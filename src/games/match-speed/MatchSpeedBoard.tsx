@@ -209,6 +209,11 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
     // and the memo do its job. See MatchSpeedCard's memo comment.
     const frozenRef = useRef(frozen);
     const cleanupModeRef = useRef(cleanupMode);
+    // `timeStamp` of the last pointerdown a CARD claimed, so the board-level
+    // fallback can tell "this tap hit a card" from "this tap hit nothing".
+    // Not state: it is written and read within a single event dispatch and must
+    // never trigger a render. See handleBoardPointerDown.
+    const claimedEventRef = useRef<number>(Number.NaN);
     const onMatchRef = useRef(onMatch);
     const onMissRef = useRef(onMiss);
     const onSpeakRef = useRef(onSpeak);
@@ -363,10 +368,17 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             const handlerStart = performance.now();
             const cleanupMode = cleanupModeRef.current;
 
+            // Claim this event for the card layer, so the board-level fallback
+            // below knows a card handled it and does not also log it as a miss.
+            // Read by `handleBoardPointerDown`, which runs later in the same
+            // dispatch (this fires at the target, that one on the way up).
+            claimedEventRef.current = eventTimeStamp;
+
             /** Close out this tap: ship one telemetry record naming what we did
-             *  with it. `reportTap` self-filters to interesting taps only (ignored
-             *  ones, or ones with a slow pre-handler stall / post-tap render), so
-             *  calling it on every path is correct and cheap. */
+             *  with it. Tap telemetry is a CENSUS — every tap ships, healthy or
+             *  not — so EVERY return path in this function must go through
+             *  `done`, or the outcome table under-counts and its percentages
+             *  quietly lie. See reportTap in src/utils/perfDiagnostics.ts. */
             const done = (outcome: string) => {
                 reportTap(outcome, `${tapped.side}:${tapped.id}`, eventTimeStamp, handlerStart);
             };
@@ -480,6 +492,48 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
         ]
     );
 
+    /**
+     * Board-level tap fallback — the census's denominator.
+     *
+     * `handleTap` can only report taps that REACHED a card. The taps most likely
+     * to be behind "I tapped and nothing happened" are exactly the ones that
+     * never get there, and they were previously invisible:
+     *   • the tap landed in the gutter between cells, or on an empty slot held
+     *     open by a popped pair (a real aiming/hit-area problem);
+     *   • it landed on a card that is mid-pop, which the card wrapper makes
+     *     `pointerEvents: "none"` the instant it matches — so the tap falls
+     *     THROUGH to the board rather than hitting `ignored-exiting`;
+     *   • something above the board (an overlay, a banner) swallowed it.
+     * A card-only log shows none of these; it just has fewer rows, which reads
+     * identically to "the player tapped less".
+     *
+     * This runs on the way UP: React dispatches the card's own pointerdown at
+     * the target first, and that handler stamps `claimedEventRef` with the
+     * event's `timeStamp`. Anything arriving here unstamped hit no card.
+     * `timeStamp` is the identity because it is stable across the dispatch and
+     * distinct per event — including for two fingers landing in the same frame,
+     * which get separate pointerdown events.
+     */
+    const handleBoardPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        // Captured first, for the same reason handleTap does it: this is the
+        // measurement of how long the tap waited on the main thread.
+        const handlerStart = performance.now();
+        // Left button only — matches the card handler, so the two agree on what
+        // counts as a tap and the census is not skewed by right-clicks.
+        if (e.button !== 0) return;
+        if (claimedEventRef.current === e.timeStamp) return; // a card took it
+
+        // Name what absorbed the tap, using the app's descriptive class names, so
+        // "gutter" (match-speed__cell) is distinguishable from "dead card"
+        // (match-speed__card--exiting) in the analysis without guessing.
+        const el = e.target as Element | null;
+        const cls =
+            typeof el?.className === "string" && el.className.trim()
+                ? el.className.trim().split(/\s+/)[0]
+                : (el?.tagName?.toLowerCase() ?? "unknown");
+        reportTap("no-card", cls, e.timeStamp, handlerStart);
+    }, []);
+
     /** Resolve one card's visual state; the card component renders it and nothing more. */
     const visualState = (card: BoardCard): CardVisualState => {
         // SELECTION OUTRANKS THE WRONG FLASH, and that order is load-bearing.
@@ -542,6 +596,10 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
         // padding can't be double-counted into the card size).
         <Box
             className="match-speed__board"
+            // Telemetry only — see handleBoardPointerDown. This must stay on the
+            // OUTER box (the one that spans the whole board area including its
+            // padding), so a tap in the outer margin is counted too.
+            onPointerDown={handleBoardPointerDown}
             sx={{
                 flex: 1,
                 minHeight: 0,

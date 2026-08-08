@@ -42,19 +42,33 @@ Plus one source that is **not** a Performance API:
   is indistinguishable from a tap that never happened — so the surface has to say
   what it decided. Each record carries:
   - `name` — the **outcome** the handler chose. Match Speed emits `match`, `miss`,
-    `select`, `deselect`, `cleanup-select/clear/deselect`, and the three no-ops
-    `ignored-frozen`, `ignored-exiting`, `ignored-removed`.
-  - `target` — `side:cardId`.
+    `select`, `deselect`, `cleanup-select/clear/deselect`, the three no-ops
+    `ignored-frozen`, `ignored-exiting`, `ignored-removed`, and `no-card` (see
+    below).
+  - `target` — `side:cardId`, or for `no-card` the first class name of whatever
+    element absorbed the tap.
   - `inputDelay` — the pointer event's `timeStamp` → handler entry. **Large here
     means the tap was queued behind a render**, not blocked by an animation.
   - `processing` — the handler itself.
   - `presentation` — handler end → next animation frame, i.e. the React re-render
     the tap caused. Large here means *this* tap is what stalls the *next* one.
 
-  Shipped only when interesting (any `ignored-*` outcome, or any phase over
-  `TAP_REPORT_MS` = 100ms) and capped at `TAP_REPORTS_PER_MIN` (30), because a
-  speed game produces several taps a second and healthy ones would drown the
-  signal. Callers: `src/games/match-speed/MatchSpeedBoard.tsx` (`handleTap`).
+  **These records are a CENSUS**, unlike every other source on this page: every
+  tap on an instrumented surface ships, healthy or not, fast or slow. That is
+  deliberate — a rate ("3% of taps were swallowed") needs the denominator, and a
+  threshold-filtered log only ever has the numerator. `TAP_REPORTS_PER_MIN` (600)
+  is a pure flood backstop, not a sampling knob: a human tapping flat-out with
+  two fingers tops out near 360/min, so it never trims real play.
+
+  Because it is a census, **every** tap path in a caller must report — including
+  the paths that do nothing, and including taps that reach no card at all. Match
+  Speed covers the latter with a board-level fallback that emits `no-card`
+  (`handleBoardPointerDown`); without it the taps most likely to be behind "I
+  tapped and nothing happened" are invisible, since a missing record is
+  indistinguishable from the player simply not tapping.
+
+  Callers: `src/games/match-speed/MatchSpeedBoard.tsx` (`handleTap` for card
+  taps, `handleBoardPointerDown` for the rest).
   Rationale + how to read it: docs/MATCH_SPEED_GAME.md § Tap telemetry.
 
 Each record carries the route `path` and a best-effort `target` description
@@ -106,17 +120,31 @@ Output groups by `(kind, route)`, sorted by p95 duration, and prints a
   since the footer/decks handlers only call `navigate()`).
 
 The report ends with a **"Game tap outcomes"** table, grouped by `(route,
-outcome)`, for `kind: "tap"` records. Read it as:
+outcome)`, for `kind: "tap"` records. This one **is** a census, so its `%`
+column (share of that route's taps) is meaningful. Read it as:
 
-- `ignored-*` rows present in volume → a **guard is eating real input**; find which
-  one from the outcome name.
+- `no-card` rows in volume → taps are **missing the cards entirely**: the gutter
+  between cells, an empty slot left by a popped pair, a card that went
+  `pointer-events: none` mid-pop, or an overlay sitting above the board. Use the
+  `target` class name to tell which. This is a hit-area/layout bug, not a guard bug.
+- `ignored-*` rows in volume → a **guard is eating real input**; find which one
+  from the outcome name. See the caveat below on what "in volume" means.
 - Healthy outcomes (`match`, `select`, …) with a large `inDly p95` → input was
   never blocked; taps are **queued behind a render**. Fix by shrinking the render
   the previous tap triggers (memoize the cells, keep the tap handler
   referentially stable) — see docs/MATCH_SPEED_GAME.md § The other kind of lockout.
 
-⚠️ These counts are **not a tap census**: the client pre-filters to interesting
-taps only, so read which outcomes appear and how slow they were, never as rates.
+⚠️ **A no-op outcome is not automatically a bug.** Every `ignored-*` case is a
+deliberate rule (`ignored-frozen` = the pre-run countdown; `ignored-exiting` /
+`ignored-removed` = the second finger of a two-finger grab landing on a pair the
+first finger already matched, which is correct multi-touch behaviour). Judge
+these by **rate and context**, not by presence: a few percent of `ignored-exiting`
+in a fast run is the design working, while `ignored-frozen` outside a countdown
+or `ignored-removed` climbing with tap speed is a real defect.
+
+⚠️ Records written **before** the census change are threshold-filtered and will
+skew the percentages upward. Check the date range of the files being analyzed
+before trusting a `%` column that spans that boundary.
 
 ## Persistence & rotation (shared by both sinks)
 

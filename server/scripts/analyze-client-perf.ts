@@ -233,24 +233,42 @@ async function main() {
     for (const [t, c] of topTargets) console.log(`  ${pad(c, 6)} ${t}`);
   }
 
-  // Game-surface tap outcomes. NOTE these records are pre-filtered client-side to
-  // *interesting* taps only (ignored ones, or ones slower than the client's
-  // threshold), so the counts are NOT a tap census — do not read them as rates.
-  // Read them as: which outcomes show up at all, and how slow they were.
+  // Game-surface tap outcomes. These records are a CENSUS — the client ships
+  // every tap on an instrumented surface, fast or slow, acted-on or not — so
+  // unlike every other table here the counts ARE rates and the `%` column is
+  // meaningful. (Records predating the census change are threshold-filtered and
+  // will skew the percentages upward; check the date range if a run looks odd.)
   if (tapOutcomes.size) {
-    console.log('\nGame tap outcomes (only taps the client judged interesting):');
-    console.log('  `ignored-*` = a guard dropped the tap. Anything else = the tap worked but was slow.');
+    console.log('\nGame tap outcomes (census — every tap, not just slow ones):');
+    console.log('  no-card    = the tap reached NO card: gutter, empty slot, mid-pop card, or an overlay ate it.');
+    console.log('  ignored-*  = a card took the tap and a guard dropped it. Expected at low rates (see below).');
+    console.log('  everything else = the tap did what the player asked.');
+    console.log('  A big inputDelay on a HEALTHY outcome means the tap worked but was queued behind a render.');
+
+    // Percentages are per route, so a route with few taps cannot be read as if
+    // its outcomes were a share of the whole session.
+    // Keys are built as `${path}  ${outcome}` above; split on that exact
+    // two-space separator rather than the last space, so an outcome name that
+    // ever grows a space in it does not silently regroup the table.
+    const routeOf = (key: string) => key.split('  ')[0];
+    const totalByRoute = new Map<string, number>();
+    for (const [key, t] of tapOutcomes) {
+      totalByRoute.set(routeOf(key), (totalByRoute.get(routeOf(key)) || 0) + t.n);
+    }
+
     console.log(
-      '\n  ' + pad('route / outcome', 44) + pad('n', 6) +
+      '\n  ' + pad('route / outcome', 44) + pad('n', 6) + pad('%', 7) +
       pad('inDly p50', 11) + pad('inDly p95', 11) + pad('pres p95', 10)
     );
-    console.log('  ' + '-'.repeat(82));
+    console.log('  ' + '-'.repeat(89));
     const tapRows = [...tapOutcomes.entries()].sort((a, b) => b[1].n - a[1].n);
     for (const [key, t] of tapRows) {
       const inp = [...t.inputDelays].sort((a, c) => a - c);
       const pres = [...t.presentations].sort((a, c) => a - c);
+      const routeTotal = totalByRoute.get(routeOf(key)) || t.n;
+      const share = ((t.n / routeTotal) * 100).toFixed(1) + '%';
       console.log(
-        '  ' + pad(key, 44) + pad(t.n, 6) +
+        '  ' + pad(key, 44) + pad(t.n, 6) + pad(share, 7) +
         pad(pct(inp, 50), 11) + pad(pct(inp, 95), 11) + pad(pct(pres, 95), 10)
       );
     }

@@ -36,9 +36,12 @@ import { API_BASE_URL } from "../constants";
  *    main thread, and what the game actually decided to do with it (including "it
  *    hit a guard and did nothing"). See `reportTap`'s doc comment.
  *
- * Sampling: only interactions/tasks above a noticeable threshold are buffered,
- * so volume stays low. The buffer is flushed with `navigator.sendBeacon` (which
- * survives page navigation/unload) on a size cap, a periodic timer, and on
+ * Sampling: interactions/longtasks are thresholded (only ones above a noticeable
+ * duration are buffered), so volume stays low. Tap records are the EXCEPTION —
+ * they are a full CENSUS, every tap shipped regardless of speed or outcome. See
+ * TAP_REPORTS_PER_MIN for why that is affordable and what still bounds it.
+ * The buffer is flushed with `navigator.sendBeacon` (which survives page
+ * navigation/unload) on a size cap, a periodic timer, and on
  * pagehide/visibility-hidden.
  *
  * Safe-by-construction: everything is wrapped in feature-detection + try/catch;
@@ -52,19 +55,28 @@ import { API_BASE_URL } from "../constants";
 const INTERACTION_REPORT_MS = 200;
 // Long tasks shorter than this aren't worth shipping (50ms is the spec floor).
 const LONGTASK_REPORT_MS = 80;
-// Flush when this many records accumulate, or every FLUSH_INTERVAL_MS.
-const BUFFER_FLUSH_SIZE = 20;
+// Flush when this many records accumulate, or every FLUSH_INTERVAL_MS. Sized
+// against the two server-side caps this has to live under: the sink rejects a
+// batch of >100 records outright, and diagnosticsLimiter allows 60 POSTs per
+// minute per IP. A tap census at ~5 taps/s fills 50 records every ~10s, i.e.
+// ~6 POSTs/min — an order of magnitude under the limiter even with several
+// players behind one NAT.
+const BUFFER_FLUSH_SIZE = 50;
 const FLUSH_INTERVAL_MS = 10000;
 
 // --- Explicit tap records (reportTap) -------------------------------------
-// A tap is only shipped when it is INTERESTING: either the game ignored it, or
-// some phase of it crossed this threshold. A speed game produces several taps a
-// second and the overwhelming majority are healthy; logging those would drown
-// the signal and burn the endpoint's per-IP rate limit for nothing.
-const TAP_REPORT_MS = 100;
-// Hard ceiling on shipped tap records per rolling minute, so a pathological
-// session (or a future caller that forgets the threshold) cannot flood the sink.
-const TAP_REPORTS_PER_MIN = 30;
+// Tap records are a CENSUS: every tap on an instrumented surface is shipped,
+// fast or slow, acted-on or ignored. This is deliberate and is the whole point
+// of the mechanism — a rate table ("3% of taps were swallowed") requires the
+// denominator, and a filtered log only ever has the numerator. Volume is
+// affordable because only game surfaces are instrumented, the app has a handful
+// of testers, and each record is ~150 bytes (a 3-minute run ≈ 300 taps ≈ 45KB).
+//
+// The rolling cap below is therefore a pure FLOOD BACKSTOP, not a sampling
+// knob: a human tapping flat-out with two fingers tops out near 360 taps/min,
+// so 600 never trims real play and only catches a runaway loop or a future
+// caller wiring this into something high-frequency.
+const TAP_REPORTS_PER_MIN = 600;
 
 const ENDPOINT = `${API_BASE_URL}/api/diagnostics/perf`;
 
@@ -148,10 +160,13 @@ let tapsThisWindow = 0;
  *                    re-render + paint the tap triggered. This is what tells us
  *                    whether the tap is what STALLS THE NEXT tap.
  *
- * Ships only when interesting (see TAP_REPORT_MS) and is rate-capped
- * (TAP_REPORTS_PER_MIN). No-ops entirely unless `initPerfDiagnostics()` ran, so
- * this is silent in dev unless `localStorage.perfDiag = "1"` — same gate as the
- * rest of this module (src/main.tsx).
+ * CENSUS, NOT A SAMPLE: every tap is shipped, including the fast healthy ones.
+ * Callers must therefore call this on EVERY tap path — including the paths that
+ * do nothing — or the outcome table silently under-counts. The only ceiling is
+ * the flood backstop (TAP_REPORTS_PER_MIN). No-ops entirely unless
+ * `initPerfDiagnostics()` ran, so this is silent in dev unless
+ * `localStorage.perfDiag = "1"` — same gate as the rest of this module
+ * (src/main.tsx).
  *
  * Never throws into the caller: a tap handler must not be able to fail because
  * telemetry did.
@@ -173,18 +188,12 @@ export function reportTap(
         const handlerEnd = performance.now();
         const inputDelay = Math.max(0, Math.round(handlerStart - eventTimeStamp));
         const processing = Math.round(handlerEnd - handlerStart);
-        // An "ignored-*" outcome is always worth shipping regardless of timing —
-        // that IS the bug report. Everything else must clear the threshold.
-        const ignored = outcome.startsWith("ignored");
 
         // `presentation` is only knowable a frame later, so the record is pushed
         // from the rAF callback rather than here; that also means one dropped
         // frame shows up as a large presentation instead of a missing record.
         const finish = (presentation: number) => {
-            if (!ignored && inputDelay < TAP_REPORT_MS && presentation < TAP_REPORT_MS) return;
-
-            // Rate cap, evaluated at push time so cheap uninteresting taps never
-            // consume budget.
+            // No interest filter: this is a census (see TAP_REPORTS_PER_MIN).
             const now = Date.now();
             if (now - tapWindowStart > 60000) {
                 tapWindowStart = now;

@@ -125,6 +125,19 @@ Every tap calls `reportTap` (`src/utils/perfDiagnostics.ts`) on its way out of
 `POST /api/diagnostics/perf` with `inputDelay` (pointerdown → handler entry),
 `processing`, and `presentation` (handler → next frame).
 
+Taps that reach **no card at all** are reported too, as `no-card`, by a
+board-level `onPointerDown` fallback (`handleBoardPointerDown` on the
+`.match-speed__board` box). `handleTap` can only see taps that hit a card, but
+the likeliest causes of "I tapped and nothing happened" never get that far: the
+gutter between cells, an empty slot held open by a popped pair, a card that went
+`pointer-events: none` the instant it matched (so the tap falls *through* rather
+than hitting `ignored-exiting`), or an overlay above the board. The card handler
+stamps `claimedEventRef` with the event's `timeStamp` at the target phase; the
+board handler runs on the way up and reports anything unstamped, tagging
+`target` with the class of the element that absorbed it. Without this, those
+taps produce no record — and a missing record is indistinguishable from the
+player not tapping.
+
 This exists because the dead-tap reports **do not reproduce locally**, and the
 browser's own Performance APIs cannot see the difference that matters here: a tap
 dropped by a guard in 0.1ms looks perfectly healthy to Event Timing and is
@@ -133,14 +146,26 @@ differently in the data:
 
 | Signal | Diagnosis |
 |---|---|
+| `no-card` outcomes in volume | taps are missing the cards — hit-area/layout, not a guard |
 | `ignored-*` outcomes appearing in volume | a guard is eating real input |
 | Healthy outcomes with large `inputDelay` | the tap was queued behind a render (above) |
 | Large `presentation` | this tap's own render is what will stall the *next* one |
 
-Only interesting taps are shipped (any `ignored-*`, or any phase over 100ms),
-capped at 30/min, under the same production gate as the rest of the module.
-Read it with `npx tsx scripts/analyze-client-perf.ts` → "Game tap outcomes".
-See [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md).
+**A no-op tap is not by itself a bug.** All three `ignored-*` outcomes are
+deliberate rules, and two of them are *expected* during correct play:
+`ignored-frozen` is the pre-run countdown (the board is readable but not live),
+while `ignored-exiting` / `ignored-removed` are the second finger of a
+two-finger grab landing on a pair the first finger already matched — which is
+the multi-touch design working, not failing (see § Two-finger (multi-touch)
+taps). What indicts a guard is the **rate and the context**: `ignored-frozen`
+outside a countdown, or `ignored-removed` rising with tap speed, is a defect;
+a few percent of `ignored-exiting` in a fast run is not.
+
+Tap records are a **census** — every tap ships, healthy or not — so the
+analyzer's `%` column is a true share of taps and rates are readable directly.
+The 600/min cap is a flood backstop only. Same production gate as the rest of
+the module. Read it with `npx tsx scripts/analyze-client-perf.ts` → "Game tap
+outcomes". See [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md).
 
 #### Taps fire on `pointerdown`, never on `click`
 

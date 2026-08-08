@@ -1,0 +1,28 @@
+; cow-maintenance.timer — managed by database/cron/install-maintenance-timer.sh
+; (do not edit the installed copy in ~/.config/systemd/user; edit THIS template,
+; commit, and redeploy).
+;
+; This file is the editable source of truth for WHEN the maintenance job runs.
+
+[Unit]
+Description=Hourly trigger for cow-maintenance.service
+Documentation=file://__REPO_DIR__/docs/STREAK_EXPIRATION_CRON.md
+
+[Timer]
+; HH:01 so the 4 AM local-day boundary has definitely ticked over for any timezone
+; whose rollover lands on the hour. Same schedule the cron drop-in used.
+OnCalendar=*:01
+
+; Catch up on a missed run (host rebooted, user manager down) at the next start
+; instead of silently skipping the hour — cron has no equivalent. Safe because the
+; penalty SQL is idempotent within a local day: a second run the same day returns
+; UPDATE 0, guarded by lastPenaltyDate.
+Persistent=true
+
+; systemd may delay a timer by up to AccuracySec to batch wakeups. Default is 1min,
+; which would let an "HH:01" job drift to HH:02; pin it tighter so the schedule
+; means what it says.
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

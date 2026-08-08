@@ -219,5 +219,6 @@ Order matters — the cron SQL and the prune script both read
 
 1. Run migration 130 (its `DO` block aborts the transaction on a bad backfill).
 2. Deploy the app.
-3. Reinstall both crontab lines via `database/cron/install-cron.sh` — the on-disk
-   cron SQL is already rewritten and will fail against a pre-130 schema.
+3. Reinstall the maintenance schedule via
+   `database/cron/install-maintenance-timer.sh` — the on-disk SQL is already
+   rewritten and will fail against a pre-130 schema.

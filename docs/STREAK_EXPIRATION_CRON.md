@@ -14,9 +14,14 @@ An hourly Postgres cron. It debits minute points from users who fall below the
 `RETENTION_MINUTES` (3-min) streak threshold, on an **escalating schedule** that
 grows with each consecutive missed local day, and — in the **same transaction** —
 decays their Night Market occupants back down to what the lowered minute total now
-entitles (`database/cron/expire-stale-streaks.sql`). A **companion job** one minute
-later then prunes any template that decay left empty and dangling (compiled JS, see
-Branch 2). Two crontab lines, installed together by `database/cron/install-cron.sh`.
+entitles (`database/cron/expire-stale-streaks.sql`). A **companion job** then prunes
+any template that decay left empty and dangling (compiled JS, see Branch 2).
+
+Both are `ExecStart=` steps of **one** systemd user unit, `cow-maintenance.service`,
+fired hourly by `cow-maintenance.timer` and installed together by
+`database/cron/install-maintenance-timer.sh`. See
+[Scheduling](#scheduling-systemd-user-timer-not-cron) — "cron" survives in this
+document's title and in the `logs/streak-expire.log` filename only for continuity.
 
 ## Branch 1 — Escalating penalty
 
@@ -207,17 +212,14 @@ psql "$DATABASE_URL" -f database/cron/expire-stale-streaks.sql
    `UPDATE 0`).
 
 4. **Install the schedule.** Both the SQL logic and the schedule are git-tracked;
-   the schedule is installed as a dedicated `/etc/cron.d/cow-maintenance` drop-in
-   from `database/cron/install-cron.sh`, which `/deploy` runs on every deploy. To
-   install/refresh manually (needs sudo — `/etc/cron.d` is root-owned):
+   the schedule is a **systemd user timer** installed by
+   `database/cron/install-maintenance-timer.sh`, which `/deploy` runs on every
+   deploy. To install/refresh manually (**no sudo**):
    ```bash
-   bash /home/michael/vocabulary-app/database/cron/install-cron.sh
+   bash /home/michael/vocabulary-app/database/cron/install-maintenance-timer.sh
    ```
-   Idempotent; cron auto-detects the new file. Runs at `HH:01` so the 4 AM local
-   boundary has ticked over for any timezone.
-
-   > **`/etc/cron.d` filenames:** cron ignores any file whose name contains a `.`.
-   > Keep the name `cow-maintenance` (letters/hyphens only).
+   Idempotent. Runs at `HH:01` so the 4 AM local boundary has ticked over for any
+   timezone. Details in [Scheduling](#scheduling-systemd-user-timer-not-cron).
 
 5. **Verify** `/home/michael/vocabulary-app/logs/streak-expire.log` the morning
    after install — one `BEGIN / DO / COMMIT` block per hour, plus a `NOTICE:` line
@@ -281,6 +283,84 @@ equals the `missed_dates` entry (always the prior local day).
 ```bash
 grep '^NOTICE:  inactivity-cron' /home/michael/vocabulary-app/logs/streak-expire.log
 ```
+
+## Scheduling (systemd user timer, not cron)
+
+**Depends on:** `database/cron/install-maintenance-timer.sh`,
+`database/cron/cow-maintenance.service.template`,
+`database/cron/cow-maintenance.timer.template`, and the `/deploy` skill
+(`.claude/commands/deploy.md` Step 3, which runs the installer every deploy).
+
+| Artifact | Path |
+|---|---|
+| Schedule source of truth (WHEN) | `database/cron/cow-maintenance.timer.template` |
+| Job definition (WHAT) | `database/cron/cow-maintenance.service.template` |
+| Installer (no sudo) | `database/cron/install-maintenance-timer.sh` |
+| Rendered units on prod | `~/.config/systemd/user/cow-maintenance.{service,timer}` |
+
+The installer renders each template, substituting `__REPO_DIR__` with the absolute
+repo path, then runs `systemctl --user daemon-reload` and
+`systemctl --user enable --now cow-maintenance.timer`.
+
+### Why a user timer replaced `/etc/cron.d` (2026-08-07)
+
+The schedule previously lived in an `/etc/cron.d/cow-maintenance` drop-in. That is
+unreachable without root on two counts — the directory is root-owned, *and*
+`man 8 cron` requires the files themselves be root-owned and not group/other-writable
+— so every deploy needed an interactive sudo password, and in practice the step got
+skipped (see `docs/oracle-runs/oracle-run-20260720T1003Z.md`). `~/.config/systemd/user`
+is owned by the deploying user, so the install needs no privilege at all.
+
+Two behaviours improved in the move, both worth knowing when reading the logs:
+
+- **Ordering is enforced, not hoped for.** The two jobs were separate cron lines at
+  `:01` and `:02`; the prune reads rows the penalty pass writes (it targets
+  `lastPenaltyDate = today`), and one minute was merely assumed to be enough. They
+  are now two `ExecStart=` lines in one `Type=oneshot` unit, which systemd runs
+  strictly in sequence. Consequence: **if the penalty step fails, the prune step does
+  not run** and the unit is marked failed — correct, since the prune would have had
+  nothing to act on.
+- **Overlapping runs are impossible.** A service is a singleton, so a long run cannot
+  race the next tick on the `CREATE OR REPLACE FUNCTION` at the top of the SQL.
+
+`Persistent=true` on the timer catches up a run missed to a reboot at next start;
+this is safe because the penalty SQL is idempotent within a local day
+(`lastPenaltyDate` guard).
+
+### Lingering is required
+
+User units only run while the user is logged in **unless** lingering is enabled. It
+is enabled on prod, is a one-time machine setup step rather than a per-deploy one,
+and is the single thing here that needs root:
+
+```bash
+sudo loginctl enable-linger michael      # one time; verify with: loginctl show-user michael -p Linger
+```
+
+The installer warns loudly if it is ever off — that failure is otherwise silent.
+
+### Operator commands
+
+```bash
+systemctl --user list-timers cow-maintenance.timer   # when it next fires / last fired
+systemctl --user status cow-maintenance.service      # last run's exit status
+journalctl --user -u cow-maintenance -n 50           # per-run history systemd keeps
+systemctl --user start cow-maintenance.service       # run both steps now (safe; idempotent)
+```
+
+The two log files are unchanged (`logs/streak-expire.log`, `logs/prune-templates.log`),
+so the verification steps elsewhere in this document still apply. The journal adds
+exit status per run, which the log files never recorded.
+
+### ⚠️ Never let two schedulers run this
+
+If the schedule exists in more than one place (the old cron drop-in, a stale user
+crontab line, and/or the timer), both fire in the same minute and race on the SQL's
+`CREATE OR REPLACE FUNCTION`, producing `ERROR: tuple concurrently updated` followed
+by a full `ROLLBACK` — that tick's penalties silently do not apply. This actually
+happened: the drop-in and a legacy user-crontab line coexisted for weeks, logging 453
+such errors before the 2026-08-07 cleanup. The installer checks both legacy locations
+and warns if either is still present.
 
 ## Maintenance
 

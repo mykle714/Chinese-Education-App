@@ -12,8 +12,9 @@ depends on the answer:
   **run the deploy commands yourself** (`git pull`, `docker-compose ... down`,
   `up --build -d`, migrations, verification). Do not hand them off as a copy-paste
   block; execute them. The only exceptions are commands that need an interactive
-  `sudo` password (e.g. `database/cron/install-cron.sh`) — you cannot supply the
-  password non-interactively, so ask the user to run just those. Since rebuilding
+  `sudo` password — you cannot supply the password non-interactively, so ask the
+  user to run just those. (The maintenance-schedule install is **no longer** one of
+  them: it is a systemd *user* timer and needs no privilege. See Step 3.) Since rebuilding
   prod containers briefly takes the live site down for real users, confirm with the
   user before running the `down`/`up --build` step unless they've already told you to
   proceed.
@@ -165,11 +166,13 @@ git pull origin main
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up --build -d
 
-# Maintenance cron (prod only) — idempotent; installs/refreshes the hourly
-# inactivity-penalty + weekly-reset schedule as the /etc/cron.d/cow-maintenance
-# drop-in from the git-tracked source (self-elevates with sudo for the write).
+# Maintenance schedule (prod only) — idempotent; installs/refreshes the hourly
+# inactivity-penalty + template-prune schedule as the cow-maintenance systemd USER
+# timer, rendered from the git-tracked unit templates in database/cron/.
+# NO SUDO — it writes to ~/.config/systemd/user, which the deploy user owns.
+# Never run it with sudo (it refuses: root's units would not run this user's jobs).
 # Safe to run every deploy. See docs/STREAK_EXPIRATION_CRON.md
-bash database/cron/install-cron.sh
+bash database/cron/install-maintenance-timer.sh
 
 # Migration(s) — one cp + -f + INSERT triple per pending file (inferred from prodSHA..origin/main),
 # in sort -V order. Copy file into container, run with -f, then RECORD it in schema_migrations.

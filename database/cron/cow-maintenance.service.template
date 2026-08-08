@@ -1,0 +1,49 @@
+; cow-maintenance.service — managed by database/cron/install-maintenance-timer.sh
+; (do not edit the installed copy in ~/.config/systemd/user; edit THIS template,
+; commit, and redeploy).
+;
+; __REPO_DIR__ is substituted with the absolute repo path at install time, so the
+; unit never depends on the checkout living at any particular path.
+;
+; PROD ONLY. Dev is intentionally left with no schedule — run the SQL by hand with
+; `psql -f` when testing. See docs/STREAK_EXPIRATION_CRON.md.
+
+[Unit]
+Description=Vocabulary app hourly maintenance (inactivity penalty + dangling-template prune)
+Documentation=file://__REPO_DIR__/docs/STREAK_EXPIRATION_CRON.md
+; Nothing to order against: the jobs talk to Docker containers, not host services,
+; and both tolerate the container being down (they fail, log, and retry next hour).
+
+[Service]
+Type=oneshot
+
+; Two steps, run STRICTLY IN SEQUENCE by systemd. Under the old cron they were two
+; separate lines at :01 and :02 that merely *hoped* one minute was enough for the
+; first to finish — the second reads what the first writes (it targets exactly the
+; users whose lastPenaltyDate the penalty pass just set to today). As ExecStart
+; lines in a single oneshot unit, step 2 cannot begin until step 1 has exited.
+;
+; A oneshot service is also a SINGLETON: systemd will not start a second run while
+; one is still active. Under cron, an overrunning job could overlap the next tick
+; and race itself on the CREATE OR REPLACE FUNCTION at the top of the SQL
+; ("tuple concurrently updated"). That failure mode is now impossible by construction.
+;
+; Step 1 — debit inactive users + decay their occupants (pure SQL, one transaction).
+; `bash -c` is required for the `<` stdin redirect and `>>` append, which are shell
+; syntax that systemd's ExecStart does not itself interpret.
+ExecStart=/bin/bash -c '/usr/bin/docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < __REPO_DIR__/database/cron/expire-stale-streaks.sql >> __REPO_DIR__/logs/streak-expire.log 2>&1'
+
+; Step 2 — prune templates that step 1's decay left empty and weakly attached. This
+; is the TypeScript adjacency fixpoint (impractical in plpgsql), run as COMPILED JS
+; inside the backend container (the prod image has no tsx/devDeps).
+;
+; NOTE a deliberate behaviour change from cron: if step 1 fails, systemd aborts the
+; unit and step 2 does NOT run. That is correct here — step 2 targets rows step 1
+; would have written, so after a failed step 1 it has nothing to do. It also means a
+; failure is visible in `systemctl --user status cow-maintenance` instead of being
+; buried in a log file.
+ExecStart=/bin/bash -c '/usr/bin/docker exec cow-backend-prod node dist/scripts/night-market/prune-dangling-templates.js >> __REPO_DIR__/logs/prune-templates.log 2>&1'
+
+; Both steps append to their own log file (unchanged from the cron setup, so the
+; verification steps in the docs still apply). systemd additionally records each
+; run's exit status in the journal: `journalctl --user -u cow-maintenance`.

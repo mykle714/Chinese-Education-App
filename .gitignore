@@ -37,6 +37,8 @@ dist-ssr
 
 # Database backup dumps (large; contain real user data — never commit)
 database/backups/
+# Repo-root backups/ — where /deploy writes its pre-deploy pg_dump
+backups/
 
 # Spanish source data is a nested git clone (doozan/spanish_data, ~151MB with its
 # own .git). It's reference input for server/scripts/import-esdict-temp.ts only —

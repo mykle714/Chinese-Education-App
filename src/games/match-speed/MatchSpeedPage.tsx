@@ -12,6 +12,7 @@ import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
 import { beginTapCensus, beginTouchProbe } from "../../utils/perfDiagnostics";
+import { TouchDebugOverlay } from "./TouchDebugOverlay";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import LeafPage from "../../components/LeafPage";
@@ -161,6 +162,19 @@ const MatchSpeedPage: React.FC = () => {
     // event becomes visible. Remove together with `beginTouchProbe` once the bug
     // is understood. Same empty-deps rule as the census.
     useEffect(() => beginTouchProbe(), []);
+
+    // TEMPORARY: `?touchdebug=1` shows a live finger-count readout (see
+    // TouchDebugOverlay). The JS-side telemetry cannot distinguish "pressed once"
+    // from "pressed twice and iOS discarded one", because a contact rejected
+    // before dispatch produces no events at all; this puts the count in front of
+    // the person who knows how many fingers they used. Read once from the URL the
+    // page was opened with — deliberately NOT reactive, so a re-render can never
+    // mount/unmount the overlay's listeners mid-run.
+    const showTouchDebug = useMemo(
+        () => new URLSearchParams(location.search).get("touchdebug") === "1",
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        []
+    );
 
     const language = (user?.selectedLanguage ?? "zh") as Language;
 
@@ -492,6 +506,7 @@ const MatchSpeedPage: React.FC = () => {
         // arrow (→ /games), slides up on enter. No per-page IPhoneFrame — the frame
         // comes from MobileDemoFrame via Layout.tsx.
         <>
+        {showTouchDebug && <TouchDebugOverlay />}
         {/* Generic (non-itemized) notice: Match Speed deals from a rolling buffer, so
             the set of lent cards isn't known before the run starts. */}
         <ProvisionalCardsNotice

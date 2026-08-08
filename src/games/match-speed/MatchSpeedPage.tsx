@@ -11,6 +11,7 @@ import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
+import { beginTapCensus } from "../../utils/perfDiagnostics";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import LeafPage from "../../components/LeafPage";
@@ -143,6 +144,16 @@ const MatchSpeedPage: React.FC = () => {
     // Mandatory on every game page (CLAUDE.md): an edge swipe would otherwise
     // navigate away mid-run. CSS touch-action can't stop the history gesture.
     useBlockEdgeSwipe(true);
+
+    // Full tap census for the life of this page (diagnostics only; no-ops unless
+    // perf diagnostics are enabled). Scoped here rather than app-wide because it
+    // records EVERY pointerdown — the right volume for one game page under
+    // investigation, far too much for a whole session.
+    //
+    // Keyed on nothing: it must start once on mount and stop once on unmount.
+    // In particular it must NOT depend on `token` (CLAUDE.md § never reload on a
+    // silent token refresh) — a re-run mid-run would drop the in-flight taps.
+    useEffect(() => beginTapCensus(), []);
 
     const language = (user?.selectedLanguage ?? "zh") as Language;
 

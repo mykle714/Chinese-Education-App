@@ -73,6 +73,13 @@ interface FlatRecord {
   inputDelay?: number;
   processing?: number;
   presentation?: number;
+  // Tap-census-only fields (kind: "tap"); see src/utils/perfDiagnostics.ts.
+  // `hit`/`hitCard` describe what was PHYSICALLY under the finger, as opposed to
+  // `target`, which is what the handler resolved. Absent on pre-census records.
+  x?: number;
+  y?: number;
+  hit?: string;
+  hitCard?: string;
 }
 
 // Accumulate per (kind + path) so footer taps, decks taps, longtasks etc. are
@@ -98,6 +105,24 @@ interface TapOutcome {
   presentations: number[];
 }
 const tapOutcomes = new Map<string, TapOutcome>();
+
+// Every `unhandled` tap the census observed: a real pointerdown that reached no
+// handler at all. These are the records that did not exist before the census —
+// the "I tapped and the selection just sat there" population. `hitCard` is the
+// discriminator: set = the finger WAS on a card and the card did not respond;
+// absent = the tap landed on no card (gutter, empty slot, overlay).
+interface UnhandledTap {
+  x?: number;
+  y?: number;
+  hit?: string;
+  hitCard?: string;
+  path: string;
+}
+const unhandledTaps: UnhandledTap[] = [];
+// Taps where the card under the finger and the card the handler acted on differ
+// — a tap routed to the wrong card, which looks perfectly healthy in the
+// outcome table but is a no-op (or worse) from the player's side.
+const misroutedTaps: Array<{ hitCard: string; target: string; outcome: string }> = [];
 
 function bucketFor(key: string): Bucket {
   let b = buckets.get(key);
@@ -167,6 +192,17 @@ async function main() {
           t.n++;
           if (typeof r.inputDelay === 'number') t.inputDelays.push(r.inputDelay);
           if (typeof r.presentation === 'number') t.presentations.push(r.presentation);
+
+          if (r.name === 'unhandled') {
+            unhandledTaps.push({ x: r.x, y: r.y, hit: r.hit, hitCard: r.hitCard, path: r.path });
+          } else if (r.hitCard && r.target) {
+            // `target` is reported as `side:cardId`; compare only the id half
+            // against the `data-card-id` the census read off the DOM.
+            const resolvedId = String(r.target).split(':').slice(1).join(':');
+            if (resolvedId && resolvedId !== r.hitCard) {
+              misroutedTaps.push({ hitCard: r.hitCard, target: resolvedId, outcome: r.name });
+            }
+          }
         }
       }
     }
@@ -240,6 +276,8 @@ async function main() {
   // will skew the percentages upward; check the date range if a run looks odd.)
   if (tapOutcomes.size) {
     console.log('\nGame tap outcomes (census — every tap, not just slow ones):');
+    console.log('  unhandled  = a real pointerdown that reached NO handler at all. THE no-op: the board just');
+    console.log('               sat there. Broken out in its own section below. Needs the window-level census.');
     console.log('  no-card    = the tap reached NO card: gutter, empty slot, mid-pop card, or an overlay ate it.');
     console.log('  ignored-*  = a card took the tap and a guard dropped it. Expected at low rates (see below).');
     console.log('  everything else = the tap did what the player asked.');
@@ -271,6 +309,51 @@ async function main() {
         '  ' + pad(key, 44) + pad(t.n, 6) + pad(share, 7) +
         pad(pct(inp, 50), 11) + pad(pct(inp, 95), 11) + pad(pct(pres, 95), 10)
       );
+    }
+  }
+
+  // THE no-op table. An `unhandled` record is a physical pointerdown that the
+  // window-level census observed and that no handler ever acted on — precisely
+  // the "selection stayed put and nothing happened" tap. Split by whether a card
+  // was under the finger, because the two halves have completely different fixes.
+  if (unhandledTaps.length) {
+    const onCard = unhandledTaps.filter((u) => u.hitCard);
+    const offCard = unhandledTaps.filter((u) => !u.hitCard);
+    console.log(`\nUnhandled taps (reached NO handler): ${unhandledTaps.length}`);
+    console.log(`  ON a card   ${pad(onCard.length, 6)} <- the card was under the finger and did not respond.`);
+    console.log('              Suspect the card layer: a dead/stale node, an element covering it,');
+    console.log('              or pointer-events being none while the card still looks live.');
+    console.log(`  OFF a card  ${pad(offCard.length, 6)} <- landed on no card: gutter, empty slot, or an overlay.`);
+    console.log('              Suspect layout/hit-area sizing.');
+
+    // Which specific cards went dead, and what element actually took the tap.
+    const byCard = new Map<string, number>();
+    for (const u of onCard) byCard.set(u.hitCard!, (byCard.get(u.hitCard!) || 0) + 1);
+    if (byCard.size) {
+      console.log('\n  Dead taps by card under the finger:');
+      for (const [c, n] of [...byCard.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+        console.log(`    ${pad(n, 5)} ${c}`);
+      }
+    }
+    const byHit = new Map<string, number>();
+    for (const u of unhandledTaps) byHit.set(u.hit || '(unknown)', (byHit.get(u.hit || '(unknown)') || 0) + 1);
+    console.log('\n  Element actually under the finger:');
+    for (const [h, n] of [...byHit.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+      console.log(`    ${pad(n, 5)} ${h}`);
+    }
+  }
+
+  // A tap that WAS handled, but by a different card than the one the finger was
+  // on. Looks healthy in the outcome table; feels broken to the player.
+  if (misroutedTaps.length) {
+    console.log(`\n⚠️  Misrouted taps (finger on one card, handler acted on another): ${misroutedTaps.length}`);
+    const byPair = new Map<string, number>();
+    for (const m of misroutedTaps) {
+      const k = `${m.hitCard} -> ${m.target} (${m.outcome})`;
+      byPair.set(k, (byPair.get(k) || 0) + 1);
+    }
+    for (const [k, n] of [...byPair.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+      console.log(`    ${pad(n, 5)} ${k}`);
     }
   }
   console.log('');

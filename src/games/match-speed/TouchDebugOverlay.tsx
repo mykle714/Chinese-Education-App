@@ -29,17 +29,31 @@ import { Box } from "@mui/material";
  * invisible to every other player.
  */
 
-/** One observed touch-layer event, newest first in the display. */
+/** One line in the display, newest first. A `separator` carries no event — it is
+ *  the blank row inserted between bursts so one press can be told from the next. */
 interface TouchLogEntry {
     /** Monotonic sequence number — cheaper to render as a key than a timestamp,
      *  and unambiguous when two events share a millisecond. */
     seq: number;
+    /** ms since page load, i.e. the SAME clock as the `at` field on the telemetry
+     *  records in perfDiagnostics. That is deliberate: a number read off the screen
+     *  can then be looked up directly in the server-side JSONL. */
+    at: number;
     label: string;
+    separator?: boolean;
 }
 
-/** How many recent events to keep on screen. Enough to show a whole two-thumb
- *  press (down, down, up, up) plus the press before it, without covering the board. */
-const LOG_LENGTH = 8;
+/** How many rows to keep on screen. Sized to hold several whole presses (a
+ *  two-thumb press is 4 events) plus their separators, without covering the board. */
+const LOG_LENGTH = 16;
+
+/** A gap this long since the previous event means a new press is starting, so a
+ *  separator goes in ahead of it. Chosen from the measured data: the two halves of
+ *  one two-thumb press land 30–115ms apart, while consecutive presses are 450ms+
+ *  apart — so anything past ~300ms is a burst boundary with wide margin on both
+ *  sides. Grouping this way is what keeps a relevant burst legible instead of
+ *  smeared into the noise around it. */
+const BURST_GAP_MS = 300;
 
 export function TouchDebugOverlay(): React.ReactElement {
     // Live finger count, straight from TouchEvent.touches.length.
@@ -54,11 +68,34 @@ export function TouchDebugOverlay(): React.ReactElement {
     // Sequence counter in a ref: bumping it must not itself trigger a render, and
     // it must survive the state updates below without going through the batching.
     const seqRef = useRef(0);
+    /** performance.now() of the previous logged event, for burst detection. */
+    const lastAtRef = useRef(0);
 
     useEffect(() => {
         const push = (label: string) => {
-            const seq = (seqRef.current += 1);
-            setLog((prev) => [{ seq, label }, ...prev].slice(0, LOG_LENGTH));
+            const at = performance.now();
+            // Burst boundary: a long quiet stretch means the previous press is
+            // over. Computed from the ref (not from `log`) so this stays correct
+            // regardless of when React flushes the state update.
+            const gap = at - lastAtRef.current;
+            const wantSeparator = lastAtRef.current > 0 && gap >= BURST_GAP_MS;
+            lastAtRef.current = at;
+
+            setLog((prev) => {
+                const next = [{ seq: (seqRef.current += 1), at, label }, ...prev];
+                // Never two separators in a row: a run of them would push real
+                // events off the screen, which is exactly what the separator is
+                // meant to prevent. `prev[0]` is the newest existing row.
+                if (wantSeparator && !prev[0]?.separator) {
+                    next.splice(1, 0, {
+                        seq: (seqRef.current += 1),
+                        at,
+                        label: "",
+                        separator: true,
+                    });
+                }
+                return next.slice(0, LOG_LENGTH);
+            });
         };
 
         const onStart = (e: TouchEvent) => {
@@ -128,11 +165,35 @@ export function TouchDebugOverlay(): React.ReactElement {
             <Box className="match-speed__touch-debug-counts">
                 touchstart {starts} &nbsp;|&nbsp; pointerdown {pointerDowns}
             </Box>
-            {log.map((entry) => (
-                <Box key={entry.seq} className="match-speed__touch-debug-line">
-                    {entry.label}
-                </Box>
-            ))}
+            {log.map((entry) =>
+                entry.separator ? (
+                    // Blank spacer row: visually separates one press from the next.
+                    <Box
+                        key={entry.seq}
+                        className="match-speed__touch-debug-separator"
+                        sx={{
+                            height: 8,
+                            borderTop: "1px solid rgba(255,255,255,0.28)",
+                            mt: 0.5,
+                        }}
+                    />
+                ) : (
+                    <Box key={entry.seq} className="match-speed__touch-debug-line">
+                        {/* Seconds since page load to 3dp — the same clock as the
+                            `at` field in the server-side telemetry, so a timestamp
+                            read off the screen can be grepped straight out of the
+                            JSONL (12.345 here = at:12345 there). */}
+                        <Box
+                            component="span"
+                            className="match-speed__touch-debug-time"
+                            sx={{ color: "#9fd0ff", mr: 1 }}
+                        >
+                            {(entry.at / 1000).toFixed(3)}
+                        </Box>
+                        {entry.label}
+                    </Box>
+                )
+            )}
         </Box>
     );
 }

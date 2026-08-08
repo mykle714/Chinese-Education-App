@@ -111,10 +111,28 @@ const PAGE_ROUTES: RouteMeta[] = [
   // keep the Home tab lit.
   { path: "/games", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/community", access: "any", shell: "frame", chrome: "tab", footerTab: "home" },
+  // Friends hub + its two request screens. All three keep the Home tab lit — they
+  // are reached from the Home menu, and the two request pages drill in one level
+  // further (their back arrows return to /friends, not to Home).
+  { path: "/friends", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/friends/requests", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/friends/sent", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/dictionary", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/compare", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/reader", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/flashcards/mastered", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
+  // Collection pages (docs/DECKS_FEATURE.md). Two routes, one component: a deck is
+  // addressed by NUMERIC id under its own segment, so a deck named "mastered" can
+  // never shadow the built-in collection route.
+  { path: "/flashcards/collection/:builtin", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
+  { path: "/flashcards/deck/:id", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
+  {
+    path: "/flashcards/mastered",
+    access: "any",
+    shell: "frame",
+    chrome: "node",
+    footerTab: "flashcards",
+    note: "Legacy path for the Mastered collection — redirects to /flashcards/collection/mastered so older links and bookmarks keep working.",
+  },
 
   {
     path: "/reader/:id",

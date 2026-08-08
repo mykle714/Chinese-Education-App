@@ -3,6 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Slide, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../../components/DelayedCircularProgress";
 import { useAuth } from "../../../AuthContext";
+import type { Language } from "../../../types";
+import ProvisionalCardsNotice from "../../../components/ProvisionalCardsNotice";
+import SortProvisionalCta from "../../../components/SortProvisionalCta";
 import { addToLibrary } from "../../../utils/vocabApi";
 import { ContentArea, MoreInfoPill } from "./styled";
 import { FC_FONT } from "../constants";
@@ -44,18 +47,24 @@ import type { VocabEntry } from "../types";
 const FlashcardsLearnPage: React.FC = () => {
     usePageTitle("Learn");
     const navigate = useNavigate();
-    const { token } = useAuth();
+    const { token, user } = useAuth();
+    // The arrival notice for lent cards. Shown once per session: it opens as soon as
+    // the loop reports a lent card and stays dismissed for the rest of the session,
+    // so a mid-session refill that lends another card doesn't re-interrupt the learner.
+    const [noticeDismissed, setNoticeDismissed] = useState(false);
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [searchParams] = useSearchParams();
     const selectedCategory: string | null = searchParams.get('category');
-    // Difficulty mode (Easy/Hard) launched from the decks page, or null for Mix.
+    // Difficulty mode (Review/Challenge) launched from the decks page, or null for Study.
+    // An unrecognized value falls back to null, so a stale bookmark of the old
+    // ?mode=easy / ?mode=hard links opens a Study session rather than dead-ending.
     const rawMode = searchParams.get('mode');
-    const selectedMode: StudyMode | null = rawMode === 'easy' || rawMode === 'hard' ? rawMode : null;
+    const selectedMode: StudyMode | null = rawMode === 'review' || rawMode === 'challenge' ? rawMode : null;
     // Mode-specific empty-state copy shown when a mode session runs out of cards.
     const emptyMessage: string | undefined =
-        selectedMode === 'easy' ? 'No more easy cards remaining.'
-        : selectedMode === 'hard' ? 'No more hard cards remaining.'
+        selectedMode === 'review' ? 'No more review cards remaining.'
+        : selectedMode === 'challenge' ? 'No more challenge cards remaining.'
         : undefined;
 
     const { settings: learnSettings, update: updateLearnSettings } = useFlashcardLearnSettings();
@@ -111,7 +120,10 @@ const FlashcardsLearnPage: React.FC = () => {
         nextSideOneLanguage,
         handleCardDismiss,
         handleUndoLastMark,
+        provisionalSeen,
     } = useWorkingLoop({ token, selectedCategory, mode: selectedMode, prefetch: tts.prefetch, cardDragRef });
+
+    const noticeOpen = !noticeDismissed && provisionalSeen.length > 0;
 
     // Drag/flip logic. Depends on the working loop's isAnimating + currentIndex,
     // and feeds dismisses back into it via handleCardDismiss.
@@ -416,6 +428,41 @@ const FlashcardsLearnPage: React.FC = () => {
 
     return (
         <>
+            {/* Generic (non-itemized) notice: flp refills its working loop as the
+                learner goes, so the played set isn't known when the session opens.
+                See docs/PROVISIONAL_CARDS.md. */}
+            <ProvisionalCardsNotice
+                open={noticeOpen}
+                onDismiss={() => setNoticeDismissed(true)}
+                surfaceName="this study session"
+                language={(user?.selectedLanguage ?? "zh") as Language}
+            />
+            {/* End-of-session offer. flp has no explicit "you finished" screen — the
+                session is over when the working loop empties — so the offer to keep
+                the lent cards surfaces exactly then, floated above the empty state.
+                Renders nothing when no cards were lent. */}
+            {workingLoop.length === 0 && (
+                <Box
+                    className="flashcards-learn__provisional-cta"
+                    sx={{
+                        position: "fixed",
+                        left: 0,
+                        right: 0,
+                        bottom: 96,
+                        zIndex: 1200,
+                        display: "flex",
+                        justifyContent: "center",
+                        px: 3,
+                        pointerEvents: "none",
+                        "& > *": { pointerEvents: "auto" },
+                    }}
+                >
+                    <SortProvisionalCta
+                        words={provisionalSeen}
+                        language={(user?.selectedLanguage ?? "zh") as Language}
+                    />
+                </Box>
+            )}
             <FlashcardsLearnHeader
                 selectedCategory={selectedCategory}
                 lastMarkUndoSnapshot={lastMarkUndoSnapshot}

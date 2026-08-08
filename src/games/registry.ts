@@ -45,7 +45,7 @@ export const GAME_REGISTRY: GameDef[] = [
     {
         gameId: "speed-reading",
         title: "Speed Reading",
-        subtitle: "Read the clue, tap the matching word before the clock runs out",
+        subtitle: "Read the clue and tap the matching word — 20 rounds against the clock",
         route: "/games/speed-reading",
         Component: lazy(() => import("./speed-reading/SpeedReadingPage")),
         bgColor: COLORS.blueAccent,

@@ -61,3 +61,25 @@ implementation: `src/games/bubble-match/BubbleMatchPage.tsx`.
 - `src/hooks/useBlockEdgeSwipe.ts` — edge-swipe-back blocker
 - `src/games/bubble-match/BubbleMatchPage.tsx` — edge-swipe reference implementation
 - `MobileTabScreen`, `LeafPage`, `NodePage` components — see the sub-docs above
+
+### Collection pages (Flashcards tab drill-ins)
+
+Three **node** routes share one component, `CollectionViewPage`
+([DECKS_FEATURE.md](./DECKS_FEATURE.md)):
+
+| Path | Shows |
+| --- | --- |
+| `/flashcards/collection/learn-now` | The sorted Learn Now cards (moved off `/decks`) |
+| `/flashcards/collection/mastered` | The Mastered cards (replaces the old `/flashcards/mastered` page) |
+| `/flashcards/deck/:id` | One user-authored deck |
+
+`/flashcards/mastered` still exists as a **redirect** to the second of these, so
+older links keep working.
+
+Two route shapes rather than one `:collectionId` on purpose: a deck is addressed by
+its numeric id under its own segment, so a deck a user names "mastered" can never
+shadow the built-in route.
+
+All three keep the Flashcards footer tab lit and are reached from `/decks`, which is
+now a **deck list** (two built-in collection rows + the user's decks) rather than an
+inline card grid.

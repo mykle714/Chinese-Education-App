@@ -1,45 +1,49 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
-import { Box, Typography, Alert, Button, Snackbar, TextField, InputAdornment, IconButton } from "@mui/material";
+import {
+    Box, Typography, Alert, Button, Snackbar, IconButton,
+    Dialog, DialogTitle, DialogContent, DialogActions, TextField,
+} from "@mui/material";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { Search, Clear } from "@mui/icons-material";
+import AddIcon from "@mui/icons-material/Add";
 import { styled } from "@mui/material/styles";
 import MobileTabScreen from "../../components/MobileTabScreen";
-import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import { useAuth } from "../../AuthContext";
-import { API_BASE_URL } from "../../constants";
-import type { VocabEntry } from "../../types";
-import { filterVocabEntries } from "../../utils/vocabSearch";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { useDiscoverNavigation } from "../../hooks/useDiscoverNavigation";
 import { useCategoryCounts } from "../../hooks/useCategoryCounts";
 import { FooterSpacer } from "../../components/MobileFooter";
+import { fetchDecks, createDeck, type DeckSummary } from "../../api/decks";
+import { deckAccentColor } from "./collectionRef";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 
-// Minimum number of cards a user must have sorted into their library before the
-// /flashcards/learn page is worth opening. Below this, we nudge them to Discover
-// instead of letting them land on a near-empty study session.
-const MIN_LIBRARY_CARDS = 20;
-
-// Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx;
-// the scroll-away header + floating footer + scroll behavior come from
-// MobileTabScreen.
+// ── What this page is now ─────────────────────────────────────────────────────
+//
+// /decks used to BE the Learn Now card grid: it fetched every non-mastered library
+// card and rendered them inline, with a search bar and a link row to the separate
+// Mastered page. Those cards moved to CollectionViewPage
+// (/flashcards/collection/learn-now), and the space they used is now the DECK LIST
+// — the user's own named card sets (docs/DECKS_FEATURE.md).
+//
+// So the page is three stacked bands:
+//   1. Review / Study Mix / Challenge — whole-library study entry points
+//   2. Two collection rows — Learn Now and Mastered, styled identically, each
+//      opening a CollectionViewPage
+//   3. Decks              — the user's sets, plus "New deck"
+//
+// Phone-frame sizing comes from MobileDemoFrame via Layout.tsx; the scroll-away
+// header + floating footer + scroll behavior come from MobileTabScreen.
+//
 // Inverted grey/white scheme, scoped to /decks only: the page surface is painted
-// with the grey header tone (passed as MobileTabScreen `surfaceColor`) while the
-// mini cards inside flip to the near-white page tone (COLORS.background). The
-// shared MobileDemoFrame and MiniVocabCard keep their normal colors everywhere else.
+// with the grey header tone (passed as MobileTabScreen `surfaceColor`).
 const CONTENT_SX = {
     alignItems: "center",
-    "& .mini-vocab-card": {
-        backgroundColor: COLORS.background,
-    },
 } as const;
 
-// Shared look for the three study-entry buttons (Easy / Mix / Hard). Easy and
-// Hard add their own color; Mix uses the neutral header surface.
+// Shared look for the three study-entry buttons (Review / Study Mix / Challenge).
+// Review and Challenge add their own color; Study Mix uses the neutral header surface.
 const studyButtonBase = {
     borderRadius: "8px",
     padding: "18px 16px",
@@ -51,51 +55,51 @@ const studyButtonBase = {
 };
 
 // Compact entry button into a mixed (all-category) study session. Sits centered
-// between the Easy/Hard buttons with a fixed footprint so those two flex to fill
-// the remaining side space.
+// between the Review/Challenge buttons with a fixed footprint so those two flex to
+// fill the remaining side space.
 const MixButton = styled(Button)(() => ({
     ...studyButtonBase,
     backgroundColor: COLORS.header,
     color: COLORS.onSurface,
     border: `2px solid ${COLORS.border}`,
-    // Keep Mix at its original half-width footprint; Easy/Hard split the rest.
+    // Keep Study Mix at its original half-width footprint; Review/Challenge split the rest.
     flex: "0 0 50%",
     "&:hover": {
         backgroundColor: COLORS.header,
     },
 }));
 
-// Easy (blue) / Hard (red) difficulty entry buttons. They flank Mix and flex to
+// Review (blue) / Challenge (red) difficulty entry buttons. They flank Study Mix and flex to
 // take the remaining side space. `greyed` renders a non-interactive-looking
 // disabled state WITHOUT the `disabled` prop, so taps still fire onClick to
 // surface the "mark more cards" toast.
-const EasyButton = styled(Button, {
-    shouldForwardProp: (prop) => prop !== "greyed",
-})<{ greyed?: boolean }>(({ greyed }) => ({
+// The two differ only by accent color, so the shared shape lives here — notably
+// the SMALLER type: "Review" and "Challenge" are longer words than the "Easy"/
+// "Hard" they replaced, and at the base bodyLg size they crowd their buttons
+// (which flex to whatever width Study Mix leaves them). One step down the scale
+// keeps each label on a single line at the narrowest phone width.
+const GREYED_BG = "#C7C7CC";
+const difficultyButtonStyle = (greyed: boolean | undefined, accent: string, hover: string) => ({
     ...studyButtonBase,
     flex: 1,
-    // Softer blue accent tone from the deck buckets (Mastered accent).
+    fontSize: SIZE.body,
     color: COLORS.onSurface,
-    backgroundColor: greyed ? "#C7C7CC" : COLORS.blueAccent,
+    backgroundColor: greyed ? GREYED_BG : accent,
     opacity: greyed ? 0.6 : 1,
     "&:hover": {
-        backgroundColor: greyed ? "#C7C7CC" : "#A6C9EC",
+        backgroundColor: greyed ? GREYED_BG : hover,
     },
-}));
+});
 
-const HardButton = styled(Button, {
+// Softer blue accent tone from the deck buckets (Mastered accent).
+const ReviewButton = styled(Button, {
     shouldForwardProp: (prop) => prop !== "greyed",
-})<{ greyed?: boolean }>(({ greyed }) => ({
-    ...studyButtonBase,
-    flex: 1,
-    // Softer red accent tone from the deck buckets (Unfamiliar accent).
-    color: COLORS.onSurface,
-    backgroundColor: greyed ? "#C7C7CC" : COLORS.redAccent,
-    opacity: greyed ? 0.6 : 1,
-    "&:hover": {
-        backgroundColor: greyed ? "#C7C7CC" : "#EBA6B9",
-    },
-}));
+})<{ greyed?: boolean }>(({ greyed }) => difficultyButtonStyle(greyed, COLORS.blueAccent, "#A6C9EC"));
+
+// Softer red accent tone from the deck buckets (Unfamiliar accent).
+const ChallengeButton = styled(Button, {
+    shouldForwardProp: (prop) => prop !== "greyed",
+})<{ greyed?: boolean }>(({ greyed }) => difficultyButtonStyle(greyed, COLORS.redAccent, "#EBA6B9"));
 
 const LineSeparator = styled(Box)(() => ({
     width: 280,
@@ -104,10 +108,11 @@ const LineSeparator = styled(Box)(() => ({
     margin: "0 auto",
 }));
 
-// Full-width tappable row that replaces the old inline Mastered preview: it links
-// to the dedicated /flashcards/mastered page (mastered decks can be large, so they
-// live on their own page rather than rendering hundreds of cards inline here).
-const MasteredLinkRow = styled(Box)(() => ({
+// Full-width tappable row linking to a CollectionViewPage. Both built-in
+// collections (Learn Now, Mastered) use it, so the two sit side by side in the
+// same visual language — that identical styling is the point: Learn Now stopped
+// being "the page you are on" and became a collection like any other.
+const CollectionLinkRow = styled(Box)(() => ({
     width: "100%",
     display: "flex",
     alignItems: "center",
@@ -120,154 +125,122 @@ const MasteredLinkRow = styled(Box)(() => ({
     },
 }));
 
+// One user-authored deck. A rounded card carrying the deck's derived pastel (see
+// deckAccentColor — the color is computed from the id, not stored), matching the
+// Home/Games hub card language without pulling in HubMenuRow's icon-tile layout,
+// which a deck has nothing to put in.
+const DeckCard = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "bgcolor",
+})<{ bgcolor: string }>(({ bgcolor }) => ({
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "16px 18px",
+    borderRadius: "12px",
+    backgroundColor: bgcolor,
+    cursor: "pointer",
+    boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.15)",
+}));
+
 // Main Component
 const FlashcardsDecksPage: React.FC = () => {
     usePageTitle("Decks");
     const navigate = useNavigate();
-    // For drill-ins that slide over this page (Mastered = node, Card Detail = leaf),
-    // use the view-transition navigate so Decks is held beneath. See useSlideNavigate.
+    // Collection pages are node drill-ins that slide over this page, so they use
+    // the view-transition navigate and Decks is held beneath. See useSlideNavigate.
     const slideNavigate = useSlideNavigate();
-    const location = useLocation();
-    const { token, isAuthenticated } = useAuth();
-    const { goToDiscover } = useDiscoverNavigation();
-    const [vocabEntries, setVocabEntries] = useState<VocabEntry[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    // Client-side search over the loaded Learn Now deck. Supports the same query
-    // formats as the dictionary search bars (CJK / numbered pinyin / toneless
-    // pinyin / English) via filterVocabEntries — no network round trip since the
-    // deck is already in memory.
-    const [searchInput, setSearchInput] = useState("");
-    // Mastered cards now live on their own page (/flashcards/mastered); this page
-    // only needs the count for the link row, which comes from categoryCounts.
-    // Per-category library card counts, used to gate study navigation. We only
-    // enforce the MIN_LIBRARY_CARDS gate once counts have loaded (fail open before
-    // then, so a slow fetch never blocks a user who has plenty of cards).
-    const { counts: categoryCounts, loaded: countsLoaded } = useCategoryCounts();
-    // Toast nudging users with too few library cards toward the Discover page.
-    const [lowCardSnackOpen, setLowCardSnackOpen] = useState(false);
-    // Toast shown when a greyed Easy/Hard button is tapped (no eligible cards yet).
+    const { isAuthenticated } = useAuth();
+    // Per-category library card counts, driving the two collection rows' figures
+    // and the Review eligibility check. These count SORTED cards only — never the
+    // temporary cards a game may have lent (docs/PROVISIONAL_CARDS.md), so the
+    // sizes shown here always mean "cards you chose to keep".
+    const { counts: categoryCounts } = useCategoryCounts();
+    // Toast shown when a greyed Review button is tapped (no eligible cards yet).
     const [markMoreSnackOpen, setMarkMoreSnackOpen] = useState(false);
 
-    // Fetch non-mastered library cards from OnDeck vocab sets
-    useEffect(() => {
-        const fetchLibraryCards = async () => {
-            try {
-                setLoading(true);
-                setError(null);
+    // The user's decks in their current language.
+    const [decks, setDecks] = useState<DeckSummary[]>([]);
+    const [decksLoading, setDecksLoading] = useState(true);
+    const [decksError, setDecksError] = useState<string | null>(null);
+    const [newDeckOpen, setNewDeckOpen] = useState(false);
+    const [newDeckName, setNewDeckName] = useState("");
+    const [createError, setCreateError] = useState<string | null>(null);
 
-                const response = await fetch(`${API_BASE_URL}/api/onDeck/nonMasteredLibraryCards`, {
-                    credentials: 'include',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch Learn Now cards');
-                }
-
-                const data = await response.json();
-                setVocabEntries(Array.isArray(data) ? data : []);
-            } catch (err: unknown) {
-                console.error('Error fetching library cards:', err);
-                setError(err instanceof Error ? err.message : 'Failed to load Learn Now cards');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        if (token) {
-            fetchLibraryCards();
-        }
-    // Keyed on isAuthenticated — the stable auth-presence flag, not the `token`
-    // string — so a silent refresh doesn't re-fetch and reset the deck list.
-    // See CLAUDE.md "Never reload on token refresh".
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAuthenticated]);
-
-    // Refresh card lists when navigating back from CDP after an action
-    useEffect(() => {
-        if (location.state?.refresh) {
-            refetchCards();
-        }
-    }, [location.state?.refresh]);
-
-    // The Learn Now preview gates its staggered pop-in cascade behind this flag.
-    const allCardsLoaded = !loading;
-
-    // Apply the search filter. Referentially stable while the query and deck are
-    // unchanged, so MiniVocabCardGrid's reveal cascade isn't restarted each render.
-    const filteredEntries = useMemo(
-        () => filterVocabEntries(vocabEntries, searchInput),
-        [vocabEntries, searchInput]
-    );
-    const isSearching = searchInput.trim().length > 0;
-
-    // Total cards the user has sorted into their library, across every bucket.
-    const totalLibraryCards = Object.values(categoryCounts).reduce((sum, n) => sum + n, 0);
-
-    // Gate every entry point into /flashcards/learn: if the user has too few
-    // cards in their library, nudge them to Discover instead of navigating.
-    // Returns true when navigation was allowed.
-    const guardLearnNavigation = (): boolean => {
-        if (countsLoaded && totalLibraryCards < MIN_LIBRARY_CARDS) {
-            setLowCardSnackOpen(true);
-            return false;
-        }
-        return true;
-    };
-
-    const handleMixClick = () => {
-        if (!guardLearnNavigation()) return;
-        navigate('/flashcards/learn');
-    };
-
-    // Easy mode draws from Comfortable+Mastered; Hard from Unfamiliar+Target. A
-    // mode is only usable once the account has at least one eligible card for it.
-    const easyEligible = ((categoryCounts["Comfortable"] || 0) + (categoryCounts["Mastered"] || 0)) > 0;
-    const hardEligible = ((categoryCounts["Unfamiliar"] || 0) + (categoryCounts["Target"] || 0)) > 0;
-
-    // Easy/Hard handlers. When no eligible cards exist, the button is greyed but
-    // still tappable — a tap surfaces the "mark more cards in Mix mode" toast.
-    // Otherwise the same 20-card library minimum as Mix applies via the guard.
-    const handleEasyClick = () => {
-        if (!easyEligible) { setMarkMoreSnackOpen(true); return; }
-        if (!guardLearnNavigation()) return;
-        navigate('/flashcards/learn?mode=easy');
-    };
-
-    const handleHardClick = () => {
-        if (!hardEligible) { setMarkMoreSnackOpen(true); return; }
-        if (!guardLearnNavigation()) return;
-        navigate('/flashcards/learn?mode=hard');
-    };
-
-    // Stable card-tap handler shared by both previews. Defined once (not an
-    // inline arrow per card) so the memoized MiniVocabCards don't all re-render
-    // whenever this page re-renders (e.g. a snackbar toggling).
-    const handleCardClick = useCallback(
-        (entry: VocabEntry) => slideNavigate(`/flashcards/card/${entry.id}`),
-        [slideNavigate]
-    );
-
-    // Refetch both card lists
-    const refetchCards = async () => {
-        // Refetch non-mastered library cards
+    const loadDecks = useCallback(async () => {
         try {
-            setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/onDeck/nonMasteredLibraryCards`, {
-                credentials: 'include',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setVocabEntries(Array.isArray(data) ? data : []);
-            }
-        } catch (err) {
-            console.error('Error refetching library cards:', err);
+            setDecksLoading(true);
+            setDecksError(null);
+            setDecks(await fetchDecks());
+        } catch (err: unknown) {
+            console.error("Error loading decks:", err);
+            setDecksError(err instanceof Error ? err.message : "Could not load your decks");
         } finally {
-            setLoading(false);
+            setDecksLoading(false);
+        }
+    }, []);
+
+    // Keyed on isAuthenticated — the stable auth-presence flag, not the `token`
+    // string — so a silent refresh doesn't re-fetch and reset the list.
+    // See CLAUDE.md "Never reload on token refresh".
+    useEffect(() => {
+        if (isAuthenticated) loadDecks();
+    }, [isAuthenticated, loadDecks]);
+
+    // NO CARD-COUNT GATE into /flashcards/learn (docs/PROVISIONAL_CARDS.md).
+    //
+    // This used to refuse navigation below a 20-card minimum and toast the user
+    // toward Discover. flp now tops itself up server-side: the working-loop endpoint
+    // lends temporary cards to reach the flp baseline, so an empty deck opens a full
+    // study session instead of a dead button.
+    const handleMixClick = () => {
+        navigate("/flashcards/learn");
+    };
+
+    // REVIEW draws from Comfortable+Mastered; CHALLENGE from Unfamiliar+Target
+    // (server MODE_CONFIGS, OnDeckVocabService.ts).
+    //
+    // REVIEW still needs real cards: Comfortable and Mastered are EARNED bands, and a
+    // lent card starts with an empty mark history, so provisioning can never populate
+    // them. Greying Review is therefore a statement about the learner's progress, not
+    // a card-count wall.
+    //
+    // CHALLENGE has NO eligibility check at all. Its buckets are exactly the ones
+    // provisioning fills — a lent card is Unfamiliar — so the server can always build
+    // a Challenge loop, even for an account with nothing sorted.
+    const reviewEligible = ((categoryCounts["Comfortable"] || 0) + (categoryCounts["Mastered"] || 0)) > 0;
+
+    const handleReviewClick = () => {
+        if (!reviewEligible) { setMarkMoreSnackOpen(true); return; }
+        navigate("/flashcards/learn?mode=review");
+    };
+
+    const handleChallengeClick = () => {
+        navigate("/flashcards/learn?mode=challenge");
+    };
+
+    const handleCreateDeck = async () => {
+        try {
+            const deck = await createDeck(newDeckName);
+            setDecks((prev) => [deck, ...prev]);
+            setNewDeckOpen(false);
+            setNewDeckName("");
+            setCreateError(null);
+        } catch (err: unknown) {
+            // The server owns the rules (blank name, duplicate name, the 100-deck
+            // per-language cap), so its message is shown verbatim rather than
+            // re-deriving them here where they would drift.
+            setCreateError(err instanceof Error ? err.message : "Could not create the deck");
         }
     };
+
+    // Learn Now's size is every sorted card that isn't mastered — the same set its
+    // collection page lists. Derived from the counts already loaded rather than a
+    // second request.
+    const learnNowCount =
+        (categoryCounts["Unfamiliar"] || 0) +
+        (categoryCounts["Target"] || 0) +
+        (categoryCounts["Comfortable"] || 0);
 
     return (
         <>
@@ -278,38 +251,42 @@ const FlashcardsDecksPage: React.FC = () => {
                 contentClassName="decks-page-content"
                 contentSx={CONTENT_SX}
             >
-                    {/* Study-entry row: Easy (blue) and Hard (red) flank the centered
-                        Mix button and flex to fill the remaining side space. */}
+                    {/* Study-entry row: Review (blue) and Challenge (red) flank the centered
+                        Study Mix button and flex to fill the remaining side space. These are
+                        WHOLE-LIBRARY entry points; to study one collection, open it and
+                        use its "Play with these cards" button. */}
                     <Box
                         className="flashcards-decks__mode-row"
-                        sx={{ width: '100%', padding: '16px 20px', display: 'flex', alignItems: 'stretch', gap: 1.5 }}
+                        sx={{ width: "100%", padding: "16px 20px", display: "flex", alignItems: "stretch", gap: 1.5 }}
                     >
-                        <EasyButton
-                            className="flashcards-decks__easy-button"
-                            greyed={!easyEligible}
-                            onClick={handleEasyClick}
+                        <ReviewButton
+                            className="flashcards-decks__review-button"
+                            greyed={!reviewEligible}
+                            onClick={handleReviewClick}
                         >
-                            Easy
-                        </EasyButton>
+                            Review
+                        </ReviewButton>
                         <MixButton className="flashcards-decks__mix-button" onClick={handleMixClick}>
-                            Mix
+                            Study Mix
                         </MixButton>
-                        <HardButton
-                            className="flashcards-decks__hard-button"
-                            greyed={!hardEligible}
-                            onClick={handleHardClick}
+                        <ChallengeButton
+                            className="flashcards-decks__challenge-button"
+                            onClick={handleChallengeClick}
                         >
-                            Hard
-                        </HardButton>
+                            Challenge
+                        </ChallengeButton>
                     </Box>
 
-                    {/* Line Separator */}
                     <LineSeparator className="decks-line-separator" />
 
-                    {/* Library Cards Section */}
-                    <Box className="flashcards-decks__library-header" sx={{ width: '100%', px: 3.5, pt: 2, pb: 1 }}>
+                    {/* The two built-in collections. Identically styled and adjacent,
+                        because they are the same kind of thing. */}
+                    <CollectionLinkRow
+                        className="flashcards-decks__library-link"
+                        onClick={() => slideNavigate("/flashcards/collection/learn-now")}
+                    >
                         <Typography
-                            className="flashcards-decks__library-label"
+                            className="flashcards-decks__library-link-label"
                             sx={{
                                 fontSize: SIZE.body,
                                 fontWeight: WEIGHT.medium,
@@ -318,64 +295,23 @@ const FlashcardsDecksPage: React.FC = () => {
                             }}
                         >
                             Learn Now
+                            <Box
+                                component="span"
+                                className="flashcards-decks__library-link-count"
+                                sx={{ color: COLORS.textSecondary, ml: 1, fontWeight: WEIGHT.regular }}
+                            >
+                                ({learnNowCount})
+                            </Box>
                         </Typography>
-                    </Box>
-
-                    {/* Client-side search over the loaded Learn Now deck. Sized to
-                        the 364px card grid so the input lines up over the cards. */}
-                    <Box className="flashcards-decks__library-search" sx={{ width: 364, maxWidth: "100%", px: 3.5, pb: 1 }}>
-                        <TextField
-                            className="flashcards-decks__library-search-input"
-                            fullWidth
-                            size="small"
-                            placeholder="Search Learn Now cards..."
-                            value={searchInput}
-                            onChange={(e) => setSearchInput(e.target.value)}
-                            InputProps={{
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <Search />
-                                    </InputAdornment>
-                                ),
-                                endAdornment: searchInput && (
-                                    <InputAdornment position="end">
-                                        <IconButton
-                                            aria-label="clear search"
-                                            onClick={() => setSearchInput("")}
-                                            edge="end"
-                                            size="small"
-                                        >
-                                            <Clear />
-                                        </IconButton>
-                                    </InputAdornment>
-                                ),
-                            }}
+                        <ChevronRightIcon
+                            className="flashcards-decks__library-link-chevron"
+                            sx={{ color: COLORS.textSecondary }}
                         />
-                    </Box>
+                    </CollectionLinkRow>
 
-                    {/* Vocabulary Cards Preview */}
-                    <MiniVocabCardGrid
-                        containerClassName="decks-cards-preview"
-                        classPrefix="flashcards-decks__library"
-                        loading={!allCardsLoaded}
-                        error={error}
-                        entries={filteredEntries}
-                        emptyMessage={
-                            isSearching
-                                ? "No Learn Now cards match your search."
-                                : "Please go to the Discover tab to select cards you would like to learn"
-                        }
-                        onCardClick={handleCardClick}
-                    />
-
-                    {/* Line Separator */}
-                    <LineSeparator className="decks-line-separator" sx={{ mt: 2 }} />
-
-                    {/* Mastered Cards link — the full list lives on its own page so a
-                        large mastered deck never renders hundreds of cards inline. */}
-                    <MasteredLinkRow
+                    <CollectionLinkRow
                         className="flashcards-decks__mastered-link"
-                        onClick={() => slideNavigate('/flashcards/mastered')}
+                        onClick={() => slideNavigate("/flashcards/collection/mastered")}
                     >
                         <Typography
                             className="flashcards-decks__mastered-link-label"
@@ -399,50 +335,105 @@ const FlashcardsDecksPage: React.FC = () => {
                             className="flashcards-decks__mastered-link-chevron"
                             sx={{ color: COLORS.textSecondary }}
                         />
-                    </MasteredLinkRow>
+                    </CollectionLinkRow>
+
+                    <LineSeparator className="decks-line-separator" sx={{ mt: 1 }} />
+
+                    {/* ── Decks ── the space the Learn Now grid used to occupy. */}
+                    <Box
+                        className="flashcards-decks__decks-header"
+                        sx={{ width: "100%", px: 3.5, pt: 2, pb: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                    >
+                        <Typography
+                            className="flashcards-decks__decks-label"
+                            sx={{
+                                fontSize: SIZE.body,
+                                fontWeight: WEIGHT.medium,
+                                color: COLORS.onSurface,
+                                fontFamily: FONTS.sans,
+                            }}
+                        >
+                            Decks
+                        </Typography>
+                        <IconButton
+                            className="flashcards-decks__new-deck-button"
+                            aria-label="New deck"
+                            size="small"
+                            onClick={() => { setNewDeckName(""); setCreateError(null); setNewDeckOpen(true); }}
+                            sx={{ color: COLORS.onSurface }}
+                        >
+                            <AddIcon />
+                        </IconButton>
+                    </Box>
+
+                    <Box
+                        className="flashcards-decks__decks-list"
+                        sx={{ width: 364, maxWidth: "100%", px: 3.5, display: "flex", flexDirection: "column", gap: 1.25 }}
+                    >
+                        {decksError && (
+                            <Typography
+                                className="flashcards-decks__decks-error"
+                                sx={{ fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.textSecondary }}
+                            >
+                                {decksError}
+                            </Typography>
+                        )}
+                        {!decksError && !decksLoading && decks.length === 0 && (
+                            <Typography
+                                className="flashcards-decks__decks-empty"
+                                sx={{ fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.textSecondary }}
+                            >
+                                No decks yet. Tap + to make one, then add cards to it from any card&apos;s detail page.
+                            </Typography>
+                        )}
+                        {decks.map((deck) => (
+                            <DeckCard
+                                key={deck.id}
+                                className="flashcards-decks__deck-card"
+                                bgcolor={deckAccentColor(deck.id)}
+                                onClick={() => slideNavigate(`/flashcards/deck/${deck.id}`)}
+                            >
+                                <Typography
+                                    className="flashcards-decks__deck-name"
+                                    sx={{
+                                        fontSize: SIZE.body,
+                                        fontWeight: WEIGHT.medium,
+                                        color: COLORS.onSurface,
+                                        fontFamily: FONTS.sans,
+                                        // A 64-char name must not push the count off the card.
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                    }}
+                                >
+                                    {deck.name}
+                                </Typography>
+                                <Typography
+                                    className="flashcards-decks__deck-count"
+                                    sx={{
+                                        fontSize: SIZE.body,
+                                        color: COLORS.textSecondary,
+                                        fontFamily: FONTS.sans,
+                                        flexShrink: 0,
+                                        ml: 1,
+                                    }}
+                                >
+                                    {deck.cardCount}
+                                </Typography>
+                            </DeckCard>
+                        ))}
+                    </Box>
 
                     <FooterSpacer />
             </MobileTabScreen>
 
-                {/* Nudge toast: too few library cards to start a study session */}
-                <Snackbar
-                    className="flashcards-decks__low-cards-snackbar"
-                    open={lowCardSnackOpen}
-                    autoHideDuration={5000}
-                    onClose={() => setLowCardSnackOpen(false)}
-                    anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-                    sx={{ zIndex: 2000 }}
-                >
-                    <Alert
-                        className="flashcards-decks__low-cards-alert"
-                        severity="info"
-                        variant="filled"
-                        onClose={() => setLowCardSnackOpen(false)}
-                        action={
-                            <Button
-                                className="flashcards-decks__low-cards-action"
-                                color="inherit"
-                                size="small"
-                                onClick={() => {
-                                    setLowCardSnackOpen(false);
-                                    goToDiscover();
-                                }}
-                            >
-                                Discover
-                            </Button>
-                        }
-                    >
-                        Add at least {MIN_LIBRARY_CARDS} cards to your Learn Now deck — head to Discover to sort some cards.
-                    </Alert>
-                </Snackbar>
-
-                {/* Toast: greyed Easy/Hard tapped — user has no eligible cards yet */}
+                {/* Toast: greyed Review tapped — user has no eligible cards yet */}
                 <Snackbar
                     className="flashcards-decks__mark-more-snackbar"
                     open={markMoreSnackOpen}
                     autoHideDuration={5000}
                     onClose={() => setMarkMoreSnackOpen(false)}
-                    anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
                     sx={{ zIndex: 2000 }}
                 >
                     <Alert
@@ -451,9 +442,36 @@ const FlashcardsDecksPage: React.FC = () => {
                         variant="filled"
                         onClose={() => setMarkMoreSnackOpen(false)}
                     >
-                        Mark more cards in Mix mode to unlock this deck.
+                        Mark more cards in Study Mix to unlock this deck.
                     </Alert>
                 </Snackbar>
+
+                <Dialog
+                    className="flashcards-decks__new-deck-dialog"
+                    open={newDeckOpen}
+                    onClose={() => setNewDeckOpen(false)}
+                >
+                    <DialogTitle>New deck</DialogTitle>
+                    <DialogContent>
+                        <TextField
+                            className="flashcards-decks__new-deck-input"
+                            autoFocus
+                            fullWidth
+                            size="small"
+                            placeholder="Deck name"
+                            value={newDeckName}
+                            onChange={(e) => setNewDeckName(e.target.value)}
+                            inputProps={{ maxLength: 64 }}
+                            error={Boolean(createError)}
+                            helperText={createError ?? " "}
+                            sx={{ mt: 1, minWidth: 260 }}
+                        />
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setNewDeckOpen(false)}>Cancel</Button>
+                        <Button onClick={handleCreateDeck} disabled={!newDeckName.trim()}>Create</Button>
+                    </DialogActions>
+                </Dialog>
         </>
     );
 };

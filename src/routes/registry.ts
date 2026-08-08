@@ -5,6 +5,9 @@ import { ROUTE_META, type RouteMeta } from "./routeMeta";
 // Eagerly-loaded page components. Games are the only lazy ones (see GAME_REGISTRY).
 import HomePage from "../pages/HomePage";
 import CommunityPage from "../features/community/CommunityPage";
+import FriendsPage from "../features/friends/FriendsPage";
+import IncomingRequestsPage from "../features/friends/IncomingRequestsPage";
+import SentRequestsPage from "../features/friends/SentRequestsPage";
 import EntriesPage from "../pages/EntriesPage";
 import EntryDetailPage from "../pages/EntryDetailPage";
 import EditEntryPage from "../pages/EditEntryPage";
@@ -17,7 +20,8 @@ import RegisterPage from "../pages/RegisterPage";
 import FlashcardsPage from "../features/flashcards/FlashcardsPage";
 import FlashcardsLearnPage from "../features/flashcards/FlashcardsLearnPage";
 import FlashcardsDecksPage from "../features/flashcards/FlashcardsDecksPage";
-import MasteredCardsPage from "../features/flashcards/MasteredCardsPage";
+import CollectionViewPage from "../features/flashcards/CollectionViewPage";
+import MasteredRedirect from "../features/flashcards/MasteredRedirect";
 import VocabCardDetailPage from "../features/flashcards/VocabCardDetailPage";
 import ReaderPage from "../features/reader/ReaderPage";
 import ReaderDocumentPage from "../features/reader/ReaderDocumentPage";
@@ -70,10 +74,15 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
   "/account": AccountPage,
   "/games": GamesPage,
   "/community": CommunityPage,
+  "/friends": FriendsPage,
+  "/friends/requests": IncomingRequestsPage,
+  "/friends/sent": SentRequestsPage,
   "/dictionary": DictionaryPage,
   "/compare": ComparePage,
   "/reader": ReaderPage,
-  "/flashcards/mastered": MasteredCardsPage,
+  "/flashcards/collection/:builtin": CollectionViewPage,
+  "/flashcards/deck/:id": CollectionViewPage,
+  "/flashcards/mastered": MasteredRedirect,
   "/reader/:id": ReaderDocumentPage,
   "/flashcards/card/:id": VocabCardDetailPage,
   "/dictionary/card/:word": DictionaryCardDetailPage,

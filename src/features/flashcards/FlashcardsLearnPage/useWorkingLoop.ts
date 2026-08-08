@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { API_BASE_URL } from "../../../constants";
+import { useLaunchCollection } from "../useLaunchCollection";
+import { collectionLaunchParams, collectionMarkFields } from "../collectionRef";
 import { markFlashcard, undoFlashcardMark } from "../../../api/flashcards";
 import { CARD_FLY_OUT_MS } from "../constants";
+import { provisionalWords } from "../../../utils/provisionalCards";
 import type {
     VocabEntry,
     MarkCardResult,
@@ -57,8 +60,8 @@ export interface CardDragControls {
     resetDragPosition: () => void;
 }
 
-// Difficulty modes launched from the decks page Easy/Hard buttons. null = Mix.
-export type StudyMode = "easy" | "hard";
+// Difficulty modes launched from the decks page Review/Challenge buttons. null = Study.
+export type StudyMode = "review" | "challenge";
 
 interface UseWorkingLoopArgs {
     token: string | null;
@@ -88,6 +91,12 @@ export interface UseWorkingLoopReturn {
     nextSideOneLanguage: SideOneLanguage;
     handleCardDismiss: (direction: "left" | "right") => Promise<void>;
     handleUndoLastMark: () => Promise<void>;
+    /**
+     * Temporary (provisional) words this session has shown, accumulated across the
+     * initial loop AND every refill. Empty when the learner's own deck covered the
+     * session. See docs/PROVISIONAL_CARDS.md.
+     */
+    provisionalSeen: string[];
 }
 
 /**
@@ -107,6 +116,11 @@ export function useWorkingLoop({
     prefetch,
     cardDragRef,
 }: UseWorkingLoopArgs): UseWorkingLoopReturn {
+    // Which collection this session was launched from (docs/DECKS_FEATURE.md) — null
+    // for an ordinary launch from the Review/Study/Challenge buttons. Read from the flp's own
+    // URL, and threaded into BOTH the initial loop fetch and every mark call (which
+    // is what refills the loop).
+    const launchCollection = useLaunchCollection();
     const [workingLoop, setWorkingLoop] = useState<VocabEntry[]>([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -138,6 +152,30 @@ export function useWorkingLoop({
     const nextEntry: VocabEntry | null =
         workingLoop.length > 1 ? workingLoop[(currentIndex + 1) % workingLoop.length] : null;
 
+    // Temporary (provisional) cards the server lent so this loop could reach the flp
+    // baseline (docs/PROVISIONAL_CARDS.md). flp is NOT itemized — the loop refills as
+    // you go, so the played set isn't known up front and the arrival notice is generic
+    // — but the words are accumulated here anyway so the end-of-session offer can name
+    // them. The ref is the authoritative accumulator; the state exists to re-render.
+    const provisionalSeenRef = useRef<Set<string>>(new Set());
+    const [provisionalSeen, setProvisionalSeen] = useState<string[]>([]);
+
+    // Fold every lent word the loop has shown into the accumulator. Keyed on the loop
+    // itself so refills (a mark's replacement card) are picked up as they land, not
+    // just the initial fetch.
+    useEffect(() => {
+        const words = provisionalWords(workingLoop);
+        if (words.length === 0) return;
+        let changed = false;
+        for (const word of words) {
+            if (!provisionalSeenRef.current.has(word)) {
+                provisionalSeenRef.current.add(word);
+                changed = true;
+            }
+        }
+        if (changed) setProvisionalSeen([...provisionalSeenRef.current]);
+    }, [workingLoop]);
+
     // Fetch distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target).
     useEffect(() => {
         const fetchInitialCards = async () => {
@@ -148,6 +186,14 @@ export function useWorkingLoop({
                 const params = new URLSearchParams();
                 if (selectedCategory) params.set("category", selectedCategory);
                 if (mode) params.set("mode", mode);
+                // Restrict the loop to the collection this session was launched from
+                // (docs/DECKS_FEATURE.md). Composes with `mode`: a deck opened in Challenge
+                // mode draws that deck's Unfamiliar/Target cards.
+                if (launchCollection) {
+                    for (const [key, value] of Object.entries(collectionLaunchParams(launchCollection))) {
+                        params.set(key, value);
+                    }
+                }
                 const query = params.toString();
                 const url = `${API_BASE_URL}/api/onDeck/distributedWorkingLoop${query ? `?${query}` : ""}`;
 
@@ -216,12 +262,18 @@ export function useWorkingLoop({
         try {
             // `mode` lets the server cap the replacement card to the mode's
             // allowed categories (and return newCard:null when exhausted).
+            //
+            // The collection fields matter just as much: THIS call is what refills the
+            // working loop, so a deck-launched session that omitted them would serve
+            // an off-deck card the moment the learner answered correctly
+            // (docs/DECKS_FEATURE.md).
             const data = await markFlashcard({
                 cardId,
                 isCorrect,
                 type: markType,
                 excludeIds,
                 mode: mode ?? undefined,
+                ...collectionMarkFields(launchCollection),
             });
 
             return {
@@ -242,6 +294,11 @@ export function useWorkingLoop({
         }
         // No `token` dep: markFlashcard reads the header at call time, so this
         // callback's identity survives a silent refresh (CLAUDE.md ⛔ rule).
+        // `launchCollection` is likewise omitted: it is parsed from this page's own
+        // URL, which cannot change without remounting the flp, so the closure can
+        // never go stale — and listing it would rebuild this callback on every
+        // render that re-parses the query string.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode]);
 
     const handleCardDismiss = useCallback(async (direction: "left" | "right") => {
@@ -392,5 +449,7 @@ export function useWorkingLoop({
         nextSideOneLanguage,
         handleCardDismiss,
         handleUndoLastMark,
+        /** Lent words this session has shown; drives the notice + the "keep these" offer. */
+        provisionalSeen,
     };
 }

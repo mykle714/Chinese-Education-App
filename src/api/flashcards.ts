@@ -43,6 +43,15 @@ export interface MarkFlashcardRequest {
      * categories, and yields `newCard: null` when the mode is exhausted.
      */
     mode?: string;
+    /**
+     * flp working-loop only, and only for a session launched from a collection
+     * (docs/DECKS_FEATURE.md): keeps the REPLACEMENT card inside that collection.
+     * Exactly one of these is ever set — `deckId` for a user-authored deck,
+     * `collection: 'mastered'` for the Mastered set. Learn Now sets neither,
+     * because it is the default pool.
+     */
+    deckId?: number;
+    collection?: string;
 }
 
 export interface MarkFlashcardResponse {
@@ -75,6 +84,8 @@ export async function markFlashcard(
         type: request.type,
         excludeIds: request.excludeIds ?? [],
         mode: request.mode,
+        deckId: request.deckId,
+        collection: request.collection,
     });
 
     // The mark is only durable if the server assigned it a timestamp; without one

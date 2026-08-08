@@ -95,7 +95,12 @@ POST /api/flashcards/mark
 4. Appends to existing history array
 5. Keeps only last 16 entries: `[...existingHistory, newMark].slice(-16)`
 6. Updates database with new history
-7. Returns response (with new card if correct)
+7. **Logs a velocity promotion** if the mark moved the card up a utcm band —
+   `bandsClimbed(categoryBefore, categoryAfter) > 0` appends a
+   `category_promotions` row (best-effort; a failure is logged and never fails the
+   mark). `undoLastMark` deletes that row inside its transaction. See
+   [VELOCITY.md](./VELOCITY.md).
+8. Returns response (with new card if correct)
 
 ## Future Use Cases
 

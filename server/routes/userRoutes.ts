@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
-import { userController, userMinutePointsController, winsController } from '../dal/setup.js';
+import { userController, userMinutePointsController, winsController, velocityController } from '../dal/setup.js';
 import { handle } from './asyncHandler.js';
 
 /**
- * User routes — /api/users/* (profile, minute points, game wins)
+ * User routes — /api/users/* (profile, minute points, game wins, velocity)
  *
  * LAYER: HTTP route layer (registration only). Split out of server.ts; paths unchanged.
  *
- * Ordering note: the literal paths (/language, /avatar, /minute-points/*, /me/wins)
+ * Ordering note: the literal paths (/language, /avatar, /minute-points/*, /me/wins,
+ * /me/velocity)
  * are registered before GET /api/users/:id so the param route can't shadow them.
  */
 const router = Router();
@@ -46,6 +47,10 @@ router.get('/api/users/me/wins', authenticateToken, handle(winsController.listWi
 
 // Record one win: body { game, level }.
 router.post('/api/users/me/wins', authenticateToken, handle(winsController.recordWin, winsController));
+
+// Velocity — utcm band-steps climbed in the last 7 days, per language
+// (derived from the category_promotions log; see docs/VELOCITY.md).
+router.get('/api/users/me/velocity', authenticateToken, handle(velocityController.getVelocity, velocityController));
 
 // Get user by ID (kept after the literal paths above)
 router.get('/api/users/:id', authenticateToken, handle(userController.getUserById, userController));

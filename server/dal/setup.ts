@@ -54,6 +54,16 @@ import { LeaderboardService } from '../services/LeaderboardService.js';
 import { LeaderboardController } from '../controllers/LeaderboardController.js';
 import { TTSService } from '../services/TTSService.js';
 import { TTSController } from '../controllers/TTSController.js';
+import { CategoryPromotionDAL } from './implementations/CategoryPromotionDAL.js';
+import { VelocityController } from '../controllers/VelocityController.js';
+import { FriendshipDAL } from './implementations/FriendshipDAL.js';
+import { DeckDAL } from './implementations/DeckDAL.js';
+import { FriendsService } from '../services/FriendsService.js';
+import { DeckService } from '../services/DeckService.js';
+import { FriendsController } from '../controllers/FriendsController.js';
+import { DecksController } from '../controllers/DecksController.js';
+import { ProvisionalCardDAL } from './implementations/ProvisionalCardDAL.js';
+import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
 
 // DAL instances
 const userDAL = new UserDAL();
@@ -75,6 +85,18 @@ const winsDAL = new WinsDAL();
 const communityLayoutDAL = new CommunityLayoutDAL();
 // Speed Reading owns no tables — this DAL reads the player's library.
 const speedReadingDAL = new SpeedReadingDAL();
+// Append-only utcm band-promotion log; velocity is summed from it (migration 137,
+// docs/VELOCITY.md). Written by the flashcard mark/undo handlers.
+const categoryPromotionDAL = new CategoryPromotionDAL();
+// The friend graph — one row per unordered pair, pending or accepted
+// (migration 138, docs/FRIENDS_FEATURE.md).
+const friendshipDAL = new FriendshipDAL();
+// Baseline top-up for games/flp: lends words as 'provisional' vet rows so no surface
+// ever blocks on card count (migration 140, docs/PROVISIONAL_CARDS.md).
+const provisionalCardDAL = new ProvisionalCardDAL();
+// User-authored card sets — decks and their membership rows (migration 141,
+// docs/DECKS_FEATURE.md).
+const deckDAL = new DeckDAL();
 
 // Service instances (with DI)
 const userService = new UserService(userDAL, refreshTokenDAL);
@@ -114,18 +136,29 @@ const leaderboardService = new LeaderboardService(userDAL, userMinutePointsDAL, 
 // is constructed HERE rather than as a module singleton so every service has one
 // lifetime owner (docs/ARCHITECTURE_REVIEW.md finding 8).
 const ttsService = new TTSService();
+// Friend-request policy (who may accept/revoke, crossing-request auto-accept).
+// userDAL supplies the target account's existence check and public identity.
+const friendsService = new FriendsService(friendshipDAL, userDAL);
 // Constructed after ttsService: the working loop pre-warms each card's audio.
 const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService, starterPacksService, ttsService);
+// Constructed after starterPacksService: it borrows estimateLevel to pick which
+// difficulty band to lend from (docs/PROVISIONAL_CARDS.md § Which words get lent).
+const provisionalCardService = new ProvisionalCardService(provisionalCardDAL, starterPacksService);
+// Constructed after onDeckVocabService: a deck's card list is the third collection
+// read and is delegated to it (see DeckService's class comment).
+const deckService = new DeckService(deckDAL, onDeckVocabService);
 
 // Controller instances
 const userController = new UserController(userService, icons8DAL, nightMarketWorldService);
 const vocabEntryController = new VocabEntryController(vocabEntryService, dictionaryService);
-const onDeckVocabController = new OnDeckVocabController(onDeckVocabService);
+// Takes deckService as well: its game/flp endpoints accept an optional `?deck=`
+// restriction and must authorize that id before assembling a round.
+const onDeckVocabController = new OnDeckVocabController(onDeckVocabService, provisionalCardService, deckService);
 const userMinutePointsController = new UserMinutePointsController(userMinutePointsService);
 const dictionaryController = new DictionaryController(dictionaryService, userDAL, vocabEntryDAL, lazyEnrichmentService);
 const textController = new TextController(textService);
 const validationController = new ValidationController(validationService);
-const starterPacksController = new StarterPacksController(starterPacksService);
+const starterPacksController = new StarterPacksController(starterPacksService, provisionalCardService);
 const nightMarketController = new NightMarketController(nightMarketService);
 const nightMarketTemplateController = new NightMarketTemplateController(nightMarketTemplateService);
 const nightMarketSandboxController = new NightMarketSandboxController(nightMarketSandboxService);
@@ -139,9 +172,14 @@ const speedReadingController = new SpeedReadingController(speedReadingService);
 const icons8Controller = new Icons8Controller(icons8DAL);
 // wins is a thin per-user event log → no service layer; controller takes the DAL directly.
 const winsController = new WinsController(winsDAL);
+// velocity is likewise a thin read over an event log; userDAL only supplies the
+// account's selected language for the headline number.
+const velocityController = new VelocityController(categoryPromotionDAL, userDAL);
 const communityLayoutController = new CommunityLayoutController(communityLayoutService);
 const leaderboardController = new LeaderboardController(leaderboardService);
 const ttsController = new TTSController(ttsService);
+const friendsController = new FriendsController(friendsService);
+const decksController = new DecksController(deckService);
 
 export {
   userDAL,
@@ -191,6 +229,8 @@ export {
   icons8Controller,
   winsDAL,
   winsController,
+  categoryPromotionDAL,
+  velocityController,
   communityLayoutDAL,
   communityLayoutService,
   communityLayoutController,
@@ -198,4 +238,12 @@ export {
   leaderboardController,
   ttsService,
   ttsController,
+  friendshipDAL,
+  friendsService,
+  friendsController,
+  provisionalCardDAL,
+  provisionalCardService,
+  deckDAL,
+  deckService,
+  decksController,
 };

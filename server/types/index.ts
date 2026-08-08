@@ -89,6 +89,8 @@ export {
   MARK_TYPES,
   MARK_WINDOW_SIZE,
   NO_APPROVALS,
+  PER_SENSE_VALIDATION_FIELDS,
+  isPerSenseValidationField,
 } from '../contracts/wire.js';
 
 // ─── Server-only: infrastructure ────────────────────────────────────────────────
@@ -208,6 +210,12 @@ export interface ValidationRecord {
   entryId: number;
   language: Language;
   field: ValidationField;
+  /**
+   * Which sense cluster this record reviews (`definitionClusters[].sense`), or '' for
+   * an entry-level field — migration 139. Part of the uniqueness key, so one validator
+   * can review each sense of a polyseme independently.
+   */
+  senseLabel: string;
   validatorUserId: string;
   validatorName: string;
   action: 'approve' | 'flag';

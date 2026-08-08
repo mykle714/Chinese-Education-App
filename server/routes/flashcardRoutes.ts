@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
 import db from '../db.js';
 import { VET_PHYSICAL_TABLES, vetTableForLanguage } from '../dal/shared/vetTable.js';
-import { onDeckVocabService } from '../dal/setup.js';
-import { MODE_CONFIGS, type StudyMode } from '../services/OnDeckVocabService.js';
+import { onDeckVocabService, categoryPromotionDAL } from '../dal/setup.js';
+import { MODE_CONFIGS, type StudyMode, type CollectionFilter } from '../services/OnDeckVocabService.js';
 import {
   ReviewMark,
   FlashcardCategory,
@@ -12,7 +12,7 @@ import {
   MARK_WINDOW_SIZE,
   TypedMarkHistory,
 } from '../types/index.js';
-import { computeUtcm, appendTypedMark, MasteryGoals } from '../utils/masteryCompute.js';
+import { computeUtcm, appendTypedMark, bandsClimbed, MasteryGoals } from '../utils/masteryCompute.js';
 import { handle } from './asyncHandler.js';
 
 /**
@@ -58,13 +58,30 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
 
   try {
     const userId = (req as any).user?.userId;
-    const { cardId, isCorrect, type: rawType, excludeIds: rawExcludeIds, mode: rawMode } = req.body;
+    const { cardId, isCorrect, type: rawType, excludeIds: rawExcludeIds, mode: rawMode, deckId: rawDeckId, collection: rawCollection } = req.body;
 
-    // Optional difficulty mode (Easy/Hard). When set, the replacement card must
+    // Optional difficulty mode (Review/Challenge). When set, the replacement card must
     // stay within the mode's allowed categories so a banned category never leaks
     // back into the loop via a correct-mark refill.
     const mode: StudyMode | undefined =
-      rawMode === 'easy' || rawMode === 'hard' ? rawMode : undefined;
+      rawMode === 'review' || rawMode === 'challenge' ? rawMode : undefined;
+
+    // Optional collection restriction (docs/DECKS_FEATURE.md). The client echoes
+    // back the collection the session was launched from, because THIS endpoint is
+    // what refills the working loop — without it, the first correct answer in a deck
+    // session would pull a replacement from the user's whole library.
+    //
+    // No ownership check is needed here (unlike the launch endpoints, which 404 on a
+    // foreign deck id): the replacement query is already filtered by `ve."userId"`,
+    // so a deck the caller does not own selects nothing and the picker falls through
+    // to its normal never-stall behaviour. Coerced defensively — a malformed value
+    // must mean "no restriction", never a crash mid-review.
+    const collection: CollectionFilter | undefined =
+      Number.isInteger(rawDeckId) && rawDeckId > 0
+        ? { kind: 'deck', deckId: rawDeckId }
+        : rawCollection === 'mastered'
+          ? { kind: 'mastered' }
+          : undefined;
 
     if (!userId) {
       client.release();
@@ -154,16 +171,45 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     // Category AFTER the mark, for the client's progress chip.
     const category: FlashcardCategory = computeUtcm(updatedHistory, goals);
 
+    // VELOCITY (docs/VELOCITY.md): this is the ONLY moment a band promotion is
+    // observable — `category` is derived, so nothing else in the schema would ever
+    // know the card moved up. Log the step count when it did.
+    //
+    // A single mark can cross two bands (pbh is continuous), so the size of the
+    // move is recorded rather than assumed to be 1. Demotions are not logged.
+    //
+    // Best-effort by design: a failure here is swallowed after logging, because
+    // losing a stat is strictly better than failing the user's review write. The
+    // insert reuses this handler's client — it is not in a transaction, so it
+    // commits independently of the vet UPDATE above.
+    const climbed = bandsClimbed(categoryBeforeMark, category);
+    if (climbed > 0) {
+      try {
+        await categoryPromotionDAL.recordPromotion({
+          userId,
+          language: cardLanguage,
+          vocabEntryId: cardId,
+          fromCategory: categoryBeforeMark as FlashcardCategory,
+          toCategory: category,
+          bandsClimbed: climbed,
+          markType,
+          markTimestamp: newMark.timestamp,
+        }, client);
+      } catch (promotionError) {
+        console.error('Failed to log category promotion (velocity):', promotionError);
+      }
+    }
+
     // If correct, return a card from the same category as BEFORE the mark (with fallback priority).
     // In a mode session the replacement pool is capped to the mode's allowed categories.
     if (isCorrect) {
       const allowedCategories = mode ? MODE_CONFIGS[mode].allowed : undefined;
-      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, cardLanguage, excludeIds, allowedCategories);
+      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, cardLanguage, excludeIds, allowedCategories, collection);
 
       if (!newCard) {
         // In a mode session, "no eligible replacement" is the expected end-of-pool
         // state, not an error: return success with newCard:null so the client winds
-        // the loop down ("no more easy/hard cards remaining"). Mix keeps the 404.
+        // the loop down ("no more review/challenge cards remaining"). Study keeps the 404.
         if (mode) {
           client.release();
           return res.status(200).json({
@@ -321,6 +367,13 @@ router.post('/api/flashcards/undoLastMark', authenticateToken, handle(async (req
     ]);
 
     const category: FlashcardCategory = computeUtcm(revertedHistory, goals);
+
+    // VELOCITY: an undone mark must give back the band-steps it earned, so delete
+    // any promotion rows keyed to this exact (card, mark). Enlisted in the undo
+    // transaction — unlike the write path this is NOT best-effort, because leaving
+    // the row behind would credit a review the user retracted, and the whole undo
+    // rolls back together anyway. No-op when the mark promoted nothing.
+    await categoryPromotionDAL.deleteForMark(cardId, markTimestamp, client);
 
     await client.query('COMMIT');
     client.release();

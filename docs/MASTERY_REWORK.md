@@ -22,6 +22,14 @@
 >   (`PracticeWritingButton.tsx` → `PracticeWritingPopup.tsx`).
 > - cdp bar: `src/features/flashcards/MasteryProgressBar.tsx` (rendered in
 >   `VocabCardDetailPage.tsx`).
+>
+> **Movement between bands is logged separately** — see
+> [VELOCITY.md](./VELOCITY.md) (migration 137): the utcm category is derived and
+> keeps no history, so the mark handler appends a `category_promotions` row
+> whenever `computeUtcm` before ≠ after. Velocity = band-steps climbed in the
+> sliding last 7 days, per (user, language). The step arithmetic
+> (`CATEGORY_ORDER` / `categoryRank()` / `bandsClimbed()`) lives alongside the pbh
+> formula in `server/contracts/mastery.ts`.
 
 ## Goal
 
@@ -468,7 +476,8 @@ _All major decisions are settled._ Minor build-time confirmations:
 
 ## References (code touched by this feature)
 
-- `server/routes/flashcardRoutes.ts` — mark/undo endpoints (mark write path).
+- `server/routes/flashcardRoutes.ts` — mark/undo endpoints (mark write path; also
+  writes/deletes the `category_promotions` velocity log — see [VELOCITY.md](./VELOCITY.md)).
 - `database/migrations/67-*.sql`, `69-*.sql` — `compute_flashcard_category()`.
 - `server/types/index.ts` — `ReviewMark`, `FlashcardCategory`, `VocabEntry`.
 - `server/services/OnDeckVocabService.ts`, `StarterPacksService.ts` — category-

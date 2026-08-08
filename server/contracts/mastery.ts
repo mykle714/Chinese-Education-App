@@ -115,6 +115,42 @@ export function categoryForPbh(pbh: number): FlashcardCategory {
   return 'Mastered';
 }
 
+/**
+ * The utcm bands in ascending order. Index = the band's rank, so a promotion's
+ * size is `categoryRank(after) - categoryRank(before)`.
+ *
+ * Local copy of the band names rather than an import — contracts hold no relative
+ * VALUE imports (see the header rules). Kept adjacent to categoryForPbh, which is
+ * the only producer of these strings.
+ */
+export const CATEGORY_ORDER: readonly FlashcardCategory[] = [
+  'Unfamiliar',
+  'Target',
+  'Comfortable',
+  'Mastered',
+] as const;
+
+/** Rank of a utcm band (0..3). Unknown input ranks as 0 rather than throwing. */
+export function categoryRank(category: FlashcardCategory | string | undefined): number {
+  const i = CATEGORY_ORDER.indexOf(category as FlashcardCategory);
+  return i < 0 ? 0 : i;
+}
+
+/**
+ * How many bands a card climbed between two categories. Positive only: a demotion
+ * (or no change) returns 0, because velocity measures upward movement only.
+ *
+ * A single mark CAN cross two bands — pbh is continuous, so one correct mark that
+ * pushes the blend from 2.9 to 6.1 goes Unfamiliar → Comfortable. Velocity counts
+ * that as 2. See docs/VELOCITY.md.
+ */
+export function bandsClimbed(
+  before: FlashcardCategory | string | undefined,
+  after: FlashcardCategory | string | undefined
+): number {
+  return Math.max(0, categoryRank(after) - categoryRank(before));
+}
+
 /** Full utcm compute from a card's typed history + the account's goals. */
 export function computeUtcm(
   history: TypedMarkHistory | undefined,

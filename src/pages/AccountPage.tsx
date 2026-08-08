@@ -18,6 +18,7 @@ import { useSlideNavigate } from "../hooks/useSlideNavigate";
 import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import MobileTabScreen from "../components/MobileTabScreen";
+import { FooterSpacer } from "../components/MobileFooter";
 import DeckBuckets from "../components/DeckBuckets";
 import IconPickerDialog from "../components/IconPickerDialog";
 import { API_BASE_URL } from "../constants";
@@ -25,9 +26,10 @@ import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCategoryCounts } from "../hooks/useCategoryCounts";
+import { useVelocity } from "../hooks/useVelocity";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
-import { SIZE, WEIGHT } from "../theme/scale";
+import { SIZE, WEIGHT, TRACKING } from "../theme/scale";
 
 // Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx;
 // the scroll-away header + floating footer + scroll behavior come from
@@ -63,6 +65,19 @@ const FormSection = styled(Box)(() => ({
     display: "flex",
     flexDirection: "column",
     gap: 12,
+}));
+
+// Velocity stat card — one big number with an overline label and a caption
+// explaining the unit. Sits directly under the deck buckets, sharing their
+// sectionCard fill so the two read as one stats block.
+const VelocityCard = styled(Box)(() => ({
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 2,
+    padding: "14px 16px",
+    borderRadius: 16,
+    backgroundColor: COLORS.sectionCard,
 }));
 
 function AccountPage() {
@@ -116,6 +131,10 @@ function AccountPage() {
     );
     // Per-category library card counts, shown as a display-only stat block.
     const { counts: categoryCounts, loaded: countsLoaded } = useCategoryCounts();
+
+    // Velocity — mastery band-steps climbed in the sliding 7-day window for the
+    // account's selected language (docs/VELOCITY.md). Display-only.
+    const { velocity, windowDays, loaded: velocityLoaded } = useVelocity();
 
     // "Copied to clipboard" toast for the user-ID copy button
     const [copiedToastOpen, setCopiedToastOpen] = useState(false);
@@ -244,6 +263,53 @@ function AccountPage() {
                             {countsLoaded && <DeckBuckets counts={categoryCounts} variant="display" />}
                         </Box>
 
+                        {/* Velocity — how many mastery bands the learner's cards climbed in
+                            the last 7 days (docs/VELOCITY.md). Held back until loaded so a
+                            0 never flashes before the real number; the wrapper reserves the
+                            height so nothing below shifts. */}
+                        <Box className="account-page__velocity" sx={{ minHeight: 92 }}>
+                            {velocityLoaded && (
+                                <VelocityCard className="account-page__velocity-card">
+                                    <Typography
+                                        className="account-page__velocity-label"
+                                        sx={{
+                                            fontSize: SIZE.caption,
+                                            fontWeight: WEIGHT.semibold,
+                                            letterSpacing: TRACKING.caps,
+                                            textTransform: "uppercase",
+                                            color: COLORS.textSecondary,
+                                            fontFamily: FONTS.sans,
+                                        }}
+                                    >
+                                        Velocity
+                                    </Typography>
+                                    <Typography
+                                        className="account-page__velocity-value"
+                                        sx={{
+                                            fontSize: SIZE.display,
+                                            fontWeight: WEIGHT.bold,
+                                            lineHeight: 1,
+                                            color: COLORS.onSurface,
+                                            fontFamily: FONTS.sans,
+                                        }}
+                                    >
+                                        {velocity}
+                                    </Typography>
+                                    <Typography
+                                        className="account-page__velocity-caption"
+                                        sx={{
+                                            fontSize: SIZE.caption,
+                                            color: COLORS.textSecondary,
+                                            fontFamily: FONTS.sans,
+                                            textAlign: "center",
+                                        }}
+                                    >
+                                        {`level-ups in the last ${windowDays} days`}
+                                    </Typography>
+                                </VelocityCard>
+                            )}
+                        </Box>
+
                         {/* Goals Section — opt into the Reading / Writing mastery goals
                             (docs/MASTERY_REWORK.md). Recognition + Production are always
                             pursued and aren't shown here. Hidden for Spanish accounts. */}
@@ -317,6 +383,12 @@ function AccountPage() {
                                 Log Out
                             </Button>
                         </FormSection>
+
+                        {/* Clearance for the floating footer pill — the Log Out button is
+                            the last row and would otherwise sit under the bar. Uses the
+                            shared spacer, not MobileTabScreen's paddingBottom (see the
+                            FooterSpacer comment for why that padding is unreliable). */}
+                        <FooterSpacer />
                     </AccountSection>
             </MobileTabScreen>
 

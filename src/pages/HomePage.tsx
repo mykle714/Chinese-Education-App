@@ -8,6 +8,7 @@ import ArticleIcon from "@mui/icons-material/Article";
 import BookIcon from "@mui/icons-material/Book";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import GroupsIcon from "@mui/icons-material/Groups";
+import PeopleIcon from "@mui/icons-material/People";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import MobileTabScreen from "../components/MobileTabScreen";
 import { useAuth } from "../AuthContext";
@@ -49,6 +50,7 @@ function HomePage() {
         { key: "night-market", to: "/night-market", title: "Night Market", subtitle: "Explore the vocabulary night market", icon: <NightsStayIcon sx={iconSx} />, bgColor: COLORS.purpleAccent },
         { key: "games", to: "/games", title: "Games", subtitle: "Play vocabulary mini-games", icon: <SportsEsportsIcon sx={iconSx} />, bgColor: COLORS.blueAccent },
         { key: "community", to: "/community", title: "Community", subtitle: "Discover and upvote card designs from other learners", icon: <GroupsIcon sx={iconSx} />, bgColor: COLORS.greenAccent },
+        { key: "friends", to: "/friends", title: "Friends", subtitle: "See your friends and answer friend requests", icon: <PeopleIcon sx={iconSx} />, bgColor: COLORS.redAccent },
         { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", icon: <ArticleIcon sx={iconSx} />, bgColor: COLORS.yellowAccent },
         { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them to your decks", icon: <BookIcon sx={iconSx} />, bgColor: COLORS.redAccent },
         // Standalone home for the eip's Compare surface (docs/WORD_COMPARE_FEATURE.md) — same

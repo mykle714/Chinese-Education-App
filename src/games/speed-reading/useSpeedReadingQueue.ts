@@ -3,8 +3,10 @@ import { API_BASE_URL } from "../../constants";
 import { authHeader } from "../../utils/authHeader";
 import { apiGet } from "../../api/http";
 import type { DistractorChar, VocabEntry } from "../../types";
+import { provisionalWords } from "../../utils/provisionalCards";
+import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
+import { collectionLaunchParams } from "../../features/flashcards/collectionRef";
 import {
-    ENTRY_GATE_CARDS,
     GAME_DISTRIBUTION,
     TOPUP_BATCH,
     TOPUP_THRESHOLD,
@@ -44,6 +46,12 @@ interface GamePoolResponse {
  * dependency comment.
  */
 export function useSpeedReadingQueue(enabled: boolean, runId: number) {
+    // Which collection this run was launched from (docs/DECKS_FEATURE.md) — null for
+    // an ordinary launch from the Games hub. Folded into every pool request so the
+    // round's headwords stay inside the set the learner picked. (Distractor
+    // characters are deliberately NOT restricted: they are foils, and drawing them
+    // from the deck would make the deck itself the answer key.)
+    const launchCollection = useLaunchCollection();
     const queueRef = useRef<VocabEntry[]>([]);
     const distractorsRef = useRef<DistractorChar[]>([]);
 
@@ -55,13 +63,27 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
     // Guards against overlapping top-ups: the trigger fires on every dequeue, so
     // a slow request would otherwise spawn one per card consumed.
     const toppingUpRef = useRef(false);
+    // Temporary cards the server lent to reach the baseline (docs/PROVISIONAL_CARDS.md).
+    const [provisional, setProvisional] = useState<string[]>([]);
 
     /** One pool request. Passing `opts` makes it a partial top-up. */
     const fetchPool = useCallback(
         async (opts?: { need: number; excludeIds: number[] }): Promise<GamePoolResponse> => {
             const params = new URLSearchParams();
             params.set("markType", "reading");
+            // Names the baseline the server tops the player up to before building the
+            // pool, so a small deck is filled with temporary cards instead of blocking
+            // (docs/PROVISIONAL_CARDS.md). Omitted on a partial top-up below — a
+            // mid-run refill must not keep lending cards.
+            if (!opts) params.set("surface", "speed-reading");
             for (const [cat, n] of Object.entries(GAME_DISTRIBUTION)) params.set(cat, String(n));
+            // On BOTH the initial pool and a mid-run top-up: a refill that dropped the
+            // restriction would start serving off-collection words.
+            if (launchCollection) {
+                for (const [key, value] of Object.entries(collectionLaunchParams(launchCollection))) {
+                    params.set(key, value);
+                }
+            }
             if (opts) {
                 params.set("need", String(opts.need));
                 params.set("exclude", opts.excludeIds.join(","));
@@ -73,6 +95,9 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
             if (!res.ok) throw new Error("Failed to load game pool");
             return (await res.json()) as GamePoolResponse;
         },
+        // `launchCollection` comes from the page's own URL, which cannot change
+        // without a remount, so the closure can never go stale.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         []
     );
 
@@ -92,18 +117,17 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
                 ]);
                 if (cancelled) return;
 
-                if (!pool.sufficient) {
-                    const have = Object.values(pool.available).reduce((sum, n) => sum + n, 0);
-                    setBlockMessage(
-                        `You need ${ENTRY_GATE_CARDS} Learn Now cards to play Speed Reading — you have ${have}. Study more cards to unlock it.`
-                    );
-                    setLoading(false);
-                    return;
-                }
-
+                // NO CARD-COUNT GATE (docs/PROVISIONAL_CARDS.md). The server has already
+                // lent whatever was needed to reach the Speed Reading baseline, so
+                // `sufficient` can only be false when the dictionary itself ran dry.
+                // A shorter queue still plays — the round builder consumes it card by
+                // card — so we start the game rather than refusing it.
                 queueRef.current = pool.cards;
                 distractorsRef.current = distractorRes.chars;
                 setQueueLength(pool.cards.length);
+                // Speed Reading plays a fixed, known set, so the notice can name the
+                // exact lent words (CARD_BASELINE_ITEMIZED).
+                setProvisional(provisionalWords(pool.cards));
                 setReady(true);
                 setLoading(false);
             } catch {
@@ -178,5 +202,7 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
         loading,
         blockMessage,
         dequeue,
+        /** Lent (temporary) words in this run's queue; empty when none were needed. */
+        provisional,
     };
 }

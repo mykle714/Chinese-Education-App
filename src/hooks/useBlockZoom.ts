@@ -59,6 +59,24 @@ export function useBlockZoom(active = true): void {
         // a tap anywhere inside such a row computes `pointer`).
         const isInteractiveTarget = (el: Element | null): boolean => {
             if (!el) return false;
+            // DETACHED TARGET → treat as interactive (i.e. leave the tap alone).
+            //
+            // This runs on `touchend`, whose `target` is the element that received
+            // the *touchstart*. If that element unmounted in between — a matched
+            // Match Speed pair popping out, a Word Search cell clearing, any
+            // control that animates itself away on tap — the node is no longer in
+            // the document. `getComputedStyle` on a detached node returns an EMPTY
+            // style declaration, so both checks below read `""`: the
+            // `touch-action: none` test fails and the `cursor: pointer` test
+            // fails, and a perfectly ordinary tap on a game surface gets judged
+            // non-interactive and has its click cancelled. That is a swallowed tap
+            // that only happens when something animated away — indistinguishable,
+            // to the player, from "the animation locked me out".
+            //
+            // A detached node also cannot double-tap-zoom (it is not being
+            // displayed), so there is nothing here to suppress in the first place;
+            // bailing out is both the safe and the correct answer.
+            if (!el.isConnected) return true;
             if (
                 el.closest(
                     'button, a[href], input, textarea, select, label, summary, ' +

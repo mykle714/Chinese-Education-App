@@ -6,6 +6,7 @@ import { Box } from '@mui/material';
 import { TILE_SIZE } from '../../engine/market/nightMarketRegistry';
 import { isoToScreen, TILE_WIDTH, TILE_HEIGHT, type ScreenPosition } from '../../engine/market/isometric';
 import { computeMinZoom, clampPan, visibleCellWindow, type CellFootprint } from '../../engine/market/cameraFit';
+import { followPanFor, approachPan } from '../../engine/market/cameraFollow';
 import { useCameraControls } from '../../hooks/useCameraControls';
 import { buildFarmField, resolveTileSurfaceUrls, resolveTileDarkSurfaceUrls, FIELD_WIDTH, FIELD_HEIGHT } from '../../engine/market/farmTerrain';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
@@ -84,7 +85,22 @@ interface SceneProps {
    * zoom state lives outside it — this is the one value that has to travel back up.
    */
   onFootprintsChange?: (footprints: CellFootprint[]) => void;
+  /** Id of the ped the camera is locked onto, or null. See "Pedestrian camera lock" below. */
+  lockedPedId: string | null;
+  /** Set/clear the pedestrian lock — called on a ped tap, and on a real pan drag (which releases). */
+  onLockedPedChange: (id: string | null) => void;
 }
+
+// ─── Pedestrian camera lock ──────────────────────────────────────────────────
+// Tapping a walker locks the camera onto it: every frame the pan eases toward the pan that centres
+// that ped (engine/market/cameraFollow). The lock is released by the user taking the camera back —
+// a pan drag past PAN_RELEASE_SLOP_PX here, or any wheel/pinch zoom via useCameraControls'
+// `onZoomGesture`. Zoom is never changed by the lock itself.
+//
+// The slop exists so the tap that CREATES the lock can't cancel it: a finger always jitters a pixel
+// or two between down and up, and the stage sees that same pointer stream as a (tiny) drag.
+
+const PAN_RELEASE_SLOP_PX = 6;
 
 /**
  * Camera ladder for nmp. The free-farm art is pixel-art (nearest-neighbour, `antialias={false}`),
@@ -443,21 +459,71 @@ function PlaceholderBoundsOverlay({ placeholders }: { placeholders: PlacedPlaceh
  * layers is the second half of the same fix, since a scene re-render for any other reason (a pan)
  * would otherwise still rebuild the terrain.
  */
-function PedestrianTicker({ pedestrians }: { pedestrians: ReturnType<typeof usePixiPedestrians> }) {
+interface PedestrianTickerProps {
+  pedestrians: ReturnType<typeof usePixiPedestrians>;
+  /** Ped the camera is chasing, or null for a free camera. */
+  lockedPedId: string | null;
+  onLockedPedChange: (id: string | null) => void;
+  /** Live camera, for the follow step. `panRef` (not a `pan` prop) so the tick reads the pan the
+   *  host has actually committed, without this leaf re-rendering on every pan. */
+  panRef: React.RefObject<{ x: number; y: number }>;
+  zoom: number;
+  onPanChange: (pan: { x: number; y: number }) => void;
+}
+
+function PedestrianTicker({
+  pedestrians, lockedPedId, onLockedPedChange, panRef, zoom, onPanChange,
+}: PedestrianTickerProps) {
   const [, setFrame] = useState(0);
+
+  // The tick callback is registered by Pixi and must not go stale between renders — mirror the
+  // follow inputs into a ref rather than re-subscribing the ticker whenever the zoom changes.
+  const followRef = useRef({ lockedPedId, panRef, zoom, onPanChange, onLockedPedChange });
+  followRef.current = { lockedPedId, panRef, zoom, onPanChange, onLockedPedChange };
+
   useTick((ticker) => {
     const now = performance.now();
     nmpPerf.frame(now); // dev-only; see ./nmpPerf for how to switch it on
     pedestrians.tick(ticker.deltaMS, now);
+
+    // Camera lock: ease the pan toward the locked ped AFTER the FSM has moved it this frame, so the
+    // camera chases the position actually about to be drawn (no one-frame lag). Writing through
+    // `onPanChange` means the follow is clamped by the same pan bounds as a manual drag.
+    const follow = followRef.current;
+    if (follow.lockedPedId) {
+      const target = pedestrians.getDrawables().find((d) => d.id === follow.lockedPedId);
+      if (target) {
+        const desired = followPanFor(target.isoX, target.isoY, follow.zoom);
+        const next = approachPan(follow.panRef.current, desired, ticker.deltaMS);
+        // `approachPan` returns the target verbatim once settled, so a stationary ped stops writing.
+        if (next.x !== follow.panRef.current.x || next.y !== follow.panRef.current.y) {
+          follow.onPanChange(next);
+        }
+      }
+      // A ped that vanished from the sim (a re-seed on world reload) leaves the lock dangling —
+      // drop it so the camera doesn't silently freeze.
+      else follow.onLockedPedChange(null);
+    }
+
     setFrame((f) => (f + 1) % 1_000_000);
   });
-  return <PedestrianLayer drawables={pedestrians.getDrawables()} />;
+
+  return (
+    <PedestrianLayer
+      drawables={pedestrians.getDrawables()}
+      lockedPedId={lockedPedId}
+      onPedTap={onLockedPedChange}
+    />
+  );
 }
 
 // ─── Scene ─────────────────────────────────────────────────────────────────
 // Runs inside <Application>. Handles drag-to-pan and renders the terrain.
 
-function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingRef, reloadToken, onFootprintsChange }: SceneProps) {
+function NightMarketScene({
+  pan, zoom, onPanChange, showGrid, debug, isPinchingRef, reloadToken, onFootprintsChange,
+  lockedPedId, onLockedPedChange,
+}: SceneProps) {
   // `isInitialised` flips true once Pixi's async init() (which creates the
   // renderer) resolves; `app`'s identity is stable across init, so an effect
   // keyed only on `app` would bail before the renderer exists and never re-run.
@@ -469,6 +535,10 @@ function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingR
   panRef.current = pan;
   const onPanChangeRef = useRef(onPanChange);
   onPanChangeRef.current = onPanChange;
+  const onLockedPedChangeRef = useRef(onLockedPedChange);
+  onLockedPedChangeRef.current = onLockedPedChange;
+  const lockedPedIdRef = useRef(lockedPedId);
+  lockedPedIdRef.current = lockedPedId;
 
   // Template runtime: load the authored hub template → assembled MarketWorld (stitched
   // terrain + recovered tile/street graphs). Replaces the former static procedural farm
@@ -516,6 +586,22 @@ function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingR
       if (!drag.current.active) return;
       const dx = e.global.x - drag.current.startX;
       const dy = e.global.y - drag.current.startY;
+      // The user has taken the camera back — drop any pedestrian lock before applying the drag, or
+      // the follow would immediately drag the pan back onto the ped. Slop-gated so the tap that
+      // sets the lock (which the stage also sees as a pointer stream) doesn't cancel it.
+      if (lockedPedIdRef.current && Math.hypot(dx, dy) > PAN_RELEASE_SLOP_PX) {
+        onLockedPedChangeRef.current(null);
+        // Re-anchor the drag to here and now: `origPan` was captured at pointerdown, but the follow
+        // has been moving the camera ever since, so continuing from it would snap the world back.
+        drag.current = {
+          active: true,
+          startX: e.global.x,
+          startY: e.global.y,
+          origPanX: panRef.current.x,
+          origPanY: panRef.current.y,
+        };
+        return;
+      }
       onPanChangeRef.current({ x: drag.current.origPanX + dx, y: drag.current.origPanY + dy });
     };
     const onUp = () => { drag.current.active = false; };
@@ -583,7 +669,16 @@ function NightMarketScene({ pan, zoom, onPanChange, showGrid, debug, isPinchingR
             (temporary stand-in until the real stand-asset catalog exists). Cosmetic only — not in
             the graph. */}
         {world && <PlaceholderHouseLayer placeholders={world.placeholderAreas} />}
-        {world && <PedestrianTicker pedestrians={pedestrians} />}
+        {world && (
+          <PedestrianTicker
+            pedestrians={pedestrians}
+            lockedPedId={lockedPedId}
+            onLockedPedChange={onLockedPedChange}
+            panRef={panRef}
+            zoom={zoom}
+            onPanChange={onPanChange}
+          />
+        )}
         {/* Template/placeholder bounds read the STITCHED layout (placements + world.placeholderAreas),
             so unlike the two overlays below they stay correct against the real template render. */}
         {debug.templateBounds && <TemplateBoundsOverlay templates={placements} />}
@@ -610,6 +705,11 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, reloadToken }: Ma
   // because only the camera-limit callbacks read it — a re-render would buy nothing.
   const footprintsRef = useRef<CellFootprint[]>([]);
 
+  // Pedestrian camera lock: the ped the camera is chasing, or null for a free camera. State (not a
+  // ref) because the ring in <PedestrianLayer> has to re-render when it changes; it changes at most
+  // once per gesture, so it costs nothing per frame.
+  const [lockedPedId, setLockedPedId] = useState<string | null>(null);
+
   // Shared camera: continuous pinch/wheel zoom that settles onto the ZOOM_STEP ladder at rest, a
   // zoom-out floor that drops below CRISP_FLOOR once the tiled continent outgrows the viewport, and
   // a pan clamp that keeps the market anchored to the viewport.
@@ -625,6 +725,9 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, reloadToken }: Ma
     // the element the host hands us is unused here.
     clampPan: (p, z) => clampPan(p, footprintsRef.current, z),
     enablePinch: true,
+    // Wheel/pinch = the user grabbing the camera → release the pedestrian lock. The pan-drag half of
+    // that rule lives in the scene, which is where drags are read.
+    onZoomGesture: () => setLockedPedId(null),
   });
 
   // The clamp's inputs move without the pan moving — the world finishes loading, or the element
@@ -659,6 +762,8 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, reloadToken }: Ma
             isPinchingRef={isPinchingRef}
             reloadToken={reloadToken}
             onFootprintsChange={handleFootprintsChange}
+            lockedPedId={lockedPedId}
+            onLockedPedChange={setLockedPedId}
           />
         </Application>
       )}

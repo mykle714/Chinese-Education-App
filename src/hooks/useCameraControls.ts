@@ -82,6 +82,14 @@ export interface UseCameraControlsOptions {
   clampPan?: (pan: CameraPan, zoom: number, el: HTMLDivElement) => CameraPan;
   /** Enable two-finger pinch zoom. Default false (desktop-only authoring surfaces). */
   enablePinch?: boolean;
+  /**
+   * Called when the USER starts a zoom gesture (wheel tick or pinch start) — never for a
+   * programmatic zoom or for the settle tween. Surfaces use it to drop any camera mode the user has
+   * just overridden by grabbing the camera themselves; nmp releases its pedestrian lock here
+   * (see {@link ../engine/market/cameraFollow}). Drag-to-pan is NOT reported: drags are read by
+   * each scene, so a scene that cares detects the release there.
+   */
+  onZoomGesture?: () => void;
   /** Suppress the browser context menu, for surfaces that pan on right-drag. Default false. */
   suppressContextMenu?: boolean;
 }
@@ -143,6 +151,11 @@ export function useCameraControls(options: UseCameraControlsOptions): CameraCont
     const el = containerRef.current;
     const clamp = optsRef.current.clampPan;
     const bounded = el && clamp ? clamp(next, zoomRef.current, el) : next;
+    // Drop writes that don't move the camera. Matters for the per-frame callers (nmp's pedestrian
+    // follow): once the clamp pins the pan at a market edge, every frame would otherwise commit a
+    // fresh-but-identical object and re-render the whole scene tree for nothing.
+    const prev = panRef.current;
+    if (bounded.x === prev.x && bounded.y === prev.y) return;
     panRef.current = bounded;
     setPanState(bounded);
   }, []);
@@ -215,6 +228,7 @@ export function useCameraControls(options: UseCameraControlsOptions): CameraCont
     const el = containerRef.current;
     if (!el) return;
     cancelSettle(); // a fresh event supersedes any pending/running settle
+    optsRef.current.onZoomGesture?.();
     const rect = el.getBoundingClientRect();
     const focalX = e.clientX - rect.left;
     const focalY = e.clientY - rect.top;
@@ -231,6 +245,7 @@ export function useCameraControls(options: UseCameraControlsOptions): CameraCont
     if (!el) return;
     e.preventDefault();
     cancelSettle();
+    optsRef.current.onZoomGesture?.();
     isPinchingRef.current = true;
     const [t0, t1] = [e.touches[0], e.touches[1]];
     const rect = el.getBoundingClientRect();

@@ -87,6 +87,18 @@ interface Bucket {
 }
 const buckets = new Map<string, Bucket>();
 
+// Explicit game-surface tap records (`kind: "tap"`), tallied by the OUTCOME the
+// handler chose. This is the table that answers "was my tap swallowed, or was it
+// just late?" — an `ignored-*` outcome means a guard dropped the tap, while a
+// healthy outcome with a big inputDelay means the tap merely waited on the main
+// thread. See src/utils/perfDiagnostics.ts § reportTap.
+interface TapOutcome {
+  n: number;
+  inputDelays: number[];
+  presentations: number[];
+}
+const tapOutcomes = new Map<string, TapOutcome>();
+
 function bucketFor(key: string): Bucket {
   let b = buckets.get(key);
   if (!b) {
@@ -147,6 +159,15 @@ async function main() {
         if (typeof r.processing === 'number') b.processings.push(r.processing);
         if (typeof r.presentation === 'number') b.presentations.push(r.presentation);
         if (r.target) b.targets.set(r.target, (b.targets.get(r.target) || 0) + 1);
+
+        if (r.kind === 'tap' && r.name) {
+          const key = `${r.path}  ${r.name}`;
+          let t = tapOutcomes.get(key);
+          if (!t) tapOutcomes.set(key, (t = { n: 0, inputDelays: [], presentations: [] }));
+          t.n++;
+          if (typeof r.inputDelay === 'number') t.inputDelays.push(r.inputDelay);
+          if (typeof r.presentation === 'number') t.presentations.push(r.presentation);
+        }
       }
     }
   }
@@ -210,6 +231,29 @@ async function main() {
   if (topTargets.length) {
     console.log('\nMost-reported tap targets:');
     for (const [t, c] of topTargets) console.log(`  ${pad(c, 6)} ${t}`);
+  }
+
+  // Game-surface tap outcomes. NOTE these records are pre-filtered client-side to
+  // *interesting* taps only (ignored ones, or ones slower than the client's
+  // threshold), so the counts are NOT a tap census — do not read them as rates.
+  // Read them as: which outcomes show up at all, and how slow they were.
+  if (tapOutcomes.size) {
+    console.log('\nGame tap outcomes (only taps the client judged interesting):');
+    console.log('  `ignored-*` = a guard dropped the tap. Anything else = the tap worked but was slow.');
+    console.log(
+      '\n  ' + pad('route / outcome', 44) + pad('n', 6) +
+      pad('inDly p50', 11) + pad('inDly p95', 11) + pad('pres p95', 10)
+    );
+    console.log('  ' + '-'.repeat(82));
+    const tapRows = [...tapOutcomes.entries()].sort((a, b) => b[1].n - a[1].n);
+    for (const [key, t] of tapRows) {
+      const inp = [...t.inputDelays].sort((a, c) => a - c);
+      const pres = [...t.presentations].sort((a, c) => a - c);
+      console.log(
+        '  ' + pad(key, 44) + pad(t.n, 6) +
+        pad(pct(inp, 50), 11) + pad(pct(inp, 95), 11) + pad(pct(pres, 95), 10)
+      );
+    }
   }
   console.log('');
 }

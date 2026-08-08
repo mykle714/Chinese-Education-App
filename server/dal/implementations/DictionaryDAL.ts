@@ -17,13 +17,25 @@ import {
   composeExampleSentenceBody,
   composeFrequencyScoreBody,
   composePartsOfSpeechBody,
+  composeSenseFrequencyScoreBody,
 } from '../../utils/validationBodyFormat.js';
 import {
   ENTRY_LEVEL_VALIDATION_FIELDS,
   NO_APPROVALS,
+  PER_SENSE_VALIDATION_FIELDS,
   type EntryApprovalFlags,
   type ValidationField,
 } from '../../types/index.js';
+
+/**
+ * Every field `enrichFieldApprovalsBatch` resolves in its single pass: the four
+ * entry-level ones plus the per-sense ones (migration 139). One list so the fetch
+ * and the per-field comparisons below can never fall out of step.
+ */
+const APPROVAL_FIELDS: readonly ValidationField[] = [
+  ...ENTRY_LEVEL_VALIDATION_FIELDS,
+  ...PER_SENSE_VALIDATION_FIELDS,
+];
 
 /**
  * The raw det columns enrichFieldApprovalsBatch must read fresh to rebuild each
@@ -37,6 +49,9 @@ interface EntryApprovalRawColumns {
   longDefinition: string | null;
   difficulty: number | null;
   frequencyScore: number | null;
+  // Per-sense commonality lives here, not in a column — one approval per cluster
+  // (migration 139). Read raw so the freshness rebuild sees today's scores.
+  definitionClusters: DefinitionCluster[] | null;
 }
 
 // Standard column list for all dictionary SELECT queries
@@ -892,6 +907,12 @@ export class DictionaryDAL implements IDictionaryDAL {
    * split it into its own field so POS churn no longer invalidates a definitions review
    * (and vice versa).
    *
+   * `approvedSenseFrequencyLabels` rides along in the same pass but is NOT entry-level:
+   * it lists the `definitionClusters[].sense` labels whose per-sense commonality still
+   * carries a valid approval (migration 139). One extra bucket in the same query — no
+   * extra round trip — because the eip/cdp Commonality chip shows the SELECTED SENSE's
+   * score on a clustered word, so that chip needs a per-sense answer.
+   *
    * Independent of enrichExampleSentencesMetadataBatch (no exampleSentences
    * precondition) — callers chain it alongside enrichLongDefinitionMetadataBatch.
    * Reads the RAW det columns fresh (not the caller's already-transformed
@@ -910,7 +931,8 @@ export class DictionaryDAL implements IDictionaryDAL {
     const rawResult = await this.dbManager.executeQuery<EntryApprovalRawColumns>(
       async (client) =>
         client.query(
-          `SELECT word1, "partsOfSpeech", definitions, "longDefinition", difficulty, "frequencyScore"
+          `SELECT word1, "partsOfSpeech", definitions, "longDefinition", difficulty,
+                  "frequencyScore", "definitionClusters"
              FROM ${table} WHERE word1 = ANY($1) AND language = $2`,
           [words, language]
         )
@@ -933,16 +955,26 @@ export class DictionaryDAL implements IDictionaryDAL {
         partsOfSpeechApproved: matches('partsOfSpeech', composePartsOfSpeechBody(raw.partsOfSpeech)),
         difficultyApproved: matches('difficulty', composeDifficultyBody(raw.difficulty)),
         frequencyScoreApproved: matches('frequencyScore', composeFrequencyScoreBody(raw.frequencyScore)),
+        // Per-SENSE commonality: same rebuild-and-compare, once per cluster. The sense
+        // label is inside the body, so a cluster whose label survived but whose score
+        // was re-scored drops out, and so does one that was renamed away entirely.
+        approvedSenseFrequencyLabels: (raw.definitionClusters ?? [])
+          .filter((cluster) =>
+            !!cluster?.sense &&
+            matches('senseFrequencyScore', composeSenseFrequencyScoreBody(cluster.sense, cluster.frequencyScore ?? null))
+          )
+          .map((cluster) => cluster.sense),
       };
     });
   }
 
   /**
-   * Batch-fetch human-APPROVED bodies for the entry-level fields, keyed by headword
-   * then by field. Mirrors fetchApprovedSentenceContents but covers all four
-   * entry-level fields in ONE query (they share a join and a batch), and keeps them
-   * bucketed per field so a `definitions` approval can never satisfy a `partsOfSpeech`
-   * comparison. A field's bucket is a Set because different validators may have
+   * Batch-fetch human-APPROVED bodies for every field in `APPROVAL_FIELDS`, keyed by
+   * headword then by field. Mirrors fetchApprovedSentenceContents but covers all of them
+   * in ONE query (they share a join and a batch), and keeps them bucketed per field so a
+   * `definitions` approval can never satisfy a `partsOfSpeech` comparison. The per-sense
+   * field shares ONE bucket across an entry's senses — its `senseLabel` is inside the
+   * body text, so the byte-for-byte compare already distinguishes them. A field's bucket is a Set because different validators may have
    * approved different revisions of the same field — any one matching today's data
    * counts as approved.
    */
@@ -968,7 +1000,7 @@ export class DictionaryDAL implements IDictionaryDAL {
               AND val.action = 'approve'
               AND val.field = ANY($2)
               AND d.word1 = ANY($3)`,
-          [language, ENTRY_LEVEL_VALIDATION_FIELDS, words]
+          [language, APPROVAL_FIELDS, words]
         )
     );
 

@@ -79,17 +79,29 @@ export const HINT_COST = 1;
 export const HINT_ACCENT_COLOR = "#FB8C00";
 
 /**
- * Trailing mark on a hint island that still has something hidden — "there is
- * more to this character, it just isn't shown yet". Used by BOTH currencies
- * (the pinyin mask and the No-Pinyin component reveals).
+ * Trailing mark on a **No Pinyin** (component) hint island that still has
+ * something hidden — "there is more to this character, it just isn't shown
+ * yet". It is exactly ONE character and deliberately a dash rather than
+ * underscores: a component island has no letter-count to blank out, so a run
+ * of underscores would imply a count that doesn't exist. A single em dash
+ * carries no count at all. See §5a-ii.
  *
- * It is exactly ONE character, and deliberately a dash rather than underscores:
- * a run of underscores reads as a hangman blank-per-letter, so a fixed 3-wide
- * "___" (what this used to be) implied a 3-unit remainder that was usually
- * wrong. A single em dash carries no count at all — which is the honest signal,
- * since the island must never leak how many units are left. See §5a.
+ * The Pinyin board used to share this mark, but now blanks its remainder
+ * letter-by-letter with `HINT_LETTER_BLANK` (see below).
  */
 export const HINT_REMAINDER_MARK = "—";
+
+/**
+ * Blank stand-in for ONE still-hidden pinyin letter on the Pinyin board's hint
+ * mask — classic hangman spacing, one underscore per omitted letter, so an
+ * island's total length is visible from the start and each reveal visibly
+ * consumes the blanks it fills. Deliberately leaks the syllable's letter count
+ * (the earlier single-dash mark hid it); knowing "this syllable is 4 letters"
+ * is a useful, honest scaffold and keeps the mask width stable as units fill
+ * in. Tone diacritics ride on their letter (`ǎ` is one blank, not two).
+ * See §5a.
+ */
+export const HINT_LETTER_BLANK = "_";
 
 /**
  * cpcd size for each grid cell. `sm` (32px column) for now; 10 rows with pinyin

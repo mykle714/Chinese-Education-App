@@ -88,11 +88,30 @@ export const DEFINITION_LEN_MAX = 50;
 export const DEFINITION_RADIUS_JITTER = 5; // ~4 × 1.2
 
 // ---- Physics --------------------------------------------------------------
-// Bubbles do NOT drift: once a bubble finishes growing it sits still. The only
-// motion is (a) a freshly spawned bubble growing in place, (b) the positional
-// shove a growing bubble gives the neighbors it overlaps, and (c) the player's
-// own drag. No velocity model, no wander, no wall bounce, no throw-on-release.
+// Settled bubbles DRIFT: once a bubble finishes growing it floats like a
+// lava-lamp bubble — a small random wander accelerates it, its speed is eased
+// back toward IDLE_SPEED, and it reflects off the walls and off its neighbors.
+// (The drift model was removed in the grow-in-place rework and reinstated here
+// at 20% of its original magnitude — an 80% reduction, see DRIFT_SCALE.) On top
+// of drift there is still (a) a freshly spawned bubble growing in place, (b) the
+// positional shove a growing bubble gives the neighbors it overlaps, and (c) the
+// player's own drag. There is no throw-on-release: a dropped bubble simply
+// resumes drifting with the velocity it had when it was picked up.
 export const MAX_DT = 1 / 30; // clamp frame delta (sec) to avoid tunneling on lag
+
+// Single knob scaling every drift *magnitude* (speeds and accelerations) against
+// the original tuning. 1 = the original lively float; 0.3 = the current 70%-
+// reduced gentle shimmer; 0 = a fully static field (the pre-reinstatement
+// behavior). Ratios like RESTITUTION are deliberately NOT scaled by it.
+export const DRIFT_SCALE = 0.3;
+export const IDLE_SPEED = 26 * DRIFT_SCALE; // px/sec target drift speed for floating bubbles
+export const WANDER_ACCEL = 8 * DRIFT_SCALE; // px/sec^2 random wander to keep motion lively
+export const MAX_SPEED = 140 * DRIFT_SCALE; // px/sec clamp so a bubble can never run away
+export const RESTITUTION = 0.92; // bounciness on wall/bubble collisions (0..1) — a ratio, unscaled
+// Per-frame factor easing a bubble's speed back toward IDLE_SPEED, so collisions
+// can briefly spike velocity without the field ever speeding up permanently and
+// bubbles never fully stop.
+export const IDLE_SPEED_LERP = 0.02;
 
 // ---- Spawn / grow-in ------------------------------------------------------
 // A new bubble appears at a chosen spot at SPAWN_SEED_RADIUS and inflates toward

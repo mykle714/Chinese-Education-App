@@ -74,7 +74,13 @@ const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const { stampEntries, staleClause } = initRunLog({ script: 'chinese/backfill-cluster-definitions', version: SCRIPT_VERSION, anthropic });
+const { stampEntries, staleClause, validatedClause } = initRunLog({ script: 'chinese/backfill-cluster-definitions', version: SCRIPT_VERSION, anthropic });
+// The clusterer writes `definitionClusters`, whose per-cluster `frequencyScore` IS a
+// validatable field since migration 139 (the eip/cdp "Commonality" chip on a clustered
+// word reviews `senseFrequencyScore` + a sense label). Re-clustering rewrites the column
+// wholesale, so it would silently discard a validator's per-sense review — skip any row
+// carrying one. See docs/DATA_VALIDATION_SYSTEM.md § Backfill guard.
+const validatedFilter = `AND ${validatedClause(['senseFrequencyScore'], 'dictionaryentries_zh')}`;
 
 // Stage-A model is overridable via CLUSTER_MODEL env for A/B testing (e.g. run
 // the whole pass on Opus); defaults to Sonnet. Retry escalation stays on Opus.
@@ -353,12 +359,14 @@ async function run() {
         ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore"
            FROM dictionaryentries_zh
            WHERE language = 'zh' AND word1 = ANY($1)
+             ${validatedFilter}
              AND jsonb_array_length(definitions) >= 1
            ORDER BY id ASC`
         : `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore"
            FROM dictionaryentries_zh
            WHERE language = 'zh'
              ${includeAll ? '' : 'AND discoverable = TRUE'}
+             ${validatedFilter}
              AND jsonb_array_length(definitions) >= 1
              ${force ? '' : stale ? `AND ("definitionClusters" IS NULL OR ${staleClause()})` : 'AND "definitionClusters" IS NULL'}
            ORDER BY id ASC

@@ -1,17 +1,23 @@
 # Speed Reading (`/games/speed-reading`)
 
 > **STATUS: BUILT.** The game is registered in `GAME_REGISTRY` and playable. What
-> remains is **tuning by eye**: the three medal thresholds are placeholders until
-> someone plays it — see [§ What still needs tuning](#what-still-needs-tuning).
+> remains is **tuning by eye**: the medal thresholds and the wrong-answer penalty
+> are placeholders until someone plays it — see [§ What still needs tuning](#what-still-needs-tuning).
 
 Fourth game. The player is shown a word's pinyin, definition, and audio, plus
 **two word options**: the real word and a wrong one that differs by exactly one
-character. Tap the real one, as many times as you can in a minute.
+character. Tap the real one, twenty times, as fast as you can.
 
 Because both options are real characters of the same length, the player cannot get
 there by shape alone — they have to actually **read**. Where Bubble Match tests
 meaning-recall and Word Search tests scanning, this tests **reading speed**: how
 fast a known word is recognised under a clock. It emits **reading** marks.
+
+**The run is a RACE, not a timed sprint.** The player answers a fixed
+`TARGET_ROUNDS` (20) rounds, the clock counts **up**, and the score is the
+finishing time — **lower is better**. There is no time cap. This replaced the
+original one-minute / count-the-correct-picks format; see
+[§ Scoring and medals](#scoring-and-medals) for what a wrong answer costs.
 
 There are **no difficulty levels**. One mode, one hub row.
 
@@ -150,7 +156,7 @@ short viewports, which is a shell-wide change.
 
 ```
 ┌─────────────────────────────┐
-│ ⌄                      0:47 │  header: back · clock
+│ ⌄                7/20  0:14 │  header: back · progress · count-up clock
 ├─────────────────────────────┤
 │                             │
 │         nǐ  hǎo             │  pinyin (large)
@@ -162,13 +168,21 @@ short viewports, which is a shell-wide change.
 │   └─────────┘ └─────────┘   │  (they differ by one character)
 │                             │
 │                             │
-│         [  Skip  ]          │
 └─────────────────────────────┘
 ```
 
+**The header carries a round counter (`speed-reading__progress`) next to the
+clock.** With the run ending on a count rather than on a countdown, the clock
+alone no longer says how far along you are — a player could not tell round 3 from
+round 19. The counter is secondary-coloured so the time stays the headline. The
+clock itself turns red once `totalMs` passes the **bronze** threshold, i.e. once
+the run can no longer medal; that is the count-up equivalent of the old "last ten
+seconds" red.
+
 The prompt and the options are **one centred group** (`speed-reading__stack`),
-with Skip pinned at the bottom. The prompt sits directly above the buttons rather
-than at the top of the screen: the player reads the prompt and then compares the
+centred in the play area — **the two options are the only controls on the
+screen** (see [§ There is no Skip](#there-is-no-skip)). The prompt sits directly
+above the buttons rather than at the top of the screen: the player reads the prompt and then compares the
 options in one motion, and the eye should not have to travel the height of the
 page between them.
 
@@ -214,21 +228,28 @@ the CSS in `SpeedReadingOption.tsx` must read the same numbers.
 
 ```
         load ──► ready ──tap──► feedback ──(FEEDBACK_MS)──► ready(next)
-                   │                                            │
-                   └──────────────skip───────────────────────────┘
 
-  clock hits 60s (from any phase) ──► ended ──Play Again──► load
+  20th round answered ──► ended ──Play Again──► load
+  queue drained       ──► ended (unfinished: no time, no medal)
 ```
 
 | Phase | Input | Notes |
 |---|---|---|
-| `loading` | blocked | Initial 20-card fetch + distractor fetch. Blocked screen if `sufficient === false`. |
-| `ready` | live | Both options, Skip and the speaker are tappable. |
+| `loading` | blocked | Initial 20-card fetch + distractor fetch. **No card-count block** — the blocked screen is now only reachable when signed out or on a fetch failure (PROVISIONAL_CARDS.md). |
+| `ready` | live | Both options and the speaker are tappable — there is no Skip. The word auto-narrates on entry — see § Auto-narration. |
 | `feedback` | **blocked** | Frozen so a double-tap can't mark the next round. |
 | `ended` | blocked | `GameEndPopup`. |
 
-**The clock does not pause during `feedback`.** Feedback time is part of the
-minute; that's what makes `FEEDBACK_MS` a real cost.
+**The clock does not pause during `feedback`.** Feedback time is charged to the
+player; that's what makes `FEEDBACK_MS` a real cost. Note that at a fixed 20
+rounds it is now charged an exactly predictable **20 times a run** (3.6s of every
+score at 180ms), where under the old one-minute format it merely reduced how many
+rounds fit. Cutting it now moves every score.
+
+**Ending is decided in `advance`, from `answeredRef`, not from the clock.** The
+count is held in a ref as well as in state because `onPick` must know in the same
+tick whether that answer was the 20th — reading it from state there would see the
+previous render and let a 21st round start.
 
 **Play Again resets in place; it does NOT navigate.** `navigate("/games/speed-reading")`
 from the same route matches the same route, so React Router never unmounts the
@@ -245,13 +266,15 @@ by design — see the CLAUDE.md rule about never keying a load effect on `token`
 |---|---|---|
 | `GAME_KEY` | `"speedReading"` | `wins` table key |
 | `WIN_LEVEL` | 1 | the game has no levels; `wins` is keyed (game, level) |
-| `RUN_DURATION_MS` | 60_000 | one minute |
+| `TARGET_ROUNDS` | 20 | answered rounds per run; the run ends on the 20th |
+| `WRONG_PENALTY_MS` | 3_000 | added to the final time per wrong answer |
 | `FEEDBACK_MS` | 180 | answer reveal before advancing (600 → 280 → 180 as the sound + float indicator took over the job) |
-| `FLOAT_INDICATOR_MS` | 650 | lifetime of the floating ✓/✗; deliberately longer than `FEEDBACK_MS` |
+| `FLOAT_INDICATOR_MS` | 650 | lifetime of a plain floating ✓; deliberately longer than `FEEDBACK_MS` |
+| `PENALTY_INDICATOR_MS` | 1_000 | lifetime of a float carrying the red **+3s** — a number has to be read, not glanced at |
 | `INITIAL_BATCH` | 20 | cards fetched on load |
 | `TOPUP_THRESHOLD` | 5 | queue length that triggers a top-up |
 | `TOPUP_BATCH` | 5 | cards per top-up request |
-| `ENTRY_GATE_CARDS` | 20 | Learn Now cards required to play |
+| ~~`ENTRY_GATE_CARDS`~~ | — | **Removed.** The baseline lives in `CARD_BASELINES['speed-reading']` (`server/contracts/wire.ts`) and is topped up, not enforced. |
 | `OPTION_ROW_GAP_PX` | 12 | gap between the two side-by-side buttons |
 | `OPTION_PADDING_X_PX` | 8 | horizontal padding inside a button, per side |
 | `OPTION_CHAR_GAP_PX` | 4 | gap between adjacent glyphs in a button |
@@ -272,6 +295,7 @@ A pick fires **three** cues at once, then the round advances after
 |---|---|---|
 | **Sound** | `playCorrectSound()` / `playWrongSound()` in `src/games/runtime/gameSounds.ts` | Reaches the player fastest and needs no eye movement at all. |
 | **Floating ✓ / ✗** | `SpeedReadingFloatIndicator.tsx`, positioned at the tap point | The eye is already at the tap point at the moment of the tap, so it is read without a saccade. |
+| **Red `+3s`** (wrong only) | the same float, stacked under the ✗ | The penalty is arithmetic on the score, so it is otherwise INVISIBLE — see below. |
 | **Button colour** | `SpeedReadingOption.tsx` (`OptionFeedback`) | Still the thing that TEACHES — on a wrong pick it shows both the red pick and the green right answer. |
 
 The first two are why the reveal can be as short as it is: the outcome no longer
@@ -293,7 +317,7 @@ the data arrived, up to 8 characters' worth. Two fixes:
   screen, the round AFTER it is built and its glyphs are prefetched via
   `loadGlyph`. That cost now runs while the player is reading, so advancing is a
   single synchronous `setState`. It consumes one extra card off the queue (the
-  top-up already covers it) and drops the last prepared round when the clock
+  top-up already covers it) and drops the last prepared round when the run
   ends.
 - `GlyphSvg` reads `glyphCache` **during render**, not in its effect, so a
   cached glyph paints on the first frame. Going through the effect cost a paint
@@ -325,23 +349,72 @@ suspended it between rounds. If `AudioContext` is unavailable, the module latche
 a flag and every call silently no-ops: sound is an enhancement, never a
 requirement, and a failure must not break the round.
 
+### Auto-narration
+
+Every round speaks its word as it lands; the speaker button remains, for replays.
+
+**Why autoplay here.** Under a running clock, a tap spent on the speaker is a
+tap not spent answering — an opt-in speaker button means the audio channel is
+effectively never used. Narrating on arrival makes the word's SOUND a third cue
+alongside the pinyin and the definition, which is the point: the game is a
+reading drill, and the reading includes the pronunciation.
+
+**Where it lives** (`SpeedReadingPage.tsx`):
+
+- **The effect** fires only in phase `ready` (never during `feedback`, never
+  after `ended`) and is guarded on **round identity** via `spokenRoundRef`, not
+  on a dep list. `useTTS()` returns a fresh object every render, so `speak`
+  changes identity constantly and the effect re-runs constantly; the ref is what
+  makes each round narrate exactly once.
+- **No explicit cancel** on advance — `useTTS.speakText` cancels the in-flight
+  utterance before starting the next one, so a fast answer simply cuts the
+  previous word off.
+- **Prefetch.** `prefetchRound(r)` (formerly `prefetchGlyphs`) warms BOTH the
+  stroke corpus and `tts.prefetch(r.entry)` one round ahead, for the same reason
+  glyphs are prefetched: an un-cached word costs a synthesis round-trip, and
+  silence at the top of a round is time added to the score. Reached via a `ttsRef`
+  so `tts`'s per-render identity doesn't churn `nextRound` → `advance` → `onPick`.
+- **`tts.unlockAudio()`** runs in the run-start effect. The tap that opened the
+  page happened on the previous screen, so no gesture is in flight when the
+  queue resolves; without the unlock, mobile autoplay policy can leave the shared
+  AudioContext suspended and swallow the first word.
+
+Narration no-ops when the user has TTS disabled, and `prefetch` additionally
+skips cards the server flagged `hasAudio === false`.
+
 ### The float indicator
 
-`FloatIndicator = { x, y, correct, id }`. The page reads `event.clientX/clientY`
-off the click and subtracts `speed-reading__content`'s bounding rect (that Box is
-already `position: relative`) to get local coordinates. A CSS keyframe pops the
-glyph in by 22% of its life, then drifts it to `-190%` while fading out.
+`FloatIndicator = { x, y, kind, id }` where `kind` is `correct | wrong`.
+The page reads `event.clientX/clientY` off the click and converts it through
+`stage.toStageCoords` to get local coordinates. A CSS keyframe pops the glyph in
+by 22% of its life, then drifts it to `-190%` while fading out.
 
-Three things worth knowing:
+| `kind` | Shows | Lifetime |
+|---|---|---|
+| `correct` | green ✓ | `FLOAT_INDICATOR_MS` (650ms) |
+| `wrong` | red ✗ **+ `+3s`** | `PENALTY_INDICATOR_MS` (1000ms) |
+
+**This float is the ONLY place the penalty is visible at the moment it is
+charged.** ⚠️ The 3s is arithmetic on the final score — it is emphatically **NOT
+a pause**. `FEEDBACK_MS` stays 180ms for every outcome and the round advances on
+schedule whether or not the player was charged; the only thing the penalty
+lengthens is how long this indicator lingers, and it finishes floating over the
+next round. A cost the player cannot see is a cost they cannot learn from, hence
+announcing it at the same place and instant as the ✗ rather than leaving them to
+notice the clock jump.
+
+Three more things worth knowing:
 
 - **`id` is the React key.** Without it React would reuse the node and the CSS
   animation would not restart on a second tap at the same spot.
 - **`pointerEvents: "none"`** — the indicator overlays the option buttons and
   must never swallow the next round's tap. It is also `aria-hidden`; the colour
   feedback already carries the meaning.
-- **It outlives the round** (650ms vs 180ms). The float keeps animating across
-  the round change, so the feedback reads as continuous instead of being cut off
-  mid-rise. Its removal timer is cleared on unmount and on Play Again.
+- **It outlives the round** (650/1000ms vs 180ms). The float keeps animating
+  across the round change, so the feedback reads as continuous instead of being
+  cut off mid-rise. Its removal timer — `indicatorLifetime(kind)`, the single
+  source shared by the CSS duration and the unmount `setTimeout` — is cleared on
+  unmount and on Play Again.
 
 ---
 
@@ -463,7 +536,7 @@ y ∈ [−124, 900] (hanzi-writer's `CHARACTER_BOUNDS`). The wrapping
 
 **Caching.** A process-lifetime `Map` of parsed glyph files plus an in-flight
 promise map, both module-level and shared across every instance: a run re-renders
-the same handful of characters many times over a minute, and without this each
+the same handful of characters many times over a run, and without this each
 remount would pay a dynamic-import round trip and flash empty.
 
 ### ⚠️ The CDN fallback is the PRODUCTION path, not a rare-miss path
@@ -498,7 +571,8 @@ model) would buy nothing.
 
 Top-ups are **fire-and-forget with a `.catch()`**, triggered on dequeue, never
 awaited in the tap handler. A failed top-up degrades to a shorter run, never a
-stall — if the queue empties, the end popup shows early with the score so far.
+stall — if the queue empties, the run ends UNFINISHED: the popup reports how far
+the player got and records no time and no medal (see § Scoring and medals).
 
 `exclude` carries every id still queued. As with Match Speed, this is **not** a
 repeat gate — repeats are prevented by the server's per-type reading cooldown — it
@@ -513,8 +587,15 @@ React may invoke an updater twice in StrictMode, consuming two cards per tap.
 **dropped at dequeue**, and the drop counts toward the top-up trigger. The retry
 loop is bounded (40 attempts) so a queue of unplayable cards cannot spin forever.
 
-**Entry gate:** 20 Learn Now cards, matching Bubble Match. Block on
-`sufficient === false`.
+**Entry gate: REMOVED.** Speed Reading no longer blocks on card count. The opening
+pool request carries `surface=speed-reading`, so the server lends the player enough
+temporary cards to reach `CARD_BASELINES['speed-reading']` first; `sufficient === false`
+is not a block, only a signal that the dictionary ran dry, and a shorter queue still
+plays. Speed Reading plays a fixed known set, so its notice **names** the lent words.
+See [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md).
+
+Note the mid-run top-up (`opts` set) deliberately omits `surface`: a refill must not
+keep lending cards.
 
 ---
 
@@ -544,8 +625,7 @@ does via `?mode=`.
 |---|---|
 | Correct option tapped | `isCorrect: true` |
 | Wrong option tapped | `isCorrect: false` |
-| Skip | **none** |
-| Any tap after the clock expires | **none** |
+| Any tap after the run ends | **none** |
 
 Fire-and-forget with a `.catch()`; the game never blocks on a mark.
 
@@ -555,27 +635,68 @@ scores ~50% and earns negative marks at that rate — the marks are an honest re
 of the answers given, and a player who guesses genuinely does not know the reading.
 No accuracy floor, no mark suppression, no special-casing.
 
-The one thing the game *does* suppress is the **Skip** path, because a skip is not
-an answer.
+With Skip removed there is **no unmarked path through a round**: every round the
+player is shown produces exactly one mark.
 
 ---
 
 ## Scoring and medals
 
-Score = correct picks in the minute. A skip scores nothing and costs the clock.
+**Score = the time to answer 20 rounds, plus penalties. Lower is better.**
 
-| Medal | Threshold (correct picks) |
+```
+totalMs = (Date.now() − startAt)  +  WRONG_PENALTY_MS × (wrong answers)
+```
+
+| Event | Counts toward the 20? | Time cost |
+|---|---|---|
+| Correct pick | yes | the time it took |
+| Wrong pick | **yes** | the time it took **+ 3s** |
+
+Those are the only two outcomes — every round must be answered. Each charge is
+announced on the spot by a red **+3s** floating from the tap — see
+[§ The float indicator](#the-float-indicator). The penalty never pauses the game;
+`FEEDBACK_MS` is 180ms whether the answer was right or wrong.
+
+**Why a wrong answer still counts as a round.** Under a count-up clock a blind tap
+is the *fastest possible round* — no reading required — so the format has to price
+accuracy explicitly rather than structurally. Replaying missed words instead was
+the alternative; charging seconds keeps every run exactly 20 rounds long, which is
+what makes two runs comparable. A coin-flip run takes ~10 misses, i.e. **+30s**,
+which lands outside every medal.
+
+### There is no Skip
+
+**Removed with the race format.** Under the one-minute clock, Skip was a real
+choice: ducking a word you couldn't read cost you the seconds spent deciding to
+duck it, and bought you a shot at an easier word inside the same minute. In a
+race that logic inverts. Skipping would be the *cheapest* way past a hard word —
+a free reroll — and the obvious fix, pricing it at the same 3s, only makes it a
+**strictly worse version of guessing**: a guess pays the same and might be right.
+
+A control the player should never rationally use is noise on the screen, so it is
+gone rather than penalized. The knock-on effects are all simplifications: the
+counter advances on every round shown, `FloatKind` lost its third case, and the
+Marks table lost its one unmarked path.
+
+| Medal | Threshold (total time, ≤) |
 |---|---|
-| 🥇 Gold | 24 |
-| 🥈 Silver | 17 |
-| 🥉 Bronze | 10 |
+| 🥇 Gold | 45s |
+| 🥈 Silver | 60s |
+| 🥉 Bronze | 90s |
 
-At ~1.8s/round (think time plus the 180ms feedback) a run is roughly 33 rounds, so
-gold means near-perfect play at speed.
+Gold at 45s is 2.25s/round, roughly the pace the old format's gold demanded (24
+correct in 60s). Note `medalFor` compares with **`<=`**, inverted from every other
+game's score thresholds — the metric is time.
 
-⚠️ The thresholds above were set against the **old 600ms** feedback (~27
-rounds/run). The shorter reveal fits roughly 6 more rounds into the minute, so
-all three are now slightly easier to hit and want re-tuning from real play data.
+⚠️ **All three are still placeholders** and want re-tuning from real play at this
+format.
+
+**A medal requires a FINISHED run.** `medalFor` is a pure time→medal mapping and
+does not know the round count, so `SpeedReadingPage` gates it on
+`answered >= TARGET_ROUNDS`. Without that gate a run cut short by a drained queue
+(three rounds in 8 seconds) would take gold. The unfinished end popup shows no
+time at all.
 
 A medal — any medal — records one win via `useGameWins(GAME_KEY).recordWin(WIN_LEVEL)`,
 guarded by a ref so it fires once per run. The hub shows the lifetime `×N`.
@@ -602,7 +723,7 @@ guarded by a ref so it fires once per run. The hub shows the lifetime `×N`.
   Match does. See `GAMES_FEATURE.md` § Sense correctness.
 - **Audio:** `useTTS().speakSentence(entry.entryKey, entry.pronunciation)` behind
   the shared `SpeakerButton`, with `isLoading={tts.speakingKey === entry.entryKey}`.
-  No autoplay.
+  **Autoplays every round** — see § Auto-narration.
 - **End popup:** `GameEndPopup` with `classPrefix="speed-reading"`.
 
 ---
@@ -616,7 +737,7 @@ guarded by a ref so it fires once per run. The hub shows the lifetime `×N`.
 | `SpeedReadingPage.tsx` | phase machine, clock, marks, scoring, run reset |
 | `SpeedReadingPrompt.tsx` | pinyin + definition + speaker |
 | `SpeedReadingOption.tsx` | one tappable word button (hands the click event up for the tap coordinates) |
-| `SpeedReadingFloatIndicator.tsx` | the ✓/✗ that floats up from the tap point |
+| `SpeedReadingFloatIndicator.tsx` | the ✓/✗ (and the red +3s) that floats up from the tap point |
 | `buildRound.ts` | the one-character invariant + the fallback ladder (pure) |
 | `useSpeedReadingQueue.ts` | card queue, distractor pool, top-up |
 | `constants.ts` | run constants, medal thresholds |
@@ -658,9 +779,12 @@ guarded by a ref so it fires once per run. The hub shows the lifetime `×N`.
 
 | Constant | Current | How to tune |
 |---|---|---|
-| `MEDAL_THRESHOLDS` | 24 / 17 / 10 | Play a few runs. Guesses from an assumed ~2.2s/round, i.e. sized for the OLD 600ms feedback — now stale by ~6 rounds/run. |
+| `MEDAL_THRESHOLDS` | 45s / 60s / 90s | Play a few runs. Derived from ~2.25s/round, carried over from the old format's gold pace rather than measured at this one. |
+| `WRONG_PENALTY_MS` | 3_000 | ~2 rounds of good play. Raise it if guessing through the 20 still medals; lower it if a single slip feels run-ending. |
+| `TARGET_ROUNDS` | 20 | Long enough that one lucky guess doesn't decide the run, short enough to replay. Changing it invalidates the medal thresholds. |
 | `FEEDBACK_MS` | 180 | Long enough to see the answer, short enough not to feel like a tax. Cut from 600 once sound + the float indicator carried the outcome. |
 | `FLOAT_INDICATOR_MS` | 650 | Long enough to complete the rise, short enough not to overlap two rounds' worth of indicators. |
+| `PENALTY_INDICATOR_MS` | 1_000 | Long enough to READ `+3s`, not just glimpse it. Raise it if play-testing shows the penalty going unnoticed. |
 
 ---
 
@@ -672,14 +796,14 @@ guarded by a ref so it fires once per run. The hub shows the lifetime `×N`.
 | Sideways rendering | `src/games/runtime/useSidewaysStage.ts`, `SpeedReadingPage.tsx` (`stage`, `speed-reading__frame`), `src/components/LeafPage.tsx` (`hideHeader`) |
 | Screen layout, Page shell | `SpeedReadingPage.tsx` (`speed-reading__stack`, `glyphSize`, the `ResizeObserver`), `SpeedReadingOption.tsx`, `SpeedReadingPrompt.tsx`, `constants.ts` (option geometry) |
 | Round state machine | `SpeedReadingPage.tsx` (`Phase`, `playAgain`), `useSpeedReadingQueue.ts` (`runId`) |
-| Answer feedback: sound + float indicator | `src/games/runtime/gameSounds.ts`, `SpeedReadingFloatIndicator.tsx`, `SpeedReadingPage.tsx` (`onPick`, `spawnFloatIndicator`), `SpeedReadingOption.tsx` (`onPick` event), `constants.ts` (`FEEDBACK_MS`, `FLOAT_INDICATOR_MS`) |
+| Answer feedback: sound + float indicator | `src/games/runtime/gameSounds.ts`, `SpeedReadingFloatIndicator.tsx`, `SpeedReadingPage.tsx` (`onPick`, `spawnFloatIndicator`), `SpeedReadingOption.tsx` (`onPick` event), `constants.ts` (`FEEDBACK_MS`, `FLOAT_INDICATOR_MS`, `PENALTY_INDICATOR_MS`, `indicatorLifetime`) |
 | One-character invariant, ladder | `buildRound.ts`, `src/__tests__/speedReadingBuildRound.test.ts` |
 | Selection query, Endpoint | `SpeedReadingDAL.ts`, `SpeedReadingService.ts`, `SpeedReadingController.ts`, `speedReadingRoutes.ts` |
 | Rendering a glyph | `src/components/handwriting/GlyphSvg.tsx`; see also [HANDWRITING_RECOGNITION.md](./HANDWRITING_RECOGNITION.md) |
 | Queue + top-up | `useSpeedReadingQueue.ts`, `OnDeckVocabController.getGamePool` |
 | `markType` | `server/controllers/OnDeckVocabController.ts`; [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
 | Marks | `src/api/flashcards.ts`, [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
-| Scoring and medals | `constants.ts`, `src/hooks/useGameWins.ts` |
+| Scoring and medals | `constants.ts` (`TARGET_ROUNDS`, `WRONG_PENALTY_MS`, `MEDAL_THRESHOLDS`, `medalFor`, `formatClock`), `SpeedReadingPage.tsx` (`totalMs`, `finished`, `endRun`, `addPenalty`), `src/hooks/useGameWins.ts` |
 
 Referenced by: [GAMES_FEATURE.md](./GAMES_FEATURE.md),
 [MASTERY_REWORK.md](./MASTERY_REWORK.md),

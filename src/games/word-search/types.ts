@@ -70,6 +70,13 @@ export interface WordSearchResponse {
     total: number;
     available: Record<string, number>;
     sufficient: boolean;
+    /**
+     * Words in this grid that were LENT to reach the baseline rather than sorted by the
+     * player (docs/PROVISIONAL_CARDS.md). Drives the pre-round notice and the
+     * end-of-round "keep these" offer. Absent/empty when the player's own deck covered
+     * the grid.
+     */
+    provisionalWords?: string[];
     /** Why the game is blocked when !sufficient (client picks the copy). */
     reason?: "language" | "insufficient-distinct" | "no-filler";
     /** Index into WORD_SEARCH_TEMPLATES if template mode placed this grid, else null (random snaking). */

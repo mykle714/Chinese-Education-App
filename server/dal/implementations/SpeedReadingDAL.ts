@@ -1,3 +1,4 @@
+import { vetPlayableClause } from '../shared/vetTable.js';
 import { ISpeedReadingDAL } from '../interfaces/ISpeedReadingDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { DistractorChar } from '../../contracts/wire.js';
@@ -49,7 +50,9 @@ export class SpeedReadingDAL implements ISpeedReadingDAL {
           FROM vocabentries_zh v
           WHERE v."userId" = $1
             AND v.language = 'zh'
-            AND v."starterPackBucket" = 'library'
+            -- PLAYABLE: distractors decorate a game round, so a near-empty deck
+            -- topped up with provisional cards must still produce filler characters.
+            AND ${vetPlayableClause('v')}
         ),
         -- Explode each library word into its constituent characters. A 2-char
         -- word contributes both characters independently — the game replaces ONE

@@ -33,6 +33,30 @@ unsupported and never throws into app code):
 - **Long Tasks** (`type: "longtask"`) — main-thread blocks ≥ `LONGTASK_REPORT_MS`
   (80ms).
 
+Plus one source that is **not** a Performance API:
+
+- **Explicit tap records** (`kind: "tap"`, via the exported `reportTap()`) — called
+  by a game's own pointer handler. The three observers above can only report that
+  an interaction was *slow*; they cannot report that a tap was **ignored**. A tap
+  dropped by a guard clause in 0.1ms looks perfectly healthy to Event Timing and
+  is indistinguishable from a tap that never happened — so the surface has to say
+  what it decided. Each record carries:
+  - `name` — the **outcome** the handler chose. Match Speed emits `match`, `miss`,
+    `select`, `deselect`, `cleanup-select/clear/deselect`, and the three no-ops
+    `ignored-frozen`, `ignored-exiting`, `ignored-removed`.
+  - `target` — `side:cardId`.
+  - `inputDelay` — the pointer event's `timeStamp` → handler entry. **Large here
+    means the tap was queued behind a render**, not blocked by an animation.
+  - `processing` — the handler itself.
+  - `presentation` — handler end → next animation frame, i.e. the React re-render
+    the tap caused. Large here means *this* tap is what stalls the *next* one.
+
+  Shipped only when interesting (any `ignored-*` outcome, or any phase over
+  `TAP_REPORT_MS` = 100ms) and capped at `TAP_REPORTS_PER_MIN` (30), because a
+  speed game produces several taps a second and healthy ones would drown the
+  signal. Callers: `src/games/match-speed/MatchSpeedBoard.tsx` (`handleTap`).
+  Rationale + how to read it: docs/MATCH_SPEED_GAME.md § Tap telemetry.
+
 Each record carries the route `path` and a best-effort `target` description
 derived from the app's descriptive class names (e.g.
 `div.mobile-footer-item[Home]`), so a log line maps back to a component.
@@ -80,6 +104,19 @@ Output groups by `(kind, route)`, sorted by p95 duration, and prints a
   / stagger the heavy render.
 - `processing` dominates → the click handler itself is slow (not expected here,
   since the footer/decks handlers only call `navigate()`).
+
+The report ends with a **"Game tap outcomes"** table, grouped by `(route,
+outcome)`, for `kind: "tap"` records. Read it as:
+
+- `ignored-*` rows present in volume → a **guard is eating real input**; find which
+  one from the outcome name.
+- Healthy outcomes (`match`, `select`, …) with a large `inDly p95` → input was
+  never blocked; taps are **queued behind a render**. Fix by shrinking the render
+  the previous tap triggers (memoize the cells, keep the tap handler
+  referentially stable) — see docs/MATCH_SPEED_GAME.md § The other kind of lockout.
+
+⚠️ These counts are **not a tap census**: the client pre-filters to interesting
+taps only, so read which outcomes appear and how slow they were, never as rates.
 
 ## Persistence & rotation (shared by both sinks)
 

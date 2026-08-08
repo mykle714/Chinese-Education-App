@@ -31,7 +31,10 @@ interface MatchSpeedCardProps {
     language: Language;
     showPinyin: boolean;
     showPinyinColor: boolean;
-    onTap: (card: BoardCard) => void;
+    /** `eventTimeStamp` is the raw pointer event's `timeStamp`, forwarded so the
+     *  board can measure how long the tap waited for the main thread before its
+     *  handler ran (see reportTap in src/utils/perfDiagnostics.ts). */
+    onTap: (card: BoardCard, eventTimeStamp: number) => void;
 }
 
 /**
@@ -53,14 +56,30 @@ function fontSizeForGloss(gloss: string): number {
  * Layer: presentational. It owns no state and decides nothing about the game; the
  * board resolves `state` and handles every consequence of `onTap`.
  *
- * CARD SIZE IS FIXED BY THE PARENT at a 2:1 (CARD_ASPECT) rectangle, identical for
- * all ten cards. That is a CORRECTNESS requirement, not a style preference: if a
+ * CARD SIZE IS FIXED BY THE PARENT at a 2.4:1 (CARD_ASPECT) rectangle, identical for
+ * all twelve cards. That is a CORRECTNESS requirement, not a style preference: if a
  * long definition made its card taller, size would leak which pair is which and the
  * player could match by silhouette instead of by reading. So this card never grows
  * — a long gloss is absorbed by strip → scale → clamp (see below), never by the
  * cell.
  *
- * See docs/MATCH_SPEED_GAME.md § Rendering a card.
+ * MEMOIZED, AND THAT IS AN INPUT-LATENCY REQUIREMENT, NOT A MICRO-OPTIMISATION.
+ * Every selection change calls `setSelectedId` on the board, which re-renders the
+ * board — and without `React.memo` that re-rendered ALL TWELVE cards, each one
+ * re-running `resolveDisplayDefinition`, a full cpcd character+pinyin render, and
+ * MUI/emotion serialization of two large `sx` objects. That is one blocking task
+ * on the main thread, sitting directly between the player's tap and their next
+ * tap. It never *blocked* input (nothing here does), but a tap that lands during
+ * it waits — which is exactly what "the animation locked me out" feels like, and
+ * why the lockout only ever showed up for taps in SEPARATE React batches (two
+ * fingers in one batch never wait for a render; a follow-up tap does).
+ *
+ * With the memo, a selection change re-renders the 1–2 cards whose `state`
+ * actually changed. This depends on the board keeping `onTap` referentially
+ * stable — MatchSpeedBoard routes its volatile props through refs for exactly
+ * that reason. Do not pass an inline arrow as `onTap`; it silently defeats this.
+ *
+ * See docs/MATCH_SPEED_GAME.md § Rendering a card and § Selection is never locked.
  */
 const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
     card,
@@ -175,7 +194,7 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                 // Left button only. On touch/pen `button` is 0 for the contact
                 // itself, so this rejects nothing but secondary MOUSE buttons.
                 if (e.button !== 0) return;
-                onTap(card);
+                onTap(card, e.timeStamp);
             }}
             sx={{
                 height: "100%",
@@ -254,4 +273,8 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
     );
 };
 
-export default MatchSpeedCard;
+// Default shallow prop comparison is exactly right here: `card` is a stable
+// object identity for as long as the card is unchanged (the board replaces the
+// slot object when it flips `exiting`), `state` is a string, and the rest are
+// scalars plus the deliberately-stable `onTap`.
+export default React.memo(MatchSpeedCard);

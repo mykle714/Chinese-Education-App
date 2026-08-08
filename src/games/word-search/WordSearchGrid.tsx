@@ -923,6 +923,14 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     pronunciation={cell.pinyin}
                                     showPinyin={showPinyin}
                                     useToneColor={showPinyinColor}
+                                    // The Pinyin board renders big pinyin (see
+                                    // CPCDRow.bigPinyin): at `sm` the default 13px
+                                    // syllable is too small to scan mid-drag. Gated on
+                                    // `showPinyin` rather than passed unconditionally
+                                    // because the reserved pinyin band is kept even when
+                                    // the syllable is hidden — enlarging it in No Pinyin
+                                    // mode would push every glyph up for nothing.
+                                    bigPinyin={showPinyin}
                                 />
                             </Box>
                         );

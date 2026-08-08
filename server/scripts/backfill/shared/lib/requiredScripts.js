@@ -60,7 +60,9 @@ export const REQUIRED_SCRIPTS_ZH = [
   { id: 'chinese/backfill-word-forms',                when: 'always',    version: 3 },
   { id: 'chinese/backfill-hsk-level',                 when: 'always',    version: 2, validationFields: ['difficulty'] },
   { id: 'chinese/backfill-frequency-score',           when: 'always',    version: 2, validationFields: ['frequencyScore'] },
-  { id: 'chinese/backfill-cluster-definitions',       when: 'always',    version: 5 },
+  // Writes `definitionClusters`, whose per-cluster frequencyScore is reviewable as
+  // 'senseFrequencyScore' (migration 139) — mirrors the script's own validatedClause.
+  { id: 'chinese/backfill-cluster-definitions',       when: 'always',    version: 5, validationFields: ['senseFrequencyScore'] },
   // Long-definitions writes ONE definition per (SENSE, POS) PAIR, taking its senses (and the
   // `sense` labels it keys on) plus each sense's POS list from `definitionClusters` — so it
   // MUST follow clustering, and skips any row that isn't clustered yet. docs/DEFINITION_CLUSTERS.md.
@@ -132,7 +134,8 @@ export const REQUIRED_SCRIPTS_ES = [
   // Writes BOTH `frequencyScore` and `difficulty` in one pass, so a review of either
   // chip protects the row — mirrors the script's own validatedClause.
   { id: 'spanish/backfill-frequency-score',             when: 'always',         version: 4, validationFields: ['frequencyScore', 'difficulty'] },
-  { id: 'spanish/backfill-cluster-definitions',         when: 'always',         version: 1 },
+  // Guards on 'definitions' too (re-clustering re-presents them) — mirrors the script.
+  { id: 'spanish/backfill-cluster-definitions',         when: 'always',         version: 1, validationFields: ['definitions', 'senseFrequencyScore'] },
   { id: 'spanish/backfill-long-definitions',            when: 'always',         version: 2, validationFields: ['definitions'] },
   { id: 'spanish/backfill-example-sentences',           when: 'always',         version: 1, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
 ];

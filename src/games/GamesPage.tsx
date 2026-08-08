@@ -10,6 +10,8 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { useGameWins } from "../hooks/useGameWins";
 import { GAME_REGISTRY } from "../games/registry";
 import { GAME_KEY as BUBBLE_MATCH_GAME_KEY, LEVEL_CONFIGS as BUBBLE_MATCH_LEVELS } from "../games/bubble-match/constants";
+import { GAME_KEY as MATCH_SPEED_GAME_KEY, MODE_CONFIGS as MATCH_SPEED_MODES } from "../games/match-speed/constants";
+import type { MatchSpeedMode } from "../games/match-speed/types";
 import WordSearchHubItem from "../games/word-search/WordSearchHubItem";
 import { useAuth } from "../AuthContext";
 import type { GameDef } from "../games/types";
@@ -26,11 +28,11 @@ import { SIZE, WEIGHT } from "../theme/scale";
 // owns game gating, the empty state, and the tip-box header / spacer footer
 // (see docs/HUB_MENU_SYSTEM.md).
 //
-// Bubble Match renders as a HubMenuArrayItem (one sub-card per difficulty
-// level) instead of a single HubMenuRow — the in-game "start" level picker was
-// removed, so the hub is now the only place to pick a level. This is
-// special-cased here (not a generic `GameDef.levels` field) since it's the
-// only game that fans out today; see docs/HUB_MENU_SYSTEM.md.
+// Bubble Match and Match Speed each render as a HubMenuArrayItem (one sub-card
+// per difficulty level / mode) instead of a single HubMenuRow — neither has an
+// in-game picker, so the hub is the only place to pick one. These are
+// special-cased here (not a generic `GameDef.levels` field) since they are the
+// only games that fan out today; see docs/HUB_MENU_SYSTEM.md.
 
 /** Persistent per-level background colors for the Bubble Match sub-cards,
     keyed by LEVEL_CONFIGS' level number — greener/calmer for easier levels,
@@ -39,6 +41,17 @@ const BUBBLE_MATCH_LEVEL_COLORS: Record<number, string> = {
     1: COLORS.greenAccent,
     2: COLORS.yellowAccent,
     3: COLORS.redAccent,
+};
+
+/** Persistent per-mode background colors for the Match Speed sub-cards, keyed by
+    MODE_CONFIGS' mode. Deliberately the SAME palette as the /decks study buttons
+    (FlashcardsDecksPage.tsx: neutral header surface for Study Mix, blueAccent for
+    Review, redAccent for Challenge) — the modes use the identical bucket rule, so they should
+    read as the same concept in both places. Hardcoded, not randomized. */
+const MATCH_SPEED_MODE_COLORS: Record<MatchSpeedMode, string> = {
+    mixed: COLORS.header,
+    review: COLORS.blueAccent,
+    challenge: COLORS.redAccent,
 };
 
 // Word Search also fans out into a strip of hub sub-cards (Pinyin / No Pinyin),
@@ -78,6 +91,10 @@ const GamesPage: React.FC = () => {
     // the strip's group header, while the weekly ⭐ stays per level sub-card
     // (a star means "you cleared THIS level this week").
     const { clearedLevels, totalWins: bubbleMatchTotalWins } = useGameWins(BUBBLE_MATCH_GAME_KEY);
+    // Same two granularities for Match Speed's mode strip: ⭐ per mode (a gold run
+    // on THAT mode this week) on each sub-card, ×N game-wide on the group header.
+    const { clearedLevels: matchSpeedClearedModes, totalWins: matchSpeedTotalWins } =
+        useGameWins(MATCH_SPEED_GAME_KEY);
     // Apply registry-level gating: `requiresAuth` hides games from public/demo
     // accounts; `unlock.minVocabEntries` is reserved for future gating once a
     // vocab count is available client-side.
@@ -124,6 +141,31 @@ const GamesPage: React.FC = () => {
                                         // ⭐ only — the ×N moved up to the group
                                         // header as a game-wide aggregate.
                                         cornerBadge: <HubMenuStatBadge starred={clearedLevels.has(cfg.level)} />,
+                                    }))}
+                                />
+                            );
+                        }
+                        if (game.gameId === "match-speed") {
+                            return (
+                                <HubMenuArrayItem
+                                    key={game.gameId}
+                                    className="games-page__menu-item games-page__menu-item--match-speed"
+                                    headerTitle={game.title}
+                                    headerStat={<HubMenuStatBadge variant="header" count={matchSpeedTotalWins} />}
+                                    items={MATCH_SPEED_MODES.map((cfg) => ({
+                                        key: `${game.gameId}-${cfg.mode}`,
+                                        to: game.route,
+                                        // The page reads `state.mode` and falls back
+                                        // to Mix if it's missing (direct URL).
+                                        state: { mode: cfg.mode },
+                                        title: game.title,
+                                        subtitle: cfg.label,
+                                        icon: resolveGameIcon(game),
+                                        bgColor: MATCH_SPEED_MODE_COLORS[cfg.mode] ?? game.bgColor,
+                                        // ⭐ only — the ×N lives on the group header.
+                                        cornerBadge: (
+                                            <HubMenuStatBadge starred={matchSpeedClearedModes.has(cfg.winLevel)} />
+                                        ),
                                     }))}
                                 />
                             );

@@ -435,11 +435,15 @@ async function run() {
       ? ''
       : `AND NOT ("enrichmentLog" ? 'spanish/backfill-cluster-definitions')`;
 
-    // Never rewrite a word whose definitions a validator has reviewed — this changes how
-    // those definitions are presented (docs/DATA_VALIDATION_SYSTEM.md, migration 104).
+    // Never rewrite a word a validator has reviewed. Two fields protect a row here:
+    //   - 'definitions', because re-clustering changes how those definitions are
+    //     PRESENTED (docs/DATA_VALIDATION_SYSTEM.md, migration 104);
+    //   - 'senseFrequencyScore', because the per-cluster score this script writes is
+    //     itself reviewable on the card's Commonality chip (migration 139), and a
+    //     wholesale rewrite of `definitionClusters` would discard that review.
     const validatedFilter = `AND id NOT IN (
       SELECT val."entryId" FROM validations val
-       WHERE val.language = 'es' AND val.field = 'definitions'
+       WHERE val.language = 'es' AND val.field IN ('definitions','senseFrequencyScore')
          AND val.action IN ('approve','flag'))`;
 
     const { rows } = await client.query(

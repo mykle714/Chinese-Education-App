@@ -152,6 +152,23 @@ the solver left alone (any comfortable natural gap) get **no apostrophe**.
 | `PINYIN_MIN_GAP_PX` | Minimum breathing space kept between adjacent pinyin texts when de-overlapping (2). |
 | `COLUMN_WIDTH` | Per-size column-box width that defines overflow. |
 | `OVERLAP_BY_SIZE` | Negative inter-cell margin (visual density of the glyphs). |
+| `BIG_PINYIN_SCALE` | Multiplier applied to the pinyin font **and** the reserved pinyin band when the `bigPinyin` prop is on (1.2 → ~15.6px at `sm`). |
+
+### Interaction with `bigPinyin`
+
+The `bigPinyin` prop (`CPCDRow` / `ForeignText`, default `false`) scales the
+pinyin overlay by `BIG_PINYIN_SCALE` while leaving the character glyph — and
+therefore `COLUMN_WIDTH` — unchanged. Since overflow is defined as *text wider
+than its column box*, big pinyin makes overflow (and therefore shifting and
+same-tone separator apostrophes) **somewhat more common**: at `sm`, a ~15.6px
+syllable against a 32px column overflows a little earlier than the 13px default.
+No special-casing is needed — the solver measures live text and spaces each
+colliding pair by exactly its deficit — but expect visibly wider spreading on
+big-pinyin surfaces. The reserved band scales by the same factor, so the glyph
+keeps its usual clearance and only the cell's total height grows.
+Current big-pinyin surface: the Word Search **Pinyin** board
+(`src/games/word-search/WordSearchGrid.tsx`, see
+[WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §3 "Cell size").
 
 The `pinyinShift` prop (default `true`) toggles the whole behavior; with it off,
 every pinyin stays at `offset 0` (centered/left-anchored per browser default)

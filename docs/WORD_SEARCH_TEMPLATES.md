@@ -36,8 +36,11 @@ alongside that:
   10-slot templates (§3) never need to reject a word for being too long.
 - Cards with `entryKey` longer than 4 characters simply never enter any
   queue, so they're treated like "not in the library" for this game — the
-  same fallback order and the same `sufficient: false` /
-  `insufficient-distinct` blocked-copy path apply if a user's library can't
+  same fallback order applies. The `insufficient-distinct` path is no longer a
+  "study more cards" block: the controller now provisions temporary cards and retries
+  the grid at 1x/2x/3x the baseline (PROVISION_RETRY_FACTOR) before giving up — see
+  [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) § Word Search is the awkward one. The
+  remaining `sufficient: false` copy is a genuine dead end, reached only if a user's library can't
   produce 10 short-enough, substring-clean words.
 
 No schema change — this is a query-time filter, same as the existing

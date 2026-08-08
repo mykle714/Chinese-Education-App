@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Button, Typography, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
@@ -11,6 +11,8 @@ import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
+import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
+import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import LeafPage from "../../components/LeafPage";
 import type { Language, VocabEntry } from "../../types";
 import MatchSpeedBoard from "./MatchSpeedBoard";
@@ -27,18 +29,20 @@ import {
     topUpRequest,
     type CardBuffer,
 } from "./cardBuffer";
-import type { CardPair, Phase } from "./types";
+import type { CardPair, GameCategory, Phase } from "./types";
 import {
+    CATEGORY_FALLBACK_ORDER,
     COUNTDOWN_STEPS,
     COUNTDOWN_STEP_MS,
-    ENTRY_GATE_CARDS,
     GAME_KEY,
-    POOL_QUERY,
     RUN_DURATION_MS,
-    WIN_LEVEL,
     medalForScore,
+    modeConfigFor,
 } from "./constants";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
+import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
+import SortProvisionalCta from "../../components/SortProvisionalCta";
+import { provisionalWords } from "../../utils/provisionalCards";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
 interface GamePoolResponse {
@@ -56,12 +60,18 @@ const CLOCK_INTERVAL_MS = 200;
 /**
  * Match Speed — page shell, phase machine, card supply, and marks.
  *
- * A 60-second recognition throughput drill: 5 foreign words on the left, their 5
+ * A 30-second recognition throughput drill: 6 foreign words on the left, their 6
  * English glosses (shuffled independently) on the right. Tap one from each column
- * to attempt a match; every 2 seconds the board refills the holes.
+ * to attempt a match; every 3 seconds the board refills the holes.
  *
  * Flow: loading → (blocked) → countdown → playing → ended → (popup minimized =
  * cleanup) → Play Again → countdown …
+ *
+ * The difficulty MODE (Study Mix / Review / Challenge) is picked on the Games hub and arrives
+ * as `location.state.mode`; it only narrows which mastery buckets the pool may
+ * draw from (the /decks rule) — the clock, board and medals are identical across
+ * modes. Everything mode-dependent is read off one `ModeConfig`; see
+ * docs/MATCH_SPEED_GAME.md § Difficulty modes.
  *
  * Layer split: this page owns ALL I/O (the pool fetch, the buffer, marks, the
  * clock) and the phase machine; `MatchSpeedBoard` owns board/selection state and
@@ -75,8 +85,14 @@ const CLOCK_INTERVAL_MS = 200;
  * See docs/MATCH_SPEED_GAME.md.
  */
 const MatchSpeedPage: React.FC = () => {
+    // Which collection this game was launched from (docs/DECKS_FEATURE.md) — null
+    // for an ordinary launch from the Games hub. Appended to every pool request so
+    // the round stays inside the set the learner picked.
+    const launchCollection = useLaunchCollection();
+    const collectionSuffix = collectionQuerySuffix(launchCollection);
     usePageTitle("Match Speed");
     const navigate = useNavigate();
+    const location = useLocation();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     const { user } = useAuth();
@@ -84,6 +100,45 @@ const MatchSpeedPage: React.FC = () => {
     const { settings, update } = useFlashcardLearnSettings();
     const { showPinyin, showPinyinColor, autoplayChinese } = settings;
     const { recordWin } = useGameWins(GAME_KEY);
+
+    // The difficulty mode tapped on the Games hub, via nav `state`
+    // (HubMenuArrayItem's `state` prop). A direct visit with no/invalid state
+    // falls back to Mix rather than bouncing to the hub the way Bubble Match
+    // does — this route predates the modes and must stay playable on its own.
+    // The returned object is a module constant, so its identity is stable across
+    // renders and it is safe in effect/callback dep arrays.
+    const baseModeConfig = modeConfigFor((location.state as { mode?: string } | null)?.mode);
+
+    // RELAXED MODE (docs/PROVISIONAL_CARDS.md § Nothing blocks on card count).
+    //
+    // Review/Challenge restrict the board to their own mastery buckets (MODE_CONFIGS in
+    // constants.ts — Review = Comfortable + Mastered, Challenge = Unfamiliar + Target).
+    //
+    // A lent card starts with an EMPTY mark history, so it is Unfamiliar. That means
+    // provisioning fills CHALLENGE's buckets for free, but can never fill REVIEW's:
+    // Comfortable and Mastered are earned, not granted, so a learner with no real
+    // progress has nothing on-mode no matter how many cards we lend them.
+    //
+    // Rather than blocking Review for everyone who hasn't got a card comfortable yet, a
+    // run with nothing on-mode widens the fallback order to all four buckets, so the
+    // server's cross-bucket top-up actually reaches the board.
+    //
+    // The mode's WEIGHTS are untouched: once the learner has real on-mode cards the
+    // widened fallback stops being reached and the mode plays exactly as designed.
+    const [relaxed, setRelaxed] = useState(false);
+    const modeConfig = useMemo(
+        () => (relaxed ? { ...baseModeConfig, fallbackOrder: CATEGORY_FALLBACK_ORDER } : baseModeConfig),
+        [relaxed, baseModeConfig]
+    );
+
+    // Temporary cards are in play this run. Match Speed deals from a rolling buffer, so
+    // the played set isn't known up front — the notice is the GENERIC form (no word
+    // list), per CARD_BASELINE_ITEMIZED in server/contracts/wire.ts.
+    const [noticeOpen, setNoticeOpen] = useState(false);
+    // Every lent word this run actually dealt, accumulated as the buffer fills, so the
+    // end-of-run "keep these" offer can name them even though the notice couldn't.
+    const provisionalSeenRef = useRef<Set<string>>(new Set());
+    const [provisionalSeen, setProvisionalSeen] = useState<string[]>([]);
 
     // Mandatory on every game page (CLAUDE.md): an edge swipe would otherwise
     // navigate away mid-run. CSS touch-action can't stop the history gesture.
@@ -112,7 +167,7 @@ const MatchSpeedPage: React.FC = () => {
     // Vocab-entry ids currently ON THE BOARD. Together with the buffer's ids this
     // is the `exclude` list every top-up sends. See the fetch comment for why.
     const onBoardIdsRef = useRef<Set<number>>(new Set());
-    // Guards against overlapping top-ups: ticks fire every 2s but a request can
+    // Guards against overlapping top-ups: ticks fire every 3s but a request can
     // take longer, and two in flight would both exclude the same ids and hand back
     // the same cards — a duplicate on screen, the exact thing exclude prevents.
     const topUpInFlightRef = useRef(false);
@@ -138,7 +193,7 @@ const MatchSpeedPage: React.FC = () => {
                 ...bufferedEntryIds(bufferRef.current),
             ];
             const res = await fetch(
-                `${API_BASE_URL}/api/onDeck/gamePool?${query}&markType=recognition&exclude=${excludeIds.join(",")}`,
+                `${API_BASE_URL}/api/onDeck/gamePool?${query}&markType=recognition&surface=match-speed&exclude=${excludeIds.join(",")}${collectionSuffix}`,
                 { credentials: "include", headers: authHeader() }
             );
             if (!res.ok) throw new Error("Failed to load game pool");
@@ -149,10 +204,31 @@ const MatchSpeedPage: React.FC = () => {
         },
         // authHeader() reads the token at call time, so this callback's identity
         // stays stable across a silent token refresh. See CLAUDE.md "Never reload
-        // on token refresh".
+        // on token refresh". `collectionSuffix` is likewise omitted: it comes from
+        // this page's own URL, which cannot change without a remount.
         // eslint-disable-next-line react-hooks/exhaustive-deps
         []
     );
+
+    /**
+     * Record any lent (provisional) words in a freshly-fetched batch, so the
+     * end-of-run "keep these" offer can name them even though the pre-run notice
+     * could not. Returns the batch's lent words. Accumulates across buffer top-ups,
+     * because a long run keeps pulling new cards in.
+     */
+    const noteProvisional = useCallback((cards: VocabEntry[]): string[] => {
+        const words = provisionalWords(cards);
+        if (words.length === 0) return words;
+        let changed = false;
+        for (const word of words) {
+            if (!provisionalSeenRef.current.has(word)) {
+                provisionalSeenRef.current.add(word);
+                changed = true;
+            }
+        }
+        if (changed) setProvisionalSeen([...provisionalSeenRef.current]);
+        return words;
+    }, []);
 
     /**
      * Restore every bucket toward BUFFER_DEPTH. Fired after each refill tick for
@@ -163,45 +239,77 @@ const MatchSpeedPage: React.FC = () => {
      */
     const topUpBuffer = useCallback(() => {
         if (topUpInFlightRef.current) return;
-        const request = topUpRequest(bufferRef.current);
+        const request = topUpRequest(bufferRef.current, modeConfig);
         if (!request) return;
         topUpInFlightRef.current = true;
         fetchPool(topUpQuery(request))
             .then((data) => {
-                if (data) fillBuffer(bufferRef.current, data.cards);
+                if (data) {
+                    noteProvisional(data.cards);
+                    fillBuffer(bufferRef.current, data.cards, modeConfig);
+                }
             })
             .catch((err) => console.error("[MatchSpeed] buffer top-up failed:", err))
             .finally(() => {
                 topUpInFlightRef.current = false;
             });
-    }, [fetchPool]);
+    }, [fetchPool, modeConfig, noteProvisional]);
 
-    /** Hand the board `count` pairs, remembering them as on-board for `exclude`. */
+    /**
+     * Hand the board `count` pairs, remembering them as on-board for `exclude`.
+     *
+     * The `isBlocked` predicate is the client-side duplicate gate: a pair whose
+     * entry is already on the board is discarded rather than placed, because two
+     * cards for one entry share a `pairId` and would make every combination of
+     * the four a "correct" match. `takePairs` separately gates within the batch.
+     * See cardBuffer.ts § takePairs for why `exclude` alone isn't sufficient.
+     *
+     * Reads the ref inside the predicate (not a captured value) so the test is
+     * against the board as it stands at draw time.
+     */
     const drawPairs = useCallback((count: number): CardPair[] => {
-        const pairs = takePairs(bufferRef.current, count);
+        const pairs = takePairs(bufferRef.current, count, Math.random, modeConfig, (pair) =>
+            onBoardIdsRef.current.has(pair.entry.id)
+        );
         pairs.forEach((p) => onBoardIdsRef.current.add(p.entry.id));
         return pairs;
-    }, []);
+    }, [modeConfig]);
 
     /** Prime the buffer and start a run (shared by first load and Play Again). */
     const beginRun = useCallback(async (): Promise<void> => {
         setPhase("loading");
         bufferRef.current = emptyBuffer();
         onBoardIdsRef.current = new Set();
+        provisionalSeenRef.current = new Set();
+        setProvisionalSeen([]);
         try {
-            const data = await fetchPool(POOL_QUERY);
+            const data = await fetchPool(modeConfig.poolQuery);
             if (!data) return;
-            if (!data.sufficient) {
-                // The game tops up across buckets, so the only hard requirement is
-                // a total of ENTRY_GATE_CARDS library cards. Report the shortfall.
-                const have = Object.values(data.available).reduce((sum, n) => sum + n, 0);
-                setBlockMessage(
-                    `You need ${ENTRY_GATE_CARDS} Learn Now cards to play Match Speed — you have ${have}. Study more cards to unlock it.`
-                );
-                setPhase("blocked");
-                return;
-            }
-            fillBuffer(bufferRef.current, data.cards);
+            // NO CARD-COUNT GATE. The server topped the player up to the Match Speed
+            // baseline before building this pool, so `sufficient` can only be false
+            // when the dictionary itself ran dry — and a short buffer still deals a
+            // playable run. See docs/PROVISIONAL_CARDS.md.
+            // How much the player has inside the mode's OWN buckets. This used to be a
+            // second block ("you have no Comfortable or Mastered cards"); it now only
+            // decides whether this run needs the widened fallback — in practice that is
+            // Review, whose buckets provisioning cannot fill.
+            const inModeAvailable = modeConfig.categories.reduce(
+                (sum: number, cat: GameCategory) => sum + (data.available[cat] ?? 0),
+                0
+            );
+            // Nothing on-mode: widen the fallback for this run instead of blocking (see
+            // `relaxed` above). The board fills from whatever the server could give,
+            // which for a new learner is a set of freshly-lent Unfamiliar cards.
+            const runMode = inModeAvailable === 0
+                ? { ...modeConfig, fallbackOrder: CATEGORY_FALLBACK_ORDER }
+                : modeConfig;
+            setRelaxed(inModeAvailable === 0);
+
+            // Generic notice only — Match Speed cannot name its set up front.
+            const lent = noteProvisional(data.cards);
+            setNoticeOpen(lent.length > 0);
+
+            fillBuffer(bufferRef.current, data.cards, runMode);
             setScore(0);
             setAttempts(0);
             setRemainingMs(RUN_DURATION_MS);
@@ -213,7 +321,7 @@ const MatchSpeedPage: React.FC = () => {
             setBlockMessage("Couldn't load the game. Please try again.");
             setPhase("blocked");
         }
-    }, [fetchPool]);
+    }, [fetchPool, modeConfig, noteProvisional]);
 
     // Initial load. Keyed on the STABLE auth identity, NOT `token`: a silent
     // access-token refresh (~every 15 min) must not restart the game mid-run.
@@ -225,8 +333,11 @@ const MatchSpeedPage: React.FC = () => {
             return;
         }
         void beginRun();
+        // Keyed on the mode too: navigating from one hub sub-card to another lands
+        // on the SAME route with only `state.mode` changed, so without this a
+        // remount-less switch would keep playing the previous mode's buffer.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id]);
+    }, [user?.id, modeConfig.mode]);
 
     // The 3·2·1·Go countdown. The board is already primed and readable behind it,
     // so the opening board gets a beat to be read and the run clock starts from an
@@ -248,7 +359,7 @@ const MatchSpeedPage: React.FC = () => {
     }, [phase, countdownStep]);
 
     // The run clock. Deadline-based rather than decrementing a counter, so a
-    // backgrounded tab or a slow frame can't stretch the run past 60 seconds.
+    // backgrounded tab or a slow frame can't stretch the run past 30 seconds.
     useEffect(() => {
         if (phase !== "playing") return;
         const deadline = Date.now() + RUN_DURATION_MS;
@@ -267,11 +378,12 @@ const MatchSpeedPage: React.FC = () => {
     }, [phase]);
 
     // Bank the win badge on a gold run only, once the run has ended. Gold-only
-    // keeps the hub badge an achievement rather than a play counter; a single
-    // difficulty means WIN_LEVEL is the only key.
+    // keeps the hub badge an achievement rather than a play counter. The win is
+    // logged under the MODE's level key, so the hub stars the mode that was
+    // actually cleared (Mix keeps key 1 — the game's pre-modes key).
     useEffect(() => {
         if (phase !== "ended") return;
-        if (medalForScore(score)?.medal === "gold") recordWin(WIN_LEVEL);
+        if (medalForScore(score)?.medal === "gold") recordWin(modeConfig.winLevel);
         // Runs once per run end; recordWin's identity is not stable across renders.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [phase]);
@@ -319,7 +431,7 @@ const MatchSpeedPage: React.FC = () => {
     );
 
     /** Play Again: Match Speed's board is fully transient, so a replay just
-     *  re-primes the buffer and starts a fresh 60s run. Primes the audio element
+     *  re-primes the buffer and starts a fresh 30s run. Primes the audio element
      *  inside this real click gesture, before the awaited fetch, or mobile autoplay
      *  policy would drop the first spoken word. */
     const playAgain = useCallback(() => {
@@ -361,6 +473,15 @@ const MatchSpeedPage: React.FC = () => {
         // Match Speed is a LEAF PAGE (docs/LEAF_NODE_PAGES.md): no footer, DOWN back
         // arrow (→ /games), slides up on enter. No per-page IPhoneFrame — the frame
         // comes from MobileDemoFrame via Layout.tsx.
+        <>
+        {/* Generic (non-itemized) notice: Match Speed deals from a rolling buffer, so
+            the set of lent cards isn't known before the run starts. */}
+        <ProvisionalCardsNotice
+            open={noticeOpen}
+            onDismiss={() => setNoticeOpen(false)}
+            surfaceName="Match Speed"
+            language={(user?.selectedLanguage ?? "zh") as Language}
+        />
         <LeafPage
             title="Match Speed"
             onBack={() => navigate("/games")}
@@ -508,6 +629,12 @@ const MatchSpeedPage: React.FC = () => {
                                     className="match-speed__replay-actions"
                                     sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}
                                 >
+                                    {/* By now the run HAS dealt its cards, so the
+                                        lent words can finally be named. */}
+                                    <SortProvisionalCta
+                                        words={provisionalSeen}
+                                        language={(user?.selectedLanguage ?? "zh") as Language}
+                                    />
                                     <Button
                                         className="match-speed__replay-btn match-speed__replay-btn--play-again"
                                         variant="contained"
@@ -543,6 +670,7 @@ const MatchSpeedPage: React.FC = () => {
                 )}
             </Box>
         </LeafPage>
+        </>
     );
 };
 

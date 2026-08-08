@@ -55,6 +55,11 @@ interface ForeignTextBaseProps {
     // lookup of the 2-char prefix via useFirstTwoAreSegment); pass an explicit
     // boolean only to override that.
     firstTwoAreSegment?: boolean;
+    // Enlarge the pronunciation overlay relative to the character (see
+    // CPCDRow.bigPinyin). Row layout only — ignored by the block layout and by
+    // Latin-script languages, neither of which renders the per-column pinyin
+    // overlay this scales.
+    bigPinyin?: boolean;
 }
 
 interface ForeignTextProps extends ForeignTextBaseProps {
@@ -144,6 +149,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     layout = "row",
     firstTwoAreSegment,
     plainFontSize,
+    bigPinyin = false,
 }) => {
     // Resolve language: explicit prop wins, otherwise the user's selection.
     const { user } = useAuth();
@@ -218,6 +224,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
             pinyinShift={pinyinShift}
             selectable={selectable}
             characterColor={characterColor}
+            bigPinyin={bigPinyin}
         />
     );
 };

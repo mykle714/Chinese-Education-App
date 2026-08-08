@@ -2,7 +2,7 @@ import React from "react";
 import { Box } from "@mui/material";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { FONTS } from "../../theme/fonts";
-import { HINT_ACCENT_COLOR, HINT_REMAINDER_MARK } from "./constants";
+import { HINT_ACCENT_COLOR, HINT_LETTER_BLANK } from "./constants";
 import { wordToPinyinUnits } from "./pinyinUnits";
 import { buildComponentReveals } from "./componentUnits";
 import type { PlacedWord } from "./types";
@@ -48,11 +48,22 @@ function distributeRevealTiers(syllableUnits: string[][], revealCount: number): 
 }
 
 /**
+ * Number of blank slots a still-hidden chunk of pinyin occupies: one per
+ * LETTER, not per code unit. Normalizing to NFC folds a combining tone mark
+ * back onto its vowel ("a" + U+030C → "ǎ") so a tone-marked vowel counts once;
+ * the spread then iterates code points rather than UTF-16 units.
+ */
+function letterCount(text: string): number {
+    return [...text.normalize("NFC")].length;
+}
+
+/**
  * Build the mask: one "island" per Chinese character (so the island count
  * openly gives away the word's character count — that's intentional), each
- * unfinished island closed with a single `HINT_REMAINDER_MARK` ("—") meaning
- * "more to come", with no indication of HOW much: a syllable's own length
- * stays hidden until its units are actually revealed.
+ * unfinished island padded out with one `HINT_LETTER_BLANK` ("_") **per
+ * still-hidden letter** — classic hangman spacing, so the island shows its
+ * full length from the first press and each reveal visibly eats the blanks it
+ * fills (e.g. "xiǎng" → `_____` → `x____` → `xi___` → `xiǎng`).
  * `revealCount` units are distributed round-robin
  * across islands via `distributeRevealTiers` (see above) rather than filling
  * one island completely before the next.
@@ -63,7 +74,9 @@ function buildMask(syllableUnits: string[][], revealCount: number): string {
         .map((units, i) => {
             const revealed = revealedPerSyllable[i];
             if (revealed >= units.length) return units.join("");
-            return `${units.slice(0, revealed).join("")}${HINT_REMAINDER_MARK}`;
+            const shown = units.slice(0, revealed).join("");
+            const hidden = units.slice(revealed).join("");
+            return `${shown}${HINT_LETTER_BLANK.repeat(letterCount(hidden))}`;
         })
         .join(" ");
 }
@@ -78,6 +91,8 @@ function buildMask(syllableUnits: string[][], revealCount: number): string {
  * pinyin's spelling doesn't map 1:1 to sounds (e.g. "zh" is one initial
  * spelled with two letters) — a strict letter-at-a-time reveal would give away
  * more or less than one meaningful chunk per press depending on the syllable.
+ * Everything not yet revealed shows as one `HINT_LETTER_BLANK` ("_") per
+ * hidden letter, so each island's length is visible up front.
  * For a multi-character word, units are revealed ROUND-ROBIN across
  * characters (`distributeRevealTiers`) rather than one character at a time:
  * every character's 1st unit is given out before any character's 2nd, then

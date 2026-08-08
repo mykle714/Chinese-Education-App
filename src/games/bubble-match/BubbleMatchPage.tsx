@@ -11,6 +11,8 @@ import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
+import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
+import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import type { Language, VocabEntry } from "../../types";
 import LeafPage from "../../components/LeafPage";
 import BubbleMatchHeaderControls from "./BubbleMatchHeader";
@@ -19,6 +21,9 @@ import BubbleStage from "./BubbleStage";
 import { GAME_DISTRIBUTION, GAME_KEY, LEVEL_CONFIGS, MAX_AVOID_IDS, MIN_REPLAY_PAIRS, TOTAL_PAIRS } from "./constants";
 import type { LevelConfig } from "./types";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
+import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
+import SortProvisionalCta from "../../components/SortProvisionalCta";
+import { provisionalWords } from "../../utils/provisionalCards";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
 interface GamePoolResponse {
@@ -54,7 +59,10 @@ function shuffle<T>(arr: T[]): T[] {
     used to hardcode that; it is now parameterized (Speed Reading pools on `reading`),
     and every caller states its own type rather than relying on the default.
     See docs/MASTERY_REWORK.md § "Games select by their own mark type". */
-const poolQuery = ["markType=recognition"]
+// `surface` names which baseline the server tops the player up to before it builds
+// the pool, so a small deck is filled with temporary cards instead of blocking
+// (docs/PROVISIONAL_CARDS.md). Bubble Match's baseline is CARD_BASELINES['bubble-match'].
+const poolQuery = ["markType=recognition", "surface=bubble-match"]
     .concat(Object.entries(GAME_DISTRIBUTION).map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`))
     .join("&");
 
@@ -76,6 +84,11 @@ const poolQuery = ["markType=recognition"]
  * list), so this page only needs to render the badge — no per-page hook.
  */
 const BubbleMatchPage: React.FC = () => {
+    // Which collection this game was launched from (docs/DECKS_FEATURE.md) — null
+    // for an ordinary launch from the Games hub. Appended to every pool request so
+    // the round stays inside the set the learner picked.
+    const launchCollection = useLaunchCollection();
+    const collectionSuffix = collectionQuerySuffix(launchCollection);
     usePageTitle("Bubble Match");
     const navigate = useNavigate();
     const location = useLocation();
@@ -104,6 +117,10 @@ const BubbleMatchPage: React.FC = () => {
     const initialLevel = chosenLevel ?? LEVEL_CONFIGS[0];
 
     const [phase, setPhase] = useState<Phase>("loading");
+    // Temporary cards the server lent for THIS board, if any. Drives the pre-round
+    // notice and the end-of-round "keep these" offer (docs/PROVISIONAL_CARDS.md).
+    // Bubble Match plays a fixed 20-card set, so the notice names the exact words.
+    const [noticeOpen, setNoticeOpen] = useState(false);
     const [blockMessage, setBlockMessage] = useState<string>("");
     const [pool, setPool] = useState<VocabEntry[]>([]);
     const [level, setLevel] = useState<LevelConfig>(initialLevel);
@@ -139,10 +156,13 @@ const BubbleMatchPage: React.FC = () => {
         refill?: { need: number; keepIds: number[]; avoidIds: number[] }
     ): Promise<VocabEntry[] | null> => {
         try {
-            const query = refill
+            // The collection suffix (docs/DECKS_FEATURE.md) goes on BOTH the full
+            // board and the Play-Again refill: a deck-launched game that dropped it
+            // on refill would start pulling replacements from the whole library.
+            const query = (refill
                 ? `${poolQuery}&need=${refill.need}&exclude=${refill.keepIds.join(",")}`
                   + `&avoid=${refill.avoidIds.join(",")}`
-                : poolQuery;
+                : poolQuery) + collectionSuffix;
             const res = await fetch(`${API_BASE_URL}/api/onDeck/gamePool?${query}`, {
                 credentials: "include",
                 headers: authHeader(),
@@ -150,16 +170,12 @@ const BubbleMatchPage: React.FC = () => {
             if (!res.ok) throw new Error("Failed to load game pool");
             const data: GamePoolResponse = await res.json();
 
-            if (!data.sufficient && !refill) {
-                // The game tops up across buckets, so the only hard requirement is
-                // a total of `data.total` library cards. Report the shortfall.
-                const have = Object.values(data.available).reduce((sum, n) => sum + n, 0);
-                setBlockMessage(
-                    `You need ${data.total} Learn Now cards to play Bubble Match — you have ${have}. Study more cards to unlock it.`
-                );
-                setPhase("blocked");
-                return null;
-            }
+            // NO CARD-COUNT GATE. The server has already topped the player up to the
+            // Bubble Match baseline with temporary cards, so `sufficient` can only be
+            // false when the dictionary itself ran dry — and even then a short board
+            // plays fine (BubbleStage sizes itself off the pool length). The old
+            // "you need 20 Learn Now cards" block is gone for good; see
+            // docs/PROVISIONAL_CARDS.md § Nothing blocks on card count.
 
             // Warm the TTS cache so in-game autoplay is instant (mirrors flp).
             data.cards.forEach((c) => tts.prefetch(c));
@@ -171,13 +187,18 @@ const BubbleMatchPage: React.FC = () => {
         }
         // authHeader() reads the token at call time, so this callback's identity
         // stays stable across a silent token refresh. See CLAUDE.md "Never
-        // reload on token refresh".
+        // reload on token refresh". `collectionSuffix` is likewise omitted: it comes
+        // from this page's own URL, which cannot change without remounting the page,
+        // so the closure can never go stale.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Apply the state transitions that kick off a fresh run with the given pool.
     // The pool is reshuffled here so the launch order differs every run.
     const beginRun = useCallback((cfg: LevelConfig, runPool: VocabEntry[]) => {
+        // Announce lent cards before the bubbles start launching, so the player isn't
+        // surprised by words they never sorted.
+        setNoticeOpen(provisionalWords(runPool).length > 0);
         setLevel(cfg);
         setPopupMinimized(false);
         matchedIdsRef.current = new Set(); // new run → nothing matched yet
@@ -256,16 +277,20 @@ const BubbleMatchPage: React.FC = () => {
             avoidIds: [...clearedThisSessionRef.current].slice(-MAX_AVOID_IDS),
         });
         if (!fresh) return; // network error → fetchGamePool switched to blocked
-        const nextPool = [...kept, ...fresh];
+        let nextPool = [...kept, ...fresh];
         // A refill can come up short if the library shrank mid-session. A slightly
-        // smaller board still plays (BubbleStage sizes itself off the pool), but
-        // below the floor there's no game left to offer.
+        // smaller board still plays (BubbleStage sizes itself off the pool), but below
+        // the floor there's no game left to offer.
+        //
+        // Rather than blocking, fall back to a FULL pool fetch. A partial refill
+        // deliberately skips the baseline top-up (OnDeckVocabController.getGamePool —
+        // lending cards on every Play Again tap would quietly grow the player's deck),
+        // so the full fetch is what re-triggers provisioning and rebuilds a real board.
+        // See docs/PROVISIONAL_CARDS.md § Nothing blocks on card count.
         if (nextPool.length < MIN_REPLAY_PAIRS) {
-            setBlockMessage(
-                `You need at least ${MIN_REPLAY_PAIRS} Learn Now cards to play again. Study more cards to keep going.`
-            );
-            setPhase("blocked");
-            return;
+            const fullPool = await fetchGamePool();
+            if (!fullPool) return; // fetchGamePool already surfaced the network error
+            nextPool = fullPool;
         }
         beginRun(level, nextPool);
     }, [tts.unlockAudio, fetchGamePool, beginRun, pool, level]);
@@ -338,6 +363,12 @@ const BubbleMatchPage: React.FC = () => {
             className="bubble-match__replay-actions"
             sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}
         >
+            {/* Offered only when this board used lent cards; renders nothing otherwise.
+                Best moment to ask — the player just spent a whole round with these words. */}
+            <SortProvisionalCta
+                words={provisionalWords(pool)}
+                language={(user?.selectedLanguage ?? "zh") as Language}
+            />
             <Button
                 className="bubble-match__replay-btn bubble-match__replay-btn--play-again"
                 variant="contained"
@@ -422,6 +453,15 @@ const BubbleMatchPage: React.FC = () => {
         // Bubble Match is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN
         // back arrow (→ /games), slides up on enter / down on exit. The pinyin +
         // autoplay toggles and the fire badge live in the header's right slot.
+        <>
+        {/* Pre-round notice: names the temporary cards this board was topped up with. */}
+        <ProvisionalCardsNotice
+            open={noticeOpen}
+            onDismiss={() => setNoticeOpen(false)}
+            surfaceName="Bubble Match"
+            words={provisionalWords(pool)}
+            language={(user?.selectedLanguage ?? "zh") as Language}
+        />
         <LeafPage
             title="Bubble Match"
             onBack={() => navigate("/games")}
@@ -486,6 +526,7 @@ const BubbleMatchPage: React.FC = () => {
                 )}
             </Box>
         </LeafPage>
+        </>
     );
 };
 

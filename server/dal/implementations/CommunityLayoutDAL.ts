@@ -2,7 +2,7 @@ import { ICommunityLayoutDAL } from '../interfaces/ICommunityLayoutDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { ValidationError } from '../../types/dal.js';
 import { CommunityDesign, VotedDesignKey, VoteResult } from '../../types/community.js';
-import { vetReadFrom, vetTableForLanguage } from '../shared/vetTable.js';
+import { vetReadFrom, vetTableForLanguage, vetSortedClause } from '../shared/vetTable.js';
 import { DICT_JOIN } from '../shared/dictJoin.js';
 import { WEEK_BOUNDARY } from '../shared/weekBoundary.js';
 import { IS_ADVANCED_LAYOUT } from '../shared/advancedLayout.js';
@@ -123,7 +123,9 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
           AND ve."entryKey" IN (
             SELECT lib."entryKey" FROM ${libTable} lib
             WHERE lib."userId" = $1 AND lib.language = $2
-              AND lib."starterPackBucket" = 'library'
+              -- SORTED: the community feed shows cards people deliberately keep,
+              -- never a provisional card a game handed them.
+              AND ${vetSortedClause('lib')}
               -- category is derived (migration 101). lib."userId" = $1 = u.id (the
               -- viewer, already joined), so reuse the viewer's goal flags.
               AND compute_utcm_category(lib."typedMarkHistory", u."readingGoal", u."writingGoal") <> 'Mastered'

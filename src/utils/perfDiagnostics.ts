@@ -29,6 +29,13 @@ import { API_BASE_URL } from "../constants";
  *  - **First Input Delay** (`type: "first-input"`) — latency of the very first
  *    interaction on a freshly navigated page.
  *
+ *  - **Explicit tap records** (`kind: "tap"`, via `reportTap()`) — the Performance
+ *    APIs above can only say an interaction was *slow*; they cannot say a tap was
+ *    *ignored*. Game surfaces (Match Speed) call `reportTap` from inside their own
+ *    pointerdown handler so we learn both, per tap: how long the tap waited for the
+ *    main thread, and what the game actually decided to do with it (including "it
+ *    hit a guard and did nothing"). See `reportTap`'s doc comment.
+ *
  * Sampling: only interactions/tasks above a noticeable threshold are buffered,
  * so volume stays low. The buffer is flushed with `navigator.sendBeacon` (which
  * survives page navigation/unload) on a size cap, a periodic timer, and on
@@ -49,17 +56,30 @@ const LONGTASK_REPORT_MS = 80;
 const BUFFER_FLUSH_SIZE = 20;
 const FLUSH_INTERVAL_MS = 10000;
 
+// --- Explicit tap records (reportTap) -------------------------------------
+// A tap is only shipped when it is INTERESTING: either the game ignored it, or
+// some phase of it crossed this threshold. A speed game produces several taps a
+// second and the overwhelming majority are healthy; logging those would drown
+// the signal and burn the endpoint's per-IP rate limit for nothing.
+const TAP_REPORT_MS = 100;
+// Hard ceiling on shipped tap records per rolling minute, so a pathological
+// session (or a future caller that forgets the threshold) cannot flood the sink.
+const TAP_REPORTS_PER_MIN = 30;
+
 const ENDPOINT = `${API_BASE_URL}/api/diagnostics/perf`;
 
 // One record per interesting performance entry. Kept deliberately flat/small so
 // the JSONL the server writes is easy to grep and the beacon payload stays tiny.
 interface PerfRecord {
-    kind: "interaction" | "longtask" | "first-input";
+    kind: "interaction" | "longtask" | "first-input" | "tap";
     // Route the entry happened on (helps separate footer vs /decks vs learn).
     path: string;
-    // Best-effort description of what was tapped (see describeTarget).
+    // Best-effort description of what was tapped (see describeTarget), or for
+    // `tap` records the caller-supplied identifier of the thing tapped.
     target?: string;
     // Event type for interactions ("pointerup" | "click" | "keydown" | …).
+    // For `tap` records this is the OUTCOME the handler chose (e.g. "match",
+    // "ignored-exiting") — that is what makes a swallowed tap visible.
     name?: string;
     // Whole tap→next-paint span (ms). For longtask this is the block duration.
     duration: number;
@@ -103,6 +123,97 @@ function describeTarget(node: EventTarget | null): string | undefined {
 function pushRecord(rec: PerfRecord) {
     buffer.push(rec);
     if (buffer.length >= BUFFER_FLUSH_SIZE) flush();
+}
+
+// Rolling-window counter backing TAP_REPORTS_PER_MIN.
+let tapWindowStart = 0;
+let tapsThisWindow = 0;
+
+/**
+ * Record one game-surface tap, from inside the surface's own pointerdown handler.
+ *
+ * WHY THIS EXISTS ALONGSIDE THE Event Timing OBSERVER: Event Timing can only tell
+ * us an interaction was slow. It cannot tell us a tap was *ignored* — a tap that a
+ * guard clause dropped in 0.1ms looks perfectly healthy to the platform and is
+ * indistinguishable from one that never happened. "My tap did nothing" is exactly
+ * the report we are chasing in Match Speed, so the game has to say what it decided.
+ *
+ * The three phases below are the whole diagnosis in one record:
+ *   • inputDelay   — `eventTimeStamp` → handler entry. The main thread was busy
+ *                    BEFORE this tap could be processed. If this is large, the tap
+ *                    was queued behind a render (the "the animation locked me out"
+ *                    feeling) rather than blocked by any animation.
+ *   • processing   — the handler itself.
+ *   • presentation — handler end → the next animation frame, i.e. the React
+ *                    re-render + paint the tap triggered. This is what tells us
+ *                    whether the tap is what STALLS THE NEXT tap.
+ *
+ * Ships only when interesting (see TAP_REPORT_MS) and is rate-capped
+ * (TAP_REPORTS_PER_MIN). No-ops entirely unless `initPerfDiagnostics()` ran, so
+ * this is silent in dev unless `localStorage.perfDiag = "1"` — same gate as the
+ * rest of this module (src/main.tsx).
+ *
+ * Never throws into the caller: a tap handler must not be able to fail because
+ * telemetry did.
+ *
+ * @param outcome         What the handler decided ("match", "ignored-frozen", …).
+ * @param target          Identifier of the thing tapped, for grouping.
+ * @param eventTimeStamp  The pointer event's `timeStamp` (same time origin as
+ *                        `performance.now()` in every browser we support).
+ * @param handlerStart    `performance.now()` captured at handler entry.
+ */
+export function reportTap(
+    outcome: string,
+    target: string,
+    eventTimeStamp: number,
+    handlerStart: number
+): void {
+    if (!started) return;
+    try {
+        const handlerEnd = performance.now();
+        const inputDelay = Math.max(0, Math.round(handlerStart - eventTimeStamp));
+        const processing = Math.round(handlerEnd - handlerStart);
+        // An "ignored-*" outcome is always worth shipping regardless of timing —
+        // that IS the bug report. Everything else must clear the threshold.
+        const ignored = outcome.startsWith("ignored");
+
+        // `presentation` is only knowable a frame later, so the record is pushed
+        // from the rAF callback rather than here; that also means one dropped
+        // frame shows up as a large presentation instead of a missing record.
+        const finish = (presentation: number) => {
+            if (!ignored && inputDelay < TAP_REPORT_MS && presentation < TAP_REPORT_MS) return;
+
+            // Rate cap, evaluated at push time so cheap uninteresting taps never
+            // consume budget.
+            const now = Date.now();
+            if (now - tapWindowStart > 60000) {
+                tapWindowStart = now;
+                tapsThisWindow = 0;
+            }
+            if (tapsThisWindow >= TAP_REPORTS_PER_MIN) return;
+            tapsThisWindow++;
+
+            pushRecord({
+                kind: "tap",
+                path: window.location.pathname,
+                target,
+                name: outcome,
+                duration: inputDelay + processing + presentation,
+                inputDelay,
+                processing,
+                presentation,
+                at: Math.round(handlerStart),
+            });
+        };
+
+        if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(() => finish(Math.round(performance.now() - handlerEnd)));
+        } else {
+            finish(0);
+        }
+    } catch {
+        /* never throw from telemetry */
+    }
 }
 
 /**

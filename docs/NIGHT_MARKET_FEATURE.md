@@ -281,6 +281,71 @@ consequences worth remembering:
 **nms/nme are deliberately unclamped** (they pass no `clampPan`): authoring requires dragging into
 empty space to place a template at a distant offset.
 
+### Pedestrian camera lock (nmp only)
+
+*Code: `src/engine/market/cameraFollow.ts` (whole file — the pure math);
+`MarketEngineViewer.tsx` (`lockedPedId` state, `PAN_RELEASE_SLOP_PX`, the follow step inside
+`PedestrianTicker`'s `useTick`, the release branch in the stage `onMove`, the `onZoomGesture`
+option); `PedestrianLayer.tsx` (`onPedTap`/`lockedPedId`, `TAP_SLOP_PX`, `PED_HIT_PAD_PX`, the ring
+constants); `src/hooks/useCameraControls.ts` (the `onZoomGesture` option, the no-op guard in
+`setPan`). Tests: `src/__tests__/cameraFollow.test.ts`.*
+
+**Tap a walker and the camera chases it until you take the camera back.** The lock is one piece of
+state — `lockedPedId` in `MarketEngineViewer` — and everything else is derived from it.
+
+**Following.** Each frame, *after* the FSM has advanced (so the camera chases the position about to
+be drawn, with no one-frame lag), `PedestrianTicker` reads the locked ped's drawable, computes the
+pan that would centre it, and eases the current pan toward it:
+
+```
+followPanFor(isoX, isoY, zoom) = −isoToScreen(isoX, isoY) · zoom      (lifted by FOLLOW_LIFT_PX)
+approachPan(current, target, dt) = current + (target − current)·(1 − e^(−dt/FOLLOW_TAU_MS))
+```
+
+The viewport cancels out of the first formula for the same reason it cancels out of the pan clamp
+above — both invert `container.x = viewportW/2 + pan.x` at the screen centre. `FOLLOW_LIFT_PX` aims
+a little above the ped's foot point, because peds are foot-anchored (`anchor.y = 1`) and centring
+their reported position would put the sprite's feet on the crosshair.
+
+**Why exponential smoothing rather than a tween:** the target moves. A fixed-duration tween authored
+against a start/end pair is stale on its second frame. Closing a constant fraction of the gap per
+unit time reads as a ~300ms glide on lock-on (large gap) and as tight tracking afterwards (a few px
+per frame), with one parameter and no state. `approachPan` returns the target **object identity**
+once the gap is under `FOLLOW_SETTLED_PX`, which is how the caller knows to stop writing.
+
+**The follow writes through the normal pan path** (`onPanChange` → `useCameraControls.setPan`), so it
+is subject to the same clamp as a drag and can never chase a ped off the placement bbox. `setPan`
+also drops writes that don't move the camera — without that, a follow pinned at a market edge would
+commit a fresh-but-identical pan every frame and re-render the whole scene tree for nothing.
+
+**Zoom is never touched by the lock**, by design: locking on changes what you look at, not how close.
+
+**Release** (the lock is only ever broken by the user grabbing the camera):
+
+| Input | Path |
+|---|---|
+| Pan drag past `PAN_RELEASE_SLOP_PX` (6px) | Stage `onMove` in `NightMarketScene` |
+| Wheel tick / pinch start | `useCameraControls`'s `onZoomGesture` callback |
+| Locked ped disappears from the sim (world reload re-seeds walkers) | The follow step self-heals to `null` |
+
+Tapping the locked ped again does **not** release it, and neither does tapping empty ground.
+
+**Two slop thresholds, two different jobs** — do not merge them:
+- `TAP_SLOP_PX` (8px, `PedestrianLayer`) rejects a *drag* that happens to start and end on the same
+  walker. Pixi emits `pointertap` for any down/up pair on one target, however far the pointer moved.
+- `PAN_RELEASE_SLOP_PX` (6px, `MarketEngineViewer`) stops the very tap that *sets* the lock from
+  cancelling it — the stage sees that same pointer stream as a one- or two-pixel drag.
+
+When a drag does release the lock, the drag **re-anchors** to the current pointer and pan: `origPan`
+was captured at pointerdown, but the follow has been moving the camera ever since, so continuing
+from it would snap the world back.
+
+**Hit targets and the marker.** Ped sprites are `eventMode="static"` only when `onPedTap` is supplied
+(every other surface keeps them inert and free). Their hit area is the texture bounds grown by
+`PED_HIT_PAD_PX` on all four sides — the farm-pack characters are ~16×32 source px, a punishing
+finger target at the 1× rung. The locked ped gets a warm translucent ground ellipse one z-step below
+itself, sized to sit inside a 32×16 tile diamond so it reads as standing *on* the tile.
+
 ### Default ground apron
 
 *Code: `src/features/nightmarket/GroundBackdropLayer.tsx` (whole file);
@@ -382,6 +447,11 @@ ground cell. Two rules keep it off the frame budget, and **both** are required:
 
 ⚠️ Do not hoist the ticker back into the scene, and do not drop the memos: either one alone leaves
 the other's cost in place.
+
+> While a **pedestrian camera lock** is active the scene *does* re-render every frame, because the
+> follow commits a new pan each tick — exactly the same load as holding a drag, and the reason rule 2
+> is load-bearing on its own. If the memos ever regress, the lock (not the idle market) is where it
+> will show up first: watch `terrain-tiles (rebuilt N×)` in `nmpPerf` while following a walker.
 
 **Measuring it (`nmpPerf.ts`).** nmp's cost is not readable from the source — how many cells the
 *loaded* market spans, whether a layer is rebuilding per frame, and the real frame time on the target
@@ -733,7 +803,11 @@ Registered in `server/routes/nightMarketRoutes.ts`.
 
 ## Interaction (V1)
 
-- **Tap to see info**: Tapping an item shows its `displayName` and `description` in a dialog
+- **Tap a pedestrian**: locks the camera onto that walker until the user pans or zooms — the one tap
+  interaction that is actually live. See "Pedestrian camera lock (nmp only)" above.
+- **Tap to see info**: ⚠️ Aspirational — tapping an item was to show its `displayName` and
+  `description` in a dialog. The stand/asset tap dialogs were removed with the free-farm rebuild
+  (see the `MarketEngineViewer` header comment) and nothing but the pedestrians is hit-testable today.
 - **Tap to trigger event**: Reserved for future expansion (animations, sounds, etc.)
 
 ---
@@ -774,6 +848,8 @@ Registered in `server/routes/nightMarketRoutes.ts`.
 | `src/features/nightmarket/MarketEngineViewer.tsx` | Pixi (`@pixi/react`) canvas renderer with pan/zoom and tap interaction |
 | `src/engine/market/cameraZoom.ts` | Pure camera-zoom math — geometric wheel mapping, ladder snap, focal-point pan, settle easing (see "Camera (pan / zoom)") |
 | `src/hooks/useCameraControls.ts` | The one pan/zoom host hook shared by nmp / nms / nme — state, gesture listeners, settle tween, the pan clamp |
+| `src/engine/market/cameraFollow.ts` | Pure follow math for the pedestrian camera lock — centring pan + frame-rate-independent easing (see "Pedestrian camera lock") |
+| `src/features/nightmarket/PedestrianLayer.tsx` | Renders the ambient walkers; owns their tap targets + the locked-ped ground ring (see "Pedestrian camera lock") |
 | `src/engine/market/cameraFit.ts` | Pure camera-limit math from world size — zoom-out floor, pan clamp, visible-cell window (see "Zoom-out floor", "Pan clamp", "Default ground apron") |
 | `src/features/nightmarket/GroundBackdropLayer.tsx` | The infinite default ground — one tiling quad of the generated tallDirt+lightGrass motif (see "Default ground apron") |
 | `src/engine/market/layerTranslucency.ts` | Pure fade table + `alphaForSlot(slot, zoom)` — the zoom-peel policy (see "Layer translucency") |

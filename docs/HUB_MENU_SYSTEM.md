@@ -23,7 +23,8 @@ A menu item is one of:
   sub-cards, same visual language as `HubMenuRow`. Desktop gets click-and-drag
   panning via `useDragScroll`; touch/trackpad scroll natively
   (`touchAction: pan-x`). Used when one hub entry fans out into several
-  choices — today, only Bubble Match's 3 difficulty levels. Because the
+  choices — today, Bubble Match's 3 difficulty levels and Match Speed's 3
+  difficulty modes. Because the
   sub-cards are anchors (`RouterLink`), `useDragScroll` also cancels the
   container's native `dragstart` — otherwise the browser would drag the
   link's URL on desktop mouse-drag and hijack the pointer (`src/hooks/useDragScroll.ts`).
@@ -47,7 +48,7 @@ render the identical header.
 
 Both card types accept a `state` prop, forwarded to the underlying
 `RouterLink`/`useSlideNavigate` call as React Router navigation state (used to
-pass the tapped Bubble Match level without a URL param).
+pass the tapped Bubble Match level / Match Speed mode without a URL param).
 
 ## Per-hub composition
 
@@ -79,14 +80,26 @@ component/pool shared by all three hubs.
 
 ## Array items (fan-out games)
 
-Two games fan their hub entry out into a `HubMenuArrayItem` (a horizontal strip
-of sub-cards) instead of a single row, both special-cased directly in
+Three games fan their hub entry out into a `HubMenuArrayItem` (a horizontal strip
+of sub-cards) instead of a single row, all special-cased directly in
 `GamesPage.tsx` (matched on `game.gameId`) rather than via a generic
 `GameDef.levels` field:
 
 - **Bubble Match** — one sub-card per `LEVEL_CONFIGS` entry
   (`src/games/bubble-match/constants.ts`: Chill / Hustle / Torture), passing
   `state: { level }`. Rendered as a plain `HubMenuArrayItem` in `GamesPage.tsx`.
+- **Match Speed** — one sub-card per `MODE_CONFIGS` entry
+  (`src/games/match-speed/constants.ts`: **Study Mix / Review / Challenge**, in that order),
+  passing `state: { mode }`. Also a plain `HubMenuArrayItem`, and badged exactly
+  like Bubble Match: weekly ⭐ per mode on each sub-card (keyed by the mode's
+  `winLevel`), game-wide `×N` on the group header. Its per-mode colors
+  (`MATCH_SPEED_MODE_COLORS` in `GamesPage.tsx`) deliberately reuse the **`/decks`
+  study-button palette** — neutral `COLORS.header` for Study Mix, `blueAccent` for Review,
+  `redAccent` for Challenge — because the modes apply the identical mastery-bucket rule
+  as those buttons and should read as the same concept in both places. Unlike the
+  other two, a visit with no valid nav state does **not** bounce to the hub; it
+  defaults to Mix (the route predates the modes). See
+  [MATCH_SPEED_GAME.md § Difficulty modes](./MATCH_SPEED_GAME.md).
 - **Word Search** — one sub-card per `MODE_CONFIGS` entry (Pinyin / No Pinyin).
   **Not** a plain `HubMenuArrayItem`: it renders a dedicated strip component,
   `src/games/word-search/WordSearchHubItem.tsx`, because its buttons need custom

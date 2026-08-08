@@ -51,6 +51,13 @@ interface CPCDRowProps {
     // setting on the flashcard — see docs/CARD_ICON_LAYOUT.md). The pinyin overlay is
     // never affected. Undefined keeps the theme default (text.primary).
     characterColor?: string;
+    // "Big pinyin" mode: scales the pinyin overlay up by BIG_PINYIN_SCALE while
+    // leaving the character glyph at its normal size for `size`. Reads as a
+    // pronunciation-forward variant of the same layout — used by Word Search's
+    // Pinyin board, where the default 13px `sm` pinyin is too small to scan while
+    // dragging. Both the font size and the reserved pinyin band grow together, so
+    // the glyph keeps its usual clearance and only the cell's total height changes.
+    bigPinyin?: boolean;
 }
 
 // Per-size visual constants. Mirror the table that used to live in
@@ -72,6 +79,14 @@ const OVERLAP_BY_SIZE: Record<CPCDSize, number> = { xs: -4, sm: -6, md: -4, lg: 
 // de-overlapping. Only applied to pairs that actually collide, so non-colliding
 // rows are never disturbed.
 const PINYIN_MIN_GAP_PX = 2;
+// Multiplier applied to BOTH the pinyin font size and the reserved pinyin band
+// when `bigPinyin` is on. Expressed as one scale factor rather than a second
+// per-size font table so it composes with every CPCDSize *and* with `compact`
+// automatically: the font tables mix px and rem units, so the font is scaled via
+// CSS `calc()` (valid for both) and the reserved height — always a plain px
+// number — by ordinary arithmetic. 1.2 puts `sm` pinyin at ~15.6px against its
+// 26px glyph: a readability bump that still reads as secondary to the character.
+const BIG_PINYIN_SCALE = 1.2;
 // A separator apostrophe is drawn between two adjacent SAME-TONE syllables only
 // when the collision solver actually had to PUSH that pair apart — i.e. their
 // pinyin texts were touching and got relaxed to the bare PINYIN_MIN_GAP_PX
@@ -94,6 +109,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     pinyinShift = true,
     selectable = false,
     characterColor,
+    bigPinyin = false,
 }) => {
     const charsBlockRef = useRef<HTMLDivElement | null>(null);
     const cellRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -102,11 +118,16 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     const sepRefs = useRef<(HTMLSpanElement | null)[]>([]);
 
     const columnWidth = COLUMN_WIDTH[size];
-    const pinyinReservedHeight = PINYIN_RESERVED_HEIGHT[size];
     const overlap = OVERLAP_BY_SIZE[size];
     const overlapAbs = Math.abs(overlap);
     const charFontSize = compact ? COMPACT_CHAR_FONT[size] : CHAR_FONT_SIZE[size];
-    const pinyinFontSize = compact ? COMPACT_PINYIN_FONT[size] : PINYIN_FONT_SIZE[size];
+    // Big-pinyin mode scales the pinyin band and its font together (see
+    // BIG_PINYIN_SCALE); the character font is untouched by design.
+    const basePinyinFontSize = compact ? COMPACT_PINYIN_FONT[size] : PINYIN_FONT_SIZE[size];
+    const pinyinFontSize = bigPinyin ? `calc(${basePinyinFontSize} * ${BIG_PINYIN_SCALE})` : basePinyinFontSize;
+    const pinyinReservedHeight = bigPinyin
+        ? Math.round(PINYIN_RESERVED_HEIGHT[size] * BIG_PINYIN_SCALE)
+        : PINYIN_RESERVED_HEIGHT[size];
 
     // Position each pinyin span over its corresponding char cell. Run on every
     // render and on size changes to the chars block (handled by ResizeObserver

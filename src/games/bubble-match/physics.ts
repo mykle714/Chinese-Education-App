@@ -1,5 +1,15 @@
 import type { BubbleBody } from "./types";
-import { GROW_LERP, MAX_PUSH_SPEED, SPAWN_MAX_ATTEMPTS, SPAWN_OVERLAP_FRACTION } from "./constants";
+import {
+    GROW_LERP,
+    IDLE_SPEED,
+    IDLE_SPEED_LERP,
+    MAX_PUSH_SPEED,
+    MAX_SPEED,
+    RESTITUTION,
+    SPAWN_MAX_ATTEMPTS,
+    SPAWN_OVERLAP_FRACTION,
+    WANDER_ACCEL,
+} from "./constants";
 
 export interface Bounds {
     width: number;
@@ -24,12 +34,30 @@ const isHeld = (b: BubbleBody): boolean => b.status === "held";
     make room as it grows, but is never pushed itself — it holds its chosen spot. */
 const isGrowing = (b: BubbleBody): boolean => b.status === "growing";
 
+/** Clamp a velocity vector's magnitude to MAX_SPEED in place, so a chain of
+    bounces can never accelerate a bubble past a controllable drift. */
+function clampSpeed(b: BubbleBody): void {
+    const sp = Math.hypot(b.vx, b.vy);
+    if (sp > MAX_SPEED) {
+        const k = MAX_SPEED / sp;
+        b.vx *= k;
+        b.vy *= k;
+    }
+}
+
 /**
- * Advance the simulation by `dt` seconds. There is NO velocity model: bubbles
- * don't drift, bounce, or get thrown. Each frame we only (1) inflate growing
- * bubbles toward their targetRadius, (2) clamp every body inside the walls, and
- * (3) resolve pairwise overlap by positional separation (the push that lets a
- * growing bubble make room among its neighbors). Mutates `bodies` in place.
+ * Advance the simulation by `dt` seconds. Each frame we (1) inflate growing
+ * bubbles toward their targetRadius, (2) drift every settled bubble — random
+ * wander, speed eased toward IDLE_SPEED, position integrated — (3) clamp every
+ * body inside the walls, reflecting its velocity off the ones it hits, and
+ * (4) resolve pairwise overlap by positional separation (the push that lets a
+ * growing bubble make room among its neighbors) plus an elastic velocity impulse
+ * so drifting bubbles bounce off each other. Mutates `bodies` in place.
+ *
+ * The drift is deliberately tiny (every magnitude is scaled by DRIFT_SCALE, see
+ * constants.ts) — it exists to keep the field alive, not to move bubbles across
+ * the stage. Growing bubbles do not drift: they own their chosen spot until they
+ * settle, at which point their pre-seeded velocity takes over.
  *
  * A held bubble has its hitbox fully disabled: it neither moves nor collides,
  * so the player can drag it freely through the field without shoving anyone.
@@ -43,37 +71,72 @@ const isGrowing = (b: BubbleBody): boolean => b.status === "growing";
  * overfill (game-over) safety net alongside the area-packing check.
  */
 export function stepPhysics(bodies: BubbleBody[], dt: number, bounds: Bounds): number {
-    // --- Grow-in + wall clamp -----------------------------------------------
+    // --- Grow-in + drift + wall clamp ----------------------------------------
     for (const b of bodies) {
         // Held bubbles are positioned by the pointer; physics never moves them.
         if (b.status === "held") continue;
 
         // Growing bubbles inflate toward their target size, then settle to idle.
         // They stay infinite-mass while growing (see isGrowing) so they hold their
-        // chosen spot and shove the neighbors they overlap outward.
+        // chosen spot and shove the neighbors they overlap outward. They do NOT
+        // drift while growing — the seeded velocity only kicks in once settled.
         if (b.status === "growing") {
             b.radius += (b.targetRadius - b.radius) * GROW_LERP;
             if (b.targetRadius - b.radius <= 0.5) {
                 b.radius = b.targetRadius;
                 b.status = "idle";
             }
+        } else {
+            // Small random wander keeps the float lively and breaks up clusters.
+            b.vx += randRange(-WANDER_ACCEL, WANDER_ACCEL) * dt;
+            b.vy += randRange(-WANDER_ACCEL, WANDER_ACCEL) * dt;
+
+            // Ease the speed back toward the idle drift target so bubbles never
+            // fully stop and never run away (bounces briefly spike velocity).
+            const sp = Math.hypot(b.vx, b.vy);
+            if (sp > 0.001) {
+                const k = (sp + (IDLE_SPEED - sp) * IDLE_SPEED_LERP) / sp;
+                b.vx *= k;
+                b.vy *= k;
+            } else {
+                // Dead stop (e.g. a freshly settled bubble whose seed cancelled
+                // out): re-launch it in a random direction at the drift speed.
+                const a = Math.random() * Math.PI * 2;
+                b.vx = Math.cos(a) * IDLE_SPEED;
+                b.vy = Math.sin(a) * IDLE_SPEED;
+            }
+
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
+            clampSpeed(b);
         }
 
-        // Wall clamp — pin the center inside bounds (position only, no bounce).
-        // Top/left/right snap (they only ever correct sub-pixel separation
-        // overshoot). The bottom is the cancel-strip boundary: a bubble released in
-        // the strip can sit well below it, so push it back up at MAX_PUSH_SPEED*dt
-        // rather than snapping — it glides into play, honoring the same shove speed
-        // cap as the separation solver.
-        if (b.x - b.radius < 0) b.x = b.radius;
-        else if (b.x + b.radius > bounds.width) b.x = bounds.width - b.radius;
+        // Wall clamp — pin the center inside bounds, reflecting the drift velocity
+        // off whichever wall was hit so the bubble bounces instead of sticking.
+        // Left/right/top snap the position (they only ever correct a drift step or
+        // sub-pixel separation overshoot). The bottom is the cancel-strip boundary:
+        // a bubble released in the strip can sit well below it, so push it back up
+        // at MAX_PUSH_SPEED*dt rather than snapping — it glides into play, honoring
+        // the same shove speed cap as the separation solver.
+        if (b.x - b.radius < 0) {
+            b.x = b.radius;
+            b.vx = Math.abs(b.vx) * RESTITUTION;
+        } else if (b.x + b.radius > bounds.width) {
+            b.x = bounds.width - b.radius;
+            b.vx = -Math.abs(b.vx) * RESTITUTION;
+        }
         // Top is the descending ceiling: snap a body that pokes above it back down.
         // (It only rises a few px/frame, so this is a sub-pixel-ish correction that
         // gently presses the field down as the ceiling closes in.)
-        if (b.y - b.radius < bounds.top) b.y = bounds.top + b.radius;
-        else if (b.y + b.radius > bounds.height) {
+        if (b.y - b.radius < bounds.top) {
+            b.y = bounds.top + b.radius;
+            b.vy = Math.abs(b.vy) * RESTITUTION;
+        } else if (b.y + b.radius > bounds.height) {
             const overshoot = b.y + b.radius - bounds.height;
             b.y -= Math.min(overshoot, MAX_PUSH_SPEED * dt);
+            // Only reverse a downward drift — the glide above already carries the
+            // bubble back up, and flipping an upward velocity would fight it.
+            if (b.vy > 0) b.vy = -b.vy * RESTITUTION;
         }
     }
 
@@ -120,6 +183,21 @@ export function stepPhysics(bodies: BubbleBody[], dt: number, bounds: Bounds): n
             a.y -= ny * moveA;
             b.x += nx * moveB;
             b.y += ny * moveB;
+
+            // Velocity impulse along the collision normal (elastic, mass-weighted)
+            // so two drifting bubbles bounce off each other rather than grinding
+            // together while the positional solver keeps prying them apart. A
+            // growing bubble has invMass 0, so it imparts a bounce without taking
+            // one. Skipped when the pair is already separating.
+            const velAlongNormal = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+            if (velAlongNormal >= 0) continue;
+            const impulse = (-(1 + RESTITUTION) * velAlongNormal) / invSum;
+            a.vx -= impulse * invA * nx;
+            a.vy -= impulse * invA * ny;
+            b.vx += impulse * invB * nx;
+            b.vy += impulse * invB * ny;
+            clampSpeed(a);
+            clampSpeed(b);
         }
     }
 

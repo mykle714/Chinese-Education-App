@@ -20,6 +20,7 @@ import {
     DEFINITION_LEN_MAX,
     DEFINITION_RADIUS_JITTER,
     MAX_DT,
+    IDLE_SPEED,
     SPAWN_SEED_RADIUS,
     SCALE_IDLE,
     SCALE_HELD,
@@ -124,6 +125,9 @@ function makeBody(
     entry: VocabEntry,
     radius: number
 ): BubbleBody {
+    // Seed the drift in a random direction at the idle speed, so a bubble starts
+    // floating the instant it finishes growing (physics ignores vx/vy until then).
+    const heading = Math.random() * Math.PI * 2;
     return {
         id: `b${bodySeq++}`,
         pairId,
@@ -131,6 +135,8 @@ function makeBody(
         entry,
         x: 0,
         y: 0,
+        vx: Math.cos(heading) * IDLE_SPEED,
+        vy: Math.sin(heading) * IDLE_SPEED,
         // Start at the seed size; the bubble inflates to targetRadius once spawned.
         radius: SPAWN_SEED_RADIUS,
         targetRadius: radius,

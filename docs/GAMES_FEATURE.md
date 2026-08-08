@@ -13,13 +13,18 @@ games; each game lives as its own page linked from the hub.
   - **Bubble Match** (`/games/bubble-match`) — see [§ Game: Bubble Match](#game-bubble-match-gamesbubble-match).
   - **Word Search** (`/games/word-search`) — see [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
   - **Match Speed** (`/games/match-speed`) — see [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md).
-    A tap-to-match recognition speed drill: 2 columns × 5 rows (foreign |
-    English), 60-second clock, board refills every 2s, medals by pairs matched.
+    Fans out on the hub into three difficulty modes (Study Mix / Review / Challenge), which
+    restrict the pool to the same mastery buckets the `/decks` study buttons use.
+    A tap-to-match recognition speed drill: 2 columns × 6 rows (foreign |
+    English), 30-second clock, board refills every 3s, medals by pairs matched.
   - **Speed Reading** (`/games/speed-reading`) — see
     [SPEED_READING_GAME.md](./SPEED_READING_GAME.md). A **reading** drill: pinyin
     + definition + audio at the top, then two word options — the real word and
     one where a single character has been swapped for another real character from
-    the player's library. 60-second clock, medals by correct picks.
+    the player's library. The only **race** format in the set: a fixed 20 rounds
+    with a count-**up** clock, medals by finishing TIME (lower is better), and a
+    3-second penalty per wrong answer (shown as a red +3s floating from the tap).
+    Every round must be answered — it has **no Skip**.
 
   Bubble Match and Word Search are **DOM + `requestAnimationFrame`** games; Match
   Speed and Speed Reading are **DOM + timers only** (no rAF loop — no physics and no
@@ -52,8 +57,9 @@ character read out of the player's own library at game load.
 
 It is also the app's first emitter of **negative reading marks** — deliberately.
 A player who taps randomly scores ~50% and earns negatives at that rate; the marks
-are an honest record of the answers given. No accuracy floor, no suppression. Only
-**Skip** is exempt, because a skip is not an answer.
+are an honest record of the answers given. No accuracy floor, no suppression, and
+no unmarked path: the game has no Skip, so every round shown produces exactly one
+mark.
 
 ## Routes
 
@@ -78,6 +84,28 @@ either shipped game** — both own their page. It still renders
 `MobileFooter activePage="home"` on its info/loading screens and hides it during
 the live stage (`!showStage`); it has not been migrated to a leaf page yet, so a
 game adopting it today would get the wrong chrome. See the Layer 2 warning below.
+
+## Launching a game with one collection of cards
+
+Besides the Games hub, every game can be entered from a **collection view page**
+(`/flashcards/collection/*`, `/flashcards/deck/:id`) via its "Play with these
+cards" button, which appends a launch param:
+
+| Collection | Param | Effect |
+| --- | --- | --- |
+| Learn Now | *(none)* | The default pool — Learn Now already **is** what games draw from |
+| Mastered | `?collection=mastered` | Pool restricted to Mastered cards |
+| A deck | `?deck=<id>` | Pool restricted to that deck, plus any card lent to reach the game's baseline |
+
+Each game page reads this back with `useLaunchCollection()` and appends
+`collectionQuerySuffix(...)` to **every** pool request — including partial refills
+(Bubble Match's "Play Again", Speed Reading's mid-run top-up). A refill that dropped
+the param would start serving cards from outside the set mid-game.
+
+Speed Reading's **distractor** endpoint is deliberately NOT restricted: the foils
+are meant to come from outside the set, or the deck becomes the answer key.
+
+Full details, including the server-side filter: [DECKS_FEATURE.md](./DECKS_FEATURE.md) § 3.
 
 ## Navigation entry point
 
@@ -130,7 +158,7 @@ for now; if a third page needs them we should hoist a shared
 | Question | Resolution |
 | --- | --- |
 | Row anatomy | Owned by the shared `HubMenu` / `HubMenuRow`, not by this page. See [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md). |
-| Locking / progression | Two gates on `GameDef`, both evaluated at hub render time: `requiresAuth` (hides the game from public/demo accounts) and `unlock.minVocabEntries`. A game may *additionally* block at entry when the vocab pool comes back short — `game-pool`'s `sufficient` flag drives Bubble Match's blocked screen. No game is gated behind another game. |
+| Locking / progression | Two gates on `GameDef`, both evaluated at hub render time: `requiresAuth` (hides the game from public/demo accounts) and `unlock.minVocabEntries` (declared but unused). **No game may block on card count** — see [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md): each game's old minimum is now a BASELINE the server tops the player up to with temporary cards. The only remaining entry conditions are being signed out and Word Search's zh-only restriction. No game is gated behind another game. |
 | Score / streak surfacing | Games feed the **existing** systems, not a parallel one. Both game routes are in `MINUTE_POINTS_ELIGIBLE_PAGES` (`src/constants.ts:13-20`) and are in the start-on-entry subset (a player reads the board before their first tap), so play time accrues minute points and streak exactly as flp does. Matches emit real review marks via `POST /api/flashcards/mark` — so playing a game moves mastery. Wins are counted separately via `POST /api/users/me/wins` and read back by `useGameWins` for the hub's `HubMenuStatBadge`. |
 | Sort order of the menu | Manual curation — `GAME_REGISTRY` array order, top to bottom. Not recency or recommendation-ranked. |
 
@@ -375,7 +403,12 @@ needs a WebGL scene graph, copy Bubble Match or Word Search instead.
 2. Fetch vocab from the OnDeck stack, not from a generic vocab endpoint:
    `GET /api/onDeck/gamePool?<Category>=<n>...` returns library cards bucketed by
    the mark type the game emits. Pass that mark type; see the backend notes under
-   [§ Game: Bubble Match](#backend). Block entry on `sufficient === false`.
+   [§ Game: Bubble Match](#backend). Also pass `surface=<your-game>` so the server
+   tops the player up to your baseline (`CARD_BASELINES` in `server/contracts/wire.ts`).
+   **Do NOT block entry on `sufficient === false`** — after provisioning it can only be
+   false when the dictionary itself is exhausted, and a short round still plays. Show
+   `ProvisionalCardsNotice` before the round and `SortProvisionalCta` after it. See
+   [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md).
 3. **Render definitions through `resolveDisplayDefinition`** — see
    [§ Sense correctness](#sense-correctness--every-game-must-honor-the-learners-selected-sense).
    This is the single easiest thing to get wrong in a new game.
@@ -457,8 +490,18 @@ not `GamePage`.
   **definition** bubble (the flashcard's dd, via `resolveDisplayDefinition` — so a bubble
   shows the learner's chosen sense, matching the card face; see
   [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3).
-- Bubbles **launch** on a per-level cadence and **float** with momentum-preserving
-  elastic collisions (`physics.ts`). Drag a bubble onto its partner to match
+- Bubbles **spawn in place** on a per-level cadence — `planSpawn` (`physics.ts`)
+  picks a spot by the "20% rule" and the bubble inflates there from a seed radius
+  as an infinite-mass body, shoving the neighbors it overlaps aside. Once grown,
+  a bubble **drifts**: a small random wander (`WANDER_ACCEL`) nudges it, its speed
+  eases back toward `IDLE_SPEED`, and it reflects off the walls and off its
+  neighbors with a mass-weighted elastic impulse (`RESTITUTION`). Every drift
+  *magnitude* is scaled by the single `DRIFT_SCALE` knob in `constants.ts`,
+  currently **0.3** — i.e. 30% of the original tuning, so the field reads as a slow
+  shimmer rather than a lava lamp. Set it to `1` for the original float, or `0` for
+  a fully static field. Growing and held bubbles do not drift (each owns its own
+  position); a dropped bubble simply resumes the velocity it had when picked up —
+  there is no throw-on-release. Drag a bubble onto its partner to match
   (bidirectional). Correct → green pop + removal; wrong → red shake + release.
   Picking up / dropping **onto** a Chinese word triggers autoplay TTS.
 - **Post-loss cleanup** (`cleanupMode`, `BubbleStage.tsx`): after a loss, when the

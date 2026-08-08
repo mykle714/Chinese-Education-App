@@ -18,7 +18,8 @@ function body(pairId: string, kind: BubbleKind): BubbleBody {
         kind,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         entry: { id: Number(pairId), entryKey: pairId, createdAt: "" } as any,
-        x: 0, y: 0, radius: 40, targetRadius: 40, mass: 1600, scale: 1, targetScale: 1,
+        // vx/vy 0: these tests exercise spawn selection/placement, not drift.
+        x: 0, y: 0, vx: 0, vy: 0, radius: 40, targetRadius: 40, mass: 1600, scale: 1, targetScale: 1,
         status: "idle",
     };
 }

@@ -57,6 +57,22 @@ router.post('/api/diagnostics/perf', diagnosticsLimiter, (req, res) => {
       );
     }
 
+    // Ignored taps get their own line. These are the records that say a tap
+    // REACHED a game's handler and was dropped by a guard — the one thing the
+    // browser's own Performance APIs cannot report, and the reason `kind: "tap"`
+    // exists (see src/utils/perfDiagnostics.ts § reportTap). Surfaced eagerly
+    // because they are rare by design: if these start appearing in volume, a
+    // guard is eating real input.
+    const ignored = records.filter(
+      (r: any) => r && r.kind === 'tap' && typeof r.name === 'string' && r.name.startsWith('ignored')
+    );
+    for (const t of ignored.slice(0, 5)) {
+      console.log(
+        `👆 client-tap IGNORED (${t.name}) on ${t.path} [${t.target}] ` +
+        `(inputDelay=${t.inputDelay}ms, present=${t.presentation}ms)`
+      );
+    }
+
     // 204 keeps the beacon response empty; the client ignores the body anyway.
     return res.status(204).end();
   } catch (err) {

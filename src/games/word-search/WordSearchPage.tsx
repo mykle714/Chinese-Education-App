@@ -10,6 +10,8 @@ import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
+import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
+import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import LeafPage from "../../components/LeafPage";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import WordSearchHeaderControls from "./WordSearchHeader";
@@ -22,6 +24,9 @@ import GameEndPopup from "../runtime/GameEndPopup";
 import { useWordSearchSettings } from "./useWordSearchSettings";
 import { saveGameState, loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
 import { GAME_KEY, WIN_LEVEL, GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor } from "./constants";
+import type { Language } from "../../types";
+import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
+import SortProvisionalCta from "../../components/SortProvisionalCta";
 import { formatTimeMs } from "../../utils/timeUtils";
 import { countPinyinUnits } from "./pinyinUnits";
 import { countComponentUnits } from "./componentUnits";
@@ -43,6 +48,11 @@ type Phase = "loading" | "blocked" | "playing" | "won";
  * board — see `persistSnapshot` / `restoreBoard` below.
  */
 const WordSearchPage: React.FC = () => {
+    // Which collection this game was launched from (docs/DECKS_FEATURE.md) — null
+    // for an ordinary launch from the Games hub. Appended to every pool request so
+    // the round stays inside the set the learner picked.
+    const launchCollection = useLaunchCollection();
+    const collectionSuffix = collectionQuerySuffix(launchCollection);
     usePageTitle("Word Search");
     const navigate = useNavigate();
     const location = useLocation();
@@ -88,6 +98,8 @@ const WordSearchPage: React.FC = () => {
     const [phase, setPhase] = useState<Phase>("loading");
     const [blockMessage, setBlockMessage] = useState("");
     const [data, setData] = useState<WordSearchResponse | null>(null);
+    // Pre-round notice for lent cards (docs/PROVISIONAL_CARDS.md).
+    const [noticeOpen, setNoticeOpen] = useState(false);
     const [found, setFound] = useState<Set<string>>(new Set());
     // Whether the end-of-run popup is collapsed into the corner puck.
     const [popupMinimized, setPopupMinimized] = useState(false);
@@ -246,7 +258,7 @@ const WordSearchPage: React.FC = () => {
             // on the reading track, Pinyin on production (docs/MASTERY_REWORK.md
             // § Per-type cooldown). `mode` is set once on mount, so capturing it in
             // this empty-deps callback is stable.
-            const res = await fetch(`${API_BASE_URL}/api/onDeck/wordSearchGrid?${GRID_QUERY}&mode=${mode ?? ""}`, {
+            const res = await fetch(`${API_BASE_URL}/api/onDeck/wordSearchGrid?${GRID_QUERY}&mode=${mode ?? ""}&surface=word-search${collectionSuffix}`, {
                 credentials: "include",
                 headers: authHeader(),
             });
@@ -254,15 +266,23 @@ const WordSearchPage: React.FC = () => {
             const payload: WordSearchResponse = await res.json();
 
             if (!payload.sufficient || !payload.grid) {
-                if (payload.reason === "language") {
-                    setBlockMessage(
-                        "Word Search is available for Chinese right now. Switch your study language to Chinese to play."
-                    );
-                } else {
-                    setBlockMessage(
-                        `You need at least ${payload.total} Learn Now cards with distinct characters to play Word Search. Study more cards to unlock it.`
-                    );
-                }
+                // The ONLY remaining block is the language one — Word Search is zh-only
+                // because a round substitutes single characters, and no amount of card
+                // lending changes the player's study language.
+                //
+                // The old "you need N cards with distinct characters" block is gone: the
+                // server now tops the player up to the Word Search baseline and RETRIES
+                // the grid with a progressively larger lent pool (see
+                // OnDeckVocabController.getWordSearchGrid + PROVISION_RETRY_FACTOR), so
+                // reaching here with a non-language reason means the dictionary itself
+                // is exhausted. That is a genuine dead end rather than a "study more
+                // cards" nudge, so it says so plainly.
+                // See docs/PROVISIONAL_CARDS.md § Word Search is the awkward one.
+                setBlockMessage(
+                    payload.reason === "language"
+                        ? "Word Search is available for Chinese right now. Switch your study language to Chinese to play."
+                        : "We couldn't build a grid right now — there aren't enough words with distinct characters left. Try another game for now."
+                );
                 setPhase("blocked");
                 return null;
             }
@@ -284,7 +304,8 @@ const WordSearchPage: React.FC = () => {
         }
         // authHeader() reads the token at call time, so this callback's identity
         // stays stable across a silent token refresh. See CLAUDE.md "Never
-        // reload on token refresh".
+        // reload on token refresh". `collectionSuffix` is likewise omitted: it comes
+        // from this page's own URL, which cannot change without a remount.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -292,6 +313,9 @@ const WordSearchPage: React.FC = () => {
     // starting the count-up timer immediately — the player doesn't need to
     // touch the grid first).
     const startBoard = useCallback((payload: WordSearchResponse) => {
+        // Word Search plays a fixed, known grid, so the notice names the lent words
+        // (docs/PROVISIONAL_CARDS.md).
+        setNoticeOpen((payload.provisionalWords?.length ?? 0) > 0);
         setData(payload);
         setFound(new Set());
         setHintUnits(0);
@@ -712,6 +736,11 @@ const WordSearchPage: React.FC = () => {
                             Time {formatTimeMs(finalMs)} — {medal.medal} medal
                         </Typography>
                         <Box className="word-search__win-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%", maxWidth: 260 }}>
+                            {/* Renders nothing unless this grid used lent cards. */}
+                            <SortProvisionalCta
+                                words={data?.provisionalWords ?? []}
+                                language={(user?.selectedLanguage ?? "zh") as Language}
+                            />
                             <Button className="word-search__play-again" variant="contained" onClick={resetBoard} sx={{ borderRadius: "12px", textTransform: "none", fontWeight: WEIGHT.bold }}>
                                 Play Again
                             </Button>
@@ -727,6 +756,13 @@ const WordSearchPage: React.FC = () => {
 
     return (
         <>
+            <ProvisionalCardsNotice
+                open={noticeOpen}
+                onDismiss={() => setNoticeOpen(false)}
+                surfaceName="Word Search"
+                words={data?.provisionalWords ?? []}
+                language={(user?.selectedLanguage ?? "zh") as Language}
+            />
             <LeafPage
                 title="Word Search"
                 onBack={() => navigate("/games")}

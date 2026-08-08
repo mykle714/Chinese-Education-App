@@ -16,7 +16,8 @@ export type BubbleKind = "word" | "definition";
  * - `growing`   — spawned in place and inflating from a tiny seed to its target
  *                 size, shoving any bubbles it overlaps aside (infinite-mass
  *                 while it grows so it holds its chosen spot).
- * - `idle`      — settled at full size, sitting still (no autonomous drift).
+ * - `idle`      — settled at full size and drifting: a gentle random wander plus
+ *                 wall/neighbor bounces keep it slowly floating (see DRIFT_SCALE).
  * - `held`      — picked up by the pointer (enlarged + greyed).
  * - `hovered`   — the current drop target under a held bubble (enlarged + greyed).
  * - `correct`   — a valid match just landed (light-green + pop, then removed).
@@ -46,6 +47,11 @@ export interface BubbleBody {
     /** Center position (px) within the stage. */
     x: number;
     y: number;
+    /** Drift velocity (px/sec). Integrated every frame while the bubble is idle
+        (i.e. neither held nor still growing); nudged by the random wander, eased
+        back toward IDLE_SPEED, and reflected by wall/neighbor bounces. */
+    vx: number;
+    vy: number;
     /** Current, animating collision radius. While `status === "growing"` it lerps
         from a tiny seed up to `targetRadius`; once settled it equals `targetRadius`. */
     radius: number;

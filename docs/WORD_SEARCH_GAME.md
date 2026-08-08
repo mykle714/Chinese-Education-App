@@ -264,7 +264,7 @@ hub card look via the exported `cardBaseSx`
 
 | Sub-card | `mode` | Pinyin |
 |---|---|---|
-| **Pinyin** | `"pinyin"` | grid pinyin on, **always tone-colored** |
+| **Pinyin** | `"pinyin"` | grid pinyin on, **always tone-colored**, rendered at **big-pinyin** scale (see "Cell size") |
 | **No Pinyin** | `"no-pinyin"` | grid pinyin off |
 
 - **Both mode buttons ALWAYS start a fresh game.** Tapping one navigates with
@@ -391,7 +391,34 @@ Vertical stack inside the standard leaf-page content area:
 
 ### Cell size
 
-Use `CPCDRow` **`sm`** (32px column) for now. A `useFitScale` wrapper in
+Use `CPCDRow` **`sm`** (32px column) for now, with **big pinyin on** in Pinyin
+mode: the grid passes `bigPinyin={showPinyin}` to `ForeignText`
+(`WordSearchGrid.tsx`), which scales the pinyin font and its reserved band by
+`BIG_PINYIN_SCALE` (1.2 → ~15.6px syllable under the unchanged 26px glyph). The
+default 13px `sm` pinyin was too small to scan while dragging. This is not a
+separate hub entry — it is simply how the Pinyin board now renders; the smaller
+variant is gone.
+
+It is gated on `showPinyin` rather than passed unconditionally because `CPCDRow`
+keeps the reserved pinyin band even when the syllable is hidden (so toggling
+pinyin never shifts layout) — enlarging it in **No Pinyin** mode would push
+every glyph upward for nothing.
+
+Two knock-on effects, both self-correcting:
+- **Grid height is unaffected.** The row track is locked to
+  `columnWidth + CELL_GAP` regardless of a cell's own content height (below), so
+  the taller cells just overlap their neighbours slightly more.
+- **Selection geometry re-centers itself.** The stadium offset is derived from a
+  live measurement of the glyph's center within its cell, so it follows the band
+  growth automatically. Only the extra tunable nudge
+  `SELECTION_EXTRA_OFFSET_Y_FRAC` is a fixed constant — retune it there if the
+  highlight reads off-center.
+
+More pinyin overflows its 32px column at this scale, so expect more
+shifting/separator apostrophes — see
+[CPCD_PINYIN_SHIFT.md](./CPCD_PINYIN_SHIFT.md) § "Interaction with `bigPinyin`".
+
+A `useFitScale` wrapper in
 `WordSearchGrid.tsx` scales the whole 7×7 grid down to fit the play area
 (transforms don't affect `elementFromPoint`, so drag hit-testing still works),
 so it renders at real `sm` size and shrinks only as needed on short screens.
@@ -573,8 +600,8 @@ A lightweight, client-only assist layer (no server/DB involvement). State lives 
 the pinyin→units split lives in `pinyinUnits.ts`, the matching gloss tint lives
 in `WordSearchWordList.tsx`, and the grid-side yellow location reveal + shake
 live in `WordSearchGrid.tsx`; tunables are in `constants.ts`
-(`HINT_BAR_UNITS = 8`, `HINT_COST = 1`, `HINT_REMAINDER_MARK = "—"`,
-`HINT_ACCENT_COLOR`).
+(`HINT_BAR_UNITS = 8`, `HINT_COST = 1`, `HINT_LETTER_BLANK = "_"`,
+`HINT_REMAINDER_MARK = "—"`, `HINT_ACCENT_COLOR`).
 
 Revealing a word's grid **location** was too easy a hint (v1's cell-pulse
 mechanic); v2 replaces it with a cheap, hangman-style **pinyin reveal** so a
@@ -600,19 +627,24 @@ hint nudges recall without handing over the answer.
   mask built by `buildMask`: **one "island" per Chinese
   character** in the word (space-separated, one per `pinyin` syllable) — so
   the island count openly gives away the word's **character count**, by
-  design. An island that still has something hidden ends in a **single
-  `HINT_REMAINDER_MARK` ("—")**, meaning only "there's more to this
-  character" — so a syllable's own unit count stays hidden until its units
-  are actually revealed. (This used to be a fixed 3 underscores, which read as
-  a hangman blank-per-letter and so implied a 3-unit remainder that was
-  usually wrong; the dash carries no count. The same mark is the No-Pinyin
-  board's `COMPONENT_BLANK`, §5a-ii.) Units are distributed **round-robin across characters**
+  design. Everything still hidden in an island is drawn as **one
+  `HINT_LETTER_BLANK` ("_") per omitted letter** — classic hangman spacing —
+  so each syllable shows its full length from the first press and every
+  reveal visibly consumes the blanks it fills. Tone diacritics ride on their
+  letter, so `ǎ` is one blank (`buildMask`/`letterCount` normalize to NFC
+  before counting). (History: this was 3 fixed underscores, then a single
+  count-free `HINT_REMAINDER_MARK` dash, now a true blank-per-letter — the
+  dash hid the length so well that a mask gave the player almost nothing to
+  anchor on. The dash lives on as the No-Pinyin board's `COMPONENT_BLANK`,
+  §5a-ii, where there is no letter count to show.) Units are distributed **round-robin across characters**
   (`distributeRevealTiers`), not filled one island at a time: every
   character's 1st unit is given out before any character's 2nd, then every
   2nd before any 3rd, wrapping until the word is fully spelled out — a
   character with fewer units than the current tier is simply skipped. E.g. a
-  2-char word like 变化 (biàn huà) goes `___ ___` → `b___ ___` → `b___ h___` →
-  `bi___ h___` → … rather than fully spelling out 变 before starting on 化.
+  2-char word like 变化 (biàn huà, units `b·i·àn` and `h·u·à`) goes
+  `____ ___` → `b___ ___` → `b___ h__` → `bi__ h__` → `bi__ hu_` →
+  `biàn hu_` → `biàn huà` rather than fully spelling out 变 before starting
+  on 化.
 - **Matching gloss tint:** while a word is actively hinted (mask showing or
   location revealed), `WordSearchWordList` tints that word's English gloss in
   `HINT_ACCENT_COLOR` — the same color as the mask text — so the player can
@@ -843,8 +875,8 @@ Frontend (`src/games/word-search/`):
   threshold line (§5a).
 - `WordSearchHintRow.tsx` — the hint display row between the gloss list and the
   grid. Renders whichever currency the board spends (`currency` prop): the
-  Pinyin board's per-syllable islands closed with a single `HINT_REMAINDER_MARK`
-  dash (`buildMask`;
+  Pinyin board's per-syllable islands padded with one `HINT_LETTER_BLANK`
+  underscore per still-hidden letter (`buildMask` / `letterCount`;
   §5a), or the No Pinyin board's component glyphs in a line, collapsing to the
   character once its parts run out (§5a-ii).
 - `pinyinUnits.ts` — splits a tone-marked pinyin syllable into its phonetic
@@ -876,7 +908,8 @@ Frontend (`src/games/word-search/`):
   `mode` stored in the payload) localStorage save/resume layer for the one
   in-progress board. See §5b.
 - `constants.ts` — grid query, `CELL_SIZE`, medal thresholds, hint tunables
-  (`HINT_BAR_UNITS`, `HINT_COST`, `HINT_REMAINDER_MARK`, `HINT_ACCENT_COLOR`),
+  (`HINT_BAR_UNITS`, `HINT_COST`, `HINT_LETTER_BLANK`, `HINT_REMAINDER_MARK`,
+  `HINT_ACCENT_COLOR`),
   the pinyin-mode config (`WordSearchMode`, `MODE_CONFIGS`, `modeConfigFor`;
   see §3), and the `wins`-table keys `GAME_KEY` / `WIN_LEVEL` (shared by
   `WordSearchPage`'s `recordWin` and the hub item's count; see §3);

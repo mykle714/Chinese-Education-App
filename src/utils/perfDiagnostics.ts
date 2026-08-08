@@ -83,7 +83,7 @@ const ENDPOINT = `${API_BASE_URL}/api/diagnostics/perf`;
 // One record per interesting performance entry. Kept deliberately flat/small so
 // the JSONL the server writes is easy to grep and the beacon payload stays tiny.
 interface PerfRecord {
-    kind: "interaction" | "longtask" | "first-input" | "tap" | "touch";
+    kind: "interaction" | "longtask" | "first-input" | "tap";
     // Route the entry happened on (helps separate footer vs /decks vs learn).
     path: string;
     // Best-effort description of what was tapped (see describeTarget), or for
@@ -95,30 +95,6 @@ interface PerfRecord {
     name?: string;
     // Whole tap→next-paint span (ms). For longtask this is the block duration.
     duration: number;
-    // --- Tap-census-only fields (see beginTapCensus) --------------------------
-    // Where the finger actually landed, in client coords. Lets a dead *zone*
-    // (a gutter, a mis-sized cell) be told apart from a dead *card*.
-    x?: number;
-    y?: number;
-    // The element genuinely under the finger at tap time, from the event's own
-    // hit test — independent of what any handler later claimed.
-    hit?: string;
-    // `data-card-id` of the nearest card ancestor of the hit element: the card
-    // the PLAYER touched. Compare with `target` (the card the HANDLER resolved).
-    // If these disagree, the tap was routed to the wrong card. If this is set on
-    // an `unhandled` record, the finger was on a real card that never responded.
-    hitCard?: string;
-    // Pointer identity of the tap, so two fingers can be told apart. A
-    // simultaneous two-finger press MUST produce two distinct pointerIds; one
-    // pointerId across a two-thumb attempt means the engine withheld a finger.
-    pointerId?: number;
-    // --- Touch-probe-only fields (see beginTouchProbe) ------------------------
-    // TouchEvent.touches.length / changedTouches.length at dispatch. These read
-    // the TOUCH layer, which is upstream of the pointer layer: `touches: 2` with
-    // only one `pointerdown` census record proves the engine saw both fingers
-    // and declined to promote the second to a pointer event.
-    touches?: number;
-    changedTouches?: number;
     // Event-Timing decomposition (ms); omitted for longtask.
     inputDelay?: number;
     processing?: number;
@@ -165,309 +141,6 @@ function pushRecord(rec: PerfRecord) {
 let tapWindowStart = 0;
 let tapsThisWindow = 0;
 
-/** Returns false and consumes a slot when the flood backstop still has room. */
-function overTapRateCap(): boolean {
-    const now = Date.now();
-    if (now - tapWindowStart > 60000) {
-        tapWindowStart = now;
-        tapsThisWindow = 0;
-    }
-    if (tapsThisWindow >= TAP_REPORTS_PER_MIN) return true;
-    tapsThisWindow++;
-    return false;
-}
-
-// --- Tap census (beginTapCensus) -------------------------------------------
-// One in-flight entry per physical pointerdown, created by the window-level
-// observer and later CLAIMED by `reportTap` if some handler dealt with the tap.
-interface PendingTap {
-    ts: number;
-    x: number;
-    y: number;
-    pointerId?: number;
-    hit?: string;
-    hitCard?: string;
-    /** performance.now() at the capture-phase observer, i.e. as early as the tap
-     *  can possibly be seen. Used as the timing baseline when nothing claims it. */
-    observedAt: number;
-    claimed: boolean;
-    outcome?: string;
-    target?: string;
-    inputDelay?: number;
-    processing?: number;
-    /** performance.now() at the end of the claiming handler, for `presentation`. */
-    handlerEnd?: number;
-}
-
-let pendingTaps: PendingTap[] = [];
-let censusDepth = 0;
-
-/**
- * Finalize one observed tap into a record, a frame after it happened.
- *
- * An entry that no handler claimed becomes `name: "unhandled"` — the record that
- * did not previously exist. Its `hitCard` says whether the finger was on a real
- * card at the time, which is the difference between "the player missed the card"
- * and "the card was there and simply did not respond".
- */
-function finalizeTap(p: PendingTap): void {
-    try {
-        const idx = pendingTaps.indexOf(p);
-        if (idx !== -1) pendingTaps.splice(idx, 1);
-        if (overTapRateCap()) return;
-
-        // Paint cost is measured from whatever the last known point in the tap's
-        // processing was: the claiming handler's end, or the observation itself.
-        const presentation = Math.round(performance.now() - (p.handlerEnd ?? p.observedAt));
-        const inputDelay = p.inputDelay ?? Math.max(0, Math.round(p.observedAt - p.ts));
-        const processing = p.processing ?? 0;
-
-        pushRecord({
-            kind: "tap",
-            path: window.location.pathname,
-            target: p.target,
-            name: p.outcome ?? "unhandled",
-            duration: inputDelay + processing + presentation,
-            inputDelay,
-            processing,
-            presentation,
-            x: p.x,
-            y: p.y,
-            pointerId: p.pointerId,
-            hit: p.hit,
-            hitCard: p.hitCard,
-            at: Math.round(p.observedAt),
-        });
-    } catch {
-        /* never throw from telemetry */
-    }
-}
-
-/**
- * Window-level, CAPTURE-PHASE pointerdown observer. This is the whole point of
- * the census: the capture phase runs window → target, so this fires BEFORE any
- * element in the tree — and therefore before anything can `stopPropagation`,
- * before a `pointer-events: none` element routes the tap elsewhere, and before a
- * guard clause decides to do nothing. A tap that no handler ever acts on still
- * lands here. Handler-level reporting can only ever see taps that arrived; this
- * sees the ones that did not, which is the population we are hunting.
- */
-function onCensusPointerDown(e: PointerEvent): void {
-    try {
-        // Same left-button-only rule the game's own handlers use, so the census
-        // and the outcome records agree on what counts as a tap.
-        if (e.button !== 0) return;
-        const observedAt = performance.now();
-        const el = e.target as Element | null;
-        // The nearest card ancestor of whatever was hit. `closest` is guarded
-        // because `e.target` can be a text node wrapper or an SVG element in
-        // some engines, where `closest` may be absent.
-        let hitCard: string | undefined;
-        try {
-            hitCard =
-                (el?.closest?.("[data-card-id]") as HTMLElement | null)?.dataset?.cardId ??
-                undefined;
-        } catch {
-            hitCard = undefined;
-        }
-
-        const p: PendingTap = {
-            ts: e.timeStamp,
-            x: Math.round(e.clientX),
-            y: Math.round(e.clientY),
-            pointerId: e.pointerId,
-            hit: describeTarget(el),
-            hitCard,
-            observedAt,
-            claimed: false,
-        };
-        pendingTaps.push(p);
-
-        // Finalize a frame later: every handler for this event has run by then
-        // (they are all synchronous within the dispatch), and the frame boundary
-        // is also what makes `presentation` measurable.
-        if (typeof requestAnimationFrame === "function") {
-            requestAnimationFrame(() => finalizeTap(p));
-        } else {
-            setTimeout(() => finalizeTap(p), 0);
-        }
-    } catch {
-        /* never throw from telemetry */
-    }
-}
-
-/**
- * Turn on the full tap census for a surface, and return the stop function.
- *
- * Call from a game page's mount effect and call the returned function on
- * unmount. Reference-counted, so overlapping callers cannot detach each other's
- * observer. While active, EVERY pointerdown on the page produces exactly one
- * record pairing the physical tap (coords, element hit, card under the finger)
- * with the logical outcome a handler claimed via `reportTap` — or `unhandled`
- * if none did.
- *
- * Scope it to the surface under investigation rather than the whole app: this
- * observes every pointerdown anywhere, which is the right volume for one game
- * page and the wrong volume for the entire session.
- */
-export function beginTapCensus(): () => void {
-    if (!started) return () => {};
-    let stopped = false;
-    try {
-        if (censusDepth === 0) {
-            window.addEventListener("pointerdown", onCensusPointerDown, { capture: true });
-        }
-        censusDepth++;
-    } catch {
-        return () => {};
-    }
-    return () => {
-        // Idempotent: a double-invoked cleanup must not unbalance the refcount.
-        if (stopped) return;
-        stopped = true;
-        try {
-            censusDepth--;
-            if (censusDepth <= 0) {
-                censusDepth = 0;
-                window.removeEventListener("pointerdown", onCensusPointerDown, { capture: true });
-                // Emit whatever is still in flight rather than dropping it, so the
-                // last taps before a page leaves are not silently lost.
-                for (const p of [...pendingTaps]) finalizeTap(p);
-                pendingTaps = [];
-            }
-        } catch {
-            /* never throw from telemetry */
-        }
-    };
-}
-
-// --- Touch-layer probe (beginTouchProbe) -----------------------------------
-// TEMPORARY DIAGNOSTIC, added for the iOS "second thumb does nothing" bug in
-// Match Speed. Delete once that is resolved.
-//
-// WHY IT EXISTS. The tap census (`beginTapCensus`) observes `pointerdown` on
-// `window` in the CAPTURE phase, so it sees every pointer event the engine
-// dispatches, whatever the app does with it. On iOS a two-thumb press produces
-// only ONE census record. Capture-phase observation rules out the app as the
-// cause, which leaves two very different culprits — and they need opposite
-// fixes, so guessing is not good enough:
-//
-//   1. WebKit sees both fingers but withholds the second from the POINTER layer
-//      because it has claimed the pair as a gesture. Then `touchstart` still
-//      reports `touches: 2`, and the fix is to drive the board off touch events
-//      on iOS.
-//   2. WebKit never surfaces the second finger at all (e.g. because cancelling
-//      `gesturestart` in useBlockZoom swallows the sequence). Then `touchstart`
-//      also only ever reports one finger, and the fix is to stop cancelling
-//      `gesturestart` on game surfaces — they already declare
-//      `touch-action: none` and cannot zoom regardless.
-//
-// EVERY listener here is `passive: true` and observation-only. That is load-
-// bearing, not tidiness: a non-passive listener on these events could itself
-// change the engine's gesture arbitration, and the probe would then be
-// measuring its own presence.
-function onProbeTouch(e: TouchEvent): void {
-    try {
-        if (overTapRateCap()) return;
-        const t = e.changedTouches?.[0];
-        pushRecord({
-            kind: "touch",
-            path: window.location.pathname,
-            name: e.type,
-            duration: 0,
-            touches: e.touches?.length ?? 0,
-            changedTouches: e.changedTouches?.length ?? 0,
-            x: t ? Math.round(t.clientX) : undefined,
-            y: t ? Math.round(t.clientY) : undefined,
-            hit: describeTarget(e.target),
-            at: Math.round(performance.now()),
-        });
-    } catch {
-        /* never throw from telemetry */
-    }
-}
-
-/** `pointercancel` = the engine REVOKING a pointer it already dispatched. If
- *  finger 1 is cancelled as finger 2 lands, the board loses a tap it had
- *  already begun, which looks identical to a dead tap. */
-function onProbePointerCancel(e: PointerEvent): void {
-    try {
-        if (overTapRateCap()) return;
-        pushRecord({
-            kind: "touch",
-            path: window.location.pathname,
-            name: "pointercancel",
-            duration: 0,
-            pointerId: e.pointerId,
-            x: Math.round(e.clientX),
-            y: Math.round(e.clientY),
-            hit: describeTarget(e.target),
-            at: Math.round(performance.now()),
-        });
-    } catch {
-        /* never throw from telemetry */
-    }
-}
-
-/** Safari-only. Timestamps the moment WebKit decides two fingers are a gesture,
- *  which is the instant the second pointerdown goes missing if hypothesis 2 holds. */
-function onProbeGestureStart(): void {
-    try {
-        if (overTapRateCap()) return;
-        pushRecord({
-            kind: "touch",
-            path: window.location.pathname,
-            name: "gesturestart",
-            duration: 0,
-            at: Math.round(performance.now()),
-        });
-    } catch {
-        /* never throw from telemetry */
-    }
-}
-
-let probeDepth = 0;
-
-/**
- * Turn on the touch-layer probe for a surface; returns the stop function.
- * Reference-counted and idempotent, exactly like `beginTapCensus`, and meant to
- * be started alongside it so the two layers can be read against each other on a
- * shared clock.
- */
-export function beginTouchProbe(): () => void {
-    if (!started) return () => {};
-    let stopped = false;
-    const opts = { capture: true, passive: true } as const;
-    try {
-        if (probeDepth === 0) {
-            window.addEventListener("touchstart", onProbeTouch as EventListener, opts);
-            window.addEventListener("touchend", onProbeTouch as EventListener, opts);
-            window.addEventListener("pointercancel", onProbePointerCancel as EventListener, opts);
-            window.addEventListener("gesturestart", onProbeGestureStart, opts);
-        }
-        probeDepth++;
-    } catch {
-        return () => {};
-    }
-    return () => {
-        if (stopped) return;
-        stopped = true;
-        try {
-            probeDepth--;
-            if (probeDepth <= 0) {
-                probeDepth = 0;
-                window.removeEventListener("touchstart", onProbeTouch as EventListener, opts);
-                window.removeEventListener("touchend", onProbeTouch as EventListener, opts);
-                window.removeEventListener("pointercancel", onProbePointerCancel as EventListener, opts);
-                window.removeEventListener("gesturestart", onProbeGestureStart, opts);
-            }
-        } catch {
-            /* never throw from telemetry */
-        }
-    };
-}
-
-
 /**
  * Record one game-surface tap, from inside the surface's own pointerdown handler.
  *
@@ -495,14 +168,6 @@ export function beginTouchProbe(): () => void {
  * `localStorage.perfDiag = "1"` — same gate as the rest of this module
  * (src/main.tsx).
  *
- * WHEN A TAP CENSUS IS RUNNING (see `beginTapCensus`) this call does not emit a
- * record of its own — it CLAIMS the census's already-observed entry for the same
- * pointerdown and attaches the outcome to it. That is what yields one record per
- * physical tap carrying both halves (where the finger landed AND what the game
- * did), and what lets an unclaimed entry be published as `unhandled`. Outside a
- * census it emits a standalone record exactly as before, so non-game callers and
- * the analyzer's existing behaviour are unaffected.
- *
  * Never throws into the caller: a tap handler must not be able to fail because
  * telemetry did.
  *
@@ -524,29 +189,18 @@ export function reportTap(
         const inputDelay = Math.max(0, Math.round(handlerStart - eventTimeStamp));
         const processing = Math.round(handlerEnd - handlerStart);
 
-        // Claim the census entry for this same pointerdown, if a census is
-        // running. Matched on `timeStamp` and searched from the END, so that two
-        // fingers landing in the same frame each claim their own entry rather
-        // than both claiming the first one. (Their timeStamps are normally
-        // distinct; searching backwards keeps it correct even when they are not.)
-        for (let i = pendingTaps.length - 1; i >= 0; i--) {
-            const p = pendingTaps[i];
-            if (p.claimed || p.ts !== eventTimeStamp) continue;
-            p.claimed = true;
-            p.outcome = outcome;
-            p.target = target;
-            p.inputDelay = inputDelay;
-            p.processing = processing;
-            p.handlerEnd = handlerEnd;
-            return; // finalizeTap will publish it a frame from now
-        }
-
         // `presentation` is only knowable a frame later, so the record is pushed
         // from the rAF callback rather than here; that also means one dropped
         // frame shows up as a large presentation instead of a missing record.
         const finish = (presentation: number) => {
             // No interest filter: this is a census (see TAP_REPORTS_PER_MIN).
-            if (overTapRateCap()) return;
+            const now = Date.now();
+            if (now - tapWindowStart > 60000) {
+                tapWindowStart = now;
+                tapsThisWindow = 0;
+            }
+            if (tapsThisWindow >= TAP_REPORTS_PER_MIN) return;
+            tapsThisWindow++;
 
             pushRecord({
                 kind: "tap",

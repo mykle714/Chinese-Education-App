@@ -21,6 +21,7 @@ distribution). Both motives are addressed below, because they point at
 - [Replacement map](#replacement-map)
 - [Where the effort actually concentrates](#where-the-effort-actually-concentrates)
 - [The Night Market finding](#the-night-market-finding)
+- [The dropped-touch finding (Match Speed)](#the-dropped-touch-finding-match-speed)
 - [Decision gates](#decision-gates)
 - [The hybrid path](#the-hybrid-path)
 - [Open questions](#open-questions)
@@ -40,6 +41,14 @@ The evidence available at the time of writing points at application-level:
 | The production build emits a **2,168 kB main chunk (721 kB gzipped)**, with Vite warning about it. Route splitting exists but is partial (e.g. `WordSearchPage` is its own chunk) | A large parse-and-execute cost on **every cold start**. Fixable in days via `React.lazy` + `manualChunks`. RN would fix this too — at vastly higher cost |
 | Three distinct stalls found in Speed Reading were: a glyph fetch firing at the round change, a CSS transition running in both directions, and an effect that should have read a cache during render | All three are **writable in React Native too**. None is a platform limitation. See [SPEED_READING_GAME.md](./SPEED_READING_GAME.md) § Answer feedback |
 | PIXI (`WebGLRenderer`, `WebGPURenderer`, `RenderTargetSystem` chunks) ships to users who never open Night Market | Lazy-loading the market engine is a contained change |
+
+**One signal now points the other way.** Every row above is application-level. The
+Match Speed dropped-touch investigation (2026-08-08) produced the first candidate
+*platform*-level defect in this codebase: on iOS, a simultaneous second finger is
+sometimes never delivered to the page at all. It is not yet confirmed as
+platform-level — one control experiment settles it and has not been run. Read
+[§ The dropped-touch finding](#the-dropped-touch-finding-match-speed) before
+concluding that the premise still fails.
 
 **You already collect the data needed to settle this.** Real-user tap-latency
 telemetry (Event Timing + long tasks) posts to `POST /api/diagnostics/perf` and is
@@ -156,6 +165,121 @@ happens to be migration insurance. See
 
 ---
 
+## The dropped-touch finding (Match Speed)
+
+**On iOS, a simultaneous two-finger press sometimes reaches the page as only one
+finger.** The second contact produces *no DOM event of any kind* — no
+`touchstart`, no `pointerdown`, no `gesturestart`, no `pointercancel`. This is the
+first defect found in this codebase that may be genuinely platform-level, which is
+why it lives in this document rather than only in the game's own.
+
+### Symptom
+
+In Match Speed, the player presses one card with each thumb. One card selects; the
+other never does, so the pair is never evaluated as a match attempt. To the player
+it reads as "my second tap did nothing". Reported reproduction rate ≈20%; measured
+≈12% (2 of 16 two-thumb presses in the instrumented run).
+
+### What was measured
+
+Instrumentation was added, deployed to prod, exercised across five real sessions,
+and then **reverted** — the bug is understood well enough that leaving telemetry in
+the app costs more than it returns. To resurrect it, revert the revert; the
+originals are commits `0c07f0a` (window-level tap census), `dc7bfec` (touch-layer
+probe: `touchstart`/`touchend`/`pointercancel`/`gesturestart` with touch counts),
+and `41fd700`/`453ec2b`/`2dfbaaf` (on-screen live finger-count overlay).
+
+Device: iPhone, iOS 26.6, Chrome (`CriOS/151`) — i.e. WebKit.
+
+| Observation | Value |
+|---|---|
+| Two-thumb presses in the analyzed run | 16 |
+| …both fingers concurrent (`touches: 2`) | 9 |
+| …both fingers sequential (each `touches: 1`, 44–103ms apart) | 5 |
+| …**only one finger ever observed** | **2** |
+| `touchstart` / `touchend` / `pointerdown` totals | 30 / 30 / 30 — perfectly balanced |
+| Long tasks during the run | 0 |
+| `presentation` (paint) p50 / max | 7ms / 22ms |
+| `processing` (handler cost) p50 | ~0ms |
+
+A failing press logs exactly two lines and nothing else:
+
+```
+12.835  touchstart  touches=1 changed=1  div.match-speed__card[三sān]
+12.890  touchend    touches=0 changed=1  div.match-speed__card[三sān]
+```
+
+against a healthy press's five:
+
+```
+17.277  touchstart     touches=1 changed=1  span.char-pinyin-display__character[下]
+17.295  gesturestart
+17.301  touchstart     touches=2 changed=1  div.match-speed__card[he]
+17.309  touchend       touches=1 changed=1  span.char-pinyin-display__character[下]
+17.3xx  touchend       touches=0 changed=1  div.match-speed__card[he]
+```
+
+### What this establishes — and what it does not
+
+**Established:**
+
+- The app is not at fault for *handling*. The census listened on `window` in the
+  **capture phase**, which runs window→target before any element handler and
+  cannot be suppressed by `stopPropagation`, `pointer-events: none`, or a guard
+  clause. An event that existed would have been recorded.
+- It is not a performance stall. Zero long tasks, sub-25ms paints, ~0ms handlers.
+  Every tap that *did* arrive was handled correctly and fast.
+- It is not the pointer-event compatibility layer specifically: the touch layer,
+  which sits upstream, is equally blind to the missing finger.
+- The absence of `gesturestart` on failing presses means WebKit never recognized a
+  second contact at all — it is not gesture arbitration claiming the finger.
+
+**Not established — and this is the gap that matters:**
+
+> **The control experiment was never run.** Nothing proves the *browser* is at
+> fault rather than *our page*. A bare static HTML page with no React, no MUI, and
+> none of the app's CSS was designed for this and not built. Until it runs, "iOS
+> drops the touch" and "something in our shell causes iOS to drop the touch" are
+> both live, and they have wildly different price tags.
+
+The intended test: serve a dependency-free page with two zones — one plain, one
+carrying the same `touch-action: none` / `user-select: none` the game surfaces use
+(see [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md)) — and two-thumb each ~20
+times, in Safari as well as Chrome.
+
+| Result | Conclusion |
+|---|---|
+| Plain zone also drops contacts | Platform-level. A real argument for RN |
+| Plain zone clean, `touch-action: none` zone drops | **Our CSS.** A one-line fix, not a rewrite |
+| Both clean | Something else in the app shell; bisect from there |
+
+Suspects for the third case, in rough order: `useBlockZoom`'s `gesturestart`
+cancellation (`src/hooks/useBlockZoom.ts`), `useBlockEdgeSwipe`, and the
+`MobileDemoFrame` wrapper.
+
+### Bearing on the migration decision
+
+**If** the control test shows the platform at fault, this is the strongest
+migration argument on file, and qualitatively different from the performance
+motives in [§ Check the premise first](#check-the-premise-first): a native app
+receives `UITouch` directly and has no WebKit touch pipeline to lose contacts in.
+It would be a *correctness* argument rather than a speed one — and correctness
+arguments do not dissolve under profiling the way speed arguments have here.
+
+Two cautions before it is treated as decisive:
+
+- **It is one interaction on one screen.** Match Speed is the only surface where
+  two-thumb input is natural. A defect affecting one game does not by itself
+  justify rewriting 348 source files; a targeted redesign of that interaction
+  (e.g. accept sequential taps only, or make the second tap's role explicit) may
+  close the user-visible problem entirely.
+- **Capacitor does not help here.** It ships the same WebKit web view, so it
+  inherits this bug unchanged — see [§ The hybrid path](#the-hybrid-path). This is
+  the one known issue where the hybrid path is *not* a cheaper substitute for RN,
+  which makes settling the control test worth doing before any packaging decision.
+
+---
+
 ## Decision gates
 
 Do not start a migration until all three are true:
@@ -167,6 +291,13 @@ Do not start a migration until all three are true:
 3. **A native capability is actually required** that Capacitor cannot supply.
    Orientation lock, push, camera and store distribution are all available through
    Capacitor without a rewrite; if that is the whole motive, RN is the wrong tool.
+
+**Gate 3 has one known exception.** The
+[dropped-touch finding](#the-dropped-touch-finding-match-speed) is a defect
+Capacitor inherits, because Capacitor ships the same WebKit web view. If that
+finding is confirmed as platform-level by its control test, it satisfies gate 3 on
+its own — but run the control test first, since the same evidence would otherwise
+point at a one-line CSS fix.
 
 ---
 
@@ -209,7 +340,12 @@ unchanged, so gate 2 above still applies.
 | What ports for free | `src/engine/market/*.ts`, `src/api/http.ts`, `src/utils/`, `src/types.ts`, `server/contracts/wire.ts` |
 | Replacement map | `src/features/nightmarket/*.tsx`, `src/components/handwriting/{GlyphSvg,HanziGuide,loadCharData}.{tsx,ts}`, `src/services/tts/*`, `src/games/runtime/{gameSounds,useSidewaysStage}.ts`, `src/hooks/usePageSlide.ts`, `src/App.tsx` |
 | The Night Market finding | `src/engine/market/` (all 23 files), [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md), [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md) |
+| The dropped-touch finding | `src/games/match-speed/MatchSpeedBoard.tsx` (`handleTap`), `src/hooks/useBlockZoom.ts`, `src/utils/perfDiagnostics.ts` (`reportTap`), `server/scripts/analyze-client-perf.ts`, [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md), [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md), [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) |
 | The hybrid path | `src/components/MobileDemoFrame.tsx`, `src/games/runtime/useSidewaysStage.ts` |
+
+**The dropped-touch finding is as of 2026-08-08**; its instrumentation has been
+reverted out of the tree, so the numbers there cannot be re-derived without
+restoring the commits listed in that section.
 
 **Counts in this document are as of 2026-07-29** (348 source files, 140 MUI
 importers, 13 `keyframes` users, 15 Night Market PIXI layers, 23 engine files,

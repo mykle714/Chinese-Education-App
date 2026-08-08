@@ -73,19 +73,6 @@ interface FlatRecord {
   inputDelay?: number;
   processing?: number;
   presentation?: number;
-  // Tap-census-only fields (kind: "tap"); see src/utils/perfDiagnostics.ts.
-  // `hit`/`hitCard` describe what was PHYSICALLY under the finger, as opposed to
-  // `target`, which is what the handler resolved. Absent on pre-census records.
-  x?: number;
-  y?: number;
-  hit?: string;
-  hitCard?: string;
-  pointerId?: number;
-  // Touch-probe-only fields (kind: "touch"); see beginTouchProbe.
-  touches?: number;
-  changedTouches?: number;
-  // ms since navigation start, stamped by the client on every record.
-  at?: number;
 }
 
 // Accumulate per (kind + path) so footer taps, decks taps, longtasks etc. are
@@ -111,31 +98,6 @@ interface TapOutcome {
   presentations: number[];
 }
 const tapOutcomes = new Map<string, TapOutcome>();
-
-// Every `unhandled` tap the census observed: a real pointerdown that reached no
-// handler at all. These are the records that did not exist before the census —
-// the "I tapped and the selection just sat there" population. `hitCard` is the
-// discriminator: set = the finger WAS on a card and the card did not respond;
-// absent = the tap landed on no card (gutter, empty slot, overlay).
-interface UnhandledTap {
-  x?: number;
-  y?: number;
-  hit?: string;
-  hitCard?: string;
-  path: string;
-}
-const unhandledTaps: UnhandledTap[] = [];
-// Taps where the card under the finger and the card the handler acted on differ
-// — a tap routed to the wrong card, which looks perfectly healthy in the
-// outcome table but is a no-op (or worse) from the player's side.
-const misroutedTaps: Array<{ hitCard: string; target: string; outcome: string }> = [];
-// TEMPORARY (iOS second-thumb bug): raw touch-layer events, kept in dispatch
-// order so they can be interleaved with the pointer-layer census on one clock.
-const touchEvents: Array<{
-  at: number; name: string; touches?: number; changedTouches?: number; hit?: string;
-}> = [];
-// Every pointerdown the census saw, for the same interleaving.
-const pointerDowns: Array<{ at: number; pointerId?: number; hitCard?: string; outcome?: string }> = [];
 
 function bucketFor(key: string): Bucket {
   let b = buckets.get(key);
@@ -198,32 +160,13 @@ async function main() {
         if (typeof r.presentation === 'number') b.presentations.push(r.presentation);
         if (r.target) b.targets.set(r.target, (b.targets.get(r.target) || 0) + 1);
 
-        if (r.kind === 'touch' && r.name) {
-          touchEvents.push({
-            at: r.at ?? 0, name: r.name, touches: r.touches,
-            changedTouches: r.changedTouches, hit: r.hit,
-          });
-        }
-
         if (r.kind === 'tap' && r.name) {
-          pointerDowns.push({ at: r.at ?? 0, pointerId: r.pointerId, hitCard: r.hitCard, outcome: r.name });
           const key = `${r.path}  ${r.name}`;
           let t = tapOutcomes.get(key);
           if (!t) tapOutcomes.set(key, (t = { n: 0, inputDelays: [], presentations: [] }));
           t.n++;
           if (typeof r.inputDelay === 'number') t.inputDelays.push(r.inputDelay);
           if (typeof r.presentation === 'number') t.presentations.push(r.presentation);
-
-          if (r.name === 'unhandled') {
-            unhandledTaps.push({ x: r.x, y: r.y, hit: r.hit, hitCard: r.hitCard, path: r.path });
-          } else if (r.hitCard && r.target) {
-            // `target` is reported as `side:cardId`; compare only the id half
-            // against the `data-card-id` the census read off the DOM.
-            const resolvedId = String(r.target).split(':').slice(1).join(':');
-            if (resolvedId && resolvedId !== r.hitCard) {
-              misroutedTaps.push({ hitCard: r.hitCard, target: resolvedId, outcome: r.name });
-            }
-          }
         }
       }
     }
@@ -297,8 +240,6 @@ async function main() {
   // will skew the percentages upward; check the date range if a run looks odd.)
   if (tapOutcomes.size) {
     console.log('\nGame tap outcomes (census — every tap, not just slow ones):');
-    console.log('  unhandled  = a real pointerdown that reached NO handler at all. THE no-op: the board just');
-    console.log('               sat there. Broken out in its own section below. Needs the window-level census.');
     console.log('  no-card    = the tap reached NO card: gutter, empty slot, mid-pop card, or an overlay ate it.');
     console.log('  ignored-*  = a card took the tap and a guard dropped it. Expected at low rates (see below).');
     console.log('  everything else = the tap did what the player asked.');
@@ -330,100 +271,6 @@ async function main() {
         '  ' + pad(key, 44) + pad(t.n, 6) + pad(share, 7) +
         pad(pct(inp, 50), 11) + pad(pct(inp, 95), 11) + pad(pct(pres, 95), 10)
       );
-    }
-  }
-
-  // THE no-op table. An `unhandled` record is a physical pointerdown that the
-  // window-level census observed and that no handler ever acted on — precisely
-  // the "selection stayed put and nothing happened" tap. Split by whether a card
-  // was under the finger, because the two halves have completely different fixes.
-  if (unhandledTaps.length) {
-    const onCard = unhandledTaps.filter((u) => u.hitCard);
-    const offCard = unhandledTaps.filter((u) => !u.hitCard);
-    console.log(`\nUnhandled taps (reached NO handler): ${unhandledTaps.length}`);
-    console.log(`  ON a card   ${pad(onCard.length, 6)} <- the card was under the finger and did not respond.`);
-    console.log('              Suspect the card layer: a dead/stale node, an element covering it,');
-    console.log('              or pointer-events being none while the card still looks live.');
-    console.log(`  OFF a card  ${pad(offCard.length, 6)} <- landed on no card: gutter, empty slot, or an overlay.`);
-    console.log('              Suspect layout/hit-area sizing.');
-
-    // Which specific cards went dead, and what element actually took the tap.
-    const byCard = new Map<string, number>();
-    for (const u of onCard) byCard.set(u.hitCard!, (byCard.get(u.hitCard!) || 0) + 1);
-    if (byCard.size) {
-      console.log('\n  Dead taps by card under the finger:');
-      for (const [c, n] of [...byCard.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
-        console.log(`    ${pad(n, 5)} ${c}`);
-      }
-    }
-    const byHit = new Map<string, number>();
-    for (const u of unhandledTaps) byHit.set(u.hit || '(unknown)', (byHit.get(u.hit || '(unknown)') || 0) + 1);
-    console.log('\n  Element actually under the finger:');
-    for (const [h, n] of [...byHit.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
-      console.log(`    ${pad(n, 5)} ${h}`);
-    }
-  }
-
-  // TEMPORARY (iOS second-thumb bug). The whole question is whether the TOUCH
-  // layer sees a finger that the POINTER layer never reports. A `touchstart`
-  // carrying `touches: 2` with only one pointerdown in the surrounding window is
-  // the engine withholding finger 2; if no `touchstart` ever reports 2 touches,
-  // the second finger was never surfaced at all and the cause is upstream.
-  if (touchEvents.length) {
-    const multi = touchEvents.filter((t) => t.name === 'touchstart' && (t.touches ?? 0) >= 2);
-    const starts = touchEvents.filter((t) => t.name === 'touchstart');
-    const gestures = touchEvents.filter((t) => t.name === 'gesturestart');
-    const cancels = touchEvents.filter((t) => t.name === 'pointercancel');
-    console.log(`\nTouch-layer probe: ${touchEvents.length} event(s)`);
-    console.log(`    touchstart total          ${starts.length}`);
-    console.log(`    touchstart with 2+ touches ${multi.length}   <- engine SAW a second finger`);
-    console.log(`    gesturestart (WebKit)      ${gestures.length}`);
-    console.log(`    pointercancel              ${cancels.length}   <- pointer revoked mid-tap`);
-    console.log(`    pointerdown (census)       ${pointerDowns.length}`);
-
-    if (multi.length) {
-      // For each multi-touch press, how many pointerdowns landed within 400ms?
-      // 2 = both fingers made it through; 1 = the second was withheld.
-      let withheld = 0;
-      for (const m of multi) {
-        const near = pointerDowns.filter((p) => Math.abs(p.at - m.at) <= 400);
-        if (near.length < 2) withheld++;
-      }
-      console.log(
-        `\n  Of ${multi.length} two-finger press(es), ${withheld} produced FEWER THAN 2 ` +
-        `pointerdowns within 400ms.`,
-      );
-      console.log(
-        withheld > 0
-          ? '  => VERDICT: the engine sees both fingers but withholds the second pointer event.'
-          : '  => VERDICT: both fingers reach the pointer layer; look elsewhere.',
-      );
-    } else if (starts.length) {
-      console.log('\n  => VERDICT: no touchstart ever reported 2+ touches. The second finger is');
-      console.log('     never surfaced to the page at all (suspect gesturestart suppression).');
-    }
-
-    // Interleaved timeline: the two layers on one clock, which is the only view
-    // that makes a missing pointerdown legible.
-    console.log('\n  Timeline (touch layer + pointer layer, ms since nav):');
-    const merged = [
-      ...touchEvents.map((t) => ({ at: t.at, line: `TOUCH  ${t.name.padEnd(14)} touches=${t.touches ?? '-'} changed=${t.changedTouches ?? '-'}  ${t.hit ?? ''}` })),
-      ...pointerDowns.map((p) => ({ at: p.at, line: `  PTR  pointerdown   id=${p.pointerId ?? '-'}  ${p.hitCard ?? '(off-card)'}  -> ${p.outcome}` })),
-    ].sort((a, b) => a.at - b.at);
-    for (const m of merged.slice(-60)) console.log(`    ${pad(m.at, 8)} ${m.line}`);
-  }
-
-  // A tap that WAS handled, but by a different card than the one the finger was
-  // on. Looks healthy in the outcome table; feels broken to the player.
-  if (misroutedTaps.length) {
-    console.log(`\n⚠️  Misrouted taps (finger on one card, handler acted on another): ${misroutedTaps.length}`);
-    const byPair = new Map<string, number>();
-    for (const m of misroutedTaps) {
-      const k = `${m.hitCard} -> ${m.target} (${m.outcome})`;
-      byPair.set(k, (byPair.get(k) || 0) + 1);
-    }
-    for (const [k, n] of [...byPair.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
-      console.log(`    ${pad(n, 5)} ${k}`);
     }
   }
   console.log('');

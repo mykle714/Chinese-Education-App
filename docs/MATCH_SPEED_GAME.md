@@ -146,7 +146,6 @@ differently in the data:
 
 | Signal | Diagnosis |
 |---|---|
-| `unhandled` outcomes | the tap reached **no handler at all** — the true no-op (see below) |
 | `no-card` outcomes in volume | taps are missing the cards — hit-area/layout, not a guard |
 | `ignored-*` outcomes appearing in volume | a guard is eating real input |
 | Healthy outcomes with large `inputDelay` | the tap was queued behind a render (above) |
@@ -161,31 +160,6 @@ the multi-touch design working, not failing (see § Two-finger (multi-touch)
 taps). What indicts a guard is the **rate and the context**: `ignored-frozen`
 outside a countdown, or `ignored-removed` rising with tap speed, is a defect;
 a few percent of `ignored-exiting` in a fast run is not.
-
-##### The true no-op: `unhandled`
-
-The symptom "a word was already selected, it stayed selected, and no match
-happened" is **not** `miss` (which clears the selection and flashes red) and not
-any `ignored-*` (which are recorded). It is a tap that reached **no handler**, so
-under handler-level reporting alone it produced *no record* — indistinguishable
-from the player not having tapped. Counting outcomes harder can never surface it.
-
-`beginTapCensus()` (started for the page's lifetime in `MatchSpeedPage`) closes
-this by observing `pointerdown` at the **window, capture phase** — upstream of
-every element, so no `stopPropagation`, `pointer-events: none` reroute, or guard
-can hide a tap from it. Anything no handler claims is published as `unhandled`,
-carrying where the finger landed (`x`/`y`), what was under it (`hit`), and the
-`data-card-id` of the card under it (`hitCard`, rendered by `MatchSpeedCard` for
-telemetry only). Read it as:
-
-| `unhandled` with… | Means | Suspect |
-|---|---|---|
-| `hitCard` **set** | the card was under the finger and did not respond | card layer: stale/dead node, something covering it, `pointer-events` off while it still looks live |
-| `hitCard` **absent** | the tap landed on no card | hit-area/layout: gutter, empty slot, overlay |
-
-A handled tap whose `hitCard` ≠ its resolved `target` is a **misrouted** tap —
-the finger was on one card, another card acted. It looks perfectly healthy in the
-outcome table, which is exactly why the census records both.
 
 Tap records are a **census** — every tap ships, healthy or not — so the
 analyzer's `%` column is a true share of taps and rates are readable directly.

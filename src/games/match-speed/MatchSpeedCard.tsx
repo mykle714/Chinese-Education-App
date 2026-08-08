@@ -168,15 +168,6 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
             ]
                 .filter(Boolean)
                 .join(" ")}
-            // TELEMETRY ONLY — read by the tap census (src/utils/perfDiagnostics.ts,
-            // beginTapCensus) off the DOM, not by any app code. It answers "which
-            // card was physically under the finger", independently of what React
-            // thought was there and of whether any handler ran. That is what
-            // separates "the tap missed the card" from "the card was right there
-            // and did not respond". Nothing keys off these; safe to render always.
-            data-card-id={card.id}
-            data-pair-id={card.pairId}
-            data-side={card.side}
             // SELECTION FIRES ON pointerdown, NOT click — deliberately.
             //
             // `click` is synthesized only if the browser decides the gesture earned

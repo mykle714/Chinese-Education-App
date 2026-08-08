@@ -11,8 +11,6 @@ import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
-import { beginTapCensus, beginTouchProbe } from "../../utils/perfDiagnostics";
-import { TouchDebugOverlay } from "./TouchDebugOverlay";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import LeafPage from "../../components/LeafPage";
@@ -145,39 +143,6 @@ const MatchSpeedPage: React.FC = () => {
     // Mandatory on every game page (CLAUDE.md): an edge swipe would otherwise
     // navigate away mid-run. CSS touch-action can't stop the history gesture.
     useBlockEdgeSwipe(true);
-
-    // Full tap census for the life of this page (diagnostics only; no-ops unless
-    // perf diagnostics are enabled). Scoped here rather than app-wide because it
-    // records EVERY pointerdown — the right volume for one game page under
-    // investigation, far too much for a whole session.
-    //
-    // Keyed on nothing: it must start once on mount and stop once on unmount.
-    // In particular it must NOT depend on `token` (CLAUDE.md § never reload on a
-    // silent token refresh) — a re-run mid-run would drop the in-flight taps.
-    useEffect(() => beginTapCensus(), []);
-
-    // TEMPORARY: touch-layer probe for the iOS "second thumb does nothing" bug.
-    // The census above reads the POINTER layer; this reads the TOUCH layer just
-    // upstream of it, so a finger the engine sees but never promotes to a pointer
-    // event becomes visible. Remove together with `beginTouchProbe` once the bug
-    // is understood. Same empty-deps rule as the census.
-    useEffect(() => beginTouchProbe(), []);
-
-    // TEMPORARY: live finger-count readout (see TouchDebugOverlay), ON BY DEFAULT
-    // while the iOS "second thumb does nothing" bug is open — the app has no
-    // customers yet, so the cost of showing it to everyone is nil and the cost of
-    // a tester forgetting the query param is a wasted run. The JS-side telemetry
-    // cannot distinguish "pressed once" from "pressed twice and iOS discarded
-    // one" (a contact rejected before dispatch produces no events at all), so
-    // this puts the count in front of the person who knows how many fingers they
-    // used. `?touchdebug=0` hides it for a clean screen when testing something
-    // else. Read once from the URL the page was opened with — deliberately NOT
-    // reactive, so a re-render can never mount/unmount its listeners mid-run.
-    const showTouchDebug = useMemo(
-        () => new URLSearchParams(location.search).get("touchdebug") !== "0",
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        []
-    );
 
     const language = (user?.selectedLanguage ?? "zh") as Language;
 
@@ -509,7 +474,6 @@ const MatchSpeedPage: React.FC = () => {
         // arrow (→ /games), slides up on enter. No per-page IPhoneFrame — the frame
         // comes from MobileDemoFrame via Layout.tsx.
         <>
-        {showTouchDebug && <TouchDebugOverlay />}
         {/* Generic (non-itemized) notice: Match Speed deals from a rolling buffer, so
             the set of lent cards isn't known before the run starts. */}
         <ProvisionalCardsNotice

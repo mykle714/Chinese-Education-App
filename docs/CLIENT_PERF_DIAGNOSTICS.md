@@ -71,60 +71,6 @@ Plus one source that is **not** a Performance API:
   taps, `handleBoardPointerDown` for the rest).
   Rationale + how to read it: docs/MATCH_SPEED_GAME.md § Tap telemetry.
 
-- **Tap census** (`beginTapCensus()`) — a **window-level, capture-phase**
-  `pointerdown` observer, started by a game page for its lifetime
-  (`MatchSpeedPage.tsx` mount effect) and stopped on unmount. Reference-counted,
-  so overlapping callers cannot detach each other's observer.
-
-  **Why the capture phase specifically:** capture runs window → target, so this
-  fires *before every element in the tree*. Nothing downstream can hide a tap
-  from it — not `stopPropagation`, not a `pointer-events: none` element
-  rerouting the hit, not a guard clause that decides to do nothing. Both handler-
-  level reports above can only describe taps that *arrived*; this one sees the
-  taps that never did, which is the population behind "I tapped and the board
-  just sat there."
-
-  Each observed pointerdown produces exactly **one** record combining both halves:
-  - the **physical** tap — `x`/`y`, `hit` (the element genuinely under the finger),
-    and `hitCard` (the `data-card-id` of the nearest card ancestor, rendered by
-    `MatchSpeedCard` purely for this purpose);
-  - the **logical** outcome, attached when `reportTap` *claims* the entry during
-    the dispatch. Under a census `reportTap` emits no record of its own; it
-    annotates the census entry, which is finalized one frame later.
-
-  An entry nothing claims is published as **`name: "unhandled"`**. That record
-  did not exist before, and it is the whole point: `hitCard` **set** means the
-  finger was on a real card that did not respond (suspect the card layer);
-  `hitCard` **absent** means the tap hit no card (suspect hit-area/layout).
-  `hitCard` disagreeing with `target` on a *handled* tap means the tap was routed
-  to the **wrong card** — healthy-looking in the outcome table, a no-op to the player.
-
-  Scope it to the surface under investigation: it records every pointerdown on
-  the page, which is right for one game page and far too much app-wide.
-
-- **Touch-layer probe** (`beginTouchProbe()`, `src/utils/perfDiagnostics.ts`) —
-  ⚠️ **TEMPORARY**, added 2026-08-08 for the iOS *"second thumb does nothing"*
-  bug in Match Speed; delete once that is resolved. Emits `kind: "touch"` records
-  for `touchstart` / `touchend` / `pointercancel` / `gesturestart`, carrying
-  `touches` and `changedTouches`.
-
-  It exists because the tap census reads the **pointer** layer, and on iOS a
-  two-thumb press yields only one census record even though capture-phase
-  observation rules the app out as the cause. The probe reads the **touch**
-  layer just upstream, which separates the two possible culprits:
-
-  | Observation | Meaning | Fix |
-  |---|---|---|
-  | `touchstart` reports `touches: 2`, only 1 `pointerdown` | engine sees both fingers, withholds the second pointer event | drive the board off touch events on iOS |
-  | no `touchstart` ever reports 2+ touches | the second finger is never surfaced to the page | stop cancelling `gesturestart` on game surfaces (they already have `touch-action: none`) |
-
-  Every listener is **`passive: true`** and observation-only. That is
-  load-bearing: a non-passive listener on these events can itself alter WebKit's
-  gesture arbitration, and the probe would then measure its own presence.
-
-  Started alongside the census in `MatchSpeedPage.tsx` so both layers share one
-  clock; `analyze-client-perf.ts` prints them interleaved with a verdict line.
-
 Each record carries the route `path` and a best-effort `target` description
 derived from the app's descriptive class names (e.g.
 `div.mobile-footer-item[Home]`), so a log line maps back to a component.
@@ -177,15 +123,6 @@ The report ends with a **"Game tap outcomes"** table, grouped by `(route,
 outcome)`, for `kind: "tap"` records. This one **is** a census, so its `%`
 column (share of that route's taps) is meaningful. Read it as:
 
-- `unhandled` rows → a real tap that **reached no handler at all**. This is the
-  literal no-op: the selection stays exactly as it was and nothing happens. The
-  report breaks these out into their own section, split by whether `hitCard` was
-  set (card was under the finger and stayed dead → card layer) or absent (tap
-  hit no card → hit-area/layout), plus a per-card tally showing *which* cards
-  went dead and what element actually received the tap.
-- **Misrouted taps** (their own ⚠️ section) → `hitCard` ≠ the card the handler
-  acted on. These look completely healthy in the outcome table, so the outcome
-  table alone will never reveal them.
 - `no-card` rows in volume → taps are **missing the cards entirely**: the gutter
   between cells, an empty slot left by a popped pair, a card that went
   `pointer-events: none` mid-pop, or an overlay sitting above the board. Use the

@@ -75,3 +75,17 @@ export function composeDifficultyBody(difficulty: number | null): string {
 export function composeFrequencyScoreBody(frequencyScore: number | null): string {
   return `Commonality: ${frequencyScore ?? '(none)'}/5`;
 }
+
+/**
+ * One SENSE's commonality — the per-cluster `frequencyScore` inside
+ * `definitionClusters` (migration 139's `senseFrequencyScore` field).
+ *
+ * The sense label is part of the BODY, not just of the record's key, for the same
+ * reason `composeExampleSentenceBody` omits its index: the body doubles as the
+ * freshness FINGERPRINT compared byte-for-byte against the stored approval, and a
+ * label in the text means a re-clustering that renames or merges the sense correctly
+ * invalidates the approval instead of silently transferring it to a different meaning.
+ */
+export function composeSenseFrequencyScoreBody(sense: string, frequencyScore: number | null): string {
+  return `Commonality (${sense}): ${frequencyScore ?? '(none)'}/5`;
+}

@@ -24,6 +24,7 @@ import { SIZE, WEIGHT } from "../../../theme/scale";
 import { SpeakerButton } from "./FlashCardSection";
 import { isHorizontalGestureClaimed } from "../../../utils/segmentScrubLock";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
+import AddToDeckMenu from "../AddToDeckMenu";
 
 // Resting track offset for a tab: the track is (N·100%) wide with N equal
 // panes, so showing tab k means shifting the track left by exactly k panes,
@@ -452,17 +453,20 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         {resolveDisplayDefinition(currentEntry)}
                     </Typography>
                 )}
-                {/* Header action buttons laid out as a 2×2 grid (reading order:
-                    Practice / Speaker · Compare / Add-to-library). Any cell may be
-                    absent — Practice self-hides for non-zh, Speaker needs onSpeak,
-                    Compare needs onOpenCompare, and Add needs onAddToLibrary on a
-                    discoverable entry — so the grid auto-packs whatever renders.
+                {/* Header action buttons laid out as a 2-column grid (reading order:
+                    Practice / Speaker · Compare / Add-to-library · Add-to-deck). Any
+                    cell may be absent — Practice self-hides for non-zh, Speaker needs
+                    onSpeak, Compare needs onOpenCompare, Add needs onAddToLibrary on a
+                    discoverable entry, and Add-to-deck needs a saved vet row — so the
+                    grid auto-packs whatever renders and simply grows a third row when
+                    every cell is present.
                     Add-to-library was previously an inline "+" after the English
                     text; it now joins this button set. */}
                 {currentEntry && (
                     onSpeak ||
                     currentEntry.language === "zh" ||
                     onOpenCompare ||
+                    currentEntry.id ||
                     (onAddToLibrary && currentEntry.discoverable)
                 ) && (
                     <Box
@@ -476,6 +480,13 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             rowGap: 0.25,
                         }}
                     >
+                        {/* File this card into a deck (docs/DECKS_FEATURE.md). Self-hides
+                            when the eip is showing a dictionary-only entry, which has no
+                            vet row to add. */}
+                        <AddToDeckMenu
+                            vocabEntryId={currentEntry.id}
+                            className="mobile-demo-eic-add-to-deck"
+                        />
                         <PracticeWritingButton
                             character={currentEntry.entryKey}
                             language={currentEntry.language}

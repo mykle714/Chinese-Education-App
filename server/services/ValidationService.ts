@@ -1,9 +1,11 @@
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import {
+  DefinitionCluster,
   Language,
   Text,
   ValidationField,
   ValidationRecord,
+  isPerSenseValidationField,
 } from '../types/index.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
 import { dbManager } from '../dal/base/DatabaseManager.js';
@@ -14,6 +16,7 @@ import {
   composeExampleSentenceBody,
   composeFrequencyScoreBody,
   composePartsOfSpeechBody,
+  composeSenseFrequencyScoreBody,
 } from '../utils/validationBodyFormat.js';
 import { longDefToDisplayString, type LongDefinitionValue } from '../utils/definitions.js';
 
@@ -34,8 +37,11 @@ import { longDefToDisplayString, type LongDefinitionValue } from '../utils/defin
  * the det tables — because dictionaryentries_{zh,es} are TRUNCATE+restored on every
  * prod data deploy, which would wipe a review column. `validations` is keyed by the
  * det row id (stable across data deploys) + language, so it survives deploys and
- * drives the backfill guard. Each (user, entry, field) may be recorded at most once
- * (enforced by the `validations_unique_per_user` constraint) — shared by both paths.
+ * drives the backfill guard. Each (user, entry, field, senseLabel) may be recorded at
+ * most once (enforced by the `validations_unique_per_user` constraint) — shared by both
+ * paths. `senseLabel` (migration 139) is '' for every entry-level field and a
+ * `definitionClusters[].sense` for the per-sense ones, so a validator can review each
+ * sense of a polyseme independently.
  *
  * Depends on: TextService.createText (persists the text's validation* linkage),
  * validationBodyFormat (shared pretty-text composer, also used by DictionaryDAL's
@@ -60,6 +66,7 @@ const FIELD_LABEL: Record<ValidationField, string> = {
   partsOfSpeech: 'Parts of Speech',
   difficulty: 'Difficulty',
   frequencyScore: 'Commonality',
+  senseFrequencyScore: 'Commonality (sense)',
 };
 
 // Minimal shape of a det row we read while composing a validation document.
@@ -75,13 +82,16 @@ interface DetFieldRow {
   exampleSentences: Array<{ foreignText?: unknown; english?: unknown }> | null;
   difficulty: number | null;
   frequencyScore: number | null;
+  // Sense clusters (migration 90 zh / 123 es). Read for the per-sense fields, whose
+  // reviewable value is a cluster's OWN frequencyScore, not the entry's column.
+  definitionClusters: DefinitionCluster[] | null;
 }
 
 // The columns every det-row read for validation needs — shared by the id-keyed
 // (document) and word1-keyed (inline) loaders so the two can never drift apart.
 const DET_FIELD_COLUMNS =
   `id, word1, pronunciation, "partsOfSpeech", definitions, "longDefinition", ` +
-  `"exampleSentences", difficulty, "frequencyScore"`;
+  `"exampleSentences", difficulty, "frequencyScore", "definitionClusters"`;
 
 export class ValidationService {
   constructor(
@@ -219,7 +229,7 @@ export class ValidationService {
            ("entryId", language, field, "validatorUserId", "validatorName", action, content)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT ON CONSTRAINT validations_unique_per_user DO NOTHING
-         RETURNING id, "entryId", language, field, "validatorUserId", "validatorName", action, content, "createdAt"`,
+         RETURNING id, "entryId", language, field, "senseLabel", "validatorUserId", "validatorName", action, content, "createdAt"`,
         [text.validationEntryId, text.validationLanguage, text.validationField, userId, user.name, action, content]
       )
     );
@@ -258,6 +268,10 @@ export class ValidationService {
    * than being rejected (`ON CONFLICT ... DO UPDATE`). There is intentionally no
    * history of the earlier vote — see `clearEntryValidation` for un-voting entirely.
    *
+   * `senseLabel` addresses ONE definitionCluster for the per-sense fields
+   * (`senseFrequencyScore`, migration 139) and is ignored — stored as '' — for
+   * entry-level fields, which have no sense.
+   *
    * @throws ValidationError if not a validator, or the field isn't populated.
    * @throws NotFoundError   if no discoverable entry matches (word1, language).
    */
@@ -266,7 +280,8 @@ export class ValidationService {
     word1: string,
     language: Language,
     field: ValidationField,
-    action: 'approve' | 'flag'
+    action: 'approve' | 'flag',
+    senseLabel?: string | null
   ): Promise<ValidationRecord> {
     const user = await this.userDAL.findById(userId);
     if (!user) throw new NotFoundError('User not found');
@@ -276,24 +291,25 @@ export class ValidationService {
 
     const entry = await this.getDetFieldRowByWord1(language, word1);
     if (!entry) throw new NotFoundError('Entry not found');
-    if (!this.isFieldPopulated(entry, field)) {
+    const sense = this.normalizeSenseLabel(field, senseLabel);
+    if (!this.isFieldPopulated(entry, field, sense)) {
       throw new ValidationError('This field has no data to validate');
     }
 
     // Approve composes fresh from the CURRENT det row (never trusts client content);
     // flag stores nothing.
-    const content = action === 'approve' ? this.composeBody(entry, field) : null;
+    const content = action === 'approve' ? this.composeBody(entry, field, sense) : null;
 
     const upsertResult = await dbManager.executeQuery<ValidationRecord>(async (client) =>
       client.query(
         `INSERT INTO validations
-           ("entryId", language, field, "validatorUserId", "validatorName", action, content)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ("entryId", language, field, "senseLabel", "validatorUserId", "validatorName", action, content)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT ON CONSTRAINT validations_unique_per_user
            DO UPDATE SET action = EXCLUDED.action, content = EXCLUDED.content,
                          "validatorName" = EXCLUDED."validatorName"
-         RETURNING id, "entryId", language, field, "validatorUserId", "validatorName", action, content, "createdAt"`,
-        [entry.id, language, field, userId, user.name, action, content]
+         RETURNING id, "entryId", language, field, "senseLabel", "validatorUserId", "validatorName", action, content, "createdAt"`,
+        [entry.id, language, field, sense, userId, user.name, action, content]
       )
     );
 
@@ -302,6 +318,7 @@ export class ValidationService {
       entryId: entry.id,
       language,
       field,
+      senseLabel: sense || undefined,
     });
 
     return upsertResult.recordset[0];
@@ -320,7 +337,8 @@ export class ValidationService {
     userId: string,
     word1: string,
     language: Language,
-    field: ValidationField
+    field: ValidationField,
+    senseLabel?: string | null
   ): Promise<void> {
     const user = await this.userDAL.findById(userId);
     if (!user) throw new NotFoundError('User not found');
@@ -331,11 +349,13 @@ export class ValidationService {
     const entry = await this.getDetFieldRowByWord1(language, word1);
     if (!entry) throw new NotFoundError('Entry not found');
 
+    const sense = this.normalizeSenseLabel(field, senseLabel);
     await dbManager.executeQuery(async (client) =>
       client.query(
         `DELETE FROM validations
-           WHERE "entryId" = $1 AND language = $2 AND field = $3 AND "validatorUserId" = $4`,
-        [entry.id, language, field, userId]
+           WHERE "entryId" = $1 AND language = $2 AND field = $3
+             AND "senseLabel" = $4 AND "validatorUserId" = $5`,
+        [entry.id, language, field, sense, userId]
       )
     );
 
@@ -344,6 +364,7 @@ export class ValidationService {
       entryId: entry.id,
       language,
       field,
+      senseLabel: sense || undefined,
     });
   }
 
@@ -360,7 +381,8 @@ export class ValidationService {
     userId: string,
     word1: string,
     language: Language,
-    field: ValidationField
+    field: ValidationField,
+    senseLabel?: string | null
   ): Promise<'approve' | 'flag' | null> {
     const user = await this.userDAL.findById(userId);
     if (!user) throw new NotFoundError('User not found');
@@ -374,8 +396,9 @@ export class ValidationService {
     const result = await dbManager.executeQuery<{ action: 'approve' | 'flag' }>(async (client) =>
       client.query(
         `SELECT action FROM validations
-           WHERE "entryId" = $1 AND language = $2 AND field = $3 AND "validatorUserId" = $4`,
-        [entry.id, language, field, userId]
+           WHERE "entryId" = $1 AND language = $2 AND field = $3
+             AND "senseLabel" = $4 AND "validatorUserId" = $5`,
+        [entry.id, language, field, this.normalizeSenseLabel(field, senseLabel), userId]
       )
     );
 
@@ -421,7 +444,13 @@ export class ValidationService {
    * validationBodyFormat so DictionaryDAL's approval-freshness check can rebuild
    * this same string from the current det row and compare byte-for-byte.
    */
-  private composeBody(entry: DetFieldRow, field: ValidationField): string {
+  private composeBody(entry: DetFieldRow, field: ValidationField, senseLabel = ''): string {
+    if (field === 'senseFrequencyScore') {
+      return composeSenseFrequencyScoreBody(
+        senseLabel,
+        this.findCluster(entry, senseLabel)?.frequencyScore ?? null
+      );
+    }
     if (field === 'definitions') {
       return composeDefinitionsBody({
         definitions: entry.definitions,
@@ -444,7 +473,13 @@ export class ValidationService {
    * for the doc-queue fields, and is the ONLY populated-check for the three inline-only
    * fields (partsOfSpeech / difficulty / frequencyScore), which never go through that SQL.
    */
-  private isFieldPopulated(entry: DetFieldRow, field: ValidationField): boolean {
+  private isFieldPopulated(entry: DetFieldRow, field: ValidationField, senseLabel = ''): boolean {
+    // A sense is reviewable only if the label still resolves to a cluster that carries
+    // a score — a stale label (the entry was re-clustered since the client rendered)
+    // must not be recorded as an approval of a sense that no longer exists.
+    if (field === 'senseFrequencyScore') {
+      return this.findCluster(entry, senseLabel)?.frequencyScore != null;
+    }
     if (field === 'definitions') {
       // longDefinition is raw JSONB — an empty array/object is "present" to a truthiness
       // check but renders as nothing, so test the composed text instead.
@@ -457,5 +492,30 @@ export class ValidationService {
     if (field === 'frequencyScore') return entry.frequencyScore != null;
     const index = Number(field.slice('exampleSentence'.length));
     return (entry.exampleSentences?.length ?? 0) > index;
+  }
+
+  /**
+   * The cluster a `senseLabel` addresses, or null. Labels are unique within an entry
+   * by construction (docs/DEFINITION_CLUSTERS.md), so a plain find is exact — and a
+   * label that matches nothing means the entry was re-clustered since the client
+   * rendered it, which every caller treats as "not reviewable".
+   */
+  private findCluster(entry: DetFieldRow, senseLabel: string): DefinitionCluster | null {
+    if (!senseLabel) return null;
+    return entry.definitionClusters?.find((c) => c?.sense === senseLabel) ?? null;
+  }
+
+  /**
+   * The value stored in `validations."senseLabel"` for a request: the trimmed label for
+   * a per-sense field, and the empty string for every entry-level one — so a client that
+   * sends a stray label on, say, `difficulty` can never fork that field's record into two
+   * rows past the unique constraint. Per-sense fields REQUIRE a label; the controller
+   * rejects a missing one before this, and this is the second line of defence.
+   */
+  private normalizeSenseLabel(field: ValidationField, senseLabel?: string | null): string {
+    if (!isPerSenseValidationField(field)) return '';
+    const label = (senseLabel ?? '').trim();
+    if (!label) throw new ValidationError('senseLabel is required for a per-sense validation field');
+    return label;
   }
 }

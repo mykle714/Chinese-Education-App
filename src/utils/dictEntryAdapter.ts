@@ -44,6 +44,9 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
         partsOfSpeechApproved: dict.partsOfSpeechApproved ?? false,
         difficultyApproved: dict.difficultyApproved ?? false,
         frequencyScoreApproved: dict.frequencyScoreApproved ?? false,
+        // Per-sense commonality approvals — the Commonality chip shows the SELECTED
+        // sense's score on a clustered word, so its approved/AI treatment is per label.
+        approvedSenseFrequencyLabels: dict.approvedSenseFrequencyLabels ?? [],
         partsOfSpeech: dict.partsOfSpeech ?? null,
         frequencyScore: dict.frequencyScore ?? null,
         difficulty: (anyDict.difficulty as DifficultyLevel | null | undefined) ?? null,

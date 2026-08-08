@@ -94,13 +94,14 @@ CREATE TABLE IF NOT EXISTS validations (
     id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     "entryId"         INTEGER      NOT NULL,   -- dictionaryentries_<language>.id
     language          VARCHAR(10)  NOT NULL,
-    field             VARCHAR(50)  NOT NULL,   -- definitions | exampleSentence0..2 | partsOfSpeech | difficulty | frequencyScore (last 3 inline-only, migration 132)
+    field             VARCHAR(50)  NOT NULL,   -- definitions | exampleSentence0..2 | partsOfSpeech | difficulty | frequencyScore (inline-only, migration 132) | senseFrequencyScore (per-sense, migration 139)
+    "senseLabel"      TEXT         NOT NULL DEFAULT '',  -- definitionClusters[].sense for per-sense fields; '' for entry-level ones (migration 139)
     "validatorUserId" UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     "validatorName"   TEXT         NOT NULL,
     action            VARCHAR(20)  NOT NULL CHECK (action IN ('approve','flag')),
     content           TEXT,        -- approved data version (copied verbatim); NULL for flag
     "createdAt"       TIMESTAMP    DEFAULT NOW(),
-    CONSTRAINT validations_unique_per_user UNIQUE ("entryId", language, field, "validatorUserId")
+    CONSTRAINT validations_unique_per_user UNIQUE ("entryId", language, field, "senseLabel", "validatorUserId")
 );
 CREATE INDEX IF NOT EXISTS idx_validations_entry ON validations ("entryId", language);
 CREATE INDEX IF NOT EXISTS idx_validations_user  ON validations ("validatorUserId");

@@ -9,6 +9,7 @@ import ExampleSentenceList from "../ExampleSentenceList";
 import MetaChipLabel from "../MetaChipLabel";
 import { FC_FONT } from "../constants";
 import { SIZE, WEIGHT } from "../../../theme/scale";
+import { resolveCommonality } from "../../../utils/definitionUtils";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 import type { TabAvailability } from "./infoCardTabAvailability";
 
@@ -62,6 +63,13 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
+    // Commonality follows the SENSE the card is on, not the entry: a polyseme's word-level
+    // score contradicts the definition printed right above it. No index override is needed
+    // — the tab's entry snapshot is re-seeded on every sense pick (useEipTabs.syncEntry),
+    // exactly as the long definition below resolves. See docs/DEFINITION_CLUSTERS.md.
+    const commonality = currentEntry
+        ? resolveCommonality(currentEntry)
+        : { score: null, senseLabel: null, approved: false };
     const {
         longDefinition,
         longDefinitionParts,
@@ -94,7 +102,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                             }}
                         />
                     )}
-                    {(currentEntry?.difficulty || (currentEntry?.partsOfSpeech?.length ?? 0) > 0 || currentEntry?.frequencyScore != null) && (
+                    {(currentEntry?.difficulty || (currentEntry?.partsOfSpeech?.length ?? 0) > 0 || commonality.score != null) && (
                         <Box
                             className="mobile-demo-definition-meta-strip"
                             sx={{
@@ -111,7 +119,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         >
                           {/* Top row renders only when it has a chip — otherwise its empty
                               box would still contribute the column gap above the POS row. */}
-                          {((currentEntry?.language === 'zh' && !!currentEntry?.difficulty) || currentEntry?.frequencyScore != null) && (
+                          {((currentEntry?.language === 'zh' && !!currentEntry?.difficulty) || commonality.score != null) && (
                           <Box
                             className="mobile-demo-definition-meta-row"
                             sx={{ display: "flex", gap: "18px", alignItems: "center", justifyContent: "center" }}
@@ -140,11 +148,12 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                                     </Typography>
                                 </Box>
                             )}
-                            {currentEntry?.frequencyScore != null && (
-                                // AI-scored (backfill-frequency-score.js), so it carries the AI-generated
-                                // box until the 'frequencyScore' validation field is human-approved.
+                            {commonality.score != null && (
+                                // AI-scored (the clusterer for a per-sense score, backfill-frequency-score.js
+                                // for the entry-level one), so it carries the AI-generated box until THAT
+                                // value's validation field is human-approved.
                                 <Box
-                                    className={currentEntry.frequencyScoreApproved ? "mobile-demo-frequency-meta" : "mobile-demo-frequency-meta mobile-demo-frequency-meta--ai-generated"}
+                                    className={commonality.approved ? "mobile-demo-frequency-meta" : "mobile-demo-frequency-meta mobile-demo-frequency-meta--ai-generated"}
                                     sx={{
                                         // position:relative anchors MetaChipLabel's absolutely-positioned
                                         // validator overlay to THIS chip's corner.
@@ -152,18 +161,29 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                                         display: "flex",
                                         flexDirection: "column",
                                         gap: "3px",
-                                        ...(currentEntry.frequencyScoreApproved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
+                                        ...(commonality.approved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
                                     }}
                                 >
-                                    <MetaChipLabel label="Commonality" field="frequencyScore" word1={currentEntry!.entryKey} language={currentEntry?.language} approved={currentEntry?.frequencyScoreApproved} classPrefix="mobile-demo" />
+                                    {/* A per-sense score validates the cluster ('senseFrequencyScore' +
+                                        senseLabel, migration 139); the entry-level fallback validates the
+                                        det column, exactly as before. */}
+                                    <MetaChipLabel
+                                        label="Commonality"
+                                        field={commonality.senseLabel ? "senseFrequencyScore" : "frequencyScore"}
+                                        word1={currentEntry!.entryKey}
+                                        language={currentEntry?.language}
+                                        senseLabel={commonality.senseLabel}
+                                        approved={commonality.approved}
+                                        classPrefix="mobile-demo"
+                                    />
                                     <Box className="mobile-demo-frequency-dots" sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
                                         <FrequencyScoreDots
-                                            score={currentEntry.frequencyScore!}
+                                            score={commonality.score}
                                             filledColor={fc.onSurface}
                                             emptyBorderColor={fc.border}
                                         />
                                         <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.onSurface, fontFamily: FC_FONT, lineHeight: 1 }}>
-                                            {currentEntry.frequencyScore}/5
+                                            {commonality.score}/5
                                         </Typography>
                                     </Box>
                                 </Box>

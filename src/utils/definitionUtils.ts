@@ -130,6 +130,52 @@ export function resolveDisplayDefinition(
 }
 
 /**
+ * **The commonality resolver — the sense-aware twin of `resolveDisplayDefinition`, for
+ * the 1–5 conversation-frequency score the eip/cdp show as "Commonality".**
+ *
+ * A word-level `frequencyScore` is a lie for a polyseme: 干 "to do" comes up constantly
+ * (5) while 干 "shield" is effectively never spoken (1). Each cluster is therefore scored
+ * independently (docs/DEFINITION_CLUSTERS.md), and the meta-strip chip must show the score
+ * of the sense the card is actually on — otherwise the number contradicts the definition
+ * printed directly above it.
+ *
+ * Resolution order mirrors `resolveDisplayDefinition` exactly, so the two never disagree
+ * about which sense is showing:
+ *   1. clustered entry (≥2 displayable `definitionClusters`) whose chosen cluster carries a
+ *      score → that cluster's `frequencyScore`, tagged with its `sense` label;
+ *   2. otherwise → the entry-level `frequencyScore`, with a null label.
+ *
+ * `senseLabel` is what tells the caller which of the two it got: non-null means the number
+ * is per-sense, which decides both the validation target (`senseFrequencyScore` +
+ * `senseLabel`, migration 139) and which approval flag applies. See
+ * docs/DATA_VALIDATION_SYSTEM.md.
+ */
+export function resolveCommonality(
+  entry: Pick<VocabEntry, 'frequencyScore' | 'frequencyScoreApproved' | 'definitionClusters' | 'selectedSense' | 'approvedSenseFrequencyLabels'>,
+  senseIndexOverride?: number,
+): { score: number | null; senseLabel: string | null; approved: boolean } {
+  const sorted = sortedSenseClusters(entry);
+  if (sorted) {
+    const index = senseIndexOverride ?? resolveSelectedSenseIndex(entry);
+    const cluster = sorted[index] ?? sorted[0];
+    // A cluster whose scoring pass failed (frequencyScore null) has nothing to show, so
+    // fall through to the entry-level number rather than rendering an empty meter.
+    if (cluster?.frequencyScore != null) {
+      return {
+        score: cluster.frequencyScore,
+        senseLabel: cluster.sense,
+        approved: !!entry.approvedSenseFrequencyLabels?.includes(cluster.sense),
+      };
+    }
+  }
+  return {
+    score: entry.frequencyScore ?? null,
+    senseLabel: null,
+    approved: !!entry.frequencyScoreApproved,
+  };
+}
+
+/**
  * **The long-definition resolver — the sense-aware twin of `resolveDisplayDefinition`.**
  *
  * `longDefinition` is stored one definition PER SENSE (zh, docs/DEFINITION_CLUSTERS.md)

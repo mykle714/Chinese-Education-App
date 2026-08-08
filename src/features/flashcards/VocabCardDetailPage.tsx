@@ -19,6 +19,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useTTS, useAutoSpeakEntry, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
 import { COLORS } from "../../theme/colors";
+import AddToDeckMenu from "./AddToDeckMenu";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "./FlashcardsLearnPage/FlashCardSection";
 import { measureDefaultEnglishCenterY } from "../../cardIcons/cardTextLayout";
 import { isAdvancedLayout } from "../../cardIcons/cardIconLayout";
@@ -236,6 +237,13 @@ const VocabCardDetailPage: React.FC = () => {
             topFade={false}
             headerExtraActions={entry && (
                 <Box sx={{ display: "flex", alignItems: "center" }}>
+                    {/* File this card into any of the user's decks (docs/DECKS_FEATURE.md).
+                        First in the row because it is additive, unlike Edit and Delete. */}
+                    <AddToDeckMenu
+                        vocabEntryId={entry.id}
+                        className="vocab-card-detail__add-to-deck"
+                        color={fc.textSecondary}
+                    />
                     {/* Opens the same fie (flashcard icon editor) toolbar/canvas flp uses,
                         decorating this card's icon layout/text placement/colors — not a
                         navigation to a separate edit form. */}

@@ -100,11 +100,46 @@ clustered). Array of cluster objects; ONE shape for both languages:
 | `reading` | zh: numbered pinyin for **this** sense — heteronyms differ (会计 → `kuai4`), so a future per-reading row split is a pure data migration, not a schema change. **NULL for es** |
 | `pos` | part(s) of speech for this sense — **always `string[] \| null`** (single-POS senses are a 1-element array). Normalized at write time by `toPosArray`; existing rows were migrated string→array. es reuses the raw Wiktionary abbreviations (`n`, `v`, `adj`, …) |
 | `gender` | es: grammatical gender of **this** sense (`m`, `f`, `mf`, `m-p`, …). This is what a Spanish gender-homograph's second det ROW became in migration 123. **NULL for zh** |
-| `frequencyScore` | 1–5 everyday-conversation frequency, scored **independently per cluster** (`null` = scoring failed). Same rubric/scale as the word-level `frequencyScore`. Also the **sort key**: `sortedSenseClusters` orders by it, so the highest-scoring cluster is the entry's default/starred sense |
+| `frequencyScore` | 1–5 everyday-conversation frequency, scored **independently per cluster** (`null` = scoring failed). Same rubric/scale as the word-level `frequencyScore`. Also the **sort key**: `sortedSenseClusters` orders by it, so the highest-scoring cluster is the entry's default/starred sense. **This is the number the eip/cdp "Commonality" chip shows** — see below |
 | `glosses` | verbatim source glosses, ordered prototypical→vernacular within the cluster |
 
 **Difficulty stays at the word level** (the `difficulty` column) and is *not*
 duplicated per cluster.
+
+### Where the per-cluster `frequencyScore` surfaces
+
+The eip definition tab (`InfoCardTabContent.tsx`) and the cdp Definition box
+(`VocabCardDetailBody.tsx`) both render a **"Commonality"** chip — five dots plus an
+`N/5` readout. It shows the **selected sense's** cluster score, not the entry's
+`frequencyScore` column: on a polyseme the word-level number contradicts the gloss
+printed directly above it (干 "to do" = 5, 干 "shield" = 1).
+
+`resolveCommonality` (`src/utils/definitionUtils.ts`) is the single resolver, and it
+mirrors `resolveDisplayDefinition` step for step so the two can never disagree about
+which sense is showing:
+
+1. a clustered entry (≥2 displayable clusters) whose chosen cluster has a non-null
+   `frequencyScore` → that score, tagged with the cluster's `sense` label;
+2. otherwise — unclustered, single-cluster, or a cluster whose scoring pass failed →
+   the entry-level `frequencyScore`, with a null label.
+
+The chip follows the same sense the card is on: the cdp passes its host page's
+`selectedSenseIndex`, and the eip needs no override because its entry snapshot is
+re-seeded on every sense pick (`useEipTabs.syncEntry`).
+
+The returned `senseLabel` is also what decides the chip's **validation target**: non-null
+→ the `senseFrequencyScore` field addressed by that label; null → the entry-level
+`frequencyScore` field. Approving one never vouches for the other. See
+[DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md) (migration 139) — which also
+explains why both clusterers now carry a `validatedClause` guard: they rewrite
+`definitionClusters` wholesale, so a reviewed sense freezes the row.
+
+Referenced code: `src/utils/definitionUtils.ts` (`resolveCommonality`,
+`sortedSenseClusters`, `resolveSelectedSenseIndex`),
+`src/features/flashcards/FlashcardsLearnPage/InfoCardTabContent.tsx`,
+`src/features/flashcards/VocabCardDetailBody.tsx`,
+`src/components/FrequencyScoreDots.tsx` (the shared five-dot meter),
+`src/__tests__/resolveCommonality.test.ts`.
 
 - Migrations: `database/migrations/90-add-definition-clusters-to-zh.sql` (zh),
   `database/migrations/123-es-word1-unique-clustered-senses.sql` (es — adds the

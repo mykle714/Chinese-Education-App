@@ -8,6 +8,11 @@ interface ValidateFlagButtonsProps {
   word1: string;
   language: Language;
   field: ValidationField;
+  // Which sense cluster this vote is about (a `definitionClusters[].sense` label) —
+  // REQUIRED for a per-sense field (`senseFrequencyScore`, migration 139) and ignored
+  // for entry-level ones. Part of the record's identity server-side, so it is also part
+  // of the status fetch's key: two senses of the same word hold independent votes.
+  senseLabel?: string | null;
   // Server-known: this field already carries a valid human approval
   // (sentence.humanApproved / entry.definitionsApproved). Used only to decide
   // whether the buttons are worth rendering at all before this validator's own
@@ -35,7 +40,7 @@ interface ValidateFlagButtonsProps {
  * `/api/validation/entryStatus` (GET = this validator's current vote, fetched on
  * mount so the state survives a reload). Renders nothing for non-validators.
  */
-function ValidateFlagButtons({ word1, language, field, alreadyApproved, dense, className }: ValidateFlagButtonsProps) {
+function ValidateFlagButtons({ word1, language, field, senseLabel, alreadyApproved, dense, className }: ValidateFlagButtonsProps) {
   const { user } = useAuth();
   const [myVote, setMyVote] = useState<ValidateAction | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -43,11 +48,16 @@ function ValidateFlagButtons({ word1, language, field, alreadyApproved, dense, c
 
   useEffect(() => {
     if (!user?.isValidator) return;
+    // Clear the previous target's vote before refetching: the sense picker swaps
+    // `senseLabel` in place (no remount), and a stale filled icon would otherwise read
+    // as "this sense is already approved" for the whole fetch.
+    setMyVote(null);
+    setLoaded(false);
     let cancelled = false;
     (async () => {
       try {
         const { action } = await apiGet<{ action: ValidateAction | null }>("/api/validation/entryStatus", {
-          params: { word1, language, field },
+          params: { word1, language, field, ...(senseLabel ? { senseLabel } : {}) },
         });
         if (!cancelled) setMyVote(action);
       } catch (err) {
@@ -58,7 +68,7 @@ function ValidateFlagButtons({ word1, language, field, alreadyApproved, dense, c
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.isValidator, word1, language, field]);
+  }, [user?.isValidator, word1, language, field, senseLabel]);
 
   if (!user?.isValidator) return null;
   // Before the status fetch resolves, fall back to the caller's best-guess
@@ -74,7 +84,7 @@ function ValidateFlagButtons({ word1, language, field, alreadyApproved, dense, c
         // No body — the target is identified entirely by querystring, so `undefined`
         // fills apiDelete's optional body slot.
         await apiDelete("/api/validation/entrySubmit", undefined, {
-          params: { word1, language, field },
+          params: { word1, language, field, ...(senseLabel ? { senseLabel } : {}) },
         });
         setMyVote(null);
       } catch (err) {
@@ -86,7 +96,7 @@ function ValidateFlagButtons({ word1, language, field, alreadyApproved, dense, c
     }
     setPending(action);
     try {
-      await apiPost("/api/validation/entrySubmit", { word1, language, field, action });
+      await apiPost("/api/validation/entrySubmit", { word1, language, field, action, senseLabel });
       setMyVote(action);
     } catch (err) {
       console.error("Error submitting inline validation:", err);

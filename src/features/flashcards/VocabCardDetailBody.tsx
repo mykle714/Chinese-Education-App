@@ -1,10 +1,11 @@
 import { Box, Typography, Chip, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import { resolveLongDefinitionForSense, stripParentheses } from "../../utils/definitionUtils";
+import { resolveCommonality, resolveLongDefinitionForSense, stripParentheses } from "../../utils/definitionUtils";
 import type { VocabEntry } from "../../types";
 import ForeignText from "../../components/ForeignText";
 import MetaChipLabel from "./MetaChipLabel";
 import LongDefinitionDisplay from "../../components/LongDefinitionDisplay";
+import FrequencyScoreDots from "../../components/FrequencyScoreDots";
 import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
@@ -119,9 +120,14 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
     // lockstep with the sense picker above it. See docs/DEFINITION_CLUSTERS.md.
     const { longDefinition, longDefinitionParts } = resolveLongDefinitionForSense(entry, selectedSenseIndex);
 
+    // Commonality follows the SAME sense as the long definition above — on a polyseme the
+    // entry-level score would contradict the meaning printed beside it. Falls back to the
+    // entry-level score on unclustered words. See docs/DEFINITION_CLUSTERS.md.
+    const commonality = resolveCommonality(entry, selectedSenseIndex);
+
     // Difficulty is part of the meta strip now, so an entry with only a difficulty
     // still warrants the Definition box.
-    const hasDefinitionBox = !!(longDefinition || longDefinitionParts?.length || (entry.partsOfSpeech?.length ?? 0) > 0 || entry.frequencyScore != null || entry.difficulty != null);
+    const hasDefinitionBox = !!(longDefinition || longDefinitionParts?.length || (entry.partsOfSpeech?.length ?? 0) > 0 || commonality.score != null || entry.difficulty != null);
     const hasExamples = entry.exampleSentences && entry.exampleSentences.length > 0;
     const hasSynonyms = entry.synonyms && entry.synonyms.length > 0;
     const hasRelatedWords = entry.relatedWords && entry.relatedWords.length > 0;
@@ -152,7 +158,7 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                         Each chip is INDEPENDENTLY validatable (migration 132): it carries its own
                         approval flag, its own AI-generated treatment, and — for validator accounts
                         — its own inline Approve/Flag pair (docs/DATA_VALIDATION_SYSTEM.md). */}
-                    {(entry.difficulty != null || (entry.partsOfSpeech?.length ?? 0) > 0 || entry.frequencyScore != null) && (
+                    {(entry.difficulty != null || (entry.partsOfSpeech?.length ?? 0) > 0 || commonality.score != null) && (
                         <Box
                             className="vocab-card-detail__definition-meta-strip"
                             sx={{
@@ -168,7 +174,7 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                         >
                           {/* Top row renders only when it has a chip — otherwise its empty
                               box would still contribute the column gap above the POS row. */}
-                          {(entry.difficulty != null || entry.frequencyScore != null) && (
+                          {(entry.difficulty != null || commonality.score != null) && (
                           <Box
                             className="vocab-card-detail__definition-meta-row"
                             sx={{ display: "flex", gap: "18px", alignItems: "center", justifyContent: "center" }}
@@ -197,9 +203,9 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                                     </Typography>
                                 </Box>
                             )}
-                            {entry.frequencyScore != null && (
+                            {commonality.score != null && (
                                 <Box
-                                    className={`vocab-card-detail__frequency-meta${entry.frequencyScoreApproved ? "" : " vocab-card-detail__frequency-meta--ai-generated"}`}
+                                    className={`vocab-card-detail__frequency-meta${commonality.approved ? "" : " vocab-card-detail__frequency-meta--ai-generated"}`}
                                     sx={{
                                         // position:relative anchors MetaChipLabel's absolutely-positioned
                                         // validator overlay to THIS chip's corner.
@@ -207,33 +213,35 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                                         display: "flex",
                                         flexDirection: "column",
                                         gap: "3px",
-                                        // frequencyScore is AI-scored (backfill-frequency-score.js), so it
-                                        // carries the AI-generated box until the 'frequencyScore' field is
-                                        // human-approved.
-                                        ...(entry.frequencyScoreApproved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
+                                        // The score is AI-written (the clusterer per sense, or
+                                        // backfill-frequency-score.js for the entry-level column), so it
+                                        // carries the AI-generated box until THAT value is human-approved.
+                                        ...(commonality.approved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
                                     }}
                                 >
-                                    <MetaChipLabel label="Commonality" field="frequencyScore" word1={entry.entryKey} language={entry.language} approved={entry.frequencyScoreApproved} classPrefix="vocab-card-detail" />
-                                    <Box sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
-                                        <Box sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                            {[1, 2, 3, 4, 5].map((level) => {
-                                                const filled = level <= entry.frequencyScore!;
-                                                return (
-                                                    <Box
-                                                        key={level}
-                                                        sx={{
-                                                            width: 8,
-                                                            height: 8,
-                                                            borderRadius: "50%",
-                                                            background: filled ? fc.onSurface : "transparent",
-                                                            border: `1.5px solid ${filled ? fc.onSurface : fc.border}`,
-                                                        }}
-                                                    />
-                                                );
-                                            })}
-                                        </Box>
+                                    {/* A per-sense score validates the cluster ('senseFrequencyScore' +
+                                        senseLabel, migration 139); the entry-level fallback validates the
+                                        det column, exactly as before. */}
+                                    <MetaChipLabel
+                                        label="Commonality"
+                                        field={commonality.senseLabel ? "senseFrequencyScore" : "frequencyScore"}
+                                        word1={entry.entryKey}
+                                        language={entry.language}
+                                        senseLabel={commonality.senseLabel}
+                                        approved={commonality.approved}
+                                        classPrefix="vocab-card-detail"
+                                    />
+                                    <Box className="vocab-card-detail__frequency-dots" sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
+                                        {/* Shared with the eip strip + the discover sort card so the three
+                                            meters stay visually identical (FrequencyScoreDots). This used to
+                                            be an inline copy of the same five dots. */}
+                                        <FrequencyScoreDots
+                                            score={commonality.score}
+                                            filledColor={fc.onSurface}
+                                            emptyBorderColor={fc.border}
+                                        />
                                         <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.onSurface, lineHeight: 1 }}>
-                                            {entry.frequencyScore}/5
+                                            {commonality.score}/5
                                         </Typography>
                                     </Box>
                                 </Box>

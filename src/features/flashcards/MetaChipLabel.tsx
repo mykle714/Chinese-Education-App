@@ -15,6 +15,10 @@ interface MetaChipLabelProps {
     // buttons are omitted and only the caption renders.
     word1: string;
     language?: Language;
+    // For a per-sense chip (Commonality on a clustered word), the sense cluster the
+    // displayed value belongs to — threaded straight to ValidateFlagButtons, which needs
+    // it to address the right `validations` row (migration 139). Omit on entry-level chips.
+    senseLabel?: string | null;
     // This chip's read-path approval flag. Passed straight through as
     // ValidateFlagButtons' pre-fetch fallback so an already-approved chip
     // doesn't flash empty outline buttons on mount.
@@ -46,7 +50,7 @@ interface MetaChipLabelProps {
  * component type on every render, remounting ValidateFlagButtons and re-firing its
  * status fetch each time.
  */
-export default function MetaChipLabel({ label, field, word1, language, approved, classPrefix }: MetaChipLabelProps) {
+export default function MetaChipLabel({ label, field, word1, language, senseLabel, approved, classPrefix }: MetaChipLabelProps) {
     const theme = useTheme();
     return (
         <>
@@ -72,6 +76,7 @@ export default function MetaChipLabel({ label, field, word1, language, approved,
                         word1={word1}
                         language={language}
                         field={field}
+                        senseLabel={senseLabel}
                         alreadyApproved={approved}
                         dense
                     />

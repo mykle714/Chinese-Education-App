@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { ValidationService } from '../services/ValidationService.js';
-import { Language, ValidationField } from '../types/index.js';
+import { Language, ValidationField, isPerSenseValidationField } from '../types/index.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
 
 const VALID_LANGUAGES = new Set<Language>(['zh', 'es']);
@@ -9,8 +9,27 @@ const VALID_LANGUAGES = new Set<Language>(['zh', 'es']);
 // ValidationService.composeValidationDoc), so this list is deliberately the wider one.
 const VALID_FIELDS = new Set<ValidationField>([
   'definitions', 'exampleSentence0', 'exampleSentence1', 'exampleSentence2',
-  'partsOfSpeech', 'difficulty', 'frequencyScore',
+  'partsOfSpeech', 'difficulty', 'frequencyScore', 'senseFrequencyScore',
 ]);
+
+// Upper bound on a `senseLabel` (a definitionClusters[].sense — a short English phrase
+// like "to reckon accounts"). The column is TEXT, so this is not a storage limit; it is
+// an input guard, since the label arrives from the client and is used as a lookup key.
+const MAX_SENSE_LABEL_LENGTH = 200;
+
+/**
+ * Validate the `senseLabel` that accompanies a field: REQUIRED for the per-sense fields
+ * (migration 139), ignored for entry-level ones (the service normalizes those to '').
+ * Returns an error message, or null when the pair is acceptable.
+ */
+function senseLabelError(field: ValidationField, senseLabel: unknown): string | null {
+  if (!isPerSenseValidationField(field)) return null;
+  if (typeof senseLabel !== 'string' || senseLabel.trim().length === 0) {
+    return 'senseLabel is required for this field';
+  }
+  if (senseLabel.length > MAX_SENSE_LABEL_LENGTH) return 'senseLabel is too long';
+  return null;
+}
 
 /**
  * Validation Controller — HTTP layer for the data-validation feature.
@@ -79,7 +98,10 @@ export class ValidationController {
    * Submit an approval or flag directly against a dictionary entry's field, with no
    * downloaded Reader document — the inline Approve/Flag buttons on the est/definition
    * UI (only shown to validators). POST /api/validation/entrySubmit
-   * { word1: string, language: 'zh'|'es', field: ValidationField, action: 'approve'|'flag' }
+   * { word1, language: 'zh'|'es', field: ValidationField, action: 'approve'|'flag',
+   *   senseLabel?: string }
+   * `senseLabel` is REQUIRED for a per-sense field (senseFrequencyScore, migration 139)
+   * and ignored otherwise.
    */
   async submitEntryValidation(req: Request, res: Response): Promise<void> {
     try {
@@ -89,7 +111,7 @@ export class ValidationController {
         return;
       }
 
-      const { word1, language, field, action } = req.body ?? {};
+      const { word1, language, field, action, senseLabel } = req.body ?? {};
 
       if (typeof word1 !== 'string' || word1.trim().length === 0) {
         res.status(400).json({ error: 'word1 is required', code: 'ERR_MISSING_WORD1' });
@@ -107,8 +129,13 @@ export class ValidationController {
         res.status(400).json({ error: "action must be 'approve' or 'flag'", code: 'ERR_INVALID_ACTION' });
         return;
       }
+      const senseError = senseLabelError(field, senseLabel);
+      if (senseError) {
+        res.status(400).json({ error: senseError, code: 'ERR_INVALID_SENSE_LABEL' });
+        return;
+      }
 
-      const record = await this.validationService.submitEntryValidation(userId, word1, language, field, action);
+      const record = await this.validationService.submitEntryValidation(userId, word1, language, field, action, senseLabel);
       res.json({ success: true, record });
     } catch (error: any) {
       this.handleError(res, error, 'Failed to submit validation', 'ERR_SUBMIT_VALIDATION_FAILED');
@@ -118,7 +145,7 @@ export class ValidationController {
   /**
    * Undo the calling validator's own inline vote on a field — the "press the
    * filled icon again" affordance, leaving no signal in the DB.
-   * DELETE /api/validation/entrySubmit?word1=&language=&field=
+   * DELETE /api/validation/entrySubmit?word1=&language=&field=&senseLabel=
    */
   async clearEntryValidation(req: Request, res: Response): Promise<void> {
     try {
@@ -128,7 +155,7 @@ export class ValidationController {
         return;
       }
 
-      const { word1, language, field } = req.query as Record<string, string | undefined>;
+      const { word1, language, field, senseLabel } = req.query as Record<string, string | undefined>;
 
       if (typeof word1 !== 'string' || word1.trim().length === 0) {
         res.status(400).json({ error: 'word1 is required', code: 'ERR_MISSING_WORD1' });
@@ -143,7 +170,13 @@ export class ValidationController {
         return;
       }
 
-      await this.validationService.clearEntryValidation(userId, word1, language as Language, field as ValidationField);
+      const senseError = senseLabelError(field as ValidationField, senseLabel);
+      if (senseError) {
+        res.status(400).json({ error: senseError, code: 'ERR_INVALID_SENSE_LABEL' });
+        return;
+      }
+
+      await this.validationService.clearEntryValidation(userId, word1, language as Language, field as ValidationField, senseLabel);
       res.json({ success: true });
     } catch (error: any) {
       this.handleError(res, error, 'Failed to clear validation', 'ERR_CLEAR_VALIDATION_FAILED');
@@ -154,7 +187,7 @@ export class ValidationController {
    * The calling validator's own current vote on a field ('approve' | 'flag' | null)
    * — lets the inline Approve/Flag buttons show the right icon filled on mount,
    * instead of only after a same-session action.
-   * GET /api/validation/entryStatus?word1=&language=&field=
+   * GET /api/validation/entryStatus?word1=&language=&field=&senseLabel=
    */
   async getEntryValidationStatus(req: Request, res: Response): Promise<void> {
     try {
@@ -164,7 +197,7 @@ export class ValidationController {
         return;
       }
 
-      const { word1, language, field } = req.query as Record<string, string | undefined>;
+      const { word1, language, field, senseLabel } = req.query as Record<string, string | undefined>;
 
       if (typeof word1 !== 'string' || word1.trim().length === 0) {
         res.status(400).json({ error: 'word1 is required', code: 'ERR_MISSING_WORD1' });
@@ -179,8 +212,14 @@ export class ValidationController {
         return;
       }
 
+      const senseError = senseLabelError(field as ValidationField, senseLabel);
+      if (senseError) {
+        res.status(400).json({ error: senseError, code: 'ERR_INVALID_SENSE_LABEL' });
+        return;
+      }
+
       const action = await this.validationService.getEntryValidationStatus(
-        userId, word1, language as Language, field as ValidationField
+        userId, word1, language as Language, field as ValidationField, senseLabel
       );
       res.json({ action });
     } catch (error: any) {

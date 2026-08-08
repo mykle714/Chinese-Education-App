@@ -14,10 +14,14 @@ table so future backfills never clobber human-reviewed fields.
 Introduced by **migration 104** (`database/migrations/104-add-validation-system.sql`),
 simplified by **migration 106** (`database/migrations/106-simplify-validator-content.sql`
 — dropped the edit/suggest/revert flow, `validations.content` nullable, dropped
-`texts.validationOriginalContent`), and widened by **migration 132**
+`texts.validationOriginalContent`), widened by **migration 132**
 (`database/migrations/132-split-parts-of-speech-validation-field.sql` — split
 `partsOfSpeech` out of the definitions bundle and added `difficulty` +
-`frequencyScore`, so all three meta-strip chips are independently reviewable).
+`frequencyScore`, so all three meta-strip chips are independently reviewable), and
+given **per-sense granularity** by **migration 139**
+(`database/migrations/139-add-sense-label-to-validations.sql` — a `senseLabel`
+discriminator + the `senseFrequencyScore` field, so the Commonality chip's per-cluster
+score is reviewable one sense at a time).
 
 > **Why a separate table (not a det column):** `dictionaryentries_{zh,es}` are
 > `TRUNCATE`+restored wholesale on every prod data deploy
@@ -30,9 +34,10 @@ simplified by **migration 106** (`database/migrations/106-simplify-validator-con
 
 ## Field model
 
-A validation targets exactly one **field** of an entry. Seven exist; the last three
-are **inline-only** (never handed out by the Reader-document queue — they are
-single-line values, better reviewed on the card's meta strip than as a document):
+A validation targets exactly one **field** of an entry — and, since migration 139, at
+most one **sense** of that field. Eight fields exist; the last four are **inline-only**
+(never handed out by the Reader-document queue — they are single-line values, better
+reviewed on the card's meta strip than as a document):
 
 | `validationField` | Label | Source column(s) | Body (`validationBodyFormat.ts`) | Paths |
 |---|---|---|---|---|
@@ -41,10 +46,13 @@ single-line values, better reviewed on the card's meta strip than as a document)
 | `partsOfSpeech` | "Parts of Speech" | `partsOfSpeech` | `composePartsOfSpeechBody` | inline only |
 | `difficulty` | "Difficulty" | `difficulty` | `composeDifficultyBody` | inline only |
 | `frequencyScore` | "Commonality" | `frequencyScore` | `composeFrequencyScoreBody` | inline only |
+| `senseFrequencyScore` | "Commonality" | `definitionClusters[i].frequencyScore` | `composeSenseFrequencyScoreBody` | inline only, **per sense** |
 
 Only **populated** fields are eligible: `definitions` requires both its columns,
 `exampleSentenceN` requires `exampleSentences` to have index `N`, and each of the
-three single-column fields requires a non-null value. The doc-queue check is the
+three single-column fields requires a non-null value, and `senseFrequencyScore` requires
+its `senseLabel` to still resolve to a cluster that carries a score (a stale label — the
+entry was re-clustered since the client rendered it — is rejected, never recorded). The doc-queue check is the
 `CROSS JOIN LATERAL (VALUES …)` in `ValidationService.composeValidationDoc`; the
 inline check is `ValidationService.isFieldPopulated`, which is the ONLY check the
 three inline-only fields ever pass through. The `ValidationField` union is declared
@@ -64,8 +72,22 @@ allow-list is `VALID_FIELDS` in `server/controllers/ValidationController.ts`.
 > remaining `definitions` approvals so they still match the new composer. Both steps
 > are idempotent.
 
-Granularity is **per (entry, field)**: a user may validate an entry's example
-sentence and, separately, its definitions bundle. Each (user, entry, field) has at
+> **Why commonality is per SENSE (migration 139).** A word-level `frequencyScore` is
+> a lie for a polyseme: 干 "to do" comes up constantly (5) while 干 "shield" is
+> effectively never spoken (1). The clusterer already scores each sense independently
+> ([DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md)), and the eip/cdp Commonality chip
+> now shows the score of the sense the card is on — so the chip's Approve/Flag pair had
+> to follow, or a validator would be endorsing a number that is not on screen. Which of
+> the two the chip shows is decided by `resolveCommonality`
+> (`src/utils/definitionUtils.ts`): a clustered word with a scored cluster →
+> `senseFrequencyScore` + that cluster's `sense` label; anything else (unclustered,
+> single-cluster, or a cluster whose scoring pass failed) → the entry-level
+> `frequencyScore`, exactly as before. Both carry the caption "Commonality" — the
+> learner never sees the distinction.
+
+Granularity is **per (entry, field, senseLabel)**: a user may validate an entry's example
+sentence and, separately, its definitions bundle — and, for a per-sense field, each sense
+independently. Each (user, entry, field) has at
 most one CURRENT record — but on the **inline path only** (see "Inline
 Approve/Flag" below), a validator may switch it (approve ↔ flag) or clear it
 entirely; the Reader-document path (`submitValidation`) still rejects a repeat
@@ -75,7 +97,11 @@ auto-deleted after the first action.
 ### Adding another validatable field
 
 `validations.field` is a free-text `VARCHAR(50)` with no CHECK constraint, so a new
-field needs **no DDL**. It does need, in order: the `ValidationField` union in both
+field needs **no DDL** — unless it is addressed by something finer than the entry, in
+which case it also needs a discriminator in the uniqueness key (migration 139 added
+`senseLabel` for exactly that; a per-sense field must additionally be listed in
+`PER_SENSE_VALIDATION_FIELDS`, which is what makes the controller require a `senseLabel`
+and the service compose a per-sense body). It does need, in order: the `ValidationField` union in both
 type files; `VALID_FIELDS` (controller); `FIELD_LABEL`, `DET_FIELD_COLUMNS`,
 `DetFieldRow`, `composeBody`, `isFieldPopulated` (`ValidationService`); a formatter
 in `validationBodyFormat.ts`; `ENTRY_LEVEL_VALIDATION_FIELDS` + `EntryApprovalFlags`
@@ -100,10 +126,18 @@ document is the right review surface for it.
 - **`validations`** table — one CURRENT row per (entry, field) reviewed by a validator:
   ```
   id UUID PK · entryId INTEGER · language VARCHAR(10) · field VARCHAR(50)
+  senseLabel TEXT NOT NULL DEFAULT ''      -- migration 139
   validatorUserId UUID (NOT a FK — see below) · validatorName TEXT
   action VARCHAR(20) CHECK IN ('approve','flag') · content TEXT NULLABLE · createdAt
-  UNIQUE (entryId, language, field, validatorUserId)   -- one record per user/field
+  UNIQUE (entryId, language, field, senseLabel, validatorUserId)
   ```
+  `senseLabel` (**migration 139**) is the `definitionClusters[].sense` label a per-sense
+  record reviews, and the **empty string** for every entry-level field. It is `NOT NULL`
+  *because* it joins the uniqueness key: Postgres treats NULLs as DISTINCT in a UNIQUE
+  constraint, so a nullable discriminator would let one validator insert unlimited
+  duplicate entry-level rows and quietly break the `ON CONFLICT ON CONSTRAINT
+  validations_unique_per_user` upsert both submit paths depend on. Existing rows take ''
+  from the DEFAULT, so their uniqueness semantics are unchanged.
   `validatorUserId` **was** `FK users(id) ON DELETE CASCADE`, but **migration 120
   dropped that FK** (the column stays `UUID NOT NULL`). Reason: prod is the source of
   truth for `validations` and it is pulled DOWN to dev boxes via `/data-pull`; a dev
@@ -273,13 +307,13 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   (`apiPost`/`apiDelete`/`apiGet` — cookie auth, no manual token plumbing):
   1. **Mount**: `!user?.isValidator` → renders `null`. Otherwise GETs
      `/api/validation/entryStatus` for this validator's own vote (`myVote`) on
-     this (word1, language, field) — this is what makes the filled icon survive a
+     this (word1, language, field, senseLabel) — this is what makes the filled icon survive a
      reload, unlike the old session-only `done` flag. While that fetch is in
      flight, `alreadyApproved` is used as a fallback to avoid a flash of empty
      outline buttons on an already-approved field; once the fetch resolves
      (including to `null`), `myVote` is the only source of truth.
   2. **Tap the icon that ISN'T the current vote** (or neither vote is set) →
-     POSTs `{ word1, language, field, action }`; the server `UPSERT`s the
+     POSTs `{ word1, language, field, action, senseLabel? }`; the server `UPSERT`s the
      validator's row (`ON CONFLICT ... DO UPDATE`), so this both records a fresh
      vote and **switches** an existing one (approve ↔ flag) in one call. `myVote`
      updates optimistically-after-success to the new action.
@@ -313,8 +347,13 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   (docs/WORD_COMPARE_FEATURE.md), which has no backing det field at all.
 - **Meta-strip chips** (migration 132): `src/features/flashcards/MetaChipLabel.tsx`
   renders a chip's uppercase caption followed by a `dense` `ValidateFlagButtons` for
-  that chip's own field (`difficulty` / `partsOfSpeech` / `frequencyScore`), with
-  `alreadyApproved` = the chip's read-path flag. Used by both `VocabCardDetailBody.tsx`
+  that chip's own field (`difficulty` / `partsOfSpeech` / `frequencyScore` or
+  `senseFrequencyScore`), with `alreadyApproved` = the chip's read-path flag. The
+  Commonality chip additionally passes `senseLabel` when it is showing a per-sense score
+  (migration 139) — `MetaChipLabel` threads it straight through, and
+  `ValidateFlagButtons` keys its status fetch on it, so switching senses refetches that
+  sense's own vote (and clears the previous one's filled icon while the fetch is in
+  flight, since the picker swaps the prop in place rather than remounting). Used by both `VocabCardDetailBody.tsx`
   and `InfoCardPanelBody.tsx` (they differ only in the `classPrefix` prop), each
   passing `entry.entryKey` / `entry.language`; the buttons are skipped when `language`
   is absent (det-fallback entries). The pair is an absolutely-positioned overlay in
@@ -332,7 +371,10 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   id; shared helper `getDetFieldRowByWord1`), checks the field is populated
   (`isFieldPopulated`, mirrors `composeValidationDoc`'s SQL eligibility check),
   then `UPSERT`s into `validations` (`ON CONFLICT ... DO UPDATE SET action,
-  content, validatorName`) — same `content = approve ? composeBody(...) : null`
+  content, validatorName`), writing the `senseLabel` normalized by
+  `normalizeSenseLabel` — the trimmed label for a per-sense field, `''` for every
+  entry-level one, so a stray label on `difficulty` can never fork that field's record
+  into two rows past the unique constraint — same `content = approve ? composeBody(...) : null`
   as `submitValidation`, but a repeat call from the same validator overwrites
   their prior vote instead of being rejected. No `texts` row is created or
   touched by this path at all.
@@ -361,12 +403,21 @@ fields (Field model table above), split by granularity:
 | `partsOfSpeechApproved` (per-entry) | `partsOfSpeech` | ″ |
 | `difficultyApproved` (per-entry) | `difficulty` | ″ |
 | `frequencyScoreApproved` (per-entry) | `frequencyScore` | ″ |
+| `approvedSenseFrequencyLabels` (per-**sense**, a label LIST) | each `definitionClusters[i].frequencyScore` | ″ |
 
-The four per-entry flags are one type, `EntryApprovalFlags`
-(`server/types/index.ts`), resolved together by a single enricher — they describe
+The four per-entry flags plus the per-sense label list are one type, `EntryApprovalFlags`
+(`server/contracts/wire.ts`), resolved together by a single enricher — they describe
 the entry as a whole, so one raw-column read plus one `validations` read answers all
-four regardless of batch size. `ENTRY_LEVEL_VALIDATION_FIELDS` (same file) is the
-list that enricher queries with; it must stay in step with the interface.
+four regardless of batch size. `ENTRY_LEVEL_VALIDATION_FIELDS` + `PER_SENSE_VALIDATION_FIELDS` (same file) are the
+lists that enricher queries with, joined as `APPROVAL_FIELDS` in `DictionaryDAL`; they
+must stay in step with the interface.
+
+`approvedSenseFrequencyLabels` is a **list of sense labels**, not a boolean, because the
+granularity is one cluster: 会 hui4 may be reviewed while 会 kuai4 is not. It rides on the
+same interface (and the same query) purely because it costs no extra round trip. The
+client asks `approvedSenseFrequencyLabels.includes(cluster.sense)` — done for it by
+`resolveCommonality`, which never lets an entry-level approval vouch for a per-sense score
+or vice versa.
 
 Both share the same shape: a batched query joins `validations` back to the det
 table by `entryId` (keyed by `word1` — vet-joined entries carry `entryKey` = det
@@ -396,7 +447,12 @@ uses to compose the doc, so they always agree byte-for-byte.
   it — while the other three each hinge on one column, so POS/difficulty/commonality
   churn no longer clears each other (or the definitions review). A field's bucket is a
   Set because different validators may have approved different revisions; any one
-  matching today's data counts. Independent of
+  matching today's data counts. `senseFrequencyScore` shares ONE bucket across an entry's
+  senses — its label is inside the body text
+  (`Commonality (<sense>): N/5`), so the byte-for-byte compare already tells them apart,
+  and a re-clustering that renames, merges, or re-scores a sense correctly drops that
+  cluster out of the approved list instead of transferring the approval to a different
+  meaning. Independent of
   `enrichExampleSentencesMetadataBatch` (no `exampleSentences` precondition); callers
   chain it alongside `enrichLongDefinitionMetadataBatch`
   (`VocabEntryService`, `OnDeckVocabService`, `DictionaryController`, via
@@ -497,6 +553,7 @@ Applied to the recurring AI writers:
 | Parts of speech | `['partsOfSpeech']` | zh: `backfill-parts-of-speech` (es has no POS step — POS is a by-product of clustering since migration 123) |
 | Difficulty | `['difficulty']` | zh: `backfill-hsk-level` |
 | Commonality + difficulty | `['frequencyScore','difficulty']` | zh: `backfill-frequency-score` guards on `['frequencyScore']` alone; **es**: `backfill-frequency-score` writes BOTH columns in one pass, so a review of either chip protects the row |
+| Per-sense commonality | `['senseFrequencyScore']` | `backfill-cluster-definitions` (both languages) — the clusterer rewrites `definitionClusters` wholesale, so ONE reviewed sense protects the whole row. es additionally guards on `['definitions']`, since re-clustering re-presents them |
 
 The manifest in `server/scripts/backfill/shared/lib/requiredScripts.js` mirrors these
 per-script `validationFields`, so the lazy-enrichment worker skips (and does not wait
@@ -512,10 +569,19 @@ There is no longer a Spanish `backfill-parts-of-speech.js`. It was deleted by
 migration 123 — before that it materialized one det row per POS, so it needed a
 word-level guard (`validatedWordFilter`, a `JOIN validations`) to skip a `word1` if
 **any** of its rows carried a `definitions` validation. Spanish is now one row per
-`word1`, and its replacement `backfill-cluster-definitions.js` writes only
-`definitionClusters` + `partsOfSpeech` — neither of which is a validatable field — so
-it needs no `validatedClause` at all. If a validatable field is ever added to the
-clusterer's write set, it must take the guard.
+`word1`, and its replacement `backfill-cluster-definitions.js` writes
+`definitionClusters` + `partsOfSpeech`. That used to be outside the validation model
+entirely; **migration 139 brought it in** — a cluster's own `frequencyScore` is now the
+`senseFrequencyScore` field — so both clusterers took the guard, and a row with any
+reviewed sense is skipped rather than re-clustered.
+
+> **A per-sense approval is coarse in one direction on purpose.** `definitionClusters`
+> is one jsonb column rewritten as a unit, so the guard can only work at row
+> granularity: approving ONE sense's commonality freezes the whole word's clustering.
+> That is the safe direction (nothing reviewed is ever silently rewritten), but it means
+> a validator approving one sense also parks re-clustering for that word. If that becomes
+> a real cost, the fix is a merge-on-write clusterer that preserves reviewed clusters —
+> not a weaker guard.
 
 New/undiscovered words have an empty `validationLog`, so initial enrichment and the
 `/mark-discoverable` pipeline are unaffected.
@@ -547,17 +613,23 @@ regeneration loop and a validator's work — treat it as load-bearing.
 - Migrations: `database/migrations/104-add-validation-system.sql`,
   `database/migrations/106-simplify-validator-content.sql`,
   `database/migrations/120-drop-validations-validator-fk.sql`,
-  `database/migrations/132-split-parts-of-speech-validation-field.sql`
+  `database/migrations/132-split-parts-of-speech-validation-field.sql`,
+  `database/migrations/139-add-sense-label-to-validations.sql`
 - Service/controller/routes: `server/services/ValidationService.ts`,
   `server/controllers/ValidationController.ts`, `server/routes/validationRoutes.ts`
   (mounted in `server/server.ts`; wired in `server/dal/setup.ts`)
 - Shared body formatters: `server/utils/validationBodyFormat.ts`
   (`composeDefinitionsBody`, `composeExampleSentenceBody`, `composePartsOfSpeechBody`,
-  `composeDifficultyBody`, `composeFrequencyScoreBody`)
+  `composeDifficultyBody`, `composeFrequencyScoreBody`, `composeSenseFrequencyScoreBody`)
 - Sanitizer: `server/utils/sanitizeContent.ts`
-- Types: `server/types/index.ts` (`ValidationField`, `ENTRY_LEVEL_VALIDATION_FIELDS`,
-  `EntryApprovalFlags`/`NO_APPROVALS`, `ValidationRecord`,
-  `Text.validation*`, `User.isValidator`) + `src/types.ts` (`ValidationField`,
+- Sense-aware resolver (which score the Commonality chip shows, and therefore which
+  field/label it validates): `resolveCommonality` in `src/utils/definitionUtils.ts`,
+  covered by `src/__tests__/resolveCommonality.test.ts`
+- Types: `server/contracts/wire.ts` (`ValidationField`, `ENTRY_LEVEL_VALIDATION_FIELDS`,
+  `PER_SENSE_VALIDATION_FIELDS`/`isPerSenseValidationField`,
+  `EntryApprovalFlags`/`NO_APPROVALS`), re-exported by `server/types/index.ts`
+  (which also declares `ValidationRecord`, `Text.validation*`, `User.isValidator`)
+  and by `src/types.ts` (`ValidationField`,
   `Text.validation*`, `User.isValidator`), `src/AuthContext.tsx`
 - Reader UI: `src/features/reader/ReaderPage.tsx`, `src/features/reader/ReaderDocumentPage.tsx`,
   `src/features/reader/TextHeader.tsx`, `src/features/reader/TextSidebar.tsx`,
@@ -567,12 +639,13 @@ regeneration loop and a validator's work — treat it as load-bearing.
   `src/api/http.ts` (`apiPost`/`apiDelete`/`apiGet`), wired from `src/features/flashcards/ExampleSentenceList.tsx`
   and `src/components/LongDefinitionDisplay.tsx` (via `src/features/flashcards/VocabCardDetailBody.tsx` +
   `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`), and
-  `src/features/flashcards/MetaChipLabel.tsx` (the three meta-strip chips)
+  `src/features/flashcards/MetaChipLabel.tsx` (the three meta-strip chips; passes
+  `senseLabel` for a per-sense Commonality chip)
 - Backfill guard: `server/scripts/backfill/run-log.js` (`validatedClause`)
 - Read-path surfacing: `server/dal/implementations/DictionaryDAL.ts`
   (`fetchApprovedSentenceContents`/`isSentenceHumanApproved` for `humanApproved`;
   `enrichFieldApprovalsBatch`/`fetchApprovedEntryFieldContents` for the four
-  `EntryApprovalFlags`), `src/features/flashcards/ExampleSentenceList.tsx`,
+  `EntryApprovalFlags` booleans + `approvedSenseFrequencyLabels`), `src/features/flashcards/ExampleSentenceList.tsx`,
   `src/components/LongDefinitionDisplay.tsx`, `src/features/flashcards/VocabCardDetailBody.tsx`,
   `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`,
   `src/theme/aiGeneratedStyling.ts` + `src/components/AiGeneratedBadge.tsx` (shared

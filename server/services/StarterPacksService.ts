@@ -5,7 +5,7 @@ import { DiscoverCard, StarterPackBucket, SortPack } from '../types/index.js';
 import { SortPackRow } from '../types/sortPacks.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, UTCM_USERS_JOIN, UTCM_CATEGORY_EXPR } from '../dal/shared/vetTable.js';
+import { vetTableForLanguage, UTCM_USERS_JOIN, UTCM_CATEGORY_EXPR, vetSortedClause } from '../dal/shared/vetTable.js';
 import { perfectTypedMarkHistory } from '../utils/masteryCompute.js';
 import { LazyEnrichmentService } from './LazyEnrichmentService.js';
 
@@ -244,6 +244,9 @@ export class StarterPacksService {
         WHERE ve."userId" = $1
           AND ve.language = $2
           AND ${validPredicate}
+          -- SORTED only: a provisional card carries no statement of intent about the
+          -- user's level, so it must not drag the cold-start estimate around.
+          AND ${vetSortedClause()}
         GROUP BY lvl
       `, [userId, language]);
 
@@ -339,6 +342,10 @@ export class StarterPacksService {
           AND NOT EXISTS (
             SELECT 1 FROM ${vetTable} ve
             WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language
+              -- SORTED only. A provisional card (migration 140) has a vet row but the
+              -- user has not sorted it, so discover MUST keep offering it — that is how
+              -- a temporary card earned in a game gets promoted into the real deck.
+              AND ${vetSortedClause()}
           )
           ${skipFilter}
           ${excludeFilter}
@@ -370,8 +377,8 @@ export class StarterPacksService {
       // counted to keep progress faithful to the pre-split behaviour.
       const sortedResult = await client.query<{ count: string }>(`
         SELECT
-          (SELECT COUNT(*) FROM ${this._vetTable(language)}
-             WHERE "userId" = $1 AND language = $2 AND "starterPackBucket" IS NOT NULL)
+          (SELECT COUNT(*) FROM ${this._vetTable(language)} ve
+             WHERE ve."userId" = $1 AND ve.language = $2 AND ${vetSortedClause()})
         + (SELECT COUNT(*) FROM discover_skips
              WHERE "userId" = $1 AND language = $2) AS count
       `, [userId, language]);
@@ -465,6 +472,10 @@ export class StarterPacksService {
           AND NOT EXISTS (
             SELECT 1 FROM ${vetTable} ve
             WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language
+              -- SORTED only. A provisional card (migration 140) has a vet row but the
+              -- user has not sorted it, so discover MUST keep offering it — that is how
+              -- a temporary card earned in a game gets promoted into the real deck.
+              AND ${vetSortedClause()}
           )
           ${cursorFilter}
         ORDER BY de."frequencyScore" DESC NULLS LAST, de.id ASC
@@ -593,7 +604,24 @@ export class StarterPacksService {
         console.log(`[StarterPacks] Created VocabEntry id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
       } else {
         vocabEntryId = existing.id;
-        console.log(`[StarterPacks] VocabEntry already exists id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
+        // A row already exists. The interesting case is a PROVISIONAL row (migration
+        // 140): a temporary card a game handed the user, which they have now chosen to
+        // keep. Promote it IN PLACE — flip the bucket and touch nothing else — so every
+        // mark they earned on it while it was temporary survives being sorted. That is
+        // the whole reason provisional cards are real vet rows rather than an ephemeral
+        // list: progress is never lost to sorting. See docs/PROVISIONAL_CARDS.md.
+        //
+        // An already-'library' row is left completely alone (re-sorting a card the user
+        // already holds must not reset anything).
+        if (existing.starterPackBucket === 'provisional') {
+          await client.query(
+            `UPDATE ${vetTable} SET "starterPackBucket" = $1 WHERE id = $2`,
+            [actualBucket, vocabEntryId]
+          );
+          console.log(`[StarterPacks] Promoted provisional VocabEntry id=${vocabEntryId} to '${actualBucket}' for entryKey=${dictEntry.word1} (marks preserved)`);
+        } else {
+          console.log(`[StarterPacks] VocabEntry already exists id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
+        }
       }
 
       if (shouldMarkMastered) {
@@ -711,20 +739,61 @@ export class StarterPacksService {
         return { success: false, message: 'Card not found in sorted list' };
       }
 
-      // One vet row per (user, word, language) in both languages now, so the undo deletes
+      // One vet row per (user, word, language) in both languages now, so the undo targets
       // exactly the row the sort created. Spanish used to need a `pos IS NOT DISTINCT FROM`
-      // predicate here to avoid deleting a sibling card of the same spelling.
-      const deleteResult = await client.query(`
-        DELETE FROM ${this._vetTable(language)}
-        WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3
-        RETURNING id
+      // predicate here to avoid touching a sibling card of the same spelling.
+      //
+      // Undo has TWO outcomes, because sorting can either CREATE a row or PROMOTE an
+      // existing provisional one (migration 140, docs/PROVISIONAL_CARDS.md):
+      //   - the row carries marks  → the user earned that progress in a game while the
+      //     card was provisional. Deleting would silently destroy it, so instead demote
+      //     the row back to 'provisional'. The card leaves the deck, keeps its history,
+      //     and discover keeps offering it (the supply query treats provisional as
+      //     unsorted), so it can be re-sorted later with the progress intact.
+      //   - the row has no marks   → nothing to preserve; delete it as before, so a
+      //     mis-tap leaves no trace and the word returns to the normal fresh supply.
+      //
+      // `typedMarkHistory` defaults to '{}' (migration 101) and every track is an array,
+      // so "has marks" is "any track is non-empty". Doing it in SQL keeps it atomic.
+      const undoResult = await client.query<{ id: number; demoted: boolean }>(`
+        WITH target AS (
+          SELECT id,
+                 EXISTS (
+                   SELECT 1
+                   FROM jsonb_each("typedMarkHistory") AS t(track, marks)
+                   WHERE jsonb_array_length(marks) > 0
+                 ) AS "hasMarks"
+          FROM ${this._vetTable(language)}
+          WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3
+        ),
+        demoted AS (
+          UPDATE ${this._vetTable(language)} v
+          SET "starterPackBucket" = 'provisional'
+          FROM target
+          WHERE v.id = target.id AND target."hasMarks"
+          RETURNING v.id
+        ),
+        removed AS (
+          DELETE FROM ${this._vetTable(language)} v
+          USING target
+          WHERE v.id = target.id AND NOT target."hasMarks"
+          RETURNING v.id
+        )
+        SELECT id, TRUE AS demoted FROM demoted
+        UNION ALL
+        SELECT id, FALSE AS demoted FROM removed
       `, [userId, word1, language]);
 
-      if (deleteResult.rows.length === 0) {
+      if (undoResult.rows.length === 0) {
         return { success: false, message: 'Card not found in sorted list' };
       }
 
-      return { success: true, message: 'Card undo successful' };
+      const demoted: boolean = undoResult.rows[0].demoted === true;
+      if (demoted) {
+        console.log(`[StarterPacks] Undo demoted VocabEntry id=${undoResult.rows[0].id} to 'provisional' (marks preserved) for entryKey=${word1}`);
+      }
+
+      return { success: true, message: 'Card undo successful', demoted };
     } finally {
       client.release();
     }
@@ -817,6 +886,40 @@ export class StarterPacksService {
    * `skipped` (currently in discover_skips → draggable again inside a pack). Used for
    * authored-pack cards.
    */
+  /**
+   * Hydrate discover cards for an explicit set of WORDS (det `word1` values), in the
+   * order given, dropping any word with no discoverable det row.
+   *
+   * This is the sort flow's "here is a specific set to offer" entry point, used by the
+   * provisional-card hand-off: a game finishes, the player taps "Sort these cards", and
+   * the sort page is handed exactly the temporary words that round used rather than the
+   * open-ended level-based supply (docs/PROVISIONAL_CARDS.md § Sorting what you played).
+   *
+   * Words are matched on `word1` because that is the identity a vet row carries
+   * (`entryKey`); the caller holds vet rows, not det ids.
+   */
+  async getCardsForWords(words: string[], userId: string, language: string): Promise<DiscoverCard[]> {
+    if (!words || words.length === 0) return [];
+    const det = this._dictTable(language);
+    const client = await db.getClient();
+    try {
+      const result = await client.query(`
+        SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
+               de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
+               de."exampleSentences",
+               de."iconId"
+        FROM ${det} de
+        WHERE de.word1 = ANY($1::text[]) AND de.language = $2
+          AND ${this._supplyGate(language)}
+        ORDER BY array_position($1::text[], de.word1)
+      `, [words, language]);
+
+      return await this._enrichDiscoverCards(this._rowsToDiscoverCards(result.rows), language);
+    } finally {
+      client.release();
+    }
+  }
+
   private async _hydrateCards(entryIds: number[], userId: string, language: string): Promise<DiscoverCard[]> {
     if (entryIds.length === 0) return [];
     const det = this._dictTable(language);
@@ -831,6 +934,7 @@ export class StarterPacksService {
                EXISTS (
                  SELECT 1 FROM ${vetTable} ve
                  WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language
+                   AND ${vetSortedClause()}
                ) AS sorted,
                EXISTS (
                  SELECT 1 FROM discover_skips ds

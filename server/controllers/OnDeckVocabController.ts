@@ -1,14 +1,72 @@
 import { Request, Response } from 'express';
-import { OnDeckVocabService, type StudyMode } from '../services/OnDeckVocabService.js';
+import { OnDeckVocabService, type StudyMode, type CollectionFilter } from '../services/OnDeckVocabService.js';
 import { requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
 import { MarkType, MARK_TYPES } from '../types/index.js';
+import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
+import { CardBaselineSurface, CARD_BASELINES, PROVISION_RETRY_FACTOR } from '../contracts/wire.js';
+import { DeckService } from '../services/DeckService.js';
 
 /**
  * OnDeck Vocabulary Controller
  * Handles HTTP requests for active on-deck card operations.
  */
 export class OnDeckVocabController {
-  constructor(private onDeckVocabService: OnDeckVocabService) {}
+  constructor(
+    private onDeckVocabService: OnDeckVocabService,
+    // Tops the user up to the surface's baseline before any set is assembled, so no
+    // endpoint here can ever answer "not enough cards" (docs/PROVISIONAL_CARDS.md).
+    private provisionalCardService: ProvisionalCardService,
+    // Resolves + authorizes the optional `deck` query param that restricts a
+    // game/flp round to one user-authored deck (docs/DECKS_FEATURE.md).
+    private deckService: DeckService
+  ) {}
+
+  /**
+   * Resolve the optional collection-launch query params (docs/DECKS_FEATURE.md).
+   *
+   *   ?deck=<id>            → that user-authored deck
+   *   ?collection=mastered  → the account's Mastered cards
+   *   (neither)             → null, the ordinary whole-library launch
+   *
+   * There is deliberately no `?collection=learn-now`: Learn Now IS the default
+   * pool, so restricting to it would be a no-op clause (see deckPlayFilter).
+   *
+   * THROWS NotFoundError when a deck id is not one this caller owns — so a stale
+   * link to a deleted deck fails loudly instead of quietly playing the user's whole
+   * library under a deck's name.
+   *
+   * The deck ownership check is not a security boundary: every downstream query is
+   * already filtered by `ve."userId"`, so another user's deck id would simply select
+   * nothing. It is a CORRECTNESS check — "selects nothing" then triggers the
+   * provisional top-up, and the learner would be handed a round made entirely of
+   * lent cards with no explanation.
+   */
+  private async resolveCollection(req: Request, userId: string): Promise<CollectionFilter | null> {
+    const rawDeck = req.query.deck;
+    if (rawDeck != null && String(rawDeck).trim() !== '') {
+      // getDeck validates the id shape and throws NotFoundError when it isn't the
+      // caller's; handleControllerError maps that to a 404.
+      const deck = await this.deckService.getDeck(userId, rawDeck);
+      return { kind: 'deck', deckId: deck.id };
+    }
+    // Anything other than the one recognized value means an unrestricted launch —
+    // an unknown collection name must never silently narrow the round.
+    if (String(req.query.collection ?? '') === 'mastered') return { kind: 'mastered' };
+    return null;
+  }
+
+  /**
+   * Parse the `surface` query param naming which baseline applies to this request.
+   *
+   * Every game/flp caller sends it. An unrecognized or missing value means an older
+   * client (or a hand-rolled request), and we must still not block: fall back to the
+   * requested distribution's own total, which is what that caller was going to try to
+   * fill anyway.
+   */
+  private static parseSurface(raw: unknown): CardBaselineSurface | null {
+    const value = String(raw ?? '');
+    return value in CARD_BASELINES ? (value as CardBaselineSurface) : null;
+  }
 
   /**
    * Get all library cards (vocab entries from *-library OnDeck sets)
@@ -63,8 +121,11 @@ export class OnDeckVocabController {
 
   /**
    * Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target by default).
-   * GET /api/onDeck/distributedWorkingLoop?category=<optional>&mode=<easy|hard|optional>
+   * GET /api/onDeck/distributedWorkingLoop?category=<optional>&mode=<review|challenge|optional>&deck=<optional>
    * The optional `mode` swaps in a difficulty-targeted distribution (see MODE_CONFIGS).
+   * The optional `deck` / `collection` params restrict the loop to one collection
+   * (docs/DECKS_FEATURE.md); the client must send the same restriction to the mark
+   * endpoint, which refills the loop.
    */
   getDistributedWorkingLoop = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -74,9 +135,18 @@ export class OnDeckVocabController {
       const categoryFilter = req.query.category as string | undefined;
       const rawMode = req.query.mode as string | undefined;
       const mode: StudyMode | undefined =
-        rawMode === 'easy' || rawMode === 'hard' ? rawMode : undefined;
+        rawMode === 'review' || rawMode === 'challenge' ? rawMode : undefined;
       const language = await getUserLanguage(userId);
-      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter, mode);
+      const collection = await this.resolveCollection(req, userId);
+
+      // flp never blocks on deck size any more: top the user up to the flp baseline
+      // first, so a learner with an empty deck still gets a full working loop. The
+      // response shape is unchanged — the client spots the temporary cards by their
+      // `starterPackBucket` and shows the generic notice (flp is not itemized,
+      // because the loop refills as you go and the played set isn't known up front).
+      await this.provisionalCardService.ensureBaselineForSurface(userId, language, 'flp');
+
+      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter, mode, collection);
       res.json(workingLoop);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getDistributedWorkingLoop');
@@ -177,8 +247,25 @@ export class OnDeckVocabController {
         : 'recognition';
 
       const language = await getUserLanguage(userId);
+      // Optional collection restriction. Resolved BEFORE the top-up so a bad deck
+      // id 404s without first lending the user cards for a round that won't happen.
+      const collection = await this.resolveCollection(req, userId);
+
+      // Top up to the surface's baseline BEFORE assembling the pool, so the selection
+      // below has enough rows to draw from and `sufficient` comes back true. A partial
+      // refill (`need` set — Bubble Match's Play Again) skips this: the player is
+      // mid-session with a board already in hand, and lending more cards there would
+      // quietly grow their deck every time they tapped the button.
+      if (need === undefined) {
+        const surface = OnDeckVocabController.parseSurface(req.query.surface);
+        const baseline = surface
+          ? CARD_BASELINES[surface]
+          : Object.values(distribution).reduce((sum, n) => sum + n, 0);
+        await this.provisionalCardService.ensureBaseline(userId, language, baseline);
+      }
+
       const pool = await this.onDeckVocabService.getGameVocabPool(
-        userId, language, distribution, markType, { need, excludeIds, avoidIds }
+        userId, language, distribution, markType, { need, excludeIds, avoidIds, collection }
       );
       res.json(pool);
     } catch (error: any) {
@@ -221,9 +308,28 @@ export class OnDeckVocabController {
       // the mode param is absent/unrecognized.
       const mode = String(req.query.mode ?? '');
       const gameMarkType: MarkType = mode === 'no-pinyin' ? 'reading' : 'production';
-      const result = await this.onDeckVocabService.getWordSearchGrid(
-        userId, language, distribution, gameMarkType
+      const collection = await this.resolveCollection(req, userId);
+
+      // Word Search is the one surface where meeting the baseline does NOT guarantee a
+      // playable round: its ten words must have mutually DISTINCT characters, which a
+      // row count cannot express, so a topped-up deck can still fail the de-dup pass.
+      // Escalate the baseline and retry until the grid builds or we hit the cap.
+      // `shortfall > 0` means the dictionary itself ran dry, so retrying is pointless.
+      let result = await this.onDeckVocabService.getWordSearchGrid(
+        userId, language, distribution, gameMarkType, collection
       );
+      for (let multiplier = 1; multiplier <= PROVISION_RETRY_FACTOR && !result.sufficient; multiplier++) {
+        // 'language' means the game is zh-only and this user isn't studying zh —
+        // no amount of lending fixes that.
+        if (result.reason === 'language') break;
+        const top = await this.provisionalCardService.ensureBaselineForSurface(
+          userId, language, 'word-search', multiplier
+        );
+        if (top.granted === 0) break; // nothing left to lend
+        result = await this.onDeckVocabService.getWordSearchGrid(
+          userId, language, distribution, gameMarkType, collection
+        );
+      }
       res.json(result);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getWordSearchGrid');

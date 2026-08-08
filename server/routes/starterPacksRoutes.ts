@@ -27,6 +27,11 @@ router.post('/api/starterPacks/skipPack', authenticateToken, handle(starterPacks
 // single replacement card for the queue.)
 router.get('/api/starterPacks/:language', authenticateToken, handle(starterPacksController.getStarterPackCards, starterPacksController));
 
+// The temporary (provisional) cards the user still holds, as a sort-flow card set.
+// Registered BEFORE the bare /:language GET would ever shadow it — Express matches in
+// registration order and /:language/provisionalSet is more specific either way.
+router.get('/api/starterPacks/:language/provisionalSet', authenticateToken, handle(starterPacksController.getProvisionalSet, starterPacksController));
+
 // Get user's progress on a starter pack
 router.get('/api/starterPacks/:language/progress', authenticateToken, handle(starterPacksController.getProgress, starterPacksController));
 

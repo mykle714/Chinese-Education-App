@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { StarterPacksService } from '../services/StarterPacksService.js';
+import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
 
 // Supported language codes — used for validation in multiple endpoints
@@ -26,7 +27,51 @@ function parseManual(raw: unknown): boolean {
  * Handles HTTP requests for starter pack operations
  */
 export class StarterPacksController {
-  constructor(private starterPacksService: StarterPacksService) {}
+  constructor(
+    private starterPacksService: StarterPacksService,
+    // Supplies the "sort the temporary cards you just played" set
+    // (docs/PROVISIONAL_CARDS.md § Sorting what you played).
+    private provisionalCardService: ProvisionalCardService
+  ) {}
+
+  /**
+   * The sort flow, handed an EXPLICIT set of cards instead of the open-ended
+   * level-based supply: the temporary (provisional) cards the user still holds.
+   * GET /api/starterPacks/:language/provisionalSet?words=a,b,c
+   *
+   * `words` narrows the set to the cards one round actually used; omit it for every
+   * outstanding temporary card. The service intersects whatever is asked for with
+   * what the user genuinely holds, so the param cannot widen the set.
+   *
+   * Response: { cards: DiscoverCard[] } — an empty array means there is nothing left
+   * to sort (every temporary card was already promoted), and the client closes the flow.
+   */
+  getProvisionalSet = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { language } = req.params;
+      if (!language || !VALID_LANGUAGES.includes(language as any)) {
+        res.status(400).json({ error: 'Invalid language parameter' });
+        return;
+      }
+
+      // Optional csv of words. Trimmed and emptied-out, so `?words=` behaves as "all".
+      const rawWords = String(req.query.words ?? '');
+      const words = rawWords
+        .split(',')
+        .map((word) => word.trim())
+        .filter((word) => word.length > 0);
+
+      const cards = await this.provisionalCardService.getSortSet(
+        userId, language, words.length > 0 ? words : undefined
+      );
+      res.json({ cards });
+    } catch (error: any) {
+      handleControllerError(error, res, 'StarterPacksController.getProvisionalSet');
+    }
+  };
 
   /**
    * Get the initial sort-pack queue for a language (the client holds a short FIFO queue

@@ -149,6 +149,15 @@ A **sort pack** is a small group of vocabulary cards shown together:
   **re-shows the card draggable**. If reversing it requires a pack that has already
   advanced off-deck (e.g. undoing a Skip), that pack is brought back on deck; if the
   action had marked the pack as **seen** (§4.5), undo clears that mark too.
+- **Undo never destroys earned progress** (migration 140,
+  [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md)). "Removes the library record" used to
+  mean an unconditional `DELETE`. A card can now arrive at the sort flow *already
+  carrying marks* — a provisional card the learner played in a game — so `undoSort`
+  branches atomically in one CTE:
+  - the row **has marks** → demote it back to `starterPackBucket = 'provisional'`. It
+    leaves the deck, keeps its history, and stays in the discover supply so it can be
+    re-sorted later with the progress intact. The response carries `demoted: true`.
+  - the row **has no marks** → `DELETE`, exactly as before.
 
 ---
 
@@ -170,6 +179,21 @@ What separates them is that Already Learned *additionally* writes a perfect 8/8 
 mark history across all four tracks, which resolves the row's utcm category to
 **Mastered**. There is no `'already-learned'` value stored anywhere — the two
 destinations are distinguishable only by the resulting utcm category.
+
+**A third bucket value exists but is never a sort destination:** `'provisional'`
+(migration 140) marks a card the *server* lent the learner so a game or flp could reach
+its baseline. Sorting such a card **promotes it in place** — `sortCard` flips the bucket
+to `'library'` and touches nothing else, so marks earned while it was temporary survive.
+The discover supply query treats a provisional row as **unsorted** (it filters on
+`vetSortedClause()`, not on row existence), which is exactly how these cards keep being
+offered until the learner decides. See [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md).
+
+### 5.2.1 Set mode — sorting a fixed set
+`/discover/sort/:language?set=provisional&words=a,b,c` hands the page a **fixed** set
+instead of the open-ended level-based supply: the temporary cards a game just lent,
+reached from the round's "Keep these cards" button. Each card becomes its own pack-of-1,
+so all the pack machinery above applies unchanged, except that the queue is **never
+replenished** and the page **closes itself** once the last card is sorted.
 
 ### 5.3 Library tally (level bar corners)
 The level bar carries a two-figure running tally of the account's library, one figure in

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Typography, IconButton, Button, Chip, Menu, MenuItem } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
@@ -15,6 +15,7 @@ import FrequencyScoreDots from "../../components/FrequencyScoreDots";
 import SpeakerButton from "../../components/SpeakerButton";
 import { API_BASE_URL } from "../../constants";
 import { fetchStarterPacks, fetchNextPack, sortCard, skipPack, undoSort } from "./starterPacksApi";
+import { fetchProvisionalSortSet } from "../../api/provisional";
 import { stripParentheses } from "../../utils/definitionUtils";
 import type { Language, DiscoverCard, SortPack } from "../../types";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -541,6 +542,25 @@ const SortCardsPage: React.FC = () => {
     const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
     const { language } = useParams<{ language: Language }>();
+    const [searchParams] = useSearchParams();
+
+    // SET MODE (docs/PROVISIONAL_CARDS.md § Sorting what you played).
+    //
+    // Normally this page pulls an open-ended supply of packs centered on the learner's
+    // level, and never ends. `?set=provisional` instead hands it a FIXED set: the
+    // temporary cards a game just lent the player, offered once so they can decide
+    // which to keep. `words` narrows that to the cards ONE round used; omitting it
+    // offers every temporary card they still hold.
+    //
+    // Two behavioural differences follow, both handled below: the queue is never
+    // replenished, and the page CLOSES itself once the last card of the set is sorted
+    // (a fixed set that ran out is "done", not "exhausted the dictionary").
+    const setMode = searchParams.get("set") === "provisional";
+    const setWords = useMemo(() => {
+        const raw = searchParams.get("words") ?? "";
+        return raw.split(",").map((word) => word.trim()).filter((word) => word.length > 0);
+    // Read once per distinct query string; the list is a stable input to the fetch below.
+    }, [searchParams]);
     const tts = useTTS();
     const { settings: discoverSettings, update: updateDiscoverSettings } = useDiscoverSettings();
     const audioUnlockedRef = useRef(false);
@@ -630,6 +650,24 @@ const SortCardsPage: React.FC = () => {
             setUndoStack([]);
             packBucketsRef.current = {};
             try {
+                // Set mode short-circuits the level-based supply entirely: the set is
+                // whatever the server still holds as provisional for this user. Each
+                // card becomes its own pack-of-1 (the same `single:<cardId>` shape the
+                // fallback supply uses), so the existing pack machinery — drag, undo,
+                // resolved markers — works unchanged, and every card is offered.
+                if (setMode) {
+                    const { cards } = await fetchProvisionalSortSet(language as Language, setWords);
+                    setQueue(cards.map((card) => ({
+                        packKey: `single:${card.id}`,
+                        packId: null,
+                        level: card.difficulty ?? 1,
+                        cards: [card],
+                    })));
+                    // Nothing to exhaust — a fixed set either has cards or is already done.
+                    setExhausted(false);
+                    return;
+                }
+
                 const requestLevel = selectedLevel != null ? selectedLevel : autoLevelRef.current;
                 const data = await fetchStarterPacks(
                     language as Language,
@@ -654,7 +692,7 @@ const SortCardsPage: React.FC = () => {
     // session (wiping undo history + resolved markers). See CLAUDE.md "Never
     // reload on token refresh". (The effect now satisfies the exhaustive-deps rule on
     // its own — starterPacksApi reads the token at call time.)
-    }, [language, isAuthenticated, selectedLevel]);
+    }, [language, isAuthenticated, selectedLevel, setMode, setWords]);
 
     const currentPack = queue[0];
     const doneForCurrent = currentPack ? done[currentPack.packKey] : undefined;
@@ -787,6 +825,15 @@ const SortCardsPage: React.FC = () => {
     const advancePack = useCallback(async (completedKey: string, attempt = 0) => {
         const rest = queue.filter((p) => p.packKey !== completedKey);
         setQueue(rest);
+
+        // Set mode never replenishes — the set is fixed. When its last card is sorted
+        // the page has done its whole job, so close it and hand the user back to where
+        // they came from rather than stranding them on an empty sort board.
+        if (setMode) {
+            if (rest.length === 0) navigate(-1);
+            return;
+        }
+
         try {
             // Reads autoLevelRef fresh (not a stale closure) — handleSortCard updates it
             // synchronously from the completing pack's signal BEFORE calling advancePack,
@@ -825,7 +872,7 @@ const SortCardsPage: React.FC = () => {
             // transient network blips instead of leaving the user with an empty queue.
             if (attempt < 1) setTimeout(() => advancePack(completedKey, attempt + 1), 800);
         }
-    }, [queue, language, selectedLevel]);
+    }, [queue, language, selectedLevel, setMode, navigate]);
 
     // doneRef helpers — the authoritative resolved-card store. Mutations mirror into
     // `done` state to re-render. Reading from the ref (not the `done` closure) is what

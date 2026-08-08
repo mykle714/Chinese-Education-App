@@ -245,8 +245,13 @@ export interface ExampleSentenceDefinitionPronunciationOverride {
  * 'partsOfSpeech'    = the POS tag list (split out of the definitions bundle by
  *                      migration 132);
  * 'difficulty'       = the 1–6 difficulty level (HSK level for zh);
- * 'frequencyScore'   = the 1–5 everyday-conversation score ("Commonality").
- * The last three are INLINE-ONLY: never handed out by the Reader-document queue
+ * 'frequencyScore'   = the 1–5 everyday-conversation score ("Commonality") of the
+ *                      ENTRY — shown only on a word with no sense choice to make;
+ * 'senseFrequencyScore' = the 1–5 score of ONE definitionCluster (migration 139).
+ *                      This is the number the eip/cdp Commonality chip shows on a
+ *                      CLUSTERED word, because a polyseme's entry-level score is a
+ *                      lie (干 "to do" = 5, 干 "shield" = 1).
+ * The last four are INLINE-ONLY: never handed out by the Reader-document queue
  * (composeValidationDoc), only by the chip-level Approve/Flag buttons.
  */
 export type ValidationField =
@@ -256,7 +261,25 @@ export type ValidationField =
   | 'exampleSentence2'
   | 'partsOfSpeech'
   | 'difficulty'
-  | 'frequencyScore';
+  | 'frequencyScore'
+  | 'senseFrequencyScore';
+
+/**
+ * The validation fields addressed by a `senseLabel` (a `definitionClusters[].sense`)
+ * rather than by the entry alone — migration 139. Everything NOT listed here is an
+ * entry-level field whose `validations."senseLabel"` is the empty string.
+ *
+ * The controller uses this to decide whether `senseLabel` is REQUIRED on a request,
+ * and ValidationService to decide whether to compose a per-sense body.
+ */
+export const PER_SENSE_VALIDATION_FIELDS = [
+  'senseFrequencyScore',
+] as const satisfies readonly ValidationField[];
+
+/** Narrowing helper — keeps the "is this field addressed by a sense?" test in one place. */
+export function isPerSenseValidationField(field: ValidationField): boolean {
+  return (PER_SENSE_VALIDATION_FIELDS as readonly ValidationField[]).includes(field);
+}
 
 /**
  * The validation fields that describe the ENTRY AS A WHOLE (as opposed to
@@ -281,6 +304,16 @@ export interface EntryApprovalFlags {
   partsOfSpeechApproved: boolean;
   difficultyApproved: boolean;
   frequencyScoreApproved: boolean;
+  /**
+   * Per-SENSE commonality approvals (migration 139) — the `definitionClusters[].sense`
+   * labels whose cluster `frequencyScore` a validator approved AND whose approval still
+   * matches today's cluster data. A LIST rather than a boolean because the granularity
+   * is one cluster, not the entry: 会 hui4 may be reviewed while 会 kuai4 is not.
+   *
+   * Resolved in the same pass as the four booleans (one join, one batch), which is why
+   * it rides on this interface despite not being entry-level.
+   */
+  approvedSenseFrequencyLabels: readonly string[];
 }
 
 /** All-false EntryApprovalFlags — the shape used whenever there is nothing to look up. */
@@ -289,6 +322,9 @@ export const NO_APPROVALS: EntryApprovalFlags = {
   partsOfSpeechApproved: false,
   difficultyApproved: false,
   frequencyScoreApproved: false,
+  // Frozen: NO_APPROVALS is SPREAD onto many entries, so all of them would otherwise
+  // share this one array instance.
+  approvedSenseFrequencyLabels: Object.freeze([]),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -470,6 +506,12 @@ export interface DictionaryEntryBase {
   partsOfSpeechApproved?: boolean;
   difficultyApproved?: boolean;
   frequencyScoreApproved?: boolean;
+  /**
+   * Per-SENSE commonality approvals — the `definitionClusters[].sense` labels whose own
+   * frequencyScore is human-approved AND still current (migration 139). Absent/empty ⇒
+   * every sense renders the AI-generated styling.
+   */
+  approvedSenseFrequencyLabels?: readonly string[];
 
   // ── AI-enriched content ──
   breakdown?: BreakdownMap | null;
@@ -527,8 +569,87 @@ export interface WordComparisonResult {
  *
  * Presented to users as "Learn Now"; the identifier stays `library` because it is a
  * backend contract (CLAUDE.md § Terminology).
+ *
+ * 'provisional' (migration 140) is a TEMPORARY card the server auto-granted so a
+ * game or flp could meet its baseline (see CARD_BASELINES below). It is a real vet
+ * row — it has an id and accepts marks — but the user never chose it, so it is
+ * hidden from every "my cards" read until they sort it. See docs/PROVISIONAL_CARDS.md.
  */
-export type StarterPackBucket = 'library';
+export type StarterPackBucket = 'library' | 'provisional';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Card baselines (docs/PROVISIONAL_CARDS.md)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Every surface that draws a set of cards to play/study with.
+ *
+ * These were five independently-declared minimum-card constants that each BLOCKED
+ * entry when the user's deck was too small. They are now BASELINES: the number of
+ * playable cards the surface wants, which the server tops up with provisional cards
+ * rather than refusing to start. Nothing may block a game or flp on card count.
+ */
+export type CardBaselineSurface =
+  | 'bubble-match'
+  | 'match-speed'
+  | 'speed-reading'
+  | 'word-search'
+  | 'flp';
+
+/**
+ * How many playable cards each surface needs before it can build a round.
+ *
+ * Single source of truth — previously duplicated across
+ * `src/games/bubble-match/constants.ts` (distribution sum), `match-speed/constants.ts`
+ * (ENTRY_GATE_CARDS), `speed-reading/constants.ts` (ENTRY_GATE_CARDS),
+ * `word-search/constants.ts` (TOTAL_WORDS) and
+ * `src/features/flashcards/FlashcardsDecksPage.tsx` (MIN_LIBRARY_CARDS), where they
+ * could drift apart from the distributions the server actually served.
+ *
+ * Word Search is 10 rather than 20 because its grid holds ten words; it additionally
+ * needs those words to have mutually distinct characters, which a flat count cannot
+ * express — see PROVISION_RETRY_FACTOR.
+ */
+export const CARD_BASELINES: Record<CardBaselineSurface, number> = {
+  'bubble-match': 20,
+  'match-speed': 20,
+  'speed-reading': 20,
+  'word-search': 10,
+  flp: 20,
+};
+
+/**
+ * Ceiling on over-provisioning, as a multiple of the surface's baseline.
+ *
+ * Word Search can be handed exactly `baseline` cards and still fail to build a grid,
+ * because it needs ten words with mutually DISTINCT characters and a provisioning
+ * query that only counts rows cannot guarantee that. So the grid builder is allowed
+ * to ask for another batch and retry, up to this multiple, before giving up. Other
+ * surfaces only ever provision to 1× baseline.
+ */
+export const PROVISION_RETRY_FACTOR = 3;
+
+/**
+ * Whether a surface can NAME the temporary cards it was given.
+ *
+ * Before play starts, a surface that was topped up tells the player so. Where the
+ * played set is fixed and known up front, the notice lists the exact words it lent
+ * them. Where the surface streams cards continuously — Match Speed deals from a
+ * rolling buffer, flp refills the working loop as you go — the set is not known in
+ * advance, so those show the generic "here are some temporary cards" message with no
+ * word list.
+ *
+ * The client derives the words themselves from the served cards
+ * (`card.starterPackBucket === 'provisional'`), so there is no separate notice
+ * payload on the wire — only this policy, shared so both sides agree.
+ */
+export const CARD_BASELINE_ITEMIZED: Record<CardBaselineSurface, boolean> = {
+  'bubble-match': true,
+  'match-speed': false,
+  'speed-reading': true,
+  'word-search': true,
+  flp: false,
+};
 
 /** The bucket NAMES the discover sort endpoint accepts as input (not all of them persist). */
 export type DiscoverSortBucket = 'library' | 'skip' | 'already-learned';
@@ -697,6 +818,8 @@ export interface VocabEntryBase {
   partsOfSpeechApproved?: boolean;
   difficultyApproved?: boolean;
   frequencyScoreApproved?: boolean;
+  /** Per-SENSE commonality approvals; see DictionaryEntryBase. */
+  approvedSenseFrequencyLabels?: readonly string[];
 
   /** 1 = almost never spoken … 5 = constant in daily speech (from the det row). */
   frequencyScore?: number | null;

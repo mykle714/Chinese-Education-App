@@ -6,7 +6,7 @@ import { StarterPacksService } from './StarterPacksService.js';
 import { ValidationError } from '../types/dal.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, vetReadFrom, UTCM_USERS_JOIN, UTCM_CATEGORY_EXPR, UTCM_CATEGORY_SELECT, typeCategoryExpr } from '../dal/shared/vetTable.js';
+import { vetTableForLanguage, vetReadFrom, UTCM_USERS_JOIN, UTCM_CATEGORY_EXPR, UTCM_CATEGORY_SELECT, typeCategoryExpr, vetSortedClause, vetPlayableClause, vetDeckOrProvisionalClause } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import type { TTSService } from './TTSService.js';
@@ -18,11 +18,22 @@ import {
 } from './wordSearchGrid.js';
 import { resolveSenseGloss, resolveDisplayDefinition } from '../utils/definitions.js';
 
-// Difficulty-targeted study modes launched from the decks page (Easy/Hard
+// Difficulty-targeted study modes launched from the decks page (Review/Challenge
 // buttons). Each mode shapes BOTH the initial working-loop distribution and the
 // replacement-card pool handed back by the mark endpoint, so banned categories
 // never leak in via a correct-mark refill.
-export type StudyMode = 'easy' | 'hard';
+export type StudyMode = 'review' | 'challenge';
+
+/**
+ * Which collection a game/flp round was launched from (docs/DECKS_FEATURE.md).
+ * `undefined` anywhere this appears means an ordinary, unrestricted launch.
+ *
+ * Deliberately narrower than the client's CollectionRef: 'learn-now' has no
+ * server-side representation because it is the default pool (see deckPlayFilter).
+ */
+export type CollectionFilter =
+  | { kind: 'deck'; deckId: number }
+  | { kind: 'mastered' };
 
 interface ModeLoopConfig {
   // Ordered initial fetch quotas (summing to the loop total).
@@ -35,15 +46,25 @@ interface ModeLoopConfig {
 
 // Single source of truth for mode distributions, shared by the working-loop
 // builder and the mark route's replacement picker.
+//
+// `allowed` is a HARD filter and is deliberately never widened. Review is exactly
+// Comfortable + Mastered, Challenge is exactly Unfamiliar + Target — the same split
+// Match Speed uses (src/games/match-speed/constants.ts). When a learner has
+// nothing in Review's buckets the loop comes back thin (or empty) and the decks
+// page greys the button; that is the intended answer, NOT a bug to fix by
+// falling back to other categories. A "review" session padded with cards the
+// learner has never seen is not a review session. Provisioned cards start with an
+// empty mark history, so lending can fill Challenge but can never fill Review.
+// See docs/PROVISIONAL_CARDS.md § 6.
 export const MODE_CONFIGS: Record<StudyMode, ModeLoopConfig> = {
-  // Easy: ease the learner with cards they mostly know.
-  easy: {
+  // Review: ease the learner with cards they mostly know.
+  review: {
     quotas: [{ category: 'Comfortable', count: 7 }, { category: 'Mastered', count: 3 }],
     fillOrder: ['Comfortable', 'Mastered'],
     allowed: ['Comfortable', 'Mastered'],
   },
-  // Hard: drill the cards the learner struggles with.
-  hard: {
+  // Challenge: drill the cards the learner struggles with.
+  challenge: {
     quotas: [{ category: 'Unfamiliar', count: 7 }, { category: 'Target', count: 3 }],
     fillOrder: ['Target', 'Unfamiliar'],
     allowed: ['Unfamiliar', 'Target'],
@@ -261,10 +282,14 @@ export class OnDeckVocabService {
     now: number,
     cap: number,
     maxEntryKeyLen?: number,
-    excludeIds: number[] = []
+    excludeIds: number[] = [],
+    collection?: CollectionFilter | null
   ): Promise<{ eligible: Record<string, VocabEntry[]>; cooled: Record<string, VocabEntry[]> }> {
     const eligible: Record<string, VocabEntry[]> = {};
     const cooled: Record<string, VocabEntry[]> = {};
+    // Optional collection restriction (docs/DECKS_FEATURE.md). $7 is the next free
+    // placeholder after the six bound below.
+    const deck = this.deckPlayFilter(collection, 7);
     // maxEntryKeyLen is a caller-supplied constant (never user input); coerce to a
     // safe integer before inlining, since it isn't a bind param.
     const lenClause = maxEntryKeyLen != null
@@ -276,13 +301,16 @@ export class OnDeckVocabService {
         FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $4
-        AND ve."starterPackBucket" = 'library'
+        -- PLAYABLE: a game round may draw provisional cards, which is the whole
+        -- point of the baseline top-up (docs/PROVISIONAL_CARDS.md).
+        AND ${vetPlayableClause()}
         AND ${typeCategoryExpr('$5')} = $2
         AND NOT (ve.id = ANY($6::int[]))
         ${lenClause}
+        ${deck.clause}
         ORDER BY RANDOM()
         LIMIT $3
-      `, [userId, category, cap, language, markType, excludeIds]);
+      `, [userId, category, cap, language, markType, excludeIds, ...deck.params]);
 
       const fresh: VocabEntry[] = [];
       const stale: VocabEntry[] = [];
@@ -394,7 +422,8 @@ export class OnDeckVocabService {
         FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $2
-        AND ve."starterPackBucket" = 'library'
+        -- SORTED: this is the deck the user built, not what a game may serve.
+        AND ${vetSortedClause()}
         ORDER BY ve."createdAt" DESC
       `, [userId, language]);
 
@@ -402,6 +431,106 @@ export class OnDeckVocabService {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Every card in one user-authored deck, enriched exactly like the Learn Now and
+   * Mastered collections above, so one client component renders all three
+   * (docs/DECKS_FEATURE.md).
+   *
+   * ── Why this read lives here and not in DeckDAL ───────────────────────────────
+   * It is the THIRD collection read, not a deck feature: it needs DICT_JOIN, the
+   * utcm category expression and `enrichEntriesPipeline`, all of which already sit
+   * on this service beside its two siblings. DeckDAL owns the deck tables and
+   * answers membership questions; DeckService owns the ownership check and calls
+   * this. See DeckService's class comment.
+   *
+   * SORTED, not playable: this is a view of the user's own cards, so a card lent
+   * by the provisional top-up (which is never written into a deck anyway — see
+   * vetDeckOrProvisionalClause) must not appear in the list. `vetDeckClause` is
+   * the strict "in the deck" form for the same reason.
+   *
+   * ORDERED BY MEMBERSHIP, newest addition first — not by the card's `createdAt`
+   * like the other two collections. A deck is something the user assembled, so
+   * "what I most recently put in here" is the meaningful recency, and it matches
+   * the order DeckDAL.listDeckCardIds returns.
+   *
+   * The caller MUST have already established that `deckId` belongs to `userId`
+   * (DeckService.getDeck does). The `ve."userId" = $1` filter means a wrong deck
+   * id yields an empty list rather than another user's cards, but it is a backstop,
+   * not the check.
+   */
+  async getDeckCards(userId: string, language: string, deckId: number): Promise<VocabEntry[]> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+
+    const client = await db.getClient();
+    try {
+      const result = await client.query<VocabEntry>(`
+        SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT},
+               dc."addedAt" AS "deckAddedAt"
+        FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
+        -- Joined rather than spliced as vetDeckClause's EXISTS: this read needs
+        -- the membership row's "addedAt" for its sort, which a semi-join cannot
+        -- expose. At most one deck_cards row matches (composite PK), so the join
+        -- cannot duplicate a card.
+        JOIN deck_cards dc ON dc."vocabEntryId" = ve.id AND dc."deckId" = $3
+        WHERE ve."userId" = $1
+        AND ve."language" = $2
+        -- SORTED: deck read (a deck never contains a lent card).
+        AND ${vetSortedClause()}
+        ORDER BY dc."addedAt" DESC
+      `, [userId, language, deckId]);
+
+      return await this.enrichEntriesPipeline(result.rows, language);
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * WHERE fragment restricting a PLAYABLE read to one collection, or the empty
+   * string when the launch was unrestricted.
+   *
+   * Every deck-filtered selection query composes this with its bucket clause; the
+   * deck id is bound, never interpolated (only the `$n` placeholder position is,
+   * and that is computed from the caller's own parameter list).
+   *
+   * For a DECK it uses the "deck OR provisional" form, not the strict one: a game
+   * launched from a four-card deck still gets topped up to its baseline, and those
+   * lent cards must be servable even though they are not deck members. See
+   * docs/DECKS_FEATURE.md § Playing a small deck.
+   *
+   * There is no 'learn-now' variant, and that is not an omission: the Learn Now
+   * collection IS every sorted card, which is exactly what these queries already
+   * select. Adding a clause for it would restate `vetPlayableClause()`.
+   */
+  private deckPlayFilter(
+    collection: CollectionFilter | null | undefined,
+    nextParamIndex: number
+  ): { clause: string; params: number[] } {
+    if (collection == null) return { clause: '', params: [] };
+
+    if (collection.kind === 'mastered') {
+      // The Mastered collection is a CATEGORY, not a stored set, so it filters on
+      // the same computed expression the collection page itself lists by. No bind
+      // parameter is needed — 'Mastered' is a literal in our own SQL, never input.
+      //
+      // Applied to EVERY candidate query, including the fallback buckets, so a
+      // round launched from Mastered cannot quietly top itself up with
+      // non-mastered cards. Note this is the goal-blended OVERALL category (what
+      // the user sees on the page), not the game's per-track band — a card can
+      // therefore be Mastered overall and land in the game's Unfamiliar bucket,
+      // which is correct: the set is what the user chose, the bucket is how the
+      // game paces it.
+      return { clause: `AND ${UTCM_CATEGORY_EXPR} = 'Mastered'`, params: [] };
+    }
+
+    return {
+      clause: `AND ${vetDeckOrProvisionalClause(`$${nextParamIndex}`)}`,
+      params: [collection.deckId],
+    };
   }
 
   /**
@@ -419,7 +548,8 @@ export class OnDeckVocabService {
         FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $2
-        AND ve."starterPackBucket" = 'library'
+        -- SORTED: deck read.
+        AND ${vetSortedClause()}
         AND ${UTCM_CATEGORY_EXPR} = 'Mastered'
         ORDER BY ve."createdAt" DESC
       `, [userId, language]);
@@ -445,7 +575,8 @@ export class OnDeckVocabService {
         FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $2
-        AND ve."starterPackBucket" = 'library'
+        -- SORTED: deck read.
+        AND ${vetSortedClause()}
         AND ${UTCM_CATEGORY_EXPR} != 'Mastered'
         ORDER BY ve."createdAt" DESC
       `, [userId, language]);
@@ -470,22 +601,27 @@ export class OnDeckVocabService {
     category: string,
     language: string,
     excludeIds: number[],
-    limitRows?: number
+    limitRows?: number,
+    collection?: CollectionFilter | null
   ): Promise<VocabEntry[]> {
     // limitRows is coerced to a non-negative integer and inlined (it can be
     // omitted, so it isn't a bind param); never interpolate untrusted input here.
     const limitClause = limitRows != null ? `LIMIT ${Math.max(0, Math.floor(limitRows))}` : '';
+    // Optional collection restriction; $5 is the next free placeholder after the four below.
+    const deck = this.deckPlayFilter(collection, 5);
     const result = await client.query<VocabEntry>(`
       SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
       FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
       WHERE ve."userId" = $1
       AND ve."language" = $4
-      AND ve."starterPackBucket" = 'library'
+      -- PLAYABLE: feeds the flp working loop and its refill.
+      AND ${vetPlayableClause()}
       AND ${UTCM_CATEGORY_EXPR} = $2
       AND ve.id != ALL($3::int[])
+      ${deck.clause}
       ORDER BY ve."createdAt" DESC
       ${limitClause}
-    `, [userId, category, excludeIds, language]);
+    `, [userId, category, excludeIds, language, ...deck.params]);
     return result.rows;
   }
 
@@ -500,17 +636,24 @@ export class OnDeckVocabService {
    * fully cooling down do we emit the least-recently-correct cooled card (so the
    * loop never stalls). `excludeIds` keeps cards already in the loop out.
    *
-   * `allowedCategories` (Easy/Hard modes) restricts the pool to the given
+   * `allowedCategories` (Review/Challenge modes) restricts the pool to the given
    * categories only — a banned category is never served, even as a last resort.
    * When the allowed pool is empty, returns null so the caller can wind the loop
-   * down ("no more easy/hard cards remaining"). Enriches only the chosen card.
+   * down ("no more review/challenge cards remaining"). Enriches only the chosen card.
+   *
+   * `collection` (docs/DECKS_FEATURE.md) restricts the replacement pool to the
+   * collection the session was launched from. IT MUST BE PASSED WHENEVER THE
+   * SESSION WAS LAUNCHED FROM ONE — the mark endpoint is what refills the loop, so a deck-launched session
+   * that omitted it here would start serving off-deck cards the moment the learner
+   * answered the first card correctly.
    */
   async getNextLibraryCardWithFallback(
     userId: string,
     preferredCategory: string,
     language: string,
     excludeIds: number[] = [],
-    allowedCategories?: string[]
+    allowedCategories?: string[],
+    collection?: CollectionFilter | null
   ): Promise<VocabEntry | null> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -537,7 +680,7 @@ export class OnDeckVocabService {
       let winner: VocabEntry | null = null;
 
       for (const category of categoryOrder) {
-        const cards = await this.fetchLibraryCandidatesByCategory(client, userId, category, language, excludeIds);
+        const cards = await this.fetchLibraryCandidatesByCategory(client, userId, category, language, excludeIds, undefined, collection);
         if (cards.length === 0) continue;
 
         const eligible = this.pickNewestFlpEligibleCard(cards);
@@ -577,20 +720,25 @@ export class OnDeckVocabService {
     category: string,
     limit: number,
     excludeIds: number[],
-    now: number
+    now: number,
+    collection?: CollectionFilter | null
   ): Promise<VocabEntry[]> {
     if (limit <= 0) return [];
+    // Optional collection restriction; $6 is the next free placeholder after the five below.
+    const deck = this.deckPlayFilter(collection, 6);
     const result = await client.query<VocabEntry>(`
       SELECT ve.*, ${DICT_COLS}, ${UTCM_CATEGORY_SELECT}
       FROM ${vetReadFrom(language)} ${DICT_JOIN} ${UTCM_USERS_JOIN}
       WHERE ve."userId" = $1
       AND ve."language" = $5
-      AND ve."starterPackBucket" = 'library'
+      -- PLAYABLE: feeds the flp working loop.
+      AND ${vetPlayableClause()}
       AND ${UTCM_CATEGORY_EXPR} = $2
       AND ve.id != ALL($3::int[])
+      ${deck.clause}
       ORDER BY RANDOM()
       LIMIT $4
-    `, [userId, category, excludeIds, LOOP_CANDIDATE_CAP, language]);
+    `, [userId, category, excludeIds, LOOP_CANDIDATE_CAP, language, ...deck.params]);
 
     const eligible: VocabEntry[] = [];
     for (const card of result.rows) {
@@ -614,14 +762,15 @@ export class OnDeckVocabService {
     language: string,
     categoryOrder: string[],
     limit: number,
-    excludeIds: number[]
+    excludeIds: number[],
+    collection?: CollectionFilter | null
   ): Promise<VocabEntry[]> {
     if (limit <= 0) return [];
     const pool: VocabEntry[] = [];
     const seen = new Set<number>(excludeIds);
     for (const category of categoryOrder) {
       const rows = await this.fetchLibraryCandidatesByCategory(
-        client, userId, category, language, [...seen], LOOP_CANDIDATE_CAP
+        client, userId, category, language, [...seen], LOOP_CANDIDATE_CAP, collection
       );
       for (const row of rows) {
         if (seen.has(row.id)) continue;
@@ -647,8 +796,8 @@ export class OnDeckVocabService {
   /**
    * Get distributed working loop with a category distribution.
    * - Default (Mix): 1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target.
-   * - `mode` 'easy'/'hard': the difficulty-targeted distributions in MODE_CONFIGS
-   *   (Easy = 7 Comfortable + 3 Mastered; Hard = 7 Unfamiliar + 3 Target), each
+   * - `mode` 'review'/'challenge': the difficulty-targeted distributions in MODE_CONFIGS
+   *   (Review = 7 Comfortable + 3 Mastered; Challenge = 7 Unfamiliar + 3 Target), each
    *   topping up only from its allowed categories.
    * - `categoryFilter`: returns up to 10 cards from that single category (legacy
    *   deck-tap path), ignoring distribution.
@@ -660,12 +809,19 @@ export class OnDeckVocabService {
    * (allowed) pool is cooling down do we fall back to least-recently-correct
    * cooled cards, so the loop never comes back empty for a user who has cards.
    * Enriches cards with related words that share characters.
+   *
+   * `deckId` (docs/DECKS_FEATURE.md) restricts the whole loop — quotas, top-up and
+   * the cooled last-resort fill alike — to one user-authored deck. It composes with
+   * `mode`: a deck launched in Challenge mode draws Unfamiliar/Target cards FROM THAT
+   * DECK. Note that the client must pass the same deck id to the mark endpoint,
+   * which is what refills the loop as cards are answered.
    */
   async getDistributedWorkingLoop(
     userId: string,
     language: string,
     categoryFilter?: string | null,
-    mode?: StudyMode
+    mode?: StudyMode,
+    collection?: CollectionFilter | null
   ): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -685,7 +841,7 @@ export class OnDeckVocabService {
         // single tapped category.
         loopCategories = [categoryFilter];
         workingLoop = await this.fetchEligibleCategoryCards(
-          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now
+          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now, collection
         );
       } else {
         // Data-driven distribution: pick the per-mode config (or the Mix default),
@@ -699,7 +855,7 @@ export class OnDeckVocabService {
         // Initial quota fetches (eligibility-filtered).
         for (const { category, count } of config.quotas) {
           const rows = await this.fetchEligibleCategoryCards(
-            client, userId, language, category, count, workingLoop.map(c => c.id), now
+            client, userId, language, category, count, workingLoop.map(c => c.id), now, collection
           );
           workingLoop.push(...rows);
         }
@@ -710,7 +866,7 @@ export class OnDeckVocabService {
             if (workingLoop.length >= WORKING_LOOP_SIZE) break;
             const rows = await this.fetchEligibleCategoryCards(
               client, userId, language, category,
-              WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now
+              WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection
             );
             workingLoop.push(...rows);
           }
@@ -726,7 +882,7 @@ export class OnDeckVocabService {
       // exists in the loop's categories.
       if (workingLoop.length === 0) {
         workingLoop = await this.fetchCooledFallbackCards(
-          client, userId, language, loopCategories, WORKING_LOOP_SIZE, []
+          client, userId, language, loopCategories, WORKING_LOOP_SIZE, [], collection
         );
       }
 
@@ -796,7 +952,10 @@ export class OnDeckVocabService {
         ${UTCM_USERS_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $3
-        AND ve."starterPackBucket" = 'library'
+        -- SORTED: these counts are the deck sizes shown on the decks page. They must
+        -- NOT count provisional cards, or the page would claim cards the user has not
+        -- sorted. Games no longer use these counts to gate entry.
+        AND ${vetSortedClause()}
         AND ${UTCM_CATEGORY_EXPR} = ANY($2::text[])
         GROUP BY ${UTCM_CATEGORY_EXPR}
       `, [userId, categories, language]);
@@ -872,7 +1031,9 @@ export class OnDeckVocabService {
     language: string,
     distribution: Record<string, number>,
     gameMarkType: MarkType,
-    opts: { need?: number; excludeIds?: number[]; avoidIds?: number[] } = {}
+    // `collection` (docs/DECKS_FEATURE.md) restricts the whole pool to one
+    // collection — for a deck, its cards plus any card lent to reach the baseline.
+    opts: { need?: number; excludeIds?: number[]; avoidIds?: number[]; collection?: CollectionFilter | null } = {}
   ): Promise<{
     cards: VocabEntry[];
     requested: Record<string, number>;
@@ -912,7 +1073,7 @@ export class OnDeckVocabService {
       // Per-category candidates split fresh (game type off cooldown) vs cooled.
       const { eligible, cooled } = await this.fetchGameCandidates(
         client, userId, language, countCategories, gameMarkType, now,
-        OnDeckVocabService.GAME_CANDIDATE_CAP, undefined, excludeIds
+        OnDeckVocabService.GAME_CANDIDATE_CAP, undefined, excludeIds, opts.collection
       );
 
       // Soft-avoid: pull just-cleared cards out of BOTH tiers into a third,
@@ -1046,7 +1207,11 @@ export class OnDeckVocabService {
     userId: string,
     language: string,
     distribution: Record<string, number>,
-    gameMarkType: MarkType
+    gameMarkType: MarkType,
+    // `collection` (docs/DECKS_FEATURE.md) restricts the grid's words to one collection.
+    // The de-dup / replacement loop below is unaffected: it only ever draws from
+    // the candidate queues this filter has already narrowed.
+    collection?: CollectionFilter | null
   ): Promise<{
     grid: GridCell[][] | null;
     words: WordSearchGrid['words'];
@@ -1057,6 +1222,8 @@ export class OnDeckVocabService {
     available: Record<string, number>;
     sufficient: boolean;
     reason?: string;
+    /** Grid words that were LENT to reach the baseline (docs/PROVISIONAL_CARDS.md). */
+    provisionalWords?: string[];
     templateIndex?: number | null;
   }> {
     if (!userId) {
@@ -1088,7 +1255,7 @@ export class OnDeckVocabService {
       // card is never reused across passes.
       const { eligible, cooled } = await this.fetchGameCandidates(
         client, userId, language, countCategories, gameMarkType, now,
-        OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4
+        OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4, [], collection
       );
 
       const selectedIds = new Set<number>();
@@ -1353,6 +1520,13 @@ export class OnDeckVocabService {
         available,
         sufficient: true,
         templateIndex: generated.templateIndex,
+        // Which of the grid's words were LENT to reach the baseline rather than sorted
+        // by the player (docs/PROVISIONAL_CARDS.md). Reported as a flat word list
+        // rather than a flag on each PlacedWord so it doesn't have to be threaded
+        // through the grid generator, which has no business knowing about buckets.
+        provisionalWords: withAudio
+          .filter((card) => card.starterPackBucket === 'provisional')
+          .map((card) => card.entryKey),
       };
     } finally {
       client.release();

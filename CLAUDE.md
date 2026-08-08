@@ -186,6 +186,18 @@ An hourly Postgres cron on the prod server. For each **(user, language)** balanc
 ### Games
 → See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)
 
+### Provisional Cards (no game/flp ever blocks on card count)
+→ See [docs/PROVISIONAL_CARDS.md](./docs/PROVISIONAL_CARDS.md) — every game's and flp's old
+minimum-card requirement is now a **baseline** (`CARD_BASELINES`, `server/contracts/wire.ts`).
+When a learner is short, the server lends them cards as `starterPackBucket = 'provisional'`
+vet rows (migration 140) chosen from the level nearest theirs, ordered by commonality.
+Lent cards accept marks but are hidden from every deck/search read (`vetSortedClause()` vs
+`vetPlayableClause()` in `server/dal/shared/vetTable.ts`); sorting one promotes it in place
+so the progress survives.
+
+### Friends
+→ See [docs/FRIENDS_FEATURE.md](./docs/FRIENDS_FEATURE.md) — the friend graph (`friendships`, migration 138): the hp Friends row and its three NodePages (`/friends`, `/friends/sent`, `/friends/requests`), adding a friend by pasted user ID, the one-row-per-pair model (a friendship IS an accepted request; declining deletes the row), and the crossing-request auto-accept rule.
+
 ### Practice Writing (character writing-practice drill)
 → See [docs/PRACTICE_WRITING.md](./docs/PRACTICE_WRITING.md) — the "Practice Writing Me" drill: four assistance levels (Trace / Step Through / Memorize / Test), the 2×2 grid for multi-char words, the generalized modal lockout + greyed-background step-back, Memorize's study-first lock (no-writing badge + Start-Writing pulse), top-1 grading, and completion stars.
 → Recognition path (stroke format, backends, Google proxy, Hanzi Writer guide): [docs/HANDWRITING_RECOGNITION.md](./docs/HANDWRITING_RECOGNITION.md)
@@ -229,6 +241,7 @@ it has been deployed yet. Delete the file once prod is verified.
 Current open runbooks:
 - [docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md) — per-language minute points + night markets (migrations 130, 134); **not yet on prod**
 - [docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md](./docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md) — unit-slot unlocks + generated unlock schedule; no migration, but the cron SQL **must** be redeployed; **not yet on prod**
+- [docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md](./docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md) — provisional cards (migration 140); the migration **must** land before the new code (it writes a bucket value the old CHECK rejects); **not yet on prod**
 
 ### Data Deployment (syncing `dictionaryentries_zh` to prod)
 → See [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)

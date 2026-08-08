@@ -31,6 +31,107 @@ export function vetReadFrom(language: string | null | undefined): string {
 // the row (exactly one matches, since ids are globally unique across the pair).
 export const VET_PHYSICAL_TABLES = ['vocabentries_zh', 'vocabentries_es'] as const;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Bucket visibility (migration 140, docs/PROVISIONAL_CARDS.md)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// A vet row is in one of two meaningful buckets, and EVERY vet read has to pick
+// which of them it means. Getting this wrong is silent: a sorted-only read that
+// forgets the filter starts leaking auto-granted cards into the user's deck, and a
+// playable read that uses the strict filter refuses to hand a game the very cards
+// that were just provisioned for it.
+//
+//   'library'     — the user deliberately sorted this card into Learn Now. Theirs.
+//   'provisional' — the server auto-granted it so a game/flp could reach its
+//                   baseline. A real row that accepts marks, but not the user's
+//                   card until they sort it.
+//
+// Rule of thumb: if the query answers "what is in MY deck?" (search, library lists,
+// counts shown as deck size, the community feed, reading-highlight ownership,
+// level estimation) it is SORTED. If it answers "what can I put in front of the
+// player right now?" (game pools, the flp working loop) it is PLAYABLE.
+//
+// Both take the table alias so they can be spliced into queries that alias vet as
+// something other than `ve` (`v` in SpeedReadingDAL, `lib` in CommunityLayoutDAL).
+// The alias is a caller-supplied literal, never user input.
+
+/**
+ * Cards the user deliberately sorted into Learn Now. Excludes provisional cards.
+ * This is the DEFAULT for any read that represents the user's own vocabulary.
+ */
+export function vetSortedClause(alias = 've'): string {
+  return `${alias}."starterPackBucket" = 'library'`;
+}
+
+/**
+ * Cards a game or flp may serve: the user's sorted deck PLUS any provisional cards
+ * granted to top them up to the surface's baseline. Only selection paths that feed
+ * an actual round should use this.
+ */
+export function vetPlayableClause(alias = 've'): string {
+  return `${alias}."starterPackBucket" IN ('library', 'provisional')`;
+}
+
+/** Matches only the auto-granted temporary cards. */
+export function vetProvisionalClause(alias = 've'): string {
+  return `${alias}."starterPackBucket" = 'provisional'`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deck membership (migration 141, docs/DECKS_FEATURE.md)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Restricts a vet read to the cards in one user-authored deck.
+ *
+ * COMPOSES WITH, NEVER REPLACES, the bucket clauses above. A deck-filtered game
+ * pool is still `vetPlayableClause() AND vetDeckClause(...)`: the deck says WHICH
+ * cards the learner picked, the bucket clause says which of them the surface is
+ * allowed to serve. Dropping the bucket clause because a deck filter is present
+ * would let a game serve a card the user has since removed from Learn Now.
+ *
+ * EXISTS rather than a JOIN: `deck_cards` has at most one row per (deck, card), so
+ * a join could not duplicate rows today — but a semi-join states the intent, keeps
+ * the clause spliceable into any WHERE without touching the caller's FROM, and
+ * cannot start duplicating results if the membership table ever grows a second
+ * dimension.
+ *
+ * @param deckIdParam  A BIND PLACEHOLDER (e.g. `'$3'`), never a literal id. Callers
+ *                     bind the deck id alongside; nothing user-controlled is
+ *                     interpolated into SQL here.
+ * @param alias        The caller's vet alias (`ve` by default, `v` in
+ *                     SpeedReadingDAL, `lib` in CommunityLayoutDAL).
+ *
+ * NOTE ON PROVISIONAL CARDS: a card lent to top a small deck up to a surface's
+ * baseline is deliberately NOT written into `deck_cards`, so it does NOT satisfy
+ * this clause. Deck-filtered selection therefore ORs the two — "in the deck, or
+ * lent for this session" — at the call site rather than here, so that every read
+ * that means strictly "the deck" keeps meaning that. See
+ * `vetDeckOrProvisionalClause` below.
+ */
+export function vetDeckClause(deckIdParam: string, alias = 've'): string {
+  return `EXISTS (
+    SELECT 1 FROM deck_cards dc
+    WHERE dc."deckId" = ${deckIdParam} AND dc."vocabEntryId" = ${alias}.id
+  )`;
+}
+
+/**
+ * What a deck-filtered GAME or flp round may draw from: the deck's cards, plus any
+ * provisional card lent to reach the surface's baseline.
+ *
+ * The lent cards are the answer to "the user launched a game from a four-card
+ * deck". They are real vet rows that accept marks, they are itemized to the player
+ * by the existing provisional notice, and they stay out of the deck itself — so
+ * playing an under-sized deck never silently grows it.
+ *
+ * Pair with `vetPlayableClause()`, not instead of it: this decides membership,
+ * that decides servability.
+ */
+export function vetDeckOrProvisionalClause(deckIdParam: string, alias = 've'): string {
+  return `(${vetDeckClause(deckIdParam, alias)} OR ${vetProvisionalClause(alias)})`;
+}
+
 // In-query utcm category (migration 101, docs/MASTERY_REWORK.md). The `category`
 // column is no longer stored — it is derived from the card's typedMarkHistory AND
 // the account's goal flags, which live on the users row. So any query that needs a

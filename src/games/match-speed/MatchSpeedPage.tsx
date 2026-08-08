@@ -11,7 +11,7 @@ import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
-import { beginTapCensus } from "../../utils/perfDiagnostics";
+import { beginTapCensus, beginTouchProbe } from "../../utils/perfDiagnostics";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import LeafPage from "../../components/LeafPage";
@@ -154,6 +154,13 @@ const MatchSpeedPage: React.FC = () => {
     // In particular it must NOT depend on `token` (CLAUDE.md § never reload on a
     // silent token refresh) — a re-run mid-run would drop the in-flight taps.
     useEffect(() => beginTapCensus(), []);
+
+    // TEMPORARY: touch-layer probe for the iOS "second thumb does nothing" bug.
+    // The census above reads the POINTER layer; this reads the TOUCH layer just
+    // upstream of it, so a finger the engine sees but never promotes to a pointer
+    // event becomes visible. Remove together with `beginTouchProbe` once the bug
+    // is understood. Same empty-deps rule as the census.
+    useEffect(() => beginTouchProbe(), []);
 
     const language = (user?.selectedLanguage ?? "zh") as Language;
 

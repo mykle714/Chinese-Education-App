@@ -102,6 +102,29 @@ Plus one source that is **not** a Performance API:
   Scope it to the surface under investigation: it records every pointerdown on
   the page, which is right for one game page and far too much app-wide.
 
+- **Touch-layer probe** (`beginTouchProbe()`, `src/utils/perfDiagnostics.ts`) —
+  ⚠️ **TEMPORARY**, added 2026-08-08 for the iOS *"second thumb does nothing"*
+  bug in Match Speed; delete once that is resolved. Emits `kind: "touch"` records
+  for `touchstart` / `touchend` / `pointercancel` / `gesturestart`, carrying
+  `touches` and `changedTouches`.
+
+  It exists because the tap census reads the **pointer** layer, and on iOS a
+  two-thumb press yields only one census record even though capture-phase
+  observation rules the app out as the cause. The probe reads the **touch**
+  layer just upstream, which separates the two possible culprits:
+
+  | Observation | Meaning | Fix |
+  |---|---|---|
+  | `touchstart` reports `touches: 2`, only 1 `pointerdown` | engine sees both fingers, withholds the second pointer event | drive the board off touch events on iOS |
+  | no `touchstart` ever reports 2+ touches | the second finger is never surfaced to the page | stop cancelling `gesturestart` on game surfaces (they already have `touch-action: none`) |
+
+  Every listener is **`passive: true`** and observation-only. That is
+  load-bearing: a non-passive listener on these events can itself alter WebKit's
+  gesture arbitration, and the probe would then measure its own presence.
+
+  Started alongside the census in `MatchSpeedPage.tsx` so both layers share one
+  clock; `analyze-client-perf.ts` prints them interleaved with a verdict line.
+
 Each record carries the route `path` and a best-effort `target` description
 derived from the app's descriptive class names (e.g.
 `div.mobile-footer-item[Home]`), so a log line maps back to a component.

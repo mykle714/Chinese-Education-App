@@ -80,6 +80,12 @@ interface FlatRecord {
   y?: number;
   hit?: string;
   hitCard?: string;
+  pointerId?: number;
+  // Touch-probe-only fields (kind: "touch"); see beginTouchProbe.
+  touches?: number;
+  changedTouches?: number;
+  // ms since navigation start, stamped by the client on every record.
+  at?: number;
 }
 
 // Accumulate per (kind + path) so footer taps, decks taps, longtasks etc. are
@@ -123,6 +129,13 @@ const unhandledTaps: UnhandledTap[] = [];
 // — a tap routed to the wrong card, which looks perfectly healthy in the
 // outcome table but is a no-op (or worse) from the player's side.
 const misroutedTaps: Array<{ hitCard: string; target: string; outcome: string }> = [];
+// TEMPORARY (iOS second-thumb bug): raw touch-layer events, kept in dispatch
+// order so they can be interleaved with the pointer-layer census on one clock.
+const touchEvents: Array<{
+  at: number; name: string; touches?: number; changedTouches?: number; hit?: string;
+}> = [];
+// Every pointerdown the census saw, for the same interleaving.
+const pointerDowns: Array<{ at: number; pointerId?: number; hitCard?: string; outcome?: string }> = [];
 
 function bucketFor(key: string): Bucket {
   let b = buckets.get(key);
@@ -185,7 +198,15 @@ async function main() {
         if (typeof r.presentation === 'number') b.presentations.push(r.presentation);
         if (r.target) b.targets.set(r.target, (b.targets.get(r.target) || 0) + 1);
 
+        if (r.kind === 'touch' && r.name) {
+          touchEvents.push({
+            at: r.at ?? 0, name: r.name, touches: r.touches,
+            changedTouches: r.changedTouches, hit: r.hit,
+          });
+        }
+
         if (r.kind === 'tap' && r.name) {
+          pointerDowns.push({ at: r.at ?? 0, pointerId: r.pointerId, hitCard: r.hitCard, outcome: r.name });
           const key = `${r.path}  ${r.name}`;
           let t = tapOutcomes.get(key);
           if (!t) tapOutcomes.set(key, (t = { n: 0, inputDelays: [], presentations: [] }));
@@ -341,6 +362,55 @@ async function main() {
     for (const [h, n] of [...byHit.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
       console.log(`    ${pad(n, 5)} ${h}`);
     }
+  }
+
+  // TEMPORARY (iOS second-thumb bug). The whole question is whether the TOUCH
+  // layer sees a finger that the POINTER layer never reports. A `touchstart`
+  // carrying `touches: 2` with only one pointerdown in the surrounding window is
+  // the engine withholding finger 2; if no `touchstart` ever reports 2 touches,
+  // the second finger was never surfaced at all and the cause is upstream.
+  if (touchEvents.length) {
+    const multi = touchEvents.filter((t) => t.name === 'touchstart' && (t.touches ?? 0) >= 2);
+    const starts = touchEvents.filter((t) => t.name === 'touchstart');
+    const gestures = touchEvents.filter((t) => t.name === 'gesturestart');
+    const cancels = touchEvents.filter((t) => t.name === 'pointercancel');
+    console.log(`\nTouch-layer probe: ${touchEvents.length} event(s)`);
+    console.log(`    touchstart total          ${starts.length}`);
+    console.log(`    touchstart with 2+ touches ${multi.length}   <- engine SAW a second finger`);
+    console.log(`    gesturestart (WebKit)      ${gestures.length}`);
+    console.log(`    pointercancel              ${cancels.length}   <- pointer revoked mid-tap`);
+    console.log(`    pointerdown (census)       ${pointerDowns.length}`);
+
+    if (multi.length) {
+      // For each multi-touch press, how many pointerdowns landed within 400ms?
+      // 2 = both fingers made it through; 1 = the second was withheld.
+      let withheld = 0;
+      for (const m of multi) {
+        const near = pointerDowns.filter((p) => Math.abs(p.at - m.at) <= 400);
+        if (near.length < 2) withheld++;
+      }
+      console.log(
+        `\n  Of ${multi.length} two-finger press(es), ${withheld} produced FEWER THAN 2 ` +
+        `pointerdowns within 400ms.`,
+      );
+      console.log(
+        withheld > 0
+          ? '  => VERDICT: the engine sees both fingers but withholds the second pointer event.'
+          : '  => VERDICT: both fingers reach the pointer layer; look elsewhere.',
+      );
+    } else if (starts.length) {
+      console.log('\n  => VERDICT: no touchstart ever reported 2+ touches. The second finger is');
+      console.log('     never surfaced to the page at all (suspect gesturestart suppression).');
+    }
+
+    // Interleaved timeline: the two layers on one clock, which is the only view
+    // that makes a missing pointerdown legible.
+    console.log('\n  Timeline (touch layer + pointer layer, ms since nav):');
+    const merged = [
+      ...touchEvents.map((t) => ({ at: t.at, line: `TOUCH  ${t.name.padEnd(14)} touches=${t.touches ?? '-'} changed=${t.changedTouches ?? '-'}  ${t.hit ?? ''}` })),
+      ...pointerDowns.map((p) => ({ at: p.at, line: `  PTR  pointerdown   id=${p.pointerId ?? '-'}  ${p.hitCard ?? '(off-card)'}  -> ${p.outcome}` })),
+    ].sort((a, b) => a.at - b.at);
+    for (const m of merged.slice(-60)) console.log(`    ${pad(m.at, 8)} ${m.line}`);
   }
 
   // A tap that WAS handled, but by a different card than the one the finger was

@@ -163,15 +163,18 @@ const MatchSpeedPage: React.FC = () => {
     // is understood. Same empty-deps rule as the census.
     useEffect(() => beginTouchProbe(), []);
 
-    // TEMPORARY: `?touchdebug=1` shows a live finger-count readout (see
-    // TouchDebugOverlay). The JS-side telemetry cannot distinguish "pressed once"
-    // from "pressed twice and iOS discarded one", because a contact rejected
-    // before dispatch produces no events at all; this puts the count in front of
-    // the person who knows how many fingers they used. Read once from the URL the
-    // page was opened with — deliberately NOT reactive, so a re-render can never
-    // mount/unmount the overlay's listeners mid-run.
+    // TEMPORARY: live finger-count readout (see TouchDebugOverlay), ON BY DEFAULT
+    // while the iOS "second thumb does nothing" bug is open — the app has no
+    // customers yet, so the cost of showing it to everyone is nil and the cost of
+    // a tester forgetting the query param is a wasted run. The JS-side telemetry
+    // cannot distinguish "pressed once" from "pressed twice and iOS discarded
+    // one" (a contact rejected before dispatch produces no events at all), so
+    // this puts the count in front of the person who knows how many fingers they
+    // used. `?touchdebug=0` hides it for a clean screen when testing something
+    // else. Read once from the URL the page was opened with — deliberately NOT
+    // reactive, so a re-render can never mount/unmount its listeners mid-run.
     const showTouchDebug = useMemo(
-        () => new URLSearchParams(location.search).get("touchdebug") === "1",
+        () => new URLSearchParams(location.search).get("touchdebug") !== "0",
         // eslint-disable-next-line react-hooks/exhaustive-deps
         []
     );

@@ -25,6 +25,13 @@
  *   right behind it. This is the only step that intentionally writes a
  *   NON-source string, so every generated gloss is surfaced in the review log.
  *
+ * Row selection (HAS_WORK_CLAUSE): >1 gloss (something to reorder) OR a lead gloss
+ *   longer than MAX_FIRST_GLOSS_LEN (something to shorten). A SINGLE-gloss row can
+ *   only arrive via the second disjunct, and for it the two ranking passes are a
+ *   no-op with a forced answer — so they are skipped and the row goes straight to
+ *   the short-gloss post-pass (`action: 'single_gloss'`, one call instead of three).
+ *
+
  * Disagreements (Pass 2 ≠ Pass 1), low_confidence flags, any pruned glosses, and
  * every generated short gloss are dumped to a timestamped review file in /tmp so
  * the user can skim post-run.
@@ -63,6 +70,21 @@ const wordsArg = process.argv.find(a => a.startsWith('--words='));
 const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// An entry is worth an API call if there is something to REORDER **or** a lead gloss
+// that is too long for the card headline. The second disjunct matters and used to be
+// missing: this script does two separable jobs — (a) reorder/prune the gloss array,
+// which genuinely needs >1 gloss, and (b) the short-gloss post-pass, whose trigger is
+// purely "definitions[0] is longer than MAX_FIRST_GLOSS_LEN". Gating BOTH on
+// `jsonb_array_length(definitions) > 1` meant a single-gloss row could never have its
+// headline shortened — exactly the case (b) exists for. 长白山's lone 142-char cedict
+// string rendered verbatim in a 20-char slot. Mirrors the es twin's HAS_WORK_CLAUSE.
+//
+// Keep in lockstep with `when: 'multiDefOrLongLead'` in shared/lib/requiredScripts.js —
+// the manifest condition is the planner's copy of this clause, and drift between the
+// two makes the planner under-report rows this script would happily process.
+const HAS_WORK_CLAUSE =
+  `(jsonb_array_length(definitions) > 1 OR char_length(definitions->>0) > ${MAX_FIRST_GLOSS_LEN})`;
 
 // run-log: track duration, version, words/mode, and token usage/cost
 const { stampEntries, validatedClause } = initRunLog({ script: 'chinese/backfill-process-definitions-array', version: SCRIPT_VERSION, anthropic: anthropic });
@@ -140,14 +162,14 @@ async function run() {
            WHERE language = 'zh'
              AND word1 = ANY($1)
              ${validatedFilter}
-             AND jsonb_array_length(definitions) > 1
+             AND ${HAS_WORK_CLAUSE}
            ORDER BY id ASC`
         : `SELECT id, word1, pronunciation, definitions
            FROM dictionaryentries_zh
            WHERE language = 'zh'
              ${includeAll ? '' : 'AND discoverable = TRUE'}
              ${validatedFilter}
-             AND jsonb_array_length(definitions) > 1
+             AND ${HAS_WORK_CLAUSE}
            ORDER BY id ASC
            ${isSpotCheck ? 'LIMIT 5' : ''}`,
       targetIds ? [targetIds] : targetWords?.length ? [targetWords] : []
@@ -173,27 +195,43 @@ async function run() {
       try {
         process.stdout.write(`  [${row.id}] ${row.word1} (${definitions.length} defs) ... `);
 
-        const p1 = await pass1Sort(row.word1, definitions);
-        if (p1.error) {
-          console.log(`FAIL pass1 (${p1.error})`);
-          failed++;
-          continue;
-        }
-        if (p1.retried) opusRetries++;
+        // A ONE-gloss row reaches this loop only via the long-lead-gloss disjunct of
+        // HAS_WORK_CLAUSE, and for it the ranking passes are a no-op with a FORCED
+        // answer: there is nothing to reorder, and the "never return an empty array"
+        // rule makes pruning illegal. Running them anyway would spend two Sonnet calls
+        // (or two authored oracle answers) per row to be told the array is unchanged.
+        // Skip straight to the short-gloss post-pass, which is the only job that has
+        // anything to do here.
+        const isSingleGloss = definitions.length <= 1;
 
-        let finalOrder = p1.order;
-        let action = 'pass1_only';
+        let finalOrder = definitions;
+        // Pass 1's output, kept for the review log and the disagreement check below.
+        // For a single-gloss row no ranking runs, so it is simply the source array.
+        let pass1Order = definitions;
+        let action = isSingleGloss ? 'single_gloss' : 'pass1_only';
         let reason = '';
 
-        if (!skipCritic) {
-          const p2 = await pass2Critique(row.word1, definitions, p1.order);
+        if (!isSingleGloss) {
+          const p1 = await pass1Sort(row.word1, definitions);
+          if (p1.error) {
+            console.log(`FAIL pass1 (${p1.error})`);
+            failed++;
+            continue;
+          }
+          if (p1.retried) opusRetries++;
+          pass1Order = p1.order;
+          finalOrder = p1.order;
+        }
+
+        if (!isSingleGloss && !skipCritic) {
+          const p2 = await pass2Critique(row.word1, definitions, pass1Order);
           if (p2.retried) opusRetries++;
           if (p2.error) {
             console.log(`pass2 fail (${p2.error}) — using pass1`);
-            // Keep p1 result, but log for review
+            // Keep the Pass 1 result, but log for review
             logReview({
               id: row.id, word: row.word1, action: 'pass2_failed',
-              original: definitions, pass1: p1.order, final: p1.order,
+              original: definitions, pass1: pass1Order, final: pass1Order,
               reason: `Critic error: ${p2.error}`,
             });
           } else {
@@ -218,7 +256,7 @@ async function run() {
             console.log(`short-gloss fail (${sg.error}) — leaving long gloss first`);
             logReview({
               id: row.id, word: row.word1, action: 'short_gloss_failed',
-              original: definitions, pass1: p1.order, final: finalOrder,
+              original: definitions, pass1: pass1Order, final: finalOrder,
               reason: `Short-gloss error: ${sg.error}`,
             });
           } else {
@@ -231,7 +269,7 @@ async function run() {
         }
 
         const orderChanged = JSON.stringify(finalOrder) !== JSON.stringify(definitions);
-        const pass2Disagreed = !skipCritic && JSON.stringify(finalOrder) !== JSON.stringify(p1.order);
+        const pass2Disagreed = !skipCritic && JSON.stringify(finalOrder) !== JSON.stringify(pass1Order);
         // Glosses present in the original but pruned from the final result.
         const finalSet = new Set(finalOrder);
         const droppedGlosses = definitions.filter(d => !finalSet.has(d));
@@ -244,7 +282,7 @@ async function run() {
         if (action === 'refined' || action === 'low_confidence' || droppedGlosses.length || generatedFirst) {
           logReview({
             id: row.id, word: row.word1, action,
-            original: definitions, pass1: p1.order, final: finalOrder,
+            original: definitions, pass1: pass1Order, final: finalOrder,
             dropped: droppedGlosses, generated: generatedFirst, reason,
           });
         }
@@ -262,7 +300,7 @@ async function run() {
         if (isSpotCheck) {
           console.log(`[${action}]`);
           console.log(`    Before: ${JSON.stringify(definitions)}`);
-          console.log(`    Pass1:  ${JSON.stringify(p1.order)}`);
+          console.log(`    Pass1:  ${JSON.stringify(pass1Order)}`);
           if (pass2Disagreed) console.log(`    Final:  ${JSON.stringify(finalOrder)}  ← critic refined`);
           if (droppedGlosses.length) console.log(`    Pruned: ${JSON.stringify(droppedGlosses)}`);
           if (generatedFirst) console.log(`    Short:  ${JSON.stringify(generatedFirst)}  ← generated leading gloss`);

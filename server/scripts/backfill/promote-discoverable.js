@@ -1,18 +1,17 @@
 /**
  * Promote fully-enriched zh entries to `discoverable = TRUE`.
  *
- * LAYER: data-enrichment (backfill) orchestration — the full-manifest counterpart to
- * promote-sortable.js, and the standalone twin of the promotion that
- * run-lazy-enrichment.js performs inline at the end of a lazy-enrichment run
+ * LAYER: data-enrichment (backfill) orchestration — the standalone twin of the
+ * promotion that run-lazy-enrichment.js performs inline at the end of a run
  * (run-lazy-enrichment.js ~line 203). See docs/DISCOVER_LAZY_ENRICHMENT.md §4b.
  *
  * WHY THIS EXISTS: before this script there were exactly two ways a row could become
  * discoverable — the on-first-sort worker (which promotes only rows IT enriched, in
  * the same process), and /mark-discoverable §A2, which sets the flag UP FRONT and then
- * enriches. The /oracle-backfill §3b path does neither: it enriches a pre-passed batch
+ * enriches. The /oracle-backfill `--new` path does neither: it enriches a curated batch
  * through the whole manifest but leaves `discoverable = FALSE`, so completed work piles
- * up invisible to the dictionary / reader / flashcard surfaces (101 such rows as of
- * 2026-07-21: sortable 885 vs discoverable 784). This script closes that gap WITHOUT
+ * up invisible to the dictionary / reader / flashcard surfaces (101 such rows when this
+ * script was written, 2026-07-21). This script closes that gap WITHOUT
  * a hand-written UPDATE: per CLAUDE.md the flag may only be set by pipeline code that
  * re-derives the completeness bar, which is exactly what this does.
  *
@@ -20,9 +19,6 @@
  * current version, or validator-protected) AND `difficulty BETWEEN 1 AND 6`. The
  * difficulty term is not redundant with the manifest: the manifest checks that the
  * hsk-level STEP ran, this checks that the COLUMN it writes actually landed in range.
- * Carrying it also keeps the corpus invariant `discoverable ⇒ sortable` true by
- * construction, since the row is flagged `sortable = TRUE` in the same UPDATE
- * (mirroring run-lazy-enrichment.js, which sets both together).
  *
  * SAFETY: DRY-RUN by default — prints what it would promote and why each rejected row
  * failed, writes nothing. Pass --apply to write. Rows that fail the bar print their own
@@ -72,7 +68,7 @@ function isDiscoverableReady(row, approvedFields) {
 }
 
 const SELECT_COLS =
-  'id, word1, difficulty, definitions, "partsOfSpeech", sortable, discoverable, "enrichmentLog"';
+  'id, word1, difficulty, definitions, "partsOfSpeech", discoverable, "enrichmentLog"';
 
 /**
  * Candidate rows. With --words: exactly those words, whatever their state, so the
@@ -162,11 +158,10 @@ async function main() {
       }
       // Re-assert the bar in the UPDATE itself, so a row that changed underneath us
       // between SELECT and UPDATE cannot slip through (the predicate is the authority,
-      // not the snapshot we read). `sortable` is set alongside, exactly as
-      // run-lazy-enrichment.js does, so `discoverable ⇒ sortable` cannot be violated.
+      // not the snapshot we read).
       const { rowCount } = await client.query(
         `UPDATE dictionaryentries_zh de
-            SET discoverable = TRUE, sortable = TRUE
+            SET discoverable = TRUE
           WHERE de.id = $1 AND de.discoverable = FALSE
             AND ${readyPredicate('de')}`,
         [row.id]

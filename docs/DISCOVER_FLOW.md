@@ -2,7 +2,7 @@
 
 > ↑ Part of [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).
 > → Card supply / lazy enrichment: [DISCOVER_LAZY_ENRICHMENT.md](./DISCOVER_LAZY_ENRICHMENT.md)
-> (the `sortable` gate that decides which det entries appear, and on-first-sort enrichment).
+> (which det entries appear, and on-first-sort enrichment).
 
 The Discover feature is a **two-level** surface, mirroring the Games hub.
 
@@ -59,6 +59,43 @@ Footer "Discover" tab
   sort supply. Tapping a card opens an **action popup** (Cancel / Mark as Already
   Learned / Mark as Learn Now); choosing a destination sorts the card and removes it
   from the skipped list. See [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) §7.
+
+## Card supply gate
+
+Every discover surface draws its cards from the per-language det table through **one**
+predicate, `StarterPacksService._supplyGate()`
+(`server/services/StarterPacksService.ts:205`):
+
+```sql
+de.discoverable = TRUE
+```
+
+No language branch, no second flag. Its four callers are `_fetchSupplyRows` (Sort
+Cards), `listQuickMarkCards` (Quick Mark), `getProgress` (the level bar), and — kept
+deliberately identical — `ProvisionalCardDAL._supplyGate`
+(`server/dal/implementations/ProvisionalCardDAL.ts:28`), so a word lent as a
+provisional card is always a word the sort flow can later offer. On top of the gate
+each query still applies the Tier-1 level filter `difficulty BETWEEN 1 AND 6`
+(`_levelConfig().validPredicate`).
+
+### Historical: the retired `sortable` flag
+
+Migration 110 added a zh-only second flag, `sortable` — a lower bar meaning
+"level-assigned + lead gloss cleaned, safe as a sort card" — so partially-enriched
+rows could reach discover ahead of the full 13-step manifest, with
+`discoverable ⇒ sortable` as a corpus invariant.
+
+**Migration 142 drops it.** The split only pays off if the cheap two-step corpus
+pre-pass behind it actually runs, and it never did: at the point of removal 1,517 of
+114,774 zh rows were sortable (1.3%) and only **218** were sortable-but-not-
+discoverable, because the oracle backfill's `--discoverable` heal queue refills on
+every manifest version bump and starved the `--unsortable` pre-pass scope. The cost
+was a language fork in every supply query, a second promotion script
+(`promote-sortable.js`), a second completeness bar (`buildSortableReadyPredicate`), a
+second planner scope, and an invariant every writer of `discoverable` had to
+maintain. Those 218 rows simply left discover; their pre-pass work is still in
+`difficulty` / `definitions` / `enrichmentLog`, so they promote normally once the
+rest of the manifest lands.
 
 ## Navigation helper
 

@@ -26,7 +26,11 @@ import { buildIncompletePredicate } from '../scripts/backfill/shared/lib/require
  * GATING (all three conditions, else no-op):
  *   1. language === 'zh'      — Spanish is out of scope for lazy enrichment.
  *   2. requester isValidator  — AI spend is bounded to trusted curators.
- *   3. the row is sortable AND incomplete per the manifest (buildIncompletePredicate).
+ *   3. the row is discoverable AND incomplete per the manifest (buildIncompletePredicate).
+ *      Since the `sortable` bar was retired (migration 142) every row a learner can
+ *      reach is already discoverable, so this trigger is now purely a HEAL path: it
+ *      re-runs steps that went version-stale under a shipped row, rather than carrying
+ *      a half-enriched row up to discoverable.
  *
  * MECHANISM: fire-and-forget. `triggerForWord` is `void` and NEVER throws — a caller
  * fires it without awaiting so the AI spend never sits on the request. It de-dupes
@@ -102,7 +106,7 @@ export class LazyEnrichmentService {
     }
     if (!validator) return;
 
-    // Gate 3: the row must be sortable AND not yet fully enriched per the manifest.
+    // Gate 3: the row must be discoverable AND not yet fully enriched per the manifest.
     // Reuses the worker's exact predicate so runtime candidacy == worker candidacy.
     const predicate = buildIncompletePredicate('de');
     // executeQuery returns { recordset, rowsAffected } (see DatabaseManager).
@@ -111,13 +115,13 @@ export class LazyEnrichmentService {
         `SELECT 1 AS one
            FROM dictionaryentries_zh de
           WHERE de.word1 = $1 AND de.language = 'zh'
-            AND de.sortable = TRUE
+            AND de.discoverable = TRUE
             AND ${predicate}
           LIMIT 1`,
         [w]
       )
     );
-    if (candidate.recordset.length === 0) return; // complete, not sortable, or unknown word
+    if (candidate.recordset.length === 0) return; // complete, not discoverable, or unknown word
 
     // De-dupe concurrent triggers for the same word.
     const key = `${language}:${w}`;

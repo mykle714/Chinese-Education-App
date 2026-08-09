@@ -145,7 +145,7 @@ because the row has marks.
 | Games throw `chk_*_starter_pack_bucket` violations | The code started before the migration. Run migration 140 now; no restart needed, the next request succeeds. |
 | Decks page count > the sorted-only SQL count | A vet read is missing `vetSortedClause()`. Not data corruption — no rollback needed. Patch the query and redeploy. |
 | Marks reset after sorting a provisional card | Promotion path bug. Data loss is limited to that card's history. Roll back the code (not the DB) and investigate. |
-| No provisional rows created for an empty-deck user | Check the backend log for `[Provisional] Lent …`. If absent, the `surface` param isn't reaching the endpoint or the supply gate (`sortable = TRUE` for zh) matches nothing on prod. |
+| No provisional rows created for an empty-deck user | Check the backend log for `[Provisional] Lent …`. If absent, the `surface` param isn't reaching the endpoint or the supply gate (`discoverable = TRUE`) matches nothing on prod. |
 
 ---
 

@@ -39,19 +39,31 @@
  *
  * The `steps` parameter on pendingSteps / isComplete / buildIncompletePredicate is what
  * carries the language — pass `scriptsForLanguage(lang)`. The zh default is kept only so
- * the zh-only callers (run-lazy-enrichment, promote-sortable) read unchanged.
+ * the zh-only caller (run-lazy-enrichment) reads unchanged.
  *
  * Referenced by: scripts/backfill/run-lazy-enrichment.js (zh only),
- * scripts/backfill/oracle-plan.js, scripts/backfill/promote-sortable.js (zh only),
+ * scripts/backfill/oracle-plan.js,
  * docs/DISCOVER_LAZY_ENRICHMENT.md, .claude/commands/oracle-backfill.md.
  */
+
+// The card-headline length budget, owned by the gloss-ordering core and imported
+// (not re-declared) so the manifest's `multiDefOrLongLead` condition and the
+// short-gloss synthesis that condition exists to reach can never disagree on the
+// number. orderGlosses.js has no imports of its own, so this stays cheap for the
+// server, which loads this manifest at request time via LazyEnrichmentService.
+import { MAX_FIRST_GLOSS_LEN } from '../../chinese/lib/orderGlosses.js';
 
 /** Ordered pipeline steps (order encodes mark-discoverable §A3 constraints). */
 export const REQUIRED_SCRIPTS_ZH = [
   { id: 'chinese/backfill-tones',                     when: 'always',    version: 1, deterministic: true },
   { id: 'chinese/backfill-numbered-pinyin',           when: 'always',    version: 1, deterministic: true },
   { id: 'chinese/backfill-dictionary-breakdown',      when: 'multiChar', version: 1 },
-  { id: 'chinese/backfill-process-definitions-array', when: 'multiDef',  version: 3, validationFields: ['definitions'] },
+  // NOT 'multiDef': this script also owns the ≤20-char lead-gloss synthesis, whose
+  // trigger is the LENGTH of definitions[0], not the gloss count. Under 'multiDef' a
+  // single-gloss row with a 142-char cedict headline was permanently non-applicable —
+  // it could never be planned, and the script's own filter would have dropped it
+  // anyway. Mirrors HAS_WORK_CLAUSE in the script; keep the two in lockstep.
+  { id: 'chinese/backfill-process-definitions-array', when: 'multiDefOrLongLead', version: 3, validationFields: ['definitions'] },
   { id: 'chinese/backfill-parts-of-speech',           when: 'always',    version: 2, validationFields: ['partsOfSpeech'] },
   // Icon search keys off definitions[0] (the dd), so it must follow the two steps that
   // can still rewrite/reorder `definitions`. Shared across languages (--lang defaults to
@@ -98,8 +110,7 @@ export const REQUIRED_SCRIPTS_ZH = [
  * Spanish has no pinyin / tone / HSK / breakdown / classifier, and — unlike zh — no
  * `parts-of-speech` step at all: `partsOfSpeech` is a by-product of clustering since
  * migration 123 retired `spanish/backfill-parts-of-speech.js` (which used to
- * materialize one det row per POS). There is also no `sortable` column on
- * `dictionaryentries_es`, so there is no es pre-pass subset — see PRE_PASS_SCRIPTS_ZH.
+ * materialize one det row per POS).
  *
  * DEPENDENCY ORDER (why this sequence, not §B3's original one):
  *   1-2. The deterministic cleanups rewrite `definitions` in place, so they come first.
@@ -159,35 +170,6 @@ export function detTableForLanguage(language) {
 }
 
 /**
- * The PRE-PASS subset — the minimum work that makes an entry legally `sortable`
- * ("level-assigned + lead gloss cleaned", migration 110 / docs/DISCOVER_LAZY_ENRICHMENT.md §2-§4).
- *
- * These are a strict subset of the full manifest above, in manifest order, and are
- * re-run by the same scripts — a pre-passed row is simply a row that has completed
- * these two steps and none of the other eleven. Everything else is Tier-3 enrichment
- * that only gates `discoverable`.
- *
- * Ordering matters: hsk-level reads `definitions` to judge the level, so process-defs
- * (which rewrites/reorders `definitions`) must NOT run after it on the same row.
- * The array order below is the run order; it matches REQUIRED_SCRIPTS_ZH's order.
- */
-export const PRE_PASS_STEP_IDS = [
-  'chinese/backfill-process-definitions-array',
-  'chinese/backfill-hsk-level',
-];
-
-/** The pre-pass steps as full manifest entries (single source of truth for versions). */
-export const PRE_PASS_SCRIPTS_ZH = PRE_PASS_STEP_IDS
-  .map((id) => REQUIRED_SCRIPTS_ZH.find((s) => s.id === id))
-  .filter(Boolean);
-
-if (PRE_PASS_SCRIPTS_ZH.length !== PRE_PASS_STEP_IDS.length) {
-  // A rename in REQUIRED_SCRIPTS_ZH that forgets this list would silently shrink the
-  // pre-pass and let under-enriched rows be promoted to sortable. Fail loudly instead.
-  throw new Error('requiredScripts: PRE_PASS_STEP_IDS references an id missing from REQUIRED_SCRIPTS_ZH');
-}
-
-/**
  * The distinct validation fields any manifest step writes (for approval lookups).
  * Union across languages: it is only ever used to bound a `validations` lookup, and
  * both pipelines write the same field names, so a union costs nothing and cannot
@@ -205,6 +187,11 @@ function conditionSql(when, alias) {
     case 'always':    return 'TRUE';
     case 'multiChar': return `char_length(${alias}.word1) > 1`;
     case 'multiDef':  return `jsonb_array_length(COALESCE(${alias}.definitions, '[]'::jsonb)) > 1`;
+    // zh process-definitions-array: something to reorder OR a headline too long for the
+    // card. MUST match HAS_WORK_CLAUSE in that script — the planner's copy of its gate.
+    case 'multiDefOrLongLead':
+      return `(jsonb_array_length(COALESCE(${alias}.definitions, '[]'::jsonb)) > 1`
+        + ` OR char_length(COALESCE(${alias}.definitions->>0, '')) > ${MAX_FIRST_GLOSS_LEN})`;
     // partsOfSpeech is a jsonb array of pos strings (e.g. ["noun"]); `?` tests membership.
     case 'nounPos':   return `COALESCE(${alias}."partsOfSpeech", '[]'::jsonb) ? 'noun'`;
     // The two deterministic es cleanups scan the whole table but stamp ONLY when they
@@ -227,6 +214,8 @@ export function appliesTo(step, row) {
     case 'always':    return true;
     case 'multiChar': return [...word1].length > 1;
     case 'multiDef':  return defs.length > 1;
+    case 'multiDefOrLongLead':
+      return defs.length > 1 || String(defs[0] ?? '').length > MAX_FIRST_GLOSS_LEN;
     case 'nounPos':   return pos.includes('noun');
     // JS twins of the es conditions above — same triggers as the scripts' transforms.
     case 'esSemicolonDef': return defs.some((d) => String(d).includes(';'));
@@ -272,8 +261,8 @@ function stampInfo(row, id) {
  * MISSING a stamp or stamped BELOW the manifest version. Version-aware, but targets
  * ONLY the out-of-date/missing steps — never "stale everything".
  * @param {Set<string>} approvedFields - validator-approved/flagged fields for this row
- * @param {Array} steps - which manifest steps to consider (default: all; pass
- *   PRE_PASS_SCRIPTS_ZH to ask only "what stands between this row and sortable?")
+ * @param {Array} steps - which manifest steps to consider (default: the zh manifest;
+ *   pass `scriptsForLanguage(lang)`, or any subset, to narrow the question)
  */
 export function pendingSteps(row, approvedFields = new Set(), steps = REQUIRED_SCRIPTS_ZH) {
   return steps.filter((step) => {
@@ -329,47 +318,6 @@ export function buildIncompletePredicate(alias = 'de', steps = REQUIRED_SCRIPTS_
 /** Convenience: the COMPLETE predicate (row is fully enriched). */
 export function buildCompletePredicate(alias = 'de') {
   return `NOT ${buildIncompletePredicate(alias)}`;
-}
-
-// ── the `sortable` bar (pre-pass promotion gate) ────────────────────────────────
-
-/**
- * SQL predicate TRUE when the row at `alias` MAY be promoted to `sortable = TRUE`.
- *
- * ZH ONLY. `dictionaryentries_es` has no `sortable` column (and no HSK level feeding
- * `difficulty`), so Spanish has no pre-pass and no sortable bar — every es row is either
- * discoverable or not. Do not generalize this without adding that column first.
- *
- * `sortable` means "level-assigned + lead gloss cleaned; safe to show as a discover
- * sort card" (migration 110). Two independent conditions, deliberately checked
- * BOTH ways — column state AND stamp state:
- *
- *   1. `difficulty BETWEEN 1 AND 6` — the Tier-1 hard filter the discover supply
- *      queries apply (`StarterPacksService._levelConfig().validPredicate`). A row
- *      without it is invisible even when flagged, so promoting it would be a lie.
- *   2. Every applicable pre-pass step is stamped at its current manifest version
- *      (or validator-protected). The column check alone is not enough: `difficulty`
- *      could predate the current prompt, and process-defs writes no column of its
- *      own that a query can distinguish from raw cedict.
- *
- * This is the ONLY definition of the bar; `promote-sortable.js` and `oracle-plan.js`
- * both import it so the planner can never disagree with the promoter.
- * Referenced by: scripts/backfill/promote-sortable.js, scripts/backfill/oracle-plan.js,
- * .claude/commands/oracle-backfill.md §3b, docs/DISCOVER_LAZY_ENRICHMENT.md §4b.
- */
-export function buildSortableReadyPredicate(alias = 'de') {
-  return `(${alias}."difficulty" BETWEEN 1 AND 6`
-    + ` AND NOT ${buildIncompletePredicate(alias, PRE_PASS_SCRIPTS_ZH)})`;
-}
-
-/**
- * JS twin of buildSortableReadyPredicate for a fetched row (needs `difficulty`,
- * `definitions`, `enrichmentLog`). Used by the promoter's per-row re-check.
- */
-export function isSortableReady(row, approvedFields = new Set()) {
-  const level = Number(row.difficulty);
-  if (!Number.isInteger(level) || level < 1 || level > 6) return false;
-  return isComplete(row, approvedFields, PRE_PASS_SCRIPTS_ZH);
 }
 
 export default REQUIRED_SCRIPTS_ZH;

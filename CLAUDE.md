@@ -242,6 +242,7 @@ Current open runbooks:
 - [docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md) — per-language minute points + night markets (migrations 130, 134); **not yet on prod**
 - [docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md](./docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md) — unit-slot unlocks + generated unlock schedule; no migration, but the cron SQL **must** be redeployed; **not yet on prod**
 - [docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md](./docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md) — provisional cards (migration 140); the migration **must** land before the new code (it writes a bucket value the old CHECK rejects); **not yet on prod**
+- [docs/SORTABLE_DEPRECATION_DEPLOY_RUNBOOK.md](./docs/SORTABLE_DEPRECATION_DEPLOY_RUNBOOK.md) — dropping the `sortable` column (migration 142); expand/contract, so the migration **must be held back** until the new code is live; **not yet on prod**
 
 ### Data Deployment (syncing `dictionaryentries_zh` to prod)
 → See [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)

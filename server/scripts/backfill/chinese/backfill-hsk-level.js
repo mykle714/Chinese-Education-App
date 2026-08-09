@@ -102,8 +102,8 @@ async function run() {
     const wordsFilter = wordsWhereClause('word1', targetWords, params);
     // An explicit --words list is an instruction to level exactly those rows, so it
     // drops the discoverable gate: `difficulty` is the Tier-1 prerequisite for a row
-    // ever BECOMING sortable (and later discoverable), so gating the words path on
-    // discoverable = TRUE would make the pre-pass unable to level a single new row —
+    // ever BECOMING discoverable, so gating the words path on
+    // discoverable = TRUE would make the pipeline unable to level a single new row —
     // the same deadlock backfill-icons had. Unscoped runs keep the gate (a full-corpus
     // sweep is a Batches-API job, not a serial one).
     const discoverableFilter = targetWords?.length ? '' : 'AND discoverable = TRUE';

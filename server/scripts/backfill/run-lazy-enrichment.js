@@ -15,7 +15,7 @@
  * WHY NO JOBS TABLE: the "needs enrichment" set is DERIVED from existing state
  * (no enrichment_jobs table). In the bulk drain a word is a candidate when:
  *     de.language = 'zh'
- *     AND de.sortable = TRUE            -- shown as a sort card
+ *     AND de.discoverable = TRUE        -- shipped to learners
  *     AND EXISTS (a vocabentries_zh row for word1)   -- someone actually sorted it
  *     AND <incomplete per the required-scripts manifest>   -- VERSION-aware
  * (No `discoverable = FALSE` filter — candidacy is version-aware, so a stale shipped row
@@ -69,7 +69,7 @@ function parseArgs(argv = process.argv.slice(2)) {
 
 /**
  * Rows that need enrichment. When `words` is given, target exactly those (skips
- * the sortable/discoverable/vet gating — a manual override). Otherwise apply the
+ * the discoverable/vet gating — a manual override). Otherwise apply the
  * full derived candidate predicate, most-recently-sorted first.
  */
 async function fetchCandidates(client, { limit, words }) {
@@ -90,7 +90,7 @@ async function fetchCandidates(client, { limit, words }) {
     `SELECT de.id, de.word1, de.definitions, de."partsOfSpeech", de."enrichmentLog"
        FROM dictionaryentries_zh de
       WHERE de.language = 'zh'
-        AND de.sortable = TRUE
+        AND de.discoverable = TRUE
         AND ${incomplete}
         AND EXISTS (
           SELECT 1 FROM vocabentries_zh ve
@@ -200,7 +200,7 @@ async function main() {
       const fresh = rows[0];
       if (fresh && isComplete(fresh, approved)) {
         await c2.query(
-          `UPDATE dictionaryentries_zh SET discoverable = TRUE, sortable = TRUE WHERE id = $1`,
+          `UPDATE dictionaryentries_zh SET discoverable = TRUE WHERE id = $1`,
           [row.id]
         );
         promoted++;

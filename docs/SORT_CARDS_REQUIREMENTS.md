@@ -220,7 +220,7 @@ each of its corners, so the user can see their collection grow as they sort:
   immediately and Undo (§4.6) gives it back — rather than refetching a whole-library
   aggregate once per card. A skip moves neither figure (it creates no vet row).
 - The delta is exact because the supply query excludes any word the user already holds a
-  vet row for, so every sortable on-deck card is a brand-new library row rather than a
+  vet row for, so every on-deck card is a brand-new library row rather than a
   re-categorization of a row already in the baseline.
 - It renders only once the baseline has loaded, so no "0" flashes before the real value.
 - Position: the two ends of the level bar, **not** the page header — that row already

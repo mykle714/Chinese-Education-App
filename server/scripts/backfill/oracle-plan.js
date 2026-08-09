@@ -27,10 +27,8 @@
  *   --lang=zh|es    which pipeline to plan (default zh). Selects the manifest AND the
  *                   det table — the two are intentionally not unified (see CLAUDE.md).
  *   --discoverable  only already-shipped rows (refresh/heal work)   [default: both]
- *   --new           only undiscoverable rows (candidates to ship)
- *   --unsortable    PRE-PASS scope: not-yet-sortable rows, planned against the
- *                   two-step pre-pass subset only (see PRE_PASS_SCRIPTS_ZH). ZH ONLY —
- *                   `dictionaryentries_es` has no `sortable` column.
+ *   --new           only undiscoverable rows (candidates to ship). For zh this scope
+ *                   is CURATED and RANKED — see the --new branch in main().
  *   --words=a,b     restrict to these word1 values (ignores the above)
  *   --limit=N       cap the candidate rows examined (default 50)
  *   --json          emit machine-readable JSON instead of the table
@@ -47,7 +45,6 @@ dotenv.config({ path: path.join(__dirname, '../../.env.docker') });
 
 import db from '../../db.js';
 import {
-  PRE_PASS_SCRIPTS_ZH,
   VALIDATION_FIELDS,
   pendingSteps,
   buildIncompletePredicate,
@@ -65,7 +62,6 @@ const val = (name) => {
 const LANG = val('lang') || 'zh';
 const ONLY_DISCOVERABLE = has('--discoverable');
 const ONLY_NEW = has('--new');
-const ONLY_UNSORTABLE = has('--unsortable');
 const AS_JSON = has('--json');
 const LIMIT = Number(val('limit') || 50);
 const WORDS = (val('words') || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -81,16 +77,8 @@ try {
   process.exit(1);
 }
 
-// `sortable` (migration 110) exists only on the zh table, so the whole pre-pass concept
-// is zh-only. Refuse rather than silently planning the full manifest instead.
-if (ONLY_UNSORTABLE && LANG !== 'zh') {
-  console.error(`❌ --unsortable is zh-only: ${DET_TABLE} has no \`sortable\` column.`);
-  process.exit(1);
-}
-
 /**
- * Corpus-derived character-commonness table, used to order the --unsortable pre-pass
- * batches. There is NO frequency column or word list anywhere in this project, so the
+ * Corpus-derived character-commonness table, used to order the zh `--new` batches. There is NO frequency column or word list anywhere in this project, so the
  * dictionary itself is the corpus: a character's score is the number of headwords it
  * appears in (的/人/大 are in thousands, 鳚/鹮/丂 in a handful). A word scores as the
  * MIN over its characters — a word is only as common as its rarest character.
@@ -120,8 +108,12 @@ async function main() {
     if (WORDS.length) {
       params.push(WORDS);
       scope = `AND d.word1 = ANY($${params.length}::text[])`;
-    } else if (ONLY_UNSORTABLE) {
-      // PRE-PASS scope. Two jobs here beyond "sortable = FALSE":
+    } else if (ONLY_DISCOVERABLE) {
+      scope = 'AND d.discoverable = TRUE';
+    } else if (ONLY_NEW) {
+      // Candidates worth shipping. For zh this branch does two jobs beyond
+      // "discoverable = FALSE" (it inherited them from the retired --unsortable
+      // pre-pass scope, which after migration 142 selected exactly these same rows):
       //
       // (a) CANDIDATE QUALITY. Plain id order walks the head of the cedict import,
       //     which is punctuation, numerals and latin-initialism entries (`%`, `110`,
@@ -129,27 +121,26 @@ async function main() {
       //     sort card, and every one wastes a hand-authored prompt. So require a
       //     Han-only headword of 1-4 characters with real definitions, and drop the
       //     cedict surname/place stubs whose lead gloss is literally "surname X".
-      // (b) USEFUL ORDER — see CHAR_FREQ_CTE. The pre-pass will realistically never
-      //     finish 113k rows, so the ORDER BY decides which slice of the corpus
-      //     learners actually get. Commonest-first, not id-first.
-      scope = `AND d.sortable = FALSE
-               AND d.word1 ~ '^[一-龥]{1,4}$'
-               AND d.definitions IS NOT NULL AND jsonb_array_length(d.definitions) > 0
-               AND COALESCE(d.definitions->>0, '') NOT ILIKE 'surname %'`;
-      order = 'score DESC, d.id';
-    } else if (ONLY_DISCOVERABLE) {
-      scope = 'AND d.discoverable = TRUE';
-    } else if (ONLY_NEW) {
-      // Candidates worth shipping: real definitions to work from.
+      // (b) USEFUL ORDER — see CHAR_FREQ_CTE. The corpus will realistically never be
+      //     enriched in full, so the ORDER BY decides which slice learners actually
+      //     get. Commonest-first, not id-first.
+      // es gets neither: `--new` does not filter junk headwords there (the Wiktionary
+      // import's head is punctuation and abbreviations), which is why the skill makes
+      // the user confirm the es word list by hand.
       scope = `AND d.discoverable = FALSE
                AND d.definitions IS NOT NULL AND jsonb_array_length(d.definitions) > 0`;
+      if (LANG === 'zh') {
+        scope += `
+               AND d.word1 ~ '^[一-龥]{1,4}$'
+               AND COALESCE(d.definitions->>0, '') NOT ILIKE 'surname %'`;
+        order = 'score DESC, d.id';
+      }
     }
 
-    // In --unsortable scope the goal is only to reach the `sortable` bar, so plan
-    // against the two-step pre-pass subset — otherwise every one of the 113k rows
-    // would report all 13 steps pending and drown the plan in Tier-3 work that does
-    // not gate a sort card. Every other scope plans the full manifest.
-    const steps = ONLY_UNSORTABLE ? PRE_PASS_SCRIPTS_ZH : MANIFEST;
+    // Every scope plans the FULL manifest: a row is either fully enriched and shipped
+    // (`discoverable`) or it is not — there is no intermediate bar any more, so there
+    // is no longer a subset of steps worth planning on its own.
+    const steps = MANIFEST;
 
     // buildIncompletePredicate encodes applicability + version-staleness + approval
     // protection. A --words run skips it: an explicit word list is an instruction to
@@ -157,13 +148,14 @@ async function main() {
     const incomplete = WORDS.length ? 'TRUE' : buildIncompletePredicate('d', steps);
 
     const lim = Number.isFinite(LIMIT) && LIMIT > 0 ? LIMIT : 50;
-    // `sortable` is a zh-only column (migration 110) — selecting it for es would throw.
     const cols = `d.id, d.word1, d.pronunciation, d.definitions, d."partsOfSpeech",
-                  d."enrichmentLog", d.discoverable, d.difficulty`
-      + (LANG === 'zh' ? ', d.sortable' : '');
+                  d."enrichmentLog", d.discoverable, d.difficulty`;
 
+    // The commonness ranking needs the per-character join + GROUP BY, so it gets its
+    // own query shape; every other scope uses the plain one.
+    const ranked = ONLY_NEW && LANG === 'zh';
     const { rows } = await client.query(
-      ONLY_UNSORTABLE
+      ranked
         ? `${CHAR_FREQ_CTE}
            SELECT ${cols}, min(cf.n) AS score
              FROM ${DET_TABLE} d
@@ -214,10 +206,8 @@ async function main() {
     if (AS_JSON) {
       console.log(JSON.stringify({
         language: LANG,
-        scope: ONLY_UNSORTABLE ? 'unsortable' : ONLY_DISCOVERABLE ? 'discoverable' : ONLY_NEW ? 'new' : WORDS.length ? 'words' : 'all',
-        candidates: rows.map((r) => ({
-          id: r.id, word1: r.word1, discoverable: r.discoverable, sortable: r.sortable,
-        })),
+        scope: ONLY_DISCOVERABLE ? 'discoverable' : ONLY_NEW ? 'new' : WORDS.length ? 'words' : 'all',
+        candidates: rows.map((r) => ({ id: r.id, word1: r.word1, discoverable: r.discoverable })),
         plan: [...byScript].filter(([, w]) => w.length).map(([id, words]) => ({ id, words })),
       }, null, 2));
       return;
@@ -225,9 +215,7 @@ async function main() {
 
     const shipped = rows.filter((r) => r.discoverable).length;
     console.log(`\n📋 Oracle plan [${LANG}] — ${rows.length} candidate rows `
-      + (ONLY_UNSORTABLE
-        ? '(PRE-PASS scope: not-yet-sortable)\n'
-        : `(${shipped} already discoverable, ${rows.length - shipped} new)\n`));
+      + `(${shipped} already discoverable, ${rows.length - shipped} new)\n`);
     console.log('  Run these in this order (manifest order encodes the dependencies):\n');
     let total = 0;
     for (const step of steps) {
@@ -239,12 +227,12 @@ async function main() {
       console.log(`        --words=${preview}`);
     }
     console.log(`\n  ${total} prompt(s) total across ${[...byScript].filter(([, w]) => w.length).length} script(s).`);
-    if (ONLY_UNSORTABLE) {
-      // The pre-pass is not finished when the prompts are answered — the rows are
-      // still invisible until promoted, and the promoter is the only thing allowed to
-      // decide they qualify. Name it explicitly so the round can't end one step short.
-      console.log('\n  Then promote the batch (re-derives the bar; never promotes a half-done row):');
-      console.log(`      scripts/backfill/promote-sortable.js --words=${rows.slice(0, 8).map((r) => r.word1).join(',')}`
+    if (ONLY_NEW) {
+      // Answering the prompts does not ship the rows — only the promoter, which
+      // re-derives completeness, may flip `discoverable`. Name it explicitly so the
+      // round can't end one step short.
+      console.log('\n  Then promote the batch (re-derives completeness; never promotes a half-done row):');
+      console.log(`      scripts/backfill/promote-discoverable.js --words=${rows.slice(0, 8).map((r) => r.word1).join(',')}`
         + `${rows.length > 8 ? ' …' : ''} --apply`);
     }
     if (protectedCount.size) {

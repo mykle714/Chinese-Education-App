@@ -107,7 +107,7 @@ Excluded by construction:
   never lent twice, and never lent when it is already in their deck;
 * words they explicitly **skipped** in discover — unless fresh supply is exhausted, at
   which point a second pass recycles them (a skipped word beats not playing);
-* words failing the language's supply gate (`sortable` for zh, `discoverable` otherwise) —
+* words failing the supply gate (`discoverable = TRUE`, every language) —
   kept in step with the discover supply query so a lent word is always a word the sort
   flow can later offer.
 

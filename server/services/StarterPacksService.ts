@@ -24,7 +24,7 @@ import { LazyEnrichmentService } from './LazyEnrichmentService.js';
  * it completes, not on the next server round-trip.
  *
  * Card source is the per-language dictionaryentries table, gated by _supplyGate:
- * zh on `sortable=TRUE` (migration 110, lazy-enrichment), es on `discoverable=TRUE`. Per-user
+ * `discoverable = TRUE`, for every language. Per-user
  * sort state lives in two places:
  *   - vocabentries (vet): "Add to Learn Now" / "Already Learned" rows persist what the
  *     user did with a card; the GENERATED `category` column (from markHistory) is what
@@ -192,19 +192,18 @@ export class StarterPacksService {
   /**
    * Supply-visibility gate for the discover flows (sort / quick-mark / progress).
    *
-   * Chinese gates on the `sortable` flag (migration 110) so lazily-enriched cards
-   * appear in discover BEFORE full enrichment; other languages fall back to
-   * `discoverable` (they have no `sortable` column yet — see
-   * docs/DISCOVER_LAZY_ENRICHMENT.md, zh-only scope). `sortable` is a strict
-   * superset of `discoverable` (discoverable ⇒ sortable), so this never *hides* a
-   * previously-visible card.
+   * ONE flag, every language: `discoverable`. Chinese briefly gated on a lower
+   * `sortable` bar (migration 110) so partially-enriched cards could reach discover
+   * ahead of full enrichment; that idea is retired (migration 142 drops the column)
+   * because the corpus-wide pre-pass it depended on never ran, so in practice
+   * `sortable` only ever added a couple hundred rows on top of `discoverable`
+   * while forking every supply query on language. See docs/DISCOVER_FLOW.md.
    *
    * @param alias - table alias prefix incl. trailing dot (e.g. `de.`), or '' when
    *   the query has no alias (getProgress).
    */
-  private _supplyGate(language: string, alias = 'de.'): string {
-    const col = language === 'zh' ? 'sortable' : 'discoverable';
-    return `${alias}${col} = TRUE`;
+  private _supplyGate(alias = 'de.'): string {
+    return `${alias}discoverable = TRUE`;
   }
 
   /**
@@ -337,7 +336,7 @@ export class StarterPacksService {
                de."iconId"
         FROM ${det} de
         WHERE de.language = $1
-          AND ${this._supplyGate(language)}
+          AND ${this._supplyGate()}
           AND ${validPredicate}
           AND NOT EXISTS (
             SELECT 1 FROM ${vetTable} ve
@@ -369,7 +368,7 @@ export class StarterPacksService {
       const totalResult = await client.query<{ count: string }>(`
         SELECT COUNT(*) as count
         FROM ${table}
-        WHERE language = $1 AND ${this._supplyGate(language, '')}
+        WHERE language = $1 AND ${this._supplyGate('')}
       `, [language]);
 
       // "Sorted" = cards the user has acted on = library vet rows PLUS current skips.
@@ -466,7 +465,7 @@ export class StarterPacksService {
                de."iconId"
         FROM ${det} de
         WHERE de.language = $1
-          AND ${this._supplyGate(language)}
+          AND ${this._supplyGate()}
           AND ${validPredicate}
           AND ${levelExpr} = $3
           AND NOT EXISTS (
@@ -910,7 +909,7 @@ export class StarterPacksService {
                de."iconId"
         FROM ${det} de
         WHERE de.word1 = ANY($1::text[]) AND de.language = $2
-          AND ${this._supplyGate(language)}
+          AND ${this._supplyGate()}
         ORDER BY array_position($1::text[], de.word1)
       `, [words, language]);
 

@@ -19,15 +19,14 @@ export class ProvisionalCardDAL implements IProvisionalCardDAL {
   constructor(protected readonly dbManager: DatabaseManager = defaultDbManager) {}
 
   /**
-   * Supply-visibility gate, mirroring StarterPacksService._supplyGate: zh lends words
-   * that are `sortable` (migration 110, so lazily-enriched words are reachable),
-   * every other language falls back to `discoverable`. Keeping the two in step matters
-   * — a word we lend must also be a word discover will later offer for sorting, or the
-   * end-of-round "sort these cards" hand-off would show an empty flow.
+   * Supply-visibility gate, mirroring StarterPacksService._supplyGate: one flag,
+   * `discoverable`, for every language (the zh-only `sortable` bar is retired —
+   * migration 142). Keeping the two gates in step matters — a word we lend must also
+   * be a word discover will later offer for sorting, or the end-of-round "sort these
+   * cards" hand-off would show an empty flow.
    */
-  private _supplyGate(language: string, alias = 'de.'): string {
-    const col = language === 'zh' ? 'sortable' : 'discoverable';
-    return `${alias}${col} = TRUE`;
+  private _supplyGate(alias = 'de.'): string {
+    return `${alias}discoverable = TRUE`;
   }
 
   async countPlayable(userId: string, language: string): Promise<number> {
@@ -83,7 +82,7 @@ export class ProvisionalCardDAL implements IProvisionalCardDAL {
         SELECT de.id, de.word1, de."difficulty", de."frequencyScore"
         FROM ${det} de
         WHERE de.language = $1
-          AND ${this._supplyGate(language)}
+          AND ${this._supplyGate()}
           AND de."difficulty" BETWEEN 1 AND 6
           -- Never lend a word the user already holds, in EITHER bucket: 'library'
           -- means it is already in their deck, 'provisional' means it is already lent.

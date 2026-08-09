@@ -338,8 +338,11 @@ running a full revert** — it discards generated content they may have already 
   "pending" for long-definitions until regenerated, and the on-first-sort lazy worker
   (`run-lazy-enrichment.js`, [DISCOVER_LAZY_ENRICHMENT.md](./DISCOVER_LAZY_ENRICHMENT.md))
   will heal rows in place as learners encounter them — spending API budget gradually. Doing
-  the §7 sweep up front avoids the drip. **Sortability is unaffected**: `PRE_PASS_STEP_IDS`
-  is only `process-definitions-array` + `hsk-level`, so no row gets demoted by the bump.
+  the §7 sweep up front avoids the drip. **No row is demoted by the bump** — nothing
+  reads completeness as a visibility gate for an already-shipped row; `discoverable`
+  only ever moves through a promoter (see [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)).
+  (Historical: this bullet used to note the bump left the `PRE_PASS_STEP_IDS`
+  sortable bar untouched. That bar was retired with migration 142.)
 - **`definitionsApproved` is not invalidated.** Reviewed rows are skipped, so their stored
   approval still matches their (unchanged) content. Regenerated rows had no approval to lose.
 - **Game/word-search payloads carry the raw column.** `OnDeckVocabService.getGameVocabPool`,

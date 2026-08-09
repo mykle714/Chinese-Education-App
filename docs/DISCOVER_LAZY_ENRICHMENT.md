@@ -1,18 +1,28 @@
 # Discover Lazy Enrichment — show every det entry, enrich on first sort
 
-> **STATUS: PARTIALLY IMPLEMENTED** (2026-07-17). Shipped: the `sortable` column
-> (migration 110), the discover supply-gate flip to `sortable` (zh), the one-time
-> reconciliation that promoted every already-fully-run row to `discoverable`, the
-> required-scripts manifest, the per-word step runner (`run-lazy-enrichment.js`), and
-> the **request-time, validator-gated triggers** (`LazyEnrichmentService`, fired from
-> the cdp lookup + the sort commit — §5) that replaced the standing cron. **Still
-> deferred: the Batches-API port** of the AI backfill steps and the corpus pre-pass run
-> (§4/§6) — steps run SERIALLY today.
+> **STATUS: PARTIALLY IMPLEMENTED, AND THE `sortable` HALF IS RETIRED** (2026-08-09).
+>
+> **Still live** — the required-scripts manifest, the per-word step runner
+> (`run-lazy-enrichment.js`), and the **request-time, validator-gated triggers**
+> (`LazyEnrichmentService`, fired from the cdp lookup + the sort commit — §5) that
+> replaced the standing cron.
+>
+> **Retired (migration 142)** — the `sortable` column and everything built on it: the
+> two-tier supply gate, `promote-sortable.js`, `buildSortableReadyPredicate` /
+> `PRE_PASS_SCRIPTS_ZH`, and the planner's `--unsortable` scope. Discover gates on
+> `discoverable = TRUE` for every language again. **§3 and §4b below describe the
+> retired design and are kept for history only** — see
+> [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) § Card supply gate for what runs now, and the
+> § "Why the pre-pass never happened" note under §4b for the post-mortem. The lazy
+> trigger survives with a `discoverable` gate, so it is now a **heal** path (re-run
+> version-stale steps under a shipped row) rather than a promote-on-first-sort path.
+>
+> **Still deferred: the Batches-API port** of the AI backfill steps and the corpus
+> pre-pass run (§4/§6) — steps run SERIALLY today.
 >
 > **SCOPE: Chinese (`dictionaryentries_zh`) ONLY.** Spanish is explicitly out of
 > scope for this change — the es pipeline differs (no `backfill-hsk-level`
-> equivalent writes `difficulty` today) and would be planned separately. Spanish
-> discover queries keep gating on `discoverable` (no `sortable` column).
+> equivalent writes `difficulty` today) and would be planned separately.
 >
 > Related: [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) · [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) ·
 > [`.claude/commands/mark-discoverable.md`](../.claude/commands/mark-discoverable.md) ·
@@ -66,7 +76,13 @@ Corpus total: **114,774 zh**. `difficulty` is `NULL` on **113,942** rows — so 
 
 Everything in Tier 3 is deferred to on-first-sort.
 
-## 3. The `sortable` column — decoupling "showable" from "fully enriched"
+## 3. The `sortable` column — decoupling "showable" from "fully enriched" (RETIRED)
+
+> ⛔ **HISTORICAL.** Migration 142 dropped `sortable`; discover gates on
+> `discoverable` again. Everything in §3/§3a describes the state between
+> 2026-07-17 and 2026-08-09. Kept because §3a's reconciliation is still the reason
+> today's `discoverable` set has the shape it does.
+
 
 `CLAUDE.md` declares it **"illegal"** to set `discoverable = TRUE` outside the
 `/mark-discoverable` pipeline, because that flag currently means "fully enriched
@@ -200,7 +216,14 @@ batch mode — and a decision point on whether `process-definitions-array` (whic
 must first be ported to the shared runner to batch) belongs in the pre-pass at
 full-corpus scale or should itself be partially deferred.
 
-### 4b. Incremental pre-pass — the `/oracle-backfill` path (IMPLEMENTED)
+### 4b. Incremental pre-pass — the `/oracle-backfill` path (RETIRED 2026-08-09)
+
+> ⛔ **HISTORICAL** — see the post-mortem at the end of this section. The
+> `--unsortable` scope, `PRE_PASS_SCRIPTS_ZH`, `buildSortableReadyPredicate` and
+> `promote-sortable.js` no longer exist. What survives from this section is the
+> candidate curation and `CHAR_FREQ_CTE` ordering, which moved onto
+> `oracle-plan.js --new` (zh), and the `backfill-hsk-level.js` deadlock fix.
+
 
 The full-corpus pre-pass above is still unrun. In the meantime the pre-pass also
 runs **incrementally, in batches of ~25 words**, as the fallback scope of the
@@ -253,7 +276,24 @@ since the pre-pass will never finish all of them: id order yields 鳚 (blenny) /
 (ibis) / 丂, the score yields 大人 / 大学 / 市区 / 国. Caveat: it ranks characters, not
 words, so a rare word of common characters (人子, 国学) can rank high.
 
-**One deadlock fixed to make this possible**: `backfill-hsk-level.js` gated on
+#### Why the pre-pass never happened (post-mortem, 2026-08-09)
+
+In the ~3 weeks the `--unsortable` scope existed it moved the corpus from 832 to
+**1,517** sortable rows out of 114,774 — **1.3%** — and left only **218** rows
+sortable-but-not-discoverable. The mechanism: the oracle loop takes
+`--discoverable` (heal shipped rows) first and only falls through to the pre-pass
+when that queue is empty, but the heal queue **refills on every manifest
+`SCRIPT_VERSION` bump** — and the manifest was bumped repeatedly over the same
+period. The fallback scope was therefore almost never reached.
+
+At 218 rows of extra reach, the split was not paying for its complexity (a language
+fork in four supply queries, a second promoter, a second completeness bar, a second
+planner scope, and an invariant every `discoverable` writer had to maintain), so it
+was removed. The lesson for any future two-tier scheme: a cheap-tier backlog that
+sits *behind* a self-refilling expensive-tier queue never drains — it needs its own
+budget, not a fallthrough.
+
+**One deadlock fixed along the way** (still in effect): `backfill-hsk-level.js` gated on
 `discoverable = TRUE` *in addition to* its `--words=` filter, so it could never level a
 row that was not already shipped — i.e. it could never produce the `difficulty` that a
 row needs to become sortable in the first place. A `--words=` run now drops that gate
@@ -301,7 +341,7 @@ both the runtime trigger and the manual CLI):
 
 1. **Candidate predicate** (`buildIncompletePredicate`) — a word needs enrichment when:
    ```
-   det.sortable = TRUE
+   det.discoverable = TRUE
    AND <some applicable, non-approved required script is MISSING
         or stamped BELOW its manifest version>  -- VERSION-incomplete
    ```
@@ -377,8 +417,11 @@ both the runtime trigger and the manual CLI):
    `validatedClause`).
 
 5. **Promote on completion** — after a word's steps run, the worker re-reads its
-   stamps and, iff the manifest is satisfied, flips `discoverable = TRUE` (and
-   `sortable = TRUE`). The word drops out of the candidate predicate and is eligible
+   stamps and, iff the manifest is satisfied, flips `discoverable = TRUE`. Since the
+   trigger's own gate is now `discoverable = TRUE` (migration 142), this is in practice
+   a re-affirmation of an already-set flag — the promotion path still matters for the
+   manual `--words=` CLI, which targets rows regardless of state. The word drops out of
+   the candidate predicate and is eligible
    for the next `/data-deploy`. A step that exits non-zero aborts that word (no
    promotion), leaving it a candidate for the next drain.
 
@@ -396,11 +439,10 @@ these gates.
 **Language scope.** The file now holds two manifests — `REQUIRED_SCRIPTS_ZH` and
 `REQUIRED_SCRIPTS_ES` (select with `scriptsForLanguage(lang)`) — but *everything in
 this document is still Chinese-only*. The lazy-enrichment worker
-(`run-lazy-enrichment.js`), the pre-pass, `promote-sortable.js` and the `sortable` bar
-all hardcode `language = 'zh'`, and `dictionaryentries_es` has no `sortable` column at
-all. The es manifest exists for `oracle-plan.js --lang=es`, which plans the
-`/mark-discoverable` §B3 pipeline; Spanish words do **not** self-heal on first sort.
-Adding that would mean adding `sortable` to the es table first.
+(`run-lazy-enrichment.js`) hardcodes `language = 'zh'`. The es manifest exists for
+`oracle-plan.js --lang=es`, which plans the `/mark-discoverable` §B3 pipeline; Spanish
+words do **not** self-heal on first sort. Adding that means generalizing the worker's
+hardcoded table name and step list — no schema change is needed any more.
 
 ## 6. Batch API strategy for the enrichment scripts
 
@@ -478,9 +520,10 @@ still surfaced *after* that step's batch completes and *before* the dependent
 ## 7. Decisions & open questions
 
 **Decided & DONE:**
-- ✅ **`sortable`** column on `dictionaryentries_zh` (migration 110); discover queries
-  gate on it for zh via `_supplyGate`; migration backfilled qualifying rows (§3).
-- ✅ **No `enrichment_jobs` table** — candidate set derived from `sortable` /
+- ↩️ **`sortable`** column on `dictionaryentries_zh` (migration 110) — **REVERTED by
+  migration 142** after 3 weeks and 218 rows of net reach; discover gates on
+  `discoverable` again for every language. Post-mortem under §4b.
+- ✅ **No `enrichment_jobs` table** — candidate set derived from
   `discoverable` / a vet row / `enrichmentLog` stamps; validator-approved fields honored
   via each script's `validatedClause` (§5).
 - ✅ **Required-scripts manifest** (`requiredScripts.js`) — ordered scriptIds + per-step
@@ -488,7 +531,7 @@ still surfaced *after* that step's batch completes and *before* the dependent
 - ✅ **On-first-sort worker** (`run-lazy-enrichment.js`) — serial, dry-run-default,
   promotes on manifest completion (§5).
 - ✅ **Reconciliation** — 683 fully-run rows promoted; 558 presence-incomplete rows
-  unmarked (kept `sortable`). End state: `discoverable` = 273 (§3a).
+  unmarked (they kept the then-live `sortable` flag). End state: `discoverable` = 273 (§3a).
 - ✅ **`--stale` on EVERY pipeline script** — all 9 that lacked it now OR `staleClause()`
   into their doneGate AND drop the `discoverable = TRUE` gate when `--words` is targeted
   (so the worker can enrich not-yet-discoverable candidates). `backfill-frequency-score`
@@ -496,12 +539,12 @@ still surfaced *after* that step's batch completes and *before* the dependent
 - ✅ **Version-aware candidacy + completeness** — `buildIncompletePredicate` / `isComplete`
   / `pendingSteps` all treat a below-manifest-version stamp as pending; the worker's
   candidate query dropped `discoverable = FALSE` so stale shipped rows heal in place (§5).
-- ✅ Pre-pass DECISION recorded = full, batched, `--no-critic` run (§4a) — *the
-  full-corpus batched run is still unrun*; an **incremental** pre-pass now runs via
-  `/oracle-backfill` §3b + `promote-sortable.js` (§4b).
-- ✅ **`sortable` promotion outside the full manifest** (`promote-sortable.js`, §4b) —
-  bar declared once as `buildSortableReadyPredicate` over `PRE_PASS_SCRIPTS_ZH`,
-  re-asserted inside the UPDATE; never writes `discoverable`.
+- ✅ Pre-pass DECISION recorded = full, batched, `--no-critic` run (§4a) — *still
+  unrun, and no longer has a delivery vehicle*: the incremental `/oracle-backfill §3b`
+  path it ran through was retired with `sortable` (§4b). Growing the corpus now means
+  taking a curated `--new` batch through the **whole** manifest to `discoverable`.
+- ↩️ **Promotion outside the full manifest** (`promote-sortable.js`) — **REMOVED**.
+  `promote-discoverable.js` (full-manifest bar) is the only promoter left.
 
 **Open:**
 1. **Batch port (DEFERRED, out of current scope)** — port `process-definitions-array`
@@ -516,7 +559,7 @@ still surfaced *after* that step's batch completes and *before* the dependent
 
 ## 8. Referenced code
 
-- `database/migrations/110-add-sortable-to-zh.sql` — the `sortable` column + backfill + index (§3).
+- `database/migrations/110-add-sortable-to-zh.sql` — the `sortable` column + backfill + index (§3). **Reverted by `142-drop-sortable-from-zh.sql`.**
 - `server/services/LazyEnrichmentService.ts` — the request-time, validator-gated trigger
   (`triggerForWord`): zh + `isValidator` + manifest-incomplete gate, `inFlight` dedupe,
   fire-and-forget worker spawn, best-effort prod no-op (§5).
@@ -525,9 +568,9 @@ still surfaced *after* that step's batch completes and *before* the dependent
   (`_rowsToDiscoverCards`), sort commit (`sortCard`) — fires the **on-sort** trigger (§5).
 - `server/controllers/DictionaryController.ts` — `lookupTerm` fires the **on-open**
   trigger after responding (the eip drill-in / cdp lands here) (§5).
-- `server/scripts/backfill/shared/lib/requiredScripts.js` — the manifests (`REQUIRED_SCRIPTS_ZH`, `REQUIRED_SCRIPTS_ES`, `scriptsForLanguage`) + `buildIncompletePredicate` / `appliesTo` (§5); the zh-only pre-pass subset `PRE_PASS_STEP_IDS` / `PRE_PASS_SCRIPTS_ZH` and the zh-only `sortable` bar `buildSortableReadyPredicate` / `isSortableReady` (§4b).
-- `server/scripts/backfill/promote-sortable.js` — the pre-pass promoter; only writer of `sortable` besides the worker (§4b). zh only.
-- `server/scripts/backfill/oracle-plan.js` — round planner; `--lang=zh|es`, plus the zh-only `--unsortable` scope + candidate-quality filter (§4b).
+- `server/scripts/backfill/shared/lib/requiredScripts.js` — the manifests (`REQUIRED_SCRIPTS_ZH`, `REQUIRED_SCRIPTS_ES`, `scriptsForLanguage`) + `buildIncompletePredicate` / `appliesTo` (§5).
+- `server/scripts/backfill/promote-discoverable.js` — the only standalone promoter; full-manifest bar, dry-run by default.
+- `server/scripts/backfill/oracle-plan.js` — round planner; `--lang=zh|es`, `--discoverable` / `--new` / `--words=`. The zh `--new` scope carries the candidate-quality filter + `CHAR_FREQ_CTE` ordering inherited from the retired `--unsortable` scope (§4b).
 - `server/scripts/backfill/run-lazy-enrichment.js` — the per-word step runner / manual bulk drain (§5).
 - `server/scripts/backfill/chinese/backfill-hsk-level.js` — difficulty (Sonnet).
 - `server/scripts/backfill/chinese/backfill-process-definitions-array.js` — lead-gloss cleanup.

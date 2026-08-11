@@ -3,13 +3,19 @@
 Status: **implemented** (migration 137). Not yet deployed to prod.
 
 **Velocity** = the number of **utcm band-steps** a learner's cards climbed in the
-**last 7 days**, per **(user, language)**.
+**last 7 days**, per **(user, language)**, **summed across the mastery bars the
+account is pursuing**.
 
 One card that moved `Unfamiliar → Comfortable` counts **2**, exactly as two cards
 that each moved up one band count 2. The window **slides** — it is always
 `now() - 7 days`, never a calendar week or the Sunday-04:00 boundary that
 [wins and community votes](./GAMES_FEATURE.md) use. A rolling rate must not
 collapse to near-zero every Sunday morning.
+
+Since migration 143 a card carries up to **three** independently-banded bars
+(`core` / `reading` / `writing` — [MASTERY_REWORK.md § Three bars](./MASTERY_REWORK.md)),
+so a step is a step **on some bar**: pushing one card's reading bar up a band counts
+the same as pushing another card's core bar up a band. See §2a for which bars count.
 
 Related: [MASTERY_REWORK.md](./MASTERY_REWORK.md) (the utcm bands velocity is
 measured in), [FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md](./FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md)
@@ -19,17 +25,16 @@ measured in), [FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md](./FLASHCARD_REVIEW_HI
 
 ## 1. Why an event log, and why it can't be backfilled
 
-A card's utcm `category` is **not stored**. It is computed on read from
-`typedMarkHistory` + the account's goal flags — `computeUtcm()` in
-`server/contracts/mastery.ts:170`, mirrored by the SQL `compute_utcm_category()`
-(migration 101). Nothing in the schema records that a card *moved* between bands,
-and the 8-slot per-type mark window discards the marks that would let us
-reconstruct the movement.
+A bar's utcm band is **not stored**. It is computed on read from
+`typedMarkHistory` — `barCategory()` in `server/contracts/mastery.ts`, mirrored by
+the SQL `compute_core_category()` / `compute_type_category()`. Nothing in the schema
+records that a bar *moved* between bands, and the 8-slot per-type mark window
+discards the marks that would let us reconstruct the movement.
 
 So a promotion is observable at exactly **one instant**: inside
-`POST /api/flashcards/mark`, which already computes the category on both sides of
-the mark (`server/routes/flashcardRoutes.ts:121` and `:155`). The
-`category_promotions` table is that observation, appended.
+`POST /api/flashcards/mark`, which computes the band on both sides of the mark, for
+the one bar that mark belongs to (`barForMarkType`). The `category_promotions` table
+is that observation, appended.
 
 **Consequence:** velocity is **not backfillable**. Every account starts at 0 on
 deploy and the number becomes meaningful after ~7 days of use.
@@ -43,9 +48,37 @@ deploy and the number becomes meaningful after ~7 days of use.
 | A mark pushes a card up one band | ✅ `bandsClimbed = 1` | The core case. |
 | A mark pushes a card up two bands at once | ✅ `bandsClimbed = 2` | pbh is continuous — one mark can cross two boundaries (see the test in `server/__tests__/velocity.test.ts`). This is why the step count is stored, not assumed to be 1. |
 | A mark demotes a card | ❌ | Velocity measures upward movement only; demotions are not subtracted. |
-| Toggling the reading/writing **goal** re-bands every card | ❌ | That re-scores *past* work, it is not work done this week. No mark, no row. |
+| Toggling the reading/writing **goal** | ❌ | Since migration 143 a toggle re-bands *nothing* — it only changes which bars are counted at read time (§2a). No mark, no row. |
 | Seeding a card as "already learned" (`updateTypedMarkHistory`) | ❌ | Goes through `VocabEntryDAL`, not the mark handler — a declaration, not a review. |
 | Undoing a mark | 🔁 rows deleted | `undoLastMark` deletes by `(vocabEntryId, markTimestamp)`, so an undone mark gives back the band-steps it earned. |
+
+**One mark writes at most one row.** `BAR_MARK_TYPES` partitions the four mark types
+across the three bars, so a review can promote exactly one bar — there is no fan-out
+and no chance of double-counting a single mark.
+
+## 2a. Which bars count — goal bars only, filtered at READ
+
+Every promotion is **logged**, on whichever bar it moved. The goal filter is applied
+in the **query**, not at write time:
+
+```
+getVelocityByLanguage(userId, windowDays, bars = ['core'])
+  → … AND bar = ANY($3::text[])
+```
+
+`VelocityController` loads the account and passes
+`activeBars({ reading: user.readingGoal, writing: user.writingGoal })`.
+
+**Why filter at read.** Writing only the goal bars' rows would freeze history against
+the settings at the time of the review: a learner who turns on the writing goal today
+would start from zero, with a week of real writing work invisible. Filtering at read
+means the toggle retroactively enriches the number — which matches the rest of the
+143 model, where a goal reveals work already done rather than starting it.
+
+The cost is the mirror-image quirk: turning a goal **off** hides steps already
+counted, so the number can drop on a settings change. Accepted — it is the same
+number the learner would have seen had they never enabled the goal, which is the
+consistent story.
 
 ---
 
@@ -63,12 +96,21 @@ category_promotions
   "toCategory"   varchar(16)
   "bandsClimbed" smallint  CHECK > 0
   "markType"     varchar(16)
+  bar            varchar(16) NOT NULL DEFAULT 'core'   -- migration 143; CHECK core|reading|writing
   "markTimestamp" timestamptz     -- the causing ReviewMark's ts; the undo key
   "promotedAt"   timestamptz DEFAULT now()
 ```
 
 Indexes: `("userId", language, "promotedAt")` for the velocity query,
-`("vocabEntryId", "markTimestamp")` for the undo delete.
+`("vocabEntryId", "markTimestamp")` for the undo delete. **No index on `bar`** —
+that predicate discards a handful of rows from an already-tiny 7-day window.
+
+`bar` is derived from `markType` via `barForMarkType()`, so it is redundant in the
+strict sense — but it is the column the velocity query filters on, and deriving it in
+SQL would mean a `CASE` in the `WHERE` clause on every read. Pre-143 rows are all
+`core` by construction (there was only one bar). The `DEFAULT` is deliberately kept
+rather than dropped after backfill, so pre-143 code inserting without the column
+during the deploy window still writes correct rows.
 
 **No FK on `vocabEntryId`**: vet is split per language
 (`vocabentries_zh` / `vocabentries_es` share one id sequence), so the referent
@@ -84,9 +126,9 @@ of the window within 7 days.
 |---|---|---|
 | contract | `server/contracts/mastery.ts` — `CATEGORY_ORDER`, `categoryRank()`, `bandsClimbed()` | The band-step arithmetic. Shared with the client via `src/utils/masteryCompute.ts`. |
 | DAL | `server/dal/implementations/CategoryPromotionDAL.ts` (behind `ICategoryPromotionDAL`) | The only SQL. Every method takes an optional `PoolClient` so a caller already holding a connection or a transaction can enlist the query (BACKEND_LAYERING §3). |
-| write (mark) | `server/routes/flashcardRoutes.ts` — after `category` is computed | `bandsClimbed(before, after) > 0` → `recordPromotion(...)`. **Best-effort**: wrapped in try/catch and logged, because losing a stat must never fail a user's review write. |
+| write (mark) | `server/routes/flashcardRoutes.ts` — after the mark's bar band is computed | `bandsClimbed(barCategoryBefore, barCategoryAfter) > 0` → `recordPromotion({…, bar})`. Note it measures **the mark's own bar**, not the core band. **Best-effort**: wrapped in try/catch and logged, because losing a stat must never fail a user's review write. |
 | write (undo) | `server/routes/flashcardRoutes.ts` — inside the undo transaction | `deleteForMark(cardId, markTimestamp, client)`. **Not** best-effort: it rolls back with the rest of the undo. |
-| controller | `server/controllers/VelocityController.ts` | `GET /api/users/me/velocity`. No service layer — the only rule is picking the headline language (mirrors `WinsController`). |
+| controller | `server/controllers/VelocityController.ts` | `GET /api/users/me/velocity`. No service layer — the only rules are picking the headline language (mirrors `WinsController`) and resolving `activeBars()` from the account's goal flags. It always loads the user now, since the bar filter needs the flags. |
 | route | `server/routes/userRoutes.ts` | Registered before `GET /api/users/:id` so the param route can't shadow it. |
 | client api | `src/api/velocity.ts` | `fetchVelocity(language?)`. No `token` param (FRONTEND_LAYERING §3.2). |
 | client hook | `src/hooks/useVelocity.ts` | Keys on `isAuthenticated` + `selectedLanguage`, **never** `token` (CLAUDE.md silent-refresh rule). |
@@ -108,18 +150,18 @@ promotions; clients default those to 0.
 ## 5. Tests
 
 `server/__tests__/velocity.test.ts` pins `categoryRank` / `bandsClimbed`, the
-demotion-returns-0 rule, and the single-mark-crosses-two-bands case.
+demotion-returns-0 rule, the single-mark-crosses-two-bands case, and the post-143
+rules: a mark scores on **its own** bar (a reading mark moves the reading bar, never
+the core one) and `activeBars()` decides which bars the query sums.
 
 ---
 
 ## 6. Known gaps
 
 - **Not backfillable** (§1) — the number is meaningless for the first 7 days after deploy.
-- **Goal toggles desync the story, not the data.** After enabling the writing goal,
-  cards demote in bulk; a learner re-promoting them earns velocity for work that
-  partly predates the toggle. Accepted: the alternative (logging the toggle's
-  re-band as promotions/demotions) would make velocity spike or crater on a
-  settings change.
+- **Turning a goal off shrinks the number** (§2a). The read-side filter is the
+  deliberate choice; this is its accepted cost. (The pre-143 version of this gap —
+  bulk demotion on enabling a goal — is **gone**: goal toggles re-band nothing.)
 - **No leaderboard integration.** Velocity is per-account display only; if it ever
   becomes competitive, `getVelocityByLanguage` needs an all-users grouped variant
   like `WinsDAL.getWeeklyCountsByUser()` to avoid an N+1.

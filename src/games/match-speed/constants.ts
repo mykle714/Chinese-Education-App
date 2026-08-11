@@ -1,3 +1,4 @@
+import type { MarkType } from "../../types";
 import type { GameCategory, MatchSpeedMode, Medal, ModeConfig } from "./types";
 
 /**
@@ -11,6 +12,18 @@ import type { GameCategory, MatchSpeedMode, Medal, ModeConfig } from "./types";
  *  ({ game, level }), read via useGameWins (src/hooks/useGameWins.ts). Shared with
  *  the Games hub so both read the same win data under the same key. */
 export const GAME_KEY = "matchSpeed";
+
+/**
+ * The mastery track this game feeds (docs/MASTERY_REWORK.md). Matching a foreign
+ * word to its meaning is recognition, so every mode writes RECOGNITION marks and
+ * pools on that track — the mode only changes WHICH cards are dealt, never the
+ * mark type, so this is a whole-game constant rather than a per-ModeConfig field.
+ *
+ * Single source of truth for the `?markType=` pool query and the
+ * /api/flashcards/mark call (MatchSpeedPage) plus the Games hub's mark-type chip
+ * (via GAME_REGISTRY's `markType`).
+ */
+export const MARK_TYPE: MarkType = "recognition";
 
 // The `wins` level key per difficulty mode lives on each MODE_CONFIGS entry
 // (`winLevel`) — Study Mix keeps 1, the key the game used back when it had a single

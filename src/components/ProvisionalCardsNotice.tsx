@@ -1,6 +1,8 @@
 import React from "react";
 import { COLORS, FONTS, SIZE, WEIGHT } from "../theme";
-import ForeignText from "./ForeignText";
+import ProvisionalCardTable from "./ProvisionalCardTable";
+import { useProvisionalRows } from "../hooks/useProvisionalRows";
+import type { ProvisionalCardRow } from "../utils/provisionalCards";
 import type { Language } from "../types";
 
 /**
@@ -15,12 +17,20 @@ import type { Language } from "../types";
  *
  * ITEMIZED VS GENERIC
  * Where the played set is fixed and known up front (Bubble Match, Speed Reading, Word
- * Search) the notice LISTS the exact words, so the player knows what they're about to
- * meet. Where the surface streams cards continuously (Match Speed deals from a rolling
- * buffer, flp refills the working loop as you go) the set isn't known in advance, so
- * the notice just says temporary cards are in play. That policy is shared with the
- * server as `CARD_BASELINE_ITEMIZED` in server/contracts/wire.ts; callers pass the
- * resulting `words` list, or omit it for the generic form.
+ * Search) the notice TABULATES the exact cards — word1 · pinyin · dd — so the player
+ * knows what they're about to meet and what it means. Where the surface streams cards
+ * continuously (Match Speed deals from a rolling buffer, flp refills the working loop
+ * as you go) the set isn't known in advance, so the notice just says temporary cards
+ * are in play. That policy is shared with the server as `CARD_BASELINE_ITEMIZED` in
+ * server/contracts/wire.ts; callers pass `rows` (or `words`), or omit both for the
+ * generic form.
+ *
+ * TWO WAYS TO SUPPLY THE CARDS
+ * A caller holding the served vet rows passes `rows={provisionalRows(cards)}` — no
+ * extra request. Word Search holds only the lent words (its payload carries
+ * `provisionalWords`, not vet rows), so it passes `words` and the table is fetched by
+ * `useProvisionalRows`. Until that lands the notice shows its generic copy rather
+ * than a half-built table.
  *
  * This is a NOTICE, not a decision: there is one dismiss button and no way to refuse,
  * because refusing would mean not playing — the exact outcome the baseline rework
@@ -37,11 +47,17 @@ export interface ProvisionalCardsNoticeProps {
     /** The surface's display name, e.g. "Bubble Match". Used in the copy. */
     surfaceName: string;
     /**
-     * The lent words to list. Omit (or pass empty) for the generic notice used by the
+     * The lent cards to tabulate, when the caller already holds the served rows
+     * (`provisionalRows(cards)`). Takes precedence over `words`.
+     */
+    rows?: ProvisionalCardRow[];
+    /**
+     * The lent words, for a caller that holds only the word list — the table is
+     * fetched from them. Omit both this and `rows` for the generic notice used by the
      * streaming surfaces, which cannot name their set up front.
      */
     words?: string[];
-    /** Language of `words`, so they render through ForeignText correctly. */
+    /** Language of the cards, so they render through ForeignText correctly. */
     language: Language;
 }
 
@@ -49,12 +65,17 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
     open,
     onDismiss,
     surfaceName,
+    rows,
     words,
     language,
 }) => {
+    // Hooks must run unconditionally, so the fetch is gated by `open` rather than by
+    // an early return above it.
+    const { rows: tableRows } = useProvisionalRows(language, words, rows, open);
+
     if (!open) return null;
 
-    const itemized = Array.isArray(words) && words.length > 0;
+    const itemized = tableRows.length > 0;
 
     return (
         <div
@@ -121,36 +142,7 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
                 </p>
 
                 {itemized && (
-                    <div
-                        className="provisional-notice__word-list"
-                        style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: 8,
-                            // The list is the one scrollable region — a large lent set
-                            // must not grow the dialog past the viewport.
-                            maxHeight: 190,
-                            overflowY: "auto",
-                            touchAction: "pan-y",
-                            padding: 2,
-                        }}
-                    >
-                        {words!.map((word) => (
-                            <span
-                                key={word}
-                                className="provisional-notice__word-chip"
-                                style={{
-                                    background: COLORS.iconBg,
-                                    borderRadius: 999,
-                                    padding: "6px 12px",
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                }}
-                            >
-                                <ForeignText text={word} language={language} size="sm" />
-                            </span>
-                        ))}
-                    </div>
+                    <ProvisionalCardTable rows={tableRows} language={language} maxHeight={190} />
                 )}
 
                 <p

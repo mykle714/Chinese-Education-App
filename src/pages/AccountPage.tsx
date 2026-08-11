@@ -260,7 +260,7 @@ function AccountPage() {
                             wrapper reserves the row's height up front so the form below
                             doesn't shift down when the cards appear. */}
                         <Box className="account-page__deck-stats" sx={{ minHeight: 150 }}>
-                            {countsLoaded && <DeckBuckets counts={categoryCounts} variant="display" />}
+                            {countsLoaded && <DeckBuckets counts={categoryCounts} />}
                         </Box>
 
                         {/* Velocity — how many mastery bands the learner's cards climbed in
@@ -336,9 +336,11 @@ function AccountPage() {
                                         mb: 1,
                                     }}
                                 >
-                                    Turning a goal on may demote some mastered cards back to
-                                    comfortable — you&apos;ll need to train reading and writing
-                                    to promote them back to mastered.
+                                    Each goal you turn on adds its own progress bar to every
+                                    card, so a card can be mastered separately for knowing it,
+                                    reading it and writing it. Your existing progress is never
+                                    affected — and any reading or writing you have already done
+                                    shows up straight away.
                                 </Typography>
                                 <FormGroup className="account-page__goals-group">
                                     <FormControlLabel

@@ -61,6 +61,13 @@ interface BubbleStageProps {
         satisfaction — matches pop/remove pairs but emit NO marks, and dragging a
         bubble reveals its correct partner (green) as a drop hint. */
     cleanupMode: boolean;
+    /** Freeze the level while a modal popup covers it. Bubble Match has no clock,
+        so "the timer" here is the pair of things that squeeze the field over time:
+        the bubble launcher and the descending ceiling. Both stop, and so does the
+        overfill loss check, so a notice sitting on top of the stage can never be
+        what loses the level. Physics resumes exactly where it froze — the frame
+        clock is re-based on every paused frame, so no `dt` debt accumulates. */
+    paused: boolean;
 }
 
 let bodySeq = 0;
@@ -166,6 +173,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     onLevelLose,
     onMark,
     cleanupMode,
+    paused,
 }) => {
     const stageRef = useRef<HTMLDivElement>(null);
     // Latest config/level in a ref so the (stable) rAF frame callback can read
@@ -199,6 +207,12 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     // the held bubble's partner (the drop hint). Kept in refs so the pointer
     // handlers can stay stable (memoized once).
     const cleanupModeRef = useRef(cleanupMode);
+    // Popup pause (mirrors the prop) — read by the rAF frame and the launcher
+    // interval, both of which are stable callbacks that must not re-create on it.
+    // Written during render rather than in an effect so the very first frame after
+    // a popup opens already sees it.
+    const pausedRef = useRef(paused);
+    pausedRef.current = paused;
     const revealedPartnerIdRef = useRef<string | null>(null);
     const grabOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
     const stageRectRef = useRef<DOMRect | null>(null);
@@ -302,6 +316,16 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     // cleanup drag. All inputs come from refs, so this callback never changes.
     const stepFrame = useCallback(
         (now: number) => {
+            // Paused by a modal popup: hold the field exactly as it is — no
+            // ceiling descent, no physics step, no overfill judgement — but keep
+            // the loop alive so play resumes on dismiss without a restart. Re-basing
+            // the frame clock here is what stops the whole paused span arriving as
+            // one huge `dt` on the first live frame.
+            if (pausedRef.current) {
+                lastFrameRef.current = now;
+                rafRef.current = requestAnimationFrame(stepFrame);
+                return;
+            }
             const dt = Math.min((now - lastFrameRef.current) / 1000, MAX_DT);
             lastFrameRef.current = now;
             const bodies = bodiesRef.current;
@@ -462,6 +486,11 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
         spawnOne();
         const launchTimer = setInterval(() => {
             if (phaseRef.current !== "playing") return;
+            // A tick that lands under a popup is skipped, not queued: the field
+            // must not gain bubbles the player couldn't reach. The cadence itself
+            // keeps running, so the next launch comes at most one interval after
+            // the popup closes.
+            if (pausedRef.current) return;
             if (queueRef.current.length === 0) {
                 shrinkingRef.current = true;
                 clearInterval(launchTimer);

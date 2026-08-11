@@ -9,6 +9,20 @@ optional tab strip). It hosts a *body* that exposes `{root, scroll}` through a
 `scroll` is the element whose `scrollTop` decides resize-vs-scroll. Current bodies:
 `InfoCardPanelBody` (eip), `CompareWorkspace` (compare tab), `SettingsPanelBody`.
 
+**Mount sites.** Despite living under `FlashcardsLearnPage/`, the eip sheet is no longer
+flp-private: the sort cards page (scp) mounts the same `InfoCardSection` + `EipTabStrip`
++ `useEipTabs` trio from each on-deck card's info button
+([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)). Everything on this
+page applies to both. The one thing a host must supply is a **positioned parent**:
+`SheetPanel`'s scrim (`absolute; inset: 0`) and container (`absolute; bottom: 0`) resolve
+against it, and the height model below reads `parentElement.clientHeight` — so that
+parent, not the viewport, is what caps the sheet. Two things that parent must also do on
+a footer-bearing page (both learned the hard way on scp — see its `EipHost`): stretch
+down through `FLOATING_FOOTER_CLEARANCE`, or the sheet floats above the screen edge; and
+carry a z-index above anything the host page lifts, because the scrim/sheet z-indexes
+below (10/11) are *internal* to `SheetPanel` and lose to any page element with a bigger
+one (scp's draggable cards sit at 1000).
+
 ---
 
 ## Height model — three stops, one floor
@@ -122,6 +136,19 @@ effect). It swallows every touchmove until its axis lock resolves; if it resolve
 it stops interfering and `SheetPanel` sees one correct larger delta covering the
 gesture so far.
 
+### Rubber-band at the ends of the tab strip
+
+Toward a neighboring tab the finger delta is clamped to one pane width. Toward an
+**end** of the strip — left on the last tab (breakdown / "used in"), right on the first
+(definition) — the track used to clamp to exactly **zero** travel, which is visually
+indistinguishable from "this tab has no swipe at all". It now rubber-bands instead:
+the track follows the finger at `TAB_SWIPE_EDGE_RUBBER_RATIO` (0.25) of its travel,
+capped at `TAB_SWIPE_EDGE_RUBBER_MAX_PX` (40px), and springs back on release. The cap
+sits far below the commit threshold (`paneWidth · TAB_SWIPE_COMMIT_RATIO`) and
+`settleDrag` rejects out-of-range targets, so an overscroll can never land on a tab
+change. See `InfoCardPanelBody.tsx`'s touchmove handler and the constants block in
+`src/features/flashcards/constants.ts`.
+
 ---
 
 ## Referenced code
@@ -132,5 +159,14 @@ gesture so far.
 - `src/features/flashcards/FlashcardsLearnPage/InfoCardSection.tsx` — eip wiring,
   `bodyKey` (re-binds the coupling when the active tab's scroller changes)
 - `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx` — body handle,
-  per-pane scrollers, horizontal tab-swipe axis lock
+  per-pane scrollers, horizontal tab-swipe axis lock, end-of-strip rubber-band
+- `src/features/flashcards/constants.ts` — `TAB_SWIPE_*` gesture constants
+  (axis lock, commit ratio, transition, edge rubber-band)
 - `src/components/CompareWorkspace.tsx`, `SettingsPanelBody.tsx` — other sheet bodies
+- `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` — tab state + drill-in
+  lookups (`openForRoot`, `openForEntryKey`, `clear`); takes an optional `language` that
+  scopes those lookups
+- `src/api/dictionary.ts` — `lookupVocabEntry(entryKey, language?)`, the single
+  det-lookup-and-adapt every eip host goes through
+- `src/features/discover/SortCardsPage.tsx` — the non-flp mount (`EipHost`,
+  `handleOpenCardInfo`)

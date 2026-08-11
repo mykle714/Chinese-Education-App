@@ -87,8 +87,8 @@ export class DecksController {
 
   /**
    * GET /api/decks/:id/cards
-   * Same enriched VocabEntry[] shape as /api/onDeck/masteredLibraryCards and
-   * /api/onDeck/nonMasteredLibraryCards, so one client page renders all three
+   * Same enriched VocabEntry[] shape as /api/onDeck/collectionCards, so one client
+   * page renders every
    * collections.
    */
   getDeckCards = async (req: Request, res: Response): Promise<void> => {

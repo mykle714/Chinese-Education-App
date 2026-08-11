@@ -1,4 +1,5 @@
 import type { CPCDSize } from "../../components/ForeignText";
+import type { MarkType } from "../../types";
 import type { Medal } from "./types";
 // Word Search uses HALF of Bubble Match's mix, keeping the same category
 // proportions: 1 Unfamiliar + 5 Target + 3 Comfortable + 1 Mastered = 10.
@@ -41,11 +42,23 @@ export interface WordSearchModeConfig {
     showPinyin: boolean;
     /** Hub sub-card subtitle. */
     label: string;
+    /**
+     * The mastery track a find in this mode marks (docs/MASTERY_REWORK.md). Word
+     * Search is the one game whose mark type varies BY MODE, which is why this
+     * lives per-config instead of as a whole-game `MARK_TYPE` like the other three
+     * games have: with the pinyin row shown the player is recalling the word from
+     * its meaning with a phonetic crutch (PRODUCTION); without it they must read
+     * the bare characters (READING).
+     *
+     * Single source of truth for the /api/flashcards/mark call (WordSearchPage)
+     * and the mode sub-card's mark-type chip (WordSearchHubItem).
+     */
+    markType: MarkType;
 }
 
 export const MODE_CONFIGS: WordSearchModeConfig[] = [
-    { mode: "pinyin", showPinyin: true, label: "Pinyin" },
-    { mode: "no-pinyin", showPinyin: false, label: "No Pinyin" },
+    { mode: "pinyin", showPinyin: true, label: "Pinyin", markType: "production" },
+    { mode: "no-pinyin", showPinyin: false, label: "No Pinyin", markType: "reading" },
 ];
 
 /** Resolve a mode slug (from nav state) to its config, or null if missing/invalid

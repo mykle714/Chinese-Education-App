@@ -2,7 +2,7 @@ import { ICommunityLayoutDAL } from '../interfaces/ICommunityLayoutDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { ValidationError } from '../../types/dal.js';
 import { CommunityDesign, VotedDesignKey, VoteResult } from '../../types/community.js';
-import { vetReadFrom, vetTableForLanguage, vetSortedClause } from '../shared/vetTable.js';
+import { vetReadFrom, vetTableForLanguage, vetSortedClause, coreCategoryExpr } from '../shared/vetTable.js';
 import { DICT_JOIN } from '../shared/dictJoin.js';
 import { WEEK_BOUNDARY } from '../shared/weekBoundary.js';
 import { IS_ADVANCED_LAYOUT } from '../shared/advancedLayout.js';
@@ -126,9 +126,12 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
               -- SORTED: the community feed shows cards people deliberately keep,
               -- never a provisional card a game handed them.
               AND ${vetSortedClause('lib')}
-              -- category is derived (migration 101). lib."userId" = $1 = u.id (the
-              -- viewer, already joined), so reuse the viewer's goal flags.
-              AND compute_utcm_category(lib."typedMarkHistory", u."readingGoal", u."writingGoal") <> 'Mastered'
+              -- CORE BAR (migration 143): a word leaves the Learning feed once the
+              -- viewer knows it by sight, which is what "learning" means here. Their
+              -- reading/writing bars are a separate pursuit and must not keep a word
+              -- they have finished circulating in a feed about words they are on.
+              -- Goal-independent, so no users join is needed for it.
+              AND ${coreCategoryExpr('lib')} <> 'Mastered'
           )
           ${this.excludeClause}
         ) d

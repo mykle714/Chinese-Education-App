@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Typography } from "@mui/material";
 import { SpeakerButton } from "../../components/SpeakerButton";
-import { resolveDisplayDefinition } from "../../utils/definitionUtils";
+import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../utils/definitionUtils";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
@@ -49,7 +49,7 @@ const SpeedReadingPrompt: React.FC<SpeedReadingPromptProps> = ({ entry, onSpeak,
                     lineHeight: LEADING.tight,
                 }}
             >
-                {entry.pronunciation ?? ""}
+                {resolveDisplayPronunciation(entry) ?? ""}
             </Typography>
             <Typography
                 className="speed-reading__prompt-definition"

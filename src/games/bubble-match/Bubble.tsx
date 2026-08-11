@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Typography } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
-import { resolveDisplayDefinition } from "../../utils/definitionUtils";
+import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../utils/definitionUtils";
 import { FONTS } from "../../theme/fonts";
 import { API_BASE_URL } from "../../constants";
 import type { BubbleBody, BubbleStatus } from "./types";
@@ -181,7 +181,8 @@ const Bubble: React.FC<BubbleProps> = ({
                             size="sm"
                             justifyContent="center"
                             text={entry.entryKey}
-                            pronunciation={entry.pronunciation}
+                            // Sense-resolved, matching the gloss on the paired bubble.
+                            pronunciation={resolveDisplayPronunciation(entry)}
                             showPinyin={showPinyin}
                             useToneColor={showPinyinColor}
                             // Match flp example sentences: nudge long pinyin syllables apart.

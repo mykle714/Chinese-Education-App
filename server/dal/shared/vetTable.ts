@@ -1,3 +1,12 @@
+import {
+  ALL_COLLECTION_ID,
+  BAND_COLLECTION_IDS,
+  bandCollectionCategory,
+  MASTERED_COLLECTION_IDS,
+  masteredCollectionBar,
+  type MasteryBarId,
+} from '../../contracts/wire.js';
+
 // Resolve the per-language `vocabentries` table (vet) name from a language code.
 // User vocab is split per language family (mirroring the det split, see CLAUDE.md):
 // Chinese saved cards live in `vocabentries_zh`, Spanish in `vocabentries_es`. Both
@@ -132,16 +141,30 @@ export function vetDeckOrProvisionalClause(deckIdParam: string, alias = 've'): s
   return `(${vetDeckClause(deckIdParam, alias)} OR ${vetProvisionalClause(alias)})`;
 }
 
-// In-query utcm category (migration 101, docs/MASTERY_REWORK.md). The `category`
-// column is no longer stored — it is derived from the card's typedMarkHistory AND
-// the account's goal flags, which live on the users row. So any query that needs a
-// card's category must JOIN users (UTCM_USERS_JOIN) and splice UTCM_CATEGORY_EXPR
-// into its SELECT (aliased `category`) and/or WHERE. Both reference `ve` (the vet
-// alias) and `u` (the joined users alias).
-export const UTCM_USERS_JOIN = `JOIN users u ON u.id = ve."userId"`;
-export const UTCM_CATEGORY_EXPR = `compute_utcm_category(ve."typedMarkHistory", u."readingGoal", u."writingGoal")`;
+// In-query utcm category (migration 143, docs/MASTERY_REWORK.md). The `category`
+// column is not stored — it is derived from the card's typedMarkHistory. A query
+// that needs a card's category splices CORE_CATEGORY_EXPR into its SELECT (aliased
+// `category`) and/or WHERE; it references `ve` (the vet alias) only.
+//
+// This is the CORE bar — recognition + production. It is what every whole-card
+// question means: deck counts, the Review gate, level estimation, the mini-card
+// chip, the community Learning feed. Reading and writing have their own bars, which
+// no query bands in SQL because nothing selects or counts by them (the per-bar
+// Mastered collections filter on `compute_type_category`, below, since a
+// single-track bar IS that track's band).
+//
+// Until migration 143 this was `compute_utcm_category(history, readingGoal,
+// writingGoal)` and every such query had to JOIN users for the flags — the
+// `UTCM_USERS_JOIN` that used to live here. The core bar is goal-independent, so
+// that join is gone and a card's band no longer moves when an account toggles a goal.
+// Alias-parameterized form, for the queries that don't call their vet alias `ve`
+// (`lib` in CommunityLayoutDAL). The alias is a caller-supplied literal, never input.
+export function coreCategoryExpr(alias = 've'): string {
+  return `compute_core_category(${alias}."typedMarkHistory")`;
+}
+export const CORE_CATEGORY_EXPR = coreCategoryExpr();
 // Ready-made SELECT-list fragment: the computed category under its column name.
-export const UTCM_CATEGORY_SELECT = `${UTCM_CATEGORY_EXPR} AS category`;
+export const CORE_CATEGORY_SELECT = `${CORE_CATEGORY_EXPR} AS category`;
 
 /**
  * In-query utcm category for ONE mark type (migration 128, docs/MASTERY_REWORK.md
@@ -149,12 +172,95 @@ export const UTCM_CATEGORY_SELECT = `${UTCM_CATEGORY_EXPR} AS category`;
  * positive count instead of the goal-blended pbh, so a game buckets cards by the
  * history of the track it actually exercises.
  *
- * Unlike UTCM_CATEGORY_EXPR this needs NO users join — a per-type band is
- * goal-independent. References `ve` (the vet alias) only.
+ * Also serves the reading/writing BARS (migration 143): a single-track bar's height
+ * is that track's raw positive count, so its band is exactly this. Only the core bar
+ * needs its own function, because only the core bar blends two tracks.
  *
  * The mark type is passed as a BIND PARAMETER, never interpolated: callers hand in
  * the placeholder (e.g. `'$5'`) and bind the MarkType value alongside it.
+ *
+ * @param alias The caller's vet alias — `ve` by default, `lib` in CommunityLayoutDAL.
  */
-export function typeCategoryExpr(markTypeParam: string): string {
-  return `compute_type_category(ve."typedMarkHistory", ${markTypeParam})`;
+export function typeCategoryExpr(markTypeParam: string, alias = 've'): string {
+  return `compute_type_category(${alias}."typedMarkHistory", ${markTypeParam})`;
+}
+
+/**
+ * In-query band expression for ONE mastery bar (migration 143). Core blends its two
+ * tracks; reading/writing ARE their track, so they reuse compute_type_category.
+ *
+ * Nothing user-controlled reaches the SQL: `bar` is a validated union value and the
+ * switch maps it to one of three fixed strings — an unrecognized value cannot fall
+ * through to an interpolation.
+ */
+export function barCategoryExpr(bar: MasteryBarId, alias = 've'): string {
+  switch (bar) {
+    case 'reading':
+      return typeCategoryExpr(`'reading'`, alias);
+    case 'writing':
+      return typeCategoryExpr(`'writing'`, alias);
+    default:
+      return coreCategoryExpr(alias);
+  }
+}
+
+/**
+ * WHERE fragment for "this card is Mastered in the given bar" — the membership test
+ * behind each of the three built-in Mastered collections.
+ */
+export function masteredBarClause(bar: MasteryBarId, alias = 've'): string {
+  return `${barCategoryExpr(bar, alias)} = 'Mastered'`;
+}
+
+/**
+ * Every built-in (non-deck) collection id, in fdp display order: the band row, then
+ * the Mastered row. `learn-now` keeps its own id even though it is exactly the union
+ * of the three band collections — it is the pool every game and the flp default to,
+ * and CLAUDE.md § Terminology names it.
+ */
+export const BUILTIN_COLLECTION_IDS = [
+  ALL_COLLECTION_ID,
+  BAND_COLLECTION_IDS.Unfamiliar,
+  BAND_COLLECTION_IDS.Target,
+  BAND_COLLECTION_IDS.Comfortable,
+  'learn-now',
+  MASTERED_COLLECTION_IDS.core,
+  MASTERED_COLLECTION_IDS.reading,
+  MASTERED_COLLECTION_IDS.writing,
+] as const;
+
+export type BuiltinCollectionId = (typeof BUILTIN_COLLECTION_IDS)[number];
+
+/** Narrow an untrusted `?collection=` value to a built-in id, or null if it isn't one. */
+export function parseBuiltinCollectionId(
+  raw: string | null | undefined
+): BuiltinCollectionId | null {
+  return BUILTIN_COLLECTION_IDS.includes(raw as BuiltinCollectionId)
+    ? (raw as BuiltinCollectionId)
+    : null;
+}
+
+/**
+ * The WHERE fragment that defines each built-in collection's membership — the ONE
+ * place a built-in collection is given its meaning.
+ *
+ * Nothing user-controlled reaches the SQL. `collection` is a validated union value
+ * and every branch returns a fixed string built from the band expressions above; the
+ * band name is never interpolated from the request.
+ *
+ * `all` returns TRUE rather than an empty string so callers can always splice it into
+ * an `AND …` position without a conditional.
+ */
+export function builtinCollectionClause(collection: BuiltinCollectionId, alias = 've'): string {
+  const bar = masteredCollectionBar(collection);
+  if (bar) return masteredBarClause(bar, alias);
+
+  const band = bandCollectionCategory(collection);
+  if (band) return `${coreCategoryExpr(alias)} = '${band}'`;
+
+  // 'learn-now' — every sorted card whose CORE bar is unfinished.
+  if (collection === 'learn-now') return `${coreCategoryExpr(alias)} <> 'Mastered'`;
+
+  // 'all' — no further narrowing beyond the caller's own SORTED/user/language clauses.
+  return 'TRUE';
 }

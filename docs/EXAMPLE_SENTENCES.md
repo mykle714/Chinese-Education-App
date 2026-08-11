@@ -87,12 +87,43 @@ segment's own* `definitionClusters[].sense` labels, written by the tagging pass
 
 **Read-time consumption.** `senseDict` *is* consumed: in `buildSegmentMetadata`
 (`server/dal/shared/segmentString.ts`), when a segment's `senseDict` label matches
-one of its `definitionClusters`, the segment's displayed definition (**dd**) is
-`ddt(matchedCluster)` — the cluster's stripped lead gloss (`server/utils/definitions.ts`
-`ddt`) — instead of the legacy translation string-match
-(`pickDefinitionForTranslatedSentence`). Un-tagged / un-clustered segments keep the
-string-match fallback. (`ddt` = `stripParentheses(cluster.glosses[0])`; the client
-twin lives in `src/utils/definitionUtils.ts`.)
+one of its `definitionClusters`, **that one cluster supplies both halves of the
+segment's popup** — its displayed definition (**dd**) *and* its pronunciation:
+
+| Half | With a matched cluster | Fallback (un-tagged / un-clustered / stale label) |
+|---|---|---|
+| dd | `ddt(matchedCluster)` — the cluster's stripped lead gloss (`server/utils/definitions.ts` `ddt`) | translation string-match (`pickDefinitionForTranslatedSentence`) |
+| pronunciation | `numberedToTonedPinyin(matchedCluster.reading)` | the entry-level `pronunciation` column |
+
+A manual `exampleSentenceDefinitionPronunciationOverride` still wins over both.
+(`ddt` = `stripParentheses(cluster.glosses[0])`; the client twin lives in
+`src/utils/definitionUtils.ts`.)
+
+### Sense-aware pinyin (heteronyms)
+
+The pronunciation half exists because a heteronym's reading **is** a function of its
+sense: `reading` is a hard cluster boundary (docs/DEFINITION_CLUSTERS.md), so the
+entry-level `pronunciation` column is only correct for the entry's *primary* sense.
+Before this, 会 in the "to reckon accounts" sense rendered **huì** in the cpcd row and
+narrated as huì; it now renders **kuài**, and tone coloring follows for free (cpcd
+derives tone from the diacritic). The same value is the pinyin hint passed to cloud
+TTS by tap-to-speak and the drag-scrub, so narration is fixed by the same change.
+
+Two conversions/guards live in `senseReading` (`segmentString.ts`):
+
+- cluster readings are **numbered** (`kuai4 ji4`) while the column is **tone-marked**
+  (`huì jì`), so the reading is converted by `numberedToTonedPinyin`
+  (`server/utils/pinyinTones.ts` — the **server twin** of the pair in `src/utils/textUtils.ts`;
+  keep them in lockstep);
+- the reading is **rejected** unless its syllable count equals the segment's character
+  count, and unless the segment is all-Han. cpcd pairs syllables to characters
+  positionally (`SegmentedSentenceDisplay` only renders per-char pinyin when
+  `syllables.length === segmentLength`), so a clusterer slip that dropped a syllable
+  would shift the entire pinyin row one character; the aligned column value is kept
+  instead.
+
+Covered by `server/__tests__/segmentString.test.ts`
+(`buildSegmentMetadata — sense-aware pronunciation`).
 
 > Replaces the former `segmentGloss` field (an AI-written per-segment "broken
 > English" reading) removed in `SCRIPT_VERSION 4`. `segmentGloss` bundled two jobs —
@@ -103,7 +134,7 @@ twin lives in `src/utils/definitionUtils.ts`.)
 |---|---|---|
 | Generation | `server/scripts/backfill/chinese/backfill-example-sentences.js` (generator/validator/repair) | Produces the sentence text + `translatedVocab`/`sense`/`targetPos` (target-word coverage signal only) |
 | Tagging pass | same file (`tagSentenceSegments` + `callSegmentTagger`) | Runs the read-path GSA on the final text, then tags each segment with `pos`/`sense`/`number`/`tense`; persists `segments` + the four segment-keyed dicts |
-| Read/enrichment | `server/dal/implementations/DictionaryDAL.ts` (`enrichExampleSentencesMetadataBatch`) + `server/dal/shared/segmentString.ts` (`buildSegmentMetadata`) | Renders stored `segments` (live GSA fallback); attaches per-segment pronunciation/definition/wordForms, resolving dd from `senseDict` → `ddt(cluster)` |
+| Read/enrichment | `server/dal/implementations/DictionaryDAL.ts` (`enrichExampleSentencesMetadataBatch`) + `server/dal/shared/segmentString.ts` (`buildSegmentMetadata`, `senseReading`) | Renders stored `segments` (live GSA fallback); attaches per-segment pronunciation/definition/wordForms, resolving **both** dd and pronunciation from `senseDict` → `ddt(cluster)` / `cluster.reading` |
 | Presentation (one sentence) | `src/components/SegmentedSentenceDisplay.tsx` | Renders one sentence's segments as cpcd; hover/tap shows the segment popup; draws the headword underline (`vocabWord`); hosts the drag-scrub gesture (see below) |
 | Presentation (est block) | `src/features/flashcards/ExampleSentenceList.tsx` | **Single source of truth for the est UI** — maps the sentence list into per-sentence cards (speaker button + `SegmentedSentenceDisplay` + English gloss). See below. |
 

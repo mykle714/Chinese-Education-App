@@ -3,7 +3,7 @@ import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory, DefinitionCluster } from '../../types/index.js';
-import { resolveDisplayDefinition } from '../../utils/definitions.js';
+import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../../utils/definitions.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
@@ -766,7 +766,9 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     return result.recordset.map((row) => ({
       id: row.id,
       entryKey: row.entrykey,
-      pronunciation: row.pronunciation ?? null,
+      // Sense-resolved for the same reason the definition below is: a heteronym reads
+      // differently per sense, so the pinyin must follow the pick the gloss follows.
+      pronunciation: resolveDisplayPronunciation(row),
       // These rows are the user's OWN cards, so the related-words list is a dd surface:
       // flatten through the shared resolver (chosen sense -> definitions[0] fallback) rather
       // than shipping det's definitions[0]. The clusters themselves stay server-side.
@@ -899,7 +901,9 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     return result.recordset.map((row) => ({
       vocabEntryId: row.vocabEntryId ?? null,
       entryKey: row.entryKey,
-      pronunciation: row.pronunciation ?? null,
+      // Pass-1 (saved) rows read out their chosen sense's pinyin; pass-2 rows carry NULL
+      // clusters, so this is their plain `pronunciation` column unchanged.
+      pronunciation: resolveDisplayPronunciation(row),
       // Pass-1 (saved) rows resolve to the learner's chosen sense; pass-2 rows carry NULL
       // clusters, so the resolver returns their plain definitions[0] dd unchanged.
       definition: resolveDisplayDefinition(row) || null,

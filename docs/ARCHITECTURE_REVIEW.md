@@ -193,8 +193,12 @@ defines what "Mastered" means — is implemented in:
 |---|---|
 | 1 | `src/utils/masteryCompute.ts` |
 | 2 | `server/utils/masteryCompute.ts` |
-| 3 | SQL `compute_utcm_category()` — `database/migrations/101-mastery-rework-typed-marks-and-goals.sql` |
+| 3 | SQL `compute_utcm_category()` — `database/migrations/101-mastery-rework-typed-marks-and-goals.sql` (**superseded** by `compute_core_category()`, migration 143) |
 | 4 | SQL `compute_type_category()` — migration 128 |
+
+> Migration 143 tightened this further: both TS copies now delegate to the single
+> `server/contracts/mastery.ts`, so the TS side is one implementation re-exported,
+> not two mirrors. Two SQL functions remain to keep in sync with it.
 
 The client file's own header documents the flaw rather than fixing it:
 

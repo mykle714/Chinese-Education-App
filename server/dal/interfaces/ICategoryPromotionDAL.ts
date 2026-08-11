@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import type { MasteryBarId } from '../../contracts/wire.js';
 import { CategoryPromotion, CategoryPromotionInput } from '../../types/velocity.js';
 
 /**
@@ -27,8 +28,16 @@ export interface ICategoryPromotionDAL {
   deleteForMark(vocabEntryId: number, markTimestamp: string, client?: PoolClient): Promise<number>;
 
   /**
-   * Band-steps climbed per language inside the velocity window, for one user.
-   * Languages with no promotions are absent from the map.
+   * Band-steps climbed per language inside the velocity window, for one user,
+   * counting only promotions in `bars` — the mastery bars the account is pursuing
+   * (migration 143). Languages with no promotions are absent from the map.
+   *
+   * Defaults to core-only so a caller that forgets the argument under-reports rather
+   * than crediting a learner for a skill they never opted into.
    */
-  getVelocityByLanguage(userId: string, windowDays: number): Promise<Map<string, number>>;
+  getVelocityByLanguage(
+    userId: string,
+    windowDays: number,
+    bars?: MasteryBarId[]
+  ): Promise<Map<string, number>>;
 }

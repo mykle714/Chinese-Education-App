@@ -298,6 +298,14 @@ export interface VocabEntry extends VocabEntryBase {
   language: Language;
   starterPackBucket: StarterPackBucket;
   createdAt: Date;
+  // `deckAddedAt` is narrowed from the base's `Date | string | null`: the server is
+  // the producer and reads it straight out of pg, which yields a Date. Still optional
+  // — it is only selected by the deck read.
+  //
+  // `masteredAt` is NOT narrowed: it is jsonb since migration 143, so pg hands back
+  // the parsed object on both sides and the base type already describes it exactly.
+  // NULL until some bar's crossing is observed.
+  deckAddedAt?: Date | null;
 }
 
 export interface VocabEntryCreateData {

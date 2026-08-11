@@ -1,5 +1,6 @@
 import { DictionaryEntry, ParticleClassifierEntry, DefinitionCluster } from '../../types/index.js';
 import { ddt } from '../../utils/definitions.js';
+import { numberedToTonedPinyin, readingSyllableCount } from '../../utils/pinyinTones.js';
 
 /**
  * Metadata entry for a dictionary-matched segment (word or character).
@@ -329,6 +330,32 @@ export interface RenderedSegmentMeta {
 }
 
 /**
+ * A tagged sense cluster's `reading` rendered as this segment's pronunciation, or
+ * undefined when it can't safely stand in for the entry-level one.
+ *
+ * Two guards, both about not corrupting the cpcd pinyin row:
+ *  - **syllable count must equal the segment's character count.** cpcd pairs syllables to
+ *    characters positionally (`SegmentedSentenceDisplay` only renders per-char pinyin when
+ *    `syllables.length === segmentLength`), so a cluster whose reading lost or gained a
+ *    syllable — a clusterer slip, or an erhua/bound-form reading — would shift every
+ *    syllable one character to the left. Better to keep the entry-level reading, which the
+ *    pinyin backfills guarantee is aligned.
+ *  - **CJK-only segments.** Punctuation and Latin runs never carry a reading.
+ *
+ * The card-level twin of this rule is `resolveDisplayPronunciation`
+ * (`server/utils/definitions.ts` / `src/utils/definitionUtils.ts`), which resolves the same
+ * per-sense reading from the learner's `selectedSense` instead of from a sentence's tag; it
+ * compares against the `pronunciation` column's syllable count for the same reason.
+ */
+function senseReading(reading: string | null | undefined, segment: string): string | undefined {
+  if (!reading?.trim()) return undefined;
+  const chars = [...segment];
+  if (!chars.every(ch => HAS_HAN.test(ch))) return undefined;
+  if (readingSyllableCount(reading) !== chars.length) return undefined;
+  return numberedToTonedPinyin(reading);
+}
+
+/**
  * Build the segment→metadata map shared by every Chinese enrichment path
  * (example sentences, long definition).
  *
@@ -347,8 +374,10 @@ export interface RenderedSegmentMeta {
  * @param opts.includeWordForms - When true, attach segMeta.wordForms (example sentences only)
  * @param opts.senseDict - Per-segment sense labels (from the example-sentence tagging pass,
  *   backfill-example-sentences.js). When a segment's label matches one of that segment's own
- *   definitionClusters, the segment's definition (dd) is resolved as ddt(matchedCluster) —
- *   the cluster's stripped lead gloss — instead of the translation string-match fallback.
+ *   definitionClusters, that cluster supplies BOTH halves of the segment's popup: the
+ *   definition (dd) is ddt(matchedCluster) instead of the translation string-match fallback,
+ *   and the pronunciation is the cluster's own `reading` (tone-marked) instead of the
+ *   entry-level one — so a heteronym is read as the sense the sentence actually uses.
  */
 export function buildSegmentMetadata(
   segments: string[],
@@ -374,8 +403,24 @@ export function buildSegmentMetadata(
     const entry: RenderedSegmentMeta = {};
 
     if (segMeta) {
-      // Verbatim overrides win; otherwise fall back to stored pronunciation.
-      const pronunciation = segMeta.overridePronunciation ?? segMeta.pronunciation;
+      // The sense this segment carries HERE, as tagged by the example-sentence tagging
+      // pass. It drives BOTH the displayed definition and the pronunciation below, so a
+      // heteronym reads as the same sense on both halves of the popup.
+      const senseLabel = senseDict?.[seg];
+      const matchedCluster = senseLabel && segMeta.definitionClusters
+        ? segMeta.definitionClusters.find(c => c.sense === senseLabel)
+        : undefined;
+
+      // Pronunciation resolution priority:
+      //   1. manual override (verbatim),
+      //   2. the tagged sense's own cluster `reading` — heteronyms are a hard cluster
+      //      boundary (docs/DEFINITION_CLUSTERS.md), so this is the ONLY sense-correct
+      //      source: 会 in the "to reckon accounts" sense is kuài, not the entry-level huì,
+      //   3. the entry-level stored pronunciation (un-tagged/un-clustered segments).
+      // Cluster readings are numbered ("kuai4"), the column is tone-marked ("huì"), so the
+      // reading is converted before it can stand in for it.
+      const clusterPronunciation = senseReading(matchedCluster?.reading, seg);
+      const pronunciation = segMeta.overridePronunciation ?? clusterPronunciation ?? segMeta.pronunciation;
       if (pronunciation) entry.pronunciation = pronunciation;
       // Definition resolution priority:
       //   1. manual override (verbatim),
@@ -383,10 +428,6 @@ export function buildSegmentMetadata(
       //      stripped lead gloss (the sense the tagging pass says this segment carries here),
       //   3. translation string-match against the flat definitions (legacy fallback, and the
       //      only path for un-tagged/un-clustered segments).
-      const senseLabel = senseDict?.[seg];
-      const matchedCluster = senseLabel && segMeta.definitionClusters
-        ? segMeta.definitionClusters.find(c => c.sense === senseLabel)
-        : undefined;
       // ddt can be "" when the cluster's lead gloss is purely parenthetical (e.g. a
       // particle's "(grammatical particle …)"); `|| undefined` lets that empty result
       // fall through to the string-match fallback instead of blanking the definition.

@@ -91,8 +91,8 @@ No new tables/columns. Both destinations already exist in
 
 | Quick Mark state | Internal bucket    | Effect                                                          |
 | ---------------- | ------------------ | -------------------------------------------------------------- |
-| green ✓          | `library`          | upsert vet row, empty history → GENERATED category `Unfamiliar` |
-| blue M           | `already-learned`  | upsert vet row + perfect 8/8 history → GENERATED category `Mastered` |
+| green ✓          | `library`          | upsert vet row, empty history → core band `Unfamiliar` |
+| blue M           | `already-learned`  | upsert vet row + 8/8 on the **core** tracks (reading/writing stay 0) → core band `Mastered` |
 
 Because both write a vet row, and the supply query excludes any word the user
 has a vet row for (`_fetchSupplyRows` `NOT EXISTS (vet …)`,
@@ -211,11 +211,13 @@ spacer the last card row overlaps the floating footer pill by ~50px.
 ### Dependency: the "already-learned" → Mastered write
 
 Quick Mark's blue-M path delegates to `sortCard`'s `already-learned` branch, which
-seeds a perfect history so the card reads as Mastered. That write goes through
-`VocabEntryDAL.updateTypedMarkHistory` (`typedMarkHistory`, migration 101 — the
-[MASTERY_REWORK](./MASTERY_REWORK.md) typed-mark model), NOT the old generated
-`category` / `markHistory`. Quick Mark inherits whatever `sortCard` does here; if the
-mastery model changes again, no Quick Mark code needs to change.
+seeds `coreMasteredTypedMarkHistory` so the card's **core** bar reads Mastered —
+recognition + production at 8/8, reading and writing left at 0 (migration 143; see
+[MASTERY_REWORK § "Declaring a card already known"](./MASTERY_REWORK.md)). That write
+goes through `VocabEntryDAL.updateTypedMarkHistory` (`typedMarkHistory`, migration
+101), NOT the old generated `category` / `markHistory`. Quick Mark inherits whatever
+`sortCard` does here — this very change needed no Quick Mark code, which is the point
+of the delegation.
 
 ## 9. Resolved decisions
 

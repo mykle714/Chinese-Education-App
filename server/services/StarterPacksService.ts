@@ -5,8 +5,8 @@ import { DiscoverCard, StarterPackBucket, SortPack } from '../types/index.js';
 import { SortPackRow } from '../types/sortPacks.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, UTCM_USERS_JOIN, UTCM_CATEGORY_EXPR, vetSortedClause } from '../dal/shared/vetTable.js';
-import { perfectTypedMarkHistory } from '../utils/masteryCompute.js';
+import { vetTableForLanguage, CORE_CATEGORY_EXPR, vetSortedClause } from '../dal/shared/vetTable.js';
+import { coreMasteredTypedMarkHistory } from '../utils/masteryCompute.js';
 import { LazyEnrichmentService } from './LazyEnrichmentService.js';
 
 /**
@@ -230,16 +230,18 @@ export class StarterPacksService {
     const vet = this._vetTable(language);
     const client = await db.getClient();
     try {
-      // category is derived per row from typedMarkHistory + the account's goal flags
-      // (migration 101), so join users for the flags and use compute_utcm_category.
+      // CORE BAR (migration 143): "how much of this level does the learner already
+      // know" is a recognition/production question. Banding it on all three bars would
+      // let a learner who never enabled the reading goal be estimated differently from
+      // one who did, off identical study — and the estimate exists precisely to place
+      // a NEW learner, who has no reading/writing history either way.
       const result = await client.query<{ lvl: number; mastered: string; learning: string }>(`
         SELECT ${levelExpr} AS lvl,
-               COUNT(*) FILTER (WHERE ${UTCM_CATEGORY_EXPR} = 'Mastered')  AS mastered,
-               COUNT(*) FILTER (WHERE ${UTCM_CATEGORY_EXPR} <> 'Mastered') AS learning
+               COUNT(*) FILTER (WHERE ${CORE_CATEGORY_EXPR} = 'Mastered')  AS mastered,
+               COUNT(*) FILTER (WHERE ${CORE_CATEGORY_EXPR} <> 'Mastered') AS learning
         FROM ${vet} ve
         JOIN ${det} de
           ON ve."entryKey" = de.word1 AND de.language = ve.language
-        ${UTCM_USERS_JOIN}
         WHERE ve."userId" = $1
           AND ve.language = $2
           AND ${validPredicate}
@@ -589,10 +591,10 @@ export class StarterPacksService {
       let vocabEntryId: number;
 
       if (!existing) {
-        // `category` is a GENERATED column (migration 67) derived from markHistory,
-        // so it is omitted here: a fresh row's empty history yields 'Unfamiliar', and
-        // the shouldMarkMastered branch below writes an 8/8 history that yields
-        // 'Mastered' automatically.
+        // No `category` to insert: it stopped being a stored column in migration 101
+        // and is now derived on read from "typedMarkHistory" (compute_core_category,
+        // migration 143). A fresh row's empty history reads 'Unfamiliar'; the
+        // shouldMarkMastered branch below seeds the history that reads 'Mastered'.
         const insertResult = await client.query(`
           INSERT INTO ${vetTable} (
             "userId", "entryKey", language, "starterPackBucket"
@@ -624,14 +626,15 @@ export class StarterPacksService {
       }
 
       if (shouldMarkMastered) {
-        // Fill ALL FOUR typed tracks 8/8 so compute_utcm_category resolves to
-        // 'Mastered' under ANY goal configuration (a single maxed track can't
-        // master a card on its own — the first pbh term is capped at 6). See
-        // docs/MASTERY_REWORK.md.
+        // Fill the CORE bar's two tracks 8/8 and leave reading/writing at 0. The
+        // learner is declaring they know the word, not that they can read or write
+        // it — those bars stay honest and start from zero. See
+        // coreMasteredTypedMarkHistory and docs/MASTERY_REWORK.md § "Declaring a
+        // card already known".
         const currentTimestamp: string = new Date().toISOString();
         await this.vocabEntryDAL.updateTypedMarkHistory(
           vocabEntryId,
-          perfectTypedMarkHistory(currentTimestamp),
+          coreMasteredTypedMarkHistory(currentTimestamp),
           8, 8
         );
         console.log(`[StarterPacks] Marked VocabEntry id=${vocabEntryId} as Mastered with a full typed history`);

@@ -6,6 +6,7 @@ import MobileFooter, {
     type FooterTab,
 } from "./MobileFooter";
 import { routeFooterTab } from "../routes/routeMeta";
+import { useFooterSuppressed } from "../hooks/useHideFooter";
 
 // Persistent footer layer. The floating footer pill is rendered ONCE here (inside
 // MobileDemoFrame) rather than inside each page, so it is **omitted from the
@@ -36,7 +37,12 @@ const HIDDEN_OFFSET = FLOATING_FOOTER_INSET + FLOATING_FOOTER_HEIGHT + 16;
 const FooterPresenter: React.FC = () => {
     const { pathname } = useLocation();
     const activePage = routeFooterTab(pathname);
-    const visible = activePage !== undefined;
+    // Two independent reasons to be hidden, sharing ONE slide-down animation:
+    //   • the route is footerless (`activePage === undefined`) — permanent, navigational
+    //   • a page is holding it suppressed — transient, e.g. a modal sheet is open
+    //     (see FooterVisibilityContext / useHideFooter)
+    const suppressed = useFooterSuppressed();
+    const visible = activePage !== undefined && !suppressed;
 
     // Keep showing the last active tab while sliding OUT, so the pill doesn't
     // blank or flip its highlight as it leaves.

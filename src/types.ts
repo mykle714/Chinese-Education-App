@@ -117,6 +117,13 @@ export interface DictionaryEntry extends DictionaryEntryBase {
  */
 export interface VocabEntry extends VocabEntryBase {
   createdAt: string;
+  // Narrowed from the base's `Date | string | null` — everything the client sees has
+  // been through JSON, so a timestamp is always an ISO string here. Stays optional:
+  // `deckAddedAt` is present only on rows loaded from a deck.
+  //
+  // `masteredAt` is NOT redeclared: since migration 143 it is a per-bar jsonb object
+  // whose values are already ISO strings on both sides, so the base type is exact.
+  deckAddedAt?: string | null;
 }
 
 /**

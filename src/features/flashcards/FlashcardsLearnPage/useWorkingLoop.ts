@@ -352,14 +352,22 @@ export function useWorkingLoop({
                     // Pull the replacement's audio into the in-session blob cache
                     // while the user is studying other cards in the loop.
                     prefetch(newCard);
-                } else if (mode && isCorrect && !newCard) {
-                    // Mode session, card passed, but the eligible pool is exhausted —
-                    // wind the loop down by removing the just-passed card instead of
-                    // recycling it. Remove by id (the optimistic currentIndex has
-                    // already advanced, so index math would be brittle), then re-anchor
-                    // currentIndex to the card now on front (the one promoted on dismiss)
-                    // so the visible card doesn't jump. Empty loop ⇒ currentEntry null
-                    // ⇒ "no more <mode> cards remaining" empty state.
+                } else if (isCorrect && !newCard) {
+                    // Card passed, but the server has no replacement — wind the loop
+                    // down by removing the just-passed card instead of recycling it.
+                    //
+                    // This is no longer mode-only. The server honors the per-type
+                    // cooldown rather than re-serving a resting card, so ANY session can
+                    // legitimately run out: a mode/deck/Mastered round when its allowed
+                    // pool is spent, and even an unrestricted round when every card is
+                    // cooling and the dictionary has no more words to lend. Keeping the
+                    // old `mode &&` guard would recycle the passed card forever in those
+                    // sessions, re-showing a card the server just declined to serve.
+                    //
+                    // Remove by id (the optimistic currentIndex has already advanced, so
+                    // index math would be brittle), then re-anchor currentIndex to the
+                    // card now on front (the one promoted on dismiss) so the visible card
+                    // doesn't jump. Empty loop ⇒ currentEntry null ⇒ empty state.
                     const preLoop = preDismissSnapshot.workingLoop;
                     const promotedCard = preLoop.length > 1
                         ? preLoop[(preDismissSnapshot.currentIndex + 1) % preLoop.length]

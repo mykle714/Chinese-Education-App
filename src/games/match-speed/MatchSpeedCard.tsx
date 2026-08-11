@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { Box, useTheme } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
-import { resolveDisplayDefinition, stripParentheses } from "../../utils/definitionUtils";
+import { resolveDisplayDefinition, resolveDisplayPronunciation, stripParentheses } from "../../utils/definitionUtils";
 import type { Language } from "../../types";
 import type { BoardCard, CardVisualState } from "./types";
 import {
@@ -244,7 +244,9 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                     size="sm"
                     justifyContent="center"
                     text={card.entry.entryKey}
-                    pronunciation={card.entry.pronunciation}
+                    // Sense-resolved for the same reason the gloss is: the two faces of one pair
+                    // must describe the SAME sense (see the gloss comment above).
+                    pronunciation={resolveDisplayPronunciation(card.entry)}
                     showPinyin={showPinyin}
                     useToneColor={showPinyinColor}
                     pinyinShift

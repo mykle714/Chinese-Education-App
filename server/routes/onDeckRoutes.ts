@@ -15,17 +15,18 @@ const router = Router();
 // Get all library cards (vocab entries from *-library OnDeck sets)
 router.get('/api/onDeck/libraryCards', authenticateToken, handle(onDeckVocabController.getLibraryCards, onDeckVocabController));
 
-// Get mastered library cards (library cards with category = 'Mastered')
-router.get('/api/onDeck/masteredLibraryCards', authenticateToken, handle(onDeckVocabController.getMasteredLibraryCards, onDeckVocabController));
-
-// Get non-mastered library cards (library cards without category = 'Mastered')
-router.get('/api/onDeck/nonMasteredLibraryCards', authenticateToken, handle(onDeckVocabController.getNonMasteredLibraryCards, onDeckVocabController));
+// The contents of one built-in collection (?collection=all|unfamiliar|target|
+// comfortable|learn-now|mastered|mastered-reading|mastered-writing). Replaces the old
+// masteredLibraryCards / nonMasteredLibraryCards pair — see docs/DECKS_FEATURE.md.
+router.get('/api/onDeck/collectionCards', authenticateToken, handle(onDeckVocabController.getCollectionCards, onDeckVocabController));
 
 // Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target)
 router.get('/api/onDeck/distributedWorkingLoop', authenticateToken, handle(onDeckVocabController.getDistributedWorkingLoop, onDeckVocabController));
 
 // Per-category library card counts (drives the decks page bucket counts)
 router.get('/api/onDeck/categoryCounts', authenticateToken, handle(onDeckVocabController.getCategoryCounts, onDeckVocabController));
+// Mastered counts per mastery bar — the fdp's up-to-three Mastered rows (migration 143).
+router.get('/api/onDeck/masteredCounts', authenticateToken, handle(onDeckVocabController.getMasteredCounts, onDeckVocabController));
 
 // Bubble-match game pool (15 Target + 10 Comfortable by default)
 router.get('/api/onDeck/gamePool', authenticateToken, handle(onDeckVocabController.getGamePool, onDeckVocabController));

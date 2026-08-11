@@ -1,27 +1,35 @@
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Box, Typography, IconButton, Button, Chip, Menu, MenuItem } from "@mui/material";
+import { Box, Typography, IconButton, Button, Chip, CircularProgress, Menu, MenuItem } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import UndoIcon from "@mui/icons-material/Undo";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import NodePage from "../../components/NodePage";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { FLOATING_FOOTER_CLEARANCE } from "../../components/MobileFooter";
+import { useHideFooter } from "../../hooks/useHideFooter";
 import ForeignText from "../../components/ForeignText";
 import FrequencyScoreDots from "../../components/FrequencyScoreDots";
 import SpeakerButton from "../../components/SpeakerButton";
+import InfoCardSection from "../flashcards/FlashcardsLearnPage/InfoCardSection";
+import EipTabStrip from "../flashcards/FlashcardsLearnPage/EipTabStrip";
+import TooManyTabsSnackbar from "../flashcards/FlashcardsLearnPage/TooManyTabsSnackbar";
+import { useEipTabs } from "../flashcards/FlashcardsLearnPage/useEipTabs";
 import { API_BASE_URL } from "../../constants";
 import { fetchStarterPacks, fetchNextPack, sortCard, skipPack, undoSort } from "./starterPacksApi";
 import { fetchProvisionalSortSet } from "../../api/provisional";
+import { lookupVocabEntry } from "../../api/dictionary";
 import { stripParentheses } from "../../utils/definitionUtils";
 import type { Language, DiscoverCard, SortPack } from "../../types";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useAuth } from "../../AuthContext";
 import { useTTS } from "../../hooks/useTTS";
 import { useDiscoverSettings } from "../../hooks/useDiscoverSettings";
+import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useCategoryCounts } from "../../hooks/useCategoryCounts";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -99,9 +107,46 @@ const ContentArea = styled(Box)({
     flexDirection: "column",
     alignSelf: "stretch",
     overflow: "visible",
+    // Containing block for the eip sheet host below (EipHost is absolutely
+    // positioned against this box), mirroring the flp's ContentArea.
+    position: "relative",
     userSelect: "none",
     WebkitUserSelect: "none",
     touchAction: "none",
+});
+
+// Positioning host for the eip bottom sheet (docs/SORT_CARDS_REQUIREMENTS.md §4.7).
+// SheetPanel's scrim is `absolute; inset: 0` and its sheet is `absolute; bottom: 0`,
+// both resolved against THIS element, and SheetPanel sizes the sheet from
+// `parentElement.clientHeight` — so this host defines both the scrim's extent and the
+// sheet's maximum height.
+//
+// The negative bottom is load-bearing: ContentArea stops at MobileTabScreen's
+// ScrollArea *content* box, which sits FLOATING_FOOTER_CLEARANCE (108px) above the
+// screen bottom so page content clears the floating footer pill. A sheet pinned to
+// ContentArea's bottom would therefore hover with a 108px band of page background
+// beneath it. Stretching the host down through that reserved band pins the sheet flush
+// to the real bottom edge; the ScrollArea's own `overflow: hidden` clips anything past
+// it. This is the same trick OnDeckSection uses to paint the platform under the pill.
+// The pill itself cannot be layered under the sheet (it is rendered at frame level by
+// FooterPresenter, outside this page's DOM, so no z-index here reaches it) — instead the
+// page slides it away for the sheet's lifetime via useHideFooter. The reserved band
+// stays reserved either way, which is why this offset is unconditional.
+//
+// The z-index is load-bearing too. Every on-deck card carries `zIndex: 1000` (see
+// CardShell's inline style — it lifts a card being dragged above its neighbours and the
+// buckets), which beats SheetPanel's internal scrim/sheet z-indexes of 10/11 outright:
+// without this the cards paint straight through the open sheet. Setting a z-index here
+// makes EipHost a stacking context, so the whole sheet moves as one above the cards and
+// SheetPanel's internal ordering is left untouched.
+const EIP_HOST_Z_INDEX = 1100; // > CardShell's 1000
+const EipHost = styled(Box)({
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: -FLOATING_FOOTER_CLEARANCE,
+    zIndex: EIP_HOST_Z_INDEX,
 });
 
 // The two destination buckets, laid out evenly across the top. A definite height lets
@@ -236,6 +281,17 @@ const CardSlot = styled(Box)({
     flexDirection: "column",
     alignItems: "center",
     gap: 6,
+});
+
+// Footer band below each card: the per-card actions (play audio, open the eip). Both
+// buttons are MUI `size="small"` IconButtons (32px hit target), which is the height
+// CardSlotPlaceholder mirrors so a sorted-away slot stays exactly as tall as a live one.
+const CardActionRow = styled(Box)({
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
 });
 
 // Header band above each card: the "Commonality" caption over the 5-dot register meter
@@ -563,6 +619,10 @@ const SortCardsPage: React.FC = () => {
     }, [searchParams]);
     const tts = useTTS();
     const { settings: discoverSettings, update: updateDiscoverSettings } = useDiscoverSettings();
+    // The eip renders pinyin per the SAME saved preference the flp uses, so a learner who
+    // turned pinyin off there doesn't get it back here. scp deliberately exposes no toggle
+    // of its own — the panel is a read-only detour, not a second settings surface.
+    const { settings: learnSettings } = useFlashcardLearnSettings();
     const audioUnlockedRef = useRef(false);
     // `useTTS` returns a NEW object identity every time its internal `speakingKey` state
     // flips — which happens on every autoplay narration start/stop. Depending on `tts`
@@ -619,6 +679,23 @@ const SortCardsPage: React.FC = () => {
     //     ONE signal no matter how many of its cards were sorted — §6).
     const autoLevelRef = useRef<number | null>(null);
     const packBucketsRef = useRef<Record<string, Record<number, string>>>({});
+
+    // ---- eip (extra info panel) -------------------------------------------
+    // The same sheet the flp opens, mounted here so a learner can inspect a card
+    // BEFORE deciding which bucket it belongs in (docs/SORT_CARDS_REQUIREMENTS.md §4.7).
+    // useEipTabs owns tab state + the drill-in lookups; `language` is the ROUTE's
+    // language, not the account's, because scp can show either.
+    const eipStripRef = useRef<HTMLDivElement | null>(null);
+    const eip = useEipTabs({ stripRef: eipStripRef, language });
+    const [eipOpen, setEipOpen] = useState(false);
+    // entryKey whose lookup is in flight, so only the tapped card's info button
+    // shows a spinner. Also gates re-taps on that same card.
+    const [eipLoadingKey, setEipLoadingKey] = useState<string | null>(null);
+    // Slide the floating footer pill out while the sheet is up. The pill is rendered at
+    // frame level (outside this page's DOM), so it would otherwise hover ON TOP of the
+    // sheet's content — no z-index here can reach it. Suppression is released
+    // automatically on close and on unmount. See FooterVisibilityContext.
+    useHideFooter(eipOpen);
 
     const bucketRefs = useRef<Map<string, HTMLElement>>(new Map());
     // Bucket geometry snapshotted at drag START — before any bucket is highlighted.
@@ -793,6 +870,40 @@ const SortCardsPage: React.FC = () => {
         },
         [unlockAudioOnce]
     );
+
+    // Open the eip for one on-deck card. A DiscoverCard is NOT a VocabEntry — it carries
+    // none of the clustered senses, extended definition, approval flags or "used in" list
+    // the panel renders — so the word is looked up in det first and adapted, exactly as
+    // the flp's drill-in taps do. The result seeds the panel's ROOT tab (openForRoot), so
+    // the tab strip stays hidden until the user actually drills into a breakdown
+    // character or example segment.
+    //
+    // Failure (no det row / offline) deliberately does nothing visible beyond clearing the
+    // spinner: this is an optional detour off the sort flow, and a blocking error dialog
+    // would be a heavier interruption than the information was worth.
+    const handleOpenCardInfo = useCallback(
+        async (card: DiscoverCard) => {
+            if (eipLoadingKey) return; // one lookup at a time
+            setEipLoadingKey(card.entryKey);
+            try {
+                const entry = await lookupVocabEntry(card.entryKey, language);
+                eip.openForRoot(entry);
+                setEipOpen(true);
+            } catch (error) {
+                console.error(`Failed to open the info panel for "${card.entryKey}":`, error);
+            } finally {
+                setEipLoadingKey(null);
+            }
+        },
+        [eipLoadingKey, language, eip]
+    );
+
+    // Closing drops every tab as well, so reopening on another card starts clean rather
+    // than resuming the previous card's drill-in stack.
+    const handleCloseEip = useCallback(() => {
+        setEipOpen(false);
+        eip.clear();
+    }, [eip]);
 
     // Autoplay: narrate every card in the on-deck pack, left to right, once per
     // pack (keyed on packKey so it fires exactly once when a pack lands on-deck,
@@ -1209,7 +1320,8 @@ const SortCardsPage: React.FC = () => {
                                     >
                                         <CardDeckHeader />
                                         <Box sx={{ width: CARD_WIDTH, height: CARD_HEIGHT }} />
-                                        {/* Mirrors the live slot's speaker-button footer height. */}
+                                        {/* Mirrors the live slot's action-row footer height
+                                            (both buttons are 32px `size="small"`). */}
                                         <Box sx={{ height: 32 }} />
                                     </CardSlotPlaceholder>
                                 );
@@ -1254,17 +1366,110 @@ const SortCardsPage: React.FC = () => {
                                         onSort={handleSortCard}
                                         onFirstDrag={handleCardPickup}
                                     />
-                                    {/* Play-audio button below the card (docs §4.5). */}
-                                    <SpeakerButton
-                                        onClick={() => handlePlayCardAudio(card)}
-                                        isLoading={tts.speakingKey === card.entryKey}
-                                    />
+                                    {/* Per-card actions below the card: play audio (docs
+                                        §4.5) and open the eip (docs §4.7). */}
+                                    <CardActionRow className="sort-cards__card-actions">
+                                        <SpeakerButton
+                                            onClick={() => handlePlayCardAudio(card)}
+                                            isLoading={tts.speakingKey === card.entryKey}
+                                        />
+                                        <IconButton
+                                            className="sort-cards__card-info-button"
+                                            size="small"
+                                            aria-label={`More info about ${card.entryKey}`}
+                                            onClick={() => handleOpenCardInfo(card)}
+                                            disabled={eipLoadingKey !== null}
+                                            sx={{
+                                                color: COLORS.textSecondary,
+                                                "&:hover": { color: COLORS.onSurface },
+                                            }}
+                                        >
+                                            {eipLoadingKey === card.entryKey ? (
+                                                // A plain (not Delayed) CircularProgress:
+                                                // this is button-action feedback for a tap
+                                                // and must appear instantly — see the
+                                                // DelayedCircularProgress docblock. Sized to
+                                                // sit inside the 32px hit target so the row's
+                                                // height never changes mid-lookup.
+                                                <CircularProgress
+                                                    className="sort-cards__card-info-spinner"
+                                                    size={18}
+                                                    thickness={4}
+                                                />
+                                            ) : (
+                                                <InfoOutlinedIcon
+                                                    className="sort-cards__card-info-icon"
+                                                    fontSize="small"
+                                                />
+                                            )}
+                                        </IconButton>
+                                    </CardActionRow>
                                 </CardSlot>
                             );
                         })}
                     </CardsRow>
                 </OnDeckSection>
+
+                {/* eip bottom sheet. Only mounted while open so the open animation
+                    replays on every reopen (same rule as the flp). The scrim inside
+                    SheetPanel covers the buckets and the on-deck cards, so no card can
+                    be dragged while the panel is up — reading about a word and sorting
+                    it are deliberately separate modes. */}
+                {eipOpen && (() => {
+                    // The active tab owns the panel's entry/breakdown/sub-tab. The root
+                    // tab is always seeded before eipOpen flips true, so `active` is
+                    // present; the nulls below are a paint-safety net only.
+                    const active = eip.activeTab;
+                    const compareTab = active?.kind === "compare" ? active : null;
+                    return (
+                        <EipHost className="sort-cards__eip-host">
+                            <InfoCardSection
+                                currentEntry={active?.kind === "entry" ? active.entry : null}
+                                selectedTab={active?.kind === "entry" ? active.selectedSubTab : 0}
+                                onTabChange={eip.setActiveSubTab}
+                                breakdownItems={active?.kind === "entry" ? active.breakdownItems : []}
+                                showPinyin={learnSettings.showPinyin}
+                                showPinyinColor={learnSettings.showPinyinColor}
+                                // scp has no card faces, so there is no "flipped" state to
+                                // mirror — the panel always renders its front-facing layout.
+                                isFlipped={false}
+                                onClose={handleCloseEip}
+                                onBreakdownItemClick={(item) => eip.openForEntryKey(item.character)}
+                                onUsedInItemClick={(item) => eip.openForEntryKey(item.entryKey)}
+                                onExampleSegmentClick={(segment) => eip.openForEntryKey(segment)}
+                                depth={0}
+                                onSpeak={tts.enabled ? tts.speak : undefined}
+                                onSpeakSentence={tts.enabled ? tts.speakSentence : undefined}
+                                speakingKey={tts.speakingKey}
+                                // NOTE: no `onAddToLibrary` — the "+" header button stays
+                                // hidden here on purpose. On scp, adding to Learn Now IS the
+                                // drag gesture the whole page is built around, and a second,
+                                // differently-shaped way to do it inside the panel would
+                                // compete with it. (Drilled-in words can still be added from
+                                // the flp, which is where that affordance lives.)
+                                onOpenCompare={eip.openCompareTab}
+                                compareTab={compareTab}
+                                onSetCompareSlot={eip.setCompareSlot}
+                                onCompareResult={eip.setCompareResult}
+                                tabStrip={
+                                    <EipTabStrip
+                                        tabs={eip.tabs}
+                                        activeIndex={eip.activeIndex}
+                                        onSelect={eip.setActive}
+                                        onCloseActiveTab={() => {
+                                            // Closing the LAST tab closes the whole panel.
+                                            if (eip.closeActiveTab()) handleCloseEip();
+                                        }}
+                                        isTabbedMode={eip.isTabbedMode}
+                                        stripRef={eipStripRef}
+                                    />
+                                }
+                            />
+                        </EipHost>
+                    );
+                })()}
             </ContentArea>
+            <TooManyTabsSnackbar signal={eip.overflowSignal} />
         </NodePage>
     );
 };

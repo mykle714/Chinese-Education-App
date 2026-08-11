@@ -4,6 +4,7 @@ import {
   buildExcludeSet,
   getAllSubstrings,
   segmentWithDict,
+  buildSegmentMetadata,
   splitHanRuns,
   SEGMENTATION_MAX_TOKEN_CHARS,
 } from '../dal/shared/segmentString.js';
@@ -193,5 +194,87 @@ describe('splitHanRuns', () => {
 
   it('handles the empty string', () => {
     expect(splitHanRuns('')).toEqual([]);
+  });
+});
+
+/**
+ * buildSegmentMetadata — the per-segment popup data (pronunciation + dd) behind the
+ * example-sentence tab. See docs/EXAMPLE_SENTENCES.md ("senseDict").
+ *
+ * The point of these: a tagged sense supplies BOTH halves of the popup, so a heteronym
+ * shows the reading of the sense the sentence actually uses (会 = kuài in
+ * "to reckon accounts") rather than the entry-level primary reading.
+ */
+describe('buildSegmentMetadata — sense-aware pronunciation', () => {
+  /** 会: three huì senses + the kuài "reckon accounts" sense, as the clusterer writes them. */
+  function huiEntry(): DictionaryEntry {
+    return {
+      ...entry('会', 5),
+      pronunciation: 'huì',
+      definitions: ['can', 'to reckon accounts'],
+      definitionClusters: [
+        { sense: 'able to / will likely', reading: 'hui4', pos: ['verb'], gender: null, frequencyScore: 5, glosses: ['can'] },
+        { sense: 'to reckon accounts', reading: 'kuai4', pos: ['verb'], gender: null, frequencyScore: 1, glosses: ['to reckon accounts'] },
+      ],
+    } as DictionaryEntry;
+  }
+
+  it('uses the TAGGED sense’s cluster reading, not the entry-level pronunciation', () => {
+    const meta = buildSegmentMetadata(['会'], dict(huiEntry()), {
+      senseDict: { 会: 'to reckon accounts' },
+    });
+    expect(meta['会'].pronunciation).toBe('kuài');
+    expect(meta['会'].definition).toBe('to reckon accounts');
+  });
+
+  it('falls back to the entry-level pronunciation when the segment is un-tagged', () => {
+    const meta = buildSegmentMetadata(['会'], dict(huiEntry()));
+    expect(meta['会'].pronunciation).toBe('huì');
+  });
+
+  it('falls back when the tagged label matches no cluster (stale label after re-clustering)', () => {
+    const meta = buildSegmentMetadata(['会'], dict(huiEntry()), {
+      senseDict: { 会: 'a sense label that no longer exists' },
+    });
+    expect(meta['会'].pronunciation).toBe('huì');
+  });
+
+  it('a manual pronunciation override still wins over the sense reading', () => {
+    const withOverride = {
+      ...huiEntry(),
+      exampleSentenceDefinitionPronunciationOverride: { pronunciation: 'OVERRIDE' },
+    } as DictionaryEntry;
+    const meta = buildSegmentMetadata(['会'], dict(withOverride), {
+      senseDict: { 会: 'to reckon accounts' },
+    });
+    expect(meta['会'].pronunciation).toBe('OVERRIDE');
+  });
+
+  it('rejects a reading whose syllable count does not match the segment length', () => {
+    // cpcd pairs syllables to characters positionally, so a 1-syllable reading on a
+    // 2-character segment would shift the whole pinyin row. Keep the aligned column value.
+    const misaligned = {
+      ...entry('会计', 3),
+      pronunciation: 'kuài jì',
+      definitions: ['accounting'],
+      definitionClusters: [
+        { sense: 'accounting', reading: 'kuai4', pos: ['noun'], gender: null, frequencyScore: 3, glosses: ['accounting'] },
+      ],
+    } as DictionaryEntry;
+    const meta = buildSegmentMetadata(['会计'], dict(misaligned), { senseDict: { 会计: 'accounting' } });
+    expect(meta['会计'].pronunciation).toBe('kuài jì');
+  });
+
+  it('renders a multi-syllable sense reading tone-marked', () => {
+    const kuaiji = {
+      ...entry('会计', 3),
+      pronunciation: 'huì jì',
+      definitions: ['accounting'],
+      definitionClusters: [
+        { sense: 'accounting', reading: 'kuai4 ji4', pos: ['noun'], gender: null, frequencyScore: 3, glosses: ['accounting'] },
+      ],
+    } as DictionaryEntry;
+    const meta = buildSegmentMetadata(['会计'], dict(kuaiji), { senseDict: { 会计: 'accounting' } });
+    expect(meta['会计'].pronunciation).toBe('kuài jì');
   });
 });

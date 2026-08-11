@@ -243,6 +243,8 @@ Current open runbooks:
 - [docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md](./docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md) — unit-slot unlocks + generated unlock schedule; no migration, but the cron SQL **must** be redeployed; **not yet on prod**
 - [docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md](./docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md) — provisional cards (migration 140); the migration **must** land before the new code (it writes a bucket value the old CHECK rejects); **not yet on prod**
 - [docs/SORTABLE_DEPRECATION_DEPLOY_RUNBOOK.md](./docs/SORTABLE_DEPRECATION_DEPLOY_RUNBOOK.md) — dropping the `sortable` column (migration 142); expand/contract, so the migration **must be held back** until the new code is live; **not yet on prod**
+- [docs/COLLECTION_SORT_DEPLOY_RUNBOOK.md](./docs/COLLECTION_SORT_DEPLOY_RUNBOOK.md) — collection Sort by + `masteredAt` (migration 142); the migration **must** land before the new code (the mark/undo handlers read and write the new column); **not yet on prod**
+- [docs/MASTERY_BARS_DEPLOY_RUNBOOK.md](./docs/MASTERY_BARS_DEPLOY_RUNBOOK.md) — three mastery bars (migration 143); ships **together with 142, in that order**, both before the new code; retains `compute_utcm_category()` for the deploy window and needs a follow-up contract migration to drop it; **not yet on prod**
 
 ### Data Deployment (syncing `dictionaryentries_zh` to prod)
 → See [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)

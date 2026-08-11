@@ -17,8 +17,9 @@ A menu item is one of:
 - **`HubMenuRow`** — a single card: a RouterLink-based rounded rectangle, 80%
   of the phone-frame width, centered, `aspect-ratio: 2/1`, with a persistent
   pastel `bgColor` (hardcoded per item, never randomized at render), title
-  top-left, subtitle below it, a large icon tile on the right, and an optional
-  `cornerBadge` pinned to the top-right corner.
+  top-left, subtitle below it, a large icon tile on the right, an optional
+  `cornerBadge` pinned to the top-right corner, and an optional `chip` pinned to
+  the card's bottom-left (see [Chip slot](#chip-slot-cardchipslot-hubmenutsx)).
 - **`HubMenuArrayItem`** — a horizontally-scrolling strip of smaller (70%-wide)
   sub-cards, same visual language as `HubMenuRow`. Desktop gets click-and-drag
   panning via `useDragScroll`; touch/trackpad scroll natively
@@ -45,6 +46,38 @@ sub-card.** A count pinned to a sub-card reads as *that card's* score. Both
 `HubMenuArrayItem` (via `headerTitle`/`headerStat`) and feature-owned strips (via
 the exported `HubMenuGroup` + `HubMenuGroupHeader`, used by `WordSearchHubItem`)
 render the identical header.
+
+### Chip slot (`CardChipSlot`, `HubMenu.tsx`)
+
+An optional pill rendered **inside the card body, below the subtitle** and pinned
+to the card's bottom edge (`margin-top: auto`, `padding-top: 6`). To make the
+bottom-pin possible `RowBody` carries `align-self: stretch`, which overrides
+`cardBaseSx`'s `align-items: flex-start` so the text column spans the card's full
+height; with no chip present that stretch is visually inert.
+
+Bottom-pinning (rather than flowing straight under the subtitle) keeps the chips of
+adjacent cards on one line even when their subtitles differ in length by a line.
+
+Passed as `chip` on `HubMenuRow`, per-sub-card as `chip` on `HubMenuArraySubItem`,
+and as `chip` on the exported `HubMenuCardTitle` (which feature-owned strips use).
+**Per-sub-card, not per-group**, precisely because a strip's choices can differ in
+what the chip says — Word Search's two modes feed different mastery tracks.
+
+Its one consumer today is the Games hub's **`MarkTypeChip`**
+(`src/components/MarkTypeChip.tsx`): a colored dot + the uppercase mastery-track
+name ("RECOGNITION" / "PRODUCTION" / "READING" / "WRITING"), so a player can see
+which track a game feeds before opening it. Dot color and label both come from
+`MARK_TYPE_COLORS` / `MARK_TYPE_LABELS` (`src/utils/masteryCompute.ts`) — the same
+maps the cdp stacked progress bar uses, so one track is one hue app-wide. It sits
+in `components/` rather than `features/flashcards/` because its callers are under
+`src/games/**`, which may not reach into another feature folder
+(docs/FRONTEND_LAYERING.md). `variant` picks the pill fill exactly as
+`HubMenuStatBadge`'s does: `"card"` (default) translucent white for a pastel card,
+`"surface"` a neutral tint for the plain page background.
+
+**Chip vs. corner badge.** The corner badge is *achievement* state that changes as
+you play (⭐ / ×N); the chip is a *static property* of the card. Keeping them at
+opposite corners means a card can carry both without collision.
 
 Both card types accept a `state` prop, forwarded to the underlying
 `RouterLink`/`useSlideNavigate` call as React Router navigation state (used to

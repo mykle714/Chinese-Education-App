@@ -88,6 +88,17 @@ const MOMENTUM_DECAY_PER_FRAME = 0.95;
 // which is exactly how a fling used to "lose its momentum" on a janky frame.
 const MOMENTUM_MAX_FRAME_MS = 32;
 
+// Tolerance (px) for "the sheet is already at its maximum height". The height
+// we write is fractional (parentHeight * MAX_HEIGHT_RATIO) and the height we
+// read back via getBoundingClientRect() is snapped to the device pixel grid, so
+// a maxed sheet routinely measures a hundredth of a pixel SHORT of the cap. An
+// exact `h < maxHeight()` test therefore reads that as "still room to grow" and
+// locks the gesture into "resize" — where the first move is instantly absorbed
+// by the boundary and, because the mode lock is deliberately one-way, the
+// content can never be scrolled again once the sheet is maxed. Comparing with
+// this slack keeps a genuinely-maxed sheet in "scroll".
+const AT_MAX_EPSILON_PX = 1;
+
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 // Shared 3-stop snap rule used by every release path (grabber drag, touch
@@ -361,7 +372,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 // Take over from the height that is actually on screen — the
                 // sheet may still be mid open/snap animation.
                 const h = freezeHeight();
-                if (dy > 0) gestureMode = h < maxHeight() ? "resize" : "scroll";
+                if (dy > 0) gestureMode = h < maxHeight() - AT_MAX_EPSILON_PX ? "resize" : "scroll";
                 else gestureMode = scrollEl.scrollTop > 0 ? "scroll" : "resize";
             }
             if (gestureMode === "scroll") {

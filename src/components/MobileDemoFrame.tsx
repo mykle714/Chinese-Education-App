@@ -3,6 +3,7 @@ import { Box, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { COLORS } from "../theme/colors";
 import FooterPresenter from "./FooterPresenter";
+import { FooterVisibilityProvider } from "./FooterVisibilityContext";
 
 // Shared phone-frame container for every mobile-demo route. This is the single
 // source of truth for the "iPhone surface" sizing — pages under
@@ -55,10 +56,14 @@ const MobileDemoFrame: React.FC<MobileDemoFrameProps> = ({ children, className }
 
     return (
         <FrameRoot className={className ?? "mobile-demo-frame"} sx={desktopSx}>
-            {children}
-            {/* Single persistent footer pill, animated independently of the page
-                slides (it lives outside the page surfaces). See FooterPresenter. */}
-            <FooterPresenter />
+            {/* The provider must wrap BOTH the pages and the footer: pages take
+                suppression holds (useHideFooter), FooterPresenter reads them. */}
+            <FooterVisibilityProvider>
+                {children}
+                {/* Single persistent footer pill, animated independently of the page
+                    slides (it lives outside the page surfaces). See FooterPresenter. */}
+                <FooterPresenter />
+            </FooterVisibilityProvider>
         </FrameRoot>
     );
 };

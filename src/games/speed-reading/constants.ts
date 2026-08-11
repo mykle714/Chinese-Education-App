@@ -1,5 +1,19 @@
+import type { MarkType } from "../../types";
+
 /** `wins` table key, shared with the Games hub's badge. */
 export const GAME_KEY = "speedReading";
+
+/**
+ * The mastery track this game feeds (docs/MASTERY_REWORK.md). A round shows a
+ * foreign clue and asks the player to pick the matching word by sight, which is
+ * READING, not recognition — so both the pool query and every mark it writes use
+ * that track.
+ *
+ * Single source of truth for the `?markType=` pool query (useSpeedReadingQueue),
+ * the /api/flashcards/mark call (SpeedReadingPage), and the Games hub's mark-type
+ * chip (via GAME_REGISTRY's `markType`).
+ */
+export const MARK_TYPE: MarkType = "reading";
 
 /**
  * Speed Reading has no difficulty levels, so every win is recorded at level 1 —

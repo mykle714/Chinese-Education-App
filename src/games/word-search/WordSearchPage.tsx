@@ -26,9 +26,10 @@ import { saveGameState, loadGameState, clearGameState, type SavedWordSearchState
 import { GAME_KEY, WIN_LEVEL, GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor } from "./constants";
 import type { Language } from "../../types";
 import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
-import SortProvisionalCta from "../../components/SortProvisionalCta";
+import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
+import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { formatTimeMs } from "../../utils/timeUtils";
-import { countPinyinUnits } from "./pinyinUnits";
+import { countPinyinRevealSteps } from "./pinyinUnits";
 import { countComponentUnits } from "./componentUnits";
 import type { BonusWord, PlacedWord, WordSearchResponse } from "./types";
 
@@ -77,6 +78,9 @@ const WordSearchPage: React.FC = () => {
     const [modeConfig] = useState(() => modeConfigFor((location.state as { mode?: string } | null)?.mode));
     const mode = modeConfig?.mode;
     const showPinyin = modeConfig?.showPinyin ?? false;
+    // Which mastery track a find marks — a property of the chosen mode, not of this
+    // page. Undefined only in the no-valid-mode case, which redirects to /games.
+    const markType = modeConfig?.markType;
     const showPinyinColor = true;
 
     // Whether this mount was launched from the hub's RESUME card (restore the
@@ -110,9 +114,11 @@ const WordSearchPage: React.FC = () => {
     // Hint meter: each successful find adds a unit (capped at HINT_BAR_UNITS); a
     // hint is spendable once >= HINT_COST units are banked. The hint row is
     // BLANK until the first hint spend. `hintEntryKey` is the one word currently
-    // being hinted (or null); `hintRevealCount` is how many of its pinyin
-    // units (see pinyinUnits.ts) have been revealed, hangman-style — each further
-    // hint reveals another unit of the SAME word until it's found (row clears)
+    // being hinted (or null); `hintRevealCount` is how many reveal steps of that
+    // word have been bought, hangman-style — on the Pinyin board the first steps
+    // buy each character's letter count in turn and the rest buy phonetic units
+    // (see pinyinUnits.ts / WordSearchHintRow's buildMask) — each further hint
+    // buys another step of the SAME word until it's found (row clears)
     // or fully spelled out. Once fully spelled out, pressing hint again doesn't
     // move on to a different word: it flips `hintLocationRevealed` (the word's
     // actual grid cells show in yellow, persistently, until it's found) and
@@ -403,6 +409,27 @@ const WordSearchPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]);
 
+    // ── Popup pause gate ─────────────────────────────────────────────────────
+    // No game clock may run while a MODAL popup covers the board. Word Search's
+    // clock counts UP and is the run's score, so time spent reading the
+    // provisional-cards notice or changing settings would show up as a worse
+    // result. Both overlays block input, so a frozen clock can't be used to study
+    // the live grid. The in-grid gloss popups are deliberately NOT included: they
+    // are small anchored tooltips that leave the board playable, so pausing on
+    // them would hand out a free stopwatch stop. Shared rule across all four games
+    // — see docs/GAMES_FEATURE.md § Popups pause the clock.
+    const clockPaused = noticeOpen || settingsOpen;
+    // Read by the visibility listener below, which fires outside React's render
+    // and must not resume a clock a popup is still holding.
+    const clockPausedRef = useRef(clockPaused);
+    clockPausedRef.current = clockPaused;
+
+    useEffect(() => {
+        if (phase !== "playing") return;
+        if (clockPaused) pauseTimer();
+        else resumeTimer();
+    }, [phase, clockPaused, pauseTimer, resumeTimer]);
+
     // Pause on backgrounding (tab hidden / app switched away), resume on
     // return — snapshot to localStorage first so a background pause that
     // never comes back (tab closed while hidden) still isn't lost.
@@ -412,7 +439,9 @@ const WordSearchPage: React.FC = () => {
             if (document.hidden) {
                 persistSnapshot();
                 pauseTimer();
-            } else {
+            } else if (!clockPausedRef.current) {
+                // Coming back to a board with a popup still open leaves the clock
+                // paused; the popup's own effect resumes it on dismiss.
                 resumeTimer();
             }
         };
@@ -469,18 +498,21 @@ const WordSearchPage: React.FC = () => {
         if (hintedWordsRef.current.has(word.entryKey)) return;
         // Board mode decides the mark type (docs/MASTERY_REWORK.md): the "Pinyin"
         // board is a production drill; the "No Pinyin" board is a reading drill
-        // (recognizing the characters without the pinyin crutch). Word Search only
-        // ever emits POSITIVE marks — a found word is a correct answer.
+        // (recognizing the characters without the pinyin crutch). That mapping lives
+        // on the mode's config (WordSearchModeConfig.markType) so the hub's
+        // mark-type chip and this call can never disagree. Word Search only ever
+        // emits POSITIVE marks — a found word is a correct answer.
         // excludeIds defaults to []: the game doesn't use the replacement card the
         // endpoint returns, so there's nothing to dedupe against.
+        if (!markType) return;
         markFlashcard({
             cardId: word.id,
             isCorrect: true,
-            type: mode === "no-pinyin" ? "reading" : "production",
+            type: markType,
         }).catch((err) => console.error(`[WordSearch] mark failed → card ${word.id}:`, err));
         // No `token` dep — markFlashcard reads the header at call time, so this
         // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
-    }, [mode]);
+    }, [markType]);
 
     // Play a word's narration (guarded by the TTS enabled flag). Shared by the
     // find-time play below and the grid's tap-to-replay / blue-match plays; the
@@ -530,14 +562,16 @@ const WordSearchPage: React.FC = () => {
 
     // How many reveals the hinted word offers before its location is the only thing
     // left to give. The two boards spend DIFFERENT currencies for the same ladder:
-    // the Pinyin board spells out phonetic units, while the No Pinyin board — which
-    // exists to hide exactly that — reveals sub-character component glyphs and then
-    // the character itself, per character (see componentUnits.ts). Everything after
-    // "fully revealed" (location reveal, then the free re-shake) is shared.
+    // the Pinyin board buys each character's letter count first and then spells out
+    // phonetic units (countPinyinRevealSteps = chars + units), while the No Pinyin
+    // board — which exists to hide exactly that — reveals sub-character component
+    // glyphs and then the character itself, per character (see componentUnits.ts).
+    // Everything after "fully revealed" (location reveal, then the free re-shake)
+    // is shared.
     const totalRevealUnits = useCallback(
         (word: PlacedWord): number =>
             showPinyin
-                ? countPinyinUnits(word.pinyin)
+                ? countPinyinRevealSteps(word.pinyin)
                 : countComponentUnits(word.entryKey, word.charComponents),
         [showPinyin]
     );
@@ -631,6 +665,9 @@ const WordSearchPage: React.FC = () => {
             {children}
         </Box>
     );
+
+    // End-of-run offer to keep the lent cards; opens a beat after the win popup.
+    const sortOffer = useProvisionalSortOffer(phase === "won", data?.provisionalWords ?? []);
 
     let content: React.ReactNode = null;
 
@@ -736,11 +773,6 @@ const WordSearchPage: React.FC = () => {
                             Time {formatTimeMs(finalMs)} — {medal.medal} medal
                         </Typography>
                         <Box className="word-search__win-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%", maxWidth: 260 }}>
-                            {/* Renders nothing unless this grid used lent cards. */}
-                            <SortProvisionalCta
-                                words={data?.provisionalWords ?? []}
-                                language={(user?.selectedLanguage ?? "zh") as Language}
-                            />
                             <Button className="word-search__play-again" variant="contained" onClick={resetBoard} sx={{ borderRadius: "12px", textTransform: "none", fontWeight: WEIGHT.bold }}>
                                 Play Again
                             </Button>
@@ -750,6 +782,18 @@ const WordSearchPage: React.FC = () => {
                         </Box>
                     </GameEndPopup>
                 )}
+
+                {/* Opens a beat after the win popup and stacks over it, collapsing to
+                    the opposite corner. Renders nothing unless this grid used lent cards. */}
+                <ProvisionalSortOffer
+                    open={sortOffer.open}
+                    words={data?.provisionalWords ?? []}
+                    language={(user?.selectedLanguage ?? "zh") as Language}
+                    onDismiss={sortOffer.dismiss}
+                    minimized={sortOffer.minimized}
+                    onMinimize={sortOffer.onMinimize}
+                    onRestore={sortOffer.onRestore}
+                />
             </Box>
         );
     }

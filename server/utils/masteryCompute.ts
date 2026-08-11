@@ -6,10 +6,10 @@
  * is a re-export so every existing `from '../utils/masteryCompute.js'` import keeps
  * working; it holds no logic of its own.
  *
- * The SQL functions `compute_utcm_category()` (migration 101) and
- * `compute_type_category()` (migration 128) still exist because the generated
- * `vocabentries_*.category` column depends on them. They are pinned to this
- * implementation by `server/__tests__/mastery.test.ts`.
+ * The SQL functions `compute_core_category()` (migration 143) and
+ * `compute_type_category()` (migration 128) still exist because the selection queries
+ * band cards in-query. They are pinned to this implementation by
+ * `server/__tests__/mastery.test.ts`.
  *
  * See docs/MASTERY_REWORK.md.
  */
@@ -24,12 +24,19 @@ export {
   bandsClimbed,
   positiveCount,
   positivesByType,
-  goalTypes,
-  progressBarHeight,
+  BAR_MARK_TYPES,
+  barForMarkType,
+  activeBars,
+  isBarActive,
+  coreProgressBarHeight,
+  barProgressBarHeight,
+  barCategory,
   categoryForPbh,
-  computeUtcm,
+  computeCoreCategory,
   computeTypeCategory,
   masteryBar,
+  masteryBars,
+  masteredAtForBar,
   appendTypedMark,
-  perfectTypedMarkHistory,
+  coreMasteredTypedMarkHistory,
 } from '../contracts/mastery.js';

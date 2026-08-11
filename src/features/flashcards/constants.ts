@@ -73,6 +73,16 @@ export const TAB_LABELS = ["definition", "examples", "breakdown"];
 // travel before release advances the tab instead of snapping back.
 export const TAB_SWIPE_AXIS_LOCK_PX = 8;
 export const TAB_SWIPE_COMMIT_RATIO = 0.22;
+// Rubber-band at the ends of the strip. Swiping left on the LAST tab (breakdown /
+// "used in") or right on the FIRST one used to clamp the track to exactly zero
+// travel, which is visually identical to "this tab has no swipe" — the gesture
+// looked broken rather than bounded. The track now follows the finger at
+// EDGE_RUBBER_RATIO of its travel, capped at EDGE_RUBBER_MAX_PX, and springs back
+// on release (settleDrag can never commit past an end, so the snap-back is
+// automatic). The cap stays well under paneWidth * TAB_SWIPE_COMMIT_RATIO so an
+// overscroll can never read as a committed swipe.
+export const TAB_SWIPE_EDGE_RUBBER_RATIO = 0.25;
+export const TAB_SWIPE_EDGE_RUBBER_MAX_PX = 40;
 // Shared by both swipe-release and tap-triggered slides so the two feel identical.
 export const TAB_SWIPE_TRANSITION = "transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)";
 

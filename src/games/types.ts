@@ -1,4 +1,4 @@
-import type { Language } from "../types";
+import type { Language, MarkType } from "../types";
 import type { LazyExoticComponent, ComponentType } from "react";
 
 /**
@@ -25,6 +25,21 @@ export interface GameDef {
     Component: LazyExoticComponent<ComponentType>;
     /** When true, hide the game from public/demo accounts. Defaults to false. */
     requiresAuth?: boolean;
+    /**
+     * The single mastery track this game feeds (docs/MASTERY_REWORK.md). The hub
+     * renders it as a MarkTypeChip on the game's card(s) so a player can see which
+     * track a game trains before opening it.
+     *
+     * Always set it from the game's own `MARK_TYPE` constant rather than repeating
+     * the literal here — that constant is what the game's pool query and mark call
+     * use, so sourcing the chip from it makes the label unfalsifiable.
+     *
+     * OMIT for a game whose mark type varies by mode; that game's hub strip labels
+     * each sub-card from its own mode config instead. Word Search is the only such
+     * game today (Pinyin → production, No Pinyin → reading; see
+     * WordSearchModeConfig.markType).
+     */
+    markType?: MarkType;
     /**
      * Languages this game can be played in. Omit for language-agnostic games
      * (the default — the first three games all work in any language).

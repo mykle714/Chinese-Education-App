@@ -3,9 +3,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
     Box, TextField, InputAdornment, IconButton, Typography, Button, Menu, MenuItem,
     Dialog, DialogTitle, DialogContent, DialogActions, ListItemIcon,
+    ToggleButtonGroup, ToggleButton,
 } from "@mui/material";
 import { Search, Clear } from "@mui/icons-material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import SwapVertIcon from "@mui/icons-material/SwapVert";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import StyleOutlinedIcon from "@mui/icons-material/StyleOutlined";
 import NodePage from "../../components/NodePage";
@@ -16,11 +18,16 @@ import { useAuth } from "../../AuthContext";
 import { API_BASE_URL } from "../../constants";
 import type { VocabEntry } from "../../types";
 import { filterVocabEntries } from "../../utils/vocabSearch";
+import {
+    sortVocabEntries, sortBundles, sortLabel, defaultSortKey, type VocabSortKey,
+} from "../../utils/vocabSort";
+import type { MasteryGoals } from "../../utils/masteryCompute";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { GAME_REGISTRY } from "../../games/registry";
 import { fetchDeckCards, fetchDecks, renameDeck, deleteDeck } from "../../api/decks";
 import {
     type CollectionRef, collectionTitle, withCollectionParams, parseBuiltinCollection,
+    builtinCollectionRef,
 } from "./collectionRef";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -78,7 +85,12 @@ const CollectionViewPage: React.FC = () => {
     // pinyin / English) via filterVocabEntries — no network round trip, since the
     // collection is already in memory.
     const [searchInput, setSearchInput] = useState("");
-    // Anchor for the "Play with these cards" sheet.
+    // Client-side ordering over the loaded collection (src/utils/vocabSort.ts). Held
+    // per-visit rather than persisted: it is a way of LOOKING at the set, not a
+    // property of it, and a collection always opens in its natural order.
+    const [sortKey, setSortKey] = useState<VocabSortKey>(() => defaultSortKey(isDeck));
+    const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
+    // Anchor for the "Study these cards" sheet.
     const [launchAnchor, setLaunchAnchor] = useState<HTMLElement | null>(null);
     // Anchor for the deck-only overflow menu (rename / delete).
     const [deckMenuAnchor, setDeckMenuAnchor] = useState<HTMLElement | null>(null);
@@ -91,7 +103,7 @@ const CollectionViewPage: React.FC = () => {
     // page title are referentially stable across unrelated re-renders.
     const collection: CollectionRef | null = useMemo(() => {
         if (isDeck) return { kind: "deck", deckId, name: deckName ?? undefined };
-        if (builtin) return { kind: builtin };
+        if (builtin) return builtinCollectionRef(builtin);
         return null;
     }, [isDeck, deckId, builtin, deckName]);
 
@@ -110,6 +122,10 @@ const CollectionViewPage: React.FC = () => {
             try {
                 setLoading(true);
                 setError(null);
+                // A different collection opens in ITS natural order — the routes for
+                // a deck and a built-in collection render this same component, so
+                // React can reuse the instance and carry a stale key across.
+                setSortKey(defaultSortKey(isDeck));
 
                 let cards: VocabEntry[] = [];
                 if (isDeck) {
@@ -122,12 +138,12 @@ const CollectionViewPage: React.FC = () => {
                     const match = decks.find((d) => d.id === deckId);
                     if (!cancelled) setDeckName(match?.name ?? null);
                 } else if (builtin) {
-                    // These two still go through raw fetch rather than src/api/http:
-                    // they are the pre-existing OnDeck endpoints, untouched by this
-                    // feature. Converting them is a separate cleanup.
-                    const path = builtin === "mastered"
-                        ? "/api/onDeck/masteredLibraryCards"
-                        : "/api/onDeck/nonMasteredLibraryCards";
+                    // ONE endpoint for all eight built-in collections — the id is the
+                    // only thing that varies, and the server owns what each one means
+                    // (`builtinCollectionClause`). Still a raw fetch rather than
+                    // src/api/http: pre-existing OnDeck endpoint, converting it is a
+                    // separate cleanup.
+                    const path = `/api/onDeck/collectionCards?collection=${encodeURIComponent(builtin)}`;
                     const response = await fetch(`${API_BASE_URL}${path}`, {
                         credentials: "include",
                         headers: { Authorization: `Bearer ${token}` },
@@ -160,13 +176,34 @@ const CollectionViewPage: React.FC = () => {
         [slideNavigate]
     );
 
-    // Apply the search filter. Referentially stable while the query and collection
-    // are unchanged, so MiniVocabCardGrid's reveal cascade isn't restarted.
+    // The account's goal flags: they decide which mastery sort options are offered
+    // (one pair per active bar) and which bars "Recently mastered" reads. Memoized so
+    // the sort memo below isn't invalidated by a fresh object on every render.
+    const goals: MasteryGoals = useMemo(
+        () => ({ reading: user?.readingGoal === true, writing: user?.writingGoal === true }),
+        [user?.readingGoal, user?.writingGoal]
+    );
+
+    // Filter, then order. Both are referentially stable while their inputs are
+    // unchanged, so MiniVocabCardGrid's reveal cascade isn't restarted by an
+    // unrelated re-render. Sorting AFTER filtering keeps the work proportional to
+    // what is actually on screen while the user is typing a search.
     const filteredEntries = useMemo(
         () => filterVocabEntries(entries, searchInput),
         [entries, searchInput]
     );
+    const visibleEntries = useMemo(
+        () => sortVocabEntries(filteredEntries, sortKey),
+        [filteredEntries, sortKey]
+    );
     const isSearching = searchInput.trim().length > 0;
+
+    // Deck-only rows are hidden where the field they read does not exist —
+    // `deckAddedAt` is selected only by the deck read (OnDeckVocabService.getDeckCards).
+    const visibleSortBundles = useMemo(
+        () => sortBundles(user?.selectedLanguage, goals).filter((b) => !b.deckOnly || isDeck),
+        [user?.selectedLanguage, goals, isDeck]
+    );
 
     // ── Launch targets ────────────────────────────────────────────────────────
     //
@@ -260,7 +297,7 @@ const CollectionViewPage: React.FC = () => {
                         "&:hover": { backgroundColor: COLORS.greenAccent },
                     }}
                 >
-                    Play with these cards
+                    Study these cards
                 </Button>
             </Box>
 
@@ -314,6 +351,109 @@ const CollectionViewPage: React.FC = () => {
                 />
             </Box>
 
+            {/* Sort row. A text button rather than a bare icon: the ACTIVE ordering is
+                the thing worth showing — a learner who sorted by "Least mastered" and
+                then scrolled needs to see why the order looks the way it does. Right
+                aligned under the search field, on the same 364px column as the grid. */}
+            <Box
+                className="collection-view__sort"
+                sx={{
+                    width: 364, maxWidth: "100%", px: 3.5, pt: 1,
+                    display: "flex", justifyContent: "flex-end",
+                }}
+            >
+                <Button
+                    className="collection-view__sort-button"
+                    startIcon={<SwapVertIcon />}
+                    onClick={(e) => setSortAnchor(e.currentTarget)}
+                    sx={{
+                        textTransform: "none",
+                        fontFamily: FONTS.sans,
+                        fontSize: SIZE.body,
+                        fontWeight: WEIGHT.medium,
+                        color: COLORS.textSecondary,
+                        padding: "2px 8px",
+                        minWidth: 0,
+                    }}
+                >
+                    {sortLabel(sortKey, user?.selectedLanguage, goals)}
+                </Button>
+            </Box>
+
+            <Menu
+                className="collection-view__sort-menu"
+                anchorEl={sortAnchor}
+                open={Boolean(sortAnchor)}
+                onClose={() => setSortAnchor(null)}
+            >
+                {/* One row per DIMENSION, with both directions as toggles on the right.
+                    Not MenuItems: a row is not itself selectable — the two toggles are —
+                    and nesting buttons inside a MenuItem would give the row a second,
+                    ambiguous tap target that swallowed the toggles' clicks. */}
+                {visibleSortBundles.map((bundle) => (
+                    <Box
+                        key={bundle.id}
+                        className={`collection-view__sort-row collection-view__sort-row--${bundle.id}`}
+                        sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "16px",
+                            padding: "6px 16px",
+                        }}
+                    >
+                        <Typography
+                            className="collection-view__sort-row-label"
+                            sx={{
+                                fontFamily: FONTS.sans,
+                                fontSize: SIZE.body,
+                                fontWeight: WEIGHT.medium,
+                                color: COLORS.onSurface,
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            {bundle.label}
+                        </Typography>
+
+                        <ToggleButtonGroup
+                            className="collection-view__sort-directions"
+                            size="small"
+                            exclusive
+                            // null unless the applied key belongs to THIS row, so exactly
+                            // one toggle in the whole menu ever reads as selected.
+                            value={bundle.directions.some((d) => d.key === sortKey) ? sortKey : null}
+                            onChange={(_e, next: VocabSortKey | null) => {
+                                // MUI emits null when the selected toggle is tapped again.
+                                // An ordering cannot be "off", so that tap is a no-op
+                                // rather than a fall back to some default.
+                                if (!next) return;
+                                setSortKey(next);
+                                setSortAnchor(null);
+                            }}
+                        >
+                            {bundle.directions.map((direction) => (
+                                <ToggleButton
+                                    key={direction.key}
+                                    value={direction.key}
+                                    className={`collection-view__sort-direction collection-view__sort-direction--${direction.key}`}
+                                    sx={{
+                                        textTransform: "none",
+                                        fontFamily: FONTS.sans,
+                                        fontSize: SIZE.caption,
+                                        fontWeight: WEIGHT.medium,
+                                        padding: "2px 10px",
+                                        lineHeight: 1.5,
+                                        whiteSpace: "nowrap",
+                                    }}
+                                >
+                                    {direction.label}
+                                </ToggleButton>
+                            ))}
+                        </ToggleButtonGroup>
+                    </Box>
+                ))}
+            </Menu>
+
             {actionError && (
                 <Typography
                     className="collection-view__action-error"
@@ -328,7 +468,7 @@ const CollectionViewPage: React.FC = () => {
                 classPrefix="collection-view"
                 loading={loading}
                 error={error}
-                entries={filteredEntries}
+                entries={visibleEntries}
                 emptyMessage={emptyMessage}
                 onCardClick={handleCardClick}
             />

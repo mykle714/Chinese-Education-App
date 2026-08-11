@@ -139,11 +139,13 @@ const ttsService = new TTSService();
 // Friend-request policy (who may accept/revoke, crossing-request auto-accept).
 // userDAL supplies the target account's existence check and public identity.
 const friendsService = new FriendsService(friendshipDAL, userDAL);
-// Constructed after ttsService: the working loop pre-warms each card's audio.
-const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService, starterPacksService, ttsService);
 // Constructed after starterPacksService: it borrows estimateLevel to pick which
 // difficulty band to lend from (docs/PROVISIONAL_CARDS.md § Which words get lent).
 const provisionalCardService = new ProvisionalCardService(provisionalCardDAL, starterPacksService);
+// Constructed after ttsService (the working loop pre-warms each card's audio) and
+// after provisionalCardService (the loop lends cards when every card it owns is
+// resting on cooldown). No cycle: ProvisionalCardService knows nothing of this one.
+const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService, starterPacksService, ttsService, provisionalCardService);
 // Constructed after onDeckVocabService: a deck's card list is the third collection
 // read and is delegated to it (see DeckService's class comment).
 const deckService = new DeckService(deckDAL, onDeckVocabService);

@@ -1,13 +1,12 @@
 import { useCallback, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { TONE_COLORS } from "../../../utils/toneColors";
-import { dictionaryEntryToVocabEntry } from "../../../utils/dictEntryAdapter";
 import { getBreakdownItems } from "../../../utils/breakdownUtils";
-import type { DictionaryEntry, LongDefinitionPart } from "../../../types";
+import type { LongDefinitionPart } from "../../../types";
 import type { CompareState } from "../../../components/CompareWorkspace";
 import type { VocabEntry, BreakdownItem } from "../types";
 import { FONTS } from "../../../theme/fonts";
-import { apiGet } from "../../../api/http";
+import { lookupVocabEntry } from "../../../api/dictionary";
 
 // A normal word tab — one looked-up dictionary entry with its own definition/examples/breakdown
 // sub-tabs (rendered by InfoCardPanelBody).
@@ -46,6 +45,11 @@ const COMPARE_TAB_LABEL = "Compare";
 interface UseEipTabsOptions {
     // Ref to the EipTabStripContainer. Its clientWidth is the budget for fitting tabs.
     stripRef: RefObject<HTMLDivElement | null>;
+    // Language every drill-in lookup is scoped to. Optional: omitted, the server falls
+    // back to the account's selectedLanguage (the flp's behavior, unchanged). scp passes
+    // its route language explicitly because the page can show a language the account is
+    // not currently set to — see DictionaryController.lookupTerm.
+    language?: string;
     // NOTE: no `apiBaseUrl` / `token`. Both were dropped when the dictionary lookup
     // moved onto src/api/http.ts, which owns the base URL and reads the Authorization
     // header at call time. Passing the token in is what pulled it into the callback's
@@ -110,7 +114,7 @@ function buildCompareTab(slotA: VocabEntry, usedColors: Set<string>): CompareEip
     };
 }
 
-export function useEipTabs({ stripRef }: UseEipTabsOptions) {
+export function useEipTabs({ stripRef, language }: UseEipTabsOptions) {
     const [tabs, setTabs] = useState<EipTab[]>([]);
     const [activeIndex, setActiveIndex] = useState(0);
     // Latches to true the moment a 2nd tab is first added and stays true for
@@ -206,12 +210,9 @@ export function useEipTabs({ stripRef }: UseEipTabsOptions) {
 
         latestRequestRef.current = entryKey;
         try {
-            const dictData = await apiGet<DictionaryEntry>(
-                `/api/dictionary/lookup/${encodeURIComponent(entryKey)}`
-            );
+            const adapted = await lookupVocabEntry(entryKey, language);
             // Drop stale responses — a newer tap superseded this one.
             if (latestRequestRef.current !== entryKey) return;
-            const adapted = dictionaryEntryToVocabEntry(dictData);
             setTabs(prev => {
                 // Re-check dedupe in case the user double-tapped during fetch.
                 const dupeIdx = prev.findIndex(t => t.kind === "entry" && t.id === adapted.entryKey);
@@ -230,10 +231,10 @@ export function useEipTabs({ stripRef }: UseEipTabsOptions) {
         } catch (err) {
             console.error(`Failed to look up dictionary entry "${entryKey}":`, err);
         }
-        // No `token` dep: apiGet reads the header at call time, so this callback's
+        // No `token` dep: the underlying apiGet reads the header at call time, so this callback's
         // identity survives a silent refresh (CLAUDE.md ⛔ rule). A non-2xx now throws
         // and is handled by the catch below, where the old code returned early.
-    }, [tabs, stripRef]);
+    }, [tabs, stripRef, language]);
 
     // Re-seed an already-open entry tab from a fresher copy of the same word. Tabs hold a
     // SNAPSHOT of the entry, so a change made outside the panel while it is open (today:

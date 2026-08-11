@@ -112,11 +112,11 @@ A **sort pack** is a small group of vocabulary cards shown together:
   user skipped is part of an authored pack, it is shown **draggable again** (not
   locked) — the pack's context is a fresh chance to sort it. Re-sorting it there clears
   its skip (§5.2).
-- **Each card sits on a raised platform with a Commonality header + a speaker below.**
+- **Each card sits on a raised platform with a Commonality header + an action row below.**
   The on-deck zone (`OnDeckSection`) is styled as an elevated **platform** (plain white
   slab, rounded top, top-edge highlight, downward drop shadow) the cards rest on. Each
   card lives in a `CardSlot` column: a **header band** on top, the draggable card in the
-  middle, and a **play-audio button** underneath.
+  middle, and an **action row** (`CardActionRow`) of two icon buttons underneath.
     - **Commonality header band** (`CardDeckHeader`). A **"Commonality"** caption
       (`CommonalityLabel`) over a row (`CommonalityMeterRow`) of the **five-dot register
       meter** (`FrequencyScoreDots`, `score` dots filled / rest hollow — the word's
@@ -131,8 +131,11 @@ A **sort pack** is a small group of vocabulary cards shown together:
       card's word on tap (`handlePlayCardAudio` → `tts.speakSentence`), independent of
       the pack-level autoplay; spins while that card is speaking
       (`tts.speakingKey === entryKey`).
-  A resolved card leaves an invisible full-slot placeholder (header + card footprint +
-  speaker-footer height) so neighbors don't reposition.
+    - **Info button.** An `InfoOutlinedIcon` button beside the speaker
+      (`.sort-cards__card-info-button`) that opens the **eip** for that card — see §4.7.
+  Both buttons are MUI `size="small"` (32px). A resolved card leaves an invisible
+  full-slot placeholder (header + card footprint + 32px action-row height) so neighbors
+  don't reposition.
 - **A pack is shown at most once.** Once the user has **finished** a pack (every card
   sorted) **or skipped** it, that pack never appears again — regardless of whether its
   cards were sorted or skipped. (This is the per-user "seen packs" record; it applies
@@ -159,6 +162,74 @@ A **sort pack** is a small group of vocabulary cards shown together:
     re-sorted later with the progress intact. The response carries `demoted: true`.
   - the row **has no marks** → `DELETE`, exactly as before.
 
+### 4.7 Extra info panel (eip) on an on-deck card
+
+A learner should not have to guess from a two-line gloss which bucket a word belongs
+in. The **info button** in each card's action row (§4.5) opens the **same eip bottom
+sheet the flp uses** — not a reduced copy of it.
+
+*Code: `src/features/discover/SortCardsPage.tsx` (`handleOpenCardInfo`, `handleCloseEip`,
+`EipHost`, the `eipOpen &&` block); `src/api/dictionary.ts` (`lookupVocabEntry`);
+`src/features/flashcards/FlashcardsLearnPage/{InfoCardSection,EipTabStrip,useEipTabs}`.
+Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md).*
+
+- **Same components, no fork.** scp mounts `InfoCardSection` + `EipTabStrip` and drives
+  them with `useEipTabs`, exactly as `FlashcardsLearnPage` does. Definition / example
+  sentences / breakdown (or "used in") sub-tabs, drag-to-resize, drill-in tabs and
+  Compare therefore all behave identically to the flp. This is the **first non-flp
+  mount** of the eip; before this the sheet was flp-private and the read-only cdp was
+  the only other "everything about this word" surface.
+- **The card must be looked up first.** A `DiscoverCard` is *not* a `VocabEntry` — it
+  carries no `definitionClusters`, `longDefinitionParts`, approval flags or `usedIn`.
+  Tapping info therefore issues `GET /api/dictionary/lookup/:term?language=` via
+  `lookupVocabEntry`, adapts the result (`dictionaryEntryToVocabEntry`) and seeds it as
+  the panel's **root tab** (`openForRoot`), so the tab strip stays hidden until the user
+  actually drills in. The tapped button shows a plain (non-delayed) `CircularProgress`
+  while that request is in flight, and every info button is disabled meanwhile — one
+  lookup at a time. A failed lookup logs and does nothing else: this is an optional
+  detour, not a step the sort flow depends on.
+- **`?language` is required here, unlike the flp.** scp's language comes from the route
+  (`/discover/sort/:language`), which can differ from the account's `selectedLanguage`.
+  `DictionaryController.lookupTerm` used to read *only* `selectedLanguage`, so a
+  Chinese-selected account sorting Spanish would have resolved every lookup against
+  `dictionaryentries_zh`. The endpoint now takes an **optional** `?language=zh|es`
+  (`resolveWriteLanguage(req.query.language) ?? user.selectedLanguage`) — omitting it is
+  the old behavior, which is what every other caller still relies on.
+- **Opening the panel suspends sorting.** `SheetPanel`'s scrim covers the buckets and
+  the on-deck cards, so no card can be dragged while the sheet is up. Reading about a
+  word and sorting it are separate modes on purpose.
+- **Closing clears every tab** (`handleCloseEip` → `eip.clear()`), so reopening on
+  another card starts clean instead of resuming the previous card's drill-in stack.
+- **No "+ Add to Learn Now" button in the panel header.** `onAddToLibrary` is
+  deliberately not wired: on scp, adding to Learn Now *is* the drag gesture the whole
+  page is built around, and a second, differently-shaped way to do it inside the panel
+  would compete with it. (The flp still offers it for drilled-in words.)
+- **Sheet geometry.** The sheet is hosted by `EipHost`, absolutely positioned against
+  `ContentArea` (which is `position: relative` for exactly this reason) and stretched
+  `bottom: -FLOATING_FOOTER_CLEARANCE`. Without that negative bottom the sheet would
+  float 108px above the screen edge, because `MobileTabScreen`'s ScrollArea reserves
+  that band for the floating footer pill; `OnDeckSection` uses the same trick to paint
+  its platform under the pill. `SheetPanel` sizes itself from
+  `parentElement.clientHeight`, so `EipHost` is what caps the sheet's height (measured:
+  host 800px tall → sheet opens at 480px = the 0.6 default ratio, flush to the bottom
+  edge).
+- **`EipHost` needs an explicit z-index (1100).** Every on-deck card carries an inline
+  `zIndex: 1000` — `CardShell`'s lift for the card being dragged — which beats
+  `SheetPanel`'s internal scrim/sheet values of 10/11 outright. Without a z-index on the
+  host, **the cards paint straight through the open sheet**. Giving `EipHost` a z-index
+  makes it a stacking context, so the sheet moves above the cards as one unit and
+  SheetPanel's internal ordering is untouched. If `CardShell`'s value ever changes, this
+  must stay above it.
+- **The footer pill slides away while the sheet is open** (`useHideFooter(eipOpen)`).
+  It is rendered at frame level by `FooterPresenter`, outside this page's DOM, so it
+  *cannot* be layered under the sheet by any z-index here — it would otherwise hover on
+  top of the panel's content. It slides back on close, and on unmount if the user
+  navigates away with the sheet open. See
+  [LEAF_NODE_PAGES.md § Transient suppression](./LEAF_NODE_PAGES.md).
+- **Pinyin display follows the flp's saved preference** (`useFlashcardLearnSettings`'s
+  `showPinyin` / `showPinyinColor`). scp exposes no toggle of its own — the panel is a
+  read-only detour, not a second settings surface.
+
 ---
 
 ## 5. Sort destinations and Skip
@@ -175,10 +246,17 @@ removed from the drag targets so the user reaches for a real destination first.
 
 Note that **both** destinations persist identically as `starterPackBucket = 'library'`
 (`StarterPacksService.sortCard`, `server/services/StarterPacksService.ts:556-612`).
-What separates them is that Already Learned *additionally* writes a perfect 8/8 typed
-mark history across all four tracks, which resolves the row's utcm category to
-**Mastered**. There is no `'already-learned'` value stored anywhere — the two
-destinations are distinguishable only by the resulting utcm category.
+What separates them is that Already Learned *additionally* seeds a typed mark history
+(`coreMasteredTypedMarkHistory`) that resolves the row to **Mastered**. There is no
+`'already-learned'` value stored anywhere — the two destinations are distinguishable
+only by the resulting utcm category.
+
+**It masters the CORE bar only** — recognition and production at 8/8, reading and
+writing left at **0**. Sorting a card as known is a claim about knowing the word, not
+about reading or writing it, and those are separate bars since migration 143. So a
+learner with the writing goal sees such a card in *Mastered Cards* with an empty Write
+bar, and it does **not** appear in *Writing Mastered*. See
+[MASTERY_REWORK.md § "Declaring a card already known"](./MASTERY_REWORK.md).
 
 **A third bucket value exists but is never a sort destination:** `'provisional'`
 (migration 140) marks a card the *server* lent the learner so a game or flp could reach

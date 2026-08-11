@@ -6,6 +6,7 @@ import NodePage from "../components/NodePage";
 import { FooterSpacer } from "../components/MobileFooter";
 import { HubMenu, HubMenuRow, HubMenuArrayItem, HubMenuStatBadge } from "../components/HubMenu";
 import TipBox from "../components/TipBox";
+import MarkTypeChip from "../components/MarkTypeChip";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useGameWins } from "../hooks/useGameWins";
 import { GAME_REGISTRY } from "../games/registry";
@@ -33,6 +34,12 @@ import { SIZE, WEIGHT } from "../theme/scale";
 // in-game picker, so the hub is the only place to pick one. These are
 // special-cased here (not a generic `GameDef.levels` field) since they are the
 // only games that fan out today; see docs/HUB_MENU_SYSTEM.md.
+//
+// Every card also carries a MarkTypeChip naming the mastery track that game feeds
+// (docs/MASTERY_REWORK.md), read from `GameDef.markType` — which each game sets
+// from its own MARK_TYPE constant, the same one its mark call uses. Word Search is
+// the exception: its two modes feed DIFFERENT tracks, so WordSearchHubItem labels
+// each mode sub-card from its own mode config.
 
 /** Persistent per-level background colors for the Bubble Match sub-cards,
     keyed by LEVEL_CONFIGS' level number — greener/calmer for easier levels,
@@ -80,6 +87,12 @@ function resolveGameIcon(game: GameDef) {
     ) : (
         <SportsEsportsIcon sx={{ color: COLORS.textSecondary }} />
     );
+}
+
+/** Mark-type chip for a game's hub card, or null for a game whose track varies by
+    mode (Word Search — its own hub item labels each sub-card). */
+function resolveMarkChip(game: GameDef) {
+    return game.markType ? <MarkTypeChip markType={game.markType} /> : null;
 }
 
 const GamesPage: React.FC = () => {
@@ -138,6 +151,7 @@ const GamesPage: React.FC = () => {
                                         subtitle: cfg.label,
                                         icon: resolveGameIcon(game),
                                         bgColor: BUBBLE_MATCH_LEVEL_COLORS[cfg.level] ?? game.bgColor,
+                                        chip: resolveMarkChip(game),
                                         // ⭐ only — the ×N moved up to the group
                                         // header as a game-wide aggregate.
                                         cornerBadge: <HubMenuStatBadge starred={clearedLevels.has(cfg.level)} />,
@@ -162,6 +176,7 @@ const GamesPage: React.FC = () => {
                                         subtitle: cfg.label,
                                         icon: resolveGameIcon(game),
                                         bgColor: MATCH_SPEED_MODE_COLORS[cfg.mode] ?? game.bgColor,
+                                        chip: resolveMarkChip(game),
                                         // ⭐ only — the ×N lives on the group header.
                                         cornerBadge: (
                                             <HubMenuStatBadge starred={matchSpeedClearedModes.has(cfg.winLevel)} />
@@ -189,6 +204,7 @@ const GamesPage: React.FC = () => {
                                 subtitle={game.subtitle}
                                 icon={resolveGameIcon(game)}
                                 bgColor={game.bgColor}
+                                chip={resolveMarkChip(game)}
                             />
                         );
                     })}

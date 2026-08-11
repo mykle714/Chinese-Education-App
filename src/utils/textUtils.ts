@@ -95,3 +95,15 @@ export const numberedToTonedPinyin = (reading: string): string =>
     .filter(Boolean)
     .map(numberedToTonedSyllable)
     .join(" ");
+
+/**
+ * Syllable count of a space-separated pinyin string ("huì jì" / "hui4 ji4" → 2).
+ *
+ * Twin of `readingSyllableCount` in `server/utils/pinyinTones.ts`. Every consumer of a
+ * per-sense cluster `reading` needs it as a shape guard: cpcd zips syllables to characters
+ * positionally, so a reading whose syllable count disagrees with its target (the word's
+ * character count, or the entry's own `pronunciation`) must be rejected rather than
+ * rendered — otherwise it shifts every character's pinyin one column over.
+ */
+export const readingSyllableCount = (pinyin: string): number =>
+  pinyin.split(/\s+/).filter(Boolean).length;

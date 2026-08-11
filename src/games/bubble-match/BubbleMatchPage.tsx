@@ -18,12 +18,13 @@ import LeafPage from "../../components/LeafPage";
 import BubbleMatchHeaderControls from "./BubbleMatchHeader";
 import BubbleMatchEndPopup from "./BubbleMatchEndPopup";
 import BubbleStage from "./BubbleStage";
-import { GAME_DISTRIBUTION, GAME_KEY, LEVEL_CONFIGS, MAX_AVOID_IDS, MIN_REPLAY_PAIRS, TOTAL_PAIRS } from "./constants";
+import { GAME_DISTRIBUTION, GAME_KEY, LEVEL_CONFIGS, MARK_TYPE, MAX_AVOID_IDS, MIN_REPLAY_PAIRS, TOTAL_PAIRS } from "./constants";
 import type { LevelConfig } from "./types";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
-import SortProvisionalCta from "../../components/SortProvisionalCta";
-import { provisionalWords } from "../../utils/provisionalCards";
+import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
+import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
+import { provisionalRows, provisionalWords } from "../../utils/provisionalCards";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
 interface GamePoolResponse {
@@ -62,7 +63,7 @@ function shuffle<T>(arr: T[]): T[] {
 // `surface` names which baseline the server tops the player up to before it builds
 // the pool, so a small deck is filled with temporary cards instead of blocking
 // (docs/PROVISIONAL_CARDS.md). Bubble Match's baseline is CARD_BASELINES['bubble-match'].
-const poolQuery = ["markType=recognition", "surface=bubble-match"]
+const poolQuery = [`markType=${MARK_TYPE}`, "surface=bubble-match"]
     .concat(Object.entries(GAME_DISTRIBUTION).map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`))
     .join("&");
 
@@ -312,7 +313,7 @@ const BubbleMatchPage: React.FC = () => {
         // docs/MASTERY_REWORK.md.
         // excludeIds defaults to []: the game doesn't use the replacement card the
         // endpoint returns, so there's nothing to dedupe against.
-        markFlashcard({ cardId: entry.id, isCorrect, type: "recognition" })
+        markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE })
             .catch((err) => console.error(`[BubbleMatch] mark failed → card ${entry.id}:`, err));
         // No `token` dep — markFlashcard reads the header at call time, so this
         // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
@@ -330,6 +331,23 @@ const BubbleMatchPage: React.FC = () => {
         setPopupMinimized(false);
         setPhase("lost");
     }, []);
+
+    // ── Popup pause gate ─────────────────────────────────────────────────────
+    // No game clock may run while a MODAL popup covers the board. Bubble Match has
+    // no clock, but it has the same problem in another currency: the launcher keeps
+    // firing and the ceiling keeps descending, so a player reading the
+    // provisional-cards notice can come back to a field that filled up (or lost)
+    // without them. The notice is a full-screen input-blocking overlay, so freezing
+    // the field buys no free study time. Shared rule across all four games — see
+    // docs/GAMES_FEATURE.md § Popups pause the clock.
+    const clockPaused = noticeOpen;
+
+    // End-of-run offer to keep the lent cards. It opens a beat AFTER the win/loss
+    // popup so the result lands first, then stacks over it in the opposite corner.
+    const sortOffer = useProvisionalSortOffer(
+        phase === "won" || phase === "lost",
+        provisionalWords(pool)
+    );
 
     // ---- Sub-screens --------------------------------------------------------
     // Full-screen centered content for the non-gameplay phases (loading / blocked
@@ -363,12 +381,6 @@ const BubbleMatchPage: React.FC = () => {
             className="bubble-match__replay-actions"
             sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}
         >
-            {/* Offered only when this board used lent cards; renders nothing otherwise.
-                Best moment to ask — the player just spent a whole round with these words. */}
-            <SortProvisionalCta
-                words={provisionalWords(pool)}
-                language={(user?.selectedLanguage ?? "zh") as Language}
-            />
             <Button
                 className="bubble-match__replay-btn bubble-match__replay-btn--play-again"
                 variant="contained"
@@ -459,7 +471,8 @@ const BubbleMatchPage: React.FC = () => {
             open={noticeOpen}
             onDismiss={() => setNoticeOpen(false)}
             surfaceName="Bubble Match"
-            words={provisionalWords(pool)}
+            // The board's cards are in hand, so the table needs no extra round-trip.
+            rows={provisionalRows(pool)}
             language={(user?.selectedLanguage ?? "zh") as Language}
         />
         <LeafPage
@@ -518,8 +531,24 @@ const BubbleMatchPage: React.FC = () => {
                             // marks). A win clears the field, so only the lost phase
                             // has anything left to clean up.
                             cleanupMode={phase === "lost" && popupMinimized}
+                            // Freeze the launcher, the descending ceiling and the
+                            // overfill check while a modal popup covers the stage
+                            // (see the `paused` prop, and docs/GAMES_FEATURE.md
+                            // § Popups pause the clock).
+                            paused={clockPaused}
                         />
                         {popup}
+                        {/* Stacks over the win/loss popup; collapses to the OTHER
+                            corner so the two pucks stay tellable apart. */}
+                        <ProvisionalSortOffer
+                            open={sortOffer.open}
+                            words={provisionalWords(pool)}
+                            language={(user?.selectedLanguage ?? "zh") as Language}
+                            onDismiss={sortOffer.dismiss}
+                            minimized={sortOffer.minimized}
+                            onMinimize={sortOffer.onMinimize}
+                            onRestore={sortOffer.onRestore}
+                        />
                     </>
                 ) : (
                     centered

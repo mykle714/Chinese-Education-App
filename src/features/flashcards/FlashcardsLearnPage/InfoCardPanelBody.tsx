@@ -2,7 +2,7 @@ import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, use
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
-import { resolveDisplayDefinition } from "../../../utils/definitionUtils";
+import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
 import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
 import { ddTextColor } from "../../../utils/cardTextColor";
@@ -18,6 +18,8 @@ import {
     FC_FONT,
     TAB_SWIPE_AXIS_LOCK_PX,
     TAB_SWIPE_COMMIT_RATIO,
+    TAB_SWIPE_EDGE_RUBBER_MAX_PX,
+    TAB_SWIPE_EDGE_RUBBER_RATIO,
     TAB_SWIPE_TRANSITION,
 } from "../constants";
 import { SIZE, WEIGHT } from "../../../theme/scale";
@@ -351,12 +353,19 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
             const track = trackRef.current;
             if (!track) return;
             const tab = selectedTabRef.current;
-            // Clamp the finger delta to at most one pane in either direction,
-            // and to zero toward a direction with no neighboring tab — the
-            // track can never be dragged past a resting edge.
-            const min = tab >= TAB_LABELS.length - 1 ? 0 : -paneWidthRef.current;
-            const max = tab <= 0 ? 0 : paneWidthRef.current;
-            const clampedDx = Math.max(min, Math.min(max, dx));
+            // Toward a neighboring tab: clamp the finger delta to at most one
+            // pane, so the track can never be dragged past the next resting
+            // position. Toward an END of the strip (left on the last tab, right
+            // on the first): rubber-band instead of clamping to zero — a dead
+            // track reads as "swipe not supported on this tab" rather than "you
+            // are at the end". The damped travel is capped far below the commit
+            // threshold, and settleDrag rejects out-of-range targets, so an
+            // overscroll always springs back.
+            const hasNeighbor = dx < 0 ? tab < TAB_LABELS.length - 1 : tab > 0;
+            const clampedDx = hasNeighbor
+                ? Math.max(-paneWidthRef.current, Math.min(paneWidthRef.current, dx))
+                : Math.sign(dx) *
+                  Math.min(TAB_SWIPE_EDGE_RUBBER_MAX_PX, Math.abs(dx) * TAB_SWIPE_EDGE_RUBBER_RATIO);
             dragDxRef.current = clampedDx;
             // Drive the drag with inline styles only — no React work per move.
             track.style.transition = "none";
@@ -424,7 +433,10 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         justifyContent="flex-start"
                         className="mobile-demo-eic-header-cpcd"
                         text={currentEntry.entryKey}
-                        pronunciation={currentEntry.pronunciation}
+                        // Sense-resolved, like the dd printed beside it: the eip snapshot is
+                        // re-seeded on every sense pick (useEipTabs.syncEntry), so the persisted
+                        // `selectedSense` is always the sense the panel is showing.
+                        pronunciation={resolveDisplayPronunciation(currentEntry)}
                         useToneColor={showPinyinColor}
                         showPinyin={showPinyin}
                     />

@@ -155,6 +155,25 @@ Every other route (all leaf pages, login, etc.) is absent → the footer slides 
 `MobileTabScreen` no longer renders `MobileFooter` itself (it still reserves
 `FLOATING_FOOTER_CLEARANCE` and uses `activePage` for the header badge).
 
+### Transient suppression (a modal is open)
+
+The route table above is a *static* fact: it says whether a route has a footer at all.
+It cannot express **"not right now"** — a node page that opens a modal surface owning
+the whole screen. A page asks for that with `useHideFooter(hidden)`
+(`src/hooks/useHideFooter.ts`); `FooterPresenter` ANDs it with the route answer, so both
+reasons share the one slide-down animation. Releasing is automatic on unmount, so a page
+navigated away from with its modal open can't strand the pill off-screen.
+
+The state is a **hold count**, not a boolean, so two suppressors (or a new one mounting
+before the outgoing one's cleanup runs) can't have the first release un-hide the footer
+under the second. Provider: `FooterVisibilityProvider`, mounted in `MobileDemoFrame`
+wrapping both the pages and `FooterPresenter`.
+
+This exists because the pill **cannot be layered under** a page's modal: it is rendered
+at frame level, outside every page's DOM, so no z-index inside a page reaches it. Sliding
+it away is the only correct answer. Current caller: scp, while the eip sheet is open
+([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)).
+
 ## Current classification
 
 | Route | Page | Archetype |

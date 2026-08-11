@@ -69,7 +69,20 @@ export function wordToPinyinUnits(pinyin: string): string[][] {
     return pinyinSyllables(pinyin).map(syllableToPinyinUnits);
 }
 
-/** Total revealable units across the whole word — the hint's per-press cap. */
+/** Total revealable phonetic units across the whole word (excludes the
+ *  letter-count reveals that precede them — see `countPinyinRevealSteps`). */
 export function countPinyinUnits(pinyin: string): number {
     return wordToPinyinUnits(pinyin).reduce((sum, units) => sum + units.length, 0);
+}
+
+/**
+ * Total hint presses the word's pinyin absorbs before only its grid location is
+ * left to give. The ladder has TWO stages (see docs/WORD_SEARCH_GAME.md §5a):
+ *   1. one press per character to reveal that character's LETTER COUNT (its
+ *      island turns from a count-free dash into one blank per letter), then
+ *   2. one press per phonetic unit, round-robin across characters.
+ * So the cap is characters + units.
+ */
+export function countPinyinRevealSteps(pinyin: string): number {
+    return pinyinSyllables(pinyin).length + countPinyinUnits(pinyin);
 }

@@ -1,4 +1,16 @@
+import type { MarkType } from "../../types";
 import type { LevelConfig } from "./types";
+
+/**
+ * The mastery track this game feeds (docs/MASTERY_REWORK.md). Bubble Match is a
+ * recognition drill (foreign → meaning), so every mark it writes is a RECOGNITION
+ * mark and its card pool must be bucketed/cooled by that same track.
+ *
+ * Single source of truth for all three places that need it: the `?markType=`
+ * pool query and the /api/flashcards/mark call (BubbleMatchPage), and the Games
+ * hub's mark-type chip (via GAME_REGISTRY's `markType`).
+ */
+export const MARK_TYPE: MarkType = "recognition";
 
 /** Game key under which Bubble Match wins are logged in the shared `wins` table
  *  ({ game, level }), read via useGameWins (src/hooks/useGameWins.ts). Shared

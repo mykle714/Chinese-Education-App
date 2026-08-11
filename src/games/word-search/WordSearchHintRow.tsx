@@ -11,10 +11,13 @@ interface WordSearchHintRowProps {
     /** The word currently being hinted, or null if no hint has been used yet
      *  (or the last hinted word was just found). */
     word: PlacedWord | null;
-    /** How many units of `word` have been revealed so far in total, distributed
-     *  round-robin across characters (see `distributeRevealTiers` below, or
-     *  `distributeComponentReveals` in componentUnits.ts), not filled one
-     *  character at a time. */
+    /** How many hint presses have been spent on `word` so far. On the pinyin
+     *  board the first N presses (N = character count) buy each character's
+     *  LETTER COUNT in turn, and everything after that buys phonetic units
+     *  distributed round-robin across characters (see `buildMask` /
+     *  `distributeRevealTiers` below). On the components board it is a plain
+     *  count of revealed component glyphs (`distributeComponentReveals` in
+     *  componentUnits.ts). */
     revealCount: number;
     /**
      * Which currency this board's hints spend. The Pinyin board reveals phonetic
@@ -59,18 +62,33 @@ function letterCount(text: string): number {
 
 /**
  * Build the mask: one "island" per Chinese character (so the island count
- * openly gives away the word's character count — that's intentional), each
- * unfinished island padded out with one `HINT_LETTER_BLANK` ("_") **per
- * still-hidden letter** — classic hangman spacing, so the island shows its
- * full length from the first press and each reveal visibly eats the blanks it
- * fills (e.g. "xiǎng" → `_____` → `x____` → `xi___` → `xiǎng`).
- * `revealCount` units are distributed round-robin
- * across islands via `distributeRevealTiers` (see above) rather than filling
- * one island completely before the next.
+ * openly gives away the word's character count — that's intentional), revealed
+ * in TWO stages as `revealCount` grows (see docs/WORD_SEARCH_GAME.md §5a):
+ *
+ *   Stage 1 — LETTER COUNTS, one character per press, left to right. A
+ *   character whose length hasn't been bought yet is NOT DRAWN AT ALL — not
+ *   even a placeholder — so the mask doesn't leak how many characters are
+ *   still to come; each press appends the next island as one
+ *   `HINT_LETTER_BLANK` ("_") per hidden letter, i.e. classic hangman spacing
+ *   showing that syllable's full length. (The word's character count is
+ *   therefore only learned by paying for it, one character at a time.)
+ *
+ *   Stage 2 — PHONETIC UNITS, only after every island's length is showing.
+ *   The leftover presses (`revealCount - syllableCount`) are distributed
+ *   round-robin across islands via `distributeRevealTiers` (see above) rather
+ *   than filling one island completely before the next, and each reveal
+ *   visibly eats the blanks it fills.
+ *
+ * e.g. 变化 (biàn huà): `____` → `____ ___` → `b___ ___` →
+ * `b___ h__` → `bi__ h__` → … → `biàn huà`.
  */
 function buildMask(syllableUnits: string[][], revealCount: number): string {
-    const revealedPerSyllable = distributeRevealTiers(syllableUnits, revealCount);
+    // Stage 1 consumes one press per character before any phonetic unit is sold.
+    const lengthsShown = Math.min(revealCount, syllableUnits.length);
+    const unitReveals = Math.max(0, revealCount - syllableUnits.length);
+    const revealedPerSyllable = distributeRevealTiers(syllableUnits, unitReveals);
     return syllableUnits
+        .slice(0, lengthsShown)
         .map((units, i) => {
             const revealed = revealedPerSyllable[i];
             if (revealed >= units.length) return units.join("");
@@ -85,14 +103,17 @@ function buildMask(syllableUnits: string[][], revealCount: number): string {
  * The letter-hint row, sitting between the English gloss list and the grid.
  * BLANK by default — nothing is shown until the player spends a hint. Pressing
  * the hint button (`WordSearchPage.tsx`'s `useHint`) picks a random still-unfound
- * word and reveals its pinyin one **phonetic unit** at a time (initial /
- * medial glide / final — see `pinyinUnits.ts`), hangman-style, via `buildMask`
- * above. These units are used instead of raw single Latin letters because
- * pinyin's spelling doesn't map 1:1 to sounds (e.g. "zh" is one initial
- * spelled with two letters) — a strict letter-at-a-time reveal would give away
- * more or less than one meaningful chunk per press depending on the syllable.
- * Everything not yet revealed shows as one `HINT_LETTER_BLANK` ("_") per
- * hidden letter, so each island's length is visible up front.
+ * word and then walks the two-stage ladder in `buildMask` above: first one
+ * press per character to buy that character's LETTER COUNT (an unbought
+ * character isn't drawn at all, so even the word's character count is paid
+ * for one character at a time; a bought one appears as one
+ * `HINT_LETTER_BLANK` "_" per hidden letter), then one press per **phonetic
+ * unit** (initial / medial
+ * glide / final — see `pinyinUnits.ts`), hangman-style. Phonetic units are
+ * used instead of raw single Latin letters because pinyin's spelling doesn't
+ * map 1:1 to sounds (e.g. "zh" is one initial spelled with two letters) — a
+ * strict letter-at-a-time reveal would give away more or less than one
+ * meaningful chunk per press depending on the syllable.
  * For a multi-character word, units are revealed ROUND-ROBIN across
  * characters (`distributeRevealTiers`) rather than one character at a time:
  * every character's 1st unit is given out before any character's 2nd, then

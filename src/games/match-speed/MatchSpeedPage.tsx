@@ -35,13 +35,15 @@ import {
     COUNTDOWN_STEPS,
     COUNTDOWN_STEP_MS,
     GAME_KEY,
+    MARK_TYPE,
     RUN_DURATION_MS,
     medalForScore,
     modeConfigFor,
 } from "./constants";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
-import SortProvisionalCta from "../../components/SortProvisionalCta";
+import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
+import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { provisionalWords } from "../../utils/provisionalCards";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
@@ -151,6 +153,12 @@ const MatchSpeedPage: React.FC = () => {
     /** Index into COUNTDOWN_STEPS while phase === "countdown". */
     const [countdownStep, setCountdownStep] = useState(0);
     const [remainingMs, setRemainingMs] = useState(RUN_DURATION_MS);
+    // Mirror of `remainingMs` for the clock effect. After a pause the interval has
+    // to re-arm from the time LEFT rather than from RUN_DURATION_MS, and reading
+    // that out of state would mean listing `remainingMs` as a dependency — which
+    // would tear down and rebuild the interval five times a second.
+    const remainingMsRef = useRef(RUN_DURATION_MS);
+    remainingMsRef.current = remainingMs;
     const [score, setScore] = useState(0);
     /** Attempts (correct + wrong) — the denominator of the end card's accuracy. */
     const [attempts, setAttempts] = useState(0);
@@ -193,7 +201,7 @@ const MatchSpeedPage: React.FC = () => {
                 ...bufferedEntryIds(bufferRef.current),
             ];
             const res = await fetch(
-                `${API_BASE_URL}/api/onDeck/gamePool?${query}&markType=recognition&surface=match-speed&exclude=${excludeIds.join(",")}${collectionSuffix}`,
+                `${API_BASE_URL}/api/onDeck/gamePool?${query}&markType=${MARK_TYPE}&surface=match-speed&exclude=${excludeIds.join(",")}${collectionSuffix}`,
                 { credentials: "include", headers: authHeader() }
             );
             if (!res.ok) throw new Error("Failed to load game pool");
@@ -339,6 +347,17 @@ const MatchSpeedPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, modeConfig.mode]);
 
+    // ── Popup pause gate ─────────────────────────────────────────────────────
+    // No game clock may run while a MODAL popup is covering the board: the
+    // provisional-cards notice opens the instant a run is primed and the settings
+    // sheet can be opened mid-run, and both take the whole screen — reading them
+    // would otherwise be billed to the player's 30 seconds. Both are input-blocking
+    // overlays, so freezing the clock can't be used to study the live board for
+    // free. The end popup is deliberately absent: by then the clock has stopped.
+    // Shared rule across all four games — see docs/GAMES_FEATURE.md § Popups pause
+    // the clock.
+    const clockPaused = noticeOpen || settingsOpen;
+
     // The 3·2·1·Go countdown. The board is already primed and readable behind it,
     // so the opening board gets a beat to be read and the run clock starts from an
     // identical state every time — nobody is billed for reading time.
@@ -349,20 +368,25 @@ const MatchSpeedPage: React.FC = () => {
     // twice), and advancing the phase from inside one is exactly the side effect
     // that rule exists to prevent.
     useEffect(() => {
-        if (phase !== "countdown") return;
+        if (phase !== "countdown" || clockPaused) return;
         const isLastStep = countdownStep >= COUNTDOWN_STEPS.length - 1;
         const id = setTimeout(
             () => (isLastStep ? setPhase("playing") : setCountdownStep((step) => step + 1)),
             COUNTDOWN_STEP_MS
         );
         return () => clearTimeout(id);
-    }, [phase, countdownStep]);
+    }, [phase, countdownStep, clockPaused]);
 
     // The run clock. Deadline-based rather than decrementing a counter, so a
     // backgrounded tab or a slow frame can't stretch the run past 30 seconds.
+    //
+    // The deadline is rebuilt from the time REMAINING every time the effect runs,
+    // so a pause (see `clockPaused`) simply tears the interval down and a resume
+    // re-arms it where it left off — the run still lasts RUN_DURATION_MS of
+    // *playable* time no matter how long a popup sat on top of it.
     useEffect(() => {
-        if (phase !== "playing") return;
-        const deadline = Date.now() + RUN_DURATION_MS;
+        if (phase !== "playing" || clockPaused) return;
+        const deadline = Date.now() + remainingMsRef.current;
         const id = setInterval(() => {
             const left = deadline - Date.now();
             if (left <= 0) {
@@ -375,7 +399,7 @@ const MatchSpeedPage: React.FC = () => {
             setRemainingMs(left);
         }, CLOCK_INTERVAL_MS);
         return () => clearInterval(id);
-    }, [phase]);
+    }, [phase, clockPaused]);
 
     // Bank the win badge on a gold run only, once the run has ended. Gold-only
     // keeps the hub badge an achievement rather than a play counter. The win is
@@ -399,7 +423,7 @@ const MatchSpeedPage: React.FC = () => {
             // Match Speed is a recognition drill (foreign → meaning), same track
             // as Bubble Match. excludeIds defaults to []: the game doesn't use the
             // replacement card the endpoint returns.
-            markFlashcard({ cardId: entry.id, isCorrect, type: "recognition" })
+            markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE })
                 .catch((err) => console.error(`[MatchSpeed] mark failed → card ${entry.id}:`, err));
         },
         // No `token` dep — markFlashcard reads the header at call time, so this
@@ -468,6 +492,11 @@ const MatchSpeedPage: React.FC = () => {
     );
 
     const showBoard = phase === "countdown" || phase === "playing" || phase === "ended";
+
+    // End-of-run offer to keep the lent cards; opens a beat after the end popup. By
+    // now the run HAS dealt its cards, so the words it borrowed can finally be named
+    // even though the pre-round notice could not name them.
+    const sortOffer = useProvisionalSortOffer(phase === "ended", provisionalSeen);
 
     return (
         // Match Speed is a LEAF PAGE (docs/LEAF_NODE_PAGES.md): no footer, DOWN back
@@ -629,12 +658,6 @@ const MatchSpeedPage: React.FC = () => {
                                     className="match-speed__replay-actions"
                                     sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}
                                 >
-                                    {/* By now the run HAS dealt its cards, so the
-                                        lent words can finally be named. */}
-                                    <SortProvisionalCta
-                                        words={provisionalSeen}
-                                        language={(user?.selectedLanguage ?? "zh") as Language}
-                                    />
                                     <Button
                                         className="match-speed__replay-btn match-speed__replay-btn--play-again"
                                         variant="contained"
@@ -666,6 +689,18 @@ const MatchSpeedPage: React.FC = () => {
                                 </Box>
                             </MatchSpeedEndPopup>
                         )}
+
+                        {/* Stacks over the end popup, collapsing to the opposite
+                            corner. Renders nothing unless this run used lent cards. */}
+                        <ProvisionalSortOffer
+                            open={sortOffer.open}
+                            words={provisionalSeen}
+                            language={(user?.selectedLanguage ?? "zh") as Language}
+                            onDismiss={sortOffer.dismiss}
+                            minimized={sortOffer.minimized}
+                            onMinimize={sortOffer.onMinimize}
+                            onRestore={sortOffer.onRestore}
+                        />
                     </>
                 )}
             </Box>

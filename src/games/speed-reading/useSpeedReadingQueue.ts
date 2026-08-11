@@ -3,11 +3,13 @@ import { API_BASE_URL } from "../../constants";
 import { authHeader } from "../../utils/authHeader";
 import { apiGet } from "../../api/http";
 import type { DistractorChar, VocabEntry } from "../../types";
-import { provisionalWords } from "../../utils/provisionalCards";
+import { provisionalRows, provisionalWords } from "../../utils/provisionalCards";
+import type { ProvisionalCardRow } from "../../utils/provisionalCards";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { collectionLaunchParams } from "../../features/flashcards/collectionRef";
 import {
     GAME_DISTRIBUTION,
+    MARK_TYPE,
     TOPUP_BATCH,
     TOPUP_THRESHOLD,
 } from "./constants";
@@ -64,13 +66,17 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
     // a slow request would otherwise spawn one per card consumed.
     const toppingUpRef = useRef(false);
     // Temporary cards the server lent to reach the baseline (docs/PROVISIONAL_CARDS.md).
+    // Kept in both shapes: the WORDS drive the end-of-round sort offer, the ROWS the
+    // pre-round table (word1 / pinyin / dd) — derived here from the served cards so
+    // the notice needs no second round-trip.
     const [provisional, setProvisional] = useState<string[]>([]);
+    const [provisionalTable, setProvisionalTable] = useState<ProvisionalCardRow[]>([]);
 
     /** One pool request. Passing `opts` makes it a partial top-up. */
     const fetchPool = useCallback(
         async (opts?: { need: number; excludeIds: number[] }): Promise<GamePoolResponse> => {
             const params = new URLSearchParams();
-            params.set("markType", "reading");
+            params.set("markType", MARK_TYPE);
             // Names the baseline the server tops the player up to before building the
             // pool, so a small deck is filled with temporary cards instead of blocking
             // (docs/PROVISIONAL_CARDS.md). Omitted on a partial top-up below — a
@@ -128,6 +134,7 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
                 // Speed Reading plays a fixed, known set, so the notice can name the
                 // exact lent words (CARD_BASELINE_ITEMIZED).
                 setProvisional(provisionalWords(pool.cards));
+                setProvisionalTable(provisionalRows(pool.cards));
                 setReady(true);
                 setLoading(false);
             } catch {
@@ -204,5 +211,7 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
         dequeue,
         /** Lent (temporary) words in this run's queue; empty when none were needed. */
         provisional,
+        /** The same lent cards as pre-round table rows (word1 / pinyin / dd). */
+        provisionalTable,
     };
 }

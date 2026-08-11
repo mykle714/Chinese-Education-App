@@ -3,7 +3,13 @@ import { OnDeckVocabService, type StudyMode, type CollectionFilter } from '../se
 import { requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
 import { MarkType, MARK_TYPES } from '../types/index.js';
 import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
-import { CardBaselineSurface, CARD_BASELINES, PROVISION_RETRY_FACTOR } from '../contracts/wire.js';
+import {
+  CardBaselineSurface,
+  CARD_BASELINES,
+  PROVISION_RETRY_FACTOR,
+  masteredCollectionBar,
+} from '../contracts/wire.js';
+import { parseBuiltinCollectionId } from '../dal/shared/vetTable.js';
 import { DeckService } from '../services/DeckService.js';
 
 /**
@@ -24,12 +30,11 @@ export class OnDeckVocabController {
   /**
    * Resolve the optional collection-launch query params (docs/DECKS_FEATURE.md).
    *
-   *   ?deck=<id>            → that user-authored deck
-   *   ?collection=mastered  → the account's Mastered cards
-   *   (neither)             → null, the ordinary whole-library launch
-   *
-   * There is deliberately no `?collection=learn-now`: Learn Now IS the default
-   * pool, so restricting to it would be a no-op clause (see deckPlayFilter).
+   *   ?deck=<id>                    → that user-authored deck
+   *   ?collection=<built-in id>     → that built-in collection (all / unfamiliar /
+   *                                   target / comfortable / learn-now / the three
+   *                                   mastered bars)
+   *   (none)                        → null, the ordinary whole-library launch
    *
    * THROWS NotFoundError when a deck id is not one this caller owns — so a stale
    * link to a deleted deck fails loudly instead of quietly playing the user's whole
@@ -49,10 +54,10 @@ export class OnDeckVocabController {
       const deck = await this.deckService.getDeck(userId, rawDeck);
       return { kind: 'deck', deckId: deck.id };
     }
-    // Anything other than the one recognized value means an unrestricted launch —
-    // an unknown collection name must never silently narrow the round.
-    if (String(req.query.collection ?? '') === 'mastered') return { kind: 'mastered' };
-    return null;
+    // Anything other than a recognized value means an unrestricted launch — an
+    // unknown collection name must never silently narrow the round.
+    const builtin = parseBuiltinCollectionId(String(req.query.collection ?? ''));
+    return builtin ? { kind: 'builtin', id: builtin } : null;
   }
 
   /**
@@ -86,36 +91,29 @@ export class OnDeckVocabController {
   };
 
   /**
-   * Get mastered library cards (library cards with category = 'Mastered')
-   * GET /api/onDeck/masteredLibraryCards
+   * The contents of ONE built-in collection — every non-deck collection page.
+   * GET /api/onDeck/collectionCards?collection=all|unfamiliar|target|comfortable
+   *                                            |learn-now|mastered|mastered-reading|mastered-writing
+   *
+   * This replaces the old `masteredLibraryCards?bar=` and `nonMasteredLibraryCards`
+   * pair. Those two were the same query with two different WHERE fragments, and the
+   * fdp's band tiles would have made it four; one parameterized endpoint keeps every
+   * built-in collection reaching the client through one shape.
+   *
+   * An unrecognized collection falls back to **learn-now** rather than to "everything":
+   * a typo'd or stale link must never quietly widen the set a learner is looking at.
    */
-  getMasteredLibraryCards = async (req: Request, res: Response): Promise<void> => {
+  getCollectionCards = async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
       const language = await getUserLanguage(userId);
-      const masteredCards = await this.onDeckVocabService.getMasteredLibraryCards(userId, language);
-      res.json(masteredCards);
+      const collection = parseBuiltinCollectionId(String(req.query.collection ?? '')) ?? 'learn-now';
+      const cards = await this.onDeckVocabService.getBuiltinCollectionCards(userId, language, collection);
+      res.json(cards);
     } catch (error: any) {
-      handleControllerError(error, res, 'OnDeckVocabController.getMasteredLibraryCards');
-    }
-  };
-
-  /**
-   * Get non-mastered library cards (library cards without category = 'Mastered')
-   * GET /api/onDeck/nonMasteredLibraryCards
-   */
-  getNonMasteredLibraryCards = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = requireUserId(req, res);
-      if (!userId) return;
-
-      const language = await getUserLanguage(userId);
-      const nonMasteredCards = await this.onDeckVocabService.getNonMasteredLibraryCards(userId, language);
-      res.json(nonMasteredCards);
-    } catch (error: any) {
-      handleControllerError(error, res, 'OnDeckVocabController.getNonMasteredLibraryCards');
+      handleControllerError(error, res, 'OnDeckVocabController.getCollectionCards');
     }
   };
 
@@ -154,7 +152,8 @@ export class OnDeckVocabController {
   };
 
   /**
-   * Get per-category library card counts (Unfamiliar / Target / Comfortable / Mastered).
+   * Per-category library card counts of the CORE bar
+   * (Unfamiliar / Target / Comfortable / Mastered).
    * GET /api/onDeck/categoryCounts
    */
   getCategoryCounts = async (req: Request, res: Response): Promise<void> => {
@@ -167,6 +166,27 @@ export class OnDeckVocabController {
       res.json(counts);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getCategoryCounts');
+    }
+  };
+
+  /**
+   * How many cards are mastered in each of the three bars (migration 143).
+   * GET /api/onDeck/masteredCounts → { core, reading, writing }
+   *
+   * Separate from categoryCounts rather than folded into it: that map is keyed by
+   * BAND for one bar, this one is keyed by BAR for one band, and merging the two
+   * shapes would give the fdp a response it has to disambiguate by key spelling.
+   */
+  getMasteredCounts = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const language = await getUserLanguage(userId);
+      const counts = await this.onDeckVocabService.getMasteredCountsByBar(userId, language);
+      res.json(counts);
+    } catch (error: any) {
+      handleControllerError(error, res, 'OnDeckVocabController.getMasteredCounts');
     }
   };
 

@@ -12,8 +12,10 @@
  * See docs/ARCHITECTURE_REVIEW.md finding 3 and docs/MASTERY_REWORK.md.
  */
 import type { MarkType } from "../types";
+import type { MasteryBarId } from "../../server/contracts/wire";
 
 export type { MasteryGoals, MasteryBar, MasteryBarSegment } from "../../server/contracts/mastery";
+export type { MasteryBarId } from "../../server/contracts/wire";
 export {
   PBH_FULL,
   PBH_BAND,
@@ -21,12 +23,19 @@ export {
   PBH_THRESHOLDS,
   positiveCount,
   positivesByType,
-  goalTypes,
-  progressBarHeight,
+  BAR_MARK_TYPES,
+  barForMarkType,
+  activeBars,
+  isBarActive,
+  coreProgressBarHeight,
+  barProgressBarHeight,
+  barCategory,
   categoryForPbh,
-  computeUtcm,
+  computeCoreCategory,
   computeTypeCategory,
   masteryBar,
+  masteryBars,
+  masteredAtForBar,
 } from "../../server/contracts/mastery";
 
 // ─── Client-only presentation ───────────────────────────────────────────────────
@@ -48,3 +57,24 @@ export const MARK_TYPE_LABELS: Record<MarkType, string> = {
   reading: "Reading",
   writing: "Writing",
 };
+
+/**
+ * User-facing names for the three mastery bars (migration 143).
+ *
+ * The core bar is called "Know" rather than "Core": the learner never sees the word
+ * "core" anywhere else, and what the bar actually measures is whether they know the
+ * word — recognition plus production — as opposed to reading or writing it.
+ */
+export const BAR_LABELS: Record<MasteryBarId, string> = {
+  core: "Know",
+  reading: "Read",
+  writing: "Write",
+};
+
+// NOTE: a bar has no single color WHERE IT IS DRAWN AS A BAR. Both surfaces that paint
+// one — the cdp track and the mini-card strip — color it by its SEGMENTS' mark types
+// (MARK_TYPE_COLORS), so there is nothing to name there.
+//
+// The fdp's Mastered TILES do need one color per bar, and that lives in
+// MASTERY_BAR_COLORS (src/utils/categoryColors.ts) beside the other tile palettes. It
+// borrows from MARK_TYPE_COLORS for reading/writing rather than inventing hues.

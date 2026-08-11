@@ -418,6 +418,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                 speakingKey={tts.speakingKey}
                                                 showWriting
                                                 inlineActions
+                                                selectedSenseIndex={selectedSenseIndex}
                                             />
                                         ),
                                         english: (
@@ -451,6 +452,7 @@ const VocabCardDetailPage: React.FC = () => {
                                                     speakingKey={tts.speakingKey}
                                                     showWriting
                                                     inlineActions
+                                                    selectedSenseIndex={selectedSenseIndex}
                                                 />
                                             )}
                                             englishNode={<EnglishBlock entry={editingCurrentEntry!} selectedSenseIndex={selectedSenseIndex} inlineActions />}

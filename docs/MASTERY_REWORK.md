@@ -1,35 +1,49 @@
-# Mastery Rework — Typed Marks, Goals & Progress Bar
+# Mastery Rework — Typed Marks, Goals & Progress Bars
 
-> STATUS: **IMPLEMENTED** (migration 101). This doc captures the design and the
-> shipped mechanics. Key code:
+> STATUS: **IMPLEMENTED** (migration 101, reworked into three bars by migration
+> 143). This doc captures the design and the shipped mechanics.
+>
+> ⚠️ **Read § "Three bars" (Section 4) first.** Migration 101 built a single
+> goal-*blended* bar; migration 143 split it into three independently-banded bars.
+> Sections written against the old blended model are marked **SUPERSEDED** inline.
+> Deploying 143: [MASTERY_BARS_DEPLOY_RUNBOOK.md](./MASTERY_BARS_DEPLOY_RUNBOOK.md).
+>
+> Key code:
 > - DB: `database/migrations/101-mastery-rework-typed-marks-and-goals.sql`
 >   (`typedMarkHistory` jsonb on vet tables; `users.readingGoal`/`writingGoal`;
 >   `compute_utcm_category()` + `mastery_positive_count()`; drops the generated
 >   `category` column, `markHistory`, and the success-rate columns).
-> - Compute: `server/utils/masteryCompute.ts` + `src/utils/masteryCompute.ts`
->   (TS mirrors of the SQL) — pbh, banding, `appendTypedMark`, the cdp bar model.
-> - In-query category: `UTCM_USERS_JOIN` / `UTCM_CATEGORY_EXPR` /
->   `UTCM_CATEGORY_SELECT` in `server/dal/shared/vetTable.ts`, spliced into the
->   selection queries in `OnDeckVocabService`, `StarterPacksService`,
->   `CommunityLayoutDAL`.
+>   `database/migrations/143-three-mastery-bars.sql` (`compute_core_category()`;
+>   `masteredAt` → jsonb keyed by bar; `category_promotions.bar`).
+> - Contract: `server/contracts/mastery.ts` — the single definition of the bars
+>   (`BAR_MARK_TYPES`, `barForMarkType`, `activeBars`, `coreProgressBarHeight`,
+>   `barProgressBarHeight`, `barCategory`, `computeCoreCategory`, `masteryBars`,
+>   `masteredAtForBar`) plus the band arithmetic `CATEGORY_ORDER` /
+>   `categoryRank()` / `bandsClimbed()`. `server/contracts/wire.ts` holds the bar
+>   identity shared with the client (`MasteryBarId`, `MASTERY_BARS`,
+>   `MASTERED_COLLECTION_IDS`, `parseMasteryBar`, `MasteredAtByBar`).
+> - Client re-export + presentation: `src/utils/masteryCompute.ts`
+>   (`BAR_LABELS`).
+> - In-query category: `coreCategoryExpr` / `CORE_CATEGORY_SELECT` /
+>   `typeCategoryExpr` / `barCategoryExpr` / `masteredBarClause` in
+>   `server/dal/shared/vetTable.ts`, spliced into the selection queries in
+>   `OnDeckVocabService`, `StarterPacksService`, `CommunityLayoutDAL`. **None of
+>   them joins `users` any more** — no band depends on account state.
 > - Mark/undo: `server/routes/flashcardRoutes.ts` (typed `type` param; per-type
->   8-window; category derived in-handler).
+>   8-window; the mark's bar and both bands derived in-handler).
 > - Goal flags API: `PUT /api/users/goals` (`UserController.updateGoals` →
 >   `UserService.updateGoals`); surfaced via `useAuth().updateGoals` and the
 >   account page Goals section (`src/pages/AccountPage.tsx`).
 > - Client mark sources: flp (`useWorkingLoop.ts`), Word Search
 >   (`WordSearchPage.tsx`), Bubble Match (`BubbleMatchPage.tsx`), Practice Writing
 >   (`PracticeWritingButton.tsx` → `PracticeWritingPopup.tsx`).
-> - cdp bar: `src/features/flashcards/MasteryProgressBar.tsx` (rendered in
->   `VocabCardDetailPage.tsx`).
+> - Bars UI: `src/features/flashcards/MasteryProgressBar.tsx` (cdp, one bar per
+>   active bar) and `src/components/MiniVocabCard.tsx` (the hairline strip).
 >
 > **Movement between bands is logged separately** — see
-> [VELOCITY.md](./VELOCITY.md) (migration 137): the utcm category is derived and
-> keeps no history, so the mark handler appends a `category_promotions` row
-> whenever `computeUtcm` before ≠ after. Velocity = band-steps climbed in the
-> sliding last 7 days, per (user, language). The step arithmetic
-> (`CATEGORY_ORDER` / `categoryRank()` / `bandsClimbed()`) lives alongside the pbh
-> formula in `server/contracts/mastery.ts`.
+> [VELOCITY.md](./VELOCITY.md) (migration 137): a bar's band is derived and keeps
+> no history, so the mark handler appends a `category_promotions` row — now
+> carrying `bar` — whenever that bar's band before ≠ after.
 
 ## Goal
 
@@ -103,42 +117,76 @@ Range **0–8**. This is the per-type analogue of today's "correct-in-last-8".
 
 ## 3. Goals
 
-- **Recognition** and **Production**: always goals (mandatory, not toggleable).
-- **Reading** and **Writing**: per-account opt-in.
-- `goalCount ∈ {2, 3, 4}`.
+- **Recognition** and **Production**: always pursued (mandatory, not toggleable).
+- **Reading** and **Writing**: per-account opt-in
+  (`users.readingGoal` / `users.writingGoal`).
+
+**A goal no longer weights anything.** Since migration 143 the flags decide only
+what is *shown*: which bars render, which Mastered collections and sort options
+exist, and which bars velocity sums. Reading and writing marks are recorded for
+every account either way — the goal surfaces them, it does not start them.
 
 ### Account settings UI
 
-New **Goals** section on the **account page** (`src/pages/AccountPage.tsx`) with
-two checkboxes:
+**Goals** section on the **account page** (`src/pages/AccountPage.tsx`) with two
+checkboxes:
 
 - ☐ *I want to learn reading*
 - ☐ *I want to learn writing*
 
-Plus description copy:
+Description copy (the pre-143 demotion warning is **gone** — nothing demotes now):
 
-> *Enabling a goal may demote some Mastered cards back to Comfortable — you'll
-> need to train reading/writing to promote them back to Mastered.*
+> *Each goal you turn on adds its own progress bar to every card, so a card can be
+> mastered separately for knowing it, reading it and writing it. Your existing
+> progress is never affected — and any reading or writing you have already done
+> shows up straight away.*
 
 The toggles are **hidden for Spanish accounts** (es never accrues Reading/Writing
-marks — see Section 1).
+marks — see Section 1), so an es card always has exactly one bar.
 
-## 4. Progress-bar height (pbh) formula
+## 4. Three bars
+
+A card carries up to **three independent progress bars**. Each is banded by the
+**same** cut points, so a card can be mastered up to three times.
+
+| Bar | Tracks | Height | Active when |
+|---|---|---|---|
+| **`core`** | recognition + production | blended, formula below | **always** |
+| **`reading`** | reading | raw `positive(reading)`, 0–8 | `users.readingGoal` |
+| **`writing`** | writing | raw `positive(writing)`, 0–8 | `users.writingGoal` |
+
+`BAR_MARK_TYPES` (`server/contracts/mastery.ts`) is the one place this mapping
+lives; `barForMarkType()` inverts it.
+
+### Why split
+
+One number was being asked two questions at once — *"how well do you know this
+word?"* and *"which of four skills have you drilled?"*. Under the blended formula,
+turning on the reading goal **demoted** a card the learner had genuinely mastered
+by sight, because a fresh empty track diluted the average. Splitting lets the
+answer to each question stand on its own, and makes goal toggles inert.
+
+### Height
+
+**Core** keeps the original blended formula with the goal count pinned at 2
+(`coreProgressBarHeight`):
 
 ```
-pbh = min( 6, max( positive(g) for g in goals ) )
-      + ( Σ positive(g) for g in goals except the max one ) / ( (goalCount - 1) * 3 )
+pbh(core) = min( 6, max(positive(recognition), positive(production)) )
+          + min( positive(recognition), positive(production) ) / 3
 ```
 
-- First term: the single highest positive count among goal tracks, **capped at
-  6** (so one maxed track alone can contribute at most 6, never enough for
-  Mastered on its own).
-- Second term: the sum of the *remaining* goal tracks, scaled so its max
-  contribution is `((goalCount-1)*8) / ((goalCount-1)*3) = 8/3 ≈ 2.67`,
-  independent of goalCount.
-- Overall pbh range: **0 → 6 + 8/3 ≈ 8.67**.
+- First term capped at **6**, so one maxed track alone can never reach Mastered:
+  8 recognition / 0 production = **Comfortable**, not Mastered.
+- Second term contributes at most `8/3 ≈ 2.67`. Range: **0 → 8.67**.
 
-### utcm thresholds (by pbh)
+**Reading and writing** use their track's raw positive count, which is already on
+the 0–8 scale (`barProgressBarHeight`). That shared scale is the whole trick: one
+`categoryForPbh` and one set of benchmark lines serve all three bars, and it makes
+`barCategory(history, 'reading')` identical to
+`computeTypeCategory(history, 'reading')` (Section 7) by construction.
+
+### utcm thresholds (by pbh — identical for every bar)
 
 | Level | Condition |
 |---|---|
@@ -147,26 +195,145 @@ pbh = min( 6, max( positive(g) for g in goals ) )
 | Comfortable | 6 ≤ pbh < 8 |
 | Mastered | pbh ≥ 8 |
 
-### Notable consequences
+A single-track bar therefore reaches Mastered only at a **perfect 8/8** window.
 
-- **No single track can reach Mastered alone.** With the first term capped at 6,
-  the max fractional contribution needed to reach pbh ≥ 8 is ≥ 2, which requires
-  the remaining goal tracks to be substantially positive too. Mastered now
-  genuinely requires strength across *all* goals, not just one maxed track.
-- **Demotion on adding a goal**: increasing `goalCount` raises the denominator
-  `(goalCount-1)*3` and adds a 0-count track, shrinking the fractional term. A
-  card previously at Mastered can drop below 8 and demote to Comfortable —
-  matching the settings warning copy.
+### Which bar does a whole-card question mean? — always `core`
 
-## 5. cdp stacked progress bar
+Anywhere the app asks one question of a whole card, the answer comes from the core
+bar. These read `compute_core_category()` / `computeCoreCategory()` and take **no
+users join**:
 
-- **Vertical** bar on the card-detail page.
-- **Height** = pbh on a fixed axis where **pbh = 8 fills the bar** (Mastered
-  fills; pbh > 8 stays clamped at full). Confirmed.
-- **Segments** = the four types' **positive-mark ratio**, i.e. each segment's
-  fraction = `positive(type) / Σ positive(allTypes)`, computed over **all four
-  types regardless of goals**.
-- **Colors** (app light palette, `src/theme/colors.ts`):
+| Consumer | Code |
+|---|---|
+| Deck bucket counts | `OnDeckVocabService.getCategoryCounts` |
+| flp working-loop quotas + cooldown window | `OnDeckVocabService`, Section 6 |
+| Level estimate | `StarterPacksService.estimateLevel` |
+| Night Market community **Learning** feed (a word drops out when core is Mastered) | `CommunityLayoutDAL.ts:131`, [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md) |
+| The mini-card badge and the `category` field on the wire | `VocabEntryBase.category` |
+
+The per-bar reads are the exceptions, and each one is a *display* of that bar:
+the Mastered collections (`masteredBarClause(bar)`), the sort options, the bars
+themselves, and velocity.
+
+### Declaring a card already known — core only
+
+The discover/sort flows let a learner say "I already know this word" (the
+`already-learned` bucket, `StarterPacksService.addCardToLibrary`). That seeds
+`coreMasteredTypedMarkHistory()`: **the core bar's two tracks at 8/8, reading and
+writing left empty.**
+
+- **Both core tracks**, because the pbh first term is capped at 6 — seeding
+  recognition alone would land on Comfortable, not the Mastered the learner asked for.
+- **Nothing on reading or writing**, because the claim is *"I know this word"*, not
+  *"I can read and write it"*. Those are separate skills with their own bars now, and
+  granting them would hand the learner a finished Read bar for a character they have
+  never once read — the exact conflation the three-bar split exists to undo. Turn the
+  reading goal on later and the bar starts honestly at 0.
+
+**So "mark as mastered" does NOT fill every bar.** A learner with the writing goal who
+sorts a card as known still sees an empty Write bar on it, and the card appears in
+*Mastered Cards* but not in *Writing Mastered*. That is the intended reading of the
+three bars: only the flp and the games can fill the reading and writing ones.
+
+### One mark moves exactly one bar
+
+Because `BAR_MARK_TYPES` partitions the four types, a single review can promote at
+most one bar. That is what keeps the mark handler to one `masteredAt` key write and
+one `category_promotions` row per mark, with no fan-out.
+
+### `masteredAt` — when each bar last crossed into Mastered (migrations 142, 143)
+
+Every other mastery fact in this app is **derived**: a band is computed from
+`typedMarkHistory` and never stored. "When did this card become Mastered" is the one
+that **cannot** be, because `typedMarkHistory` is a rolling window of the last 8
+marks per type — the marks that carried the card over the line are usually evicted
+long before anyone asks. The transition is only observable at the instant it happens,
+exactly like a band promotion (migration 137, [VELOCITY.md](./VELOCITY.md)).
+
+Three bars cross at three different moments, so migration 143 makes
+`vocabentries_zh."masteredAt"` / `vocabentries_es."masteredAt"` **jsonb keyed by
+bar** (it was a bare `timestamptz` in 142):
+
+```jsonc
+{ "core": "2026-08-01T…Z", "reading": "2026-08-09T…Z" }   // writing key absent: never crossed
+```
+
+The mark handler writes exactly one key, for the bar the mark belongs to:
+
+```
+barCategoryBefore !== 'Mastered' && barCategoryAfter === 'Mastered'
+    → jsonb_set("masteredAt", '{<bar>}', <the mark's own timestamp>)
+```
+
+Four rules govern each key:
+
+* **Sticky.** Never cleared on regression. It means "the LAST time this card crossed
+  into Mastered", so one bad mark cannot erase the date. A later re-crossing
+  overwrites it.
+* **Undo retracts its own stamp.** `/undoLastMark` removes **only the undone mark's
+  bar's key**, and only when that key holds the exact timestamp of the mark being
+  undone (`"masteredAt" = "masteredAt" - $6::text`) — the same rule as the
+  `category_promotions` delete beside it. The key is dropped rather than rewound to
+  the previous crossing, because the previous crossing is unrecoverable. This is safe
+  for a bar that was already Mastered before the mark: no transition fired then, so
+  the key cannot be pointing at that mark. **The other bars' keys are untouched** —
+  undoing a reading mark cannot erase a core mastery date.
+* **Not backfilled.** Cards already Mastered when the column shipped have no keys, for
+  the same rolling-window reason. The one reader (the "Recently mastered" sort) puts
+  missing dates last, so they sit at the bottom until they cross again.
+* **Goal toggles do not touch it.** Trivially true since 143 — a toggle re-bands
+  nothing. The rule is kept because it is now load-bearing in the other direction:
+  turning a goal ON must **not** stamp the bar it reveals, even though that bar may
+  already read Mastered from marks accrued while it was hidden. `masteredAt` records
+  when the LEARNER carried the bar over the line, and that moment was not observed.
+  **Do not "fix" this** by sweeping the vet tables on goal change.
+
+Its only consumer today is the collection **Sort by → Date mastered**
+(`src/utils/vocabSort.ts`, [DECKS_FEATURE.md](./DECKS_FEATURE.md) § "Sort by"), which
+gets **one row per active bar**, each reading `masteredAtForBar(masteredAt, bar)` —
+that bar's OWN stamp. Deliberately not the newest across bars: the three are three
+separate achievements, and collapsing them to a max would let a reading crossing
+silently reorder the list a learner is reading as their core progress. No query
+orders or filters on it, so it carries no index.
+
+## 5. The progress bars on screen
+
+### cdp — one vertical bar per active bar
+
+`src/features/flashcards/MasteryProgressBar.tsx` renders
+`masteryBars(entry.typedMarkHistory, goals)` — one `BarTrack` each, captioned from
+`BAR_LABELS` (**Know** / **Read** / **Write**). With no goals set the page looks
+exactly as it did before the rework: a single bar.
+
+- **Height** = that bar's pbh on a fixed axis where **pbh = 8 fills the bar**
+  (Mastered fills; pbh > 8 stays clamped at full).
+- **Segments** = the **positive-mark ratio across that bar's OWN tracks**. So the
+  core bar is a two-color stack (recognition / production) and the reading and
+  writing bars are single-color. A segment's fraction is
+  `positive(type) / Σ positive(bar's types)`.
+- The **chip** above the bars shows the **core** band — the whole-card answer.
+- The legend lists only the types actually on screen.
+
+### Mini cards — a hairline strip
+
+`src/components/MiniVocabCard.tsx` draws the active bars as up to three 3px-tall,
+30px-wide tracks stacked bottom-left with a margin (`BAR_STRIP`), each filled to
+`heightFraction`. The English definition is lifted by `barStripHeight(n)` to make
+room, so a one-bar card sits where it always did and only a goal-bearing account
+pays the vertical space. The **badge stays**, colored by the **core** band.
+
+Each fill carries the **same per-type segment breakdown as the cdp bar** — the core
+strip splits between recognition blue and production green in proportion to their
+positive counts, so a card strong one way and weak the other reads that way at
+thumbnail size too. It runs left-to-right where the cdp runs bottom-up, so the first
+type sits at the track's origin in both. Zero-count segments are dropped rather than
+rendered at 0 width.
+
+- **Colors** — one hue per **mark type**, shared by both surfaces and the Games hub
+  chip (`MARK_TYPE_COLORS`, `src/utils/masteryCompute.ts`). There is deliberately
+  **no per-bar color**: every surface paints a bar by its segments, so a bar has no
+  single color of its own to name. From the app light palette
+  (`src/theme/colors.ts`):
   - Recognition → **Blue** `#779BE7` (`COLORS.blueMain`)
   - Production → **Green** `#05C793` (`COLORS.greenMain`)
   - Reading → **Red** `#EF476F` (`COLORS.redMain`)
@@ -226,10 +393,65 @@ production} currently off cooldown:
   ready → the historical coin flip).
 - **both cooling** ⇒ the card is **skipped**.
 
-If the entire allowed pool is cooling down, selection falls back to the
-**least-recently-correct** cooled card (`pickLeastRecentlyCorrectFlp` /
-`fetchCooledFallbackCards`, stamped with the single closest-to-expiring type) so
-the loop **never returns empty** for a user who has cards.
+### Ordering: a queue, longest-waiting first
+
+Eligible cards are ranked by `rankFlpEligible` (`OnDeckVocabService.ts`), which is the
+**single ordering rule for both flp paths** — the initial loop and the refill draw the
+same way, so a loop and its replacements cannot diverge.
+
+The sort key is `flpReadyAt` = the card's **arrival time in the queue**, i.e. when it
+*first* became reviewable:
+
+```
+readyAt(card) = MIN over its ready types of ( lastCorrect(type) + window(overall category) )
+                  — skipping tracks with no correct mark
+
+ranked        = [ cards with history, by readyAt ASC ]   // longest-waiting first
+             ++ [ never-marked cards ]                   // always last
+```
+
+- **MIN, not MAX**, across the ready types — this is what makes it a queue. A card whose
+  recognition track has been ready for ten days is ten days overdue even if its
+  production track only came off cooldown yesterday.
+- Tracks with **no correct mark** are **skipped**, not treated as ready-since-forever.
+  Counting them would score `-Infinity` for any *partially* marked card and drop it into
+  the never-marked tail, which is wrong — the learner has gotten that card right, just in
+  one track.
+- A card scores `-Infinity` only when **neither** flp track has a correct mark. That is
+  the definition of "never marked", and those cards sort **last** — so brand-new sorts
+  and lent provisional cards are reached only once genuinely rested cards run out.
+
+**The never-marked tail needs its own tier, not just a timestamp.** `-Infinity` in an
+*ascending* sort would land at the front, which is the opposite of what we want, so the
+comparator compares the tier before the timestamp. Equal timestamps return `0` rather
+than subtracting (`-Infinity - -Infinity` is `NaN`, which would leave the sort
+undefined); ties keep the SQL order, `createdAt DESC`.
+
+**The ranking picks WHICH cards, not the play order.** It runs *inside* each utcm quota:
+the 1/2/2/5 Mix distribution still decides how many cards come from each mastery bucket,
+and this decides which cards fill them. The assembled loop is then shuffled
+(`shuffleInPlace`, Fisher–Yates) so a session doesn't march predictably from most- to
+least-overdue.
+
+Because ranking needs `typedMarkHistory`, it is computed in app code and the candidate
+query (`fetchFlpCandidates`) is deliberately **unlimited** — a partial scan would rank a
+random subset and return the wrong card.
+
+### When everything is cooling: honor it
+
+There is **no cooled-card last resort**. A resting card is never re-served. Instead:
+
+| Session | All cards cooling ⇒ |
+|---|---|
+| Mix, Challenge (unrestricted) | **lend provisional cards** to fill the shortfall (`lendIntoLoop` → `ProvisionalCardService.lendCards`) |
+| Review, `?collection=mastered`, `?deck=` | return **short or empty**; the client shows a "resting" empty state |
+
+The split is one rule, `canLendProvisional`: lend only when `Unfamiliar` is a servable
+category **and** the round is unrestricted. A lent card is Unfamiliar, so anywhere else it
+would either be filtered straight back out or misrepresent a named set. This is also why
+`POST /api/flashcards/mark` now returns **200 with `newCard: null`** for *every* session
+type instead of 404-ing Study — an unrestricted round can legitimately run dry when the
+dictionary has no more words to lend. See docs/PROVISIONAL_CARDS.md § 6.
 
 ### Notes / caveats
 
@@ -252,6 +474,26 @@ mark type it emits** (`OnDeckVocabService.isCardGameEligible` / `fetchGameCandid
 | Word Search — Pinyin | `production` | `getWordSearchGrid` (mode via `?mode=` query) |
 | Word Search — No-Pinyin | `reading` | `getWordSearchGrid` (mode via `?mode=` query) |
 | Practice Writing | `writing` | — launched per-card from a flashcard; **no pool to gate** |
+
+**One constant per game, three consumers.** Each game's mark type is declared once
+in its own `constants.ts` (`MARK_TYPE` in `src/games/bubble-match/constants.ts`,
+`src/games/match-speed/constants.ts`, `src/games/speed-reading/constants.ts`) and
+read from there by all three places that need it: the `?markType=` pool query, the
+`markFlashcard({ type })` call, and the Games hub's mark-type chip (via
+`GameDef.markType` in `src/games/registry.ts`, rendered by
+`src/components/MarkTypeChip.tsx`). Word Search is the exception — its mark type is
+**per mode**, so it lives on `WordSearchModeConfig.markType`
+(`src/games/word-search/constants.ts`) and is read by `WordSearchPage`'s mark call
+and by `WordSearchHubItem`'s per-sub-card chip. Nothing repeats the string literal,
+so the label a player sees cannot drift from the mark that is actually written.
+
+**The hub names the track.** Every Games-hub card carries a `MarkTypeChip` — a
+colored dot plus the uppercase track name — bottom-left in the card body, so a
+player can see which of the four tracks a game feeds *before* opening it. Colors
+and labels are the shared `MARK_TYPE_COLORS` / `MARK_TYPE_LABELS`
+(`src/utils/masteryCompute.ts`), so a track is the same hue on the hub and in the
+cdp stacked progress bar. See
+[HUB_MENU_SYSTEM.md § Chip slot](./HUB_MENU_SYSTEM.md).
 
 > **`getGamePool` is parameterized, not recognition-with-an-exception.** It used
 > to hardcode `'recognition'` when Bubble Match was its only caller. Speed Reading
@@ -301,9 +543,9 @@ utcm category.
 
 ### Why
 
-`compute_utcm_category` answers *"how far along is this card overall?"* by blending
-every goal track through the pbh formula. That is right for the flp (which presents
-two mark types on one card) and the decks page, but wrong for a game that exercises
+The core band answers *"how far along is this card overall?"* by blending
+recognition and production through the pbh formula. That is right for the flp (which
+presents two mark types on one card) and the decks page, but wrong for a game that exercises
 exactly one track. A card with a maxed Recognition window and an empty Reading
 window reads as **Comfortable** overall, so Word Search No-Pinyin used to serve it
 as a Comfortable word even though the learner has never once read it. The game's
@@ -328,9 +570,13 @@ Mastered therefore requires a **perfect 8/8** window for that type. The TS mirro
 `computeTypeCategory` reuses `categoryForPbh` directly, since the cut points are
 shared by construction.
 
-Unlike `UTCM_CATEGORY_EXPR`, `typeCategoryExpr` needs **no users join** — a
-per-type band is goal-independent. The mark type is passed as a bind parameter,
-never interpolated.
+Since migration 143 the reading and writing **bars** are this same computation —
+`barCategoryExpr('reading')` delegates to `typeCategoryExpr('reading')`. A game's
+per-type bucket and the bar the learner watches are therefore the same number, which
+is the intended coherence, not a coincidence to be refactored apart.
+
+The mark type is passed as a bind parameter, never interpolated. Post-143 **no**
+category expression joins `users` — bands are goal-independent across the board.
 
 ### Which type each surface uses
 
@@ -341,16 +587,17 @@ never interpolated.
 | Word Search — Pinyin | `production` per-type category | `production` per-type category |
 | Word Search — No-Pinyin | `reading` per-type category | `reading` per-type category |
 | Speed Reading | `reading` per-type category | `reading` per-type category |
-| flp working loop | overall utcm (unchanged) | overall utcm (unchanged) |
-| decks page counts | overall utcm (unchanged) | — |
+| flp working loop | **core** band (unchanged) | **core** band (unchanged) |
+| decks page counts | **core** band (unchanged) | — |
 
-The flp keeps the overall category because it presents **two** mark types on one
-card; a single whole-card band is the coherent choice there.
+The flp keeps the whole-card band because it presents **two** mark types on one
+card — and those two are exactly the core bar's tracks, so "the flp's band" and "the
+core bar" are the same thing by construction.
 
 **The bucket is visible on the wire.** `fetchGameCandidates` stamps each returned
 row with `gameCategory` — the per-type bucket it was actually drawn from — which is
-deliberately distinct from the row's `category` (the goal-blended overall utcm level
-`UTCM_CATEGORY_SELECT` fills in). Both ride on the same entry and mean different
+deliberately distinct from the row's `category` (the **core** band that
+`CORE_CATEGORY_SELECT` fills in). Both ride on the same entry and mean different
 things, so the names must stay explicit. Match Speed keys its client-side card
 buffer off `gameCategory` (docs/MATCH_SPEED_GAME.md § Backend change); Bubble Match
 and Word Search ignore it. It reports the queue actually drained, so it stays
@@ -371,7 +618,7 @@ flp passes `card.category` and behaves exactly as before.
 ### Known divergence: `available` counts
 
 The `available` map both game endpoints return still comes from
-`getCategoryCounts`, which uses the **overall** utcm category (it is shared with the
+`getCategoryCounts`, which uses the **core** band (it is shared with the
 decks page). So the client's "you have N Comfortable cards" hint can disagree with
 the pool the same request assembled. This is a deliberate trade (one shared count
 source); if the hints ever need to match, add a per-type count variant for the game
@@ -404,6 +651,14 @@ Each track keeps its own 8 most recent `{timestamp, isCorrect}` entries.
 - Per-type positive counts are computed on the fly from the jsonb at read time.
 
 ### The `category` GENERATED-column problem (**major**) — DECIDED: service-layer
+
+> ⚠️ **Historical.** The reasoning below was true of migration 101's goal-blended
+> band. Migration 143 removed the dependency on account state entirely — every band
+> is now a pure function of one row's `typedMarkHistory`, which is why
+> `compute_core_category()` is `IMMUTABLE` and takes no goal arguments, and why the
+> `users` join is gone from every selection query. The column was **not** restored to
+> GENERATED (a service-layer compute is now load-bearing for the per-bar reads too),
+> but it could be — that option reopened.
 
 **Decision: (A) drop the generated column; compute pbh + utcm in the service
 layer** on read, where the user's goal flags are in scope.
@@ -453,6 +708,33 @@ Implications to work through:
 - ✅ **category computation**: **service-layer** compute (drop generated column);
   flp selection computes **pbh in-query** from goal params.
 - ✅ **Bar scale**: pbh = 8 fills the cdp bar.
+
+### Migration 143 — the split into three bars
+
+- ✅ **Three bars**: `core` (recognition + production, always active), `reading`,
+  `writing` (each its track's raw 0–8 count, goal-gated **display only**). Same cut
+  points for all three, so a card can be mastered up to three times.
+- ✅ **Non-goal tracks keep accruing.** The goal hides the bar, it does not stop the
+  marks — so turning a goal on reveals progress already earned.
+- ✅ **Goal toggles demote nothing.** The account-page warning copy is replaced.
+- ✅ **Whole-card questions are CORE ONLY**: deck counts, level estimate, the
+  community Learning feed drop-out, the mini-card badge, flp quotas.
+- ✅ **Three Mastered collections** on the fdp, goal-gated rows; counts from
+  `GET /api/onDeck/masteredCounts`.
+- ✅ **Sort options are per bar**, and a bar's rows appear only when its goal is set.
+  The menu is BUNDLED — one row per dimension, both directions as toggles — so every
+  ordering is readable in reverse without doubling the menu.
+- ✅ **`masteredAt` is jsonb keyed by bar**; "Date mastered" gets one row per active
+  bar, each reading that bar's OWN stamp. *(Revised from "latest across the active
+  bars": three bars are three achievements, and a max let one reorder another's list.)*
+- ✅ **Velocity sums band-steps across bars, but only the GOAL bars.** Every bar's
+  promotion is logged (`category_promotions.bar`); the filter is applied at read, so
+  switching a goal on retroactively enriches the number instead of restarting it.
+- ✅ **"Mark as mastered" (discover/sort) fills the CORE bar only** — 8/8 on
+  recognition + production, reading and writing left at 0. *(Revised: the first pass
+  seeded all four tracks. Declaring you know a word is not a claim about reading or
+  writing it, and a seeded Read bar would be a lie the learner never told.)*
+- ✅ **Games and the flp are unchanged.**
 - ✅ **Mark storage**: new `typedMarkHistory` keyed jsonb
   (`{recognition,production,reading,writing}`), 8 each. **Drop the old
   `markHistory` column; no backfill — existing progress is discarded** (no real
@@ -479,9 +761,30 @@ _All major decisions are settled._ Minor build-time confirmations:
 - `server/routes/flashcardRoutes.ts` — mark/undo endpoints (mark write path; also
   writes/deletes the `category_promotions` velocity log — see [VELOCITY.md](./VELOCITY.md)).
 - `database/migrations/67-*.sql`, `69-*.sql` — `compute_flashcard_category()`.
+- `database/migrations/142-add-mastered-at-to-vocabentries.sql` — `masteredAt`, plus
+  its stamp/retract sites in `server/routes/flashcardRoutes.ts` and its one reader,
+  `src/utils/vocabSort.ts`.
+- `database/migrations/143-three-mastery-bars.sql` — `compute_core_category()`,
+  `masteredAt` → jsonb, `category_promotions.bar`. Deploy:
+  [MASTERY_BARS_DEPLOY_RUNBOOK.md](./MASTERY_BARS_DEPLOY_RUNBOOK.md).
+- `server/contracts/mastery.ts` — **the definition of the bars**; mirrored by
+  `server/__tests__/mastery.test.ts`, which pins the TS/SQL agreement.
+- `server/contracts/wire.ts` — `MasteryBarId`, `MASTERY_BARS`,
+  `MASTERED_COLLECTION_IDS`, `parseMasteryBar`, `MasteredAtByBar`.
+- `server/dal/shared/vetTable.ts` — `coreCategoryExpr`, `barCategoryExpr`,
+  `masteredBarClause`, `typeCategoryExpr`.
 - `server/types/index.ts` — `ReviewMark`, `FlashcardCategory`, `VocabEntry`.
-- `server/services/OnDeckVocabService.ts`, `StarterPacksService.ts` — category-
-  driven flp selection pipeline.
-- `src/features/flashcards/VocabCardDetailBody.tsx` — cdp (progress bar host).
+- `server/services/OnDeckVocabService.ts` (`getCategoryCounts` = core only;
+  `getMasteredCountsByBar`; `getBuiltinCollectionCards`),
+  `StarterPacksService.ts` (`estimateLevel` = core only).
+- `server/controllers/OnDeckVocabController.ts` + `server/routes/onDeckRoutes.ts` —
+  `GET /api/onDeck/masteredCounts`, `GET /api/onDeck/collectionCards?collection=`.
+- `src/features/flashcards/MasteryProgressBar.tsx` (cdp bars),
+  `src/components/MiniVocabCard.tsx` (hairline strip),
+  `src/features/flashcards/VocabCardDetailBody.tsx` — cdp (progress bar host).
+- `src/features/flashcards/collectionRef.ts`, `FlashcardsDecksPage.tsx`,
+  `CollectionViewPage.tsx`, `src/hooks/useMasteredCounts.ts` — the three Mastered
+  collections. See [DECKS_FEATURE.md](./DECKS_FEATURE.md).
+- `src/utils/vocabSort.ts` — the per-bar sort keys.
 - `src/utils/categoryColors.ts`, `src/theme/colors.ts` — colors.
 - `src/pages/AccountPage.tsx` / `SettingsPage.tsx` — Goals settings section.

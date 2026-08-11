@@ -6,6 +6,7 @@ import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { RateLimitError } from '../types/dal.js';
 import { resolveTimezone, streakDateOf } from '../utils/streakDate.js';
 import { requireUserId, getUserLanguage } from '../utils/controllerUtils.js';
+import { resolveWriteLanguage } from '../utils/languageParam.js';
 
 /**
  * Dictionary Controller - Handles HTTP requests for dictionary operations
@@ -20,8 +21,14 @@ export class DictionaryController {
   ) {}
 
   /**
-   * Look up a dictionary entry by term (uses user's selected language)
-   * GET /api/dictionary/lookup/:term
+   * Look up a dictionary entry by term.
+   * GET /api/dictionary/lookup/:term?language=zh|es
+   *
+   * `language` is OPTIONAL and falls back to the user's selectedLanguage, so every
+   * pre-existing caller is unchanged. It exists because some surfaces show a language
+   * that is not the account's current selection — scp (`/discover/sort/:language`) takes
+   * its language from the route, so a Chinese-selected account sorting Spanish would
+   * otherwise have every eip lookup resolved against `dictionaryentries_zh` and 404.
    */
   async lookupTerm(req: Request, res: Response): Promise<void> {
     try {
@@ -38,9 +45,13 @@ export class DictionaryController {
         return;
       }
 
-      // Get user's selected language
+      // Explicit ?language wins; otherwise fall back to the user's selected language.
+      // resolveWriteLanguage (not resolveLanguage) is the right helper here precisely
+      // because it returns undefined rather than defaulting to 'zh' — an unrecognized
+      // value must fall through to the account's real language, not silently become
+      // Chinese.
       const user = await this.userDAL.findById(userId);
-      const language = user?.selectedLanguage || 'zh';
+      const language = resolveWriteLanguage(req.query.language) ?? user?.selectedLanguage ?? 'zh';
 
       const entry = await this.dictionaryService.lookupTerm(term, language);
 

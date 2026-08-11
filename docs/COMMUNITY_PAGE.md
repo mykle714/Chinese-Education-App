@@ -12,8 +12,17 @@ users have saved. The page (`CommunityPage.tsx`, a Home-hub `NodePage`) has a se
 (`CommunitySearchBar`) above two horizontally-scrolling, infinitely-paginated feeds:
 
 1. **"For words you're learning"** — other users' advanced layouts for words in the viewer's
-   **non-mastered library** (`starterPackBucket = 'library'` and category ≠ `Mastered`).
+   **non-mastered library** (`starterPackBucket = 'library'` and the **core** mastery bar
+   ≠ `Mastered` — `coreCategoryExpr('lib')` in `CommunityLayoutDAL.ts`).
    Returned in random order, a page (10) at a time.
+
+   **Core only, deliberately.** Since migration 143 a card carries up to three bars
+   ([MASTERY_REWORK.md § Three bars](./MASTERY_REWORK.md)), and this feed drops a word
+   when the **core** bar is mastered — i.e. when the learner knows the word, regardless
+   of whether they have also finished reading or writing it. The feed is about which
+   words are still worth decorating, which is a whole-card question, and gating on all
+   active bars would keep known words in the feed for months purely because a writing
+   goal was switched on. The query takes **no users join**: core is goal-independent.
 2. **"Top designs this week"** — advanced layouts across all other users, ranked by this-week
    vote count (descending, stable `(ownerUserId, entryKey)` tiebreak). Designs with zero votes
    this week are still included; they sort to the bottom of the feed.

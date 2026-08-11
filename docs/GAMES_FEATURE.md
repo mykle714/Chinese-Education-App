@@ -88,7 +88,7 @@ game adopting it today would get the wrong chrome. See the Layer 2 warning below
 ## Launching a game with one collection of cards
 
 Besides the Games hub, every game can be entered from a **collection view page**
-(`/flashcards/collection/*`, `/flashcards/deck/:id`) via its "Play with these
+(`/flashcards/collection/*`, `/flashcards/deck/:id`) via its "Study these
 cards" button, which appends a launch param:
 
 | Collection | Param | Effect |
@@ -389,6 +389,42 @@ Two deliberate exceptions, both correct:
   the player's cards — so they follow the standard det-fallback rule (index 0),
   the same as discover cards and the read-only dictionary cdp.
 
+### Popups pause the clock
+
+**The rule:** no game's clock — or whatever else in that game advances on its own
+and can end a run — may run while a **modal, input-blocking popup** covers the
+board. Reading a popup is not playing, so it must not be billed to the player.
+
+Each page derives one boolean, `clockPaused`, from its own popup state and feeds
+it to whatever moves on its own:
+
+| Game | `clockPaused` is true while | What freezes | Code |
+| --- | --- | --- | --- |
+| Match Speed | the provisional notice or the settings sheet is open | the 3·2·1 countdown **and** the 30 s run clock | `MatchSpeedPage.tsx` (`clockPaused`, the countdown effect, the run-clock effect) |
+| Word Search | the provisional notice or the settings sheet is open | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchPage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
+| Speed Reading | the provisional notice is open | the count-up clock — `startAtRef` is pushed forward by the paused span on resume | `SpeedReadingPage.tsx` (`clockPaused`, `pausedAtRef`, the clock effect) |
+| Bubble Match | the provisional notice is open | the bubble launcher, the descending ceiling and the overfill loss check | `BubbleMatchPage.tsx` (`clockPaused`) → `BubbleStage.tsx` (`paused`, `pausedRef`, `stepFrame`, the launch interval) |
+
+Three consequences worth keeping in mind when adding a popup or a game:
+
+- **Only input-blocking overlays qualify.** `ProvisionalCardsNotice` and the
+  settings sheets take the whole screen, so a frozen clock cannot be used to study
+  a live board. Word Search's in-grid gloss popups are deliberately **excluded**:
+  they are small anchored tooltips that leave the board playable, so pausing on
+  them would hand the player a free stopwatch stop.
+- **End-of-run popups are irrelevant.** The end popup and `ProvisionalSortOffer`
+  only ever open once the run is scored and the clock has already stopped.
+- **Resume must not pay the pause back.** A count-down clock re-arms from the time
+  *remaining* (Match Speed keeps `remainingMs` in a ref for exactly this); a
+  count-up clock moves its origin forward (Speed Reading) or uses an explicit
+  pause/resume pair (Word Search); the rAF field re-bases its frame clock every
+  paused frame so the whole span doesn't arrive as one giant `dt` (Bubble Match).
+
+Also note Word Search's pause has **two** sources — the popup gate and the
+existing backgrounding (`visibilitychange`) pause. Returning to the foreground
+checks `clockPausedRef` before resuming, so a tab switch cannot restart a clock a
+popup is still holding.
+
 ### Adding a new game — checklist
 
 Reflects what the two shipped games actually do. The Pixi path
@@ -402,12 +438,20 @@ needs a WebGL scene graph, copy Bubble Match or Word Search instead.
    `IPhoneFrame` — the frame comes from `MobileDemoFrame` via `Layout.tsx`.
 2. Fetch vocab from the OnDeck stack, not from a generic vocab endpoint:
    `GET /api/onDeck/gamePool?<Category>=<n>...` returns library cards bucketed by
-   the mark type the game emits. Pass that mark type; see the backend notes under
-   [§ Game: Bubble Match](#backend). Also pass `surface=<your-game>` so the server
+   the mark type the game emits. Declare that mark type ONCE as `MARK_TYPE` in your
+   game's `constants.ts` and read it from there for the `?markType=` query, the
+   `markFlashcard({ type })` call, and your `GameDef.markType` (which makes the hub
+   render its mark-type chip). If your game's mark type varies by mode, omit
+   `GameDef.markType` and put the type on each mode config instead, the way Word
+   Search does — then pass a `MarkTypeChip` per sub-card. See the backend notes under
+   [§ Game: Bubble Match](#backend) and
+   [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md). Also pass `surface=<your-game>` so the server
    tops the player up to your baseline (`CARD_BASELINES` in `server/contracts/wire.ts`).
    **Do NOT block entry on `sufficient === false`** — after provisioning it can only be
    false when the dictionary itself is exhausted, and a short round still plays. Show
-   `ProvisionalCardsNotice` before the round and `SortProvisionalCta` after it. See
+   `ProvisionalCardsNotice` before the round and `ProvisionalSortOffer` after it
+   (drive the latter with `useProvisionalSortOffer(roundIsOver, lentWords)` and render
+   it as a SIBLING of your `GameEndPopup`, so it stacks over the result). See
    [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md).
 3. **Render definitions through `resolveDisplayDefinition`** — see
    [§ Sense correctness](#sense-correctness--every-game-must-honor-the-learners-selected-sense).
@@ -592,13 +636,13 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   **Category buckets are per mark type**: each game passes the single mark type it
   emits (Bubble Match `recognition`; Word Search `reading`/`production` by mode) and
   candidates are bucketed by that track's own recent mark history
-  (`compute_type_category`), not by the goal-blended overall utcm category the flp
+  (`compute_type_category`), not by the whole-card **core** mastery bar the flp
   and decks page use — so each game's difficulty distribution reflects the skill it
   actually trains. That same per-type category also selects the card's cooldown
   window. See [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md).
   **Each returned card carries `gameCategory`** — the bucket it was actually drawn
   from (`fetchGameCandidates` stamps it as it partitions rows). It is NOT the same
-  field as the card's `category`, which is the goal-blended overall utcm level; both
+  field as the card's `category`, which is the **core** mastery bar's band; both
   ride on the entry and mean different things, hence the explicit name. The stamp
   reports the queue *drained*, so it stays truthful when a short bucket is topped up
   from the fallback order. Match Speed sorts its per-category client-side card

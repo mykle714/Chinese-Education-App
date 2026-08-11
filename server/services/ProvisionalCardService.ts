@@ -36,8 +36,16 @@ import { DiscoverCard } from '../types/index.js';
  * garbage-collected, because deleting it would throw that progress away — the same
  * reason undoSort demotes rather than deletes.
  *
+ * TWO ENTRY POINTS
+ *   - `ensureBaseline` — "top the user up to N playable cards". The cold-start guard
+ *     every surface calls before assembling a round.
+ *   - `lendCards` — "lend exactly N, whatever they hold". Used by the flp working
+ *     loop, where the user can be far past the baseline and still have nothing to
+ *     play because every card is resting on its cooldown.
+ *
  * Referenced by: OnDeckVocabController (game pools, word search, the flp working
- * loop). Depends on: ProvisionalCardDAL, StarterPacksService.estimateLevel.
+ * loop), OnDeckVocabService (the flp cooldown-exhaustion top-up).
+ * Depends on: ProvisionalCardDAL, StarterPacksService.estimateLevel.
  */
 export class ProvisionalCardService {
   constructor(
@@ -75,16 +83,55 @@ export class ProvisionalCardService {
       return { granted: 0, grantedWords: [], playable, shortfall: 0 };
     }
 
+    const { granted, grantedWords } = await this.lendCards(userId, language, target - playable);
+    // Re-read the true playable count rather than trusting the batch size: ON CONFLICT
+    // DO NOTHING means a concurrent entry may have claimed some of the same words.
+    if (granted > 0) {
+      playable = await this.provisionalCardDAL.countPlayable(userId, language);
+    }
+
+    const shortfall = Math.max(0, target - playable);
+    return { granted, grantedWords, playable, shortfall };
+  }
+
+  /**
+   * Lend exactly `count` cards, REGARDLESS of how many the user already holds.
+   *
+   * This is the unconditional primitive `ensureBaseline` is built on, and it exists
+   * as its own entry point because the flp working loop needs a case the baseline
+   * cannot express: a learner with hundreds of playable cards, all of them resting on
+   * their per-type cooldown. `ensureBaseline` no-ops there (the count is already past
+   * the baseline) even though the loop has nothing to serve. The loop asks for the
+   * cards it is short and honors the cooldown instead of re-serving a cooling card.
+   * See OnDeckVocabService.getDistributedWorkingLoop and docs/PROVISIONAL_CARDS.md.
+   *
+   * Two passes. The first draws from fresh supply only; the second is reached only
+   * when fresh supply cannot cover the gap, and recycles words the user skipped in
+   * discover.
+   *
+   * `granted` counts rows that actually landed. `grantedWords` lists every word
+   * ATTEMPTED, so it can slightly overstate when a concurrent request won the same
+   * word — harmless, because a word lost that way is one the user now holds anyway,
+   * and the list's only consumers are the exclusion filter and the "sort these cards"
+   * hand-off. Returns `{ granted: 0 }` rather than throwing when supply runs out.
+   */
+  async lendCards(
+    userId: string,
+    language: string,
+    count: number
+  ): Promise<{ granted: number; grantedWords: string[] }> {
+    if (!userId) throw new ValidationError('User ID is required');
+    if (!language) throw new ValidationError('Language is required');
+
+    const want = Math.max(0, Math.floor(count));
+    if (want === 0) return { granted: 0, grantedWords: [] };
+
     const level = await this.starterPacksService.estimateLevel(userId, language);
     const grantedWords: string[] = [];
+    let granted = 0;
 
-    // Two passes. The first draws from fresh supply only; the second is reached only
-    // when fresh supply cannot cover the gap, and recycles words the user skipped in
-    // discover. Each pass re-reads the true playable count afterwards rather than
-    // trusting its own batch size, because ON CONFLICT DO NOTHING means a concurrent
-    // entry may have claimed some of the same words.
     for (const includeSkipped of [false, true]) {
-      const need = target - playable;
+      const need = want - granted;
       if (need <= 0) break;
 
       const candidates = await this.provisionalCardDAL.findCandidates(
@@ -98,22 +145,19 @@ export class ProvisionalCardService {
 
       const words = candidates.map((c) => c.word1);
       const inserted = await this.provisionalCardDAL.insertProvisional(userId, words, language);
-      if (inserted.length === 0) continue;
-
       grantedWords.push(...words);
-      playable = await this.provisionalCardDAL.countPlayable(userId, language);
+      granted += inserted.length;
     }
 
-    const shortfall = Math.max(0, target - playable);
-    if (grantedWords.length > 0) {
+    if (granted > 0) {
       console.log(
-        `[Provisional] Lent ${grantedWords.length} card(s) to user=${userId.substring(0, 8)}… language=${language} ` +
-          `level=${level} baseline=${target} playable=${playable}` +
-          (shortfall > 0 ? ` (still ${shortfall} short — dictionary supply exhausted)` : '')
+        `[Provisional] Lent ${granted} card(s) to user=${userId.substring(0, 8)}… language=${language} ` +
+          `level=${level} requested=${want}` +
+          (granted < want ? ` (${want - granted} short — dictionary supply exhausted)` : '')
       );
     }
 
-    return { granted: grantedWords.length, grantedWords, playable, shortfall };
+    return { granted, grantedWords };
   }
 
   /**

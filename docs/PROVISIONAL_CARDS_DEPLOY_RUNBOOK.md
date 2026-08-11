@@ -97,10 +97,13 @@ Provisional cards must be invisible to every deck surface. With the same user:
 
 ```sql
 -- What the decks page reports as deck size (must EXCLUDE provisional).
-SELECT compute_utcm_category(ve."typedMarkHistory", u."readingGoal", u."writingGoal") AS category,
+-- Uses the CORE mastery bar, which is what getCategoryCounts reads (migration 143,
+-- docs/MASTERY_BARS_DEPLOY_RUNBOOK.md). If 143 has not been applied yet, substitute
+-- compute_utcm_category(ve."typedMarkHistory", u."readingGoal", u."writingGoal")
+-- and join users.
+SELECT compute_core_category(ve."typedMarkHistory") AS category,
        count(*)
 FROM vocabentries_zh ve
-JOIN users u ON u.id = ve."userId"
 WHERE ve."userId" = '<user-uuid>'
   AND ve.language = 'zh'
   AND ve."starterPackBucket" = 'library'

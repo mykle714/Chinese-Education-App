@@ -181,6 +181,7 @@ const DictionaryCardDetailPage: React.FC = () => {
                                             speakingKey={tts.speakingKey}
                                             showWriting
                                             inlineActions
+                                            selectedSenseIndex={selectedSenseIndex}
                                         />
                                     ),
                                     english: (

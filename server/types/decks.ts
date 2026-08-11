@@ -60,15 +60,8 @@ export interface SetDeckMembershipsBody {
   deckIds?: number[];
 }
 
-/**
- * Which set of cards a launch surface (a game, or flp) should draw from.
- *
- * Parsed from the query string by `parseCollectionRef` and threaded down to the
- * vet read as an optional deck filter. `kind: 'deck'` is the only variant that
- * narrows anything — the two built-in collections are exactly the pools those
- * surfaces already used, so they carry no extra filter.
- */
-export type CollectionRef =
-  | { kind: 'deck'; deckId: number }
-  | { kind: 'learn-now' }
-  | { kind: 'mastered' };
+// NOTE: a `CollectionRef` union used to live here, describing which set a launch
+// surface draws from. It had no importers — the real one is `CollectionFilter` in
+// OnDeckVocabService, which is what every launch path actually threads — and it had
+// already drifted (a `parseCollectionRef` that does not exist, a 'mastered' variant
+// the service no longer has). Removed rather than re-synced.

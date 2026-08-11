@@ -189,7 +189,7 @@ const CardFace: React.FC<{
                 inert={isFlipped}
             >
                 {sideOneLanguage === 'zh'
-                    ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} showWriting={false} />
+                    ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} showWriting={false} selectedSenseIndex={selectedSenseIndex} />
                     : <EnglishBlock
                         entry={entry}
                         selectedSenseIndex={selectedSenseIndex}
@@ -226,6 +226,7 @@ const CardFace: React.FC<{
                             speakingKey={speakingKey}
                             showWriting
                             inlineActions
+                            selectedSenseIndex={selectedSenseIndex}
                         />
                     ),
                     english: <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={handleSelectSense} inlineActions />,

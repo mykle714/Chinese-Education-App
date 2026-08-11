@@ -512,7 +512,7 @@ a fixed 2/10/6/2 mix for a whole run. A Match Speed board can legitimately come
 up 5 Target cards.
 
 ⚠️ These categories are the **per-mark-type** categories (recognition, the track
-this game emits), not the goal-blended overall utcm category the decks page
+this game emits), not the whole-card **core** mastery bar the decks page
 shows. The `game-pool` endpoint already buckets this way — see
 [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md).
 
@@ -646,8 +646,9 @@ both the server and client types carry it from one definition.
 The buffer is keyed by category, but `GET /api/onDeck/game-pool` returns a **flat
 `cards[]` with no per-card game-category label**
 (`server/services/OnDeckVocabService.ts:974`). The `category` field the rows do
-carry comes from `UTCM_CATEGORY_SELECT` — the goal-blended **overall** utcm
-category, *not* the per-mark-type category the buckets were selected by. So today
+carry comes from `CORE_CATEGORY_SELECT` — the **core** mastery bar's band
+(recognition + production; see [MASTERY_REWORK.md](./MASTERY_REWORK.md) § Three
+bars), *not* the per-mark-type category the buckets were selected by. So today
 a client cannot sort a response back into four buffers.
 
 **The change:** stamp each returned card with the category bucket it was drawn

@@ -2,7 +2,7 @@ import React from "react";
 import { Box, CardContent, IconButton, ListItemIcon, ListItemText, ListSubheader, Menu, MenuItem, Typography, useTheme } from "@mui/material";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import StarIcon from "@mui/icons-material/Star";
-import { ddt, senseGrammarTag, sortedSenseClusters, resolveDisplayDefinition } from "../../../utils/definitionUtils";
+import { ddt, senseGrammarTag, sortedSenseClusters, resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import { numberedToTonedPinyin } from "../../../utils/textUtils";
 import { getToneColor } from "../../../utils/toneColors";
 import {
@@ -18,6 +18,7 @@ import CardIconLayer from "../../../cardIcons/CardIconLayer";
 import { defaultLayoutForIcon } from "../../../cardIcons/cardIconLayout";
 import { resolveTextLayout, textItemTransform, defaultEnglishTopAnchorTransform } from "../../../cardIcons/cardTextLayout";
 import ForeignText from "../../../components/ForeignText";
+import FrequencyScoreDots from "../../../components/FrequencyScoreDots";
 import { SpeakerButton } from "../../../components/SpeakerButton";
 import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
 import { getCategoryColor } from "../../../utils/categoryColors";
@@ -62,7 +63,13 @@ export const ChineseBlock: React.FC<{
     // include them (the movable-text case). Default (false) keeps the actions absolute so they
     // don't shift the centered text in the normal lower-third layout. See docs/CARD_ICON_LAYOUT.md.
     inlineActions?: boolean;
-}> = ({ entry, showPinyin, showPinyinColor, onSpeak, speakingKey, showWriting = false, inlineActions = false }) => {
+    // Which sense the card is currently on (index into `sortedSenseClusters`). The
+    // pinyin over the characters is per-SENSE for a heteronym (过去 guò qù / guò qu),
+    // so this block must resolve its pronunciation from the same pick EnglishBlock
+    // resolves its gloss from — see resolveDisplayPronunciation. Omit to fall back to
+    // the entry's persisted `selectedSense`.
+    selectedSenseIndex?: number;
+}> = ({ entry, showPinyin, showPinyinColor, onSpeak, speakingKey, showWriting = false, inlineActions = false, selectedSenseIndex }) => {
     const showWritingButton = showWriting && entry.language === "zh";
     // Per-card Contrast override for the foreign-word GLYPHS only (pinyin is untouched).
     // Undefined = theme default. See docs/CARD_ICON_LAYOUT.md.
@@ -114,7 +121,7 @@ export const ChineseBlock: React.FC<{
                     justifyContent="center"
                     className="mobile-demo-flashcard-cpcd-row"
                     text={entry.entryKey}
-                    pronunciation={entry.pronunciation}
+                    pronunciation={resolveDisplayPronunciation(entry, selectedSenseIndex)}
                     showPinyin={showPinyin}
                     useToneColor={showPinyinColor}
                     characterColor={characterColor}
@@ -255,6 +262,28 @@ export const EnglishBlock: React.FC<{
                     </ListItemIcon>
                 )}
                 <ListItemText inset={index !== 0} primary={ddt(cluster)} />
+                {/* Per-sense commonality (the cluster's own 1–5 conversation-frequency
+                    score, migration 139 / docs/DEFINITION_CLUSTERS.md) — the same meter
+                    the eip and cdp show, shrunk to menu scale and muted to secondary text
+                    so it reads as metadata beside the sense label. It earns its place here
+                    because the zh path GROUPS by reading, so the menu order is no longer
+                    globally frequency-sorted and the learner otherwise can't tell which of
+                    two senses under different readings is the common one. Omitted (rather
+                    than shown as five hollow dots) when scoring failed / never ran. */}
+                {cluster.frequencyScore != null && (
+                    // Wrapper carries the spacing/no-shrink: FrequencyScoreDots takes
+                    // colors and sizes but no sx, so layout is the caller's job.
+                    <Box sx={{ ml: 1.5, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                        <FrequencyScoreDots
+                            className="mobile-demo-flashcard-sense-commonality"
+                            score={cluster.frequencyScore}
+                            dotSize={5}
+                            gap={2.5}
+                            filledColor={theme.palette.text.secondary}
+                            emptyBorderColor={theme.palette.divider}
+                        />
+                    </Box>
+                )}
                 {tag && (
                     <Typography
                         className="mobile-demo-flashcard-sense-grammar"
@@ -366,8 +395,15 @@ export const EnglishBlock: React.FC<{
                                     lineHeight: 1.6,
                                     fontWeight: WEIGHT.semibold,
                                     bgcolor: 'transparent',
+                                    // Row so the heading can carry the right-hand column label
+                                    // (see the "Commonality" caption below) opposite the reading.
+                                    display: 'flex',
+                                    alignItems: 'baseline',
+                                    justifyContent: 'space-between',
+                                    gap: 1.5,
                                 }}
                             >
+                                <Box component="span">
                                 {/* Front/question side: the reading is the answer, so the heading
                                     becomes a bare ordinal label ("Group 1"). Sections are already in
                                     frequency order, so the numbering is stable for a given card. */}
@@ -384,6 +420,26 @@ export const EnglishBlock: React.FC<{
                                         </React.Fragment>
                                     ))
                                     : <span style={{ color: theme.palette.text.secondary }}>—</span>}
+                                </Box>
+                                {/* Column label for the trailing dot meters. Rendered on the FIRST
+                                    section only — repeating it over every reading would read as
+                                    part of each heading rather than as a one-time column header —
+                                    and only when some cluster actually has a score to show. */}
+                                {sectionIndex === 0 && sortedClusters.some((c) => c.frequencyScore != null) && (
+                                    <Box
+                                        component="span"
+                                        className="mobile-demo-flashcard-sense-commonality-label"
+                                        sx={{
+                                            fontSize: SIZE.micro,
+                                            fontWeight: WEIGHT.regular,
+                                            letterSpacing: TRACKING.wide,
+                                            color: theme.palette.text.secondary,
+                                            whiteSpace: 'nowrap',
+                                        }}
+                                    >
+                                        Commonality
+                                    </Box>
+                                )}
                             </ListSubheader>,
                             // The reading heading above already disambiguates these senses,
                             // so the per-item grammar tag would be noise here.

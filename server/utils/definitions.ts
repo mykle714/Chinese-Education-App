@@ -1,3 +1,5 @@
+import { numberedToTonedPinyin, readingSyllableCount } from './pinyinTones.js';
+
 /**
  * Pure utility for computing short definitions from a definitions array.
  * Deterministic — no AI, no DB, no external dependencies.
@@ -186,7 +188,13 @@ export function resolveSenseGloss(
 }
 
 // Inline cluster shape (avoids a circular dependency with server/types/index.ts).
-type SenseCluster = { sense?: string | null; glosses?: string[] | null; frequencyScore?: number | null };
+type SenseCluster = {
+  sense?: string | null;
+  glosses?: string[] | null;
+  frequencyScore?: number | null;
+  // Numbered pinyin for THIS sense (zh only; null for es). See resolveDisplayPronunciation.
+  reading?: string | null;
+};
 
 /**
  * The ONE sense-pick rule, shared by every server-side "which sense is this card on?"
@@ -314,6 +322,39 @@ export function resolveDisplayDefinition(entry: {
   const chosen = resolveSelectedCluster(entry);
   if (!chosen || !Array.isArray(chosen.glosses)) return legacyDd;
   return ddt({ glosses: chosen.glosses as string[] }) || legacyDd;
+}
+
+/**
+ * Server twin of `resolveDisplayPronunciation` in `src/utils/definitionUtils.ts` — the
+ * DISPLAY pinyin for a vet-backed entry, honoring the learner's per-card sense pick.
+ *
+ * A heteronym's reading belongs to its sense, not to the word (过去 = `guò qù` "the past"
+ * vs `guò qu` the directional suffix), so every payload that materializes a sense-resolved
+ * definition must materialize the matching reading beside it — otherwise the surface prints
+ * one sense's English over another sense's tones. Used only where the clusters do NOT travel
+ * to the client (the Word Search word list, the related-words / used-in lists); client-side
+ * surfaces resolve locally with the client twin.
+ *
+ * Returns the entry-level `pronunciation` column whenever there is no per-sense reading to
+ * use — unclustered, single-cluster, Spanish (whose clusters carry no reading), or a reading
+ * whose syllable count disagrees with the column (cpcd zips syllables to characters
+ * positionally, so a mis-shaped reading would shift every character's pinyin one column).
+ * See docs/DEFINITION_CLUSTERS.md.
+ */
+export function resolveDisplayPronunciation(entry: {
+  pronunciation?: string | null;
+  definitionClusters?: SenseCluster[] | null;
+  selectedSense?: string | null;
+}): string | null {
+  const columnPinyin = entry.pronunciation ?? null;
+  const reading = resolveSelectedCluster(entry)?.reading;
+  if (!reading) return columnPinyin;
+  const toned = numberedToTonedPinyin(reading);
+  if (!toned) return columnPinyin;
+  if (columnPinyin && readingSyllableCount(toned) !== readingSyllableCount(columnPinyin)) {
+    return columnPinyin;
+  }
+  return toned;
 }
 
 // Inline type to avoid a circular dependency with server/types/index.ts

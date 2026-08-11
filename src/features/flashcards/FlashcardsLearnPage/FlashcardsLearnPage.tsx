@@ -5,10 +5,11 @@ import DelayedCircularProgress from "../../../components/DelayedCircularProgress
 import { useAuth } from "../../../AuthContext";
 import type { Language } from "../../../types";
 import ProvisionalCardsNotice from "../../../components/ProvisionalCardsNotice";
-import SortProvisionalCta from "../../../components/SortProvisionalCta";
+import ProvisionalSortOffer from "../../../components/ProvisionalSortOffer";
 import { addToLibrary } from "../../../utils/vocabApi";
 import { ContentArea, MoreInfoPill } from "./styled";
 import { FC_FONT } from "../constants";
+import { useLaunchCollection } from "../useLaunchCollection";
 import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
 import { useWorkingLoop, type CardDragControls, type StudyMode } from "./useWorkingLoop";
@@ -61,10 +62,23 @@ const FlashcardsLearnPage: React.FC = () => {
     // ?mode=easy / ?mode=hard links opens a Study session rather than dead-ending.
     const rawMode = searchParams.get('mode');
     const selectedMode: StudyMode | null = rawMode === 'review' || rawMode === 'challenge' ? rawMode : null;
-    // Mode-specific empty-state copy shown when a mode session runs out of cards.
+    // The collection this session was launched from, for the empty-state copy below.
+    // useWorkingLoop reads the same hook for its fetches; it is a pure derivation of
+    // this page's own URL, so calling it twice cannot disagree.
+    const launchCollection = useLaunchCollection();
+    // Empty-state copy, shown when the working loop runs dry.
+    //
+    // It CAN now run dry in every kind of session, not just a mode one. The server
+    // honors the per-type cooldown rather than re-serving a resting card: an
+    // unrestricted round covers the gap with lent cards, but a round restricted to a
+    // named set (Review, Mastered, a deck) has no lendable card it is allowed to show
+    // and comes back empty on purpose. "Resting" is the honest word for that — the
+    // learner has these cards, they just aren't due. See docs/PROVISIONAL_CARDS.md.
     const emptyMessage: string | undefined =
         selectedMode === 'review' ? 'No more review cards remaining.'
         : selectedMode === 'challenge' ? 'No more challenge cards remaining.'
+        : launchCollection?.kind === 'deck' ? 'Every card in this deck is resting. Check back later!'
+        : launchCollection?.kind === 'mastered' ? 'Your mastered cards are all resting. Check back later!'
         : undefined;
 
     const { settings: learnSettings, update: updateLearnSettings } = useFlashcardLearnSettings();
@@ -206,6 +220,36 @@ const FlashcardsLearnPage: React.FC = () => {
         redoAdv,
         pushAdvHistory,
     } = useCardIconEditor({ currentEntry, nextEntry });
+
+    // ── Leaving the session ──────────────────────────────────────────────────
+    // flp accumulates lent cards for the whole session (the working loop refills as
+    // the learner goes), so the offer to keep them can only be made on the way OUT.
+    // The back arrow therefore raises the offer once; "Not now" completes the exit.
+    // `exitOfferShown` makes it a one-shot — a learner who declined and tapped back
+    // again leaves immediately rather than being asked twice.
+    const [exitOfferOpen, setExitOfferOpen] = useState(false);
+    const [exitOfferShown, setExitOfferShown] = useState(false);
+
+    /** Perform the real exit, closing the offer first if it is up. */
+    const leaveSession = useCallback(() => {
+        setExitOfferOpen(false);
+        if (editMode) exitEdit();
+        navigate('/flashcards/decks');
+    }, [editMode, exitEdit, navigate]);
+
+    /**
+     * Back arrow. In edit mode it first cancels the edit (discarding the draft,
+     * unpausing minute points) — that happens inside `leaveSession`. When the session
+     * borrowed cards, the sort offer intercepts the first tap instead of navigating.
+     */
+    const handleBack = useCallback(() => {
+        if (provisionalSeen.length > 0 && !exitOfferShown) {
+            setExitOfferShown(true);
+            setExitOfferOpen(true);
+            return;
+        }
+        leaveSession();
+    }, [provisionalSeen.length, exitOfferShown, leaveSession]);
 
     // ── Toolbar-overlap push-down gate ────────────────────────────────────────
     // The advanced-edit push-down slides the card down to clear the three-row toolbar, but we
@@ -437,32 +481,25 @@ const FlashcardsLearnPage: React.FC = () => {
                 surfaceName="this study session"
                 language={(user?.selectedLanguage ?? "zh") as Language}
             />
-            {/* End-of-session offer. flp has no explicit "you finished" screen — the
-                session is over when the working loop empties — so the offer to keep
-                the lent cards surfaces exactly then, floated above the empty state.
-                Renders nothing when no cards were lent. */}
-            {workingLoop.length === 0 && (
-                <Box
-                    className="flashcards-learn__provisional-cta"
-                    sx={{
-                        position: "fixed",
-                        left: 0,
-                        right: 0,
-                        bottom: 96,
-                        zIndex: 1200,
-                        display: "flex",
-                        justifyContent: "center",
-                        px: 3,
-                        pointerEvents: "none",
-                        "& > *": { pointerEvents: "auto" },
-                    }}
-                >
-                    <SortProvisionalCta
-                        words={provisionalSeen}
-                        language={(user?.selectedLanguage ?? "zh") as Language}
-                    />
-                </Box>
-            )}
+            {/* End-of-session offer. Unlike a game, flp has no scoreboard to attach
+                this to — a session ends when the learner LEAVES — so the offer gates
+                the back arrow instead (see `handleBack` below), listing every lent
+                card the working loop dealt across the whole session. Not minimizable:
+                the learner is on their way out, so the only two answers are "sort
+                them" and "leave anyway". Renders nothing when no cards were lent. */}
+            <ProvisionalSortOffer
+                open={exitOfferOpen}
+                words={provisionalSeen}
+                language={(user?.selectedLanguage ?? "zh") as Language}
+                onDismiss={leaveSession}
+                dismissLabel="Leave anyway"
+                // No game stage to sit inside, and flp's own dialogs live in the 1200s.
+                positioning="fixed"
+                zIndex={1400}
+                // Sorting navigates away from an unsaved icon-layout edit, so tear the
+                // editor down first exactly as leaving normally would.
+                onNavigate={() => { if (editMode) exitEdit(); }}
+            />
             <FlashcardsLearnHeader
                 selectedCategory={selectedCategory}
                 lastMarkUndoSnapshot={lastMarkUndoSnapshot}
@@ -470,10 +507,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 isUndoing={isUndoing}
                 // In edit mode the back arrow first cancels the edit (discarding the
                 // draft, unpausing minute points), then performs the normal back nav.
-                onBack={() => {
-                    if (editMode) exitEdit();
-                    navigate('/flashcards/decks');
-                }}
+                onBack={handleBack}
                 onUndo={handleUndoLastMark}
                 showPinyin={showPinyin}
                 onTogglePinyin={() => updateLearnSettings({ showPinyin: !showPinyin })}
@@ -632,6 +666,9 @@ const FlashcardsLearnPage: React.FC = () => {
                                     // In-flow so the buttons are part of the block's box — the
                                     // selection outline + on-card clamp include them.
                                     inlineActions
+                                    // Same sense the preview's EnglishBlock below resolves, so the
+                                    // previewed pinyin matches the live card's (migration 99).
+                                    selectedSenseIndex={resolveSelectedSenseIndex(editingCurrentEntry)}
                                 />
                             ) : null}
                             englishNode={editingCurrentEntry ? (

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   bandsClimbed,
+  barCategory,
+  barForMarkType,
   categoryRank,
   CATEGORY_ORDER,
-  computeUtcm,
-  type MasteryGoals,
 } from '../contracts/mastery.js';
 import type { ReviewMark, TypedMarkHistory } from '../contracts/wire.js';
 
@@ -17,8 +17,12 @@ import type { ReviewMark, TypedMarkHistory } from '../contracts/wire.js';
  * mistake here silently mis-scores the log forever, because the log is the only
  * record that the move happened.
  *
- * The multi-band case is not hypothetical: pbh is continuous, so one mark can cross
- * two boundaries at once. See the last test.
+ * The multi-band case is not hypothetical: the core pbh is continuous, so one mark
+ * can cross two boundaries at once. See the last test.
+ *
+ * Since migration 143 a promotion is measured on the bar the MARK belongs to, not on
+ * a single whole-card band — the mark handler pairs `barForMarkType` with
+ * `barCategory` either side of the write.
  */
 
 /** Build a track with `n` correct marks. */
@@ -26,8 +30,6 @@ function track(n: number): ReviewMark[] {
   const at = '2026-01-01T00:00:00.000Z';
   return Array.from({ length: n }, () => ({ timestamp: at, isCorrect: true }));
 }
-
-const RECOGNITION_ONLY: MasteryGoals = { reading: false, writing: false };
 
 describe('categoryRank', () => {
   it('ranks the bands in ascending mastery order', () => {
@@ -62,50 +64,53 @@ describe('bandsClimbed', () => {
   });
 });
 
+/** What the mark handler computes: the step size on the bar the mark landed in. */
+function stepsFor(
+  before: TypedMarkHistory,
+  after: TypedMarkHistory,
+  markType: Parameters<typeof barForMarkType>[0]
+): number {
+  const bar = barForMarkType(markType);
+  return bandsClimbed(barCategory(before, bar), barCategory(after, bar));
+}
+
 describe('velocity at the mark boundary', () => {
   it('logs 1 for the mark that carries a card over a band boundary', () => {
-    // Recognition-only goals: pbh == the recognition positive count, so the 3rd
-    // correct mark crosses PBH_BAND.TARGET.
+    // Recognition only, so the core pbh == the recognition count: the 3rd correct
+    // mark crosses PBH_BAND.TARGET.
     const before: TypedMarkHistory = { recognition: track(2) };
     const after: TypedMarkHistory = { recognition: track(3) };
-    const climbed = bandsClimbed(
-      computeUtcm(before, RECOGNITION_ONLY),
-      computeUtcm(after, RECOGNITION_ONLY)
-    );
-    expect(climbed).toBe(1);
+    expect(stepsFor(before, after, 'recognition')).toBe(1);
   });
 
   it('logs 0 for a mark that stays inside a band (most marks)', () => {
     const before: TypedMarkHistory = { recognition: track(3) };
     const after: TypedMarkHistory = { recognition: track(4) };
     // Both sides band as 'Target' (3 and 4 correct are inside the same band).
-    expect(computeUtcm(before, RECOGNITION_ONLY)).toBe('Target');
-    expect(
-      bandsClimbed(computeUtcm(before, RECOGNITION_ONLY), computeUtcm(after, RECOGNITION_ONLY))
-    ).toBe(0);
+    expect(barCategory(before, 'core')).toBe('Target');
+    expect(stepsFor(before, after, 'recognition')).toBe(0);
   });
 
   it('logs 2 when one mark crosses two boundaries at once', () => {
-    // With all four goals the second term (the non-max tracks / 9) can jump the
-    // blend by more than a band in a single mark: a card sitting just under
-    // Target with three maxed non-max tracks lands in Comfortable.
-    const goals: MasteryGoals = { reading: true, writing: true };
-    const before: TypedMarkHistory = {
-      recognition: track(2),
-      production: track(2),
-      reading: track(2),
-      writing: track(2),
-    };
-    // pbh(before) = 2 + (6/9) = 2.67 → Unfamiliar
-    expect(computeUtcm(before, goals)).toBe('Unfamiliar');
-    const after: TypedMarkHistory = {
-      recognition: track(6),
-      production: track(2),
-      reading: track(2),
-      writing: track(2),
-    };
-    // pbh(after) = 6 + (6/9) = 6.67 → Comfortable, two bands up.
-    expect(computeUtcm(after, goals)).toBe('Comfortable');
-    expect(bandsClimbed(computeUtcm(before, goals), computeUtcm(after, goals))).toBe(2);
+    // The core blend is continuous, so a single mark can jump more than one band.
+    // Here production is parked at 2 (contributing a flat 2/3) while recognition
+    // climbs from 2 to 6 — which is a realistic Bubble Match streak, not a contrived
+    // history, and is why the log stores the step size instead of assuming 1.
+    const before: TypedMarkHistory = { recognition: track(2), production: track(2) };
+    const after: TypedMarkHistory = { recognition: track(6), production: track(2) };
+    // pbh(before) = 2 + 2/3 = 2.67 → Unfamiliar
+    expect(barCategory(before, 'core')).toBe('Unfamiliar');
+    // pbh(after)  = 6 + 2/3 = 6.67 → Comfortable, two bands up.
+    expect(barCategory(after, 'core')).toBe('Comfortable');
+    expect(stepsFor(before, after, 'recognition')).toBe(2);
+  });
+
+  it('scores a reading mark on the READING bar, not the core one', () => {
+    // The core bar sees nothing here; velocity would log 0 if it banded the card as
+    // a whole, which is exactly the progress the three-bar model set out to count.
+    const before: TypedMarkHistory = { reading: track(2) };
+    const after: TypedMarkHistory = { reading: track(3) };
+    expect(stepsFor(before, after, 'reading')).toBe(1);
+    expect(bandsClimbed(barCategory(before, 'core'), barCategory(after, 'core'))).toBe(0);
   });
 });

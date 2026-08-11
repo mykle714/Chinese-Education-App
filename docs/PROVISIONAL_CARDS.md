@@ -73,12 +73,11 @@ Current classification (all call sites):
 
 | Read | Clause | Where |
 |---|---|---|
-| `fetchGameCandidates` (all game pools) | PLAYABLE | `OnDeckVocabService.ts:281` |
-| `fetchLibraryCandidatesByCategory` (flp refill) | PLAYABLE | `OnDeckVocabService.ts:489` |
-| `fetchEligibleCategoryCards` (flp loop) | PLAYABLE | `OnDeckVocabService.ts:595` |
+| `fetchGameCandidates` (all game pools) | PLAYABLE | `OnDeckVocabService.ts:318` |
+| `fetchFlpCandidates` (flp loop **and** refill — one shared source) | PLAYABLE | `OnDeckVocabService.ts:645` |
 | `getLibraryDistractors` (Speed Reading filler) | PLAYABLE | `SpeedReadingDAL.ts:55` |
-| `getLibraryCards` / `getMastered…` / `getNonMastered…` | SORTED | `OnDeckVocabService.ts:400,426,453` |
-| `getCategoryCounts` (decks page deck sizes) | SORTED | `OnDeckVocabService.ts:809` |
+| `getLibraryCards` / `getMastered…` / `getNonMastered…` | SORTED | `OnDeckVocabService.ts:455,581,608` |
+| `getCategoryCounts` (decks page deck sizes) | SORTED | `OnDeckVocabService.ts:969` |
 | `findByUserIdAndLanguage`, `countByUserIdAndLanguage`, `searchEntries`, `findByDifficultyLevel`, `bulkFindByKeys`, `findByTokens`, `findEntriesCreatedAfter`, `findRelatedBySharedCharacters`, `findUsedInForCharacter` | SORTED | `VocabEntryDAL.ts` |
 | community feed | SORTED | `CommunityLayoutDAL.ts:128` |
 | `estimateLevel`, discover supply, quick-mark supply, `_hydrateCards.sorted`, `getProgress` | SORTED | `StarterPacksService.ts` |
@@ -126,6 +125,25 @@ discoverable word gets `shortfall > 0` and a smaller round. Never a block screen
 Always server-side, implicitly, when a surface fetches its card set. The client never
 asks for cards to be lent.
 
+There are **two triggers**, and they answer different questions:
+
+| Entry point | Question | Caller |
+|---|---|---|
+| `ensureBaseline(userId, language, N)` | "does this learner hold at least N playable cards?" | `OnDeckVocabController`, before assembling any set |
+| `lendCards(userId, language, n)` | "lend exactly n, whatever they hold" | `OnDeckVocabService`, mid-algorithm, when the flp loop can't be filled |
+
+`lendCards` exists because the baseline **cannot express the flp's case**. A learner with
+400 sorted cards is far past the 20-card flp baseline, so `ensureBaseline` no-ops — yet
+if every one of those cards is resting on its per-type cooldown, the working loop has
+nothing to serve. The loop honors the cooldown and asks for the difference instead of
+re-serving a resting card. See § 6 and docs/MASTERY_REWORK.md § 6.
+
+Consequence worth knowing: **lending is now a routine event, not just a cold-start one**,
+and there is deliberately **no cap** on outstanding lent cards. A learner who studies hard
+and never sorts can accumulate a large provisional holding. That is the accepted trade —
+the same "never block" principle that created provisional cards in the first place — and
+the end-of-session "sort these cards" CTA is the pressure valve.
+
 `OnDeckVocabController` calls `ensureBaseline` **before** assembling any set:
 
 | Endpoint | Surface | Notes |
@@ -156,28 +174,76 @@ Whether the notice can **name** the words is a per-surface property, shared as
 
 | Surface | Itemized? | Why |
 |---|---|---|
-| Bubble Match, Speed Reading, Word Search | **yes** — lists the exact words | fixed, known set |
+| Bubble Match, Speed Reading, Word Search | **yes** — tabulates the exact cards | fixed, known set |
 | Match Speed | no — generic message | deals from a rolling buffer |
 | flp | no — generic message | working loop refills as you go |
+
+An itemized notice shows a **table**, one row per lent card: **word1 · pinyin · dd**
+(`src/components/ProvisionalCardTable.tsx`). A bare word list was the first version and
+was not enough — a learner handed words they never sorted cannot judge them without the
+meaning. Both the pinyin and the dd go through the sense-aware resolvers
+(`resolveDisplayPronunciation` / `resolveDisplayDefinition`), so the table agrees with
+the card face the learner is about to meet.
 
 There is no way to decline. Declining would mean not playing, which is the outcome this
 whole rework removed.
 
+Because the notice opens the moment a round is primed, **every game freezes while it is
+up** — its clock, and in Bubble Match's case its launcher and descending ceiling. Reading
+which cards were lent to you is not playing, so it isn't charged to the run. See
+[GAMES_FEATURE.md](./GAMES_FEATURE.md) § Popups pause the clock for the per-game table.
+
 The client derives the notice from the served cards themselves
-(`card.starterPackBucket === 'provisional'`, via `src/utils/provisionalCards.ts`), so
-nothing extra rides on the wire. Word Search is the one exception: its grid payload
-carries `PlacedWord`s rather than vet rows, so the server reports a flat
-`provisionalWords: string[]` instead of threading a flag through the grid generator.
+(`card.starterPackBucket === 'provisional'`, via `provisionalRows` in
+`src/utils/provisionalCards.ts`), so nothing extra rides on the wire. Word Search is the
+one exception: its grid payload carries `PlacedWord`s rather than vet rows, so the server
+reports a flat `provisionalWords: string[]` instead of threading a flag through the grid
+generator — and the notice turns those words into rows by fetching them
+(`useProvisionalRows`, `src/hooks/useProvisionalRows.ts`).
 
-### After the round — `src/components/SortProvisionalCta.tsx`
+### After the round — `src/components/ProvisionalSortOffer.tsx`
 
-The completion screen offers *"Keep these N cards"*. This is the best possible moment to
-ask: the learner just spent a whole round with those words.
+The same table comes back as a **popup** asking *"Keep these N cards?"*, with
+**Sort these cards** / **Not now**. This is the best possible moment to ask: the learner
+just spent a whole round with those words. Accepting opens the sort flow in set mode
+(§ 7) on exactly those words.
 
-Ignoring it costs nothing — the cards stay, the marks stay, and the offer returns after
+**On a game** the offer is sequenced *behind* the run's own result. The end-of-run popup
+lands first and the offer opens over it `SORT_OFFER_DELAY_MS` (1.4 s) later, so the medal
+or time gets its own beat — `useProvisionalSortOffer` (`src/hooks/useProvisionalSortOffer.ts`)
+owns that timer plus the open/minimized/dismissed state, and resets the whole thing on a
+replay so a second run is judged on its own.
+
+Both popups are on screen together, so they must never read as one thing:
+
+| | Collapses to | Puck color |
+|---|---|---|
+| End-of-run popup (`GameEndPopup`) | top-**right** | neutral card color |
+| Sort offer (`ProvisionalSortOffer`) | top-**left** | blue accent (`COLORS.blueMain`), white icon |
+
+Minimizing the offer is the "not right now, but don't take it away" answer — it lives on
+as the corner puck for the rest of the round; **Not now** dismisses it for good. The
+collapse/restore mechanics are shared by both popups and live in
+`src/components/MinimizablePopup.tsx`; `GameEndPopup` is now a thin wrapper that pins the
+end-of-run corner and color.
+
+**On flp** there is no scoreboard to attach the offer to — a study session ends when the
+learner LEAVES — so the offer **gates the back arrow**. The first tap raises it listing
+every card the working loop dealt across the whole session; **Sort these cards** goes to
+the sort flow, **Leave anyway** completes the exit. It is a one-shot (`exitOfferShown`):
+tapping back after declining leaves immediately rather than asking twice. It is also not
+minimizable — the learner is on their way out, so a corner puck would have nothing to sit
+over. The loop-empty state shows nothing extra.
+
+Ignoring the offer costs nothing — the cards stay, the marks stay, and it returns after
 the next round. The non-itemized surfaces accumulate the lent words **as they are dealt**
 (`provisionalSeenRef` in `MatchSpeedPage` / `useWorkingLoop`), so by the end of the run
 they can name them even though the opening notice could not.
+
+The offer's table is fetched through the sort-set endpoint (§ 7), which intersects the
+asked-for words with what the learner genuinely still holds. Two consequences worth
+knowing: a card sorted in another tab drops out of the table by itself, and an offer with
+nothing left to give **does not appear at all**.
 
 ---
 
@@ -211,7 +277,7 @@ on-mode cards exist it plays exactly as designed.
 
 ### The same asymmetry on flp
 
-flp's study modes split identically (`MODE_CONFIGS`, `OnDeckVocabService.ts:38-50`):
+flp's study modes split identically (`MODE_CONFIGS`, `OnDeckVocabService.ts:59-72`):
 **Review = Comfortable + Mastered**, **Challenge = Unfamiliar + Target**.
 
 `FlashcardsDecksPage` therefore treats them differently:
@@ -236,6 +302,33 @@ The consequence is deliberate — Match Speed Review degrades (widened fallback)
 Review greys out. Match Speed can degrade because its board only needs *pairs*, and a pair
 of unfamiliar cards is still a playable board; flp Review's whole purpose is "show me cards
 I mostly know", which has no meaningful degraded form.
+
+### Which flp sessions may be topped up with lent cards
+
+The same asymmetry decides who gets a mid-loop top-up when every card is cooling. One rule,
+`canLendProvisional` (`OnDeckVocabService.ts`), governs both the initial loop and the refill:
+
+> Lend only when **`Unfamiliar` is a servable category** for this round **and** the round is
+> **unrestricted** (no `?deck=`, no `?collection=mastered`).
+
+| Session | All cards cooling ⇒ |
+|---|---|
+| Study (Mix) | lend to fill the 10-card loop |
+| Challenge | lend — `Unfamiliar` is one of its buckets |
+| Review | **empty**; `Comfortable`/`Mastered` are earned, and a lent card is neither |
+| `?collection=mastered` | **empty**; the collection filter would drop the lent card anyway |
+| `?deck=<id>` | **empty**; a lent card *would* pass `vetDeckOrProvisionalClause`, but a round named after a deck must not be made of non-deck words |
+
+Written as one predicate rather than a mode/collection switch, so a future mode or
+collection gets the right answer by construction.
+
+The restricted rows come back **short or empty on purpose** — there is no cooled-card last
+resort any more (`fetchCooledFallbackCards` and `pickLeastRecentlyCorrectFlp` are deleted).
+The client shows a "resting" empty state (`emptyMessage` in `FlashcardsLearnPage.tsx`), and
+`POST /api/flashcards/mark` returns **200 with `newCard: null`** rather than a 404 so
+`useWorkingLoop` winds the loop down cleanly. Note the *baseline* `ensureBaseline('flp')`
+call still runs for restricted sessions — that is the pre-existing cold-start guard and is
+unchanged; only the mid-loop top-up is gated by `canLendProvisional`.
 
 ---
 
@@ -310,8 +403,12 @@ The strict `vetDeckClause` (no provisional branch) is used by every read that me
 | Service | `server/services/StarterPacksService.ts` | `getCardsForWords`, in-place promotion, undo demotion |
 | Controller | `server/controllers/OnDeckVocabController.ts` | `ensureBaseline` before every set; Word Search retry ladder |
 | Controller | `server/controllers/StarterPacksController.ts` | `GET /api/starterPacks/:language/provisionalSet` |
-| Client (shared) | `src/api/provisional.ts`, `src/utils/provisionalCards.ts` | typed call; derive lent cards from a served set |
-| Client (shared) | `src/components/ProvisionalCardsNotice.tsx`, `src/components/SortProvisionalCta.tsx` | the notice; the end-of-round offer |
+| Client (shared) | `src/api/provisional.ts`, `src/utils/provisionalCards.ts` | typed call; derive lent cards (`provisionalWords` / `provisionalRows`) from a served set |
+| Client (shared) | `src/hooks/useProvisionalRows.ts` | word1/pinyin/dd rows — local when the caller holds the cards, fetched when it holds only words |
+| Client (shared) | `src/hooks/useProvisionalSortOffer.ts` | a game's offer timing + open/minimized/dismissed state |
+| Client (shared) | `src/components/MinimizablePopup.tsx` | the scrim / card / corner-puck collapse shell (also backs `GameEndPopup`) |
+| Client (shared) | `src/components/ProvisionalCardTable.tsx` | the word1 · pinyin · dd table |
+| Client (shared) | `src/components/ProvisionalCardsNotice.tsx`, `src/components/ProvisionalSortOffer.tsx` | the pre-round notice; the end-of-round offer popup |
 
 ---
 

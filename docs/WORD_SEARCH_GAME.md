@@ -30,11 +30,15 @@ Reuses Bubble Match's pool machinery so the two games feel like siblings.
 - **Buckets are per mark type, and differ by mode.** A candidate's
   Unfamiliar/Target/Comfortable/Mastered bucket comes from the recent mark history
   of the mode's own mark type — `reading` in No-Pinyin, `production` in Pinyin —
-  via `compute_type_category`, **not** the goal-blended overall utcm category. So
+  via `compute_type_category`, **not** the whole-card **core** mastery bar. So
   the same library yields a different word set in each mode: a card drilled hard in
   Pinyin mode still shows up as Unfamiliar for No-Pinyin. The same per-type category
   also picks that card's cooldown window. See
   [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md).
+  The mapping itself lives on `WordSearchModeConfig.markType`
+  (`src/games/word-search/constants.ts`) — Pinyin → `production`, No-Pinyin →
+  `reading` — and is the single source for both `WordSearchPage`'s `markFlashcard`
+  call and the hub sub-card's `MarkTypeChip`, so the label and the mark cannot drift.
 - **≤4-character cap**: each per-category candidate query filters
   `LENGTH(ve."entryKey") <= 4` — words longer than that are never selectable
   for this game. This keeps every word compatible with the template fallback's
@@ -262,10 +266,17 @@ hub card look via the exported `cardBaseSx`
 (`src/components/hubMenuCardBase.ts`) + `HubMenuCardTitle` / `HubMenuRowIconTile`
 (`src/components/HubMenu.tsx`). See [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md).
 
-| Sub-card | `mode` | Pinyin |
-|---|---|---|
-| **Pinyin** | `"pinyin"` | grid pinyin on, **always tone-colored**, rendered at **big-pinyin** scale (see "Cell size") |
-| **No Pinyin** | `"no-pinyin"` | grid pinyin off |
+| Sub-card | `mode` | Pinyin | Mark type chip |
+|---|---|---|---|
+| **Pinyin** | `"pinyin"` | grid pinyin on, **always tone-colored**, rendered at **big-pinyin** scale (see "Cell size") | PRODUCTION |
+| **No Pinyin** | `"no-pinyin"` | grid pinyin off | READING |
+
+- Each mode button carries a **`MarkTypeChip`** bottom-left
+  (`src/components/MarkTypeChip.tsx`, passed as `HubMenuCardTitle`'s `chip`), read
+  from that mode's `WordSearchModeConfig.markType`. Word Search is the only game
+  whose chip differs *between* its sub-cards, which is why the chip slot is
+  per-sub-card rather than on the group header. The resume square carries no chip —
+  at 1:1 it already holds four lines, and it names its saved mode anyway.
 
 - **Both mode buttons ALWAYS start a fresh game.** Tapping one navigates with
   nav `state = { mode, resume: false }`. Because both modes now share ONE saved
@@ -625,26 +636,43 @@ hint nudges recall without handing over the answer.
   list and the grid. **Blank by default** — nothing renders here until the
   player's first hint spend. Once a hint has picked a word, the row shows a
   mask built by `buildMask`: **one "island" per Chinese
-  character** in the word (space-separated, one per `pinyin` syllable) — so
-  the island count openly gives away the word's **character count**, by
-  design. Everything still hidden in an island is drawn as **one
-  `HINT_LETTER_BLANK` ("_") per omitted letter** — classic hangman spacing —
-  so each syllable shows its full length from the first press and every
-  reveal visibly consumes the blanks it fills. Tone diacritics ride on their
-  letter, so `ǎ` is one blank (`buildMask`/`letterCount` normalize to NFC
-  before counting). (History: this was 3 fixed underscores, then a single
-  count-free `HINT_REMAINDER_MARK` dash, now a true blank-per-letter — the
-  dash hid the length so well that a mask gave the player almost nothing to
-  anchor on. The dash lives on as the No-Pinyin board's `COMPONENT_BLANK`,
-  §5a-ii, where there is no letter count to show.) Units are distributed **round-robin across characters**
-  (`distributeRevealTiers`), not filled one island at a time: every
-  character's 1st unit is given out before any character's 2nd, then every
-  2nd before any 3rd, wrapping until the word is fully spelled out — a
-  character with fewer units than the current tier is simply skipped. E.g. a
-  2-char word like 变化 (biàn huà, units `b·i·àn` and `h·u·à`) goes
-  `____ ___` → `b___ ___` → `b___ h__` → `bi__ h__` → `bi__ hu_` →
-  `biàn hu_` → `biàn huà` rather than fully spelling out 变 before starting
-  on 化.
+  character** in the word (space-separated, one per `pinyin` syllable), but
+  **only for characters the player has paid to see** — everything is bought
+  one press at a time along a **two-stage ladder**:
+  1. **Letter counts, one character per press, left to right.** A character
+     whose length hasn't been bought yet is **not drawn at all** — no
+     placeholder — so the mask never leaks how many characters are still to
+     come; the word's **character count is itself learned one press at a
+     time**. The Nth press appends the Nth island as **one
+     `HINT_LETTER_BLANK` ("_") per hidden letter** — classic hangman spacing
+     showing that syllable's full length. So an N-character word spends its
+     first N presses purely on lengths.
+  2. **Phonetic units, only after every island's length is showing.** The
+     remaining presses fill blanks in, and each reveal visibly consumes the
+     blanks it fills. Units are distributed **round-robin across characters**
+     (`distributeRevealTiers`), not filled one island at a time: every
+     character's 1st unit is given out before any character's 2nd, then every
+     2nd before any 3rd, wrapping until the word is fully spelled out — a
+     character with fewer units than the current tier is simply skipped.
+
+  E.g. a 2-char word like 变化 (biàn huà, units `b·i·àn` and `h·u·à`) goes
+  `____` → `____ ___` → `b___ ___` → `b___ h__` → `bi__ h__` →
+  `bi__ hu_` → `biàn hu_` → `biàn huà`. The word's total reveal steps are
+  therefore `characters + units` (`countPinyinRevealSteps`, `pinyinUnits.ts`),
+  which is what `totalRevealUnits` in `WordSearchPage.tsx` gates on before
+  moving to the location reveal.
+
+  Tone diacritics ride on their letter, so `ǎ` is one blank
+  (`buildMask`/`letterCount` normalize to NFC before counting).
+  (History: the hidden portion was 3 fixed underscores, then a single
+  count-free `HINT_REMAINDER_MARK` dash, then a blank-per-letter shown for
+  every character from the first press; the dash hid the length so well that
+  a mask gave the player almost nothing to anchor on, but handing every
+  length over at once gave away the whole word's shape for one unit — hence
+  the staged ladder above, where an unbought character is simply absent.
+  `HINT_REMAINDER_MARK` is no longer used on the pinyin board at all; it
+  lives on as the No-Pinyin board's `COMPONENT_BLANK`, §5a-ii, where there
+  is no letter count to show.)
 - **Matching gloss tint:** while a word is actively hinted (mask showing or
   location revealed), `WordSearchWordList` tints that word's English gloss in
   `HINT_ACCENT_COLOR` — the same color as the mask text — so the player can
@@ -652,9 +680,10 @@ hint nudges recall without handing over the answer.
   spelled out in the row itself.
 - **Spending (`useHint` / `canUseHint` in `WordSearchPage.tsx`):**
   1. If a word is already being hinted (`hintEntryKey`) and it's still unfound
-     with unrevealed units left, drain `HINT_COST` (1) and reveal **one more
-     pinyin unit of that same word** (`hintRevealCount++`, counted across all
-     syllables in round-robin order) — the mask grows in place.
+     with reveal steps left, drain `HINT_COST` (1) and buy **one more step of
+     that same word** (`hintRevealCount++` — the next character's letter count,
+     or once all lengths are showing, the next pinyin unit in round-robin
+     order) — the mask grows in place.
   2. If that word is still unfound but its pinyin is **already fully spelled
      out** (no units left to reveal) and its location **isn't yet
      revealed**, drain `HINT_COST` and lock onto it: `hintLocationRevealed =
@@ -875,14 +904,16 @@ Frontend (`src/games/word-search/`):
   threshold line (§5a).
 - `WordSearchHintRow.tsx` — the hint display row between the gloss list and the
   grid. Renders whichever currency the board spends (`currency` prop): the
-  Pinyin board's per-syllable islands padded with one `HINT_LETTER_BLANK`
+  Pinyin board's per-syllable islands — nothing at all until that character's
+  length is bought, then one `HINT_LETTER_BLANK`
   underscore per still-hidden letter (`buildMask` / `letterCount`;
   §5a), or the No Pinyin board's component glyphs in a line, collapsing to the
   character once its parts run out (§5a-ii).
 - `pinyinUnits.ts` — splits a tone-marked pinyin syllable into its phonetic
   building-block units (initial / medial glide / final), Bopomofo-segmentation-
   informed but rendered as plain pinyin text; used by `WordSearchHintRow` and
-  `WordSearchPage`'s reveal-cap check (§5a).
+  `WordSearchPage`'s reveal-cap check (`countPinyinRevealSteps` = characters +
+  units, covering both ladder stages; §5a).
 - `componentUnits.ts` — the No Pinyin counterpart to `pinyinUnits.ts`: turns a
   word's `charComponents` into the per-character reveal ladder (every part, then
   the character itself), distributed round-robin across characters in two phases

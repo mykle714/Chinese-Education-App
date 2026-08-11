@@ -5,10 +5,18 @@
  * A collection is any named set of the learner's cards that a CollectionViewPage
  * can render and a game/flp can be launched against. There are three kinds:
  *
- *   learn-now  — every card the user sorted into Learn Now, minus the mastered
- *                ones. The built-in default deck.
- *   mastered   — the cards whose overall utcm category is Mastered.
+ *   learn-now  — every card the user sorted into Learn Now, minus the ones mastered
+ *                in the CORE bar. The built-in default deck.
+ *   mastered   — the cards mastered in ONE bar. Three of these since migration 143
+ *                (core / reading / writing), because a card has three independent
+ *                bars and can be mastered in each; the reading and writing ones are
+ *                offered only when that goal is set.
  *   deck       — a user-authored set (`decks`, migration 141).
+ *
+ * Everything downstream of a CollectionRef is deliberately AGNOSTIC to which kind it
+ * holds: the launch sheet, the play buttons, the sort toolbar and the game fetches
+ * all treat a collection as an opaque set of cards. Adding the two new Mastered
+ * collections therefore touched this module and the fdp row list, and nothing else.
  *
  * WHY A SHARED MODULE. Four surfaces have to agree on this: the collection page
  * (which one am I showing), the launch button (what do I append to the game URL),
@@ -23,62 +31,131 @@
  *   src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts
  *   src/games/{bubble-match,match-speed,word-search,speed-reading}/*
  * Server counterpart: `CollectionFilter` in server/services/OnDeckVocabService.ts
- * and `resolveCollection` in server/controllers/OnDeckVocabController.ts —
- * keep the param names in step. See docs/DECKS_FEATURE.md.
+ * and `resolveCollection` in server/controllers/OnDeckVocabController.ts. The wire
+ * VALUES themselves are shared rather than mirrored — `MASTERED_COLLECTION_IDS` and
+ * `masteredCollectionBar` live in server/contracts/wire.ts, so the two sides cannot
+ * drift on the spelling of `mastered-reading`. See docs/DECKS_FEATURE.md.
  */
+import {
+    ALL_COLLECTION_ID,
+    BAND_COLLECTION_IDS,
+    bandCollectionCategory,
+    MASTERED_COLLECTION_IDS,
+    masteredCollectionBar,
+    type BandCollectionCategory,
+    type MasteryBarId,
+} from '../../../server/contracts/wire';
+import {
+    BUILTIN_COLLECTION_IDS,
+    parseBuiltinCollectionId,
+    type BuiltinCollectionId,
+} from '../../../server/dal/shared/vetTable';
 
 /** Which set of cards a page is showing / a round is drawn from. */
 export type CollectionRef =
+    | { kind: 'all' }
+    | { kind: 'band'; category: BandCollectionCategory }
     | { kind: 'learn-now' }
-    | { kind: 'mastered' }
+    | { kind: 'mastered'; bar: MasteryBarId }
     | { kind: 'deck'; deckId: number; name?: string };
 
-/** The two built-in collections, as they appear in the `/flashcards/collection/:builtin` route. */
-export const BUILTIN_COLLECTIONS = ['learn-now', 'mastered'] as const;
-export type BuiltinCollection = (typeof BUILTIN_COLLECTIONS)[number];
+/**
+ * The built-in collections, as they appear in the `/flashcards/collection/:builtin`
+ * route and in `?collection=`.
+ *
+ * The list itself lives SERVER-SIDE (`BUILTIN_COLLECTION_IDS`, vetTable.ts) beside
+ * the WHERE fragment that gives each id its meaning, and is re-exported here rather
+ * than restated — a collection the client can link to but the server cannot resolve
+ * would be a dead page, and that is exactly the drift a second list invites.
+ *
+ * The core bar keeps the bare `mastered` id it has always had, so existing links and
+ * bookmarks still resolve.
+ */
+export const BUILTIN_COLLECTIONS = BUILTIN_COLLECTION_IDS;
+export type BuiltinCollection = BuiltinCollectionId;
 
 /** Narrow a route param to a built-in collection id, or null if it isn't one. */
 export function parseBuiltinCollection(raw: string | undefined): BuiltinCollection | null {
-    return BUILTIN_COLLECTIONS.includes(raw as BuiltinCollection) ? (raw as BuiltinCollection) : null;
+    return parseBuiltinCollectionId(raw);
 }
+
+/** The CollectionRef a built-in id names. */
+export function builtinCollectionRef(id: BuiltinCollection): CollectionRef {
+    const bar = masteredCollectionBar(id);
+    if (bar) return { kind: 'mastered', bar };
+    const category = bandCollectionCategory(id);
+    if (category) return { kind: 'band', category };
+    if (id === ALL_COLLECTION_ID) return { kind: 'all' };
+    return { kind: 'learn-now' };
+}
+
+/** Human-readable name for each bar's Mastered collection. */
+const MASTERED_TITLES: Record<MasteryBarId, string> = {
+    core: 'Mastered Cards',
+    reading: 'Reading Mastered',
+    writing: 'Writing Mastered',
+};
 
 /** Human-readable title for a collection, used as the page title and in the launch sheet. */
 export function collectionTitle(ref: CollectionRef): string {
     switch (ref.kind) {
+        case 'all':
+            return 'All Cards';
+        case 'band':
+            // The band's own name IS its title — "Target", "Comfortable". These read
+            // as card sets in context (a tile in a row of card sets, a page reached
+            // by tapping one), so a "… Cards" suffix would only add noise.
+            return ref.category;
         case 'learn-now':
             // "Learn Now" is the user-facing name of the `library` bucket (CLAUDE.md
             // § Terminology) — the internal identifier stays `library` everywhere.
             return 'Learn Now';
         case 'mastered':
-            return 'Mastered Cards';
+            return MASTERED_TITLES[ref.bar];
         case 'deck':
             return ref.name ?? 'Deck';
     }
 }
 
+/** The built-in id naming a non-deck collection. */
+export function builtinCollectionId(ref: CollectionRef): BuiltinCollection | null {
+    switch (ref.kind) {
+        case 'all':
+            return ALL_COLLECTION_ID;
+        case 'band':
+            return BAND_COLLECTION_IDS[ref.category];
+        case 'learn-now':
+            return 'learn-now';
+        case 'mastered':
+            return MASTERED_COLLECTION_IDS[ref.bar];
+        case 'deck':
+            return null;
+    }
+}
+
 /** The route that renders a collection. */
 export function collectionPath(ref: CollectionRef): string {
-    return ref.kind === 'deck'
-        ? `/flashcards/deck/${ref.deckId}`
-        : `/flashcards/collection/${ref.kind}`;
+    if (ref.kind === 'deck') return `/flashcards/deck/${ref.deckId}`;
+    return `/flashcards/collection/${builtinCollectionId(ref)}`;
 }
 
 /**
  * The query params a game/flp launch must carry to stay inside this collection.
  *
- * `learn-now` returns NOTHING, and that is correct rather than a gap: every game
- * and the flp already draw from the sorted library, so Learn Now is the default
- * pool. The server has no `collection=learn-now` value for the same reason.
+ * **`all` returns NOTHING**, and that is correct rather than a gap: every game and the
+ * flp already draw from every sorted card, so `all` IS the default pool and a clause
+ * for it would restate the query's own `vetPlayableClause()`.
+ *
+ * `learn-now` used to return nothing for that same reason, and that stopped being
+ * true when `all` arrived: Learn Now is "sorted AND not core-mastered", which is a
+ * real narrowing, and a round launched from it was quietly including mastered cards
+ * the page does not list. It now sends its id like any other narrowing collection.
  */
 export function collectionLaunchParams(ref: CollectionRef): Record<string, string> {
-    switch (ref.kind) {
-        case 'deck':
-            return { deck: String(ref.deckId) };
-        case 'mastered':
-            return { collection: 'mastered' };
-        case 'learn-now':
-            return {};
-    }
+    if (ref.kind === 'deck') return { deck: String(ref.deckId) };
+    if (ref.kind === 'all') return {};
+    const id = builtinCollectionId(ref);
+    return id ? { collection: id } : {};
 }
 
 /** Append a collection's launch params to a path, preserving any params already on it. */
@@ -110,8 +187,8 @@ export function collectionFromSearch(search: URLSearchParams): CollectionRef | n
         // link fails loudly there instead of quietly widening the pool here.
         if (Number.isInteger(deckId) && deckId > 0) return { kind: 'deck', deckId };
     }
-    if (search.get('collection') === 'mastered') return { kind: 'mastered' };
-    return null;
+    const builtin = parseBuiltinCollection(search.get('collection') ?? undefined);
+    return builtin ? builtinCollectionRef(builtin) : null;
 }
 
 /**
@@ -123,8 +200,10 @@ export function collectionMarkFields(
 ): { deckId?: number; collection?: string } {
     if (!ref) return {};
     if (ref.kind === 'deck') return { deckId: ref.deckId };
-    if (ref.kind === 'mastered') return { collection: 'mastered' };
-    return {};
+    // Same rule as the launch params: everything a refill must stay inside sends its
+    // id; `all` sends nothing because it narrows nothing.
+    const { collection } = collectionLaunchParams(ref);
+    return collection ? { collection } : {};
 }
 
 /**
@@ -148,6 +227,25 @@ export const DECK_ACCENTS = [
 
 export function deckAccentColor(deckId: number): string {
     return DECK_ACCENTS[Math.abs(deckId) % DECK_ACCENTS.length];
+}
+
+/**
+ * The saturated body tone paired with each entry of DECK_ACCENTS, for the deck TILE
+ * (which needs two tones: a card body and a lighter inner fill). Index-aligned with
+ * DECK_ACCENTS, so `deckTileColors` can read both from one modulo.
+ */
+const DECK_MAINS = [
+    '#779BE7', // blueMain
+    '#05C793', // greenMain
+    '#FF9E5A', // yellowMain
+    '#9B8BD4', // purpleMain
+    '#EF476F', // redMain
+] as const;
+
+/** A deck's two-tone tile palette, derived from its id exactly as its accent is. */
+export function deckTileColors(deckId: number): { main: string; accent: string } {
+    const index = Math.abs(deckId) % DECK_ACCENTS.length;
+    return { main: DECK_MAINS[index], accent: DECK_ACCENTS[index] };
 }
 
 /**

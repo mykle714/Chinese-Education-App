@@ -5,7 +5,8 @@ import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import LeafPage from "../../components/LeafPage";
 import type { Language } from "../../types";
 import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
-import SortProvisionalCta from "../../components/SortProvisionalCta";
+import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
+import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import LeafPageHeader from "../../components/LeafPageHeader";
 import GameEndPopup from "../runtime/GameEndPopup";
 import { useAuth } from "../../AuthContext";
@@ -28,6 +29,7 @@ import { useSpeedReadingQueue } from "./useSpeedReadingQueue";
 import {
     FEEDBACK_MS,
     GAME_KEY,
+    MARK_TYPE,
     MAX_GLYPH_PX,
     MEDAL_THRESHOLDS,
     MIN_GLYPH_PX,
@@ -300,16 +302,42 @@ const SpeedReadingPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [queue.ready, queue.loading, queue.blockMessage, user?.id]);
 
+    // ── Popup pause gate ─────────────────────────────────────────────────────
+    // No game clock may run while a MODAL popup covers the board. Speed Reading's
+    // clock counts UP and IS the score, so the seconds spent reading the
+    // provisional-cards notice — which opens on the very first round — would
+    // otherwise be charged straight to the player's time. The notice is a
+    // full-screen input-blocking overlay, so a frozen clock buys no free study.
+    // Shared rule across all four games — see docs/GAMES_FEATURE.md § Popups pause
+    // the clock.
+    const clockPaused = noticeOpen;
+    /** `Date.now()` when the current pause began, or null while running. */
+    const pausedAtRef = useRef<number | null>(null);
+    useEffect(() => {
+        if (clockPaused) {
+            pausedAtRef.current = Date.now();
+            return;
+        }
+        if (pausedAtRef.current === null) return;
+        // Push the run's ORIGIN forward by the paused span. Every reader of the
+        // clock (the display interval and the end-of-run `finalMs`) measures from
+        // startAtRef, so moving it is all that's needed to un-bill the pause.
+        startAtRef.current += Date.now() - pausedAtRef.current;
+        pausedAtRef.current = null;
+        setElapsedMs(Date.now() - startAtRef.current);
+    }, [clockPaused]);
+
     // ── Clock ────────────────────────────────────────────────────────────────
     // Counts UP and never expires: the run ends on the round count, not on time,
     // so this interval only drives the display.
     useEffect(() => {
         if (phase !== "ready" && phase !== "feedback") return;
+        if (clockPaused) return; // frozen display while a popup is up
         const id = setInterval(() => {
             setElapsedMs(Date.now() - startAtRef.current);
         }, 200);
         return () => clearInterval(id);
-    }, [phase]);
+    }, [phase, clockPaused]);
 
     // Clear any pending timers on unmount.
     useEffect(() => () => {
@@ -327,7 +355,7 @@ const SpeedReadingPage: React.FC = () => {
     // markFlashcard resolves the auth header at call time, so this callback's
     // identity survives the silent refresh (CLAUDE.md).
     const mark = useCallback((cardId: number, isCorrect: boolean) => {
-        markFlashcard({ cardId, isCorrect, type: "reading" })
+        markFlashcard({ cardId, isCorrect, type: MARK_TYPE })
             .catch((err) => console.error(`[SpeedReading] mark failed → card ${cardId}:`, err));
     }, []);
 
@@ -584,6 +612,9 @@ const SpeedReadingPage: React.FC = () => {
         </Box>
     );
 
+    // End-of-run offer to keep the lent cards; opens a beat after the end popup.
+    const sortOffer = useProvisionalSortOffer(phase === "ended", queue.provisional);
+
     return (
         // Leaf page: no footer, slides up on enter. `hideHeader` because this
         // game is SIDEWAYS — the header has to live inside the rotated stage, not
@@ -594,7 +625,8 @@ const SpeedReadingPage: React.FC = () => {
             open={noticeOpen}
             onDismiss={() => setNoticeOpen(false)}
             surfaceName="Speed Reading"
-            words={queue.provisional}
+            // Rows come straight from the served queue — no extra round-trip.
+            rows={queue.provisionalTable}
             language={(user?.selectedLanguage ?? "zh") as Language}
         />
         <LeafPage
@@ -762,11 +794,6 @@ const SpeedReadingPage: React.FC = () => {
                             className="speed-reading__popup-actions"
                             sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}
                         >
-                            {/* Renders nothing unless this run used lent cards. */}
-                            <SortProvisionalCta
-                                words={queue.provisional}
-                                language={(user?.selectedLanguage ?? "zh") as Language}
-                            />
                             <Button
                                 className="speed-reading__popup-again"
                                 variant="contained"
@@ -786,6 +813,18 @@ const SpeedReadingPage: React.FC = () => {
                         </Box>
                     </GameEndPopup>
                 )}
+
+                {/* Opens a beat after the end popup and stacks over it, collapsing to
+                    the opposite corner. Renders nothing unless this run used lent cards. */}
+                <ProvisionalSortOffer
+                    open={sortOffer.open}
+                    words={queue.provisional}
+                    language={(user?.selectedLanguage ?? "zh") as Language}
+                    onDismiss={sortOffer.dismiss}
+                    minimized={sortOffer.minimized}
+                    onMinimize={sortOffer.onMinimize}
+                    onRestore={sortOffer.onRestore}
+                />
             </Box>
             </Box>
             )}

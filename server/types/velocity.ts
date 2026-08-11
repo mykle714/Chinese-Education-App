@@ -5,10 +5,16 @@
  * (a sliding window, not a calendar week), per (user, language). One card that
  * climbed two bands counts the same as two cards that climbed one each.
  *
+ * Steps are summed ACROSS THE THREE MASTERY BARS (migration 143) — mastering a card's
+ * reading is progress just as much as mastering its recognition — but only across the
+ * bars the account is PURSUING. A promotion in a bar whose goal is off is still
+ * logged (the tracks accrue for everyone) and simply not counted, so switching a goal
+ * on retroactively enriches the number rather than starting it from zero.
+ *
  * Backed by the append-only `category_promotions` table (migration 137); nothing
  * here is a stored counter. See docs/VELOCITY.md.
  */
-import type { FlashcardCategory, MarkType } from '../contracts/wire.js';
+import type { FlashcardCategory, MarkType, MasteryBarId } from '../contracts/wire.js';
 
 /** One logged promotion: a card moving up one or more utcm bands. */
 export interface CategoryPromotion {
@@ -17,6 +23,8 @@ export interface CategoryPromotion {
   language: string;
   /** vet id (globally unique across vocabentries_zh / vocabentries_es). */
   vocabEntryId: number;
+  /** Which bar moved — derived from the causing mark's type (`barForMarkType`). */
+  bar: MasteryBarId;
   fromCategory: FlashcardCategory;
   toCategory: FlashcardCategory;
   /** rank(to) - rank(from); always >= 1. */
@@ -32,6 +40,7 @@ export interface CategoryPromotionInput {
   userId: string;
   language: string;
   vocabEntryId: number;
+  bar: MasteryBarId;
   fromCategory: FlashcardCategory;
   toCategory: FlashcardCategory;
   bandsClimbed: number;

@@ -3,43 +3,43 @@ import type { VocabEntry } from "../../types";
 import { useAuth } from "../../AuthContext";
 import { getCategoryColor } from "../../utils/categoryColors";
 import {
-    masteryBar,
+    masteryBars,
     MARK_TYPE_COLORS,
     MARK_TYPE_LABELS,
+    BAR_LABELS,
     PBH_THRESHOLDS,
     PBH_FULL,
     type MasteryGoals,
+    type MasteryBar,
 } from "../../utils/masteryCompute";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { FC_FONT } from "./constants";
 
 /**
- * cdp mastery progress bar (docs/MASTERY_REWORK.md).
+ * cdp mastery progress bars (docs/MASTERY_REWORK.md § "Three bars").
  *
- * A vertical stacked bar whose FILLED height = the card's progress-bar-height
- * (pbh), full at pbh = 8 (Mastered). The fill is composed of the four mark types
- * in the ratio of their positive marks (regardless of which goals are set):
- * blue = Recognition, green = Production, red = Reading, yellow = Writing.
+ * ONE VERTICAL BAR PER ACTIVE MASTERY BAR — core always, plus reading and/or writing
+ * when the account has that goal. Each bar's FILLED height is its own pbh on the
+ * shared 0..PBH_FULL scale, so all three share the Target/Comfortable benchmark lines
+ * and a card can be full in one bar while empty in another.
  *
- * pbh depends on the account's reading/writing goals, so we read them from auth.
+ * The core bar's fill is composed of its two mark types in the ratio of their
+ * positive marks (blue = Recognition, green = Production); the single-track bars are
+ * one solid color. Before migration 143 there was ONE bar composed of all four types
+ * whose height was goal-weighted — which meant enabling a goal visibly shrank a card
+ * the learner had already finished.
  */
 const BAR_HEIGHT = 132;
 const BAR_WIDTH = 26;
 
-export const MasteryProgressBar: React.FC<{ entry: VocabEntry; className?: string }> = ({ entry, className }) => {
-    const { user } = useAuth();
-    const goals: MasteryGoals = {
-        reading: user?.readingGoal === true,
-        writing: user?.writingGoal === true,
-    };
-
-    const bar = masteryBar(entry.typedMarkHistory, goals);
+/** One vertical track: fill, per-type segments, and the two benchmark lines. */
+const BarTrack: React.FC<{ bar: MasteryBar }> = ({ bar }) => {
     const filledSegments = bar.segments.filter((s) => s.positive > 0);
 
     return (
         <Box
-            className={`mastery-progress-bar ${className ?? ""}`}
-            sx={{ display: "flex", alignItems: "flex-start", gap: "12px" }}
+            className={`mastery-progress-bar__bar mastery-progress-bar__bar--${bar.id}`}
+            sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}
         >
             {/* Track wrapper: NOT clipped, so the benchmark lines can extend past
                 the bar's edges. Holds the (clipped) track + the overhanging lines. */}
@@ -76,7 +76,7 @@ export const MasteryProgressBar: React.FC<{ entry: VocabEntry; className?: strin
                         {filledSegments.map((seg) => (
                             <Tooltip
                                 key={seg.type}
-                                title={`${MARK_TYPE_LABELS[seg.type]}: ${seg.positive}/8`}
+                                title={`${MARK_TYPE_LABELS[seg.type]}: ${seg.positive}/${PBH_FULL}`}
                                 placement="right"
                             >
                                 <Box
@@ -113,15 +113,58 @@ export const MasteryProgressBar: React.FC<{ entry: VocabEntry; className?: strin
                 ))}
             </Box>
 
-            {/* Legend: category + per-type positive counts */}
+            {/* Which bar this is. Always labelled, even when core is the only one:
+                the label is what tells a learner the bar is about recognition and
+                production rather than everything they have ever done with the card. */}
+            <Typography
+                className="mastery-progress-bar__bar-label"
+                sx={{ fontSize: SIZE.micro, fontFamily: FC_FONT, opacity: 0.85 }}
+            >
+                {BAR_LABELS[bar.id]}
+            </Typography>
+        </Box>
+    );
+};
+
+export const MasteryProgressBar: React.FC<{ entry: VocabEntry; className?: string }> = ({ entry, className }) => {
+    const { user } = useAuth();
+    const goals: MasteryGoals = {
+        reading: user?.readingGoal === true,
+        writing: user?.writingGoal === true,
+    };
+
+    const bars = masteryBars(entry.typedMarkHistory, goals);
+    // The chip reports the CORE band — the card's whole-card level everywhere else in
+    // the app (deck counts, the mini-card badge). The per-bar bands are readable from
+    // the bars themselves.
+    const coreCategory = bars[0].category;
+    // Legend rows cover only the types actually on screen, so a learner with no
+    // writing goal is not shown a color they will never see in a bar.
+    const shownTypes = bars.flatMap((b) => b.segments.map((s) => s.type));
+
+    return (
+        <Box
+            className={`mastery-progress-bar ${className ?? ""}`}
+            sx={{ display: "flex", alignItems: "flex-start", gap: "12px" }}
+        >
+            <Box
+                className="mastery-progress-bar__bars"
+                sx={{ display: "flex", alignItems: "flex-start", gap: "10px" }}
+            >
+                {bars.map((bar) => (
+                    <BarTrack key={bar.id} bar={bar} />
+                ))}
+            </Box>
+
+            {/* Legend: core category + the mark-type colors in play */}
             <Box className="mastery-progress-bar__legend" sx={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                 <Chip
                     className="mastery-progress-bar__category-chip"
-                    label={bar.category}
+                    label={coreCategory}
                     size="small"
                     sx={{
                         alignSelf: "flex-start",
-                        backgroundColor: getCategoryColor(bar.category),
+                        backgroundColor: getCategoryColor(coreCategory),
                         color: "white",
                         fontSize: SIZE.micro,
                         fontWeight: WEIGHT.bold,
@@ -129,19 +172,19 @@ export const MasteryProgressBar: React.FC<{ entry: VocabEntry; className?: strin
                         height: 22,
                     }}
                 />
-                {/* Color legend: one swatch + label per mark type (no counts). */}
-                {bar.segments.map((seg) => (
+                {/* Color legend: one swatch + label per mark type on screen (no counts). */}
+                {shownTypes.map((type) => (
                     <Box
-                        key={seg.type}
-                        className={`mastery-progress-bar__legend-row mastery-progress-bar__legend-row--${seg.type}`}
+                        key={type}
+                        className={`mastery-progress-bar__legend-row mastery-progress-bar__legend-row--${type}`}
                         sx={{ display: "flex", alignItems: "center", gap: "6px" }}
                     >
                         <Box
                             className="mastery-progress-bar__legend-swatch"
-                            sx={{ width: 10, height: 10, borderRadius: "3px", backgroundColor: MARK_TYPE_COLORS[seg.type], flexShrink: 0 }}
+                            sx={{ width: 10, height: 10, borderRadius: "3px", backgroundColor: MARK_TYPE_COLORS[type], flexShrink: 0 }}
                         />
                         <Typography sx={{ fontSize: SIZE.micro, fontFamily: FC_FONT, opacity: 0.85 }}>
-                            {MARK_TYPE_LABELS[seg.type]}
+                            {MARK_TYPE_LABELS[type]}
                         </Typography>
                     </Box>
                 ))}

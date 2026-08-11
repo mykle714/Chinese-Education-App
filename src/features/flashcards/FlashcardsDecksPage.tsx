@@ -5,16 +5,20 @@ import {
     Box, Typography, Alert, Button, Snackbar, IconButton,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField,
 } from "@mui/material";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import AddIcon from "@mui/icons-material/Add";
 import { styled } from "@mui/material/styles";
 import MobileTabScreen from "../../components/MobileTabScreen";
+import DeckTile from "../../components/DeckTile";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCategoryCounts } from "../../hooks/useCategoryCounts";
+import { useMasteredCounts } from "../../hooks/useMasteredCounts";
+import { activeBars } from "../../utils/masteryCompute";
+import { BAND_COLORS, MASTERY_BAR_COLORS } from "../../utils/categoryColors";
+import { BAND_COLLECTION_CATEGORIES } from "../../../server/contracts/wire";
+import { collectionPath, collectionTitle, deckTileColors, type CollectionRef } from "./collectionRef";
 import { FooterSpacer } from "../../components/MobileFooter";
 import { fetchDecks, createDeck, type DeckSummary } from "../../api/decks";
-import { deckAccentColor } from "./collectionRef";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
@@ -27,11 +31,19 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 // (/flashcards/collection/learn-now), and the space they used is now the DECK LIST
 // — the user's own named card sets (docs/DECKS_FEATURE.md).
 //
-// So the page is three stacked bands:
+// So the page is four stacked bands:
 //   1. Review / Study Mix / Challenge — whole-library study entry points
-//   2. Two collection rows — Learn Now and Mastered, styled identically, each
-//      opening a CollectionViewPage
-//   3. Decks              — the user's sets, plus "New deck"
+//   2. Cards    — All / Unfamiliar / Target / Comfortable, as deck tiles
+//   3. Mastered — one tile per active mastery bar (Know / Read / Write)
+//   4. Decks    — the user's own sets in rows of three, plus "New deck"
+//
+// EVERY set on this page is the same object: a `DeckTile` (the stacked-card icon)
+// that navigates to that set's CollectionViewPage. Bands 2–4 differ only in what
+// fills them, which is the point — a built-in band, a mastery bar and a
+// user-authored deck are all just "a set of your cards", and the page should not
+// argue otherwise. Learn Now lost its own tile here because the band row covers it
+// exactly (Unfamiliar + Target + Comfortable); its route and endpoint remain, since
+// the flp and every game still draw on that set.
 //
 // Phone-frame sizing comes from MobileDemoFrame via Layout.tsx; the scroll-away
 // header + floating footer + scroll behavior come from MobileTabScreen.
@@ -108,40 +120,55 @@ const LineSeparator = styled(Box)(() => ({
     margin: "0 auto",
 }));
 
-// Full-width tappable row linking to a CollectionViewPage. Both built-in
-// collections (Learn Now, Mastered) use it, so the two sit side by side in the
-// same visual language — that identical styling is the point: Learn Now stopped
-// being "the page you are on" and became a collection like any other.
-const CollectionLinkRow = styled(Box)(() => ({
+// A row of DeckTiles. THREE PER ROW is the page's grid unit: the band row holds
+// four and the Mastered row up to three, but the user's decks wrap at three, so a
+// fixed-column grid (rather than a wrapping flex) keeps a lone deck the same size as
+// one in a full row instead of stretching it across the page.
+const TileGrid = styled(Box)(() => ({
     width: "100%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "18px 28px",
-    cursor: "pointer",
-    transition: "background-color 0.15s ease-in-out",
-    "&:hover": {
-        backgroundColor: COLORS.header,
-    },
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    justifyItems: "center",
+    gap: "14px 10px",
+    padding: "4px 20px 12px",
 }));
 
-// One user-authored deck. A rounded card carrying the deck's derived pastel (see
-// deckAccentColor — the color is computed from the id, not stored), matching the
-// Home/Games hub card language without pulling in HubMenuRow's icon-tile layout,
-// which a deck has nothing to put in.
-const DeckCard = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "bgcolor",
-})<{ bgcolor: string }>(({ bgcolor }) => ({
+// The one exception to the 3-column grid: the band row is FOUR tiles
+// (All / Unfamiliar / Target / Comfortable) and they belong on one line — the four
+// utcm bands read as a single scale, and wrapping "Comfortable" onto its own row
+// would break that reading. DeckTile flex-shrinks, so four fit a phone width.
+const BandRow = styled(Box)(() => ({
     width: "100%",
     display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "16px 18px",
-    borderRadius: "12px",
-    backgroundColor: bgcolor,
-    cursor: "pointer",
-    boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.15)",
+    justifyContent: "center",
+    alignItems: "flex-start",
+    gap: "8px",
+    padding: "4px 16px 12px",
 }));
+
+// Section caption above each tile band.
+const SectionLabel = styled(Typography)(() => ({
+    fontSize: SIZE.body,
+    fontWeight: WEIGHT.medium,
+    color: COLORS.onSurface,
+    fontFamily: FONTS.sans,
+}));
+
+/**
+ * The Cards row: the whole library, then each unmastered band in ascending order.
+ *
+ * `colorKey` doubles as the BAND_COLORS key and (for the three bands) the key into
+ * the per-category counts, so a tile cannot end up painted as one band and counted
+ * as another. Mastered is deliberately absent — it is the section below, three
+ * tiles wide.
+ */
+const BAND_TILES: { ref: CollectionRef; colorKey: keyof typeof BAND_COLORS }[] = [
+    { ref: { kind: "all" }, colorKey: "All" },
+    ...BAND_COLLECTION_CATEGORIES.map((category) => ({
+        ref: { kind: "band", category } as CollectionRef,
+        colorKey: category as keyof typeof BAND_COLORS,
+    })),
+];
 
 // Main Component
 const FlashcardsDecksPage: React.FC = () => {
@@ -150,12 +177,24 @@ const FlashcardsDecksPage: React.FC = () => {
     // Collection pages are node drill-ins that slide over this page, so they use
     // the view-transition navigate and Decks is held beneath. See useSlideNavigate.
     const slideNavigate = useSlideNavigate();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
     // Per-category library card counts, driving the two collection rows' figures
     // and the Review eligibility check. These count SORTED cards only — never the
     // temporary cards a game may have lent (docs/PROVISIONAL_CARDS.md), so the
     // sizes shown here always mean "cards you chose to keep".
     const { counts: categoryCounts } = useCategoryCounts();
+    // Mastered totals per mastery bar, for the up-to-three Mastered rows below
+    // (docs/MASTERY_REWORK.md § "Three bars"). The core figure comes from here rather
+    // than from categoryCounts["Mastered"] so all three rows read from one source and
+    // cannot disagree.
+    const { counts: masteredCounts } = useMasteredCounts();
+    // Which Mastered rows to show: core always, reading/writing only when that goal is
+    // set. Same gate as the card bars themselves, so a learner never sees a collection
+    // for a bar they have no bar for.
+    const masteredRows = activeBars({
+        reading: user?.readingGoal === true,
+        writing: user?.writingGoal === true,
+    });
     // Toast shown when a greyed Review button is tapped (no eligible cards yet).
     const [markMoreSnackOpen, setMarkMoreSnackOpen] = useState(false);
 
@@ -234,13 +273,20 @@ const FlashcardsDecksPage: React.FC = () => {
         }
     };
 
-    // Learn Now's size is every sorted card that isn't mastered — the same set its
-    // collection page lists. Derived from the counts already loaded rather than a
-    // second request.
-    const learnNowCount =
-        (categoryCounts["Unfamiliar"] || 0) +
-        (categoryCounts["Target"] || 0) +
-        (categoryCounts["Comfortable"] || 0);
+    // Every figure on the Cards row, from the counts already loaded — no extra
+    // request. `All` is the sum of the four core bands, which is exactly what its
+    // collection page lists (every SORTED card, mastered or not).
+    const bandCounts: Record<keyof typeof BAND_COLORS, number> = {
+        Unfamiliar: categoryCounts["Unfamiliar"] || 0,
+        Target: categoryCounts["Target"] || 0,
+        Comfortable: categoryCounts["Comfortable"] || 0,
+        Mastered: categoryCounts["Mastered"] || 0,
+        All:
+            (categoryCounts["Unfamiliar"] || 0) +
+            (categoryCounts["Target"] || 0) +
+            (categoryCounts["Comfortable"] || 0) +
+            (categoryCounts["Mastered"] || 0),
+    };
 
     return (
         <>
@@ -254,7 +300,7 @@ const FlashcardsDecksPage: React.FC = () => {
                     {/* Study-entry row: Review (blue) and Challenge (red) flank the centered
                         Study Mix button and flex to fill the remaining side space. These are
                         WHOLE-LIBRARY entry points; to study one collection, open it and
-                        use its "Play with these cards" button. */}
+                        use its "Study these cards" button. */}
                     <Box
                         className="flashcards-decks__mode-row"
                         sx={{ width: "100%", padding: "16px 20px", display: "flex", alignItems: "stretch", gap: 1.5 }}
@@ -279,65 +325,66 @@ const FlashcardsDecksPage: React.FC = () => {
 
                     <LineSeparator className="decks-line-separator" />
 
-                    {/* The two built-in collections. Identically styled and adjacent,
-                        because they are the same kind of thing. */}
-                    <CollectionLinkRow
-                        className="flashcards-decks__library-link"
-                        onClick={() => slideNavigate("/flashcards/collection/learn-now")}
+                    {/* ── Cards ── the whole library, then its three unmastered bands.
+                        All four tiles are the same object as a user's deck below; only
+                        what defines the set differs. */}
+                    <Box
+                        className="flashcards-decks__cards-header"
+                        sx={{ width: "100%", px: 3.5, pt: 2, pb: 0.5 }}
                     >
-                        <Typography
-                            className="flashcards-decks__library-link-label"
-                            sx={{
-                                fontSize: SIZE.body,
-                                fontWeight: WEIGHT.medium,
-                                color: COLORS.onSurface,
-                                fontFamily: FONTS.sans,
-                            }}
-                        >
-                            Learn Now
-                            <Box
-                                component="span"
-                                className="flashcards-decks__library-link-count"
-                                sx={{ color: COLORS.textSecondary, ml: 1, fontWeight: WEIGHT.regular }}
-                            >
-                                ({learnNowCount})
-                            </Box>
-                        </Typography>
-                        <ChevronRightIcon
-                            className="flashcards-decks__library-link-chevron"
-                            sx={{ color: COLORS.textSecondary }}
-                        />
-                    </CollectionLinkRow>
+                        <SectionLabel className="flashcards-decks__cards-label">Cards</SectionLabel>
+                    </Box>
 
-                    <CollectionLinkRow
-                        className="flashcards-decks__mastered-link"
-                        onClick={() => slideNavigate("/flashcards/collection/mastered")}
+                    <BandRow className="flashcards-decks__band-row">
+                        {BAND_TILES.map(({ ref, colorKey }, index) => (
+                            <DeckTile
+                                key={colorKey}
+                                className={`flashcards-decks__band-tile flashcards-decks__band-tile--${colorKey.toLowerCase()}`}
+                                label={collectionTitle(ref)}
+                                count={bandCounts[colorKey]}
+                                mainColor={BAND_COLORS[colorKey].main}
+                                accentColor={BAND_COLORS[colorKey].accent}
+                                animationDelay={index * 70}
+                                onClick={() => slideNavigate(collectionPath(ref))}
+                            />
+                        ))}
+                    </BandRow>
+
+                    <LineSeparator className="decks-line-separator" />
+
+                    {/* ── Mastered ── one tile per ACTIVE mastery bar. Title and
+                        destination both come from the shared collectionRef helpers, so
+                        the tiles stay agnostic to which bar they represent. */}
+                    <Box
+                        className="flashcards-decks__mastered-header"
+                        sx={{ width: "100%", px: 3.5, pt: 2, pb: 0.5 }}
                     >
-                        <Typography
-                            className="flashcards-decks__mastered-link-label"
-                            sx={{
-                                fontSize: SIZE.body,
-                                fontWeight: WEIGHT.medium,
-                                color: COLORS.onSurface,
-                                fontFamily: FONTS.sans,
-                            }}
-                        >
-                            Mastered Cards
-                            <Box
-                                component="span"
-                                className="flashcards-decks__mastered-link-count"
-                                sx={{ color: COLORS.textSecondary, ml: 1, fontWeight: WEIGHT.regular }}
-                            >
-                                ({categoryCounts["Mastered"] || 0})
-                            </Box>
-                        </Typography>
-                        <ChevronRightIcon
-                            className="flashcards-decks__mastered-link-chevron"
-                            sx={{ color: COLORS.textSecondary }}
-                        />
-                    </CollectionLinkRow>
+                        <SectionLabel className="flashcards-decks__mastered-label">Mastered</SectionLabel>
+                    </Box>
 
-                    <LineSeparator className="decks-line-separator" sx={{ mt: 1 }} />
+                    <TileGrid className="flashcards-decks__mastered-row">
+                        {masteredRows.map((bar, index) => {
+                            const ref = { kind: "mastered", bar } as const;
+                            return (
+                                <DeckTile
+                                    key={bar}
+                                    className={`flashcards-decks__mastered-tile flashcards-decks__mastered-tile--${bar}`}
+                                    label={collectionTitle(ref)}
+                                    count={masteredCounts[bar]}
+                                    // Each bar gets its own hue: reading and writing take
+                                    // THEIR MARK's color (red / orange), the same one that
+                                    // mark paints on the cdp track and the mini-card strip;
+                                    // core keeps Mastered blue. See MASTERY_BAR_COLORS.
+                                    mainColor={MASTERY_BAR_COLORS[bar].main}
+                                    accentColor={MASTERY_BAR_COLORS[bar].accent}
+                                    animationDelay={index * 70}
+                                    onClick={() => slideNavigate(collectionPath(ref))}
+                                />
+                            );
+                        })}
+                    </TileGrid>
+
+                    <LineSeparator className="decks-line-separator" />
 
                     {/* ── Decks ── the space the Learn Now grid used to occupy. */}
                     <Box
@@ -366,63 +413,37 @@ const FlashcardsDecksPage: React.FC = () => {
                         </IconButton>
                     </Box>
 
-                    <Box
-                        className="flashcards-decks__decks-list"
-                        sx={{ width: 364, maxWidth: "100%", px: 3.5, display: "flex", flexDirection: "column", gap: 1.25 }}
-                    >
-                        {decksError && (
+                    {(decksError || (!decksLoading && decks.length === 0)) && (
+                        <Box className="flashcards-decks__decks-message" sx={{ width: "100%", px: 3.5, pb: 1 }}>
                             <Typography
-                                className="flashcards-decks__decks-error"
+                                className={decksError ? "flashcards-decks__decks-error" : "flashcards-decks__decks-empty"}
                                 sx={{ fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.textSecondary }}
                             >
-                                {decksError}
+                                {decksError ??
+                                    "No decks yet. Tap + to make one, then add cards to it from any card's detail page."}
                             </Typography>
-                        )}
-                        {!decksError && !decksLoading && decks.length === 0 && (
-                            <Typography
-                                className="flashcards-decks__decks-empty"
-                                sx={{ fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.textSecondary }}
-                            >
-                                No decks yet. Tap + to make one, then add cards to it from any card&apos;s detail page.
-                            </Typography>
-                        )}
-                        {decks.map((deck) => (
-                            <DeckCard
+                        </Box>
+                    )}
+
+                    {/* The user's decks, wrapping at three per row — the same tile as
+                        every built-in set above, carrying the deck's derived pastel
+                        (deckAccentColor: computed from the id, never stored). */}
+                    <TileGrid className="flashcards-decks__decks-list">
+                        {decks.map((deck, index) => (
+                            <DeckTile
                                 key={deck.id}
-                                className="flashcards-decks__deck-card"
-                                bgcolor={deckAccentColor(deck.id)}
+                                className="flashcards-decks__deck-tile"
+                                label={deck.name}
+                                count={deck.cardCount}
+                                mainColor={deckTileColors(deck.id).main}
+                                accentColor={deckTileColors(deck.id).accent}
+                                // Stagger only within the first couple of rows; past
+                                // that the cascade would run longer than the scroll.
+                                animationDelay={Math.min(index, 5) * 70}
                                 onClick={() => slideNavigate(`/flashcards/deck/${deck.id}`)}
-                            >
-                                <Typography
-                                    className="flashcards-decks__deck-name"
-                                    sx={{
-                                        fontSize: SIZE.body,
-                                        fontWeight: WEIGHT.medium,
-                                        color: COLORS.onSurface,
-                                        fontFamily: FONTS.sans,
-                                        // A 64-char name must not push the count off the card.
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                    }}
-                                >
-                                    {deck.name}
-                                </Typography>
-                                <Typography
-                                    className="flashcards-decks__deck-count"
-                                    sx={{
-                                        fontSize: SIZE.body,
-                                        color: COLORS.textSecondary,
-                                        fontFamily: FONTS.sans,
-                                        flexShrink: 0,
-                                        ml: 1,
-                                    }}
-                                >
-                                    {deck.cardCount}
-                                </Typography>
-                            </DeckCard>
+                            />
                         ))}
-                    </Box>
+                    </TileGrid>
 
                     <FooterSpacer />
             </MobileTabScreen>

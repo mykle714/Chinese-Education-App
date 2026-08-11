@@ -110,10 +110,25 @@ const RowIconTile = styled(Box)(() => ({
     },
 }));
 
+// Left column of a card: title, subtitle, and (optionally) a chip pinned to the
+// card's bottom edge. `alignSelf: stretch` overrides cardBaseSx's
+// `alignItems: flex-start` so this column spans the card's full height — that is
+// what lets the chip's `marginTop: auto` push it to the bottom. With no chip the
+// stretch changes nothing visually (a column of top-aligned text).
 const RowBody = styled(Box)(() => ({
     flex: 1,
     display: "flex",
     flexDirection: "column",
+    minWidth: 0,
+    alignSelf: "stretch",
+}));
+
+// Bottom-left slot of a card body. `marginTop: auto` bottom-pins it, so cards
+// with one- and two-line subtitles still line their chips up with each other.
+const CardChipSlot = styled(Box)(() => ({
+    display: "flex",
+    marginTop: "auto",
+    paddingTop: 6,
     minWidth: 0,
 }));
 
@@ -197,7 +212,7 @@ export const HubMenuGroupHeader: React.FC<{ title: string; stat?: ReactNode; cla
     </ArrayGroupHeaderRow>
 );
 
-const CardTitle: React.FC<{ title: string; subtitle?: string }> = ({ title, subtitle }) => (
+const CardTitle: React.FC<{ title: string; subtitle?: string; chip?: ReactNode }> = ({ title, subtitle, chip }) => (
     <RowBody className="hub-menu__row-body">
         <Typography
             className="hub-menu__row-title"
@@ -225,6 +240,7 @@ const CardTitle: React.FC<{ title: string; subtitle?: string }> = ({ title, subt
                 {subtitle}
             </Typography>
         )}
+        {chip && <CardChipSlot className="hub-menu__row-chip">{chip}</CardChipSlot>}
     </RowBody>
 );
 
@@ -237,10 +253,11 @@ export const HubMenuGroup = ArrayGroup;
     strips that build their own cards but want the identical icon treatment. */
 export const HubMenuRowIconTile = RowIconTile;
 
-/** Title-over-subtitle block (left side of a hub card). Exported alongside
-    {@link cardBaseSx} / {@link HubMenuRowIconTile} for custom hub strips
-    (e.g. Word Search's hub item). */
-export const HubMenuCardTitle: React.FC<{ title: string; subtitle?: string }> = CardTitle;
+/** Title-over-subtitle block (left side of a hub card), plus an optional `chip`
+    bottom-pinned under them (the Games hub passes a {@link MarkTypeChip}).
+    Exported alongside {@link cardBaseSx} / {@link HubMenuRowIconTile} for custom
+    hub strips (e.g. Word Search's hub item). */
+export const HubMenuCardTitle: React.FC<{ title: string; subtitle?: string; chip?: ReactNode }> = CardTitle;
 
 interface HubMenuProps {
     className?: string;
@@ -281,11 +298,14 @@ interface HubMenuRowProps {
     state?: unknown;
     /** Optional stat pinned to the card's top-right corner. */
     cornerBadge?: ReactNode;
+    /** Optional pill bottom-pinned under the subtitle — used by the Games hub to
+        name the mastery mark type a game feeds ({@link MarkTypeChip}). */
+    chip?: ReactNode;
     /** Per-row class (e.g. `games-page__menu-item--bubble-match`). */
     className?: string;
 }
 
-export const HubMenuRow: React.FC<HubMenuRowProps> = ({ to, icon, title, subtitle, bgColor, state, cornerBadge, className }) => {
+export const HubMenuRow: React.FC<HubMenuRowProps> = ({ to, icon, title, subtitle, bgColor, state, cornerBadge, chip, className }) => {
     const slideNavigate = useSlideNavigate();
     // Intercept plain left-clicks to drive the slide-over view transition; leave
     // modified clicks (new tab/window) to the underlying RouterLink.
@@ -297,7 +317,7 @@ export const HubMenuRow: React.FC<HubMenuRowProps> = ({ to, icon, title, subtitl
     return (
     <MenuCard to={to} state={state} onClick={handleClick} bgcolor={bgColor} className={className ?? "hub-menu__row"}>
         {cornerBadge && <CornerBadgeSlot className="hub-menu__row-badge">{cornerBadge}</CornerBadgeSlot>}
-        <CardTitle title={title} subtitle={subtitle} />
+        <CardTitle title={title} subtitle={subtitle} chip={chip} />
         <RowIconTile className="hub-menu__row-icon">{icon}</RowIconTile>
     </MenuCard>
     );
@@ -312,6 +332,10 @@ export interface HubMenuArraySubItem {
     bgColor: string;
     state?: unknown;
     cornerBadge?: ReactNode;
+    /** Optional pill bottom-pinned under the subtitle — per SUB-CARD, so a strip
+        whose choices differ (e.g. Word Search's modes feed different mastery
+        tracks) can label each one accurately. */
+    chip?: ReactNode;
 }
 
 interface HubMenuArrayItemProps {
@@ -354,7 +378,7 @@ export const HubMenuArrayItem: React.FC<HubMenuArrayItemProps> = ({ items, heade
                         className="hub-menu__array-item-card"
                     >
                         {item.cornerBadge && <CornerBadgeSlot className="hub-menu__array-item-badge">{item.cornerBadge}</CornerBadgeSlot>}
-                        <CardTitle title={item.title} subtitle={item.subtitle} />
+                        <CardTitle title={item.title} subtitle={item.subtitle} chip={item.chip} />
                         <RowIconTile className="hub-menu__array-item-icon">{item.icon}</RowIconTile>
                     </ArraySubCard>
                 );

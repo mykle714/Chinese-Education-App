@@ -1,4 +1,5 @@
 import type { DefinitionCluster, LongDefinitionPart, VocabEntry } from '../types';
+import { numberedToTonedPinyin, readingSyllableCount } from './textUtils';
 
 /**
  * Strip all parenthetical substrings from a definition string for display.
@@ -127,6 +128,49 @@ export function resolveDisplayDefinition(
   // A cluster with an empty gloss list would render a blank card face, so fall back
   // to the flat dd rather than showing nothing.
   return ddt(sorted[index] ?? sorted[0]) || legacyDd;
+}
+
+/**
+ * **The display-pinyin resolver — the pronunciation twin of `resolveDisplayDefinition`.**
+ *
+ * A heteronym's reading belongs to its SENSE, not to the word: 过去 is `guò qù` for "the
+ * past" but `guò qu` for the directional suffix, 会 is `huì` for "can" and `kuài` for "to
+ * reckon accounts". The entry-level `pronunciation` column can only carry one of those, so
+ * any surface that shows a sense-resolved definition must resolve its pinyin the same way —
+ * otherwise the card prints one sense's English over another sense's tones.
+ *
+ * Resolution order mirrors `resolveDisplayDefinition` step for step so the two can never
+ * disagree about which sense is showing:
+ *   1. clustered entry (≥2 displayable clusters) whose chosen cluster carries a `reading`
+ *      → that reading, converted from the stored numbered form to the tone-marked form the
+ *      rest of the app renders (`hui4 ji4` → `huì jì`);
+ *   2. otherwise — unclustered, single-cluster, or a Spanish cluster (whose `reading` is
+ *      always null, senses being separated by pos/gender) → the entry-level `pronunciation`,
+ *      unchanged from before this feature.
+ *
+ * Guard: a reading whose syllable count disagrees with the entry's own `pronunciation` is
+ * rejected in favor of the column. cpcd zips syllables to characters positionally, so a
+ * mis-shaped cluster reading (a clusterer bug, or a reading written for only part of the
+ * word) would silently shift every character's pinyin one column over.
+ *
+ * See docs/DEFINITION_CLUSTERS.md.
+ */
+export function resolveDisplayPronunciation(
+  entry: Pick<VocabEntry, 'pronunciation' | 'definitionClusters' | 'selectedSense'>,
+  senseIndexOverride?: number,
+): string | null {
+  const columnPinyin = entry.pronunciation ?? null;
+  const sorted = sortedSenseClusters(entry);
+  if (!sorted) return columnPinyin;
+  const index = senseIndexOverride ?? resolveSelectedSenseIndex(entry);
+  const reading = (sorted[index] ?? sorted[0])?.reading;
+  if (!reading) return columnPinyin;
+  const toned = numberedToTonedPinyin(reading);
+  if (!toned) return columnPinyin;
+  if (columnPinyin && readingSyllableCount(toned) !== readingSyllableCount(columnPinyin)) {
+    return columnPinyin;
+  }
+  return toned;
 }
 
 /**

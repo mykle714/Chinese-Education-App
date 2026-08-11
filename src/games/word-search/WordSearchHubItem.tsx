@@ -10,6 +10,7 @@ import { useDragScroll } from "../../hooks/useDragScroll";
 import { cardBaseSx } from "../../components/hubMenuCardBase";
 import { HubMenuCardTitle, HubMenuRowIconTile, HubMenuGroup, HubMenuGroupHeader, HubMenuStatBadge } from "../../components/HubMenu";
 import { useGameWins } from "../../hooks/useGameWins";
+import MarkTypeChip from "../../components/MarkTypeChip";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
@@ -27,6 +28,12 @@ import { formatTimeMs } from "../../utils/timeUtils";
  *  - Tapping a mode button ALWAYS starts a fresh game. Because both modes now
  *    share one saved slot, doing so would clobber any parked board, so if a
  *    save exists we confirm first ("your saved game will be lost").
+ *  - Each mode button carries a MarkTypeChip: unlike every other game, Word
+ *    Search's two modes feed DIFFERENT mastery tracks (Pinyin → production,
+ *    No Pinyin → reading), so the label is read per mode from
+ *    WordSearchModeConfig.markType — the same field WordSearchPage marks with.
+ *    The resume square deliberately has none: at 1:1 it is already carrying four
+ *    lines, and its mode name is right there on the card.
  *  - The resume card (leading, 1:1) restores the single saved board in its
  *    saved mode — no warning, nothing is lost. Its ✕ erases the save; the strip
  *    then animates the mode buttons left to fill the gap (react-spring leave).
@@ -327,7 +334,11 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, icon, class
                             bgcolor={WORD_SEARCH_MODE_COLORS[cfg.mode] ?? game.bgColor}
                             className={`word-search-hub__mode-card word-search-hub__mode-card--${cfg.mode}`}
                         >
-                            <HubMenuCardTitle title={game.title} subtitle={cfg.label} />
+                            <HubMenuCardTitle
+                                title={game.title}
+                                subtitle={cfg.label}
+                                chip={<MarkTypeChip markType={cfg.markType} />}
+                            />
                             <HubMenuRowIconTile className="word-search-hub__mode-icon">{icon}</HubMenuRowIconTile>
                         </ModeCard>
                     ))}

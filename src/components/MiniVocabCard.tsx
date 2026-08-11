@@ -3,13 +3,15 @@ import { Box, Typography, IconButton } from "@mui/material";
 import ForeignText from "./ForeignText";
 import CardIconLayer from "../cardIcons/CardIconLayer";
 import { iconImageUrl, isAdvancedLayout } from "../cardIcons/cardIconLayout";
-import { resolveDisplayDefinition } from "../utils/definitionUtils";
+import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../utils/definitionUtils";
 import { resolveTextColor } from "../utils/cardTextColor";
 import { resolveCardColor } from "../utils/cardColor";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import type { VocabEntry } from "../types";
 import { getCategoryColor } from "../utils/categoryColors";
+import { useAuth } from "../AuthContext";
+import { masteryBars, BAR_LABELS, MARK_TYPE_COLORS } from "../utils/masteryCompute";
 import { COLORS } from "../theme/colors";
 import { SIZE, WEIGHT } from "../theme/scale";
 
@@ -28,7 +30,34 @@ interface MiniVocabCardProps {
 // Category color mapping lives in src/utils/categoryColors (shared with the
 // card detail page and the flashcard-learn back-of-card chip).
 
+// ── Mastery bar strip (docs/MASTERY_REWORK.md § "Three bars") ────────────────────
+// Up to three hairline bars in the card's bottom-left corner, one per active mastery
+// bar. Deliberately tiny and unlabelled: at 92x132 there is no room for a legend, and
+// the strip is meant to be read as a glanceable shape across a grid of cards rather
+// than as three separate readings. The cdp is where a learner goes for the detail.
+const BAR_STRIP = {
+    height: 3,        // hairline — three of these still read as one small block
+    width: 30,        // ~1/3 of the card width, so the strip stays a corner mark
+    gap: 2,
+    left: 10,         // the "margin" the strip is left-justified against
+    bottom: 6,
+};
+
+/** Total vertical space the strip occupies, for `n` bars (0 when there are none). */
+const barStripHeight = (n: number): number =>
+    n === 0 ? 0 : n * BAR_STRIP.height + (n - 1) * BAR_STRIP.gap;
+
 const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs }) => {
+    // The account's goals decide how many bars this strip has (core always, plus each
+    // opted-in goal). Read here rather than passed down: every host of this card would
+    // otherwise have to thread the same two flags through, and they are already in
+    // context. The bar COUNT is per-account, so it is uniform across a grid and the
+    // definition below sits at the same height on every card.
+    const { user } = useAuth();
+    const bars = masteryBars(entry.typedMarkHistory, {
+        reading: user?.readingGoal === true,
+        writing: user?.writingGoal === true,
+    });
     // Render a custom icon arrangement behind the text only for ADVANCED layouts:
     // multiple icons, OR a single icon that has been moved/resized/rotated off its
     // default placement. Plain default-icon cards keep the icon-free thumbnail. Uses
@@ -168,7 +197,12 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
             </Box>
             {/* UTCM Badge - top left. Shrunk to a single-letter dot (Unfamiliar/Target/
                 Comfortable/Mastered) so the freed-up top space can hold the basic-layout
-                icon instead. */}
+                icon instead.
+
+                Colored by the CORE bar — `entry.category` is the core band since
+                migration 143, which is the same thing every other whole-card readout
+                (deck counts, the Review gate) reports. The reading/writing bands are
+                in the strip at the bottom. */}
             {entry.category && (
                 <Box
                     className="mini-vocab-card__category-badge"
@@ -254,7 +288,8 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                     flexWrap="wrap"
                     justifyContent="center"
                     text={entry.entryKey}
-                    pronunciation={entry.pronunciation}
+                    // Sense-resolved, matching the dd this card prints below the word.
+                    pronunciation={resolveDisplayPronunciation(entry)}
                     characterColor={characterColor}
                     // Latin-script (es) only: a Spanish headword is many glyphs wide where a
                     // Chinese one is 1–2, so the shared xs size (18px) overruns this 76px-wide
@@ -266,12 +301,13 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
 
             {/* Entry Value (Definition). Anchored to the bottom independently of the icon
                 slot / word above — it keeps its original resting spot no matter how those
-                are nudged. */}
+                are nudged. Lifted clear of the mastery strip below it, so adding a
+                reading/writing goal pushes the text up rather than colliding with it. */}
             <Typography
                 className="mini-vocab-card__entry-value"
                 sx={{
                     position: 'absolute',
-                    bottom: 8,
+                    bottom: BAR_STRIP.bottom + barStripHeight(bars.length) + 5,
                     left: 8,
                     right: 8,
                     fontSize: SIZE.caption,
@@ -291,6 +327,76 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                     chosen sense (vet.selectedSense) rather than det's definitions[0]. */}
                 {resolveDisplayDefinition(entry)}
             </Typography>
+
+            {/* Mastery strip: one hairline track per active bar, filled to that bar's
+                pbh. Left-justified against BAR_STRIP.left rather than centered, so the
+                strip reads as a margin annotation and does not compete with the
+                centered word and definition above it. */}
+            <Box
+                className="mini-vocab-card__mastery-strip"
+                sx={{
+                    position: 'absolute',
+                    bottom: BAR_STRIP.bottom,
+                    left: BAR_STRIP.left,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: `${BAR_STRIP.gap}px`,
+                    zIndex: 1,
+                }}
+            >
+                {bars.map((bar) => (
+                    <Box
+                        key={bar.id}
+                        className={`mini-vocab-card__mastery-bar mini-vocab-card__mastery-bar--${bar.id}`}
+                        // Native title rather than a MUI Tooltip: these are decorative
+                        // at this size, and three tooltip wrappers per card across a
+                        // long grid is real render cost for a hover affordance that
+                        // does not exist on touch anyway.
+                        title={`${BAR_LABELS[bar.id]}: ${bar.category}`}
+                        sx={{
+                            width: BAR_STRIP.width,
+                            height: BAR_STRIP.height,
+                            borderRadius: BAR_STRIP.height / 2,
+                            backgroundColor: 'rgba(0, 0, 0, 0.13)',
+                            overflow: 'hidden',
+                        }}
+                    >
+                        {/* The fill carries the SAME per-type breakdown as the cdp bar
+                            (MasteryProgressBar's BarTrack): the core bar splits its
+                            length between recognition blue and production green in
+                            proportion to their positive counts, so a card that is
+                            strong one way and weak the other reads that way at
+                            thumbnail size too. Laid out left-to-right here rather than
+                            the cdp's bottom-up column, so the first type sits at the
+                            track's origin in both. */}
+                        <Box
+                            className="mini-vocab-card__mastery-bar-fill"
+                            sx={{
+                                width: `${bar.heightFraction * 100}%`,
+                                height: '100%',
+                                borderRadius: BAR_STRIP.height / 2,
+                                display: 'flex',
+                                overflow: 'hidden',
+                                transition: 'width 240ms ease',
+                            }}
+                        >
+                            {bar.segments
+                                .filter((seg) => seg.positive > 0)
+                                .map((seg) => (
+                                    <Box
+                                        key={seg.type}
+                                        className={`mini-vocab-card__mastery-segment mini-vocab-card__mastery-segment--${seg.type}`}
+                                        sx={{
+                                            width: `${seg.fraction * 100}%`,
+                                            height: '100%',
+                                            backgroundColor: MARK_TYPE_COLORS[seg.type],
+                                        }}
+                                    />
+                                ))}
+                        </Box>
+                    </Box>
+                ))}
+            </Box>
         </Box>
     );
 };

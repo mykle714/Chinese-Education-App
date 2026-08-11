@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { ICategoryPromotionDAL } from '../interfaces/ICategoryPromotionDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { CategoryPromotion, CategoryPromotionInput } from '../../types/velocity.js';
+import type { MasteryBarId } from '../../contracts/wire.js';
 import { ValidationError } from '../../types/dal.js';
 
 /**
@@ -47,15 +48,16 @@ export class CategoryPromotionDAL implements ICategoryPromotionDAL {
 
     const result = await this.run<CategoryPromotion>(client, (c) => c.query(`
       INSERT INTO category_promotions
-        ("userId", language, "vocabEntryId", "fromCategory", "toCategory",
+        ("userId", language, "vocabEntryId", bar, "fromCategory", "toCategory",
          "bandsClimbed", "markType", "markTimestamp")
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING id, "userId", language, "vocabEntryId", "fromCategory", "toCategory",
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING id, "userId", language, "vocabEntryId", bar, "fromCategory", "toCategory",
                 "bandsClimbed", "markType", "markTimestamp", "promotedAt"
     `, [
       input.userId,
       input.language,
       input.vocabEntryId,
+      input.bar,
       input.fromCategory,
       input.toCategory,
       input.bandsClimbed,
@@ -81,16 +83,26 @@ export class CategoryPromotionDAL implements ICategoryPromotionDAL {
     return result.rowCount;
   }
 
-  async getVelocityByLanguage(userId: string, windowDays: number): Promise<Map<string, number>> {
+  async getVelocityByLanguage(
+    userId: string,
+    windowDays: number,
+    bars: MasteryBarId[] = ['core']
+  ): Promise<Map<string, number>> {
     if (!userId) throw new ValidationError('userId is required');
 
+    // Restricted to the bars the account is PURSUING (migration 143). Promotions in a
+    // bar whose goal is off stay in the log — turning that goal on later brings the
+    // learner's real recent work with it, instead of resetting velocity to zero — but
+    // they must not inflate a number for a skill the learner never opted into.
+    // `bars` is a list of union values, bound as a text[] rather than interpolated.
     const result = await this.run<{ language: string; steps: string }>(undefined, (c) => c.query(`
       SELECT language, SUM("bandsClimbed") AS steps
       FROM category_promotions
       WHERE "userId" = $1
         AND "promotedAt" >= now() - make_interval(days => $2::int)
+        AND bar = ANY($3::text[])
       GROUP BY language
-    `, [userId, windowDays]));
+    `, [userId, windowDays, bars]));
 
     const byLanguage = new Map<string, number>();
     for (const row of result.rows) {

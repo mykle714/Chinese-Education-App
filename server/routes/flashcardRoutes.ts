@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
 import db from '../db.js';
-import { VET_PHYSICAL_TABLES, vetTableForLanguage } from '../dal/shared/vetTable.js';
+import { VET_PHYSICAL_TABLES, vetTableForLanguage, parseBuiltinCollectionId } from '../dal/shared/vetTable.js';
 import { onDeckVocabService, categoryPromotionDAL } from '../dal/setup.js';
 import { MODE_CONFIGS, type StudyMode, type CollectionFilter } from '../services/OnDeckVocabService.js';
 import {
@@ -12,7 +12,14 @@ import {
   MARK_WINDOW_SIZE,
   TypedMarkHistory,
 } from '../types/index.js';
-import { computeUtcm, appendTypedMark, bandsClimbed, MasteryGoals } from '../utils/masteryCompute.js';
+import {
+  computeCoreCategory,
+  appendTypedMark,
+  bandsClimbed,
+  barCategory,
+  barForMarkType,
+} from '../utils/masteryCompute.js';
+import { type MasteredAtByBar } from '../contracts/wire.js';
 import { handle } from './asyncHandler.js';
 
 /**
@@ -23,12 +30,19 @@ import { handle } from './asyncHandler.js';
  * route handlers with embedded SQL — a future pass should push this into
  * VocabEntryService. See docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md.
  *
- * MASTERY MODEL (migration 101, docs/MASTERY_REWORK.md): each mark carries a
+ * MASTERY MODEL (migrations 101 + 143, docs/MASTERY_REWORK.md): each mark carries a
  * `type` (recognition/production/reading/writing). A card keeps the 8 most recent
- * marks PER TYPE in `typedMarkHistory`. The utcm `category` is no longer stored —
- * it is derived here in app code via computeUtcm(typedMarkHistory, accountGoals),
- * because it depends on the account's reading/writing goal flags (goalCount),
- * which a generated column can't reference.
+ * marks PER TYPE in `typedMarkHistory`, and those four tracks feed THREE independent
+ * bars — core (recognition + production), reading, writing. No band is stored; they
+ * are derived here in app code from `typedMarkHistory` alone.
+ *
+ * A mark belongs to exactly ONE bar (`barForMarkType`), so each of these handlers
+ * only ever has one bar's before/after band to reason about — which is what keeps
+ * the mastery-crossing stamp and the velocity row to a single write each.
+ *
+ * The `category` returned to the client is the CORE bar's: it feeds the flp progress
+ * chip and the replacement-card picker, both of which are recognition/production
+ * surfaces.
  */
 const router = Router();
 
@@ -39,18 +53,12 @@ function resolveMarkType(raw: unknown): MarkType {
   return MARK_TYPES.includes(raw as MarkType) ? (raw as MarkType) : 'recognition';
 }
 
-// Fetch the account's mastery goal flags (recognition + production are always
-// goals; reading/writing are opt-in). Defaults to false/false if the row is gone.
-async function fetchGoals(client: any, userId: string): Promise<MasteryGoals> {
-  const r = await client.query(
-    `SELECT "readingGoal", "writingGoal" FROM users WHERE id = $1`,
-    [userId]
-  );
-  return {
-    reading: r.rows[0]?.readingGoal === true,
-    writing: r.rows[0]?.writingGoal === true,
-  };
-}
+// NOTE: neither handler reads the account's goal flags any more. Before migration
+// 143 every mark had to fetch them because the band was goal-weighted; the three bars
+// are goal-independent, so a mark is now one users-table query cheaper and — more to
+// the point — a mark's outcome no longer depends on account state that can change
+// under it. The goals decide only which bars are DISPLAYED and which promotions
+// velocity sums, both of which are read-side questions.
 
 // Mark a flashcard as correct or incorrect (protected route)
 router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) => {
@@ -76,11 +84,12 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     // so a deck the caller does not own selects nothing and the picker falls through
     // to its normal never-stall behaviour. Coerced defensively — a malformed value
     // must mean "no restriction", never a crash mid-review.
+    const markedBuiltin = parseBuiltinCollectionId(rawCollection);
     const collection: CollectionFilter | undefined =
       Number.isInteger(rawDeckId) && rawDeckId > 0
         ? { kind: 'deck', deckId: rawDeckId }
-        : rawCollection === 'mastered'
-          ? { kind: 'mastered' }
+        : markedBuiltin
+          ? { kind: 'builtin', id: markedBuiltin }
           : undefined;
 
     if (!userId) {
@@ -104,16 +113,13 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
       ? rawExcludeIds.filter((n): n is number => typeof n === 'number')
       : [];
 
-    // The account's goal flags drive the derived category (before + after).
-    const goals = await fetchGoals(client, userId);
-
     // Fetch the current vocab entry's typed history + counts + language. vet is
     // split per language; the client sends only a cardId, so probe each physical
     // table (ids are globally unique) — exactly one holds the row.
     let entryResult: any = { rows: [] };
     for (const t of VET_PHYSICAL_TABLES) {
       const r = await client.query(
-        `SELECT "typedMarkHistory", "totalMarkCount", "totalCorrectCount", "language" FROM ${t} WHERE id = $1 AND "userId" = $2`,
+        `SELECT "typedMarkHistory", "totalMarkCount", "totalCorrectCount", "language", "masteredAt" FROM ${t} WHERE id = $1 AND "userId" = $2`,
         [cardId, userId]
       );
       if (r.rows.length > 0) { entryResult = r; break; }
@@ -133,8 +139,16 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     // The replacement card must be in the same language as the card just marked.
     const cardLanguage: string = entryResult.rows[0].language || 'zh';
 
-    // Category BEFORE the mark drives the replacement-card category.
-    const categoryBeforeMark: string = computeUtcm(existingHistory, goals);
+    // The bar this mark moves. Every mark lands in exactly one, so the crossing stamp
+    // and the velocity row below are each single-bar decisions.
+    const bar = barForMarkType(markType);
+
+    // CORE category BEFORE the mark drives the replacement-card category: the flp
+    // presents recognition/production, so its pool is paced by the core bar.
+    const categoryBeforeMark: string = computeCoreCategory(existingHistory);
+    // ...and the marked BAR's band either side, for the crossing + velocity writes.
+    // For a recognition/production mark these two are the same value.
+    const barCategoryBefore = barCategory(existingHistory, bar);
 
     // Preserve the mark displaced from THIS TYPE's window when it's already full,
     // so undo can restore it precisely (per-type window of MARK_WINDOW_SIZE).
@@ -152,12 +166,39 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     const newTotalMarkCount: number = currentTotalMarkCount + 1;
     const newTotalCorrectCount: number = currentTotalCorrectCount + (isCorrect ? 1 : 0);
 
-    // category is derived, not stored — write only the history + lifetime counts.
+    // Core category AFTER the mark, for the client's progress chip. Computed BEFORE
+    // the UPDATE (it is a pure function of the new history) so the mastery crossing
+    // below can be folded into that same write instead of costing a second round trip.
+    const category: FlashcardCategory = computeCoreCategory(updatedHistory);
+    const barCategoryAfter = barCategory(updatedHistory, bar);
+
+    // MASTERY CROSSING (migrations 142 + 143): this is the ONLY moment "this bar
+    // became mastered" is observable — the same reason band promotions are logged
+    // below. `typedMarkHistory` is a rolling 8-mark window, so the marks that carried
+    // the bar over the line are evicted long before anyone asks when it happened.
+    //
+    // Stamped on the un-mastered → mastered transition only, and never cleared on
+    // regression: a bar's `masteredAt` entry means "last time this bar crossed into
+    // mastered", so one bad mark must not erase the date. Re-crossing overwrites it.
+    //
+    // Stamped even when the bar's goal is OFF. The reading/writing tracks accrue for
+    // everyone (that is the "keep accruing, hide the bar" rule), so a learner who
+    // turns the reading goal on later finds their real crossing dates already there
+    // rather than an empty column that back-dates their work to zero.
+    const crossedIntoMastered = barCategoryBefore !== 'Mastered' && barCategoryAfter === 'Mastered';
+
+    // Bands are derived, not stored — write only the history + lifetime counts (plus
+    // this bar's masteredAt key on the crossing). jsonb_set with create_if_missing
+    // merges into whatever the other two bars already hold instead of replacing them,
+    // and COALESCE seeds the object for a card that has never crossed anything.
     const updateQuery = `
       UPDATE ${vetTableForLanguage(cardLanguage)}
       SET "typedMarkHistory" = $1,
           "totalMarkCount" = $2,
           "totalCorrectCount" = $3
+          ${crossedIntoMastered
+            ? `, "masteredAt" = jsonb_set(COALESCE("masteredAt", '{}'::jsonb), $6::text[], to_jsonb($7::text), true)`
+            : ''}
       WHERE id = $4 AND "userId" = $5
     `;
     await client.query(updateQuery, [
@@ -165,32 +206,41 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
       newTotalMarkCount,
       newTotalCorrectCount,
       cardId,
-      userId
+      userId,
+      // jsonb_set's path is an array; `bar` is a union value, never client input.
+      // Stamped with the MARK's timestamp, not now(): it is the mark that mastered
+      // the bar, and undo below matches on this exact value to decide whether it is
+      // the stamp it must retract.
+      ...(crossedIntoMastered ? [`{${bar}}`, newMark.timestamp] : []),
     ]);
 
-    // Category AFTER the mark, for the client's progress chip.
-    const category: FlashcardCategory = computeUtcm(updatedHistory, goals);
-
     // VELOCITY (docs/VELOCITY.md): this is the ONLY moment a band promotion is
-    // observable — `category` is derived, so nothing else in the schema would ever
-    // know the card moved up. Log the step count when it did.
+    // observable — bands are derived, so nothing else in the schema would ever know
+    // the card moved up. Log the step count when it did.
     //
-    // A single mark can cross two bands (pbh is continuous), so the size of the
-    // move is recorded rather than assumed to be 1. Demotions are not logged.
+    // Logged for the MARKED BAR, not the core bar (migration 143): velocity sums
+    // band-steps across all three bars, so a reading mark that carries the reading bar
+    // from Target to Comfortable is a real step forward and is counted as one. The
+    // row records which bar it moved so the velocity read can restrict itself to the
+    // bars the account is pursuing.
+    //
+    // A single mark can cross two bands (the core pbh is continuous), so the size of
+    // the move is recorded rather than assumed to be 1. Demotions are not logged.
     //
     // Best-effort by design: a failure here is swallowed after logging, because
     // losing a stat is strictly better than failing the user's review write. The
     // insert reuses this handler's client — it is not in a transaction, so it
     // commits independently of the vet UPDATE above.
-    const climbed = bandsClimbed(categoryBeforeMark, category);
+    const climbed = bandsClimbed(barCategoryBefore, barCategoryAfter);
     if (climbed > 0) {
       try {
         await categoryPromotionDAL.recordPromotion({
           userId,
           language: cardLanguage,
           vocabEntryId: cardId,
-          fromCategory: categoryBeforeMark as FlashcardCategory,
-          toCategory: category,
+          bar,
+          fromCategory: barCategoryBefore,
+          toCategory: barCategoryAfter,
           bandsClimbed: climbed,
           markType,
           markTimestamp: newMark.timestamp,
@@ -207,24 +257,25 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
       const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, cardLanguage, excludeIds, allowedCategories, collection);
 
       if (!newCard) {
-        // In a mode session, "no eligible replacement" is the expected end-of-pool
-        // state, not an error: return success with newCard:null so the client winds
-        // the loop down ("no more review/challenge cards remaining"). Study keeps the 404.
-        if (mode) {
-          client.release();
-          return res.status(200).json({
-            success: true,
-            category,
-            markTimestamp: newMark.timestamp,
-            markType,
-            displacedMark,
-            newCard: null,
-          });
-        }
+        // "No eligible replacement" is an expected end-of-pool state for EVERY kind of
+        // session, not an error, so it is always a 200 with newCard:null and the client
+        // winds the loop down. It means one of:
+        //   - a mode / deck / Mastered round whose allowed pool is exhausted;
+        //   - an unrestricted round where every card is cooling AND the dictionary has
+        //     no more words to lend (the service already tried — see
+        //     getNextLibraryCardWithFallback).
+        // Study used to 404 here on the assumption it could always find a card. It
+        // can't any more: honoring the cooldown means an unrestricted session can also
+        // legitimately run dry, and a 404 would surface as "failed to save progress"
+        // even though the mark above committed fine.
         client.release();
-        return res.status(404).json({
-          error: 'No library cards available',
-          code: 'ERR_NO_CARDS_AVAILABLE'
+        return res.status(200).json({
+          success: true,
+          category,
+          markTimestamp: newMark.timestamp,
+          markType,
+          displacedMark,
+          newCard: null,
         });
       }
 
@@ -288,8 +339,6 @@ router.post('/api/flashcards/undoLastMark', authenticateToken, handle(async (req
 
     await client.query('BEGIN');
 
-    const goals = await fetchGoals(client, userId);
-
     // FOR UPDATE can't run against the union view, and we don't yet know the row's
     // language, so probe each per-language vet table; the one holding this id
     // returns (and locks) the row. ids are globally unique across the pair.
@@ -297,7 +346,7 @@ router.post('/api/flashcards/undoLastMark', authenticateToken, handle(async (req
     let lockedVetTable: string | null = null;
     for (const t of VET_PHYSICAL_TABLES) {
       const r = await client.query(
-        `SELECT "typedMarkHistory", "totalMarkCount", "totalCorrectCount" FROM ${t} WHERE id = $1 AND "userId" = $2 FOR UPDATE`,
+        `SELECT "typedMarkHistory", "totalMarkCount", "totalCorrectCount", "masteredAt" FROM ${t} WHERE id = $1 AND "userId" = $2 FOR UPDATE`,
         [cardId, userId]
       );
       if (r.rows.length > 0) { entryResult = r; lockedVetTable = t; break; }
@@ -350,11 +399,31 @@ router.post('/api/flashcards/undoLastMark', authenticateToken, handle(async (req
     const newTotalMarkCount: number = Math.max(0, currentTotalMarkCount - 1);
     const newTotalCorrectCount: number = Math.max(0, currentTotalCorrectCount - (lastMark.isCorrect ? 1 : 0));
 
+    // MASTERY CROSSING, retracted (migrations 142 + 143). If the MARKED BAR's
+    // `masteredAt` entry holds THIS mark's timestamp then this is the mark that
+    // mastered that bar, and undoing it must take the stamp with it — the same rule as
+    // the promotion-row delete below. Only that bar's key is touched; the other two
+    // bars' crossings are unrelated events.
+    //
+    // Set to null rather than restored to the previous crossing: the earlier date is
+    // unrecoverable (the rolling mark window has long since evicted the marks it was
+    // derived from), and null is exactly the "never observed crossing" value the sort
+    // reader already handles. A stamp from any OTHER mark is left alone, which is also
+    // what makes this safe when the bar was already mastered before this mark — no
+    // transition fired then, so its entry cannot be pointing at it.
+    const bar = barForMarkType(markType);
+    const storedMasteredAt: MasteredAtByBar | null = entryResult.rows[0].masteredAt ?? null;
+    const storedBarStamp = storedMasteredAt?.[bar] ?? null;
+    const clearMasteredAt =
+      storedBarStamp !== null &&
+      new Date(storedBarStamp).getTime() === new Date(markTimestamp).getTime();
+
     const updateQuery = `
       UPDATE ${lockedVetTable}
       SET "typedMarkHistory" = $1,
           "totalMarkCount" = $2,
           "totalCorrectCount" = $3
+          ${clearMasteredAt ? `, "masteredAt" = "masteredAt" - $6::text` : ''}
       WHERE id = $4 AND "userId" = $5
     `;
 
@@ -363,10 +432,11 @@ router.post('/api/flashcards/undoLastMark', authenticateToken, handle(async (req
       newTotalMarkCount,
       newTotalCorrectCount,
       cardId,
-      userId
+      userId,
+      ...(clearMasteredAt ? [bar] : []),
     ]);
 
-    const category: FlashcardCategory = computeUtcm(revertedHistory, goals);
+    const category: FlashcardCategory = computeCoreCategory(revertedHistory);
 
     // VELOCITY: an undone mark must give back the band-steps it earned, so delete
     // any promotion rows keyed to this exact (card, mark). Enlisted in the undo

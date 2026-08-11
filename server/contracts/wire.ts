@@ -363,6 +363,107 @@ export const MARK_TYPES: readonly MarkType[] = [
  */
 export type TypedMarkHistory = Partial<Record<MarkType, ReviewMark[]>>;
 
+/**
+ * The up-to-three INDEPENDENT mastery bars a card carries (migration 143,
+ * docs/MASTERY_REWORK.md § "Three bars").
+ *
+ *   core    — recognition + production, blended. ALWAYS active; this is the bar
+ *             every whole-card question means (deck counts, level estimate, the
+ *             mini-card chip, the community Learning feed).
+ *   reading — the reading track alone. Active only when `users.readingGoal`.
+ *   writing — the writing track alone. Active only when `users.writingGoal`.
+ *
+ * Each bar bands independently, so one card can be Mastered up to three times.
+ * A mark belongs to exactly ONE bar (see `barForMarkType`), so a single review
+ * can never move two bars at once.
+ */
+export type MasteryBarId = 'core' | 'reading' | 'writing';
+
+export const MASTERY_BARS: readonly MasteryBarId[] = ['core', 'reading', 'writing'] as const;
+
+/**
+ * The `?collection=` wire value for each bar's Mastered collection — one built-in
+ * collection per bar, since a card can now be mastered up to three times.
+ *
+ * `core` keeps the bare `mastered` value it has always had, so every existing link,
+ * bookmark and in-flight client request keeps resolving to the same set.
+ */
+export const MASTERED_COLLECTION_IDS: Record<MasteryBarId, string> = {
+  core: 'mastered',
+  reading: 'mastered-reading',
+  writing: 'mastered-writing',
+};
+
+/**
+ * Which bar's Mastered collection a `?collection=` value names, or null if it names
+ * none. Null must always mean "unrestricted" at the call sites — an unrecognized
+ * collection name may never silently narrow a round to some other set.
+ */
+/** Narrow a raw string to a bar id, or null if it names none. */
+export function parseMasteryBar(raw: string | null | undefined): MasteryBarId | null {
+  return MASTERY_BARS.includes(raw as MasteryBarId) ? (raw as MasteryBarId) : null;
+}
+
+export function masteredCollectionBar(raw: string | null | undefined): MasteryBarId | null {
+  if (!raw) return null;
+  for (const bar of MASTERY_BARS) {
+    if (MASTERED_COLLECTION_IDS[bar] === raw) return bar;
+  }
+  return null;
+}
+
+/**
+ * The BAND collections: one per unmastered utcm band of the CORE bar, plus `all`.
+ *
+ * These are the fdp's top deck row. `Mastered` deliberately has no band collection —
+ * that band is already three collections (one per bar, above), and a fourth id
+ * meaning "core-mastered" would be a second name for `mastered`.
+ *
+ * Lowercased ids rather than the band's own capitalisation, so a URL segment matches
+ * the rest of the route vocabulary (`learn-now`, `mastered-reading`).
+ */
+export const BAND_COLLECTION_IDS = {
+  Unfamiliar: 'unfamiliar',
+  Target: 'target',
+  Comfortable: 'comfortable',
+} as const;
+
+export type BandCollectionCategory = keyof typeof BAND_COLLECTION_IDS;
+
+export const BAND_COLLECTION_CATEGORIES: readonly BandCollectionCategory[] = [
+  'Unfamiliar',
+  'Target',
+  'Comfortable',
+] as const;
+
+/** Every sorted card the learner holds, mastered or not. */
+export const ALL_COLLECTION_ID = 'all';
+
+/**
+ * Which core band a `?collection=` value names, or null if it names none.
+ * Null must always mean "unrestricted" at the call sites — an unrecognized collection
+ * name may never silently narrow a round to some other set.
+ */
+export function bandCollectionCategory(
+  raw: string | null | undefined
+): BandCollectionCategory | null {
+  if (!raw) return null;
+  for (const category of BAND_COLLECTION_CATEGORIES) {
+    if (BAND_COLLECTION_IDS[category] === raw) return category;
+  }
+  return null;
+}
+
+/**
+ * Per-bar mastery crossing timestamps — the shape of vet."masteredAt" (jsonb since
+ * migration 143; a bare timestamptz before it, when there was only one bar).
+ *
+ * A key is absent or null until that bar's crossing is observed. ISO strings on the
+ * wire; Postgres stores them as jsonb strings, so unlike the old column pg hands
+ * back strings rather than `Date`s on both sides.
+ */
+export type MasteredAtByBar = Partial<Record<MasteryBarId, string | null>>;
+
 /** How many most-recent marks each type retains (the sliding-window size). */
 export const MARK_WINDOW_SIZE = 8;
 
@@ -834,8 +935,33 @@ export interface VocabEntryBase {
   totalMarkCount?: number;
   /** Lifetime count of correct marks. */
   totalCorrectCount?: number;
-  /** utcm level, computed from typedMarkHistory + the account's goal flags. */
+  /**
+   * The CORE bar's utcm level (recognition + production), computed from
+   * typedMarkHistory. Goal-independent since migration 143 — the reading/writing
+   * goals now raise their own bars instead of re-weighting this one.
+   */
   category?: FlashcardCategory;
+  /**
+   * When each bar LAST crossed into its `mastered` band (vet column; jsonb keyed by
+   * bar since migration 143, a single timestamptz in migration 142).
+   *
+   * Sticky per bar — a later regression does not clear it — so "recently mastered"
+   * stays a usable ordering for a card that dipped. A key is missing/null for every
+   * bar whose crossing was never observed, which includes every card mastered before
+   * migration 142 (the crossing moment is not recoverable from the rolling
+   * `typedMarkHistory` window, so it is deliberately not backfilled).
+   *
+   * See docs/MASTERY_REWORK.md § "masteredAt".
+   */
+  masteredAt?: MasteredAtByBar | null;
+  /**
+   * When this card was added to the DECK currently being read (`deck_cards.addedAt`,
+   * migration 141). Present ONLY on rows from `OnDeckVocabService.getDeckCards` —
+   * absent on Learn Now, Mastered, game pools and dictionary lookups, because deck
+   * membership is a property of a (deck, card) pair rather than of the card.
+   * Powers the deck-only "Recently added to this deck" sort.
+   */
+  deckAddedAt?: Date | string | null;
   /**
    * The game-pool bucket this card was drawn from, stamped only by
    * `getGameVocabPool` (absent everywhere else). NOT the same thing as `category`

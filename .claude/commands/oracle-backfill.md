@@ -105,6 +105,13 @@ The manifest — not this document — decides what "pending" means:
 - **Approval protection**: a step whose validation field a validator approved or
   flagged is never pending, mirroring `validatedClause` in the scripts themselves.
   The planner prints these under `🛡 validator-protected`.
+- **Opt-in steps** (`optional: true`): excluded from the plan *and* from the promotion
+  bar unless asked for. Today this is `backfill-icons` only — the one step that must
+  reach an external paid API (icons8), which an oracle run cannot answer locally. **The
+  default is to skip it**: a word ships with `iconId` NULL and every surface that reads
+  it degrades gracefully. Include it only on explicit instruction, and then pass
+  `--with-icons` to **both** the planner and `promote-discoverable.js` (the planner alone
+  only adds it to the plan; the promoter alone only adds it to the bar).
 
 The manifest's `version` is hand-synced to each script's `SCRIPT_VERSION` (see its
 header). If you bump a `SCRIPT_VERSION`, bump the manifest too — in **both** manifests

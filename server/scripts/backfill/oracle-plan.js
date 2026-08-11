@@ -31,6 +31,13 @@
  *                   is CURATED and RANKED — see the --new branch in main().
  *   --words=a,b     restrict to these word1 values (ignores the above)
  *   --limit=N       cap the candidate rows examined (default 50)
+ *   --with-icons    also plan the OPT-IN `backfill-icons` step. It is excluded by
+ *                   default because it is the one manifest step that must reach an
+ *                   external paid API (icons8) — an oracle round cannot answer it
+ *                   locally, and a NULL `iconId` degrades gracefully. Pass this only
+ *                   when ICONS8_API_KEY is set and you intend to run it (and then pass
+ *                   --with-icons to promote-discoverable.js too, or the rows it
+ *                   enriched will still promote without it).
  *   --json          emit machine-readable JSON instead of the table
  *
  * Referenced by: .claude/commands/oracle-backfill.md §3-§4.
@@ -63,6 +70,8 @@ const LANG = val('lang') || 'zh';
 const ONLY_DISCOVERABLE = has('--discoverable');
 const ONLY_NEW = has('--new');
 const AS_JSON = has('--json');
+// Opt-in for the manifest's `optional` steps (today: backfill-icons). Off by default.
+const WITH_ICONS = has('--with-icons');
 const LIMIT = Number(val('limit') || 50);
 const WORDS = (val('words') || '').split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -70,7 +79,7 @@ const WORDS = (val('words') || '').split(',').map((s) => s.trim()).filter(Boolea
 // Caught so a typo'd --lang prints one usable line instead of a module-load stack trace.
 let MANIFEST, DET_TABLE;
 try {
-  MANIFEST = scriptsForLanguage(LANG);
+  MANIFEST = scriptsForLanguage(LANG, { includeOptional: WITH_ICONS });
   DET_TABLE = detTableForLanguage(LANG);
 } catch {
   console.error(`❌ unknown --lang="${LANG}". Supported: zh, es.`);
@@ -206,6 +215,7 @@ async function main() {
     if (AS_JSON) {
       console.log(JSON.stringify({
         language: LANG,
+        withOptional: WITH_ICONS,
         scope: ONLY_DISCOVERABLE ? 'discoverable' : ONLY_NEW ? 'new' : WORDS.length ? 'words' : 'all',
         candidates: rows.map((r) => ({ id: r.id, word1: r.word1, discoverable: r.discoverable })),
         plan: [...byScript].filter(([, w]) => w.length).map(([id, words]) => ({ id, words })),
@@ -216,6 +226,11 @@ async function main() {
     const shipped = rows.filter((r) => r.discoverable).length;
     console.log(`\n📋 Oracle plan [${LANG}] — ${rows.length} candidate rows `
       + `(${shipped} already discoverable, ${rows.length - shipped} new)\n`);
+    // Say so out loud: a silently-omitted step would read as "nothing to do" rather
+    // than "deliberately skipped", which is exactly the confusion `optional` invites.
+    console.log(WITH_ICONS
+      ? '  (--with-icons: the opt-in icons8 step IS planned — needs ICONS8_API_KEY)\n'
+      : '  (opt-in step backfill-icons skipped; pass --with-icons to include it)\n');
     console.log('  Run these in this order (manifest order encodes the dependencies):\n');
     let total = 0;
     for (const step of steps) {

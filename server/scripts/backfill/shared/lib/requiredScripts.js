@@ -17,6 +17,15 @@
  *   - version: the script's CURRENT `SCRIPT_VERSION`. **Keep in sync by hand when a
  *     script bumps its SCRIPT_VERSION** — this is the manifest's known-good version,
  *     used to detect a row stamped by an out-of-date script (§7 open item).
+ *   - optional (default false): OPT-IN step. Excluded from every manifest read unless
+ *     the caller explicitly asks for it (`scriptsForLanguage(lang, {includeOptional:true})`
+ *     / the `includeOptional` option on the helpers below). An optional step is
+ *     therefore neither planned nor a promotion blocker by default — a row ships
+ *     without ever running it. Today this is `backfill-icons` only: it is the one
+ *     manifest step that must reach an external paid API (icons8) and so cannot be
+ *     answered locally by an oracle run, and a missing `iconId` degrades gracefully
+ *     everywhere it is read. Opt in with `--with-icons` on oracle-plan.js /
+ *     promote-discoverable.js.
  *   - validationFields (optional): the `validations.field`(s) this script writes.
  *     If a validator has approved/flagged one, the script self-skips it via
  *     `validatedClause`, so the worker must NOT run the step on that row and must
@@ -68,7 +77,9 @@ export const REQUIRED_SCRIPTS_ZH = [
   // Icon search keys off definitions[0] (the dd), so it must follow the two steps that
   // can still rewrite/reorder `definitions`. Shared across languages (--lang defaults to
   // zh), hence the un-prefixed id — it lives at scripts/backfill/backfill-icons.js.
-  { id: 'backfill-icons',                             when: 'always',    version: 1, deterministic: true },
+  // OPTIONAL (opt-in): needs the external icons8 API, so it is skipped by default and
+  // never blocks promotion — see the `optional` bullet in the header.
+  { id: 'backfill-icons',                             when: 'always',    version: 1, deterministic: true, optional: true },
   { id: 'chinese/backfill-word-forms',                when: 'always',    version: 3 },
   { id: 'chinese/backfill-hsk-level',                 when: 'always',    version: 2, validationFields: ['difficulty'] },
   { id: 'chinese/backfill-frequency-score',           when: 'always',    version: 2, validationFields: ['frequencyScore'] },
@@ -141,7 +152,8 @@ export const REQUIRED_SCRIPTS_ES = [
   { id: 'spanish/backfill-process-definitions-array',   when: 'multiDef',       version: 4, validationFields: ['definitions'] },
   // Language-shared script at scripts/backfill/backfill-icons.js — pass --lang=es.
   // Un-prefixed id because it stamps the same key for every language.
-  { id: 'backfill-icons',                               when: 'always',         version: 1, deterministic: true },
+  // OPTIONAL (opt-in) for the same reason as in the zh manifest — external icons8 API.
+  { id: 'backfill-icons',                               when: 'always',         version: 1, deterministic: true, optional: true },
   // Writes BOTH `frequencyScore` and `difficulty` in one pass, so a review of either
   // chip protects the row — mirrors the script's own validatedClause.
   { id: 'spanish/backfill-frequency-score',             when: 'always',         version: 4, validationFields: ['frequencyScore', 'difficulty'] },
@@ -151,11 +163,29 @@ export const REQUIRED_SCRIPTS_ES = [
   { id: 'spanish/backfill-example-sentences',           when: 'always',         version: 1, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
 ];
 
-/** Manifest for a language code. Throws on a language with no pipeline. */
-export function scriptsForLanguage(language) {
+/**
+ * Drop the opt-in (`optional`) steps from a manifest. This is the ONE place the
+ * default-off rule lives: every helper below and every caller that does not pass an
+ * explicit step list goes through it, so an optional step is invisible unless someone
+ * asked for it by name.
+ */
+export function requiredOnly(steps) {
+  return steps.filter((s) => !s.optional);
+}
+
+/** The default (opt-in steps excluded) view of each manifest — computed once. */
+const DEFAULT_SCRIPTS_ZH = requiredOnly(REQUIRED_SCRIPTS_ZH);
+const DEFAULT_SCRIPTS_ES = requiredOnly(REQUIRED_SCRIPTS_ES);
+
+/**
+ * Manifest for a language code. Throws on a language with no pipeline.
+ * @param {{includeOptional?: boolean}} [opts] - includeOptional:true adds the opt-in
+ *   steps (today: `backfill-icons`). Default false — see the `optional` header bullet.
+ */
+export function scriptsForLanguage(language, { includeOptional = false } = {}) {
   switch (language) {
-    case 'zh': return REQUIRED_SCRIPTS_ZH;
-    case 'es': return REQUIRED_SCRIPTS_ES;
+    case 'zh': return includeOptional ? REQUIRED_SCRIPTS_ZH : DEFAULT_SCRIPTS_ZH;
+    case 'es': return includeOptional ? REQUIRED_SCRIPTS_ES : DEFAULT_SCRIPTS_ES;
     default: throw new Error(`requiredScripts: no manifest for language "${language}"`);
   }
 }
@@ -261,10 +291,11 @@ function stampInfo(row, id) {
  * MISSING a stamp or stamped BELOW the manifest version. Version-aware, but targets
  * ONLY the out-of-date/missing steps — never "stale everything".
  * @param {Set<string>} approvedFields - validator-approved/flagged fields for this row
- * @param {Array} steps - which manifest steps to consider (default: the zh manifest;
- *   pass `scriptsForLanguage(lang)`, or any subset, to narrow the question)
+ * @param {Array} steps - which manifest steps to consider (default: the zh manifest
+ *   MINUS its opt-in `optional` steps; pass `scriptsForLanguage(lang, opts)`, or any
+ *   subset, to narrow — or to widen, via `{includeOptional: true}`)
  */
-export function pendingSteps(row, approvedFields = new Set(), steps = REQUIRED_SCRIPTS_ZH) {
+export function pendingSteps(row, approvedFields = new Set(), steps = DEFAULT_SCRIPTS_ZH) {
   return steps.filter((step) => {
     if (!appliesTo(step, row)) return false;
     if (isProtected(step, approvedFields)) return false;
@@ -278,9 +309,10 @@ export function pendingSteps(row, approvedFields = new Set(), steps = REQUIRED_S
  * approval-protected or stamped at its CURRENT manifest version. Matches
  * `pendingSteps` (a word promotes exactly when nothing is pending). Every pipeline
  * script now honors `--stale`, so a version-stale step can always be brought current
- * — there is no stuck state.
+ * — there is no stuck state. `steps` defaults to the zh manifest without its opt-in
+ * steps, so an `optional` step never keeps a row from promoting.
  */
-export function isComplete(row, approvedFields = new Set(), steps = REQUIRED_SCRIPTS_ZH) {
+export function isComplete(row, approvedFields = new Set(), steps = DEFAULT_SCRIPTS_ZH) {
   return steps.every((step) => {
     if (!appliesTo(step, row)) return true;
     if (isProtected(step, approvedFields)) return true;
@@ -299,7 +331,7 @@ export function isComplete(row, approvedFields = new Set(), steps = REQUIRED_SCR
  * `discoverable = FALSE` filter for exactly this reason (a stale discoverable row heals
  * in place on next sort). Stuck-free because every script now honors `--stale`.
  */
-export function buildIncompletePredicate(alias = 'de', steps = REQUIRED_SCRIPTS_ZH) {
+export function buildIncompletePredicate(alias = 'de', steps = DEFAULT_SCRIPTS_ZH) {
   const log = `COALESCE(${alias}."enrichmentLog", '{}'::jsonb)`;
   const terms = steps.map((step) => {
     const parts = [];
@@ -316,8 +348,8 @@ export function buildIncompletePredicate(alias = 'de', steps = REQUIRED_SCRIPTS_
 }
 
 /** Convenience: the COMPLETE predicate (row is fully enriched). */
-export function buildCompletePredicate(alias = 'de') {
-  return `NOT ${buildIncompletePredicate(alias)}`;
+export function buildCompletePredicate(alias = 'de', steps = DEFAULT_SCRIPTS_ZH) {
+  return `NOT ${buildIncompletePredicate(alias, steps)}`;
 }
 
 export default REQUIRED_SCRIPTS_ZH;

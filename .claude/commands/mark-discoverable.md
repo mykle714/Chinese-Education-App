@@ -82,7 +82,7 @@ server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-numbered-p
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-process-definitions-array.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-parts-of-speech.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/backfill-icons.js --lang=zh --words=未来,摸脉
+server/scripts/backfill/run-prod.sh scripts/backfill/backfill-icons.js --lang=zh --words=未来,摸脉   # OPTIONAL (opt-in) — needs ICONS8_API_KEY; skip it and the word still ships
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-word-forms.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
 server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-frequency-score.js --words=未来,摸脉
@@ -103,7 +103,9 @@ single-char batch will report "0 entries" — that is correct, not a failure.
 
 **Parts of speech must run before `backfill-word-forms`, `backfill-long-definitions`, AND `backfill-example-sentences`.** All three depend on `partsOfSpeech`: word-forms and long-definitions only process rows where `partsOfSpeech IS NOT NULL` (they silently skip otherwise), and the example-sentence prompt enforces at least one sentence per listed POS. `backfill-word-forms` additionally reads `definitions[0]`, so it must also run after `backfill-process-definitions-array`. It writes an English `wordForms` map (e.g. `{"past":"ran",...}`), or `{}` when no forms apply, so re-runs skip already-processed rows.
 
-**`backfill-icons` must run AFTER `backfill-process-definitions-array` and `backfill-parts-of-speech`.** Its icons8 search-term cascade starts from the dd (`definitions[0]`), and both of those steps can still rewrite or reorder `definitions` — searching earlier would key the icon off a gloss the card never shows. It is deterministic (no LLM) but it *does* make outbound icons8 HTTP calls, so it is the one manifest step an oracle run cannot answer locally; it lives at the backfill root (not `chinese/`) because it is language-shared — pass `--lang=zh|es`. Rows whose every candidate term misses are stamped with `iconId` left NULL, so a word icons8 does not carry still completes.
+**`backfill-icons` is OPTIONAL (opt-in) and skipped by default.** It is the manifest's only `optional: true` step: it needs the external icons8 API (`ICONS8_API_KEY`), and a NULL `iconId` degrades gracefully on every surface that reads it. It is therefore excluded from the default manifest view, so it is neither planned nor required for promotion — run it only when you have the key and want icons. Opt in with `--with-icons` on `oracle-plan.js` / `promote-discoverable.js`.
+
+**When you do run it, `backfill-icons` must run AFTER `backfill-process-definitions-array` and `backfill-parts-of-speech`.** Its icons8 search-term cascade starts from the dd (`definitions[0]`), and both of those steps can still rewrite or reorder `definitions` — searching earlier would key the icon off a gloss the card never shows. It is deterministic (no LLM) but it *does* make outbound icons8 HTTP calls, so it is the one manifest step an oracle run cannot answer locally; it lives at the backfill root (not `chinese/`) because it is language-shared — pass `--lang=zh|es`. Rows whose every candidate term misses are stamped with `iconId` left NULL, so a word icons8 does not carry still completes.
 
 **`backfill-cluster-definitions` must run BEFORE `backfill-example-sentences`.** Example-sentences reads `definitionClusters` to tag each generated sentence with the exact `sense` label it demonstrates (and to steer coverage toward every register-4/5 sense); it **skips any row whose `definitionClusters` IS NULL**. Clustering reads the finalized `definitions` (so it must run after `backfill-process-definitions-array`) and writes `definitionClusters` — orthogonal sense clusters; see `docs/DEFINITION_CLUSTERS.md`.
 
@@ -203,7 +205,7 @@ server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-split-semi
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-expand-abbreviations.js
 # 3 order + prune `definitions` (AI) — MUST precede clustering, see the note below
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-process-definitions-array.js --words=cura,perro
-# 4 icons8 icon — after every step that can still rewrite definitions[0]; shared script, es table via --lang
+# 4 icons8 icon — OPTIONAL (opt-in, needs ICONS8_API_KEY); after every step that can still rewrite definitions[0]; shared script, es table via --lang
 server/scripts/backfill/run-prod.sh scripts/backfill/backfill-icons.js --lang=es --words=cura,perro
 # 5 word-level frequency score
 server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-frequency-score.js

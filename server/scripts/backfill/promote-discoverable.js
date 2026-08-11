@@ -19,6 +19,8 @@
  * current version, or validator-protected) AND `difficulty BETWEEN 1 AND 6`. The
  * difficulty term is not redundant with the manifest: the manifest checks that the
  * hsk-level STEP ran, this checks that the COLUMN it writes actually landed in range.
+ * The manifest's OPT-IN steps (`optional: true` — today `backfill-icons`) are NOT part
+ * of the bar unless `--with-icons` is passed: a word icons8 cannot serve still ships.
  *
  * SAFETY: DRY-RUN by default — prints what it would promote and why each rejected row
  * failed, writes nothing. Pass --apply to write. Rows that fail the bar print their own
@@ -45,10 +47,15 @@ import {
   isComplete,
   pendingSteps,
   buildCompletePredicate,
+  scriptsForLanguage,
 } from './shared/lib/requiredScripts.js';
 
 const argv = process.argv.slice(2);
 const APPLY = argv.includes('--apply');
+// Opt-in for the manifest's `optional` steps (today: backfill-icons, which needs the
+// external icons8 API). Off by default, so a missing iconId never blocks promotion.
+const WITH_ICONS = argv.includes('--with-icons');
+const STEPS = scriptsForLanguage('zh', { includeOptional: WITH_ICONS });
 const valOf = (name) => {
   const hit = argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : null;
@@ -58,13 +65,13 @@ const LIMIT = Math.max(1, Number(valOf('limit') || 100));
 
 /** The full bar, as SQL. Manifest completeness AND a real level in the column. */
 const readyPredicate = (alias = 'de') =>
-  `(${alias}."difficulty" BETWEEN 1 AND 6 AND ${buildCompletePredicate(alias)})`;
+  `(${alias}."difficulty" BETWEEN 1 AND 6 AND ${buildCompletePredicate(alias, STEPS)})`;
 
 /** JS twin of readyPredicate for a fetched row. */
 function isDiscoverableReady(row, approvedFields) {
   const level = Number(row.difficulty);
   if (!Number.isInteger(level) || level < 1 || level > 6) return false;
-  return isComplete(row, approvedFields);
+  return isComplete(row, approvedFields, STEPS);
 }
 
 const SELECT_COLS =
@@ -116,7 +123,8 @@ async function loadApprovedFields(client, ids) {
 
 async function main() {
   const mode = APPLY ? 'APPLY' : 'DRY-RUN';
-  console.log(`\n📖 promote-discoverable [${mode}]${WORDS.length ? ` words=${WORDS.join(',')}` : ` limit=${LIMIT}`}\n`);
+  console.log(`\n📖 promote-discoverable [${mode}]${WORDS.length ? ` words=${WORDS.join(',')}` : ` limit=${LIMIT}`}`
+    + `${WITH_ICONS ? ' (--with-icons: icons8 step REQUIRED for promotion)' : ' (opt-in icons8 step not required)'}\n`);
 
   const client = await db.getClient();
   try {
@@ -147,7 +155,7 @@ async function main() {
         if (!Number.isInteger(level) || level < 1 || level > 6) {
           blockers.push(`difficulty=${row.difficulty ?? 'NULL'}`);
         }
-        for (const s of pendingSteps(row, approved)) blockers.push(path.basename(s.id));
+        for (const s of pendingSteps(row, approved, STEPS)) blockers.push(path.basename(s.id));
         console.log(`  ✗ ${row.word1} (id ${row.id}) — not ready: ${blockers.join(', ')}`);
         continue;
       }

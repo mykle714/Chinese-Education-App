@@ -380,6 +380,16 @@ both the runtime trigger and the manual CLI):
    > outbound HTTP calls, so an oracle run cannot answer it locally. It stamps even when
    > icons8 returns no match (`iconId` stays NULL), so an unmatchable word still completes
    > and can be promoted.
+   >
+   > **It is also the manifest's only `optional: true` step, i.e. OPT-IN**: because it
+   > needs an external paid API and a NULL `iconId` degrades gracefully everywhere it is
+   > read, it is filtered out of every manifest read by default (`requiredOnly()`, applied
+   > in `scriptsForLanguage()` and in the default `steps` of `pendingSteps` / `isComplete`
+   > / `buildIncompletePredicate` / `buildCompletePredicate`). So **this worker never runs
+   > it and never waits for its stamp**. Callers opt back in with
+   > `scriptsForLanguage(lang, { includeOptional: true })` — surfaced as `--with-icons` on
+   > `oracle-plan.js` and `promote-discoverable.js`. `check-manifest-sync.js` still
+   > version-checks it, since it reads the raw manifests.
 
 3. **Runner executes a word's pending steps** — the runtime trigger spawns
    `server/scripts/backfill/run-lazy-enrichment.js --words=<word> --apply --stale` for

@@ -1,4 +1,4 @@
--- Migration 142: drop the discover `sortable` flag (reverts migration 110)
+-- Migration 144: drop the discover `sortable` flag (reverts migration 110)
 --
 -- Retires the two-tier visibility model. Discover sort / quick-mark / progress and
 -- the provisional-card lender all gate on `discoverable = TRUE` again, for every

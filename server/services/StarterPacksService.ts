@@ -194,7 +194,7 @@ export class StarterPacksService {
    *
    * ONE flag, every language: `discoverable`. Chinese briefly gated on a lower
    * `sortable` bar (migration 110) so partially-enriched cards could reach discover
-   * ahead of full enrichment; that idea is retired (migration 142 drops the column)
+   * ahead of full enrichment; that idea is retired (migration 144 drops the column)
    * because the corpus-wide pre-pass it depended on never ran, so in practice
    * `sortable` only ever added a couple hundred rows on top of `discoverable`
    * while forking every supply query on language. See docs/DISCOVER_FLOW.md.

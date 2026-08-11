@@ -85,7 +85,7 @@ Migration 110 added a zh-only second flag, `sortable` — a lower bar meaning
 rows could reach discover ahead of the full 13-step manifest, with
 `discoverable ⇒ sortable` as a corpus invariant.
 
-**Migration 142 drops it.** The split only pays off if the cheap two-step corpus
+**Migration 144 drops it.** The split only pays off if the cheap two-step corpus
 pre-pass behind it actually runs, and it never did: at the point of removal 1,517 of
 114,774 zh rows were sortable (1.3%) and only **218** were sortable-but-not-
 discoverable, because the oracle backfill's `--discoverable` heal queue refills on

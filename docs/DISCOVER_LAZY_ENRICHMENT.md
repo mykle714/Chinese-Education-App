@@ -7,7 +7,7 @@
 > (`LazyEnrichmentService`, fired from the cdp lookup + the sort commit — §5) that
 > replaced the standing cron.
 >
-> **Retired (migration 142)** — the `sortable` column and everything built on it: the
+> **Retired (migration 144)** — the `sortable` column and everything built on it: the
 > two-tier supply gate, `promote-sortable.js`, `buildSortableReadyPredicate` /
 > `PRE_PASS_SCRIPTS_ZH`, and the planner's `--unsortable` scope. Discover gates on
 > `discoverable = TRUE` for every language again. **§3 and §4b below describe the
@@ -78,7 +78,7 @@ Everything in Tier 3 is deferred to on-first-sort.
 
 ## 3. The `sortable` column — decoupling "showable" from "fully enriched" (RETIRED)
 
-> ⛔ **HISTORICAL.** Migration 142 dropped `sortable`; discover gates on
+> ⛔ **HISTORICAL.** Migration 144 dropped `sortable`; discover gates on
 > `discoverable` again. Everything in §3/§3a describes the state between
 > 2026-07-17 and 2026-08-09. Kept because §3a's reconciliation is still the reason
 > today's `discoverable` set has the shape it does.
@@ -418,7 +418,7 @@ both the runtime trigger and the manual CLI):
 
 5. **Promote on completion** — after a word's steps run, the worker re-reads its
    stamps and, iff the manifest is satisfied, flips `discoverable = TRUE`. Since the
-   trigger's own gate is now `discoverable = TRUE` (migration 142), this is in practice
+   trigger's own gate is now `discoverable = TRUE` (migration 144), this is in practice
    a re-affirmation of an already-set flag — the promotion path still matters for the
    manual `--words=` CLI, which targets rows regardless of state. The word drops out of
    the candidate predicate and is eligible
@@ -521,7 +521,7 @@ still surfaced *after* that step's batch completes and *before* the dependent
 
 **Decided & DONE:**
 - ↩️ **`sortable`** column on `dictionaryentries_zh` (migration 110) — **REVERTED by
-  migration 142** after 3 weeks and 218 rows of net reach; discover gates on
+  migration 144** after 3 weeks and 218 rows of net reach; discover gates on
   `discoverable` again for every language. Post-mortem under §4b.
 - ✅ **No `enrichment_jobs` table** — candidate set derived from
   `discoverable` / a vet row / `enrichmentLog` stamps; validator-approved fields honored
@@ -559,7 +559,7 @@ still surfaced *after* that step's batch completes and *before* the dependent
 
 ## 8. Referenced code
 
-- `database/migrations/110-add-sortable-to-zh.sql` — the `sortable` column + backfill + index (§3). **Reverted by `142-drop-sortable-from-zh.sql`.**
+- `database/migrations/110-add-sortable-to-zh.sql` — the `sortable` column + backfill + index (§3). **Reverted by `144-drop-sortable-from-zh.sql`.**
 - `server/services/LazyEnrichmentService.ts` — the request-time, validator-gated trigger
   (`triggerForWord`): zh + `isValidator` + manifest-incomplete gate, `inFlight` dedupe,
   fire-and-forget worker spawn, best-effort prod no-op (§5).

@@ -113,7 +113,7 @@ async function main() {
     } else if (ONLY_NEW) {
       // Candidates worth shipping. For zh this branch does two jobs beyond
       // "discoverable = FALSE" (it inherited them from the retired --unsortable
-      // pre-pass scope, which after migration 142 selected exactly these same rows):
+      // pre-pass scope, which after migration 144 selected exactly these same rows):
       //
       // (a) CANDIDATE QUALITY. Plain id order walks the head of the cedict import,
       //     which is punctuation, numerals and latin-initialism entries (`%`, `110`,

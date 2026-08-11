@@ -27,7 +27,7 @@ import { buildIncompletePredicate } from '../scripts/backfill/shared/lib/require
  *   1. language === 'zh'      — Spanish is out of scope for lazy enrichment.
  *   2. requester isValidator  — AI spend is bounded to trusted curators.
  *   3. the row is discoverable AND incomplete per the manifest (buildIncompletePredicate).
- *      Since the `sortable` bar was retired (migration 142) every row a learner can
+ *      Since the `sortable` bar was retired (migration 144) every row a learner can
  *      reach is already discoverable, so this trigger is now purely a HEAL path: it
  *      re-runs steps that went version-stale under a shipped row, rather than carrying
  *      a half-enriched row up to discoverable.

@@ -119,7 +119,7 @@ Service method `listQuickMarkCards(language, userId, level, cursor, limit=100)`
 
 - `WHERE de.language = $1 AND <supplyGate> AND <validPredicate>` — the supply gate is
   `_supplyGate()`: `de.discoverable = TRUE`, for every language (the zh-only `sortable`
-  bar was retired by migration 142 — see docs/DISCOVER_FLOW.md § Card supply gate)
+  bar was retired by migration 144 — see docs/DISCOVER_FLOW.md § Card supply gate)
 - `AND <levelExpr> = $level`  (exact level, no ±drift)
 - `AND NOT EXISTS (vet row for this user/word[/pos])`  — excludes already-sorted
 - **Skips are INCLUDED** (resolved): unlike Sort Cards' fresh supply, Quick Mark

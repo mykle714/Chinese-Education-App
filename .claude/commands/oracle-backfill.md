@@ -138,7 +138,7 @@ server/scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --new --limi
 
 **One bar, not two.** A row is either fully enriched and `discoverable`, or it is
 invisible — the intermediate `sortable` flag (migration 110) was **dropped by
-migration 142**, along with `promote-sortable.js` and the `--unsortable` scope. Do not
+migration 144**, along with `promote-sortable.js` and the `--unsortable` scope. Do not
 look for a cheap two-step path to put a card in front of learners; there isn't one any
 more. A `--new` batch goes through the **whole** manifest.
 

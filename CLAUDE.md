@@ -238,11 +238,30 @@ check fails, the rollback path, and any user-visible behaviour change to expect.
 **TEMPORARY** at the top with a "delete once verified on prod" note, and say plainly whether
 it has been deployed yet. Delete the file once prod is verified.
 
+#### Migration number collisions — just renumber, don't ask
+Work happens on more than one machine, so two branches can independently claim the same
+migration number (e.g. two files numbered `142`). When you find a collision, **resolve it
+yourself as part of the deploy prep** — do not stop to ask which number wins. Rules:
+
+1. **Only renumber migrations that have not reached any database.** Check
+   `schema_migrations` (and the runbook's "not yet on prod" status). A migration that has
+   been applied anywhere is immutable — renumber the other one.
+2. **Order by deploy constraint, not by authorship date.** Migrations that must run
+   *before* the new code get the lower numbers; any **held-back / contract** migration
+   (one that must run *after* the code) gets the **highest** number in the batch, because
+   `migrate.sh` applies everything above `MAX(version)` in order and cannot skip a gap.
+3. **Renumber whichever file is cheaper to move** — count the references (`grep -rn
+   "migration N"`) and rename the one with the smaller footprint, unless rule 2 forces the
+   other way.
+4. `git mv` the file, then fix **every** reference: the migration's own header comment, its
+   runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
+   note in the runbook saying it was renumbered and why.
+
 Current open runbooks:
 - [docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md) — per-language minute points + night markets (migrations 130, 134); **not yet on prod**
 - [docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md](./docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md) — unit-slot unlocks + generated unlock schedule; no migration, but the cron SQL **must** be redeployed; **not yet on prod**
 - [docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md](./docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md) — provisional cards (migration 140); the migration **must** land before the new code (it writes a bucket value the old CHECK rejects); **not yet on prod**
-- [docs/SORTABLE_DEPRECATION_DEPLOY_RUNBOOK.md](./docs/SORTABLE_DEPRECATION_DEPLOY_RUNBOOK.md) — dropping the `sortable` column (migration 142); expand/contract, so the migration **must be held back** until the new code is live; **not yet on prod**
+- [docs/SORTABLE_DEPRECATION_DEPLOY_RUNBOOK.md](./docs/SORTABLE_DEPRECATION_DEPLOY_RUNBOOK.md) — dropping the `sortable` column (migration 144, renumbered from 142); expand/contract, so the migration **must be held back** until the new code is live — it is deliberately the highest pending number so `migrate.sh` can reach 142/143 without it; **not yet on prod**
 - [docs/COLLECTION_SORT_DEPLOY_RUNBOOK.md](./docs/COLLECTION_SORT_DEPLOY_RUNBOOK.md) — collection Sort by + `masteredAt` (migration 142); the migration **must** land before the new code (the mark/undo handlers read and write the new column); **not yet on prod**
 - [docs/MASTERY_BARS_DEPLOY_RUNBOOK.md](./docs/MASTERY_BARS_DEPLOY_RUNBOOK.md) — three mastery bars (migration 143); ships **together with 142, in that order**, both before the new code; retains `compute_utcm_category()` for the deploy window and needs a follow-up contract migration to drop it; **not yet on prod**
 

@@ -21,7 +21,7 @@ export class ProvisionalCardDAL implements IProvisionalCardDAL {
   /**
    * Supply-visibility gate, mirroring StarterPacksService._supplyGate: one flag,
    * `discoverable`, for every language (the zh-only `sortable` bar is retired —
-   * migration 142). Keeping the two gates in step matters — a word we lend must also
+   * migration 144). Keeping the two gates in step matters — a word we lend must also
    * be a word discover will later offer for sorting, or the end-of-round "sort these
    * cards" hand-off would show an empty flow.
    */

@@ -1,7 +1,7 @@
 # TEMPORARY — `sortable` deprecation deploy runbook
 
 > **Delete this file once prod is verified.**
-> **Status: NOT YET DEPLOYED.** Migration `142-drop-sortable-from-zh.sql` has **not**
+> **Status: NOT YET DEPLOYED.** Migration `144-drop-sortable-from-zh.sql` has **not**
 > been run on prod (or dev). The code in this commit no longer reads the column, but
 > the column is still there — that is the intended intermediate state.
 
@@ -22,23 +22,32 @@ post-mortem under §4b of [DISCOVER_LAZY_ENRICHMENT.md](./DISCOVER_LAZY_ENRICHME
 
 ## ⚠️ This is an EXPAND/CONTRACT pair — order is not optional
 
-`142-drop-sortable-from-zh.sql` is the **contract** step. It must run **AFTER** the new
+`144-drop-sortable-from-zh.sql` is the **contract** step. It must run **AFTER** the new
 backend is live. If it runs first, every discover supply query on the old backend hits
 a missing column and 500s.
 
 `migrate.sh` runs pending migrations automatically, so **do not let the normal
-`/deploy` flow apply 142 in its usual pre-code slot.** Sequence:
+`/deploy` flow apply 144 in its usual pre-code slot.** Sequence:
+
+> **Why 144 and not 142.** This migration was authored as `142` and renumbered on the
+> way to prod: the mastery work (`142-add-mastered-at-to-vocabentries.sql`,
+> `143-three-mastery-bars.sql`) landed on the same number from another machine, and
+> those two must run **before** the new code while this one must run **after**. Since
+> `migrate.sh` applies everything above `MAX(version)` in `sort -V` order, the
+> held-back file has to be the **highest-numbered** one — otherwise the pre-code step
+> cannot reach 142/143 without dragging this drop along with it. Neither number had
+> reached any database when the swap happened.
 
 | # | Step | Notes |
 |---|---|---|
 | 1 | `server/scripts/backfill/backup-det.sh sortable-drop` | Cheap insurance; the column lives on the det table. |
-| 2 | Deploy the backend + frontend as usual | **Hold back migration 142.** No other migration in this change. |
+| 2 | Deploy the backend + frontend as usual, applying **142 and 143 only** | **Hold back migration 144.** It is the highest-numbered pending file, so `migrate.sh` reaches it last — pull it out of `database/migrations/` for this step. |
 | 3 | Smoke-test discover (below) on the new code | The column still exists at this point — a rollback here is a plain code rollback, no DB work. |
-| 4 | Run migration 142 only after step 3 passes | `docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < database/migrations/142-drop-sortable-from-zh.sql` |
+| 4 | Run migration 144 only after step 3 passes | `docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < database/migrations/144-drop-sortable-from-zh.sql` |
 | 5 | Re-run the verification SQL | Confirms the column is gone and discover still serves. |
 
 If your `/deploy` run applies all pending migrations unconditionally, temporarily move
-`142-drop-sortable-from-zh.sql` out of `database/migrations/` for the deploy and put it
+`144-drop-sortable-from-zh.sql` out of `database/migrations/` for the deploy and put it
 back for step 4.
 
 ## Verification

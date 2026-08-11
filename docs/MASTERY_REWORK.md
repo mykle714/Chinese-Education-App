@@ -6,7 +6,7 @@
 > ⚠️ **Read § "Three bars" (Section 4) first.** Migration 101 built a single
 > goal-*blended* bar; migration 143 split it into three independently-banded bars.
 > Sections written against the old blended model are marked **SUPERSEDED** inline.
-> Deploying 143: [MASTERY_BARS_DEPLOY_RUNBOOK.md](./MASTERY_BARS_DEPLOY_RUNBOOK.md).
+> Migrations 142–144 shipped to prod on 2026-08-11; their deploy runbooks are deleted.
 >
 > Key code:
 > - DB: `database/migrations/101-mastery-rework-typed-marks-and-goals.sql`
@@ -765,8 +765,9 @@ _All major decisions are settled._ Minor build-time confirmations:
   its stamp/retract sites in `server/routes/flashcardRoutes.ts` and its one reader,
   `src/utils/vocabSort.ts`.
 - `database/migrations/143-three-mastery-bars.sql` — `compute_core_category()`,
-  `masteredAt` → jsonb, `category_promotions.bar`. Deploy:
-  [MASTERY_BARS_DEPLOY_RUNBOOK.md](./MASTERY_BARS_DEPLOY_RUNBOOK.md).
+  `masteredAt` → jsonb, `category_promotions.bar`. On prod since 2026-08-11; it
+  intentionally left `compute_utcm_category()` in place for the deploy window, and that
+  function is still awaiting a contract migration to drop it.
 - `server/contracts/mastery.ts` — **the definition of the bars**; mirrored by
   `server/__tests__/mastery.test.ts`, which pins the TS/SQL agreement.
 - `server/contracts/wire.ts` — `MasteryBarId`, `MASTERY_BARS`,

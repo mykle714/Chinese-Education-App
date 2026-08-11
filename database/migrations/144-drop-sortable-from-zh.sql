@@ -27,7 +27,9 @@
 --
 -- ⚠️ EXPAND/CONTRACT — THIS IS THE CONTRACT STEP. The code that stopped reading
 -- `sortable` must be DEPLOYED BEFORE this file runs, or every discover supply query
--- errors on a missing column. See docs/SORTABLE_DEPRECATION_DEPLOY_RUNBOOK.md.
+-- errors on a missing column. (Shipped in that order on 2026-08-11; the deploy runbook
+-- that described the sequence has been deleted now that prod is verified. Note the
+-- column was already absent from prod when this ran — both drops skipped via IF EXISTS.)
 --
 -- Idempotent (IF EXISTS on both drops).
 

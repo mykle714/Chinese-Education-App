@@ -454,4 +454,4 @@ Related docs: [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (small-deck top-up)
 [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (node pages),
 [MASTERY_REWORK.md](./MASTERY_REWORK.md) (the three mastery bars the Mastered
 collections filter on),
-[MASTERY_BARS_DEPLOY_RUNBOOK.md](./MASTERY_BARS_DEPLOY_RUNBOOK.md) (shipping migration 143).
+`database/migrations/143-three-mastery-bars.sql` (on prod since 2026-08-11).

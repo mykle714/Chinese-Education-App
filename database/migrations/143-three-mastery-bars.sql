@@ -1,6 +1,7 @@
 -- Migration 143: Three independent mastery bars per card (core / reading / writing).
 --
--- See docs/MASTERY_REWORK.md § "Three bars" and docs/MASTERY_BARS_DEPLOY_RUNBOOK.md.
+-- See docs/MASTERY_REWORK.md § "Three bars". (The deploy runbook that sequenced this
+-- with 142 was deleted once prod was verified on 2026-08-11.)
 --
 -- ── WHAT CHANGES ─────────────────────────────────────────────────────────────
 -- Migration 101 made a card's utcm band GOAL-BLENDED: turning on the reading goal

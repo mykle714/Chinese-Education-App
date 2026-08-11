@@ -261,9 +261,11 @@ Current open runbooks:
 - [docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md) — per-language minute points + night markets (migrations 130, 134); **not yet on prod**
 - [docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md](./docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md) — unit-slot unlocks + generated unlock schedule; no migration, but the cron SQL **must** be redeployed; **not yet on prod**
 - [docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md](./docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md) — provisional cards (migration 140); the migration **must** land before the new code (it writes a bucket value the old CHECK rejects); **not yet on prod**
-- [docs/SORTABLE_DEPRECATION_DEPLOY_RUNBOOK.md](./docs/SORTABLE_DEPRECATION_DEPLOY_RUNBOOK.md) — dropping the `sortable` column (migration 144, renumbered from 142); expand/contract, so the migration **must be held back** until the new code is live — it is deliberately the highest pending number so `migrate.sh` can reach 142/143 without it; **not yet on prod**
-- [docs/COLLECTION_SORT_DEPLOY_RUNBOOK.md](./docs/COLLECTION_SORT_DEPLOY_RUNBOOK.md) — collection Sort by + `masteredAt` (migration 142); the migration **must** land before the new code (the mark/undo handlers read and write the new column); **not yet on prod**
-- [docs/MASTERY_BARS_DEPLOY_RUNBOOK.md](./docs/MASTERY_BARS_DEPLOY_RUNBOOK.md) — three mastery bars (migration 143); ships **together with 142, in that order**, both before the new code; retains `compute_utcm_category()` for the deploy window and needs a follow-up contract migration to drop it; **not yet on prod**
+
+Deployed and retired on 2026-08-11 (runbooks deleted): collection Sort by + `masteredAt`
+(142), three mastery bars (143), `sortable` drop (144). **Outstanding from that deploy:**
+`compute_utcm_category(jsonb, boolean, boolean)` is dead but deliberately NOT dropped —
+143 retained it for the deploy window. It still needs a contract migration.
 
 ### Data Deployment (syncing `dictionaryentries_zh` to prod)
 → See [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)

@@ -380,13 +380,22 @@ the user **chooses** to bring it back, in one of three ways:
 ### 6.4 Supply order, running out of in-level cards, and queue lag
 - **At the target level, authored packs are served first**, then **system fallback
   single-card packs** for the remaining un-sorted, un-skipped words at that level
-  (§4.5). **Within each of those two groups, supply is ordered by colloquial
-  register — highest `frequencyScore` first** (natural/colloquial words before
-  literary ones): authored packs by the mean `frequencyScore` of their cards,
-  fallback singles by the card's own score; entries with no score sink to the end,
-  and ties keep the prior order (authored curation order / card id).
-  Implemented in `StarterPacksService.getNextPacks` (authored sort via
-  `_packFrequencyRank`) and the `_fetchSupplyRows` `ORDER BY` (singles).
+  (§4.5). The two groups order by **different authorities**, and this is deliberate:
+  - **Authored packs: curation order (`sort_packs."packOrder"`, ascending).**
+    `packOrder` is a human teaching sequence — packs at a level are written to build
+    on one another — so nothing derived may reorder them. Applied once, in
+    `SortPacksDAL.fetchPacksAtLevel`'s `ORDER BY`; `getNextPacks` consumes that order
+    as-is and does **not** re-sort.
+  - **Fallback singles: colloquial register — highest `frequencyScore` first**
+    (natural/colloquial words before literary ones), cards with no score last, ties
+    by card id. These are machine-selected words with no curation order to respect,
+    so a derived ordering is the best available. Applied in `_fetchSupplyRows`'s
+    `ORDER BY`.
+
+  > Authored packs were briefly re-sorted by mean `frequencyScore` inside
+  > `getNextPacks`, which overrode `packOrder` on all but exact ties and made the
+  > curation sequence effectively dead. Removed — if a level's packs are coming out
+  > in the wrong order, fix their `packOrder`, not the serve path.
 - When the user has **sorted all packs at their level**, the flow **offers packs from
   adjacent levels** so the user always has something to sort (§4.4), serving them **as
   close to the target level as possible** — exhaust the nearest levels first and only

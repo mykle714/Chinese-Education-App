@@ -157,6 +157,12 @@ async function callTagger(word, ambiguous) {
       }
     }
   } catch (e) {
+    // The oracle's export phase unwinds via OracleExportSignal AFTER capturing the
+    // prompt — that is not a tagger failure and must NOT be degraded into the
+    // per-char default fallback, which would write (and stamp) globally-default
+    // senses during a phase that is contractually read-only. Re-throw so the
+    // per-entry handler unwinds the row untouched. See run-log.js § ORACLE MODE.
+    if (e?.oracleExport) throw e;
     console.log(`${REVIEW_MARKER} ${word}: tagger call failed (${e.message}) — using per-char defaults`);
   }
   return result;

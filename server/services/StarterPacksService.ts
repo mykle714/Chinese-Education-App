@@ -958,19 +958,6 @@ export class StarterPacksService {
     }
   }
 
-  /**
-   * A pack's conversation-frequency rank for the within-level supply ordering: the mean
-   * frequencyScore across its cards that have one. A pack with no scored cards ranks
-   * -1 so it sinks below any pack that has a real score.
-   */
-  private _packFrequencyRank(pack: SortPack): number {
-    const scores = pack.cards
-      .map((c) => c.frequencyScore)
-      .filter((s): s is number => typeof s === 'number');
-    if (scores.length === 0) return -1;
-    return scores.reduce((sum, s) => sum + s, 0) / scores.length;
-  }
-
   /** Turn authored sort_packs rows into SortPack DTOs (cards hydrated; no sentence — not shown in this flow). */
   private async _hydrateAuthoredPacks(rows: SortPackRow[], userId: string, language: string): Promise<SortPack[]> {
     return Promise.all(rows.map(async (row) => ({
@@ -1081,10 +1068,11 @@ export class StarterPacksService {
       const remaining1 = limit - packs.length;
       const candidates = await this.sortPacksDAL.fetchPacksAtLevel(language, lvl, excludePackIds, remaining1 * 3 + 5);
       const authored = await this._hydrateAuthoredPacks(candidates, userId, language);
-      // Within a level, surface the most colloquial packs first (docs §5): rank each
-      // pack by the mean frequencyScore of its cards (nulls sink to the bottom), a
-      // stable sort so ties keep the authored packOrder from fetchPacksAtLevel.
-      authored.sort((a, b) => this._packFrequencyRank(b) - this._packFrequencyRank(a));
+      // Authored packs are served in CURATION ORDER — the `packOrder` sequence that
+      // fetchPacksAtLevel already applied. Do NOT re-sort here: `packOrder` is a
+      // deliberate human teaching sequence (packs build on each other), and a derived
+      // ordering silently overrides it. Frequency ordering still governs the fallback
+      // singles (_fetchSupplyRows' ORDER BY), which have no curation order to respect.
       for (const p of authored) {
         if (packs.length >= limit) break;
         if (p.cards.some((c) => !c.sorted)) { // never serve an all-sorted pack (§4.5)

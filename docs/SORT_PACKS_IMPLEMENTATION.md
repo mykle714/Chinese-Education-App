@@ -113,8 +113,34 @@ docker exec cow-postgres-prod psql -U cow_user -d cow_db \
   -c "SELECT language, level, count(*) FROM sort_packs GROUP BY 1,2 ORDER BY 1,2;"
 ```
 
-Expected after migration 131: `zh` → 19 packs at level 1, 2 at level 2, 23 at level 5,
-11 at level 6. Levels 3 and 4 are legitimately empty (none authored yet).
+Expected on prod today: `zh` → **19 packs at level 1, 2 at level 2, and nothing
+else** (21 total). Levels 3 and 4 are legitimately empty (none authored yet); levels 5
+and 6 are empty **by decision** — see below.
+
+### 2.2 Levels 5 and 6 have no authored packs
+
+Migration 131 seeded 34 packs at levels 5–6. They were **withdrawn on 2026-08-11 by a
+one-off ad-hoc `DELETE` against prod**, deliberately *not* shipped as a migration: this
+is a content decision about the rows one seed happened to insert, not a schema change,
+and a migration file would replay the withdrawal on every freshly-bootstrapped database
+forever. Every withdrawn pack was the same genre — an **idiom decomposition**, i.e.
+`{first half, second half, whole 4-char idiom}` (`{脚踏, 实地, 脚踏实地}`) — 23/23 at L5
+and 11/11 at L6, versus the **thematic** grouping used at L1/L2 (`{昨天, 今天, 明天}`).
+Two teaching genres shared one schema with no column distinguishing them, and the
+literary idiom packs were not the right content for those levels.
+
+Consequences to know:
+- The det entries are untouched and still reachable — a level-5/6 sorter now gets
+  100% system fallback packs-of-1 at those levels (the documented degradation path in
+  §2.1, here intentional rather than accidental).
+- No user data was invalidated: sorted cards (vet) and skips (`discover_skips`) key
+  off det ids, not pack ids. The withdrawal also stripped the deleted ids out of
+  `users."seenPacks"`, which has no FK — orphaned ids are inert today but would
+  wrongly suppress a future pack that reused the id.
+- **Freed pack ids (45–78) must never be reused.** `sort_packs_id_seq` was deliberately
+  left at 78 rather than rewound; a pack id is user-visible state via `seenPacks`.
+- Before re-authoring anything at these levels, settle the genre question — a
+  `packType` column (`'thematic' | 'compositional'`) is the proposed fix, not yet built.
 
 ## 3. Layer 1 — Server (`server/services/StarterPacksService.ts`)
 
@@ -129,7 +155,8 @@ internal helper for fallback-card selection). Algorithm:
    next level. So a level-2 user exhausts ALL level-2 supply (packs **and** singles)
    before seeing any level-1/level-3 card.
    - **Authored packs at a level** via `SortPacksDAL.fetchPacksAtLevel(language, lvl,
-     excludePackIds, …)` (ordered by `packOrder`), excluding `seenPacks` + client-held
+     excludePackIds, …)` — **served in `packOrder`, the DAL's order, never re-sorted by
+     the service** (curation order is authoritative; see requirements §6.4) — excluding `seenPacks` + client-held
      packs and dropping any pack whose `entryIds` are **all** already sorted. Each
      returned pack's cards are hydrated + tagged `sorted` (vet row → locked "sorted!") /
      `skipped` (discover_skips → draggable again).
@@ -255,3 +282,6 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 - `src/types.ts` (`DiscoverCard`, `DiscoverFetchResponse`, new `SortPack`).
 - `database/migrations/131-seed-zh-sort-packs.sql` — the zh pack seed (§2.1); the only
   delivery path for authored packs into a non-authoring environment.
+  (No companion migration withdraws the L5/L6 idiom-decomposition packs 131 seeded —
+  that was a one-off ad-hoc DELETE on prod, §2.2. A database bootstrapped from the
+  migrations alone therefore still has them.)

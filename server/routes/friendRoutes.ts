@@ -28,6 +28,9 @@ router.delete('/api/friends/requests/:id', authenticateToken, handle(friendsCont
 
 // ── The friend list itself ──
 router.get('/api/friends', authenticateToken, handle(friendsController.getFriends, friendsController));
+// Declared above the parameterized routes for the same reason /requests is: a
+// future `GET /api/friends/:id` would otherwise swallow "leaderboard".
+router.get('/api/friends/leaderboard', authenticateToken, handle(friendsController.getLeaderboard, friendsController));
 router.delete('/api/friends/:friendUserId', authenticateToken, handle(friendsController.removeFriend, friendsController));
 
 export default router;

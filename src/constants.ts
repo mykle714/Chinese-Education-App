@@ -43,9 +43,13 @@ export const STREAK_CONFIG = {
   RETENTION_MINUTES: parseInt(import.meta.env.VITE_STREAK_RETENTION_MINUTES) || 3,
   // Mirror of server STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES: escalating penalty
   // (minutes) by consecutive full days below the threshold; the 7th+ missed day
-  // wipes the remaining balance. Keep in sync with server/constants.ts and
+  // takes the whole remaining balance. Keep in sync with server/constants.ts and
   // database/cron/expire-stale-streaks.sql.
   PENALTY_SCHEDULE_MINUTES: [3, 15, 30, 60, 90, 120],
+  // Mirror of server STREAK_CONFIG.CHECKPOINT_MINUTES. No penalty may take the NET
+  // balance below the highest multiple of 1440 (24 h) at or under it; below the
+  // first checkpoint a balance can still reach 0.
+  CHECKPOINT_MINUTES: 1440,
 };
 
 // Vocabulary Search Configuration

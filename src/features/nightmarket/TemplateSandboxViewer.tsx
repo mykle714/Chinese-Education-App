@@ -1,3 +1,6 @@
+// PIXI's non-eval shader codegen. MUST be first: it has to be applied before a
+// renderer is created. See ./pixiRuntime for why this is not in main.tsx.
+import './pixiRuntime';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Application, extend, useApplication } from '@pixi/react';
 import { Container, Sprite, Graphics, Text } from 'pixi.js';
@@ -6,7 +9,7 @@ import { Box } from '@mui/material';
 import { isoToScreen, TILE_WIDTH, TILE_HEIGHT } from '../../engine/market/isometric';
 import { computeMinZoom } from '../../engine/market/cameraFit';
 import { useCameraControls } from '../../hooks/useCameraControls';
-import { buildEditorField, type EditorMasks } from '../../engine/market/farmTerrain';
+import { buildEditorField, compileMasks, type EditorMasks } from '../../engine/market/farmTerrain';
 import EditorTerrainLayer from './EditorTerrainLayer';
 import { TemplateMaskOverlays } from './TemplateEditorViewer';
 import { CameraZoomProvider } from './CameraZoomContext';
@@ -127,7 +130,7 @@ function PlacedTemplate(
   },
 ) {
   const tiles = useMemo(
-    () => buildEditorField(item.width, item.height, item.masks),
+    () => buildEditorField(item.width, item.height, compileMasks(item.masks)),
     [item.width, item.height, item.masks],
   );
   // While this item is being dragged the parent supplies a provisional offset so the preview
@@ -174,7 +177,7 @@ const GHOST_OUTLINE_COLOR = 0x8fffb0; // the page's LAYOUT (add) accent — this
  */
 function GhostTemplate({ pending, cell }: { pending: PendingPlacement; cell: GlobalCell }) {
   const tiles = useMemo(
-    () => buildEditorField(pending.width, pending.height, pending.masks),
+    () => buildEditorField(pending.width, pending.height, compileMasks(pending.masks)),
     [pending.width, pending.height, pending.masks],
   );
   // Centre the footprint on the cursor: the author aims at the middle of the template, not its

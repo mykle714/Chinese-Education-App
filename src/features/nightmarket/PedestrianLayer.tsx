@@ -108,6 +108,19 @@ export default function PedestrianLayer({ drawables, onPedTap, lockedPedId }: Pe
     pointerDown.y = e.global.y;
   }, [pointerDown]);
 
+  // ONE tap handler for every walker, resolving which was hit from the event's own target rather
+  // than closing over `d.id`. A per-ped arrow function would be a fresh callback identity for every
+  // walker on every frame — this layer re-renders at 60fps — forcing Pixi to detach and re-attach
+  // each sprite's listener each time. The ped id rides on the sprite via `label`.
+  const onPedTapRef = useRef(onPedTap);
+  onPedTapRef.current = onPedTap;
+  const handlePointerTap = useCallback((e: FederatedPointerEvent) => {
+    const moved = Math.hypot(e.global.x - pointerDown.x, e.global.y - pointerDown.y);
+    if (moved > TAP_SLOP_PX) return;
+    const id = (e.currentTarget as { label?: string | null } | null)?.label;
+    if (id) onPedTapRef.current?.(id);
+  }, [pointerDown]);
+
   // Selection ring, drawn in the graphics' OWN local space and positioned via x/y, so this callback
   // stays identity-stable and Pixi never re-runs the path while the ped walks.
   const drawRing = useCallback((g: Graphics) => {
@@ -144,6 +157,9 @@ export default function PedestrianLayer({ drawables, onPedTap, lockedPedId }: Pe
         return (
           <pixiSprite
             key={d.id}
+            // Carries the ped id onto the display object so the ONE shared tap handler can
+            // identify which walker was hit without a per-sprite closure.
+            label={d.id}
             texture={texture}
             x={screenX}
             y={screenY}
@@ -154,14 +170,7 @@ export default function PedestrianLayer({ drawables, onPedTap, lockedPedId }: Pe
             cursor={onPedTap ? 'pointer' : undefined}
             hitArea={onPedTap ? hitAreas.get(d.imagePath) : undefined}
             onPointerDown={onPedTap ? handlePointerDown : undefined}
-            onPointerTap={
-              onPedTap
-                ? (e: FederatedPointerEvent) => {
-                    const moved = Math.hypot(e.global.x - pointerDown.x, e.global.y - pointerDown.y);
-                    if (moved <= TAP_SLOP_PX) onPedTap(d.id);
-                  }
-                : undefined
-            }
+            onPointerTap={onPedTap ? handlePointerTap : undefined}
           />
         );
       })}

@@ -31,7 +31,7 @@ language-dimensioned.
 |---|---|---|
 | `userId` | uuid, FK → `users(id)` ON DELETE CASCADE | |
 | `language` | varchar(10) | PK part 2 |
-| `totalMinutePoints` | integer NOT NULL DEFAULT 0 | **NET** wallet for this language — penalty-debited, floored at 0. Funds this language's Night Market. |
+| `totalMinutePoints` | integer NOT NULL DEFAULT 0 | **NET** wallet for this language — penalty-debited, floored at the balance's **24-hour checkpoint** (`floor(total/1440)*1440`), which is 0 below 1440. Funds this language's Night Market. |
 | `currentStreak` | integer NOT NULL DEFAULT 0 | Consecutive qualifying days **in this language**. |
 | `lastStreakDate` | date | Last local day this language crossed the 3-min threshold. Advanced **only** by the increment path; the cron never touches it. |
 | `lastPenaltyDate` | date | Cron idempotency guard — at most one penalty per (user, language) per local day. |
@@ -123,18 +123,27 @@ tier = today_local - user_language_points.lastStreakDate - 1
 | 4 | 60 | 108 |
 | 5 | 90 | 198 |
 | 6 | 120 | 318 |
-| 7+ | all remaining → 0 | — |
+| 7+ | all remaining → the checkpoint | — |
 
 Schedule stays in sync with `STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES`
 (`server/constants.ts`) and its client mirror (`src/constants.ts`).
 
+**Every tier is capped by the 24-hour checkpoint floor** (`CHECKPOINT_MINUTES = 1440`):
+no debit may carry a balance across a multiple of 1440, so 1560 stops at 1440 and 3300
+at 2880. Sub-1440 balances are unprotected and still reach 0. Full rules:
+[STREAK_EXPIRATION_CRON.md § Checkpoints](./STREAK_EXPIRATION_CRON.md#checkpoints--the-penalty-floor).
+
 Each tick, per (user, language) with points to lose and a non-null
 `lastStreakDate`:
 
-- debit the tier penalty from **that language's** `totalMinutePoints`, floored at 0;
-- stamp the actual amount removed onto `userminutepoints` for
-  `(userId, missed_date, language)` — the language is now **known**, not guessed;
-- reset that language's `currentStreak` to 0;
+- debit the tier penalty from **that language's** `totalMinutePoints`, floored at that
+  balance's 24-hour checkpoint;
+- stamp the actual amount removed (`total − new_total`, always derived — never the
+  nominal tier value) onto `userminutepoints` for `(userId, missed_date, language)` —
+  the language is now **known**, not guessed. A penalty fully absorbed by a checkpoint
+  (0 removed) stamps nothing;
+- reset that language's `currentStreak` to 0 — **always**, even when the checkpoint
+  absorbed the whole penalty. A missed day breaks the streak regardless of what it costs;
 - set that language's `lastPenaltyDate = today_local`.
 
 **A lapse in two languages debits both on the same tick.** This is intended:

@@ -8,24 +8,110 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
 import FriendPersonRow from "./FriendPersonRow";
-import { fetchFriends, fetchIncomingRequests, removeFriend } from "../../api/friends";
-import type { FriendSummary } from "../../api/friends";
+import { fetchFriendsLeaderboard, fetchIncomingRequests } from "../../api/friends";
+import type { FriendLeaderboardEntry } from "../../api/friends";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import { friendErrorMessage, friendsSinceLabel } from "./friendLabels";
+import { friendErrorMessage, netMinutesLabel } from "./friendLabels";
 import { messageSx, mutedTextSx, navButtonSx, sectionCardSx, smallButtonSx } from "./friendStyles";
 
 /**
- * Friends page (docs/FRIENDS_FEATURE.md) — a Home-hub drill-in (NodePage) listing
- * the viewer's accepted friends.
+ * The rank chip left of the avatar. The top three get the podium accents (the same
+ * pastel family the rest of the app uses — gold-ish yellow, silver-ish blue, bronze-ish
+ * red) so the head of the board is readable at a glance; everyone else gets the neutral
+ * surface, because tinting all rows would make the tint meaningless.
+ */
+function RankBadge({ rank }: { rank: number }) {
+    const podium: Record<number, string> = {
+        1: COLORS.yellowAccent,
+        2: COLORS.blueAccent,
+        3: COLORS.redAccent,
+    };
+    return (
+        <Box
+            className={`friends-page__rank friends-page__rank--${rank}`}
+            sx={{
+                flexShrink: 0,
+                minWidth: 28,
+                height: 28,
+                px: 0.5,
+                borderRadius: "14px",
+                backgroundColor: podium[rank] ?? COLORS.iconBg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontFamily: FONTS.sans,
+                fontSize: SIZE.caption,
+                fontWeight: WEIGHT.bold,
+                color: COLORS.onSurface,
+            }}
+        >
+            {rank}
+        </Box>
+    );
+}
+
+/**
+ * The ranked metric as one unit: the number large, the word "velocity" small beneath,
+ * the two CENTRED ON EACH OTHER so the pair reads as a single stacked stat rather than
+ * as two independently aligned lines (the number's width swings from 1 to 3 digits,
+ * which a shared edge alignment makes look ragged).
  *
- * Two buttons across the top lead to the two pending-request screens: "Sent"
- * (outgoing, revocable, and where new requests are composed) and "Requests"
- * (incoming, with a count badge so the user knows to look).
+ * A zero is drawn muted rather than hidden — "0 this week" is information, and a
+ * blank space would read as a rendering bug.
+ */
+function VelocityStat({ velocity }: { velocity: number }) {
+    return (
+        <Box
+            className="friends-page__velocity"
+            sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                textAlign: "center",
+                lineHeight: 1.1,
+            }}
+        >
+            <Typography
+                className="friends-page__velocity-value"
+                sx={{
+                    fontFamily: FONTS.sans,
+                    fontSize: SIZE.subtitle,
+                    fontWeight: WEIGHT.bold,
+                    color: velocity > 0 ? COLORS.onSurface : COLORS.textSecondary,
+                    lineHeight: 1.1,
+                }}
+            >
+                {velocity.toLocaleString()}
+            </Typography>
+            <Typography
+                className="friends-page__velocity-unit"
+                sx={{ fontFamily: FONTS.sans, fontSize: SIZE.micro, color: COLORS.textSecondary }}
+            >
+                velocity
+            </Typography>
+        </Box>
+    );
+}
+
+/**
+ * Friends page (docs/FRIENDS_FEATURE.md) — a Home-hub drill-in (NodePage) showing
+ * the viewer and their accepted friends as a LEADERBOARD ranked by velocity
+ * (utcm band-steps climbed in the last 7 days; see docs/VELOCITY.md).
+ *
+ * Every row is scored in THAT person's own selected language, so each carries its
+ * language's flag + name; the subtitle is that same language's net minute-point
+ * wallet. The server owns the ranking — this page never re-sorts, so what it draws
+ * is always the ranks the server assigned.
+ *
+ * The board itself is READ-ONLY. Three buttons across the top lead to the three
+ * action screens — "Send" (compose + outgoing pending, revocable), "Accept"
+ * (incoming, with a count badge so the user knows to look) and "Remove" (unfriend)
+ * — so no mutation sits on a ranking row.
  *
  * The viewer's own user ID is shown here with a copy button because the ID *is*
  * the friend handle — there is no username column, so the only way for someone to
@@ -37,7 +123,7 @@ function FriendsPage() {
     const slideNavigate = useSlideNavigate();
     const { user, isAuthenticated } = useAuth();
 
-    const [friends, setFriends] = useState<FriendSummary[]>([]);
+    const [entries, setEntries] = useState<FriendLeaderboardEntry[]>([]);
     const [incomingCount, setIncomingCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -48,10 +134,10 @@ function FriendsPage() {
     useEffect(() => {
         let cancelled = false;
         setLoading(true);
-        Promise.all([fetchFriends(), fetchIncomingRequests()])
-            .then(([list, incoming]) => {
+        Promise.all([fetchFriendsLeaderboard(), fetchIncomingRequests()])
+            .then(([board, incoming]) => {
                 if (cancelled) return;
-                setFriends(list);
+                setEntries(board.entries);
                 setIncomingCount(incoming.length);
                 setError(null);
             })
@@ -63,19 +149,6 @@ function FriendsPage() {
             });
         return () => { cancelled = true; };
     }, [isAuthenticated]);
-
-    // Optimistic unfriend: drop the row immediately, put it back if the call fails.
-    // A friendship is symmetric and cheap to restore, so an optimistic remove is
-    // the right trade — the alternative is a spinner on every row.
-    const handleRemove = useCallback(async (friend: FriendSummary) => {
-        setFriends((prev) => prev.filter((f) => f.userId !== friend.userId));
-        try {
-            await removeFriend(friend.userId);
-        } catch (err: unknown) {
-            setFriends((prev) => [friend, ...prev]);
-            setError(friendErrorMessage(err, "Could not remove this friend"));
-        }
-    }, []);
 
     const handleCopyId = useCallback(async () => {
         if (!user?.id) return;
@@ -94,23 +167,28 @@ function FriendsPage() {
         <NodePage title="Friends" activePage="home" onBack={() => navigate("/")} contentClassName="friends-page__content">
             <Box className="friends-page" sx={{ display: "flex", flexDirection: "column", gap: 2, px: 2, pt: 1 }}>
 
-                {/* The two request screens. Full-width pair so both are thumb-reachable. */}
+                {/* The three action screens. This board is READ-ONLY — every mutation
+                    (send a request, answer one, unfriend) lives behind one of these
+                    buttons, so no destructive control sits on a ranking row where it
+                    can be mis-tapped while reading scores. Equal thirds, all
+                    thumb-reachable; the icons carry the meaning the one-word labels
+                    compress. */}
                 <Box className="friends-page__nav-buttons" sx={{ display: "flex", gap: 1 }}>
                     <Button
-                        className="friends-page__sent-button"
+                        className="friends-page__send-button"
                         onClick={() => slideNavigate("/friends/sent")}
                         startIcon={<SendIcon />}
-                        sx={navButtonSx}
+                        sx={navButtonSx(COLORS.blueAccent)}
                     >
-                        Sent
+                        Send
                     </Button>
                     <Button
-                        className="friends-page__requests-button"
+                        className="friends-page__accept-button"
                         onClick={() => slideNavigate("/friends/requests")}
                         startIcon={<MarkEmailUnreadIcon />}
-                        sx={navButtonSx}
+                        sx={navButtonSx(COLORS.greenAccent)}
                     >
-                        Requests
+                        Accept
                         {incomingCount > 0 && (
                             <Box
                                 className="friends-page__requests-badge"
@@ -132,6 +210,14 @@ function FriendsPage() {
                                 {incomingCount}
                             </Box>
                         )}
+                    </Button>
+                    <Button
+                        className="friends-page__remove-button"
+                        onClick={() => slideNavigate("/friends/remove")}
+                        startIcon={<PersonRemoveIcon />}
+                        sx={navButtonSx(COLORS.redAccent)}
+                    >
+                        Remove
                     </Button>
                 </Box>
 
@@ -182,30 +268,28 @@ function FriendsPage() {
                     one small query and a spinner flashes more than it informs. */}
                 {loading ? (
                     <Typography className="friends-page__loading" sx={mutedTextSx}>Loading…</Typography>
-                ) : friends.length === 0 ? (
+                ) : entries.length <= 1 ? (
+                    // <= 1: the viewer's own row is always present, so a board of one
+                    // person is the empty state — a leaderboard of yourself is not one.
                     <Typography className="friends-page__empty" sx={mutedTextSx}>
                         No friends yet. Tap <strong>Sent</strong> to add someone by their friend ID.
                     </Typography>
                 ) : (
-                    <Box className="friends-page__list" sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                        {friends.map((friend) => (
+                    <Box className="friends-page__leaderboard" sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                        {entries.map((entry) => (
                             <FriendPersonRow
-                                key={friend.userId}
-                                className="friends-page__friend"
-                                name={friend.name}
-                                email={friend.email}
-                                avatarIconId={friend.avatarIconId}
-                                secondary={friendsSinceLabel(friend.friendsSince)}
-                                actions={
-                                    <Button
-                                        className="friends-page__remove-button"
-                                        onClick={() => handleRemove(friend)}
-                                        startIcon={<PersonRemoveIcon sx={{ fontSize: 16 }} />}
-                                        sx={{ ...smallButtonSx, color: COLORS.redMain }}
-                                    >
-                                        Remove
-                                    </Button>
-                                }
+                                key={entry.userId}
+                                className={`friends-page__friend${entry.isCurrentUser ? " friends-page__friend--self" : ""}`}
+                                name={entry.isCurrentUser ? `${entry.name || entry.email} (you)` : entry.name}
+                                email={entry.email}
+                                avatarIconId={entry.avatarIconId}
+                                highlighted={entry.isCurrentUser}
+                                secondary={netMinutesLabel(entry.netMinutes, entry.language)}
+                                leading={<RankBadge rank={entry.rank} />}
+                                // The board is read-only: the row's only right-hand
+                                // element is the score it is ranked on. Unfriending
+                                // moved to /friends/remove.
+                                actions={<VelocityStat velocity={entry.velocity} />}
                             />
                         ))}
                     </Box>

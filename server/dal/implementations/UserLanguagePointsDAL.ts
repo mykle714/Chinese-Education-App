@@ -157,6 +157,38 @@ export class UserLanguagePointsDAL implements IUserLanguagePointsDAL {
     return totals;
   }
 
+  async getNetPointsForUsers(userIds: string[]): Promise<Map<string, Map<string, number>>> {
+    const byUser = new Map<string, Map<string, number>>();
+    if (!Array.isArray(userIds) || userIds.length === 0) return byUser;
+
+    const result = await dbManager.executeQuery<{
+      userid: string;
+      language: string;
+      totalminutepoints: number;
+    }>(async (client) => {
+      // No GROUP BY: (userId, language) is already the table's key, so these are
+      // rows, not aggregates. One query for the whole friend list.
+      return await client.query(
+        `SELECT "userId"            AS userid,
+                language,
+                "totalMinutePoints" AS totalminutepoints
+         FROM user_language_points
+         WHERE "userId" = ANY($1::uuid[])`,
+        [userIds]
+      );
+    });
+
+    for (const row of result.recordset) {
+      let languages = byUser.get(row.userid);
+      if (!languages) {
+        languages = new Map<string, number>();
+        byUser.set(row.userid, languages);
+      }
+      languages.set(row.language, Number(row.totalminutepoints) || 0);
+    }
+    return byUser;
+  }
+
   // ─────────────────────────────────────────────────────────────
   // internals
   // ─────────────────────────────────────────────────────────────

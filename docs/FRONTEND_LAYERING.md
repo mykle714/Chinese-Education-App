@@ -15,10 +15,59 @@ Referenced from [ARCHITECTURE_REVIEW.md](./ARCHITECTURE_REVIEW.md) (findings 5 a
 | `src/pages/` | App-level, auth, and legacy pages only (`AccountPage`, login/register, settings) | It is not part of any one feature |
 | `src/components/` | Genuinely shared presentational components | Importers in **two or more** features |
 | `src/hooks/`, `src/utils/` | Shared, feature-agnostic logic | Same test as `components/` |
-| `src/engine/market/` | The Pixi night-market engine — pure simulation/geometry | No React, no DOM, no network |
+| `src/engine/market/` | The night-market engine — pure simulation/geometry | No React, no DOM, no network, **and no Pixi** — see the rule below |
 | `src/cardIcons/` | The card-icon subsystem (layout math, text layout, API client, `editor/`) | Consumed by both flp and cdp |
 | `src/api/` | The HTTP transport (§ 3) | — |
-| `src/routes/` | `routeMeta.ts` (path table, **no page imports**) + `registry.ts` (components) | — |
+| `src/routes/` | `routeMeta.ts` (path table, **no page imports**) + `registry.ts` (components, **all `React.lazy`**) | — |
+
+### `src/engine/` imports nothing outside itself
+
+Every file under `src/engine/market/` imports only its siblings — no React, no
+Pixi, no browser API. This is load-bearing, not tidiness: it is what allows the
+whole 1,000-agent simulation to move into a Web Worker verbatim, and it is the
+single largest piece of pre-paid work if the app is ever ported off the web.
+
+**Enforced by a test, not by review** (`src/engine/__tests__/enginePurity.test.ts`,
+added 2026-08-13 — REACT_NATIVE_MIGRATION.md action item 13). A leak is invisible
+when it happens: importing `pixi.js` into an engine module works perfectly, ships,
+and silently costs both properties above. The test is stricter than the manual
+grep it replaces in three ways — it covers subdirectories and `__tests__`, it
+catches dynamic `import()` and `require()`, and it also rejects **relative** paths
+that escape the engine (`../../features/…`), which would drag React and Pixi in
+transitively while looking local.
+
+The equivalent grep, if you want it by hand:
+
+```bash
+grep -rhn "^import .*from ['\"]" src/engine/market/*.ts | grep -v "from ['\"]\."
+# expected: no output
+```
+
+**Tests count.** A test that needs a real Pixi object belongs on the renderer side
+of the line — see `src/features/nightmarket/__tests__/pedestrianDepthPixi.test.ts`,
+which was split out of the engine's own depth test for exactly this reason. Do not
+weaken such a test to keep it in `src/engine/`; move it. The purity test allows
+exactly `vitest`, `fs` and `path` inside `src/engine/**/__tests__/` (harness and
+tree-walking only) and nothing else — adding a renderer or React to that allowlist
+is a decision to give up Web Worker eligibility, so do it deliberately or not at
+all.
+
+→ Rationale: [REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md) § The Night
+Market finding.
+
+### Every route is code-split
+
+`src/routes/registry.ts` binds **all 37 routes** with `React.lazy`, and
+`src/App.tsx` wraps every route in `<Suspense>` unconditionally — there is no
+per-route `lazy` flag to forget. Adding a page with a plain static `import` still
+works, which is precisely the danger: it silently moves that page and everything
+it pulls in back into the main chunk. `src/__tests__/routeRegistry.test.ts` fails
+if any route's component is not lazy.
+
+The one module that must **never** regain a static heavy import is `src/main.tsx`.
+PIXI's `unsafe-eval` shim lived there and single-handedly pinned the whole renderer
+into every user's main chunk; it now lives in
+`src/features/nightmarket/pixiRuntime.ts`.
 
 ### The rule
 

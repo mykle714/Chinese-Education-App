@@ -487,13 +487,15 @@ read from there by all three places that need it: the `?markType=` pool query, t
 and by `WordSearchHubItem`'s per-sub-card chip. Nothing repeats the string literal,
 so the label a player sees cannot drift from the mark that is actually written.
 
-**The hub names the track.** Every Games-hub card carries a `MarkTypeChip` — a
-colored dot plus the uppercase track name — bottom-left in the card body, so a
-player can see which of the four tracks a game feeds *before* opening it. Colors
-and labels are the shared `MARK_TYPE_COLORS` / `MARK_TYPE_LABELS`
-(`src/utils/masteryCompute.ts`), so a track is the same hue on the hub and in the
-cdp stacked progress bar. See
-[HUB_MENU_SYSTEM.md § Chip slot](./HUB_MENU_SYSTEM.md).
+**The hub names the track.** Every Games-hub card carries a `MarkTypeChip
+variant="edge"` — the uppercase track name in faded grey, turned 90° and run up
+the card's right edge — so a player can see which of the four tracks a game feeds
+*before* opening it. The label is the shared `MARK_TYPE_LABELS`
+(`src/utils/masteryCompute.ts`). Note the edge variant deliberately drops the
+colored dot, so **the hub is the one surface where a track is not shown in its
+`MARK_TYPE_COLORS` hue**; everywhere else (cdp stacked progress bar, the pill
+variants of this chip) one track is one hue. See
+[HUB_MENU_SYSTEM.md § Edge label slot](./HUB_MENU_SYSTEM.md).
 
 > **`getGamePool` is parameterized, not recognition-with-an-exception.** It used
 > to hardcode `'recognition'` when Bubble Match was its only caller. Speed Reading

@@ -878,6 +878,13 @@ it runs in the **same transaction** that debits the minutes:
 2. While the user has **more** unlocks than `target`, **delete unlocks at random**
    from `nightmarketunlocks` until the count matches.
 
+**Decay has a floor.** Since the penalty itself cannot carry `totalMinutePoints` below
+its 24-hour checkpoint (`floor(total/1440)*1440`, see
+[STREAK_EXPIRATION_CRON.md § Checkpoints](./STREAK_EXPIRATION_CRON.md#checkpoints--the-penalty-floor)),
+a market can never decay below `unlocks(checkpoint)`. A learner who has banked ≥24 h of
+minute points keeps that much market permanently, no matter how long they stay away;
+only a market funded by under 1440 points can decay all the way to the bare hub.
+
 Decay's SQL step deletes only *unlocks* (placeholder occupants); freed placeholders
 return to the pool and a later re-granted unlock backfills them (placement picks among
 **all** placed templates' free slots) before any new template is spawned.

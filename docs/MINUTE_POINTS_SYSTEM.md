@@ -34,7 +34,8 @@ added the gross counter to that same row.
 
 `user_language_points` (PK = `userId, language`):
 - `totalMinutePoints INTEGER` — **NET** balance for this language: earns raise it, penalties
-  lower it (floored at 0).
+  lower it (floored at the balance's 24-hour **checkpoint**, `floor(total/1440)*1440` — which
+  is 0 for anything under 1440; see the NET bullet below).
 - `lifetimeMinutesEarned INTEGER` — **GROSS** lifetime earned for this language (migration 134).
   **Monotonic** — nothing ever lowers it.
 - `currentStreak INTEGER` — consecutive qualifying days for this language.
@@ -51,7 +52,13 @@ for a never-penalized language and DIVERGE once a penalty lands.
 
 **Two display quantities (GROSS vs NET),** both now per language:
 - **NET** — the prominent "Current Balance" number on the tester dashboard + the nmp
-  minutes badge. Drops on penalty/loss.
+  minutes badge. Drops on penalty/loss, but **only within its 24-hour checkpoint band**:
+  an inactivity penalty can never carry it across a multiple of 1440 minute points
+  (`STREAK_CONFIG.CHECKPOINT_MINUTES`), so 1560 bottoms out at 1440 and 3300 at 2880.
+  Below 1440 it is unprotected and can still reach 0. Checkpoints are **absorbing** — a
+  balance resting exactly on one is permanently out of the penalty system. Full rules:
+  [STREAK_EXPIRATION_CRON.md § Checkpoints](./STREAK_EXPIRATION_CRON.md#checkpoints--the-penalty-floor).
+  The one debit path that ignores checkpoints is the template-author `−N` dev tool.
 - **GROSS** — the secondary "N total minutes earned" caption. Only grows.
 
 ### Why per language
@@ -103,7 +110,7 @@ Both aggregate over one row per language — bounded by language count, never by
 `userminutepoints` (PK = `userId, streakDate, language`):
 - `language VARCHAR(10) NOT NULL DEFAULT 'zh'` — the language the minute was earned studying (migration 62). One row per `(streakDate, language)`.
 - `minutesEarned INTEGER` — sum across all of the user's devices, for that language.
-- `penaltyMinutes INTEGER` — minutes deducted by the escalating inactivity penalty, stamped on the missed day (`today − 1`), attributed to **the language actually penalized** (migration 130; it used to be a guess at the user's `selectedLanguage`). Written by the cron and by the author dev tool's −N path.
+- `penaltyMinutes INTEGER` — minutes deducted by the escalating inactivity penalty, stamped on the missed day (`today − 1`), attributed to **the language actually penalized** (migration 130; it used to be a guess at the user's `selectedLanguage`). Written by the cron and by the author dev tool's −N path. The cron stamps the **derived** amount (`total − new_total`, what actually left the wallet), never the nominal tier value, so a penalty partly absorbed by the 24-hour checkpoint records the real, smaller number. A **fully** absorbed penalty (0 removed) writes no row — this table has no missed-day flag, so an all-zero row would be indistinguishable from an absent one. Consequence for audits: an absent row means "nothing was taken", which covers both "the cron never examined this day" and "a checkpoint absorbed it"; the cron's NOTICE log is the only place those two are distinguished.
 - `lastSyncTimestamp`, `updatedAt` — bookkeeping timestamps.
 
 There is **no** device fingerprint and **no** longest-streak field.
@@ -141,7 +148,7 @@ is global except the two rollups listed above.
 - `UserMinutePointsService.getLanguageSummary(userId, language, timestamp, tz)` — returns `{ totalMinutePoints (this language's net), lifetimeMinutesEarned (this language's gross), todayMinutes (fire badge), currentStreak (this language's streak) }`. Backs `GET /api/users/minutePoints/summary`. **Every field is language-scoped** since migration 130; the field NAMES are unchanged because they are the client contract, only their scope moved. A language the user has never studied has no row and correctly returns all zeros.
 - `UserMinutePointsService.adjustMinutesForAuthor(userId, delta, timestamp, tz)` — **template-author-only** dev tool (`POST /api/nightMarket/dev/adjustMinutes`, gated on `isTemplateAuthor`, 403 otherwise, NOT rate-limited). `delta > 0` adds to today's `minutesEarned` + credits **both** counters; `delta < 0` adds `|delta|` to today's `penaltyMinutes` (gross intact) + debits net only (floored); then reconciles the night market (`NightMarketPlacementService.reconcileUnlocks` — grant on +, decay on −; decay also prunes empty dangling templates). Backs the nmp ±1/±5/±30 + Submit buttons. See docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md.
 - DAL split: the day ledger (`IUserMinutePointsDAL`) serves per-day/per-month reads; the wallet/streak/gross row (`IUserLanguagePointsDAL`) serves balances and streaks. `getMinutesForDate` still sums a day across all languages but is now used only by the test-only leaderboard — the streak threshold reads the single-language day total returned by `addMinutesForDate`.
-- `database/cron/expire-stale-streaks.sql` — hourly Postgres cron, the **sole authority for streak breaks and point penalties**. For each user below the threshold (`today − lastStreakDate ≥ 2`, in the user's stored tz, 4 AM-bounded), it debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then wipe the remainder on day 7+) from `totalMinutePoints`, resets `currentStreak = 0`, and stamps the debited amount as `penaltyMinutes` on the missed day (`today − 1`). Once per user per local day (`lastPenaltyDate` guard). See `docs/STREAK_EXPIRATION_CRON.md`.
+- `database/cron/expire-stale-streaks.sql` — hourly Postgres cron, the **sole authority for streak breaks and point penalties**. For each user below the threshold (`today − lastStreakDate ≥ 2`, in the user's stored tz, 4 AM-bounded), it debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then the remainder on day 7+) from `totalMinutePoints` — **floored at the balance's 24-hour checkpoint**, so no debit crosses a multiple of 1440 — resets `currentStreak = 0`, and stamps the amount actually debited as `penaltyMinutes` on the missed day (`today − 1`) unless that amount is 0. Once per user per local day (`lastPenaltyDate` guard). See `docs/STREAK_EXPIRATION_CRON.md`.
 - `UserController.onLogin` — post-login hook (`POST /api/auth/onLogin`). Today: refreshes `users.timezone` from the client so the cron has an up-to-date tz for every active user.
 - `LeaderboardService` — masks `currentStreak` to `null` for non-public users.
 
@@ -186,7 +193,7 @@ on each call.
 1. User hits goal on 12/10 → `currentStreak = N`, `lastStreakDate = 2024-12-10`.
 2. User skips 12/11 entirely.
 3. At the next `HH:01` after the user's local 4 AM on 12/12, the hourly Postgres cron (`expire-stale-streaks.sql`) sweeps every user with `totalMinutePoints > 0` and `today_local - lastStreakDate >= 2`.
-4. For each match it computes `tier = today_local - lastStreakDate - 1` (here `1`, the first missed day) and debits the tier penalty (`3` min): stamps `penaltyMinutes` on **2024-12-11** (the missed day = `today − 1`), resets `currentStreak = 0`, debits from `totalMinutePoints` (floored at 0), and stamps `lastPenaltyDate = today_local` for idempotency. `lastStreakDate` is **left unchanged**, so 12/13 escalates to tier 2 (`15` min), 12/14 to tier 3 (`30`), etc., resetting only when the user hits the threshold again.
+4. For each match it computes `tier = today_local - lastStreakDate - 1` (here `1`, the first missed day) and debits the tier penalty (`3` min): stamps `penaltyMinutes` on **2024-12-11** (the missed day = `today − 1`), resets `currentStreak = 0` (a missed day always breaks the streak, even if the checkpoint floor leaves the balance untouched), debits from `totalMinutePoints` (floored at the balance's 24-hour checkpoint), and stamps `lastPenaltyDate = today_local` for idempotency. `lastStreakDate` is **left unchanged**, so 12/13 escalates to tier 2 (`15` min), 12/14 to tier 3 (`30`), etc., resetting only when the user hits the threshold again.
 5. The cron reads `users.timezone` directly; the client keeps that column fresh via `/api/auth/onLogin` and `/api/users/minutePoints/increment`.
 
 ## Related documents
@@ -210,10 +217,12 @@ on each call.
 |---|---|---|
 | `STREAK_RETENTION_MINUTES` / `VITE_STREAK_RETENTION_MINUTES` | 3 | Both |
 | `STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES` | `[3, 15, 30, 60, 90, 120]` | Both (constant) |
+| `STREAK_CONFIG.CHECKPOINT_MINUTES` | `1440` (24 h) | Both (constant) |
 
-`RETENTION_MINUTES` is env-overridable. The escalating penalty schedule is a
-hard-coded constant in `server/constants.ts`, mirrored in `src/constants.ts`, and
-hard-coded again in `database/cron/expire-stale-streaks.sql` — all three must stay
-in sync. The 7th+ consecutive missed day wipes the remaining balance to 0 (no
-schedule entry). There is no longer a flat `DAILY_PENALTY_MINUTES`, `PENALTY_PERCENT`,
+`RETENTION_MINUTES` is env-overridable. The escalating penalty schedule and the
+checkpoint interval are hard-coded constants in `server/constants.ts`, mirrored in
+`src/constants.ts`, and hard-coded again in
+`database/cron/expire-stale-streaks.sql` — all three must stay in sync, and the SQL
+is the only copy any code actually executes. The 7th+ consecutive missed day takes
+the whole remaining balance **down to its checkpoint** (no schedule entry). There is no longer a flat `DAILY_PENALTY_MINUTES`, `PENALTY_PERCENT`,
 or `RETENTION_POINTS` config.

@@ -11,9 +11,11 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { useGameWins } from "../hooks/useGameWins";
 import { GAME_REGISTRY } from "../games/registry";
 import { GAME_KEY as BUBBLE_MATCH_GAME_KEY, LEVEL_CONFIGS as BUBBLE_MATCH_LEVELS } from "../games/bubble-match/constants";
-import { GAME_KEY as MATCH_SPEED_GAME_KEY, MODE_CONFIGS as MATCH_SPEED_MODES } from "../games/match-speed/constants";
-import type { MatchSpeedMode } from "../games/match-speed/types";
+import { GAME_KEY as MATCH_SPEED_GAME_KEY } from "../games/match-speed/constants";
 import WordSearchHubItem from "../games/word-search/WordSearchHubItem";
+import GamesCollectionSelector from "./GamesCollectionSelector";
+import { withCollectionParams } from "../features/flashcards/collectionRef";
+import { useSelectedCollection } from "../features/flashcards/selectedCollection";
 import { useAuth } from "../AuthContext";
 import type { GameDef } from "../games/types";
 import { COLORS } from "../theme/colors";
@@ -29,11 +31,25 @@ import { SIZE, WEIGHT } from "../theme/scale";
 // owns game gating, the empty state, and the tip-box header / spacer footer
 // (see docs/HUB_MENU_SYSTEM.md).
 //
-// Bubble Match and Match Speed each render as a HubMenuArrayItem (one sub-card
-// per difficulty level / mode) instead of a single HubMenuRow — neither has an
-// in-game picker, so the hub is the only place to pick one. These are
-// special-cased here (not a generic `GameDef.levels` field) since they are the
-// only games that fan out today; see docs/HUB_MENU_SYSTEM.md.
+// Bubble Match renders as a HubMenuArrayItem (one sub-card per difficulty
+// level) instead of a single HubMenuRow — it has no in-game picker, so the hub
+// is the only place to pick a level. This is special-cased here (not a generic
+// `GameDef.levels` field) since it's the only game that fans out this way
+// today; see docs/HUB_MENU_SYSTEM.md.
+//
+// Match Speed is a SINGLE row again: its Review / Challenge mode sub-cards were
+// removed from the hub, so every launch from here carries no `state.mode` and
+// the page falls back to Study Mix (DEFAULT_MODE_CONFIG in
+// match-speed/constants.ts). The mode machinery itself is untouched — a run
+// still resolves a ModeConfig — there is just no UI that picks a non-default one.
+//
+// The header also carries the COLLECTION SELECTOR (GamesCollectionSelector): the
+// hub is where a learner picks which of their card sets every game here plays with.
+// The choice lives in a session-only store (features/flashcards/selectedCollection.ts)
+// and reaches a game the same way a launch from a collection page always has — this
+// page wraps every card's `to` in withCollectionParams, so the game arrives with
+// `?deck=` / `?collection=` and reads it back via useLaunchCollection. No game page
+// changed. See docs/GAMES_FEATURE.md § "Collection selector".
 //
 // Every card also carries a MarkTypeChip naming the mastery track that game feeds
 // (docs/MASTERY_REWORK.md), read from `GameDef.markType` — which each game sets
@@ -48,17 +64,6 @@ const BUBBLE_MATCH_LEVEL_COLORS: Record<number, string> = {
     1: COLORS.greenAccent,
     2: COLORS.yellowAccent,
     3: COLORS.redAccent,
-};
-
-/** Persistent per-mode background colors for the Match Speed sub-cards, keyed by
-    MODE_CONFIGS' mode. Deliberately the SAME palette as the /decks study buttons
-    (FlashcardsDecksPage.tsx: neutral header surface for Study Mix, blueAccent for
-    Review, redAccent for Challenge) — the modes use the identical bucket rule, so they should
-    read as the same concept in both places. Hardcoded, not randomized. */
-const MATCH_SPEED_MODE_COLORS: Record<MatchSpeedMode, string> = {
-    mixed: COLORS.header,
-    review: COLORS.blueAccent,
-    challenge: COLORS.redAccent,
 };
 
 // Word Search also fans out into a strip of hub sub-cards (Pinyin / No Pinyin),
@@ -92,7 +97,7 @@ function resolveGameIcon(game: GameDef) {
 /** Mark-type chip for a game's hub card, or null for a game whose track varies by
     mode (Word Search — its own hub item labels each sub-card). */
 function resolveMarkChip(game: GameDef) {
-    return game.markType ? <MarkTypeChip markType={game.markType} /> : null;
+    return game.markType ? <MarkTypeChip markType={game.markType} variant="edge" /> : null;
 }
 
 const GamesPage: React.FC = () => {
@@ -104,10 +109,16 @@ const GamesPage: React.FC = () => {
     // the strip's group header, while the weekly ⭐ stays per level sub-card
     // (a star means "you cleared THIS level this week").
     const { clearedLevels, totalWins: bubbleMatchTotalWins } = useGameWins(BUBBLE_MATCH_GAME_KEY);
-    // Same two granularities for Match Speed's mode strip: ⭐ per mode (a gold run
-    // on THAT mode this week) on each sub-card, ×N game-wide on the group header.
-    const { clearedLevels: matchSpeedClearedModes, totalWins: matchSpeedTotalWins } =
-        useGameWins(MATCH_SPEED_GAME_KEY);
+    // The card set every game link below is pointed at. Session-scoped, never
+    // persisted; `all` (the default) adds no params, so an untouched hub behaves
+    // exactly as it did before the selector existed.
+    const selectedCollection = useSelectedCollection();
+    /** A game's route carrying the currently-selected collection. */
+    const launchPath = (route: string) => withCollectionParams(route, selectedCollection);
+    // Match Speed is a single row, so only the GAME-WIDE ×N survives — it rides
+    // the row's own corner badge instead of a strip header. No per-mode ⭐: with
+    // the mode sub-cards gone there is no card for a per-mode star to sit on.
+    const { totalWins: matchSpeedTotalWins } = useGameWins(MATCH_SPEED_GAME_KEY);
     // Apply registry-level gating: `requiresAuth` hides games from public/demo
     // accounts; `unlock.minVocabEntries` is reserved for future gating once a
     // vocab count is available client-side.
@@ -125,7 +136,12 @@ const GamesPage: React.FC = () => {
         <NodePage title="Games" activePage="home" onBack={() => navigate("/")} contentClassName="games-page__content">
                 <HubMenu
                     className="games-page__menu"
-                    header={<TipBox className="games-page__tip-box" />}
+                    header={
+                        <>
+                            <GamesCollectionSelector className="games-page__collection-selector" />
+                            <TipBox className="games-page__tip-box" />
+                        </>
+                    }
                     footer={<FooterSpacer />}
                 >
                     {visibleGames.map((game: GameDef) => {
@@ -145,7 +161,7 @@ const GamesPage: React.FC = () => {
                                     headerStat={<HubMenuStatBadge variant="header" count={bubbleMatchTotalWins} />}
                                     items={BUBBLE_MATCH_LEVELS.map((cfg) => ({
                                         key: `${game.gameId}-${cfg.level}`,
-                                        to: game.route,
+                                        to: launchPath(game.route),
                                         state: { level: cfg.level },
                                         title: game.title,
                                         subtitle: cfg.label,
@@ -155,32 +171,6 @@ const GamesPage: React.FC = () => {
                                         // ⭐ only — the ×N moved up to the group
                                         // header as a game-wide aggregate.
                                         cornerBadge: <HubMenuStatBadge starred={clearedLevels.has(cfg.level)} />,
-                                    }))}
-                                />
-                            );
-                        }
-                        if (game.gameId === "match-speed") {
-                            return (
-                                <HubMenuArrayItem
-                                    key={game.gameId}
-                                    className="games-page__menu-item games-page__menu-item--match-speed"
-                                    headerTitle={game.title}
-                                    headerStat={<HubMenuStatBadge variant="header" count={matchSpeedTotalWins} />}
-                                    items={MATCH_SPEED_MODES.map((cfg) => ({
-                                        key: `${game.gameId}-${cfg.mode}`,
-                                        to: game.route,
-                                        // The page reads `state.mode` and falls back
-                                        // to Mix if it's missing (direct URL).
-                                        state: { mode: cfg.mode },
-                                        title: game.title,
-                                        subtitle: cfg.label,
-                                        icon: resolveGameIcon(game),
-                                        bgColor: MATCH_SPEED_MODE_COLORS[cfg.mode] ?? game.bgColor,
-                                        chip: resolveMarkChip(game),
-                                        // ⭐ only — the ×N lives on the group header.
-                                        cornerBadge: (
-                                            <HubMenuStatBadge starred={matchSpeedClearedModes.has(cfg.winLevel)} />
-                                        ),
                                     }))}
                                 />
                             );
@@ -198,13 +188,21 @@ const GamesPage: React.FC = () => {
                         return (
                             <HubMenuRow
                                 key={game.gameId}
-                                to={game.route}
+                                to={launchPath(game.route)}
                                 className={`games-page__menu-item games-page__menu-item--${game.gameId}`}
                                 title={game.title}
                                 subtitle={game.subtitle}
                                 icon={resolveGameIcon(game)}
                                 bgColor={game.bgColor}
                                 chip={resolveMarkChip(game)}
+                                // Match Speed is the only single row with a stat
+                                // today: its lifetime ×N, kept when the mode strip
+                                // (which carried it on a group header) was removed.
+                                cornerBadge={
+                                    game.gameId === "match-speed" ? (
+                                        <HubMenuStatBadge count={matchSpeedTotalWins} />
+                                    ) : undefined
+                                }
                             />
                         );
                     })}

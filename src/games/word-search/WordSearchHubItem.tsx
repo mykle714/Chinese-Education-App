@@ -8,8 +8,10 @@ import { useAuth } from "../../AuthContext";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { useDragScroll } from "../../hooks/useDragScroll";
 import { cardBaseSx } from "../../components/hubMenuCardBase";
-import { HubMenuCardTitle, HubMenuRowIconTile, HubMenuGroup, HubMenuGroupHeader, HubMenuStatBadge } from "../../components/HubMenu";
+import { HubMenuCardTitle, HubMenuCardEdgeSlot, HubMenuRowIconTile, HubMenuGroup, HubMenuGroupHeader, HubMenuStatBadge } from "../../components/HubMenu";
 import { useGameWins } from "../../hooks/useGameWins";
+import { withCollectionParams } from "../../features/flashcards/collectionRef";
+import { useSelectedCollection } from "../../features/flashcards/selectedCollection";
 import MarkTypeChip from "../../components/MarkTypeChip";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -64,6 +66,10 @@ const Strip = styled(Box)(() => ({
     display: "flex",
     width: "100%",
     overflowX: "auto",
+    // Explicit, for the same reason as ArrayScroll's: a lone `overflowX: auto`
+    // makes the strip vertically scrollable too, and the cards' aspect-ratio
+    // rounding gives that phantom axis a few px to wobble in.
+    overflowY: "hidden",
     padding: "0 10%",
     touchAction: "pan-x",
     scrollbarWidth: "none",
@@ -102,6 +108,12 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, icon, class
     // mode sub-cards carry no count of their own (see docs/HUB_MENU_SYSTEM.md).
     const { totalWins } = useGameWins(GAME_KEY);
 
+    // The collection chosen in the hub header. This strip builds its own links (it
+    // navigates imperatively, to confirm before clobbering a save), so unlike a
+    // generic HubMenuArrayItem it has to apply the params itself.
+    const selectedCollection = useSelectedCollection();
+    const newGamePath = withCollectionParams(game.route, selectedCollection);
+
     // Saved board (read once on mount). Both modes share this one slot; null when
     // there's nothing to resume. Erasing it (✕) sets this back to null, which
     // drives the leave animation.
@@ -121,7 +133,7 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, icon, class
     // Navigate into a fresh game for `mode`. resume:false → WordSearchPage always
     // fetches a new board.
     const startNewGame = (mode: WordSearchMode) => {
-        slideNavigate(game.route, { state: { mode, resume: false } });
+        slideNavigate(newGamePath, { state: { mode, resume: false } });
     };
 
     const handleModeClick = (e: React.MouseEvent, mode: WordSearchMode) => {
@@ -149,6 +161,10 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, icon, class
         e.preventDefault();
         if (!savedGame) return;
         if (confirmingErase) return; // the delete-confirm face owns taps while armed
+        // NO collection params on a resume: the saved board was already built from
+        // whatever set was selected when it started, and nothing refetches mid-game —
+        // appending today's selection would only make the URL claim a set the grid
+        // on screen doesn't come from.
         slideNavigate(game.route, { state: { mode: savedGame.mode, resume: true } });
     };
 
@@ -329,17 +345,18 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, icon, class
                     {MODE_CONFIGS.map((cfg) => (
                         <ModeCard
                             key={`${game.gameId}-${cfg.mode}`}
-                            to={game.route}
+                            to={newGamePath}
                             onClick={(e) => handleModeClick(e, cfg.mode)}
                             bgcolor={WORD_SEARCH_MODE_COLORS[cfg.mode] ?? game.bgColor}
                             className={`word-search-hub__mode-card word-search-hub__mode-card--${cfg.mode}`}
                         >
-                            <HubMenuCardTitle
-                                title={game.title}
-                                subtitle={cfg.label}
-                                chip={<MarkTypeChip markType={cfg.markType} />}
-                            />
+                            <HubMenuCardTitle title={game.title} subtitle={cfg.label} />
                             <HubMenuRowIconTile className="word-search-hub__mode-icon">{icon}</HubMenuRowIconTile>
+                            {/* Same right-edge slot a generic HubMenuRow uses, so this
+                                hand-built card labels its track identically. */}
+                            <HubMenuCardEdgeSlot className="word-search-hub__mode-chip">
+                                <MarkTypeChip markType={cfg.markType} variant="edge" />
+                            </HubMenuCardEdgeSlot>
                         </ModeCard>
                     ))}
                 </Strip>

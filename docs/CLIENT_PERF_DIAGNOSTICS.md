@@ -10,9 +10,11 @@ page (the lag does not reproduce locally, so synthetic profiling is not enough).
 |---|---|---|
 | **Client capture** | `src/utils/perfDiagnostics.ts` | Observes the platform Performance APIs, buffers interesting entries, beacons batches to the server. |
 | **Client bootstrap** | `src/main.tsx` | Calls `initPerfDiagnostics()` once, gated to production (or `localStorage.perfDiag === "1"`). |
+| **Frame reporter** | `src/features/nightmarket/nmpPerf.ts` → `reportFrameStats()` | Ships each 2s window's mean/worst frame time under the current load label. The only *non*-interaction source — see "Frame records" below. |
 | **Server sink** | `server/routes/diagnosticsRoutes.ts` → `POST /api/diagnostics/perf` | Unauthenticated endpoint; appends each batch via the shared writer + prints a one-line summary. |
 | **Shared writer** | `server/utils/diagnosticsLog.ts` | `appendDiagnostic(prefix, record)` — resolves the (configurable) log dir, daily-rotates, and sweeps expired files. Used by **both** the perf and error sinks. |
 | **Analysis** | `server/scripts/analyze-client-perf.ts` | Read-only aggregator; reads every `client-perf-*.jsonl` (+ legacy single file) and prints per-route p50/p95 latency breakdowns. |
+| **Export (prod → dev)** | `server/scripts/export-diagnostics-bundle.ts` | Packages the JSONL for transport to a dev box, **stripping the `ip` field**. There is no cross-machine SSH on this project, so the only transport is a git commit — which makes scrubbing mandatory, not advisory. Driven by `/diagnostics-pull`. |
 | **Storage** | `server/logs/client-perf-YYYY-MM-DD.jsonl` (host) | Append-only JSONL, git-ignored. **Persisted + daily-rotated** — see "Persistence & rotation" below. |
 
 ## What is captured
@@ -71,6 +73,53 @@ Plus one source that is **not** a Performance API:
   taps, `handleBoardPointerDown` for the rest).
   Rationale + how to read it: docs/MATCH_SPEED_GAME.md § Tap telemetry.
 
+### Frame records (`kind: "frame"` / `"frame-worst"`)
+
+**Added 2026-08-13.** Reported by an animated surface itself via the exported
+`reportFrameStats()` (`src/utils/perfDiagnostics.ts`), currently only from the
+Night Market's `nmpPerf` probe (`src/features/nightmarket/nmpPerf.ts`).
+
+**Why the other sources cannot cover this.** Everything above is
+interaction-triggered. A scene rendering at 8fps with nobody touching it produces
+**no records at all** and is indistinguishable from a healthy idle page. Frame
+cost has to be volunteered by the renderer.
+
+**Why here, and not a console log.** The Night Market scale question
+(`docs/REACT_NATIVE_MIGRATION.md` action item 4a: does it hold at 1,000
+pedestrians?) is answered by a *synthetic dev load test*, while the tap-lag
+question is answered by *real prod telemetry*. Routing both through this pipeline
+means they share one transport, one JSONL shape, and one analyzer — so the two
+numbers are comparable rather than merely similarly named.
+
+| Field | Meaning |
+|---|---|
+| `kind: "frame"` | **Mean** frame time (ms) over one 2s window — throughput |
+| `kind: "frame-worst"` | **Longest single frame** (ms) in that window — jank, what a user feels |
+| `target` | Surface name (`night-market`) |
+| `name` | Load descriptor set by `nmpPerf.load()`, e.g. `peds=1000` — the experiment's x-axis |
+| `duration` | The frame time itself, so the existing analyzer's p50/p95/max table works unchanged |
+
+Two kinds rather than one field: the analyzer buckets by `(kind, path)` and takes
+percentiles over `duration`, so mean and worst would pool into one meaningless
+distribution if they shared a kind.
+
+**Volume:** one pair per 2s window (~1 record/s) — two orders of magnitude under
+the tap census.
+
+**Double-gated, and both gates matter:**
+
+| Gate | Where | Effect |
+|---|---|---|
+| `initPerfDiagnostics()` ran | `src/main.tsx` — prod, or `localStorage.perfDiag = "1"` | Without it `reportFrameStats` is a no-op |
+| `nmpPerf` enabled | dev by default; `localStorage.nmpPerf = "1"` in prod | Without it no window is ever reported |
+
+Consequence worth knowing before reading a report: **in ordinary production these
+records do not exist**, because `nmpPerf` is off there. They are a *load-test
+instrument* that happens to share the prod pipeline, not passive prod telemetry.
+To run one, open nmp in dev with `localStorage.perfDiag = "1"`, cycle the
+pedestrian-load button in the debug column, and read the result with the same
+`analyze-client-perf.ts` invocation used for prod.
+
 Each record carries the route `path` and a best-effort `target` description
 derived from the app's descriptive class names (e.g.
 `div.mobile-footer-item[Home]`), so a log line maps back to a component.
@@ -107,6 +156,15 @@ npx tsx scripts/analyze-client-perf.ts --path /flashcards/decks
 npx tsx scripts/analyze-client-perf.ts --since 2026-06-13
 npx tsx scripts/analyze-client-perf.ts --min 500        # only taps ≥500ms
 ```
+
+**Reading prod's data on a dev box:** these are files on the prod host, not a
+database table, so `/data-pull`'s `pg_dump` path does not reach them. Use
+the dedicated **`/diagnostics-pull`** skill, which runs `export-diagnostics-bundle.ts` on prod
+(IP-stripped + gzipped), commits the bundle, and unpacks it into local
+`server/logs/` where `analyze-client-perf.ts` picks it up with no flag.
+
+⚠️ That also means **local dev records mix into the same report** — clear or rename
+them first, or the prod picture is contaminated with laptop timings.
 
 Output groups by `(kind, route)`, sorted by p95 duration, and prints a
 "dominant cost" line per interaction route. **Interpretation:**

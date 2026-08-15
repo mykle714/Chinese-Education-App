@@ -27,7 +27,7 @@
  * iterative.
  *
  * DEPENDS ON: {@link ./versionSelection} (analyzeConditions, abuttingBorderIslandIds,
- * conditionScoreSelector, globalOccupied, boardCells).
+ * conditionScoreSelector, globalOccupiedRects).
  * CONSUMED BY: {@link ./templatePlacement.planSpawn} via the injected `sealCheck` predicate,
  * wired by {@link ../../services/NightMarketPlacementService.planNextPlacement} — so BOTH the
  * live continent and the author sandbox's Iterate run the identical rule.
@@ -36,10 +36,8 @@
 import {
   analyzeConditions,
   abuttingBorderIslandIds,
-  boardCells,
   conditionScoreSelector,
-  globalOccupied,
-  type PlacementOccupancy,
+  globalOccupiedRects,
   type VersionConditionState,
 } from './versionSelection.js';
 import type { PlaceholderArea } from './placeholderArea.js';
@@ -147,25 +145,18 @@ function collectOpenStreetConditions(
   placements: readonly SealPlacement[],
   stopEarly: boolean,
 ): OpenStreetCondition[] {
-  // Phase 1: every placement's global footprint (version-agnostic — all versions share one W×H).
-  const footprintByKey = new Map<string, PlacementOccupancy>();
-  for (const p of placements) {
-    footprintByKey.set(p.key, {
-      offsetCol: p.offsetCol,
-      offsetRow: p.offsetRow,
-      cells: boardCells(p.width, p.height),
-    });
-  }
+  // Phase 1: ONE global footprint union for the whole continent (version-agnostic — all versions
+  // share one W×H). This used to build an "everyone but me" union per placement, which made the
+  // seal simulation O(N² · cells); the spawn planner calls it repeatedly while probing candidate
+  // placements, so that cost compounded. Passing the single full union is equivalent — see the
+  // invariant (and its rectangular-footprint precondition) at {@link globalOccupiedRects}.
+  const occupied = globalOccupiedRects(placements);
 
-  // Phase 2: resolve each placement's final version against everyone else's footprints, and
-  // report its unsatisfied border-street islands.
+  // Phase 2: resolve each placement's final version against that occupancy, and report its
+  // unsatisfied border-street islands.
   const open: OpenStreetCondition[] = [];
   for (const p of placements) {
-    const others: PlacementOccupancy[] = [];
-    for (const q of placements) if (q.key !== p.key) others.push(footprintByKey.get(q.key)!);
-    const occupiedByOthers = globalOccupied(others);
-
-    const { version, byVersion } = resolvePlacementVersion(p, occupiedByOthers);
+    const { version, byVersion } = resolvePlacementVersion(p, occupied);
     const state = byVersion.get(version);
     if (!state) continue; // selector floored to a version with no masks (degenerate catalog row)
 

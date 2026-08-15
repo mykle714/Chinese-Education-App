@@ -1,15 +1,16 @@
+// PIXI's non-eval shader codegen. MUST be first: it has to be applied before a
+// renderer is created. See ./pixiRuntime for why this is not in main.tsx.
+import './pixiRuntime';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Application, extend, useTick, useApplication } from '@pixi/react';
 import { Container, Sprite, Graphics, Text } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box } from '@mui/material';
 import { TILE_SIZE } from '../../engine/market/nightMarketRegistry';
-import { isoToScreen, TILE_WIDTH, TILE_HEIGHT, type ScreenPosition } from '../../engine/market/isometric';
+import { isoToScreen, type ScreenPosition } from '../../engine/market/isometric';
 import { computeMinZoom, clampPan, visibleCellWindow, type CellFootprint } from '../../engine/market/cameraFit';
 import { followPanFor, approachPan } from '../../engine/market/cameraFollow';
 import { useCameraControls } from '../../hooks/useCameraControls';
-import { buildFarmField, resolveTileSurfaceUrls, resolveTileDarkSurfaceUrls, FIELD_WIDTH, FIELD_HEIGHT } from '../../engine/market/farmTerrain';
-import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 import TemplateTerrainLayer from './TemplateTerrainLayer';
 import PlaceholderHouseLayer from './PlaceholderHouseLayer';
 // Publishes the camera zoom to the sprite leaves so a building's outer layers can ghost out as the
@@ -18,11 +19,10 @@ import { CameraZoomProvider } from './CameraZoomContext';
 import PedestrianLayer from './PedestrianLayer';
 import GroundBackdropLayer from './GroundBackdropLayer';
 import nmpPerf from './nmpPerf';
-import { useMarketWorld } from './useMarketWorld';
 import { usePixiPedestrians } from '../../hooks/usePixiPedestrians';
 import type { PlacedPlaceholder } from '../../engine/market/templateStitch';
 import { placeholderAreaId } from '../../engine/market/placeholderArea';
-import type { TemplateBounds } from './useMarketWorld';
+import type { TemplateBounds, UseMarketWorldResult } from './useMarketWorld';
 
 // Register Pixi.js classes as pixiContainer / pixiSprite / pixiGraphics / pixiText JSX elements.
 extend({ Container, Sprite, Graphics, Text });
@@ -30,61 +30,99 @@ extend({ Container, Sprite, Graphics, Text });
 /**
  * MarketEngineViewer — Pixi.js host for the night market.
  *
- * The market was rebuilt on the free-farm 2:1 tileset: this component now renders
- * a static {@link FarmTerrainLayer} plateau plus a pan/zoom camera. The former
- * demo layout (floor.png, authored streets/stalls, walking pedestrians, strip
- * slicing, tap dialogs, and the per-stand debug label overlays) was removed — see
- * docs/NIGHT_MARKET_FEATURE.md. The dormant pedestrian/streetGraph engine remains
- * in engine/market for a future re-layout.
+ * Renders the user's continent, built on the free-farm 2:1 tileset: terrain stitched from their
+ * placed templates ({@link TemplateTerrainLayer}) over an infinite ground backdrop
+ * ({@link GroundBackdropLayer}), occupant houses in filled placeholder slots
+ * ({@link PlaceholderHouseLayer}), and ambient pedestrians walking the recovered street graph
+ * ({@link PedestrianLayer}) — all under a pan/zoom camera with a tap-to-follow pedestrian lock.
+ *
+ * PRESENTATIONAL over the layout: {@link ./useMarketWorld} is called by
+ * {@link ./NightMarketEnginePage}, which owns the load state and renders the spinner/error. This
+ * component receives the assembled world as a prop.
+ *
+ * ⚠️ Every sprite below is emitted FLAT into the single `sortableChildren` camera container — that
+ * is what gives the market one global painter's sort across terrain, houses and walkers. Wrapping
+ * a layer in its own container would re-isolate its depth. See docs/NIGHT_MARKET_FEATURE.md
+ * § "Terrain performance" for the two React rules and the Pixi one that keep this affordable.
  */
 
-/** Per-overlay debug flags. Slimmed to the terrain-era overlays. */
+/**
+ * Per-overlay debug flags.
+ *
+ * Every overlay here reads the LIVE stitched world, so it stays truthful against what is actually
+ * rendered. Two earlier overlays (a grass tint and per-tile sprite-stem labels) were removed
+ * because they did not: they rebuilt the retired procedural `buildFarmField` plateau, which the
+ * template terrain replaced, so they drew a field unrelated to what was on screen. An overlay that
+ * can disagree with the render is worse than no overlay — do not add one back without pointing it
+ * at the stitched world.
+ */
 export interface DebugFlags {
   /** Iso (0,0) origin crosshair. */
   origin: boolean;
-  /** Tint every tile the terrain model designated as grass. */
-  grass: boolean;
-  /** Label each tile with the surface sprite (overlay tile) stem it was painted with. */
-  overlayLabels: boolean;
   /** Outline each PLACED template's board rectangle + float its "name vN" over the center. */
   templateBounds: boolean;
   /** Outline each PLACEHOLDER occupant slot + label it (owning template + slot id, filled/empty tint). */
   placeholderBounds: boolean;
+  /**
+   * Route zoomed-out GROUND through the baked chunk cache instead of per-cell sprites
+   * (docs/NIGHT_MARKET_TERRAIN_CHUNKING.md).
+   *
+   * Unlike the other three this is not an overlay — it changes how terrain is rendered.
+   * It lives here because its failure mode (chunk seams, wrong occlusion) is judged by
+   * LOOKING, so it needs an in-app A/B toggle, and because it must stay off by default
+   * until it has been eyeballed across the zoom range on a real screen.
+   */
+  chunkedTerrain: boolean;
 }
 
 export const DEBUG_FLAG_KEYS: Array<keyof DebugFlags> = [
-  'origin', 'grass', 'overlayLabels', 'templateBounds', 'placeholderBounds',
+  'origin', 'templateBounds', 'placeholderBounds', 'chunkedTerrain',
 ];
 
 export const ALL_DEBUG_OFF: DebugFlags = {
-  origin: false, grass: false, overlayLabels: false, templateBounds: false, placeholderBounds: false,
+  origin: false, templateBounds: false, placeholderBounds: false, chunkedTerrain: false,
 };
+
+/**
+ * The loaded world, as handed down from the page. This component is PRESENTATIONAL with respect
+ * to the layout: {@link useMarketWorld} is called by {@link ./NightMarketEnginePage}, which owns
+ * the load state so it can render the spinner/error itself. Passing the result down (rather than
+ * fetching in the scene) is also what lets the camera read the placement rectangles directly —
+ * see {@link MarketEngineViewerProps.world}.
+ */
+type LoadedWorld = Pick<UseMarketWorldResult, 'world' | 'width' | 'height' | 'field' | 'placements'>;
 
 export interface MarketEngineViewerProps {
   /** Render the isometric debug grid (fine green + major red lines). Default false. */
   showGrid?: boolean;
   /** Per-overlay debug toggles. Omitted flags default to off. */
   debug?: DebugFlags;
-  /** Bump to force the world to re-fetch its layout (e.g. after the author minute-adjust tool). */
-  reloadToken?: number;
+  /**
+   * Ambient pedestrian count — the load-test knob (docs/REACT_NATIVE_MIGRATION.md action item 4a).
+   *
+   * Deliberately NOT a `DebugFlags` member: those are booleans, and this is the independent
+   * variable of an experiment rather than an overlay. Omit for the normal ambient population.
+   */
+  pedCount?: number;
+  /**
+   * The loaded layout. Its `placements` are also the camera's size input: they derive the
+   * zoom-out floor ({@link computeMinZoom}) and the pan clamp ({@link clampPan}). Before this was
+   * a prop the scene fetched the world itself and had to report the rectangles back UP through an
+   * `onFootprintsChange` callback; owning the load at the page removes that back-edge entirely.
+   */
+  world: LoadedWorld;
 }
 
-interface SceneProps {
+interface SceneProps extends LoadedWorld {
   pan: { x: number; y: number };
   zoom: number;
   onPanChange: (pan: { x: number; y: number }) => void;
   showGrid?: boolean;
   debug: DebugFlags;
+  /** Ambient pedestrian count; see {@link MarketEngineViewerProps.pedCount}. */
+  pedCount?: number;
   /** Ref set to true by the outer component during a pinch gesture — suppresses Pixi drag. */
   isPinchingRef?: React.RefObject<boolean>;
-  /** Bump to force the world to re-fetch its layout. */
-  reloadToken?: number;
-  /**
-   * Report the loaded layout's placement rectangles up to the camera host, which derives its
-   * zoom-out floor from them ({@link computeMinZoom}). The world is fetched inside the scene, but
-   * zoom state lives outside it — this is the one value that has to travel back up.
-   */
-  onFootprintsChange?: (footprints: CellFootprint[]) => void;
   /** Id of the ped the camera is locked onto, or null. See "Pedestrian camera lock" below. */
   lockedPedId: string | null;
   /** Set/clear the pedestrian lock — called on a ped tap, and on a real pan drag (which releases). */
@@ -186,125 +224,6 @@ function OriginOverlay() {
   return (
     <pixiContainer zIndex={ORIGIN_Z}>
       <pixiGraphics draw={drawMarker} />
-    </pixiContainer>
-  );
-}
-
-// ─── Grass overlay ───────────────────────────────────────────────────────────
-// Debug tint over every tile the terrain model ({@link buildFarmField}) marked as
-// grass. Rebuilds the SAME field the FarmTerrainLayer paints (same dimensions +
-// default seed) so the tinted diamonds line up exactly with the grass caps. Light
-// and dark patches get distinct tints (dark drawn in a second pass on top, matching
-// how the terrain stacks the dark layer over the light one).
-
-// Just below the origin crosshair (10_000) but above the grid (9_000) so it reads
-// over both the terrain and the gridlines.
-const GRASS_OVERLAY_Z = 9_500;
-const LIGHT_GRASS_OVERLAY_COLOR = 0x33ff66;
-const DARK_GRASS_OVERLAY_COLOR = 0x0b6b2f;
-const GRASS_OVERLAY_ALPHA = 0.45;
-
-function GrassOverlay() {
-  // Deterministic field → memoize once; split into the light and dark tile sets.
-  const { lightTiles, darkTiles } = useMemo(() => {
-    const field = buildFarmField(FIELD_WIDTH, FIELD_HEIGHT);
-    return {
-      lightTiles: field.filter((t) => t.kind === 'grass'),
-      darkTiles: field.filter((t) => t.darkGrass),
-    };
-  }, []);
-
-  const draw = useCallback((g: Graphics) => {
-    g.clear();
-    // Trace each tile's surface diamond (32×16) into the current path.
-    const tracePatch = (tiles: typeof lightTiles) => {
-      for (const t of tiles) {
-        // The diamond sits in the lower half of the tile cell: its bottom vertex is
-        // at screenY, so the diamond center is TILE_HEIGHT/2 up.
-        const { screenX, screenY } = isoToScreen(t.isoX, t.isoY);
-        const cx = screenX;
-        const cy = screenY - TILE_HEIGHT / 2;
-        g.moveTo(cx, cy - TILE_HEIGHT / 2);   // top vertex
-        g.lineTo(cx + TILE_WIDTH / 2, cy);    // right vertex
-        g.lineTo(cx, cy + TILE_HEIGHT / 2);   // bottom vertex
-        g.lineTo(cx - TILE_WIDTH / 2, cy);    // left vertex
-        g.closePath();
-      }
-    };
-    // Light pass, then the dark pass on top (dark over light).
-    tracePatch(lightTiles);
-    g.fill({ color: LIGHT_GRASS_OVERLAY_COLOR, alpha: GRASS_OVERLAY_ALPHA });
-    tracePatch(darkTiles);
-    g.fill({ color: DARK_GRASS_OVERLAY_COLOR, alpha: GRASS_OVERLAY_ALPHA });
-  }, [lightTiles, darkTiles]);
-
-  return <pixiGraphics draw={draw} zIndex={GRASS_OVERLAY_Z} />;
-}
-
-// ─── Overlay-tile labels ───────────────────────────────────────────────────────
-// Debug text over each tile naming the SURFACE sprites (overlay tiles) it was painted
-// with — the grass cap for a grass tile, the stacked grass-boundary overlays for a
-// tile bordering grass, across BOTH the light and dark layers (dark stems prefixed
-// `d:`). Resolves the exact same sprites the FarmTerrainLayer paints (via
-// resolveTileSurfaceUrls + resolveTileDarkSurfaceUrls) and reverse-maps each url to
-// its filename stem.
-
-// Above the grass tint so labels stay readable when both overlays are on.
-const OVERLAY_LABEL_Z = 9_600;
-
-/** Trim the verbose pack prefixes so the label is just the meaningful part. */
-function shortenStem(stem: string): string {
-  if (stem === 'lightGrass_center') return 'grass';
-  if (stem === 'darkGrass_center') return 'dark';
-  // Dark overlays get a `d:` prefix so they read distinctly from the light ones.
-  if (stem.startsWith('darkGrassOverlay_')) return `d:${stem.replace('darkGrassOverlay_', '')}`;
-  return stem.replace(/^lightGrassOverlay_/, '');
-}
-
-function OverlayLabels() {
-  // Deterministic field → resolve every tile's surface stems once.
-  const labels = useMemo(() => {
-    return buildFarmField(FIELD_WIDTH, FIELD_HEIGHT)
-      .map((t) => {
-        // Both layers' surface sprites, light first then dark (paint order).
-        const stems = [...resolveTileSurfaceUrls(t), ...resolveTileDarkSurfaceUrls(t)]
-          .map((u) => freeFarmTileset.stemOf(u))
-          .filter((s): s is string => !!s)
-          .map(shortenStem);
-        if (stems.length === 0) return null; // interior dirt — nothing painted
-        const { screenX, screenY } = isoToScreen(t.isoX, t.isoY);
-        return {
-          key: `${t.isoX},${t.isoY}`,
-          x: screenX,
-          y: screenY - TILE_HEIGHT / 2, // diamond center (surface top face)
-          text: stems.join('\n'),
-        };
-      })
-      .filter((l): l is NonNullable<typeof l> => l !== null);
-  }, []);
-
-  return (
-    <pixiContainer zIndex={OVERLAY_LABEL_Z}>
-      {labels.map((l) => (
-        <pixiText
-          key={l.key}
-          text={l.text}
-          x={l.x}
-          y={l.y}
-          anchor={{ x: 0.5, y: 0.5 }}
-          // Tiny font — tiles are 32px wide; the integer camera zoom scales it up
-          // legibly. White fill + dark stroke reads over both grass and dirt.
-          style={{
-            fontFamily: 'monospace',
-            fontSize: 5,
-            lineHeight: 5,
-            align: 'center',
-            fill: 0xffffff,
-            stroke: { color: 0x000000, width: 1 },
-          }}
-          resolution={4}
-        />
-      ))}
     </pixiContainer>
   );
 }
@@ -481,17 +400,24 @@ function PedestrianTicker({
   const followRef = useRef({ lockedPedId, panRef, zoom, onPanChange, onLockedPedChange });
   followRef.current = { lockedPedId, panRef, zoom, onPanChange, onLockedPedChange };
 
+  // This frame's drawables, computed ONCE per tick. `getDrawables()` re-runs `computeDrawable` for
+  // every walker and allocates a fresh array, so the tick and the render below must share one
+  // result rather than each asking for their own.
+  const drawablesRef = useRef(pedestrians.getDrawables());
+
   useTick((ticker) => {
     const now = performance.now();
     nmpPerf.frame(now); // dev-only; see ./nmpPerf for how to switch it on
     pedestrians.tick(ticker.deltaMS, now);
+    const drawables = pedestrians.getDrawables();
+    drawablesRef.current = drawables;
 
     // Camera lock: ease the pan toward the locked ped AFTER the FSM has moved it this frame, so the
     // camera chases the position actually about to be drawn (no one-frame lag). Writing through
     // `onPanChange` means the follow is clamped by the same pan bounds as a manual drag.
     const follow = followRef.current;
     if (follow.lockedPedId) {
-      const target = pedestrians.getDrawables().find((d) => d.id === follow.lockedPedId);
+      const target = drawables.find((d) => d.id === follow.lockedPedId);
       if (target) {
         const desired = followPanFor(target.isoX, target.isoY, follow.zoom);
         const next = approachPan(follow.panRef.current, desired, ticker.deltaMS);
@@ -510,7 +436,7 @@ function PedestrianTicker({
 
   return (
     <PedestrianLayer
-      drawables={pedestrians.getDrawables()}
+      drawables={drawablesRef.current}
       lockedPedId={lockedPedId}
       onPedTap={onLockedPedChange}
     />
@@ -521,7 +447,8 @@ function PedestrianTicker({
 // Runs inside <Application>. Handles drag-to-pan and renders the terrain.
 
 function NightMarketScene({
-  pan, zoom, onPanChange, showGrid, debug, isPinchingRef, reloadToken, onFootprintsChange,
+  pan, zoom, onPanChange, showGrid, debug, pedCount, isPinchingRef,
+  world, width, height, field, placements,
   lockedPedId, onLockedPedChange,
 }: SceneProps) {
   // `isInitialised` flips true once Pixi's async init() (which creates the
@@ -540,24 +467,12 @@ function NightMarketScene({
   const lockedPedIdRef = useRef(lockedPedId);
   lockedPedIdRef.current = lockedPedId;
 
-  // Template runtime: load the authored hub template → assembled MarketWorld (stitched
-  // terrain + recovered tile/street graphs). Replaces the former static procedural farm
-  // plateau (FarmTerrainLayer/WalkwayLayer/HouseLayer).
-  const { world, width, height, field, placements } = useMarketWorld(reloadToken);
-
-  // Hand the placement rectangles to the camera host so it can size its zoom-out floor. Kept in a
-  // ref-read effect (not a render-time call) so the parent's state update never happens mid-render.
-  const onFootprintsChangeRef = useRef(onFootprintsChange);
-  onFootprintsChangeRef.current = onFootprintsChange;
-  useEffect(() => {
-    onFootprintsChangeRef.current?.(placements);
-  }, [placements]);
-
   // Slice-2 pedestrians: ambient walkers seeded on the recovered graph. The hook re-seeds
   // when the graph identity changes (first load / version switch) and no-ops while null.
   const pedestrians = usePixiPedestrians({
     tileGraph: world?.tileGraph ?? null,
     streetGraph: world?.streetGraph ?? null,
+    count: pedCount,
   });
 
   // NOTE: the per-frame simulation + re-render lives in <PedestrianTicker> below, NOT here. Bumping
@@ -622,8 +537,9 @@ function NightMarketScene({
   // Which cells the camera can currently see, for terrain culling. An apron-padded field is far
   // larger than the market (tens of thousands of cells at the zoom-out floor), so building it whole
   // is not affordable — this bounds the work to the viewport. `visibleCellWindow` quantises its
-  // edges, so the memo below re-runs only every few cells of travel, not every dragged pixel
-  // (the scene itself re-renders every tick to advance the pedestrians).
+  // edges, so the memo below re-runs only every few cells of travel, not on every dragged pixel
+  // (this scene re-renders on every committed pan, and once per frame under a pedestrian lock).
+  // The window it returns is a DIAMOND, not just a box — see `visibleCellWindow`.
   const screenW = app?.renderer ? app.screen.width : 0;
   const screenH = app?.renderer ? app.screen.height : 0;
   const cullWindow = useMemo(
@@ -634,11 +550,31 @@ function NightMarketScene({
   // Census: the numbers that decide whether the lag is "this market is genuinely enormous" or
   // "something is rebuilding that shouldn't". `world` is the authored span; `window` is what the
   // camera can currently see, and is what the terrain actually builds. See ./nmpPerf.
-  nmpPerf.count('world-cells', width * height);
-  nmpPerf.count(
-    'window-cells',
-    (cullWindow.maxCol - cullWindow.minCol + 1) * (cullWindow.maxRow - cullWindow.minRow + 1),
-  );
+  //
+  // In an EFFECT, not the render body: `nmpPerf.count` mutates module state and schedules a
+  // `setTimeout`, and this component re-renders on every pan (and every frame while a pedestrian
+  // lock is active). A side effect in the render body would fire on renders React discards.
+  useEffect(() => {
+    nmpPerf.count('world-cells', width * height);
+    nmpPerf.count(
+      'window-cells',
+      (cullWindow.maxCol - cullWindow.minCol + 1) * (cullWindow.maxRow - cullWindow.minRow + 1),
+    );
+  }, [width, height, cullWindow]);
+
+  // The load the scene is under. `note` (not `count`) because it describes the EXPERIMENT and must
+  // survive every report window, and `load` so it also rides on the shipped frame records — a frame
+  // time with no pedestrian count attached cannot be plotted against anything.
+  //
+  // Reads the population through a ref: the hook returns a fresh handle object every render, so
+  // depending on it directly would re-run this effect on every pan and every locked-camera frame.
+  const pedestriansRef = useRef(pedestrians);
+  pedestriansRef.current = pedestrians;
+  useEffect(() => {
+    const n = pedestriansRef.current.getStates().length;
+    nmpPerf.note('pedestrians', String(n));
+    nmpPerf.load(`peds=${n}`);
+  }, [pedCount, world]);
 
   // app.screen reads app.renderer.screen — gate on renderer, not screen.
   if (!app?.renderer) return null;
@@ -663,6 +599,8 @@ function NightMarketScene({
             field={field}
             apronPad={APRON_RING_CELLS}
             cullWindow={cullWindow}
+            chunked={debug.chunkedTerrain}
+            camera={{ zoom, pan, viewportW: screenW, viewportH: screenH }}
           />
         )}
         {/* Occupant markers: a house (or two adjacent houses) in each FILLED placeholder slot
@@ -685,12 +623,6 @@ function NightMarketScene({
         {debug.placeholderBounds && world && (
           <PlaceholderBoundsOverlay placeholders={world.placeholderAreas} />
         )}
-        {/* NOTE: the GrassOverlay/OverlayLabels debug tints below still visualize the OLD
-            procedural buildFarmField, not the stitched template terrain — they are stale
-            against the template render and want re-targeting when a debug pass is
-            needed (both default off). */}
-        {debug.grass && <GrassOverlay />}
-        {debug.overlayLabels && <OverlayLabels />}
         {debug.origin && <OriginOverlay />}
       </CameraZoomProvider>
     </pixiContainer>
@@ -700,10 +632,12 @@ function NightMarketScene({
 // ─── MarketEngineViewer ───────────────────────────────────────────────────────
 // Outer component: pan/zoom state, gesture handlers, Application mount.
 
-function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, reloadToken }: MarketEngineViewerProps) {
-  // The loaded layout's placement rectangles, reported up by the scene. Held in a ref (not state)
-  // because only the camera-limit callbacks read it — a re-render would buy nothing.
-  const footprintsRef = useRef<CellFootprint[]>([]);
+function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, pedCount, world }: MarketEngineViewerProps) {
+  // The loaded layout's placement rectangles. Mirrored into a ref because the camera-limit
+  // callbacks below are called by `useCameraControls` mid-gesture and must read the CURRENT
+  // placements without being re-created (and re-subscribed) on every render.
+  const footprintsRef = useRef<CellFootprint[]>(world.placements);
+  footprintsRef.current = world.placements;
 
   // Pedestrian camera lock: the ped the camera is chasing, or null for a free camera. State (not a
   // ref) because the ring in <PedestrianLayer> has to re-render when it changes; it changes at most
@@ -730,12 +664,13 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, reloadToken }: Ma
     onZoomGesture: () => setLockedPedId(null),
   });
 
-  // The clamp's inputs move without the pan moving — the world finishes loading, or the element
-  // resizes — and nothing else would notice that the standing pan has gone out of bounds.
-  const handleFootprintsChange = useCallback((footprints: CellFootprint[]) => {
-    footprintsRef.current = footprints;
+  // The clamp's inputs move without the pan moving — the world finishes loading (or reloads after
+  // the author minute-adjust tool grows the continent) — and nothing else would notice that the
+  // standing pan has gone out of bounds. `placements` is a fresh array per load, so its identity is
+  // exactly the "the world changed size" signal.
+  useEffect(() => {
     reclampPan();
-  }, [reclampPan]);
+  }, [world.placements, reclampPan]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -759,9 +694,13 @@ function MarketEngineViewer({ showGrid, debug = ALL_DEBUG_OFF, reloadToken }: Ma
             onPanChange={setPan}
             showGrid={showGrid}
             debug={debug}
+            pedCount={pedCount}
             isPinchingRef={isPinchingRef}
-            reloadToken={reloadToken}
-            onFootprintsChange={handleFootprintsChange}
+            world={world.world}
+            width={world.width}
+            height={world.height}
+            field={world.field}
+            placements={world.placements}
             lockedPedId={lockedPedId}
             onLockedPedChange={setLockedPedId}
           />

@@ -83,4 +83,15 @@ export interface IUserLanguagePointsDAL {
    * One grouped query — never call {@link getAllProgress} in a per-user loop.
    */
   getTotalsForAllUsers(): Promise<Map<string, UserPointsTotals>>;
+
+  /**
+   * NET wallets for a set of users, kept split by language:
+   * `userId → (language → totalMinutePoints)`.
+   *
+   * Unlike {@link getTotalsForAllUsers} this does NOT sum across languages — the
+   * friends leaderboard reports each person's balance in the one language they are
+   * studying, so collapsing the languages here would over-report a multi-language
+   * account. Absent (user, language) pairs mean "never studied" — read them as 0.
+   */
+  getNetPointsForUsers(userIds: string[]): Promise<Map<string, Map<string, number>>>;
 }

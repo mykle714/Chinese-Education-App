@@ -10,25 +10,28 @@ Status: **implemented**, on dev. Migration **138** is not yet on prod (see
 
 ## 1. Surfaces
 
-Three pages, all `chrome: "node"` with `footerTab: "home"`
-(`src/routes/routeMeta.ts:114-119`), so the footer stays visible and the Home tab
-stays lit.
+Four pages, all `chrome: "node"` with `footerTab: "home"`, so the footer stays
+visible and the Home tab stays lit. `/friends` is **read-only**; each of the three
+mutations (send, answer, unfriend) has its own screen behind a top-row button.
 
 | Route | Component | What it is |
 |---|---|---|
-| `/friends` | `src/features/friends/FriendsPage.tsx` | The friend list. Two buttons across the top → the two request screens. Shows the viewer's own friend ID with a Copy button. Each row has **Remove** (unfriend). |
-| `/friends/sent` | `src/features/friends/SentRequestsPage.tsx` | Pending **outgoing** requests, each with **Revoke**. Also holds the compose field — the only place a friendship is created. |
-| `/friends/requests` | `src/features/friends/IncomingRequestsPage.tsx` | Pending **incoming** requests, each with **Accept** / **Decline**. |
+| `/friends` | `src/features/friends/FriendsPage.tsx` | The friends **leaderboard** (§ 1a), read-only. Three buttons across the top — **Send** / **Accept** / **Remove** → the three action screens. Shows the viewer's own friend ID with a Copy button. |
+| `/friends/sent` | `src/features/friends/SentRequestsPage.tsx` | Reached by **Send**. Pending **outgoing** requests, each with **Revoke**. Also holds the compose field — the only place a friendship is created. |
+| `/friends/requests` | `src/features/friends/IncomingRequestsPage.tsx` | Reached by **Accept**. Pending **incoming** requests, each with **Accept** / **Decline**. |
+| `/friends/remove` | `src/features/friends/RemoveFriendsPage.tsx` | Reached by **Remove**. The plain friend list ("Friends since …"), each row with **Remove** (unfriend). The board deliberately has no per-row Remove: a destructive control on a ranking row invites a mis-tap while reading scores. |
 
-Back-arrow targets: `/friends` → `/` (Home); the two request pages → `/friends`.
-Both request pages navigate via `useSlideNavigate` so the drill-in animates.
+Back-arrow targets: `/friends` → `/` (Home); all three action pages → `/friends`.
+Every action page navigates via `useSlideNavigate` so the drill-in animates.
 
 Shared pieces:
 * `FriendPersonRow.tsx` — the avatar + name + secondary-line + actions row used by
-  all three screens (the only difference between them is the `actions` slot).
+  all four screens (they differ only in the `actions` slot; the leaderboard also
+  uses the `leading` rank-chip slot and the `highlighted` self-row flag).
 * `friendStyles.ts` — shared `sx` fragments. They live outside the page components
   because this repo lints `react-refresh/only-export-components`.
-* `friendLabels.ts` — "Friends since …" / "Sent …" copy and `friendErrorMessage`.
+* `friendLabels.ts` — "Sent …" copy, the leaderboard's `netMinutesLabel` /
+  `velocityUnitLabel`, and `friendErrorMessage`.
 
 **Adding a friend is BY USER ID.** `users` has no username column, so the handle is
 the account's UUID: `/friends` renders yours with a Copy button (and `userSelect:
@@ -40,11 +43,63 @@ The **Requests** button carries a red count badge when incoming requests exist �
 `FriendsPage` fetches the incoming list alongside the friend list purely for that
 count.
 
+### 1a. The leaderboard (`/friends`)
+
+`/friends` is a **leaderboard ranked by velocity** — utcm band-steps climbed in the
+last 7 days ([VELOCITY.md](./VELOCITY.md)) — not a plain list. One row per person:
+
+```
+[2] (avatar)  Bob                            12
+              20h 40m · 🇪🇸 ES            velocity
+```
+
+* **Ranked metric — velocity**: the number and its "velocity" label are one
+  centred stack (`VelocityStat`), not two edge-aligned lines — the number's width
+  swings from 1 to 3 digits, which a shared edge makes look ragged. The row states
+  no window; `windowDays` still ships on the response for any client that wants to
+  label it, but this page no longer reads it.
+* **Subtitle — the balance as a DURATION** ("3w 2d 4h 10m"): a minute point is a
+  minute of study, and a duration sizes up at a glance where "32,650 minutes" does
+  not — which is the whole job of a column being compared down a list. Formatted by
+  the shared `src/utils/formatDuration.ts` (`weeks: true`; the Night Market badge
+  uses the same function without weeks). The figure is
+  `user_language_points.totalMinutePoints`, the penalty-debited NET wallet
+  ([STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)), **not** the monotonic
+  `lifetimeMinutesEarned` — the two diverge for any learner who has ever been
+  penalised.
+* **Each person is scored in THEIR OWN selected language**, not the viewer's, and
+  both numbers on a row share that language. Scoring everyone in the viewer's
+  language would render a Spanish-only friend as a permanent 0 on a Chinese
+  viewer's board — "does nothing" rather than "studies something else". The row
+  therefore carries a **flag + region-code badge** ("🇪🇸 ES") rather than the
+  language's name — the row is a compact scoreboard line and the code identifies the
+  track in a third of the width. Both halves come from one source: `LANGUAGE_FLAGS`
+  holds the flag and `languageRegionCode()` DECODES it (a flag emoji is two Regional
+  Indicator Symbols, which map one-to-one onto A–Z), so the letters can never
+  disagree with the flag. It also degrades well: **Windows renders no flag glyph**
+  and shows the letters instead, so the badge reads "ES ES" at worst, never as
+  nothing.
+* Velocity counts only the bars **that person** pursues (`activeBars` on their own
+  `readingGoal`/`writingGoal`), matching what their own Account page shows.
+* **The viewer is in the board**, marked `isCurrentUser`: name suffixed "(you)"
+  and a blue 2px border instead of the 1px neutral one (the padding drops to 11px
+  so row heights stay equal).
+* Ranks 1–3 get podium-tinted chips; everyone else gets the neutral surface.
+* The three top buttons are coloured by their action's valence — Send neutral blue,
+  Accept green, Remove red — the same green/red pairing the request rows use for
+  Accept/Decline. `navButtonSx` is a factory over the fill colour.
+* **Ranking is the server's**: the client never re-sorts, and the board has no
+  mutations of its own — unfriending happens on `/friends/remove`, so the ranks on
+  screen are always exactly the ranks the server assigned.
+* A board of one row — the viewer alone — renders the "No friends yet" empty state.
+
 ### Optimistic vs. confirmed updates
 
 Deliberately mixed, per the cost of being wrong:
-* **Unfriend** is optimistic (row disappears at once, restored on failure) — the
-  action is symmetric and trivially redone.
+* **Unfriend** (`/friends/remove`) is optimistic (row disappears at once, restored
+  on failure) — the action is symmetric and trivially redone. It also carries a
+  `busyId` guard, because a double-tap's second call 404s ("you are not friends
+  with this user") and would surface an error for something that in fact succeeded.
 * **Accept / Decline / Revoke** wait for the server. A failed accept that had
   already vanished from the list would leave the user believing they have a friend
   they do not. A `busyId` guard blocks the double-tap in the meantime.
@@ -101,7 +156,8 @@ pair" rule enforceable rather than merely intended.
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/friends` | `FriendSummary[]` — accepted friends, newest first |
+| GET | `/api/friends` | `FriendSummary[]` — accepted friends, newest first. Read by `/friends/remove`. |
+| GET | `/api/friends/leaderboard` | `FriendLeaderboardResponse` — `{entries, windowDays}`, viewer included, ranked |
 | DELETE | `/api/friends/:friendUserId` | 204 — unfriend (either side) |
 | GET | `/api/friends/requests/incoming` | `FriendRequestSummary[]` |
 | GET | `/api/friends/requests/outgoing` | `FriendRequestSummary[]` |
@@ -145,9 +201,11 @@ non-public user can still send and receive friend requests.
 
 ## 5. Tests
 
-`server/__tests__/friends.test.ts` — 18 tests over `FriendsService` with
-hand-stubbed DALs (no DB). Covers each authorization rule and the auto-accept path;
-these are the cases that fail *silently* rather than loudly if the policy regresses.
+`server/__tests__/friends.test.ts` — 21 tests over `FriendsService` with
+hand-stubbed DALs (no DB). Covers each authorization rule, the auto-accept path, and
+the five leaderboard scoping rules (own-language scoring, goal-bar filtering, the
+self row, the total tie-break order, and the never-studied friend); these are the
+cases that fail *silently* rather than loudly if the policy regresses.
 
 Run: `npm run test:server`.
 
@@ -175,6 +233,10 @@ This document describes:
 `database/migrations/138-create-friendships.sql`,
 `server/types/friends.ts`,
 `server/dal/interfaces/IFriendshipDAL.ts`,
+`server/dal/interfaces/IUserDAL.ts` (`findScoringProfilesByIds`) + `UserDAL.ts`,
+`server/dal/interfaces/ICategoryPromotionDAL.ts` (`getVelocityBuckets`) + `CategoryPromotionDAL.ts`,
+`server/dal/interfaces/IUserLanguagePointsDAL.ts` (`getNetPointsForUsers`) + `UserLanguagePointsDAL.ts`,
+`server/contracts/wire.ts` (`LANGUAGE_FLAGS`),
 `server/dal/implementations/FriendshipDAL.ts`,
 `server/services/FriendsService.ts`,
 `server/controllers/FriendsController.ts`,
@@ -183,17 +245,20 @@ This document describes:
 `server/server.ts` (`app.use(friendRoutes)`),
 `src/api/friends.ts`,
 `src/features/friends/*`,
-`src/routes/routeMeta.ts:114-119`,
-`src/routes/registry.ts` (three `PAGE_COMPONENTS` entries),
+`src/utils/formatDuration.ts` (shared with the Night Market badge),
+`src/routes/routeMeta.ts` (the four friends entries),
+`src/routes/registry.ts` (four `PAGE_COMPONENTS` entries),
 `src/pages/HomePage.tsx` (the `friends` hub row).
 
-Related docs: [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md) (the hp row),
+Related docs: [VELOCITY.md](./VELOCITY.md) (the ranked metric),
+[PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md) (the net wallet),
+[HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md) (the hp row),
 [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) (the NodePage archetype),
 [BACKEND_LAYERING.md](./BACKEND_LAYERING.md), [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md).
 
 ## 8. Not built
 
 Deliberately out of scope for this pass — no blocking, no friend-only content
-(comparing streaks, seeing a friend's decks or night market), no notification when
+beyond the leaderboard's two numbers (no friend's decks, night market or streak), no notification when
 a request arrives (the badge on `/friends` is the only signal), and no
 friend-count limit.

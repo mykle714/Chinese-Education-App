@@ -949,22 +949,63 @@ export function ensureAmbientAgenda(p: PedestrianState, wanderDwellMs: number): 
 }
 
 /**
+ * Which tile keys the LAST {@link updateTileOccupancy} call marked occupied, per tile map.
+ *
+ * Keyed weakly on the map itself so it dies with the graph it belongs to — a market reload or a
+ * language switch builds a new `tileGraph`, and the old entry is simply collected.
+ */
+const lastOccupiedByTileMap = new WeakMap<
+  Map<string, import('./nightMarketRegistry').TileDef>,
+  Set<string>
+>();
+
+/**
  * Resync tile occupancy with each pedestrian's `currentTile`. `tickPedestrian`
  * already mutates `isOccupied` synchronously at commit, sidestep, and
  * step-completion, so this is a per-frame sanity sync — guards against state
  * drift and handles initial setup.
+ *
+ * ⚠️ COST IS PER PEDESTRIAN, NOT PER MARKET. This used to clear `isOccupied` on EVERY walkable
+ * tile in the continent before re-marking the ~8 that walkers actually stand on — an O(all tiles)
+ * sweep, 60 times a second, whose cost grew with how much of the market the user had unlocked
+ * while the work being done stayed constant. Now only the previously-marked tiles are cleared, so
+ * the whole call is O(pedestrians). Do not reintroduce a full-map loop here.
+ *
+ * ⚠️ THE INVARIANT THAT MAKES THE INCREMENTAL CLEAR SAFE. `tickPedestrian` also flips `isOccupied`
+ * directly — at commit, sidestep and forward-jump. Clearing only the tiles THIS function marked
+ * would strand any tile that the FSM marked but this function never recorded, leaving it occupied
+ * forever and permanently blocking that cell. It is safe because at every one of those sites
+ * (`tryForwardJump`, the sidestep teleport, and both Traveling/Wandering commits) the tile set to
+ * `true` is immediately assigned to `p.currentTile` — so the set of tiles the FSM can mark is a
+ * subset of the `currentTile`s recorded below. **If a future change marks a tile occupied without
+ * making it that pedestrian's `currentTile`, this optimisation breaks and that cell leaks.**
  */
 export function updateTileOccupancy(
   pedestrians: PedestrianState[],
   tileMap: Map<string, import('./nightMarketRegistry').TileDef>,
 ): void {
-  for (const tile of tileMap.values()) {
-    tile.isOccupied = false;
+  let lastOccupied = lastOccupiedByTileMap.get(tileMap);
+  if (!lastOccupied) {
+    // First call for this graph: the map may carry stale flags from however it was built, so pay
+    // one full clear to establish the invariant this function then maintains incrementally.
+    for (const tile of tileMap.values()) tile.isOccupied = false;
+    lastOccupied = new Set<string>();
+    lastOccupiedByTileMap.set(tileMap, lastOccupied);
+  } else {
+    for (const key of lastOccupied) {
+      const tile = tileMap.get(key);
+      if (tile) tile.isOccupied = false;
+    }
+    lastOccupied.clear();
   }
+
   for (const p of pedestrians) {
     const k = tileKey(p.currentTile.isoX, p.currentTile.isoY);
     const t = tileMap.get(k);
-    if (t) t.isOccupied = true;
+    if (t) {
+      t.isOccupied = true;
+      lastOccupied.add(k);
+    }
   }
 }
 

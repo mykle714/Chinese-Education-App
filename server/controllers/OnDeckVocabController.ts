@@ -31,9 +31,8 @@ export class OnDeckVocabController {
    * Resolve the optional collection-launch query params (docs/DECKS_FEATURE.md).
    *
    *   ?deck=<id>                    → that user-authored deck
-   *   ?collection=<built-in id>     → that built-in collection (all / unfamiliar /
-   *                                   target / comfortable / learn-now / the three
-   *                                   mastered bars)
+   *   ?collection=<built-in id>     → that built-in collection (all / learn-now /
+   *                                   the three mastered bars)
    *   (none)                        → null, the ordinary whole-library launch
    *
    * THROWS NotFoundError when a deck id is not one this caller owns — so a stale
@@ -92,13 +91,13 @@ export class OnDeckVocabController {
 
   /**
    * The contents of ONE built-in collection — every non-deck collection page.
-   * GET /api/onDeck/collectionCards?collection=all|unfamiliar|target|comfortable
-   *                                            |learn-now|mastered|mastered-reading|mastered-writing
+   * GET /api/onDeck/collectionCards?collection=all|learn-now
+   *                                            |mastered|mastered-reading|mastered-writing
    *
    * This replaces the old `masteredLibraryCards?bar=` and `nonMasteredLibraryCards`
-   * pair. Those two were the same query with two different WHERE fragments, and the
-   * fdp's band tiles would have made it four; one parameterized endpoint keeps every
-   * built-in collection reaching the client through one shape.
+   * pair. Those two were the same query with two different WHERE fragments; one
+   * parameterized endpoint keeps every built-in collection reaching the client
+   * through one shape.
    *
    * An unrecognized collection falls back to **learn-now** rather than to "everything":
    * a typo'd or stale link must never quietly widen the set a learner is looking at.

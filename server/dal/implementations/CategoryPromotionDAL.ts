@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { ICategoryPromotionDAL } from '../interfaces/ICategoryPromotionDAL.js';
+import { ICategoryPromotionDAL, VelocityBucket } from '../interfaces/ICategoryPromotionDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { CategoryPromotion, CategoryPromotionInput } from '../../types/velocity.js';
 import type { MasteryBarId } from '../../contracts/wire.js';
@@ -110,5 +110,33 @@ export class CategoryPromotionDAL implements ICategoryPromotionDAL {
       byLanguage.set(row.language, parseInt(row.steps, 10));
     }
     return byLanguage;
+  }
+
+  async getVelocityBuckets(userIds: string[], windowDays: number): Promise<VelocityBucket[]> {
+    if (!Array.isArray(userIds) || userIds.length === 0) return [];
+
+    // Grouped by bar as well as language because the caller applies each user's OWN
+    // goal flags — see the interface note. Users with no promotions in the window
+    // simply produce no rows; the caller reads those as zero.
+    const result = await this.run<{
+      userId: string;
+      language: string;
+      bar: MasteryBarId;
+      steps: string;
+    }>(undefined, (c) => c.query(`
+      SELECT "userId", language, bar, SUM("bandsClimbed") AS steps
+      FROM category_promotions
+      WHERE "userId" = ANY($1::uuid[])
+        AND "promotedAt" >= now() - make_interval(days => $2::int)
+      GROUP BY "userId", language, bar
+    `, [userIds, windowDays]));
+
+    return result.rows.map((row) => ({
+      userId: row.userId,
+      language: row.language,
+      bar: row.bar,
+      // SUM() of a smallint arrives as a bigint string from pg.
+      bandsClimbed: parseInt(row.steps, 10),
+    }));
   }
 }

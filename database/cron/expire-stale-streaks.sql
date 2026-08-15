@@ -21,18 +21,37 @@
 --     tier = today_local - lastStreakDate - 1     (# of full missed days)
 -- Penalty schedule by tier (minutes):
 --     1 -> 3    2 -> 15   3 -> 30   4 -> 60   5 -> 90   6 -> 120
---     7+ -> everything remaining (that language's wallet set to 0)
--- Cumulative through tier 6 = 318; tier 7 wipes any remainder. Keep this
--- schedule in sync with STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES in
--- server/constants.ts (and the client mirror in src/constants.ts).
+--     7+ -> everything remaining down to the checkpoint (see below)
+-- Cumulative through tier 6 = 318. Keep this schedule in sync with
+-- STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES in server/constants.ts (and the client
+-- mirror in src/constants.ts).
+--
+-- CHECKPOINTS (24 h = 1440 minute points). No penalty -- not even the tier-7 wipe --
+-- may take a balance below the highest multiple of 1440 at or under it. 1560 (26 h)
+-- floors at 1440; 3300 (55 h) floors at 2880 (48 h); anything under 1440 is
+-- unprotected and can still reach 0. Consequences worth knowing:
+--   * a checkpoint is ABSORBING. Once a balance lands exactly on one it can never be
+--     debited again, so the wallet -- and the night market entitlement that Branch 2
+--     derives from it -- freezes there for good, no matter how long the lapse runs.
+--     "An inactive account zeroes out within a week" is now true only below 24 h.
+--   * no high-water column is needed: the balance only rises by earning and falls by
+--     this cron, and this cron can no longer cross a checkpoint, so the checkpoint of
+--     the CURRENT balance is always the highest one ever reached.
+--   * the author dev tool (UserMinutePointsService.adjustMinutesForAuthor, the nmp
+--     -N button) deliberately does NOT honour checkpoints -- it is a raw test signal
+--     that must be able to drive a balance anywhere.
 --
 -- Applied at most once per (user, language) per local day, guarded by
 -- user_language_points."lastPenaltyDate". Each tick, for each eligible pair:
---   * debits the tier penalty from THAT LANGUAGE's totalMinutePoints, floored at 0;
+--   * debits the tier penalty from THAT LANGUAGE's totalMinutePoints, floored at the
+--     balance's CHECKPOINT (see below), which is 0 below the first checkpoint;
 --   * stamps the ACTUAL amount removed (total - new_total) as penaltyMinutes on
 --     the just-completed missed day (yesterday local = today_local - 1) for THAT
 --     language, so the calendar shows the real deduction even when a small balance
---     underflows. The language is now KNOWN rather than guessed from
+--     underflows or a checkpoint absorbs part of the tier. A FULLY absorbed penalty
+--     (0 removed) stamps NOTHING -- an all-zero row is indistinguishable from an absent
+--     one in this table, so it would be dead weight written daily and forever.
+--     The language is now KNOWN rather than guessed from
 --     users."selectedLanguage" -- that guess was the write/read mismatch this
 --     design replaces;
 --   * resets that language's currentStreak to 0 (a missed day always breaks it);
@@ -147,19 +166,41 @@ BEGIN
              WHEN tier = 4 THEN 60
              WHEN tier = 5 THEN 90
              WHEN tier = 6 THEN 120
-             ELSE total_points          -- tier >= 7: wipe this language's remaining balance
-           END AS nominal_penalty
+             ELSE total_points          -- tier >= 7: everything down to the checkpoint
+           END AS nominal_penalty,
+           -- CHECKPOINT FLOOR: the highest whole day of minute points (24 h = 1440)
+           -- at or below the current balance. Penalties may never cross it, so a
+           -- balance of 1560 (26 h) stops at 1440 and one of 3300 (55 h) stops at
+           -- 2880 (48 h). Integer division truncates, and totals are non-negative,
+           -- so this is floor(). Keep 1440 in sync with
+           -- STREAK_CONFIG.CHECKPOINT_MINUTES in server/constants.ts (mirrored in
+           -- src/constants.ts).
+           ((total_points / 1440) * 1440) AS checkpoint_floor
     FROM eligible
   ),
   final AS (
+    -- The debit floors at the checkpoint, not at 0, and the amount charged is always
+    -- DERIVED (total - new_total) rather than the nominal tier value: it is exactly what
+    -- it took to reach the floor. A balance already sitting on a checkpoint therefore
+    -- loses nothing (new_total = total_points, actual_penalty = 0) but STILL breaks its
+    -- streak below -- that is why such rows stay in scope, and why penalty_insert
+    -- filters on actual_penalty > 0 rather than stamping a 0 every day.
     SELECT user_id, language, today_local, missed_date, tier,
-           GREATEST(0, total_points - nominal_penalty) AS new_total,      -- floored debit
-           LEAST(nominal_penalty, total_points)        AS actual_penalty  -- what actually left the wallet
+           GREATEST(checkpoint_floor, total_points - nominal_penalty) AS new_total,
+           total_points
+             - GREATEST(checkpoint_floor, total_points - nominal_penalty) AS actual_penalty  -- what actually left the wallet
     FROM computed
   ),
   penalty_insert AS (
+    -- Only a penalty that actually removed minutes gets a ledger line. A row with
+    -- minutesEarned = 0 AND penaltyMinutes = 0 carries no information this table can
+    -- express -- there is no missed-day flag here, and the calendar blanks such a cell
+    -- (src/components/MonthlyCalendar.tsx) -- so a fully absorbed penalty would write
+    -- one dead row per parked (user, language) per day, forever. The streak break for
+    -- those rows still happens in progress_update below.
     INSERT INTO userminutepoints ("userId", "streakDate", "language", "minutesEarned", "penaltyMinutes", "updatedAt")
     SELECT user_id, missed_date, language, 0, actual_penalty, now() FROM final
+    WHERE actual_penalty > 0
     ON CONFLICT ("userId", "streakDate", "language")
     DO UPDATE SET "penaltyMinutes" = userminutepoints."penaltyMinutes" + EXCLUDED."penaltyMinutes",
                   "updatedAt"      = now()

@@ -5,11 +5,7 @@ import {
   TemplateDefinition,
   VersionScoringInputs,
 } from './NightMarketTemplateService.js';
-import {
-  boardCells,
-  globalOccupied,
-  type PlacementOccupancy,
-} from '../dal/shared/versionSelection.js';
+import { globalOccupiedRects } from '../dal/shared/versionSelection.js';
 import { resolvePlacementVersion } from '../dal/shared/continentSeal.js';
 import { TemplatePlacementRow } from '../types/nightMarket.js';
 import { NotFoundError } from '../types/dal.js';
@@ -45,6 +41,16 @@ export interface UserLayoutResponse {
 }
 
 /**
+ * One loaded template version, plus whether loading it had to fall back to version 0 because the
+ * requested version no longer exists. See {@link NightMarketWorldService.loadVersionDefinition}
+ * for why the fallback is REPORTED rather than repaired in place.
+ */
+interface LoadedVersion {
+  row: Awaited<ReturnType<NightMarketTemplateService['getTemplate']>>;
+  healed: boolean;
+}
+
+/**
  * Night Market WORLD Service — the runtime LAYOUT read (docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md
  * slice 3).
  *
@@ -74,20 +80,40 @@ export class NightMarketWorldService {
 
   /**
    * ONE MARKET's rendered layout — the user's continent for `language`. Seeds the origin hub if
-   * that market has no placements (see
-   * {@link seedHubIfAbsent}), recomputes+persists each placement's active version from live
-   * conditions, then materializes every placement into a {@link PlacedTemplatePayload}.
+   * that market has no placements (see {@link seedHubPlacement}), recomputes+persists each
+   * placement's active version from live conditions, then materializes every placement into a
+   * {@link PlacedTemplatePayload}.
+   *
+   * QUERY SHAPE. This is the single hottest read in the night market — every nmp mount, every
+   * language switch, every author minute-adjust. It is written to keep its round-trip DEPTH flat
+   * rather than proportional to continent size: the placement/occupant reads go out together, the
+   * per-name scoring reads fan out with `Promise.all`, the version persists are batched, and the
+   * definition loads are de-duplicated by (name, version) before being fanned out. Previously each
+   * of those was a serial `await` inside a per-placement loop, so a 20-placement continent took
+   * ~45 sequential queries; it is now a handful regardless of size. Keep it that way — an `await`
+   * added inside a loop here is a latency regression that scales with how much a user has played.
    */
   async getUserLayout(userId: string, language: string): Promise<UserLayoutResponse> {
+    // Independent reads — issue them together rather than stacking two round trips.
+    let [placements, occupants] = await Promise.all([
+      this.placementDAL.findPlacementsByUser(userId, language),
+      this.placementDAL.findOccupantsByUser(userId, language),
+    ]);
+
     // First-load safety net: guarantee every user has a hub IN THIS MARKET, even pre-existing
     // accounts that predate the account-creation seed (see seedHubIfAbsent). Since migration 130
     // each language has its own continent, so each also gets its own hub on first read.
-    await this.seedHubIfAbsent(userId, language);
-
-    const placements = await this.placementDAL.findPlacementsByUser(userId, language);
+    //
+    // Driven off the placements read rather than its own COUNT: "has no placements" is already
+    // answered above, so the previous `seedHubIfAbsent` pre-check was a query on EVERY layout
+    // read to detect a condition that is true at most once per (user, language). The extra
+    // re-read below is paid only on that one first load.
+    if (placements.length === 0) {
+      await this.seedHubPlacement(userId, language);
+      placements = await this.placementDAL.findPlacementsByUser(userId, language);
+    }
 
     // Group occupants by placement so each placement's filled-slot set is its own.
-    const occupants = await this.placementDAL.findOccupantsByUser(userId, language);
     const filledByPlacement = new Map<string, Set<string>>();
     for (const occ of occupants) {
       const set = filledByPlacement.get(occ.placedTemplateId) ?? new Set<string>();
@@ -95,56 +121,112 @@ export class NightMarketWorldService {
       filledByPlacement.set(occ.placedTemplateId, set);
     }
 
-    // Load each distinct template's per-version scoring masks once (placements may share a name).
-    const scoringByName = new Map<string, VersionScoringInputs>();
-    for (const p of placements) {
-      if (!scoringByName.has(p.templateName)) {
-        scoringByName.set(p.templateName, await this.templateService.getVersionScoringInputs(p.templateName));
-      }
-    }
+    // Load each DISTINCT template's per-version scoring masks once — a tiled continent reuses the
+    // same handful of templates, so this is far fewer reads than placements. Fanned out with
+    // Promise.all: they are independent, and awaiting them in a loop made the layout read's
+    // latency scale with the catalog's variety for no reason.
+    const distinctNames = [...new Set(placements.map((p) => p.templateName))];
+    const scoringByName = new Map<string, VersionScoringInputs>(
+      await Promise.all(
+        distinctNames.map(async (name) =>
+          [name, await this.templateService.getVersionScoringInputs(name)] as const,
+        ),
+      ),
+    );
 
-    // Every placement's GLOBAL footprint (full board rect) — the version-agnostic occupancy the
-    // border-street conditions test for abutment. Built once so each placement can exclude itself.
-    const footprintByPlacement = new Map<string, PlacementOccupancy>();
-    for (const p of placements) {
-      const dims = scoringByName.get(p.templateName)!;
-      footprintByPlacement.set(p.id, {
-        offsetCol: p.offsetCol,
-        offsetRow: p.offsetRow,
-        cells: boardCells(dims.width, dims.height),
-      });
-    }
+    // ONE global occupancy union for the whole continent, not one per placement.
+    //
+    // This used to rebuild an "everyone but me" union inside the per-placement loop, making the
+    // read O(N² · cells) — with N placements of w×h cells, N × (N−1) × w × h cell keys encoded,
+    // parsed and re-encoded on every layout GET. Passing the single full union (this placement
+    // included) is EQUIVALENT, because the only consumer probes strictly outward from board-edge
+    // cells and so can never see its own footprint — the invariant is spelled out, with its
+    // rectangular-footprint precondition, at {@link globalOccupiedRects}.
+    const occupied = globalOccupiedRects(
+      placements.map((p) => {
+        const dims = scoringByName.get(p.templateName)!;
+        return {
+          offsetCol: p.offsetCol,
+          offsetRow: p.offsetRow,
+          width: dims.width,
+          height: dims.height,
+        };
+      }),
+    );
 
-    const layout: PlacedTemplatePayload[] = [];
-    for (const p of placements) {
-      const scoring = scoringByName.get(p.templateName)!;
+    // Recompute every placement's version first (pure + synchronous), so the DB work below can be
+    // batched instead of interleaved one placement at a time.
+    const selectedByPlacement = placements.map((p) => {
       const filled = filledByPlacement.get(p.id) ?? new Set<string>();
+      return {
+        placement: p,
+        filled,
+        selected: this.selectVersion(p, scoringByName.get(p.templateName)!, filled, occupied),
+      };
+    });
 
-      // Neighbor footprints (everyone but this placement) → the abutment test's "others" set.
-      const others: PlacementOccupancy[] = [];
-      for (const q of placements) if (q.id !== p.id) others.push(footprintByPlacement.get(q.id)!);
-      const occupiedByOthers = globalOccupied(others);
+    // Persist only the placements whose recompute actually changed the active version (the
+    // persisted value is a stability cache, not the source of truth). Fired together: on a steady
+    // continent this list is empty and costs nothing.
+    await Promise.all(
+      selectedByPlacement
+        .filter(({ placement, selected }) => selected !== placement.activeVersion)
+        .map(({ placement, selected }) => this.placementDAL.updateActiveVersion(placement.id, selected)),
+    );
 
-      const selected = this.selectVersion(p, scoring, filled, occupiedByOthers);
-
-      // Persist only when the recompute changed the active version (stability cache).
-      if (selected !== p.activeVersion) {
-        await this.placementDAL.updateActiveVersion(p.id, selected);
+    // Load each placement's SELECTED version definition, de-duplicated by (name, version): a
+    // continent typically tiles a few templates many times, so this collapses ~2 queries per
+    // PLACEMENT into ~2 per distinct (name, version) pair. Caching the PROMISE (not the resolved
+    // row) also collapses concurrent asks for the same pair into a single in-flight query.
+    //
+    // Request-scoped on purpose. A process-wide catalog cache would be a bigger win still - the
+    // catalog is account-independent and every user's layout read re-fetches it - but it is
+    // MUTABLE (the template editor writes it) and would need explicit invalidation on save. That
+    // is a worthwhile follow-up, not something to smuggle in here.
+    //
+    // The cache holds only the version FETCH, which is a pure function of (name, version). The
+    // self-heal WRITE is deliberately kept OUTSIDE it: several placements can share a vanished
+    // version, and a cached heal would repair only whichever placement happened to ask first.
+    const definitionCache = new Map<string, Promise<LoadedVersion>>();
+    const loadCached = (name: string, version: number) => {
+      const cacheKey = `${name}\u0000${version}`; // NUL-separated - names may contain anything
+      let pending = definitionCache.get(cacheKey);
+      if (!pending) {
+        pending = this.loadVersionDefinition(userId, name, version);
+        definitionCache.set(cacheKey, pending);
       }
+      return pending;
+    };
 
-      // Load the SELECTED version's full definition for rendering (self-heals a vanished version).
-      const loaded = await this.loadPlacementVersion(userId, p.id, p.templateName, selected);
-      layout.push({
+    const loadedByPlacement = await Promise.all(
+      selectedByPlacement.map(async (entry) => ({
+        ...entry,
+        loaded: await loadCached(entry.placement.templateName, entry.selected),
+      })),
+    );
+
+    // Self-heal, PER PLACEMENT: a placement whose selected version turned out to be missing is
+    // re-pointed at version 0 so the next read is stable. Normally a no-op - `selected` is drawn
+    // from the catalog's live `availableVersions`, so this only fires if a version is deleted
+    // between the scoring read and the definition read.
+    await Promise.all(
+      loadedByPlacement
+        .filter(({ loaded }) => loaded.healed)
+        .map(({ placement }) => this.placementDAL.updateActiveVersion(placement.id, 0)),
+    );
+
+    const layout: PlacedTemplatePayload[] = loadedByPlacement.map(
+      ({ placement: p, filled, loaded }) => ({
         name: p.templateName,
-        activeVersion: loaded.version,
+        activeVersion: loaded.row.version,
         offsetCol: p.offsetCol,
         offsetRow: p.offsetRow,
-        width: loaded.width,
-        height: loaded.height,
-        def: loaded.definition,
+        width: loaded.row.width,
+        height: loaded.row.height,
+        def: loaded.row.definition,
         filledPlaceholderIds: [...filled],
-      });
-    }
+      }),
+    );
 
     return { layout };
   }
@@ -183,42 +265,32 @@ export class NightMarketWorldService {
   }
 
   /**
-   * Load a placement's persisted version, self-healing if it was deleted from the catalog: on a
-   * 404 for the persisted version, fall back to version 0 and re-persist `activeVersion = 0` so
-   * subsequent reads are stable. Returns the loaded row (its `version` is the one actually used).
+   * Load ONE (template name, version) definition, falling back to version 0 if that version was
+   * deleted from the catalog. Returns the loaded row plus a `healed` flag saying the fallback was
+   * taken.
+   *
+   * PURE OVER (name, version) BY DESIGN. The old shape took a `placementId` and performed the
+   * `activeVersion = 0` repair write itself, which made it un-cacheable: a continent tiles the
+   * same template many times, and de-duplicating the read would then have silently repaired only
+   * the first placement that asked. Reporting `healed` and letting the CALLER write the repair for
+   * every affected placement keeps the fetch cacheable and the heal complete.
    */
-  private async loadPlacementVersion(
+  private async loadVersionDefinition(
     userId: string,
-    placementId: string,
     templateName: string,
-    activeVersion: number,
-  ) {
+    version: number,
+  ): Promise<LoadedVersion> {
     try {
-      return await this.templateService.getTemplate(userId, templateName, activeVersion);
+      return { row: await this.templateService.getTemplate(userId, templateName, version), healed: false };
     } catch (err) {
-      if (err instanceof NotFoundError && activeVersion !== 0) {
-        // The persisted version is gone (a validator deleted it). Clamp to the base and heal.
+      if (err instanceof NotFoundError && version !== 0) {
+        // The version is gone (a validator deleted it). Clamp to the base; caller persists it.
         console.warn(
-          `[NightMarketWorld] placement ${placementId} (${templateName}) had missing version ${activeVersion}; falling back to version 0.`,
+          `[NightMarketWorld] template ${templateName} is missing version ${version}; falling back to version 0.`,
         );
-        await this.placementDAL.updateActiveVersion(placementId, 0);
-        return await this.templateService.getTemplate(userId, templateName, 0);
+        return { row: await this.templateService.getTemplate(userId, templateName, 0), healed: true };
       }
-      throw err; // hub template genuinely missing, or some other error — surface it
-    }
-  }
-
-  /**
-   * ⚠️ DEPRECATED-ON-ARRIVAL first-load safety net. Idempotently seed the origin hub for a user
-   * who has ZERO placements. This covers PRE-EXISTING accounts that predate the canonical
-   * account-creation seed (UserService/registration). Once every existing account has a hub row
-   * (organic first-load coverage or a one-time backfill), DELETE this branch — new accounts get
-   * their hub at creation and never reach here. Do not treat this as load-bearing runtime logic.
-   */
-  private async seedHubIfAbsent(userId: string, language: string): Promise<void> {
-    const count = await this.placementDAL.countPlacementsByUser(userId, language);
-    if (count === 0) {
-      await this.seedHubPlacement(userId, language);
+      throw err; // hub template genuinely missing, or some other error - surface it
     }
   }
 

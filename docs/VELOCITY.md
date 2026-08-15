@@ -132,7 +132,26 @@ of the window within 7 days.
 | route | `server/routes/userRoutes.ts` | Registered before `GET /api/users/:id` so the param route can't shadow it. |
 | client api | `src/api/velocity.ts` | `fetchVelocity(language?)`. No `token` param (FRONTEND_LAYERING §3.2). |
 | client hook | `src/hooks/useVelocity.ts` | Keys on `isAuthenticated` + `selectedLanguage`, **never** `token` (CLAUDE.md silent-refresh rule). |
-| UI | `src/pages/AccountPage.tsx` — `account-page__velocity-card` | One stat card under the deck buckets: label, big number, `"level-ups in the last N days"`. |
+| UI | `src/pages/AccountPage.tsx` — `account-page__velocity-card` | One stat card under the deck buckets: the "VELOCITY" overline + a tappable ⓘ (`src/components/InfoTip.tsx`) carrying `"Mastery level-ups in the last N days"`, then the big number. The explanation was a permanent caption until it moved into the ⓘ — it is one-time information, so it costs a tap rather than a line of small print on every visit. |
+| second consumer | `server/services/FriendsService.getLeaderboard` → `src/features/friends/FriendsPage.tsx` | The friends leaderboard **ranks** on velocity (§ 4a). |
+
+### 4a. Second consumer — the friends leaderboard
+
+`/friends` ranks the viewer and their friends by velocity
+([FRIENDS_FEATURE.md § 1a](./FRIENDS_FEATURE.md)). It does **not** go through
+`VelocityController`, because that controller answers for one caller:
+
+* `ICategoryPromotionDAL.getVelocityBuckets(userIds, windowDays)` reads **many
+  users at once**, grouped by `(userId, language, bar)` — one query for the whole
+  board, no N+1.
+* It is deliberately **not** bar-filtered in SQL, unlike `getVelocityByLanguage`:
+  which bars count depends on each row's own goal flags, and the result spans many
+  users. `FriendsService` folds the buckets against each person's `activeBars`.
+* Each person is scored in **their own** `selectedLanguage`, not the viewer's.
+
+If the window ever changes, `VELOCITY_WINDOW_DAYS` remains the single source —
+both paths import it, and the friends response ships it as `windowDays` so the
+client's unit line cannot drift.
 
 ### API
 

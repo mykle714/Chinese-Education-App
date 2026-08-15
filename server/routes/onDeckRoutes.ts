@@ -15,8 +15,8 @@ const router = Router();
 // Get all library cards (vocab entries from *-library OnDeck sets)
 router.get('/api/onDeck/libraryCards', authenticateToken, handle(onDeckVocabController.getLibraryCards, onDeckVocabController));
 
-// The contents of one built-in collection (?collection=all|unfamiliar|target|
-// comfortable|learn-now|mastered|mastered-reading|mastered-writing). Replaces the old
+// The contents of one built-in collection (?collection=all|learn-now|mastered|
+// mastered-reading|mastered-writing). Replaces the old
 // masteredLibraryCards / nonMasteredLibraryCards pair — see docs/DECKS_FEATURE.md.
 router.get('/api/onDeck/collectionCards', authenticateToken, handle(onDeckVocabController.getCollectionCards, onDeckVocabController));
 

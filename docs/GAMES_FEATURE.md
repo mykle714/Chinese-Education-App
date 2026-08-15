@@ -87,15 +87,54 @@ game adopting it today would get the wrong chrome. See the Layer 2 warning below
 
 ## Launching a game with one collection of cards
 
-Besides the Games hub, every game can be entered from a **collection view page**
-(`/flashcards/collection/*`, `/flashcards/deck/:id`) via its "Study these
-cards" button, which appends a launch param:
+Every game is played with **the collection selected in the Games hub header**.
 
 | Collection | Param | Effect |
 | --- | --- | --- |
-| Learn Now | *(none)* | The default pool — Learn Now already **is** what games draw from |
-| Mastered | `?collection=mastered` | Pool restricted to Mastered cards |
+| All Cards *(default)* | *(none)* | Every playable card — the pool games have always drawn from |
+| Learn Now | `?collection=learn-now` | Sorted cards that aren't core-mastered |
+| Mastered (per bar) | `?collection=mastered[-reading|-writing]` | Pool restricted to that bar's mastered cards |
 | A deck | `?deck=<id>` | Pool restricted to that deck, plus any card lent to reach the game's baseline |
+
+### Collection selector (hub header)
+
+`src/games/GamesCollectionSelector.tsx`, rendered into `HubMenu`'s `header` slot
+above the TipBox: a full-width pill reading **"Playing with: &lt;collection&gt;"** that
+opens a menu of every set the fdp offers — *Cards* (All Cards + Learn Now), *Mastered*
+(one row per **active** bar), and the learner's *Decks* (`fetchDecks`).
+
+**The fdp is the source of truth for that list.** The built-in rows come from
+`builtinCollectionEntries` (`src/features/flashcards/builtinCollections.ts`), the same
+function the fdp renders as tiles, so the two surfaces cannot drift on which
+collections exist, their order, their grouping or their colors — including the rule
+that *Mastered* is a separate group only when a reading or writing goal is set
+(otherwise its single row is listed under *Cards*). This component decides only how a
+row LOOKS. Each row carries the same identifying color its fdp tile does; a deck's dot
+uses `deckTileColors(id).main`.
+
+The choice lives in **`src/features/flashcards/selectedCollection.ts`** — a module
+singleton + `useSyncExternalStore`, the same shape as `minutePointsPause`:
+
+* **Session-scoped, never persisted.** It survives leaving the hub for a game and
+  coming back (otherwise every round would silently reset to All Cards mid-session),
+  and is gone on reload — a learner returning tomorrow is not still locked to one
+  deck they picked once. That rules out both `localStorage` and page-level state.
+* **No game page knows it exists.** `GamesPage` wraps every card's `to` in
+  `withCollectionParams(route, selected)`, so a game arrives with the same
+  `?deck=` / `?collection=` a collection-page launch always sent.
+  `WordSearchHubItem` applies the params itself because it builds its own links
+  (it navigates imperatively to confirm before clobbering a saved board); its
+  **resume** card deliberately carries **no** params — that board was built from
+  whatever set was selected when it started.
+* **Stale decks self-heal.** After loading the deck list the selector calls
+  `clearSelectedDeckIfMissing`, dropping back to All Cards when the selected deck was
+  deleted or belongs to the learner's other language (decks are per-language).
+
+> **Removed:** the collection view page's "Study these cards" button used to open a
+> sheet listing the flp **and every game**. That put the two choices in the wrong
+> order — a learner picks the activity first — so the sheet is gone and the button is
+> now a plain one-tap launch into the **flp** with that collection. Games are chosen
+> on the Games hub, cards with the selector above.
 
 Each game page reads this back with `useLaunchCollection()` and appends
 `collectionQuerySuffix(...)` to **every** pool request — including partial refills
@@ -441,9 +480,10 @@ needs a WebGL scene graph, copy Bubble Match or Word Search instead.
    the mark type the game emits. Declare that mark type ONCE as `MARK_TYPE` in your
    game's `constants.ts` and read it from there for the `?markType=` query, the
    `markFlashcard({ type })` call, and your `GameDef.markType` (which makes the hub
-   render its mark-type chip). If your game's mark type varies by mode, omit
-   `GameDef.markType` and put the type on each mode config instead, the way Word
-   Search does — then pass a `MarkTypeChip` per sub-card. See the backend notes under
+   render its right-edge mark-type label). If your game's mark type varies by mode,
+   omit `GameDef.markType` and put the type on each mode config instead, the way Word
+   Search does — then pass a `<MarkTypeChip variant="edge" />` per sub-card, wrapped
+   in `HubMenuCardEdgeSlot` if you hand-build the cards. See the backend notes under
    [§ Game: Bubble Match](#backend) and
    [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md). Also pass `surface=<your-game>` so the server
    tops the player up to your baseline (`CARD_BASELINES` in `server/contracts/wire.ts`).
@@ -486,7 +526,9 @@ and `Layout` need no edits.
 - `src/components/MobileDemoHeader.tsx` — shared header (back / title / active badge / extraActions); no hamburger
 - `src/components/PageHeader.tsx` — base header (renamed `rightItems` → `rightContent`)
 - `src/components/Layout.tsx` — wires `MobileDemoFrame` into demo routes; spreads `GAME_ROUTES` into `MOBILE_DEMO_PATHS`
-- `src/games/GamesPage.tsx` — hub page; renders `GAME_REGISTRY`
+- `src/games/GamesPage.tsx` — hub page; renders `GAME_REGISTRY`, wraps every link in `withCollectionParams`
+- `src/games/GamesCollectionSelector.tsx` — hub-header "Playing with …" collection pill + menu
+- `src/features/flashcards/selectedCollection.ts` — the session-only store behind that pill
 - `src/App.tsx` — `/games` route + per-game routes from registry
 - `src/games/registry.ts` — central `GAME_REGISTRY` + `GAME_ROUTES`
 - `src/games/types.ts` — `GameDef`, `GameAsset`, `GameProgress`

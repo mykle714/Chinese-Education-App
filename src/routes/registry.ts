@@ -1,42 +1,6 @@
-import type { ComponentType } from "react";
+import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 import { GAME_REGISTRY } from "../games/registry";
 import { ROUTE_META, type RouteMeta } from "./routeMeta";
-
-// Eagerly-loaded page components. Games are the only lazy ones (see GAME_REGISTRY).
-import HomePage from "../pages/HomePage";
-import CommunityPage from "../features/community/CommunityPage";
-import FriendsPage from "../features/friends/FriendsPage";
-import IncomingRequestsPage from "../features/friends/IncomingRequestsPage";
-import SentRequestsPage from "../features/friends/SentRequestsPage";
-import EntriesPage from "../pages/EntriesPage";
-import EntryDetailPage from "../pages/EntryDetailPage";
-import EditEntryPage from "../pages/EditEntryPage";
-import ProfilePage from "../pages/ProfilePage";
-import AccountPage from "../pages/AccountPage";
-import SettingsPage from "../pages/SettingsPage";
-import NotFoundPage from "../pages/NotFoundPage";
-import LoginPage from "../pages/LoginPage";
-import RegisterPage from "../pages/RegisterPage";
-import FlashcardsPage from "../features/flashcards/FlashcardsPage";
-import FlashcardsLearnPage from "../features/flashcards/FlashcardsLearnPage";
-import FlashcardsDecksPage from "../features/flashcards/FlashcardsDecksPage";
-import CollectionViewPage from "../features/flashcards/CollectionViewPage";
-import MasteredRedirect from "../features/flashcards/MasteredRedirect";
-import VocabCardDetailPage from "../features/flashcards/VocabCardDetailPage";
-import ReaderPage from "../features/reader/ReaderPage";
-import ReaderDocumentPage from "../features/reader/ReaderDocumentPage";
-import NightMarketEnginePage from "../features/nightmarket/NightMarketEnginePage";
-import TemplateEditorPage from "../features/nightmarket/TemplateEditorPage";
-import TemplateSandboxPage from "../features/nightmarket/TemplateSandboxPage";
-import DictionaryPage from "../features/dictionary/DictionaryPage";
-import ComparePage from "../features/dictionary/ComparePage";
-import DictionaryCardDetailPage from "../features/dictionary/DictionaryCardDetailPage";
-import DiscoverPage from "../features/discover/DiscoverPage";
-import TesterDashboardPage from "../pages/TesterDashboardPage";
-import SortCardsPage from "../features/discover/SortCardsPage";
-import QuickMarkPage from "../features/discover/QuickMarkPage";
-import SkippedCardsPage from "../features/discover/SkippedCardsPage";
-import GamesPage from "../games/GamesPage";
 
 /**
  * Binds each route in `./routeMeta` to its page component.
@@ -53,9 +17,30 @@ import GamesPage from "../games/GamesPage";
  * components. Building `APP_ROUTES` below THROWS at boot if a row has no component,
  * and warns in dev if a component has no row, so the two cannot silently diverge.
  *
+ * ── Why EVERY route is React.lazy ──────────────────────────────────────────────
+ * Games used to be the only code-split routes; the other 31 pages were static
+ * imports, so a cold start parsed and executed the whole page tree — every page,
+ * every MUI surface — before the first route could paint. That was the single
+ * largest contributor to the 2.22 MB main chunk.
+ *
+ * Laziness is UNIFORM rather than per-route on purpose. A hand-maintained
+ * "these ones are eager" list is exactly the kind of table that drifts (see the
+ * four-table sync bug documented in routeMeta.ts), and the benefit of keeping any
+ * one page eager is a single saved round trip on the entry route only. Uniformity
+ * also means `RouteMeta` needs no `lazy` flag at all: `src/App.tsx` wraps every
+ * route in <Suspense> unconditionally, so there is no way to mount a lazy
+ * component without a boundary.
+ *
+ * The trade-off, stated plainly: the entry route now costs one extra request
+ * after the main chunk (index → route chunk) instead of arriving inside it. If
+ * measurement shows that waterfall dominates on the common landing routes, the
+ * fix is a `<link rel="modulepreload">` hint or a Vite `manualChunks` grouping —
+ * NOT a return to static imports.
+ *
  * Only `src/App.tsx` imports this file.
  *
- * See docs/ARCHITECTURE_REVIEW.md finding 4.
+ * See docs/ARCHITECTURE_REVIEW.md finding 4 and
+ * docs/REACT_NATIVE_MIGRATION.md § Action items, Tier 1 item 2.
  */
 
 /** A route row plus the component that renders it. */
@@ -63,51 +48,59 @@ export interface AppRoute extends RouteMeta {
   Component: ComponentType;
 }
 
+/** What every entry in the two maps below is: a code-split page. */
+type RouteComponent = LazyExoticComponent<ComponentType>;
+
 /**
  * Component for every non-game route, keyed by the exact `path` in routeMeta.ts.
  * Game components come from GAME_REGISTRY instead.
+ *
+ * Each value is a `React.lazy` wrapper, so importing this module costs nothing but
+ * the arrow functions — the page itself is fetched when its route first matches.
  */
-const PAGE_COMPONENTS: Record<string, ComponentType> = {
-  "/": HomePage,
-  "/flashcards/decks": FlashcardsDecksPage,
-  "/discover": DiscoverPage,
-  "/account": AccountPage,
-  "/games": GamesPage,
-  "/community": CommunityPage,
-  "/friends": FriendsPage,
-  "/friends/requests": IncomingRequestsPage,
-  "/friends/sent": SentRequestsPage,
-  "/dictionary": DictionaryPage,
-  "/compare": ComparePage,
-  "/reader": ReaderPage,
-  "/flashcards/collection/:builtin": CollectionViewPage,
-  "/flashcards/deck/:id": CollectionViewPage,
-  "/flashcards/mastered": MasteredRedirect,
-  "/reader/:id": ReaderDocumentPage,
-  "/flashcards/card/:id": VocabCardDetailPage,
-  "/dictionary/card/:word": DictionaryCardDetailPage,
-  "/discover/sort/:language": SortCardsPage,
-  "/discover/quick-mark/:language": QuickMarkPage,
-  "/discover/skipped/:language": SkippedCardsPage,
-  "/night-market": NightMarketEnginePage,
-  "/tester-dashboard": TesterDashboardPage,
-  "/settings": SettingsPage,
-  "/flashcards/learn": FlashcardsLearnPage,
-  "/night-market/template-editor": TemplateEditorPage,
-  "/night-market/template-sandbox": TemplateSandboxPage,
-  "/entries": EntriesPage,
-  "/entries/:id": EntryDetailPage,
-  "/edit/:id": EditEntryPage,
-  "/flashcards": FlashcardsPage,
-  "/profile": ProfilePage,
-  "/login": LoginPage,
-  "/register": RegisterPage,
-  "*": NotFoundPage,
+const PAGE_COMPONENTS: Record<string, RouteComponent> = {
+  "/": lazy(() => import("../pages/HomePage")),
+  "/flashcards/decks": lazy(() => import("../features/flashcards/FlashcardsDecksPage")),
+  "/discover": lazy(() => import("../features/discover/DiscoverPage")),
+  "/account": lazy(() => import("../pages/AccountPage")),
+  "/games": lazy(() => import("../games/GamesPage")),
+  "/community": lazy(() => import("../features/community/CommunityPage")),
+  "/friends": lazy(() => import("../features/friends/FriendsPage")),
+  "/friends/requests": lazy(() => import("../features/friends/IncomingRequestsPage")),
+  "/friends/sent": lazy(() => import("../features/friends/SentRequestsPage")),
+  "/friends/remove": lazy(() => import("../features/friends/RemoveFriendsPage")),
+  "/dictionary": lazy(() => import("../features/dictionary/DictionaryPage")),
+  "/compare": lazy(() => import("../features/dictionary/ComparePage")),
+  "/reader": lazy(() => import("../features/reader/ReaderPage")),
+  // Two routes, one component — see the routeMeta.ts note on collection paths.
+  "/flashcards/collection/:builtin": lazy(() => import("../features/flashcards/CollectionViewPage")),
+  "/flashcards/deck/:id": lazy(() => import("../features/flashcards/CollectionViewPage")),
+  "/flashcards/mastered": lazy(() => import("../features/flashcards/MasteredRedirect")),
+  "/reader/:id": lazy(() => import("../features/reader/ReaderDocumentPage")),
+  "/flashcards/card/:id": lazy(() => import("../features/flashcards/VocabCardDetailPage")),
+  "/dictionary/card/:word": lazy(() => import("../features/dictionary/DictionaryCardDetailPage")),
+  "/discover/sort/:language": lazy(() => import("../features/discover/SortCardsPage")),
+  "/discover/quick-mark/:language": lazy(() => import("../features/discover/QuickMarkPage")),
+  "/discover/skipped/:language": lazy(() => import("../features/discover/SkippedCardsPage")),
+  "/night-market": lazy(() => import("../features/nightmarket/NightMarketEnginePage")),
+  "/tester-dashboard": lazy(() => import("../pages/TesterDashboardPage")),
+  "/settings": lazy(() => import("../pages/SettingsPage")),
+  "/flashcards/learn": lazy(() => import("../features/flashcards/FlashcardsLearnPage")),
+  "/night-market/template-editor": lazy(() => import("../features/nightmarket/TemplateEditorPage")),
+  "/night-market/template-sandbox": lazy(() => import("../features/nightmarket/TemplateSandboxPage")),
+  "/entries": lazy(() => import("../pages/EntriesPage")),
+  "/entries/:id": lazy(() => import("../pages/EntryDetailPage")),
+  "/edit/:id": lazy(() => import("../pages/EditEntryPage")),
+  "/flashcards": lazy(() => import("../features/flashcards/FlashcardsPage")),
+  "/profile": lazy(() => import("../pages/ProfilePage")),
+  "/login": lazy(() => import("../pages/LoginPage")),
+  "/register": lazy(() => import("../pages/RegisterPage")),
+  "*": lazy(() => import("../pages/NotFoundPage")),
 };
 
-/** Game components, keyed by route, from the game registry. */
-const GAME_COMPONENTS: Record<string, ComponentType> = Object.fromEntries(
-  GAME_REGISTRY.map((g) => [g.route, g.Component as ComponentType])
+/** Game components, keyed by route, from the game registry. Already lazy there. */
+const GAME_COMPONENTS: Record<string, RouteComponent> = Object.fromEntries(
+  GAME_REGISTRY.map((g) => [g.route, g.Component])
 );
 
 /**
@@ -125,7 +118,10 @@ export const APP_ROUTES: AppRoute[] = ROUTE_META.map((meta) => {
         `routes/registry.ts. Add it to PAGE_COMPONENTS.`
     );
   }
-  return { ...meta, Component };
+  // `LazyExoticComponent` is structurally a component but is not assignable to
+  // `ComponentType`; React renders it fine inside a Suspense boundary, which
+  // App.tsx always provides.
+  return { ...meta, Component: Component as unknown as ComponentType };
 });
 
 // The other direction of the same mistake: a component bound to a path that no

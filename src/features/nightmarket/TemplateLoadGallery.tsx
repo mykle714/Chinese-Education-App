@@ -1,9 +1,12 @@
+// PIXI's non-eval shader codegen. MUST be first: it has to be applied before a
+// renderer is created. See ./pixiRuntime for why this is not in main.tsx.
+import './pixiRuntime';
 import { useEffect, useMemo, useRef, useState, Fragment, useCallback } from 'react';
 import { Application, extend, useApplication } from '@pixi/react';
 import { Container, Sprite, Graphics, Text } from 'pixi.js';
 import { Box } from '@mui/material';
 import { TILE_WIDTH, TILE_HEIGHT } from '../../engine/market/isometric';
-import { buildEditorField, type EditorMasks } from '../../engine/market/farmTerrain';
+import { buildEditorField, compileMasks, type EditorMasks } from '../../engine/market/farmTerrain';
 import { placeholderAreaCells } from '../../engine/market/placeholderArea';
 import EditorTerrainLayer from './EditorTerrainLayer';
 import { TemplateMaskOverlays } from './TemplateEditorViewer';
@@ -65,7 +68,8 @@ interface PreparedEntry {
 function prepare(entries: TemplateGalleryEntry[], houseMode: GalleryHouseMode): PreparedEntry[] {
   return entries.map((entry) => {
     const masks = definitionToMasks(entry.definition);
-    const tiles = buildEditorField(entry.width, entry.height, masks);
+    // `prepare` is itself memoised on the entry list, so compiling here is once per gallery load.
+    const tiles = buildEditorField(entry.width, entry.height, compileMasks(masks));
     // A placeholder area containing a condition cell renders occupant HOUSE(S) (see
     // TemplateMaskOverlays); reserve extra top room so the taller house sprites aren't clipped.
     // Under `'all'` every placeholder area gets a house, so any area at all needs the allowance.

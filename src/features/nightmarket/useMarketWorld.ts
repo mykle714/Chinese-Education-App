@@ -4,6 +4,7 @@ import { loadUserLayout } from './nightMarketLayoutApi';
 import type { PlacedTemplate } from '../../engine/market/templateStitch';
 import { buildMarketWorld, type MarketWorld } from '../../engine/market/marketWorld';
 import type { TerrainField } from '../../engine/market/farmTerrain';
+import { packCell, type CellId } from '../../engine/market/cellKey';
 
 /**
  * useMarketWorld — runtime hook: load the user's persisted template LAYOUT (their placements),
@@ -107,7 +108,16 @@ export function useMarketWorld(reloadToken = 0): UseMarketWorldResult {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated) return; // wait for a session before hitting the gated endpoint
+    // `/night-market` is an `access: "any"` route (src/routes/routeMeta.ts) but the layout
+    // endpoint is gated, so a signed-out visitor genuinely reaches here. RESOLVE the load state
+    // rather than returning early: `loading` means "a load is in flight", and leaving it true
+    // forever would strand the page's spinner (nmp renders it straight from this hook).
+    if (!isAuthenticated) {
+      setState(null);
+      setError('Sign in to visit your night market.');
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -144,18 +154,21 @@ export function useMarketWorld(reloadToken = 0): UseMarketWorldResult {
         const width = maxCol - minCol;
         const height = maxRow - minRow;
 
-        const footprint = new Set<string>();
+        // Packed cell ids, not `"c,r"` strings: `contains` is probed ~8× per visible cell by
+        // buildEditorField (membership + the 4-neighbour landmass edge + the slab-occlusion test),
+        // so a string key here would allocate on every probe. See engine/market/cellKey.
+        const footprint = new Set<CellId>();
         for (const p of placements) {
           for (let c = p.offsetCol; c < p.offsetCol + p.width; c++) {
             for (let r = p.offsetRow; r < p.offsetRow + p.height; r++) {
-              footprint.add(`${c},${r}`);
+              footprint.add(packCell(c, r));
             }
           }
         }
         const field: TerrainField = {
           originCol: minCol,
           originRow: minRow,
-          contains: (c, r) => footprint.has(`${c},${r}`),
+          contains: (c, r) => footprint.has(packCell(c, r)),
         };
 
         // Slim per-template bounds for the template-bounds debug overlay (name/version/offset/size).

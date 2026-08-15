@@ -1,6 +1,6 @@
 import { PoolClient } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
-import { IUserDAL } from '../interfaces/IUserDAL.js';
+import { IUserDAL, UserScoringProfile } from '../interfaces/IUserDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { User, UserCreateData, UserUpdateData } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
@@ -262,6 +262,50 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       name: row.name,
       isPublic: row.ispublic === true,
       avatarIconId: row.avatariconid ?? null
+    }));
+  }
+
+  async findScoringProfilesByIds(userIds: string[]): Promise<UserScoringProfile[]> {
+    // An empty list is a legitimate call (a user with no friends still asks for
+    // their own row, but a caller may hand us nothing); short-circuit rather than
+    // issuing `= ANY('{}')`.
+    if (!Array.isArray(userIds) || userIds.length === 0) return [];
+
+    const result = await this.dbManager.executeQuery<{
+      id: string;
+      email: string;
+      name: string | null;
+      avatariconid: string | null;
+      selectedlanguage: string | null;
+      readinggoal: boolean | null;
+      writinggoal: boolean | null;
+    }>(async (client) => {
+      // One `= ANY($1::uuid[])` rather than a per-id loop: the friends leaderboard
+      // reads every friend at once and an N+1 here would scale with the friend list.
+      return await client.query(`
+        SELECT
+          id,
+          email,
+          name,
+          "avatarIconId"     AS avatariconid,
+          "selectedLanguage" AS selectedlanguage,
+          "readingGoal"      AS readinggoal,
+          "writingGoal"      AS writinggoal
+        FROM Users
+        WHERE id = ANY($1::uuid[])
+      `, [userIds]);
+    });
+
+    return result.recordset.map(row => ({
+      userId: row.id,
+      email: row.email,
+      name: row.name ?? null,
+      avatarIconId: row.avatariconid ?? null,
+      selectedLanguage: row.selectedlanguage ?? null,
+      // The columns are NOT NULL with a false default (migration 101), but a null
+      // here must read as "goal off" rather than crediting a bar they never chose.
+      readingGoal: row.readinggoal === true,
+      writingGoal: row.writinggoal === true,
     }));
   }
 

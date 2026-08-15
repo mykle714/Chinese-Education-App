@@ -23,7 +23,6 @@ import {
 } from "../../utils/vocabSort";
 import type { MasteryGoals } from "../../utils/masteryCompute";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { GAME_REGISTRY } from "../../games/registry";
 import { fetchDeckCards, fetchDecks, renameDeck, deleteDeck } from "../../api/decks";
 import {
     type CollectionRef, collectionTitle, withCollectionParams, parseBuiltinCollection,
@@ -51,15 +50,15 @@ import { SIZE, WEIGHT } from "../../theme/scale";
  *
  * ── Layer ─────────────────────────────────────────────────────────────────────
  * Feature page (src/features/flashcards). It owns data fetching for the three
- * collection sources and the launch sheet; NodePage supplies the scroll container,
+ * collection sources and the flp launch button; NodePage supplies the scroll container,
  * floating footer, back arrow and edge fade, and MiniVocabCardGrid owns the grid.
  *
  * This is a NODE PAGE (docs/UX_AND_NAVIGATION.md): it keeps the footer and uses
  * the LEFT back arrow + horizontal slide.
  */
 
-/** The flp, listed alongside the games in the launch sheet. */
-const FLP_LAUNCH = { id: "flp", title: "Flashcards", route: "/flashcards/learn" } as const;
+/** Where "Study these cards" goes — the flp, and only the flp (see handleStudy). */
+const FLP_ROUTE = "/flashcards/learn";
 
 const CollectionViewPage: React.FC = () => {
     const navigate = useNavigate();
@@ -90,8 +89,6 @@ const CollectionViewPage: React.FC = () => {
     // property of it, and a collection always opens in its natural order.
     const [sortKey, setSortKey] = useState<VocabSortKey>(() => defaultSortKey(isDeck));
     const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
-    // Anchor for the "Study these cards" sheet.
-    const [launchAnchor, setLaunchAnchor] = useState<HTMLElement | null>(null);
     // Anchor for the deck-only overflow menu (rename / delete).
     const [deckMenuAnchor, setDeckMenuAnchor] = useState<HTMLElement | null>(null);
     const [renameOpen, setRenameOpen] = useState(false);
@@ -205,23 +202,18 @@ const CollectionViewPage: React.FC = () => {
         [user?.selectedLanguage, goals, isDeck]
     );
 
-    // ── Launch targets ────────────────────────────────────────────────────────
+    // ── Launch ────────────────────────────────────────────────────────────────
     //
-    // The flp plus every registered game, minus the ones this learner's language
-    // can't play — the same `languages` gate GamesPage applies, so Speed Reading
-    // doesn't appear for a Spanish learner only to fail on arrival.
-    const launchTargets = useMemo(() => {
-        const games = GAME_REGISTRY.filter(
-            (g) => !g.languages || !user?.selectedLanguage || g.languages.includes(user.selectedLanguage)
-        ).map((g) => ({ id: g.gameId, title: g.title, route: g.route }));
-        return [FLP_LAUNCH, ...games];
-    }, [user?.selectedLanguage]);
-
-    const handleLaunch = (route: string) => {
-        setLaunchAnchor(null);
-        // withCollectionParams is what makes the round stay inside this set; every
-        // game and the flp read the params back via collectionFromSearch.
-        navigate(withCollectionParams(route, collection));
+    // ONE destination: the flp. This button used to open a sheet listing the flp and
+    // every registered game, which put the two choices in the wrong order — a learner
+    // picks the ACTIVITY first. Choosing a card set for a GAME now happens in the
+    // Games hub header (GamesCollectionSelector), so the sheet is gone and this is a
+    // plain "study these cards as flashcards" button.
+    //
+    // withCollectionParams is still what makes the session stay inside this set; the
+    // flp reads the params back via collectionFromSearch.
+    const handleStudy = () => {
+        navigate(withCollectionParams(FLP_ROUTE, collection));
     };
 
     // ── Deck-only actions ─────────────────────────────────────────────────────
@@ -283,7 +275,7 @@ const CollectionViewPage: React.FC = () => {
                     className="collection-view__launch-button"
                     fullWidth
                     startIcon={<PlayArrowIcon />}
-                    onClick={(e) => setLaunchAnchor(e.currentTarget)}
+                    onClick={handleStudy}
                     sx={{
                         borderRadius: "8px",
                         padding: "14px 16px",
@@ -300,23 +292,6 @@ const CollectionViewPage: React.FC = () => {
                     Study these cards
                 </Button>
             </Box>
-
-            <Menu
-                className="collection-view__launch-menu"
-                anchorEl={launchAnchor}
-                open={Boolean(launchAnchor)}
-                onClose={() => setLaunchAnchor(null)}
-            >
-                {launchTargets.map((target) => (
-                    <MenuItem
-                        key={target.id}
-                        className={`collection-view__launch-option collection-view__launch-option--${target.id}`}
-                        onClick={() => handleLaunch(target.route)}
-                    >
-                        {target.title}
-                    </MenuItem>
-                ))}
-            </Menu>
 
             {/* Client-side search, sized to the 364px card grid so the input lines
                 up over the cards below it. Moved here from /decks, which now lists

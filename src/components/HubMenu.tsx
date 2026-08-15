@@ -4,7 +4,7 @@ import { styled } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 import { useSlideNavigate } from "../hooks/useSlideNavigate";
 import { useDragScroll } from "../hooks/useDragScroll";
-import { cardBaseSx } from "./hubMenuCardBase";
+import { cardBaseSx, CARD_PADDING_PX } from "./hubMenuCardBase";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../theme/scale";
@@ -62,6 +62,13 @@ const ArrayScroll = styled(Box)(() => ({
     gap: 16,
     width: "100%",
     overflowX: "auto",
+    // Must be stated explicitly: CSS computes the *other* axis to `auto` when one
+    // axis is `auto`/`scroll`, so `overflowX: auto` alone would make the strip a
+    // VERTICAL scroll container too — sub-pixel rounding of the sub-cards'
+    // `aspectRatio: 2/1` height then leaves a few px of vertical slop the user can
+    // drag the strip around in (cards wobble in place). Nothing here is meant to
+    // overflow vertically, so clipping is safe.
+    overflowY: "hidden",
     // Matches MenuCard's 10% left inset (width: 80%, margin: 0 auto) so the
     // first sub-card's left edge lines up with a regular HubMenuRow above/below
     // it; mirrored on the right so the strip stays visually centered.
@@ -110,11 +117,10 @@ const RowIconTile = styled(Box)(() => ({
     },
 }));
 
-// Left column of a card: title, subtitle, and (optionally) a chip pinned to the
-// card's bottom edge. `alignSelf: stretch` overrides cardBaseSx's
-// `alignItems: flex-start` so this column spans the card's full height — that is
-// what lets the chip's `marginTop: auto` push it to the bottom. With no chip the
-// stretch changes nothing visually (a column of top-aligned text).
+// Left column of a card: title over subtitle. `alignSelf: stretch` overrides
+// cardBaseSx's `alignItems: flex-start` so the column spans the card's full
+// height; with top-aligned text that changes nothing visually, but it keeps the
+// body from collapsing around short content.
 const RowBody = styled(Box)(() => ({
     flex: 1,
     display: "flex",
@@ -123,13 +129,38 @@ const RowBody = styled(Box)(() => ({
     alignSelf: "stretch",
 }));
 
-// Bottom-left slot of a card body. `marginTop: auto` bottom-pins it, so cards
-// with one- and two-line subtitles still line their chips up with each other.
-const CardChipSlot = styled(Box)(() => ({
+// Right-edge slot of a card, outboard of the icon tile: a full-height column
+// holding a vertical label (today only a `MarkTypeChip variant="edge"`).
+// The label inside renders at ONE fixed font size on every card; this column is
+// what has to be tall enough for it. Negative margins cancel the card's own padding
+// (CARD_PADDING_PX) on three sides so the column spans the cell's FULL height and
+// sits close to its right edge — a long track name ("RECOGNITION") needs more run
+// than the padded content box gives it, and clipped text is worse than text that
+// reaches nearer the edge.
+//
+// The label is CENTERED in that full height, so it reads as balanced against the
+// card rather than anchored to one end. Note this is what makes the corner badge a
+// live concern: CornerBadgeSlot floats at top/right 14 and is ~33px tall, while a
+// centered ~89px run on the shortest card (136px) starts ~24px down — the two can
+// touch on a card carrying both. Reserving a band for the badge is what
+// EDGE_SLOT_BADGE_INSET used to do, and it was removed for reading as too much
+// padding; if the overlap ever matters, move the badge rather than re-inset here.
+const EDGE_SLOT_CORNER_CLEARANCE = 4;
+// How much of the card's right padding the slot reclaims. Half, not all: flush to
+// the edge would collide with the corner radius and read as a printing error.
+const EDGE_SLOT_RIGHT_PULL = CARD_PADDING_PX / 2;
+const CardEdgeSlot = styled(Box)(() => ({
     display: "flex",
-    marginTop: "auto",
-    paddingTop: 6,
-    minWidth: 0,
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "stretch",
+    flexShrink: 0,
+    marginTop: -CARD_PADDING_PX,
+    marginBottom: -CARD_PADDING_PX,
+    marginRight: -EDGE_SLOT_RIGHT_PULL,
+    paddingTop: EDGE_SLOT_CORNER_CLEARANCE,
+    paddingBottom: EDGE_SLOT_CORNER_CLEARANCE,
 }));
 
 const CornerBadgeSlot = styled(Box)(() => ({
@@ -212,7 +243,7 @@ export const HubMenuGroupHeader: React.FC<{ title: string; stat?: ReactNode; cla
     </ArrayGroupHeaderRow>
 );
 
-const CardTitle: React.FC<{ title: string; subtitle?: string; chip?: ReactNode }> = ({ title, subtitle, chip }) => (
+const CardTitle: React.FC<{ title: string; subtitle?: string }> = ({ title, subtitle }) => (
     <RowBody className="hub-menu__row-body">
         <Typography
             className="hub-menu__row-title"
@@ -240,7 +271,6 @@ const CardTitle: React.FC<{ title: string; subtitle?: string; chip?: ReactNode }
                 {subtitle}
             </Typography>
         )}
-        {chip && <CardChipSlot className="hub-menu__row-chip">{chip}</CardChipSlot>}
     </RowBody>
 );
 
@@ -253,11 +283,15 @@ export const HubMenuGroup = ArrayGroup;
     strips that build their own cards but want the identical icon treatment. */
 export const HubMenuRowIconTile = RowIconTile;
 
-/** Title-over-subtitle block (left side of a hub card), plus an optional `chip`
-    bottom-pinned under them (the Games hub passes a {@link MarkTypeChip}).
-    Exported alongside {@link cardBaseSx} / {@link HubMenuRowIconTile} for custom
-    hub strips (e.g. Word Search's hub item). */
-export const HubMenuCardTitle: React.FC<{ title: string; subtitle?: string; chip?: ReactNode }> = CardTitle;
+/** Title-over-subtitle block (left side of a hub card). Exported alongside
+    {@link cardBaseSx} / {@link HubMenuRowIconTile} for custom hub strips (e.g.
+    Word Search's hub item). */
+export const HubMenuCardTitle: React.FC<{ title: string; subtitle?: string }> = CardTitle;
+
+/** Right-edge column of a hub card, rendered AFTER the icon tile — holds the
+    vertical mark-type label. Exported so custom strips (Word Search's) place
+    their label exactly where a generic {@link HubMenuRow} does. */
+export const HubMenuCardEdgeSlot = CardEdgeSlot;
 
 interface HubMenuProps {
     className?: string;
@@ -298,8 +332,9 @@ interface HubMenuRowProps {
     state?: unknown;
     /** Optional stat pinned to the card's top-right corner. */
     cornerBadge?: ReactNode;
-    /** Optional pill bottom-pinned under the subtitle — used by the Games hub to
-        name the mastery mark type a game feeds ({@link MarkTypeChip}). */
+    /** Optional vertical label run up the card's RIGHT edge, outboard of the
+        icon tile — used by the Games hub to name the mastery mark type a game
+        feeds (`<MarkTypeChip variant="edge" />`). */
     chip?: ReactNode;
     /** Per-row class (e.g. `games-page__menu-item--bubble-match`). */
     className?: string;
@@ -317,8 +352,11 @@ export const HubMenuRow: React.FC<HubMenuRowProps> = ({ to, icon, title, subtitl
     return (
     <MenuCard to={to} state={state} onClick={handleClick} bgcolor={bgColor} className={className ?? "hub-menu__row"}>
         {cornerBadge && <CornerBadgeSlot className="hub-menu__row-badge">{cornerBadge}</CornerBadgeSlot>}
-        <CardTitle title={title} subtitle={subtitle} chip={chip} />
+        <CardTitle title={title} subtitle={subtitle} />
         <RowIconTile className="hub-menu__row-icon">{icon}</RowIconTile>
+        {chip && (
+            <CardEdgeSlot className="hub-menu__row-chip">{chip}</CardEdgeSlot>
+        )}
     </MenuCard>
     );
 };
@@ -332,9 +370,9 @@ export interface HubMenuArraySubItem {
     bgColor: string;
     state?: unknown;
     cornerBadge?: ReactNode;
-    /** Optional pill bottom-pinned under the subtitle — per SUB-CARD, so a strip
-        whose choices differ (e.g. Word Search's modes feed different mastery
-        tracks) can label each one accurately. */
+    /** Optional right-edge vertical label — per SUB-CARD, so a strip whose
+        choices differ (e.g. Word Search's modes feed different mastery tracks)
+        can label each one accurately. */
     chip?: ReactNode;
 }
 
@@ -378,8 +416,11 @@ export const HubMenuArrayItem: React.FC<HubMenuArrayItemProps> = ({ items, heade
                         className="hub-menu__array-item-card"
                     >
                         {item.cornerBadge && <CornerBadgeSlot className="hub-menu__array-item-badge">{item.cornerBadge}</CornerBadgeSlot>}
-                        <CardTitle title={item.title} subtitle={item.subtitle} chip={item.chip} />
+                        <CardTitle title={item.title} subtitle={item.subtitle} />
                         <RowIconTile className="hub-menu__array-item-icon">{item.icon}</RowIconTile>
+                        {item.chip && (
+                            <CardEdgeSlot className="hub-menu__array-item-chip">{item.chip}</CardEdgeSlot>
+                        )}
                     </ArraySubCard>
                 );
             })}

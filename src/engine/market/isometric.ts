@@ -112,14 +112,63 @@ export interface CellWindow {
   maxCol: number;
   minRow: number;
   maxRow: number;
+  /**
+   * Bounds on the cell-space DIAGONALS, which are what the viewport actually constrains.
+   *
+   * A screen-axis-aligned rectangle is not axis-aligned in cell space — the iso basis is rotated,
+   * so the visible region is a DIAMOND and the `minCol…maxRow` box above is its bounding box,
+   * roughly TWICE its area. Culling on the box alone therefore builds about half its tiles
+   * off-screen.
+   *
+   * The diamond is axis-aligned in the rotated coordinates, though: `isoToScreen` is
+   * `x = (col − row)·W/2`, `y = −(col + row)·H/2`, so a screen rect bounds exactly
+   * `diag = col − row` (the screen-x axis) and `sum = col + row` (the screen-y/depth axis).
+   * Two comparisons on those recover the true visible set — see
+   * {@link ../farmTerrain buildEditorField}, which converts them into an exact per-column row span
+   * so the off-screen half is never iterated at all.
+   *
+   * Kept as plain numbers (not a closure) so callers can still memoise on the window's contents.
+   */
+  minDiag: number;
+  maxDiag: number;
+  minSum: number;
+  maxSum: number;
 }
 
 /**
  * Compute z-index for a pedestrian. Same painter's rule as computeLayerZ;
  * pedestrians always render in the `entity` slot.
+ *
+ * ⚠️ THE DEPTH IS QUANTISED TO THE NEAREST CELL, AND THAT IS PERFORMANCE-CRITICAL.
+ *
+ * A walker's `isoX`/`isoY` are LERPED across a step, so they are fractional on almost every frame.
+ * Feeding that straight into `zIndex` produced a different value each frame, and in Pixi 8 writing
+ * `zIndex` runs `depthOfChildModified()`, which sets BOTH `parent.sortDirty` and
+ * `parentRenderGroup.structureDidChange`. The first re-sorts every child of the camera container;
+ * the second makes the renderer throw away and rebuild the render group's whole instruction set.
+ * Since the walkers share that container with the terrain, ~8 pedestrians were forcing a full sort
+ * and a full instruction rebuild across THOUSANDS of terrain sprites, 60 times a second — the
+ * dominant cost of nmp's lag, and one the React-side memoisation could never touch.
+ *
+ * Rounding fixes it because Pixi's `zIndex` setter early-returns when the value is unchanged: the
+ * depth now changes only when a walker actually crosses a cell boundary (a few times per second
+ * per walker), so the overwhelming majority of frames dirty nothing at all. Positions still update
+ * every frame — that path (`_onUpdate` → `childrenRenderablesToUpdate`) is the cheap one and does
+ * NOT rebuild instructions.
+ *
+ * Rounding is also the more CORRECT sort, not merely a cheaper one. For a walker standing on a
+ * cell of depth `d`, the painter's rule requires `z` to sit above that cell's own terrain (which
+ * tops out at `-d + 0.15`, its decor slot) and below the next cell toward the camera (which starts
+ * at `-d + 0.5`). `-d + 0.25` is exactly that gap. An unrounded mid-step depth of `d + 0.5` gives
+ * `-d - 0.25`, which falls *inside* the own-cell terrain range — below the grass cap at `-d` — so
+ * the walker's feet were being drawn UNDER the very tile it was standing on for the middle of
+ * every step.
+ *
+ * `Math.round` (rather than flooring, or taking the destination tile) keeps the error symmetric:
+ * the walker sorts against the nearer of the two cells it straddles.
  */
 export function computePedestrianZ(isoX: number, isoY: number): number {
-  return -(isoX + isoY) + RENDER_SLOT_Z.entity;
+  return -Math.round(isoX + isoY) + RENDER_SLOT_Z.entity;
 }
 
 // ── Sprite-strip slicing ─────────────────────────────────────────────────────

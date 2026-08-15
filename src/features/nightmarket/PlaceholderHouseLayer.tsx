@@ -97,5 +97,6 @@ function PlaceholderHouseLayer({ placeholders }: { placeholders: PlacedPlacehold
   );
 }
 
-/** Memoised for the same reason as {@link ./EditorTerrainLayer} — nmp re-renders its scene every frame. */
+/** Memoised for the same reason as {@link ./EditorTerrainLayer} — nmp re-renders its scene on every
+ *  pan, and once per frame while a pedestrian camera lock is active. */
 export default memo(PlaceholderHouseLayer);

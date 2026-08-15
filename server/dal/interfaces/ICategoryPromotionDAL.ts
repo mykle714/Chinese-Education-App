@@ -40,4 +40,23 @@ export interface ICategoryPromotionDAL {
     windowDays: number,
     bars?: MasteryBarId[]
   ): Promise<Map<string, number>>;
+
+  /**
+   * Band-steps climbed inside the window for MANY users, broken out by
+   * (user, language, bar) — one grouped query, never a per-user loop.
+   *
+   * Deliberately NOT bar-filtered: which bars count depends on each user's own goal
+   * flags (migration 143), and this returns rows for several users at once, so the
+   * caller folds the buckets against each person's `activeBars`. Feeds the friends
+   * leaderboard (docs/FRIENDS_FEATURE.md § Leaderboard).
+   */
+  getVelocityBuckets(userIds: string[], windowDays: number): Promise<VelocityBucket[]>;
+}
+
+/** One (user, language, bar) group of band-steps inside the velocity window. */
+export interface VelocityBucket {
+  userId: string;
+  language: string;
+  bar: MasteryBarId;
+  bandsClimbed: number;
 }

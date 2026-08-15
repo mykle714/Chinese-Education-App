@@ -27,6 +27,7 @@ import { useConfirmation } from "../contexts/ConfirmationContext";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCategoryCounts } from "../hooks/useCategoryCounts";
 import { useVelocity } from "../hooks/useVelocity";
+import InfoTip from "../components/InfoTip";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT, TRACKING } from "../theme/scale";
@@ -67,9 +68,9 @@ const FormSection = styled(Box)(() => ({
     gap: 12,
 }));
 
-// Velocity stat card — one big number with an overline label and a caption
-// explaining the unit. Sits directly under the deck buckets, sharing their
-// sectionCard fill so the two read as one stats block.
+// Velocity stat card — one big number under an overline label, with a tappable ⓘ
+// carrying the explanation of the unit (see InfoTip). Sits directly under the deck
+// buckets, sharing their sectionCard fill so the two read as one stats block.
 const VelocityCard = styled(Box)(() => ({
     display: "flex",
     flexDirection: "column",
@@ -270,19 +271,33 @@ function AccountPage() {
                         <Box className="account-page__velocity" sx={{ minHeight: 92 }}>
                             {velocityLoaded && (
                                 <VelocityCard className="account-page__velocity-card">
-                                    <Typography
-                                        className="account-page__velocity-label"
-                                        sx={{
-                                            fontSize: SIZE.caption,
-                                            fontWeight: WEIGHT.semibold,
-                                            letterSpacing: TRACKING.caps,
-                                            textTransform: "uppercase",
-                                            color: COLORS.textSecondary,
-                                            fontFamily: FONTS.sans,
-                                        }}
+                                    {/* Label + the ⓘ that explains the unit. The explanation
+                                        used to be a permanent caption under the number; it is
+                                        one-time information, so it now costs a tap instead of
+                                        a line of small print on every visit. */}
+                                    <Box
+                                        className="account-page__velocity-label-row"
+                                        sx={{ display: "flex", alignItems: "center", gap: 0.25 }}
                                     >
-                                        Velocity
-                                    </Typography>
+                                        <Typography
+                                            className="account-page__velocity-label"
+                                            sx={{
+                                                fontSize: SIZE.caption,
+                                                fontWeight: WEIGHT.semibold,
+                                                letterSpacing: TRACKING.caps,
+                                                textTransform: "uppercase",
+                                                color: COLORS.textSecondary,
+                                                fontFamily: FONTS.sans,
+                                            }}
+                                        >
+                                            Velocity
+                                        </Typography>
+                                        <InfoTip
+                                            className="account-page__velocity-info"
+                                            ariaLabel="What velocity means"
+                                            text={`Mastery level-ups in the last ${windowDays} days`}
+                                        />
+                                    </Box>
                                     <Typography
                                         className="account-page__velocity-value"
                                         sx={{
@@ -294,17 +309,6 @@ function AccountPage() {
                                         }}
                                     >
                                         {velocity}
-                                    </Typography>
-                                    <Typography
-                                        className="account-page__velocity-caption"
-                                        sx={{
-                                            fontSize: SIZE.caption,
-                                            color: COLORS.textSecondary,
-                                            fontFamily: FONTS.sans,
-                                            textAlign: "center",
-                                        }}
-                                    >
-                                        {`level-ups in the last ${windowDays} days`}
                                     </Typography>
                                 </VelocityCard>
                             )}

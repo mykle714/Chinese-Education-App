@@ -16,9 +16,10 @@ import { CLEAR_BANNER_MS } from "./constants";
  *
  * Decorative in the strict sense — `pointerEvents: "none"` so it can never
  * swallow a tap on a card fading in underneath it, and `aria-hidden` because it
- * carries no information a screen reader needs. Same contract as Speed Reading's
- * float indicator (`SpeedReadingFloatIndicator.tsx`), which this deliberately
- * mirrors so the two games' transient feedback reads as one system.
+ * carries no information a screen reader needs. It mirrored the same contract as
+ * Speed Reading's float indicator (`SpeedReadingFloatIndicator.tsx`) — that
+ * component has since been deleted, so this is now the only transient
+ * tap-anchored feedback in the games.
  *
  * Takes NO props: the board gives it a `key` that changes on every clear, which
  * is what re-mounts it and replays the animation. A prop would be redundant —

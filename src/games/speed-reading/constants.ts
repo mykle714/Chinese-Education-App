@@ -1,3 +1,4 @@
+import type { CPCDSize } from "../../components/ForeignText";
 import type { MarkType } from "../../types";
 
 /** `wins` table key, shared with the Games hub's badge. */
@@ -37,6 +38,22 @@ export const WIN_LEVEL = 1;
 export const TARGET_ROUNDS = 20;
 
 /**
+ * How many of those rounds are SENTENCE rounds, taken from the END of the run
+ * (rounds 19 and 20 of 20).
+ *
+ * The finale escalates from "read this word" to "read this word in context":
+ * both options are the same example sentence, differing at one character inside
+ * the target word, and the prompt shows the sentence's translation, its pinyin,
+ * and narrates the sentence rather than the bare word.
+ *
+ * Their cards are RESERVED AT LOAD from the initial pool — the only cards
+ * eligible are ones whose det row already carries an example sentence containing
+ * the headword — so the finale is decided before the run starts and never
+ * depends on what a mid-run top-up returns. See useSpeedReadingQueue.
+ */
+export const SENTENCE_ROUNDS = 2;
+
+/**
  * Seconds added to the final time for each wrong answer, in ms.
  *
  * With a count-up clock, an incorrect tap is otherwise the FASTEST way through a
@@ -48,45 +65,33 @@ export const WRONG_PENALTY_MS = 3_000;
 /**
  * Green/red flash before the next round loads.
  *
- * Shortened from 600ms → 280 → 180 once the answer sound and the tap-anchored
- * float indicator landed: with an instant audio cue and feedback appearing where
- * the eye already is, the player no longer needs to travel to the button colours
- * to learn the outcome, so the pause can be much tighter. The clock does not stop
+ * Shortened from 600ms → 280 → 180 once the answer SOUND landed: an instant
+ * audio cue tells the player the outcome without their having to travel to a
+ * colour at all, so the pause can be much tighter. The clock does not stop
  * during feedback, so this pause is charged to the player 20 times a run — every
  * ms cut here comes straight off every final time.
  *
- * ⚠️ This constant is NOT the whole gap the player feels. Two other sources used
- * to dominate it, both now fixed: the next round's glyphs loading on mount
+ * ⚠️ The visual half of that argument got weaker when the tap-anchored float
+ * indicator was removed: the only thing left to see is the tapped half's tint,
+ * and 180ms is short for a colour change to register. If the reveal starts
+ * feeling unreadable, LENGTHENING this is the fix — the sound is doing most of
+ * the work at present.
+ *
+ * ⚠️ This constant is also NOT the whole gap the player feels. Two other sources
+ * used to dominate it, both now fixed: the next round's glyphs loading on mount
  * (SpeedReadingPage prebuilds and prefetches one round ahead) and the option
- * button's 140ms colour fade back to neutral (SpeedReadingOption transitions
- * into feedback only). Re-check those before shortening this further.
+ * colour's 140ms fade back to neutral (SpeedReadingTapZone transitions into
+ * feedback only). Re-check those before shortening this further.
  */
 export const FEEDBACK_MS = 180;
 
-/**
- * Lifetime of the floating ✓/✗ that rises from the tap point.
- *
- * Intentionally LONGER than FEEDBACK_MS: the indicator is absolutely positioned
- * over the play area and keeps animating across the round change, so the
- * feedback reads as continuous instead of being cut off mid-float.
- */
-export const FLOAT_INDICATOR_MS = 650;
+// The floating ✓/✗ that used to rise from the tap point — and the red +3s it
+// carried on a wrong answer — was REMOVED, along with FLOAT_INDICATOR_MS,
+// PENALTY_INDICATOR_MS and indicatorLifetime(). The tapped half's green/red tint
+// is now the only visual answer cue. ⚠️ Nothing shows the WRONG_PENALTY_MS
+// charge at the moment it is incurred; it is visible only as the clock being
+// larger than the elapsed time. See docs/SPEED_READING_GAME.md.
 
-/**
- * Lifetime of a float that also carries the red **+3s**.
- *
- * Longer than the bare ✓/✗: a glyph is recognised at a glance, but a number has
- * to be READ, and 650ms of a rising, fading element is not enough to be sure the
- * player registered what the mistake cost. This is the ONLY thing the penalty
- * lengthens — it is not a pause, the game advances after FEEDBACK_MS regardless
- * and the indicator finishes floating over the next round.
- */
-export const PENALTY_INDICATOR_MS = 1_000;
-
-/** How long a given float indicator lives, in ms. */
-export function indicatorLifetime(kind: "correct" | "wrong"): number {
-    return kind === "correct" ? FLOAT_INDICATOR_MS : PENALTY_INDICATOR_MS;
-}
 /** Cards fetched on game load. */
 export const INITIAL_BATCH = 20;
 /** Queue length that triggers a top-up. */
@@ -98,31 +103,53 @@ export const TOPUP_BATCH = 5;
 // temporary cards — CARD_BASELINES['speed-reading'] in server/contracts/wire.ts.
 // See docs/PROVISIONAL_CARDS.md.
 
-// ── Option-button geometry ──────────────────────────────────────────────────
-// The two options sit SIDE BY SIDE, so each gets about half the row. Glyph size
-// is measured against the real row width rather than tabulated by word length
-// (see SpeedReadingPage's `glyphSize`), and these are the fixed costs that come
-// off that width first. They MUST match the sx values in SpeedReadingOption —
-// they are the same numbers expressed for arithmetic instead of for CSS.
+// ── Tap zones and option words ──────────────────────────────────────────────
+// The two controls are the LEFT and RIGHT HALVES of the play area
+// (SpeedReadingTapZone), with each option's word drawn centred on its half
+// (SpeedReadingOptionWord). These are the shared numbers between those two.
 
-/** Gap between the two option buttons, px. Matches the options row's `gap: 1.5`. */
-export const OPTION_ROW_GAP_PX = 12;
-/** Horizontal padding inside one option button, px, per side. */
-export const OPTION_PADDING_X_PX = 8;
-/** Gap between adjacent glyphs inside a button, px. Matches `gap: 0.5`. */
-export const OPTION_CHAR_GAP_PX = 4;
-/** Floor, so a 4-character word stays legible on a narrow phone. */
-export const MIN_GLYPH_PX = 30;
-/** Ceiling, so a single character doesn't balloon on a tablet. */
-export const MAX_GLYPH_PX = 120;
 /**
- * Minimum option-button height, px.
+ * Fill of the TAPPED half while it is showing answer feedback — green if the
+ * pick was right, red if it was wrong — for the FEEDBACK_MS window. The other
+ * half is never tinted (see SpeedReadingPage.feedbackFor).
  *
- * Side-by-side glyphs are small, and height tracks the glyph — without a floor a
- * 4-character word would produce a button too short to be a comfortable tap
- * target.
+ * Held at the old option cards' 0.14 even though the tinted area is now half the
+ * screen: with the float indicator gone this tint is the ONLY visual answer cue,
+ * and only one half of the two ever lights, so the total colour on screen is
+ * comparable to what the two cards used to produce.
  */
-export const MIN_OPTION_HEIGHT_PX = 92;
+export const ZONE_TINT_CORRECT = "rgba(5, 199, 147, 0.14)";
+export const ZONE_TINT_WRONG = "rgba(239, 71, 111, 0.14)";
+/**
+ * Hairline down the middle, so the two halves read as two targets before the
+ * player has tapped either. Deliberately fainter than `COLORS.border` — it is a
+ * seam, not a frame.
+ */
+export const ZONE_DIVIDER = "rgba(255, 255, 255, 0.08)";
+/** Horizontal breathing room around one option word, px, per side. */
+export const OPTION_WORD_PADDING_X_PX = 12;
+/**
+ * cpcd size the option word is drawn at — the top of the ladder (`xl`,
+ * ~51px glyphs), because reading these two words quickly IS the game.
+ *
+ * Fixed rather than fitted: at half the screen a 3–4 character word is wider
+ * than its half, and it WRAPS at full size instead of shrinking. Both options
+ * are the same length (the one-character invariant), so they always wrap the
+ * same way and neither side can hint at the answer.
+ */
+export const OPTION_GLYPH_SIZE: CPCDSize = "xl";
+
+/**
+ * cpcd size a SENTENCE option is drawn at. Much smaller than the word rounds'
+ * `xl` for the obvious reason: a sentence is 8–14 characters and each option
+ * still only gets half the screen, so at `xl` it would wrap to five or six lines
+ * and the two halves would stop being scannable side by side.
+ *
+ * `sm` (32px columns) fits ~10 characters per line in a half, i.e. most sentences
+ * on one or two lines. The pair still wraps identically — the options differ by a
+ * single character, so their line breaks are always in the same places.
+ */
+export const OPTION_SENTENCE_GLYPH_SIZE: CPCDSize = "sm";
 
 /**
  * Pool distribution, same shape as Bubble Match's. Bucketed by the READING track

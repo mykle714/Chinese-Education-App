@@ -7,6 +7,7 @@ import type { SendFriendRequestBody } from '../types/friends.js';
  * Friend-graph HTTP layer (docs/FRIENDS_FEATURE.md).
  *
  *   GET    /api/friends                        → FriendSummary[]
+ *   GET    /api/friends/leaderboard            → FriendLeaderboardResponse
  *   DELETE /api/friends/:friendUserId          → 204 (unfriend)
  *   GET    /api/friends/requests/incoming      → FriendRequestSummary[]
  *   GET    /api/friends/requests/outgoing      → FriendRequestSummary[]
@@ -29,6 +30,17 @@ export class FriendsController {
       res.json(await this.friendsService.listFriends(userId));
     } catch (error) {
       handleControllerError(error, res, 'FriendsController.getFriends');
+    }
+  }
+
+  /** GET /api/friends/leaderboard */
+  async getLeaderboard(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      res.json(await this.friendsService.getLeaderboard(userId));
+    } catch (error) {
+      handleControllerError(error, res, 'FriendsController.getLeaderboard');
     }
   }
 

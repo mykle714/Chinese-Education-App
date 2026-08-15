@@ -1,8 +1,10 @@
 import { memo, useMemo } from 'react';
-import { buildEditorField, padTerrainField, type TerrainField } from '../../engine/market/farmTerrain';
+import { buildEditorField, compileMasks, padTerrainField, type TerrainField } from '../../engine/market/farmTerrain';
 import { stitchedToEditorMasks, type StitchedWorld } from '../../engine/market/templateStitch';
 import type { CellWindow } from '../../engine/market/isometric';
 import EditorTerrainLayer from './EditorTerrainLayer';
+import TerrainChunkLayer from './TerrainChunkLayer';
+import { isChunkBakingActive } from '../../engine/market/chunkGrid';
 
 /**
  * TemplateTerrainLayer — the RUNTIME terrain renderer for a stitched template world
@@ -38,6 +40,8 @@ function TemplateTerrainLayer({
   field,
   apronPad = 0,
   cullWindow,
+  chunked = false,
+  camera,
 }: {
   world: StitchedWorld;
   width: number;
@@ -47,10 +51,23 @@ function TemplateTerrainLayer({
   apronPad?: number;
   /** Visible cell window; omitted ⇒ build the whole (padded) field. */
   cullWindow?: CellWindow;
+  /**
+   * Route GROUND through the baked chunk cache instead of per-cell sprites
+   * (docs/NIGHT_MARKET_TERRAIN_CHUNKING.md). Requires {@link camera}.
+   *
+   * OFF by default. This is a throughput change with a visual failure mode that
+   * no automated check can see (chunk seams), so it ships behind the nmp debug
+   * menu until it has been eyeballed at several zoom levels.
+   */
+  chunked?: boolean;
+  /** Camera state, needed only by the chunk cache to decide which chunks are resident. */
+  camera?: { zoom: number; pan: { x: number; y: number }; viewportW: number; viewportH: number };
 }) {
   // Masks are per-WORLD, so they survive pan/zoom. Split from the tile build below so dragging the
   // camera does not re-stitch the template masks — only the windowed tile list is rebuilt.
-  const masks = useMemo(() => stitchedToEditorMasks(world), [world]);
+  // Compiled to packed cell ids in the SAME memo: the tile build probes these ~20–25× per visible
+  // cell, so it must never see the string-keyed form (see farmTerrain § CompiledMasks).
+  const masks = useMemo(() => compileMasks(stitchedToEditorMasks(world)), [world]);
 
   // `boundless`: membership is infinite (so the ring's outer cells autotile as interior ground),
   // while the returned span keeps iteration to the ring. The backdrop covers everything beyond.
@@ -67,9 +84,36 @@ function TemplateTerrainLayer({
     [padded, masks, cullWindow?.minCol, cullWindow?.maxCol, cullWindow?.minRow, cullWindow?.maxRow],
   );
 
+  // Baked path: ground comes from the chunk cache (one quad per 256px chunk), and
+  // only the tall decor stays as per-cell sprites so it can still sort against
+  // pedestrians. See TerrainChunkLayer's header for why the split is necessary.
+  //
+  // The chunk layer no-ops above native zoom, so `part="decor"` alone would leave
+  // the ground missing when the camera is close — hence BOTH parts render live
+  // there. `TerrainChunkLayer` owns that threshold; this just mirrors it.
+  if (chunked && camera) {
+    const baking = isChunkBakingActive(camera.zoom);
+    return (
+      <>
+        <TerrainChunkLayer
+          masks={masks}
+          fieldWidth={padded.width}
+          fieldHeight={padded.height}
+          field={padded.field}
+          zoom={camera.zoom}
+          pan={camera.pan}
+          viewportW={camera.viewportW}
+          viewportH={camera.viewportH}
+        />
+        <EditorTerrainLayer tiles={tiles} part={baking ? 'decor' : 'all'} />
+      </>
+    );
+  }
+
   return <EditorTerrainLayer tiles={tiles} />;
 }
 
-/** Memoised: nmp's scene re-renders every frame for the pedestrians, and the terrain below is the
- *  app's most expensive subtree. `cullWindow` is quantised so its identity changes rarely. */
+/** Memoised: the terrain below is the app's most expensive subtree, and nmp's scene re-renders on
+ *  every pan (and once per frame while a pedestrian camera lock is active). `cullWindow` is
+ *  quantised so its identity changes rarely. */
 export default memo(TemplateTerrainLayer);

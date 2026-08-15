@@ -200,13 +200,22 @@ const WINDOW_QUANTUM_CELLS = 8;
 /**
  * The cell-space window currently on screen, for terrain culling.
  *
- * Inverse of the camera transform: the viewport's four screen corners map back to camera-local px
- * (`(screen − viewportW/2 − pan)/zoom`), then to cell space. Because the iso basis is rotated, the
- * cell-space extremes come from the CORNERS of the screen rect, not from its edges — hence all four
- * are converted and min/maxed rather than transforming two points.
+ * Inverse of the camera transform: the viewport's screen rect maps back to camera-local px
+ * (`(screen − viewportW/2 − pan)/zoom`), then to cell space.
  *
- * The result is padded by {@link WINDOW_MARGIN_CELLS} and snapped outward to
- * {@link WINDOW_QUANTUM_CELLS}, so callers can memoise on its four numbers and rebuild rarely.
+ * The rect is axis-aligned on SCREEN, and `isoToScreen` is `x = (col − row)·W/2`,
+ * `y = −(col + row)·H/2` — so what it bounds directly is the pair of cell-space DIAGONALS
+ * `diag = col − row` and `sum = col + row`, one per screen axis. Those bounds are the exact
+ * visible region (a diamond in `(col, row)`); `minCol…maxRow` is merely its bounding box, about
+ * twice the area. Both are returned: the box bounds iteration, the diagonals trim it back to the
+ * diamond — see {@link ../farmTerrain buildEditorField}.
+ *
+ * Every bound is padded by {@link WINDOW_MARGIN_CELLS} and snapped outward to
+ * {@link WINDOW_QUANTUM_CELLS}, so callers can memoise on the window's numbers and rebuild rarely.
+ * The diagonals are padded by `2 × MARGIN`: a unit step in `col` or `row` moves `diag`/`sum` by
+ * one each, so a margin of M cells in cell space is a margin of 2M along a diagonal. Under-padding
+ * here would clip the diamond INSIDE the box the box-margin already covers, which reads as terrain
+ * missing along the screen edges.
  */
 export function visibleCellWindow(
   pan: Pan,
@@ -218,28 +227,45 @@ export function visibleCellWindow(
   const halfH = TILE_HEIGHT / 2;
 
   let minCol = Infinity, maxCol = -Infinity, minRow = Infinity, maxRow = -Infinity;
+  let minDiag = Infinity, maxDiag = -Infinity, minSum = Infinity, maxSum = -Infinity;
   for (const [sx, sy] of [[0, 0], [viewportW, 0], [0, viewportH], [viewportW, viewportH]] as const) {
     // Screen px → camera-local (unscaled) px.
     const localX = (sx - viewportW / 2 - pan.x) / zoom;
     const localY = (sy - viewportH / 2 - pan.y) / zoom;
     // Camera-local px → cell space (inverse of isoToScreen).
-    const u = localX / halfW;   // = col − row
+    const u = localX / halfW;   // = col − row  (the `diag` axis)
     const v = localY / halfH;   // = −(col + row)
+    const sum = -v;             // = col + row  (the `sum` / depth axis)
     const col = (u - v) / 2;
     const row = (-u - v) / 2;
     if (col < minCol) minCol = col;
     if (col > maxCol) maxCol = col;
     if (row < minRow) minRow = row;
     if (row > maxRow) maxRow = row;
+    if (u < minDiag) minDiag = u;
+    if (u > maxDiag) maxDiag = u;
+    if (sum < minSum) minSum = sum;
+    if (sum > maxSum) maxSum = sum;
   }
 
-  const snapDown = (n: number) => Math.floor((n - WINDOW_MARGIN_CELLS) / WINDOW_QUANTUM_CELLS) * WINDOW_QUANTUM_CELLS;
-  const snapUp = (n: number) => Math.ceil((n + WINDOW_MARGIN_CELLS) / WINDOW_QUANTUM_CELLS) * WINDOW_QUANTUM_CELLS;
+  const snap = (n: number, margin: number, dir: -1 | 1) => {
+    const round = dir < 0 ? Math.floor : Math.ceil;
+    return round((n + dir * margin) / WINDOW_QUANTUM_CELLS) * WINDOW_QUANTUM_CELLS;
+  };
+  const snapDown = (n: number) => snap(n, WINDOW_MARGIN_CELLS, -1);
+  const snapUp = (n: number) => snap(n, WINDOW_MARGIN_CELLS, 1);
+  // See the docblock: a cell-space margin of M is a margin of 2M along a diagonal.
+  const snapDiagDown = (n: number) => snap(n, WINDOW_MARGIN_CELLS * 2, -1);
+  const snapDiagUp = (n: number) => snap(n, WINDOW_MARGIN_CELLS * 2, 1);
 
   return {
     minCol: snapDown(minCol),
     maxCol: snapUp(maxCol),
     minRow: snapDown(minRow),
     maxRow: snapUp(maxRow),
+    minDiag: snapDiagDown(minDiag),
+    maxDiag: snapDiagUp(maxDiag),
+    minSum: snapDiagDown(minSum),
+    maxSum: snapDiagUp(maxSum),
   };
 }

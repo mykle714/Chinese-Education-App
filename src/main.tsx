@@ -1,4 +1,8 @@
-import 'pixi.js/unsafe-eval'
+// NOTE: `pixi.js/unsafe-eval` deliberately does NOT live here. A static import in
+// the entry module pinned the whole PIXI runtime into the main chunk for every
+// user and defeated code-splitting of the Night Market viewers. It now lives in
+// src/features/nightmarket/pixiRuntime.ts, imported by the four modules that
+// actually construct a renderer.
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'

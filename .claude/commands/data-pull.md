@@ -11,6 +11,11 @@ deprecated — do not push these tables up anymore; refresh dev *down* with this
 Structurally this mirrors [`/template-pull`](./template-pull.md) (Prod half = SOURCE,
 Local half = TARGET, transport = Git LFS because you have no cross-machine SSH).
 
+> **Not this skill:** prod's client-diagnostics telemetry
+> (`client-perf-*.jsonl` / `client-error-*.jsonl`) lives on the prod **host
+> filesystem**, not in Postgres — nothing here reaches it. Use
+> [`/diagnostics-pull`](./diagnostics-pull.md).
+
 ## Tables (restored in this order)
 
 | # | Table | Dump file | Restore mode into local |

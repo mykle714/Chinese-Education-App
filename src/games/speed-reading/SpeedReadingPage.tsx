@@ -18,33 +18,30 @@ import { useGameWins } from "../../hooks/useGameWins";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
-import SpeedReadingOption, { type OptionFeedback } from "./SpeedReadingOption";
+import SpeedReadingOptionText from "./SpeedReadingOptionText";
+import SpeedReadingTapZone from "./SpeedReadingTapZone";
 import SpeedReadingPrompt from "./SpeedReadingPrompt";
-import SpeedReadingFloatIndicator, { type FloatIndicator, type FloatKind } from "./SpeedReadingFloatIndicator";
-import { loadGlyph } from "../../components/handwriting/GlyphSvg";
 import { useSidewaysStage } from "../runtime/useSidewaysStage";
 import { playCorrectSound, playWrongSound } from "../runtime/gameSounds";
-import { buildRound } from "./buildRound";
+import { buildRound, buildSentenceRound } from "./buildRound";
+import { roundPrompt } from "./roundPrompt";
 import { useSpeedReadingQueue } from "./useSpeedReadingQueue";
 import {
     FEEDBACK_MS,
     GAME_KEY,
     MARK_TYPE,
-    MAX_GLYPH_PX,
     MEDAL_THRESHOLDS,
-    MIN_GLYPH_PX,
-    OPTION_CHAR_GAP_PX,
-    OPTION_PADDING_X_PX,
-    OPTION_ROW_GAP_PX,
     MEDAL_LABEL,
+    OPTION_GLYPH_SIZE,
+    OPTION_SENTENCE_GLYPH_SIZE,
+    SENTENCE_ROUNDS,
     TARGET_ROUNDS,
     WIN_LEVEL,
     WRONG_PENALTY_MS,
     formatClock,
-    indicatorLifetime,
     medalFor,
 } from "./constants";
-import type { Phase, Round } from "./types";
+import type { OptionFeedback, Phase, Round } from "./types";
 
 /**
  * Speed Reading — read the pinyin and definition, then tap the word that matches.
@@ -67,9 +64,30 @@ import type { Phase, Round } from "./types";
  * WRONG_PENALTY_MS instead of being replayed, because with a count-up clock a
  * blind tap is otherwise the fastest possible round.
  *
+ * ── The last two rounds are SENTENCES ───────────────────────────────────────
+ * The final SENTENCE_ROUNDS (2) rounds escalate from "read this word" to "read
+ * this word in context": both options are the same EXAMPLE SENTENCE, differing
+ * at one character inside the target word, and the prompt shows the sentence's
+ * pinyin and translation and narrates the sentence. Same controls, same
+ * one-character invariant, more to scan — so the run ends on its hardest reading.
+ *
+ * Their cards are RESERVED AT LOAD (useSpeedReadingQueue), from the initial pool
+ * only, and only from cards whose det row carries an example sentence containing
+ * the headword. The finale therefore never depends on what a mid-run top-up
+ * returns. A round's kind is decided by its ORDINAL, and the ordinal comes from
+ * `answeredRef` (see `nextRound`) — the prebuilt round carries the ordinal it was
+ * made for and is discarded if the run moves under it.
+ *
+ * ── Tap your side of the screen ─────────────────────────────────────────────
+ * The controls are the LEFT and RIGHT HALVES of the play area, not the words:
+ * the whole left half picks option A, the whole right half picks option B, and
+ * the tapped half tints green or red. The words are display-only labels sitting
+ * in a `pointer-events: none` layer above the zones (SpeedReadingTapZone,
+ * SpeedReadingOptionWord).
+ *
  * ── There is NO Skip ────────────────────────────────────────────────────────
- * The two options are the only controls on the screen; every round must be
- * answered. Skip existed under the one-minute format, where ducking a hard word
+ * The two halves are the only controls on the screen (bar the prompt's speaker);
+ * every round must be answered. Skip existed under the one-minute format, where ducking a hard word
  * cost you the seconds it took to decide to duck it. In a race that logic
  * inverts: skipping would be the cheapest way past a word you cannot read, i.e.
  * a free reroll, and pricing it (a penalty) only turns it into a strictly worse
@@ -81,12 +99,16 @@ import type { Phase, Round } from "./types";
  * Feedback time is charged to the player. That is what makes FEEDBACK_MS a real
  * cost rather than free reading time.
  *
- * ── Answer feedback: sound + a float from the tap point ─────────────────────
- * A pick fires three things at once: a synthesized rising/falling blip
- * (games/runtime/gameSounds), a ✓/✗ that floats up from the exact tap
- * coordinates, and the button colour. The first two land where attention
- * already is — the ear and the tap point — which is what lets FEEDBACK_MS stay
- * as short as it is.
+ * ── Answer feedback: a sound and the tapped half's tint ─────────────────────
+ * A pick fires two things at once: a synthesized rising/falling blip
+ * (games/runtime/gameSounds) and a green/red tint over the half that was
+ * tapped. The sound is what lets FEEDBACK_MS stay as short as it is — it needs
+ * no eye movement at all.
+ *
+ * A ✓/✗ used to float up from the exact tap coordinates, carrying a red +3s on a
+ * wrong answer; it was removed by request. ⚠️ Nothing now shows the penalty at
+ * the moment it is charged — it is only visible as the clock running ahead of
+ * the elapsed time.
  *
  * ── Marks ───────────────────────────────────────────────────────────────────
  * Emits READING marks, positive AND negative. This is the app's first source of
@@ -121,8 +143,6 @@ const SpeedReadingPage: React.FC = () => {
     /** Accumulated WRONG_PENALTY_MS, one charge per wrong answer. */
     const [penaltyMs, setPenaltyMs] = useState(0);
     const [popupMinimized, setPopupMinimized] = useState(false);
-    /** The ✓/✗ currently floating up from the last tap, or null. */
-    const [floatIndicator, setFloatIndicator] = useState<FloatIndicator | null>(null);
     /** Bumped by Play Again; drives the queue's reload and re-arms the run. */
     const [runId, setRunId] = useState(0);
 
@@ -145,10 +165,6 @@ const SpeedReadingPage: React.FC = () => {
      */
     const answeredRef = useRef(0);
     const penaltyRef = useRef(0);
-    /** Removes the float indicator once its animation has finished. */
-    const floatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    /** Monotonic id, so each pick mounts a fresh element and restarts the CSS. */
-    const floatIdRef = useRef(0);
     /**
      * Sideways rendering. Rotates the whole game 90° whenever its container is
      * taller than wide, which is what makes device rotation a non-event — see
@@ -156,48 +172,34 @@ const SpeedReadingPage: React.FC = () => {
      */
     const stage = useSidewaysStage();
 
-    /** The rotated stage element — the float indicator's positioning parent. */
-    const contentRef = useRef<HTMLDivElement | null>(null);
-
-    // ── Measured option row ──────────────────────────────────────────────────
-    /**
-     * Live width of the two-button row, in px. Drives `glyphSize`, which cannot
-     * be a fixed ladder now that each button only gets half the row.
-     *
-     * Observed rather than read once: a phone rotation or the iOS URL bar
-     * collapsing changes it mid-run, and a stale width would either overflow the
-     * button or waste half of it.
-     */
-    const [optionsWidth, setOptionsWidth] = useState(0);
-    const optionsRowRef = useRef<HTMLDivElement | null>(null);
-    useEffect(() => {
-        const el = optionsRowRef.current;
-        if (!el) return;
-        setOptionsWidth(el.getBoundingClientRect().width);
-        // ResizeObserver is supported everywhere this app runs; the guard is for
-        // test environments (jsdom) where it may be absent.
-        if (typeof ResizeObserver === "undefined") return;
-        const ro = new ResizeObserver((entries) => {
-            const w = entries[0]?.contentRect.width;
-            if (w) setOptionsWidth(w);
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-        // Keyed on `phase` because the row only exists in the play phases — the
-        // effect has to re-attach when it mounts. Re-observing on every phase
-        // change is cheap and keeps the dependency honest.
-    }, [phase]);
+    // The option row's width used to be measured here (ResizeObserver) to derive
+    // a per-round glyph size. The options now render as a fixed-size cpcd row
+    // (OPTION_GLYPH_SIZE) that wraps instead of shrinking, so nothing on this
+    // page depends on that width any more.
 
     // ── Round construction ───────────────────────────────────────────────────
     /**
      * Pull cards until one yields a playable round.
+     *
+     * `roundNumber` is 1-based and decides the KIND: the last SENTENCE_ROUNDS of
+     * the run (19 and 20 of 20) are built from the cards the queue reserved at
+     * load, as sentence rounds. If that reservation is empty — a pool where too
+     * few cards carry an example sentence, which the queue warns about — the
+     * round degrades to an ordinary word round rather than ending the run.
      *
      * A card is UNPLAYABLE when it has no CJK characters, or when the distractor
      * ladder is exhausted (every library character already appears in the word).
      * Those are dropped here at dequeue, and the drop counts toward the top-up
      * trigger.
      */
-    const takeRound = useCallback((): Round | null => {
+    const takeRound = useCallback((roundNumber: number): Round | null => {
+        if (roundNumber > TARGET_ROUNDS - SENTENCE_ROUNDS) {
+            const entry = queue.dequeueSentenceCard();
+            // Reserved cards are pre-checked for a usable sentence, so a null
+            // build here means only that the distractor ladder ran dry.
+            const built = entry ? buildSentenceRound(entry, queue.distractorsRef.current) : null;
+            if (built) return built;
+        }
         // Bounded so an entire queue of unplayable cards can't spin forever.
         for (let attempts = 0; attempts < 40; attempts++) {
             const entry = queue.dequeue();
@@ -217,57 +219,90 @@ const SpeedReadingPage: React.FC = () => {
     ttsRef.current = tts;
 
     /**
-     * Warm a round's assets: the stroke corpus for its glyphs, and the cloud
-     * audio for its word.
+     * Warm a round's cloud audio.
      *
-     * `GlyphSvg` paints a CACHED glyph on its first frame but has to wait on a
-     * dynamic import (dev) or a CDN fetch (prod) for one it has never seen — up
-     * to 8 characters' worth of network at the round change, showing as empty
-     * buttons. Auto-narration has the same problem in the audio dimension: an
-     * un-cached word needs a synthesis round-trip, and half a second of silence
-     * at the top of a round is half a second added to the player's time. Calling
-     * this one round AHEAD moves both costs into the time the player is already
-     * spending reading the current round.
+     * An un-cached word needs a synthesis round-trip, and half a second of
+     * silence at the top of a round is half a second added to the player's time.
+     * Calling this one round AHEAD moves that cost into the time the player is
+     * already spending reading the current round.
+     *
+     * The glyphs used to be prefetched here too (the stroke corpus behind the
+     * old `GlyphSvg` options needed a dynamic import in dev / a CDN fetch in
+     * prod, showing as empty buttons on a miss). The options are plain font text
+     * now — nothing to load — so only audio is warmed.
      */
     const prefetchRound = useCallback((r: Round) => {
-        for (const option of r.options) {
-            for (const ch of option.chars) {
-                // loadGlyph memoizes and swallows its own errors; nothing to await.
-                void loadGlyph(ch);
-            }
+        // No-ops when TTS is off or the card has no audio; caches otherwise. A
+        // sentence round narrates the SENTENCE, so it warms a different cache key
+        // than the headword — the cloud cache is keyed on text+pinyin+voice.
+        if (r.kind === "sentence") {
+            const { speechText, speechPinyin } = roundPrompt(r);
+            ttsRef.current.prefetchSentence(speechText, speechPinyin);
+            return;
         }
-        // No-ops when TTS is off or the card has no audio; caches otherwise.
         ttsRef.current.prefetch(r.entry);
     }, []);
 
     /**
-     * The round AFTER the one on screen, built and glyph-prefetched while the
+     * The round AFTER the one on screen, built and audio-prefetched while the
      * player is still reading the current one. Advancing then costs a single
-     * synchronous setState instead of a build plus a glyph load.
+     * synchronous setState instead of a build plus an audio fetch.
+     *
+     * TAGGED with the ordinal it was built for. A round's KIND depends on its
+     * ordinal (the last SENTENCE_ROUNDS of a run are sentence rounds), so a
+     * prebuilt round is only valid at the position it was made for; if the run is
+     * re-armed under it, it must be discarded rather than shown out of turn.
      */
-    const pendingRoundRef = useRef<Round | null>(null);
+    const pendingRoundRef = useRef<{ ordinal: number; round: Round } | null>(null);
 
     /**
-     * Show the next round. Consumes the prebuilt one when there is one, then
-     * immediately prepares the one after it.
+     * Show the next round. Consumes the prebuilt one when it is the right one,
+     * then immediately prepares the one after it.
+     *
+     * ── The ordinal comes from `answeredRef`, never from a build counter ─────
+     * `answeredRef.current + 1` IS the round about to be shown, because every
+     * round shown is answered exactly once (there is no Skip). Counting
+     * CONSTRUCTED rounds instead looks equivalent and is not — it drifts ahead of
+     * the player on any build that doesn't reach the screen, and React
+     * StrictMode double-invokes the run-start effect in dev, so such a counter
+     * starts ahead and lands the sentence finale in the middle of the run.
+     * Deriving the ordinal from ANSWERS is self-correcting: however many rounds
+     * were built and thrown away, round 19 is still the one shown after 18
+     * answers.
      */
     const nextRound = useCallback((): boolean => {
-        const upcoming = pendingRoundRef.current ?? takeRound();
+        const ordinal = answeredRef.current + 1;
+        const pending = pendingRoundRef.current;
         pendingRoundRef.current = null;
+        // Reuse the prebuilt round only if it was built for THIS position.
+        let upcoming = pending && pending.ordinal === ordinal ? pending.round : null;
+        if (!upcoming) upcoming = takeRound(ordinal);
         if (!upcoming) return false; // queue drained
         setRound(upcoming);
         setPicked(null);
 
         // Prepare one round ahead. Costs one extra card off the queue, which the
-        // top-up already accounts for; the last prepared round is simply dropped
-        // when the clock runs out.
-        const ahead = takeRound();
-        pendingRoundRef.current = ahead;
-        if (ahead) prefetchRound(ahead);
+        // top-up already accounts for. Not past the target: a 21st round would
+        // never be shown, and building one would burn a card — and, once the
+        // finale's reservation is empty, would pull a word card for nothing.
+        const ahead = ordinal < TARGET_ROUNDS ? takeRound(ordinal + 1) : null;
+        if (ahead) {
+            pendingRoundRef.current = { ordinal: ordinal + 1, round: ahead };
+            prefetchRound(ahead);
+        }
         return true;
     }, [takeRound, prefetchRound]);
 
     // ── Run start ────────────────────────────────────────────────────────────
+    /**
+     * The `runId` this effect has already armed a run for, so it arms each run
+     * EXACTLY once. React StrictMode invokes mount effects twice in dev, and a
+     * second arming is not harmless: it burns the cards of the round already
+     * built, re-narrates, and re-stamps the clock's origin. State can't be the
+     * guard here — the first invocation's `setPhase` has not flushed by the time
+     * the second runs — so it has to be a ref.
+     */
+    const armedRunRef = useRef<number | null>(null);
     useEffect(() => {
         if (!user) {
             setPhase("blocked");
@@ -279,6 +314,8 @@ const SpeedReadingPage: React.FC = () => {
             return;
         }
         if (!queue.ready) return;
+        if (armedRunRef.current === runId) return;
+        armedRunRef.current = runId;
 
         // Arm the shared AudioContext before the first round auto-narrates. The
         // tap that opened this page happened on the previous screen, so by the
@@ -297,10 +334,11 @@ const SpeedReadingPage: React.FC = () => {
         } else {
             setPhase("blocked");
         }
-        // Runs once the queue reports ready. `nextRound` is intentionally excluded:
-        // it changes identity with the queue and would restart the run.
+        // Runs once per runId, the first time the queue reports ready. `nextRound`
+        // is intentionally excluded: it changes identity with the queue and would
+        // restart the run.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [queue.ready, queue.loading, queue.blockMessage, user?.id]);
+    }, [queue.ready, queue.loading, queue.blockMessage, user?.id, runId]);
 
     // ── Popup pause gate ─────────────────────────────────────────────────────
     // No game clock may run while a MODAL popup covers the board. Speed Reading's
@@ -342,7 +380,6 @@ const SpeedReadingPage: React.FC = () => {
     // Clear any pending timers on unmount.
     useEffect(() => () => {
         if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
-        if (floatTimerRef.current) clearTimeout(floatTimerRef.current);
     }, []);
 
     // ── Marks ────────────────────────────────────────────────────────────────
@@ -391,38 +428,13 @@ const SpeedReadingPage: React.FC = () => {
         }
     }, [nextRound, endRun]);
 
-    /**
-     * Spawn the ✓/✗ — and, on a wrong answer, the red +3s — at the tap point.
-     *
-     * The event's clientX/clientY are viewport coordinates; the stage converts
-     * them into its own space, which is the space the overlay is positioned in.
-     *
-     * The penalty must appear where the player just looked: a +3s that surfaced
-     * somewhere else (or only on the clock) would not be connected to the tap
-     * that caused it.
-     */
-    const spawnFloatIndicator = useCallback((event: React.MouseEvent<HTMLElement>, kind: FloatKind) => {
-        // MUST go through the stage: when it is rotated, `clientX/clientY` and
-        // the stage's own bounding rect are in different coordinate systems, and
-        // the naive `clientX - rect.left` is wrong by a 90° rotation rather than
-        // by an offset. See useSidewaysStage.toStageCoords.
-        const { x, y } = stage.toStageCoords(event.clientX, event.clientY);
-        floatIdRef.current += 1;
-        setFloatIndicator({ x, y, kind, id: floatIdRef.current });
-        // Unmount after the animation so a stale node can't linger over the next
-        // round. Restarted (not stacked) on a rapid second tap. A penalty float
-        // lives longer than a plain ✓ — a number has to be read, not glanced at.
-        if (floatTimerRef.current) clearTimeout(floatTimerRef.current);
-        floatTimerRef.current = setTimeout(() => setFloatIndicator(null), indicatorLifetime(kind));
-    }, [stage]);
-
     /** Charge a wrong answer. Ref first: `advance` reads it. */
     const addPenalty = useCallback(() => {
         penaltyRef.current += WRONG_PENALTY_MS;
         setPenaltyMs(penaltyRef.current);
     }, []);
 
-    const onPick = useCallback((index: number, event: React.MouseEvent<HTMLElement>) => {
+    const onPick = useCallback((index: number) => {
         if (phase !== "ready" || !round) return;
         const option = round.options[index];
         setPicked(index);
@@ -438,14 +450,20 @@ const SpeedReadingPage: React.FC = () => {
         // wait on the mark request or the render.
         if (option.isCorrect) playCorrectSound();
         else playWrongSound();
-        spawnFloatIndicator(event, option.isCorrect ? "correct" : "wrong");
         mark(round.entry.id, option.isCorrect);
         advanceTimerRef.current = setTimeout(advance, FEEDBACK_MS);
-    }, [phase, round, mark, advance, spawnFloatIndicator, addPenalty]);
+    }, [phase, round, mark, advance, addPenalty]);
 
+    /**
+     * Narrate the round's clue: the headword on a word round, the whole example
+     * sentence on a finale round. `speakSentence` is the right call for both — it
+     * is just "speak this text with this optional pinyin hint" — and the hint
+     * matters, since cloud TTS otherwise has to guess every heteronym in the line.
+     */
     const speak = useCallback(() => {
         if (!round) return;
-        void tts.speakSentence(round.entry.entryKey, round.entry.pronunciation ?? undefined);
+        const { speechText, speechPinyin } = roundPrompt(round);
+        void tts.speakSentence(speechText, speechPinyin);
     }, [round, tts]);
 
     /**
@@ -502,11 +520,11 @@ const SpeedReadingPage: React.FC = () => {
      */
     const playAgain = useCallback(() => {
         if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
-        if (floatTimerRef.current) clearTimeout(floatTimerRef.current);
-        setFloatIndicator(null);
         // Built from the previous run's queue; the reload replaces that queue.
         pendingRoundRef.current = null;
         winRecordedRef.current = false;
+        // Round numbering is derived from this, so zeroing it restarts the
+        // ordinals — and with them the new run's sentence finale.
         answeredRef.current = 0;
         penaltyRef.current = 0;
         setScore(0);
@@ -522,39 +540,29 @@ const SpeedReadingPage: React.FC = () => {
 
     // ── Render ───────────────────────────────────────────────────────────────
     const clock = formatClock(totalMs);
-
-    /** Feedback paint for one option. */
-    const feedbackFor = (index: number): OptionFeedback => {
-        if (phase !== "feedback" || !round) return "none";
-        if (round.options[index].isCorrect) return "correct";
-        // Only the option the player actually tapped turns red; the untapped
-        // wrong option on a correct answer stays neutral.
-        return index === picked ? "wrong" : "none";
-    };
+    /**
+     * The round's clue (pinyin + English + what the speaker says), derived from
+     * the round's KIND — the headword's for a word round, the example sentence's
+     * for a finale round. See roundPrompt.
+     */
+    const prompt = round ? roundPrompt(round) : null;
 
     /**
-     * Glyph size, MEASURED rather than tabulated.
+     * Feedback paint for one half.
      *
-     * The options sit SIDE BY SIDE, so each button gets about half the row —
-     * roughly 165px on a 390px phone, against ~350px when they were stacked. A
-     * hardcoded size-per-length ladder cannot survive that: it was tuned for the
-     * full width and a 4-character word would overflow its button. So the row's
-     * real width is measured and the glyph is whatever actually fits.
-     *
-     * Both buttons always get the SAME size — the one-character invariant means
-     * both options have equal length — so size can never hint at the answer.
+     * ONLY THE TAPPED HALF is ever painted: green when the pick was right, red
+     * when it was wrong. The untapped half stays neutral in both cases — a wrong
+     * pick deliberately does NOT light the correct side green. The feedback
+     * answers "was I right?", which is the question the player asked by tapping;
+     * showing them the answer they failed to read turns a reading test into a
+     * flashcard reveal, and at FEEDBACK_MS (180ms) there is no time to learn
+     * from it anyway.
      */
-    const charCount = round?.options[0].chars.length ?? 1;
-    const glyphSize = React.useMemo(() => {
-        // Fall back to a conservative size until the first measurement lands.
-        const rowWidth = optionsWidth || 320;
-        const perButton = (rowWidth - OPTION_ROW_GAP_PX) / 2;
-        const drawable =
-            perButton - OPTION_PADDING_X_PX * 2 - (charCount - 1) * OPTION_CHAR_GAP_PX;
-        // Clamped: MIN keeps a 4-character word legible on a narrow phone, MAX
-        // stops a single character ballooning on a tablet.
-        return Math.max(MIN_GLYPH_PX, Math.min(MAX_GLYPH_PX, Math.floor(drawable / charCount)));
-    }, [optionsWidth, charCount]);
+    const feedbackFor = (index: number): OptionFeedback => {
+        if (phase !== "feedback" || !round || picked === null) return "none";
+        if (index !== picked) return "none";
+        return round.options[index].isCorrect ? "correct" : "wrong";
+    };
 
     const centered = (children: React.ReactNode) => (
         <Box
@@ -576,10 +584,23 @@ const SpeedReadingPage: React.FC = () => {
      * are on round 3 or round 19. It sits left of the clock, in the secondary
      * colour, so the time stays the headline.
      *
+     * It names the round the player is LOOKING AT, not the number completed: the
+     * first word on screen reads `1/20` and the last reads `20/20`. That is
+     * `answered + 1` while a round is awaiting its answer, and plain `answered`
+     * once it has been answered — during the feedback window the same word is
+     * still on screen, so the number must not tick over to the next round early.
+     * A run that ends short (drained queue) keeps the last round it showed.
+     *
      * The clock turns red once the run can no longer medal (past bronze), which
      * is the count-up equivalent of the old "last 10 seconds" warning: both say
      * "the thing you were racing has slipped away".
      */
+    // Which round is on screen — see the doc-comment above. Clamped at both ends:
+    // never 0 (the loading header would read "0/20") and never past the target.
+    const currentRound = Math.min(
+        phase === "ready" ? answered + 1 : Math.max(answered, 1),
+        TARGET_ROUNDS,
+    );
     const clockEl = (
         <Box
             className="speed-reading__status"
@@ -594,7 +615,7 @@ const SpeedReadingPage: React.FC = () => {
                     color: COLORS.textSecondary,
                 }}
             >
-                {Math.min(answered, TARGET_ROUNDS)}/{TARGET_ROUNDS}
+                {currentRound}/{TARGET_ROUNDS}
             </Typography>
             <Typography
                 className="speed-reading__clock"
@@ -655,8 +676,6 @@ const SpeedReadingPage: React.FC = () => {
             >
             <Box
                 className={`speed-reading__content${stage.rotated ? " speed-reading__content--sideways" : ""}`}
-                // Positioning frame for the float indicator.
-                ref={contentRef}
                 style={stage.stageStyle}
             >
                 <LeafPageHeader title="Speed Reading" onBack={leaveGame} rightContent={clockEl} />
@@ -678,80 +697,113 @@ const SpeedReadingPage: React.FC = () => {
                     </>
                 )}
 
-                {(phase === "ready" || phase === "feedback" || phase === "ended") && round && (
+                {(phase === "ready" || phase === "feedback" || phase === "ended") && round && prompt && (
                     <Box
                         className="speed-reading__play"
                         sx={{
+                            position: "relative",
                             flex: 1, minHeight: 0, display: "flex", flexDirection: "column",
-                            alignItems: "center", justifyContent: "center", py: 2.5, px: 2.5, gap: 2,
+                            alignItems: "center", justifyContent: "center",
                         }}
                     >
+                        {/* ── The controls: the two HALVES of the play area ─────
+                            An answer is "tap your side of the screen", not "hit the
+                            word" — a target half the play area wide, which under a
+                            clock is the whole ergonomic story. These zones are the
+                            BACKGROUND layer, stretched over the full area; the
+                            visible content floats above them with pointer events
+                            off, so a tap anywhere on a half reaches its zone
+                            regardless of what is drawn on top. The zone also paints
+                            the green/red answer feedback (see SpeedReadingTapZone).
+
+                            There is nothing else on this screen — the two halves are
+                            the ONLY controls, apart from the prompt's speaker button.
+                            Skip was removed: see the page doc-comment. */}
+                        <Box
+                            className="speed-reading__zones"
+                            sx={{ position: "absolute", inset: 0, display: "flex", flexDirection: "row" }}
+                        >
+                            {/* The zones are positional, not word-bound — only the index matters. */}
+                            {round.options.map((_option, i) => (
+                                <SpeedReadingTapZone
+                                    key={i}
+                                    side={i === 0 ? "left" : "right"}
+                                    feedback={feedbackFor(i)}
+                                    // Frozen during feedback so a double-tap can't
+                                    // mark the next round.
+                                    disabled={phase !== "ready"}
+                                    onPick={() => onPick(i)}
+                                />
+                            ))}
+                        </Box>
+
                         {/* Prompt and options are ONE GROUP, centred in the play
-                            area. The prompt sits directly on top of the buttons
+                            area. The prompt sits directly on top of the words
                             rather than being pushed to the top of the screen: the
                             player reads the prompt and then compares the options in
                             one motion, so the eye should not have to travel the
                             height of the page between them.
 
-                            There is nothing else on this screen — the two options
-                            are the ONLY controls. Skip was removed: see the page
-                            doc-comment. */}
+                            ⚠️ This whole layer is `pointer-events: none` so every
+                            tap falls through to the zones behind it. Anything added
+                            here that must be tappable has to re-enable pointer
+                            events for itself — the speaker button already does (see
+                            SpeedReadingPrompt). */}
                         <Box
                             className="speed-reading__stack"
                             sx={{
+                                position: "relative",
+                                pointerEvents: "none",
                                 flex: 1, minHeight: 0, width: "100%", display: "flex",
                                 flexDirection: "column", alignItems: "center",
-                                justifyContent: "center", gap: 1.5,
+                                justifyContent: "center", gap: 1.5, py: 2.5,
                             }}
                         >
                             <SpeedReadingPrompt
-                                entry={round.entry}
+                                pinyin={prompt.pinyin}
+                                english={prompt.english}
                                 onSpeak={speak}
-                                speaking={tts.speakingKey === round.entry.entryKey}
+                                // `speakingKey` is the TEXT being spoken, which on
+                                // a finale round is the sentence, not the headword.
+                                speaking={tts.speakingKey === prompt.speechText}
+                                compact={round.kind === "sentence"}
                             />
 
                             {/* Options sit SIDE BY SIDE, so the pair is read as one
                                 unit — they differ by a single character, and that is
-                                the comparison the game asks for.
+                                the comparison the game asks for. Each word takes an
+                                equal share of the row and the row has NO gap, so each
+                                word sits centred on the tap zone behind it — the word
+                                is the label of its half.
 
-                                The cost is width: each button gets about half the row,
-                                so glyphs are smaller than when the options stacked.
-                                That is why `glyphSize` is MEASURED off this row rather
-                                than tabulated by word length — see the note there.
-                                Equal flex plus the shared glyph size keeps the two
-                                buttons identical boxes, so neither hints at the
-                                answer. */}
+                                The cost is width: each word gets half the screen, and
+                                it is a fixed-size cpcd row (OPTION_GLYPH_SIZE = "xl")
+                                that WRAPS rather than shrinking when it doesn't fit.
+                                Both options are the same length, so they wrap the same
+                                way and neither side hints at the answer. */}
                             <Box
                                 className="speed-reading__options"
-                                ref={optionsRowRef}
                                 sx={{
                                     width: "100%",
                                     display: "flex",
                                     flexDirection: "row",
-                                    gap: `${OPTION_ROW_GAP_PX}px`,
+                                    alignItems: "stretch",
                                 }}
                             >
                                 {round.options.map((option, i) => (
-                                    <SpeedReadingOption
+                                    <SpeedReadingOptionText
                                         key={i}
                                         option={option}
-                                        feedback={feedbackFor(i)}
-                                        // Frozen during feedback so a double-tap can't
-                                        // mark the next round.
-                                        disabled={phase !== "ready"}
-                                        onPick={(event) => onPick(i, event)}
-                                        glyphSize={glyphSize}
+                                        // Both halves always get the SAME size —
+                                        // a per-option size would leak the answer.
+                                        size={round.kind === "sentence"
+                                            ? OPTION_SENTENCE_GLYPH_SIZE
+                                            : OPTION_GLYPH_SIZE}
                                     />
                                 ))}
                             </Box>
                         </Box>
                     </Box>
-                )}
-
-                {/* Keyed by id so a second tap mounts a NEW element and the
-                    float animation restarts from the top. */}
-                {floatIndicator && (
-                    <SpeedReadingFloatIndicator key={floatIndicator.id} indicator={floatIndicator} />
                 )}
 
                 {phase === "ended" && (

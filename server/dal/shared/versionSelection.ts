@@ -12,6 +12,11 @@
  * NightMarketTemplateService, and the `placeholderArea.ts` mirror this file imports).
  * If you change any of the four client modules' scoring behavior, change it here too.
  *
+ * KNOWN, DELIBERATE DIVERGENCE: {@link globalOccupiedRects} + {@link PlacementRect} exist only
+ * here. They are a performance addition for the per-request layout read, and the client's
+ * `globalOccupied` has no production caller at all — mirroring them would add dead client code.
+ * Everything else in this file still tracks its client counterpart one-for-one.
+ *
  * LAYER: dep-free shared engine (same family as the other `server/dal/shared/*` mirrors). No
  * DB, no React, no assets. Consumed by {@link ../../services/NightMarketWorldService} to
  * RECOMPUTE each placement's active version on every layout read (docs/NIGHT_MARKET_TEMPLATE_
@@ -268,6 +273,60 @@ export function globalOccupied(placements: readonly PlacementOccupancy[]): Set<s
     for (const key of p.cells) {
       const [col, row] = parseCell(key);
       out.add(tileKey(col + p.offsetCol, row + p.offsetRow));
+    }
+  }
+  return out;
+}
+
+/** A placement reduced to its board RECTANGLE in global cell space. */
+export interface PlacementRect {
+  offsetCol: number;
+  offsetRow: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Union of every placement's footprint in GLOBAL coordinates, built straight from the board
+ * rectangles.
+ *
+ * ⚠️ SERVER-ONLY ADDITION — deliberately absent from the client `seamAdjacency.ts` mirror this
+ * module otherwise tracks by hand (see the file header). The client's `globalOccupied` has no
+ * production caller; only the server runs this per request, once per placement, which is what
+ * makes the cost visible. Adding a dead twin client-side would be worse than the documented
+ * divergence.
+ *
+ * WHY IT EXISTS. Every footprint here is a full `width × height` rectangle
+ * ({@link boardCells} is the only producer of `PlacementOccupancy.cells` anywhere), so the old
+ * path encoded each cell as a LOCAL `"col,row"` string, parsed it straight back into numbers, and
+ * re-encoded it with the offset applied — a pure round trip through string form, per cell, per
+ * placement. This skips it: a rectangle is fully described by its origin and size.
+ *
+ * ### The "self is included" invariant
+ *
+ * Callers pass this ONE union to every placement, rather than rebuilding an N-1 "everyone but me"
+ * union per placement (which is what made the layout read O(N² · cells)). That substitution is
+ * SOUND, not an approximation, and the reason is narrow enough to state exactly:
+ *
+ * `occupiedByOthers` is consumed on exactly one path — {@link abuttingBorderIslandIds} →
+ * {@link cellAbutsOthers}, probing `dirs = outerEdgesOf(col, row, width, height)`. `outerEdgesOf`
+ * yields `'w'` only at `col === 0`, `'e'` only at `col === width - 1`, `'s'` only at `row === 0`,
+ * `'n'` only at `row === height - 1`; each {@link OUTWARD} step then moves AWAY from the board.
+ * So every probed neighbour lands strictly outside this placement's own rectangle, and including
+ * its own cells in the set can never make it abut itself.
+ *
+ * This holds because footprints are rectangular. If a non-rectangular footprint is ever
+ * introduced (an L-shaped template), a cell on an interior notch could probe into its own board
+ * and self-satisfy a border-street condition — at which point callers must go back to a per-
+ * placement exclusion. `versionSelection.test.ts` pins the property.
+ */
+export function globalOccupiedRects(rects: readonly PlacementRect[]): Set<string> {
+  const out = new Set<string>();
+  for (const r of rects) {
+    for (let col = 0; col < r.width; col++) {
+      for (let row = 0; row < r.height; row++) {
+        out.add(tileKey(col + r.offsetCol, row + r.offsetRow));
+      }
     }
   }
   return out;

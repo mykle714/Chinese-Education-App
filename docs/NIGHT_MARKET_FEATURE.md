@@ -21,6 +21,13 @@ their own continent as they earn.
 > templates tiled together — see [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)
 > (DESIGN stage).
 
+> **Terrain throughput at scale:** zoomed-out ground can be served from a cache of
+> pre-rasterised 256×256 chunks instead of per-cell sprites, so terrain cost stops
+> scaling with market size — see
+> [NIGHT_MARKET_TERRAIN_CHUNKING.md](./NIGHT_MARKET_TERRAIN_CHUNKING.md).
+> **Implemented but OFF by default**, behind the nmp `chunkedTerrain` debug toggle,
+> pending visual verification.
+
 ---
 
 ## Coordinate System
@@ -424,10 +431,54 @@ backdrop replaces that entire calculation with one quad. See "Terrain performanc
 `visibleCellWindow(pan, zoom, w, h)` inverts the camera transform at the viewport's four **corners**
 (the iso basis is rotated, so the cell extremes are the corners, not the edges), pads by
 `WINDOW_MARGIN_CELLS`, and snaps outward to `WINDOW_QUANTUM_CELLS` — so the window changes every few
-cells of travel rather than every dragged pixel, and `TemplateTerrainLayer` can memoise on its four
+cells of travel rather than every dragged pixel, and `TemplateTerrainLayer` can memoise on its
 numbers. Culling limits **iteration only**: `inField`/`apron` are still consulted at full extent, so
 a tile at the window's edge autotiles against its real neighbours and no phantom rim appears at the
 cut (the test asserts a windowed tile is identical to its uncelled counterpart).
+
+#### The window is a DIAMOND, not a box
+
+A screen-axis-aligned viewport is **not** axis-aligned in cell space, so `minCol…maxRow` is only
+the *bounding box* of what is visible — roughly twice its area. Iterating the box built ~40% of its
+tiles off screen.
+
+The visible region is axis-aligned in the rotated coordinates, though. `isoToScreen` is
+`x = (col − row)·W/2`, `y = −(col + row)·H/2`, so the screen rect bounds exactly the two cell-space
+**diagonals**, one per screen axis:
+
+```
+diag = col − row   (the screen-x axis)      sum = col + row   (the screen-y / depth axis)
+```
+
+`CellWindow` therefore carries `minDiag/maxDiag/minSum/maxSum` alongside the box, and
+`buildEditorField` solves them for `row` at each `col` to get the exact visible span:
+
+```
+isoX − maxDiag ≤ isoY ≤ isoX − minDiag        (from diag)
+minSum − isoX  ≤ isoY ≤ maxSum − isoX         (from sum)
+```
+
+intersected with the box. The off-screen half is never iterated at all. They are plain numbers, not
+a closure, so callers can still memoise on the window's contents.
+
+⚠️ The diagonals are padded by **2 × `WINDOW_MARGIN_CELLS`**: a unit step in `col` or `row` moves
+each diagonal by one, so an M-cell margin in cell space is a 2M margin along a diagonal.
+Under-padding clips the diamond *inside* the box margin, which shows up as terrain missing along
+the screen edges.
+
+Measured (empty field, so the count is pure geometry):
+
+| Viewport | Zoom | Box | Diamond | |
+|---|---|---|---|---|
+| 390×780 | 1× | 9409 | 5617 | 40% fewer |
+| 390×780 | 0.5× | 21025 | 11113 | **47% fewer** |
+| 820×1180 | 1× | 16641 | 9105 | 45% fewer |
+| 390×780 | 2× | 4225 | 2897 | 31% fewer |
+
+The saving is largest zoomed OUT, which is where the tile count is highest to begin with.
+`terrainApron.test.ts` pins the safety direction by brute force: it projects every candidate cell
+through the same transform the renderer uses and asserts that nothing landing inside the viewport
+was culled.
 
 ### Terrain performance (why the scene is split and memoised)
 
@@ -445,8 +496,118 @@ ground cell. Two rules keep it off the frame budget, and **both** are required:
    memoised inside `TemplateTerrainLayer`, and `cullWindow` is quantised so its identity rarely
    changes.
 
+3. **The masks the build probes are keyed by PACKED CELL ID, not by `"col,row"` strings.**
+   `buildEditorField` probes the masks ~20–25× per visible cell (8-neighbour occupancy for light
+   grass, again for dark, plus the kind / slab-occlusion / decor / plank tests), so a string key
+   meant ~100k short-lived allocations per rebuild. See the next section.
+4. **Pedestrian depth is QUANTISED to the cell.** Rules 1–2 are React-side; this one is the Pixi
+   side, and without it the other two were fixing half the problem. See "The Pixi half" below.
+
 ⚠️ Do not hoist the ticker back into the scene, and do not drop the memos: either one alone leaves
 the other's cost in place.
+
+### The Pixi half — why memoisation alone was not enough
+
+*Code: `src/engine/market/isometric.ts` (`computePedestrianZ`). Tests:
+`src/engine/market/__tests__/pedestrianDepth.test.ts`.*
+
+Keeping React from reconciling the terrain does **not** stop Pixi from re-processing it. Every
+sprite in the scene — the whole terrain plus the walkers — is a direct child of one
+`sortableChildren` camera container, which is what gives the market its single global painter's
+sort. In Pixi 8, assigning `zIndex` runs `depthOfChildModified()`:
+
+```js
+this.parent.sortableChildren = true;
+this.parent.sortDirty = true;                      // → full children.sort() next render
+this.parentRenderGroup.structureDidChange = true;  // → instruction set thrown away and rebuilt
+```
+
+A walker's `isoX`/`isoY` are **lerped**, so they were fractional on essentially every frame — which
+meant a new `zIndex` every frame, from ~8 walkers, dirtying a container holding thousands of
+terrain sprites. Result: a full `Array.sort` **and** a full `_buildInstructions` walk of the entire
+terrain, 60 times a second. No amount of React memoisation touches that; the elements never
+re-rendered, but Pixi rebuilt them anyway.
+
+The fix is one `Math.round` in `computePedestrianZ`. Pixi's `zIndex` setter early-returns when the
+value is unchanged, so quantising the depth to the nearest cell means the flag is set only when a
+walker genuinely crosses a cell boundary. Measured against real Pixi containers: **120/120 frames
+dirtied → 6/120.**
+
+Positions still update every frame, and that is fine: `x`/`y` (and `texture`, for the walk cycle)
+go through `_onUpdate`/`onViewUpdate` → `childrenRenderablesToUpdate`, the cheap path that updates
+renderables without rebuilding instructions. **Only `zIndex`, `visible`, `blendMode` and
+add/remove-child force a structure rebuild** — so those are the properties to keep stable per frame.
+
+Rounding is also the more correct sort. For a walker on a cell of depth `d`, the painter's rule
+needs `z` between that cell's own terrain (topping out at `-d + 0.15`) and the next cell toward the
+camera (starting at `-d + 0.5`); `-d + 0.25` is exactly that gap. An unrounded mid-step depth
+`d + f` gives `-d - f + 0.25`, which drops below the cell's own grass cap at `-d` once `f > 0.25` —
+so for most of every step a walker's feet were being drawn *under the tile it was walking on*.
+
+> **Considered and rejected: per-depth-band containers.** Bucketing terrain into one container per
+> `col + row` diagonal would shrink each sort, but `structureDidChange` propagates to the nearest
+> ancestor *render group*, not the nearest container — so it would not have stopped the instruction
+> rebuild unless every band became its own render group. A viewport spans 100+ bands, and render
+> groups carry real per-group overhead, so that would likely have been a net loss. It would also
+> have broken the flat-emit convention that the strip-slicing depth rules depend on. The
+> quantisation achieves the same end with one line and no architectural change.
+
+### Packed cell ids (`cellKey.ts`)
+
+*Code: `src/engine/market/cellKey.ts` (`packCell`/`unpackCell`/`packCellKey`);
+`farmTerrain.ts` (`CompiledMasks`, `compileMasks`, `buildEditorField`);
+`useMarketWorld.ts` (footprint membership). Tests: `src/engine/market/__tests__/cellKey.test.ts`.*
+
+There are **two** cell-key forms, deliberately:
+
+| Form | Where | Why |
+|---|---|---|
+| `"col,row"` string | Authoring + wire: `EditorMasks`, the stored `TemplateDefinitionPayload`, `StitchedWorld`, the server mirrors | Human-readable, JSON-native, and none of it is hot |
+| Packed `CellId` number | Render hot loop: `CompiledMasks`, `TerrainField.contains` | Allocation-free, hashes without a character walk |
+
+`compileMasks(masks)` converts one to the other in a single pass over the painted cells.
+**Every caller folds it into the memo that already guards its masks** — the runtime's per-world
+`stitchedToEditorMasks` memo, the editor's per-paint-stroke `tiles` memo, the sandbox's per-item
+memo. Compiling per render would trade a per-cell cost for a per-frame one, which is the opposite
+of the point.
+
+Packing is `(col + 2^14) * 2^15 + (row + 2^14)`. The bias/span are chosen so every id stays under
+2^31 and therefore remains a V8 small integer (unboxed) — **widening `CELL_BIAS` past 2^14 would
+push ids into heap doubles and quietly undo the optimisation.** The usable range is ±16384 cells,
+orders of magnitude beyond any real continent. Out-of-range or non-integral cells throw in dev
+rather than aliasing onto another cell, which would silently paint one cell's terrain onto another.
+
+Measured at the real probe ratio (120×120 cells × 25 probes ≈ 360k lookups): **19.3ms → 6.0ms,
+a 3.2× speedup.**
+
+Not converted, deliberately: `tileGraph`/`streetGraph` keep string keys. They are probed a few
+times per pedestrian per frame (~8 walkers), which is negligible beside the terrain, and the server
+mirrors in `server/dal/shared/versionSelection.ts` are kept structurally identical to their client
+counterparts by hand — re-keying one side alone would break that correspondence.
+
+### Per-frame allocation rules
+
+*Code: `MarketEngineViewer.tsx` (`PedestrianTicker`), `PedestrianLayer.tsx`,
+`pedestrianAgent.ts` (`updateTileOccupancy`).*
+
+The ticker runs at 60fps, so anything it allocates per walker is allocated ~500×/second. Four rules
+hold there, each of which replaced a real cost:
+
+1. **`getDrawables()` is called ONCE per tick.** It re-runs `computeDrawable` for every walker and
+   returns a fresh array; the tick's camera-follow lookup and the render below share one result via
+   a ref. They used to ask separately, doing the work twice a frame.
+2. **One shared tap handler for all walkers.** The ped id rides on the sprite as `label` and the
+   handler reads `e.currentTarget.label`. A per-ped arrow function is a fresh callback identity for
+   every walker every frame, which makes Pixi detach and re-attach each listener.
+3. **`updateTileOccupancy` is O(pedestrians), not O(market).** It used to clear `isOccupied` on
+   every walkable tile in the continent before re-marking the ~8 in use — a full sweep 60×/second
+   whose cost grew as the user unlocked more market while the useful work stayed constant. It now
+   clears only the tiles it marked last frame. **This depends on an invariant**: `tickPedestrian`
+   also flips `isOccupied` directly, and the incremental clear is only safe because every tile it
+   marks is immediately assigned to that pedestrian's `currentTile`. Marking a tile occupied
+   without making it the `currentTile` would leak that cell as permanently blocked.
+4. **`nmpPerf.count` is called from an effect, never the render body.** It mutates module state and
+   schedules a `setTimeout`; in the render body it would fire on renders React discards.
 
 > While a **pedestrian camera lock** is active the scene *does* re-render every frame, because the
 > follow commits a new pan each tick — exactly the same load as holding a drag, and the reason rule 2
@@ -467,6 +628,32 @@ build, `'0'` forces it off anywhere. What to read:
 | `terrain-tiles` / `terrain-sprites` | Cells built vs. Pixi children emitted (a cell emits 1–4) |
 | `… (rebuilt N× in the last 2s)` | **The key diagnostic.** N ≈ 120 means memoisation is broken; N ≈ 1 means the count itself is the cost |
 | `backdrop: motif W×H, holes N` | Whether the ground motif baked at all, and whether it is opaque |
+| `pedestrians` | How many walkers the frame time above was measured under |
+
+**Load-testing it (the pedestrian knob).** *Code: `NightMarketEnginePage.tsx`
+(`PED_LOAD_STEPS`, `cyclePedLoad`, the `ped-load` debug button);
+`MarketEngineViewer.tsx` (`pedCount` prop, the `nmpPerf.note`/`nmpPerf.load` effect);
+`usePixiPedestrians.ts` (`seededCountRef`).*
+
+The market ships **8** ambient walkers against a target of **1,000**, so a measurement of the
+market as it stands proves nothing about the market as it is meant to be. The `—/50/200/500/1k`
+button in the nmp debug column re-seeds the population at that count, so frame cost can be plotted
+against a known load. It is **DEV-ONLY** by construction (`import.meta.env.DEV`): unlike the
+overlays beside it, this control degrades the page on purpose, and a user must not be able to stall
+their own device with it.
+
+Changing the count **re-seeds from scratch** — walkers are not added or removed incrementally.
+
+⚠️ **What this does and does not reproduce.** It loads the RENDER and TICK paths honestly, which is
+what the ceiling is. It does **not** reproduce 1,000-ped *behaviour*: the walkers are seeded onto
+today's small board, so hundreds share tiles in a way a 240×240 world would not. Stand and template
+multiplication are not implemented at all — both asset pools (`NIGHT_MARKET_BASE_SET`,
+`NIGHT_MARKET_UNLOCK_POOL`) are empty, so there is no stand art to synthesize.
+
+Each 2s window is also shipped to the client-diagnostics pipeline (`kind: "frame"` /
+`"frame-worst"`, labelled `peds=N`) so a synthetic run and real prod telemetry are read by the same
+analyzer — see [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md) § Frame records. That leg
+needs `localStorage.perfDiag = '1'` as well; the console line needs only `nmpPerf`.
 
 ### Layer translucency (zoom-peel)
 
@@ -541,21 +728,11 @@ written it should call `alphaForSlot(layer.slot, useCameraZoom())` and gets the 
 drives per-overlay `DebugFlags` on `MarketEngineViewer`, all rendered inside the scene
 container so they pan/zoom with the terrain:
 - **origin** — cyan iso-axis crosshair at grid (0,0).
-- **grass** — semi-transparent diamond tint over every grass tile (`GrassOverlay`): a light
-  green pass over `kind === 'grass'` tiles, then a darker green pass over `darkGrass` tiles on
-  top (mirroring the terrain's dark-over-light stacking). Rebuilds the same field via
-  `buildFarmField` so the tinted diamonds line up with the grass caps.
-- **overlayLabels** — tiny per-cell text naming the SURFACE sprite stem(s) each tile was
-  painted with across BOTH layers (`OverlayLabels`), resolved from the shared
-  `resolveTileSurfaceUrls` + `resolveTileDarkSurfaceUrls` (farmTerrain.ts) and reverse-mapped
-  url→stem via `freeFarmTileset.stemOf`. Light caps show `grass`, dark caps show `dark`;
-  boundary overlays show their compass-set (e.g. `n,nw,ne`), dark ones prefixed `d:`; interior
-  dirt is unlabeled. `showGrid` (gridlines) is separate page state, not a DebugFlag.
+  `showGrid` (gridlines) is separate page state, not a DebugFlag.
 - **templateBounds** — amber iso-diamond outline of every PLACED template's board rectangle
   (`offset..offset+size`, in cells) with `name\nvN` floated over the center (`TemplateBoundsOverlay`).
   Reads the placement bounds surfaced by `useMarketWorld` as `placements: TemplateBounds[]` (a slim
-  name/version/offset/size projection of the layout), so it tracks the real stitched render — unlike
-  the grass/overlayLabels overlays which still visualize the stale procedural `buildFarmField`.
+  name/version/offset/size projection of the layout), so it tracks the real stitched render.
 - **placeholderBounds** — iso-diamond outline of every PLACEHOLDER occupant slot
   (`world.placeholderAreas`, global cells) with a `templateName\ncol_row ●/○` label
   (`PlaceholderBoundsOverlay`). Filled slots outline cyan, empty slots magenta (two stroke passes);
@@ -564,6 +741,17 @@ container so they pan/zoom with the terrain:
 
 Both bounds overlays share `traceIsoRect` (diamond outline of a cell rectangle) and `isoRectCenter`
 (screen center for the label) in `MarketEngineViewer.tsx`.
+
+> **Removed: the `grass` and `overlayLabels` overlays.** They tinted grass tiles and labelled each
+> cell's sprite stems — but they rebuilt the retired procedural `buildFarmField` plateau rather than
+> the stitched template terrain, so they drew a field with no relationship to what was on screen.
+> Every surviving overlay reads the LIVE stitched world. **An overlay that can disagree with the
+> render is worse than no overlay**: do not reinstate these without re-targeting them at
+> `world.terrain`. Their removal left the whole procedural generator in `farmTerrain.ts`
+> (`buildFarmField`, `buildGrassPatch`, `buildDarkGrassPatch`, `resolveTileDecorUrl`,
+> `FIELD_WIDTH`/`FIELD_HEIGHT`, the decor probabilities) with **no callers**; it is flagged dead
+> in-file and is safe to delete wholesale. `FarmTile`, `resolveTileSurfaceUrls` and
+> `resolveTileDarkSurfaceUrls` must stay — they are on the live template render path.
 
 The surface-sprite selection (grass cap vs. stacked grass-boundary overlays) lives once per
 layer in `resolveTileSurfaceUrls` / `resolveTileDarkSurfaceUrls` (farmTerrain.ts), each
@@ -766,6 +954,24 @@ studying Spanish grows the Spanish market and never touches the Chinese one.
 The pass is **idempotent** — safe on every tick, and a capped/blocked pass simply resumes
 on the next one.
 
+### What nmp shows (no unlock UI)
+Because the economy is push-based there is **no unlock button and no unlock notification** on
+the page. The header's progress readout is `filledSlots / totalSlots` **stalls**, derived at
+render from `world.placeholderAreas` (`NightMarketEnginePage.tsx`) — i.e. occupants actually
+placed, out of every unit slot the tiled continent currently exposes. It therefore moves both
+when a grant lands *and* when a lazy spawn adds new empty slots.
+
+This replaced a `N / M unlocked` counter plus a `Next unlock at X pts` hint that were fed by
+the retired `useNightMarket` hook: `GET /api/nightMarket/unlocks` returns a stable empty
+response, so the counter was permanently `0 / 0` and the threshold was a static config
+constant. That hook is **deleted**; the page now loads `useMarketWorld` directly and renders
+its `loading` / `error` (previously the scene fetched the world internally and discarded both,
+so a failed layout load drew a blank market with no message).
+
+⚠️ `/night-market` is an `access: "any"` route, so a signed-out visitor reaches the page while
+the layout endpoint is gated. `useMarketWorld` resolves that case to an explicit error rather
+than leaving `loading` true, which would strand the page's spinner.
+
 ### Decay
 `reconcileUnlocks(userId, language, net)` handles a *dropped* balance **for one market**:
 delete that market's newest surplus occupants, then `pruneDanglingTemplates(userId, language)`
@@ -843,9 +1049,8 @@ Registered in `server/routes/nightMarketRoutes.ts`.
 | `server/dal/implementations/NightMarketDAL.ts` | ⚠️ Legacy DAL implementation |
 | `server/services/NightMarketService.ts` | ⚠️ Retired stub — empty `getUnlocks`, throwing `unlockNext` |
 | `server/controllers/NightMarketController.ts` | HTTP handling for the two retired endpoints |
-| `src/features/nightmarket/useNightMarket.ts` | ⚠️ Legacy hook still calling the retired endpoints |
-| `src/features/nightmarket/NightMarketEnginePage.tsx` | Page component — builds layers from unlocks + registry, hosts debug toggles |
-| `src/features/nightmarket/MarketEngineViewer.tsx` | Pixi (`@pixi/react`) canvas renderer with pan/zoom and tap interaction |
+| `src/features/nightmarket/NightMarketEnginePage.tsx` | Page component — OWNS the layout load (`useMarketWorld`) and its spinner/error, hosts debug toggles + the occupant counter |
+| `src/features/nightmarket/MarketEngineViewer.tsx` | Pixi (`@pixi/react`) canvas renderer with pan/zoom and tap interaction; presentational over the world passed down from the page |
 | `src/engine/market/cameraZoom.ts` | Pure camera-zoom math — geometric wheel mapping, ladder snap, focal-point pan, settle easing (see "Camera (pan / zoom)") |
 | `src/hooks/useCameraControls.ts` | The one pan/zoom host hook shared by nmp / nms / nme — state, gesture listeners, settle tween, the pan clamp |
 | `src/engine/market/cameraFollow.ts` | Pure follow math for the pedestrian camera lock — centring pan + frame-rate-independent easing (see "Pedestrian camera lock") |

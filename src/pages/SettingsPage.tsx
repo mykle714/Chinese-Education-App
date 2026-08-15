@@ -37,6 +37,7 @@ import LockIcon from '@mui/icons-material/Lock';
 import { Visibility, VisibilityOff, Warning } from '@mui/icons-material';
 import { useTheme, type ThemeMode } from '../contexts/ThemeContext';
 import { useAuth } from '../AuthContext';
+import { LANGUAGE_FLAGS, LANGUAGE_NAMES } from '../types';
 import type { Language } from '../types';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useTTSSettings } from '../hooks/useTTSSettings';
@@ -168,15 +169,19 @@ function SettingsPage() {
         }
     };
 
+    // The FLAG + NAME both come from the shared contract (server/contracts/wire.ts) so
+    // this picker cannot drift from every other place a language is named — it used to
+    // hardcode its own copy, which is how "Chinese (Mandarin)" survived here after the
+    // rename. Only the description, which is picker-specific prose, lives locally.
     const availableLanguages: { value: Language; label: string; description: string }[] = [
         {
             value: 'zh',
-            label: 'Chinese (Mandarin)',
+            label: `${LANGUAGE_FLAGS.zh} ${LANGUAGE_NAMES.zh}`,
             description: 'Learn simplified and traditional Chinese characters with pinyin pronunciation'
         },
         {
             value: 'es',
-            label: 'Spanish',
+            label: `${LANGUAGE_FLAGS.es} ${LANGUAGE_NAMES.es}`,
             description: 'Learn Spanish vocabulary as plain text — no pronunciation overlay'
         },
     ];

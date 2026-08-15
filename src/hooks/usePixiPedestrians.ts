@@ -47,7 +47,16 @@ export interface UsePixiPedestriansParams {
   streetGraph: StreetGraph | null;
   /** Stand definitions occupying placeholder slots (for travel-target labels). Slice 2: none. */
   stands?: NightMarketAssetDef[];
-  /** Ambient walker count. */
+  /**
+   * Ambient walker count. Changing it RE-SEEDS the population from scratch (walkers are not
+   * added/removed incrementally), which is what the nmp load-test knob relies on.
+   *
+   * ⚠ At load-test counts the walkers are seeded onto a graph far too small for them — a 16×16
+   * board has a few hundred walkable tiles, so 1,000 walkers means heavy tile sharing. That is
+   * fine for measuring RENDER and TICK cost, which is what the harness is for, but it does not
+   * reproduce the movement behaviour of 1,000 peds on a 240×240 world. See
+   * docs/REACT_NATIVE_MIGRATION.md § "Why item 4a exists".
+   */
   count?: number;
 }
 
@@ -77,6 +86,11 @@ export function usePixiPedestrians(params: UsePixiPedestriansParams): UsePixiPed
   // Identity of the tileGraph the current walkers were seeded from. Re-seed when it changes
   // (first non-null load, or a version switch that rebuilds the world).
   const seededGraphRef = useRef<TileGraph | null>(null);
+  // Walker count the current population was seeded at. Re-seed when it changes so the load-test
+  // knob (docs/REACT_NATIVE_MIGRATION.md item 4a) takes effect without reloading the world —
+  // keying the re-seed on the graph alone would silently ignore every count change after the
+  // first, which is the whole point of the knob.
+  const seededCountRef = useRef<number>(count);
 
   // Keep the latest graphs + stand map in refs so tick/getDrawables read fresh values
   // without re-subscribing. Rebuilding STAND_MAP each render is cheap (few entries).
@@ -89,8 +103,9 @@ export function usePixiPedestrians(params: UsePixiPedestriansParams): UsePixiPed
 
   // (Re)seed walkers when the graph identity changes. Runs during render (ref writes only),
   // so the first frame after the world loads already has populated pedestrians.
-  if (tileGraph && tileGraph !== seededGraphRef.current) {
+  if (tileGraph && (tileGraph !== seededGraphRef.current || count !== seededCountRef.current)) {
     seededGraphRef.current = tileGraph;
+    seededCountRef.current = count;
     const tiles = [...tileGraph.tiles.values()];
     const next: PedestrianState[] = [];
     for (let i = 0; i < count; i++) {

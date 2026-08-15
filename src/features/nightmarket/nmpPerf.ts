@@ -13,12 +13,23 @@
  * `localStorage.setItem('nmpPerf', '1')`; force it OFF anywhere with `'0'`. It is a hard no-op when
  * disabled, so it costs nothing in normal use. Summary lands on the console every {@link REPORT_MS}.
  *
- * Referenced by: MarketEngineViewer.tsx (frame + container census), EditorTerrainLayer.tsx (tile and
- * sprite counts), GroundBackdropLayer.tsx (motif generation), docs/NIGHT_MARKET_FEATURE.md
- * § "Terrain performance".
+ * SHIPS ITS FRAME STATS, TOO. Every report window also goes to the client-diagnostics pipeline via
+ * {@link reportFrameStats}, so a synthetic load test (docs/REACT_NATIVE_MIGRATION.md action item 4a)
+ * and real prod telemetry land in the same JSONL and are read by the same analyzer. The console is
+ * for watching; the records are for measuring. That leg is inert unless `initPerfDiagnostics()` ran
+ * (`localStorage.perfDiag = '1'` in dev), so normal dev sessions still only pay for the console line.
+ *
+ * Referenced by: MarketEngineViewer.tsx (frame + container census + ped load), EditorTerrainLayer.tsx
+ * (tile and sprite counts), GroundBackdropLayer.tsx (motif generation), docs/NIGHT_MARKET_FEATURE.md
+ * § "Terrain performance", docs/CLIENT_PERF_DIAGNOSTICS.md § "Frame records".
  */
 
+import { reportFrameStats } from '../../utils/perfDiagnostics';
+
 const REPORT_MS = 2_000;
+
+/** Surface name stamped on every shipped frame record, for grouping in the analyzer. */
+const SURFACE = 'night-market';
 
 /** Resolved once: the flag cannot change without a reload, and `enabled()` is called per frame. */
 const ENABLED = (() => {
@@ -41,6 +52,13 @@ function enabled(): boolean {
 const counts = new Map<string, { fires: number; last: number }>();
 const notes = new Map<string, string>();
 
+/**
+ * Current load descriptor ("peds=1000"), set by the load harness. It is the x-axis of any scale
+ * experiment, so it rides on every shipped frame record — a frame time without the load it was
+ * measured under is not a data point.
+ */
+let loadLabel: string | undefined;
+
 let frames = 0;
 let frameTimeTotal = 0;
 let worstFrame = 0;
@@ -60,6 +78,19 @@ export function count(label: string, value: number): void {
   entry.last = value;
   counts.set(label, entry);
   schedule();
+}
+
+/**
+ * Declare what load the scene is currently under, e.g. `load('peds=1000')`.
+ *
+ * Unlike {@link count}, this is NOT cleared between reports — it describes the experiment, not the
+ * work done in one window, and every subsequent frame record carries it until it changes.
+ *
+ * NOT gated on `enabled()`: the label must survive being set before/while the probe is off, so a
+ * caller cannot produce unlabelled records by ordering. Setting a string costs nothing.
+ */
+export function load(label: string | undefined): void {
+  loadLabel = label;
 }
 
 /** Attach a one-off fact to the next report (e.g. the generated motif's size). */
@@ -109,11 +140,15 @@ function report(): void {
 
   if (lines.length > 0) console.info(`[nmpPerf]\n  ${lines.join('\n  ')}`);
 
+  // Ship the window's frame cost to the diagnostics pipeline BEFORE the counters reset. No-ops
+  // unless the reporter was initialised, so this is free in an ordinary dev session.
+  if (frames > 0) reportFrameStats(SURFACE, mean, worstFrame, frames, loadLabel);
+
   frames = 0;
   frameTimeTotal = 0;
   worstFrame = 0;
   counts.clear();
 }
 
-export const nmpPerf = { count, note, frame };
+export const nmpPerf = { count, note, frame, load };
 export default nmpPerf;

@@ -3,10 +3,11 @@
  * the client, and how one becomes a URL.
  *
  * A collection is any named set of the learner's cards that a CollectionViewPage
- * can render and a game/flp can be launched against. There are three kinds:
+ * can render and a game/flp can be launched against. There are four kinds:
  *
- *   learn-now  — every card the user sorted into Learn Now, minus the ones mastered
- *                in the CORE bar. The built-in default deck.
+ *   all        — every sorted card, mastered or not.
+ *   learn-now  — every card the user sorted, minus the ones mastered in the CORE
+ *                bar. The built-in default deck.
  *   mastered   — the cards mastered in ONE bar. Three of these since migration 143
  *                (core / reading / writing), because a card has three independent
  *                bars and can be mastered in each; the reading and writing ones are
@@ -17,6 +18,10 @@
  * holds: the launch sheet, the play buttons, the sort toolbar and the game fetches
  * all treat a collection as an opaque set of cards. Adding the two new Mastered
  * collections therefore touched this module and the fdp row list, and nothing else.
+ *
+ * WHICH collections a SURFACE offers is not decided here — that is
+ * `builtinCollections.ts`, the shared list the fdp and the Games hub selector both
+ * render. This module only says what a collection IS and how it becomes a URL.
  *
  * WHY A SHARED MODULE. Four surfaces have to agree on this: the collection page
  * (which one am I showing), the launch button (what do I append to the game URL),
@@ -38,11 +43,8 @@
  */
 import {
     ALL_COLLECTION_ID,
-    BAND_COLLECTION_IDS,
-    bandCollectionCategory,
     MASTERED_COLLECTION_IDS,
     masteredCollectionBar,
-    type BandCollectionCategory,
     type MasteryBarId,
 } from '../../../server/contracts/wire';
 import {
@@ -54,7 +56,6 @@ import {
 /** Which set of cards a page is showing / a round is drawn from. */
 export type CollectionRef =
     | { kind: 'all' }
-    | { kind: 'band'; category: BandCollectionCategory }
     | { kind: 'learn-now' }
     | { kind: 'mastered'; bar: MasteryBarId }
     | { kind: 'deck'; deckId: number; name?: string };
@@ -83,17 +84,24 @@ export function parseBuiltinCollection(raw: string | undefined): BuiltinCollecti
 export function builtinCollectionRef(id: BuiltinCollection): CollectionRef {
     const bar = masteredCollectionBar(id);
     if (bar) return { kind: 'mastered', bar };
-    const category = bandCollectionCategory(id);
-    if (category) return { kind: 'band', category };
     if (id === ALL_COLLECTION_ID) return { kind: 'all' };
     return { kind: 'learn-now' };
 }
 
-/** Human-readable name for each bar's Mastered collection. */
+/**
+ * Human-readable name for each bar's Mastered collection.
+ *
+ * All three lead with the word "Mastered" and end with what was mastered. The
+ * reading/writing names used to read the other way round ("Reading Mastered"),
+ * which sorted badly next to core's "Mastered Cards" and — now that the fdp tile
+ * wraps a long name onto a second line — put the qualifier first. One word order
+ * for all three, so every Mastered tile wraps to the same shape: "MASTERED" then
+ * what was mastered.
+ */
 const MASTERED_TITLES: Record<MasteryBarId, string> = {
     core: 'Mastered Cards',
-    reading: 'Reading Mastered',
-    writing: 'Writing Mastered',
+    reading: 'Mastered Reading',
+    writing: 'Mastered Writing',
 };
 
 /** Human-readable title for a collection, used as the page title and in the launch sheet. */
@@ -101,11 +109,6 @@ export function collectionTitle(ref: CollectionRef): string {
     switch (ref.kind) {
         case 'all':
             return 'All Cards';
-        case 'band':
-            // The band's own name IS its title — "Target", "Comfortable". These read
-            // as card sets in context (a tile in a row of card sets, a page reached
-            // by tapping one), so a "… Cards" suffix would only add noise.
-            return ref.category;
         case 'learn-now':
             // "Learn Now" is the user-facing name of the `library` bucket (CLAUDE.md
             // § Terminology) — the internal identifier stays `library` everywhere.
@@ -122,8 +125,6 @@ export function builtinCollectionId(ref: CollectionRef): BuiltinCollection | nul
     switch (ref.kind) {
         case 'all':
             return ALL_COLLECTION_ID;
-        case 'band':
-            return BAND_COLLECTION_IDS[ref.category];
         case 'learn-now':
             return 'learn-now';
         case 'mastered':

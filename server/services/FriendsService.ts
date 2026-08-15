@@ -1,9 +1,15 @@
 import { IFriendshipDAL } from '../dal/interfaces/IFriendshipDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
+import { ICategoryPromotionDAL } from '../dal/interfaces/ICategoryPromotionDAL.js';
+import { IUserLanguagePointsDAL } from '../dal/interfaces/IUserLanguagePointsDAL.js';
 import { ValidationError, NotFoundError, DuplicateError } from '../types/dal.js';
+import { VELOCITY_WINDOW_DAYS } from '../types/velocity.js';
+import { activeBars } from '../utils/masteryCompute.js';
 import type {
   FriendSummary,
   FriendRequestSummary,
+  FriendLeaderboardEntry,
+  FriendLeaderboardResponse,
   SendFriendRequestResponse,
 } from '../types/friends.js';
 
@@ -31,12 +37,97 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export class FriendsService {
   constructor(
     private friendshipDAL: IFriendshipDAL,
-    private userDAL: IUserDAL
+    private userDAL: IUserDAL,
+    private categoryPromotionDAL: ICategoryPromotionDAL,
+    private userLanguagePointsDAL: IUserLanguagePointsDAL
   ) {}
 
   /** The viewer's accepted friends. */
   async listFriends(userId: string): Promise<FriendSummary[]> {
     return this.friendshipDAL.listFriends(userId);
+  }
+
+  /**
+   * The friends leaderboard: the viewer and their friends, ranked by VELOCITY.
+   *
+   * THE SCOPING RULE — every person is scored in **their own** selected language,
+   * not the viewer's. The alternative (score everyone in the viewer's language)
+   * renders a friend who studies only Spanish as a permanent 0 on a Chinese
+   * viewer's board, which reads as "this person does nothing" rather than "we
+   * study different things". Each row therefore carries its `language`, and the
+   * client shows that language's flag so the comparison stays honest.
+   *
+   * Velocity for one person = Σ band-steps in the window over that person's OWN
+   * active bars (`activeBars` on their goal flags, migration 143) in that language.
+   * `netMinutes` is the same language's net wallet, so headline and subtitle never
+   * describe different tracks.
+   *
+   * Three batched reads, no per-friend query — the whole board is O(1) round trips.
+   */
+  async getLeaderboard(userId: string): Promise<FriendLeaderboardResponse> {
+    if (!userId) throw new ValidationError('User ID is required');
+
+    const friends = await this.friendshipDAL.listFriends(userId);
+
+    // The viewer is ranked among their friends, so they are part of every lookup.
+    const userIds = [userId, ...friends.map((friend) => friend.userId)];
+
+    const [profiles, buckets, netPointsByUser] = await Promise.all([
+      this.userDAL.findScoringProfilesByIds(userIds),
+      this.categoryPromotionDAL.getVelocityBuckets(userIds, VELOCITY_WINDOW_DAYS),
+      this.userLanguagePointsDAL.getNetPointsForUsers(userIds),
+    ]);
+
+    // Index the flat bucket rows by user so the per-person sum below is a scan of
+    // that person's own buckets rather than of the whole board's.
+    const bucketsByUser = new Map<string, typeof buckets>();
+    for (const bucket of buckets) {
+      const list = bucketsByUser.get(bucket.userId);
+      if (list) list.push(bucket);
+      else bucketsByUser.set(bucket.userId, [bucket]);
+    }
+
+    const entries: FriendLeaderboardEntry[] = profiles.map((profile) => {
+      // A brand-new account may not have picked a language yet; 'zh' is the app's
+      // default everywhere else (VelocityController does the same).
+      const language = profile.selectedLanguage || 'zh';
+      const bars = new Set<string>(
+        activeBars({ reading: profile.readingGoal, writing: profile.writingGoal })
+      );
+
+      const velocity = (bucketsByUser.get(profile.userId) ?? []).reduce(
+        (sum, bucket) =>
+          bucket.language === language && bars.has(bucket.bar)
+            ? sum + bucket.bandsClimbed
+            : sum,
+        0
+      );
+
+      return {
+        userId: profile.userId,
+        name: profile.name,
+        email: profile.email,
+        avatarIconId: profile.avatarIconId,
+        language,
+        velocity,
+        netMinutes: netPointsByUser.get(profile.userId)?.get(language) ?? 0,
+        rank: 0,
+        isCurrentUser: profile.userId === userId,
+      };
+    });
+
+    // Velocity first (that is what the board ranks), net minutes as the tiebreaker
+    // — between two learners at the same recent rate, the one who has put in more
+    // total study stands higher. Display name last so the order is TOTAL and the
+    // list cannot shuffle between refreshes for two identical rows.
+    entries.sort((a, b) => {
+      if (b.velocity !== a.velocity) return b.velocity - a.velocity;
+      if (b.netMinutes !== a.netMinutes) return b.netMinutes - a.netMinutes;
+      return (a.name || a.email).localeCompare(b.name || b.email);
+    });
+    entries.forEach((entry, index) => { entry.rank = index + 1; });
+
+    return { entries, windowDays: VELOCITY_WINDOW_DAYS };
   }
 
   /** Pending requests awaiting the viewer's answer. */

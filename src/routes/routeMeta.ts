@@ -92,8 +92,9 @@ export interface RouteMeta {
   chrome: RouteChrome;
   /** Which footer tab is active here. Omit for footerless routes. */
   footerTab?: FooterTab;
-  /** True for `React.lazy` components, which must be wrapped in <Suspense>. */
-  lazy?: boolean;
+  // NOTE: there is deliberately no `lazy` flag. Every route is code-split (see
+  // routes/registry.ts) and App.tsx wraps them all in <Suspense>, so a per-row
+  // flag would be always-true and could only ever drift.
   /** Why this route is classified the way it is, when that isn't obvious. */
   note?: string;
 }
@@ -111,12 +112,14 @@ const PAGE_ROUTES: RouteMeta[] = [
   // keep the Home tab lit.
   { path: "/games", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/community", access: "any", shell: "frame", chrome: "tab", footerTab: "home" },
-  // Friends hub + its two request screens. All three keep the Home tab lit — they
-  // are reached from the Home menu, and the two request pages drill in one level
-  // further (their back arrows return to /friends, not to Home).
+  // Friends leaderboard + its three action screens (Send / Accept / Remove). All
+  // four keep the Home tab lit — they are reached from the Home menu, and the three
+  // action pages drill in one level further (their back arrows return to /friends,
+  // not to Home). /friends itself is read-only; every mutation lives on a screen.
   { path: "/friends", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/friends/requests", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/friends/sent", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/friends/remove", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/dictionary", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/compare", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/reader", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
@@ -223,7 +226,6 @@ const GAME_ROUTE_META: RouteMeta[] = GAME_REGISTRY.map((g) => ({
   access: g.requiresAuth ? ("account" as const) : ("any" as const),
   shell: "frame" as const,
   chrome: "leaf" as const,
-  lazy: true,
 }));
 
 /** Every route in the app, metadata only. */

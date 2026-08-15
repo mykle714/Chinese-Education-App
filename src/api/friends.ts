@@ -18,6 +18,33 @@ export interface FriendSummary {
     friendsSince: string | null;
 }
 
+/**
+ * One row of the friends leaderboard — mirrors server/types/friends.ts.
+ *
+ * Both numbers are scoped to `language`, which is the ROW'S OWN person's selected
+ * language, not the viewer's (see the server type for why). Render the language
+ * alongside them so two rows in different languages aren't read as comparable
+ * without notice.
+ */
+export interface FriendLeaderboardEntry {
+    userId: string;
+    name: string | null;
+    email: string;
+    avatarIconId: string | null;
+    language: string;
+    /** utcm band-steps climbed in the last `windowDays` days. The ranked metric. */
+    velocity: number;
+    /** Net minute-point wallet in `language`. */
+    netMinutes: number;
+    rank: number;
+    isCurrentUser: boolean;
+}
+
+export interface FriendLeaderboardResponse {
+    entries: FriendLeaderboardEntry[];
+    windowDays: number;
+}
+
 /** Which way a pending request points, relative to the viewer. */
 export type RequestDirection = 'incoming' | 'outgoing';
 
@@ -43,9 +70,23 @@ export interface SendFriendRequestResponse {
     friend: FriendSummary | null;
 }
 
-/** The viewer's accepted friends, newest friendship first. */
+/**
+ * The viewer's accepted friends, newest friendship first — the plain list.
+ *
+ * Used by `/friends/remove` (the unfriend screen). `/friends` itself reads the
+ * leaderboard below instead, which carries the scores the plain list has no
+ * business computing.
+ */
 export function fetchFriends(): Promise<FriendSummary[]> {
     return withFallback(apiGet<FriendSummary[]>('/api/friends'), 'Could not load your friends');
+}
+
+/** The viewer + their friends, ranked by 7-day velocity. Powers the Friends screen. */
+export function fetchFriendsLeaderboard(): Promise<FriendLeaderboardResponse> {
+    return withFallback(
+        apiGet<FriendLeaderboardResponse>('/api/friends/leaderboard'),
+        'Could not load your friends leaderboard'
+    );
 }
 
 /** Pending requests awaiting the viewer's answer. */

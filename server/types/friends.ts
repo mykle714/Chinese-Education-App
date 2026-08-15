@@ -41,6 +41,44 @@ export interface FriendSummary {
   friendsSince: string | null;
 }
 
+/**
+ * One row of the friends leaderboard — a friend (or the viewer) ranked by VELOCITY.
+ *
+ * Velocity here is the same number the Account page shows (utcm band-steps climbed
+ * in the last 7 days, counting only the bars that account pursues — see
+ * server/types/velocity.ts), scored in **that person's own selected language**, not
+ * the viewer's. A Spanish learner is therefore never shown as a zero on a Chinese
+ * viewer's board; `language` says which track the two numbers describe, and the
+ * client renders its flag beside them.
+ *
+ * `netMinutes` is that same language's NET wallet
+ * (`user_language_points.totalMinutePoints`) — penalty-debited and floored at 0,
+ * NOT the monotonic `lifetimeMinutesEarned`. Kept in the same language as velocity
+ * so the headline and the subtitle never describe different study tracks.
+ */
+export interface FriendLeaderboardEntry {
+  userId: string;
+  name: string | null;
+  email: string;
+  avatarIconId: string | null;
+  /** The person's selected language — the scope of BOTH numbers below. */
+  language: string;
+  /** Band-steps climbed in `language` over the velocity window. */
+  velocity: number;
+  /** Net minute-point wallet for `language`. */
+  netMinutes: number;
+  /** 1-based position after sorting; ties share nothing — the sort is total. */
+  rank: number;
+  /** True on the viewer's own row, so the client can highlight it. */
+  isCurrentUser: boolean;
+}
+
+/** GET /api/friends/leaderboard. `windowDays` labels the velocity window client-side. */
+export interface FriendLeaderboardResponse {
+  entries: FriendLeaderboardEntry[];
+  windowDays: number;
+}
+
 /** Which way a pending request points, relative to the viewer. */
 export type RequestDirection = 'incoming' | 'outgoing';
 

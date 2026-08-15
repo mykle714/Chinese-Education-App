@@ -137,8 +137,10 @@ const leaderboardService = new LeaderboardService(userDAL, userMinutePointsDAL, 
 // lifetime owner (docs/ARCHITECTURE_REVIEW.md finding 8).
 const ttsService = new TTSService();
 // Friend-request policy (who may accept/revoke, crossing-request auto-accept).
-// userDAL supplies the target account's existence check and public identity.
-const friendsService = new FriendsService(friendshipDAL, userDAL);
+// userDAL supplies the target account's existence check and public identity; the
+// last two DALs are read-only and feed the velocity leaderboard (each friend scored
+// in their own selected language) — see FriendsService.getLeaderboard.
+const friendsService = new FriendsService(friendshipDAL, userDAL, categoryPromotionDAL, userLanguagePointsDAL);
 // Constructed after starterPacksService: it borrows estimateLevel to pick which
 // difficulty band to lend from (docs/PROVISIONAL_CARDS.md § Which words get lent).
 const provisionalCardService = new ProvisionalCardService(provisionalCardDAL, starterPacksService);

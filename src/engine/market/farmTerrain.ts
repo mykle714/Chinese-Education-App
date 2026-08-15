@@ -16,7 +16,7 @@
  *   - `darkGrassNeighbours` — the same 8-neighbour occupancy for the DARK patch,
  *     used to spill dark-grass-boundary overlays onto light-grass tiles bordering it.
  *
- * It does NOT render — the view ({@link FarmTerrainLayer}) turns these into
+ * It does NOT render — the view ({@link ../../features/nightmarket/EditorTerrainLayer}) turns these into
  * tallDirt slabs, grass caps, and (for boundary tiles) stacked grass overlays via
  * {@link freeFarmTileset.pickGrassBorderOverlays}. The dark layer is painted just
  * above the light layer so its caps/overlays win on shared tiles.
@@ -40,12 +40,27 @@ import {
 import { PLANK_VARIATIONS } from './walkway';
 import type { PlaceholderArea } from './placeholderArea';
 import type { CellWindow } from './isometric';
+import { packCell, packCellKey, type CellId } from './cellKey';
 
 /**
- * Field dimensions in tiles. Shared by the terrain view ({@link FarmTerrainLayer})
- * and any overlay that needs to rebuild the same field (e.g. the nmp grass debug
- * overlay in MarketEngineViewer) — both must pass these to {@link buildFarmField}
- * so their tiles line up.
+ * ⚠️ DEAD CODE — the PROCEDURAL farm generator has no callers left.
+ *
+ * `FIELD_WIDTH`/`FIELD_HEIGHT`, {@link buildFarmField}, {@link buildGrassPatch},
+ * {@link buildDarkGrassPatch}, {@link resolveTileDecorUrl}, `FAMILY_DECOR_PROBABILITY`,
+ * `COMMON_DECOR_PROBABILITY` and `DECOR_SEED` together generated the original single-plateau
+ * market: a random light-grass patch with a dark patch grown inside it, plus scatter decor. The
+ * market is now assembled from AUTHORED TEMPLATES instead ({@link buildEditorField} +
+ * `templateStitch`), so nothing calls any of it.
+ *
+ * Its last two consumers were nmp's `GrassOverlay` and `OverlayLabels` debug overlays, which were
+ * removed because they rebuilt THIS field rather than the stitched template terrain — i.e. they
+ * drew a plateau unrelated to what was actually on screen.
+ *
+ * The block is retained for now only because it is a self-contained, reusable piece of terrain
+ * generation. **It is safe to delete in full**; nothing outside this file references it except
+ * two doc comments (in `freeFarmTileset.ts`). What must NOT be deleted with it: {@link FarmTile}
+ * (which {@link EditorTile} extends), {@link resolveTileSurfaceUrls} and
+ * {@link resolveTileDarkSurfaceUrls} — those are on the live template render path.
  */
 export const FIELD_WIDTH = 20;
 export const FIELD_HEIGHT = 20;
@@ -327,7 +342,7 @@ function closeGrassNotches(
  *     from its 8 grass neighbours,
  *   - interior dirt → none (its own dirt top face shows).
  *
- * Shared by the {@link FarmTerrainLayer} view (which paints these) and the nmp
+ * Shared by the {@link ../../features/nightmarket/EditorTerrainLayer} view (which paints these) and the nmp
  * overlay-tile debug overlay (which labels them via {@link freeFarmTileset.stemOf}),
  * so both name/paint the exact same sprites. Does NOT include the tallDirt slab —
  * that is the plateau body, not a surface sprite — nor the dark layer (see
@@ -499,6 +514,44 @@ export interface EditorMasks {
 }
 
 /**
+ * {@link EditorMasks} reduced to just the layers {@link buildEditorField} reads, re-keyed by
+ * PACKED cell id ({@link ../cellKey packCell}) instead of `"col,row"` strings.
+ *
+ * WHY A SEPARATE TYPE. `EditorMasks` is the AUTHORING and WIRE shape: the editor paints into it
+ * and {@link ./templateDefinition} persists it as string-keyed JSON. Both are string-keyed for
+ * good reason and neither is hot. The RENDER path is hot — `buildEditorField` probes these masks
+ * ~20–25 times per visible cell — so it consumes this compiled form instead, and the conversion
+ * happens once per mask change rather than once per probe.
+ *
+ * The walkability/annotation layers (street/communal/placeholder/condition) are deliberately
+ * absent: they render no sprite and `buildEditorField` never reads them, so compiling them would
+ * be pure waste.
+ *
+ * ⚠️ CALLERS MUST MEMOISE. {@link compileMasks} is O(painted cells); fold it into whatever memo
+ * already guards the masks (every call site does — see the callers of `buildEditorField`).
+ * Compiling per render would trade a per-cell cost for a per-frame one.
+ */
+export interface CompiledMasks {
+  terrain1: Set<CellId>;
+  terrain2: Set<CellId>;
+  decor: Map<CellId, string>;
+}
+
+/**
+ * Compile the string-keyed authoring masks into the packed form the render loop consumes.
+ * One pass over the painted cells; see {@link CompiledMasks} for why this is a separate step.
+ */
+export function compileMasks(masks: EditorMasks): CompiledMasks {
+  const terrain1 = new Set<CellId>();
+  const terrain2 = new Set<CellId>();
+  const decor = new Map<CellId, string>();
+  for (const cell of masks.terrain1) terrain1.add(packCellKey(cell));
+  for (const cell of masks.terrain2) terrain2.add(packCellKey(cell));
+  for (const [cell, url] of masks.decor) decor.set(packCellKey(cell), url);
+  return { terrain1, terrain2, decor };
+}
+
+/**
  * The paintable surface a cell resolves to, which selects its family-decor rotation.
  * `terrain1`/`terrain2` are the generic (hot-swappable) names for what currently render
  * as light/dark grass; `dirt` is the bare board.
@@ -635,7 +688,7 @@ export function isBlockingDecorUrl(url: string): boolean {
  * spilling onto — the cell covers them, reading as a ground detail the grass grows over. Every
  * other decor family (lightGrass/darkGrass family, common, tree) stays ABOVE the surface.
  * Single-sourced against the tileset's own `dirt` bucket, mirroring {@link isBlockingDecorUrl}.
- * Consumed by the view layers ({@link ../../features/nightmarket/FarmTerrainLayer},
+ * Consumed by the view layers ({@link ../../features/nightmarket/EditorTerrainLayer},
  * {@link ../../features/nightmarket/EditorTerrainLayer}) to pick the decor z-slot.
  */
 export function isDirtDecorUrl(url: string): boolean {
@@ -771,14 +824,17 @@ export function padTerrainField(
 export function buildEditorField(
   width: number,
   height: number,
-  masks: EditorMasks,
+  masks: CompiledMasks,
   field?: TerrainField,
   window?: CellWindow,
 ): EditorTile[] {
   const originCol = field?.originCol ?? 0;
   const originRow = field?.originRow ?? 0;
-  const isTerrain1 = (x: number, y: number) => masks.terrain1.has(key(x, y));
-  const isTerrain2 = (x: number, y: number) => masks.terrain2.has(key(x, y));
+  // Packed-id probes: this is the hot path (~20–25 mask lookups per visible cell), so every
+  // membership test below is an integer hash rather than a `${x},${y}` allocation. See
+  // {@link CompiledMasks}.
+  const isTerrain1 = (x: number, y: number) => masks.terrain1.has(packCell(x, y));
+  const isTerrain2 = (x: number, y: number) => masks.terrain2.has(packCell(x, y));
   // Field membership: the editor's single board is the whole rectangle; the runtime passes a
   // footprint-union test so ground paints only inside the real continent shape (and rims it).
   const inField =
@@ -791,7 +847,7 @@ export function buildEditorField(
   const isLightGrass = (x: number, y: number) => isTerrain1(x, y) || isApron(x, y);
   // The stored decor url for a cell, before plank autotiling. The street mask does not
   // suppress decor (it is a spriteless tint; family decor coexists with a street).
-  const rawDecorAt = (x: number, y: number) => masks.decor.get(key(x, y)) ?? null;
+  const rawDecorAt = (x: number, y: number) => masks.decor.get(packCell(x, y)) ?? null;
   // Whether a cell currently holds any plank — drives the plank far-face cap resolution.
   const isPlankAt = (x: number, y: number) => {
     const u = rawDecorAt(x, y);
@@ -817,7 +873,25 @@ export function buildEditorField(
   const startRow = Math.max(originRow, window?.minRow ?? -Infinity);
   const endRow = Math.min(originRow + height - 1, window?.maxRow ?? Infinity);
   for (let isoX = startCol; isoX <= endCol; isoX++) {
-    for (let isoY = startRow; isoY <= endRow; isoY++) {
+    // DIAMOND SPAN. The window's col/row box is the BOUNDING BOX of what is on screen, and in an
+    // iso projection that box is about twice the visible area — iterating it whole builds roughly
+    // half its tiles off-screen. The viewport actually bounds the two diagonals, so solving them
+    // for `row` at this `col` gives the exact visible span:
+    //     minDiag ≤ isoX − isoY ≤ maxDiag   ⇒   isoX − maxDiag ≤ isoY ≤ isoX − minDiag
+    //     minSum  ≤ isoX + isoY ≤ maxSum    ⇒   minSum − isoX  ≤ isoY ≤ maxSum − isoX
+    // Intersected with the box, an empty span just skips the column. Without a window (the editor
+    // and sandbox, which draw a whole small board) the bounds are ±Infinity and this is a no-op.
+    const rowLo = Math.max(
+      startRow,
+      isoX - (window?.maxDiag ?? Infinity),
+      (window?.minSum ?? -Infinity) - isoX,
+    );
+    const rowHi = Math.min(
+      endRow,
+      isoX - (window?.minDiag ?? -Infinity),
+      (window?.maxSum ?? Infinity) - isoX,
+    );
+    for (let isoY = rowLo; isoY <= rowHi; isoY++) {
       if (!inField(isoX, isoY)) continue;
       const fieldEdge = freeFarmTileset.pickLandmassEdge({
         n: inField(isoX, isoY + 1),

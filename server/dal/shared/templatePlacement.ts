@@ -30,9 +30,8 @@
 
 import {
   type Cardinal,
-  globalOccupied,
   boardCells,
-  type PlacementOccupancy,
+  globalOccupiedRects,
 } from './versionSelection.js';
 
 // `boardCells` lives in versionSelection (single source — the layout read and the seal simulation
@@ -185,11 +184,6 @@ export interface ExposedAnchor {
   originDistance: number;
 }
 
-/** Every placed template's footprint as a {@link PlacementOccupancy} (local cells + offset). */
-function footprints(placed: readonly PlacedTemplate[]): PlacementOccupancy[] {
-  return placed.map((p) => ({ offsetCol: p.offsetCol, offsetRow: p.offsetRow, cells: boardCells(p.width, p.height) }));
-}
-
 /**
  * Enumerate every EXPOSED street anchor across the continent: maximal contiguous runs of
  * street-walkable boundary cells whose outward-normal neighbor is void (not occupied by any placed
@@ -197,7 +191,7 @@ function footprints(placed: readonly PlacedTemplate[]): PlacementOccupancy[] {
  * {@link ExposedAnchor.originDistance}. Mirror of placement-algorithm step 1.
  */
 export function exposedAnchors(placed: readonly PlacedTemplate[]): ExposedAnchor[] {
-  const occupied = globalOccupied(footprints(placed));
+  const occupied = globalOccupiedRects(placed);
   const out: ExposedAnchor[] = [];
 
   for (const owner of placed) {
@@ -298,7 +292,7 @@ function exposedAnchorKey(a: ExposedAnchor): string {
  * would inherit the pre-existing violation and be rejected.
  */
 export function flankedAnchorKeys(placed: readonly PlacedTemplate[]): Set<string> {
-  const occupied = globalOccupied(footprints(placed));
+  const occupied = globalOccupiedRects(placed);
   const flanked = new Set<string>();
 
   for (const a of exposedAnchors(placed)) {
@@ -480,7 +474,7 @@ export function maximinSpread(
   placed: readonly PlacedTemplate[],
   voidGap = 1000,
 ): number {
-  const occupied = globalOccupied(footprints(placed));
+  const occupied = globalOccupiedRects(placed);
   let min = voidGap;
 
   // Bounding box of the whole continent, from RECTANGLE bounds only — O(placed), not O(cells).

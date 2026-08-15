@@ -6,8 +6,9 @@ Two things landed together here, because one made the other possible:
 
 1. **Collection view page** — the `/flashcards/mastered` page was generalized into a
    page that renders *any* set of the learner's cards, with a search bar and a
-   launch button that drops straight into any game or the flp **with just those
-   cards**.
+   button that drops straight into the **flp** with just those cards. (It used to
+   offer every game too; games are now launched from the Games hub, which carries its
+   own collection selector — see § 3.)
 2. **Decks** — a deck is a named set of a user's cards (`decks` / `deck_cards`,
    migration 141). Selecting one opens its collection view. The `/decks` page,
    whose space used to be the inline Learn Now card grid, is now the deck list.
@@ -125,18 +126,29 @@ the meaningful recency.
 
 ## 3. Launching a game or the flp with one collection
 
-The collection view page's top button launches any surface restricted to that set.
+**Two surfaces choose a collection, one each:**
+
+| Surface | Chooses | How |
+|---|---|---|
+| Collection view page's top button | the **flp**, with the collection the page is showing | `withCollectionParams("/flashcards/learn", collection)` |
+| **Games hub header selector** | the collection **every game** on the hub is launched with | `GamesCollectionSelector` writes a session-only store; `GamesPage` wraps each link in `withCollectionParams` |
+
+The collection-page button used to open a sheet listing the flp *and every game*.
+Choosing the cards and then the activity was backwards, so the game half moved to the
+Games hub (`src/games/GamesCollectionSelector.tsx` + `src/features/flashcards/selectedCollection.ts`,
+detailed in [GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Collection selector"). **The wire
+format below did not change** — the hub sends exactly the params a collection-page
+launch always sent, and every game still reads them back with `useLaunchCollection()`.
 
 ### Wire format
 
 | Collection | Launch params | Server filter (`builtinCollectionClause`) |
 |---|---|---|
 | All Cards | *(none)* | none — **All is the default pool** |
-| Unfamiliar / Target / Comfortable | `?collection=unfamiliar` etc. | `compute_core_category(...) = '<band>'` |
 | Learn Now | `?collection=learn-now` | `compute_core_category(...) <> 'Mastered'` |
 | Mastered (core) | `?collection=mastered` | `masteredBarClause('core')` |
-| Reading Mastered | `?collection=mastered-reading` | `masteredBarClause('reading')` |
-| Writing Mastered | `?collection=mastered-writing` | `masteredBarClause('writing')` |
+| Mastered Reading | `?collection=mastered-reading` | `masteredBarClause('reading')` |
+| Mastered Writing | `?collection=mastered-writing` | `masteredBarClause('writing')` |
 | A deck | `?deck=<id>` | `AND (EXISTS deck_cards row OR bucket = 'provisional')` |
 
 **`all` is the one that sends nothing**, because every game and the flp already draw
@@ -152,7 +164,8 @@ from every sorted card — a clause for it would restate `vetPlayableClause()`.
 
 `CollectionFilter` (`OnDeckVocabService`) has just two variants — `deck` (a STORED
 set, the `deck_cards` join) and `builtin` (a COMPUTED set, carrying the id whose
-clause defines it). Adding the band collections therefore added no variant, only ids.
+clause defines it). Adding or removing a built-in collection therefore changes no
+variant, only the id list.
 
 ### Where the filter is applied
 
@@ -226,7 +239,10 @@ deck would make the deck itself the answer key.
 |---|---|
 | `src/api/decks.ts` | Typed calls against `/api/decks/*`. No `token` param (FRONTEND_LAYERING §3.2). |
 | `src/features/flashcards/collectionRef.ts` | **The one definition of "a collection"** — kinds, titles, routes, launch params, mark-body fields, deck accent color |
+| `src/features/flashcards/builtinCollections.ts` | **The one list of built-in collections a surface offers** — order, colors, grouping (`hasMasteredSection`) and tile counts; shared by the fdp and the Games hub selector |
 | `src/features/flashcards/useLaunchCollection.ts` | Reads the collection back off a surface's own URL |
+| `src/features/flashcards/selectedCollection.ts` | **Session-only store** for the collection the Games hub plays with (never persisted); read by `GamesPage` / `WordSearchHubItem`, written by `GamesCollectionSelector` |
+| `src/games/GamesCollectionSelector.tsx` | The hub-header "Playing with …" pill + menu (see [GAMES_FEATURE.md](./GAMES_FEATURE.md)) |
 | `src/features/flashcards/CollectionViewPage.tsx` | The generalized page (all three collection kinds) |
 | `src/features/flashcards/MasteredRedirect.tsx` | `/flashcards/mastered` → `/flashcards/collection/mastered` |
 | `src/features/flashcards/FlashcardsDecksPage.tsx` | `/decks`, now the deck list |
@@ -236,9 +252,6 @@ deck would make the deck itself the answer key.
 
 ```
 /flashcards/collection/all               ─┐
-/flashcards/collection/unfamiliar        ─┤
-/flashcards/collection/target            ─┤
-/flashcards/collection/comfortable       ─┤
 /flashcards/collection/learn-now         ─┼─ CollectionViewPage
 /flashcards/collection/mastered          ─┤
 /flashcards/collection/mastered-reading  ─┤
@@ -252,7 +265,7 @@ deck would make the deck itself the answer key.
 fragment that gives each id its meaning. `collectionRef.ts` re-exports it rather than
 restating it: a collection the client can link to but the server cannot resolve would
 be a dead page, and a second list is exactly how that happens. The id *spellings*
-(`mastered-reading`, `unfamiliar`) come from `wire.ts`.
+(`mastered-reading`, `all`) come from `wire.ts`.
 
 One route serves all eight because the segment is `:builtin` — adding a ninth
 collection is a case in `builtinCollectionClause` and a tile on the fdp, nothing else.
@@ -264,7 +277,38 @@ its own path segment, so a user who names a deck "mastered" gets
 All are **node pages** (docs/UX_AND_NAVIGATION.md): footer kept, left back arrow,
 horizontal slide.
 
-### `/decks` is now three bands
+### Which collections exist
+
+The built-in list is deliberately **three ideas wide**:
+
+| Collection | What it holds |
+|---|---|
+| **All Cards** | every sorted card, mastered or not |
+| **Learn Now** | every sorted card whose **core** bar is unfinished |
+| **Mastered** | the cards finished in one bar — one collection per **active** bar |
+
+The per-band collections (`unfamiliar` / `target` / `comfortable`) **were removed**.
+A utcm band is a property of one card's progress, not a set a learner studies: nobody
+opens "my Target cards" to drill them, and a set whose membership changes on every
+mark is a poor thing to launch a round against. The bands still exist everywhere they
+mean something — the category on a card, the Account page's bucket row, the mini-card
+chip — just not as collections. Consequence: `?collection=target` no longer resolves
+(it falls back to `learn-now`) and `/flashcards/collection/target` renders nothing.
+
+**One conditional rule: is *Mastered* its own section?** Only when the account pursues
+a reading or writing goal, i.e. only when there is more than one Mastered collection
+to tell apart. With `core` alone that tile joins the **Cards** section, because a
+captioned section holding a single tile is a heading for nothing.
+
+**One shared list, two surfaces.** `src/features/flashcards/builtinCollections.ts`
+owns the entries, their order, their colors and their grouping.
+`FlashcardsDecksPage` renders them as tiles and `GamesCollectionSelector` as menu
+rows — **the fdp is the source of truth for what a collection is**, and a set a
+learner can open on `/decks` but cannot play a game with would be a silent
+inconsistency. Counts come from the same module (`builtinCollectionCount`), so a
+collection's definition and its number cannot drift.
+
+### `/decks` is now four sections
 
 1. **Review / Study Mix / Challenge** — *whole-library* study entry points. To study
    one collection, open it and use its launch button.
@@ -277,39 +321,64 @@ horizontal slide.
    > `?mode=easy` bookmark fails the validity check and opens a **Study Mix**
    > session rather than dead-ending; Match Speed's `modeConfigFor` does the same
    > with an old nav-state value.
-2. **Cards** — *All*, *Unfamiliar*, *Target*, *Comfortable*, as **deck tiles** in one
-   row. Four rather than the page's usual three, deliberately: the utcm bands read as
-   a single scale and wrapping *Comfortable* onto its own line would break that
-   reading. `DeckTile` flex-shrinks, so four fit a phone width.
+2. **Cards** — *All Cards* and *Learn Now* as **deck tiles**, plus *Mastered Cards*
+   when it has no section of its own (no reading/writing goal).
 3. **Mastered** — one tile per **active** mastery bar: *Mastered Cards* (core,
-   always), *Reading Mastered* and *Writing Mastered* (each gated on that account
-   goal). `FlashcardsDecksPage` maps over `activeBars({reading, writing})` and asks
-   `collectionPath` / `collectionTitle` for each, so adding a bar is a change in one
-   contract rather than in the page. All three tiles share the **Mastered blue**, so
-   the row reads as one achievement in three skills.
+   always), *Mastered Reading* and *Mastered Writing* (each gated on that account
+   goal) — **rendered only when a reading or writing goal is set**
+   (`hasMasteredSection`). The page maps over whatever `builtinCollectionEntries`
+   returns for each group, so adding a bar is a change in one contract rather than in
+   the page.
 4. **Decks** — the user's sets, wrapping at **three per row**, plus a `+` to create
    one.
 
+Every section shares one row component (`TileGrid`): a **centered wrapping flex**
+capped at exactly three tiles' worth of width (`3 × TILE_WIDTH + 2 × TILE_GAP`,
+derived rather than typed twice — a wider gap with a stale cap would push the third
+tile onto its own line, a narrower one would let a fourth up). It is not a
+3-column grid, because a grid pins each tile to a column and its last row is then
+stuck with visibly empty columns. The width cap is what keeps the three-per-row
+rhythm, and `DeckTile` never grows past its natural 72px, so a short row is normal
+tiles rather than stretched ones.
+
+It takes **two alignments**, deliberately:
+
+* **Centered** — *Cards* and *Mastered*. Fixed sets of two or three tiles that never
+  wrap, so there is no column structure to preserve, and left-aligning them would
+  leave an obvious hole where the third tile isn't.
+* **Left** (`alignLeft`) — *Decks*. A growing, wrapping list: centered, adding a
+  fourth deck would shunt the first three sideways to re-center the row above, so a
+  deck would move every time the user makes another one. Left-aligned, each deck keeps
+  its place and every row starts on the same column.
+
 ### Every set on the page is the same object
 
-Bands 2–4 all render **`DeckTile`** (`src/components/DeckTile.tsx`) — the stacked-card
-icon — and all navigate to that set's CollectionViewPage. They differ only in what
-fills them, which is the point: a utcm band, a mastery bar and a user-authored deck
-are all just "a set of your cards", and the page should not argue otherwise.
+Sections 2–4 all render **`DeckTile`** (`src/components/DeckTile.tsx`) — the
+stacked-card icon — and all navigate to that set's CollectionViewPage. They differ
+only in what fills them, which is the point: a built-in collection, a mastery bar and
+a user-authored deck are all just "a set of your cards", and the page should not
+argue otherwise.
 
 `DeckTile` was extracted from `DeckBuckets` (the Account page's display-only count
 block), which now consumes it. The stacked-card look existed once, privately, inside
-that component; the fdp needed it eight more times, and a second copy would have
+that component; the fdp needed it for every set it lists, and a second copy would have
 drifted on the stack offsets the moment either page was touched. The tile is purely
-presentational — a label, an optional count, two colors, an optional `onClick` — and
-knows nothing about bands, bars or routes.
+presentational — a label, an optional count, an optional `icon` **element**, two
+colors, an optional `onClick` — and knows nothing about bands, bars or routes.
 
-Colors come from `BAND_COLORS` (`src/utils/categoryColors.ts`) for the built-ins and
-from `deckTileColors(id)` for a user deck — the same id-derived palette as
-`deckAccentColor`, paired with a saturated body tone so a deck tile has the same
-two-tone structure as a band tile. **All** is the one grey tile: every other color on
-the page names a set (a band, a bar, a deck), and All is their union rather than
-another member, so it takes a neutral pair instead of a fifth hue.
+The stack itself is **two cards**, not three: the face (`.deck-tile__layer-1`) plus one
+back card offset 8px down-right (`.deck-tile__layer-2`). 8px is exactly the layers'
+width slack (`calc(100% - 8px)`), so the two-card stack still fills the tile's box.
+
+Colors come from `builtinCollectionEntries` for the built-ins (which reads
+`BAND_COLORS.All`, `LEARN_NOW_COLORS` and `MASTERY_BAR_COLORS` out of
+`src/utils/categoryColors.ts`) and from `deckTileColors(id)` for a user deck — the
+same id-derived palette as `deckAccentColor`, paired with a saturated body tone so a
+deck tile has the same two-tone structure as a built-in one. **All** is the one grey
+tile: every other color on the page names a set, and All is their union rather than
+another member, so it takes a neutral pair instead of another hue. **Learn Now** takes
+purple — a hue no band owns, so it cannot be misread as Comfortable green, which
+still means the band on mini-card chips and the Account bucket row.
 
 The three **Mastered** tiles come from `MASTERY_BAR_COLORS` (same file), one hue per bar
 rather than three blues. `reading` and `writing` are single-mark-type bars, so each tile
@@ -317,27 +386,116 @@ takes ITS MARK's color out of `MARK_TYPE_COLORS` — red and orange, the same co
 marks paint on the cdp track and the mini-card strip — and reads them rather than
 restating the hex, so a mark and its Mastered tile cannot drift. `core` blends
 recognition and production, has no single mark color to borrow, and keeps Mastered blue.
-⚠️ Those two hues are also the Unfamiliar and Target band hues one section above; the
-sections are captioned and separated, but interleaving them would need the colors to
-diverge.
+Those two hues are also the Unfamiliar and Target band hues, which used to collide with
+the band row one section above; with the band tiles gone they mean only "reading" and
+"writing" on this page.
 
-The tile's natural size is **72 × 105** (`SIZING` in `DeckTile.tsx`). That is the width
-the Account row has always rendered at — four tiles inside a 350px-capped section
-shrink to ≈71.5px — while the fdp's roomier grid used to let the same component sit at
-its old 92px natural size. Pinning the natural size to the Account width makes every
-deck on both pages identical; the tile still flex-shrinks below it when a container is
-narrower than its row.
+**The name runs up the tile's right edge.** The face carries three things: the card
+**count** as a small stat pinned to its top-left corner (`.deck-tile__count`, 11px/800
+at a 7px inset), the set's **icon** centered in the middle (`.deck-tile__icon` — see
+below), and the set's name as a rotated run against its right edge — faded grey
+uppercase (`COLORS.textSecondary` at `opacity: 0.5`, `TRACKING.caps`) turned 90°
+counter-clockwise so it reads bottom-to-top, centered on the tile's height
+(`.deck-tile__label`, via `writing-mode: vertical-rl` + `transform: rotate(180deg)`).
+This is deliberately the **same treatment the Games hub gives a card's mark-type
+label** — see [HUB_MENU_SYSTEM.md § Edge label slot](./HUB_MENU_SYSTEM.md) — so a
+name attached to a set reads the same way on both surfaces. Two consequences:
 
-**Learn Now has no tile here.** The band row covers it exactly (Unfamiliar + Target +
-Comfortable), so a fifth tile would have been a second name for the same set. Its
-route, its endpoint and the `learn-now` collection id all remain — the flp and every
-game still draw on that set.
+- **A long name wraps sideways, up to three lines.** In vertical writing mode the
+  inline axis is the height and the block axis is the width, so a name that outruns
+  the face (~13 characters at `labelFontSize`) starts a second **column** beside the
+  first rather than a second row below it — the label grows *inward across* the tile,
+  never off its top. `MAX_LABEL_LINES` (3) caps that via `max-width`; past it the
+  remainder is clipped, which only 64-char user deck names reach. Callers pass the
+  plain name and never pre-break it.
+- **The label is pinned top AND bottom, never `top: 50%` + a translate.** The line
+  length *is* the box's height here, and an absolutely-positioned box given only
+  `top` gets just the space below that offset as its inline size — at 50% every
+  label wrapped at half the face ("ALL CARDS" took two columns) and the translate
+  that re-centered it gave none of the space back. With both offsets set,
+  `text-align: center` does the centering, since it aligns along the inline axis.
+- **The count and the icon yield the label's column.** `estimateLabelLines()` guesses
+  the wrapped line count from the text (a word-aware character estimate, `CHAR_ADVANCE_EM`)
+  and both elements reserve `lines × SIZING.labelLineColumn` (12px per line) on the
+  right. It is an estimate on purpose — measuring the rendered label would cost a
+  layout pass per tile to move a few pixels of padding, and being one line out only
+  shifts the count slightly off-center, never under the letters.
+
+Because the tile wraps after the first word that doesn't fit, the three Mastered
+collections are named **"Mastered Cards" / "Mastered Reading" / "Mastered Writing"**
+(`MASTERED_TITLES`, `collectionRef.ts`) — one word order for all three, so every
+Mastered tile breaks to the same shape: MASTERED, then what was mastered. The
+reading/writing names previously read the other way round.
+
+### The icon in the middle of the face
+
+The count used to be big and centered; it is now a corner stat, and the middle of the
+face belongs to a **glyph naming the set** — which is what tells two tiles of the same
+color apart at a glance, and what makes an unfamiliar deck readable before its sideways
+name is. It is a 30px `@mui/icons-material` outlined element rendered at
+`opacity: 0.38` (`SIZING.iconSize` / `iconOpacity`), inset on the right by the label's
+column so a wide glyph centers in the space actually left to it.
+
+**The tile does not choose it.** `icon` is a prop, because picking a glyph needs to
+know what collections, mastery bars and decks are — exactly the knowledge `DeckTile` is
+built not to have. There are two maps, one per surface:
+
+| Surface | Map | Icons |
+|---|---|---|
+| fdp collections + decks | `collectionIcon(ref)`, `src/features/flashcards/collectionIcon.tsx` | all → `StyleOutlined` (a card stack), learn-now → `SchoolOutlined`, mastered/core → `EmojiEventsOutlined`, mastered/reading → `MenuBookOutlined`, mastered/writing → `EditOutlined`, deck → `FolderOutlined` |
+| Account utcm bands | `BUCKET_ICONS`, `src/components/DeckBuckets.tsx` | Unfamiliar → `HelpOutline`, Target → `Adjust`, Comfortable → `CheckCircleOutline`, Mastered → `EmojiEventsOutlined` |
+
+`collectionIcon` lives beside the fdp rather than in `builtinCollections.ts` because
+that module is the shared list of *which* collections exist — the Games hub selector
+reads it too and draws a color dot, not an icon — and it deliberately owns no
+presentation. It switches exhaustively over `CollectionRef`, so a fifth kind of
+collection is a type error rather than a silently icon-less tile. The Account map is
+separate because `components/` may not import from `features/`
+([FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md)) and because a utcm band is a card
+property, not a collection; the two maps share exactly one glyph on purpose — the
+trophy, so "mastered" looks like one idea on both pages.
+
+The three Mastered tiles take the icon of the **skill** mastered (trophy / open book /
+pencil) rather than three identical trophies, which would defeat the point of having a
+glyph at all.
+
+### One tile, two sizes, one design
+
+The tile's natural size is **100 × 146** (`SIZING` in `DeckTile.tsx`), chosen so three
+of them **fill the fdp's row**: the page's content column is 337px (a 393px frame less
+the 28px gutter its section headings use), and 3 × 100 + 2 × 18px of gap is 336, so the
+row's outer edges land on the headings above it. `TILE_WIDTH` in
+`FlashcardsDecksPage.tsx` must stay equal to `SIZING.cardWidth` — `ROW_MAX_WIDTH` is
+derived from it, and a mismatch either pushes the third tile onto its own line or lets
+a fourth up.
+
+The Account row still renders the tile at **≈71.5px** (four across in a 350px-capped
+section, where it flex-shrinks). Two sizes on two pages used to be drift worth fixing;
+it isn't any more, because **every interior size scales with the rendered width**:
+
+- The tile declares `container-type: inline-size`, and the count, icon, label, stack
+  offsets and corner radii are all authored in `SIZING` against `REFERENCE_WIDTH` (72)
+  and emitted as `cqw` by the `scaled()` helper. A 100px tile is the 72px one enlarged,
+  not a second design with the same furniture at a different scale.
+- `REFERENCE_WIDTH` is 72 **because that is what the Account row renders**, so that row
+  is pixel-for-pixel unchanged by the fdp's resize. Change the reference only if you
+  want to move both pages at once.
+- It is `inline-size`, never `size`. `size` containment additionally makes the height
+  self-contained, which is what broke the hub cards
+  ([HUB_MENU_SYSTEM.md § Edge label slot](./HUB_MENU_SYSTEM.md)). Nothing here fits
+  text to its own length — the whole tile scales as one piece.
+- `estimateLabelLines()` works in reference units for the same reason, and its answer
+  is scale-invariant.
 
 ### Counts
 
-| Row | Source |
+All figures are derived by `builtinCollectionCount` (`builtinCollections.ts`) from the
+two count hooks the page already loads — no third endpoint:
+
+| Tile | Source |
 |---|---|
-| All / the three bands | `useCategoryCounts` — `All` is the sum of the four core bands |
+| All Cards | `useCategoryCounts` — the sum of the four core bands |
+| Learn Now | `useCategoryCounts` — Unfamiliar + Target + Comfortable, mirroring its own SQL (`core category <> 'Mastered'`) |
 | The Mastered tiles | `GET /api/onDeck/masteredCounts` (`useMasteredCounts`) |
 | A deck | `DeckSummary.cardCount` |
 
@@ -445,8 +603,9 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §2 Server layers | `server/types/decks.ts`, `IDeckDAL.ts`, `DeckDAL.ts`, `DeckService.ts`, `DecksController.ts`, `deckRoutes.ts`, `dal/setup.ts` |
 | §2 Deck card read | `OnDeckVocabService.getDeckCards` |
 | §3 Launch filter | `vetTable.ts` (`vetDeckClause`, `vetDeckOrProvisionalClause`); `OnDeckVocabService.deckPlayFilter` + its three fetchers; `OnDeckVocabController.resolveCollection`; `routes/flashcardRoutes.ts` (mark body) |
+| §3 Games-hub selector | `src/features/flashcards/selectedCollection.ts`; `src/games/GamesCollectionSelector.tsx`; `src/games/GamesPage.tsx` (`launchPath`); `src/games/word-search/WordSearchHubItem.tsx` (`newGamePath`); `src/api/decks.ts` (`fetchDecks`) |
 | §4 Client | `src/api/decks.ts`, `collectionRef.ts`, `useLaunchCollection.ts`, `CollectionViewPage.tsx`, `FlashcardsDecksPage.tsx`, `AddToDeckMenu.tsx`, `routes/routeMeta.ts`, `routes/registry.ts` |
-| §4 Tiles & built-in collections | `src/components/DeckTile.tsx` (+ `DeckBuckets.tsx`, its other host); `src/utils/categoryColors.ts` (`BAND_COLORS`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `BAND_COLLECTION_IDS`, `bandCollectionCategory`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
+| §4 Tiles & built-in collections | `src/components/DeckTile.tsx` (+ `DeckBuckets.tsx`, its other host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`builtinCollectionEntries`, `hasMasteredSection`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
 | §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `CollectionViewPage.tsx` (the sort row + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |
 
 Related docs: [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (small-deck top-up),

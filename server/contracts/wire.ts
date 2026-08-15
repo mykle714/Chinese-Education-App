@@ -52,11 +52,61 @@ export type Language = 'zh' | 'es';
 /** Every user-selectable language, in menu order. */
 export const LANGUAGES: readonly Language[] = ['zh', 'es'] as const;
 
-/** Display names for the language picker. */
+/**
+ * Display names for a language.
+ *
+ * Bare language names, no parenthetical qualifier: 'Mandarin', not
+ * 'Chinese (Mandarin)'. They appear inline in running copy (the friends
+ * leaderboard's per-row subtitle), where a parenthetical reads as an aside about
+ * the person rather than a label for the language.
+ */
 export const LANGUAGE_NAMES: Record<Language, string> = {
-  zh: 'Chinese (Mandarin)',
+  zh: 'Mandarin',
   es: 'Spanish',
 };
+
+/**
+ * Flag emoji per language, for compact "which language is this person studying"
+ * badges (the friends leaderboard). A language is not a country — these are the
+ * conventional flag for the language's principal standard variety, chosen for
+ * recognisability, not political claim: Mandarin → PRC, Spanish → Spain.
+ *
+ * Rendering caveat: these are regional-indicator pairs, which Windows does NOT
+ * render as flags (it shows the two letters, e.g. "ES"). That degradation is
+ * acceptable — the letters still identify the language — but never make a flag the
+ * ONLY carrier of meaning; always pair it with the language name or code.
+ */
+export const LANGUAGE_FLAGS: Record<Language, string> = {
+  zh: '🇨🇳',
+  es: '🇪🇸',
+};
+
+/**
+ * The two-letter region code behind a language's flag: 'zh' → 'CN', 'es' → 'ES'.
+ *
+ * DERIVED from {@link LANGUAGE_FLAGS} rather than stored in a second table, because a
+ * flag emoji IS its region code — two Regional Indicator Symbols, U+1F1E6..U+1F1FF,
+ * mapping one-to-one onto A..Z. Decoding it means the badge and the flag can never
+ * disagree, and changing a flag automatically changes the code beside it.
+ *
+ * This is also exactly what Windows renders in place of the flag it cannot draw, so a
+ * "🇨🇳 CN" badge degrades to "CN CN" at worst — never to something unidentifiable.
+ *
+ * Returns '' for a language with no flag, so callers can fall back to their own label.
+ */
+export function languageRegionCode(language: Language): string {
+  const flag = LANGUAGE_FLAGS[language];
+  if (!flag) return '';
+  // Spread, not charAt: each indicator is a surrogate pair, so index-based access
+  // would split it in half.
+  return [...flag]
+    .map((ch) => {
+      const cp = ch.codePointAt(0);
+      if (cp === undefined || cp < 0x1f1e6 || cp > 0x1f1ff) return '';
+      return String.fromCharCode('A'.charCodeAt(0) + cp - 0x1f1e6);
+    })
+    .join('');
+}
 
 /**
  * Generalized difficulty band stored in dictionaryentries_*.difficulty (drives the
@@ -412,47 +462,25 @@ export function masteredCollectionBar(raw: string | null | undefined): MasteryBa
   return null;
 }
 
-/**
- * The BAND collections: one per unmastered utcm band of the CORE bar, plus `all`.
- *
- * These are the fdp's top deck row. `Mastered` deliberately has no band collection —
- * that band is already three collections (one per bar, above), and a fourth id
- * meaning "core-mastered" would be a second name for `mastered`.
- *
- * Lowercased ids rather than the band's own capitalisation, so a URL segment matches
- * the rest of the route vocabulary (`learn-now`, `mastered-reading`).
- */
-export const BAND_COLLECTION_IDS = {
-  Unfamiliar: 'unfamiliar',
-  Target: 'target',
-  Comfortable: 'comfortable',
-} as const;
-
-export type BandCollectionCategory = keyof typeof BAND_COLLECTION_IDS;
-
-export const BAND_COLLECTION_CATEGORIES: readonly BandCollectionCategory[] = [
-  'Unfamiliar',
-  'Target',
-  'Comfortable',
-] as const;
-
 /** Every sorted card the learner holds, mastered or not. */
 export const ALL_COLLECTION_ID = 'all';
 
 /**
- * Which core band a `?collection=` value names, or null if it names none.
- * Null must always mean "unrestricted" at the call sites — an unrecognized collection
- * name may never silently narrow a round to some other set.
+ * NOTE — the BAND collections are GONE.
+ *
+ * `unfamiliar` / `target` / `comfortable` used to be built-in collections, one per
+ * unmastered utcm band of the core bar, and they were the fdp's top tile row. The
+ * collection vocabulary is now deliberately three ideas wide — every card (`all`),
+ * the ones still being learned (`learn-now`), and the ones finished in a given bar
+ * (`mastered*`) — because a BAND is a property of a single card's progress, not a set
+ * a learner wants to study: nobody opens "my Target cards" to drill them, and a set
+ * whose membership changes under you on every mark is a poor thing to launch a round
+ * against. The bands still exist everywhere they mean something (the utcm category on
+ * a card, the Account page's bucket row, the mini-card chip) — just not as collections.
+ *
+ * Consequence: `?collection=target` no longer resolves and falls back to `learn-now`
+ * (OnDeckVocabController), and `/flashcards/collection/target` renders nothing.
  */
-export function bandCollectionCategory(
-  raw: string | null | undefined
-): BandCollectionCategory | null {
-  if (!raw) return null;
-  for (const category of BAND_COLLECTION_CATEGORIES) {
-    if (BAND_COLLECTION_IDS[category] === raw) return category;
-  }
-  return null;
-}
 
 /**
  * Per-bar mastery crossing timestamps — the shape of vet."masteredAt" (jsonb since

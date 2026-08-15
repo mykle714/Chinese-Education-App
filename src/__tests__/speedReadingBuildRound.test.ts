@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { buildRound, wordCharacters } from "../games/speed-reading/buildRound";
+import {
+    buildRound,
+    buildSentenceRound,
+    hasSentenceRound,
+    usableSentences,
+    wordCharacters,
+} from "../games/speed-reading/buildRound";
 import type { DistractorChar, VocabEntry } from "../types";
 
 /**
@@ -156,5 +162,107 @@ describe("buildRound", () => {
         const round = buildRound(entry("你好"), [distractor("妤")], scriptedRng([0.6, 0, 0.9]));
         expect(round!.swapIndex).toBe(1);
         expect(round!.options.find((o) => !o.isCorrect)!.chars.join("")).toBe("你妤");
+    });
+});
+
+/**
+ * The FINALE rounds (docs/SPEED_READING_GAME.md § The last two rounds are
+ * sentences). Same invariant as a word round — two options differing in exactly
+ * one position — but the sequence is a whole sentence and the differing position
+ * must land INSIDE the target headword, so the round still tests the card's word.
+ */
+function sentenceEntry(
+    entryKey: string,
+    sentences: Array<{ foreignText: string; english: string }>,
+    id = 1
+): VocabEntry {
+    return { id, entryKey, pronunciation: "mai3", exampleSentences: sentences } as unknown as VocabEntry;
+}
+
+const BUY = { foreignText: "我今天去买书。", english: "I am going to buy books today." };
+
+describe("usableSentences / hasSentenceRound", () => {
+    it("keeps only sentences that literally contain the headword", () => {
+        const e = sentenceEntry("买书", [BUY, { foreignText: "他很高。", english: "He is tall." }]);
+        expect(usableSentences(e).map((s) => s.foreignText)).toEqual([BUY.foreignText]);
+        expect(hasSentenceRound(e)).toBe(true);
+    });
+
+    it("rejects an entry with no example sentences at all", () => {
+        expect(hasSentenceRound(sentenceEntry("买书", []))).toBe(false);
+        expect(hasSentenceRound(entry("买书"))).toBe(false);
+    });
+
+    it("rejects an entry whose sentences never contain the headword", () => {
+        const e = sentenceEntry("买书", [{ foreignText: "他很高。", english: "He is tall." }]);
+        expect(hasSentenceRound(e)).toBe(false);
+    });
+});
+
+describe("buildSentenceRound", () => {
+    it("returns null when no sentence contains the headword", () => {
+        const e = sentenceEntry("买书", [{ foreignText: "他很高。", english: "He is tall." }]);
+        expect(buildSentenceRound(e, [distractor("卖")])).toBeNull();
+    });
+
+    it("returns null when the distractor pool is empty", () => {
+        expect(buildSentenceRound(sentenceEntry("买书", [BUY]), [])).toBeNull();
+    });
+
+    it("produces two same-length sentences differing in exactly one position", () => {
+        const round = buildSentenceRound(
+            sentenceEntry("买书", [BUY]),
+            [distractor("卖")],
+            scriptedRng([0, 0, 0, 0.9])
+        );
+        expect(round).not.toBeNull();
+        const [a, b] = round!.options;
+        expect(a.chars).toHaveLength(b.chars.length);
+        expect(a.chars.filter((ch, i) => ch !== b.chars[i])).toHaveLength(1);
+    });
+
+    it("keeps the whole correct sentence as the correct option, punctuation included", () => {
+        const round = buildSentenceRound(
+            sentenceEntry("买书", [BUY]),
+            [distractor("卖")],
+            scriptedRng([0, 0, 0, 0.9])
+        );
+        const correct = round!.options.filter((o) => o.isCorrect);
+        expect(correct).toHaveLength(1);
+        expect(correct[0].chars.join("")).toBe(BUY.foreignText);
+    });
+
+    it("swaps a character INSIDE the headword, not elsewhere in the sentence", () => {
+        // 买书 starts at index 4 of 我今天去买书。 — the two eligible positions are
+        // 4 (买) and 5 (书), and nothing else.
+        for (const offsetDraw of [0, 0.9]) {
+            const round = buildSentenceRound(
+                sentenceEntry("买书", [BUY]),
+                [distractor("卖")],
+                scriptedRng([0, offsetDraw, 0, 0.9])
+            );
+            expect([4, 5]).toContain(round!.swapIndex);
+        }
+    });
+
+    it("carries the sentence it was built from, for the prompt and narration", () => {
+        const round = buildSentenceRound(
+            sentenceEntry("买书", [BUY]),
+            [distractor("卖")],
+            scriptedRng([0, 0, 0, 0.9])
+        );
+        expect(round!.kind).toBe("sentence");
+        expect(round!.sentence.english).toBe(BUY.english);
+    });
+
+    it("never uses a character of the headword as the distractor", () => {
+        // Both 买 and 书 are in the word, so only 卖 survives the exclusion.
+        const round = buildSentenceRound(
+            sentenceEntry("买书", [BUY]),
+            [distractor("买"), distractor("书"), distractor("卖")],
+            scriptedRng([0, 0, 0, 0.9])
+        );
+        const wrong = round!.options.find((o) => !o.isCorrect)!;
+        expect(wrong.chars[round!.swapIndex]).toBe("卖");
     });
 });

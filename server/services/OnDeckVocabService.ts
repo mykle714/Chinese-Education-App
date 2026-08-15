@@ -647,20 +647,21 @@ export class OnDeckVocabService {
    * The contents of ONE built-in collection — the single read behind every non-deck
    * collection page (`GET /api/onDeck/collectionCards?collection=…`).
    *
-   * The eight built-ins differ ONLY in a WHERE fragment, so they share one query
+   * The five built-ins differ ONLY in a WHERE fragment, so they share one query
    * rather than one method each. `builtinCollectionClause` (vetTable.ts) owns the
-   * fragment; adding a ninth collection is a case there and a tile on the fdp.
+   * fragment; adding a sixth collection is a case there and an entry in the client's
+   * shared list (src/features/flashcards/builtinCollections.ts).
    *
    * Every one of them is a SORTED read (`vetSortedClause`): lent provisional cards
    * are invisible to every deck surface, so a collection's size always means "cards
    * you chose to keep" (docs/PROVISIONAL_CARDS.md).
    *
    * Notes on the individual sets:
-   * - **learn-now** and the three **band** collections read the CORE bar only. Learn
-   *   Now is "what is left to learn", and a card whose recognition/production is
-   *   unfinished belongs there no matter how its reading or writing bar is doing.
-   *   Banding on all three would strand a core-mastered card in the active pile
-   *   forever because the learner once enabled the writing goal.
+   * - **learn-now** reads the CORE bar only. Learn Now is "what is left to learn",
+   *   and a card whose recognition/production is unfinished belongs there no matter
+   *   how its reading or writing bar is doing. Requiring all three bars would strand
+   *   a core-mastered card in the active pile forever because the learner once
+   *   enabled the writing goal.
    * - The three **mastered** collections are not disjoint and are not meant to be: a
    *   card the learner both recognizes and can write appears in two. Each answers
    *   "what have I finished in THIS skill".

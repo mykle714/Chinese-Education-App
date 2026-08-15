@@ -83,7 +83,7 @@ const ENDPOINT = `${API_BASE_URL}/api/diagnostics/perf`;
 // One record per interesting performance entry. Kept deliberately flat/small so
 // the JSONL the server writes is easy to grep and the beacon payload stays tiny.
 interface PerfRecord {
-    kind: "interaction" | "longtask" | "first-input" | "tap";
+    kind: "interaction" | "longtask" | "first-input" | "tap" | "frame" | "frame-worst";
     // Route the entry happened on (helps separate footer vs /decks vs learn).
     path: string;
     // Best-effort description of what was tapped (see describeTarget), or for
@@ -220,6 +220,68 @@ export function reportTap(
         } else {
             finish(0);
         }
+    } catch {
+        /* never throw from telemetry */
+    }
+}
+
+/**
+ * Report one window of rendered-frame statistics from an animated surface.
+ *
+ * WHY THIS EXISTS: the Night Market scale question ("does it hold up at 1,000
+ * pedestrians?") cannot be answered by any of the record kinds above. Event
+ * Timing measures *interactions*; a scene that renders at 8fps with nobody
+ * touching it produces no interaction records at all and looks perfectly healthy.
+ * Frame cost has to be reported by the thing doing the rendering.
+ *
+ * The point of routing it through THIS module rather than logging it is
+ * comparability: the synthetic dev load test and the real prod telemetry then
+ * share one transport, one JSONL shape, and one analyzer
+ * (server/scripts/analyze-client-perf.ts), so "the harness said 40ms" and "a real
+ * user saw 40ms" are the same measurement rather than two numbers that merely
+ * sound alike. Before this, nmpPerf reported to `console.info` and cleared its
+ * counters — a number you had to be watching to have.
+ *
+ * TWO RECORDS, NOT ONE. The analyzer buckets by (kind, path) and derives
+ * percentiles over `duration`, so mean and worst have to arrive under different
+ * kinds or they would pool into one meaningless distribution:
+ *   • `frame`        — mean frame time over the window (throughput)
+ *   • `frame-worst`  — the window's longest frame (jank; what a user actually feels)
+ *
+ * VOLUME: one pair per report window (nmpPerf reports every 2s), i.e. ~1 record/s
+ * — two orders of magnitude under the tap census this module already carries.
+ *
+ * Caller gate: this no-ops unless `initPerfDiagnostics()` ran, which in dev means
+ * `localStorage.perfDiag = "1"`. A load test therefore needs BOTH that flag and
+ * nmpPerf enabled; see docs/CLIENT_PERF_DIAGNOSTICS.md § "Frame records".
+ *
+ * @param surface   What was rendering, for grouping ("night-market").
+ * @param meanMs    Mean frame time across the window.
+ * @param worstMs   Longest single frame in the window.
+ * @param frames    Frames observed — a window of 1 frame is noise, so it is dropped.
+ * @param load      Free-form load descriptor ("peds=1000"), the x-axis of the experiment.
+ */
+export function reportFrameStats(
+    surface: string,
+    meanMs: number,
+    worstMs: number,
+    frames: number,
+    load?: string
+): void {
+    if (!started) return;
+    // A near-empty window says nothing about steady-state cost and would drag the
+    // percentiles around (e.g. the single frame right after a route change).
+    if (frames < 2) return;
+    try {
+        const at = Math.round(performance.now());
+        const common = {
+            path: window.location.pathname,
+            target: surface,
+            name: load,
+            at,
+        };
+        pushRecord({ kind: "frame", duration: Math.round(meanMs), ...common });
+        pushRecord({ kind: "frame-worst", duration: Math.round(worstMs), ...common });
     } catch {
         /* never throw from telemetry */
     }

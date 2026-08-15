@@ -178,6 +178,42 @@ street+communal cells → `recoverStreets` on the street cells → stamp each st
      account has a hub row (a one-time backfill, or organic first-load coverage), this
      branch is **removed** — new accounts never hit it. Mark it clearly in code as
      deprecated-on-arrival so it isn't mistaken for load-bearing runtime logic.
+     **Update:** this no longer costs a query. It used to run its own `countPlacementsByUser`
+     on *every* layout read to detect a condition true at most once per (user, language); it is
+     now driven off the placements read that already happened, and re-reads only on that first
+     load. `seedHubIfAbsent` is gone; `seedHubPlacement` is called directly.
+
+#### ⚠️ `getUserLayout` query shape — keep the depth flat
+
+*Code: `server/services/NightMarketWorldService.ts`; `server/dal/shared/versionSelection.ts`
+(`globalOccupiedRects`). Tests: `server/__tests__/versionSelection.test.ts`.*
+
+This is the hottest read in the night market — every nmp mount, every language switch, every
+author minute-adjust. Its round-trip depth must stay **independent of continent size**. Four
+rules, each of which replaced a per-placement `await`:
+
+| Rule | What it replaced |
+|---|---|
+| Placement + occupant reads issued together | Two stacked round trips |
+| Per-name scoring reads fanned out with `Promise.all` | One serial `await` per distinct template name |
+| Version persists batched, and only for placements that actually changed | One serial `await` per changed placement |
+| Definition loads de-duplicated by `(name, version)`, then fanned out | **2 queries per placement** — a continent tiles the same few templates many times |
+
+A 20-placement continent went from ~45 sequential queries to a handful. **An `await` added
+inside a loop here is a latency regression that scales with how much the user has played.**
+
+The **occupancy union is built once** for the whole continent (`globalOccupiedRects`) instead of
+an "everyone but me" union per placement, which was O(N² · cells) — and, because the only producer
+of footprint cells was a full rectangle, spent that budget encoding local `"col,row"` keys,
+parsing them straight back to numbers, and re-encoding them with the offset applied. Sharing one
+union (this placement included) is sound because the union is probed only OUTWARD from board-edge
+cells; the invariant and its rectangular-footprint precondition are stated at `globalOccupiedRects`
+and pinned by test. The same fix applies to `continentSeal.collectOpenStreetConditions`, which the
+spawn planner calls repeatedly.
+
+**Known follow-up:** the definition cache is request-scoped. A process-wide catalog cache would be
+a bigger win — the catalog is account-independent and every user's layout read re-fetches it — but
+it is mutable (the template editor writes it) and needs explicit invalidation on save.
 
 ### 🟨 Feature / render layer — `src/features/nightmarket/`
 
@@ -293,7 +329,7 @@ Update this table as work lands (✅ done / 🚧 in progress / ⬜ not started).
 | `templatePlacement.ts` (pure anchor/spawn engine) | 3 | ✅ | `server/dal/shared/` (spawn is server-only + persisted, never recomputed client-side). `deriveAnchors`, `exposedAnchors`, `buildAnchorIndex`, `isPlacementLegal` (cell-level seam), `matchedStreetRuns`, `maximinSpread`, `planSpawn` (closest-anchor → complement/equal-width candidates → legal → maximize runs → maximin spread → random). ⚠️ candidate walkability matched on **v0** street (recompute-on-read settles final version); compass labels follow the runtime (`outerEdgesOf`), NOT the doc's "Edge signatures" bit-order table — see the doc inconsistency note there. Verified via `tsx` geometry checks (29 asserts). |
 | `NightMarketPlacementDAL` (placement DAL) | 3 | ✅ | `findPlacementsByUser` / `countPlacementsByUser` / `insertPlacement` / `findOccupantsByUser` / `updateActiveVersion`. Reads `nightmarkettemplatelocations` + occupants (unlocks joined by placement). |
 | `NightMarketWorldService.getUserLayout` + `getStarterTemplate()` | 3 | ✅ | Server layout read: seed-if-absent → read placements + occupants → **recompute each placement's `activeVersion` from live conditions** (see recompute-on-read row) → persist on change → load the selected def (self-heals a deleted version → v0) → attach per-placement `filledPlaceholderIds`. Returns `PlacedTemplatePayload[]`. `getStarterTemplate` on the template service loads the hub. `GET /api/nightMarket/layout` (`NightMarketWorldController`). Client: `nightMarketLayoutApi.loadUserLayout` + `useMarketWorld` rewired off the single-hub fetch. |
-| **Version selection — recompute on read** (server mirror + wiring) | 3/C | ✅ | Decision 2026-07-17 (supersedes write-time). `server/dal/shared/versionSelection.ts` mirrors the four client engine modules (`placeholderIslands`/`conditionAnalysis`/`seamAdjacency`/`versionSelector`), hand-synced (server can't import `src/`). `NightMarketTemplateService.getVersionScoringInputs(name)` pulls every version's `street`+`condition` masks (+shared placeholderAreas/dims) in one query. `getUserLayout` scores every version per placement (filled slots + neighbor-footprint abutment via `globalOccupied`), picks via `conditionScoreSelector`, and persists via `updateActiveVersion` only on change. Single pass — no fixpoint (conditions key on neighbor footprints, not versions). **Both condition-changing moments are now correct**: an unlock (occupant insert) and hourly decay (occupant delete) each reconcile on the NEXT read; the decay cron stays pure SQL. |
+| **Version selection — recompute on read** (server mirror + wiring) | 3/C | ✅ | Decision 2026-07-17 (supersedes write-time). `server/dal/shared/versionSelection.ts` mirrors the four client engine modules (`placeholderIslands`/`conditionAnalysis`/`seamAdjacency`/`versionSelector`), hand-synced (server can't import `src/`). `NightMarketTemplateService.getVersionScoringInputs(name)` pulls every version's `street`+`condition` masks (+shared placeholderAreas/dims) in one query. `getUserLayout` scores every version per placement (filled slots + neighbor-footprint abutment via `globalOccupiedRects` — ONE union for the whole continent, see the query-shape note below), picks via `conditionScoreSelector`, and persists via `updateActiveVersion` only on change. Single pass — no fixpoint (conditions key on neighbor footprints, not versions). **Both condition-changing moments are now correct**: an unlock (occupant insert) and hourly decay (occupant delete) each reconcile on the NEXT read; the decay cron stays pure SQL. |
 | Starter-hub seed on account creation (canonical) | 3 | ✅ | `UserController.seedNightMarketHub` (best-effort) after `createUser` in both `register` and admin `createUser`; first-load safety net (`seedHubIfAbsent`) still covers pre-existing accounts (deprecated-on-arrival). |
 | Legacy asset-unlock economy retired | 3 | ✅ | Migration 113's NOT NULL columns broke the old `nightmarketunlocks` writers; `NightMarketService.getUnlocks` now returns a stable empty shape (no seed/read), `unlockNext` rejects, and the old-shape write methods were removed from `NightMarketDAL`/interface. The occupant model is the sole writer; Slice 4 rebuilds the economy. |
 | Unlock schedule constant + grant flow | 4 | ✅ | `server/dal/shared/unlockSchedule.ts` (`unlocksForMinutes` + `UNLOCK_BREAKPOINTS`, source of truth). Grant flow = `NightMarketPlacementService.grantUnlocks`, hooked best-effort into `UserMinutePointsService.incrementMinutePoints` after the total is bumped (idempotent, swallows errors so it never breaks the study loop). No client mirror yet (nothing on the client computes unlocks). |

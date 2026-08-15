@@ -5,7 +5,7 @@
  * docs/NIGHT_MARKET_FEATURE.md). The old hand-authored demo layout — named
  * streets, 8×8 stalls, `floor.png`, and the pedestrian-populated navigation
  * graph — was removed. The visible ground now comes from
- * {@link ../../features/nightmarket/FarmTerrainLayer}, driven by
+ * {@link ../../features/nightmarket/EditorTerrainLayer}, driven by
  * {@link ./farmTerrain}.
  *
  * This module is kept as the seam where a future authored layout plugs back in:

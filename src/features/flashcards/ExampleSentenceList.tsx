@@ -2,7 +2,7 @@ import { Box, Typography, useTheme } from "@mui/material";
 import SegmentedSentenceDisplay from "../../components/SegmentedSentenceDisplay";
 import { SpeakerButton } from "./FlashcardsLearnPage/FlashCardSection";
 import ValidateFlagButtons from "../../components/ValidateFlagButtons";
-import { buildSentencePronunciation } from "./FlashcardsLearnPage/sentencePronunciation";
+import { buildSentencePronunciation } from "../../utils/sentencePronunciation";
 import { renderEnglishWithVocabUnderline } from "./exampleSentenceText";
 import { FC_FONT } from "./constants";
 import { SIZE, LEADING } from "../../theme/scale";

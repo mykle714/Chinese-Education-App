@@ -1,3 +1,6 @@
+// PIXI's non-eval shader codegen. MUST be first: it has to be applied before a
+// renderer is created. See ./pixiRuntime for why this is not in main.tsx.
+import './pixiRuntime';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Application, extend, useTick, useApplication } from '@pixi/react';
 import { Container, Sprite, Graphics, Text, Assets, Texture } from 'pixi.js';
@@ -7,7 +10,7 @@ import {
   isoToScreen, computeLayerZ, TILE_WIDTH, TILE_HEIGHT, ORIGIN_ZERO, type CellOrigin,
 } from '../../engine/market/isometric';
 import {
-  buildEditorField, editorSurfaceAt, editorDecorRotation,
+  buildEditorField, compileMasks, editorSurfaceAt, editorDecorRotation,
   type EditorMasks, type DecorCategory,
 } from '../../engine/market/farmTerrain';
 import { occupantHousesForArea } from '../../engine/market/house';
@@ -809,9 +812,10 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
   const onPasteAtRef = useRef(onPasteAt); onPasteAtRef.current = onPasteAt;
 
   // Rebuild the field whenever the board or any mask changes — this is what
-  // "recompute the overlay caps on each paint" reduces to.
+  // "recompute the overlay caps on each paint" reduces to. The compile to packed cell ids rides
+  // along in the same memo, so a paint stroke pays it once rather than per mask probe.
   const tiles = useMemo(
-    () => buildEditorField(width, height, masks),
+    () => buildEditorField(width, height, compileMasks(masks)),
     [width, height, masks],
   );
 

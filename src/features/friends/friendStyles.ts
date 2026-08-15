@@ -10,19 +10,27 @@ import { SIZE, WEIGHT } from "../../theme/scale";
  * constant exports breaks Fast Refresh for the whole module).
  */
 
-/** The two destination buttons across the top of FriendsPage. */
-export const navButtonSx = {
+/**
+ * The three destination buttons across the top of FriendsPage, as a factory over the
+ * fill colour.
+ *
+ * Colour carries the ACTION's valence, matching how the request rows already colour
+ * their controls (Accept green / Decline red on IncomingRequestsPage): green for the
+ * affirmative one, red for the destructive one, neutral blue for the rest. A button
+ * that removes people should not look like a button that adds them.
+ */
+export const navButtonSx = (background: string) => ({
     flex: 1,
     textTransform: "none",
     fontFamily: FONTS.sans,
     fontSize: SIZE.body,
     fontWeight: WEIGHT.semibold,
     color: COLORS.onSurface,
-    backgroundColor: COLORS.blueAccent,
+    backgroundColor: background,
     borderRadius: 3,
     py: 1,
-    "&:hover": { backgroundColor: COLORS.blueAccent, filter: "brightness(0.97)" },
-} as const;
+    "&:hover": { backgroundColor: background, filter: "brightness(0.97)" },
+}) as const;
 
 /** Compact inline row actions — Copy, Remove, Accept, Decline, Revoke. */
 export const smallButtonSx = {

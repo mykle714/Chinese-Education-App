@@ -18,14 +18,13 @@ import { useBlockZoom } from "./hooks/useBlockZoom";
  * src/routes/registry.ts. See docs/ARCHITECTURE_REVIEW.md finding 4.
  */
 function renderRoute(route: AppRoute) {
-  // Lazy (code-split) components need a Suspense boundary. The fallback is
-  // intentionally null so the parent MobileDemoFrame stays visible during the
-  // brief fetch instead of flashing a spinner inside the phone card.
-  const page = route.lazy ? (
-    <Suspense fallback={null}>{createElement(route.Component)}</Suspense>
-  ) : (
-    createElement(route.Component)
-  );
+  // EVERY route is code-split (see src/routes/registry.ts), so every route gets a
+  // Suspense boundary — unconditionally, rather than from a per-row `lazy` flag
+  // that could be forgotten on a new page and would then throw at runtime.
+  //
+  // The fallback is intentionally null so the parent MobileDemoFrame stays visible
+  // during the brief fetch instead of flashing a spinner inside the phone card.
+  const page = <Suspense fallback={null}>{createElement(route.Component)}</Suspense>;
 
   // 'open' routes mount with no auth wrapper at all (login, register, 404).
   const element =

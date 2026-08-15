@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ROUTE_META, findRoute, routeChrome, routeFooterTab, routeShell } from "../routes/routeMeta";
+import { APP_ROUTES } from "../routes/registry";
 import { routeSlideDir } from "../utils/pageTransition";
 import { GAME_REGISTRY } from "../games/registry";
 
@@ -41,11 +42,25 @@ describe("route registry integrity", () => {
     }
   });
 
-  it("only marks lazy components as lazy", () => {
-    // Getting this wrong renders a lazy component without a Suspense boundary,
-    // which throws at runtime rather than at build time.
-    const lazyPaths = ROUTE_META.filter((r) => r.lazy).map((r) => r.path).sort();
-    expect(lazyPaths).toEqual(GAME_REGISTRY.map((g) => g.route).sort());
+  it("code-splits EVERY route", () => {
+    // Tier 1 item 2 of docs/REACT_NATIVE_MIGRATION.md: 31 of the 37 routes used to
+    // be static imports, so a cold start parsed the entire page tree before it
+    // could paint. Pinned here because the regression is invisible — adding a page
+    // with a plain `import` still works perfectly, it just quietly moves that page
+    // (and everything it pulls in) back into the main chunk.
+    //
+    // React tags lazy components with this symbol; there is no public predicate.
+    const LAZY = Symbol.for("react.lazy");
+    const eager = APP_ROUTES.filter(
+      (r) => (r.Component as unknown as { $$typeof?: symbol }).$$typeof !== LAZY
+    ).map((r) => r.path);
+    expect(eager).toEqual([]);
+  });
+
+  it("binds a component to every row, and no orphans", () => {
+    // APP_ROUTES throws at import if a row has no component, so reaching this
+    // assertion already proves that direction; this pins the count both ways.
+    expect(APP_ROUTES).toHaveLength(ROUTE_META.length);
   });
 });
 

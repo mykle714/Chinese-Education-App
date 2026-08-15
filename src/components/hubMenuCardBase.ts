@@ -5,6 +5,11 @@
 //
 // Callers layer width/flex + backgroundColor on top, and may override
 // aspectRatio (e.g. the 1:1 Word Search resume card). See docs/HUB_MENU_SYSTEM.md.
+/** Inner padding of every hub card, in px. Exported because HubMenu's
+    CardEdgeSlot cancels the VERTICAL half of it with a negative margin, so its
+    vertical label can use the card's full height; the two must not drift. */
+export const CARD_PADDING_PX = 20;
+
 export const cardBaseSx = {
     position: "relative" as const,
     display: "flex",
@@ -12,7 +17,7 @@ export const cardBaseSx = {
     justifyContent: "space-between",
     gap: 12,
     aspectRatio: "2 / 1",
-    padding: "20px",
+    padding: `${CARD_PADDING_PX}px`,
     borderRadius: "28px",
     textDecoration: "none",
     color: "inherit",

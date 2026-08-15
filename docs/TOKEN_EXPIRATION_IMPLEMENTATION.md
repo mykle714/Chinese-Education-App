@@ -210,7 +210,7 @@ Referenced by: `src/utils/authDebug.ts`, plus the `authLog` call sites in
 `src/utils/fetchInterceptor.ts` brands the patched function with
 `Symbol.for('cow.fetchInterceptor.installed')` and returns early if `window.fetch`
 already carries it. `AuthContext` calls `setupFetchInterceptor()` from a `useEffect`
-with no cleanup, and it gets re-invoked two ways: StrictMode (`src/main.tsx:25`)
+with no cleanup, and it gets re-invoked two ways: StrictMode (`src/main.tsx:29`)
 double-mounts in dev, and **Vite HMR re-evaluates the module on every edit**. Each
 re-invocation captured the already-patched `window.fetch` as its "original",
 stacking interceptors — 21 nested layers were observed in a real console trace, so
@@ -308,8 +308,9 @@ Loader effects re-keyed to `user?.id` / `isAuthenticated` / `Boolean(token)`:
 `EntryDetailPage.tsx`, `EditEntryPage.tsx`, `SortCardsPage.tsx`,
 `SkippedCardsPage.tsx`, `DictionaryPage.tsx`, `CommunityPage.tsx`,
 `useMinutePoints.ts` (reads `tokenRef.current`). Driver callbacks moved to
-`authHeader()`: `useLeaderboard.ts`, `useCalendarMinutePoints.ts`,
-`useNightMarket.ts`.
+`authHeader()`: `useLeaderboard.ts`, `useCalendarMinutePoints.ts`
+(`useNightMarket.ts` was also on this list; the hook has since been deleted along
+with the retired unlock economy — `useMarketWorld.ts` follows the same rule).
 
 ## Future enhancements
 1. Proactive refresh (decode `exp`, refresh just before expiry) in addition to the

@@ -73,6 +73,22 @@ function makeUserDAL(users: Record<string, ReturnType<typeof userRow>> = {}) {
     return { findById: async (id: string) => users[id] ?? null } as any;
 }
 
+/**
+ * Build the service with stubbed leaderboard DALs.
+ *
+ * The two score DALs (promotions, per-language wallets) are read-only and only the
+ * leaderboard touches them, so every graph-policy test below gets an empty pair and
+ * the leaderboard tests pass their own.
+ */
+function makeService(
+    friendshipDAL: IFriendshipDAL,
+    userDAL: any,
+    categoryPromotionDAL: any = { getVelocityBuckets: async () => [] },
+    userLanguagePointsDAL: any = { getNetPointsForUsers: async () => new Map() }
+) {
+    return new FriendsService(friendshipDAL, userDAL, categoryPromotionDAL, userLanguagePointsDAL);
+}
+
 describe('FriendsService.sendRequest', () => {
     let userDAL: any;
     beforeEach(() => {
@@ -81,7 +97,7 @@ describe('FriendsService.sendRequest', () => {
 
     it('rejects anything that is not a user ID before touching the database', async () => {
         const { dal, calls } = makeFriendshipDAL();
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         await expect(service.sendRequest(ALICE, 'bob@example.com')).rejects.toBeInstanceOf(ValidationError);
         await expect(service.sendRequest(ALICE, undefined)).rejects.toBeInstanceOf(ValidationError);
         expect(calls).toEqual([]);
@@ -89,19 +105,19 @@ describe('FriendsService.sendRequest', () => {
 
     it('rejects friending yourself', async () => {
         const { dal } = makeFriendshipDAL();
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         await expect(service.sendRequest(ALICE, ALICE)).rejects.toBeInstanceOf(ValidationError);
     });
 
     it('404s on an ID that belongs to no account', async () => {
         const { dal } = makeFriendshipDAL();
-        const service = new FriendsService(dal, makeUserDAL({ [ALICE]: userRow(ALICE, 'Alice') }));
+        const service = makeService(dal, makeUserDAL({ [ALICE]: userRow(ALICE, 'Alice') }));
         await expect(service.sendRequest(ALICE, BOB)).rejects.toBeInstanceOf(NotFoundError);
     });
 
     it('creates a pending request when the pair has no row', async () => {
         const { dal, calls } = makeFriendshipDAL();
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         const result = await service.sendRequest(ALICE, BOB);
         expect(result.status).toBe('requested');
         expect(result.request?.userId).toBe(BOB);
@@ -116,7 +132,7 @@ describe('FriendsService.sendRequest', () => {
         const { dal, calls } = makeFriendshipDAL({
             findBetween: async () => pendingRow({ requesterId: BOB, addresseeId: ALICE }),
         });
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         const result = await service.sendRequest(ALICE, BOB);
         expect(result.status).toBe('auto-accepted');
         expect(result.friend?.userId).toBe(BOB);
@@ -127,7 +143,7 @@ describe('FriendsService.sendRequest', () => {
 
     it('refuses a duplicate request to someone already asked', async () => {
         const { dal } = makeFriendshipDAL({ findBetween: async () => pendingRow() });
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         await expect(service.sendRequest(ALICE, BOB)).rejects.toBeInstanceOf(DuplicateError);
     });
 
@@ -135,7 +151,7 @@ describe('FriendsService.sendRequest', () => {
         const { dal } = makeFriendshipDAL({
             findBetween: async () => pendingRow({ status: 'accepted' }),
         });
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         await expect(service.sendRequest(ALICE, BOB)).rejects.toBeInstanceOf(DuplicateError);
     });
 });
@@ -145,7 +161,7 @@ describe('FriendsService.acceptRequest', () => {
 
     it('lets the addressee accept and returns the requester as the new friend', async () => {
         const { dal } = makeFriendshipDAL({ findById: async () => pendingRow() });
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         const friend = await service.acceptRequest(BOB, REQUEST_ID);
         expect(friend.userId).toBe(ALICE);
         expect(friend.friendsSince).toBe('2026-08-02T00:00:00.000Z');
@@ -153,7 +169,7 @@ describe('FriendsService.acceptRequest', () => {
 
     it('does NOT let the requester accept their own request', async () => {
         const { dal, calls } = makeFriendshipDAL({ findById: async () => pendingRow() });
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         await expect(service.acceptRequest(ALICE, REQUEST_ID)).rejects.toBeInstanceOf(NotFoundError);
         expect(calls).not.toContain('acceptRequest');
     });
@@ -161,7 +177,7 @@ describe('FriendsService.acceptRequest', () => {
     it('does not confirm the existence of a stranger\'s request', async () => {
         const CAROL = '44444444-4444-4444-8444-444444444444';
         const { dal } = makeFriendshipDAL({ findById: async () => pendingRow() });
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         await expect(service.acceptRequest(CAROL, REQUEST_ID)).rejects.toBeInstanceOf(NotFoundError);
     });
 });
@@ -171,13 +187,13 @@ describe('FriendsService.deleteRequest', () => {
 
     it('lets the addressee decline', async () => {
         const { dal, calls } = makeFriendshipDAL({ findById: async () => pendingRow() });
-        await new FriendsService(dal, userDAL).deleteRequest(BOB, REQUEST_ID);
+        await makeService(dal, userDAL).deleteRequest(BOB, REQUEST_ID);
         expect(calls).toContain('deleteById');
     });
 
     it('lets the requester revoke', async () => {
         const { dal, calls } = makeFriendshipDAL({ findById: async () => pendingRow() });
-        await new FriendsService(dal, userDAL).deleteRequest(ALICE, REQUEST_ID);
+        await makeService(dal, userDAL).deleteRequest(ALICE, REQUEST_ID);
         expect(calls).toContain('deleteById');
     });
 
@@ -185,7 +201,7 @@ describe('FriendsService.deleteRequest', () => {
         const { dal, calls } = makeFriendshipDAL({
             findById: async () => pendingRow({ status: 'accepted' }),
         });
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         await expect(service.deleteRequest(BOB, REQUEST_ID)).rejects.toBeInstanceOf(NotFoundError);
         expect(calls).not.toContain('deleteById');
     });
@@ -193,7 +209,7 @@ describe('FriendsService.deleteRequest', () => {
     it('refuses a third party', async () => {
         const CAROL = '44444444-4444-4444-8444-444444444444';
         const { dal, calls } = makeFriendshipDAL({ findById: async () => pendingRow() });
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         await expect(service.deleteRequest(CAROL, REQUEST_ID)).rejects.toBeInstanceOf(NotFoundError);
         expect(calls).not.toContain('deleteById');
     });
@@ -206,14 +222,143 @@ describe('FriendsService.removeFriend', () => {
         const { dal, calls } = makeFriendshipDAL({
             findBetween: async () => pendingRow({ status: 'accepted' }),
         });
-        await new FriendsService(dal, userDAL).removeFriend(ALICE, BOB);
+        await makeService(dal, userDAL).removeFriend(ALICE, BOB);
         expect(calls).toContain('deleteBetween');
     });
 
     it('404s when the pair only has a pending request — unfriending is not a decline', async () => {
         const { dal, calls } = makeFriendshipDAL({ findBetween: async () => pendingRow() });
-        const service = new FriendsService(dal, userDAL);
+        const service = makeService(dal, userDAL);
         await expect(service.removeFriend(ALICE, BOB)).rejects.toBeInstanceOf(NotFoundError);
         expect(calls).not.toContain('deleteBetween');
+    });
+});
+
+/**
+ * Leaderboard tests. The interesting rules are all SCOPING rules, and each one
+ * fails silently rather than loudly if it regresses:
+ *   • scoring a friend in the VIEWER's language shows a Spanish learner as a 0;
+ *   • counting a bar whose goal is off credits a skill the learner never chose;
+ *   • summing net minutes across languages over-reports a bilingual account.
+ */
+const CARLA = '44444444-4444-4444-8444-444444444444';
+
+/** An account row as findScoringProfilesByIds returns it. */
+function profile(id: string, name: string, over: Record<string, unknown> = {}) {
+    return {
+        userId: id,
+        email: `${name.toLowerCase()}@example.com`,
+        name,
+        avatarIconId: null,
+        selectedLanguage: 'zh',
+        readingGoal: false,
+        writingGoal: false,
+        ...over,
+    };
+}
+
+function makeLeaderboardService(opts: {
+    friends: Array<{ userId: string; friendsSince: string | null }>;
+    profiles: any[];
+    buckets?: any[];
+    netPoints?: Record<string, Record<string, number>>;
+}) {
+    const { dal } = makeFriendshipDAL({
+        listFriends: async () => opts.friends.map((f) => ({
+            userId: f.userId, name: null, email: '', avatarIconId: null, friendsSince: f.friendsSince,
+        })),
+    });
+    const userDAL = { findScoringProfilesByIds: async () => opts.profiles } as any;
+    const promotionDAL = { getVelocityBuckets: async () => opts.buckets ?? [] } as any;
+    const pointsDAL = {
+        getNetPointsForUsers: async () => new Map(
+            Object.entries(opts.netPoints ?? {}).map(([id, langs]) => [id, new Map(Object.entries(langs))])
+        ),
+    } as any;
+    return makeService(dal, userDAL, promotionDAL, pointsDAL);
+}
+
+describe('FriendsService.getLeaderboard', () => {
+    it('scores each person in their OWN selected language, not the viewer\'s', async () => {
+        const service = makeLeaderboardService({
+            friends: [{ userId: BOB, friendsSince: '2026-08-01T00:00:00.000Z' }],
+            profiles: [
+                profile(ALICE, 'Alice', { selectedLanguage: 'zh' }),
+                profile(BOB, 'Bob', { selectedLanguage: 'es' }),
+            ],
+            buckets: [
+                { userId: ALICE, language: 'zh', bar: 'core', bandsClimbed: 3 },
+                // Bob's work is all Spanish — it must count, even though Alice studies zh.
+                { userId: BOB, language: 'es', bar: 'core', bandsClimbed: 9 },
+            ],
+            netPoints: { [BOB]: { es: 500, zh: 4000 } },
+        });
+
+        const { entries } = await service.getLeaderboard(ALICE);
+        expect(entries.map((e) => e.userId)).toEqual([BOB, ALICE]);
+        expect(entries[0]).toMatchObject({ velocity: 9, language: 'es', rank: 1 });
+        // Net minutes follow the SAME language — Bob's 4000 Chinese points are not his score.
+        expect(entries[0].netMinutes).toBe(500);
+    });
+
+    it('counts only the bars the account pursues', async () => {
+        const service = makeLeaderboardService({
+            friends: [{ userId: BOB, friendsSince: null }],
+            profiles: [
+                profile(ALICE, 'Alice', { readingGoal: true }),
+                profile(BOB, 'Bob'), // core only
+            ],
+            buckets: [
+                { userId: ALICE, language: 'zh', bar: 'core', bandsClimbed: 2 },
+                { userId: ALICE, language: 'zh', bar: 'reading', bandsClimbed: 5 },
+                { userId: BOB, language: 'zh', bar: 'core', bandsClimbed: 2 },
+                // Logged but not pursued — must not inflate Bob past Alice.
+                { userId: BOB, language: 'zh', bar: 'writing', bandsClimbed: 50 },
+            ],
+        });
+
+        const { entries } = await service.getLeaderboard(ALICE);
+        expect(entries.find((e) => e.userId === ALICE)?.velocity).toBe(7);
+        expect(entries.find((e) => e.userId === BOB)?.velocity).toBe(2);
+    });
+
+    it('includes the viewer and flags their own row', async () => {
+        const service = makeLeaderboardService({
+            friends: [{ userId: BOB, friendsSince: '2026-08-01T00:00:00.000Z' }],
+            profiles: [profile(ALICE, 'Alice'), profile(BOB, 'Bob')],
+        });
+
+        const { entries } = await service.getLeaderboard(ALICE);
+        const self = entries.find((e) => e.userId === ALICE);
+        expect(self?.isCurrentUser).toBe(true);
+        expect(entries.find((e) => e.userId === BOB)?.isCurrentUser).toBe(false);
+    });
+
+    it('breaks a velocity tie on net minutes, then on name, so the order is total', async () => {
+        const service = makeLeaderboardService({
+            friends: [{ userId: BOB, friendsSince: null }, { userId: CARLA, friendsSince: null }],
+            profiles: [profile(ALICE, 'Alice'), profile(BOB, 'Bob'), profile(CARLA, 'Carla')],
+            buckets: [],
+            netPoints: { [BOB]: { zh: 100 }, [CARLA]: { zh: 100 } },
+        });
+
+        const { entries } = await service.getLeaderboard(ALICE);
+        // All velocities 0 → Bob and Carla (100 each) outrank Alice (0), Bob first by name.
+        expect(entries.map((e) => e.userId)).toEqual([BOB, CARLA, ALICE]);
+        expect(entries.map((e) => e.rank)).toEqual([1, 2, 3]);
+    });
+
+    it('reports zero rather than throwing for a friend who has never studied', async () => {
+        const service = makeLeaderboardService({
+            friends: [{ userId: BOB, friendsSince: null }],
+            // No selected language either — the account is brand new.
+            profiles: [profile(ALICE, 'Alice'), profile(BOB, 'Bob', { selectedLanguage: null })],
+        });
+
+        const { entries, windowDays } = await service.getLeaderboard(ALICE);
+        expect(entries.find((e) => e.userId === BOB)).toMatchObject({
+            velocity: 0, netMinutes: 0, language: 'zh',
+        });
+        expect(windowDays).toBe(7);
     });
 });

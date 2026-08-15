@@ -37,6 +37,18 @@ export const BAND_COLORS = {
 } as const;
 
 /**
+ * "Learn Now" — the cards still being learned (every sorted card whose core bar is
+ * unfinished). It is a COLLECTION, not a band, so it takes a hue no band owns:
+ * purple. Green (Comfortable) would have been free on the fdp now that the band
+ * tiles are gone, but Comfortable green still paints mini-card chips and the Account
+ * page's bucket row, and a learner should not meet the same color meaning two things.
+ *
+ * Shared by the fdp tile and the Games hub selector dot via `builtinCollections.ts`.
+ * Same two-tone shape as BAND_COLORS / MASTERY_BAR_COLORS: saturated body + light fill.
+ */
+export const LEARN_NOW_COLORS = { main: "#9B8BD4", accent: "#D8BAF2" } as const;
+
+/**
  * The two-tone tile palette for each mastery bar's Mastered collection (the fdp's
  * Mastered row, migration 143).
  *
@@ -51,10 +63,11 @@ export const BAND_COLORS = {
  * `core` is the exception, and has to be: it blends recognition (blue) and production
  * (green), so it has no single mark color to borrow and keeps the app's Mastered blue.
  *
- * NOTE the collision this creates on the fdp: reading's red and writing's orange are
- * the Unfamiliar and Target band hues, which sit one section above. The sections are
- * separated and captioned, so the tiles are distinguishable by position — but if the
- * page ever interleaves them, these need to diverge.
+ * Reading's red and writing's orange are also the Unfamiliar and Target band hues.
+ * That used to be a live collision on the fdp, which stacked a band row above the
+ * Mastered row; the band collections are gone, so on that page these hues now mean
+ * only "reading" and "writing". They still carry the band meaning on the Account
+ * page's bucket row and on mini-card chips, where no Mastered tile appears.
  */
 export const MASTERY_BAR_COLORS: Record<MasteryBarId, { main: string; accent: string }> = {
     // No mark color to borrow — recognition + production — so it keeps Mastered blue.

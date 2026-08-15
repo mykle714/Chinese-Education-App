@@ -43,19 +43,76 @@ tier = today_local - lastStreakDate - 1     (# of full missed days)
 | 4 | 60 | 108 |
 | 5 | 90 | 198 |
 | 6 | 120 | 318 |
-| 7+ | **all remaining → 0** | — |
+| 7+ | **all remaining → the checkpoint** | — |
+
+Every row of that table is capped by the **checkpoint floor** below.
 
 **Per (user, language) since migration 130.** The unit of penalty is a language balance, not a user: each language derives its own tier from its own `lastStreakDate`, so one tick can penalize several of a user's languages independently, and keeping up Chinese no longer shields neglected Spanish.
 
 Each tick, at most once per (user, language) per local day (guarded by that row's `"lastPenaltyDate"`):
 
-- debit the tier penalty from that language's `"totalMinutePoints"`, floored at 0;
+- debit the tier penalty from that language's `"totalMinutePoints"`, floored at that
+  balance's **checkpoint** (below) — which is 0 for any balance under 24 h;
 - stamp the **actual** amount removed (`total − new_total`) as `penaltyMinutes` on
   the just-completed missed day (`today_local − 1`), so the calendar shows the real
-  deduction even when a small balance underflows the nominal tier;
+  deduction even when a small balance underflows the nominal tier or a checkpoint
+  absorbs part of it. A **fully absorbed** penalty (0 removed) stamps no row at all;
 - reset that language's `"currentStreak"` to 0 (a missed day always breaks it);
 - set `lastPenaltyDate = today_local` (idempotency — later ticks the same local
   day are no-ops).
+
+### Checkpoints — the penalty floor
+
+**Depends on:** `database/cron/expire-stale-streaks.sql` (the `computed` CTE's
+`checkpoint_floor` and the `final` CTE's `GREATEST`), `STREAK_CONFIG.CHECKPOINT_MINUTES`
+in `server/constants.ts` (mirrored in `src/constants.ts`).
+
+A penalty may never carry `totalMinutePoints` across a multiple of
+**1440 minute points (24 h)**. The floor is computed per tick from the balance itself:
+
+```
+checkpoint_floor = floor(total / 1440) * 1440
+new_total        = GREATEST(checkpoint_floor, total - tier_penalty)
+```
+
+| Balance | Tier | Nominal | Actually removed | New total |
+|---|---|---|---|---|
+| 1560 (26 h) | 1 | 3 | 3 | 1557 |
+| 1560 (26 h) | 7+ | all | 120 | **1440** (24 h), not 0 |
+| 3300 (55 h) | 7+ | all | 420 | **2880** (48 h), not 1440 |
+| 1445 | 4 | 60 | 5 | 1440 |
+| 1440 | 7+ | all | **0** | 1440 (no calendar row written) |
+| 1200 (20 h) | 7+ | all | 1200 | 0 — below the first checkpoint, unprotected |
+
+Four consequences to keep in mind:
+
+1. **A checkpoint is absorbing.** Once a balance lands exactly on one, no later tick can
+   debit it. The wallet — and the Night Market entitlement Branch 2 derives from it —
+   freezes there permanently, however long the lapse runs. The old "an inactive account
+   zeroes out within a week" now holds **only below 24 h**.
+2. **No high-water column is needed.** A balance only rises by earning and falls by this
+   cron, and this cron can no longer cross a checkpoint, so the checkpoint of the *current*
+   balance is always the highest one ever reached. There is nothing to store; hence no
+   migration for this feature.
+3. **At-checkpoint rows stay in scope, but write no ledger line.** They are deliberately
+   *not* filtered out of the candidate set, because a missed day must still reset
+   `currentStreak` to 0. What is filtered is the ledger write: `penalty_insert` runs
+   `WHERE actual_penalty > 0`, so a parked user does not accumulate a 0-minute
+   `userminutepoints` row every single day. The charged amount itself is always
+   **derived** (`total − new_total`, exactly what it took to reach the floor), never
+   the nominal tier value — so a partially absorbed penalty writes the real, smaller
+   number, and only a *fully* absorbed one writes nothing. `userminutepoints` has no
+   missed-day flag (`minutesEarned` / `penaltyMinutes` only), so an all-zero row would
+   be indistinguishable from an absent one.
+4. **The NOTICE `count=` counts streak breaks, not debits.** Some of the listed
+   (user, language) pairs may have lost 0 minutes to an absorbing checkpoint. Cross-check
+   against `userminutepoints` when auditing an actual debit total.
+
+**Not applied to the author dev tool.** `UserMinutePointsService.adjustMinutesForAuthor`
+(the nmp −N button) is a raw test signal and floors at 0 as before, so an author can still
+drive a balance anywhere to exercise market decay. It is the one debit path that can put a
+balance below its checkpoint; the next cron tick simply treats wherever it landed as the
+new checkpoint band.
 
 **The cron must never touch `"lifetimeMinutesEarned"`** (the GROSS counter, per-language as of
 migration 134). Gross is monotonic by definition — it records what the user *earned*, which a
@@ -72,7 +129,7 @@ threshold again** (the increment path sets `lastStreakDate = that day`, driving
 `tier` back below 1 and out of scope).
 
 **Exemptions.** A (user, language) pair with `totalMinutePoints = 0` (nothing to
-debit) or that has never hit the threshold (`lastStreakDate IS NULL` — no
+debit — 0 is itself a checkpoint) or that has never hit the threshold (`lastStreakDate IS NULL` — no
 reference day to escalate from) is out of scope. The second condition is what
 implements the **"only languages ever studied"** rule: a language enters the
 penalty system the first time it reaches 3 minutes, and a language you have never
@@ -263,9 +320,13 @@ seed `"lastPenaltyDate" = today_local` on the affected `user_language_points` ro
 - **Users still on default `'UTC'`** are evaluated in UTC until the client
   backfills their timezone; edge cases could see a penalty fire up to ~half a day
   before their real local 4 AM.
-- **Balances reach 0 quickly.** Cumulative penalties hit 318 min by tier 6 and
-  wipe the remainder at tier 7, so an inactive account zeroes out within a week
-  regardless of prior balance. Once at 0 the user falls out of scope.
+- **Sub-24 h balances reach 0 quickly.** Cumulative penalties hit 318 min by tier 6 and
+  take the remainder at tier 7, so an inactive account under 24 h zeroes out within a
+  week. Once at 0 it falls out of scope for debits (it still breaks its streak).
+- **≥24 h balances now stop falling.** Since checkpoints are absorbing, a long-inactive
+  account parks on its checkpoint forever and keeps the Night Market that entitles. The
+  cron will keep selecting that row daily (to reset the streak) and updating
+  `lastPenaltyDate` while removing nothing.
 
 ## Log format
 
@@ -364,6 +425,14 @@ and warns if either is still present.
 
 ## Maintenance
 
-The penalty schedule is hard-coded in the SQL (`3, 15, 30, 60, 90, 120`, then
-wipe). Keep it in sync with `STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES` in
-`server/constants.ts` and its mirror in `src/constants.ts`.
+The penalty schedule is hard-coded in the SQL (`3, 15, 30, 60, 90, 120`, then the
+remainder), as is the `1440` checkpoint interval. Keep both in sync with
+`STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES` / `STREAK_CONFIG.CHECKPOINT_MINUTES` in
+`server/constants.ts` and their mirrors in `src/constants.ts`. Neither TS copy is
+*read* by any code — they exist to document the SQL — so nothing fails if they drift;
+the SQL is the only thing that runs.
+
+**Deploy note:** the systemd unit runs the SQL straight out of the repo
+(`ExecStart=… psql < __REPO_DIR__/database/cron/expire-stale-streaks.sql`), so a
+normal `/deploy` (git pull) is the entire rollout for a change to this file. No
+migration, no manual step, no runbook.

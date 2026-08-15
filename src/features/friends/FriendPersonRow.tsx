@@ -21,10 +21,17 @@ interface FriendPersonRowProps {
     secondary?: string;
     /** Right-hand controls (Accept / Decline / Revoke / Remove). */
     actions?: ReactNode;
+    /** Slot to the LEFT of the avatar — the leaderboard's rank badge. */
+    leading?: ReactNode;
+    /**
+     * Draw the row as "this is you". Used only by the leaderboard, where the viewer
+     * is ranked among their friends and needs to find themselves at a glance.
+     */
+    highlighted?: boolean;
     className?: string;
 }
 
-function FriendPersonRow({ name, email, avatarIconId, secondary, actions, className }: FriendPersonRowProps) {
+function FriendPersonRow({ name, email, avatarIconId, secondary, actions, leading, highlighted, className }: FriendPersonRowProps) {
     // Name is optional on the account, so the email is the fallback label AND the
     // source of the initial — never render an empty avatar.
     const label = name || email;
@@ -36,12 +43,20 @@ function FriendPersonRow({ name, email, avatarIconId, secondary, actions, classN
                 display: "flex",
                 alignItems: "center",
                 gap: 1.5,
-                p: 1.5,
                 borderRadius: 3,
                 backgroundColor: COLORS.infoCard,
-                border: `1px solid ${COLORS.rowBorder}`,
+                // "You" is marked with a border, not a fill: a different fill would
+                // read as a different KIND of row rather than as the same row, yours.
+                border: highlighted
+                    ? `2px solid ${COLORS.blueMain}`
+                    : `1px solid ${COLORS.rowBorder}`,
+                // Compensate for the thicker border so highlighted and plain rows
+                // keep the same outer height and the list stays evenly spaced.
+                p: highlighted ? "11px" : 1.5,
             }}
         >
+            {leading}
+
             <Avatar
                 className="friend-person-row__avatar"
                 src={avatarIconId ? `${API_BASE_URL}/api/icons8/${encodeURIComponent(avatarIconId)}/image` : undefined}

@@ -1,7 +1,5 @@
 import {
   ALL_COLLECTION_ID,
-  BAND_COLLECTION_IDS,
-  bandCollectionCategory,
   MASTERED_COLLECTION_IDS,
   masteredCollectionBar,
   type MasteryBarId,
@@ -213,16 +211,16 @@ export function masteredBarClause(bar: MasteryBarId, alias = 've'): string {
 }
 
 /**
- * Every built-in (non-deck) collection id, in fdp display order: the band row, then
- * the Mastered row. `learn-now` keeps its own id even though it is exactly the union
- * of the three band collections — it is the pool every game and the flp default to,
- * and CLAUDE.md § Terminology names it.
+ * Every built-in (non-deck) collection id, in fdp display order.
+ *
+ * Three ideas wide, and deliberately no wider: the whole library (`all`), the part of
+ * it still being learned (`learn-now`), and the part finished in a given bar
+ * (`mastered*`, one per bar since migration 143). The per-band collections
+ * (`unfamiliar` / `target` / `comfortable`) were removed — see the note in
+ * contracts/wire.ts for why a utcm band is a card property rather than a card SET.
  */
 export const BUILTIN_COLLECTION_IDS = [
   ALL_COLLECTION_ID,
-  BAND_COLLECTION_IDS.Unfamiliar,
-  BAND_COLLECTION_IDS.Target,
-  BAND_COLLECTION_IDS.Comfortable,
   'learn-now',
   MASTERED_COLLECTION_IDS.core,
   MASTERED_COLLECTION_IDS.reading,
@@ -245,8 +243,8 @@ export function parseBuiltinCollectionId(
  * place a built-in collection is given its meaning.
  *
  * Nothing user-controlled reaches the SQL. `collection` is a validated union value
- * and every branch returns a fixed string built from the band expressions above; the
- * band name is never interpolated from the request.
+ * and every branch returns a fixed string built from the band expressions above;
+ * nothing is interpolated from the request.
  *
  * `all` returns TRUE rather than an empty string so callers can always splice it into
  * an `AND …` position without a conditional.
@@ -254,9 +252,6 @@ export function parseBuiltinCollectionId(
 export function builtinCollectionClause(collection: BuiltinCollectionId, alias = 've'): string {
   const bar = masteredCollectionBar(collection);
   if (bar) return masteredBarClause(bar, alias);
-
-  const band = bandCollectionCategory(collection);
-  if (band) return `${coreCategoryExpr(alias)} = '${band}'`;
 
   // 'learn-now' — every sorted card whose CORE bar is unfinished.
   if (collection === 'learn-now') return `${coreCategoryExpr(alias)} <> 'Mastered'`;

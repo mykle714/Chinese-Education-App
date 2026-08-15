@@ -38,4 +38,27 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // Leaderboard roster. Returns identity + isPublic only; the caller joins the
   // per-language totals from IUserLanguagePointsDAL.getTotalsForAllUsers().
   getLeaderboardRoster(): Promise<Array<{ userId: string; email: string; name: string; isPublic: boolean; avatarIconId: string | null }>>;
+
+  /**
+   * Identity + the two things a per-user SCORE depends on — which language the
+   * account is studying and which mastery goals it pursues — for a set of ids in
+   * one query. Feeds the friends leaderboard, which scores every person in their
+   * OWN selected language (docs/FRIENDS_FEATURE.md § Leaderboard).
+   *
+   * Ids with no account are simply absent from the result; the caller must not
+   * assume the array is the same length as its input.
+   */
+  findScoringProfilesByIds(userIds: string[]): Promise<UserScoringProfile[]>;
+}
+
+/** What {@link IUserDAL.findScoringProfilesByIds} returns for one account. */
+export interface UserScoringProfile {
+  userId: string;
+  email: string;
+  name: string | null;
+  avatarIconId: string | null;
+  /** Null when the account never picked one; callers default it. */
+  selectedLanguage: string | null;
+  readingGoal: boolean;
+  writingGoal: boolean;
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { WEIGHT } from '../../theme/scale';
 import {
@@ -9,50 +9,53 @@ import DelayedCircularProgress from '../../components/DelayedCircularProgress';
 import GpsFixedIcon from '@mui/icons-material/GpsFixed';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import GridOnIcon from '@mui/icons-material/GridOn';
-import GrassIcon from '@mui/icons-material/Grass';
-import LabelIcon from '@mui/icons-material/Label';
 import CropFreeIcon from '@mui/icons-material/CropFree';
 import WidgetsIcon from '@mui/icons-material/Widgets';
+import ViewComfyIcon from '@mui/icons-material/ViewComfy';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import MarketEngineViewer, { ALL_DEBUG_OFF } from './MarketEngineViewer';
 import type { DebugFlags } from './MarketEngineViewer';
-import { useNightMarket } from './useNightMarket';
+import { useMarketWorld } from './useMarketWorld';
 import { useMinutePoints } from '../../minutePoints/useMinutePoints';
 import { usePageTitle } from '../../hooks/usePageTitle';
-import { NIGHT_MARKET_ASSET_MAP } from '../../engine/market/nightMarketRegistry';
 import { useAuth } from '../../AuthContext';
 import { adjustAuthorMinutes } from './nightMarketLayoutApi';
+// The badge's "2d 3h 5m" formatter and its unit sizes now live in one place, shared
+// with the friends leaderboard (src/utils/formatDuration.ts). This page keeps the
+// day/hour/minute output it has always had — weeks are opt-in and it does not opt in.
+import { MINUTES_PER_HOUR, formatMinutesAsDuration } from '../../utils/formatDuration';
 
 /**
  * Night Market Engine Page
  *
- * Hosts the Pixi.js night market. The market was rebuilt on the free-farm 2:1
- * tileset: the page renders a static grass-plateau terrain (see
- * {@link MarketEngineViewer} / FarmTerrainLayer) with a pan/zoom camera. The
- * former demo stalls + walking pedestrians were removed; the unlock economy
- * (minute-points → unlocks) still runs, ready to drive an authored layout later.
+ * Hosts the Pixi.js night market: the user's continent, assembled from authored templates
+ * tiled onto their own layout, walked by ambient pedestrians, under a pan/zoom camera. The
+ * page OWNS the layout load ({@link useMarketWorld}) and renders its spinner/error states,
+ * handing the assembled world down to the presentational {@link MarketEngineViewer}.
+ *
+ * The economy is PUSH-based: minute points grant occupants server-side
+ * (`NightMarketPlacementService.grantUnlocks`), and each layout read reflects the result. There
+ * is no client-driven "unlock" action — the retired `useNightMarket` hook that used to gate this
+ * page on the dead `/api/nightMarket/unlocks` endpoint was removed, along with the "N / M
+ * unlocked" and "Next unlock at X pts" readouts it fed (both were permanently 0/0 and a static
+ * config constant respectively). See docs/NIGHT_MARKET_FEATURE.md § "Unlock Flow".
  */
-const MINUTES_PER_HOUR = 60;
-const MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
 
 /**
- * Format a raw minute-points balance as a coarse "2d 3h 5m" duration for the
- * bottom-left badge. Leading zero units are dropped (90 → "1h 30m") so the pill
- * stays short, but a zero *middle* unit is kept (1500 → "1d 1h 0m") to avoid the
- * ambiguous-looking "1d 0m". A balance under an hour renders as plain minutes,
- * and 0/negative balances render as "0m".
+ * Pedestrian load ladder for the scale harness (docs/REACT_NATIVE_MIGRATION.md action item 4a).
+ *
+ * `undefined` is deliberately FIRST so the page opens at the real ambient population and the knob
+ * is opt-in — a load test must never be the default state of a user-facing page.
+ *
+ * The rungs bracket the 1,000-ped target roughly logarithmically: the interesting result is the
+ * rung where frame time leaves 16.7ms, and a linear ladder would spend most of its steps past it.
  */
-function formatMinutesAsDuration(totalMinutes: number): string {
-  const safeMinutes = Math.max(0, Math.floor(totalMinutes));
-  const days = Math.floor(safeMinutes / MINUTES_PER_DAY);
-  const hours = Math.floor((safeMinutes % MINUTES_PER_DAY) / MINUTES_PER_HOUR);
-  const minutes = safeMinutes % MINUTES_PER_HOUR;
+const PED_LOAD_STEPS: Array<number | undefined> = [undefined, 50, 200, 500, 1000];
 
-  const parts: string[] = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (days > 0 || hours > 0) parts.push(`${hours}h`);
-  parts.push(`${minutes}m`);
-  return parts.join(' ');
+/** Compact rung label for the debug button ("—", "200", "1k"). */
+function pedLoadLabel(count: number | undefined): string {
+  if (count === undefined) return '—';
+  return count >= 1000 ? `${count / 1000}k` : String(count);
 }
 
 /**
@@ -84,17 +87,6 @@ function NightMarketEnginePage() {
     return () => { document.body.style.overflow = previous; };
   }, []);
 
-  const {
-    isLoading,
-    error,
-    nextThreshold,
-    totalUnlockable,
-    canUnlock,
-    newUnlock,
-    clearNewUnlock,
-    unlocks,
-  } = useNightMarket();
-
   const { accumulativeMinutePoints } = useMinutePoints();
   const { user } = useAuth();
   const isTemplateAuthor = !!user?.isTemplateAuthor;
@@ -102,12 +94,27 @@ function NightMarketEnginePage() {
   // Author minute-adjust tool state. `pendingDelta` accumulates the ±N button presses; Submit
   // fires one request. `displayNet` overrides the badge with the server's fresh net after a
   // submit (useMinutePoints doesn't re-fetch on its own). `reloadToken` bump forces the market
-  // canvas to re-read the layout so granted/decayed occupants (houses) redraw.
+  // to re-read the layout so granted/decayed occupants (houses) redraw.
   const [pendingDelta, setPendingDelta] = useState(0);
   const [displayNet, setDisplayNet] = useState<number | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [adjustError, setAdjustError] = useState<string | null>(null);
+
+  // The layout load lives HERE, not in the canvas: this page owns the spinner and the error
+  // panel, and the viewer below is presentational over the result. Previously the scene fetched
+  // it internally and its `error` was discarded, so a failed layout load drew a silently blank
+  // market while the page showed a spinner for an unrelated (dead) endpoint.
+  const marketWorld = useMarketWorld(reloadToken);
+  const { world, loading: isLoading, error } = marketWorld;
+
+  // Occupant progress across the whole continent: how many placeholder unit slots currently hold
+  // an occupant, out of every slot the tiled templates expose. This replaces the old
+  // "N / M unlocked" counter, which read from the retired unlock economy and was always "0 / 0".
+  const { filledSlots, totalSlots } = useMemo(() => {
+    const areas = world?.placeholderAreas ?? [];
+    return { filledSlots: areas.filter((a) => a.filled).length, totalSlots: areas.length };
+  }, [world]);
 
   const shownMinutes = displayNet ?? accumulativeMinutePoints;
 
@@ -131,10 +138,15 @@ function NightMarketEnginePage() {
   const toggleDebugFlag = (key: keyof DebugFlags) =>
     setDebug(prev => ({ ...prev, [key]: !prev[key] }));
 
+  // Pedestrian load-test knob (docs/REACT_NATIVE_MIGRATION.md action item 4a). Cycles the ambient
+  // walker count so frame cost can be measured against a known load instead of being argued about.
+  // `undefined` = the hook's own default, i.e. the population a real user sees.
+  const [pedLoadStep, setPedLoadStep] = useState(0);
+  const pedCount = PED_LOAD_STEPS[pedLoadStep];
+  const cyclePedLoad = () => setPedLoadStep(prev => (prev + 1) % PED_LOAD_STEPS.length);
+
   // Gridlines are off by default; toggled on via the debug overlay column.
   const [showGrid, setShowGrid] = useState(false);
-
-  const earnedCount = unlocks.filter(u => u.unlockOrder > 0).length;
 
   // Night Market is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN back
   // arrow (→ Home), slides up on enter / down on exit. All three states render
@@ -209,24 +221,12 @@ function NightMarketEnginePage() {
             </Typography>
           </Typography>
           <Typography
-            className="night-market-engine-unlock-counter"
+            className="night-market-engine-occupant-counter"
             variant="body2"
             sx={{ color: 'rgba(255,255,255,0.8)', textShadow: '1px 1px 2px rgba(0,0,0,0.8)', mt: 0.5 }}
           >
-            {earnedCount} / {totalUnlockable} unlocked
+            {filledSlots} / {totalSlots} stalls
           </Typography>
-        </Box>
-
-        <Box className="night-market-engine-header-actions" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        {!canUnlock && totalUnlockable > earnedCount && (
-          <Typography
-            className="night-market-engine-next-unlock-hint"
-            variant="body2"
-            sx={{ color: 'rgba(255,255,255,0.7)', textShadow: '1px 1px 2px rgba(0,0,0,0.8)', textAlign: 'right', mt: 1 }}
-          >
-            Next unlock at {nextThreshold} pts ({accumulativeMinutePoints} / {nextThreshold})
-          </Typography>
-        )}
         </Box>
       </Box>
 
@@ -246,12 +246,26 @@ function NightMarketEnginePage() {
         {([
           { key: 'all-off', label: 'Turn all debug overlays off', icon: <VisibilityOffIcon fontSize="small" />, active: false, onClick: () => setDebug(ALL_DEBUG_OFF) },
           { key: 'origin', label: 'Toggle iso (0, 0) origin crosshair', icon: <GpsFixedIcon fontSize="small" />, active: debug.origin, onClick: () => toggleDebugFlag('origin') },
-          { key: 'grass', label: 'Toggle grass-tile overlay', icon: <GrassIcon fontSize="small" />, active: debug.grass, onClick: () => toggleDebugFlag('grass') },
-          { key: 'overlay-labels', label: 'Toggle overlay-tile labels (which sprite each cell used)', icon: <LabelIcon fontSize="small" />, active: debug.overlayLabels, onClick: () => toggleDebugFlag('overlayLabels') },
           { key: 'template-bounds', label: 'Toggle template boundaries + names', icon: <CropFreeIcon fontSize="small" />, active: debug.templateBounds, onClick: () => toggleDebugFlag('templateBounds') },
           { key: 'placeholder-bounds', label: 'Toggle placeholder boundaries + labels', icon: <WidgetsIcon fontSize="small" />, active: debug.placeholderBounds, onClick: () => toggleDebugFlag('placeholderBounds') },
           { key: 'grid', label: 'Toggle gridlines', icon: <GridOnIcon fontSize="small" />, active: showGrid, onClick: () => setShowGrid(prev => !prev) },
-        ] as const).map(({ key, label, icon, active, onClick }) => (
+          { key: 'chunked-terrain', label: 'Toggle baked terrain chunks (zoomed-out ground)', icon: <ViewComfyIcon fontSize="small" />, active: debug.chunkedTerrain, onClick: () => toggleDebugFlag('chunkedTerrain') },
+          // Load-test knob — DEV ONLY. Unlike the overlays above this one degrades the page on
+          // purpose: it would let any user seed 1,000 walkers and stall their own device, so it
+          // must not exist in a production build. The button shows the current rung because a load
+          // you have to hover to read is a load you will forget you set.
+          ...(import.meta.env.DEV ? [{
+            key: 'ped-load',
+            label: `Pedestrian load — ${pedCount ?? 'default'} walkers (tap to cycle)`,
+            icon: (
+              <Box component="span" className="night-market-engine-ped-load-value" sx={{ fontSize: 12, fontWeight: 700, lineHeight: 1 }}>
+                {pedLoadLabel(pedCount)}
+              </Box>
+            ),
+            active: pedCount !== undefined,
+            onClick: cyclePedLoad,
+          }] : []),
+        ]).map(({ key, label, icon, active, onClick }) => (
           <Tooltip key={key} title={label} placement="left">
             <Button
               className={`night-market-engine-debug-toggle night-market-engine-debug-toggle-${key}`}
@@ -391,22 +405,8 @@ function NightMarketEnginePage() {
         className="night-market-engine-canvas-container"
         sx={{ flexGrow: 1, width: '100%', height: '100%', position: 'relative' }}
       >
-        <MarketEngineViewer showGrid={showGrid} debug={debug} reloadToken={reloadToken} />
+        <MarketEngineViewer showGrid={showGrid} debug={debug} pedCount={pedCount} world={marketWorld} />
       </Box>
-
-      {/* New unlock snackbar */}
-      <Snackbar
-        className="night-market-engine-unlock-snackbar"
-        open={!!newUnlock}
-        autoHideDuration={4000}
-        onClose={clearNewUnlock}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        message={
-          newUnlock
-            ? `Unlocked: ${NIGHT_MARKET_ASSET_MAP.get(newUnlock.assetId)?.displayName || newUnlock.assetId}!`
-            : ''
-        }
-      />
 
       {/* Author minute-adjust error (403 for non-authors, network, etc.) */}
       <Snackbar

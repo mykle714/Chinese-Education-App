@@ -145,7 +145,7 @@ For adding a completely new language:
 → See [docs/MINUTE_POINTS_SYSTEM.md](./docs/MINUTE_POINTS_SYSTEM.md)
 
 #### Inactivity penalty cron (prod only)
-An hourly Postgres cron on the prod server. For each **(user, language)** balance that has gone a full local day below the 3-minute threshold, it breaks that language's streak and debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then wipe the remainder at day 7+), floored at 0, and decays the user's Night Market occupants to match. Penalties are per language (migration 130): keeping up Chinese does not shield neglected Spanish. Never touches `lifetimeMinutesEarned` (gross is monotonic). Not installed on dev.
+An hourly Postgres cron on the prod server. For each **(user, language)** balance that has gone a full local day below the 3-minute threshold, it breaks that language's streak and debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then the remainder at day 7+), floored at the balance's **24-hour checkpoint** (a penalty never carries a balance across a multiple of 1440 minute points; under 1440 it can still reach 0), and decays the user's Night Market occupants to match. The streak breaks on a missed day even when the checkpoint absorbs the whole penalty. Penalties are per language (migration 130): keeping up Chinese does not shield neglected Spanish. Never touches `lifetimeMinutesEarned` (gross is monotonic). Not installed on dev.
 → See [docs/STREAK_EXPIRATION_CRON.md](./docs/STREAK_EXPIRATION_CRON.md)
 
 ### Flashcards & Review History
@@ -197,6 +197,9 @@ so the progress survives.
 
 ### Friends
 → See [docs/FRIENDS_FEATURE.md](./docs/FRIENDS_FEATURE.md) — the friend graph (`friendships`, migration 138): the hp Friends row and its three NodePages (`/friends`, `/friends/sent`, `/friends/requests`), adding a friend by pasted user ID, the one-row-per-pair model (a friendship IS an accepted request; declining deletes the row), and the crossing-request auto-accept rule.
+
+### Study Challenge (weekly head-to-head between friends)
+→ See [docs/STUDY_CHALLENGE.md](./docs/STUDY_CHALLENGE.md) — **DESIGN/DRAFT**: a Monday-issued, Friday-played challenge between two friends over a 10-word set — the same-word vs different-word variants, the 04:00-local week boundaries, generated (non-editable) challenge decks that don't count against the 100-deck cap, the `mastered-first` provisioning mode, the per-game contested/filler scoring contract every recognition/production game must now implement, and results/no-contest. Live (synchronous) mode is deferred to phase 2.
 
 ### Practice Writing (character writing-practice drill)
 → See [docs/PRACTICE_WRITING.md](./docs/PRACTICE_WRITING.md) — the "Practice Writing Me" drill: four assistance levels (Trace / Step Through / Memorize / Test), the 2×2 grid for multi-char words, the generalized modal lockout + greyed-background step-back, Memorize's study-first lock (no-writing badge + Start-Writing pulse), top-1 grading, and completion stars.

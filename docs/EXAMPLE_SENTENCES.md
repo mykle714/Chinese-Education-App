@@ -383,6 +383,23 @@ gesture instead of a tap-per-word.
 |---|---|---|
 | **Form modification** | [EXAMPLE_SENTENCE_FORM_MODIFICATION.md](./EXAMPLE_SENTENCE_FORM_MODIFICATION.md) | The segment popup shows the contextually inflected English gloss (right tense / number / POS form for *this* sentence) via the per-headword `wordForms` inventory + the per-segment `partOfSpeechDict`/`numberDict`/`tenseDict` signals, selected at runtime by `resolveWordForm`. |
 
+## Consumers outside the est
+
+The est tab is the main surface, but `exampleSentences` also ships on **game pool
+cards** (`DICT_COLS` in `server/dal/shared/dictJoin.ts`, enriched by
+`OnDeckVocabService.enrichEntriesPipeline`), and one game reads it:
+
+| Surface | What it uses | Where |
+|---|---|---|
+| **Speed Reading finale** (rounds 19–20 of a run) | `foreignText` (both options are that sentence, one character apart), `english` (the prompt's translation line), and `_segments` + `segmentMetadata` via `buildSentencePronunciation` (the prompt's pinyin line **and** the TTS pinyin hint) | [SPEED_READING_GAME.md § The last two rounds are sentences](./SPEED_READING_GAME.md#the-last-two-rounds-are-sentences), `src/games/speed-reading/buildRound.ts`, `src/games/speed-reading/roundPrompt.ts` |
+
+Two consequences for this pipeline: a sentence is only usable there if it
+**literally contains its entry's headword** (the round alters one character of the
+headword *in situ*), and `buildSentencePronunciation` — now at
+`src/utils/sentencePronunciation.ts`, shared with the est list — returns
+`undefined` unless **every** segment carries a `pronunciation`, in which case both
+the prompt's pinyin line and the TTS hint are dropped for that round.
+
 ## Related
 
 - **Greedy segmentation** — [greedySegmentation.md](./greedySegmentation.md) (how the foreign text is split into segments)

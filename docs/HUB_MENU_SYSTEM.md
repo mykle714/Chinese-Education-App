@@ -10,7 +10,10 @@ hubs: `HomePage.tsx` (`/`), `DiscoverPage.tsx` (`/discover`), `GamesPage.tsx`
 in order: an optional `header`, its card children, an optional `footer`. Header
 and footer render as direct flex children (not wrapped in their own box), so a
 multi-part header/footer gets the same 28px gap between its own parts as between
-the cards.
+the cards. The Games hub uses exactly that: its `header` is the collection selector
+pill followed by the `TipBox` (see [GAMES_FEATURE.md](./GAMES_FEATURE.md)
+§ "Collection selector"). Both are sized to **80% width, centered**, the same
+footprint as a `HubMenuRow`, so the header reads as part of the same column.
 
 A menu item is one of:
 
@@ -18,17 +21,24 @@ A menu item is one of:
   of the phone-frame width, centered, `aspect-ratio: 2/1`, with a persistent
   pastel `bgColor` (hardcoded per item, never randomized at render), title
   top-left, subtitle below it, a large icon tile on the right, an optional
-  `cornerBadge` pinned to the top-right corner, and an optional `chip` pinned to
-  the card's bottom-left (see [Chip slot](#chip-slot-cardchipslot-hubmenutsx)).
+  `cornerBadge` pinned to the top-right corner, and an optional `chip` run
+  vertically up the card's right edge (see
+  [Edge label slot](#edge-label-slot-cardedgeslot-hubmenutsx)).
 - **`HubMenuArrayItem`** — a horizontally-scrolling strip of smaller (70%-wide)
   sub-cards, same visual language as `HubMenuRow`. Desktop gets click-and-drag
   panning via `useDragScroll`; touch/trackpad scroll natively
   (`touchAction: pan-x`). Used when one hub entry fans out into several
-  choices — today, Bubble Match's 3 difficulty levels and Match Speed's 3
-  difficulty modes. Because the
+  choices — today, Bubble Match's 3 difficulty levels and Word Search's 2 pinyin
+  modes. Because the
   sub-cards are anchors (`RouterLink`), `useDragScroll` also cancels the
   container's native `dragstart` — otherwise the browser would drag the
   link's URL on desktop mouse-drag and hijack the pointer (`src/hooks/useDragScroll.ts`).
+  Any strip like this **must set `overflowY: hidden` explicitly** next to its
+  `overflowX: auto` (`ArrayScroll`, `HubMenu.tsx`; `Strip`,
+  `src/games/word-search/WordSearchHubItem.tsx`): CSS computes the unspecified
+  axis to `auto` whenever the other is `auto`/`scroll`, which made the strip a
+  vertical scroll container and let the sub-cards wobble within the few px of
+  slop left by rounding their `aspectRatio: 2/1` height.
   Optionally topped by a **group header** (`headerTitle` + `headerStat`), in
   which case header and strip are wrapped in one `HubMenuGroup` flex column
   (`gap: 8`) so the pair counts as a single item inside `MenuList`'s 28px gap.
@@ -47,41 +57,90 @@ sub-card.** A count pinned to a sub-card reads as *that card's* score. Both
 the exported `HubMenuGroup` + `HubMenuGroupHeader`, used by `WordSearchHubItem`)
 render the identical header.
 
-### Chip slot (`CardChipSlot`, `HubMenu.tsx`)
+### Edge label slot (`CardEdgeSlot`, `HubMenu.tsx`)
 
-An optional pill rendered **inside the card body, below the subtitle** and pinned
-to the card's bottom edge (`margin-top: auto`, `padding-top: 6`). To make the
-bottom-pin possible `RowBody` carries `align-self: stretch`, which overrides
-`cardBaseSx`'s `align-items: flex-start` so the text column spans the card's full
-height; with no chip present that stretch is visually inert.
+An optional node rendered as the card's **last flex child — outboard of the icon
+tile, against the right edge**. It is a flex column that stretches to the card's
+height and **centers** its label in it (`align-self: stretch`,
+`justify-content: center`), so the word reads as balanced against the cell rather
+than anchored to one end. It hugs its label's width, costing the text column that
+plus `cardBaseSx`'s 12px gap, which is why the label is deliberately narrow.
 
-Bottom-pinning (rather than flowing straight under the subtitle) keeps the chips of
-adjacent cards on one line even when their subtitles differ in length by a line.
+**The slot carries almost no padding**, by design — every px of it is a px the
+longest label can't use, and on a card this small it reads immediately as the label
+being crowded:
 
-Passed as `chip` on `HubMenuRow`, per-sub-card as `chip` on `HubMenuArraySubItem`,
-and as `chip` on the exported `HubMenuCardTitle` (which feature-owned strips use).
-**Per-sub-card, not per-group**, precisely because a strip's choices can differ in
-what the chip says — Word Search's two modes feed different mastery tracks.
+| | | |
+|---|---|---|
+| `margin: -CARD_PADDING_PX` (top/bottom) | −20px | Cancels the card's vertical padding so the column spans the cell's **full height** |
+| `margin-right: -EDGE_SLOT_RIGHT_PULL` | −10px | Reclaims **half** the card's right padding. Half, not all: flush to the edge collides with the 28px corner radius |
+| `padding: EDGE_SLOT_CORNER_CLEARANCE` (top/bottom) | 4px | The only padding left — just enough to keep the last letter off the rounded corner |
+
+**Centering makes the corner badge a live concern.** `CornerBadgeSlot` floats at
+top/right 14 and is ~33px tall, while a centered ~89px run on the shortest card
+(136px) starts ~24px down — so on a card carrying both (Bubble Match's ⭐ level
+sub-cards) the badge can touch the label's first letters. The slot used to reserve a
+band for it (`EDGE_SLOT_BADGE_INSET`), but that inset is exactly the padding that
+read as too much and was removed. **If the overlap ever needs fixing, move the badge
+— do not re-inset the slot.**
+
+Passed as `chip` on `HubMenuRow` and per-sub-card as `chip` on
+`HubMenuArraySubItem`. Feature-owned strips that hand-build their cards wrap their
+own label in the exported **`HubMenuCardEdgeSlot`**, placed after
+`HubMenuRowIconTile` (`WordSearchHubItem.tsx`) — the slot is no longer part of
+`HubMenuCardTitle`, which is now title-over-subtitle only. **Per-sub-card, not
+per-group**, precisely because a strip's choices can differ in what the label says
+— Word Search's two modes feed different mastery tracks.
 
 Its one consumer today is the Games hub's **`MarkTypeChip`**
-(`src/components/MarkTypeChip.tsx`): a colored dot + the uppercase mastery-track
-name ("RECOGNITION" / "PRODUCTION" / "READING" / "WRITING"), so a player can see
-which track a game feeds before opening it. Dot color and label both come from
-`MARK_TYPE_COLORS` / `MARK_TYPE_LABELS` (`src/utils/masteryCompute.ts`) — the same
-maps the cdp stacked progress bar uses, so one track is one hue app-wide. It sits
-in `components/` rather than `features/flashcards/` because its callers are under
-`src/games/**`, which may not reach into another feature folder
-(docs/FRONTEND_LAYERING.md). `variant` picks the pill fill exactly as
-`HubMenuStatBadge`'s does: `"card"` (default) translucent white for a pastel card,
-`"surface"` a neutral tint for the plain page background.
+(`src/components/MarkTypeChip.tsx`) in its `variant="edge"` form: the uppercase
+mastery-track name ("RECOGNITION" / "PRODUCTION" / "READING" / "WRITING") from
+`MARK_TYPE_LABELS` (`src/utils/masteryCompute.ts`), set in faded grey
+(`COLORS.textSecondary` at `opacity: 0.5`, `SIZE.micro`, `TRACKING.caps`) and
+turned 90° counter-clockwise so it reads bottom-to-top up the card's right edge —
+`writing-mode: vertical-rl` plus `transform: rotate(180deg)`.
 
-**Chip vs. corner badge.** The corner badge is *achievement* state that changes as
-you play (⭐ / ×N); the chip is a *static property* of the card. Keeping them at
-opposite corners means a card can carry both without collision.
+**The font size is fixed at `SIZE.micro`** — the same size the pill variants use.
+Every track name reads identically on every card; the label never scales itself.
+
+**Fitting the longest name is the SLOT's job, not the font's** — that is what the
+negative margins above are for. "RECOGNITION" needs ~89px of run at `SIZE.micro`,
+more than a 70%-wide sub-card's 96px *content box* comfortably gives, but a
+comfortable fit in the ~128px the full-height slot gives. `CARD_PADDING_PX` is
+exported from `hubMenuCardBase.ts` and used by both the card's padding and the
+slot's negative margin, so the two cannot drift.
+
+If a longer track name is ever added, **trim `EDGE_SLOT_CORNER_CLEARANCE` before
+shrinking the font**; if it still doesn't fit, let it clip (`max-height: 100% /
+overflow: hidden` is the backstop).
+
+> **Do not make the font auto-fit.** Deriving the size from the container with CSS
+> container units (`container-type: size` on the cards, `font-size` in `cqh`
+> divided by the label's character count) was built and reverted twice: it makes
+> labels of different lengths render at different sizes, which reads as a bug on a
+> strip of sibling cards, and putting `contain: size` on a hub card also makes
+> `aspect-ratio: 2/1` authoritative, so long subtitles clip instead of growing the
+> card. Uniform type + a taller slot is the design.
+
+This variant is intentionally **quiet** — on the Games hub the track a game feeds is
+a footnote, not a second title. The trade-off: `variant="edge"` drops the colored
+dot, so it is the one place `MarkTypeChip` does *not* color-match the cdp stacked
+progress bar's `MARK_TYPE_COLORS` hue. The other two variants keep the pill+dot form
+(`"card"` translucent white for a pastel card, `"surface"` a neutral tint for the
+plain page background) for use off the hub cards.
+
+`MarkTypeChip` sits in `components/` rather than `features/flashcards/` because its
+callers are under `src/games/**`, which may not reach into another feature folder
+(docs/FRONTEND_LAYERING.md).
+
+**Edge label vs. corner badge.** The corner badge is *achievement* state that
+changes as you play (⭐ / ×N); the edge label is a *static property* of the card.
+The badge holds the top-right corner and the label is bottom-anchored below it, so
+a card can carry both without collision.
 
 Both card types accept a `state` prop, forwarded to the underlying
 `RouterLink`/`useSlideNavigate` call as React Router navigation state (used to
-pass the tapped Bubble Match level / Match Speed mode without a URL param).
+pass the tapped Bubble Match level without a URL param).
 
 ## Per-hub composition
 
@@ -113,26 +172,14 @@ component/pool shared by all three hubs.
 
 ## Array items (fan-out games)
 
-Three games fan their hub entry out into a `HubMenuArrayItem` (a horizontal strip
-of sub-cards) instead of a single row, all special-cased directly in
+Two games fan their hub entry out into a `HubMenuArrayItem` (a horizontal strip
+of sub-cards) instead of a single row, both special-cased directly in
 `GamesPage.tsx` (matched on `game.gameId`) rather than via a generic
 `GameDef.levels` field:
 
 - **Bubble Match** — one sub-card per `LEVEL_CONFIGS` entry
   (`src/games/bubble-match/constants.ts`: Chill / Hustle / Torture), passing
   `state: { level }`. Rendered as a plain `HubMenuArrayItem` in `GamesPage.tsx`.
-- **Match Speed** — one sub-card per `MODE_CONFIGS` entry
-  (`src/games/match-speed/constants.ts`: **Study Mix / Review / Challenge**, in that order),
-  passing `state: { mode }`. Also a plain `HubMenuArrayItem`, and badged exactly
-  like Bubble Match: weekly ⭐ per mode on each sub-card (keyed by the mode's
-  `winLevel`), game-wide `×N` on the group header. Its per-mode colors
-  (`MATCH_SPEED_MODE_COLORS` in `GamesPage.tsx`) deliberately reuse the **`/decks`
-  study-button palette** — neutral `COLORS.header` for Study Mix, `blueAccent` for Review,
-  `redAccent` for Challenge — because the modes apply the identical mastery-bucket rule
-  as those buttons and should read as the same concept in both places. Unlike the
-  other two, a visit with no valid nav state does **not** bounce to the hub; it
-  defaults to Mix (the route predates the modes). See
-  [MATCH_SPEED_GAME.md § Difficulty modes](./MATCH_SPEED_GAME.md).
 - **Word Search** — one sub-card per `MODE_CONFIGS` entry (Pinyin / No Pinyin).
   **Not** a plain `HubMenuArrayItem`: it renders a dedicated strip component,
   `src/games/word-search/WordSearchHubItem.tsx`, because its buttons need custom
@@ -140,6 +187,16 @@ of sub-cards) instead of a single row, all special-cased directly in
   exists) and it prepends a **1:1 resume card** when a saved board exists. That
   component reuses the shared card look via the exported primitives (below).
   See [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §3.
+
+**Match Speed is deliberately NOT one of them.** It briefly shipped as a third
+strip (Study Mix / Review / Challenge sub-cards passing `state: { mode }`) and was
+converted back to a single `HubMenuRow`: the hub now offers one Match Speed entry,
+so a launch from here carries no nav state and the page resolves
+`DEFAULT_MODE_CONFIG` (Study Mix). The mode machinery in
+`src/games/match-speed/constants.ts` still exists and still honours a `state.mode`
+passed by any other caller — there is just no UI that sets one. That row keeps the
+game-wide `×N` win badge as its `cornerBadge` (it has no group header to hang it
+on), which makes it the only single row carrying a stat today.
 
 ### Shared card primitives (for custom strips)
 

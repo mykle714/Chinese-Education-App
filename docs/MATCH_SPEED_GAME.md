@@ -406,8 +406,8 @@ becomes empty, so it is the one place the transition is unambiguous.
 The banner is re-mounted via a changing `key` (`clearId`, bumped per clear) rather
 than being shown/hidden by a flag — a reused DOM node keeps the CSS animation in
 its finished state and a second clear would render nothing visible. Same trick
-`MatchSpeedCard` uses for its per-card fade-in and Speed Reading's float indicator
-uses for repeat taps at one spot.
+`MatchSpeedCard` uses for its per-card fade-in (and that Speed Reading's float
+indicator used for repeat taps at one spot, before it was removed).
 
 **Reachability.** With `ROWS` = 6 and a 3-second tick, clearing during live play
 means matching six pairs inside one tick window — very rare, which is the point.
@@ -418,10 +418,17 @@ refills; the banner fires there too, on the final pair.
 
 ## Difficulty modes (Study Mix / Review / Challenge)
 
-The game has **three independently-playable modes**, picked on the Games hub (one
-`HubMenuArrayItem` sub-card each, in this order — there is no in-game picker) and
-carried in via nav `state.mode`. Modes do **not** chain and nothing is unlocked by
-clearing one.
+> ⚠️ **No mode is reachable from the UI today.** The Games hub briefly carried a
+> `HubMenuArrayItem` strip with one sub-card per mode; it was removed and Match
+> Speed is a **single `HubMenuRow`** again, so every launch arrives with no
+> `state.mode` and plays **Study Mix**. Everything below still describes live code —
+> the mode machinery is intact and still honours a `state.mode` passed by any
+> caller — but Review and Challenge are currently unreachable. Re-adding the strip
+> (or any other picker) is all that's needed to bring them back.
+
+The game defines **three independently-playable modes**, selected via nav
+`state.mode` (there is no in-game picker). Modes do **not** chain and nothing is
+unlocked by clearing one.
 
 A mode changes **only which mastery buckets the pool may draw from**. The 30s
 clock, the 6×2 board, the 3-second refill tick and the medal thresholds are
@@ -479,15 +486,18 @@ defaulting to Mix, which is exactly the game's pre-modes behavior.
   `topUpRequest` — `src/games/match-speed/cardBuffer.ts`
 - `modeConfigFor(location.state.mode)` and the pool/gate/`recordWin` wiring —
   `src/games/match-speed/MatchSpeedPage.tsx`
-- Hub strip + `MATCH_SPEED_MODE_COLORS` — `src/games/GamesPage.tsx`
+- Hub entry — `src/games/GamesPage.tsx` (a plain single `HubMenuRow`; the mode
+  strip and its `MATCH_SPEED_MODE_COLORS` palette were removed)
 - Coverage — `src/__tests__/matchSpeedCardBuffer.test.ts` (roll bands per mode,
   no off-mode fallback, off-mode drop, in-mode-only top-up)
 
-A direct visit with no/invalid `state.mode` **falls back to Mix** rather than
-bouncing to the hub the way Bubble Match does — this route shipped before the
-modes existed and must stay playable on its own. Switching modes from the hub
-lands on the same route with only `state.mode` changed, so the page's load effect
-is keyed on `modeConfig.mode` as well as `user?.id`.
+A visit with no/invalid `state.mode` **falls back to Mix** rather than bouncing to
+the hub the way Bubble Match does — this route shipped before the modes existed and
+must stay playable on its own. That fallback is now the ONLY path in the app, since
+the hub passes no state. The page's load effect is still keyed on
+`modeConfig.mode` as well as `user?.id`: if a picker returns, switching modes lands
+on the same route with only `state.mode` changed, and without that key a
+remount-less switch would keep playing the previous mode's buffer.
 
 ---
 
@@ -738,10 +748,11 @@ information only. It does not gate a medal.
 `recordWin(modeConfig.winLevel)` fires **only on a gold-medal run** (`useGameWins`,
 `src/hooks/useGameWins.ts`, `GAME_KEY = "matchSpeed"`). The level key is the
 **mode's** (Study Mix 1, Review 2, Challenge 3 — see
-[§ Difficulty modes](#difficulty-modes-study-mix--review--challenge)), so the hub stars the
-mode that was actually cleared; Study Mix keeps key `1`, the game's original
-single-difficulty key. Gold-only keeps the hub badge an achievement rather than a
-play counter.
+[§ Difficulty modes](#difficulty-modes-study-mix--review--challenge)); Study Mix keeps
+key `1`, the game's original single-difficulty key, and is the only key reachable
+now that the hub launches Study Mix only. The hub row shows the **game-wide `×N`**
+as its corner badge (there is no per-mode ⭐ left — that lived on the removed mode
+sub-cards). Gold-only keeps the badge an achievement rather than a play counter.
 
 Medal thresholds are deliberately **not** re-tuned per mode: a 9-pair gold on
 Challenge is a real achievement and on Review it is an easier one, which is the point of
@@ -986,7 +997,7 @@ Edits outside that folder:
 | File | Edit |
 |---|---|
 | `src/games/registry.ts` | one `GameDef` (title, subtitle, `bgColor`, lazy `Component`) — this alone wires the hub, router, and phone frame |
-| `src/games/GamesPage.tsx` | the difficulty-mode strip: a `HubMenuArrayItem` special-cased on `gameId === "match-speed"`, plus `MATCH_SPEED_MODE_COLORS` (the `/decks` palette) |
+| `src/games/GamesPage.tsx` | the hub entry: a plain single `HubMenuRow` (registry-driven), special-cased only to hang the game-wide `×N` win badge on its `cornerBadge`. The former difficulty-mode strip and its `MATCH_SPEED_MODE_COLORS` palette are gone. |
 | `src/constants.ts` | add `/games/match-speed` to `MINUTE_POINTS_ELIGIBLE_PAGES` |
 | `server/services/OnDeckVocabService.ts` | stamp `gameCategory` on pool cards |
 | `server/contracts/wire.ts` | `gameCategory?: FlashcardCategory` on `VocabEntryBase` — one declaration serves both sides |
@@ -1066,6 +1077,7 @@ Docs updated when this shipped:
 - [MASTERY_REWORK.md](./MASTERY_REWORK.md) — ✅ Match Speed added to the
   which-type-each-surface table, plus a note that the bucket is now on the wire as
   `gameCategory`.
-- [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md) — ✅ updated when the difficulty
-  modes shipped: Match Speed is now a second plain `HubMenuArrayItem` strip
-  (three mode sub-cards, ⭐ per mode, game-wide `×N` on the group header).
+- [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md) — ✅ Match Speed's mode strip was
+  later **removed**: it is a single `HubMenuRow` again, carrying the game-wide
+  `×N` as its own corner badge. That doc's § Array items records why it is not a
+  fan-out game.

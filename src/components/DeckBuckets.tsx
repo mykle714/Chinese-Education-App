@@ -1,5 +1,9 @@
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import AdjustIcon from "@mui/icons-material/Adjust";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import EmojiEventsOutlinedIcon from "@mui/icons-material/EmojiEventsOutlined";
 import DeckTile from "./DeckTile";
 import { BAND_COLORS } from "../utils/categoryColors";
 
@@ -29,6 +33,24 @@ const BucketsContainer = styled(Box)({
 /** The four utcm bands, in ascending mastery order. */
 const BUCKETS = ["Unfamiliar", "Target", "Comfortable", "Mastered"] as const;
 
+/**
+ * The glyph each band's tile carries, as one ascending progression: a question mark
+ * (don't know it) → a target (working on it) → a check (comfortable) → a trophy
+ * (done). The trophy is deliberately the SAME icon the fdp gives its Mastered
+ * collection, so "mastered" looks like one idea across both pages.
+ *
+ * Kept local rather than shared with `features/flashcards/collectionIcon.tsx`:
+ * components/ must not import from features/ (docs/FRONTEND_LAYERING.md), and these
+ * are utcm BANDS — a property of one card's progress — not the collections that
+ * module maps. Only the trophy is deliberately common to both.
+ */
+const BUCKET_ICONS: Record<(typeof BUCKETS)[number], React.ReactNode> = {
+    Unfamiliar: <HelpOutlineIcon />,
+    Target: <AdjustIcon />,
+    Comfortable: <CheckCircleOutlineIcon />,
+    Mastered: <EmojiEventsOutlinedIcon />,
+};
+
 interface DeckBucketsProps {
     // Per-category library card counts, keyed by category label.
     counts: Record<string, number>;
@@ -48,6 +70,7 @@ const DeckBuckets: React.FC<DeckBucketsProps> = ({ counts }) => (
                 className={`deck-bucket deck-bucket--${category.toLowerCase()}`}
                 label={category}
                 count={counts[category]}
+                icon={BUCKET_ICONS[category]}
                 mainColor={BAND_COLORS[category].main}
                 accentColor={BAND_COLORS[category].accent}
                 // Stagger so the four cascade left-to-right instead of firing at once.

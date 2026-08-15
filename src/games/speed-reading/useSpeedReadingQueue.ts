@@ -10,9 +10,11 @@ import { collectionLaunchParams } from "../../features/flashcards/collectionRef"
 import {
     GAME_DISTRIBUTION,
     MARK_TYPE,
+    SENTENCE_ROUNDS,
     TOPUP_BATCH,
     TOPUP_THRESHOLD,
 } from "./constants";
+import { hasSentenceRound } from "./buildRound";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
 interface GamePoolResponse {
@@ -20,6 +22,29 @@ interface GamePoolResponse {
     available: Record<string, number>;
     total: number;
     sufficient: boolean;
+}
+
+/**
+ * Split a freshly-loaded pool into the cards reserved for the run's sentence
+ * rounds and the ones that stay in the play queue.
+ *
+ * Takes the FIRST `count` eligible cards rather than the "best" ones: the pool
+ * arrives already ordered by the mastery distribution the game asked for, and
+ * re-ranking it here would quietly bias the finale toward whatever happens to be
+ * richest in example sentences (which correlates with how long a word has been
+ * discoverable, not with how well the player reads it).
+ */
+function reserveFinaleCards(
+    cards: VocabEntry[],
+    count: number
+): { finale: VocabEntry[]; rest: VocabEntry[] } {
+    const finale: VocabEntry[] = [];
+    const rest: VocabEntry[] = [];
+    for (const card of cards) {
+        if (finale.length < count && hasSentenceRound(card)) finale.push(card);
+        else rest.push(card);
+    }
+    return { finale, rest };
 }
 
 /**
@@ -55,6 +80,18 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
     // from the deck would make the deck itself the answer key.)
     const launchCollection = useLaunchCollection();
     const queueRef = useRef<VocabEntry[]>([]);
+    /**
+     * Cards held back for the run's SENTENCE rounds (the last SENTENCE_ROUNDS of
+     * the run), reserved out of the very first pool response and never returned
+     * by `dequeue`.
+     *
+     * Reserved at LOAD rather than picked when round 19 comes up: the run's whole
+     * card set is known on the first call, so the finale must not depend on
+     * whether a mid-run top-up happens to return a card carrying an example
+     * sentence. A card is eligible only if one of its example sentences actually
+     * contains its headword (`hasSentenceRound`).
+     */
+    const finaleRef = useRef<VocabEntry[]>([]);
     const distractorsRef = useRef<DistractorChar[]>([]);
 
     const [queueLength, setQueueLength] = useState(0);
@@ -128,9 +165,22 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
                 // `sufficient` can only be false when the dictionary itself ran dry.
                 // A shorter queue still plays — the round builder consumes it card by
                 // card — so we start the game rather than refusing it.
-                queueRef.current = pool.cards;
+                // Split the pool ONCE, here: the finale's cards come off the top
+                // of the eligible ones and the rest stay in the FIFO. Fewer than
+                // SENTENCE_ROUNDS eligible cards is not fatal — the page falls
+                // back to a word round for the rounds it can't fill — but it does
+                // mean the run quietly loses its finale, so say so out loud.
+                const { finale, rest } = reserveFinaleCards(pool.cards, SENTENCE_ROUNDS);
+                if (finale.length < SENTENCE_ROUNDS) {
+                    console.warn(
+                        `[SpeedReading] only ${finale.length}/${SENTENCE_ROUNDS} pool cards carry an example `
+                        + `sentence containing their headword; the rest of the finale falls back to word rounds.`
+                    );
+                }
+                queueRef.current = rest;
+                finaleRef.current = finale;
                 distractorsRef.current = distractorRes.chars;
-                setQueueLength(pool.cards.length);
+                setQueueLength(rest.length);
                 // Speed Reading plays a fixed, known set, so the notice can name the
                 // exact lent words (CARD_BASELINE_ITEMIZED).
                 setProvisional(provisionalWords(pool.cards));
@@ -167,17 +217,18 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
 
         (async () => {
             try {
-                // `exclude` carries every id still queued so a refill can't hand
-                // back a word already waiting.
+                // `exclude` carries every id still queued — INCLUDING the cards
+                // held back for the finale — so a refill can't hand back a word
+                // already waiting, or one the run is going to end on.
                 const pool = await fetchPool({
                     need: TOPUP_BATCH,
-                    excludeIds: queueRef.current.map((c) => c.id),
+                    excludeIds: [...queueRef.current, ...finaleRef.current].map((c) => c.id),
                 });
                 if (pool.cards.length === 0) return;
 
                 // A concurrent dequeue can shift the queue under the request, so
                 // re-check membership rather than trusting `exclude` alone.
-                const known = new Set(queueRef.current.map((c) => c.id));
+                const known = new Set([...queueRef.current, ...finaleRef.current].map((c) => c.id));
                 const added = pool.cards.filter((c) => !known.has(c.id));
                 queueRef.current = [...queueRef.current, ...added];
                 setQueueLength(queueRef.current.length);
@@ -201,9 +252,23 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
         return next;
     }, [topUp]);
 
+    /**
+     * Take the next card RESERVED for a sentence round, synchronously. Returns
+     * null once the reservation is used up (or was never filled), which the page
+     * treats as "build an ordinary word round instead".
+     *
+     * Deliberately does NOT fall back to the main queue: a card pulled from there
+     * has no example sentence by construction, so there would be nothing to build
+     * a sentence round out of.
+     */
+    const dequeueSentenceCard = useCallback((): VocabEntry | null => {
+        return finaleRef.current.shift() ?? null;
+    }, []);
+
     return {
         /** Live ref, read at round-build time. */
         distractorsRef,
+        dequeueSentenceCard,
         queueLength,
         ready,
         loading,

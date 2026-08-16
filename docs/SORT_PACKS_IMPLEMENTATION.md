@@ -231,7 +231,7 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
   packId}`); undo pops one, calls `POST /undo`, and re-shows the card (bringing its
   pack back on deck if it had advanced).
 
-### 5.3 `SkippedCardsPage.tsx` (new — mirror `MasteredCardsPage`)
+### 5.3 `SkippedCardsPage.tsx` (new — mirrored the then-current `MasteredCardsPage`)
 - `NodePage` + `MiniVocabCardGrid`; fetch `GET /:language/skipped`.
 - Header `rightContent`: **Recycle all** → `POST /recycle-skips`, then refetch.
 - Tap a card → **action popup** (Cancel / Mark as Already Learned / Mark as Learn Now)
@@ -278,7 +278,9 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 - `server/controllers/StarterPacksController.ts` + `server/routes/starterPacksRoutes.ts` — routes.
 - `src/features/discover/SortCardsPage.tsx` — pack UI rework.
 - `src/features/discover/DiscoverPage.tsx`, `src/hooks/useDiscoverNavigation.ts`, `src/App.tsx` — nav.
-- `src/features/flashcards/MasteredCardsPage.tsx` — template for `SkippedCardsPage`.
+- `src/features/flashcards/CollectionViewPage.tsx` — the generalized collection view that
+  replaced `MasteredCardsPage.tsx` (deleted in the decks work, migration 141); it was
+  `MasteredCardsPage` that `SkippedCardsPage` was originally copied from.
 - `src/types.ts` (`DiscoverCard`, `DiscoverFetchResponse`, new `SortPack`).
 - `database/migrations/131-seed-zh-sort-packs.sql` — the zh pack seed (§2.1); the only
   delivery path for authored packs into a non-authoring environment.

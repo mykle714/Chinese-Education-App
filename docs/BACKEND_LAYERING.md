@@ -83,23 +83,25 @@ adding that parameter is the correct fix.
 
 ## 4. Current conformance
 
-Of 22 services, 15 hold no SQL. The exceptions, largest first:
+*Re-measure before trusting this table — it drifts. Counts below are
+`grep -cE '\.query(<[^>]*>)?\(' server/services/*.ts`, taken 2026-08-16 over 26
+services. **19 of 26 hold no SQL.***
 
 | Service | Direct-SQL sites | Assessment |
 |---|---|---|
-| `NightMarketTemplateService.ts` | ~26 | **Non-conforming.** Owns the whole `nightmarkettemplatedefinitions` read/write path with no DAL. The largest single gap; a `NightMarketTemplateDAL` is the intended fix. |
-| `ValidationService.ts` | ~14 | **Non-conforming.** Reads/writes the `validations` table and patches det columns directly. Needs a `ValidationDAL`; the det patches belong on `IDictionaryDAL`. |
-| `StarterPacksService.ts` | ~14 | **Non-conforming.** Straddles `SortPacksDAL` and raw vet/det queries — the mixed state is worse than either extreme, because a reader cannot tell which path a given query took. |
-| `TextService.ts` | ~12 | **Non-conforming.** The `texts` table has no DAL at all. |
-| `VocabEntryService.ts` | 2 | **Conforming-by-exception (§3).** Both sites are inside transactions. Still worth migrating to client-accepting DAL methods. |
-| `OnDeckVocabService.ts` | 1 | **Conforming-by-exception (§3).** Inside a transaction. |
+| `StarterPacksService.ts` | 21 | **Non-conforming, and getting worse** (was ~14). Straddles `SortPacksDAL` and raw vet/det queries — the mixed state is worse than either extreme, because a reader cannot tell which path a given query took. |
+| `NightMarketTemplateService.ts` | 13 | **Non-conforming** (down from ~26). Owns the `nightmarkettemplatedefinitions` read/write path with no DAL; a `NightMarketTemplateDAL` is the intended fix. |
+| `OnDeckVocabService.ts` | 12 | **Non-conforming — reclassified.** This was "conforming-by-exception (§3): one site, inside a transaction". It is now twelve `db.getClient()` + `client.query()` sites that are **not** transactions (the game-pool, collection, mastered-count and filler/distractor queries). The §3 exception no longer covers it; these belong on `IOnDeckVocabDAL`. |
+| `ValidationService.ts` | 7 | **Non-conforming** (down from ~14). Reads/writes the `validations` table and patches det columns directly. Needs a `ValidationDAL`; the det patches belong on `IDictionaryDAL`. |
+| `TextService.ts` | 6 | **Non-conforming** (down from ~12). The `texts` table still has no DAL at all. |
+| `VocabEntryService.ts` | 4 | **Conforming-by-exception (§3)** — the sites are inside transactions. Still worth migrating to client-accepting DAL methods. |
 | `LazyEnrichmentService.ts` | 1 | **Borderline.** A single `executeQuery` existence probe; belongs on `IDictionaryDAL` as `exists(word, language)`. |
 
 `services/wordSearchGrid.ts` matches a naive `pool.` grep but issues no SQL — its
 `pool` is a candidate-letter array.
 
 **These are recorded, not endorsed.** New code does not get to add to this table;
-the four non-conforming services are pre-existing debt with a named remedy each.
+the five non-conforming services are pre-existing debt with a named remedy each.
 
 ---
 

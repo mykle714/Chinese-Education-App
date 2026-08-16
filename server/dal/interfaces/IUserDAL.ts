@@ -28,7 +28,7 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   updateTimezoneIfChanged(userId: string, timezone: string): Promise<void>;
 
   // NOTE: wallets and streaks are NOT here — since migration 130 they are
-  // per-(user, language) and live in IUserLanguagePointsDAL. `users` no longer has
+  // per-(user, language) and live in IUserLanguagesDAL. `users` no longer has
   // totalMinutePoints / currentStreak / lastStreakDate / lastPenaltyDate columns.
   // See docs/PER_LANGUAGE_STREAKS.md.
   //
@@ -36,7 +36,7 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // cron (database/cron/expire-stale-streaks.sql), never application code.
 
   // Leaderboard roster. Returns identity + isPublic only; the caller joins the
-  // per-language totals from IUserLanguagePointsDAL.getTotalsForAllUsers().
+  // per-language totals from IUserLanguagesDAL.getTotalsForAllUsers().
   getLeaderboardRoster(): Promise<Array<{ userId: string; email: string; name: string; isPublic: boolean; avatarIconId: string | null }>>;
 
   /**

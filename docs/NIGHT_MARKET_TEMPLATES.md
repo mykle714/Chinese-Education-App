@@ -159,7 +159,9 @@ terminates cleanly.
 - `pickGrassOverlay(neighbours)` — lower-level exact compass-set lookup that the above builds on.
 - `src/engine/market/farmTerrain.ts` (`buildFarmField` + `buildGrassPatch`) marks each tile
   grass/dirt (one contiguous wobbly patch), the tallDirt `fieldEdge` for the plateau rim, and
-  the 8-dir `grassNeighbours`; rendered by `features/nightmarket/FarmTerrainLayer.tsx`.
+  the 8-dir `grassNeighbours`; rendered by `features/nightmarket/EditorTerrainLayer.tsx`
+  (via the shared `terrainDraws.ts#buildDraws`), or baked into chunk textures by
+  `TerrainChunkLayer.tsx` off the same draw list.
   See *Terrain rendering* in [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md).
 
 ---
@@ -1099,8 +1101,14 @@ construction; projection inside `buildStreetGraph` covers T-junctions (N2).
 > overlapping can yield an **L-shaped node** (violates
 > [N1](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)). Rather than complicate recovery, a test
 > asserts every `buildStreetGraph` node comes out rectangular; a pathological authored
-> mask fails the test and the author fixes the mask
-> (`src/engine/market/__tests__/graphAssumptions.test.ts`).
+> mask fails the test and the author fixes the mask.
+>
+> ⚠️ **That test no longer exists.** `src/engine/market/__tests__/graphAssumptions.test.ts`
+> was deleted with the demo layout in commit `9bedfb5`, so the invariant is currently
+> asserted nowhere — the closest live coverage is
+> `__tests__/streetRecovery.test.ts` (recovery output) and `__tests__/seamAdjacency.test.ts`.
+> Re-add a rectangularity assertion over `buildStreetGraph` if authored masks are going to
+> be trusted.
 
 ---
 

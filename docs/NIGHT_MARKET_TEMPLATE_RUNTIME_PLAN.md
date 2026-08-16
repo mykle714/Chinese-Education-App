@@ -30,8 +30,8 @@ migrations 107–109). The runtime is what reads that catalog at load and render
 ### The load-bearing insight
 
 `buildStreetGraph(streets: Street[], tiles: TileDef[])`
-(`src/engine/market/streetGraph.ts:452`) and
-`buildTileGraph(tiles, stands)` (`src/engine/market/tileGraph.ts:65`) **already exist
+(`src/engine/market/streetGraph.ts`) and
+`buildTileGraph(tiles, stands)` (`src/engine/market/tileGraph.ts`) **already exist
 and do not change.**
 
 **The template cells *are* the tiles.** Each street/communal cell in a stitched template
@@ -97,7 +97,7 @@ function stitchedToEditorMasks(world: StitchedWorld): EditorMasks;  // → build
 function localToGlobal(p: PlacedTemplate, cellKey: string): string;  // pure translation, col→isoX row→isoY
 function stitchWorld(placed: PlacedTemplate[]): StitchedWorld;
 ```
-Depends on: `TemplateDefinitionPayload` (`src/features/nightmarket/templateEditorApi.ts:12`).
+Depends on: `TemplateDefinitionPayload` (`src/features/nightmarket/templateEditorApi.ts`).
 Coordinate mapping mirrors [NIGHT_MARKET_TEMPLATES.md § Local coordinate system].
 
 #### `streetRecovery.ts` — greedy maximal-rectangle cover (⏭ slice 2)
@@ -111,7 +111,7 @@ function recoverStreets(streetCells: Set<string>): RecoveredStreets;   // tiles 
 //           asserts width ∈ [1,8] (NIGHT_MARKET_GRAPH_ASSUMPTIONS S3); throws loudly otherwise
 ```
 Implements [NIGHT_MARKET_TEMPLATES.md § Street recovery]. `Street`
-(`nightMarketRegistry.ts:122`). The caller (`marketWorld.ts`) turns **each template
+(`nightMarketRegistry.ts`). The caller (`marketWorld.ts`) turns **each template
 street cell into a `TileDef`** and stamps its `intersectingStreets` from `ownership`;
 **communal cells** become extra walkable `TileDef`s with no `street`/`intersectingStreets`.
 No streets→tiles expansion happens.
@@ -151,13 +151,13 @@ Pipeline inside: `stitchWorld` → build `TileDef[]` directly from the stitched
 street+communal cells → `recoverStreets` on the street cells → stamp each street tile's
 `intersectingStreets` from `ownership` → `buildTileGraph` + `buildStreetGraph`. Feeds
 [NIGHT_MARKET_TEMPLATES.md § Feeding TILE_GRAPH / STREET_GRAPH]. The legacy
-`buildTilesFromStreets` (`tileRegistry.ts:60`) is **not** used.
+`buildTilesFromStreets` (`tileRegistry.ts`) is **not** used.
 
 ### 🟩 Backend layer — `server/`
 
 **Slice 1: no new backend code.** The client fetches the hub directly via the existing
 `loadTemplate(NIGHT_MARKET_HUB_TEMPLATE_NAME, version)` endpoint
-(`templateEditorApi.ts:112`), which already returns the full definition +
+(`templateEditorApi.ts`), which already returns the full definition +
 `availableVersions`.
 
 **Slice 3+ (needs the `nightmarkettemplatelocations` table — ⚠️ confirm before migration):**
@@ -233,7 +233,7 @@ build fetch headers with `authHeader()`.
 Renders `world.terrain` (grass/street autotiles, decor). Generalizes the
 existing `EditorTerrainLayer.tsx` (which already autotiles the same mask shape). In
 `MarketEngineViewer.tsx`, swap the static `buildFarmField` call
-(`MarketEngineViewer.tsx:143`) for `useMarketWorld`.
+(`MarketEngineViewer.tsx`) for `useMarketWorld`.
 
 **Multi-template field (done).** The terrain field is no longer the origin-only box: it now
 spans the **union of all placement footprints** across the continent bbox — including templates

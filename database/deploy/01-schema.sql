@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
     "selectedLanguage"         VARCHAR(10) DEFAULT 'zh',
     -- ⚠️ Baseline only. Migration 130 DROPS "totalMinutePoints" (along with
     -- "currentStreak"/"lastStreakDate"/"lastPenaltyDate") and moves the wallet +
-    -- streak state to user_language_points, keyed (userId, language); migration 134
+    -- streak state to user_languages, keyed (userId, language); migration 134
     -- then adds the monotonic gross counter "lifetimeMinutesEarned" to that same
     -- table. A DB built from this file is expected to be brought forward by
     -- migrate.sh, so the column below is the pre-130 shape, not the current one.

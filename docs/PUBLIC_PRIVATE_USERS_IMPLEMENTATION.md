@@ -296,6 +296,6 @@ Potential improvements to public/private features:
 
 ## Related Documentation
 
-- [WORK_POINTS_SYSTEM.md](./WORK_POINTS_SYSTEM.md) - Work points tracking system
-- [WORK_POINTS_INCREMENT_IMPLEMENTATION.md](./WORK_POINTS_INCREMENT_IMPLEMENTATION.md) - How work points are earned
+- [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md) - Study-time points tracking (replaced the work-points system this doc was written against)
+- [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md) - Per-(user, language) wallets and streaks
 - [POSTGRES_QUERY_GUIDE.md](../POSTGRES_QUERY_GUIDE.md) - Database queries for user data

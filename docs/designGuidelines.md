@@ -103,87 +103,114 @@ PostgreSQL 15 database with Node.js/Express backend, managed via Docker Compose.
 
 ### Tables
 
+> ⚠️ **Verify before trusting.** These tables drift. `\d <table>` in the local Postgres
+> container is the source of truth:
+> `docker exec cow-postgres-local psql -U cow_user -d cow_db -c '\d users'`.
+
 #### Users
 
-| Column Name | Data Type        | Constraints | Nullable | Default           | Description                         |
-| ----------- | ---------------- | ----------- | -------- | ----------------- | ----------------------------------- |
-| id          | uniqueidentifier | PRIMARY KEY | NO       | newsequentialid() | Unique identifier for each user     |
-| email       | varchar(255)     | NOT NULL    | NO       | NULL              | User's email address                |
-| name        | varchar(100)     | NOT NULL    | NO       | NULL              | User's full name                    |
-| createdAt   | datetime         |             | YES      | getdate()         | Timestamp when the user was created |
+| Column Name | Data Type | Nullable | Default | Description |
+| --- | --- | --- | --- | --- |
+| id | uuid | NO | `uuid_generate_v4()` | Unique identifier for each user |
+| email | varchar(255) | NO | — | User's email address (UNIQUE) |
+| name | varchar(100) | NO | — | User's display name |
+| password | varchar(255) | NO | — | bcrypt hash |
+| selectedLanguage | varchar(10) | YES | `'zh'` | The learner's active language |
+| lastMinutePointIncrement | timestamp | YES | — | Rate-limit anchor for minute-point increments |
+| isPublic | boolean | YES | `true` | Leaderboard/profile visibility — see [PUBLIC_PRIVATE_USERS_IMPLEMENTATION.md](./PUBLIC_PRIVATE_USERS_IMPLEMENTATION.md) |
+| createdAt | timestamp | YES | `now()` | Account creation |
+| timezone | text | NO | `'UTC'` | IANA zone; resolves the 4 AM-bounded streak day |
+| avatarIconId | text | YES | — | FK → `icons8("icons8Id")`, ON DELETE SET NULL |
+| seenPacks | integer[] | NO | `'{}'` | Sort packs already shown |
+| readingGoal | boolean | NO | `false` | Enables the Reading mastery bar |
+| writingGoal | boolean | NO | `false` | Enables the Writing mastery bar |
+| isValidator | boolean | NO | `false` | Grants the validator flow — see [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md) |
+| isTemplateAuthor | boolean | NO | `false` | Grants the night-market template editor/sandbox |
+| showSegmentSpaces | boolean | NO | `false` | Account-level est display toggle (zh only) |
+
+**Not here any more:** the global minute-point counters (`totalMinutePoints`,
+`currentStreak`, …) moved to **`user_languages`**, keyed `(userId, language)` —
+migration 130, renamed by 145. See [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md).
 
 ##### Indexes
 
 - Primary Key: `id`
-- Unique Index: `email` (recommended for login functionality)
+- Unique: `email`; plus btree on `email`, `avatarIconId`, `lastMinutePointIncrement`
 
 ##### Relationships
 
-- [Describe any foreign key relationships with other tables]
+- `avatarIconId` → `icons8("icons8Id")` (SET NULL)
+- Referenced with ON DELETE CASCADE by essentially every per-user table:
+  `user_languages`, `userminutepoints`, `vocabentries_zh` / `vocabentries_es`, `decks`,
+  `friendships` (both sides), `texts`, `refresh_tokens`, `validations`, `weeklies`,
+  `wins`, `discover_skips`, `category_promotions`, `gameprogress`,
+  `writing_practice_completions`, the three `nightmarkettemplate*` tables,
+  `nightmarketunlocks`, `community_layout_votes`.
 
-#### VocabEntries
+#### VocabEntries — `vocabentries_zh` / `vocabentries_es`
 
-| Column Name  | Data Type        | Constraints | Nullable | Default   | Description                              |
-| ------------ | ---------------- | ----------- | -------- | --------- | ---------------------------------------- |
-| id           | int              | PRIMARY KEY | NO       | NULL      | Unique identifier for each entry         |
-| userId       | uniqueidentifier | FOREIGN KEY | NO       | NULL      | Reference to the user who owns the entry |
-| entryKey     | text             | NOT NULL    | NO       | NULL      | Key for the dictionary entry             |
-| entryValue   | text             | NOT NULL    | NO       | NULL      | Value for the dictionary entry           |
-| isCustomTag  | bit              |             | YES      | NULL      | Boolean tag indicating if entry is user-created |
-| hskLevel  | varchar(10)      | CHECK       | YES      | NULL      | HSK difficulty level (HSK1-HSK6)        |
-| createdAt    | datetime         |             | YES      | getdate() | Timestamp when the entry was created     |
+> There is **no `vocabentries` table**. It was split per language; the two tables share
+> one id sequence (`vocabentries_id_seq`). A card's identity is
+> **(userId, entryKey, language)** — every query must be language-scoped. Enrichment
+> (definitions, pronunciation, breakdown, …) is NOT stored here; it is LEFT JOINed from
+> the det tables on `entryKey = word1 AND language`.
+
+| Column Name | Data Type | Nullable | Default | Description |
+| --- | --- | --- | --- | --- |
+| id | integer | NO | `nextval('vocabentries_id_seq')` | PK, shared sequence across both tables |
+| userId | uuid | NO | — | FK → `users(id)` CASCADE — the card's owner |
+| entryKey | text | NO | — | The headword; joins to `dictionaryentries_*.word1` |
+| language | varchar(10) | NO | `'zh'` / `'es'` | Redundant with the table but kept so the shared read path can union |
+| totalMarkCount | integer | YES | 0 | Legacy aggregate mark counter |
+| totalCorrectCount | integer | YES | 0 | Legacy aggregate correct counter |
+| starterPackBucket | varchar(20) | NO | — | `'library'` (shown as **Learn Now**), `'provisional'` (lent — see [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md)), etc. |
+| createdAt | timestamp | YES | `now()` | When the card entered the library |
+| typedMarkHistory | jsonb | NO | `'{}'` | The four typed mark tracks (Recognition / Production / Reading / Writing) that drive utcm — see [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
+| masteredAt | jsonb | YES | — | Per-bar mastery timestamps (migration 142) |
+| selectedSense | text | YES | — | Which sense cluster this card is studying — see [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) |
+| iconLayout | jsonb | YES | — | Custom back-face icon arrangement — see [CARD_ICON_LAYOUT.md](./CARD_ICON_LAYOUT.md) |
+| snapConfig / textColors / textLayout / cardColor | jsonb / jsonb / jsonb / text | YES | — | Per-card face styling |
+| author | uuid | YES | — | FK → `users(id)` SET NULL; set for user-authored cards |
 
 ##### Indexes
 
 - Primary Key: `id`
-- Foreign Key: `userId` references `Users(id)`
-- Index: `entryKey` (for quick lookups by key)
+- btree: `entryKey`, `language`, `author`
+- Foreign Keys: `userId` → `users(id)` CASCADE; `author` → `users(id)` SET NULL
 
-##### Tag System
+##### Gone: the tag system
 
-The VocabEntries table includes a tag system with the following design principles:
-
-**Tag Types:**
-- **isCustomTag**: Boolean tag indicating whether an entry was created by the user (true) or imported from a standard source (false/null)
-- **hskLevel**: Enum tag for HSK (Hanyu Shuiping Kaoshi) difficulty levels with values: HSK1, HSK2, HSK3, HSK4, HSK5, HSK6
-
-**Tag Naming Convention:**
-- All tag column names must end with "Tag" suffix
-- Tags are not customizable by users - they are system-defined with preset values
-- Each tag type can have multiple preset variations (enums) or boolean values
-
-**Tag Constraints:**
-- `hskLevel` has a CHECK constraint to enforce valid HSK levels: `CHECK (hskLevel IN ('HSK1', 'HSK2', 'HSK3', 'HSK4', 'HSK5', 'HSK6'))`
-- Both tag fields are nullable for backward compatibility with existing entries
-
-**Tag Behavior:**
-- New entries created via UI default to `isCustomTag = true`
-- CSV imports set `isCustomTag = true`
-- HSK levels can be assigned manually or via automated scripts
-- Tags are displayed as badges in the UI (upper right corner of entry cards)
+The `entryValue`, `isCustomTag` and `hskLevel` columns described in earlier revisions of
+this document **no longer exist on the vet tables**, and neither does the
+`CHECK (hskLevel IN ('HSK1'..'HSK6'))` constraint. Difficulty is a **det** concern now:
+`dictionaryentries_zh.difficulty`, a `smallint` 1..6 (migration 76 renamed `hskLevel` →
+`difficulty`, 79 stripped the `HSK` prefix, 92 retyped it). For zh the values still ARE
+HSK levels, and the UI re-adds an HSK badge from them.
 
 ##### Relationships
 
 - Each entry belongs to a user through the `userId` foreign key
+- `deck_cards` references entries to build user-authored decks — see [DECKS_FEATURE.md](./DECKS_FEATURE.md)
 
 #### UserMinutePoints
 
 | Column Name | Data Type        | Constraints | Nullable | Default | Description                                                                |
 | ----------- | ---------------- | ----------- | -------- | ------- | -------------------------------------------------------------------------- |
-| userId      | uniqueidentifier | FOREIGN KEY | NO       | NULL    | Reference to the user who owns the row                                     |
+| userId      | uuid             | FOREIGN KEY | NO       | NULL    | Reference to the user who owns the row                                     |
 | streakDate  | date             | NOT NULL    | NO       | NULL    | Streak day label (4 AM-bounded local day) in YYYY-MM-DD form               |
+| language    | varchar(10)      | NOT NULL    | NO       | 'zh'    | The language the minutes were earned in (migration 130)                    |
 | minutesEarned | int            | NOT NULL    | NO       | 0       | Total minute points earned across all of the user's devices on this day   |
 | penaltyMinutes | int           | NOT NULL    | NO       | 0       | Minutes deducted by a streak break attributed to this missed day          |
 | lastSyncTimestamp | datetime    |             | YES      | now()   | Timestamp of last sync update                                              |
 | updatedAt   | datetime         |             | YES      | now()   | Timestamp when the record was last updated                                  |
 
 ##### Primary Key
-- Composite Primary Key: `(userId, streakDate)` — one row per user per streak day, aggregating activity across all devices.
+- Composite Primary Key: `(userId, streakDate, language)` — one row per user per streak day **per language**, aggregating activity across all devices.
 
 ##### Minute Points System
 - Each row represents a single 4 AM-bounded local day for a user, summed across devices.
 - Minute points accrue at 60s = 1 point in the client and are committed to the server one at a time.
-- Each consecutive missed day (below the threshold) stamps `penaltyMinutes` on that missed day (`today − 1`), resets `currentStreak` to 0, and debits an **escalating** amount (`STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES` = `3, 15, 30, 60, 90, 120`, then wipe on day 7+) from `users.totalMinutePoints`. Applied only by the cron — see [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md).
+- Each consecutive missed day (below the threshold) stamps `penaltyMinutes` on that missed day (`today − 1`), resets `currentStreak` to 0, and debits an **escalating** amount (`STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES` = `3, 15, 30, 60, 90, 120`, then the remainder on day 7+) from that language's `user_languages.totalMinutePoints` — **not** from `users`, which no longer holds a points counter. Applied only by the cron — see [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md).
 - Streak retention requires `STREAK_CONFIG.RETENTION_MINUTES` (default 3) per day.
 
 **Calendar Integration:**
@@ -194,30 +221,49 @@ The VocabEntries table includes a tag system with the following design principle
 
 ##### Relationships
 - `userId` references `Users(id)` with CASCADE DELETE
-- One row per user per streak day (no per-device split).
+- One row per user per streak day per language (no per-device split).
 
 ## API Endpoints
 
-### Vocabulary Entries
+> This is an illustrative subset, not the full surface. The route files under
+> `server/routes/` are the source of truth (one file per feature, registered in
+> `server/routes/index.ts`); see [BACKEND_LAYERING.md](./BACKEND_LAYERING.md).
+
+### Vocabulary Entries (`server/routes/vocabEntryRoutes.ts`)
 
 - `GET /api/vocabEntries` - Get all vocabulary entries
+- `GET /api/vocabEntries/paginated` - Paged listing
+- `GET /api/vocabEntries/search` - Search the user's cards
 - `GET /api/vocabEntries/:id` - Get a specific vocabulary entry by ID
 - `POST /api/vocabEntries` - Create a new vocabulary entry
+- `POST /api/vocabEntries/addToLibrary` - Add a discoverable det word as a Learn Now card
+- `POST /api/vocabEntries/import` - CSV import (multipart)
+- `POST /api/vocabEntries/byTokens` - Bulk lookup by headword tokens
 - `PUT /api/vocabEntries/:id` - Update a vocabulary entry
+- `PATCH /api/vocabEntries/:id/iconLayout` - Save the custom back-face icon layout
+- `PATCH /api/vocabEntries/:id/selectedSense` - Change which sense cluster the card studies
 - `DELETE /api/vocabEntries/:id` - Delete a vocabulary entry
 
-### Users
+### Users (`server/routes/userRoutes.ts`)
 
 - `GET /api/users` - Get all users
 - `GET /api/users/:id` - Get a specific user by ID
-- `POST /api/users` - Create a new user
+- `POST /api/users` - Create a new user (admin)
+- `PUT /api/users/language` - Change the learner's active language
+- `PUT /api/users/avatar` - Set/clear the icons8 avatar
+- `PUT /api/users/goals` - Set the reading/writing mastery-goal flags
+- `PUT /api/users/displaySettings` - Account display preferences (segment spacing)
+- `GET /api/users/me/wins` - This week's badges + lifetime win counts
+- `POST /api/users/me/wins` - Record one game win
+- `GET /api/users/me/velocity` - 7-day utcm band-step rate, per language
 
 ### Minute Points & Streak
 
-- `GET /api/users/:id/totalMinutePoints` - Get a user's total lifetime minute points and current streak
 - `POST /api/users/minutePoints/increment` - Add 1 minute point. Body: `{ timestamp, tz }`. Server resolves the streak day from the timezone.
 - `GET /api/users/minutePoints/calendar/:yearMonth` - Calendar data (per-day minutes earned + penalties) for the given YYYY-MM
-- Streak breaks are detected server-side by the hourly Postgres cron at `database/cron/expire-stale-streaks.sql` (see `docs/STREAK_EXPIRATION_CRON.md`). The client no longer has a `/new-day` endpoint.
+- `GET /api/users/minutePoints/summary?language=…` - Per-language lifetime total + today's minutes + streak
+- ⚠️ **`GET /api/users/:id/totalMinutePoints` was removed** by migration 130 — wallets are per-language, so there is no single total to return. Use the summary endpoint above.
+- Streak breaks are detected server-side by the hourly Postgres cron at `database/cron/expire-stale-streaks.sql` (see [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)). The client has no `/new-day` endpoint.
 
 ## Navigation and Page Transitions
 

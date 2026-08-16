@@ -1,5 +1,22 @@
 # Backfill Enrichment Script - Setup & Troubleshooting
 
+> ⚠️ **OBSOLETE — the script this document describes does not exist.**
+> `server/scripts/backfill/chinese/backfill-enrichment.js` was deleted in commit
+> `33a6f84`, and the `expansion` / `expansionMetadata` columns it wrote were dropped
+> from `dictionaryentries_zh`. Enrichment is now **one script per column** under
+> `server/scripts/backfill/{chinese,spanish}/`, driven by the shared runner
+> (`backfill/shared/lib/runner.js`) and gated per entry on the `enrichmentLog` stamp.
+>
+> **Use instead:**
+> - [docs/newDictionaryEntriesBackfillInstructions.md](docs/newDictionaryEntriesBackfillInstructions.md) — the per-column script list and run order
+> - the `/mark-discoverable` skill — the only legal path to `discoverable = TRUE`
+> - [docs/VOCAB_ENRICHMENT_IMPLEMENTATION.md](docs/VOCAB_ENRICHMENT_IMPLEMENTATION.md) — the enrichment read path
+>
+> Kept only for the container/`npx tsx` invocation notes below, which still apply to
+> the current scripts. **Safe to delete once those notes move into the backfill
+> instructions doc.**
+
+
 ## Overview
 The `backfill-enrichment.js` script populates enrichment data (synonyms, example sentences, parts of speech, and expansions) for existing Chinese vocabulary entries using Claude AI.
 

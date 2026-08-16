@@ -1,5 +1,21 @@
 # Work Points Sync System Implementation
 
+> ⚠️ **SUPERSEDED — HISTORICAL ONLY.** The work-points system described below no longer
+> exists. It was replaced by **minute points** — see
+> [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md) and
+> [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md). Nothing in `src/` or `server/`
+> references work points any more: the `UserWorkPoints` table, the
+> `users.totalWorkPoints` / `currentWorkPoints` columns, `UserWorkPointsDAL` /
+> `UserWorkPointsService` / `UserWorkPointsController`, `src/hooks/useWorkPoints.ts`,
+> `src/utils/workPointsSync.ts`, `src/utils/deviceFingerprint.ts` and every
+> `/api/users/work-points/*` route are all gone. The only survivors are dead helper
+> scripts (`server/scripts/adjust-work-points.js`, `server/tests/*work-points*`).
+>
+> Kept for the design rationale it records (the abuse model behind server-side
+> increment, the daily-boundary sync argument), which minute points inherited. Do not
+> use it as a description of current behaviour. **Safe to delete once that rationale is
+> folded into MINUTE_POINTS_SYSTEM.md.**
+
 ## Overview
 
 This document describes the complete implementation of the daily boundary sync system for the vocabulary learning application. The system synchronizes client-side work points with the server once per day when users start a new day, providing reliable data persistence and preventing data loss during daily resets.

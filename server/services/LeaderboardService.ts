@@ -1,6 +1,6 @@
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js';
-import { IUserLanguagePointsDAL } from '../dal/interfaces/IUserLanguagePointsDAL.js';
+import { IUserLanguagesDAL } from '../dal/interfaces/IUserLanguagesDAL.js';
 import { IWinsDAL } from '../dal/interfaces/IWinsDAL.js';
 import { LeaderboardEntry, LeaderboardResponse } from '../types/leaderboard.js';
 import { ValidationError } from '../types/dal.js';
@@ -24,7 +24,7 @@ export class LeaderboardService {
   constructor(
     private userDAL: IUserDAL,
     private userMinutePointsDAL: IUserMinutePointsDAL,
-    private userLanguagePointsDAL: IUserLanguagePointsDAL,
+    private userLanguagesDAL: IUserLanguagesDAL,
     private winsDAL: IWinsDAL
   ) {}
 
@@ -32,11 +32,11 @@ export class LeaderboardService {
     try {
       // Roster = identity + isPublic only; since migration 130 the points no longer live on
       // `users`, so the wallet/streak totals come from a second grouped query over
-      // user_language_points. Two queries, both O(1) in the number of users — never
+      // user_languages. Two queries, both O(1) in the number of users — never
       // getAllProgress() in a per-user loop. We mask streak for non-public users below.
       const [roster, totalsByUser] = await Promise.all([
         this.userDAL.getLeaderboardRoster(),
-        this.userLanguagePointsDAL.getTotalsForAllUsers(),
+        this.userLanguagesDAL.getTotalsForAllUsers(),
       ]);
 
       if (roster.length === 0) {
@@ -46,7 +46,7 @@ export class LeaderboardService {
       // Hide users with no accumulated points from the leaderboard entirely.
       // Filtering FIRST (it used to happen after the per-user minute lookups) means
       // the minutes query below only covers users who will actually be rendered.
-      // A user with no user_language_points row has never studied, so absent == 0 points
+      // A user with no user_languages row has never studied, so absent == 0 points
       // and they drop out here — the same outcome the old `totalMinutePoints > 0` had.
       const rankedUsers = roster.filter(
         (user) => (totalsByUser.get(user.userId)?.totalMinutePoints ?? 0) > 0

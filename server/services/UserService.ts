@@ -443,7 +443,7 @@ export class UserService {
   // (GET /api/users/:id/total-minute-points). Wallet + streak are per-language now, so there
   // is no single figure to roll up here; user-facing callers use
   // UserMinutePointsService.getLanguageSummary, and the leaderboard uses
-  // IUserLanguagePointsDAL.getTotalsForAllUsers(). See docs/PER_LANGUAGE_STREAKS.md.
+  // IUserLanguagesDAL.getTotalsForAllUsers(). See docs/PER_LANGUAGE_STREAKS.md.
 
   /**
    * Post-login bookkeeping. Today: refresh users.timezone so the hourly

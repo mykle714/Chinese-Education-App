@@ -64,7 +64,7 @@ Footer "Discover" tab
 
 Every discover surface draws its cards from the per-language det table through **one**
 predicate, `StarterPacksService._supplyGate()`
-(`server/services/StarterPacksService.ts:205`):
+(`server/services/StarterPacksService.ts`):
 
 ```sql
 de.discoverable = TRUE
@@ -73,7 +73,7 @@ de.discoverable = TRUE
 No language branch, no second flag. Its four callers are `_fetchSupplyRows` (Sort
 Cards), `listQuickMarkCards` (Quick Mark), `getProgress` (the level bar), and — kept
 deliberately identical — `ProvisionalCardDAL._supplyGate`
-(`server/dal/implementations/ProvisionalCardDAL.ts:28`), so a word lent as a
+(`server/dal/implementations/ProvisionalCardDAL.ts`), so a word lent as a
 provisional card is always a word the sort flow can later offer. On top of the gate
 each query still applies the Tier-1 level filter `difficulty BETWEEN 1 AND 6`
 (`_levelConfig().validPredicate`).

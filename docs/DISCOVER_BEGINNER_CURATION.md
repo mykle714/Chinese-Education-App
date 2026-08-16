@@ -25,9 +25,9 @@ For a user who has **never sorted any card**, the server picks cards in
 
 1. `estimateLevel(userId, language)` returns **1** — a fresh user has zero mastered
    and zero learning cards, so level 1 is the first *uncleared* level
-   (`StarterPacksService.ts:193`).
+   (`StarterPacksService.ts`).
 2. `_fetchSupplyRows` selects discoverable cards ordered **nearest-level-first**
-   around the estimate (`StarterPacksService.ts:305`):
+   around the estimate (`StarterPacksService.ts`):
 
    ```sql
    ORDER BY ABS(CAST(difficulty AS INTEGER) - 1) ASC, de.id ASC

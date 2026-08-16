@@ -22,7 +22,7 @@ Every column in `dictionaryentries_zh` and the script responsible for populating
 | `definitions` | Import / seed data | — | — | all |
 | `discoverable` | Manual / admin action | — | — | all |
 | `script` | Import / seed data | — | — | all |
-| `hskLevel` | `backfill/chinese/backfill-hsk-level.js` or import/seed data | AI (Claude Sonnet) or — | **Yes** (for backfill) | zh |
+| `difficulty` | `backfill/chinese/backfill-hsk-level.js` or import/seed data | AI (Claude Sonnet) or — | **Yes** (for backfill) | zh |
 | `shortDefinition` | *Not stored — computed at runtime* | Deterministic via `server/utils/definitions.ts` | — | all |
 | `longDefinition` | `backfill/chinese/backfill-long-definitions.js` | AI (Claude Haiku) | **Yes** | zh |
 | `longDefinitionCitations` | `backfill/chinese/backfill-longdef-citations.js` | AI (Claude Sonnet) | **Yes** | zh |
@@ -88,9 +88,11 @@ Note: Only applies to multi-character Chinese entries.
 ```bash
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --words=word1,word2
 ```
-Populates: `hskLevel`
-Filter: `language = 'zh' AND discoverable = TRUE AND "hskLevel" IS NULL`
-Note: Assigns one level token per entry (`HSK1`..`HSK6`). Use `--spot-check` to preview 5 entries first.
+Populates: `difficulty` (smallint 1..6)
+Note: the script name still says "hsk-level" but the column is **`difficulty`** — migration
+76 renamed `hskLevel` → `difficulty`, 79 stripped the `HSK` prefix, and 92 retyped it to
+smallint. For zh the values ARE HSK levels (1 = HSK1 … 6 = HSK6); the UI re-adds the HSK
+badge. Assigns one level per entry. Use `--spot-check` to preview 5 entries first.
 
 ---
 
@@ -156,7 +158,6 @@ These are not part of the standard discoverable-entry flow. Run them only when r
 | Script | Purpose | When To Run |
 |---|---|---|
 | `backfill/chinese/backfill-pinyin-ucolon.js` | Fixes malformed `u:N` CEDICT notation in `pronunciation` (e.g. `lu:3` → `lǚ`). Also recomputes `tone`. | Only needed once after initial CEDICT import. |
-| `backfill/chinese/backfill-enrichment.js` | Populates `expansionMetadata` for rows that have `expansion` but no metadata. | After manually adding or importing `expansion` values. |
 
 ---
 

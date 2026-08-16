@@ -7,7 +7,7 @@ This feature adds rich contextual information to vocabulary flashcards, includin
 
 ### 1. Database Schema (✅ Complete)
 
-Enrichment columns (breakdown, synonyms, exampleSentences, longDefinition, pronunciation, tone, script, hskLevel) live in `dictionaryentries_zh`, not `vocabentries`. They are fetched via LEFT JOIN on `entryKey = word1 AND language`.
+Enrichment columns (breakdown, synonyms, exampleSentences, longDefinition, pronunciation, tone, script, difficulty) live in `dictionaryentries_zh`, not `vocabentries`. They are fetched via LEFT JOIN on `entryKey = word1 AND language`.
 
 Runtime-computed fields (never stored in the DB):
 - `shortDefinition` — deterministic, via `generateShortDefinition()` in `server/utils/definitions.ts`
@@ -81,15 +81,15 @@ When creating new Chinese vocab entries, automatically generates and stores:
 **Modified Method**:
 - `getDistributedWorkingLoop()` - Now enriches all returned cards with related words before returning
 
-### 6. Backfill Script (✅ Complete)
-**File**: `server/scripts/backfill/chinese/backfill-enrichment.js`
-
-Populates enrichment data for existing Chinese vocab entries.
-
-**Usage**:
-```bash
-docker-compose exec backend-local node server/scripts/backfill/chinese/backfill-enrichment.js
-```
+### 6. Backfill Scripts (✅ Complete — but split up since)
+The single `backfill-enrichment.js` this section was written against **no longer
+exists** (deleted in commit `33a6f84`), and neither do the `expansion` /
+`expansionMetadata` columns it also populated. Enrichment is now **one script per
+column** under `server/scripts/backfill/chinese/` and `…/spanish/`, run through the
+shared runner (`backfill/shared/lib/runner.js`) with a per-entry `enrichmentLog`
+done-gate. The authoritative per-column list and run order is
+[newDictionaryEntriesBackfillInstructions.md](./newDictionaryEntriesBackfillInstructions.md);
+marking words discoverable goes through the `/mark-discoverable` skill end to end.
 
 ## Related documents
 
@@ -147,7 +147,7 @@ docker-compose exec backend-local node server/scripts/backfill/chinese/backfill-
 
 ## API Response
 
-When fetching flashcards from `/api/ondeck/working-loop`, each Chinese vocab entry now includes:
+When fetching flashcards from `/api/onDeck/distributedWorkingLoop`, each Chinese vocab entry now includes:
 
 ```json
 {
@@ -221,7 +221,7 @@ docker-compose exec postgres-local psql -U cow_user -d cow_db -c "SELECT word1, 
 ### Test API Response
 Login as test user and call:
 ```bash
-GET /api/ondeck/working-loop
+GET /api/onDeck/distributedWorkingLoop
 ```
 
 The response should include enrichment fields for Chinese cards.
@@ -265,7 +265,7 @@ bash server/scripts/run-discoverable-enrichment.sh [production|local]
 |------|--------|-----------------|-------|
 | 1 | `backfill/chinese/backfill-split-semicolon-definitions.js` | `definitions` | Expands semicolon-delimited elements into separate array entries. Runs on ALL zh entries. |
 | 2 | `backfill/chinese/backfill-process-definitions-array.js` | `definitions` | AI reorders definitions from most prototypical to least, and prunes very low-confidence glosses (broken English, incredibly rare/archaic). Runs on discoverable zh entries with >1 definition. |
-| 3 | `backfill/chinese/backfill-hsk-level.js` | `hskLevel` | AI assigns one level token per entry (`HSK1`..`HSK6`). |
+| 3 | `backfill/chinese/backfill-hsk-level.js` | `difficulty` | AI assigns one level per entry. The script name still says "hsk-level" but it writes `dictionaryentries_zh.difficulty` as a bare smallint `1`..`6` — migrations 76/79/92 renamed `hskLevel` → `difficulty`, stripped the `HSK` prefix and retyped it. |
 | 4 | `backfill/chinese/backfill-long-definitions.js` | `longDefinition` | AI generates ONE 25–200 char elaboration **per sense**, from `definitionClusters` — so it runs after clustering (see [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md)), not just after step 2. |
 | 4b | `backfill/chinese/backfill-longdef-citations.js` | `longDefinitionCitations` | AI translates each Chinese run quoted inside step 4's text (migration 126) so a tap shows the whole cited phrase's meaning. Runs immediately after step 4; re-running step 4 invalidates it. See [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #5b. |
 | 5 | `backfill/chinese/backfill-example-sentences.js` | `exampleSentences` | AI generates 3 example sentences. Segment metadata (`_segments`, `segmentMetadata`) is computed at runtime — not stored. |
@@ -342,7 +342,8 @@ Only processes `discoverable = TRUE` zh entries where either column is NULL.
 - `server/services/DictionaryService.ts`
 - `server/services/VocabEntryService.ts`
 - `server/services/OnDeckVocabService.ts`
-- `server/scripts/backfill/chinese/backfill-enrichment.js` (new)
+- `server/scripts/backfill/chinese/*.js` — one script per enrichment column (the single
+  `backfill-enrichment.js` named in the original design was deleted in `33a6f84`)
 
 ### Frontend
 - `src/types.ts`

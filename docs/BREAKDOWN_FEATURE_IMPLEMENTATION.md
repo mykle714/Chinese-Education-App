@@ -99,7 +99,9 @@ Breakdown enrichment is two ordered passes over `dictionaryentries_zh.breakdown`
 
 **5c. Elaborate the non-obvious breakdowns (AI)** —
 `server/scripts/backfill/chinese/backfill-breakdown-elaboration.js`
-(column added by `database/migrations/130-add-breakdown-elaboration-to-zh.sql`)
+(column added by `database/migrations/133-add-breakdown-elaboration-to-zh.sql` —
+authored as 130, renumbered to 133 in merge `ef7b964` when origin's per-language
+minute-points migration claimed 130)
 - After 5a+5b the breakdown is CORRECT, but for a minority of words it is still
   MISLEADING when read bare: the component glosses do not add up to the word.
   东西 reads "east + west" but means "thing"; 马虎 reads "horse + tiger" but means
@@ -142,7 +144,7 @@ Breakdown enrichment is two ordered passes over `dictionaryentries_zh.breakdown`
   NO writes, verbose).
 - Usage: `docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-breakdown-elaboration.js`
 - **No consumer yet** — nothing in the det read path or the bt UI reads this column as
-  of migration 130; it is populated ahead of the display work.
+  of migration 133; it is populated ahead of the display work.
 
 ## Data Flow
 

@@ -2,7 +2,7 @@
 --
 -- PER-LANGUAGE since migration 130 (docs/PER_LANGUAGE_STREAKS.md). Every unit of
 -- state this cron reads and writes is keyed (userId, language) via
--- user_language_points: the wallet, the streak, the reference day and the
+-- user_languages: the wallet, the streak, the reference day and the
 -- once-per-day guard. A user studying zh and es has two INDEPENDENT tracks, and a
 -- lapse in both debits both on the same tick. The old global columns on `users`
 -- (totalMinutePoints / currentStreak / lastStreakDate / lastPenaltyDate) are no
@@ -11,7 +11,7 @@
 -- ONE branch: an escalating penalty for consecutive full local days spent
 -- BELOW the RETENTION_MINUTES (3-min) streak threshold IN THAT LANGUAGE. "Missing"
 -- a day means not reaching the threshold in that language that day, tracked purely
--- by user_language_points."lastStreakDate" (the last local day the user hit 3 min
+-- by user_languages."lastStreakDate" (the last local day the user hit 3 min
 -- in that language). lastStreakDate is advanced ONLY by the minute-points increment
 -- path -- this cron never touches it -- so the day gap grows by exactly one each
 -- continued local day and snaps back to 0 the moment the user hits the threshold
@@ -42,7 +42,7 @@
 --     that must be able to drive a balance anywhere.
 --
 -- Applied at most once per (user, language) per local day, guarded by
--- user_language_points."lastPenaltyDate". Each tick, for each eligible pair:
+-- user_languages."lastPenaltyDate". Each tick, for each eligible pair:
 --   * debits the tier penalty from THAT LANGUAGE's totalMinutePoints, floored at the
 --     balance's CHECKPOINT (see below), which is 0 below the first checkpoint;
 --   * stamps the ACTUAL amount removed (total - new_total) as penaltyMinutes on
@@ -144,7 +144,7 @@ BEGIN
            (((now() AT TIME ZONE u.timezone) - INTERVAL '4 hours')::date) AS today_local,
            p."lastStreakDate"::date AS last_streak_date,
            p."lastPenaltyDate" AS last_penalty_date
-    FROM user_language_points p
+    FROM user_languages p
     JOIN users u ON u.id = p."userId"
     WHERE p."totalMinutePoints" > 0
       AND p."lastStreakDate" IS NOT NULL
@@ -207,7 +207,7 @@ BEGIN
     RETURNING "userId"
   ),
   progress_update AS (
-    UPDATE user_language_points p
+    UPDATE user_languages p
     SET "totalMinutePoints" = f.new_total,
         "currentStreak"     = 0,
         "lastPenaltyDate"   = f.today_local,

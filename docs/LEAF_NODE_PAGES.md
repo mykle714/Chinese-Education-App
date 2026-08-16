@@ -176,22 +176,44 @@ it away is the only correct answer. Current caller: scp, while the eip sheet is 
 
 ## Current classification
 
+**Source of truth: `src/routes/routeMeta.ts`** (`PAGE_ROUTES` + `GAME_ROUTE_META`).
+Every row below mirrors a `chrome:` field there — if the two disagree, the code wins
+and this table is stale. Only the `chrome: "node" | "leaf"` routes are listed;
+`chrome: "tab"` (footer-tab destinations) and `chrome: "none"` (plain-shell and
+own-animation pages) are neither archetype.
+
 | Route | Page | Archetype |
 |---|---|---|
 | `/discover/sort/:language` | `SortCardsPage` | Node |
+| `/discover/quick-mark/:language` | `QuickMarkPage` | Node |
 | `/discover/skipped/:language` | `SkippedCardsPage` | Node |
 | `/dictionary` | `DictionaryPage` | Node (footer added; tapping a result opens the dictionary cdp) |
 | `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word) |
 | `/compare` | `ComparePage` | Node (word-compare surface reached from the Home hub; auth-required — see [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) |
 | `/reader` | `ReaderPage` | Node (document list; footer kept, Home tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |
 | `/reader/:id` | `ReaderDocumentPage` | Node-style (footerless) — the open-document cdp-style page, see § below |
+| `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; footer added) |
+| `/flashcards/collection/:builtin` | `CollectionViewPage` | Node (Learn Now / Mastered / mastered-reading / mastered-writing — see [DECKS_FEATURE.md](./DECKS_FEATURE.md)) |
+| `/flashcards/deck/:id` | `CollectionViewPage` | Node (a user-authored deck, addressed by numeric id) |
+| `/flashcards/mastered` | `MasteredRedirect` | Node (legacy path; `<Navigate replace>` to `/flashcards/collection/mastered`) |
+| `/friends` | `FriendsPage` | Node (Home tab stays lit) |
+| `/friends/requests` | `IncomingRequestsPage` | Node |
+| `/friends/sent` | `SentRequestsPage` | Node |
+| `/friends/remove` | `RemoveFriendsPage` | Node |
+| `/games` | `GamesPage` | Node |
+| `/games/bubble-match` | `BubbleMatchPage` | Leaf (footer removed; the info/picker screen no longer shows the footer) |
+| `/games/word-search` | `WordSearchPage` | Leaf |
+| `/games/match-speed` | `MatchSpeedPage` | Leaf |
+| `/games/speed-reading` | `SpeedReadingPage` | Leaf |
+| `/community` | `CommunityPage` | Node (reached from the Home hub; Home tab stays lit) |
 | `/tester-dashboard` | `TesterDashboardPage` | Leaf |
 | `/night-market` | `NightMarketEnginePage` | Leaf |
-| `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; footer added) |
-| `/games/bubble-match` | `BubbleMatchPage` | Leaf (footer removed; the info/picker screen no longer shows the footer) |
-| `/flashcards/mastered` | `MasteredCardsPage` | Node |
-| `/games` | `GamesPage` | Node |
-| `/community` | `CommunityPage` | Node |
+| `/settings` | `SettingsPage` | Leaf (slide-up sheet from the Account header gear) |
+
+> Game rows are not written out in `routeMeta.ts` — `GAME_ROUTE_META` derives one
+> `chrome: "leaf"` entry per `GAME_REGISTRY` member, so a new game is a leaf page
+> automatically. Adding a non-leaf game would need a `chrome` field on `GameDef`.
+
 
 ### Dictionary browse-state persistence
 
@@ -237,7 +259,7 @@ single-char **Used In** rows and the example-sentence segments tappable by passi
 
 | Surface | Handler | Target |
 |---|---|---|
-| Read-only dictionary cdp | `DictionaryCardDetailPage.handleWordOpen` (`src/features/dictionary/DictionaryCardDetailPage.tsx:97`) | always `/dictionary/card/:word` — browsing the dictionary never jumps into the editable deck surface |
+| Read-only dictionary cdp | `DictionaryCardDetailPage.handleWordOpen` (`src/features/dictionary/DictionaryCardDetailPage.tsx`) | always `/dictionary/card/:word` — browsing the dictionary never jumps into the editable deck surface |
 | Saved-card cdp | `useOpenWordCard` (`src/hooks/useOpenWordCard.ts`), wired in `VocabCardDetailPage.tsx` | the learner's own `/flashcards/card/:id` when a vet row exists for that word, else `/dictionary/card/:word` |
 
 `useOpenWordCard` resolves word → saved-card id through

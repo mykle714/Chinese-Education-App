@@ -17,9 +17,11 @@ import { MARK_TYPE as SPEED_READING_MARK_TYPE } from "./speed-reading/constants"
  *   1. Create the page component under `src/games/<gameId>/<GameId>Page.tsx`.
  *   2. Add one `GameDef` entry here with a `React.lazy(...)` import.
  *
- * The hub (`src/pages/GamesPage.tsx`), the router (`src/App.tsx`), and the
- * mobile-demo frame allowlist (`src/components/Layout.tsx`) all derive from
- * this array — adding a game requires no edits to those files.
+ * The hub (`src/games/GamesPage.tsx`), the route registry + metadata
+ * (`src/routes/registry.ts`, `src/routes/routeMeta.ts` — where `GAME_ROUTE_META`
+ * derives one `chrome: "leaf"` row per entry), and the mobile-demo frame
+ * allowlist (`src/components/Layout.tsx`) all derive from this array — adding a
+ * game requires no edits to those files.
  */
 export const GAME_REGISTRY: GameDef[] = [
     {
@@ -48,7 +50,7 @@ export const GAME_REGISTRY: GameDef[] = [
     {
         gameId: "match-speed",
         title: "Match Speed",
-        subtitle: "Match words to meanings against a 60-second clock",
+        subtitle: "Match words to meanings against a 30-second clock",
         route: "/games/match-speed",
         Component: lazy(() => import("./match-speed/MatchSpeedPage")),
         bgColor: COLORS.greenAccent,

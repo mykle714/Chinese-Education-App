@@ -23,7 +23,8 @@ All project documentation is organized in the `/docs` directory. This keeps the 
 - **Deployment guide**: [`docs/deployment-guide.md`](docs/deployment-guide.md) - Server setup, Docker deployment
 - **Deployment checklist**: [`docs/deployment-checklist.md`](docs/deployment-checklist.md) - Pre-deployment verification
 - **HTTPS setup**: [`docs/HTTPS_SETUP_GUIDE.md`](docs/HTTPS_SETUP_GUIDE.md) - Let's Encrypt SSL for mren.me
-- **Database setup**: [`docs/POSTGRESQL_MIGRATION_GUIDE.md`](docs/POSTGRESQL_MIGRATION_GUIDE.md) - PostgreSQL configuration and migration
+- **Database queries**: [`POSTGRES_QUERY_GUIDE.md`](POSTGRES_QUERY_GUIDE.md) - PostgreSQL conventions, table naming, running db scripts
+- **Migrations**: `database/migrations/` applied by `database/migrate.sh` - see [`docs/BACKEND_LAYERING.md`](docs/BACKEND_LAYERING.md) § migrate.sh
 
 ### 🌍 Multi-Language Support
 - **System overview**: [`docs/MULTI_LANGUAGE_IMPLEMENTATION.md`](docs/MULTI_LANGUAGE_IMPLEMENTATION.md) - How multi-language works
@@ -32,11 +33,11 @@ All project documentation is organized in the `/docs` directory. This keeps the 
 
 ### ⚙️ Core Features
 
-#### Work Points System
-- **System architecture**: [`docs/WORK_POINTS_SYSTEM.md`](docs/WORK_POINTS_SYSTEM.md) - How work points track study time
-- **Display updates**: [`docs/WORK_POINTS_DISPLAY_UPDATE_IMPLEMENTATION.md`](docs/WORK_POINTS_DISPLAY_UPDATE_IMPLEMENTATION.md)
-- **Increment logic**: [`docs/WORK_POINTS_INCREMENT_IMPLEMENTATION.md`](docs/WORK_POINTS_INCREMENT_IMPLEMENTATION.md)
-- **Server sync**: [`docs/WORK_POINTS_SYNC_IMPLEMENTATION.md`](docs/WORK_POINTS_SYNC_IMPLEMENTATION.md)
+#### Minute Points & Streaks (formerly "work points")
+- **System architecture**: [`docs/MINUTE_POINTS_SYSTEM.md`](docs/MINUTE_POINTS_SYSTEM.md) - How minute points track study time
+- **Per-language streaks/wallets**: [`docs/PER_LANGUAGE_STREAKS.md`](docs/PER_LANGUAGE_STREAKS.md)
+- **Inactivity penalty cron**: [`docs/STREAK_EXPIRATION_CRON.md`](docs/STREAK_EXPIRATION_CRON.md)
+- ⚠️ **Superseded — historical only**: [`docs/WORK_POINTS_DISPLAY_UPDATE_IMPLEMENTATION.md`](docs/WORK_POINTS_DISPLAY_UPDATE_IMPLEMENTATION.md), [`docs/WORK_POINTS_INCREMENT_IMPLEMENTATION.md`](docs/WORK_POINTS_INCREMENT_IMPLEMENTATION.md), [`docs/WORK_POINTS_SYNC_IMPLEMENTATION.md`](docs/WORK_POINTS_SYNC_IMPLEMENTATION.md). The work-points system, its `UserWorkPoints` table and its `/api/users/work-points/*` endpoints no longer exist. `docs/WORK_POINTS_SYSTEM.md` was deleted.
 
 #### Authentication & Users
 - **Token expiration**: [`docs/TOKEN_EXPIRATION_IMPLEMENTATION.md`](docs/TOKEN_EXPIRATION_IMPLEMENTATION.md) - Auto-redirect on token expiry
@@ -66,8 +67,8 @@ All project documentation is organized in the `/docs` directory. This keeps the 
 **Q: How do I set up the development environment?**  
 A: See [`docs/DOCKER_GUIDE.md`](docs/DOCKER_GUIDE.md) and [`docs/DOCKER_COMMANDS.md`](docs/DOCKER_COMMANDS.md)
 
-**Q: How does the work points system work?**  
-A: Read [`docs/WORK_POINTS_SYSTEM.md`](docs/WORK_POINTS_SYSTEM.md)
+**Q: How does the study-time points system work?**  
+A: Read [`docs/MINUTE_POINTS_SYSTEM.md`](docs/MINUTE_POINTS_SYSTEM.md) (minute points replaced work points)
 
 **Q: How do I add a new language?**  
 A: Follow [`docs/ADDING_NEW_LANGUAGE_GUIDE.md`](docs/ADDING_NEW_LANGUAGE_GUIDE.md)
@@ -103,16 +104,13 @@ A: Read [`docs/WSL_TO_WINDOWS_MIGRATION_GUIDE.md`](docs/WSL_TO_WINDOWS_MIGRATION
 │   ├── HTTPS_SETUP_GUIDE.md
 │   ├── MULTI_LANGUAGE_IMPLEMENTATION.md
 │   ├── MULTI_LANGUAGE_STATUS.md
-│   ├── POSTGRESQL_MIGRATION_GUIDE.md
 │   ├── PUBLIC_PRIVATE_USERS_IMPLEMENTATION.md
 │   ├── TEST_USERS.md
 │   ├── TOKEN_EXPIRATION_IMPLEMENTATION.md
 │   ├── USER_DOCUMENT_FEATURE_SUMMARY.md
 │   ├── VOCAB_ENRICHMENT_IMPLEMENTATION.md
-│   ├── WORK_POINTS_DISPLAY_UPDATE_IMPLEMENTATION.md
-│   ├── WORK_POINTS_INCREMENT_IMPLEMENTATION.md
-│   ├── WORK_POINTS_SYNC_IMPLEMENTATION.md
-│   ├── WORK_POINTS_SYSTEM.md
+│   ├── MINUTE_POINTS_SYSTEM.md
+│   ├── WORK_POINTS_*.md              # superseded by MINUTE_POINTS_SYSTEM.md
 │   ├── WSL_TO_WINDOWS_MIGRATION_GUIDE.md
 │   ├── deployment-checklist.md
 │   ├── deployment-guide.md

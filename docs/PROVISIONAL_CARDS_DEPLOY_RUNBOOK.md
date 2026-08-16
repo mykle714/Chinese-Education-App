@@ -28,9 +28,14 @@ old code simply never writes the new value. So the safe order is DB first.
 1. **Pre-deploy dump** (standard `/deploy` step). Migration 140 only widens a CHECK and
    adds two partial indexes, but the rollback path deletes rows, so take the dump.
 
-2. **Run migrations** — `migrate.sh` picks up 140 with no special handling.
+2. **Run migrations** — ⚠️ **140 now needs `--allow-out-of-order`**: prod's highest recorded
+   version is 144, so `migrate.sh`'s set-difference runner halts on 140 rather than applying
+   it. See [COMBINED_DEPLOY_RUNBOOK.md](./COMBINED_DEPLOY_RUNBOOK.md) § Problem 1.
    ⚠️ Note 137, 138 and 139 are also unshipped at time of writing; 140 is independent of
    all three and can run in any order relative to them.
+   ⚠️ 140 no longer ships alone — see the combined runbook for the full six-migration batch.
+   **This runbook's DB-before-code requirement wins over the per-language runbook's
+   code-first recommendation**, and the combined file records that resolution.
 
 3. **Verify the constraint landed** (SQL below) — do this *before* starting the new code.
 

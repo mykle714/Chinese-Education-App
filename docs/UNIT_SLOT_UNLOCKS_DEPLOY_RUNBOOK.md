@@ -79,7 +79,7 @@ Then confirm no market is over-occupied relative to entitlement (should return *
 SELECT n."userId", n.language, count(*) AS occupants,
        nightmarket_unlocks_for_minutes(p."totalMinutePoints") AS entitled
 FROM nightmarketunlocks n
-JOIN user_language_points p
+JOIN user_languages p
   ON p."userId" = n."userId" AND p.language = n.language
 GROUP BY n."userId", n.language, p."totalMinutePoints"
 HAVING count(*) > nightmarket_unlocks_for_minutes(p."totalMinutePoints");

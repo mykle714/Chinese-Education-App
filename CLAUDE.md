@@ -65,7 +65,7 @@ Do not write content descibing what you just completed; you should write the sta
 - **Project Goal**: See [docs/PROJECT_GOAL.md](./docs/PROJECT_GOAL.md)
 - **Project Constructs**: See [docs/CONSTRUCTS.md](./docs/CONSTRUCTS.md) — consult this when encountering unfamiliar project-specific terms
 - **Project Overview**: See [README.md](./README.md)
-- **Docker Setup**: See [README_DOCKER.md](./README_DOCKER.md)
+- **Docker Setup**: See [docs/DOCKER_GUIDE.md](./docs/DOCKER_GUIDE.md) and [docs/DOCKER_COMMANDS.md](./docs/DOCKER_COMMANDS.md)
 - **Server Development**: See [server/README.md](./server/README.md)
 - **General Reference**: See [AI_REFERENCE.md](./AI_REFERENCE.md)
 - **Which machine am I on?**: See [amIOnTheProdMachine.md](./amIOnTheProdMachine.md) — present on all machines (gitignored); read the file to determine if this is dev or prod
@@ -91,13 +91,13 @@ natural identity/keying differs. Do not try to force them into one table.
 
 | Concept | Table | Identity / key | Notes |
 |---|---|---|---|
-| **Chinese det** (cdet) | `dictionaryentries_zh` | surrogate `id`; looked up by `word1` (+ `language`) | The original rich table, **renamed from `dictionaryentries` (migration 57)** and now Chinese-only. Holds Chinese (`zh`) data plus all CJK-style enrichment columns (`numberedPinyin`, `tone`, `hskLevel`, `breakdown`, `classifier`, etc.). A `gender` column used to exist (added by migration 55 back when this table was the unified `dictionaryentries`) but was always NULL for Chinese and was **dropped by migration 103**; grammatical gender is a Spanish-only concept living on `dictionaryentries_es`. |
+| **Chinese det** (cdet) | `dictionaryentries_zh` | surrogate `id`; looked up by `word1` (+ `language`) | The original rich table, **renamed from `dictionaryentries` (migration 57)** and now Chinese-only. Holds Chinese (`zh`) data plus all CJK-style enrichment columns (`numberedPinyin`, `tone`, `breakdown`, `classifier`, `wordForms`, `components`, `breakdownElaboration`, etc.). A `gender` column used to exist (added by migration 55 back when this table was the unified `dictionaryentries`) but was always NULL for Chinese and was **dropped by migration 103**; grammatical gender is a Spanish-only concept living on `dictionaryentries_es`. |
 | **Spanish det** (sdet) | `dictionaryentries_es` | `word1` (+ `language`), enforced by `uq_es_word1_language` (surrogate `id` PK) | Schema = clone of `dictionaryentries_zh` + `etymology` (Wiktionary etymology text, migration 59) + `raw` (jsonb source blocks). `longDefinition` is reserved for the AI definition-elaboration backfill, NOT etymology. A word's several parts of speech and its gender-homographs (`cura`/f "cure" vs `cura`/m "priest") live **inside** the row as `definitionClusters` — the same sense-cluster column zh uses — with `pos` + `gender` per cluster. Until migration 123 they were **separate rows** keyed (`word1`, `pos`, `gender`); that migration merged them and dropped the `pos`/`gender`/`hasMultiplePos`/`alternateGender`/`alternateMeaning` columns. |
 | **Affixes** | `affixes` | (`language`, `affix`, `type`) | Bound morphemes for ALL languages. Kept out of the det tables because they are not standalone headwords. `type` ∈ {`prefix`,`suffix`,`interfix`,`infix`} (migration 61 added interfix/infix for Spanish `-i-`/`-x-`). `gender` ∈ {`m`,`f`,NULL} and `number` ∈ {`s`,`p`,NULL} (migration 61) carry the singular/plural + gender caveats for inflected affix forms (e.g. `-eada` = feminine singular of `-eado`). |
 
 Why the split: **not** identity — both tables are keyed by `word1` since migration
 123 — but ENRICHMENT. The zh table carries CJK-only columns (`numberedPinyin`,
-`tone`, `hskLevel`, `breakdown`, `classifier`, `wordForms`) that are meaningless for
+`tone`, `breakdown`, `classifier`, `wordForms`, `components`) that are meaningless for
 Spanish, and the es table carries `etymology` + `raw` that are meaningless for
 Chinese. Rather than one schema half-NULL in both directions, each gets its own
 table and the shared read path unions them (`server/dal/shared/dictJoin.ts`).
@@ -198,6 +198,9 @@ so the progress survives.
 ### Friends
 → See [docs/FRIENDS_FEATURE.md](./docs/FRIENDS_FEATURE.md) — the friend graph (`friendships`, migration 138): the hp Friends row and its three NodePages (`/friends`, `/friends/sent`, `/friends/requests`), adding a friend by pasted user ID, the one-row-per-pair model (a friendship IS an accepted request; declining deletes the row), and the crossing-request auto-accept rule.
 
+### Arena (weekly global division leaderboard)
+→ See [docs/ARENA_FEATURE.md](./docs/ARENA_FEATURE.md) — **DESIGN/DRAFT**: the hp Arena row and `/arena`, a weekly cluster of 25 players ranked by minutes earned while the arena is live. Covers the Tue 04:00 → **Sun 16:00** cycle and its 36-hour break/opt-in period (the app's only non-04:00 boundary, and why), 12 divisions held **per (user, language)** on `user_languages` with multi-language clusters, the clustering ladder (last week's arena → region → location-less pool → any), synthetic padding that lives in `arena_members` rather than `users`, ±5 promotion/relegation, and the opt-in permission flow for `users."regionCode"`.
+
 ### Study Challenge (weekly head-to-head between friends)
 → See [docs/STUDY_CHALLENGE.md](./docs/STUDY_CHALLENGE.md) — **DESIGN/DRAFT**: a Monday-issued, Friday-played challenge between two friends over a 10-word set — the same-word vs different-word variants, the 04:00-local week boundaries, generated (non-editable) challenge decks that don't count against the 100-deck cap, the `mastered-first` provisioning mode, the per-game contested/filler scoring contract every recognition/production game must now implement, and results/no-contest. Live (synchronous) mode is deferred to phase 2.
 
@@ -261,14 +264,27 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    note in the runbook saying it was renumbered and why.
 
 Current open runbooks:
-- [docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md) — per-language minute points + night markets (migrations 130, 134); **not yet on prod**
+- ⚠️ **[docs/COMBINED_DEPLOY_RUNBOOK.md](./docs/COMBINED_DEPLOY_RUNBOOK.md) — READ THIS FIRST.**
+  The three runbooks below have accumulated unshipped and now go out together. Deployed
+  together they interact in two ways none of them mentions: `migrate.sh` **halts** (five
+  pending migrations sit below prod's highest recorded version and need
+  `--allow-out-of-order`), and two of the runbooks give **opposite** step orders. The
+  combined file is authoritative on **order**; the three below remain authoritative on
+  **verification**
+- [docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md) — per-language minute points + night markets (migrations 130, 134, **145**); **not yet on prod**. 145 renames `user_language_points` → `user_languages` and **must land before the app restarts** (the shipped code knows only the new name); the cron SQL must be redeployed with it
 - [docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md](./docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md) — unit-slot unlocks + generated unlock schedule; no migration, but the cron SQL **must** be redeployed; **not yet on prod**
 - [docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md](./docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md) — provisional cards (migration 140); the migration **must** land before the new code (it writes a bucket value the old CHECK rejects); **not yet on prod**
 
 Deployed and retired on 2026-08-11 (runbooks deleted): collection Sort by + `masteredAt`
-(142), three mastery bars (143), `sortable` drop (144). **Outstanding from that deploy:**
-`compute_utcm_category(jsonb, boolean, boolean)` is dead but deliberately NOT dropped —
-143 retained it for the deploy window. It still needs a contract migration.
+(142), three mastery bars (143), `sortable` drop (144). The one loose end from that deploy
+(the dead `compute_utcm_category`) is tracked in the deferred-work list below.
+
+### Deferred work (the "do it later" queue)
+→ See [docs/DEFERRED_WORK.md](./docs/DEFERRED_WORK.md) — work that is known, agreed, and
+deliberately not being done yet: outstanding contract migrations, safe cleanup, and
+explicitly postponed decisions. Add an item here rather than leaving a `⚠️` in a feature
+doc that nobody re-reads. **Not** for bugs, and not for feature design questions (those
+belong in the owning doc's question log).
 
 ### Data Deployment (syncing `dictionaryentries_zh` to prod)
 → See [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)
@@ -377,7 +393,15 @@ Full rule + rationale + converted-sites list:
 Do not add to CLAUDE.md without asking me. Generally speaking I would like new documents to be linked as grandchild documents to CLAUDE.md so that this file does not grow too large.
 
 ### Dependency Documentation
-When writing functions, always write down which docs depend on or reference the code being written. In addition, when writing docs, add to each section which lines of code in which files the sections references or depends on.
+When writing functions, always write down which docs depend on or reference the code being written. In addition, when writing docs, add to each section which code it references or depends on.
+
+**Cite by file path + symbol name, never by line number.** Good:
+`server/services/OnDeckVocabService.ts` → `fetchFlpCandidates`. Bad:
+`OnDeckVocabService.ts:645`. A line number is correct only until the next edit to that
+file — a 2026-08-16 audit found 105 such citations across 25 docs, several already
+pointing past the end of their file and many landing on a blank line or an unrelated
+statement. A symbol name survives every edit that does not delete the symbol, and when
+it *is* deleted the dangling name is a useful signal rather than a silently-wrong number.
 
 When editting code, check the referenced documentation and update it if need be. When editting documentation, check the referenced code to see if there is alignment.
 

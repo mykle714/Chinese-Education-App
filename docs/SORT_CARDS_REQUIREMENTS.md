@@ -245,7 +245,7 @@ Each card is dragged into one of **two** destinations:
 removed from the drag targets so the user reaches for a real destination first.
 
 Note that **both** destinations persist identically as `starterPackBucket = 'library'`
-(`StarterPacksService.sortCard`, `server/services/StarterPacksService.ts:556-612`).
+(`StarterPacksService.sortCard`, `server/services/StarterPacksService.ts`).
 What separates them is that Already Learned *additionally* seeds a typed mark history
 (`coreMasteredTypedMarkHistory`) that resolves the row to **Mastered**. There is no
 `'already-learned'` value stored anywhere — the two destinations are distinguishable
@@ -293,7 +293,7 @@ each of its corners, so the user can see their collection grow as they sort:
 - Each figure is tinted with its own bucket's color; those are already the utcm category
   colors, so the tally, the drop buckets and the decks page share one color language.
 - The baseline is fetched **once** on mount from `GET /api/onDeck/categoryCounts`
-  (`useCategoryCounts`, `src/hooks/useCategoryCounts.ts:19`). Sorts made during the
+  (`useCategoryCounts`, `src/hooks/useCategoryCounts.ts`). Sorts made during the
   session are layered on as an **optimistic delta** — a drop bumps its figure
   immediately and Undo (§4.6) gives it back — rather than refetching a whole-library
   aggregate once per card. A skip moves neither figure (it creates no vet row).

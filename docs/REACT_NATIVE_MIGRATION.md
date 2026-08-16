@@ -52,9 +52,9 @@ The evidence available at the time of writing points at application-level:
 | Signal | What it suggests |
 |---|---|
 | ~~The production build emits a **2,224 kB main chunk**~~ — of **37 routes**, only the **6 games** were lazy; the other 31 pages were statically imported | A large parse-and-execute cost on **every cold start**. ✅ **FIXED 2026-08-13** — all 37 routes are now `React.lazy`; entry chunk **2,229 kB → 436 kB**. See [§ Tier 1 measured result](#measured-result-of-items-13-2026-08-13) |
-| ~~**`src/main.tsx:1` statically imports `pixi.js/unsafe-eval`**~~ — unconditionally, in the entry module, before React | This pinned the PIXI runtime into the main chunk for every user including those who never open Night Market, and **defeated lazy-loading of the viewer components downstream** — while `src/routes/registry.ts`'s own header comment said the registry/routeMeta split existed specifically to keep PIXI out of consumers' module graphs. ✅ **FIXED 2026-08-13** — moved to `src/features/nightmarket/pixiRuntime.ts`; PIXI is verifiably absent from the entry chunk |
+| ~~**`src/main.tsx` statically imports `pixi.js/unsafe-eval`**~~ — unconditionally, in the entry module, before React | This pinned the PIXI runtime into the main chunk for every user including those who never open Night Market, and **defeated lazy-loading of the viewer components downstream** — while `src/routes/registry.ts`'s own header comment said the registry/routeMeta split existed specifically to keep PIXI out of consumers' module graphs. ✅ **FIXED 2026-08-13** — moved to `src/features/nightmarket/pixiRuntime.ts`; PIXI is verifiably absent from the entry chunk |
 | Three distinct stalls found in Speed Reading were: a glyph fetch firing at the round change, a CSS transition running in both directions, and an effect that should have read a cache during render | All three are **writable in React Native too**. None is a platform limitation. See [SPEED_READING_GAME.md](./SPEED_READING_GAME.md) § Answer feedback |
-| `PedestrianLayer` re-renders **one React element per pedestrian per frame** (see its own header comment, `PedestrianLayer.tsx:15-17`) | At the 1,000-pedestrian target this is 60,000 reconciliations/sec. **Fails on every platform.** See [§ Night Market load model](#night-market-load-model-scale-targets) |
+| `PedestrianLayer` re-renders **one React element per pedestrian per frame** (see its own header comment, `PedestrianLayer.tsx`) | At the 1,000-pedestrian target this is 60,000 reconciliations/sec. **Fails on every platform.** See [§ Night Market load model](#night-market-load-model-scale-targets) |
 
 **One signal points the other way.** The Match Speed dropped-touch investigation
 (2026-08-08) produced the first candidate *platform*-level defect in this
@@ -467,12 +467,12 @@ actually approved.**
 five-call slice of the library: `create({showCharacter:false, showOutline:false})`,
 `showOutline({duration})`, `hideOutline({duration})`, `loopCharacterAnimation()`,
 and `charDataLoader`. No quiz, no grading — deliberately, since recognition is
-independent (`HanziGuide.tsx:3-6`). **You are porting five behaviours, not a
+independent (`HanziGuide.tsx`). **You are porting five behaviours, not a
 library.**
 
 ### The animation algorithm
 
-Read from `node_modules/hanzi-writer/dist/index.esm.js:1408-1460`:
+Read from `node_modules/hanzi-writer/dist/index.esm.js`:
 
 ```
 For each stroke:
@@ -580,6 +580,31 @@ things sometimes mistaken for gaps:
 One limitation worth knowing: **web push on iOS Safari** requires the PWA be
 installed to the Home Screen (iOS 16.4+). Capacitor's *native* push has no such
 constraint — that restriction only affects the pure-PWA path.
+
+### Concrete product demands on a native shell
+
+Capability arguments have historically been abstract here ("we *could* do push").
+These are features that have actually been specified and that a shell would
+materially improve. None is a blocker — each has a working web path — but they are
+the ledger against which "ship Capacitor if native packaging is wanted" should be
+re-read.
+
+| Demand | From | Web path | What a Capacitor shell adds |
+|---|---|---|---|
+| **Coarse location** (a ~5 km geohash cell, for arena clustering) | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 5.2 | `navigator.geolocation` at `enableHighAccuracy: false`, HTTPS-only, and on iOS effectively Safari-only | `@capacitor/geolocation` → CoreLocation: the real `NSLocationWhenInUseUsageDescription` **inside** the system prompt instead of a second dialog we render ourselves; explicit reduced-accuracy authorization (and `ACCESS_COARSE_LOCATION` on Android) rather than a hint; and a deep link to the app's Settings pane, so a denial is recoverable instead of permanent |
+| **Notifications** ("your arena opens", "a friend challenged you", "your streak is at risk") | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 13, [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) § 8 | none — web push on iOS needs a Home-Screen install (16.4+) | native push with no install precondition |
+| **Time-critical "join now" invite** (a friend has opened a live Study Challenge room and is waiting) | [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 4 (Q21) | **none that works** — an in-app banner over the live WebSocket reaches only a player who already has the app open, which is precisely the player who did not need summoning | `@capacitor/push-notifications` → APNs/FCM, deep-linked into the waiting room. **This is the demand that decides whether live mode ships at all**, not merely how nice it feels |
+
+The two notification rows are deliberately separate. The first is a **"come back
+sometime"** class — it can be late, batched, or missed without breaking anything, and the
+in-app badge already covers it. The second is a **60-second, self-expiring summons** whose
+whole value is delivery inside that minute; there is no in-app fallback for it, because a
+player with the app already open is not the player it needs to reach. Implementing the
+first does **not** cover the second.
+
+The location entry is worth noting for *why* it is not a React Native argument:
+**Capacitor supplies it in full.** It moves the packaging question, not the
+framework question — consistent with the recommendation below.
 
 ### What React Native can do that Capacitor cannot
 
@@ -772,6 +797,13 @@ currently answered.
    [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md).
 4. **Is the web app retired, kept via react-native-web, or maintained separately?**
    The third option is the worst outcome and must be ruled out explicitly.
+4a. **Does the accumulating demand for native permissions (location, notifications)
+   justify shipping a Capacitor shell *now*, ahead of any migration decision?**
+   See [§ Concrete product demands on a native shell](#concrete-product-demands-on-a-native-shell).
+   Both demands are Capacitor-satisfiable, so this is a **packaging** decision that
+   can be taken independently of — and much sooner than — the RN question. It is
+   the first item here that argues for doing something rather than measuring
+   something.
 
 ### Technical
 
@@ -852,8 +884,8 @@ back green and prove nothing**:
 
 | | Today | Target |
 |---|---|---|
-| Pedestrians | **8** — a hard constant (`usePixiPedestrians.ts:41`), not derived from occupants | 1,000 |
-| Stands | **0** — `NIGHT_MARKET_UNLOCK_POOL` is an empty array (`nightMarketRegistry.ts:39`) | 500 |
+| Pedestrians | **8** — a hard constant (`usePixiPedestrians.ts`), not derived from occupants | 1,000 |
+| Stands | **0** — `NIGHT_MARKET_UNLOCK_POOL` is an empty array (`nightMarketRegistry.ts`) | 500 |
 | Templates placed | a handful of **16×16** boards (`DEFAULT_DIM = 16`), one hub at seed | ~100 × 24×24 |
 | Animated per frame | the pedestrian ticker leaf only; terrain and houses are memoized | ~400 sprites |
 
@@ -887,7 +919,7 @@ produce a measurement. Details: [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGN
 
 | Gap | Reason |
 |---|---|
-| 500 synthesized **stands** | There is no stand art to synthesize. Both `NIGHT_MARKET_BASE_SET` and `NIGHT_MARKET_UNLOCK_POOL` (`nightMarketRegistry.ts:341,347`) are **empty arrays** — occupant slots currently draw placeholder houses. Faking 500 of those would measure the placeholder, not the stand |
+| 500 synthesized **stands** | There is no stand art to synthesize. Both `NIGHT_MARKET_BASE_SET` and `NIGHT_MARKET_UNLOCK_POOL` (`nightMarketRegistry.ts`) are **empty arrays** — occupant slots currently draw placeholder houses. Faking 500 of those would measure the placeholder, not the stand |
 | 100 synthesized **template placements** | Placements come from authored template masks stitched by `useMarketWorld`. Multiplying them means fabricating world data upstream of the renderer — a materially larger change than a knob, and one that risks measuring a world the stitcher would never produce |
 | Unit test for the re-seed | The suite runs `environment: 'node'` with no `@testing-library/react`, so no hook can be rendered. Adding a jsdom setup for one assertion was out of scope; the knob is verified by using it |
 
@@ -1002,7 +1034,7 @@ ship Capacitor if native packaging is wanted.**
 The reasoning, in order of weight:
 
 1. **Every motive examined so far has dissolved under analysis except one.**
-   Startup cost is `main.tsx:1` plus 31 eager routes. The Speed Reading stalls
+   Startup cost is `main.tsx` plus 31 eager routes. The Speed Reading stalls
    were application-level. The Night Market scale target is an architecture
    problem that reproduces identically in Skia. Capabilities are covered by
    Capacitor. What remains unresolved is the dropped-touch finding — **one
@@ -1042,7 +1074,10 @@ The reasoning, in order of weight:
   despite the worker — → measured platform ceiling on a stated product
   requirement, and a strong argument.
 - **A required capability appears that Capacitor cannot supply.** Nothing
-  currently qualifies.
+  currently qualifies. The two newest demands — coarse **location** (Arena
+  clustering) and **notifications** — are both squarely inside Capacitor's
+  surface; they raise the value of *packaging*, not of *migrating*. See
+  [§ Concrete product demands on a native shell](#concrete-product-demands-on-a-native-shell).
 
 **Sequence:** Tier 1 → control test (Tier 3) → Tier 2 → re-evaluate. The control
 test is placed early because it is minutes of effort and is the only step that can
@@ -1077,11 +1112,12 @@ should not be re-derived:
 | Replacement map | `src/features/nightmarket/*.tsx`, `src/components/handwriting/*`, `src/services/tts/*`, `src/games/runtime/{gameSounds,useSidewaysStage}.ts`, `src/hooks/{usePageSlide,useBlockZoom,useBlockEdgeSwipe}.ts`, `src/App.tsx`, `package.json` |
 | Error-proneness ratings | as Replacement map |
 | The Night Market finding | `src/engine/market/` (all 25 files), `src/engine/__tests__/enginePurity.test.ts` (**enforces the rule**), `src/engine/market/__tests__/pedestrianDepth.test.ts`, [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) § `src/engine/` imports nothing outside itself, [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md), [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md) |
-| Why item 4a exists / what it built | `src/hooks/usePixiPedestrians.ts` (`seededCountRef`), `src/features/nightmarket/{NightMarketEnginePage,MarketEngineViewer,nmpPerf}.ts(x)`, `src/utils/perfDiagnostics.ts` (`reportFrameStats`), `src/engine/market/nightMarketRegistry.ts:341,347` (the empty asset pools), [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md) § Frame records, [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md) § Load-testing it |
+| Why item 4a exists / what it built | `src/hooks/usePixiPedestrians.ts` (`seededCountRef`), `src/features/nightmarket/{NightMarketEnginePage,MarketEngineViewer,nmpPerf}.ts(x)`, `src/utils/perfDiagnostics.ts` (`reportFrameStats`), `src/engine/market/nightMarketRegistry.ts` (the empty asset pools), [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md) § Frame records, [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md) § Load-testing it |
 | Night Market load model | `src/features/nightmarket/PedestrianLayer.tsx`, `src/engine/market/{pedestrianAgent,isometric,templateStitch,tileRegistry,cameraZoom}.ts`, [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), [PEDESTRIAN_WALKING_ALGORITHM.md](./PEDESTRIAN_WALKING_ALGORITHM.md) |
 | Terrain chunk baking | `src/features/nightmarket/{EditorTerrainLayer,TemplateTerrainLayer,GroundBackdropLayer}.tsx`, `src/engine/market/templateStitch.ts` |
-| The hanzi-writer port | `src/components/handwriting/{HanziGuide,GlyphSvg,loadCharData}.{tsx,ts}`, `node_modules/hanzi-writer/dist/index.esm.js:1408-1460`, [HANDWRITING_RECOGNITION.md](./HANDWRITING_RECOGNITION.md), [PRACTICE_WRITING.md](./PRACTICE_WRITING.md) |
+| The hanzi-writer port | `src/components/handwriting/{HanziGuide,GlyphSvg,loadCharData}.{tsx,ts}`, `node_modules/hanzi-writer/dist/index.esm.js`, [HANDWRITING_RECOGNITION.md](./HANDWRITING_RECOGNITION.md), [PRACTICE_WRITING.md](./PRACTICE_WRITING.md) |
 | The dropped-touch finding | `src/games/match-speed/MatchSpeedBoard.tsx` (`handleTap`), `src/hooks/useBlockZoom.ts`, `src/utils/perfDiagnostics.ts` (`reportTap`), `server/scripts/analyze-client-perf.ts`, [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md), [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md), [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) |
+| Capacitor vs RN / concrete demands | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 5.2 (location), [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) § 8 + [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 7 (notifications) — none of these has code yet |
 | The hybrid path | `src/components/MobileDemoFrame.tsx`, `src/games/runtime/useSidewaysStage.ts` |
 | Open / action items | all of the above |
 

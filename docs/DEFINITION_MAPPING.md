@@ -25,13 +25,14 @@ Child docs:
 - **Role:** the canonical, app-wide contract. ~40 consumers (flashcards, dd,
   segmentation, discover) read it. **Owned by**
   `backfill-process-definitions-array.js` (the only writer that reorders/prunes).
-- **Type:** `DictionaryEntry.definitions` (`server/types/index.ts:151`, `src/types.ts`).
+- **Type:** `DictionaryEntryBase.definitions` (`server/contracts/wire.ts`, re-exported
+  through `server/types/index.ts`; client mirror in `src/types.ts`).
 
 ### 2. `definition` — the single lead gloss
 - **Shape:** `string` = `definitions[0]`.
-- **Where:** projected at the DAL/join boundary (`det.definitions[0]`,
-  `server/types/index.ts:353`), carried on `DiscoverCard.definition`
-  (`:199`), `VocabEntry.definition`, related-word lists, etc.
+- **Where:** projected at the DAL/join boundary (`det.definitions[0]`, see
+  `server/dal/shared/dictJoin.ts`), carried on `DiscoverCard.definition`
+  (`server/contracts/wire.ts`), `VocabEntry.definition`, related-word lists, etc.
 - **Operation:** none beyond `[0]` — so the *quality* of this field is entirely
   determined by the Stage-A ordering of form #1.
 
@@ -68,13 +69,13 @@ Child docs:
 ### 4. `shortDefinition` — deterministic short gloss
 - **Shape:** `string | null`, resolved at read time, **no AI**.
 - **Rule:** `resolveShortDefinition` = manual override `?.definition`, else
-  `generateShortDefinition(definitions)` (`server/utils/definitions.ts:105`,
+  `generateShortDefinition(definitions)` (`server/utils/definitions.ts`,
   `:12`). The generator filters grammatical-note glosses (`(`/`CL:`), splits on
   `; `, strips trailing parentheticals, and returns the **shortest** surviving
   token.
 - **Override:** `shortDefinitionPronunciationOverride.definition`
-  (`server/types/index.ts:108`) wins verbatim.
-- **Hydrated by:** `DictionaryDAL` (`server/dal/implementations/DictionaryDAL.ts:59`).
+  (`server/types/index.ts`) wins verbatim.
+- **Hydrated by:** `DictionaryDAL` (`server/dal/implementations/DictionaryDAL.ts`).
 
 ### 5. `longDefinition` — AI extended definition
 - **Shape stored (zh):** JSONB **array, one element per (SENSE, PART OF SPEECH) pair** —
@@ -315,12 +316,12 @@ or sense comes up in everyday conversation**:
 **It is NOT a register score.** Until migration 122 the column was named
 `vernacularScore` and scored register (casual↔literary): 5 = sounds colloquial,
 1 = sounds bookish. That was wrong for every consumer, all of which rank by "how
-common is this word" — the gsa tie-break (`server/dal/shared/segmentString.ts:274-286`),
-dictionary search relevance (`server/dal/implementations/DictionaryDAL.ts:48`),
-starter-pack card + pack ordering (`server/services/StarterPacksService.ts:355,485,899`),
+common is this word" — the gsa tie-break (`server/dal/shared/segmentString.ts`),
+dictionary search relevance (`server/dal/implementations/DictionaryDAL.ts`),
+starter-pack card + pack ordering (`server/services/StarterPacksService.ts`),
 the Quick Mark universe gate `BETWEEN 3 AND 5`
-(`server/dal/implementations/VocabEntryDAL.ts:838`), and dd's top-cluster pick
-(`server/utils/definitions.ts:207`). Under register semantics a colloquial-but-rare
+(`server/dal/implementations/VocabEntryDAL.ts`), and dd's top-cluster pick
+(`server/utils/definitions.ts`). Under register semantics a colloquial-but-rare
 word outranked a very common register-neutral one (自由 "freedom" scored 3).
 
 Do not re-introduce register language into the scorer prompts. Register is no longer

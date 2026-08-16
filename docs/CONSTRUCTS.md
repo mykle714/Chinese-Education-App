@@ -56,7 +56,7 @@ Joined via `LEFT JOIN LATERAL` in `server/dal/shared/dictJoin.ts`, matching on `
 |----------|-----------|-------------|
 | `pronunciation` | `pronunciation` | Space-separated pinyin/romaji; DET value overwrites VET's own column |
 | `tone` | `tone` | Tone digit string (e.g. `"12"` for fēng kuáng); derived from pronunciation |
-| `hskLevel` | `hskLevel` | HSK1–HSK6 level |
+| `difficulty` | `difficulty` | Language-agnostic difficulty band, `smallint` 1..6. **There is no `hskLevel` column** — migration 76 renamed it to `difficulty`, 79 stripped the `HSK` prefix, 92 retyped it to smallint. For zh the values ARE HSK levels (1 = HSK1 … 6 = HSK6) and the UI re-adds an HSK badge. |
 | `script` | `script` | Writing system variant (traditional/simplified/kanji) |
 | `breakdown` | `breakdown` | JSONB `Record<char, { definition: string }>` — per-character decomposition |
 | `longDefinition` | `longDefinition` | AI-generated extended definition, JSONB **per sense** for zh (`[{sense, pos, definition}]`, 25–200 chars each) / per POS for es; hydrated at read time to the card's current sense — see [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) #5 |
@@ -101,7 +101,7 @@ The English translation field is one fixed string for the whole sentence, so it 
 
 ### Request time — carrying `wordForms` onto segment metadata
 
-When the FLP request hits `OnDeckVocabService`, `DictionaryService.enrichExampleSentencesMetadataBatch()` greedy-segments each sentence's Chinese against DET. `buildDictMap()` in `server/dal/shared/segmentString.ts:97` copies the matched entry's `wordForms` (when present) onto each `SegmentMeta`, alongside the existing `pronunciation` / `definition` / `particleOrClassifier`. The result is `exampleSentences[i].segmentMetadata: Record<segment, { pronunciation, definition, particleOrClassifier?, wordForms? }>`.
+When the FLP request hits `OnDeckVocabService`, `DictionaryService.enrichExampleSentencesMetadataBatch()` greedy-segments each sentence's Chinese against DET. `buildDictMap()` in `server/dal/shared/segmentString.ts` copies the matched entry's `wordForms` (when present) onto each `SegmentMeta`, alongside the existing `pronunciation` / `definition` / `particleOrClassifier`. The result is `exampleSentences[i].segmentMetadata: Record<segment, { pronunciation, definition, particleOrClassifier?, wordForms? }>`.
 
 ### Render time — `resolveWordForm` in `SegmentedSentenceDisplay`
 
@@ -148,7 +148,7 @@ This means the user never sees the content scroll past the top of its page while
 
 ### Tile object (`TileDef`)
 
-Defined in `src/engine/market/nightMarketRegistry.ts:137`.
+Defined in `src/engine/market/nightMarketRegistry.ts`.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -158,7 +158,7 @@ Defined in `src/engine/market/nightMarketRegistry.ts:137`.
 | `intersectingStreets?` | `Street[]` | *Every* street that tried to claim this slot. `length >= 2` ⇒ intersection tile (the seed for nodes); `length === 1` ⇒ body tile on a single street. |
 | `isOccupied?` | `boolean` | Mutated each sim tick — true if a pedestrian's current or next tile is here. Pathfinder avoids these. |
 
-Streets are authored as `Street { isNorthSouth, start, end, offset, width }` and expanded to tiles by `streetTiles()` in `src/engine/market/tileRegistry.ts:107`. `buildTilesFromStreets()` then deduplicates by priority and stamps `street` + `intersectingStreets` onto each surviving tile.
+Streets are authored as `Street { isNorthSouth, start, end, offset, width }` and expanded to tiles by `streetTiles()` in `src/engine/market/tileRegistry.ts`. `buildTilesFromStreets()` then deduplicates by priority and stamps `street` + `intersectingStreets` onto each surviving tile.
 
 > **Future layout source:** the tiles above are authored today via the hand-written tile/street registry. The template system ([NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), DESIGN stage) will replace that registry as the source of truth — the tile and street graphs will be computed from tiled, placed templates instead.
 
@@ -166,19 +166,19 @@ Streets are authored as `Street { isNorthSouth, start, end, offset, width }` and
 
 #### 1. Tile graph (fine-grained) — `src/engine/market/tileGraph.ts`
 
-Built by `buildTileGraph(TILES, DEMO_STALLS)` at `tileRegistry.ts:338`.
+Built by `buildTileGraph(TILES, DEMO_STALLS)` in `src/engine/market/tileRegistry.ts`. ⚠️ That module-level graph is **empty and unused** — `STREETS`/`TILES`/`DEMO_STALLS` are empty arrays. The live graph is rebuilt from stitched templates by `marketWorld.ts` via `streetRecovery.ts#recoverStreets`.
 
 - **Nodes** = every walkable tile (`tiles: Map<tileKey, TileDef>`).
-- **Edges** = pure 4-neighbor adjacency. For each tile, try `(±TILE_SIZE, 0)` and `(0, ±TILE_SIZE)`; keep neighbors that exist in `tileMap` (`tileGraph.ts:115-123`).
+- **Edges** = pure 4-neighbor adjacency. For each tile, try `(±TILE_SIZE, 0)` and `(0, ±TILE_SIZE)`; keep neighbors that exist in `tileMap` (`tileGraph.ts`).
 - Also indexes stand access: `standAccessTiles` (assetId → tile keys that name it in `connections`) and validates that each access tile is 4-adjacent to the stand footprint and that each stand has exactly one access tile.
 
 Used for per-tile stepping and last-mile pathing (BFS in `bfsTilePath`).
 
 #### 2. Street graph (coarse) — `src/engine/market/streetGraph.ts`
 
-Built by `buildStreetGraph(STREETS, TILES)` at `tileRegistry.ts:345`. This is the high-level routing graph.
+Built by `buildStreetGraph(STREETS, TILES)` in `src/engine/market/tileRegistry.ts` — the high-level routing graph. Same caveat as above: the `tileRegistry` instance is empty; `marketWorld.ts` builds the one the pedestrians actually walk.
 
-- **Nodes (`StreetNode`)** = 4-connected components of *intersection tiles* (tiles where `intersectingStreets.length >= 2`). Flood-filled in `buildNodes` (`streetGraph.ts:143`).
+- **Nodes (`StreetNode`)** = 4-connected components of *intersection tiles* (tiles where `intersectingStreets.length >= 2`). Flood-filled in `buildNodes` (`streetGraph.ts`).
 - **Edges (`StreetEdge`)** = a single street's run between two intersection nodes. The `bodyTileSet` is every tile on that street with `intersectingStreets.length === 1` lying strictly between the two endpoint nodes. Because tiles on a street are axial and contiguous, an edge is a straight strip — pedestrians traverse it by monotonic motion along the street's primary axis.
 - **Adjacency** = `nodeId → [{ edge, other }]`. Plus `tileToNode` (intersection tile → node) and `tileToEdge` (body tile → its edge) for O(1) lookups when promoting a tile-BFS leg into an axial street walk.
 
@@ -197,7 +197,7 @@ The codebase uses the word "node" in two distinct senses:
 #### Street-graph node — an intersection (`StreetNode`)
 - **Function:** the stopping points in the *high-level* plan. Routing across the market is "node → edge → node → edge → …", and only at a node may the pedestrian change streets.
 - Carries its `tileKeys` (all intersection tiles in the component), the distinct `streets` that meet there, and a debug centroid.
-- A pedestrian arriving at a node may pick any tile in the node as a randomized goal (this is how lane variety is introduced — see the `bodyTileSet` comment at `streetGraph.ts:54`).
+- A pedestrian arriving at a node may pick any tile in the node as a randomized goal (this is how lane variety is introduced — see the `bodyTileSet` comment at `streetGraph.ts`).
 
 #### How the two interact
 - The **street graph** chooses *which* intersections to visit (coarse plan).

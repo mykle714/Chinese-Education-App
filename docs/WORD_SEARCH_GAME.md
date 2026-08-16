@@ -359,7 +359,7 @@ Vertical stack inside the standard leaf-page content area:
   rendered so they fill **~2 compact lines**. Typography matches the Bubble
   Match HUD "Lv 1 · Chill" label: `fontSize: SIZE.body` (14px),
   `fontWeight: WEIGHT.bold`, `color: "#6b6b6b"`
-  (`src/games/bubble-match/BubbleStage.tsx:889`). Found glosses get struck
+  (`src/games/bubble-match/BubbleStage.tsx`). Found glosses get struck
   through / dimmed. (Glosses are the dd resolved SERVER-side in
   `OnDeckVocabService.getWordSearchGrid` via `resolveDisplayDefinition`, so they honor the
   learner's per-card `selectedSense`; kept short so they tile, and a very long definition is

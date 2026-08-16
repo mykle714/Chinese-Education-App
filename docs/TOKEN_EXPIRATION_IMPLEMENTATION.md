@@ -210,7 +210,7 @@ Referenced by: `src/utils/authDebug.ts`, plus the `authLog` call sites in
 `src/utils/fetchInterceptor.ts` brands the patched function with
 `Symbol.for('cow.fetchInterceptor.installed')` and returns early if `window.fetch`
 already carries it. `AuthContext` calls `setupFetchInterceptor()` from a `useEffect`
-with no cleanup, and it gets re-invoked two ways: StrictMode (`src/main.tsx:29`)
+with no cleanup, and it gets re-invoked two ways: StrictMode (`src/main.tsx`)
 double-mounts in dev, and **Vite HMR re-evaluates the module on every edit**. Each
 re-invocation captured the already-patched `window.fetch` as its "original",
 stacking interceptors — 21 nested layers were observed in a real console trace, so
@@ -303,7 +303,8 @@ sends). Use it in fetch callbacks that drive load effects so they don't need
 Loader effects re-keyed to `user?.id` / `isAuthenticated` / `Boolean(token)`:
 `WordSearchPage.tsx` (mount load), `BubbleMatchPage.tsx` (pool load + wins seed),
 `useWorkingLoop.ts` (distributed-loop fetch), `ReaderPage.tsx`,
-`FlashcardsPage.tsx` (×2), `FlashcardsDecksPage.tsx`, `MasteredCardsPage.tsx`,
+`FlashcardsPage.tsx` (×2), `FlashcardsDecksPage.tsx`, `CollectionViewPage.tsx`
+(the page that replaced `MasteredCardsPage.tsx`),
 `VocabEntryCards.tsx` (×3), `PracticeWritingButton.tsx`, `useCategoryCounts.ts`,
 `EntryDetailPage.tsx`, `EditEntryPage.tsx`, `SortCardsPage.tsx`,
 `SkippedCardsPage.tsx`, `DictionaryPage.tsx`, `CommunityPage.tsx`,

@@ -52,7 +52,7 @@ export interface FriendSummary {
  * client renders its flag beside them.
  *
  * `netMinutes` is that same language's NET wallet
- * (`user_language_points.totalMinutePoints`) — penalty-debited and floored at 0,
+ * (`user_languages.totalMinutePoints`) — penalty-debited and floored at 0,
  * NOT the monotonic `lifetimeMinutesEarned`. Kept in the same language as velocity
  * so the headline and the subtitle never describe different study tracks.
  */

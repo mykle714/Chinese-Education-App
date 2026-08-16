@@ -33,11 +33,11 @@
 
 import {
   freeFarmTileset,
+  PLANK_VARIATIONS,
   type Compass,
   type LandmassEdge,
   type WalkwayDirection,
 } from './freeFarmTileset';
-import { PLANK_VARIATIONS } from './walkway';
 import type { PlaceholderArea } from './placeholderArea';
 import type { CellWindow } from './isometric';
 import { packCell, packCellKey, type CellId } from './cellKey';
@@ -605,7 +605,8 @@ function parsePlankStem(stem: string | undefined): { dir: WalkwayDirection; vari
 /**
  * Autotile a placed plank CENTER into its rendered sprite: a plank shows its far-end
  * EDGE cap (`eastEdge` for `ew` / +isoX, `northEdge` for `ns` / +isoY — the only two
- * faces the pack caps, mirroring {@link buildWalkway}) whenever that far neighbour is
+ * faces the pack caps — see the `PlankCap` docs in {@link ./freeFarmTileset}) whenever
+ * that far neighbour is
  * NOT itself a plank; otherwise it stays the flat `center`. `isPlankAt` reports whether
  * a given cell currently holds any plank decor. Non-plank urls pass through unchanged.
  */

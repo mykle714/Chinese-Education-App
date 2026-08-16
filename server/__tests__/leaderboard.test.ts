@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { LeaderboardService } from '../services/LeaderboardService.js';
 import type { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import type { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js';
-import type { IUserLanguagePointsDAL, UserPointsTotals } from '../dal/interfaces/IUserLanguagePointsDAL.js';
+import type { IUserLanguagesDAL, UserPointsTotals } from '../dal/interfaces/IUserLanguagesDAL.js';
 import type { IWinsDAL } from '../dal/interfaces/IWinsDAL.js';
 
 /**
@@ -23,7 +23,7 @@ import type { IWinsDAL } from '../dal/interfaces/IWinsDAL.js';
 /**
  * One fixture user. `total`/`streak` are what the leaderboard should REPORT, which since
  * migration 130 no longer comes from `users` — the roster carries identity only and the figures
- * come from a grouped read over user_language_points. `makeUsers` therefore splits each row into
+ * come from a grouped read over user_languages. `makeUsers` therefore splits each row into
  * the two sources the service actually consults, and `total`/`streak` stand for the user's
  * cross-language Σ wallet and MAX streak respectively.
  */
@@ -64,7 +64,7 @@ function makeService(
 
   const userDAL = { getLeaderboardRoster: vi.fn().mockResolvedValue(roster) } as unknown as IUserDAL;
   const minutePointsDAL = { getMinutesForDatesByUser, getMinutesForDate } as unknown as IUserMinutePointsDAL;
-  const languagePointsDAL = { getTotalsForAllUsers } as unknown as IUserLanguagePointsDAL;
+  const languagePointsDAL = { getTotalsForAllUsers } as unknown as IUserLanguagesDAL;
   const winsDAL = { getWeeklyCountsByUser: vi.fn().mockResolvedValue(weekly) } as unknown as IWinsDAL;
 
   return {

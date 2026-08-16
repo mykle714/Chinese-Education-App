@@ -47,6 +47,6 @@ export interface CalendarResponse {
 }
 
 // NOTE: the per-(user, language) wallet/streak/gross record is NOT declared here — it is
-// `LanguageProgress` in server/dal/interfaces/IUserLanguagePointsDAL.ts, next to the DAL that
-// owns `user_language_points` (migrations 130 + 134). This file keeps only the day-ledger and
+// `LanguageProgress` in server/dal/interfaces/IUserLanguagesDAL.ts, next to the DAL that
+// owns `user_languages` (migrations 130 + 134). This file keeps only the day-ledger and
 // calendar shapes.

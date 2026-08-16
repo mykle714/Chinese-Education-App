@@ -104,7 +104,7 @@ for f in server/services/*.ts; do n=$(grep -c "\.query(" $f); [ "$n" -gt 0 ] && 
 > are the point: a rewrite that reintroduces per-user lookups still returns correct
 > numbers, so only a spy catches the regression.
 
-**Location:** `server/services/LeaderboardService.ts:46-62`
+**Location:** `server/services/LeaderboardService.ts`
 
 ```ts
 for (const user of usersWithPoints) {
@@ -114,7 +114,7 @@ for (const user of usersWithPoints) {
 }
 ```
 
-`getMinutesForDate` (`server/dal/implementations/UserMinutePointsDAL.ts:116-129`) is one
+`getMinutesForDate` (`server/dal/implementations/UserMinutePointsDAL.ts`) is one
 `SUM("minutesEarned")` over `userminutepoints` scoped to a single user and a single
 `streakDate`. Three problems compound:
 
@@ -316,7 +316,7 @@ a callback which drives a load effect must build its header with `authHeader()`
 ~15 minutes, so anything listing `token` changes identity on that cadence.
 
 The pattern is known and applied correctly in one place —
-`useWorkingLoop.ts:203` uses `[Boolean(token), selectedCategory, mode]`, which is stable
+`useWorkingLoop.ts` uses `[Boolean(token), selectedCategory, mode]`, which is stable
 across a refresh. It simply was not applied everywhere.
 
 | File | Line | Dep array |
@@ -334,9 +334,9 @@ across a refresh. It simply was not applied everywhere.
 | `src/components/handwriting/PracticeWritingButton.tsx` | 102 | `[vocabEntryId, token]` |
 | `src/hooks/useGameWins.ts` | 61 | `[token, gameKey]` |
 
-**Two exclusions, both correct as-is:** `src/AuthContext.tsx:208` *is* the refresh layer
+**Two exclusions, both correct as-is:** `src/AuthContext.tsx` *is* the refresh layer
 (documented exception in FRONTEND_LAYERING §3.2), and
-`src/minutePoints/useMinutePoints.ts:148` is a deliberate `tokenRef.current = token` sync
+`src/minutePoints/useMinutePoints.ts` is a deliberate `tokenRef.current = token` sync
 effect, which is the intended way to read a live token without a dep.
 
 ### Severity note
@@ -345,8 +345,9 @@ These are `useCallback`s, **not** load effects, so none is currently the same bu
 2026-07-02 mid-game Word Search reset the CLAUDE.md rule cites. The risk is second-order:
 a callback whose identity changes every 15 minutes will re-fire any effect or `memo` that
 depends on it, and nothing prevents a future edit from turning one of these into a load
-effect. `WordSearchPage.tsx:465` is worth converting first on the strength of that file's
-history alone. `useVocabularyProcessing.ts:244/364` are the largest genuine risk — both sit
+effect. `WordSearchPage.tsx` is worth converting first on the strength of that file's
+history alone. `useVocabularyProcessing.ts` (its two `token`-dependent callbacks) is the largest genuine
+risk — both sit
 on document-processing paths with heavy sibling deps.
 
 ### Target shape
@@ -372,7 +373,7 @@ grep -rn "}, \[.*\btoken\b" src --include=*.ts --include=*.tsx | wc -l   # 17 at
 > token arrays, now route through it; `console.error` calls were left as real errors.
 > Bubble Match's two per-mark logs were deleted with finding 3. 57 → 26.
 
-`src/games/bubble-match/BubbleMatchPage.tsx:288` and `:299` log every single mark and its
+`src/games/bubble-match/BubbleMatchPage.tsx` and `:299` log every single mark and its
 HTTP status. One console write per bubble matched, shipped. App-wide there are **59**
 `console.log` calls in `src/`.
 
@@ -387,7 +388,7 @@ grep -rn "console.log" src --include=*.ts --include=*.tsx | wc -l
 > most of those 24 are **coincidental collisions between three independent palettes**,
 > not missed token adoption:
 > - `TONE_COLORS` (pinyin tones 1–4) happens to share values with the utcm category colors.
-> - `MARK_TYPE_COLORS` does too — and `masteryCompute.ts:35` already says so:
+> - `MARK_TYPE_COLORS` does too — and `masteryCompute.ts` already says so:
 >   *"NOTE: these currently collide with the utcm category colors; to be rectified later."*
 >
 > Mechanically swapping those to `CATEGORY_COLORS` would have been WRONG: it would cement
@@ -468,7 +469,7 @@ binary in git history, and it is not obvious which copy the import scripts read.
 
 Recorded so a future reader does not re-audit these.
 
-- **Security posture.** `helmet()` (`server/server.ts:45`), configured CORS (`:48`), and
+- **Security posture.** `helmet()` (`server/server.ts`), configured CORS (`:48`), and
   four purpose-built limiters in `server/middleware/rateLimits.ts` (auth, refresh,
   diagnostics, proxy) attached to the matching route files.
 - **No SQL injection.** All 98 template-literal interpolation sites in `server/dal` and

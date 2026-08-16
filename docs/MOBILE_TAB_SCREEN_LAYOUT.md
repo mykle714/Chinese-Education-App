@@ -78,21 +78,21 @@ soften/lighten out as they scroll past the screen edges (NYT-Games style).
 
 **The floating pill is the only footer style** — there is no flat / in-flow
 variant. `MobileFooter` always renders the pill and anchors it to the nearest
-positioned ancestor. `MobileTabScreen` provides that ancestor (its `ScreenRoot`);
-for pages that render `MobileFooter` directly, the phone frame
-(`MobileDemoFrame`'s `FrameRoot`, `position: relative`) is the anchor. Any such
-surface must reserve `FLOATING_FOOTER_CLEARANCE` at the bottom so content isn't
-covered:
+positioned ancestor, the phone frame (`MobileDemoFrame`'s `FrameRoot`,
+`position: relative`).
 
-| Surface (direct `MobileFooter`)        | How it reserves clearance                  |
-| -------------------------------------- | ------------------------------------------ |
-| `GamePage` (generic game shell)        | `paddingBottom` on its `ContentArea`       |
+**No page renders `<MobileFooter>` itself.** It is rendered exactly once, by
+`FooterPresenter` (mounted in `MobileDemoFrame`), which decides visibility from the
+route's `chrome` in `src/routes/routeMeta.ts` plus any active `useHideFooter` hold.
+Pages that import `MobileFooter` import only its geometry constants. So the
+clearance contract is: **a scrollable surface reserves
+`FLOATING_FOOTER_CLEARANCE` at the bottom** — `MobileTabScreen` does this for every
+node page automatically, and a page laying out its own scroller must do it by hand.
 
-> Note: `MasteredCardsPage` is now a **node page** (wraps `MobileTabScreen` via
-> `NodePage`), so it gets the footer + clearance from the shell rather than
-> rendering `MobileFooter` directly. `VocabCardDetailPage` and `BubbleMatchPage`
-> are **leaf pages** (`LeafPage`) and have **no footer** at all. See
-> [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
+> Related: the Mastered page was generalized into `CollectionViewPage` (node page;
+> `/flashcards/mastered` is now a redirect — see [DECKS_FEATURE.md](./DECKS_FEATURE.md)).
+> `VocabCardDetailPage` is a node page; the four game pages are **leaf pages**
+> (`LeafPage`) with **no footer** at all. See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
 
 ## Game info screens
 

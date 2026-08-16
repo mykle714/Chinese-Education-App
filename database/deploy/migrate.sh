@@ -109,6 +109,18 @@ is_applied() {
     echo "$APPLIED_VERSIONS" | grep -qx "$1"
 }
 
+# ── Orphan recorded versions (recorded, but no file with that number) ──────────
+# A version in schema_migrations with no matching file in database/migrations/ means
+# the file was deleted after being applied — routine when a branch's migrations are
+# superseded by another branch's during a merge (e.g. 135/136 on dev, deleted by merge
+# ef7b964 when origin's 130 subsumed them).
+#
+# Harmless on its own: this runner uses a SET difference, so an orphan cannot cause a
+# real migration to be skipped. The hazard is REUSE — those numbers look free in the
+# directory listing, so a future migration could be authored as 135, and `is_applied`
+# would then report it as already applied and SILENTLY SKIP it. That is precisely the
+# failure mode this script was rewritten to eliminate, so surface the burned numbers.
+
 # Echo "<version> <filename>" for every migration file, in version order.
 list_migrations() {
     for filepath in $(ls "$MIGRATIONS_DIR"/*.sql 2>/dev/null | sort -V); do
@@ -141,6 +153,18 @@ if [ -n "$BASELINE" ]; then
     done < <(list_migrations)
     echo "==> Baseline complete. Recorded $RECORDED migration(s) as already applied."
     exit 0
+fi
+
+FILE_VERSIONS=$(list_migrations | awk '{print $1}')
+ORPHANS=""
+for v in $APPLIED_VERSIONS; do
+    echo "$v" | grep -qE '^[0-9]+$' || continue
+    echo "$FILE_VERSIONS" | grep -qx "$v" || ORPHANS="$ORPHANS $v"
+done
+if [ -n "$ORPHANS" ]; then
+    echo "==> NOTE: recorded but no longer present as files:$ORPHANS"
+    echo "    These version numbers are BURNED — do not author a new migration with one,"
+    echo "    it would be recorded as already applied and never run."
 fi
 
 # ── Collect pending work and check ordering before touching anything ───────────

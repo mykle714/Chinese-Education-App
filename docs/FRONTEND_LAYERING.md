@@ -115,8 +115,17 @@ extracted alongside a component therefore needs its own module — which is why
 
 ## 3. Talking to the server
 
-> **All server calls go through `src/api/http.ts`.** No component, hook, or page calls
+> **Rule: all server calls go through `src/api/http.ts`.** New code must not call
 > `fetch` directly.
+>
+> ⚠️ **Status: aspirational, not yet true.** ~42 direct `fetch(...)` call sites across
+> ~35 files still bypass it (`AuthContext.tsx`, `FlashcardsPage.tsx`, `EntriesPage.tsx`,
+> `EditEntryPage.tsx`, the Reader dialogs, `useDictionarySearch.ts`,
+> `useSpeedReadingQueue.ts`, `CollectionViewPage.tsx`, …). They work — the global
+> `fetchInterceptor` patch means they still get token refresh — but they re-hand-roll
+> the base URL, headers and error handling. Migrate them opportunistically; never add a
+> new one. Re-check with:
+> `grep -rn '\bfetch(' src/ --include=*.ts --include=*.tsx | grep -v 'src/api/http.ts\|fetchInterceptor\|__tests__'`
 
 `src/api/http.ts` exports `apiGet` / `apiPost` / `apiPut` / `apiPatch` / `apiDelete`
 plus `withFallback`. It supplies:
@@ -137,10 +146,15 @@ the whole app.
 `features/<x>/<x>Api.ts` (or `src/cardIcons/cardIconApi.ts`). One function per endpoint,
 returning parsed data. The page does not know the path, the method, or the payload shape.
 
-Existing modules: `features/community/communityApi.ts`,
-`features/discover/starterPacksApi.ts`, `features/nightmarket/templateEditorApi.ts`,
+Existing feature-local modules: `features/community/communityApi.ts`,
+`features/discover/starterPacksApi.ts`, `features/nightmarket/nightMarketLayoutApi.ts`,
+`features/nightmarket/templateEditorApi.ts`,
 `features/nightmarket/templateSandboxApi.ts`, `features/reader/validationApi.ts`,
 `cardIcons/cardIconApi.ts`, `utils/vocabApi.ts`.
+
+Cross-feature endpoint groups instead live directly under `src/api/`:
+`decks.ts`, `dictionary.ts`, `flashcards.ts`, `friends.ts`, `provisional.ts`,
+`velocity.ts` (alongside the `http.ts` transport itself).
 
 ### 3.2 ⛔ No API function takes a `token`
 

@@ -176,41 +176,25 @@ The production setup includes optimized builds, proper environment variables, an
 - PUT `/api/vocabEntries/:id` - Update a vocabulary entry (protected)
 - DELETE `/api/vocabEntries/:id` - Delete a vocabulary entry (protected)
 
-## Tag System
+## Difficulty (formerly the "tag system")
 
-The application includes a comprehensive tag system for vocabulary entries:
+> ⚠️ The `isCustomTag` / `hskLevel` tag columns this section used to describe **no longer
+> exist**, and neither do the `server/tests/add-tag-columns.sql`,
+> `assign-random-hsk-levels.sql` or `test-tag-functionality.js` scripts it pointed at.
 
-### Tag Types
+Difficulty is a **dictionary-entry** property, not a vocab-entry tag:
 
-1. **isCustomTag** (Boolean)
-   - `true`: User-created entries (via UI or CSV import)
-   - `false`: Entries from official/standard sources
-   - `null`: Legacy entries (backward compatibility)
+- Column: **`dictionaryentries_zh.difficulty`** (and `dictionaryentries_es.difficulty`),
+  `smallint` 1..6 — a language-agnostic band. Migration 76 renamed `hskLevel` →
+  `difficulty`, 79 stripped the `HSK` prefix, 92 retyped it to smallint.
+- For Chinese the values ARE HSK levels (1 = HSK1 … 6 = HSK6), and the UI re-adds an HSK
+  badge from them. For Spanish the same 1..6 band means CEFR-ish difficulty.
+- Populated by `server/scripts/backfill/chinese/backfill-hsk-level.js` (name kept, column
+  changed) or by import/seed data.
+- It drives the discover band and the sort-pack level ladder — see
+  [docs/DISCOVER_FLOW.md](docs/DISCOVER_FLOW.md) and
+  [docs/SORT_PACKS_IMPLEMENTATION.md](docs/SORT_PACKS_IMPLEMENTATION.md).
 
-2. **hskLevel** (Enum)
-   - Valid values: `HSK1`, `HSK2`, `HSK3`, `HSK4`, `HSK5`, `HSK6`
-   - Represents HSK (Hanyu Shuiping Kaoshi) difficulty levels
-   - Enforced by database CHECK constraint
-
-### Tag Features
-
-- **Database Constraints**: HSK levels enforced with CHECK constraint
-- **UI Display**: Tags shown as badges in upper right corner of entry cards
-- **Material UI Icons**: HSK levels display with numbered icons (1-6)
-- **Automatic Assignment**: New entries default to `isCustomTag = true`
-- **CSV Import Support**: Imported entries automatically tagged as custom
-- **Backward Compatibility**: Existing entries remain functional with null tag values
-
-### Tag Display Rules
-
-- **Custom Badge**: Only visible when `isCustomTag === true`
-- **HSK Badge**: Only visible when `hskLevel` is not null
-- **Badge Styling**: Material UI Chip components with appropriate colors and icons
-
-### Database Migration
-
-To add the tag system to an existing database:
-
-1. Run `server/tests/add-tag-columns.sql` to add the new columns
-2. Run `server/tests/assign-random-hsk-levels.sql` to populate test data (randomly assigns both HSK levels and custom tag values)
-3. Use `server/tests/test-tag-functionality.js` to verify the implementation
+Card ownership/provenance, which `isCustomTag` used to express, is now
+`vocabentries_*.starterPackBucket` (`'library'` = Learn Now, `'provisional'` = lent) plus
+the nullable `author` FK for user-authored cards.

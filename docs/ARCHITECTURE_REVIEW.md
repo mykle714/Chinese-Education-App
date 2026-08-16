@@ -5,6 +5,11 @@ carries a `**Resolved:**` note describing the shape that replaced the one it des
 The measurement commands are kept so a future reader can re-check whether a finding has
 regressed — that is the point of this document, not the history of the fix.
 **Date of survey:** 2026-07-28 (branch `main`, at commit `429894b`)
+**Note on citations:** this document (like the rest of `docs/`) cites files by **path and
+symbol name only**. The `file.ts:NNN` line numbers it used to carry had drifted — several
+pointed past the end of the file — so they were removed rather than re-pinned; line numbers
+in a doc rot on the next edit to the file. Findings below describe the shape they were
+raised against, so grep for the named symbol rather than expecting a literal match.
 **Scope:** whole repo — `src/` (68.8k lines), `server/` (175.0k), `database/` (77.5k), `docs/` (23.0k)
 
 This document records **standing structural properties of the codebase** — layering,
@@ -75,7 +80,7 @@ That is exactly the shape findings 4 and 5 need.
 > [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) § 2.
 
 **Files:** `server/dal/base/BaseDAL.ts` (345 lines), `server/dal/interfaces/IBaseDAL.ts`,
-`server/dal/implementations/DictionaryDAL.ts:166-169`
+`server/dal/implementations/DictionaryDAL.ts`
 
 Only 3 of 14 DALs extend `BaseDAL` (`UserDAL`, `VocabEntryDAL`, `DictionaryDAL`);
 the other 11 `implements` their interface directly. Server-wide usage of its
@@ -126,7 +131,7 @@ grep -rn "dictionaryDAL\.\(findById\|create\|update\|delete\|findAll\|exists\|co
 `server/types/dal.ts` — `DALError` → `ValidationError` / `NotFoundError` /
 `DuplicateError` / `DatabaseConnectionError` / `RateLimitError`. Shared
 `toClientError()`, genuine substitutability, consumed uniformly by
-`handleControllerError` (`server/utils/controllerUtils.ts:62`). This is the model
+`handleControllerError` (`server/utils/controllerUtils.ts`). This is the model
 to follow.
 
 ---
@@ -140,7 +145,7 @@ to follow.
 > backend Docker build context is `./server` — shared code cannot live at the repo root.
 
 **Files:** `server/types/index.ts` (725 lines), `src/types.ts` (491 lines),
-`src/AuthContext.tsx:13`
+`src/AuthContext.tsx`
 
 29 type names are declared in **both** type modules. A structural diff
 (comments and whitespace normalized away):
@@ -160,9 +165,9 @@ to follow.
 ### `User` exists three times
 
 1. `server/types/index.ts` — full server shape
-2. `src/types.ts:443` — stale; also declares `password?: string`, a field that
+2. `src/types.ts` — stale; also declares `password?: string`, a field that
    never crosses the wire
-3. `src/AuthContext.tsx:13` — **private, not exported**, and the only one with
+3. `src/AuthContext.tsx` — **private, not exported**, and the only one with
    the current field set (`isValidator`, `isTemplateAuthor`, `readingGoal`,
    `writingGoal`, `showSegmentSpaces`, `avatarIconId`)
 
@@ -239,17 +244,17 @@ Adding one page requires edits to four files that each independently classify ro
 
 | File | Table | Encodes |
 |---|---|---|
-| `src/App.tsx:53-219` | inline `<Route>` list | path → component, `allowPublic` |
-| `src/components/Layout.tsx:56` | `MOBILE_DEMO_PATHS` + 6 `startsWith` checks | phone frame vs. plain |
-| `src/components/FooterPresenter.tsx:20,40` | `FOOTER_ROUTES` + `FOOTER_ROUTE_PREFIXES` | footer visible + active tab |
-| `src/utils/pageTransition.ts:21-33` | `NODE_ROUTES` + `NODE_PREFIXES` + `LEAF_EXACT` | slide direction |
+| `src/App.tsx` | inline `<Route>` list | path → component, `allowPublic` |
+| `src/components/Layout.tsx` | `MOBILE_DEMO_PATHS` + 6 `startsWith` checks | phone frame vs. plain |
+| `src/components/FooterPresenter.tsx` | `FOOTER_ROUTES` + `FOOTER_ROUTE_PREFIXES` | footer visible + active tab |
+| `src/utils/pageTransition.ts` | `NODE_ROUTES` + `NODE_PREFIXES` + `LEAF_EXACT` | slide direction |
 
 Two of them carry explicit *"Keep in sync with…"* comments
-(`FooterPresenter.tsx:37`, `pageTransition.ts:20`).
+(`FooterPresenter.tsx`, `pageTransition.ts`).
 
 ### It has already broken
 
-`LEAF_EXACT` (`pageTransition.ts:28`) contains `/games/bubble-match` but **not**
+`LEAF_EXACT` (`pageTransition.ts`) contains `/games/bubble-match` but **not**
 `/games/word-search` — yet both pages render `<LeafPage>`:
 
 ```bash
@@ -265,7 +270,7 @@ defect. (`TemplateEditorPage` and `TemplateSandboxPage` are also absent from
 
 25 of 30 routes in `App.tsx` pass `allowPublic`. Combined with the local-environment
 fact that every user is `isPublic`, a **forgotten** flag does not error — it
-silently `<Navigate to="/">`s (`ProtectedRoute.tsx:29`), which presents as a dead
+silently `<Navigate to="/">`s (`ProtectedRoute.tsx`), which presents as a dead
 button rather than a crash. Four of the route comments in `App.tsx` exist solely
 to explain why `allowPublic` is present.
 
@@ -375,7 +380,7 @@ and CLI scripts.
 | `src/features/nightmarket/WalkwayLayer.tsx` | 118 | superseded |
 | `src/features/flashcards/FlashcardsLearnPage/InfoCardPopup.tsx` | 113 | |
 | `src/games/runtime/useGameActors.ts` | 97 | |
-| `src/components/ChangelogDisplay.tsx` | 96 | `GET /api/changelog` is live and now has no consumer |
+| `src/components/ChangelogDisplay.tsx` | 96 | ⚠️ still true after deletion: `GET /api/changelog` (`server/routes/metaRoutes.ts`) is live and has **no client consumer at all**. Retire the route or rebuild a consumer. |
 | `src/features/nightmarket/HouseLayer.tsx` | 92 | superseded |
 | `src/games/hooks/useGameProgress.ts` | 79 | |
 | `src/features/nightmarket/nightMarketMotion.ts` | 64 | |
@@ -399,18 +404,23 @@ decoy — it looks like the thing a new game should build on.
 
 ### Also worth pruning
 
-`server/tests/` contains `test-japanese-dictionary-api.js`,
-`test-korean-dictionary-api.js`, and `test-vietnamese-dictionary-api.js`, which
-exercise the ja/ko/vi import paths that CLAUDE.md documents as *intentionally
-broken*. See finding 7.
+**Partly done.** The `test-{japanese,korean,vietnamese}-dictionary-api.js` scripts named
+here — which exercised the ja/ko/vi import paths CLAUDE.md documents as *intentionally
+broken* — are gone. `server/tests/` still holds **29 files** of manual scripts and SQL
+fixtures (see finding 7), including `add-korean-sample-data.sql` from the same era and
+`test-work-points-rate-limit.js` / `create-historical-work-points-data.sql` for the
+retired work-points system. None is an automated test; the real suites are
+`server/__tests__/` and `src/**/__tests__/`.
 
 ---
 
 ## 7. There is no server test suite
 
-> **Resolved.** `server/` has a `vitest` suite (**68 tests / 3 files**) alongside the
-> frontend's **202 tests / 19 files**. The self-instantiating singletons this finding named
-> as a blocker are constructed in `server/dal/setup.ts` like everything else.
+> **Resolved.** `server/` has a `vitest` suite and a `test` script, as does the root.
+> Counts as of 2026-08-16: **server 129 tests / 7 files**, **client 415 tests / 34 files**
+> (was 68/3 and 202/19 when this note was first written). The self-instantiating singletons
+> this finding named as a blocker are constructed in `server/dal/setup.ts` like everything
+> else. Re-check with `npm test` in each of `/` and `server/`.
 
 - `server/package.json` has **no `test` script** (only `build`, `start`, `dev`).
 - `server/tests/` is **32 files of manual scripts and SQL fixtures** — `test-login.js`,
@@ -493,7 +503,7 @@ blocker to finding 7.
 ### One acknowledged shortcut (fine as-is)
 
 `Icons8Controller` and `WinsController` take a DAL directly with no service layer.
-This is deliberate and documented at `dal/setup.ts:113-116` — both are thin
+This is deliberate and documented at `dal/setup.ts` — both are thin
 pass-throughs. Worth keeping, but it should be a *stated rule* rather than a
 case-by-case comment.
 
@@ -701,13 +711,37 @@ and wrap the migration file plus its `INSERT INTO schema_migrations` in a single
 
 ### Not an issue: the gap at 121
 
-`database/migrations/` runs 05→132 with exactly one number missing (121). This is
-intentional and documented at `docs/ES_CLUSTERED_SENSES_DEPLOYMENT.md:241` — the
-change was drafted as 121 and renumbered to 123. **However**, several code
-comments still cite "migration 121" for work that shipped as 123
-(`server/dal/shared/dictJoin.ts:30`, `server/dal/shared/vetTable.ts:19`,
-`src/types.ts:351`). Worth a one-line cleanup so future readers don't hunt for a
-file that never existed.
+`database/migrations/` has exactly one number missing below the survey's high-water
+mark (121). This is intentional and documented in
+[ES_CLUSTERED_SENSES_DEPLOYMENT.md](./ES_CLUSTERED_SENSES_DEPLOYMENT.md) — the change
+was drafted as 121 and renumbered to 123.
+
+**Resolved:** the code comments that cited "migration 121" for work that shipped as 123
+have been repointed; `grep -rn "migration 121" server/ src/` now returns nothing.
+
+**New gaps since the survey:** 135 and 136 are also absent from
+`database/migrations/`. They were authored on a branch, applied to this dev database,
+and then **deleted** by merge `ef7b964` when origin's migration 130 subsumed them — so a
+dev DB seeded before that merge still carries `schema_migrations` rows 135/136 naming
+files that no longer exist.
+
+Those rows cannot cause a real migration to be skipped (the runner does a set
+difference, not a high-water mark — see the finding above). The live hazard is **number
+reuse**: 121/135/136 look free in a directory listing, so a future migration authored as
+`135-…sql` would match an existing `schema_migrations` row and be silently recorded as
+already applied — exactly the failure this finding closed.
+
+**Resolved:** `migrate.sh` now diffs recorded versions against the files on disk and
+prints the burned numbers on every run, before doing any work:
+
+```
+==> NOTE: recorded but no longer present as files: 135 136
+    These version numbers are BURNED — do not author a new migration with one,
+    it would be recorded as already applied and never run.
+```
+
+The rows are deliberately **not** deleted: they are a truthful record that that DDL ran
+against this database.
 
 ---
 
@@ -777,8 +811,8 @@ refactor:
 and several were spot-checked against the schema and found accurate. Examples worth
 preserving as a style reference: `server/dal/shared/dictJoin.ts` (explains the
 union-branch divergence and its migration history),
-`server/dal/implementations/DictionaryDAL.ts:105-160` (the numbered-pinyin regex
-rationale), `src/AuthContext.tsx:104-201` (the checkAuth effect's re-entrancy
+`server/dal/implementations/DictionaryDAL.ts` (the numbered-pinyin regex
+rationale), `src/AuthContext.tsx` (the checkAuth effect's re-entrancy
 reasoning). This documentation is the reason a review of this size was tractable.
 
 **The Leaf/Node page model.** `LeafPage` / `NodePage` / `FooterPresenter` /

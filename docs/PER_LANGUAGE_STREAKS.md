@@ -1,8 +1,18 @@
 # Per-Language Streaks, Wallets & Penalties
 
-**STATUS: IMPLEMENTED (migration not yet run).** All code, the migration and the
-cron are written and type-clean; the 105-test suite passes. Migration 130 has
-**not** been executed anywhere — see § 5.
+**STATUS: IMPLEMENTED. Applied on DEV, not yet on PROD.** All code, the migration
+and the cron are written and type-clean; the test suite passes. Migrations 130
+(2026-07-29) and 134 (2026-07-30) are recorded in dev's `schema_migrations`;
+neither has run on prod — see § 5 and
+[PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md).
+
+> ⚠️ **Renamed:** the table this document describes was created by migration 130 as
+> `user_language_points` and renamed to **`user_languages`** by **migration 145**
+> (2026-08-16). Every name in this document is the post-145 one. Migrations 130 and
+> 134 still say `user_language_points` in their own text — correctly, since that was
+> its name when they ran; an applied migration is never edited. Because 130 has not
+> reached prod, a prod deploy creates the old name and renames it minutes later in
+> the same `migrate.sh` run.
 
 Every unit of study progress — the streak, the minute-point wallet, the
 inactivity penalty, and the Night Market it funds — is scoped to a **single
@@ -21,7 +31,20 @@ per-language calendar no longer reconciled with the global balance.
 
 ## 1. Data model
 
-### 1.1 `user_language_points` (new, migration 130)
+### 1.1 `user_languages` (new, migration 130; renamed by 145)
+
+**Why the name is what it is.** Created as `user_language_points`, after the single
+thing it held at the time. It stopped being a points table almost immediately — 130
+gave it the streak and the penalty bookkeeping, 134 added `lifetimeMinutesEarned`,
+and Arena adds `division` + `arenaOptInWeek` ([ARENA_FEATURE.md](./ARENA_FEATURE.md)
+§ 7.1). Only two of its columns are points. Migration 145 renamed it after its
+**key** instead of its contents: one row per `(userId, language)`, which is the one
+fact about the table that cannot change, because it *is* the primary key.
+
+**Read `user_languages` as "the users table, for one language."** Anything
+per-(user, language) belongs here. The alternative shapes — a column per language on
+`users`, or a jsonb map — were both rejected: the first makes every new language a
+migration, and the second cannot be indexed, sorted or incremented in SQL.
 
 Replaces the four global columns on `users`. Keyed the same way as
 `userminutepoints`, so the whole minute-points domain is uniformly
@@ -54,7 +77,7 @@ There is no phased retreat: every account is a test account, and leaving the
 columns would create a second, silently-stale source of truth.
 
 > ⚠️ Do not reintroduce reads of these columns — they do not exist. `IUserDAL` no
-> longer exposes them; use `IUserLanguagePointsDAL`.
+> longer exposes them; use `IUserLanguagesDAL`.
 
 ### 1.3 Night Market gains a language dimension
 
@@ -112,7 +135,7 @@ still the intended number.
 The tier formula is unchanged, but derived per language:
 
 ```
-tier = today_local - user_language_points.lastStreakDate - 1
+tier = today_local - user_languages.lastStreakDate - 1
 ```
 
 | Tier | Penalty (min) | Cumulative |
@@ -176,7 +199,7 @@ an already-small user base (only 2 of 13 users have non-`zh` history).
 |---|---|---|
 | **Migration** | `database/migrations/130-per-language-streaks.sql` | New table, night-market `language` columns, backfill |
 | **Cron** | `database/cron/expire-stale-streaks.sql` | Per-(user, language) candidates; decay partitioned by language |
-| **DAL (new)** | `server/dal/implementations/UserLanguagePointsDAL.ts` | Wallet + streak state CRUD, keyed `(userId, language)` |
+| **DAL (new)** | `server/dal/implementations/UserLanguagesDAL.ts` | Wallet + streak state CRUD, keyed `(userId, language)` |
 | **DAL** | `server/dal/implementations/UserDAL.ts` | Remove points/streak methods (was lines 174-431) |
 | **DAL** | `server/dal/implementations/UserMinutePointsDAL.ts` | `getMinutesForDate` retained for leaderboard only |
 | **DAL** | `server/dal/implementations/NightMarketPlacementDAL.ts` | All placement/unlock queries take `language` |
@@ -219,14 +242,17 @@ This document is referenced by:
 
 ## 5. Deployment
 
-Migration 130 has **not been run**. It was authored on the prod machine but
-deliberately not executed there; build and verify on dev first, then ship via
-`/deploy`.
+Migration 130 has **not been run on prod**. It was authored on the prod machine but
+deliberately not executed there; it is applied and verified on dev, and ships to
+prod via `/deploy`.
 
 Order matters — the cron SQL and the prune script both read
-`user_language_points`, so they break until the migration lands:
+`user_languages`, so they break until the migrations land:
 
 1. Run migration 130 (its `DO` block aborts the transaction on a bad backfill).
+1b. Migrations 134 and **145** follow in the same `migrate.sh` run. 145 renames the
+   table `user_language_points` → `user_languages`; the app code deployed in step 2
+   knows **only** the new name, so 145 must land before the app restarts.
 2. Deploy the app.
 3. Reinstall the maintenance schedule via
    `database/cron/install-maintenance-timer.sh` — the on-disk SQL is already

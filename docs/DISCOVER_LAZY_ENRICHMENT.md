@@ -487,7 +487,7 @@ implemented but **has never actually been run** (0 `--batch` runs in
 ### The runner contract (porting template)
 
 A ported script supplies two pure functions to `runBackfill`
-(`shared/lib/runner.js:123`):
+(`shared/lib/runner.js`):
 - `buildRequest(row)` → the `messages.create` params for ONE entry.
 - `handleResponse(row, message)` → parse the single message + write the row.
 

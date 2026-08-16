@@ -7,7 +7,7 @@
  * (NightMarketPlacementService.pruneDanglingTemplates). This script runs that pass for every user
  * the cron just penalized, so the geometry stays single-sourced with the live author-tool path.
  *
- * "Just penalized" = `user_language_points.lastPenaltyDate` equals that user's current local day
+ * "Just penalized" = `user_languages.lastPenaltyDate` equals that user's current local day
  * (the SQL cron stamps exactly that on debit). Since migration 130 penalties are per-(user,
  * language), so the candidate set is PAIRS, not users: a Spanish lapse prunes only the Spanish
  * continent. The local-day boundary still comes from `users.timezone` — it belongs to the person.
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
     async (client) =>
       client.query(`
         SELECT p."userId" AS userid, p.language
-        FROM user_language_points p
+        FROM user_languages p
         JOIN users u ON u.id = p."userId"
         WHERE p."lastPenaltyDate"
               = ((now() AT TIME ZONE COALESCE(u.timezone, 'UTC')) - INTERVAL '4 hours')::date

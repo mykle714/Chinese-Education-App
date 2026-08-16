@@ -208,7 +208,7 @@ users join**:
 | Deck bucket counts | `OnDeckVocabService.getCategoryCounts` |
 | flp working-loop quotas + cooldown window | `OnDeckVocabService`, Section 6 |
 | Level estimate | `StarterPacksService.estimateLevel` |
-| Night Market community **Learning** feed (a word drops out when core is Mastered) | `CommunityLayoutDAL.ts:131`, [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md) |
+| Night Market community **Learning** feed (a word drops out when core is Mastered) | `CommunityLayoutDAL.ts`, [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md) |
 | The mini-card badge and the `category` field on the wire | `VocabEntryBase.category` |
 
 The per-bar reads are the exceptions, and each one is a *display* of that bar:

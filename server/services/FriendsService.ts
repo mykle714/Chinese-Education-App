@@ -1,7 +1,7 @@
 import { IFriendshipDAL } from '../dal/interfaces/IFriendshipDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { ICategoryPromotionDAL } from '../dal/interfaces/ICategoryPromotionDAL.js';
-import { IUserLanguagePointsDAL } from '../dal/interfaces/IUserLanguagePointsDAL.js';
+import { IUserLanguagesDAL } from '../dal/interfaces/IUserLanguagesDAL.js';
 import { ValidationError, NotFoundError, DuplicateError } from '../types/dal.js';
 import { VELOCITY_WINDOW_DAYS } from '../types/velocity.js';
 import { activeBars } from '../utils/masteryCompute.js';
@@ -39,7 +39,7 @@ export class FriendsService {
     private friendshipDAL: IFriendshipDAL,
     private userDAL: IUserDAL,
     private categoryPromotionDAL: ICategoryPromotionDAL,
-    private userLanguagePointsDAL: IUserLanguagePointsDAL
+    private userLanguagesDAL: IUserLanguagesDAL
   ) {}
 
   /** The viewer's accepted friends. */
@@ -75,7 +75,7 @@ export class FriendsService {
     const [profiles, buckets, netPointsByUser] = await Promise.all([
       this.userDAL.findScoringProfilesByIds(userIds),
       this.categoryPromotionDAL.getVelocityBuckets(userIds, VELOCITY_WINDOW_DAYS),
-      this.userLanguagePointsDAL.getNetPointsForUsers(userIds),
+      this.userLanguagesDAL.getNetPointsForUsers(userIds),
     ]);
 
     // Index the flat bucket rows by user so the per-person sum below is a scan of

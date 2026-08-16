@@ -196,7 +196,7 @@ function defineMode(
  * Mix table (20:8 → 70:30, 12:60 → 20:80), so Challenge still leans on Target
  * and Review still leans on Comfortable rather than flattening to 50/50.
  *
- * Everything else about a run — the 60s clock, the 6×2 board, the 3s refill
+ * Everything else about a run — the 30s clock (RUN_DURATION_MS), the 6×2 board, the 3s refill
  * tick, the medal thresholds — is identical across modes. Difficulty comes only
  * from which cards you are asked to recognize, which is exactly what "Review"
  * and "Challenge" mean on /decks.

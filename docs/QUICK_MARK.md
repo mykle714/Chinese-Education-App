@@ -48,7 +48,7 @@ Legend:     ○ skip/none    ✓ Add to Learn Now    Ⓜ Mastered
 - **Header** (`NodePage.headerExtraActions`): **Clear** and **Save** buttons plus
   the `MinutePointsFireBadge` (mirrors SortCardsPage's header actions).
 - **Level bar**: the same HSK/difficulty `Chip`+`Menu` dropdown as
-  `SortCardsPage` (`src/features/discover/SortCardsPage.tsx:836-882`) **minus the `Auto`
+  `SortCardsPage` (`src/features/discover/SortCardsPage.tsx`) **minus the `Auto`
   menu item** — Quick Mark is always a concrete level. Label is `HSK N` for zh,
   `Level N` otherwise (`difficultyLabel`).
 - **Legend**: a static row explaining the three indicator states (§3).
@@ -63,7 +63,7 @@ Each card carries **two** corner badges:
 
 - **Top-left — frequency badge** (unchanged): the word's `frequencyScore`
   (1 = literary … 5 = natural colloquial), same circular dot Sort Cards draws at
-  `SortCardsPage.tsx:307-331`.
+  `SortCardsPage.tsx`.
 - **Top-right — 3-state mark indicator** (new). Tapping the card **cycles** it:
 
   | State | Visual (top-right)          | Destination on Save        |
@@ -87,7 +87,7 @@ otherwise still owns the loading/error/empty states + the cascade-15 reveal). Th
 ## 4. Persistence — reuses Sort Cards' buckets verbatim
 
 No new tables/columns. Both destinations already exist in
-`StarterPacksService.sortCard` (`server/services/StarterPacksService.ts:389-420`):
+`StarterPacksService.sortCard` (`server/services/StarterPacksService.ts`):
 
 | Quick Mark state | Internal bucket    | Effect                                                          |
 | ---------------- | ------------------ | -------------------------------------------------------------- |
@@ -96,7 +96,7 @@ No new tables/columns. Both destinations already exist in
 
 Because both write a vet row, and the supply query excludes any word the user
 has a vet row for (`_fetchSupplyRows` `NOT EXISTS (vet …)`,
-`StarterPacksService.ts:323-326`), **cards already in the user's library/mastered
+`StarterPacksService.ts`), **cards already in the user's library/mastered
 never appear in Quick Mark** — satisfying the "never override progress the user
 already made" requirement automatically. (A card saved *this session* stays in
 view for undo — §6 — because the current page is not refetched; a fresh page or
@@ -110,7 +110,7 @@ row created by an earlier Save. So the batch is a **reconcile**, not an append �
 it drives each card's vet state to match its on-screen mark:
 empty → *no vet row* (delete if present), green → library/Unfamiliar,
 blue → already-learned/Mastered. `sortCard` already has the delete path
-(`undoSort`, `StarterPacksService.ts:530`) to reuse.
+(`undoSort`, `StarterPacksService.ts`) to reuse.
 
 ## 5. Supply query
 

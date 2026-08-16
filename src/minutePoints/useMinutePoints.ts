@@ -16,7 +16,7 @@ import { getMinutePointsPaused } from './minutePointsPause';
 
 export interface UseMinutePointsReturn {
   currentPoints: number;
-  /** THIS LANGUAGE's penalty-debited NET balance — the prominent "current balance" number; decays on loss. Per-language since migration 130 (user_language_points). */
+  /** THIS LANGUAGE's penalty-debited NET balance — the prominent "current balance" number; decays on loss. Per-language since migration 130 (user_languages). */
   accumulativeMinutePoints: number;
   /** THIS LANGUAGE's lifetime minutes earned, ignoring penalties; only grows. gross ≥ net. Shown as the secondary "total earned" figure. */
   lifetimeMinutesEarned: number;

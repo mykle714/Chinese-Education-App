@@ -160,9 +160,9 @@ Written together with `iconLayout` by the same `PATCH …/icon-layout`. Types `T
 `TextColors` live in `src/types.ts` + `server/types/index.ts`; the resolver
 `resolveTextColor(mode, tones?)` lives in `src/utils/cardTextColor.ts` (returns `undefined`
 for `theme` so callers keep their theme-aware default; `tones` defaults to
-`DEFAULT_TEXT_TONES`). Call sites: `FlashCardSection.tsx:116` (foreign) and `:231` (dd, via
+`DEFAULT_TEXT_TONES`). Call sites: `FlashCardSection.tsx` (foreign) and `:231` (dd, via
 `ddTextColor`), `InfoCardPanelBody.tsx` entry header (dd, via `ddTextColor`, theme case only —
-it does not apply the per-card Contrast pick), `MiniVocabCard.tsx:49-50` (uses the default
+it does not apply the per-card Contrast pick), `MiniVocabCard.tsx` (uses the default
 black/white pair for its English line — a known inconsistency with the dd surfaces above).
 
 **Per-card card background fill — `cardColor` text** on both vet tables (migration

@@ -84,9 +84,9 @@ function makeService(
     friendshipDAL: IFriendshipDAL,
     userDAL: any,
     categoryPromotionDAL: any = { getVelocityBuckets: async () => [] },
-    userLanguagePointsDAL: any = { getNetPointsForUsers: async () => new Map() }
+    userLanguagesDAL: any = { getNetPointsForUsers: async () => new Map() }
 ) {
-    return new FriendsService(friendshipDAL, userDAL, categoryPromotionDAL, userLanguagePointsDAL);
+    return new FriendsService(friendshipDAL, userDAL, categoryPromotionDAL, userLanguagesDAL);
 }
 
 describe('FriendsService.sendRequest', () => {

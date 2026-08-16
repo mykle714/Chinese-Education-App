@@ -63,7 +63,7 @@ last 7 days ([VELOCITY.md](./VELOCITY.md)) — not a plain list. One row per per
   not — which is the whole job of a column being compared down a list. Formatted by
   the shared `src/utils/formatDuration.ts` (`weeks: true`; the Night Market badge
   uses the same function without weeks). The figure is
-  `user_language_points.totalMinutePoints`, the penalty-debited NET wallet
+  `user_languages.totalMinutePoints`, the penalty-debited NET wallet
   ([STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)), **not** the monotonic
   `lifetimeMinutesEarned` — the two diverge for any learner who has ever been
   penalised.
@@ -189,7 +189,7 @@ All require `authenticateToken`. Wire types: `server/types/friends.ts`, mirrored
 
 A friend request exposes the target's `name`, `email` and `avatarIconId` to the
 sender once sent — the same fields the leaderboard already shows to every logged-in
-user (`server/services/LeaderboardService.ts:82-105`), so this adds no new
+user (`server/services/LeaderboardService.ts`), so this adds no new
 disclosure. Note that knowing a user ID is currently enough to confirm an account
 exists (404 vs 201): acceptable while the ID is a random UUID a user chooses to
 share, and worth revisiting if IDs ever become guessable or public.
@@ -235,7 +235,7 @@ This document describes:
 `server/dal/interfaces/IFriendshipDAL.ts`,
 `server/dal/interfaces/IUserDAL.ts` (`findScoringProfilesByIds`) + `UserDAL.ts`,
 `server/dal/interfaces/ICategoryPromotionDAL.ts` (`getVelocityBuckets`) + `CategoryPromotionDAL.ts`,
-`server/dal/interfaces/IUserLanguagePointsDAL.ts` (`getNetPointsForUsers`) + `UserLanguagePointsDAL.ts`,
+`server/dal/interfaces/IUserLanguagesDAL.ts` (`getNetPointsForUsers`) + `UserLanguagesDAL.ts`,
 `server/contracts/wire.ts` (`LANGUAGE_FLAGS`),
 `server/dal/implementations/FriendshipDAL.ts`,
 `server/services/FriendsService.ts`,

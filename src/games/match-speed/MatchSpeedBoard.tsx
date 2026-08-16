@@ -78,7 +78,7 @@ function shuffle<T>(arr: T[]): T[] {
  * That invariant is what lets the fill logic be trivial — it is asserted in dev
  * below rather than silently assumed.
  *
- * See docs/MATCH_SPEED_GAME.md § Board model and § The 2-second refill tick.
+ * See docs/MATCH_SPEED_GAME.md § Board model and § The 3-second refill tick.
  */
 const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
     language,

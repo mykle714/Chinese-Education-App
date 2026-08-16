@@ -44,7 +44,7 @@ export interface IUserMinutePointsDAL {
   getTotalMinutesForLanguage(userId: string, language: string): Promise<number>;
 
   // NOTE: lifetime-earned is NOT served from this table. It is the maintained per-language
-  // counter user_language_points."lifetimeMinutesEarned" (migration 134),
-  // read via IUserLanguagePointsDAL — summing the ledger grew with account age.
+  // counter user_languages."lifetimeMinutesEarned" (migration 134),
+  // read via IUserLanguagesDAL — summing the ledger grew with account age.
 
 }

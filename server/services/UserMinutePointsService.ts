@@ -1,6 +1,6 @@
 import { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
-import { IUserLanguagePointsDAL } from '../dal/interfaces/IUserLanguagePointsDAL.js';
+import { IUserLanguagesDAL } from '../dal/interfaces/IUserLanguagesDAL.js';
 import { NightMarketPlacementService } from './NightMarketPlacementService.js';
 import {
   MinutePointsIncrementRequest,
@@ -23,7 +23,7 @@ import {
  *
  * EVERYTHING HERE IS PER-LANGUAGE (migration 130, docs/PER_LANGUAGE_STREAKS.md).
  * The wallet, the streak and the penalty schedule are keyed (userId, language) in
- * user_language_points; a user studying zh and es has two independent tracks that
+ * user_languages; a user studying zh and es has two independent tracks that
  * never read or write each other's state. Three minutes of Spanish no longer keeps
  * a Chinese streak alive.
  *
@@ -40,7 +40,7 @@ export class UserMinutePointsService {
   constructor(
     private userMinutePointsDAL: IUserMinutePointsDAL,
     private userDAL: IUserDAL,
-    private userLanguagePointsDAL: IUserLanguagePointsDAL,
+    private userLanguagesDAL: IUserLanguagesDAL,
     // Optional: the night-market grant flow. When present, earning a minute reconciles the
     // user's unlock entitlement (fill slots / spawn templates). Best-effort — a failure here
     // must never break the minute-point increment, so the call is wrapped + swallowed below.
@@ -83,7 +83,7 @@ export class UserMinutePointsService {
 
     await this.userMinutePointsDAL.addMinutesForDate(userId, streakDate, language, 1);
 
-    const totalMinutePoints = await this.userLanguagePointsDAL.incrementPoints(userId, language, 1);
+    const totalMinutePoints = await this.userLanguagesDAL.incrementPoints(userId, language, 1);
 
     // The streak is PER-LANGUAGE: only minutes in THIS language can advance THIS
     // language's streak. Decide the threshold crossing on the single language row
@@ -154,9 +154,9 @@ export class UserMinutePointsService {
 
     if (delta > 0) {
       // Earn signal: gross + net both rise. One statement bumps both counters on the
-      // language's user_language_points row, so the pair cannot drift (migration 134).
+      // language's user_languages row, so the pair cannot drift (migration 134).
       await this.userMinutePointsDAL.addMinutesForDate(userId, streakDate, language, delta);
-      await this.userLanguagePointsDAL.incrementPoints(userId, language, delta);
+      await this.userLanguagesDAL.incrementPoints(userId, language, delta);
     } else if (delta < 0) {
       // Loss signal: penalty rises (gross intact), net falls floored at 0.
       //
@@ -165,7 +165,7 @@ export class UserMinutePointsService {
       // the user never paid, so reconstructing a balance from the ledger would go negative.
       // The hourly cron has always stamped `total − new_total`; this path now matches it.
       const requested = -delta;
-      const before = await this.userLanguagePointsDAL.getProgress(userId, language);
+      const before = await this.userLanguagesDAL.getProgress(userId, language);
       const actuallyRemoved = Math.min(requested, before.totalMinutePoints);
 
       if (actuallyRemoved > 0) {
@@ -173,12 +173,12 @@ export class UserMinutePointsService {
       }
       // Still pass the full request: adjustPoints floors at 0 itself, so this is a no-op
       // beyond the floor and keeps the DAL the single owner of the flooring rule.
-      await this.userLanguagePointsDAL.adjustPoints(userId, language, -requested);
+      await this.userLanguagesDAL.adjustPoints(userId, language, -requested);
     }
 
     // Both of this language's counters come back in one row read — no unbounded SUM over
     // the day ledger (that is what migration 134's counter replaced).
-    const after = await this.userLanguagePointsDAL.getProgress(userId, language);
+    const after = await this.userLanguagesDAL.getProgress(userId, language);
 
     // Make THIS LANGUAGE's market match its new net balance. Unlike the passive study-tick
     // grant, this is an explicit author action, so a reconcile failure is allowed to surface
@@ -250,14 +250,14 @@ export class UserMinutePointsService {
   /**
    * Lifetime minutes the user has earned studying `language` — GROSS, ignoring
    * penalties, so it only ever grows. Powers the home screen's "total study time".
-   * (Distinct from user_language_points.totalMinutePoints, which is the same
+   * (Distinct from user_languages.totalMinutePoints, which is the same
    * language's penalty-debited NET wallet; the two DIVERGE once penalised.)
    *
    * Reads the maintained counter, NOT a SUM over the day ledger: that SUM was the one
    * aggregate in this system whose cost grew with account age. See migration 134.
    */
   async getTotalForLanguage(userId: string, language: string): Promise<number> {
-    const { lifetimeMinutesEarned } = await this.userLanguagePointsDAL.getProgress(userId, language);
+    const { lifetimeMinutesEarned } = await this.userLanguagesDAL.getProgress(userId, language);
     return lifetimeMinutesEarned;
   }
 
@@ -275,7 +275,7 @@ export class UserMinutePointsService {
    * One-shot snapshot for the client's minute-points hook. EVERY figure is scoped to
    * `language` — since migration 130 there is no global balance or global streak:
    *   • totalMinutePoints — that language's penalty-debited NET wallet
-   *     (user_language_points.totalMinutePoints); drives ITS night-market unlocks and the
+   *     (user_languages.totalMinutePoints); drives ITS night-market unlocks and the
    *     prominent "current balance" number. Decays when the language is neglected.
    *   • lifetimeMinutesEarned — that language's lifetime minutes earned, ignoring penalties;
    *     only ever grows. Shown as the secondary "total earned" figure. gross ≥ net, and they
@@ -288,7 +288,7 @@ export class UserMinutePointsService {
    * each language shows its own independent progress.
    *
    * Two queries, not three: the wallet, the streak and the gross counter all live on the
-   * same user_language_points row, so one getProgress() serves all three.
+   * same user_languages row, so one getProgress() serves all three.
    */
   async getLanguageSummary(
     userId: string,
@@ -298,7 +298,7 @@ export class UserMinutePointsService {
   ): Promise<{ totalMinutePoints: number; lifetimeMinutesEarned: number; todayMinutes: number; currentStreak: number }> {
     const [todayMinutes, progress] = await Promise.all([
       this.getTodayMinutes(userId, language, timestamp, tz),
-      this.userLanguagePointsDAL.getProgress(userId, language),
+      this.userLanguagesDAL.getProgress(userId, language),
     ]);
     return {
       totalMinutePoints: progress.totalMinutePoints,
@@ -322,7 +322,7 @@ export class UserMinutePointsService {
     language: string,
     streakDate: string
   ): Promise<void> {
-    const info = await this.userLanguagePointsDAL.getProgress(userId, language);
+    const info = await this.userLanguagesDAL.getProgress(userId, language);
     let newStreak: number;
 
     if (!info.lastStreakDate) {
@@ -340,7 +340,7 @@ export class UserMinutePointsService {
       newStreak = 1;
     }
 
-    await this.userLanguagePointsDAL.setStreak(userId, language, newStreak, streakDate);
+    await this.userLanguagesDAL.setStreak(userId, language, newStreak, streakDate);
   }
 
   private parseTimestamp(input: string): Date {

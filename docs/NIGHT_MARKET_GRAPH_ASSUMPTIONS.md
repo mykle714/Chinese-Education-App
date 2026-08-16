@@ -2,9 +2,15 @@
 
 Structural invariants the tile graph, street graph, and stand layout must satisfy. These are *load-bearing* — the pedestrian walking algorithm ([PEDESTRIAN_WALKING_ALGORITHM.md](./PEDESTRIAN_WALKING_ALGORITHM.md)) assumes all of them and will misbehave (off-graph steps, never-terminating legs, sidestep math failures) if any are violated.
 
-Each assumption should be enforced by a test against the built graphs (`TILE_GRAPH`, `STREET_GRAPH`). Tests live alongside the existing graph tests in `src/utils/__tests__/`.
+Each assumption should be enforced by a test against the built graphs (`TILE_GRAPH`, `STREET_GRAPH`). Engine tests live in `src/engine/market/__tests__/` (the old `src/utils/__tests__/` location moved with the engine).
 
-> **Layout source:** once the template system ([NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), DESIGN stage) lands, the graphs are computed from tiled templates rather than the hand-authored tile registry. The stitched-template result must still satisfy *every* invariant below — the edge-signature matching rule is what keeps cross-seam streets contiguous enough to do so.
+> **Layout source — this has now landed.** The graphs are computed from **tiled templates**, not from the hand-authored tile registry: `marketWorld.ts` runs `streetRecovery.ts#recoverStreets` over the stitched STREET cells and builds `TILE_GRAPH`/`STREET_GRAPH` from that. `tileRegistry.ts`'s own `STREETS`/`TILES`/`DEMO_STALLS` are empty and its module-level graphs are vestigial. The stitched-template result must still satisfy *every* invariant below — the edge-signature matching rule is what keeps cross-seam streets contiguous enough to do so.
+
+> ⚠️ **Nothing currently asserts S1–T2.** The single test file this document asks for
+> (`graphAssumptions.test.ts`) was deleted along with the demo layout in commit `9bedfb5`
+> and never re-created against the recovered graphs. Live neighbours:
+> `src/engine/market/__tests__/streetRecovery.test.ts` and `seamAdjacency.test.ts`, which
+> cover recovery output and cross-seam contiguity but not the invariants below.
 
 ---
 
@@ -36,7 +42,7 @@ For every node `N` and every edge `E` that meets `N`:
 > **Why:** when a pedestrian exits a node into a connected edge at any lane (perpendicular coord) chosen inside the node, that lane must be a valid lane on the new edge. Equal widths are the simplest sufficient condition.
 
 ### N3. Nodes are 4-connected components of intersection tiles
-A node is the flood-fill of contiguous tiles with `intersectingStreets.length >= 2`. This is how `buildNodes` constructs them (`streetGraph.ts:143`) and is the definition the walking algorithm assumes when it treats node tiles differently from body tiles.
+A node is the flood-fill of contiguous tiles with `intersectingStreets.length >= 2`. This is how `buildNodes` constructs them (`streetGraph.ts`) and is the definition the walking algorithm assumes when it treats node tiles differently from body tiles.
 
 ---
 
@@ -75,7 +81,7 @@ Existing invariant; restated for completeness.
 ## Tile graph
 
 ### T1. The tile graph is 4-connected within each reachable component
-Standard. Already true by construction: edges in the tile graph are pure 4-neighbor adjacencies (`tileGraph.ts:115`).
+Standard. Already true by construction: edges in the tile graph are pure 4-neighbor adjacencies (`tileGraph.ts`).
 
 ### T2. Every tile referenced by a node or edge body exists in the tile graph
 `StreetNode.tileKeys` and `StreetEdge.bodyTileSet` are subsets of `tileGraph.tiles.keys()`. Already true by construction; worth a regression test.
@@ -84,4 +90,4 @@ Standard. Already true by construction: edges in the tile graph are pure 4-neigh
 
 ## Suggested test layout
 
-A single test file `src/utils/__tests__/graphAssumptions.test.ts` covering all of S1–T2 against the built `TILE_GRAPH` and `STREET_GRAPH`. Tests should run as part of normal CI so any tile-registry change that breaks an invariant fails loudly.
+A single test file `src/engine/market/__tests__/graphAssumptions.test.ts` covering all of S1–T2 against the `TILE_GRAPH` / `STREET_GRAPH` that `marketWorld.ts` builds from a stitched world (NOT the empty `tileRegistry` ones — those would pass every invariant vacuously). Tests should run as part of normal CI so any template/recovery change that breaks an invariant fails loudly. **Status: not written** — see the warning at the top.

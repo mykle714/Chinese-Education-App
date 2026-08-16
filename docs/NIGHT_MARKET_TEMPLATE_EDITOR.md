@@ -231,7 +231,7 @@ surface-decor cell (it can still overwrite family/plank decor).
 **Wood-panel autotiling.** A placed plank **stores its center tile**; the render layer
 (`plankRenderUrl`, applied in `buildEditorField`'s `decorAt`) swaps that center for its far-end
 **edge cap** — `eastEdge` for an `ew` panel (+isoX face), `northEdge` for an `ns` panel (+isoY
-face), the only two faces the pack caps (mirrors `buildWalkway`) — wherever that far neighbour is
+face), the only two faces the pack caps (see the `PlankCap` docs in `freeFarmTileset.ts`) — wherever that far neighbour is
 **not itself a plank**. So an author only ever picks the flat tile and the exposed run-ends cap
 themselves. Planks are **flush / walkable** (not blocking, like family decor). Unlike the other
 decor tools, Wood panel tiles by **rectangle** (`rectangleMode`), not drag-paint.
@@ -256,8 +256,8 @@ validator explicitly paints shows. Changing the **width or height** in Propertie
   `EditorTile`/`buildEditorField`; the view highlights them straight from the mask. (There
   is **no `houses` mask** — the manual House tool was removed; the only houses drawn are the
   filled-slot occupant previews, derived from placeholder + condition — see the view section.)
-- **`src/engine/market/house.ts`** — the shared, PURE house geometry consumed by the live nmp
-  house (`HouseLayer`) and the placeholder-occupant renderers: footprint dims
+- **`src/engine/market/house.ts`** — the shared, PURE house geometry consumed by the
+  placeholder-occupant renderers: footprint dims
   (`HOUSE_FOOTPRINT_X`=4, `HOUSE_FOOTPRINT_Y`=5), the measured `HOUSE_ANCHOR` (base-diamond
   front corner), `occupantHousesForArea(area)` — which tiles a placeholder area into 1–2
   `{col,row,flip}` house footprints (5-wide slots use the flipped 5×4 transpose) — and
@@ -265,8 +265,9 @@ validator explicitly paints shows. Changing the **width or height** in Propertie
   is never drawn as one sprite; see *Depth sorting: sprite-strip slicing* in
   [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md)). Shared by the runtime
   `PlaceholderHouseLayer` and the editor's occupant preview, both of which render through the
-  common `src/features/nightmarket/HouseStripSprites.tsx`. It imports no asset, so pure layers
-  (`farmTerrain`) can depend on it.
+  common `src/features/nightmarket/HouseStripSprites.tsx`. (A third consumer, the standalone nmp
+  sample house `HouseLayer.tsx`, was deleted in commit `70dc441`.) It imports no asset, so pure
+  layers (`farmTerrain`) can depend on it.
 - `editorSurfaceAt(masks, col, row)` → `'dirt' | 'terrain1' | 'terrain2'` (takes just
   `Pick<EditorMasks,'terrain1'|'terrain2'>`, the two masks it reads) and
   `editorDecorRotation(category, surface)` (`category: DecorCategory` = `'family' |
@@ -297,7 +298,9 @@ validator explicitly paints shows. Changing the **width or height** in Propertie
   a spriteless walkability tint drawn straight from the mask, not a plank sprite.)
 
 ### View — `src/features/nightmarket/`
-- `EditorTerrainLayer.tsx` — a trimmed `FarmTerrainLayer`: dirt slab + light/dark
+- `EditorTerrainLayer.tsx` — **the one terrain renderer for every night-market surface**
+  (editor, sandbox, and the nmp runtime through `TemplateTerrainLayer`). It replaced the
+  procedural `FarmTerrainLayer.tsx`, which was deleted in commit `70dc441`. Draws a dirt slab + light/dark
   grass stack and the **painted `decorUrl`** sprite on top (no *procedural* scatter, and
   **no plank** — the street mask is a spriteless tint the viewer draws separately). Driven
   by a `tiles` prop only (the house layer was removed — filled-slot occupant houses are drawn
@@ -478,13 +481,14 @@ promote-to-code step) is a downstream decision.
 - Data: `src/engine/market/farmTerrain.ts` (`EditorMasks`, `buildEditorField`,
   `editorSurfaceAt`, `editorDecorRotation`, `editorPlankCenters`, `plankRenderUrl`,
   `isPlankUrl`, `editorDecorCategory`),
-  `src/engine/market/freeFarmTileset.ts` (`getDecorUrls`, `getTreeUrls`, `getPlank`),
-  `src/engine/market/walkway.ts` (`PLANK_VARIATIONS`),
+  `src/engine/market/freeFarmTileset.ts` (`getDecorUrls`, `getTreeUrls`, `getPlank`,
+  `PLANK_VARIATIONS`, `WalkwayDirection`, `PlankCap` — the whole plank vocabulary; the
+  former `walkway.ts` module was deleted),
   `src/engine/market/house.ts` (footprint dims + `HOUSE_ANCHOR` + `HOUSE_STRIPS` +
-  `occupantHousesForArea`; also consumed by the live nmp `src/features/nightmarket/HouseLayer.tsx`
-  and the runtime occupant `src/features/nightmarket/PlaceholderHouseLayer.tsx`).
+  `occupantHousesForArea`; also consumed by the runtime occupant
+  `src/features/nightmarket/PlaceholderHouseLayer.tsx`).
 - View/page: `src/features/nightmarket/HouseStripSprites.tsx` (the shared strip-sliced house
-  renderer used by all three house surfaces),
+  renderer used by both house surfaces — the runtime occupant layer and the editor preview),
   `src/features/nightmarket/{EditorTerrainLayer,TemplateEditorViewer,TemplateEditorPage}.tsx`,
   `templateEditorApi.ts`,
   `src/features/nightmarket/editorButtonStyles.tsx` (toolbar chrome shared with the sandbox —

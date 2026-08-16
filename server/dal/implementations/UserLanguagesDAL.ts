@@ -1,15 +1,15 @@
 import {
-  IUserLanguagePointsDAL,
+  IUserLanguagesDAL,
   LanguageProgress,
   UserPointsTotals,
-} from '../interfaces/IUserLanguagePointsDAL.js';
+} from '../interfaces/IUserLanguagesDAL.js';
 import { dbManager } from '../base/DatabaseManager.js';
 import { ValidationError } from '../../types/dal.js';
 
 /**
- * UserLanguagePoints Data Access Layer.
+ * UserLanguages Data Access Layer.
  *
- * One row per (userId, language) in `user_language_points` (migration 130): that
+ * One row per (userId, language) in `user_languages` (migration 130): that
  * language's NET wallet, its monotonic GROSS earned counter (migration 134), its streak,
  * and the two dates the penalty cron reads. Replaces the four global columns that used to
  * live on `users`.
@@ -21,7 +21,7 @@ import { ValidationError } from '../../types/dal.js';
  *
  * Design: docs/PER_LANGUAGE_STREAKS.md
  */
-export class UserLanguagePointsDAL implements IUserLanguagePointsDAL {
+export class UserLanguagesDAL implements IUserLanguagesDAL {
   async getProgress(userId: string, language: string): Promise<LanguageProgress> {
     if (!userId) throw new ValidationError('User ID is required');
     if (!language) throw new ValidationError('Language is required');
@@ -37,7 +37,7 @@ export class UserLanguagePointsDAL implements IUserLanguagePointsDAL {
                 "lifetimeMinutesEarned" AS lifetimeminutesearned,
                 "currentStreak"         AS currentstreak,
                 to_char("lastStreakDate", 'YYYY-MM-DD') AS laststreakdate
-         FROM user_language_points
+         FROM user_languages
          WHERE "userId" = $1 AND language = $2`,
         [userId, language]
       );
@@ -71,7 +71,7 @@ export class UserLanguagePointsDAL implements IUserLanguagePointsDAL {
                 "lifetimeMinutesEarned" AS lifetimeminutesearned,
                 "currentStreak"         AS currentstreak,
                 to_char("lastStreakDate", 'YYYY-MM-DD') AS laststreakdate
-         FROM user_language_points
+         FROM user_languages
          WHERE "userId" = $1
          ORDER BY language ASC`,
         [userId]
@@ -118,7 +118,7 @@ export class UserLanguagePointsDAL implements IUserLanguagePointsDAL {
 
     await dbManager.executeQuery(async (client) => {
       return await client.query(
-        `INSERT INTO user_language_points ("userId", language, "currentStreak", "lastStreakDate")
+        `INSERT INTO user_languages ("userId", language, "currentStreak", "lastStreakDate")
          VALUES ($1, $2, $3, $4)
          ON CONFLICT ("userId", language)
          DO UPDATE SET "currentStreak"  = EXCLUDED."currentStreak",
@@ -139,7 +139,7 @@ export class UserLanguagePointsDAL implements IUserLanguagePointsDAL {
         `SELECT "userId"                        AS userid,
                 COALESCE(SUM("totalMinutePoints"), 0) AS totalminutepoints,
                 COALESCE(MAX("currentStreak"), 0)     AS beststreak
-         FROM user_language_points
+         FROM user_languages
          GROUP BY "userId"`
       );
     });
@@ -172,7 +172,7 @@ export class UserLanguagePointsDAL implements IUserLanguagePointsDAL {
         `SELECT "userId"            AS userid,
                 language,
                 "totalMinutePoints" AS totalminutepoints
-         FROM user_language_points
+         FROM user_languages
          WHERE "userId" = ANY($1::uuid[])`,
         [userIds]
       );
@@ -217,19 +217,19 @@ export class UserLanguagePointsDAL implements IUserLanguagePointsDAL {
   ): Promise<number> {
     const seed = floored ? Math.max(0, delta) : delta;
     const updateExpr = floored
-      ? 'GREATEST(0, user_language_points."totalMinutePoints" + $3)'
-      : 'user_language_points."totalMinutePoints" + $3';
+      ? 'GREATEST(0, user_languages."totalMinutePoints" + $3)'
+      : 'user_languages."totalMinutePoints" + $3';
 
     // Gross only ever climbs, so a negative delta is clamped to 0 on both the insert seed
     // and the update — belt-and-braces behind incrementPoints' own non-negative guard.
     const grossSeed = raiseGross ? Math.max(0, delta) : 0;
     const grossUpdate = raiseGross
-      ? ', "lifetimeMinutesEarned" = user_language_points."lifetimeMinutesEarned" + GREATEST(0, $3)'
+      ? ', "lifetimeMinutesEarned" = user_languages."lifetimeMinutesEarned" + GREATEST(0, $3)'
       : '';
 
     const result = await dbManager.executeQuery<{ totalminutepoints: number }>(async (client) => {
       return await client.query(
-        `INSERT INTO user_language_points ("userId", language, "totalMinutePoints", "lifetimeMinutesEarned")
+        `INSERT INTO user_languages ("userId", language, "totalMinutePoints", "lifetimeMinutesEarned")
          VALUES ($1, $2, $4, $5)
          ON CONFLICT ("userId", language)
          DO UPDATE SET "totalMinutePoints" = ${updateExpr},

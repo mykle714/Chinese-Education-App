@@ -186,9 +186,15 @@ Searches the user's vocab entries.
 Returns all library cards (`starterPackBucket = 'library'`).
 - **Response:** `VocabEntry[]`
 
-### `GET /api/onDeck/masteredLibraryCards` / `non-mastered-library-cards`
-Returns library cards filtered by mastery status.
+### `GET /api/onDeck/collectionCards`
+Returns the cards of one collection (Learn Now, a Mastered bar, or a deck), selected by
+query param. This replaced the separate `masteredLibraryCards` /
+`non-mastered-library-cards` endpoints when collections were generalized — see
+[DECKS_FEATURE.md](./DECKS_FEATURE.md).
 - **Response:** `VocabEntry[]`
+
+### `GET /api/onDeck/masteredCounts`
+Per-bar mastered card counts for the active language.
 
 ### `GET /api/onDeck/distributedWorkingLoop`
 Returns the distributed working loop (shuffled blend of cards from multiple categories).

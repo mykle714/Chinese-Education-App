@@ -87,8 +87,12 @@ References: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` (`EipTab
 measurement), `EipTabStrip.tsx`, `InfoCardPanelBody.tsx` (header 2×2 action grid, the
 `mobile-demo-eic-actions` Box), `FlashcardsLearnPage.tsx` (mounts both eip wrappers).
 
-The eip renders on flp only (bottom-sheet `InfoCardSection` + centered `InfoCardPopup`); both
-wrappers get Compare for free since they share the tab system and panel body.
+The eip has a single wrapper — the bottom-sheet `InfoCardSection` (`SheetPanel` +
+`InfoCardPanelBody`). The centered `InfoCardPopup` variant that used to sit alongside
+it was deleted (commit `70dc441`), so there is one code path to keep Compare working
+in. `InfoCardSection` is mounted by `FlashcardsLearnPage.tsx` (flp) and
+`SortCardsPage.tsx` (scp); both get Compare for free since they share the tab system
+and panel body.
 
 ---
 

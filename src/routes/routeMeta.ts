@@ -111,7 +111,11 @@ const PAGE_ROUTES: RouteMeta[] = [
   // Dictionary, Reader, Compare and Games are reached from the Home menu, so they
   // keep the Home tab lit.
   { path: "/games", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/community", access: "any", shell: "frame", chrome: "tab", footerTab: "home" },
+  // Was `chrome: "tab"`, which contradicted both this comment block and the page:
+  // CommunityPage renders <NodePage>, so it drew a back arrow and slid OUT to the
+  // right on back, but got no slide on the way IN (routeSlideDir returns null for
+  // "tab"). Asymmetric by accident, not by design — see docs/LEAF_NODE_PAGES.md.
+  { path: "/community", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   // Friends leaderboard + its three action screens (Send / Accept / Remove). All
   // four keep the Home tab lit — they are reached from the Home menu, and the three
   // action pages drill in one level further (their back arrows return to /friends,

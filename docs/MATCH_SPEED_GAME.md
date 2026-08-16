@@ -443,7 +443,7 @@ asked to recognize, which is exactly what Review/Challenge mean on `/decks`.
 
 - **The bucket split is the `/decks` rule verbatim** — Review draws
   Comfortable+Mastered, Challenge draws Unfamiliar+Target
-  (`src/features/flashcards/FlashcardsDecksPage.tsx:226-227`). Same rule, same
+  (`src/features/flashcards/FlashcardsDecksPage.tsx`). Same rule, same
   card colors on the hub (see [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md)).
 - **Within a restricted mode the two buckets keep roughly their Study Mix ratio**
   (20:8 → 70:30, 12:60 → 20:80), so Challenge still leans on Target and Review still
@@ -517,7 +517,7 @@ is the **Study Mix** table; Review and Challenge roll over their own buckets —
 | Mastered | 8% |
 
 This is a **per-draw roll**, not a fixed board quota — unlike Bubble Match's
-`GAME_DISTRIBUTION` (`src/games/bubble-match/constants.ts:23-28`), which requests
+`GAME_DISTRIBUTION` (`src/games/bubble-match/constants.ts`), which requests
 a fixed 2/10/6/2 mix for a whole run. A Match Speed board can legitimately come
 up 5 Target cards.
 
@@ -529,7 +529,7 @@ shows. The `game-pool` endpoint already buckets this way — see
 **Empty-category fallback.** If the rolled category's buffer is empty, walk the
 mode's fallback order — in Study Mix, the existing bubble-match one —
 **Target → Comfortable → Unfamiliar → Mastered**
-(`OnDeckVocabService.GAME_FALLBACK_ORDER`, `server/services/OnDeckVocabService.ts:803`)
+(`OnDeckVocabService.GAME_FALLBACK_ORDER`, `server/services/OnDeckVocabService.ts`)
 — and take from the first non-empty one. The weights are **not** re-normalized;
 the roll happens against the full 12/60/20/8 table every time and the fallback is
 purely a "that shelf was bare" recovery.
@@ -575,7 +575,7 @@ Bubble Match has the identical case and solves it the identical way with its
 `keepIds` hard exclude (`BubbleMatchPage.tsx`, `playAgain`).
 
 `exclude` is enforced in SQL and is absolute (`fetchGameCandidates`'s
-`excludeIds`, `server/services/OnDeckVocabService.ts:252-293`).
+`excludeIds`, `server/services/OnDeckVocabService.ts`).
 
 We do **not** use the `avoid` (soft-demote) param.
 
@@ -653,9 +653,9 @@ fresh/cooled; the `drain()` helper in `getGameVocabPool` then preserves it for
 free. The field is declared on `VocabEntryBase` in `server/contracts/wire.ts`, so
 both the server and client types carry it from one definition.
 
-The buffer is keyed by category, but `GET /api/onDeck/game-pool` returns a **flat
+The buffer is keyed by category, but `GET /api/onDeck/gamePool` returns a **flat
 `cards[]` with no per-card game-category label**
-(`server/services/OnDeckVocabService.ts:974`). The `category` field the rows do
+(`server/services/OnDeckVocabService.ts`). The `category` field the rows do
 carry comes from `CORE_CATEGORY_SELECT` — the **core** mastery bar's band
 (recognition + production; see [MASTERY_REWORK.md](./MASTERY_REWORK.md) § Three
 bars), *not* the per-mark-type category the buckets were selected by. So today
@@ -663,12 +663,12 @@ a client cannot sort a response back into four buffers.
 
 **The change:** stamp each returned card with the category bucket it was drawn
 from. The value already exists inside `fetchGameCandidates` — it is the loop key
-(`server/services/OnDeckVocabService.ts:270`) — it is simply not carried onto the
+(`server/services/OnDeckVocabService.ts`) — it is simply not carried onto the
 row. Tag the rows as they're bucketed, then the `drain()` helper in
 `getGameVocabPool` preserves it automatically.
 
 ```
-GET /api/onDeck/game-pool?Unfamiliar=5&Target=5&Comfortable=5&Mastered=5
+GET /api/onDeck/gamePool?Unfamiliar=5&Target=5&Comfortable=5&Mastered=5
   → { cards: [{ ...entry, gameCategory: "Target" }, ...], ... }
 ```
 
@@ -736,7 +736,7 @@ not at all.
 
 There is a genuine **no-medal tier** — unlike Word Search's `medalForTime`, whose
 bronze row is `maxSeconds: Infinity` and therefore always awarded
-(`src/games/word-search/constants.ts:152-162`). Structure the resolver the same
+(`src/games/word-search/constants.ts`). Structure the resolver the same
 way (an ordered threshold table + a `medalForScore(score)` helper) but let it
 return `null`.
 
@@ -847,8 +847,8 @@ removed** once the run ends, for the same reason (the end card owns the result;
 a frozen `0:00` would otherwise read as broken).
 
 Minute points: add `/games/match-speed` to `MINUTE_POINTS_ELIGIBLE_PAGES`
-(`src/constants.ts:13-20`). The start-on-entry subset is already the path prefix
-`/games` (`MINUTE_POINTS_AUTO_ACTIVE_PAGES`, `src/constants.ts:29-31`), so it is
+(`src/constants.ts`). The start-on-entry subset is already the path prefix
+`/games` (`MINUTE_POINTS_AUTO_ACTIVE_PAGES`, `src/constants.ts`), so it is
 covered automatically.
 
 ### Language scope
@@ -964,7 +964,7 @@ derived avoids a state pair that can disagree.
 ```
 src/games/match-speed/
   MatchSpeedPage.tsx       page shell + phase machine + pool/buffer + marks
-  MatchSpeedBoard.tsx      the 2×5 slot grid, tap handling, refill tick
+  MatchSpeedBoard.tsx      the 6×2 slot grid (ROWS=6 × 2 columns), tap handling, refill tick
   MatchSpeedCard.tsx       one card (foreign or english) + its visual states
   MatchSpeedHeader.tsx     right-slot controls: settings cog + fire badge
   MatchSpeedSettingsDialog.tsx  settings sheet: pinyin / tone colors / autoplay
@@ -1056,7 +1056,7 @@ it reads from.
 | Board cleared celebration | `src/games/match-speed/MatchSpeedClearBanner.tsx`; `MatchSpeedBoard.tsx` (`clearId`, `removePair`); `constants.ts` (`CLEAR_BANNER_MS`) |
 | Duplicate gate | `src/games/match-speed/cardBuffer.ts` (`takePairs`'s `isBlocked` + batch id set, `fillBuffer`'s dedupe); `src/games/match-speed/MatchSpeedPage.tsx` (`drawPairs`, `onBoardIdsRef`); `src/__tests__/matchSpeedCardBuffer.test.ts` |
 | Card selection, buffer, `exclude` | `server/services/OnDeckVocabService.ts` — `getGameVocabPool` (856-976), `fetchGameCandidates` (252-293), `GAME_FALLBACK_ORDER` (803) |
-| Difficulty modes | `src/games/match-speed/constants.ts` (`MODE_CONFIGS`, `defineMode`, `modeConfigFor`), `types.ts` (`ModeConfig`), `cardBuffer.ts` (all functions), `MatchSpeedPage.tsx`, `src/games/GamesPage.tsx`; bucket rule mirrored from `src/features/flashcards/FlashcardsDecksPage.tsx:226-227` |
+| Difficulty modes | `src/games/match-speed/constants.ts` (`MODE_CONFIGS`, `defineMode`, `modeConfigFor`), `types.ts` (`ModeConfig`), `cardBuffer.ts` (all functions), `MatchSpeedPage.tsx`, `src/games/GamesPage.tsx`; bucket rule mirrored from `src/features/flashcards/FlashcardsDecksPage.tsx` |
 | Backend change | same, plus `server/routes/onDeckRoutes.ts`, `server/dal/shared/dictJoin.ts` (`DICT_COLS`) |
 | Marks | `POST /api/flashcards/mark`; per-type categories → [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
 | Rendering a card | `src/components/ForeignText.tsx`; `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`) |
@@ -1066,7 +1066,7 @@ it reads from.
 | Page shell, header | `src/components/LeafPage.tsx`; `src/games/word-search/WordSearchHeader.tsx` + `WordSearchSettingsDialog.tsx` (the cog-sheet pattern this header follows); `src/hooks/useBlockEdgeSwipe.ts` |
 | Two-finger (multi-touch) taps | `src/games/match-speed/MatchSpeedCard.tsx` (the card `Box`'s `onPointerDown`); `src/games/match-speed/MatchSpeedBoard.tsx` (`selectedIdRef` / `setSelected`, `findCard`, `handleTap`) |
 | Card sizing (2.4:1) | `src/games/match-speed/MatchSpeedBoard.tsx` (`gridElRef` / `cardHeight` measurement block); `constants.ts` (`CARD_ASPECT`, `ROW_GAP_PX`, `COL_GAP_PX`) |
-| Registry, minute points | `src/games/registry.ts`; `src/constants.ts:13-31` |
+| Registry, minute points | `src/games/registry.ts`; `src/constants.ts` |
 | Win badge | `src/hooks/useGameWins.ts` |
 | Pure-selection precedent | `src/games/bubble-match/spawnSelection.ts` |
 

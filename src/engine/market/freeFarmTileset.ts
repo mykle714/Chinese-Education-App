@@ -49,6 +49,17 @@ export type PlayerState = 'idle' | 'walking';
 export type WalkwayDirection = 'ew' | 'ns';
 
 /**
+ * Board-pattern variations the pack authors per direction
+ * (`plank_{dir}_{1..3}_…`), in canonical order.
+ *
+ * Lived in `./walkway` until that module was deleted: its `buildWalkway()` run-layer
+ * had no callers once `WalkwayLayer` was removed, and its far-end cap rule is now
+ * re-implemented — per neighbour rather than per run — by
+ * `farmTerrain.ts#plankRenderUrl`. This constant was the only surviving export.
+ */
+export const PLANK_VARIATIONS = [1, 2, 3] as const;
+
+/**
  * Plank end-cap vocabulary. `center` is the flat mid-run tile; the pack authors an
  * end cap only on each direction's FAR face — `eastEdge` for an `ew` run (its
  * east/+isoX end), `northEdge` for an `ns` run (its north/+isoY end) — mirroring the

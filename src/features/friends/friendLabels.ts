@@ -27,7 +27,7 @@ export function friendsSinceLabel(friendsSince: string | null): string {
 /**
  * The leaderboard subtitle: "20h 40m · 🇨🇳 CN".
  *
- * The FIGURE is the NET wallet — `user_language_points.totalMinutePoints`, which the
+ * The FIGURE is the NET wallet — `user_languages.totalMinutePoints`, which the
  * inactivity penalty debits (docs/STREAK_EXPIRATION_CRON.md) — not the monotonic
  * `lifetimeMinutesEarned`. Keep that in mind when changing what this formats, because
  * the two figures drift apart for any learner who has ever been penalised.

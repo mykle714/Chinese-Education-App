@@ -3,10 +3,11 @@
 A weekly head-to-head between two friends: agree on a set of words on Monday, study
 them all week, then play the same three games against that set and compare scores.
 
-**Status: DESIGN / DRAFT.** Nothing here is built. No migration has been written and
-no table exists yet — every table and column below is a **proposal awaiting
-confirmation** (§ 11 collects the open questions). This document is the spec the
-implementation will be written from, not a record of what shipped.
+**Status: DESIGN / DRAFT.** Nothing here is built and no migration has been written.
+The **data model (§ 9) is signed off** as of 2026-08-16 — the tables, columns and index
+change are approved and may be implemented as written; everything else remains a spec
+(§ 11 collects what is still open). This document is what the implementation will be
+written from, not a record of what shipped.
 
 ---
 
@@ -30,6 +31,243 @@ Two variants, chosen by the challenger right after picking the friend:
 
 Everything else — the timeline, the temp decks, the three games, the scoring, live
 mode, expiry — is shared between the two variants.
+
+### How many at once
+
+**One challenge per friend pair per week, and at most six active at a time.** Alice may
+challenge Bob, Carol and Dan on the same Monday and may simultaneously be challenged by
+Erin — but she may not be in more than **six live challenges** at once
+(`MAX_ACTIVE_CHALLENGES = 6`). Two limits doing two different jobs: the pair rule stops
+one friendship generating noise, the count stops the week itself becoming unmanageable
+(six challenges is six decks and up to eighteen rounds to play in one weekend — well past
+the point where any of them gets real preparation).
+
+Three rules make the cap behave (Q65):
+
+* **It counts challenges you are *committed* to** — ones you issued that are still
+  pending, plus ones you accepted — in either role.
+* **Incoming invitations do not count until you accept.** This matters: if pending
+  invitations consumed slots, a single friend could fill your quota with invitations you
+  never asked for and lock you out of challenging anyone. Instead the cap is checked
+  **twice** — when you issue, and again when you accept — so it is only ever spent by
+  your own decisions.
+* **It is per (user, language)**, like decks, minute points (migration 130) and the vet
+  layer. A learner studying Chinese and Spanish may have six of each; their Chinese week
+  and their Spanish week are separate weeks in every other respect. A single account-wide
+  budget was rejected because it would be the **only** place in the app where two
+  languages compete for a resource — starting a Spanish challenge could be blocked by
+  Chinese ones, which no other feature does.
+
+At the cap, the friend row's **Challenge** control is disabled with a stated reason
+("you're in 6 challenges this week"), not silently absent — this is the one unavailable
+state that is genuinely the user's own doing, so unlike Q39 and the block it should
+explain itself.
+
+Consequences the design must carry:
+
+* A player can hold **several challenge decks at once**, so the `/decks` "Challenges"
+  section (§ 4) is a list, not a single tile, and must stay tidy at its worst case of
+  **six** entries — which is exactly why the cap is six rather than open-ended.
+* The results surface is a **list of this week's challenges**, not one page.
+* The uniqueness rule is `(challengerId, challengeeId, week)` **unordered** — Bob
+  cannot counter-challenge Alice in a week she already challenged him. Enforce with a
+  normalised pair key (`least(a,b), greatest(a,b)`), the same trick `friendships`
+  already uses for its one-row-per-pair model.
+* Q30 (deck-name collisions) is **not** eliminated by this rule — it only pushes the
+  collision across weeks, where a `vs Bob` deck from last week may still be alive.
+
+### Where it lives in the app
+
+A new **Challenges page reached from the Friends page** — a NodePage under the friends
+drill-in ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md)), sibling to `/friends/sent`
+and `/friends/requests`, e.g. `/friends/challenges`. It is the single surface for the
+whole lifecycle: invitations to answer, accepted challenges awaiting Friday, the test
+entry point, and finished results. No new home-hub row and no push infrastructure — the
+badge count rides along with the friends payload the hp Friends row already fetches,
+which is what makes "you have a challenge" discoverable at all given there are no
+notifications ([FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md)).
+
+**The page is a list of friends, not a list of challenges.** The friend is the unit;
+each row carries everything about your standing with that person:
+
+```
+ ┌─────────────────────────────────────────────┐
+ │ [History ▸]                                 │   ← full log, top of page
+ ├─────────────────────────────────────────────┤
+ │ Bob            👑            Play test  ▸   │   ← accepted, Friday open
+ │ Carol                     Review words  ▸   │   ← she challenged you, pending
+ │ Dan            👑              Challenge    │   ← nothing active
+ │ Erin                       Waiting on her   │   ← you challenged, pending
+ └─────────────────────────────────────────────┘
+```
+
+* **One row per friend**, always present, whether or not a challenge is active. The row
+  is the challenge's whole lifecycle: *Challenge* → *Waiting on them* / *Review words* →
+  *Play test* → *See results*. There is never a second place to look.
+* **Reigning champion** (👑) marks whoever won the pair's **most recent resolved**
+  challenge. It sits on the row as a standing claim, and the next challenge is framed as
+  taking it. A `no_contest` or a draw leaves the previous champion in place — the crown
+  changes hands only when someone wins.
+* **No lifetime W–L anywhere.** Deliberate: a running record makes a losing streak a
+  reason to stop playing, and the crown already supplies the rivalry. The data is stored
+  regardless, so a record can be added later if it is ever wanted.
+* Issuing starts from the friend's row (**Challenge**), so the friend is chosen before
+  the variant, matching the flow in § 3.
+
+Because rows are per friend and the page is language-scoped (below), the row set is
+"friends who study this language" — a friend who studies only Spanish does not appear on
+the Chinese challenges page. See Q39.
+
+### How a challenge is announced: in-app badges only (Q48)
+
+There is **no notification of any kind** — no push, no email, no native badge. A pending
+challenge is announced by a **badge chain the user has to walk into**: a dot on the hp
+**Friends** row → a dot on the **Challenges** row inside the friends drill-in → the
+friend's row itself showing *Review words*. Every one of those counts rides the payload
+the surface already fetches; no new endpoint and no delivery infrastructure.
+
+The accepted cost, stated plainly rather than designed around: **a player who does not
+open the app between Monday and their Wednesday 04:00 never learns the challenge
+existed.** It expires (`expired`, § 6) in silence. This is the same failure mode as Q39
+and it has the same shape — the app can only speak to a user who is already looking at
+it. Two mitigations that do *not* require new infrastructure:
+
+* the badge must survive across sessions until the challenge is resolved, so a single
+  app open at any point in the two-day window is enough;
+* the friends payload must carry the count even when the user's active language is not
+  the challenge's, or the language scoping (Q38) hides the badge as well as the row.
+  ⚠️ This is the one place where language scoping must be **deliberately violated** —
+  the badge is a "look over here" signal, not a challenge listing.
+
+Building push notifications is the obvious upgrade and is deliberately **not** a
+prerequisite: it is an independent project that would block this feature on it, and the
+weekly rhythm (§ 2) is slow enough that a single app open per week is a reasonable
+assumption for an engaged learner.
+
+### Switching language mid-challenge (Q66)
+
+A player who accepts a Chinese challenge on Monday and spends the week in Spanish
+**cannot see it** — the challenges page is language-scoped (Q38), so their zh challenge,
+its deck and its test entry point are all invisible until they switch back. Nothing is
+lost; the challenge is untouched and one switch reveals it.
+
+This is deliberate consistency rather than a special case: the deck is already invisible
+in Spanish, the words are zh vet rows, and the minute points it earns are zh points.
+Making the *challenge* the one cross-language surface would be the anomaly.
+
+Two rejected alternatives and why: **auto-switching the language when the player taps
+the test** would let a game silently change a global account setting; **showing
+challenges in every language** would contradict the partitioning every other feature
+uses.
+
+⚠️ The accepted risk: a player who switches away for the week and forgets simply misses
+their window, and the challenge ends `no_contest`. The badge (Q48) is the mitigation —
+it deliberately ignores language scoping, so it still lights up. That is the one thread
+back to a challenge you cannot otherwise see, which makes the badge's scoping exception
+load-bearing rather than cosmetic.
+
+### Empty state (Q67)
+
+A user with no friends sees a **bare empty state** — "No challenges yet." — not a
+feature explainer and not a hidden row. Consistent with every other empty surface in the
+app; teaching the feature is not this page's job, and a row that vanishes until you have
+a friend would make the feature undiscoverable for exactly the people who have not found
+friends yet.
+
+### Withdrawing, declining, and not wanting to be challenged
+
+* **Withdraw** — the challenger may cancel a `pending` challenge at any time before it
+  is accepted, from the same friend row that issued it. The row is deleted outright (no
+  `withdrawn` status, no history entry): nothing was agreed, no decks exist, so there is
+  nothing to record. This is also the only repair for a challenge issued into the wrong
+  language (Q39) or to the wrong friend.
+* **Decline** — the challengee may end a `pending` challenge explicitly rather than
+  letting it expire. Declining **blocks a new challenge to that pair until the next
+  Monday**, so the weekly rhythm doubles as the cooldown and no separate rate limiter is
+  needed. (Any Mastered writes made while reviewing the set persist — Q25.)
+* **"No challenges with this friend"** — a per-friend toggle on the friend row, a
+  durable opt-out independent of the weekly cooldown.
+
+  **Each player owns their own flag; the effect is symmetric.** Either player may set a
+  block independently, and **a challenge goes through only if neither has blocked**.
+  Setting a block therefore stops your own outgoing challenges to that person as well as
+  their incoming ones — it means *"I do not want to play challenges with this person"*,
+  not *"don't let them challenge me"*. That is the honest reading: a challenge is a
+  mutual commitment to three games, so opting out of them with someone is a statement
+  about the pair.
+
+  This separates **ownership** from **effect**, which is what makes the flag safe:
+  each side can only ever clear its own, so a blocked person cannot unblock themselves,
+  and someone who blocks is never silently unblocked by the other party changing their
+  mind.
+
+  Storage: **two booleans on `friendships`**, one per endpoint —
+  `"requesterChallengesBlocked"` / `"addresseeChallengesBlocked"`, both
+  `NOT NULL DEFAULT false`, matching the table's existing `requesterId`/`addresseeId`
+  endpoints (`database/migrations/138-create-friendships.sql`). Two columns rather than
+  one because they are two independent facts held by two people; the *reading* is
+  `NOT (requesterBlocked OR addresseeBlocked)`, and that OR is where the symmetry lives.
+  They belong on `friendships` because a block is a property of the relationship, not of
+  either user. ✅ Signed off.
+
+  ⚠️ The block is **not disclosed to the blocked friend** — their row shows no Challenge
+  control and no reason. That is intentional (a visible "Bob blocked you" is worse than a
+  quiet absence) but it does mean a user can be confused about why a friend is
+  unchallengeable, which is the same ambiguity Q39 creates. Both point at the same UI
+  need: a neutral "not available" line rather than a bare missing button.
+
+### Challenge history
+
+A **History** button at the top of the challenges page opens the full, **paginated** log
+of every challenge the user has played — the durable record § 6 promises, made
+browsable. Each entry shows the opponent, the week, the word set, both totals with
+breakdowns, and the outcome.
+
+Controls:
+
+| Control | Behaviour |
+|---|---|
+| Sort | by time (default: most recent first) |
+| Filter: friend | one opponent |
+| Filter: game | challenges that included a given game |
+
+The game filter is why each entry in `study_challenges.rounds` stores `gameId` rather than
+only the sequence on the challenge row — filtering "challenges where I played Word
+Search" is a join on the rounds table, and the sequence column alone would force a jsonb
+scan. Pagination is keyset on `completedAt`, not offset, since the log only grows.
+
+The history is **not** language-scoped: it is a record of what you did, and hiding half
+of it behind the active language would make a page whose whole purpose is completeness
+lie about it.
+
+### One language per challenge — the challenger's active language
+
+A challenge is **scoped to a single language**, and that language is simply the
+challenger's **currently active** one. No language picker in the invite flow.
+
+The challenges page is likewise **language-scoped**: the challengee sees an invitation
+only while that language is active. A Chinese challenge is invisible to a friend
+sitting in Spanish; switching to Chinese reveals it. This is the same per-language
+partitioning that decks, minute points (migration 130) and the whole vet layer already
+use, so it is consistent rather than special-cased. The **page** is scoped; the
+**badge** deliberately is not (§ 1, Q48), because a badge that hid cross-language
+challenges would be the very thing that makes them undiscoverable.
+
+**Consequence (Q39, settled): the silent expiry is accepted.** A challenger may issue
+into a language the challengee does not study; the challengee never sees it and it
+expires (`expired`) with no feedback to either side. Nothing warns and nothing blocks.
+Rationale: both alternatives need a *friend's studied-languages* list that no endpoint
+exposes today, and adding one to prevent an uncommon, harmless dead end is not worth the
+payload. The damage is bounded — an expired challenge costs nothing, creates no deck,
+and the pair is free to try again the following Monday.
+
+Because of Q48, the challengee's badge *does* light up even in the wrong language, so
+the practical outcome is softer than "invisible": a curious user who taps through and
+finds an empty challenges page has at least been given a thread to pull. Revisit only if
+this is actually reported.
+
+Cross-language pairing is the exception, and only for **different-word** challenges
+(§ 8), where each side plays their own language by construction.
 
 ---
 
@@ -68,6 +306,25 @@ Consequences that the design must accept rather than paper over:
 Boundaries are computed on demand from a stored UTC anchor plus each user's timezone —
 **not** stored as pre-computed local timestamps, which would go stale the moment a
 player travels.
+
+### If a player's timezone changes mid-challenge (Q50)
+
+**Always use the current `users.timezone`.** Deadlines are recomputed from it on every
+read; nothing about a player's zone is snapshotted onto the challenge row. This is the
+same rule the streak cron already follows, it needs no new columns, and it means a
+player who fixes a wrong timezone setting immediately sees correct deadlines instead of
+being stuck with a wrong one for a week.
+
+Consequences accepted rather than engineered away:
+
+* **A window can move under a player's feet.** Travelling east shortens the remaining
+  window; travelling far enough west can make an already-open window *retroactively
+  closed*, so the player is told the test is over without having played. Rare, and the
+  outcome is `no_contest` (§ 6) rather than a loss, so nobody is scored down for it.
+* The two players' windows shift independently. Expiry still fires on the **later** of
+  the two, so a traveller cannot time their opponent out.
+* Because boundaries are recomputed rather than stored, **no backfill or repair job is
+  needed** when a timezone changes — the next read is simply correct.
 
 ---
 
@@ -119,6 +376,32 @@ blocked on a count. Widening is symmetric so it does not quietly become one play
 challenge; if the supply runs out entirely the challenge is issued with the short set
 (and, being short, is worth fewer points to both sides equally).
 
+**New players are never gated.** There is no minimum sorted-card count to issue or
+receive a challenge. A player whose `estimateLevel` is still a cold-start guess simply
+gets a band anchored at that guess; the "in both libraries" preference (step 3) finds
+nothing and falls straight through to commonality, which is the right answer anyway — the
+most common words are the correct challenge set for a beginner. Their filler comes from
+step 5 of the ladder (§ 5.2), i.e. lent cards, which is precisely what lending is for.
+
+This follows [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md)'s rule that nothing blocks on
+card count, and it keeps the friend row's **Challenge** control from being mysteriously
+absent — the ambiguity Q39 and the per-friend opt-out already threaten to create. The
+accepted cost is that a beginner challenging a veteran in **same-word** mode will
+probably lose badly; the honest fix for that is different-word mode, which exists for
+exactly this mismatch (§ 8), not a gate.
+
+**Past challenges are not excluded.** There is no "words we already contested" filter —
+the candidate query never looks at past challenge word sets. It does not need to: a word
+that stuck was banded up by the marks the test itself wrote (§ 5.7) and is excluded by
+step 2 already, and a word that *didn't* stick is exactly the word that should come back.
+The band filter is the memory. This keeps the candidate query dependent on one thing —
+current mastery — rather than on challenge history, and avoids accelerating the
+band-widening (above) for pairs who play every week.
+
+The visible consequence is that a rematch can legitimately re-offer a word from last
+week if neither player learned it. That reads as the system noticing, not repeating
+itself.
+
 ### 3.2 Confirmation flow
 
 Both players run the **same** screen, at different times:
@@ -157,6 +440,25 @@ challengee:  [see the 10]   → mark any "I already know this" → replaced → 
   not get a second veto. (Q7 — alternative is a round trip, which costs a day out of a
   one-week window and is probably not worth it.)
 * No word may repeat within the set, and the set is exactly 10 (`CHALLENGE_WORD_COUNT`).
+
+**There is no limit on strikes.** A player may reject all 10, and the 10 replacements
+after that, indefinitely. No cap, no "you have 3 left" copy, no special state — the
+mechanism polices itself, because **every strike writes Mastered onto the striker's own
+card**. Reshuffling toward an easier set costs you a permanently inflated mastery record
+and removes those words from discover and from every future challenge. The player who
+games the picker is the only one harmed by it.
+
+Two things this leaves the implementation responsible for:
+
+* The replacement query re-runs per strike against an ever-growing exclusion list, so it
+  must be **cheap and paged**, not a full re-rank of the candidate pool each time.
+* The supply can genuinely run out for a determined striker; when it does, the
+  band-widening rule (§ 3.1) applies exactly as it does at first build, and if even that
+  is exhausted the set is short — the same graceful degradation, never a refusal.
+
+⚠️ Worth watching after launch: the strike is one tap and its consequence (permanent
+Mastered) is invisible at the moment of tapping. If mastery data starts looking inflated,
+the fix is **clearer copy on the strike gesture**, not a cap.
 
 ### 3.3 On accept
 
@@ -204,9 +506,15 @@ A challenge's word set is delivered to each player as a **deck** so every existi
 surface — the flp, the games' collection selector, the collection view page — works
 against it with no new plumbing ([DECKS_FEATURE.md](./DECKS_FEATURE.md) § 3).
 
-A temp deck is a `decks` row with a new flag, proposed as **`decks.origin`**
-(`'user' | 'challenge'`, default `'user'`) plus a nullable
-**`decks."challengeId"`** back-reference:
+A temp deck is a `decks` row carrying exactly **one** new column:
+**`decks."editMode"`** (`'custom' | 'preset'`, default `'custom'`).
+
+There is **no `challengeId` on `decks`.** The link runs the other way — the challenge
+row holds its two generated deck ids (§ 9) — because a deck does not need to know why it
+exists, and a column naming a foreign feature is not intrinsic to a deck. `editMode` is:
+it describes what the user may do to this deck, which is a property of the deck itself.
+It also generalises past this feature — any future generated set (a curated pack, a
+weakness drill) is `preset` without a second flag.
 
 | Property | User deck | Temp (challenge) deck |
 |---|---|---|
@@ -214,23 +522,39 @@ A temp deck is a `decks` row with a new flag, proposed as **`decks.origin`**
 | Renamable / deletable by user | yes | **no** |
 | Card add/remove by user | yes | **no** |
 | Counts against `MAX_DECKS_PER_LANGUAGE` (100) | yes | **no** |
-| Lifetime | until deleted | until the **Monday 04:00 after the challenge resolves** |
+| Lifetime | until deleted | **per player**: dropped the moment that player finishes the test, else at their window close (Monday 04:00 local) |
 
-**Lifetime:** the deck survives the results week and is then dropped by the same sweep
-that expires challenges. Nothing meaningful is lost — deleting a deck never deletes a
+**Lifetime:** the deck exists for the *preparation*, not for the record. It appears on
+accept, carries the player through the Tuesday–Thursday study days and into the test,
+and is dropped **as soon as that player completes their third round** — its job is done
+and leaving it on the decks list is clutter. A player who never takes the test loses the
+deck when their window closes.
+
+The drop is therefore **per player, not per challenge**: Alice's deck can disappear
+Friday evening while Bob's is still live on Sunday. This falls out of the rule and is
+correct — the deck is a personal study aid, not shared state.
+
+Nothing meaningful is lost — deleting a deck never deletes a
 card or a mark ([DECKS_FEATURE.md](./DECKS_FEATURE.md) § 1), the words stay on the
-account, and the set itself is stored permanently in `study_challenge_words`, so
+account, and the set itself is stored permanently in `study_challenges.words`, so
 challenge history renders from the history table and never depends on the deck existing.
 If a "study this old set again" action is ever wanted, it rebuilds a deck from history
 rather than requiring one to have been kept.
 
+**Pre-study is the point.** Between accept and Friday the deck is fully playable — flp,
+any game, any drill. Both players get the same three days, so it is symmetric, and it
+converts the competition into a reason to study. The test therefore measures
+**preparation plus performance**, deliberately, not raw ability. No gating of games on
+the deck before Friday: a player could study the same words from their library anyway,
+so a block would frustrate without protecting anything.
+
 **"Their own pool of deck slots" means exactly one thing: they do not detract from the
 100.** There is no user-visible slot capacity to build — the count query behind
-`MAX_DECKS_PER_LANGUAGE` simply filters to `origin = 'user'`. A learner in three
+`MAX_DECKS_PER_LANGUAGE` simply filters to `editMode = 'custom'`. A learner in three
 challenges still has all 100 of their own deck slots available.
 
 Enforcement is one guard in `DeckService`: every mutation (`rename`, `delete`,
-`setMemberships`, and the membership PUT) rejects a deck whose `origin <> 'user'` with
+`setMemberships`, and the membership PUT) rejects a deck whose `editMode <> 'custom'` with
 a `ValidationError`. Reads are unchanged, so a temp deck feeds the collection selector
 and the collection view page exactly like any other deck.
 
@@ -249,9 +573,28 @@ entirely** when the user has no active challenge deck, exactly as the `Mastered`
 is when no reading/writing goal is set.
 
 **Each deck is named after the opponent — `vs Bob`** — because that is what the learner
-actually remembers about a set of ten words. (The name is generated, so the usual
-per-(user, language) unique-name index needs a collision answer: two challenges against
-the same friend in the same language can't both be `vs Bob`. See Q30.)
+actually remembers about a set of ten words.
+
+**Duplicate names are allowed for challenge decks (Q30).** Two live challenges against
+the same friend in the same language may both be called `vs Bob`; they are distinguished
+by the challenge that owns them (§ 9) and, for the user, by the **friend's icon on the
+deck tile**. The name is not the identifier.
+
+Rendering that icon needs a `deckId → opponent` map. Because `decks` carries no
+back-pointer, the `/decks` payload builds it from the other side: it already loads the
+user's active challenges to render the Challenges section, so it reads their
+`presetDeckIds` and inverts them in memory. Active challenges are few (at most one per
+friend), so this is cheap and needs no jsonb query.
+
+⚠️ **This requires relaxing an existing index.**
+`decks_user_language_name_uniq` (`database/migrations/141-create-decks.sql`) is a
+plain unique index on `("userId", language, lower(btrim(name)))`. It must become a
+**partial** index — `WHERE "editMode" = 'custom'` — so authored decks keep their uniqueness
+guarantee (its stated reason still holds: two decks called "Food" are indistinguishable
+in the add-to-deck checkbox menu) while generated challenge decks are exempt. Challenge
+decks are safe to exempt precisely because they never appear in that menu: they cannot
+be added to, so there is nothing to mistakenly tick. Dropping and recreating the index is
+part of the same migration that adds `decks."editMode"`.
 
 **There is no lock badge.** The restriction is expressed by the *absence* of controls:
 no `+` on the section, no rename or delete on the deck's collection view, no add-to-deck
@@ -300,6 +643,50 @@ comparison across different games is not a comparison.
 Word Search being zh-only means an es-vs-es challenge has **two** eligible games today.
 Same constraint, sharper, in cross-language challenges — § 8.
 
+### 5.1b The game sequence is hidden until Friday (Q63)
+
+`gameSequence` is drawn at **issue** time (§ 9) but is **not shown to either player until
+their test window opens**. The invitation states the words and the format; it does not
+state the games. Neither does the accepted-and-waiting state.
+
+Why draw early but reveal late: drawing at issue keeps one draw shared by both players
+and lets the pair be scheduled as a unit, while hiding it keeps the accept decision about
+*the person and the words* rather than about game preferences. A visible sequence invites
+declining because you dislike one game, which would quietly turn the draw into a veto.
+
+⚠️ **This must be enforced on the server, not in the UI.** `gameSequence` must be
+**omitted from the API payload** for any challenge whose window has not opened for the
+requesting player — a client that simply declines to render it still ships the answer to
+anyone who opens the network tab. This is the only field in the feature with a
+time-gated visibility rule, so it needs an explicit note in the serializer.
+
+Note this does **not** weaken pre-study (Q36): the deck is the preparation, and it is
+fully playable in any game the learner likes all week. What is hidden is only which three
+count.
+
+### 5.1a Rounds are strictly sequential, one attempt each
+
+Round *n+1* unlocks only when round *n* is submitted, and **a submitted round is final** —
+no replay, no restarting the test. The player may leave between rounds and come back
+(the test is a three-day window, not a sitting), and may pause mid-round (§ 5.8), but
+they cannot re-roll a score.
+
+This is what makes the running total in the between-games scoreboard (§ 5.5) mean
+something: it is the real, committed score, not a provisional best-so-far. It also keeps
+the async test structurally identical to the live one, which matters because live mode
+(§ 7) is the same three rounds with a confirmation gate between them — if async allowed
+replays, the two modes would be scored on different terms and no result would be
+comparable.
+
+The cost is accepted: a player who has one bad round carries it. That is what "a test"
+means, and the three-day window plus the pre-study days (§ 4) are the compensating
+generosity.
+
+Server-side this is one invariant: a round row is **insert-only**. `POST` of a round that
+already exists is rejected, not upserted, and the server refuses a submission for round
+*n+1* until *n* is present — which also means a tampered client cannot skip straight to
+the last round.
+
 ### 5.2 Provisional mode: `mastered-first`
 
 Games already lend cards when the pool is short
@@ -313,7 +700,28 @@ the surface:
 | Mode | Fill order | Used by |
 |---|---|---|
 | `default` | nearest level → commonality → id | everything today |
-| `mastered-first` | the player's **Mastered** cards first (most recently mastered first — `masteredAt`, migration 142), then fall back to `default` | study challenge |
+| `mastered-first` | descend the player's own utcm bands — **Mastered → Comfortable → Target → Unfamiliar** — and only then fall back to `default` lending | study challenge |
+
+**The full ladder.** `mastered-first` is not "mastered, else lend"; it is *exhaust the
+player's own cards, hardest-known first, before borrowing*:
+
+1. **Mastered** — most recently mastered first (`masteredAt`, migration 142)
+2. **Comfortable**
+3. **Target**
+4. **Unfamiliar** (still the player's own sorted cards)
+5. **`default` lending** — provisional rows, only when the player's whole library is
+   exhausted
+
+Within each band the order is the same as `default`'s tiebreak (commonality, then id).
+The contested 10 are removed from the pool first, so a contested word can never also
+appear as filler. A player with a real library never reaches step 5; a brand-new player
+(Q47) reaches it immediately, which is exactly the never-block behaviour
+[PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) already guarantees.
+
+Descending the bands rather than jumping straight to lending matters because filler
+should be **the player's easiest available material**, and the player's own Unfamiliar
+card — one they chose to sort — is still more familiar than a word the server lent them
+sight-unseen.
 
 `mastered-first` exists so the filler is *not* a source of difficulty: a challenge is
 meant to measure the 10 contested words, and padding the board with words the player
@@ -322,8 +730,16 @@ Filler the player already owns is near-free points for both sides — which is w
 is worth **20 points instead of 100** (§ 5.4).
 
 The mode is a parameter on `ProvisionalCardService.ensureBaseline` / `lendCards` and
-travels on the pool request as `?provisionMode=`. When a player has no mastered cards,
-`mastered-first` degrades silently to `default`.
+travels on the pool request as `?provisionMode=`. Every step degrades silently to the
+next, so no caller ever has to check whether a player has mastered cards.
+
+**All 10 contested words must appear in every round.** Filler pads the board out to the
+game's natural size; it never displaces a contested word. This is what makes the
+contested ceiling of 1000 points real in all three games and what makes the rounds
+comparable to each other — a game whose natural board is smaller than 10 must run
+longer in challenge mode rather than drop words. The one deliberate exception is Match
+Speed, whose rolling buffer expresses this as an alternation rule instead (§ 5.3), and
+whose alternation lapses to filler only once **all 10 have been dealt**.
 
 **Vocabulary (settled).** The cards a challenge game pads with are not "provisional" in
 the lending sense — they are usually the player's own mastered cards. So:
@@ -391,6 +807,13 @@ Per-game rules as specified:
 | survival bonus | **+500** the moment the ceiling starts dropping, decaying **−100 every 2 s** (floor 0) |
 | bonus if the run is **lost** | **0** |
 
+> **The bonus is deliberately large and deliberately all-or-nothing (Q68).** At up to
+> +500 against +1000 for ten contested matches, surviving is worth roughly a third of the
+> round, and losing forfeits it entirely. That is not an imbalance to tune away: Bubble
+> Match *is* a survival game, and a challenge score that ignored whether the player
+> survived would be scoring a different game than the one they played. The cliff is also
+> what makes the last thirty seconds tense, which is the reason to draw this game at all.
+
 **Word Search (Pinyin)**
 
 | Event | Points |
@@ -445,15 +868,104 @@ Every line item is derived from the same `ChallengeScoringSpec` the game scored 
 the breakdown can never disagree with the number. In **live** mode this card also shows
 the opponent's breakdown side by side and both players must confirm to advance (§ 7).
 
+In **async** mode this card shows only the player's own numbers. The opponent's score —
+per round or total — is not revealed until **both** players have finished all three
+rounds (§ 6).
+
+### 5.6 Score authority: the client reports, the server stores
+
+The game already tracks its own score as it plays; at round end the client POSTs the
+**total and the breakdown** and the server records them verbatim into
+`study_challenges.rounds`. The server does not recompute.
+
+This matches how games report today and keeps the scoring spec in one place (the game),
+rather than duplicating it into a server-side evaluator that must be kept in step. The
+trade-off is accepted knowingly: **the score is unverifiable** — a modified client can
+post any number. That is tolerable because a challenge is between two people who chose
+each other as friends, and the mode is already on the honor system for "I already know
+this word" (§ 8).
+
+Two things this decision makes the *client* responsible for, which must not be
+overlooked when the games are built:
+
+* The breakdown must be **derived from the same accumulator as the total**, never
+  recomputed for display, or the two can disagree on screen with nothing to arbitrate.
+* Elapsed-time penalties must use **accumulated active time** (§ 5.8), since the server
+  has no independent clock on the round to fall back on.
+
+If verification is ever wanted, the upgrade path is to post the round's *events* and
+score them on the server — the per-round row shape does not have to change for that.
+
+### 5.7 A challenge round is normal play
+
+Challenge games write **normal typed marks** and earn **normal minute points**. There is
+no scoring-only mode and no suppression flag: a match in round 2 of a challenge moves the
+same recognition track that a match in a casual Bubble Match run would. The competition
+is a study session that happens to be scored twice — once for mastery, once for the
+challenge.
+
+Design consequences, stated so nobody is surprised by them later:
+
+* **Contested words gain mastery during the test.** A player can walk out of a challenge
+  with several of the ten words banded up. That is the feature working, not a leak.
+* **A word can cross into Mastered mid-test.** Banding is a service-layer compute over
+  `typedMarkHistory`, so round 3 may see a word that was Unfamiliar in round 1. Nothing
+  in the scoring reads the band — contested/filler is fixed when the round's board is
+  generated (§ 5.4) — so the score is unaffected. Do **not** later make scoring
+  band-dependent without revisiting this.
+* **The `mastered-first` filler pool shifts between rounds** for the same reason. Each
+  round provisions its board independently at start, so this is consistent, just not
+  stable across the test.
+* **Challenges feed the streak.** Playing your Friday test counts toward the day's
+  3-minute threshold like any other session. No double-crediting exists to guard
+  against — minute points are earned by the games, and the challenge adds none of its
+  own.
+
+### 5.8 Leaving the app pauses the game — everywhere
+
+A player who backgrounds the app mid-round must find the round exactly as they left it
+when they return. This is **not** a challenge-specific rule: it is a **new global
+requirement on every game in the app**, and it removes async abandonment as a scoring
+question entirely — there is no "abandoned round" to score, because rounds do not run
+while nobody is watching.
+
+What it requires:
+
+* A shared visibility hook (`visibilitychange` / `pagehide`) that every game mounts,
+  which freezes the round: timers stop accumulating, ceilings stop dropping, per-second
+  penalties stop counting. Games must express elapsed time as **accumulated active
+  time**, not `now − startedAt`, or the pause is cosmetic.
+* A resume affordance on return rather than an instant unfreeze, so the player is not
+  dropped back into a live timer they cannot see yet.
+* **Live mode is the deliberate exception.** There, leaving does *not* pause — the round
+  runs on without the deserter, by the rule already specified in § 7, because pausing
+  would let one player freeze the other's game.
+
+Because it is global, this belongs in the games framework, not here:
+→ **[docs/GAMES_FEATURE.md](./GAMES_FEATURE.md) needs a section on pause-on-background**
+before this feature is built, and every existing game must be audited against it. The
+per-second scoring in Word Search (−10/s after 1:00) is the loudest thing this rule
+touches — it is currently wall-clock.
+
 ---
 
 ## 6. Results, winner, and no contest
 
 * Async: once **both** players have completed all three games, the results page opens
-  for both. Neither can see the other's breakdown before finishing their own — a
-  known target score would change how the last game is played.
+  for both. **Nothing of the opponent's performance is visible until then** — not the
+  total, not a per-round score, not "Alice is winning". Whoever plays second must play
+  against the game, never against a number, or the mode quietly rewards playing late.
+  The only opponent state a player may see beforehand is **progress**: "Bob hasn't
+  played yet" / "Bob has finished", which is needed to know whether the challenge is
+  waiting on you.
 * The results page declares a **winner** at the top (higher total), then shows both
-  players' per-game breakdowns side by side. Ties → **draw** (Q16: tiebreak or plain
+  players' per-game breakdowns side by side. **That is all it shows (Q64)** — totals and
+  per-game scores, with **no per-word comparison**. A word-by-word table would be a nice
+  study artifact, but it requires per-word outcomes in every game's stored breakdown
+  (§ 5.6), which means every game must emit them and keep emitting them forever — a
+  large permanent tax on the `challengeScoring` contract for a screen nobody has asked
+  for. It stays addable later: the breakdown is jsonb, so a game may enrich it without a
+  migration. Ties → **draw** (Q16: tiebreak or plain
   draw? draft: plain draw).
 * **No contest**: if the test window closes with either player incomplete, the
   challenge ends `no_contest`. Not a forfeit — a player who finished still sees their
@@ -462,15 +974,67 @@ the opponent's breakdown side by side and both players must confirm to advance (
   set both players agreed to.)
 * **Every challenge is recorded permanently**, including the words and the outcome, so
   a pair's history is browsable. That is what makes the word set worth storing on the
-  challenge row rather than only in the temp decks (which may be cleaned up — Q9).
+  challenge row rather than only in the temp decks (which are cleaned up — Q9/Q36).
+
+### Winning pays nothing (Q51)
+
+**The crown on the friend's row is the entire prize.** No bonus minute points, no Night
+Market payout, no leaderboard entry, no tdp strip. Three reasons, in order of weight:
+
+1. **Minute points are the economy.** They drive the streak, the inactivity penalty
+   cron, and Night Market occupancy. Any challenge-conditional payout is farmable by two
+   colluding friends trading wins every week, and the fix for that (throttles, anti-abuse
+   heuristics) costs far more than the incentive is worth.
+2. **The round already pays.** Challenge rounds are normal play (§ 5.7) — normal typed
+   marks, normal minute points. So playing a challenge is never worse than playing solo,
+   and no compensation is owed.
+3. **A loss must not cost anything.** With no payout attached, losing is free, which is
+   what makes issuing a challenge to a stronger friend a reasonable thing to do.
+
+Nothing about the challenge appears outside the challenges page and its history log
+(§ 1) — the results page is reached from the friend's row, not from the hp, the tdp, or
+the leaderboard. That also keeps the read paths to one.
+
+### Unfriending ends the challenge
+
+If either player unfriends the other while a challenge is in flight — at any stage,
+pending or accepted or mid-test — the challenge immediately becomes **`no_contest`**,
+both challenge decks are dropped, and no winner is declared. Unfriending withdraws you
+from everything shared with that person; a challenge is not an exception carved out of
+that.
+
+* The unfriend action is **never blocked** by an active challenge. It is a social-safety
+  action and must always succeed on the first tap.
+* Implementation: `FriendService`'s delete path calls into `StudyChallengeService` to
+  resolve in-flight challenges for the pair, in the **same transaction** as the
+  friendship delete, so there is no window in which a challenge outlives its friendship.
+* Marks and words already earned **stay** — the cards are the player's, in the `library`
+  bucket, and are not challenge state (§ 3.3). Only the challenge, its decks and its
+  pending result go away.
+* ⚠️ Accepted knowingly: this is a **rage-quit button**. A player who is losing can
+  unfriend to erase the result. It resolves to `no_contest`, not a forfeit win for the
+  other player, so the escape works. The mitigation is social, not technical — you had
+  to be friends to be challenged, and re-friending is a visible request the other person
+  must accept.
+* A resolved challenge is **untouched** by unfriending: the history entry and the crown
+  survive, because the record is of something that actually happened.
 
 ---
 
 ## 7. Live (synchronous) mode
 
+→ **Designed in full in [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md)** (2026-08-16).
+That document settles Q18–Q21 and supersedes this section wherever the two differ. What
+follows is the summary; go there for the transport, the room model, and the collapse
+rules.
+
 Either player may, during the test window, press **Play live**. That player enters a
 waiting room and the other receives an invitation to join. Once both are in, the three
 games are administered **synchronously**.
+
+⚠️ **Live may be entered only while *both* players have zero recorded rounds.** Rounds are
+strictly sequential with one attempt each (§ 5.1a), so a challenge cannot be half-live.
+Starting async therefore permanently forecloses live for that challenge.
 
 Between games both players see both breakdowns and **both must confirm** to advance.
 
@@ -479,35 +1043,37 @@ Rules for the messy parts:
 | Situation | Behaviour |
 |---|---|
 | A player confirms, then **leaves the app** | their confirmation is **revoked** — the room must not advance into a game one player is not present for |
-| A player leaves **after a game has started** | the game runs without them; they score whatever they had and risk losing |
-| A game with **no natural time limit** | must gain one for live mode, after which it terminates and banks the points earned so far |
-| The invitee never joins | the inviter falls back to async (Q18: after how long?) |
+| A player leaves **after a game has started** | the game runs without them on the server's clock; they score whatever they had banked and risk losing. **No grace period** (Q20) |
+| A game with **no natural time limit** | must gain one for live mode (`GameDef.liveTimeLimitSec`), after which it terminates and banks the points earned so far |
+| The invitee never joins | the waiting room expires after **1 minute** and returns the inviter to the challenge screen — it does **not** fall back to async (Q18) |
 | The window closes mid-session | `no_contest`, same as async |
+| The session collapses **after** a round is banked | the challenge **reverts to async for both players**; banked rounds stand |
 
-⚠️ **This is the largest unbuilt dependency in the feature.** The repo has **no
-realtime transport today** — no WebSocket server, no SSE endpoint, no push
-notifications. Live mode needs, at minimum:
+The repo has **no realtime transport today**. The live doc resolves each of the four
+prerequisites this section used to list as open:
 
-1. a **transport** (WebSocket vs. SSE + POST vs. short polling — Q19);
-2. a **room/session model** on the server (who is in, who has confirmed, which round);
-3. **presence/liveness** — "left the app" must be *detected*, which means heartbeats
-   plus a `visibilitychange` signal, and a grace period so a 3-second reconnect is not
-   a desertion (Q20);
-4. an **invite notification** to a player who is not currently on the challenge screen
-   — with no push infrastructure, this can only reach a player who has the app open
-   (Q21).
+1. **transport** — a WebSocket at `/api/ws`; nginx already forwards the upgrade and there
+   is one backend container, so rooms live in process memory (Q19);
+2. **room/session model** — in-memory only, **no new table** (Q19b);
+3. **presence** — no grace period at all; the game never waits for anyone (Q20);
+4. **invite delivery** — logged as a **Capacitor/native-push demand** in
+   [REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md); on the web it reaches only a
+   player who already has the app open (Q21).
 
-**Settled: live mode is phase 2 and gets its own document** (`docs/STUDY_CHALLENGE_LIVE.md`
-when it is designed). Everything in §§ 1–6 is buildable on the existing
-request/response stack; nothing in § 7 is. This section stays here as the statement of
-intent so the async build does not accidentally foreclose it — concretely, phase 1 must:
+**Live mode is phase 2 and has its own document**
+([STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md)). Everything in §§ 1–6 is buildable
+on the existing request/response stack; nothing in § 7 is. This section stays here as the
+statement of intent so the async build does not accidentally foreclose it — concretely,
+phase 1 must:
 
-* store per-round scores as they complete (§ 9 `study_challenge_rounds`), not only a
+* store per-round scores as they complete (§ 9 `study_challenges.rounds`), not only a
   final total, so a synchronous round-by-round comparison has something to read;
 * keep every game's scoring in a declarative `ChallengeScoringSpec` rather than inside
   the page, so a live round can score the same events server-side;
 * give every game a **run length** the server knows about, since live mode's
-  "the game runs without them" rule needs a deterministic end.
+  "the game runs without them" rule needs a deterministic end;
+* **not implement pause-on-background as unconditional** (§ 5.8) — live mode is its one
+  documented exception, and an unconditional handler makes live unbuildable.
 
 **Live mode may be cross-language** (§ 8) — both players play the same game
 simultaneously in their own language.
@@ -585,20 +1151,39 @@ should be language-agnostic**, and every future recognition/production game that
 widens the cross-language pool. Word Search is the outlier because its grid is built from
 characters.
 
-### 8.4 Still open here
+### 8.4 Settled here
 
-* **Q27 — Set size.** Still 10 each, or may a player choose fewer/more?
-* **Q29 — Who chooses the variant?** Draft: purely the challenger's, stated in the
-  invitation, so the challengee accepts a known format.
+* **Q27 — Set size is fixed at 10** (`CHALLENGE_WORD_COUNT`), not a choice. Set size
+  determines how many points are available, so both players must use the same number
+  anyway — making it selectable would add a negotiation to buy nothing. It is a constant,
+  so it can be changed globally later without a schema or protocol change.
+* **Q29 — The challenger chooses the variant**, stated in the invitation, so the
+  challengee accepts a known format and there is no negotiation round trip. Cross-language
+  pairs are offered **different-word only**, because same-word is impossible for them.
+  This is the one thing the invitation *does* disclose about the format — the games do
+  not (§ 5.1b).
 
 ---
 
 ## 9. Proposed data model
 
-⚠️ **All of the following is proposed and unconfirmed.** Migration numbers start at
-**145** (144 is the highest existing file).
+✅ **The schema below is signed off** (2026-08-16) — the tables, the columns and the
+index change are approved; only the migration number is still floating. Migration
+numbers start at **146** (145 is the `user_languages` rename). ⚠️ [ARENA_FEATURE.md](./ARENA_FEATURE.md) also targets 146+ — whichever ships first takes the number.
 
-### `study_challenges`
+**Guiding rule (Q52):** a table gets a column only when that column is a property of the
+object the table represents. Everything that is a property of *the challenge* lives on
+the challenge — including the word sets, the round scores and the generated deck ids, as
+jsonb — rather than being scattered across the vet and deck tables as foreign
+bookkeeping. This is safe because a challenge is **bounded**: exactly 2 players, 10 words
+each, 3 rounds each, then it is finished forever. Unbounded collections would still
+deserve their own table.
+
+### `study_challenges` — the only new table
+
+The whole feature is **one table**. A challenge is a small, bounded, self-contained
+object: two players, ten words each, three rounds each, one outcome. Everything about it
+is intrinsic to it, so everything lives on it.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -608,46 +1193,247 @@ characters.
 | `challengerLanguage` / `challengeeLanguage` | varchar(8) | equal unless cross-language |
 | `status` | varchar(16) | `pending \| accepted \| declined \| expired \| complete \| no_contest`. There is **no** "accepted but unpicked" state — see § 8.2 |
 | `gameSequence` | jsonb | the 3 chosen game ids **in order**, drawn once, shared |
+| `words` | jsonb | **each player's 10 words**, keyed by user id — see below |
+| `rounds` | jsonb | **each player's played rounds**, keyed by user id — see below |
+| `presetDeckIds` | jsonb | `{ "<userId>": <deckId>, ... }` — the generated decks to drop on cleanup (§ 4) |
 | `issuedAt` | timestamptz | the UTC anchor every local boundary is derived from |
 | `acceptedAt`, `completedAt` | timestamptz null | |
 | `winnerUserId` | uuid null | null for draw / no contest |
 
-### `study_challenge_words`
+**`words`** — keyed by user id so one shape serves both variants and the results page
+never branches. Same-word challenges simply write the same ten entries under both keys.
 
-One row per (challenge, player, word) — 10 rows per player. Same-word challenges write
-the same 10 words twice (once per player) so that **one shape serves both variants** and
-the results page never branches.
+```jsonc
+{
+  "<userId>": [
+    { "position": 1, "word1": "开始", "language": "zh", "vocabEntryId": 90210 },
+    // ... 10 total
+  ]
+}
+```
 
-| Column | Notes |
+`word1` + `language` is the identity, denormalised, so history survives a det data
+deploy (det ids are not stable across re-imports). `vocabEntryId` is filled in when the
+set is materialised on accept (§ 3.3) and is null before then.
+
+#### The challenge and the vet row never compete for source of truth (Q54)
+
+This is the rule that keeps the two records from drifting, and it is worth stating
+sharply because it is the one place they could:
+
+| Question | Source of truth |
 |---|---|
-| `challengeId` → `study_challenges` CASCADE | |
-| `userId` | which player's set |
-| `language`, `word1` | the word, denormalised so history survives a det change |
-| `vocabEntryId` | the player's vet row, once materialised |
-| `position` | 1–10 |
+| **Which 10 words is this challenge about?** | `study_challenges.words` — always, forever |
+| **Is this word in the user's library?** | the **vet row** — always |
 
-### `study_challenge_rounds`
+`vocabEntryId` is a **convenience pointer, never an identity and never a claim of
+membership.** It may dangle. The challenge does not care whether the card still exists.
 
-One row per (challenge, player, round) — the score record the results page reads.
+The consequence is deliberate and good: **if a player deletes a contested word from their
+library mid-challenge, the challenge is unaffected.** The word is still one of the ten,
+still appears on the test, still scores as contested. What the player loses is the
+ability to *study* it — it drops out of their challenge deck (a deck is a set of vet
+cards), so they go into Friday having practised nine. They chose that; nothing is broken
+and nothing needs repairing.
 
-| Column | Notes |
-|---|---|
-| `challengeId`, `userId`, `roundIndex` (1–3) | |
-| `gameId` | must match `gameSequence[roundIndex]` |
-| `score` | int, may be negative (Q15) |
-| `breakdown` | jsonb — the itemised lines § 5.5 renders |
-| `completedAt` | |
+#### Rendering a contested word: which list, which values (Q55)
+
+**The list comes from the challenge; the values come from the player.** These are two
+separate lookups and they resolve in a fixed order:
+
+1. **Which words** — `study_challenges.words`, and only ever that. Never a vet query,
+   never a deck query. This is what guarantees all 10 appear on every board (§ 5.2)
+   regardless of the state of anyone's library.
+2. **What each word looks like** — hydrate from the player's own **vet row** first,
+   falling back to the **det row** when there is no vet row.
+
+Hydrating from vet first is the point: the vet row carries the learner's own choices
+about that word — `selectedSense` (migration 99), the display definition derived from it,
+`iconLayout` (migration 82), text colors (migration 89). Reading the word straight from
+det would show the dictionary's default sense and throw all of that away, so a player
+would see their own card rendered as somebody else's.
+
+**The two players may therefore see the same word differently, and that is accepted.**
+Alice's 上 may be captioned with a different sense than Bob's. Fairness is not harmed:
+the contested set, the scoring and the boards are identical, and each player is being
+tested on the word *as they learned it* — which is more faithful than forcing both onto
+a canonical gloss neither of them chose. Same word, each player's own card.
+
+Det is the fallback, not the default. It is reached only when the player has no vet row —
+never studied the word, or deleted it mid-challenge — and it supplies enough (`word1`,
+pinyin, a default definition) to draw a complete tile. So a missing vet row degrades the
+rendering to the dictionary default; it never blanks a tile or crashes a round.
+
+**Marks against a word with no vet row are always skipped.** There is nowhere to write a
+typed mark, so the play produces none and the round scores normally. This is a **skip,
+not an error**, and it must **not** re-create the card: silently resurrecting a word the
+user deliberately deleted would be worse than an unmarked play. The same skip covers the
+det-fallback case generally, so there is one rule, not a special case per cause.
+
+Scoring is untouched by any of this, because contested-vs-filler is fixed at board
+generation (§ 5.7) and never re-derived from library state.
+
+**`rounds`** — keyed by user id, then by round index.
+
+```jsonc
+{
+  "<userId>": {
+    "1": { "gameId": "bubble-match", "score": 820,
+           "breakdown": { /* the itemised lines § 5.5 renders */ },
+           "completedAt": "2026-08-14T18:03:11Z" }
+  }
+}
+```
+
+`gameId` is stored per round even though it is derivable from `gameSequence` — the
+history page filters by game (§ 1), and reading it from the round entry keeps that filter
+from having to correlate two arrays.
+
+**Concurrency: solved by encapsulation, not by versioning (Q53).** Both players write
+`rounds` on the same row, possibly at the same instant. The fix is that **exactly one
+function may ever touch the column** — `StudyChallengeDAL.recordRound(challengeId,
+userId, roundIndex, payload)` — and it is a single statement:
+
+```sql
+UPDATE study_challenges
+   SET rounds = jsonb_set(rounds, ARRAY[$2, $3], $4::jsonb, true)
+ WHERE id = $1
+   AND rounds #> ARRAY[$2, $3] IS NULL   -- insert-only: no replays (Q40)
+RETURNING id;
+```
+
+One statement takes the row lock, reads, modifies and writes inside that lock, so
+concurrent submissions serialise and neither can be lost. The `IS NULL` guard makes it
+idempotent and enforces the one-attempt rule in the same breath — zero rows returned
+means "already submitted", which the service turns into a rejection.
+
+**An ETag / version column would be strictly worse here.** Optimistic concurrency
+(`WHERE version = $expected`, bump on write, retry on conflict) exists to protect a
+*read-modify-write across a round trip* — the client reads state, thinks, writes back.
+That is not this shape: the client sends a score for one specific slot and never needs
+the rest of the blob. Adding a version would buy an extra column, a retry loop, and a
+new failure mode (a client that must re-fetch and resubmit) to solve a problem the
+single statement already does not have.
+
+So the danger is not concurrency itself, it is **someone later writing a convenient
+read-modify-write helper in the service**. The guard is structural: `rounds` is written
+by `recordRound` alone, and that is the rule to state at the top of the DAL. If that
+discipline ever feels unreliable, the fallback is the child table (`study_challenge_rounds`),
+where the same guarantee comes from a unique constraint instead — but the single
+statement above is simpler than either alternative, so there is no reason to reach for
+it now.
+
+### Why the words are not a column on the vet tables
+
+The tempting alternative — mark a vet row as "this week's challenge word" and keep the
+value for history — does not work, for two reasons that are not about style:
+
+1. **A word can be contested in more than one challenge at once.** A player may have a
+   live challenge with every friend (Q32), and the same word can legitimately appear in
+   several of those sets. A vet row is unique per (user, word, language), so a scalar
+   column cannot represent it; it would have to become an unbounded, ever-growing array
+   of challenge ids on the **hottest table in the app** — the one read by every game
+   load, every deck query and every search.
+2. **A pending challenge has no vet rows yet.** The challenger's proposed set exists from
+   the moment the invitation is issued, but words are only materialised as vet rows **on
+   accept** (§ 3.3). A vet column has nowhere to store a set that has not been accepted —
+   and reviewing that set is the whole confirmation flow (§ 3.2).
+
+There is also a layering reason: a challenge is not a property of a vocabulary card. The
+card outlives the challenge, is shared with every other feature, and should not carry
+another feature's bookkeeping. The challenge owns its words; the vet row is merely
+pointed at (`vocabEntryId`).
 
 ### Changes to existing tables
 
-* `decks.origin varchar(16) NOT NULL DEFAULT 'user'` + `decks."challengeId" uuid NULL`
-  — § 4.
+Kept to the minimum, and only where the column is genuinely a property of the object it
+sits on.
+
+* `decks."editMode" varchar(16) NOT NULL DEFAULT 'custom'` (`'custom' | 'preset'`) — § 4.
+  Describes what the user may do to this deck, so it is intrinsic to the deck. **No
+  `challengeId` on `decks`**: the pointer lives on the challenge (`presetDeckIds`), so
+  `decks` learns nothing about challenges.
+  ⚠️ Trade-off accepted: an id inside jsonb cannot carry a foreign key, so there is no
+  `ON DELETE CASCADE` and a stale deck id is possible in principle. Tolerable because the
+  **only** code path that deletes a challenge deck is the challenge's own cleanup — users
+  cannot delete them (§ 4) — and a stale id resolving to nothing is a no-op on cleanup.
+* `friendships."requesterChallengesBlocked"` / `friendships."addresseeChallengesBlocked"`,
+  both `boolean NOT NULL DEFAULT false` — the per-pair challenge opt-out (§ 1). Each
+  player owns their own flag; a challenge may be issued only when **neither** is set, so
+  the effect is symmetric while ownership is not. A property of the relationship rather
+  than of either user, which is why it sits on `friendships`.
+* `decks_user_language_name_uniq` becomes **partial** — `WHERE "editMode" = 'custom'` —
+  so generated decks may share a name (Q30, § 4).
 * `vocabentries_*` — **no change**; challenge words are ordinary vet rows.
 
-### Live mode (phase 2)
+### The maintenance job (Q60)
 
-`study_challenge_sessions` (room state: participants, current round, per-player
-confirmation, heartbeat timestamps). Deliberately deferred with § 7.
+Several transitions are **time-triggered rather than user-triggered** — nobody taps a
+button when a window closes — so the feature needs a periodic job. It becomes a **third
+step in the existing `cow-maintenance` systemd unit**
+(`database/cron/cow-maintenance.service.template`), not a new schedule: that unit already
+runs **hourly**, which is the granularity every 04:00-local boundary needs (one timezone
+crosses the boundary each hour), and it is already a `Type=oneshot` singleton, so runs
+cannot overlap. See [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md).
+
+New file: `database/cron/expire-study-challenges.sql`, appended as
+`ExecStart` step 3, logging to `logs/study-challenges.log`. **Prod only**, like the rest
+of the unit; dev runs it by hand with `psql -f`.
+
+**Testing (Q61):** prod has no users yet and is effectively a pre-production
+environment, so this feature is tested **on prod** rather than behind a dev-only clock
+offset or admin trigger endpoints. Nothing simulated is built. When prod becomes a real
+production environment, this decision has to be revisited — at that point a week-long,
+cron-driven feature has no safe way to be exercised, and the trigger endpoints deferred
+here become necessary.
+
+Its four passes, in order — the order matters, because each later pass consumes what an
+earlier one leaves behind:
+
+1. **Expire unaccepted invitations.** `status = 'pending'` past the *challengee's*
+   Wednesday 04:00 → `expired`. No decks exist yet (§ 3.3), so nothing else to do.
+2. **Close finished windows.** `status = 'accepted'` past the *later* of the two
+   players' Monday 04:00 → `complete` if both played all three rounds (stamping
+   `winnerUserId`), else `no_contest` (§ 6).
+3. **Drop preset decks whose window has closed.** Per player, per that player's own
+   clock — Alice's deck can go while Bob's window is still open (§ 4). The
+   completion-triggered drop is *not* here: that one happens synchronously in
+   `StudyChallengeService` when the third round is submitted, because it should be
+   immediate rather than up to an hour late.
+4. **Sweep orphaned preset decks.** `decks` where `"editMode" = 'preset'` and no
+   surviving `study_challenges` row lists that id in `presetDeckIds`.
+
+**Why pass 4 exists.** Deleting an account CASCADEs the challenge row away (Q59), which
+destroys the only record of which decks belonged to it — while the *surviving* player's
+challenge deck lives on, and they **cannot delete it themselves** (preset decks expose no
+delete control, § 4). Without the sweep it sits on their `/decks` page forever. The same
+pass also cleans up after any future path that drops a challenge without its decks, so it
+is a genuine backstop rather than a fix for one bug.
+
+⚠️ Pass 4 is the one that could **delete a deck it should not**, since it is defined
+negatively ("no challenge claims this"). Two safeguards, both mandatory:
+
+* it must match on `"editMode" = 'preset'` **first**, so a user's own deck can never be
+  a candidate no matter what the challenge table says;
+* it must ignore decks younger than a grace period (say 1 hour), so a deck created in the
+  window between the deck insert and the `presetDeckIds` write is never swept. Better
+  still, write both in one transaction — then the grace period is belt-and-braces.
+
+Every pass must be **idempotent**, since `Persistent=true` re-runs a tick missed to a
+reboot. Passes 1–3 are naturally so (they filter on the status they are leaving); pass 4
+is idempotent because a deleted deck simply stops matching.
+
+### Live mode (phase 2) — no tables, no columns
+
+This section previously deferred a `study_challenge_sessions` table (participants, current
+round, per-player confirmation, heartbeats). **That table is retracted**
+([STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 9, Q19b): every one of those fields
+is worthless the moment the session ends, room state lives in the backend process, and the
+only durable thing a live round produces is a `rounds` entry written through the same
+`recordRound` path async uses.
+
+**Live mode adds nothing to the database.** Its one contract change is client-side:
+`GameDef.liveTimeLimitSec` (`src/games/types.ts`).
 
 ---
 
@@ -656,11 +1442,11 @@ confirmation, heartbeat timestamps). Deliberately deferred with § 7.
 | Layer | File | Responsibility |
 |---|---|---|
 | Contract | `server/contracts/wire.ts` | `CHALLENGE_WORD_COUNT`, `CHALLENGE_ROUND_COUNT`, eligible-game list, `ProvisionMode` |
-| DAL | `server/dal/implementations/StudyChallengeDAL.ts` (+ interface) | the three tables; **no policy** |
+| DAL | `server/dal/implementations/StudyChallengeDAL.ts` (+ interface) | the single `study_challenges` table, including the atomic `jsonb_set` round writes (§ 9); **no policy** |
 | DAL | `ProvisionalCardDAL` | new `mastered-first` candidate query |
 | Service | `server/services/StudyChallengeService.ts` | windows/time zones, candidate selection, replacement, accept transaction, scoring persistence, winner resolution |
 | Service | `server/services/ProvisionalCardService.ts` | `mode` parameter |
-| Service | `server/services/DeckService.ts` | temp-deck creation + the `origin <> 'user'` mutation guard |
+| Service | `server/services/DeckService.ts` | temp-deck creation + the `editMode <> 'custom'` mutation guard |
 | Controller | `server/controllers/StudyChallengeController.ts` | HTTP edge only |
 | Routes | `server/routes/studyChallengeRoutes.ts` | ⚠️ static segments above `/:id`, as in `friendRoutes` |
 | Client API | `src/api/studyChallenges.ts` | typed calls, **no `token` param** |
@@ -708,20 +1494,65 @@ incoming requests.
 | Q29 | Who chooses the variant | **the challenger**, stated in the invitation. Cross-language pairs are offered different-word only |
 
 | Q8 | Bucket for materialised contested words | **`library`** — accepting the set *is* the sorting decision; see § 3.3 |
+| Q31 | Do challenge rounds write marks / earn minute points | **yes, both** — a challenge round is normal play (§ 5.7). No suppression flag |
+| Q32 | Challenges in flight per week | **one per friend pair, unlimited friends** — cap the pair, not the user (§ 1) |
+| Q33 | Async mid-round abandonment | **the question is dissolved** — backgrounding the app **pauses** the round, and this is a **global games requirement**, not a challenge rule (§ 5.8) |
+| Q34 | Seeing the opponent's score before you play | **hidden until both finish**; progress ("has played") is visible, scores are not (§ 6) |
+| Q35 | Entry point / how a challenge is discovered | a **Challenges NodePage reached from the Friends page**; badge rides the friends payload (§ 1) |
+| Q36 | Study the challenge deck before Friday | **yes, that is the point** — and this *revised Q9*: the deck drops **when that player finishes the test**, else at their window close (§ 4) |
+| Q37 | Score authority | **client reports, server stores** — unverifiable by design, upgradeable to event-based later (§ 5.6) |
+| Q44 | Cap on "already learned" strikes | **none** — every strike writes Mastered to the striker's own card, so it is self-policing (§ 3.2) |
+| Q45 | Challenge round length / filler ladder | **all 10 contested words appear in every round**; filler descends **Mastered → Comfortable → Target → Unfamiliar → lent** (§ 5.2) |
+| Q46 | Withdraw, decline, and challenge spam | **withdraw** (row deleted) + **decline** (blocks the pair until next Monday) + a per-pair **"no challenges" block**: two booleans on `friendships`, either one suppresses challenges both ways (§ 1) |
+| Q52 | Shape of the data model | **one table** — words, rounds and deck ids are jsonb on `study_challenges`; nothing about a challenge is stored on `vet` or `decks` (§ 9) |
+| Q53 | Race on the shared `rounds` jsonb | **one DAL function, one statement** — `jsonb_set` with an `IS NULL` path guard; no ETag/version column, which would solve a round-trip problem this shape does not have (§ 9) |
+| Q54 | Challenge words vs vet as source of truth | **they never overlap** — the challenge owns "which words"; vet owns "is it in the library". Deleting a card mid-challenge loses the *study* deck entry, never the challenge word (§ 9) |
+| Q55 | How a contested word is rendered | list from `study_challenges.words`; **values hydrated from vet, falling back to det**. The two players may see different senses — accepted, each plays their own card. Marks with no vet row are always skipped (§ 9) |
+| Q56 | Schema sign-off | **approved 2026-08-16** — `study_challenges`, `decks."editMode"`, the two `friendships` booleans, and the partial unique index (§ 9) |
+| Q57 | Setting the block mid-challenge | **only blocks new challenges** — the in-flight one plays out. Keeps a one-tap toggle from becoming an escape hatch; unfriending remains the hard exit (§ 1) |
+| Q58 | A game is removed while challenges hold its id | **a scheduling rule, not runtime handling** — retire it from the challenge-eligible pool a week before deleting it. Written into [GAMES_FEATURE.md](./GAMES_FEATURE.md) |
+| Q59 | Account deletion mid-challenge | **let it cascade** — the challenge row and its history vanish for both sides, matching how `friendships` already treats a deleted account (§ 9) |
+| Q27 | Set size | **fixed at 10** (`CHALLENGE_WORD_COUNT`) — a constant, not a choice (§ 8.4) |
+| Q60 | Where the time-triggered work runs | **a third step in the hourly `cow-maintenance` unit**, not a new schedule; four passes, including a sweep for preset decks orphaned by Q59's cascade (§ 9) |
+| Q61 | Testing a week-long, cron-driven feature | **test on prod** — it has no users yet and is effectively a PPE. No dev-only clock offset and no trigger endpoints (§ 9) |
+| Q62 | Who chooses the variant | **the challenger**, stated in the invitation; cross-language pairs get different-word only (§ 8.4) |
+| Q63 | Is the game sequence visible before Friday | **no** — drawn at issue, revealed at window open, and **omitted from the payload** until then so the rule is server-enforced (§ 5.1b) |
+| Q65 | Per-user challenge cap | **6 active at once** (`MAX_ACTIVE_CHALLENGES`), **per (user, language)**, spent only by your own issue/accept — pending invitations never consume a slot (§ 1) |
+| Q66 | Switching active language mid-challenge | **the challenge is invisible until they switch back**; nothing is lost. The language-blind badge (Q48) is the only thread back to it (§ 1) |
+| Q67 | Challenges page with no friends | **bare empty state**, consistent with the app's other empty surfaces (§ 1) |
+| Q68 | Bubble Match's ±500 survival bonus dominating a round | **kept as specified** — Bubble Match is a survival game and the all-or-nothing cliff is the format (§ 5.4) |
+| Q64 | Results-page detail | **totals and per-game scores only**; no per-word comparison — it would tax every game's scoring contract permanently (§ 6) |
+| Q47 | Cold-start players | **no gate** — never block on card count; different-word mode is the answer to a level mismatch (§ 3.1) |
+| Q40 | Round order / replays | **strictly sequential, one attempt each**; round rows are insert-only (§ 5.1a) |
+| Q41 | Unfriending mid-challenge | **challenge becomes `no_contest`**, decks dropped, unfriend never blocked; resolved history survives (§ 6) |
+| Q42 | Excluding previously contested words | **no exclusion** — the core-band filter is the memory (§ 3.1) |
+| Q43 | Post-challenge history surface | challenges page is a **list of friends** with the **reigning-champion crown** on the row and **no lifetime record**; a **History** button opens the paginated log with sort-by-time and friend/game filters (§ 1) |
+| Q38 | Which language a same-word challenge uses | the **challenger's active language**; the challenges page is language-scoped, so the challengee must be in that language to see it (§ 1) |
+| Q48 | How a challenge is announced | **in-app badge chain only** — no push, no email; a player who never opens the app in the window misses it, and the badge must ignore language scoping (§ 1) |
+| Q49 | Word identity of a challenge word | **`(language, word1)` denormalised**, no det FK — det ids are not stable across data deploys (§ 9) |
+| Q50 | Player's timezone changes mid-challenge | **live** — always the current `users.timezone`, nothing snapshotted; a window may move, and closing early yields `no_contest`, never a loss (§ 2) |
+| Q51 | Reward for winning | **none** — crown only. Rounds already pay normal minute points, and any payout is farmable by colluding friends (§ 6) |
+| Q30 | Deck-name collisions | **allow duplicates** — the owning challenge distinguishes them internally, the friend's icon visually. Requires making `decks_user_language_name_uniq` partial (`WHERE "editMode" = 'custom'`) (§ 4) |
+| Q39 | Challenge issued into a language the challengee does not study | **do nothing** — accept the silent expiry; blocking or warning needs a friend's-languages payload not worth adding (§ 1) |
+| Q18 | How long the inviter waits in the live waiting room | **1 minute**, plus an always-available Cancel; on expiry the inviter returns to the challenge screen and does **not** fall back to async. Retry is free and unlimited ([live doc](./STUDY_CHALLENGE_LIVE.md) § 5) |
+| Q19 | Live-mode transport | **WebSocket** at `/api/ws` — nginx already forwards the upgrade, one backend container means in-process rooms ([live doc](./STUDY_CHALLENGE_LIVE.md) § 2) |
+| Q20 | Desertion mid-round | **no grace period at all** — the game continues on the server's clock and banks what the absent player had. Makes live the one exception to § 5.8's pause rule ([live doc](./STUDY_CHALLENGE_LIVE.md) § 6) |
+| Q21 | Live invite delivery with no push infrastructure | **a Capacitor/native-push demand**, logged in [REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md). On the web the invite reaches only a player already in the app ([live doc](./STUDY_CHALLENGE_LIVE.md) § 4) |
 
 ### Still open
 
-| # | Question | Draft answer |
-|---|---|---|
-| Q18, Q20, Q21 | Live-mode timings, presence, invite delivery | deferred to the live-mode doc |
-| Q30 | Deck-name collisions: two challenges against the same friend in the same language both want `vs Bob` | suffix the week (`vs Bob · Aug 14`) only on collision |
+**Nothing in this document is open.** Q1–Q68 are all settled above; Q18–Q21 were settled
+on 2026-08-16 in [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md), which continues the
+numbering from Q22 with four **implementation-time** questions of its own (gate timeout,
+invite rate-limiting, per-challenge live eligibility, and Bubble Match's survival bonus
+under a time cap). None of those blocks building either phase.
 
 ---
 
 ## 12. Code ↔ doc dependencies
 
 This document will describe (nothing exists yet):
-`database/migrations/145+`,
+`database/migrations/146+`,
 `server/contracts/wire.ts`,
 `server/dal/{interfaces,implementations}/StudyChallengeDAL`,
 `server/services/StudyChallengeService.ts`,
@@ -732,9 +1563,33 @@ This document will describe (nothing exists yet):
 `src/api/studyChallenges.ts`,
 `src/features/studyChallenge/*`,
 `src/games/types.ts` + `src/games/registry.ts` (`challengeScoring`),
-`src/games/{match-speed,bubble-match,word-search}/*` (scoring emission, challenge mode).
+`src/games/{match-speed,bubble-match,word-search}/*` (scoring emission, challenge mode),
+`src/features/friends/*` (the Challenges NodePage and its badge).
+
+**Owed to other docs before this is built:**
+* [GAMES_FEATURE.md](./GAMES_FEATURE.md) — a **pause-on-background** section (§ 5.8). This
+  is a global games rule, not a challenge rule, and every existing game must be audited
+  against it (Word Search's per-second penalty is currently wall-clock). ⚠️ It must be
+  written as **suppressible**, not unconditional — live mode is its documented exception
+  ([STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 6).
+* [GAMES_FEATURE.md](./GAMES_FEATURE.md) — `GameDef.liveTimeLimitSec` beside
+  `challengeScoring`: Bubble Match and Word Search have no natural end and need a hard cap
+  before they can be played live ([STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 7).
+* [GAMES_FEATURE.md](./GAMES_FEATURE.md) — the `challengeScoring` contract every
+  recognition/production game must declare (§ 5.4).
+* [GAMES_FEATURE.md](./GAMES_FEATURE.md) — ✅ **done**: the two-phase game-retirement rule
+  (disable for challenges, wait a week, then remove), under "Removing a game" (Q58).
+* [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) — the Challenges NodePage as a fourth
+  friends surface, and the language-scoped badge on the hp Friends row (§ 1).
+* [DECKS_FEATURE.md](./DECKS_FEATURE.md) — `decks."editMode"`, the fifth `/decks` section,
+  and the mutation guard (§ 4).
+* [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) — the third `ExecStart` step
+  and its log file; the unit's description ("inactivity penalty + dangling-template
+  prune") will need updating too (§ 9).
 
 Related docs:
+[STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) (**phase 2** — the live/synchronous
+half of this design: transport, room, invite, collapse),
 [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) (the friend graph this is built on),
 [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (lending, and the new mode),
 [DECKS_FEATURE.md](./DECKS_FEATURE.md) (temp decks, collection launch),

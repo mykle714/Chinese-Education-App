@@ -1,11 +1,11 @@
 # Inactivity Penalty Cron (prod only)
 
 > **PER-LANGUAGE since migration 130.** Every piece of state below is keyed
-> `(userId, language)` in **`user_language_points`**, not on `users`. A user
+> `(userId, language)` in **`user_languages`**, not on `users`. A user
 > studying `zh` and `es` has two independent penalty tracks, and a lapse in both
 > debits both on the same tick. Wherever this document says `lastStreakDate`,
 > `lastPenaltyDate`, `currentStreak` or `totalMinutePoints`, read
-> `user_language_points.<column>` — those four columns were **dropped from
+> `user_languages.<column>` — those four columns were **dropped from
 > `users`** by migration 130. `users.timezone` is unchanged: the local-day
 > boundary belongs to the person, not the language.
 > Design: [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md).
@@ -26,7 +26,7 @@ document's title and in the `logs/streak-expire.log` filename only for continuit
 ## Branch 1 — Escalating penalty
 
 A user "misses" a day when they do not reach the 3-min threshold that local day.
-Missing is tracked purely by `user_language_points.lastStreakDate` — the last local day
+Missing is tracked purely by `user_languages.lastStreakDate` — the last local day
 the language **on its own** hit the threshold (it is no longer a cross-language sum),
 advanced **only** by the minute-points increment path and **never** by this cron. The number of consecutive full missed days is therefore
 derived, not stored:
@@ -118,7 +118,7 @@ new checkpoint band.
 migration 134). Gross is monotonic by definition — it records what the user *earned*, which a
 penalty does not undo — so a penalty moves the NET counter only, and the two numbers diverge by
 exactly the total penalized amount. If you add a new debit path here or anywhere else, debit
-`"totalMinutePoints"` alone; in the DAL that means `UserLanguagePointsDAL.adjustPoints`, never
+`"totalMinutePoints"` alone; in the DAL that means `UserLanguagesDAL.adjustPoints`, never
 `incrementPoints` (which credits both). See
 [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md) § Database.
 
@@ -198,7 +198,7 @@ lives in TypeScript (`NightMarketPlacementService.pruneDanglingTemplates`, pure 
 `server/dal/shared/templatePrune.ts`) and runs as **compiled JS inside `cow-backend-prod`**
 (`node dist/scripts/night-market/prune-dangling-templates.js`; the prod image has no tsx).
 It targets exactly the **(user, language) pairs** this SQL just penalized via
-`user_language_points.lastPenaltyDate`, pruning each market separately — no `DISTINCT`, because
+`user_languages.lastPenaltyDate`, pruning each market separately — no `DISTINCT`, because
 a market is per (user, language) and each penalized language needs its own pass. A failure on one
 pair is caught and logged so it cannot abort the rest of the run. The live
 author minute-loss tool reaches the same prune through
@@ -218,12 +218,12 @@ stored `users.timezone`.
   hard-coded in the SQL — keep all three in sync.
 - **Schema dependencies**:
   - `users.timezone` — migration `50-add-user-timezone.sql`
-  - `user_language_points.lastPenaltyDate`, `.lastStreakDate`, `.currentStreak`,
+  - `user_languages.lastPenaltyDate`, `.lastStreakDate`, `.currentStreak`,
     `.totalMinutePoints` — migration `130-per-language-streaks.sql` (these moved off `users`,
     which had them from migrations `54`/earlier; the same migration drops the global columns).
     Reads all four; writes `.totalMinutePoints`, `.currentStreak`, `.lastPenaltyDate` — never
     `.lastStreakDate`, which is what makes the tier gap grow by one per continued missed day.
-  - `user_language_points."lifetimeMinutesEarned"` — migration `134-add-lifetime-minutes-earned.sql`,
+  - `user_languages."lifetimeMinutesEarned"` — migration `134-add-lifetime-minutes-earned.sql`,
     and a **deliberate non-dependency**: the cron reads and writes it nowhere, and must keep
     doing so, because gross is monotonic.
   - `users.selectedLanguage`
@@ -254,7 +254,7 @@ psql "$DATABASE_URL" -f database/cron/expire-stale-streaks.sql
 ## Prod adoption (one-time, after `/deploy`)
 
 1. **Verify migrations applied.** `/deploy` runs them automatically; confirm
-   `users.timezone` and `user_language_points."lastPenaltyDate"` exist.
+   `users.timezone` and `user_languages."lastPenaltyDate"` exist.
 
 2. **Let timezones backfill organically.** Existing rows default to `'UTC'` and
    get rewritten the next time the user hits the minute-points endpoint.
@@ -302,7 +302,7 @@ SELECT
   (((now() AT TIME ZONE u.timezone) - INTERVAL '4 hours')::date
     - t."lastStreakDate"::date - 1) AS tier,
   COUNT(*)
-FROM user_language_points t
+FROM user_languages t
 JOIN users u ON u.id = t."userId"
 WHERE t."totalMinutePoints" > 0
   AND t."lastStreakDate" IS NOT NULL
@@ -312,7 +312,7 @@ GROUP BY 1, 2 ORDER BY 1, 2;
 ```
 
 If the high-tier count is nontrivial and you want to avoid retroactive wipes,
-seed `"lastPenaltyDate" = today_local` on the affected `user_language_points` rows before the first tick
+seed `"lastPenaltyDate" = today_local` on the affected `user_languages` rows before the first tick
 (this only defers, not cancels — they still escalate from the next local day).
 
 ## Risks to weigh

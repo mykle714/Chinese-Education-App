@@ -178,7 +178,7 @@ use it. `ExampleSentenceList` just never passes it.)
 | Layer | Where |
 |---|---|
 | Column | `users."showSegmentSpaces"` (migration 129) |
-| Read path | `UserDAL.findById` select list (`server/dal/implementations/UserDAL.ts:91`); `User` / `UserUpdateData` in `server/types/index.ts` |
+| Read path | `UserDAL.findById` select list (`server/dal/implementations/UserDAL.ts`); `User` / `UserUpdateData` in `server/types/index.ts` |
 | Write path | `PUT /api/users/displaySettings` → `UserController.updateDisplaySettings` → `UserService.updateDisplaySettings` (`server/routes/userRoutes.ts`) |
 | Client state | `AuthContext` `User.showSegmentSpaces` + `updateDisplaySettings()` (`src/AuthContext.tsx`) |
 | Toggle UI | Settings page → **Display** section (`settings-page__display-section` / `settings-page__segment-spaces-row`, `src/pages/SettingsPage.tsx`), a `Paper` + `Switch` row matching the Narration section. **Chinese only** — rendered when `(user.selectedLanguage ?? 'zh') === 'zh'`, because Latin-script sentences always render spaced (`SegmentedSentenceDisplay`'s `isLatin` branch) so the switch would be a no-op for Spanish. `selectedLanguage` is nullable with a `'zh'` DB default, hence the `??`. |
@@ -186,7 +186,7 @@ use it. `ExampleSentenceList` just never passes it.)
 
 It was previously a device-local flp toggle in
 `useFlashcardLearnSettings` (localStorage `flashcard.learn-settings`) threaded down
-`FlashcardsLearnPage → InfoCardSection/InfoCardPopup → InfoCardPanelBody →
+`FlashcardsLearnPage → InfoCardSection → InfoCardPanelBody →
 ExampleSentenceList`. The cdp had no way to reach that chain and so always rendered
 un-spaced. `ExampleSentenceList` now reads the account value itself and **the prop
 no longer exists on any of those components** — no caller can forget to thread it.
@@ -218,8 +218,8 @@ tapped segment's headword.
   gated on `isPopupInteractive` (`onSegmentOpen` wired **and** a concrete `selectedRange.segment`).
 - **Wiring.** New prop `onSegmentOpen?(segment)` on `SegmentedSentenceDisplay`. It is threaded
   through the est call site only (`InfoCardPanelBody.tsx` Examples tab, prop
-  `onExampleSegmentClick`) → `InfoCardSection`/`InfoCardPopup` → the two consumers
-  (`FlashcardsLearnPage.tsx`, `DictionaryPage.tsx`), each passing
+  `onExampleSegmentClick`) → `InfoCardSection` → the two consumers
+  (`FlashcardsLearnPage.tsx`, `SortCardsPage.tsx`), each passing
   `(segment) => eip.openForEntryKey(segment)`. The expansion-tab `SegmentedSentenceDisplay`
   omits `onSegmentOpen`, so that popup stays a passive tooltip.
 - **Tap absorption.** The popup renders through a Popper portal but is still a **React child

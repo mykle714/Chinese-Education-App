@@ -73,13 +73,13 @@ Current classification (all call sites):
 
 | Read | Clause | Where |
 |---|---|---|
-| `fetchGameCandidates` (all game pools) | PLAYABLE | `OnDeckVocabService.ts:318` |
-| `fetchFlpCandidates` (flp loop **and** refill — one shared source) | PLAYABLE | `OnDeckVocabService.ts:645` |
-| `getLibraryDistractors` (Speed Reading filler) | PLAYABLE | `SpeedReadingDAL.ts:55` |
-| `getLibraryCards` / `getMastered…` / `getNonMastered…` | SORTED | `OnDeckVocabService.ts:455,581,608` |
-| `getCategoryCounts` (decks page deck sizes) | SORTED | `OnDeckVocabService.ts:969` |
+| `fetchGameCandidates` (all game pools) | PLAYABLE | `OnDeckVocabService.ts` |
+| `fetchFlpCandidates` (flp loop **and** refill — one shared source) | PLAYABLE | `OnDeckVocabService.ts` |
+| `getLibraryDistractors` (Speed Reading filler) | PLAYABLE | `SpeedReadingDAL.ts` |
+| `getLibraryCards` / `getMastered…` / `getNonMastered…` | SORTED | `OnDeckVocabService.ts` |
+| `getCategoryCounts` (decks page deck sizes) | SORTED | `OnDeckVocabService.ts` |
 | `findByUserIdAndLanguage`, `countByUserIdAndLanguage`, `searchEntries`, `findByDifficultyLevel`, `bulkFindByKeys`, `findByTokens`, `findEntriesCreatedAfter`, `findRelatedBySharedCharacters`, `findUsedInForCharacter` | SORTED | `VocabEntryDAL.ts` |
-| community feed | SORTED | `CommunityLayoutDAL.ts:128` |
+| community feed | SORTED | `CommunityLayoutDAL.ts` |
 | `estimateLevel`, discover supply, quick-mark supply, `_hydrateCards.sorted`, `getProgress` | SORTED | `StarterPacksService.ts` |
 
 Two by-id reads are **deliberately unfiltered** — `findByIdAndLanguage` and
@@ -277,7 +277,7 @@ on-mode cards exist it plays exactly as designed.
 
 ### The same asymmetry on flp
 
-flp's study modes split identically (`MODE_CONFIGS`, `OnDeckVocabService.ts:59-72`):
+flp's study modes split identically (`MODE_CONFIGS`, `OnDeckVocabService.ts`):
 **Review = Comfortable + Mastered**, **Challenge = Unfamiliar + Target**.
 
 `FlashcardsDecksPage` therefore treats them differently:

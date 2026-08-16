@@ -3,7 +3,7 @@ import { UserDAL } from './implementations/UserDAL.js';
 import { RefreshTokenDAL } from './implementations/RefreshTokenDAL.js';
 import { VocabEntryDAL } from './implementations/VocabEntryDAL.js';
 import { UserMinutePointsDAL } from './implementations/UserMinutePointsDAL.js';
-import { UserLanguagePointsDAL } from './implementations/UserLanguagePointsDAL.js';
+import { UserLanguagesDAL } from './implementations/UserLanguagesDAL.js';
 import { DictionaryDAL } from './implementations/DictionaryDAL.js';
 import { UserService } from '../services/UserService.js';
 import { VocabEntryService } from '../services/VocabEntryService.js';
@@ -72,7 +72,7 @@ const vocabEntryDAL = new VocabEntryDAL();
 const userMinutePointsDAL = new UserMinutePointsDAL();
 // Per-(user, language) wallet + streak state, plus the monotonic gross counter
 // (migrations 130 and 134, docs/PER_LANGUAGE_STREAKS.md). Replaced the global counters on `users`.
-const userLanguagePointsDAL = new UserLanguagePointsDAL();
+const userLanguagesDAL = new UserLanguagesDAL();
 const dictionaryDAL = new DictionaryDAL();
 const sortPacksDAL = new SortPacksDAL();
 const nightMarketDAL = new NightMarketDAL();
@@ -124,14 +124,14 @@ const nightMarketPlacementService = new NightMarketPlacementService(nightMarketP
 // Constructed after the placement service — the sandbox's Iterate action reuses its growth planner.
 const nightMarketSandboxService = new NightMarketSandboxService(nightMarketSandboxDAL, userDAL, nightMarketPlacementService);
 // Constructed after the placement service so the grant hook can be wired in.
-const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, userLanguagePointsDAL, nightMarketPlacementService);
+const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, userLanguagesDAL, nightMarketPlacementService);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
 // Community shared-layout feeds + votes; reuses vocabEntryService for the apply-to-card flow.
 const communityLayoutService = new CommunityLayoutService(communityLayoutDAL, vocabEntryService);
 // Read-only aggregate over four DALs; streak is masked for non-public users. Deliberately
 // cross-language: it ranks on Σ per-language wallets and shows the best per-language streak.
-const leaderboardService = new LeaderboardService(userDAL, userMinutePointsDAL, userLanguagePointsDAL, winsDAL);
+const leaderboardService = new LeaderboardService(userDAL, userMinutePointsDAL, userLanguagesDAL, winsDAL);
 // Provider-pluggable text-to-speech with an on-disk cache. No DB dependencies, but it
 // is constructed HERE rather than as a module singleton so every service has one
 // lifetime owner (docs/ARCHITECTURE_REVIEW.md finding 8).
@@ -140,7 +140,7 @@ const ttsService = new TTSService();
 // userDAL supplies the target account's existence check and public identity; the
 // last two DALs are read-only and feed the velocity leaderboard (each friend scored
 // in their own selected language) — see FriendsService.getLeaderboard.
-const friendsService = new FriendsService(friendshipDAL, userDAL, categoryPromotionDAL, userLanguagePointsDAL);
+const friendsService = new FriendsService(friendshipDAL, userDAL, categoryPromotionDAL, userLanguagesDAL);
 // Constructed after starterPacksService: it borrows estimateLevel to pick which
 // difficulty band to lend from (docs/PROVISIONAL_CARDS.md § Which words get lent).
 const provisionalCardService = new ProvisionalCardService(provisionalCardDAL, starterPacksService);
@@ -190,7 +190,7 @@ export {
   refreshTokenDAL,
   vocabEntryDAL,
   userMinutePointsDAL,
-  userLanguagePointsDAL,
+  userLanguagesDAL,
   dictionaryDAL,
   sortPacksDAL,
   userService,

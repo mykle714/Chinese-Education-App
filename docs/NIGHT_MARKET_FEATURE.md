@@ -106,9 +106,10 @@ frame centre — `House.png`), an explicit `stripTexW`, and `flip`.
 
 **Houses** are the live consumer: `HOUSE_STRIPS.normal` / `.flipped` precompute the 11 strips of
 `House.png` relative to a front corner at (0, 0), and `HouseStripSprites` is the single component
-all three house surfaces render through — `HouseLayer` (nmp sample house), `PlaceholderHouseLayer`
-(runtime filled-slot occupant) and the template editor's `PlaceholderOccupantHouses` (lifted above
-the mask tints in flat mode). All three use the `entity` slot.
+every house surface renders through — `PlaceholderHouseLayer` (runtime filled-slot occupant) and
+the template editor's `PlaceholderOccupantHouses` (lifted above the mask tints in flat mode). Both
+use the `entity` slot. (A third consumer, `HouseLayer`, drew a standalone sample house on nmp; it
+was deleted with the demo layout in commit `70dc441`.)
 Strips are emitted FLAT into the caller's `sortableChildren` container — never wrapped in a
 per-house container, which would collapse them back to one depth.
 
@@ -147,7 +148,7 @@ inside* the light one, so dark grass always sits over light grass (never over ba
     dark ⊆ light), ~`DARK_GRASS_COVERAGE` fill (0.12), distinct seed `DARK_SEED`.
   Per tile it resolves `kind` (light grass/dirt), `darkGrass` (bool), `fieldEdge` (rim),
   and `grassNeighbours` + `darkGrassNeighbours` (8-dir occupancy of each patch). Currently 20×20.
-- `features/nightmarket/FarmTerrainLayer.tsx` (view) — paints each tile as up to several **native**
+- `features/nightmarket/EditorTerrainLayer.tsx` (view) — paints each tile as up to several **native**
   (scale 1) sprites, emitted **flat** (no per-tile container) so the scene's
   `sortableChildren` z-sorts every sprite globally by `zIndex`:
   - a **tallDirt slab** (`fieldEdge`) at `screenY + TILE_HEIGHT`, `z = layerZ − 0.5`
@@ -755,9 +756,10 @@ Both bounds overlays share `traceIsoRect` (diamond outline of a cell rectangle) 
 
 The surface-sprite selection (grass cap vs. stacked grass-boundary overlays) lives once per
 layer in `resolveTileSurfaceUrls` / `resolveTileDarkSurfaceUrls` (farmTerrain.ts), each
-consumed by both `FarmTerrainLayer` (paints) and `OverlayLabels` (labels) so they never diverge.
+consumed by both the terrain draw-list builder (`terrainDraws.ts#buildDraws`, which paints) and
+`OverlayLabels` (labels) so they never diverge.
 
-**Decor scatter:** after each tile's surface is resolved, `FarmTerrainLayer.buildDraws`
+**Decor scatter:** after each tile's surface is resolved, `terrainDraws.ts#buildDraws`
 runs a seeded decor pass (`resolveTileDecorUrl` in farmTerrain.ts, walking the field with a
 single `createDecorRng()` so the layout is stable across reloads). Per tile:
 - Tiles that carry **grass-boundary overlays** on *either* layer are **skipped** (their diamond
@@ -780,23 +782,31 @@ below the entity slot at +0.25).
   via the typed `getPlank(direction, variation, cap)`. `direction` ∈ {`ew`,`ns`}; the pack authors
   3 board-pattern variations per direction and an end cap only on each direction's **far** iso face
   (`eastEdge` for `ew`/+isoX, `northEdge` for `ns`/+isoY) — mirroring the landmass far-face rule.
-- `engine/market/walkway.ts` (data) — `buildWalkway({origin, direction, variations?})` lays tiles
-  from the near-end `origin` toward the far face: `ew` runs along +isoX at constant isoY, `ns` along
-  +isoY at constant isoX. Successive tiles take the successive `variations` board patterns (default
-  `PLANK_VARIATIONS` = 1,2,3, one of each in order); the **far-end** tile takes the direction's edge
-  cap, every other tile the flat `center` plank.
-- `features/nightmarket/WalkwayLayer.tsx` (view) — paints each plank flush on the shared terrain
-  plane (offset `+TILE_HEIGHT`, exactly like a dirt slab, so its surface lands on the plane). The
-  whole walkway is lifted above the terrain layer by `WALKWAY_Z_LIFT = FIELD_WIDTH + FIELD_HEIGHT`
-  (the max iso-sum) so the back-most plank still clears the front-most terrain tile's slab, while
-  `computeLayerZ` keeps planks ordered among themselves. Currently renders a hard-coded
-  `SAMPLE_WALKWAYS` list (one `ew` + one `ns`); replace with an authored/data-driven layout later.
+- `engine/market/farmTerrain.ts` (data + autotile) — `editorPlankCenters()` enumerates the flat
+  `center` tile per (direction × variation) as the SPACE-cycle the author picks from, and
+  `plankRenderUrl(centerUrl, isPlankAt, x, y)` autotiles a placed center into its far-end edge cap
+  whenever the far neighbour (east for `ew`/+isoX, north for `ns`/+isoY) is **not** itself a plank.
+  So a plank is authored per CELL and terminates per NEIGHBOUR — an author never picks a cap.
+- **There is no walkway module and no walkway view layer.**
+  - `WalkwayLayer.tsx` — which painted a hard-coded `SAMPLE_WALKWAYS` list flush on the terrain
+    plane, lifted above it by its own `WALKWAY_Z_LIFT` — was deleted with the rest of the demo
+    layout in commit `70dc441`. Planks now sort with the terrain and need no z-lift.
+  - `engine/market/walkway.ts` — whose `buildWalkway({origin, direction, variations?})` laid a
+    whole straight RUN at once and capped only its far-end tile — was deleted afterwards: it had
+    no callers, and `plankRenderUrl` re-implements its cap rule in a strictly more general form
+    (per neighbour, so a bent or branching path caps correctly, which a run-based solver cannot).
+    Its one surviving export, `PLANK_VARIATIONS`, moved to `freeFarmTileset.ts` next to
+    `WalkwayDirection` and `PlankCap`, so the whole plank vocabulary now lives in one module.
 
-**Dormant modules:** the pedestrian/street-graph engine
-(`streetGraph.ts`, `tileGraph.ts`, `pedestrianAgent.ts`, `tileTraversal.ts`,
-`hooks/usePixiPedestrians.ts`) remains in the tree but is unused — `tileRegistry.ts`
-exposes empty `STREETS`/`TILES`/`DEMO_STALLS`, so both graphs are empty. It is the seam
-where a future authored layout re-attaches.
+**The pedestrian/street-graph engine is live again — on a different data source.**
+`streetGraph.ts`, `tileGraph.ts`, `pedestrianAgent.ts`, `tileTraversal.ts` and
+`hooks/usePixiPedestrians.ts` are all in use, driven by `PedestrianLayer` on nmp. What
+changed is where the graph comes from: `tileRegistry.ts` still exposes **empty**
+`STREETS`/`TILES`/`DEMO_STALLS` (so its module-level `TILE_GRAPH`/`STREET_GRAPH` are
+still empty and still unused for rendering), and `marketWorld.ts` instead recovers a
+real graph from the stitched templates' STREET cells via
+`streetRecovery.ts#recoverStreets`. `tileRegistry`'s demo exports are the vestigial
+half; they survive only because `PEDESTRIAN_SPRITE_PATHS` lives in the same module.
 
 ---
 

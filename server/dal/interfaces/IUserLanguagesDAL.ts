@@ -1,7 +1,7 @@
 /**
  * Interface for the per-language progress Data Access Layer.
  *
- * LAYER: DAL. Owns `user_language_points` — the (userId, language)-keyed wallet +
+ * LAYER: DAL. Owns `user_languages` — the (userId, language)-keyed wallet +
  * streak state introduced by migration 130. Everything here used to be four global
  * columns on `users`; see docs/PER_LANGUAGE_STREAKS.md for why they were split.
  *
@@ -40,7 +40,7 @@ export interface UserPointsTotals {
   bestStreak: number;
 }
 
-export interface IUserLanguagePointsDAL {
+export interface IUserLanguagesDAL {
   /**
    * Read one language's progress. Returns a zeroed record (not null) for a language
    * the user has never studied, so callers never branch on existence — a language

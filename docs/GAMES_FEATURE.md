@@ -28,10 +28,10 @@ games; each game lives as its own page linked from the hub.
 
   Bubble Match and Word Search are **DOM + `requestAnimationFrame`** games; Match
   Speed and Speed Reading are **DOM + timers only** (no rAF loop — no physics and no
-  per-frame animation, just CSS transitions and intervals). None uses the
-  Pixi runtime scaffolding described in
-  [§ Layer 2](#layer-2--runtime-srcgamesruntime), which remains unused — see the
-  warning there before building on it.
+  per-frame animation, just CSS transitions and intervals). **There is no Pixi game
+  runtime any more** — the never-used `GameStage` / `GamePage` / `useGameActors`
+  scaffolding was deleted (commit `70dc441`); see
+  [§ Layer 2](#layer-2--runtime-srcgamesruntime).
 
 ### What Speed Reading introduced
 
@@ -79,11 +79,15 @@ the header's right slot via `BubbleMatchHeaderControls`.
 **Word Search is also a leaf page**, wrapped the same way (down arrow → `/games`,
 no footer, slides up on enter).
 
-The **generic** in-game shell `src/games/runtime/GamePage.tsx` is **not used by
-either shipped game** — both own their page. It still renders
-`MobileFooter activePage="home"` on its info/loading screens and hides it during
-the live stage (`!showStage`); it has not been migrated to a leaf page yet, so a
-game adopting it today would get the wrong chrome. See the Layer 2 warning below.
+**Match Speed and Speed Reading are leaf pages too** — every shipped game is. Games
+are classified `chrome: "leaf"` in bulk by `GAME_ROUTE_META` in
+`src/routes/routeMeta.ts`, which derives one row per `GAME_REGISTRY` entry, so a new
+game gets leaf chrome without touching the route tables. A game that should keep the
+footer would need a `chrome` field on `GameDef` first; none exists.
+
+There is no generic in-game shell to adopt — each game owns its page. (A
+`src/games/runtime/GamePage.tsx` used to exist and rendered node-style chrome, which
+was wrong for a leaf page; it was deleted unused. See § Layer 2.)
 
 ## Launching a game with one collection of cards
 
@@ -198,7 +202,7 @@ for now; if a third page needs them we should hoist a shared
 | --- | --- |
 | Row anatomy | Owned by the shared `HubMenu` / `HubMenuRow`, not by this page. See [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md). |
 | Locking / progression | Two gates on `GameDef`, both evaluated at hub render time: `requiresAuth` (hides the game from public/demo accounts) and `unlock.minVocabEntries` (declared but unused). **No game may block on card count** — see [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md): each game's old minimum is now a BASELINE the server tops the player up to with temporary cards. The only remaining entry conditions are being signed out and Word Search's zh-only restriction. No game is gated behind another game. |
-| Score / streak surfacing | Games feed the **existing** systems, not a parallel one. Both game routes are in `MINUTE_POINTS_ELIGIBLE_PAGES` (`src/constants.ts:13-20`) and are in the start-on-entry subset (a player reads the board before their first tap), so play time accrues minute points and streak exactly as flp does. Matches emit real review marks via `POST /api/flashcards/mark` — so playing a game moves mastery. Wins are counted separately via `POST /api/users/me/wins` and read back by `useGameWins` for the hub's `HubMenuStatBadge`. |
+| Score / streak surfacing | Games feed the **existing** systems, not a parallel one. Both game routes are in `MINUTE_POINTS_ELIGIBLE_PAGES` (`src/constants.ts`) and are in the start-on-entry subset (a player reads the board before their first tap), so play time accrues minute points and streak exactly as flp does. Matches emit real review marks via `POST /api/flashcards/mark` — so playing a game moves mastery. Wins are counted separately via `POST /api/users/me/wins` and read back by `useGameWins` for the hub's `HubMenuStatBadge`. |
 | Sort order of the menu | Manual curation — `GAME_REGISTRY` array order, top to bottom. Not recency or recommendation-ranked. |
 
 ## Mobile demo frame (shared sizing)
@@ -216,7 +220,7 @@ page). Just register the route in `MOBILE_DEMO_PATHS` and render the page's
 content directly — header + content area + `MobileFooter`. The frame is
 applied for you.
 
-Today's `MOBILE_DEMO_PATHS` (`src/components/Layout.tsx:56-82`): `/`,
+Today's `MOBILE_DEMO_PATHS` (`src/components/Layout.tsx`): `/`,
 `/flashcards/decks`, `/flashcards/mastered`, `/account`, `/flashcards/learn`,
 `/discover`, `/games`, `/community`, `/night-market`, `/reader`, `/dictionary`,
 `/compare`, `/tester-dashboard`, `/settings`, `...GAME_ROUTES`, plus any path
@@ -292,68 +296,54 @@ component. No edits to `GamesPage`, `App`, or `Layout`.
 
 ### Layer 2 — Runtime (`src/games/runtime/`)
 
-> ⚠️ **`GameStage.tsx`, `GamePage.tsx`, and `useGameActors.ts` are unused
-> scaffolding.** They were built ahead of the first game and **no shipped game
-> imports them** — both Bubble Match and Word Search are DOM + rAF and own their
-> own page shell. They are documented here because they still exist and still
-> compile, but treat them as unproven: `GamePage` renders the wrong chrome for a
-> leaf page (see Routes above), and neither the Pixi host nor the actor handle has
-> ever run in production. Prefer copying a shipped game's structure. The only
-> runtime file that IS live is **`GameEndPopup.tsx`** (used by Word Search
-> directly and by Bubble Match through `BubbleMatchEndPopup`), which is why the
-> folder survives.
+Three files, all live. The folder is a **grab-bag of shared game bits**, not a
+framework — no game inherits a shell from it.
 
-- **`GameStage.tsx`** *(unused)* — generic Pixi.js host. Props:
+- **`GameEndPopup.tsx`** — the shared end-of-run popup **shell**: presentational
+  layer owning the scrim, the card chrome (× button), the corner puck, and the
+  FLIP-style collapse animation between them. The **page** owns the `minimized`
+  flag and the card's content (title / message / actions), passed as `children`;
+  `classPrefix` keeps each game's BEM classes distinct. Word Search renders it
+  directly; Bubble Match wraps it in `BubbleMatchEndPopup` to pin
+  `classPrefix="bubble-match"`; Match Speed and Speed Reading wrap it the same way.
+- **`gameSounds.ts`** — shared sound effects for game events.
+- **`useSidewaysStage.ts`** — the landscape-stage helper behind Speed Reading's
+  rotated presentation (see `LeafPage`'s `hideHeader` render-prop form in
+  [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)).
 
-  ```ts
-  interface GameStageProps {
-    assets: GameAsset[];                          // preloaded as textures
-    onReady?: (ctx: GameStageContext) => void;    // app + textures + viewport
-    onTick?: (dtMs: number, tMs: number) => void; // per-frame hook
-    children?: ReactNode;                         // pixi JSX scene
-    background?: string;
-  }
-  ```
+> **Deleted: the Pixi runtime scaffolding.** `GameStage.tsx` (generic Pixi.js
+> host), `GamePage.tsx` (generic page shell), and `useGameActors.ts` (generic actor
+> handle) were written ahead of the first game and **no game ever imported them**.
+> They were removed in commit `70dc441`. Do not resurrect them speculatively — the
+> shipped pattern is DOM + rAF (Bubble Match, Word Search) or DOM + timers (Match
+> Speed, Speed Reading), and a game that genuinely needs a WebGL scene graph should
+> borrow from the night market's Pixi host (`src/features/nightmarket/pixiRuntime.ts`,
+> `useMarketWorld.ts`) rather than from a fresh unproven abstraction.
 
-  Texture preload is keyed by `assetId`; the URL is resolved from the
-  backend's `imagePath` (`/games/<gameId>/...`) via `API_BASE_URL`. Games own
-  the scene tree by rendering pixi JSX through `children`.
+### Layer 3 — Data hooks
 
-- **`GamePage.tsx`** *(unused)* — page-level shell. Renders `<MobileDemoHeader>`
-  (with back-nav to `/games`) + a flex `ContentArea` + `<MobileFooter
-  activePage="home">`. The intent was `<GamePage game={gameDef}>{stage}</GamePage>`;
-  no game does this.
+**There is no `src/games/hooks/` folder.** It held four hooks, all now deleted:
 
-- **`useGameActors.ts`** *(unused)* — generalized version of the night market's
-  `usePixiPedestrians` handle. Generic over the game's actor type; returns
-  `{ tick, getDrawables, getActors, setActors, setSpeedMultiplier }`.
+| Hook | Fate |
+| --- | --- |
+| `useVocabEntries` (`GET /api/vocabentries`) | deleted 2026-07-28 — exposed a flat `definition?: string \| null` with no sense fields, so a new game written against it would have silently produced sense-blind definitions |
+| `useDictionaryEntries` (`GET /api/dictionary/lookup/:term`) | deleted 2026-07-28, same reason |
+| `useGameAssets(gameId)` (`GET /api/games/:gameId/assets`) | deleted in `70dc441` — existed only to feed `GameStage`'s texture preload |
+| `useGameProgress<TState>(gameId)` (`GET`/`POST /api/games/:gameId/progress`) | deleted in `70dc441` — unused; Word Search persists its board to `localStorage` (`gameStateStorage.ts`) instead |
 
-- **`GameEndPopup.tsx`** *(live)* — the shared end-of-run popup **shell**:
-  presentational layer owning the scrim, the card chrome (× button), the corner
-  puck, and the FLIP-style collapse animation between them. The **page** owns the
-  `minimized` flag and the card's content (title / message / actions), passed as
-  `children`; `classPrefix` keeps each game's BEM classes distinct. Word Search
-  renders it directly; Bubble Match wraps it in `BubbleMatchEndPopup` to pin
-  `classPrefix="bubble-match"`.
+> ⚠️ **The backend halves of the last two are still live and now have no client.**
+> `GET /api/games/:gameId/assets`, `GET`/`POST /api/games/:gameId/progress`
+> (`server/routes/gamesRoutes.ts` → `GamesController` → `GameAssetService` /
+> `GameProgressService` → the `gameassets` / `gameprogress` tables, migration 52)
+> are all still wired and unreferenced from the client. Either a future game adopts
+> them or they should be retired together with their two tables — flagged rather
+> than silently deleted because the seed script `server/scripts/seedGameAssets.js`
+> and migration 52 belong to the same decision.
 
-### Layer 3 — Data hooks (`src/games/hooks/`)
-
-Reuse `src/api/http.ts` (the typed cookie-auth `fetch` wrapper — `apiGet` /
-`apiPost`). It inherits transparent token-refresh from the global fetch
-interceptor (`src/utils/fetchInterceptor.ts`).
-
-| Hook | Endpoint | Notes |
-| --- | --- | --- |
-| `useGameAssets(gameId)` | `GET /api/games/:gameId/assets` | Was built to drive `GameStage` texture preload; unused while `GameStage` is. |
-| `useGameProgress<TState>(gameId)` | `GET` / `POST /api/games/:gameId/progress` | No-ops for public / unauthenticated accounts. Unused — Word Search persists its board to `localStorage` (`gameStateStorage.ts`) instead. |
-
-> **There is no generic vocab hook here, and that is deliberate.** Two hooks used
-> to live in this folder — `useVocabEntries` (`GET /api/vocabentries`) and
-> `useDictionaryEntries` (`GET /api/dictionary/lookup/:term`) — both exposing a
-> flat `definition?: string | null` with no sense fields. Neither was ever used by
-> a shipped game, and both were **deleted (2026-07-28)** because writing a new game
-> against them would have silently produced sense-blind definitions. Game vocab
-> comes from the OnDeck endpoints instead; see the rule below.
+Games talk to the server through `src/api/http.ts` (the typed cookie-auth `fetch`
+wrapper — `apiGet` / `apiPost`), which inherits transparent token-refresh from the
+global fetch interceptor (`src/utils/fetchInterceptor.ts`). **Game vocab comes from
+the OnDeck endpoints**, never from a generic vocab hook; see the rule below.
 
 ### Layer 4 — Backend (`server/`)
 
@@ -405,9 +395,9 @@ flat `definition` when fewer than 2 remain (no real choice), sort by
 **hand-maintained twins** (separate builds, no shared module, no test asserting
 they agree) — change one, change the other.
 
-How the two shipped games satisfy this:
+How the shipped games satisfy this:
 
-- **Bubble Match** resolves on the client. `game-pool` selects `ve.*, ${DICT_COLS}`
+- **Bubble Match** resolves on the client. `gamePool` selects `ve.*, ${DICT_COLS}`
   (`OnDeckVocabService.fetchGameCandidates`), so `selectedSense` (from `ve.*`) and
   `definitionClusters` (`server/dal/shared/dictJoin.ts`) both reach the browser;
   `Bubble.tsx` calls `resolveDisplayDefinition(entry)` for the text and
@@ -466,15 +456,15 @@ popup is still holding.
 
 ### Adding a new game — checklist
 
-Reflects what the two shipped games actually do. The Pixi path
-(`seedGameAssets` → `useGameAssets` → `GameStage` → `GamePage`) is still wired
-end to end, but is unproven — see the Layer 2 warning. Unless the game genuinely
-needs a WebGL scene graph, copy Bubble Match or Word Search instead.
+Reflects what the four shipped games actually do. There is no generic runtime to
+inherit from (§ Layer 2) — copy the closest shipped game: Bubble Match / Word Search
+for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
 
 1. Create `src/games/<gameId>/<GameId>Page.tsx`. Wrap it in `LeafPage`
-   (down arrow → `/games`, no footer) — both shipped games are leaf pages; use
-   `NodePage` only if the game should keep the footer. **Do not** add a per-page
-   `IPhoneFrame` — the frame comes from `MobileDemoFrame` via `Layout.tsx`.
+   (down arrow → `/games`, no footer) — all four shipped games are leaf pages, and
+   `GAME_ROUTE_META` classifies every registry entry as `chrome: "leaf"`, so a game
+   that wants the footer needs a `chrome` field on `GameDef` first. **Do not** add a
+   per-page `IPhoneFrame` — the frame comes from `MobileDemoFrame` via `Layout.tsx`.
 2. Fetch vocab from the OnDeck stack, not from a generic vocab endpoint:
    `GET /api/onDeck/gamePool?<Category>=<n>...` returns library cards bucketed by
    the mark type the game emits. Declare that mark type ONCE as `MARK_TYPE` in your
@@ -519,6 +509,37 @@ Steps 1–6 are the game. Step 7 is all the wiring: the hub, router, and
 mobile-demo frame configure themselves from the registry, so `GamesPage`, `App`,
 and `Layout` need no edits.
 
+### Removing a game — retire it from challenges FIRST
+
+⚠️ Applies once the Study Challenge feature ships
+([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)); written here now because the constraint
+belongs with the games registry, not with the feature that discovered it.
+
+A Study Challenge draws three game ids **at issue time on Monday** and stores them in
+`study_challenges.gameSequence`. The pair does not play them until **Friday**. So a game
+deleted from `GAME_REGISTRY` mid-week leaves live challenges holding an id that no longer
+resolves, and both players are stuck at a round that cannot start.
+
+Deprecating a game is therefore a **two-phase retirement, at least one full week apart**:
+
+1. **Disable it for challenges** — remove it from the challenge-eligible pool so no new
+   `gameSequence` can contain it, while the game itself keeps working normally. Wait
+   until every challenge issued before the change has closed (the test window shuts the
+   following **Monday 04:00 local**, so one week plus a timezone margin is enough).
+2. **Then remove the game** — delete the `GameDef`, the route and the page.
+
+Doing these in one deploy breaks every in-flight challenge that drew the game. There is
+deliberately **no runtime substitution** and no auto-voiding: silently swapping a round's
+game after the players have prepared for a known sequence is worse than a scheduling
+rule, and voiding would make an ordinary deploy a user-visible event that destroys
+challenges people were mid-way through.
+
+The same applies to a game becoming *ineligible* for challenges for any other reason
+(losing its contested/filler scoring implementation, becoming single-player-only): phase
+it out of the eligible pool first, let the week drain, then change it.
+
+Renaming a `gameId` counts as removing one game and adding another. Don't.
+
 ## Files
 
 - `src/components/MobileFooter.tsx` — footer tabs (Flashcards / Discover / Home / Account)
@@ -532,18 +553,18 @@ and `Layout` need no edits.
 - `src/App.tsx` — `/games` route + per-game routes from registry
 - `src/games/registry.ts` — central `GAME_REGISTRY` + `GAME_ROUTES`
 - `src/games/types.ts` — `GameDef`, `GameAsset`, `GameProgress`
-- `src/games/runtime/GameEndPopup.tsx` — shared end-of-run popup shell (**live**; both games)
-- `src/games/runtime/GameStage.tsx` — generic Pixi host (**unused**)
-- `src/games/runtime/GamePage.tsx` — generic page shell (**unused**; no game adopts it)
-- `src/games/runtime/useGameActors.ts` — generic actor handle, tick + drawables (**unused**)
-- `src/games/hooks/useGameAssets.ts`, `useGameProgress.ts` (**unused**; `useVocabEntries.ts` + `useDictionaryEntries.ts` deleted 2026-07-28 as sense-blind — see Layer 3)
+- `src/games/runtime/GameEndPopup.tsx` — shared end-of-run popup shell (all four games)
+- `src/games/runtime/gameSounds.ts` — shared game sound effects
+- `src/games/runtime/useSidewaysStage.ts` — landscape-stage helper (Speed Reading)
+- `src/routes/routeMeta.ts` — `GAME_ROUTE_META` derives one `chrome: "leaf"` row per registry entry
+- *(deleted — do not look for these: `runtime/GameStage.tsx`, `runtime/GamePage.tsx`, `runtime/useGameActors.ts`, and the whole `src/games/hooks/` folder; see § Layer 2 / § Layer 3)*
 - `src/utils/definitionUtils.ts` / `server/utils/definitions.ts` — the dd resolvers every game's definition text must go through
 - `server/dal/implementations/GameAssetDAL.ts`, `GameProgressDAL.ts`
 - `server/services/GameAssetService.ts`, `GameProgressService.ts`
 - `server/controllers/GamesController.ts`
 - `server/dal/setup.ts` — DI wiring
 - `server/routes/gamesRoutes.ts` — route registration (games + night market + community + leaderboard)
-- `server/routes/onDeckRoutes.ts` — `game-pool` / `word-search-grid` route registration
+- `server/routes/onDeckRoutes.ts` — `gamePool` / `wordSearchGrid` route registration (camelCase paths — project convention, see [BACKEND_LAYERING.md](./BACKEND_LAYERING.md))
 - `server/scripts/seedGameAssets.js` — asset seed helper
 - `database/migrations/52-create-game-tables.sql` — `gameassets` + `gameprogress`
 
@@ -559,16 +580,16 @@ spec + file map: → [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
 
 ## Game: Bubble Match (`/games/bubble-match`)
 
-The first shipped game. **Does not use the Pixi `GameStage`/`useGameActors`
-runtime** — it is a DOM + `requestAnimationFrame` game (absolutely-positioned
-bubbles moved via `transform`), chosen for direct reuse of the colored-pinyin
-`CPCDRow` (cpcd) and cheap circle-circle physics at ~50 bubbles. It owns its page
-shell (`LeafPage` + its own flp-style header, **no footer** — see Routes above),
-not `GamePage`.
+The first shipped game. A DOM + `requestAnimationFrame` game (absolutely-positioned
+bubbles moved via `transform`) — chosen over Pixi for direct reuse of the
+colored-pinyin `CPCDRow` (cpcd) and cheap circle-circle physics at ~50 bubbles. That
+choice is why the speculative Pixi runtime was never adopted and has since been
+deleted (§ Layer 2). It owns its page shell (`LeafPage` + its own flp-style header,
+**no footer** — see Routes above).
 
 ### Gameplay
 
-- A game uses the **full pool**: the `GAME_DISTRIBUTION` mix (`constants.ts:23-28`)
+- A game uses the **full pool**: the `GAME_DISTRIBUTION` mix (`constants.ts`)
   of 2 Unfamiliar + 10 Target + 6 Comfortable + 2 Mastered library cards =
   **20 pairs (`TOTAL_PAIRS`) → 40 bubbles**. That mix is *preferred*, not strict —
   the server tops the pool up to 20 from the fallback buckets when one can't fill
@@ -625,7 +646,7 @@ not `GamePage`.
   `clearedThisSessionRef`, accumulates every card cleared across ALL rounds while
   the page stays mounted (capped to the newest `MAX_AVOID_IDS` = 200) and acts as a
   client-side cooldown, so round 3 doesn't hand back what round 1 cleared. The
-  refill hits `game-pool?...&need=N&exclude=<kept ids>&avoid=<cleared ids>`:
+  refill hits `gamePool?...&need=N&exclude=<kept ids>&avoid=<cleared ids>`:
   **kept ids are a hard exclude** (returning one would duplicate a live bubble),
   **cleared ids are a soft avoid** (last-resort tier). Nothing matched
   (`need === 0`) replays with no round trip. If the
@@ -649,7 +670,7 @@ not `GamePage`.
   in `constants.ts` (`LEVEL_CONFIGS`, `GAME_DISTRIBUTION`, `MIN_PLAY_HEIGHT`,
   sizes, physics).
 - Minute-points: `/games/bubble-match` is in `MINUTE_POINTS_ELIGIBLE_PAGES`
-  (`src/constants.ts:13-20`, alongside `/games/word-search`) and in the
+  (`src/constants.ts`, alongside `/games/word-search`) and in the
   start-on-entry subset, so time accrues from mount rather than from the first
   tap; the header's `MinutePointsFireBadge` works as on flp.
 

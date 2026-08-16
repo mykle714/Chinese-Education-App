@@ -231,7 +231,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
    *
    * Since migration 130 wallets are per-language, so ranking cannot be expressed as
    * an ORDER BY on this table any more. The caller joins
-   * IUserLanguagePointsDAL.getTotalsForAllUsers() (one grouped query) and sorts on
+   * IUserLanguagesDAL.getTotalsForAllUsers() (one grouped query) and sorts on
    * the summed wallet; `isPublic` lets it mask streak from non-public users at the
    * response layer. Ordering here is stable-by-signup only, purely so the join
    * output is deterministic before the caller re-sorts.

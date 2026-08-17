@@ -3,18 +3,25 @@
 **Delete this file once verified on prod.**
 **Deployed to prod yet? NO.**
 
-Three runbooks' worth of work has accumulated unshipped and now goes out together. Deployed
+Four runbooks' worth of work has accumulated unshipped and now goes out together. Deployed
 individually each was fine; deployed **together** they interact in two ways that neither
 file mentions, and both will stop the deploy dead if discovered live. Read this file first;
-the three per-feature runbooks remain the authority on *verification*, this one on *order*.
+the four per-feature runbooks remain the authority on *verification*, this one on *order*.
 
 | Runbook | Ships | Migrations |
 |---|---|---|
 | [PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md) | per-language minute points + night markets | 130, 134, **145** |
 | [PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md](./PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md) | provisional cards | 140 |
 | [UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md](./UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md) | unit-slot unlocks + generated unlock schedule | none (cron SQL only) |
+| [ARENA_DEPLOY_RUNBOOK.md](./ARENA_DEPLOY_RUNBOOK.md) | Arena weekly leaderboard | 146 |
 
 Plus unrelated additive migrations swept along: 132, 133.
+
+**Arena joined this batch on 2026-08-16.** It was originally sequenced *after* the batch,
+because 146 adds columns to `user_languages` — a table 145 creates by rename, so prod does
+not have it yet. Folding it in is safe **only because `migrate.sh` applies in `sort -V`
+order within a single run**: 145 lands before 146 in the same pass. It also brings one new
+step that none of the other three have — a **second systemd timer** (§ step 7a).
 
 ---
 
@@ -29,7 +36,7 @@ version. Prod's highest recorded version is **144** (the mastery-bars drop, veri
 
 ```
 pending on prod:  130  132  133  134  140      ← all < 144, triggers the guard
-                  145                          ← above, fine
+                  145  146                     ← above, fine
 ```
 
 So the per-language runbook's instruction — *"Run the normal `/deploy` skill, unmodified.
@@ -119,9 +126,13 @@ written for a solo deploy where 140 did not exist; it is **superseded by this fi
    ```bash
    ./database/deploy/migrate.sh --dry-run --allow-out-of-order <host> <port> cow_db cow_user
    ```
-   **Expect exactly:** 130, 132, 133, 134, 140, 145 — six files, in that order. More or
-   fewer than six means prod's state is not what this runbook assumes: **stop and
+   **Expect exactly:** 130, 132, 133, 134, 140, 145, **146** — seven files, in that order.
+   More or fewer than seven means prod's state is not what this runbook assumes: **stop and
    re-derive**, do not proceed.
+
+   ⚠️ 146 must appear **after** 145 in the printed list. 146 adds columns to
+   `user_languages`, which does not exist until 145 renames `user_language_points` into it.
+   `sort -V` guarantees this, but read the list rather than assuming it.
 
 4. **Apply:**
    ```bash
@@ -147,7 +158,26 @@ written for a solo deploy where 140 did not exist; it is **superseded by this fi
    never calls the function; the cron never calls the app), but do not end the session
    without it.
 
-8. **Post-deploy verification** — the three per-feature runbooks' own sections.
+7a. **Install the systemd timers** — `bash database/cron/install-timers.sh`. **New in this
+   batch**, and easy to skip because the old deploy block named a different file:
+
+   - The script was **renamed** from `install-maintenance-timer.sh`. A pasted old block
+     fails with "No such file" — loud, not silent, but only if you read the output.
+   - It now installs **two** timers: the existing `cow-maintenance` (HH:01) and the new
+     `cow-arena` (HH:06). Idempotent; safe to re-run.
+   - It must run **after** step 6, because `cow-arena` executes
+     `dist/scripts/arena-cron.js` inside the rebuilt backend container, and **after**
+     step 4, or the first pass fails on missing tables. (That failure is harmless — it
+     logs, exits 1, and retries the next hour — but it is noise you do not want.)
+   - Without this, Arena ships **inert**: every user sees a Join button that silently
+     never produces a board.
+
+   Confirm both timers are armed before moving on:
+   ```bash
+   systemctl --user list-timers cow-maintenance.timer cow-arena.timer --no-pager
+   ```
+
+8. **Post-deploy verification** — the four per-feature runbooks' own sections.
 
 ---
 
@@ -159,7 +189,9 @@ Run each runbook's SQL; they do not overlap. In dependency order:
 |---|---|---|
 | 4 | rename landed, no stale index names, wallet conserved, global columns gone, night-market `language` NOT NULL | per-language § Verification SQL (queries 0–5, **all of 1–4 must return 0**) |
 | 4 | `chk_zh/es_starter_pack_bucket` includes `'provisional'`; two partial indexes exist | provisional § After step 2 |
+| 4 | `arenas` + `arena_members` exist, `uq_arena_member_live` present, everyone in division 1 | arena § Verification SQL |
 | 7 | `nightmarket_unlocks_for_minutes` exists; one clean `inactivity-cron` NOTICE on the next tick | unit-slot § Verification SQL |
+| 7a | both timers armed; a forced `cow-arena` run logs `resolved N, formed M` | arena § Verifying the timer after deploy |
 | 8 | per-language summary returns **different** values for `zh` vs `es`; night market differs per language | per-language § smoke test |
 
 ## Rollback

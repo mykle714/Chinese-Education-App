@@ -295,7 +295,7 @@ function ChallengeDetailPage() {
                                     fontSize: SIZE.caption,
                                     fontWeight: WEIGHT.semibold,
                                     color: COLORS.redMain,
-                                    backgroundColor: COLORS.surface,
+                                    backgroundColor: COLORS.sectionCard,
                                     borderRadius: 2,
                                     px: 1.5,
                                     py: 0.5,

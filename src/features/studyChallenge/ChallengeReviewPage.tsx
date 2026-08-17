@@ -310,7 +310,7 @@ function ChallengeReviewPage() {
                                 fontSize: SIZE.body,
                                 fontWeight: WEIGHT.semibold,
                                 color: COLORS.redMain,
-                                backgroundColor: COLORS.surface,
+                                backgroundColor: COLORS.sectionCard,
                                 borderRadius: 3,
                                 px: 2,
                             }}

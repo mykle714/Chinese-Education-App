@@ -353,8 +353,12 @@ const SpeedReadingPage: React.FC = () => {
     // (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). This game's score IS
     // its elapsed time, so an unpaused background spell was charged directly to the
     // player's result.
+    // The live phases are "ready" and "feedback" — this game has no "playing"
+    // phase (unlike Match Speed / Bubble Match, whose call sites this was adapted
+    // from). Feedback time is deliberately part of the clock, per the `Phase` doc
+    // in ./types.ts, so both phases must hold the run open.
     const { paused: backgroundPaused, resume: resumeFromBackground } =
-        useBackgroundPause(phase === "playing");
+        useBackgroundPause(phase === "ready" || phase === "feedback");
     const clockPaused = noticeOpen || backgroundPaused;
     /** `Date.now()` when the current pause began, or null while running. */
     const pausedAtRef = useRef<number | null>(null);
@@ -888,20 +892,26 @@ const SpeedReadingPage: React.FC = () => {
                     onMinimize={sortOffer.onMinimize}
                     onRestore={sortOffer.onRestore}
                 />
+
+                {/* Backgrounding paused the round — the app-wide rule
+                    (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). A SIBLING of
+                    the board, like GameEndPopup, so the layout does not change shape when
+                    paused; it covers the board so the pause cannot be used as a free look
+                    at it, and the clock only restarts when the player taps Resume.
+
+                    It must live INSIDE the render-prop body: `children` here is the
+                    render-prop FUNCTION, so an overlay placed next to it under <LeafPage>
+                    would make two children and collapse the prop's union type back to
+                    ReactNode (tsc then rejects the function child). */}
+                <GamePausedOverlay
+                    open={backgroundPaused}
+                    onResume={resumeFromBackground}
+                    classPrefix="speed-reading"
+                />
             </Box>
             </Box>
             )}
 
-            {/* Backgrounding paused the round — the app-wide rule
-                (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). A SIBLING of
-                the board, like GameEndPopup, so the layout does not change shape when
-                paused; it covers the board so the pause cannot be used as a free look
-                at it, and the clock only restarts when the player taps Resume. */}
-            <GamePausedOverlay
-                open={backgroundPaused}
-                onResume={resumeFromBackground}
-                classPrefix="speed-reading"
-            />
         </LeafPage>
         </>
     );

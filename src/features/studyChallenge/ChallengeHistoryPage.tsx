@@ -106,7 +106,7 @@ function ChallengeHistoryPage() {
     const selectSx = {
         fontFamily: FONTS.sans,
         fontSize: SIZE.caption,
-        backgroundColor: COLORS.surface,
+        backgroundColor: COLORS.sectionCard,
         borderRadius: 2,
         "& .MuiOutlinedInput-notchedOutline": { border: "none" },
     } as const;
@@ -223,7 +223,7 @@ function ChallengeHistoryPage() {
                             fontSize: SIZE.caption,
                             fontWeight: WEIGHT.semibold,
                             color: COLORS.onSurface,
-                            backgroundColor: COLORS.surface,
+                            backgroundColor: COLORS.sectionCard,
                             borderRadius: 2,
                             px: 2,
                             py: 0.5,

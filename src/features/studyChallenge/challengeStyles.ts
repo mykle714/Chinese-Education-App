@@ -14,7 +14,7 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 
 /** A rounded surface card — the container every section on these pages sits in. */
 export const challengeCardSx = {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.sectionCard,
     borderRadius: 3,
     p: 1.5,
 } as const;

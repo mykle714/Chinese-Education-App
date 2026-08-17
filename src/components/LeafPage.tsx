@@ -75,7 +75,12 @@ interface LeafPageProps {
     children: ReactNode | ((api: LeafPageChildApi) => ReactNode);
 }
 
-const LeafPage: React.FC<LeafPageProps> = ({
+// NOT `React.FC<LeafPageProps>`: React.FC re-declares `children` as plain
+// ReactNode, which silently discards the render-prop half of the union declared
+// above — so `<LeafPage>{({ onBack }) => …}</LeafPage>` would not typecheck even
+// though the implementation supports it. Annotating the props directly keeps the
+// union intact.
+const LeafPage = ({
     title,
     onBack,
     rightContent,
@@ -85,7 +90,7 @@ const LeafPage: React.FC<LeafPageProps> = ({
     className,
     hideHeader = false,
     children,
-}) => {
+}: LeafPageProps) => {
     const { surfaceRef, style, exit } = usePageSlide({ axis: "y" });
 
     // Back arrow is the only exit: navigate (destination mounts beneath) while a

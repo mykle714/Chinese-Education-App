@@ -121,7 +121,7 @@ function ChallengesPage() {
                         fontSize: SIZE.body,
                         fontWeight: WEIGHT.semibold,
                         color: COLORS.onSurface,
-                        backgroundColor: COLORS.surface,
+                        backgroundColor: COLORS.sectionCard,
                         borderRadius: 3,
                         px: 2,
                         py: 0.75,

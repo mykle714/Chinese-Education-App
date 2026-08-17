@@ -1,0 +1,46 @@
+; cow-arena.service — managed by database/cron/install-timers.sh
+; (do not edit the installed copy in ~/.config/systemd/user; edit THIS template,
+; commit, and redeploy).
+;
+; __REPO_DIR__ is substituted with the absolute repo path at install time, so the
+; unit never depends on the checkout living at any particular path.
+;
+; PROD ONLY. Dev is intentionally left with no schedule — trigger a pass by hand
+; with `npx tsx scripts/arena-tick.ts` from server/. See docs/ARENA_FEATURE.md § 10
+; and docs/ARENA_DEPLOY_RUNBOOK.md.
+
+[Unit]
+Description=Arena hourly pass (resolve closed arenas, then form new ones)
+Documentation=file://__REPO_DIR__/docs/ARENA_FEATURE.md
+; Nothing to order against: the job talks to the backend container, not a host
+; service, and it tolerates the container being down (it fails, logs, retries next
+; hour). It is deliberately NOT ordered after cow-maintenance.service — see below.
+
+[Service]
+Type=oneshot
+
+; ── WHY THIS IS A SEPARATE UNIT AND NOT A THIRD ExecStart ON cow-maintenance ───
+; cow-maintenance is a oneshot with two ordered steps, and systemd ABORTS the unit
+; when a step fails. That is correct there, because its step 2 consumes what its
+; step 1 writes. The arena shares nothing with either: it reads opt-ins and writes
+; arenas/arena_members, while the maintenance pass debits minute points and prunes
+; templates. Appending it there would mean a failed inactivity-penalty SQL run
+; silently prevents arenas from forming — and because formation only happens in the
+; hours around the Tuesday boundary, a failure in the wrong hour costs a whole week
+; of arenas for every user. Separate units keep those failure domains apart.
+;
+; A oneshot is still a SINGLETON, so overlapping runs remain impossible: if a pass
+; somehow ran past the hour, systemd will not start the next one on top of it.
+;
+; Runs as COMPILED JS inside the backend container — the prod image has no tsx and
+; no devDeps, exactly as the template-prune step does. `bash -c` is required for
+; the `>>` append, which is shell syntax systemd's ExecStart does not interpret.
+;
+; ⚠️ The script is arena-cron.js, NOT arena-tick.js. arena-tick is the dev trigger
+; and accepts --seed-opt-ins, which would opt every user in the database into next
+; week. Never point a scheduler at it.
+ExecStart=/bin/bash -c '/usr/bin/docker exec cow-backend-prod node dist/scripts/arena-cron.js >> __REPO_DIR__/logs/arena-cron.log 2>&1'
+
+; The script exits non-zero on any failure, so a bad run shows up in
+; `systemctl --user status cow-arena` and in the journal rather than only in the
+; log file: `journalctl --user -u cow-arena`.

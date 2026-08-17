@@ -1,0 +1,41 @@
+; cow-arena.timer — managed by database/cron/install-timers.sh
+; (do not edit the installed copy in ~/.config/systemd/user; edit THIS template,
+; commit, and redeploy).
+;
+; This file is the editable source of truth for WHEN the arena pass runs.
+
+[Unit]
+Description=Hourly trigger for cow-arena.service
+Documentation=file://__REPO_DIR__/docs/ARENA_FEATURE.md
+
+[Timer]
+; Hourly, because the arena's boundaries are LOCAL to each member's timezone
+; (docs/ARENA_FEATURE.md § 3). There is no single instant at which "the week
+; starts" — 04:00 Tuesday sweeps around the globe across ~26 hours, so the pass has
+; to come round every hour and act on whichever timezone buckets have just crossed.
+;
+; HH:06 rather than HH:01 for two reasons:
+;   1. It leaves the local-hour boundary itself uncontended. cow-maintenance fires
+;      at HH:01 and updates user_languages row-by-row for the penalty pass; arena
+;      formation reads and writes the SAME table (division, arenaOptInWeek). Five
+;      minutes of stagger keeps the two off each other's row locks without either
+;      needing to know the other exists.
+;   2. Formation runs on a lead (ARENA_FORMATION_LEAD_MINUTES = 60), so nothing
+;      here is time-critical to the minute; being a few minutes late is invisible.
+OnCalendar=*:06
+
+; Catch up on a missed run (host rebooted, user manager down) at the next start
+; instead of silently skipping the hour. This matters MORE here than for the
+; maintenance timer: a skipped penalty hour is retried an hour later with the same
+; outcome, but a skipped formation hour is a timezone bucket that never got its
+; arena, and there is no later hour that will notice. Safe because both halves of
+; the pass are idempotent (arenaExistsForBucket; `resolvedAt IS NULL`).
+Persistent=true
+
+; systemd may delay a timer by up to AccuracySec to batch wakeups. Default is 1min,
+; which would let an "HH:06" job drift to HH:07; pin it tighter so the stagger from
+; cow-maintenance means what it says.
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

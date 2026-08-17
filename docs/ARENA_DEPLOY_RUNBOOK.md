@@ -17,11 +17,12 @@ Two reasons, neither visible from the diff:
    prod yet. It is created by 130 and renamed by 145, both of which are in the batch
    described by [COMBINED_DEPLOY_RUNBOOK.md](./COMBINED_DEPLOY_RUNBOOK.md). **146 must not
    ship before that batch lands**, or it fails on a missing table.
-2. **The feature does nothing without a cron that has not been written.** Formation and
-   resolution are driven by an hourly job. There is a dev trigger
-   (`server/scripts/arena-tick.ts`) and an HTTP trigger (`POST /api/arena/admin/tick`), but
-   **no prod cron exists yet**. Shipping the code without one gives every user a permanently
-   empty arena and a Join button that silently never produces a board.
+2. **The feature does nothing without its cron, and the cron install is a new step.**
+   Formation and resolution are driven by an hourly job — without it every user gets a
+   permanently empty arena and a Join button that silently never produces a board. The
+   `cow-arena` systemd timer now exists and `/deploy` installs it, but the installer was
+   **renamed** (`install-maintenance-timer.sh` → `install-timers.sh`) and must run *after*
+   the migration. Details under [The cron](#the-cron).
 
 ---
 
@@ -33,7 +34,8 @@ Two reasons, neither visible from the diff:
    highest recorded version is 145 and 146 is above it, so the out-of-order guard does not
    fire. (If for any reason 146 lands in the *same* run as the backlog, it needs the same
    `--allow-out-of-order` flag that batch does.)
-3. **Install the cron** (below). Until this is done the feature is inert.
+3. **Install the timers** — `bash database/cron/install-timers.sh`, *after* the migration.
+   Until this is done the feature is inert. Already part of the `/deploy` block.
 4. Verify.
 
 ## Verification SQL
@@ -77,26 +79,62 @@ FROM arenas a WHERE a.id = m."arenaId" AND a."resolvedAt" IS NOT NULL AND m."isL
 
 ## The cron
 
-**Not yet written.** It must call, hourly:
+**Written — installed by the standard deploy step.** It is the `cow-arena` systemd user
+timer (hourly at **HH:06**), a sibling of the existing `cow-maintenance` timer:
 
+| Piece | File |
+|---|---|
+| Entry point | `server/scripts/arena-cron.ts` → `dist/scripts/arena-cron.js` |
+| Service unit | `database/cron/cow-arena.service.template` |
+| Timer unit | `database/cron/cow-arena.timer.template` |
+| Installer | `database/cron/install-timers.sh` (installs **both** timers) |
+
+The installer was renamed from `install-maintenance-timer.sh` in this change and now
+installs both schedules. **The `/deploy` block already runs it**, so nothing extra is
+needed — but it must run *after* migration 146, or the first arena pass fails on missing
+tables (harmlessly: it logs, exits 1, and retries the next hour).
+
+Why HH:06 and not HH:01: `cow-maintenance` fires at HH:01 and updates `user_languages`
+row-by-row, and arena formation reads and writes the same table. Five minutes of stagger
+keeps them off each other's row locks. Formation runs on a 60-minute lead, so a few
+minutes of lateness is invisible.
+
+Why a separate unit rather than a third `ExecStart` on `cow-maintenance`: systemd aborts a
+oneshot when a step fails, so appending it would mean a failed inactivity-penalty run
+silently prevents arenas from forming — and formation only happens in the hours around the
+Tuesday boundary, so a failure in the wrong hour costs a whole week of arenas for everyone.
+
+⚠️ **Do not point the timer at `arena-tick.ts`.** That is the dev trigger and accepts
+`--seed-opt-ins`, which opts every user in the database into next week. The prod entry
+point is `arena-cron.ts`, which takes no arguments at all.
+
+⚠️ **Do not split this into two scheduled jobs, and do not call `formArenas` before
+`resolveDue`.** Resolution releases live seats; formation consumes them. Forming first
+makes an outage self-escalating: last week's unresolved arenas hold their members' seats,
+the new formation is rejected by `uq_arena_member_live`, and nobody gets an arena.
+`ArenaService.tick()` exists precisely so this ordering cannot be got wrong at a call site.
+
+Both halves are idempotent (`arenaExistsForBucket` for formation, `resolvedAt IS NULL` for
+resolution), which is what makes `Persistent=true` safe on the timer — a run missed to a
+reboot is caught up rather than skipped.
+
+### Verifying the timer after deploy
+
+```bash
+systemctl --user list-timers cow-arena.timer --no-pager   # expect NEXT = the coming HH:06
+systemctl --user status cow-arena.service --no-pager      # expect inactive (dead), Result: success
+tail -n 20 ~/vocabulary-app/logs/arena-cron.log           # expect "arena-cron: done — resolved N, formed M"
 ```
-ArenaService.tick()   -- resolve first, then form
+
+A manual pass can be forced at any time, and is the fastest way to confirm the wiring:
+
+```bash
+systemctl --user start cow-arena.service
+# or, straight to the container:
+docker exec cow-backend-prod node dist/scripts/arena-cron.js
 ```
 
-⚠️ **Do not reimplement this as two separate scheduled jobs, and do not call `formArenas`
-before `resolveDue`.** Resolution releases live seats; formation consumes them. Forming
-first makes a cron outage self-escalating: last week's unresolved arenas hold their
-members' seats, the new formation is rejected by `uq_arena_member_live`, and nobody gets an
-arena. `tick()` exists precisely so this ordering cannot be got wrong at the call site.
-
-Follow the pattern in [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) — it is the
-existing prod-only, local-boundary cron and its idempotency guard is the model here. Both
-arena operations are already idempotent (`arenaExistsForBucket` for formation,
-`resolvedAt IS NULL` for resolution), so a retry or a double-fire is harmless.
-
-Interim option: prod can be ticked by hand via `POST /api/arena/admin/tick` (validator-only)
-until the cron is installed. That is acceptable for a soft launch and unacceptable as a
-steady state — a missed Tuesday means no arenas that week.
+`POST /api/arena/admin/tick` (validator-only) remains available as an HTTP trigger.
 
 ## Rollback
 

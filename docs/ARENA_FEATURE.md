@@ -887,7 +887,7 @@ No change to `userminutepoints` or any vet table.
 | Service | `server/services/MinutePointsService.ts` | one new call into `ArenaService.creditMinutes` (§ 4.1) |
 | Controller | `server/controllers/ArenaController.ts` | HTTP edge only |
 | Routes | `server/routes/arenaRoutes.ts` | ⚠️ static segments above any `/:id`, as in `friendRoutes` |
-| Cron | `database/cron/arena-tick.sql` **or** a node job | hourly: form arenas for any timezone crossing Tue 04:00, resolve any crossing Sun 16:00 |
+| Cron | `server/scripts/arena-cron.ts` + `database/cron/cow-arena.{service,timer}.template` | the `cow-arena` systemd user timer, hourly at **HH:06**: resolve any arena past Sun 16:00, then form for any timezone crossing Tue 04:00 |
 | Client API | `src/api/arena.ts` | typed calls, **no `token` param** (FRONTEND_LAYERING § 3.2) |
 | Client | `src/features/arena/*` | `ArenaPage` + the four states |
 | Client (shared) | `src/components/leaderboard/*` | `LeaderboardPersonRow` extracted from `features/friends` (§ 2.1) |
@@ -930,6 +930,38 @@ pattern rather than inventing one.
 Because the cron is **prod-only**, dev needs a manual trigger — an admin/validator-gated
 `POST /api/arena/admin/tick` or a `server/scripts/arena-tick.ts` — or the feature is
 untestable locally. Do not skip this.
+
+### How the cron is actually installed
+
+The `cow-arena` **systemd user timer**, a sibling of the existing `cow-maintenance` timer,
+installed by `database/cron/install-timers.sh` (renamed from `install-maintenance-timer.sh`
+when this second schedule arrived; it now installs both, and `/deploy` runs it every
+deploy). Full operational detail, including verification commands, lives in
+[ARENA_DEPLOY_RUNBOOK.md](./ARENA_DEPLOY_RUNBOOK.md).
+
+Three decisions worth keeping:
+
+1. **A separate unit, not a third `ExecStart` on `cow-maintenance`.** systemd aborts a
+   oneshot when a step fails. Appending the arena there would mean a failed
+   inactivity-penalty run silently prevents arenas from forming — and since formation only
+   happens in the hours around the Tuesday boundary, a failure in the wrong hour costs a
+   whole week of arenas for every user. The two jobs share no data; they should not share a
+   failure domain.
+2. **HH:06, not HH:01.** `cow-maintenance` fires at HH:01 and updates `user_languages`
+   row-by-row for the penalty pass; arena formation reads and writes the same table
+   (`division`, `arenaOptInWeek`). The stagger keeps them off each other's row locks
+   without either job needing to know the other exists. Formation runs on a 60-minute lead
+   (`ARENA_FORMATION_LEAD_MINUTES`), so lateness of a few minutes is invisible.
+3. **A dedicated entry point, `arena-cron.ts`, separate from the dev `arena-tick.ts`.**
+   The dev trigger accepts `--seed-opt-ins`, which opts *every user in the database* into
+   next week. That flag must not exist on any code path a scheduler can reach, so the prod
+   entry point takes no arguments at all. It exits non-zero on failure, which is what makes
+   a bad run visible in `systemctl --user status cow-arena` rather than only in a log file.
+
+`Persistent=true` on the timer is safe — and matters more here than for the maintenance
+timer. A skipped penalty hour is retried an hour later with the same outcome; a skipped
+formation hour is a timezone bucket that never got its arena, and no later hour would
+notice.
 
 ---
 
@@ -991,7 +1023,9 @@ but deliberately postponed belongs in [DEFERRED_WORK.md](./DEFERRED_WORK.md), no
 This document describes (all of the following now exist except where marked):
 `database/migrations/146+` (`arenas`, `arena_members`, two `user_languages` columns,
 `users."geoCell"`),
-`server/scripts/arena-tick.ts` (the dev trigger; the prod cron is **not yet written**),
+`server/scripts/arena-tick.ts` (the dev trigger) and `server/scripts/arena-cron.ts`
+(the prod entry point, driven by the `cow-arena` systemd timer —
+`database/cron/cow-arena.{service,timer}.template`, `database/cron/install-timers.sh`),
 `server/contracts/wire.ts` (arena constants),
 `server/shared/arenaWeek.ts` + `src/utils/arenaWeek.ts`,
 `server/types/arena.ts`,

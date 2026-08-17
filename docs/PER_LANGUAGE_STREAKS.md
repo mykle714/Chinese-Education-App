@@ -255,5 +255,5 @@ Order matters — the cron SQL and the prune script both read
    knows **only** the new name, so 145 must land before the app restarts.
 2. Deploy the app.
 3. Reinstall the maintenance schedule via
-   `database/cron/install-maintenance-timer.sh` — the on-disk SQL is already
+   `database/cron/install-timers.sh` — the on-disk SQL is already
    rewritten and will fail against a pre-130 schema.

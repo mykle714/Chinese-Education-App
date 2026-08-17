@@ -166,13 +166,14 @@ git pull origin main
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up --build -d
 
-# Maintenance schedule (prod only) — idempotent; installs/refreshes the hourly
-# inactivity-penalty + template-prune schedule as the cow-maintenance systemd USER
-# timer, rendered from the git-tracked unit templates in database/cron/.
+# Schedules (prod only) — idempotent; installs/refreshes BOTH hourly systemd USER
+# timers from the git-tracked unit templates in database/cron/:
+#   cow-maintenance  HH:01  inactivity penalty + template prune  (docs/STREAK_EXPIRATION_CRON.md)
+#   cow-arena        HH:06  resolve then form arenas             (docs/ARENA_FEATURE.md § 10)
 # NO SUDO — it writes to ~/.config/systemd/user, which the deploy user owns.
 # Never run it with sudo (it refuses: root's units would not run this user's jobs).
-# Safe to run every deploy. See docs/STREAK_EXPIRATION_CRON.md
-bash database/cron/install-maintenance-timer.sh
+# Safe to run every deploy.
+bash database/cron/install-timers.sh
 
 # Migration(s) — one cp + -f + INSERT triple per pending file (inferred from prodSHA..origin/main),
 # in sort -V order. Copy file into container, run with -f, then RECORD it in schema_migrations.

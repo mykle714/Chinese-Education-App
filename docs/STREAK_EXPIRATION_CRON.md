@@ -19,7 +19,7 @@ any template that decay left empty and dangling (compiled JS, see Branch 2).
 
 Both are `ExecStart=` steps of **one** systemd user unit, `cow-maintenance.service`,
 fired hourly by `cow-maintenance.timer` and installed together by
-`database/cron/install-maintenance-timer.sh`. See
+`database/cron/install-timers.sh`. See
 [Scheduling](#scheduling-systemd-user-timer-not-cron) — "cron" survives in this
 document's title and in the `logs/streak-expire.log` filename only for continuity.
 
@@ -270,10 +270,10 @@ psql "$DATABASE_URL" -f database/cron/expire-stale-streaks.sql
 
 4. **Install the schedule.** Both the SQL logic and the schedule are git-tracked;
    the schedule is a **systemd user timer** installed by
-   `database/cron/install-maintenance-timer.sh`, which `/deploy` runs on every
+   `database/cron/install-timers.sh`, which `/deploy` runs on every
    deploy. To install/refresh manually (**no sudo**):
    ```bash
-   bash /home/michael/vocabulary-app/database/cron/install-maintenance-timer.sh
+   bash /home/michael/vocabulary-app/database/cron/install-timers.sh
    ```
    Idempotent. Runs at `HH:01` so the 4 AM local boundary has ticked over for any
    timezone. Details in [Scheduling](#scheduling-systemd-user-timer-not-cron).
@@ -347,7 +347,7 @@ grep '^NOTICE:  inactivity-cron' /home/michael/vocabulary-app/logs/streak-expire
 
 ## Scheduling (systemd user timer, not cron)
 
-**Depends on:** `database/cron/install-maintenance-timer.sh`,
+**Depends on:** `database/cron/install-timers.sh`,
 `database/cron/cow-maintenance.service.template`,
 `database/cron/cow-maintenance.timer.template`, and the `/deploy` skill
 (`.claude/commands/deploy.md` Step 3, which runs the installer every deploy).
@@ -356,7 +356,7 @@ grep '^NOTICE:  inactivity-cron' /home/michael/vocabulary-app/logs/streak-expire
 |---|---|
 | Schedule source of truth (WHEN) | `database/cron/cow-maintenance.timer.template` |
 | Job definition (WHAT) | `database/cron/cow-maintenance.service.template` |
-| Installer (no sudo) | `database/cron/install-maintenance-timer.sh` |
+| Installer (no sudo) | `database/cron/install-timers.sh` |
 | Rendered units on prod | `~/.config/systemd/user/cow-maintenance.{service,timer}` |
 
 The installer renders each template, substituting `__REPO_DIR__` with the absolute
@@ -480,7 +480,7 @@ migration, no manual step, no runbook.
 ⚠️ **That is true of the SQL only.** A change to the **unit template** — adding an
 `ExecStart` line, editing `Description=` — is *not* picked up by a git pull, because prod
 runs the rendered copy in `~/.config/systemd/user`. It needs
-`database/cron/install-maintenance-timer.sh` to re-render and `systemctl --user
+`database/cron/install-timers.sh` to re-render and `systemctl --user
 daemon-reload`. `/deploy` Step 3 runs the installer every deploy, so this is automatic —
 but only if the step is not skipped, which is exactly what happened under the old cron
 setup.

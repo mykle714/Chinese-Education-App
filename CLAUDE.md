@@ -263,11 +263,21 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks:
-- [docs/STUDY_CHALLENGE_DEPLOY_RUNBOOK.md](./docs/STUDY_CHALLENGE_DEPLOY_RUNBOOK.md) — Study Challenge (migration **148**); **not yet on prod**. Migration must land before the app restarts (the shipped deck read selects the new `decks."editMode"`), and the **systemd unit must be re-rendered** by `database/cron/install-timers.sh` — a git pull does not roll out a unit-template change, and until it does the feature's entire time-triggered half (invitations lapsing, windows closing, winners declared) stays inert while everything else works
-- Migration **147** (the dead `compute_utcm_category` drop) is applied on dev and rides along in the same batch; it ships no code and needs no runbook of its own
+Current open runbooks: **none.** Prod is current through migration **149**.
 
-Prod is current through migration **146**.
+Deployed and retired on 2026-08-17 (runbook deleted): Study Challenge phase 1 async
+(**148**), the dead `compute_utcm_category` drop (**147**) and the lifetime-mark-counter
+drop (**149**). This batch could **not** be applied in one `migrate.sh` pass, and the
+runbook did not say so: **148 had to land before the rebuild** (the shipped deck read
+selects `decks."editMode"`, so old schema + new code 500s `/decks`) while **149 had to
+land after it** (it drops `vet."totalMarkCount"`/`"totalCorrectCount"`, which the old code
+still wrote on every mark). 147+148 were applied by hand with their tracking rows, then
+the containers were rebuilt, then `migrate.sh` picked up 149 alone. **When a batch mixes
+expand and contract migrations, split it around the rebuild rather than trusting a single
+`migrate.sh` run.** The deploy also re-rendered the systemd units via
+`database/cron/install-timers.sh` — a git pull does not roll out a unit-template change,
+and until it does the feature's whole time-triggered half stays inert while everything
+else works; the `Description=` line is the tell that it took.
 
 Deployed and retired on 2026-08-16 (runbooks deleted): the `user_language_points` →
 `user_languages` rename (145) and Arena (146), which also installed the **`cow-arena`**

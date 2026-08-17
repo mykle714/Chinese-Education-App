@@ -39,7 +39,7 @@ Delete an item when it is done; this file is a queue, not a history.
 | **What** | Implement the async Study Challenge. The design is complete: [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) (Q1–Q68) and [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) (Q69–Q73) have **no open design questions**, and every doc the build depends on was updated on 2026-08-16 |
 | **Why deferred** | It *was* queued behind Arena, which owned the two things it would have collided with: `database/migrations/146-create-arenas.sql` and then-uncommitted edits to `server/contracts/wire.ts`. **That collision is gone as of 2026-08-16** — Arena is committed (`480c80d`, `12159ef`) and shipped to prod, so `wire.ts` is a normal read rather than a merge |
 | **Cost of leaving it** | None. Nothing depends on it and nothing degrades while it waits |
-| **Trigger** | **Met; the build is DONE except one piece.** Migration **148** applied on dev; the contract, the whole async server stack, the client surfaces, `mastered-first` provisioning, the shared scoring runner, pause-on-background for all four games, the maintenance job and the deploy runbook are all built and tested (see the status table at the top of [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)). **The one thing left is the scored round runner** — see the next row. **Next free migration number is 150** — 149 is the lifetime-counter drop |
+| **Trigger** | **Met; the build is DONE except one piece.** Migration **148** applied on dev **and shipped to prod 2026-08-17** (its runbook is retired); the contract, the whole async server stack, the client surfaces, `mastered-first` provisioning, the shared scoring runner, pause-on-background for all four games, the maintenance job and the deploy runbook are all built and tested (see the status table at the top of [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)). **The one thing left is the scored round runner** — see the next row. **Next free migration number is 150** — 149 is the lifetime-counter drop |
 | **What is left** | The per-game board integration only: a challenge-board pool read (ten contested cards + `mastered-first` filler, extending `/api/onDeck/gamePool` rather than adding a second loader), contested/filler classification inside Bubble Match / Match Speed / Word Search-Pinyin with `ChallengeEvent`s fed to `src/games/runtime/challengeScoring.ts`, Match Speed's alternation rule (§ 5.3), and the between-games scoreboard + round POST. Everything it depends on exists and is tested; this is wiring inside the three most complex pages in the app, which is why it was not rushed alongside the rest |
 | **References** | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 9–12, [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md), [GAMES_FEATURE.md](./GAMES_FEATURE.md), [DECKS_FEATURE.md](./DECKS_FEATURE.md), [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md), [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) |
 
@@ -79,9 +79,10 @@ independent of each other.
 6. **Maintenance job** — `database/cron/expire-study-challenges.sql`, a third `ExecStart`
    in `cow-maintenance.service.template`, and its `Description=` update. ⚠️ A unit-template
    change is **not** rolled out by a git pull; the installer must re-render it.
-7. **`docs/STUDY_CHALLENGE_DEPLOY_RUNBOOK.md`** — deliberately not written yet, because it
-   must state exact step order and verification SQL for a migration that does not exist.
-   Write it in the same commit as the migration, per CLAUDE.md.
+7. **Deploy runbook** — written with the migration, used on 2026-08-17, and deleted once
+   prod was verified, per CLAUDE.md. Its one gap is recorded in the CLAUDE.md deploy
+   notes: it assumed a single `migrate.sh` pass, but 148 (expand) had to precede the
+   rebuild and 149 (contract) had to follow it.
 
 **Live mode is phase 2 and is not part of this.** It needs a WebSocket at `/api/ws` and
 adds no tables and no columns; it is buildable at any point after phase 1 exists. Its one
@@ -135,34 +136,22 @@ sort, filter, aggregate or join, no service, and zero references in `src/`.
 
 The lesson worth keeping: the "per-type or all-type?" framing presumed a reader. Asking
 *who consumes this* before *what shape should it be* dissolved a standing schema decision
-into a deletion. Applied on dev; **not yet on prod** — it is a **contract** migration (the
-code that stopped writing the columns must be live first), which the standard `/deploy`
-order satisfies because `up --build` precedes the migration commands. Verify with:
-
-```sql
-SELECT count(*) FROM information_schema.columns
-WHERE column_name IN ('totalMarkCount','totalCorrectCount');   -- expect 0
-```
+into a deletion. **Deployed and verified on prod 2026-08-17** (0 leftover columns across
+`vocabentries_zh` / `vocabentries_es`). Being a **contract** migration, it was applied
+*after* the container rebuild rather than in one `migrate.sh` pass with 147/148 — 148 had
+to land before the new code and 149 after it, so the batch was split around the rebuild.
 
 Note the ⚠️ one-way door: the lifetime tallies are gone and unreconstructible
 (`typedMarkHistory` keeps only 8 marks per type). Accepted — nothing read them, and a
 future lifetime statistic would start counting from zero.
 
-### Drop the dead `compute_utcm_category()` (closed 2026-08-17 — ⚠️ one loose thread)
+### Drop the dead `compute_utcm_category()` (closed 2026-08-17 — done)
 
-Written as `database/migrations/147-drop-compute-utcm-category.sql` and applied to dev
-(dev is now at 147). The contract half of migration 143, whose deploy window closed when
-143 was verified on prod on 2026-08-11.
-
-**It has not reached prod yet**, and it is kept here rather than as an open item because
-nothing needs deciding or doing: it ships no code, has no ordering constraint, and
-`migrate.sh` auto-applies it on the next `/deploy` for any reason. After that deploy,
-confirm and then delete this entry:
-
-```sql
-SELECT p.oid::regprocedure FROM pg_proc p WHERE p.proname LIKE 'compute_%category';
--- expect exactly two rows: compute_core_category(jsonb), compute_type_category(jsonb,text)
-```
+`database/migrations/147-drop-compute-utcm-category.sql`, the contract half of migration
+143 (whose deploy window closed when 143 was verified on prod on 2026-08-11).
+**Deployed and verified on prod 2026-08-17**: `pg_proc` now holds exactly
+`compute_core_category(jsonb)` and `compute_type_category(jsonb,text)`, so the mirror set
+is four-way as intended and the phantom fifth is gone.
 
 ### Mastery goal defaults — `users.readingGoal` / `users.writingGoal` (closed 2026-08-17)
 

@@ -263,22 +263,27 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks:
-- ⚠️ **[docs/COMBINED_DEPLOY_RUNBOOK.md](./docs/COMBINED_DEPLOY_RUNBOOK.md) — READ THIS FIRST.**
-  The three runbooks below have accumulated unshipped and now go out together. Deployed
-  together they interact in two ways none of them mentions: `migrate.sh` **halts** (five
-  pending migrations sit below prod's highest recorded version and need
-  `--allow-out-of-order`), and two of the runbooks give **opposite** step orders. The
-  combined file is authoritative on **order**; the three below remain authoritative on
-  **verification**
-- [docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md) — per-language minute points + night markets (migrations 130, 134, **145**); **not yet on prod**. 145 renames `user_language_points` → `user_languages` and **must land before the app restarts** (the shipped code knows only the new name); the cron SQL must be redeployed with it
-- [docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md](./docs/UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md) — unit-slot unlocks + generated unlock schedule; no migration, but the cron SQL **must** be redeployed; **not yet on prod**
-- [docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md](./docs/PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md) — provisional cards (migration 140); the migration **must** land before the new code (it writes a bucket value the old CHECK rejects); **not yet on prod**
-- [docs/ARENA_DEPLOY_RUNBOOK.md](./docs/ARENA_DEPLOY_RUNBOOK.md) — Arena (migration 146); **not yet on prod**. Depends on the combined batch above landing first (146 adds columns to `user_languages`, which prod does not have yet). Ships the **`cow-arena` hourly systemd timer** (HH:06), installed by `database/cron/install-timers.sh` — **renamed** from `install-maintenance-timer.sh`, which now installs both timers; the feature is inert until it runs
+Current open runbooks: **none.** Prod is current through migration **146**.
 
-Deployed and retired on 2026-08-11 (runbooks deleted): collection Sort by + `masteredAt`
-(142), three mastery bars (143), `sortable` drop (144). The one loose end from that deploy
-(the dead `compute_utcm_category`) is tracked in the deferred-work list below.
+Deployed and retired on 2026-08-16 (runbooks deleted): the `user_language_points` →
+`user_languages` rename (145) and Arena (146), which also installed the **`cow-arena`**
+hourly systemd timer via `database/cron/install-timers.sh` — **renamed** from
+`install-maintenance-timer.sh`; it now installs both `cow-maintenance` and `cow-arena`.
+Retired in the same pass, having shipped earlier and been verified on prod after the
+fact: per-language minute points (130, 134), provisional cards (140), unit-slot unlocks
+(cron SQL only). Earlier, on 2026-08-11: collection Sort by + `masteredAt` (142), three
+mastery bars (143), `sortable` drop (144).
+
+> ⚠️ **A runbook's own status line is not evidence.** Four of the runbooks retired above
+> still read "not yet on prod" when their migrations had already been applied — the
+> 2026-08-16 deploy nearly acted on that, and the remedy (`--allow-out-of-order`) would
+> have suppressed the guard that was correctly reporting the mismatch. **Always derive
+> pending work from `schema_migrations` and a `migrate.sh --dry-run`**, and treat any
+> disagreement with a runbook as the runbook being stale. Two runbooks still carrying
+> false "NOT YET DEPLOYED" banners are tracked in [docs/DEFERRED_WORK.md](./docs/DEFERRED_WORK.md).
+
+The loose end from the 2026-08-11 deploy (the dead `compute_utcm_category`) is tracked in
+the deferred-work list below.
 
 ### Deferred work (the "do it later" queue)
 → See [docs/DEFERRED_WORK.md](./docs/DEFERRED_WORK.md) — work that is known, agreed, and

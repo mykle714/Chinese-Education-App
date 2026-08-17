@@ -1,7 +1,6 @@
 # Provisional Cards — nothing blocks on card count
 
-**Status:** implemented (migration 140). Not yet on prod — see
-[SORT_CARDS_REQUIREMENTS / deploy runbook](./PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md).
+**Status:** implemented and on prod (migration 140, shipped 2026-08-08).
 
 ---
 

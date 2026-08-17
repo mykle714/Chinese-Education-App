@@ -74,14 +74,10 @@ Delete an item when it is done; this file is a queue, not a history.
 
 #### Deploy-order constraints to resolve before writing the migration
 
-Two migrations this one sits on top of are **not yet on prod**, so the challenge migration
-cannot be the first thing that ships:
-
-* **140** (provisional cards) — the `mastered-first` provisioning mode extends it, and its
-  runbook says 140 must land **before** the new code, because it writes a bucket value the
-  old CHECK rejects. See [PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md](./PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md).
-* **145** (`user_language_points` → `user_languages`) — must land before the app restarts.
-  See [PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md).
+**Resolved 2026-08-16 — no longer a constraint.** Both migrations this one sits on top of
+are now on prod: **140** (provisional cards, shipped 2026-08-08) and **145**
+(`user_language_points` → `user_languages`, shipped 2026-08-16). Prod is current through
+146, so the challenge migration is free to be numbered and shipped on its own.
 
 #### The build, in dependency order
 
@@ -122,7 +118,28 @@ demand on this build is that nothing in phase 1 forecloses it — see
 
 ---
 
+### 5. Two runbooks still carry false "NOT YET DEPLOYED" banners
+
+`docs/FREQUENCY_SCORE_DEPLOY_RUNBOOK.md` (migration **122**) and
+`docs/SENSE_COMMONALITY_DEPLOY_RUNBOOK.md` (migration **139**) both say they have not
+shipped. Both migrations **are on prod** — 122 and 139 are recorded in `schema_migrations`
+(139 applied 2026-08-08). Either verify and delete them, or correct the banners.
+
+**Why this is worth an item rather than a quiet fix:** the same staleness in four *other*
+runbooks nearly derailed the 2026-08-16 deploy. `COMBINED_DEPLOY_RUNBOOK.md` instructed
+the deployer to pass `migrate.sh --allow-out-of-order` to work around a halt caused by
+five migrations it believed were unshipped. They had all shipped; the flag would have
+suppressed the guard that exists to report exactly that mismatch. The lesson is in
+[CLAUDE.md](../CLAUDE.md) § Current open runbooks: **derive pending work from
+`schema_migrations` and `migrate.sh --dry-run`, never from a runbook's status line.**
+
+---
+
 ## Recently closed
 
-_Nothing yet. Move items here only if the reason they were deferred is worth remembering;
-otherwise just delete them._
+### Study Challenge deploy-order constraints (closed 2026-08-16)
+
+Migrations 140 and 145 were blocking the challenge migration from shipping first. Both
+are now on prod; prod is current through 146. Kept here because the *shape* of the
+constraint recurs: a new migration that depends on an unshipped one cannot be numbered
+until the dependency lands.

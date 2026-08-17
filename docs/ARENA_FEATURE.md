@@ -9,8 +9,8 @@ the **minutes you earn while that arena is live**. Top 5 promote, bottom 5 demot
 database and the full backend and client are implemented and tested (625 tests pass across
 the repo). Every design question in § 11 was answered before implementation began.
 
-What is NOT done: the prod deploy (see
-[ARENA_DEPLOY_RUNBOOK.md](./ARENA_DEPLOY_RUNBOOK.md)), the prod-only hourly cron, and the
+Deployed to prod 2026-08-16 (migration 146; the `cow-arena` hourly timer is installed and
+armed). What is NOT done: the
 `src/components/leaderboard/` extraction owed to
 [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) — Arena ships with its own row component and
 that shared extraction is still outstanding (§ 12).
@@ -936,8 +936,9 @@ untestable locally. Do not skip this.
 The `cow-arena` **systemd user timer**, a sibling of the existing `cow-maintenance` timer,
 installed by `database/cron/install-timers.sh` (renamed from `install-maintenance-timer.sh`
 when this second schedule arrived; it now installs both, and `/deploy` runs it every
-deploy). Full operational detail, including verification commands, lives in
-[ARENA_DEPLOY_RUNBOOK.md](./ARENA_DEPLOY_RUNBOOK.md).
+deploy). Verify with `systemctl --user list-timers cow-arena.timer --no-pager` and
+`tail logs/arena-cron.log` (expect `arena-cron: done — resolved N, formed M`); force a
+pass with `systemctl --user start cow-arena.service`.
 
 Three decisions worth keeping:
 

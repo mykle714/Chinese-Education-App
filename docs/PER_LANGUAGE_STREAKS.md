@@ -1,10 +1,7 @@
 # Per-Language Streaks, Wallets & Penalties
 
-**STATUS: IMPLEMENTED. Applied on DEV, not yet on PROD.** All code, the migration
-and the cron are written and type-clean; the test suite passes. Migrations 130
-(2026-07-29) and 134 (2026-07-30) are recorded in dev's `schema_migrations`;
-neither has run on prod — see § 5 and
-[PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md).
+**STATUS: IMPLEMENTED AND ON PROD.** Migrations 130 and 134 shipped 2026-07-30; the
+table rename (145) shipped 2026-08-16. See § 5 for the cron.
 
 > ⚠️ **Renamed:** the table this document describes was created by migration 130 as
 > `user_language_points` and renamed to **`user_languages`** by **migration 145**

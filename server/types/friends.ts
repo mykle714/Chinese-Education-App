@@ -25,6 +25,23 @@ export interface Friendship {
   createdAt: string;
   /** When the addressee accepted; null while pending. */
   respondedAt: string | null;
+  /**
+   * The per-pair Study Challenge opt-out — "no challenges with this friend"
+   * (migration 148, docs/STUDY_CHALLENGE.md § 1).
+   *
+   * TWO flags, one per endpoint, because they are two independent facts held by two
+   * people. OWNERSHIP IS SPLIT BUT THE EFFECT IS SYMMETRIC: each player may only
+   * set or clear their own, while the READ is `NOT (requester OR addressee)` — a
+   * challenge goes through only if NEITHER has blocked. That OR is where the
+   * symmetry lives, and it is what makes setting a block a statement about the PAIR
+   * ("I don't want to play challenges with this person") rather than a one-way
+   * shield.
+   *
+   * They live on the friendship because a block is a property of the relationship,
+   * not of either user.
+   */
+  requesterChallengesBlocked?: boolean;
+  addresseeChallengesBlocked?: boolean;
 }
 
 /**

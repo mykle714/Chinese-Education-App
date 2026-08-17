@@ -11,8 +11,9 @@ import { fetchDecks, fetchDeckMemberships, setDeckMemberships, createDeck, type 
  * (docs/DECKS_FEATURE.md).
  *
  * Mounted in two places, both of which already have the card in hand:
- *   • the cdp header actions (VocabCardDetailPage), and
- *   • the eip header action grid (InfoCardPanelBody).
+ *   • the cdp header actions (VocabCardDetailPage) — bare icon trigger, and
+ *   • the eip definition tab's action bar (InfoCardActionBar) — labelled trigger
+ *     ("Add to Deck…"), via the `label` prop.
  *
  * ── Why a whole-set save on close, not a write per tick ───────────────────────
  * Ticking three boxes would otherwise be three requests, and a half-completed
@@ -37,9 +38,16 @@ interface AddToDeckMenuProps {
     className?: string;
     /** Icon color, so the button matches whichever header it sits in. */
     color?: string;
+    /**
+     * When set, the trigger is a LABELLED outlined button carrying this text instead
+     * of the bare icon button — the form used in the eip definition tab's action bar
+     * (InfoCardActionBar), where the actions are named rather than guessed at. Header
+     * hosts (cdp) omit it and keep the compact icon.
+     */
+    label?: string;
 }
 
-const AddToDeckMenu: React.FC<AddToDeckMenuProps> = ({ vocabEntryId, className, color }) => {
+const AddToDeckMenu: React.FC<AddToDeckMenuProps> = ({ vocabEntryId, className, color, label }) => {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
     const [decks, setDecks] = useState<DeckSummary[]>([]);
     // The ticked set, held locally while the menu is open (see the class comment).
@@ -68,7 +76,13 @@ const AddToDeckMenu: React.FC<AddToDeckMenuProps> = ({ vocabEntryId, className, 
                     fetchDeckMemberships(vocabEntryId),
                 ]);
                 if (cancelled) return;
-                setDecks(allDecks);
+                // GENERATED decks are excluded from this menu (migration 148,
+                // docs/STUDY_CHALLENGE.md § 4). Their membership is fixed at creation, so
+                // a tickable row here would be a control that does nothing — and it is
+                // precisely because they never appear in this menu that they are allowed
+                // to share a name with each other (the deck-name uniqueness index is
+                // partial on `editMode = 'custom'`).
+                setDecks(allDecks.filter((deck) => deck.editMode === "custom"));
                 setChecked(new Set(memberships));
             } catch (err: unknown) {
                 if (!cancelled) setError(err instanceof Error ? err.message : "Could not load your decks");
@@ -123,24 +137,43 @@ const AddToDeckMenu: React.FC<AddToDeckMenuProps> = ({ vocabEntryId, className, 
     // Nothing to file — see the class comment.
     if (!vocabEntryId) return null;
 
+    // Shared by both trigger shapes: taps must not bubble to the flip/drag handlers of
+    // any wrapping card (matches SpeakerButton's stop-propagation pattern).
+    const openMenu = (e: React.MouseEvent<HTMLElement>) => {
+        e.stopPropagation();
+        setAnchor(e.currentTarget);
+    };
+
     return (
         <>
-            <Tooltip title="Add to deck">
-                <IconButton
+            {label ? (
+                <Button
                     className={className ?? "add-to-deck__button"}
+                    variant="outlined"
                     size="small"
+                    startIcon={<LibraryAddOutlinedIcon />}
                     aria-label="Add to deck"
-                    onClick={(e) => {
-                        // Match SpeakerButton's stop-propagation pattern so taps don't
-                        // bubble to flip/drag handlers in any wrapping card.
-                        e.stopPropagation();
-                        setAnchor(e.currentTarget);
-                    }}
+                    onClick={openMenu}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
                     sx={color ? { color } : undefined}
                 >
-                    <LibraryAddOutlinedIcon fontSize="small" />
-                </IconButton>
-            </Tooltip>
+                    {label}
+                </Button>
+            ) : (
+                <Tooltip title="Add to deck">
+                    <IconButton
+                        className={className ?? "add-to-deck__button"}
+                        size="small"
+                        aria-label="Add to deck"
+                        onClick={openMenu}
+                        sx={color ? { color } : undefined}
+                    >
+                        <LibraryAddOutlinedIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+            )}
 
             <Menu
                 className="add-to-deck__menu"

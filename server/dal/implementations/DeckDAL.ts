@@ -8,7 +8,7 @@ import { ValidationError, DuplicateError } from '../../types/dal.js';
  * The `decks` columns a DeckSummary needs, minus `cardCount`.
  * `d` is the alias every query here uses for the decks table.
  */
-const DECK_COLS = `d.id, d.language, d.name, d."createdAt", d."updatedAt"`;
+const DECK_COLS = `d.id, d.language, d.name, d."editMode", d."createdAt", d."updatedAt"`;
 
 /**
  * Membership count as a correlated subquery rather than a
@@ -131,6 +131,96 @@ export class DeckDAL implements IDeckDAL {
       }
       throw error;
     }
+  }
+
+  async createPresetDeck(
+    userId: string,
+    language: string,
+    name: string,
+    vocabEntryIds: number[],
+    client?: PoolClient
+  ): Promise<DeckSummary> {
+    this.requireUserId(userId);
+    if (!language) throw new ValidationError('language is required');
+    if (!name || !name.trim()) throw new ValidationError('Deck name is required');
+
+    const cardIds = Array.from(
+      new Set((vocabEntryIds ?? []).filter((id) => Number.isInteger(id) && id > 0))
+    );
+
+    const apply = async (c: PoolClient): Promise<DeckSummary> => {
+      // `editMode = 'preset'`: no rename, no delete, no membership change by the
+      // user, and it does not count against MAX_DECKS_PER_LANGUAGE (migration 148).
+      //
+      // No DuplicateError translation here, unlike createDeck: the name index is
+      // PARTIAL on `editMode = 'custom'`, so two live challenges against the same
+      // friend may both produce a deck called `vs Bob`. That is deliberate — they are
+      // told apart by the challenge that owns them and, for the user, by the friend's
+      // icon on the tile (Q30). A preset deck can never collide.
+      const inserted = await c.query<{ id: number }>(
+        `INSERT INTO decks ("userId", language, name, "editMode")
+         VALUES ($1, $2, btrim($3), 'preset')
+         RETURNING id`,
+        [userId, language, name]
+      );
+      const deckId = inserted.rows[0].id;
+
+      if (cardIds.length > 0) {
+        await c.query(
+          `INSERT INTO deck_cards ("deckId", "vocabEntryId")
+           SELECT $1, id FROM unnest($2::int[]) AS id
+           ON CONFLICT ("deckId", "vocabEntryId") DO NOTHING`,
+          [deckId, cardIds]
+        );
+      }
+
+      const { rows } = await c.query<DeckSummary>(
+        `SELECT ${DECK_COLS}, ${CARD_COUNT} FROM decks d WHERE d.id = $1`,
+        [deckId]
+      );
+      return rows[0];
+    };
+
+    // The deck row and its membership must not be observable half-created — a deck
+    // that exists with no cards is a deck the learner cannot study from and cannot
+    // delete (preset decks expose no delete control). The challenge accept path
+    // always supplies its own client, so this normally enlists in that transaction.
+    if (client) return apply(client);
+    return this.dbManager.executeInTransaction((tx) => apply(tx.getClient()));
+  }
+
+  async countCustomDecks(userId: string, language: string, client?: PoolClient): Promise<number> {
+    this.requireUserId(userId);
+    if (!language) throw new ValidationError('language is required');
+
+    // The 100-deck cap counts ONLY authored decks (§ 4, Q11). "Their own pool of
+    // deck slots" means exactly one thing: generated decks do not detract from the
+    // 100. There is no user-visible slot capacity to build.
+    const { rows } = await this.run<{ count: string }>(client, (c) =>
+      c.query(
+        `SELECT COUNT(*) AS count FROM decks
+          WHERE "userId" = $1 AND language = $2 AND "editMode" = 'custom'`,
+        [userId, language]
+      )
+    );
+    return parseInt(rows[0]?.count ?? '0', 10);
+  }
+
+  async findDeckEditMode(
+    userId: string,
+    deckId: number,
+    client?: PoolClient
+  ): Promise<string | null> {
+    this.requireUserId(userId);
+    this.requireIntId(deckId, 'deckId');
+
+    const { rows } = await this.run<{ editMode: string }>(client, (c) =>
+      c.query(
+        `SELECT "editMode" FROM decks WHERE id = $1 AND "userId" = $2`,
+        [deckId, userId]
+      )
+    );
+    return rows[0]?.editMode ?? null;
   }
 
   async renameDeck(

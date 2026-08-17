@@ -303,9 +303,14 @@ framework — no game inherits a shell from it.
   layer owning the scrim, the card chrome (× button), the corner puck, and the
   FLIP-style collapse animation between them. The **page** owns the `minimized`
   flag and the card's content (title / message / actions), passed as `children`;
-  `classPrefix` keeps each game's BEM classes distinct. Word Search renders it
-  directly; Bubble Match wraps it in `BubbleMatchEndPopup` to pin
-  `classPrefix="bubble-match"`; Match Speed and Speed Reading wrap it the same way.
+  `classPrefix` keeps each game's BEM classes distinct. Word Search and Speed
+  Reading render it directly; Bubble Match wraps it in `BubbleMatchEndPopup` to pin
+  `classPrefix="bubble-match"`, and Match Speed wraps it the same way.
+  **Minimizing is opt-in**: pass `onMinimize`/`onRestore` and the × button and the
+  corner puck appear; omit them (as **Speed Reading** does) and neither is rendered,
+  so the popup is modal and its own buttons are the only exits. The rule is
+  "minimizable iff the board is still worth uncovering" — Bubble Match, Match Speed
+  and Word Search all have a post-run cleanup mode, Speed Reading has none.
 - **`gameSounds.ts`** — shared sound effects for game events.
 - **`useSidewaysStage.ts`** — the landscape-stage helper behind Speed Reading's
   rotated presentation (see `LeafPage`'s `hideHeader` render-prop form in
@@ -465,17 +470,35 @@ must find the round exactly as they left it.
 This is the same mechanism as the section above with a **second source** feeding
 the same `clockPaused` boolean. It is not new machinery.
 
-**Status of the four shipped games (audited 2026-08-16):**
+**Status of the four shipped games — ✅ ALL FOUR PAUSE (completed 2026-08-17):**
 
-| Game | Pauses on backgrounding today | What it needs |
-| --- | --- | --- |
-| Word Search | ✅ **yes** — `WordSearchPage.tsx` listens for `visibilitychange`, calls `persistSnapshot()` then `pauseTimer()`, and resumes only if `clockPausedRef.current` is false | nothing — **this is the reference implementation** |
-| Bubble Match | ❌ no | feed the visibility signal into the existing `clockPaused` → `BubbleStage` `paused` path (launcher, descending ceiling, overfill check) |
-| Match Speed | ❌ no | feed it into the existing `clockPaused` (countdown + 30 s run clock) |
-| Speed Reading | ❌ no | feed it into the existing `clockPaused` (`pausedAtRef`, the clock effect) |
+| Game | How |
+| --- | --- |
+| Word Search | its own earlier implementation — `WordSearchPage.tsx` listens for `visibilitychange`, calls `persistSnapshot()` then `pauseTimer()`, and resumes only if `clockPausedRef.current` is false. **This is what the rule was generalised from**, and it is deliberately left as-is (its localStorage snapshot is entangled with its pause path) |
+| Bubble Match | `useBackgroundPause(phase === "playing")` → the existing `clockPaused` → `BubbleStage`'s `paused` prop |
+| Match Speed | `useBackgroundPause(countdown \|\| playing)` → the existing `clockPaused` (countdown + 30 s run clock) |
+| Speed Reading | `useBackgroundPause(phase === "playing")` → the existing `clockPaused` (`pausedAtRef`, the clock effect) |
 
-So three of four games need a **signal wired to a gate they already have**, not a
-new pause implementation.
+The three that needed it got a **signal wired to a gate they already had**, not a new
+pause implementation — which is what the 2026-08-16 audit predicted.
+
+**The two shared pieces** (`src/games/runtime/`):
+
+* **`useBackgroundPause(active)`** — latches on `visibilitychange` *and* `pagehide`
+  (neither is sufficient alone: `pagehide` is the one iOS Safari fires on swipe-away and
+  screen lock). It **stays paused after the player returns**; only `resume()` clears it.
+  That is the § 5.8 requirement — dropping somebody back into a live timer they have not
+  looked at yet is the same as not pausing for that first second. `active` should be the
+  game's playing condition, so returning to a finished board shows no prompt.
+* **`<GamePausedOverlay>`** — the tap-to-resume affordance. It **covers** the board
+  rather than dimming it, so the pause cannot be used as a free look at the arrangement;
+  that is what lets the rule stay absolute with no per-mode exception. Rendered as a
+  SIBLING of the board (like `GameEndPopup`) at **z-index 150 — below** MinimizablePopup's
+  200, so a notice that also pauses the clock stacks above it.
+
+⚠️ **The pause is only real if elapsed time is ACCUMULATED ACTIVE TIME.** A game that
+computes elapsed as `now − startedAt` will honour the hook visually and still bill the
+player for the time they were away — worse than no pause, because it looks correct.
 
 Two requirements that are easy to miss:
 
@@ -510,6 +533,22 @@ challenge-eligible must declare how.
 1. its `markType` is `recognition` or `production` — or, for a moded game, *that
    mode's* `markType` is; and
 2. it declares a `challengeScoring` spec.
+
+> ✅ **BUILT 2026-08-17, with one deviation worth knowing about.** The specs physically
+> live in **`server/contracts/wire.ts` as `CHALLENGE_GAMES`**, not in this registry,
+> because the SERVER draws each challenge's game sequence (at issue time) and cannot load
+> `src/games/registry.ts` — it imports lazy React components — and because live mode must
+> score the same events server-side with no game page mounted.
+>
+> Eligibility is still **derived from the registry**, and the thing that guarantees it is
+> `src/games/__tests__/challengePool.test.ts`: adding a recognition/production game
+> without a `CHALLENGE_GAMES` entry is a RED TEST rather than a game that is quietly
+> never drawn. `GameDef.challengeScoring` remains the per-game declaration point and is
+> populated by `challengeScoringFor(gameId, mode)`.
+>
+> The runner that applies a spec to events is **`src/games/runtime/challengeScoring.ts`**
+> — pure, React-free, 15 unit tests against the real specs, and written so the server can
+> adopt it verbatim for live mode.
 
 Eligibility is **derived from the registry, never hand-listed**, so a new
 recognition/production game joins the rotation the day it ships. That is why the
@@ -604,8 +643,9 @@ for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
    with `POST /api/users/me/wins` if the hub should show a win badge.
 5. Add the route to `MINUTE_POINTS_ELIGIBLE_PAGES` (and the start-on-entry subset)
    in `src/constants.ts` so play time accrues points and streak.
-6. Reuse `GameEndPopup` for the won/lost card so the minimize-to-puck behavior
-   matches the other games.
+6. Reuse `GameEndPopup` for the won/lost card. Pass `onMinimize`/`onRestore` only
+   if the game has a post-run cleanup mode worth uncovering the board for;
+   otherwise omit them and the popup is modal (Speed Reading).
 7. **Derive one `clockPaused` boolean from every pause source** — input-blocking
    popups *and* backgrounding — and feed it to everything that advances on its own.
    Express elapsed time as accumulated active time, never `now − startedAt`. See

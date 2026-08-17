@@ -70,6 +70,16 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/friends/requests": lazy(() => import("../features/friends/IncomingRequestsPage")),
   "/friends/sent": lazy(() => import("../features/friends/SentRequestsPage")),
   "/friends/remove": lazy(() => import("../features/friends/RemoveFriendsPage")),
+  // Study Challenge (docs/STUDY_CHALLENGE.md § 1) — a fourth screen under the friends
+  // drill-in. STATIC PATHS FIRST: "history", "new" and "review" would all be legal
+  // values for the `:challengeId` segment below. React Router ranks a static segment
+  // above a dynamic one regardless of declaration order, but the order here matches the
+  // server's route file, where ordering IS the guarantee.
+  "/friends/challenges": lazy(() => import("../features/studyChallenge/ChallengesPage")),
+  "/friends/challenges/history": lazy(() => import("../features/studyChallenge/ChallengeHistoryPage")),
+  "/friends/challenges/new/:friendUserId": lazy(() => import("../features/studyChallenge/ChallengeReviewPage")),
+  "/friends/challenges/review/:challengeId": lazy(() => import("../features/studyChallenge/ChallengeReviewPage")),
+  "/friends/challenges/:challengeId": lazy(() => import("../features/studyChallenge/ChallengeDetailPage")),
   "/dictionary": lazy(() => import("../features/dictionary/DictionaryPage")),
   "/compare": lazy(() => import("../features/dictionary/ComparePage")),
   "/reader": lazy(() => import("../features/reader/ReaderPage")),

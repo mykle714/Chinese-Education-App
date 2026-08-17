@@ -46,6 +46,22 @@ export interface IFriendshipDAL {
   /** Delete the row joining two users, whichever direction it points. Unfriend. */
   deleteBetween(userA: string, userB: string, client?: PoolClient): Promise<boolean>;
 
+  /**
+   * Set or clear ONE endpoint's Study Challenge opt-out (migration 148,
+   * docs/STUDY_CHALLENGE.md § 1).
+   *
+   * `endpoint` names which of the two flags to write, so a caller can only ever
+   * touch the flag belonging to the side they are on — the service decides that by
+   * comparing the caller's id to the row. Blocking is deliberately NOT disclosed to
+   * the blocked friend, so there is no read here beyond the row itself.
+   */
+  setChallengesBlocked(
+    id: string,
+    endpoint: 'requester' | 'addressee',
+    blocked: boolean,
+    client?: PoolClient
+  ): Promise<boolean>;
+
   /** The viewer's accepted friends, newest friendship first, joined to user identity. */
   listFriends(userId: string, client?: PoolClient): Promise<FriendSummary[]>;
 

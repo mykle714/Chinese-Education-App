@@ -25,6 +25,8 @@ import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { provisionalRows, provisionalWords } from "../../utils/provisionalCards";
+import GamePausedOverlay from "../runtime/GamePausedOverlay";
+import { useBackgroundPause } from "../runtime/useBackgroundPause";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
 interface GamePoolResponse {
@@ -340,7 +342,14 @@ const BubbleMatchPage: React.FC = () => {
     // without them. The notice is a full-screen input-blocking overlay, so freezing
     // the field buys no free study time. Shared rule across all four games — see
     // docs/GAMES_FEATURE.md § Popups pause the clock.
-    const clockPaused = noticeOpen;
+    // BACKGROUNDING IS THE SECOND SOURCE for this same boolean — the app-wide rule
+    // (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). It latches, so the
+    // ceiling does not resume descending the instant the player returns; they tap
+    // Resume on the overlay below. Only while genuinely playing, so returning to a
+    // finished board shows no prompt.
+    const { paused: backgroundPaused, resume: resumeFromBackground } =
+        useBackgroundPause(phase === "playing");
+    const clockPaused = noticeOpen || backgroundPaused;
 
     // End-of-run offer to keep the lent cards. It opens a beat AFTER the win/loss
     // popup so the result lands first, then stacks over it in the opposite corner.
@@ -554,6 +563,17 @@ const BubbleMatchPage: React.FC = () => {
                     centered
                 )}
             </Box>
+
+            {/* Backgrounding paused the round — the app-wide rule
+                (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). A SIBLING of
+                the board, like GameEndPopup, so the layout does not change shape when
+                paused; it covers the board so the pause cannot be used as a free look
+                at it, and the clock only restarts when the player taps Resume. */}
+            <GamePausedOverlay
+                open={backgroundPaused}
+                onResume={resumeFromBackground}
+                classPrefix="bubble-match"
+            />
         </LeafPage>
         </>
     );

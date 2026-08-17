@@ -1,3 +1,5 @@
+import type { PoolClient } from 'pg';
+import { dbManager } from '../dal/base/DatabaseManager.js';
 import { IFriendshipDAL } from '../dal/interfaces/IFriendshipDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { ICategoryPromotionDAL } from '../dal/interfaces/ICategoryPromotionDAL.js';
@@ -15,6 +17,20 @@ import type {
 
 /** A `users.id` is a v4 UUID; anything else can't be an account and is rejected before we query. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The one thing the friend graph needs from Study Challenge: end the pair's
+ * in-flight challenges when they unfriend (docs/STUDY_CHALLENGE.md § 6).
+ *
+ * A one-method interface rather than the whole StudyChallengeService, so the
+ * dependency points one way and this file learns nothing about challenges beyond
+ * "there is something to clean up". OPTIONAL in the constructor so a test — and the
+ * existing friends test suite — can build a FriendsService without standing up the
+ * challenge stack.
+ */
+export interface UnfriendChallengeResolver {
+  resolveForUnfriend(userA: string, userB: string, client?: PoolClient): Promise<void>;
+}
 
 /**
  * Friend-graph policy (docs/FRIENDS_FEATURE.md).
@@ -39,7 +55,9 @@ export class FriendsService {
     private friendshipDAL: IFriendshipDAL,
     private userDAL: IUserDAL,
     private categoryPromotionDAL: ICategoryPromotionDAL,
-    private userLanguagesDAL: IUserLanguagesDAL
+    private userLanguagesDAL: IUserLanguagesDAL,
+    /** Optional — see UnfriendChallengeResolver. Omitted, unfriending just deletes the edge. */
+    private challengeResolver?: UnfriendChallengeResolver
   ) {}
 
   /** The viewer's accepted friends. */
@@ -238,7 +256,28 @@ export class FriendsService {
     await this.friendshipDAL.deleteById(requestId);
   }
 
-  /** Unfriend. Symmetric: either side may do it, and it deletes the single shared row. */
+  /**
+   * Unfriend. Symmetric: either side may do it, and it deletes the single shared row.
+   *
+   * ⚠️ IT ALSO ENDS ANY IN-FLIGHT STUDY CHALLENGE between the pair, in the SAME
+   * TRANSACTION (docs/STUDY_CHALLENGE.md § 6, Q41). Unfriending withdraws you from
+   * everything shared with that person, and a challenge is not an exception carved
+   * out of that — so there must be no window in which a challenge outlives the
+   * friendship it depended on.
+   *
+   * The unfriend is NEVER BLOCKED by an active challenge: it is a social-safety
+   * action and must always succeed on the first tap. The knowingly-accepted cost is
+   * that this is a rage-quit button — a player who is losing can unfriend to erase
+   * the result. It resolves to `no_contest` rather than a forfeit win for the other
+   * player, so the escape genuinely works; the mitigation is social, not technical
+   * (you had to be friends to be challenged, and re-friending is a visible request
+   * the other person must accept).
+   *
+   * Marks and words already earned STAY — the cards are the player's own, in the
+   * `library` bucket, and were never challenge state. A RESOLVED challenge is
+   * likewise untouched: its history entry and its crown survive, because the record
+   * is of something that actually happened.
+   */
   async removeFriend(userId: string, friendUserId: string): Promise<void> {
     if (!friendUserId || !UUID_RE.test(friendUserId)) {
       throw new ValidationError('Invalid user ID');
@@ -247,7 +286,16 @@ export class FriendsService {
     if (!existing || existing.status !== 'accepted') {
       throw new NotFoundError('You are not friends with this user');
     }
-    await this.friendshipDAL.deleteBetween(userId, friendUserId);
+
+    await dbManager.executeInTransaction(async (tx) => {
+      const client = tx.getClient();
+      // Challenges first, then the edge. Either order is correct inside one
+      // transaction; this order means that if the hook throws, the friendship is
+      // still intact and the user can retry — rather than the reverse, which would
+      // leave them unfriended with a challenge to clean up by hand.
+      await this.challengeResolver?.resolveForUnfriend(userId, friendUserId, client);
+      await this.friendshipDAL.deleteBetween(userId, friendUserId, client);
+    });
   }
 
   /** Load a request row, rejecting a missing id, a bad id, or an already-accepted row. */

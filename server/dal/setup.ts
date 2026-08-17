@@ -67,6 +67,9 @@ import { FriendsController } from '../controllers/FriendsController.js';
 import { DecksController } from '../controllers/DecksController.js';
 import { ProvisionalCardDAL } from './implementations/ProvisionalCardDAL.js';
 import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
+import { StudyChallengeDAL } from './implementations/StudyChallengeDAL.js';
+import { StudyChallengeService } from '../services/StudyChallengeService.js';
+import { StudyChallengeController } from '../controllers/StudyChallengeController.js';
 
 // DAL instances
 const userDAL = new UserDAL();
@@ -107,6 +110,9 @@ const provisionalCardDAL = new ProvisionalCardDAL();
 // User-authored card sets — decks and their membership rows (migration 141,
 // docs/DECKS_FEATURE.md).
 const deckDAL = new DeckDAL();
+// The weekly head-to-head between two friends — one table, everything about a
+// challenge on it (migration 148, docs/STUDY_CHALLENGE.md).
+const studyChallengeDAL = new StudyChallengeDAL();
 
 // Service instances (with DI)
 const userService = new UserService(userDAL, refreshTokenDAL);
@@ -146,11 +152,6 @@ const leaderboardService = new LeaderboardService(userDAL, userMinutePointsDAL, 
 // is constructed HERE rather than as a module singleton so every service has one
 // lifetime owner (docs/ARCHITECTURE_REVIEW.md finding 8).
 const ttsService = new TTSService();
-// Friend-request policy (who may accept/revoke, crossing-request auto-accept).
-// userDAL supplies the target account's existence check and public identity; the
-// last two DALs are read-only and feed the velocity leaderboard (each friend scored
-// in their own selected language) — see FriendsService.getLeaderboard.
-const friendsService = new FriendsService(friendshipDAL, userDAL, categoryPromotionDAL, userLanguagesDAL);
 // Constructed after starterPacksService: it borrows estimateLevel to pick which
 // difficulty band to lend from (docs/PROVISIONAL_CARDS.md § Which words get lent).
 const provisionalCardService = new ProvisionalCardService(provisionalCardDAL, starterPacksService);
@@ -161,6 +162,27 @@ const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryServi
 // Constructed after onDeckVocabService: a deck's card list is the third collection
 // read and is delegated to it (see DeckService's class comment).
 const deckService = new DeckService(deckDAL, onDeckVocabService);
+// Constructed after deckService (it creates the generated study decks) and after
+// starterPacksService (it borrows estimateLevel for the candidate band, and the
+// shared "already known" write for a struck word). Takes deckDAL directly as well,
+// for the deck DROPS that happen outside any deck-service policy — when a player
+// finishes their test and when an unfriend ends a challenge.
+const studyChallengeService = new StudyChallengeService(
+  studyChallengeDAL, friendshipDAL, userDAL, deckDAL, deckService, starterPacksService
+);
+// Friend-request policy (who may accept/revoke, crossing-request auto-accept).
+// userDAL supplies the target account's existence check and public identity; the
+// next two DALs are read-only and feed the velocity leaderboard (each friend scored
+// in their own selected language) — see FriendsService.getLeaderboard.
+//
+// MUST be constructed AFTER studyChallengeService: unfriending ends the pair's
+// in-flight challenges in the same transaction as the friendship delete
+// (docs/STUDY_CHALLENGE.md § 6). The dependency is one-way — the challenge service
+// reads the friend graph through friendshipDAL, never through this service — so
+// there is no cycle to break, only an ordering to respect.
+const friendsService = new FriendsService(
+  friendshipDAL, userDAL, categoryPromotionDAL, userLanguagesDAL, studyChallengeService
+);
 
 // Controller instances
 const userController = new UserController(userService, icons8DAL, nightMarketWorldService);
@@ -195,6 +217,7 @@ const ttsController = new TTSController(ttsService);
 const friendsController = new FriendsController(friendsService);
 const arenaController = new ArenaController(arenaService);
 const decksController = new DecksController(deckService);
+const studyChallengeController = new StudyChallengeController(studyChallengeService);
 
 export {
   userDAL,
@@ -264,4 +287,7 @@ export {
   deckDAL,
   deckService,
   decksController,
+  studyChallengeDAL,
+  studyChallengeService,
+  studyChallengeController,
 };

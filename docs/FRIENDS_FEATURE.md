@@ -43,7 +43,7 @@ The **Requests** button carries a red count badge when incoming requests exist �
 `FriendsPage` fetches the incoming list alongside the friend list purely for that
 count.
 
-### 1b. Challenges (`/friends/challenges`) — planned
+### 1b. Challenges (`/friends/challenges`) — built on dev (2026-08-17)
 
 ⚠️ **Not built.** Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 1; it ships
 with that feature.

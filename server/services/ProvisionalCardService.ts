@@ -2,6 +2,7 @@ import { ProvisionalCardDAL } from '../dal/implementations/ProvisionalCardDAL.js
 import { StarterPacksService } from './StarterPacksService.js';
 import { ValidationError } from '../types/dal.js';
 import { CardBaselineSurface, CARD_BASELINES } from '../contracts/wire.js';
+import type { ProvisionMode } from '../contracts/wire.js';
 import { DiscoverCard } from '../types/index.js';
 
 /**
@@ -72,7 +73,8 @@ export class ProvisionalCardService {
   async ensureBaseline(
     userId: string,
     language: string,
-    baseline: number
+    baseline: number,
+    mode: ProvisionMode = 'default'
   ): Promise<{ granted: number; grantedWords: string[]; playable: number; shortfall: number }> {
     if (!userId) throw new ValidationError('User ID is required');
     if (!language) throw new ValidationError('Language is required');
@@ -83,7 +85,7 @@ export class ProvisionalCardService {
       return { granted: 0, grantedWords: [], playable, shortfall: 0 };
     }
 
-    const { granted, grantedWords } = await this.lendCards(userId, language, target - playable);
+    const { granted, grantedWords } = await this.lendCards(userId, language, target - playable, mode);
     // Re-read the true playable count rather than trusting the batch size: ON CONFLICT
     // DO NOTHING means a concurrent entry may have claimed some of the same words.
     if (granted > 0) {
@@ -118,7 +120,8 @@ export class ProvisionalCardService {
   async lendCards(
     userId: string,
     language: string,
-    count: number
+    count: number,
+    mode: ProvisionMode = 'default'
   ): Promise<{ granted: number; grantedWords: string[] }> {
     if (!userId) throw new ValidationError('User ID is required');
     if (!language) throw new ValidationError('Language is required');
@@ -152,7 +155,7 @@ export class ProvisionalCardService {
     if (granted > 0) {
       console.log(
         `[Provisional] Lent ${granted} card(s) to user=${userId.substring(0, 8)}… language=${language} ` +
-          `level=${level} requested=${want}` +
+          `level=${level} mode=${mode} requested=${want}` +
           (granted < want ? ` (${want - granted} short — dictionary supply exhausted)` : '')
       );
     }
@@ -172,10 +175,76 @@ export class ProvisionalCardService {
     userId: string,
     language: string,
     surface: CardBaselineSurface,
-    multiplier = 1
+    multiplier = 1,
+    mode: ProvisionMode = 'default'
   ): Promise<{ granted: number; grantedWords: string[]; playable: number; shortfall: number }> {
     const baseline = Math.ceil(CARD_BASELINES[surface] * Math.max(1, multiplier));
-    return this.ensureBaseline(userId, language, baseline);
+    return this.ensureBaseline(userId, language, baseline, mode);
+  }
+
+  /**
+   * The `mastered-first` FILLER LADDER — the player's own cards, hardest-known first,
+   * and only then lent ones (docs/STUDY_CHALLENGE.md § 5.2).
+   *
+   * ⚠️ THIS, NOT THE `mode` PARAMETER ABOVE, IS WHERE `mastered-first` ACTUALLY LIVES,
+   * and the distinction matters to anyone reading § 5.2 and looking for it:
+   *
+   *   * `ensureBaseline` decides HOW MANY cards a surface gets. It is already correct
+   *     for challenges without any mode-specific logic — a player with a real library
+   *     is over the baseline, so nothing is lent; a brand-new player is short, so the
+   *     ladder's last rung fires. `mode` is threaded through it for logging and so a
+   *     future mode can change the lending ORDER, not because the count changes.
+   *   * this method decides WHICH cards, IN WHAT ORDER, and that is the whole
+   *     substance of the ladder: Mastered (most recently first) → Comfortable → Target
+   *     → Unfamiliar → lent.
+   *
+   * `excludeWords` must carry the contested ten, so a contested word can never also
+   * appear as filler on the same board.
+   *
+   * Returns vet ids in ladder order. Every step degrades silently to the next, so no
+   * caller has to check whether the player has mastered cards.
+   */
+  async getFillerPool(
+    userId: string,
+    language: string,
+    count: number,
+    excludeWords: string[] = []
+  ): Promise<number[]> {
+    if (!userId) throw new ValidationError('User ID is required');
+    if (!language) throw new ValidationError('Language is required');
+
+    const want = Math.max(0, Math.floor(count));
+    if (want === 0) return [];
+
+    // Rungs 1-4: the player's own cards, hardest-known first. One query — the band
+    // descent is an ORDER BY, not four round trips.
+    const own = await this.provisionalCardDAL.findOwnCardsByBand(userId, language, want, {
+      excludeWords,
+    });
+    const ids = own.map((card) => card.id);
+    if (ids.length >= want) return ids.slice(0, want);
+
+    // Rung 5: lend the remainder. Reached immediately by a brand-new player, which is
+    // exactly the never-block behaviour PROVISIONAL_CARDS.md already guarantees, and
+    // never reached by a learner with a real library.
+    const { grantedWords } = await this.lendCards(
+      userId,
+      language,
+      want - ids.length,
+      'mastered-first'
+    );
+    if (grantedWords.length === 0) {
+      // Supply exhausted. A SHORT board is the correct answer, never a refusal.
+      return ids;
+    }
+
+    // Re-read through the same ladder so the lent rows come back as vet ids in one
+    // consistent ordering, rather than being appended from a different query's shape.
+    const topped = await this.provisionalCardDAL.findOwnCardsByBand(userId, language, want, {
+      excludeWords,
+    });
+    if (topped.length >= ids.length) return topped.slice(0, want).map((card) => card.id);
+    return ids;
   }
 
   /** The entryKeys of every card currently lent to this user for a language. */

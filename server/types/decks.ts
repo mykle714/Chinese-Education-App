@@ -31,6 +31,24 @@ export interface DeckSummary {
   /** 'zh' | 'es'. A deck holds cards of exactly one language. */
   language: string;
   name: string;
+  /**
+   * What the USER may do to this deck (migration 148,
+   * docs/STUDY_CHALLENGE.md § 4).
+   *
+   * 'custom' — they authored it: rename, delete, add and remove cards.
+   * 'preset' — it was generated for them (a Study Challenge's study deck): none of
+   *   those, and it does not count against the 100-deck cap.
+   *
+   * The restriction is expressed in the UI by the ABSENCE of controls, not by a
+   * lock badge — a lock icon invites a tap that does nothing and needs its own
+   * explanatory copy, while a control that isn't there needs neither.
+   *
+   * Deliberately NOT a `challengeId`: this describes the deck itself and generalises
+   * to any future generated set (a curated pack, a weakness drill). The pointer to
+   * the owning challenge lives on the challenge (`presetDeckIds`), so `decks` learns
+   * nothing about challenges.
+   */
+  editMode: 'custom' | 'preset';
   cardCount: number;
   createdAt: string;
   updatedAt: string;

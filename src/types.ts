@@ -28,6 +28,15 @@ export type {
   ApiResponse,
   ApplyDesignResult,
   BreakdownMap,
+  ChallengeGameRef,
+  ChallengeRound,
+  ChallengeScoreBreakdown,
+  ChallengeScoreLine,
+  ChallengeScoringBonus,
+  ChallengeScoringSpec,
+  ChallengeStatus,
+  ChallengeVariant,
+  ChallengeWord,
   CommunityDesign,
   DefinitionCluster,
   DifficultyLevel,
@@ -71,8 +80,14 @@ export type {
   WordComparisonResult,
 } from "../server/contracts/wire";
 
+export type { ChallengeGameSpec, ProvisionMode } from "../server/contracts/wire";
+
 export {
   CARD_COLOR_VALUES,
+  CHALLENGE_GAMES,
+  challengeGamesForLanguages,
+  CHALLENGE_ROUND_COUNT,
+  CHALLENGE_WORD_COUNT,
   ENTRY_LEVEL_VALIDATION_FIELDS,
   FLASHCARD_CATEGORY,
   FLASHCARD_CATEGORIES,
@@ -83,6 +98,7 @@ export {
   languageRegionCode,
   MARK_TYPES,
   MARK_WINDOW_SIZE,
+  MAX_ACTIVE_CHALLENGES,
   NO_APPROVALS,
 } from "../server/contracts/wire";
 

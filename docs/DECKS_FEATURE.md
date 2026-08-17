@@ -21,7 +21,7 @@ Two things landed together here, because one made the other possible:
 
 | Table | Columns | Notes |
 |---|---|---|
-| `decks` | `id` serial PK · `userId` uuid → `users(id)` CASCADE · `language` varchar(8) · `name` varchar(64) · `createdAt` · `updatedAt` · **`editMode`** (planned) | Unique on (`userId`, `language`, `lower(btrim(name))`) — **becomes partial**, see below; CHECK `btrim(name) <> ''`; index on (`userId`, `language`) |
+| `decks` | `id` serial PK · `userId` uuid → `users(id)` CASCADE · `language` varchar(8) · `name` varchar(64) · `createdAt` · `updatedAt` · **`editMode`** (migration 148) | Unique on (`userId`, `language`, `lower(btrim(name))`) — **becomes partial**, see below; CHECK `btrim(name) <> ''`; index on (`userId`, `language`) |
 | `deck_cards` | `deckId` int → `decks(id)` CASCADE · `vocabEntryId` int · `addedAt` | PK (`deckId`, `vocabEntryId`); index on `vocabEntryId` |
 
 ### A deck carries no study state
@@ -59,7 +59,7 @@ of these two". The integrity an FK would have given us comes from two places:
 
 If the vet is ever unified into one table, add the FK and delete that cleanup.
 
-### `editMode` — user-authored vs. generated decks (planned, Study Challenge)
+### `editMode` — user-authored vs. generated decks (migration 148, on dev)
 
 ⚠️ **Not built.** Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 4 and
 signed off 2026-08-16; it ships with that feature's migration.
@@ -374,7 +374,7 @@ collection's definition and its number cannot drift.
    the page.
 4. **Decks** — the user's sets, wrapping at **three per row**, plus a `+` to create
    one.
-5. **Challenges** *(planned)* — generated challenge decks (`editMode = 'preset'`), same
+5. **Challenges** *(built on dev)* — generated challenge decks (`editMode = 'preset'`), same
    `DeckTile`, same wrapping, but with the **opponent's friend icon** in the tile's icon
    slot instead of the `+`. See [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 4.
 
@@ -570,11 +570,15 @@ The Learn Now card grid and its search bar moved to
 
 ### Add to deck (cdp + eip)
 
-`AddToDeckMenu` is an icon button opening a checkbox menu of the user's decks, with
-"New deck…" at the bottom. Mounted in:
+`AddToDeckMenu` opens a checkbox menu of the user's decks, with "New deck…" at the
+bottom. Its trigger has two shapes — a bare icon button, or a labelled outlined button
+when a `label` prop is given. Mounted in:
 
-* `VocabCardDetailPage.tsx` — the cdp header actions, beside Edit and Delete
-* `InfoCardPanelBody.tsx` — the eip header action grid (which grows a third row)
+* `VocabCardDetailPage.tsx` — the cdp header actions, beside Edit and Delete (icon)
+* `InfoCardActionBar.tsx` — the "Add to Deck…" button in the action bar at the end of
+  the **eip definition tab** (labelled). It used to live in the eip *header*'s action
+  grid as a bare icon; it moved so the action reads as a named button rather than a
+  guessed-at glyph.
 
 Two behaviours worth knowing:
 
@@ -666,7 +670,7 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §3 Games-hub selector | `src/features/flashcards/selectedCollection.ts`; `src/games/GamesCollectionSelector.tsx`; `src/games/GamesPage.tsx` (`launchPath`); `src/games/word-search/WordSearchHubItem.tsx` (`newGamePath`); `src/api/decks.ts` (`fetchDecks`) |
 | §4 Client | `src/api/decks.ts`, `collectionRef.ts`, `useLaunchCollection.ts`, `CollectionViewPage.tsx`, `FlashcardsDecksPage.tsx`, `AddToDeckMenu.tsx`, `routes/routeMeta.ts`, `routes/registry.ts` |
 | §4 Tiles & built-in collections | `src/components/DeckTile.tsx` (+ `DeckBuckets.tsx`, its other host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`builtinCollectionEntries`, `hasMasteredSection`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
-| §1 `editMode` + §4 Challenges section (planned) | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; the challenge migration (147+); `DeckService` (the preset mutation guard); `study_challenges.presetDeckIds` |
+| §1 `editMode` + §4 Challenges section | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; `database/migrations/148-create-study-challenges.sql`; `DeckService` → `assertMutable` (the preset mutation guard) and `createPresetDeck`; `DeckDAL` → `createPresetDeck` / `countCustomDecks` / `findDeckEditMode`; `study_challenges.presetDeckIds` |
 | §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `CollectionViewPage.tsx` (the sort row + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |
 
 Related docs: [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (small-deck top-up),

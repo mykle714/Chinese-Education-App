@@ -3,11 +3,37 @@
 A weekly head-to-head between two friends: agree on a set of words on Monday, study
 them all week, then play the same three games against that set and compare scores.
 
-**Status: DESIGN / DRAFT.** Nothing here is built and no migration has been written.
-The **data model (§ 9) is signed off** as of 2026-08-16 — the tables, columns and index
-change are approved and may be implemented as written; everything else remains a spec
-(§ 11 collects what is still open). This document is what the implementation will be
-written from, not a record of what shipped.
+**Status: PART BUILT ON DEV (2026-08-17), nothing on prod.** The schema and the whole
+async server stack exist; the games, the client and the maintenance job do not. Build
+order and remaining steps: [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+
+| Step | State |
+|---|---|
+| **Migration 148** — `study_challenges`, `decks."editMode"`, the two `friendships` block booleans, the partial name index | ✅ applied and verified on dev |
+| **Contract** — `CHALLENGE_WORD_COUNT`/`ROUND_COUNT`, `MAX_ACTIVE_CHALLENGES`, `ProvisionMode`, `CHALLENGE_GAMES`, the scoring/breakdown types | ✅ `server/contracts/wire.ts` |
+| **Server** — DAL, service, controller, routes, DI, the preset-deck guard, the unfriend hook | ✅ smoke-tested end to end on dev |
+| **`mastered-first` provisioning** | ✅ `ProvisionalCardDAL.findOwnCardsByBand` + `ProvisionalCardService.getFillerPool` (the full ladder: Mastered → Comfortable → Target → Unfamiliar → lent), and the `ProvisionMode` parameter threaded through `ensureBaseline`/`lendCards`. Band ordering verified against dev data |
+| **Games** — the shared scoring runner, the registry↔pool sync test, pause-on-background | ⚠️ **partly built.** Done: `src/games/runtime/challengeScoring.ts` (the declarative spec runner, 15 unit tests against the real specs), `challengeScoringFor` on the registry, `src/games/__tests__/challengePool.test.ts` (5 tests — the thing that keeps eligibility registry-derived), and **pause-on-background wired into Bubble Match, Match Speed and Speed Reading** via `useBackgroundPause` + `GamePausedOverlay`. **Not done: the per-game board integration** — see the row below |
+| **The scored round runner** — the one remaining piece | ❌ not started. Needs (a) a challenge-board pool read that returns the ten contested cards plus `mastered-first` filler, extending the existing `/api/onDeck/gamePool` path rather than adding a second pool loader; (b) each of the three eligible games classifying its board cards as contested/filler at generation and emitting `ChallengeEvent`s into the runner; (c) Match Speed's alternation rule (§ 5.3); (d) the between-games scoreboard and the round POST. The server, the contract, the scoring maths and the provisioning ladder for all of this exist and are tested — what is missing is the wiring inside the three game pages |
+| **Client** — `src/api/studyChallenges.ts`, `src/features/studyChallenge/*`, the `/friends/challenges` NodePage + its badge, the fifth `/decks` section | ✅ built on dev. The one gap is the **scored round runner**, which belongs to the games step — the detail page lists the drawn rounds but cannot play them yet, and says so on screen |
+| **Maintenance job** — `database/cron/expire-study-challenges.sql` and its `ExecStart` step | ✅ written; all four passes exercised on dev with backdated fixtures, and idempotent on re-run. ⚠️ **Inert on prod until `install-timers.sh` re-renders the unit** — a git pull does not roll out a unit-template change, and until it does nothing expires |
+| **Runbook** | ✅ [STUDY_CHALLENGE_DEPLOY_RUNBOOK.md](./STUDY_CHALLENGE_DEPLOY_RUNBOOK.md) — migration 148 must precede the restart, and the systemd unit must be **re-rendered** or the whole time-triggered half stays inert |
+
+⚠️ **Migration 148, not 147.** 147 was claimed by the `compute_utcm_category` drop and
+had already been applied to dev, so this one moved (CLAUDE.md § Migration number
+collisions).
+
+⚠️ **One column was added that § 9 does not list: `study_challenges."weekStart"`.**
+§ 1 specifies uniqueness as `(challengerId, challengeeId, week)` unordered, but a week
+cannot be an index expression — resolving `users.timezone` is not `IMMUTABLE`, so
+Postgres refuses it. `weekStart` stores the challenger's Monday 04:00 local as a UTC
+instant, and the unique index over `(LEAST, GREATEST, weekStart)` then enforces the
+weekly pair rule **and** the § 1 decline cooldown with no separate rate limiter.
+Signed off 2026-08-17. It does not contradict Q50: deadlines are still recomputed live
+from the player's current timezone, and only the challenge's *week identity* is fixed.
+
+The **data model (§ 9) was signed off** on 2026-08-16. §§ 1–6 and 8 remain the spec the
+rest of the build is written from; § 7 (live mode) is phase 2.
 
 ---
 
@@ -777,7 +803,17 @@ the other two games decide the match.
 ### 5.4 Scoring
 
 Every recognition/production game is henceforth **required** to expose a study-challenge
-scoring function. This is a registry-level contract, not a per-game afterthought:
+scoring spec. This is a registry-level contract, not a per-game afterthought:
+
+> **⚠️ Where the specs physically live, decided at build time (2026-08-17).** The numbers
+> are in **`server/contracts/wire.ts` as `CHALLENGE_GAMES`**, not in
+> `src/games/registry.ts`, because **the server draws the game sequence** (at issue,
+> § 5.1b) and the registry imports lazy React components the Node build cannot load —
+> and live mode must score the same events server-side with no game page mounted (Q76).
+> `GameDef.challengeScoring` remains the per-game declaration point and is populated by
+> lookup, and a registry test must fail when a recognition/production game has no
+> `CHALLENGE_GAMES` entry. That test is what preserves "derived from the registry, never
+> hand-listed" — it is **owed by the games step and not written yet**.
 
 ```ts
 // src/games/types.ts (proposed)
@@ -1613,7 +1649,7 @@ This document will describe (nothing exists yet):
 `src/games/{match-speed,bubble-match,word-search}/*` (scoring emission, challenge mode),
 `src/features/friends/*` (the Challenges NodePage and its badge).
 
-**The build queue lives in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 4** — ordered steps,
+**The build queue lives in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 1** — ordered steps,
 the two unshipped migrations this one stacks on, and the trigger (Arena landing).
 
 **Owed to other docs before this is built** — ✅ **all done 2026-08-16**, while Arena was

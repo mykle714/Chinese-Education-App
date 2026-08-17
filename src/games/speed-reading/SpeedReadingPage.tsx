@@ -42,6 +42,8 @@ import {
     medalFor,
 } from "./constants";
 import type { OptionFeedback, Phase, Round } from "./types";
+import GamePausedOverlay from "../runtime/GamePausedOverlay";
+import { useBackgroundPause } from "../runtime/useBackgroundPause";
 
 /**
  * Speed Reading — read the pinyin and definition, then tap the word that matches.
@@ -142,7 +144,6 @@ const SpeedReadingPage: React.FC = () => {
     const [elapsedMs, setElapsedMs] = useState(0);
     /** Accumulated WRONG_PENALTY_MS, one charge per wrong answer. */
     const [penaltyMs, setPenaltyMs] = useState(0);
-    const [popupMinimized, setPopupMinimized] = useState(false);
     /** Bumped by Play Again; drives the queue's reload and re-arms the run. */
     const [runId, setRunId] = useState(0);
 
@@ -348,7 +349,13 @@ const SpeedReadingPage: React.FC = () => {
     // full-screen input-blocking overlay, so a frozen clock buys no free study.
     // Shared rule across all four games — see docs/GAMES_FEATURE.md § Popups pause
     // the clock.
-    const clockPaused = noticeOpen;
+    // BACKGROUNDING IS THE SECOND SOURCE for this same boolean — the app-wide rule
+    // (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). This game's score IS
+    // its elapsed time, so an unpaused background spell was charged directly to the
+    // player's result.
+    const { paused: backgroundPaused, resume: resumeFromBackground } =
+        useBackgroundPause(phase === "playing");
+    const clockPaused = noticeOpen || backgroundPaused;
     /** `Date.now()` when the current pause began, or null while running. */
     const pausedAtRef = useRef<number | null>(null);
     useEffect(() => {
@@ -409,7 +416,6 @@ const SpeedReadingPage: React.FC = () => {
         if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
         setElapsedMs(Date.now() - startAtRef.current);
         setPhase("ended");
-        setPopupMinimized(false);
     }, []);
 
     const advance = useCallback(() => {
@@ -533,7 +539,6 @@ const SpeedReadingPage: React.FC = () => {
         setPicked(null);
         setRound(null);
         setElapsedMs(0);
-        setPopupMinimized(false);
         setPhase("loading");
         setRunId((n) => n + 1);
     }, []);
@@ -806,13 +811,19 @@ const SpeedReadingPage: React.FC = () => {
                     </Box>
                 )}
 
+                {/* Non-minimizable on purpose: no minimize handlers are passed, so the ×
+                    and the corner puck are not rendered. Unlike the other games there is
+                    no post-run cleanup to do on the board — the run is a fixed set of
+                    rounds and the board behind is spent — so the only exits are Play
+                    Again and Back to Games.
+
+                    The comment sits OUTSIDE the `&&` on purpose: a JSX comment is an
+                    expression, so as the first child of a `cond && ( … )` body it makes
+                    two siblings with no fragment around them, which esbuild rejects
+                    outright (tsc lets it through, so the repo typechecks and the build
+                    still fails). */}
                 {phase === "ended" && (
-                    <GameEndPopup
-                        classPrefix="speed-reading"
-                        minimized={popupMinimized}
-                        onMinimize={() => setPopupMinimized(true)}
-                        onRestore={() => setPopupMinimized(false)}
-                    >
+                    <GameEndPopup classPrefix="speed-reading">
                         <Typography
                             className="speed-reading__popup-title"
                             sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}
@@ -880,6 +891,17 @@ const SpeedReadingPage: React.FC = () => {
             </Box>
             </Box>
             )}
+
+            {/* Backgrounding paused the round — the app-wide rule
+                (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). A SIBLING of
+                the board, like GameEndPopup, so the layout does not change shape when
+                paused; it covers the board so the pause cannot be used as a free look
+                at it, and the clock only restarts when the player taps Resume. */}
+            <GamePausedOverlay
+                open={backgroundPaused}
+                onResume={resumeFromBackground}
+                classPrefix="speed-reading"
+            />
         </LeafPage>
         </>
     );

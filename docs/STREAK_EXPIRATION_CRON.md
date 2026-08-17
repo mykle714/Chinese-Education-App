@@ -363,10 +363,19 @@ The installer renders each template, substituting `__REPO_DIR__` with the absolu
 repo path, then runs `systemctl --user daemon-reload` and
 `systemctl --user enable --now cow-maintenance.timer`.
 
-### Planned third step — Study Challenge expiry
+### Third step — Study Challenge expiry (built on dev 2026-08-17, NOT on prod)
 
-⚠️ **Not built.** Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 9 (Q60); ships
-with that feature.
+Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 9 (Q60) and now written:
+`database/cron/expire-study-challenges.sql`, plus the third `ExecStart=` line and the
+`Description=` update in `cow-maintenance.service.template`. All four passes were
+exercised against dev with backdated fixtures, and a second run is silent (idempotent).
+
+⚠️ **A UNIT-TEMPLATE CHANGE IS NOT ROLLED OUT BY A GIT PULL.** The rendered copy in
+`~/.config/systemd/user/` is a *substituted* file, so prod keeps running the two-step
+unit until `database/cron/install-timers.sh` is re-run. Until then the SQL file sits on
+disk doing nothing, and — because the whole feature's time-triggered transitions live in
+it — **no challenge ever expires or resolves on prod**. This is the step of the deploy
+most likely to be forgotten, because everything else about the feature works without it.
 
 The unit gains a **third `ExecStart=` line** running a new pure-SQL file,
 `database/cron/expire-study-challenges.sql`, appending to
@@ -376,9 +385,9 @@ It belongs in this unit rather than in a timer of its own for the same reason th
 does: it is hourly, it is idempotent, it talks to the same container, and a second timer
 would be a second thing to install, verify and forget.
 
-**⚠️ The unit's `Description=` must be updated with it** — it currently reads
-*"inactivity penalty + dangling-template prune"*, which is what `systemctl --user status`
-prints. A stale description is how an operator concludes the wrong job failed.
+**The unit's `Description=` was updated with it** — it now reads *"inactivity penalty +
+dangling-template prune + study-challenge expiry"*, which is what `systemctl --user
+status` prints. A stale description is how an operator concludes the wrong job failed.
 
 Four ordered passes, all idempotent (required, since `Persistent=true` re-runs a tick
 missed to a reboot):

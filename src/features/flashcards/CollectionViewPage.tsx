@@ -88,6 +88,8 @@ const CollectionViewPage: React.FC = () => {
     // per-visit rather than persisted: it is a way of LOOKING at the set, not a
     // property of it, and a collection always opens in its natural order.
     const [sortKey, setSortKey] = useState<VocabSortKey>(() => defaultSortKey(isDeck));
+    // Whether this deck was generated for the user rather than authored by them.
+    const [deckIsPreset, setDeckIsPreset] = useState(false);
     const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
     // Anchor for the deck-only overflow menu (rename / delete).
     const [deckMenuAnchor, setDeckMenuAnchor] = useState<HTMLElement | null>(null);
@@ -133,7 +135,16 @@ const CollectionViewPage: React.FC = () => {
                     // deck still exists.
                     const decks = await fetchDecks();
                     const match = decks.find((d) => d.id === deckId);
-                    if (!cancelled) setDeckName(match?.name ?? null);
+                    if (!cancelled) {
+                        setDeckName(match?.name ?? null);
+                        // A GENERATED deck (a Study Challenge study deck, migration 148)
+                        // is fully viewable and fully playable here — that is the point of
+                        // it — but it may not be renamed or deleted, so the options menu
+                        // that offers both is not rendered at all. Absence of the control
+                        // IS the restriction (docs/STUDY_CHALLENGE.md § 4); a lock badge
+                        // would invite a tap that does nothing.
+                        setDeckIsPreset(match?.editMode === "preset");
+                    }
                 } else if (builtin) {
                     // ONE endpoint for all eight built-in collections — the id is the
                     // only thing that varies, and the server owns what each one means
@@ -256,7 +267,7 @@ const CollectionViewPage: React.FC = () => {
             onBack={() => navigate(-1)}
             contentClassName="collection-view-page-content"
             contentSx={{ alignItems: "center" }}
-            headerExtraActions={isDeck && (
+            headerExtraActions={isDeck && !deckIsPreset && (
                 <IconButton
                     className="collection-view__deck-menu-button"
                     aria-label="Deck options"

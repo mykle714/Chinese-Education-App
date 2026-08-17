@@ -49,6 +49,10 @@ function makeFriendshipDAL(overrides: Partial<IFriendshipDAL> = {}) {
             pendingRow({ id, status: 'accepted', respondedAt: '2026-08-02T00:00:00.000Z' }),
         deleteById: async () => true,
         deleteBetween: async () => true,
+        // The Study Challenge opt-out (migration 148). Nothing in FriendsService
+        // calls it — the flags are written from StudyChallengeService — but the stub
+        // must satisfy the interface.
+        setChallengesBlocked: async () => true,
         listFriends: async () => [],
         listPendingRequests: async () => [],
         ...overrides,

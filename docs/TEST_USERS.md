@@ -2,6 +2,10 @@
 
 This document describes all test users that are automatically created when the Docker containers are started.
 
+> **Not the only test accounts.** 55 synthetic Arena load-test accounts currently live in
+> **prod** — manually seeded, non-loginable, and meant to be deleted. They are documented
+> separately in [ARENA_TEST_USERS.md](./ARENA_TEST_USERS.md); nothing below applies to them.
+
 ## Automatic Test User Creation
 
 All test users are created automatically via database initialization scripts in `database/init/` when Docker containers start up. No manual setup is required.

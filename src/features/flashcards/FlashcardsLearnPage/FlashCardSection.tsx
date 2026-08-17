@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Card, CardContent, Typography, useTheme } from "@mui/material";
-import { sortedSenseClusters, resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
+import { senseLabelForIndex, resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
 import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel } from "./styled";
 import {
     CORRECT_COLOR,
@@ -126,8 +126,16 @@ const CardFace: React.FC<{
     // mode) and Side 2 stay in sync on the same pick. On a card change it re-seeds from the
     // entry's PERSISTED choice (`selectedSense` label → sorted index, migration 99), falling
     // back to the top/starred sense when there's no saved pick.
+    //
+    // It ALSO re-seeds when `selectedSense` changes on the SAME card, which is what keeps the
+    // card in step with a pick made in the eip's own header picker: that pick persists through
+    // `persistSelectedSense`, whose optimistic session override lands on this entry within the
+    // same flp session (no refetch). Without the `selectedSense` dep this local index would
+    // out-rank the fresher label and the face would keep showing the previous sense until the
+    // card was cycled. A pick made HERE re-runs it too and resolves to the same index, so the
+    // round trip is a no-op rather than a flicker. See docs/DEFINITION_CLUSTERS.md.
     const [selectedSenseIndex, setSelectedSenseIndex] = React.useState(() => resolveSelectedSenseIndex(entry));
-    React.useEffect(() => { setSelectedSenseIndex(resolveSelectedSenseIndex(entry)); }, [entry.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    React.useEffect(() => { setSelectedSenseIndex(resolveSelectedSenseIndex(entry)); }, [entry.id, entry.selectedSense]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // A pick updates the in-sync display index immediately (both faces) AND persists the
     // chosen cluster's `sense` LABEL. Index 0 is the default/starred sense, stored as null so
@@ -135,9 +143,7 @@ const CardFace: React.FC<{
     const handleSelectSense = React.useCallback((index: number) => {
         setSelectedSenseIndex(index);
         if (!onPersistSense) return;
-        const sorted = sortedSenseClusters(entry);
-        const label = index === 0 ? null : sorted?.[index]?.sense ?? null;
-        onPersistSense(entry, label);
+        onPersistSense(entry, senseLabelForIndex(entry, index));
     }, [entry, onPersistSense]);
 
     // Whether this entry is saved (in this account) with an ADVANCED layout — a multi-icon /

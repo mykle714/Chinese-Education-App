@@ -140,8 +140,8 @@ export class OnDeckVocabService {
   private static readonly COOLDOWN_MS_BY_CATEGORY: Record<string, number> = {
     Unfamiliar: 5 * 60 * 1000,            // 5 minutes
     Target: 24 * 60 * 60 * 1000,          // 24 hours
-    Comfortable: 7 * 24 * 60 * 60 * 1000, // 7 days
-    Mastered: 30 * 24 * 60 * 60 * 1000,   // 30 days
+    Comfortable: 14 * 24 * 60 * 60 * 1000, // 14 days
+    Mastered: 180 * 24 * 60 * 60 * 1000,   // 6 months (180 days)
   };
 
   // The mark types the flp can actually present (docs/MASTERY_REWORK.md § 1): a

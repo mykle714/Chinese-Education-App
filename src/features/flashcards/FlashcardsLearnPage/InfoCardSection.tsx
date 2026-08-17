@@ -28,14 +28,19 @@ interface InfoCardSectionProps {
     // (breakdown chars / example segments) that aren't yet in the library can be
     // added; undefined hides the button (see InfoCardPanelBody).
     onAddToLibrary?: (entry: VocabEntry) => void;
-    // Compare tab (docs/WORD_COMPARE_FEATURE.md). `onOpenCompare` renders the header's Compare
-    // button (undefined hides it). `compareTab` set ⇒ the panel renders CompareWorkspace instead of
+    // Compare tab (docs/WORD_COMPARE_FEATURE.md). `onOpenCompare` renders the "Compare To…"
+    // button in the definition tab's action bar (undefined hides it). `compareTab` set ⇒ the panel renders CompareWorkspace instead of
     // InfoCardPanelBody's normal definition/examples/breakdown content — the Compare tab has no
     // entry/breakdown/sub-tab of its own.
     onOpenCompare?: (entry: VocabEntry) => void;
     compareTab?: CompareEipTab | null;
     onSetCompareSlot?: (slot: "A" | "B", entry: VocabEntry | null) => void;
     onCompareResult?: (comparison: string | null, comparisonParts?: LongDefinitionPart[] | null) => void;
+    // The definitionClusters sense the panel is showing, and the header picker's
+    // callback (docs/DEFINITION_CLUSTERS.md). Owned by the host page's useEipTabs so the
+    // pick survives entry-tab switches; the host also persists it to the vet row.
+    selectedSenseIndex?: number;
+    onSelectSense?: (index: number) => void;
     // Optional content slot rendered above the grabber. Used by the entry-tabs
     // feature (see EipTabStrip + useEipTabs) — undefined renders nothing extra.
     tabStrip?: React.ReactNode;
@@ -66,6 +71,8 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     compareTab,
     onSetCompareSlot,
     onCompareResult,
+    selectedSenseIndex,
+    onSelectSense,
     tabStrip,
 }, ref) => {
     const panelRef = useRef<InfoCardPanelBodyHandle | null>(null);
@@ -112,6 +119,8 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                         speakingKey={speakingKey}
                         onAddToLibrary={onAddToLibrary}
                         onOpenCompare={onOpenCompare}
+                        selectedSenseIndex={selectedSenseIndex}
+                        onSelectSense={onSelectSense}
                         scrollTouchAction="none"
                         headerDragBind={bindHeaderDrag}
                     />

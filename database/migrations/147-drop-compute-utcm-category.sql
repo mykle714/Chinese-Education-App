@@ -1,0 +1,44 @@
+-- Migration 147: drop the dead compute_utcm_category(jsonb, boolean, boolean)
+--
+-- ⚠️ EXPAND/CONTRACT — THIS IS THE CONTRACT STEP for migration 143 (three mastery
+-- bars). No new code ships with it and no code may be deployed alongside it.
+--
+-- WHY IT EXISTED
+-- Migration 101 created compute_utcm_category(typedMarkHistory, readingGoal,
+-- writingGoal): the SQL mirror of the goal-weighted pbh formula, spliced into the
+-- deck/selection queries. Being goal-weighted, every call site had to JOIN users to
+-- supply the two flags.
+--
+-- WHY IT IS DEAD
+-- Migration 143 replaced it at EVERY call site with compute_core_category(jsonb) —
+-- the same bands over the same 8-mark window, minus the goal arguments (goals now
+-- decide which bars are SHOWN, not how a card is banded), which is why the successor
+-- needs no users JOIN. 143 deliberately left this function in place because it ran
+-- BEFORE the new server code, and the still-running old code called it on every deck
+-- read. That deploy window closed when 143 was verified on prod on 2026-08-11, so
+-- nothing has called it since.
+--
+-- WHY IT IS BEING REMOVED RATHER THAN LEFT ALONE
+-- It reads like live schema — it even carries a COMMENT ON FUNCTION from 143 — so the
+-- next person adding a mastery column would reasonably believe it must be kept in sync
+-- with compute_core_category() / compute_type_category() / server/utils/masteryCompute.ts
+-- / src/utils/masteryCompute.ts. That mirror set is already four-way; a phantom fifth
+-- is exactly the kind of dead code that gets accidentally resurrected.
+--
+-- EFFECT ON DATA
+-- None. A function drop touches no rows. Nothing depends on it structurally: no
+-- generated column, index, view or constraint references it (143 moved the generated
+-- `category` column's replacement to the service layer, and the deliberate absence of
+-- CASCADE below is the guard — if any dependent object still exists this migration
+-- fails loudly rather than silently dropping it).
+--
+-- ROLLBACK
+-- Re-run the CREATE OR REPLACE FUNCTION block in
+-- database/migrations/101-mastery-rework-typed-marks-and-goals.sql. The function is
+-- pure (IMMUTABLE, no state), so recreating it is a complete restore.
+--
+-- Idempotent (IF EXISTS). The argument list is required: it disambiguates the
+-- overload, and Postgres rejects a bare DROP FUNCTION name when arguments are omitted
+-- on this version.
+
+DROP FUNCTION IF EXISTS compute_utcm_category(jsonb, boolean, boolean);

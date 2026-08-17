@@ -97,6 +97,26 @@ export function resolveSelectedSenseIndex(
 }
 
 /**
+ * The inverse of `resolveSelectedSenseIndex`: the `selectedSense` LABEL to persist for a
+ * pick at `index` in `sortedSenseClusters(entry)`.
+ *
+ * Index 0 is the default/starred sense and is stored as NULL, so a card the learner never
+ * re-pointed keeps a clean NULL row (migration 99's semantics) and automatically follows
+ * any future re-scoring of which sense is the most common one.
+ *
+ * Shared by every sense picker host — the flp card face (FlashCardSection), the cdp
+ * (VocabCardDetailPage) and the eip header (FlashcardsLearnPage / SortCardsPage) — so the
+ * index→label conversion can't drift between them. See docs/DEFINITION_CLUSTERS.md.
+ */
+export function senseLabelForIndex(
+  entry: Pick<VocabEntry, 'definitionClusters'>,
+  index: number,
+): string | null {
+  if (index === 0) return null;
+  return sortedSenseClusters(entry)?.[index]?.sense ?? null;
+}
+
+/**
  * **The dd resolver — the single source of truth for an entry's display definition.**
  *
  * Every surface that shows "this word's English meaning" for a *saved* card must go

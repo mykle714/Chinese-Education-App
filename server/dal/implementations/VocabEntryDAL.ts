@@ -986,16 +986,15 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   // Callers that previously forced a category now write the corresponding markHistory.
 
   /**
-   * Overwrite a vocab entry's typed mark history + lifetime counts.
+   * Overwrite a vocab entry's typed mark history.
    * Used when marking cards "already learned" to seed a full (Mastered) history.
-   * `category` is no longer stored — it's derived on read from typedMarkHistory +
-   * the account's goal flags (migration 101), so there's nothing else to write.
+   * `category` is no longer stored — it's derived on read from typedMarkHistory
+   * (migration 101), so the history IS the whole write. The lifetime counters that
+   * used to be written alongside it were dropped by migration 149 (write-only).
    */
   async updateTypedMarkHistory(
     id: number,
-    typedMarkHistory: TypedMarkHistory,
-    totalMarkCount: number,
-    totalCorrectCount: number
+    typedMarkHistory: TypedMarkHistory
   ): Promise<void> {
     if (!id) {
       throw new ValidationError('Entry ID is required');
@@ -1009,14 +1008,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       for (const table of VET_PHYSICAL_TABLES) {
         await client.query(`
           UPDATE ${table}
-          SET "typedMarkHistory" = $1,
-              "totalMarkCount" = $2,
-              "totalCorrectCount" = $3
-          WHERE id = $4
+          SET "typedMarkHistory" = $1
+          WHERE id = $2
         `, [
           JSON.stringify(typedMarkHistory),
-          totalMarkCount,
-          totalCorrectCount,
           id
         ]);
       }

@@ -4,8 +4,10 @@
  * This used to exist four times: `src/utils/masteryCompute.ts`,
  * `server/utils/masteryCompute.ts`, the SQL `compute_utcm_category()` (migration
  * 101) and `compute_type_category()` (migration 128). The two TypeScript copies now
- * both re-export this file; the SQL functions remain because the selection queries
- * band cards in-query, but they are no longer the definition — see the sync test in
+ * both re-export this file; two SQL functions remain because the selection queries
+ * band cards in-query — `compute_core_category()` (migration 143, which superseded
+ * `compute_utcm_category()`; migration 147 drops the dead original) and
+ * `compute_type_category()` — but they are no longer the definition. See the sync test in
  * `server/__tests__/mastery.test.ts`, which pins the cut points and the blend so a
  * future edit here fails loudly.
  *

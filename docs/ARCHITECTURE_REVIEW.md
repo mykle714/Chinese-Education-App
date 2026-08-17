@@ -156,7 +156,7 @@ to follow.
 | Type | Drift |
 |---|---|
 | `DictionaryEntry` | client is missing **21 fields** (`breakdown`, `synonyms`, `exampleSentences`, `wordForms`, `difficulty`, `script`, `segments`, `longDefinitionRaw`, `longDefinitionCitations`, …) |
-| `VocabEntry` | client missing `totalMarkCount`, `totalCorrectCount`, `longDefinitionCitations`; declares a `discoverable` the server does not |
+| `VocabEntry` | client missing `longDefinitionCitations`; declares a `discoverable` the server does not. (The `totalMarkCount` / `totalCorrectCount` drift listed here was closed by migration 149, which deleted both columns as write-only rather than adding them to the client.) |
 | `User` | client missing `avatarIconId`, `readingGoal`, `writingGoal`, `showSegmentSpaces`, `lastMinutePointIncrement` |
 | `DiscoverCard` | client missing `matchException`, `translatedVocab` |
 | `FlashcardCategory` | `enum` on the server, string union on the client |
@@ -198,12 +198,14 @@ defines what "Mastered" means — is implemented in:
 |---|---|
 | 1 | `src/utils/masteryCompute.ts` |
 | 2 | `server/utils/masteryCompute.ts` |
-| 3 | SQL `compute_utcm_category()` — `database/migrations/101-mastery-rework-typed-marks-and-goals.sql` (**superseded** by `compute_core_category()`, migration 143) |
+| 3 | SQL `compute_core_category()` — `database/migrations/143-three-mastery-bars.sql` (**replaced** `compute_utcm_category()` from migration 101, which migration 147 drops) |
 | 4 | SQL `compute_type_category()` — migration 128 |
 
 > Migration 143 tightened this further: both TS copies now delegate to the single
 > `server/contracts/mastery.ts`, so the TS side is one implementation re-exported,
-> not two mirrors. Two SQL functions remain to keep in sync with it.
+> not two mirrors. Two SQL functions remain to keep in sync with it — and migration
+> 147 removes the dead third (`compute_utcm_category()`), so the mirror set is four,
+> not five.
 
 The client file's own header documents the flaw rather than fixing it:
 

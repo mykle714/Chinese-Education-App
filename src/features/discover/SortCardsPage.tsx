@@ -23,7 +23,8 @@ import { API_BASE_URL } from "../../constants";
 import { fetchStarterPacks, fetchNextPack, sortCard, skipPack, undoSort } from "./starterPacksApi";
 import { fetchProvisionalSortSet } from "../../api/provisional";
 import { lookupVocabEntry } from "../../api/dictionary";
-import { stripParentheses } from "../../utils/definitionUtils";
+import { senseLabelForIndex, stripParentheses } from "../../utils/definitionUtils";
+import { saveSelectedSense } from "../../utils/vocabApi";
 import type { Language, DiscoverCard, SortPack } from "../../types";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useAuth } from "../../AuthContext";
@@ -1448,6 +1449,22 @@ const SortCardsPage: React.FC = () => {
                                 // compete with it. (Drilled-in words can still be added from
                                 // the flp, which is where that affordance lives.)
                                 onOpenCompare={eip.openCompareTab}
+                                selectedSenseIndex={active?.kind === "entry" ? active.selectedSenseIndex : 0}
+                                // A pick in the eip header mirrors the flp/cdp pickers: the tab
+                                // records it (so the panel re-renders at once) and the chosen
+                                // cluster's LABEL is persisted for saved cards. scp has no card
+                                // face holding an optimistic override, so the PATCH is
+                                // fire-and-forget — the tab's own index is what the panel renders
+                                // from. Un-sorted/dictionary words carry no vet row (id 0), so
+                                // their pick simply stays local to the tab.
+                                onSelectSense={(index) => {
+                                    eip.setActiveSenseIndex(index);
+                                    const entry = active?.kind === "entry" ? active.entry : null;
+                                    if (entry?.id) {
+                                        saveSelectedSense(entry.id, senseLabelForIndex(entry, index))
+                                            .catch((err) => console.error("Failed to save selected sense:", err));
+                                    }
+                                }}
                                 compareTab={compareTab}
                                 onSetCompareSlot={eip.setCompareSlot}
                                 onCompareResult={eip.setCompareResult}

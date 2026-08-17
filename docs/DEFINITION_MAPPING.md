@@ -332,14 +332,53 @@ on the cdp (`VocabCardDetailBody.tsx`), the eip (`InfoCardPanelBody.tsx`), scp
 (`SortCardsPage.tsx`), and as the top-left badge on Quick Mark mini cards
 (`QuickMarkCard.tsx`).
 
-**Deploying this change to prod:** see
-[FREQUENCY_SCORE_DEPLOY_RUNBOOK.md](./FREQUENCY_SCORE_DEPLOY_RUNBOOK.md) — migration
-order (122 must precede 123), verification queries, the re-scoring run, and rollback.
+**Deployed.** Migration 122 (the rename) is on prod; its temporary deploy runbook has
+been deleted. The one ordering fact worth keeping: **122 must precede 123**, since 123
+references the already-renamed column — both are long since applied, so this matters only
+to someone rebuilding a database from the migration files in order.
 
-**Re-scoring:** migration 122 renamed the column and the run-log stamp key but
-deliberately KEPT the old register values, so rows still hold v1 register numbers
-until the backfills are re-run with `--stale` (SCRIPT_VERSION was bumped: zh word-level
-→ 2, es → 4, cluster-definitions → 5).
+**⚠️ Re-scoring — the values may still be v1 register numbers.** Migration 122 renamed
+the column and the run-log stamp key but deliberately KEPT the old values, so a row holds
+a *register* number under a *frequency* name until the backfills are re-run with
+`--stale` (SCRIPT_VERSION was bumped for exactly this: zh word-level → 2, es → 4,
+cluster-definitions → 5). **That re-run never happened.** Measured on dev 2026-08-17:
+896 of 930 discoverable zh rows are still stamped `version: 1` (only 34 reached v2), and
+no es row has ever reached v4 (713 at v3, 130 at v2). Prod is very unlikely to be ahead
+of dev. **So most "Commonality" dots in the app today are still register judgments
+wearing a frequency label.** This is a known, accepted state — it is deliberately **not**
+queued in [DEFERRED_WORK.md](./DEFERRED_WORK.md); the re-run costs one Sonnet call per row
+and has not been judged worth the spend. Re-measure with:
+
+```sql
+-- v1 register vs v2 frequency, per row, from the run-log stamp
+SELECT "enrichmentLog" -> 'chinese/backfill-frequency-score' ->> 'version' AS v,
+       count(*)
+  FROM dictionaryentries_zh WHERE discoverable GROUP BY 1 ORDER BY 1;
+```
+
+**If it is ever run**, the mechanics (preserved here from the since-deleted migration-122
+deploy runbook, so they are not lost with it):
+
+```bash
+# From the HOST — the prod backend image ships neither scripts/backfill/ nor tsx.
+# Needs POSTGRES_PASSWORD in the repo-root .env. Idempotent, per-row commit.
+server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-frequency-score.js --stale
+server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-frequency-score.js --stale
+```
+
+- **Order matters: word-level before clustering.** Clustering's single-definition fast
+  path copies the word-level score onto the lone cluster rather than spending a call.
+- **Spot-check first:** `--spot-check --stale --random --limit=5` prints one-line
+  reasoning per word. It must talk about *how often a word comes up*, not how formal it
+  sounds. If it mentions register, stop — the wrong prompt shipped.
+- ⚠️ **`backfill-cluster-definitions.js --stale` is a different order of cost** — it
+  re-runs the entire clustering pipeline (partition + gloss ordering + scoring) per row,
+  several calls each. There is no score-only mode. Confirm the spend before running it.
+- **Sanity check after:** expect roughly `吃饭` 5, `时间` 5, `搞定` 4, `手术` 3, `自由` 3,
+  `阐述` 2, `余` 2, `翌日` 1. A `手术` of 2 or a `翌日` of 4 means the old rubric is still
+  in play.
+- `--stale` on the **Spanish** script is comparatively new; without it the run finds
+  nothing to do, because every row already has a score.
 
 ---
 

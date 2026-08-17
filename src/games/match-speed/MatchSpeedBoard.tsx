@@ -200,9 +200,9 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
     // Props read by the TAP handler, held in refs for a different but equally
     // load-bearing reason: `handleTap` must be referentially STABLE.
     //
-    // It is passed to all twelve MatchSpeedCards, which are `React.memo`'d. If
+    // It is passed to all ten MatchSpeedCards, which are `React.memo`'d. If
     // this callback changed identity on any render, the memo would miss on every
-    // card and each tap would re-render the entire board — twelve cpcd renders
+    // card and each tap would re-render the entire board — ten cpcd renders
     // between the player's tap and their next one. That render stall is what the
     // "animations lock out my taps" reports were actually made of. Keeping the
     // volatile props in refs is what lets the dependency array below be empty-ish

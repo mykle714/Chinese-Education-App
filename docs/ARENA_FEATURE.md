@@ -75,7 +75,7 @@ there. See § 9 for the layering note.
 
 ```
  ┌──────────────────────────────────────────────┐
- │  🇨🇳 CHINESE · DIVISION 7   ends Sun 4:00 PM  │   ← header: language + division + countdown
+ │  🇨🇳 CHINESE · IRIDIUM      ends Sun 4:00 PM  │   ← header: language + division (§ 7.0) + countdown
  ├──────────────────────────────────────────────┤
  │ [1] (av)  Priya          🇪🇸 ES        6h 52m │   ← ▲ promotion zone (top 5)
  │ [2] (av)  Wen            🇨🇳 ZH        6h 28m │
@@ -122,7 +122,7 @@ both Chinese and Spanish holds **two** arena standings. `/arena` shows the one f
 per-language partitioning decks, minute points (migration 130) and the whole vet layer
 already use, so it is consistent rather than special-cased.
 
-The header therefore leads with the language ("🇨🇳 Chinese · Division 7"), or the user
+The header therefore leads with the language ("🇨🇳 Chinese · Iridium"), or the user
 will read a Spanish division number as their Chinese one. There is no combined
 "all my arenas" view — **settled as Q17**: a two-language learner switches language to
 check their other race, the same as everywhere else in the app.
@@ -654,6 +654,34 @@ arena result never moves a Chinese division.
   points, a night-market unlock) is farmable by players who agree to sit out and hand each
   other a cluster, and status is the one prize collusion cannot manufacture.
 * **A new (user, language) pair starts at division 1.**
+
+### 7.0 Division names
+
+The rungs are **named** in the UI; the number is the storage and wire format, and it
+appears only as the small "Division N of 12" subtitle under the name. A learner cannot
+tell whether "Division 7" is good, but can tell that Platinum is above Gold.
+
+| # | Name | # | Name |
+|---|---|---|---|
+| 1 | Slate | 7 | Iridium |
+| 2 | Bronze | 8 | Obsidian |
+| 3 | Silver | 9 | Titanium |
+| 4 | Gold | 10 | Jade |
+| 5 | Steel | 11 | Diamond |
+| 6 | Platinum | 12 | Legendary |
+
+The ladder is a **materials** progression — soft stone → the three medals → rare and
+engineered metals → gems → the unnamed top rung.
+
+* **Code**: `src/features/arena/arenaStyles.ts` → `DIVISION_NAMES`, `DIVISION_COLORS`,
+  `divisionName`, `divisionColor`, `divisionTextColor`. Consumed by
+  `src/features/arena/ArenaPage.tsx` → `DivisionHeader`.
+* Both arrays are index-aligned and 0-based (`division - 1`); the two lookup helpers clamp,
+  so a division outside 1–12 renders the nearest rung rather than crashing the page.
+* `DIVISION_COLORS` is drawn entirely from existing `src/theme/colors` tokens — no arena
+  palette. Two rungs (Iridium, Obsidian) are dark enough that the default dark body text
+  fails on them, so **any surface tinted with `divisionColor` must take its foreground from
+  `divisionTextColor`**, never from `COLORS.onSurface` directly.
 
 ### 7.1 Where the division lives — `user_languages`, not `users`
 

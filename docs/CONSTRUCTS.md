@@ -40,12 +40,7 @@ Each property on a `VocabEntry` object falls into one of three source categories
 | `entryValue` | `entryValue` | Short English definition |
 | `category` | `category` | Current flashcard category (`Unfamiliar`/`Target`/`Comfortable`/`Mastered`). A **GENERATED STORED** column (migration 67) the DB derives from `markHistory` via `compute_flashcard_category()` — banded by correct-count in the last 8 marks (≤1 Unfamiliar, ≤4 Target, ≤6 Comfortable, ≥7 Mastered; thresholds set by migration 69). Read-only: never written by app code; the mark/undo endpoints read it back via `RETURNING`. |
 | `starterPackBucket` | `starterPackBucket` | `'library'` / `'skip'` — determines if card appears in study loop (`'already-learned'` is a sort action that maps to `'library'` + Mastered, not a stored value) |
-| `markHistory` | `markHistory` | JSONB array (capped at 16) of `{ timestamp: ISO-8601, isCorrect: boolean }` |
-| `totalMarkCount` | `totalMarkCount` | Running total of all marks ever given |
-| `totalCorrectCount` | `totalCorrectCount` | Running total of correct marks |
-| `totalSuccessRate` | `totalSuccessRate` | `totalCorrectCount / totalMarkCount`; recalculated after each mark |
-| `last8SuccessRate` | `last8SuccessRate` | Correct count in last 8 marks ÷ 8; recalculated after each mark |
-| `last16SuccessRate` | `last16SuccessRate` | Correct count in last 16 marks ÷ 16; recalculated after each mark |
+| `typedMarkHistory` | `typedMarkHistory` | JSONB keyed by mark type (`recognition`/`production`/`reading`/`writing`), each a rolling window of the 8 most recent `{ timestamp: ISO-8601, isCorrect: boolean }`. Replaced the flat `markHistory` in migration 101 — see [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
 | `createdAt` | `createdAt` | Row creation timestamp |
 
 ### From `dictionaryentries_zh` (DET) — via DICT_JOIN

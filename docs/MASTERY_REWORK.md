@@ -361,8 +361,8 @@ the card's overall utcm category (weaker = shorter, so weak cards drill more):
 |---|---|
 | Unfamiliar | 5 minutes |
 | Target | 24 hours |
-| Comfortable | 7 days |
-| Mastered | 30 days |
+| Comfortable | 14 days |
+| Mastered | 6 months (180 days) |
 
 ### The timer is PER MARK TYPE
 
@@ -647,8 +647,10 @@ Each track keeps its own 8 most recent `{timestamp, isCorrect}` entries.
   **defaults to the `recognition` track** (cheap guard; not load-bearing now that
   old data is dropped).
 - **Drop the success-rate columns** (`totalSuccessRate`, `last8SuccessRate`,
-  `last16SuccessRate`) — no longer used by the new model. Keep `totalMarkCount` /
-  `totalCorrectCount` lifetime aggregates (used by stats / OnDeck cooldowns).
+  `last16SuccessRate`) — no longer used by the new model. The `totalMarkCount` /
+  `totalCorrectCount` lifetime aggregates were kept at the time (this doc claimed
+  they were "used by stats / OnDeck cooldowns" — they were not; nothing read them),
+  and **migration 149 dropped them** once that was confirmed.
 - Drop the generated `category` column (moves to service-layer compute).
 - Per-type positive counts are computed on the fly from the jsonb at read time.
 
@@ -688,9 +690,9 @@ Implications to work through:
 ### Account settings — goal flags storage — DECIDED: new users columns
 
 **Decision:** add `users.readingGoal boolean` and `users.writingGoal boolean`
-(default false). Directly joinable in the flp selection queries that need
+(`NOT NULL DEFAULT false`). Directly joinable in the flp selection queries that need
 `goalCount`. Recognition + Production are implicit/mandatory (not stored).
-❓Confirm column names + defaults before the migration.
+✅ Column names and defaults confirmed 2026-08-17 against the live columns.
 
 ---
 
@@ -742,7 +744,8 @@ Implications to work through:
   `markHistory` column; no backfill — existing progress is discarded** (no real
   customers yet). Typeless marks default to recognition (defensive read guard).
 - ✅ **Drop success-rate columns** (`totalSuccessRate`, `last8/16SuccessRate`);
-  keep `totalMarkCount`/`totalCorrectCount`.
+  `totalMarkCount`/`totalCorrectCount` were kept here but dropped later by
+  migration 149 — see the References section.
 - ✅ **Goal-flag storage**: new `users.readingGoal` / `users.writingGoal` booleans.
 - ✅ **Settings host**: `src/pages/AccountPage.tsx`, labels "I want to learn
   reading" / "I want to learn writing".
@@ -750,11 +753,17 @@ Implications to work through:
 
 ## Open questions (remaining — none block the doc; resolve before build)
 
-_All major decisions are settled._ Minor build-time confirmations:
+_All major decisions are settled._ One minor build-time confirmation remains:
 
-1. `users.readingGoal` / `writingGoal` defaults — assumed `false`.
-2. Whether `totalMarkCount` / `totalCorrectCount` should become per-type or stay
-   all-type aggregates (kept all-type for now).
+1. Whether `totalMarkCount` / `totalCorrectCount` should become per-type or stay
+   all-type aggregates (kept all-type for now). Tracked as item 1 of
+   [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+
+Settled since:
+
+- ✅ **`users.readingGoal` / `writingGoal` defaults** — `boolean NOT NULL DEFAULT false`
+  (confirmed 2026-08-17). Neither goal is pursued until an account opts in on
+  `src/pages/AccountPage.tsx`, so no existing account's bars change height on deploy day.
 
 ---
 
@@ -768,8 +777,18 @@ _All major decisions are settled._ Minor build-time confirmations:
   `src/utils/vocabSort.ts`.
 - `database/migrations/143-three-mastery-bars.sql` — `compute_core_category()`,
   `masteredAt` → jsonb, `category_promotions.bar`. On prod since 2026-08-11; it
-  intentionally left `compute_utcm_category()` in place for the deploy window, and that
-  function is still awaiting a contract migration to drop it.
+  intentionally left `compute_utcm_category()` in place for the deploy window.
+- `database/migrations/147-drop-compute-utcm-category.sql` — the contract half of the
+  above: drops the now-dead `compute_utcm_category()`. Applied on dev 2026-08-17,
+  **not yet on prod** — it rides along with the next `/deploy` and needs no runbook; see
+  [DEFERRED_WORK.md](./DEFERRED_WORK.md) § Recently closed for the verification SQL.
+- `database/migrations/149-drop-lifetime-mark-counters.sql` — drops vet's
+  `totalMarkCount` / `totalCorrectCount`. Migration 101 kept them when it dropped the
+  success-rate columns they fed; nothing ever read them again, so they were write-only
+  from 101 until 149. ⚠️ **Contract migration** — the code that stopped writing them
+  (`flashcardRoutes` mark + undo, `VocabEntryDAL.updateTypedMarkHistory`) must be live
+  first, which the standard `/deploy` order already guarantees. Applied on dev
+  2026-08-17, **not yet on prod**.
 - `server/contracts/mastery.ts` — **the definition of the bars**; mirrored by
   `server/__tests__/mastery.test.ts`, which pins the TS/SQL agreement.
 - `server/contracts/wire.ts` — `MasteryBarId`, `MASTERY_BARS`,

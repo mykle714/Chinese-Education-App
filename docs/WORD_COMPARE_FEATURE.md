@@ -18,7 +18,7 @@ consume it):
 
 | Surface | Entry point | Where the state lives | Slot A on open |
 |---|---|---|---|
-| **eip Compare tab** (flp) | Compare icon in the eip header's 2×2 action grid | the singleton Compare tab object in `useEipTabs` | pre-filled with the word the user came from |
+| **eip Compare tab** (flp) | "Compare To…" button in the action bar at the end of the eip definition tab | the singleton Compare tab object in `useEipTabs` | pre-filled with the word the user came from |
 | **`/compare` page** (hp) | "Compare Words" row in the Home hub menu | `useState` in `src/features/dictionary/ComparePage.tsx` | empty (the user arrives without a source word) |
 
 The contract between them is the `CompareState` interface exported by `CompareWorkspace`
@@ -68,10 +68,12 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
 `EipTabStrip` / `useEipTabs` system that breakdown-word links use to open additional word tabs.
 
 - **Singleton**: at most one Compare tab exists in the strip at a time.
-- **Entry point**: a Compare icon button in the eip entry header's 2×2 action grid (alongside
-  `PracticeWritingButton`, `SpeakerButton`, and the "+ Add to Learn Now" button — reading order
-  Practice / Speaker · Compare / Add). Tapping it pushes the Compare tab (or focuses the
-  existing one) and **auto-populates slot A** with the word the user navigated from.
+- **Entry point**: a labelled "Compare To…" button in `InfoCardActionBar` — the action bar at
+  the END of the eip **definition tab**, alongside "Add to Deck…" and "Practice Writing Me".
+  (It was previously a bare icon in the eip header's action grid, which now keeps only the
+  entry-level actions: `SpeakerButton` and "+ Add to Learn Now".) Tapping it pushes the Compare
+  tab (or focuses the existing one) and **auto-populates slot A** with the word the user
+  navigated from.
 - **Re-entry from a different word** (Compare tab already open): focus it, **refill slot A**
   with the new source word, and **clear slot B** back to the `+` placeholder (decided — the old
   pair is no longer what the user asked about).
@@ -84,8 +86,8 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
 
 References: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` (`EipTab`,
 `measureTabWidth`, overflow fitting — the "Compare" label goes through the same width
-measurement), `EipTabStrip.tsx`, `InfoCardPanelBody.tsx` (header 2×2 action grid, the
-`mobile-demo-eic-actions` Box), `FlashcardsLearnPage.tsx` (mounts both eip wrappers).
+measurement), `EipTabStrip.tsx`, `InfoCardActionBar.tsx` (the definition tab's action bar, the
+`mobile-demo-definition-action-bar` Box), `FlashcardsLearnPage.tsx` (mounts the eip wrapper).
 
 The eip has a single wrapper — the bottom-sheet `InfoCardSection` (`SheetPanel` +
 `InfoCardPanelBody`). The centered `InfoCardPopup` variant that used to sit alongside
@@ -263,7 +265,7 @@ CREATE TABLE word_comparison_cache (
 | Route / nav | `src/App.tsx`, `src/components/Layout.tsx` (`MOBILE_DEMO_PATHS`), `src/utils/pageTransition.ts` (`NODE_ROUTES`), `src/components/FooterPresenter.tsx` (`FOOTER_ROUTES`), `src/pages/HomePage.tsx` | the `/compare` route, its phone-frame membership, its right-slide direction, its footer (Home tab), and the "Compare Words" hub row |
 | Shared util | `src/utils/dictEntryAdapter.ts` (**moved** out of `features/flashcards/FlashcardsLearnPage/`) | `dictionaryEntryToVocabEntry` — now consumed by the shared workspace, the eip, and the dictionary cdp |
 | Client UI | `src/components/LongDefinitionDisplay.tsx`, `src/components/SegmentedSentenceDisplay.tsx` | shared renderer; `runTranslation` puts a translated run into whole-run (passive) mode |
-| Client UI | `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx` | Compare icon button in the header 2×2 action grid |
+| Client UI | `src/features/flashcards/FlashcardsLearnPage/InfoCardActionBar.tsx` | "Compare To…" button in the definition tab's action bar |
 | Client UI | `src/components/PinyinKeypad.tsx` (**new**, extracted) | shared tone-vowel / accent keypad; replaces DictionaryPage's two inline copies |
 | Client UI | `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx` | new `"xl"` `CPCDSize` |
 | Reused | `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx` | slot-B search + result cards |
@@ -316,7 +318,8 @@ English-query space. Cache hits are always free and don't consume a slot.
   (`DictionaryService.generateAiEntry`, `ai_dictionary_cache` migrations 97–98, daily-limit
   migrations 99–100, `streakDateOf`).
 - eip entry-tab system this extends: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts`,
-  `EipTabStrip.tsx`; panel body + header actions: `InfoCardPanelBody.tsx`.
+  `EipTabStrip.tsx`; panel body + header actions: `InfoCardPanelBody.tsx`; definition-tab
+  action bar (the Compare entry point): `InfoCardActionBar.tsx`.
 - Keypad source being extracted: `src/features/dictionary/DictionaryPage.tsx` (`SPECIAL_CHARACTERS`,
   `getVowelColor`, `specialCharButtonSx`).
 - Search reuse: `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx`.

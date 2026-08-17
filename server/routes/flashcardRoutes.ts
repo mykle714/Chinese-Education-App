@@ -113,13 +113,13 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
       ? rawExcludeIds.filter((n): n is number => typeof n === 'number')
       : [];
 
-    // Fetch the current vocab entry's typed history + counts + language. vet is
-    // split per language; the client sends only a cardId, so probe each physical
-    // table (ids are globally unique) — exactly one holds the row.
+    // Fetch the current vocab entry's typed history + language. vet is split per
+    // language; the client sends only a cardId, so probe each physical table (ids
+    // are globally unique) — exactly one holds the row.
     let entryResult: any = { rows: [] };
     for (const t of VET_PHYSICAL_TABLES) {
       const r = await client.query(
-        `SELECT "typedMarkHistory", "totalMarkCount", "totalCorrectCount", "language", "masteredAt" FROM ${t} WHERE id = $1 AND "userId" = $2`,
+        `SELECT "typedMarkHistory", "language", "masteredAt" FROM ${t} WHERE id = $1 AND "userId" = $2`,
         [cardId, userId]
       );
       if (r.rows.length > 0) { entryResult = r; break; }
@@ -134,8 +134,6 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     }
 
     const existingHistory: TypedMarkHistory = entryResult.rows[0].typedMarkHistory || {};
-    const currentTotalMarkCount: number = entryResult.rows[0].totalMarkCount || 0;
-    const currentTotalCorrectCount: number = entryResult.rows[0].totalCorrectCount || 0;
     // The replacement card must be in the same language as the card just marked.
     const cardLanguage: string = entryResult.rows[0].language || 'zh';
 
@@ -163,9 +161,6 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
 
     const updatedHistory: TypedMarkHistory = appendTypedMark(existingHistory, markType, newMark);
 
-    const newTotalMarkCount: number = currentTotalMarkCount + 1;
-    const newTotalCorrectCount: number = currentTotalCorrectCount + (isCorrect ? 1 : 0);
-
     // Core category AFTER the mark, for the client's progress chip. Computed BEFORE
     // the UPDATE (it is a pure function of the new history) so the mastery crossing
     // below can be folded into that same write instead of costing a second round trip.
@@ -187,24 +182,20 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     // rather than an empty column that back-dates their work to zero.
     const crossedIntoMastered = barCategoryBefore !== 'Mastered' && barCategoryAfter === 'Mastered';
 
-    // Bands are derived, not stored — write only the history + lifetime counts (plus
-    // this bar's masteredAt key on the crossing). jsonb_set with create_if_missing
-    // merges into whatever the other two bars already hold instead of replacing them,
-    // and COALESCE seeds the object for a card that has never crossed anything.
+    // Bands are derived, not stored — write only the history (plus this bar's
+    // masteredAt key on the crossing). jsonb_set with create_if_missing merges into
+    // whatever the other two bars already hold instead of replacing them, and
+    // COALESCE seeds the object for a card that has never crossed anything.
     const updateQuery = `
       UPDATE ${vetTableForLanguage(cardLanguage)}
-      SET "typedMarkHistory" = $1,
-          "totalMarkCount" = $2,
-          "totalCorrectCount" = $3
+      SET "typedMarkHistory" = $1
           ${crossedIntoMastered
-            ? `, "masteredAt" = jsonb_set(COALESCE("masteredAt", '{}'::jsonb), $6::text[], to_jsonb($7::text), true)`
+            ? `, "masteredAt" = jsonb_set(COALESCE("masteredAt", '{}'::jsonb), $4::text[], to_jsonb($5::text), true)`
             : ''}
-      WHERE id = $4 AND "userId" = $5
+      WHERE id = $2 AND "userId" = $3
     `;
     await client.query(updateQuery, [
       JSON.stringify(updatedHistory),
-      newTotalMarkCount,
-      newTotalCorrectCount,
       cardId,
       userId,
       // jsonb_set's path is an array; `bar` is a union value, never client input.
@@ -346,7 +337,7 @@ router.post('/api/flashcards/undoLastMark', authenticateToken, handle(async (req
     let lockedVetTable: string | null = null;
     for (const t of VET_PHYSICAL_TABLES) {
       const r = await client.query(
-        `SELECT "typedMarkHistory", "totalMarkCount", "totalCorrectCount", "masteredAt" FROM ${t} WHERE id = $1 AND "userId" = $2 FOR UPDATE`,
+        `SELECT "typedMarkHistory", "masteredAt" FROM ${t} WHERE id = $1 AND "userId" = $2 FOR UPDATE`,
         [cardId, userId]
       );
       if (r.rows.length > 0) { entryResult = r; lockedVetTable = t; break; }
@@ -394,11 +385,6 @@ router.post('/api/flashcards/undoLastMark', authenticateToken, handle(async (req
 
     const revertedHistory: TypedMarkHistory = { ...existingHistory, [markType]: revertedTrack };
 
-    const currentTotalMarkCount: number = entryResult.rows[0].totalMarkCount || 0;
-    const currentTotalCorrectCount: number = entryResult.rows[0].totalCorrectCount || 0;
-    const newTotalMarkCount: number = Math.max(0, currentTotalMarkCount - 1);
-    const newTotalCorrectCount: number = Math.max(0, currentTotalCorrectCount - (lastMark.isCorrect ? 1 : 0));
-
     // MASTERY CROSSING, retracted (migrations 142 + 143). If the MARKED BAR's
     // `masteredAt` entry holds THIS mark's timestamp then this is the mark that
     // mastered that bar, and undoing it must take the stamp with it — the same rule as
@@ -420,17 +406,13 @@ router.post('/api/flashcards/undoLastMark', authenticateToken, handle(async (req
 
     const updateQuery = `
       UPDATE ${lockedVetTable}
-      SET "typedMarkHistory" = $1,
-          "totalMarkCount" = $2,
-          "totalCorrectCount" = $3
-          ${clearMasteredAt ? `, "masteredAt" = "masteredAt" - $6::text` : ''}
-      WHERE id = $4 AND "userId" = $5
+      SET "typedMarkHistory" = $1
+          ${clearMasteredAt ? `, "masteredAt" = "masteredAt" - $4::text` : ''}
+      WHERE id = $2 AND "userId" = $3
     `;
 
     await client.query(updateQuery, [
       JSON.stringify(revertedHistory),
-      newTotalMarkCount,
-      newTotalCorrectCount,
       cardId,
       userId,
       ...(clearMasteredAt ? [bar] : []),

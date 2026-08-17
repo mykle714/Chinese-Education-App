@@ -69,8 +69,8 @@ export const MAX_AVOID_IDS = 200;
 // was dropped, leaving Chill / Hustle / Torture.
 export const LEVEL_CONFIGS: LevelConfig[] = [
     { level: 1, label: "Chill", launchIntervalMs: 1800, shrinkSpeedPxPerSec: 9 },
-    { level: 2, label: "Hustle", launchIntervalMs: 1100, shrinkSpeedPxPerSec: 26 },
-    { level: 3, label: "Torture", launchIntervalMs: 700, shrinkSpeedPxPerSec: 42 },
+    { level: 2, label: "Hustle", launchIntervalMs: 1000, shrinkSpeedPxPerSec: 26 },
+    { level: 3, label: "Torture", launchIntervalMs: 800, shrinkSpeedPxPerSec: 42 },
 ];
 
 // ---- Bubble sizing (px radius) -------------------------------------------

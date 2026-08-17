@@ -31,17 +31,20 @@ export const MARK_TYPE: MarkType = "recognition";
 
 // ---- Board ----------------------------------------------------------------
 /** Rows per column. The board is ROWS × 2 slots — ROWS foreign, ROWS english. */
-export const ROWS = 6;
+export const ROWS = 5;
 
 /**
  * Card aspect ratio, WIDTH ÷ HEIGHT — every card is locked to 2.4:1. The board
  * measures its own box and derives one card size that satisfies the ratio in BOTH
- * directions, so the twelve cards are always identical rectangles no matter how tall
+ * directions, so the ten cards are always identical rectangles no matter how tall
  * or wide the play area is.
  *
  * This is ALSO the height dial: on a phone the board is width-limited, so raising
  * the ratio makes every card shorter (the column keeps its width and the grid
  * centers in the freed vertical slack). Lower it to make the cards taller again.
+ * It is deliberately held at 2.4 across the ROWS 6 → 5 change: on a width-limited
+ * board the card height depends ONLY on this ratio, so dropping a row removes a
+ * pair without resizing the remaining cells — the grid just centers in more slack.
  *
  * Locking the ratio is a correctness requirement, not just a style choice: card
  * SHAPE must carry no information. If cards stretched to fill leftover height, a
@@ -126,7 +129,7 @@ export const CATEGORY_FALLBACK_ORDER: GameCategory[] = [
  *  buffer 12 each where Study Mix (4 buckets) buffers 6 each — the board draws the
  *  same number of pairs per tick either way.
  *
- *  Sized so that even Study Mix's per-bucket depth (6) covers a FULL board (ROWS = 6)
+ *  Sized so that even Study Mix's per-bucket depth (6) covers a FULL board (ROWS = 5)
  *  on its own: a bucket that can't fill the board by itself makes the fallback
  *  walk fire on an ordinary tick, quietly pulling the run off its weight table. */
 export const BUFFER_TOTAL_TARGET = 24;
@@ -196,7 +199,7 @@ function defineMode(
  * Mix table (20:8 → 70:30, 12:60 → 20:80), so Challenge still leans on Target
  * and Review still leans on Comfortable rather than flattening to 50/50.
  *
- * Everything else about a run — the 30s clock (RUN_DURATION_MS), the 6×2 board, the 3s refill
+ * Everything else about a run — the 30s clock (RUN_DURATION_MS), the 5×2 board, the 3s refill
  * tick, the medal thresholds — is identical across modes. Difficulty comes only
  * from which cards you are asked to recognize, which is exactly what "Review"
  * and "Challenge" mean on /decks.
@@ -250,7 +253,7 @@ export function medalForScore(score: number): { medal: Medal; emoji: string } | 
 // ---- Gloss fitting --------------------------------------------------------
 // The english card scales its font down as the gloss gets longer, between this
 // character band (measured AFTER stripParentheses), then clamps to 3 lines. Row
-// height must stay fixed and equal across all 6 rows — a taller row would leak
+// height must stay fixed and equal across all 5 rows — a taller row would leak
 // which pair is which — so overflow is absorbed by size, then by ellipsis.
 // Same length→size idea Bubble Match applies to bubble radius.
 export const DEF_LEN_MIN = 10;

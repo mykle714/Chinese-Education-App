@@ -49,6 +49,7 @@ import {
   buildCompletePredicate,
   scriptsForLanguage,
 } from './shared/lib/requiredScripts.js';
+import { isZhBoundForm, zhBoundFormHosts } from './shared/lib/boundForms.js';
 
 const argv = process.argv.slice(2);
 const APPLY = argv.includes('--apply');
@@ -138,9 +139,23 @@ async function main() {
     let promoted = 0;
     let already = 0;
     let notReady = 0;
+    let bound = 0;
 
     for (const row of rows) {
       const approved = approvedByRow.get(row.id) || new Set();
+      // Phrase-bound bases (会子, 辈子 …) can never be a card: they do not occur
+      // outside their 一/这/那 frame, so a learner who memorizes one produces
+      // ungrammatical Mandarin. Checked BEFORE the discoverable/readiness branches
+      // so an already-promoted bound form is reported loudly rather than counted
+      // as a benign "already discoverable". See shared/lib/boundForms.js.
+      if (isZhBoundForm(row.word1)) {
+        bound++;
+        const hosts = zhBoundFormHosts(row.word1).join(' / ');
+        console.log(`  ⛔ ${row.word1} (id ${row.id}) — phrase-bound base, never promotable`
+          + `${hosts ? `; use ${hosts} instead` : ''}`
+          + `${row.discoverable ? ' ⚠️  ALREADY DISCOVERABLE — remove this row' : ''}`);
+        continue;
+      }
       if (row.discoverable) {
         already++;
         console.log(`  = ${row.word1} (id ${row.id}) — already discoverable`);
@@ -185,7 +200,8 @@ async function main() {
 
     console.log(`\n${'='.repeat(60)}`);
     console.log(`Considered: ${rows.length}  |  ${APPLY ? 'Promoted' : 'Would promote'}: ${promoted}`
-      + `  |  Already discoverable: ${already}  |  Not ready: ${notReady}  |  Mode: ${mode}`);
+      + `  |  Already discoverable: ${already}  |  Not ready: ${notReady}`
+      + `${bound ? `  |  ⛔ Phrase-bound (blocked): ${bound}` : ''}  |  Mode: ${mode}`);
     console.log('='.repeat(60) + '\n');
   } finally {
     client.release();

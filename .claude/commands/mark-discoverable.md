@@ -65,6 +65,28 @@ Nulling the enrichment columns lets the pipeline regenerate everything against t
 
 ### A2. Set discoverable = TRUE
 
+⚠️ **First check the word list against the bound-form denylist.** This step writes the
+flag with hand-written SQL, so it **bypasses** the `⛔ phrase-bound` gate that
+`promote-discoverable.js` applies — that gate cannot protect this path. Phrase-bound
+bases (`会子`, `辈子`, `阵子`, `家子`, `程子`, `当儿` …) never occur outside their
+`一`/`这`/`那` frame, so they are unusable as flashcards; promote the **hosted** form
+(`一会儿`, `一辈子`) instead. The list of 14 is
+`server/scripts/backfill/shared/lib/boundForms.js` → `ZH_BOUND_FORMS`; see
+[docs/BOUND_FORM_WORDS.md](../../docs/BOUND_FORM_WORDS.md). All six that were in det
+were deleted on 2026-08-17, so a hit here means the word came back — stop and find out
+how before flagging it.
+
+```bash
+# Reject any bound base in the batch before running the UPDATE.
+cd server && node --input-type=module -e "
+import { isZhBoundForm, zhBoundFormHosts } from './scripts/backfill/shared/lib/boundForms.js';
+const words = process.argv.slice(1);
+const bad = words.filter(isZhBoundForm);
+if (bad.length) { for (const w of bad) console.error('⛔', w, '— phrase-bound; use', zhBoundFormHosts(w).join(' / ')); process.exit(1); }
+console.log('✅ no bound forms in batch');
+" 未来 摸脉
+```
+
 ```sql
 UPDATE dictionaryentries_zh
 SET discoverable = TRUE

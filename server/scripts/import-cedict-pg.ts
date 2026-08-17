@@ -8,6 +8,9 @@
 
 import fs from 'fs';
 import pg from 'pg';
+// @ts-ignore -- plain-ESM shared lib (allowJs, no .d.ts); the canonical denylist
+// lives with the backfill scripts because the promotion gate consults it too.
+import { isZhBoundForm } from './backfill/shared/lib/boundForms.js';
 
 const BATCH_SIZE = 1000;
 
@@ -95,6 +98,15 @@ function parseCEDICTLine(line: string): DictionaryEntry | null {
     }
 
     const [, traditional, simplified, pinyinWithNumbers, definitionsStr] = match;
+
+    // Drop phrase-bound bases (会子, 辈子, 阵子 …). CC-CEDICT lists some of them as
+    // headwords even though they never occur outside a 一/这/那 frame, which makes
+    // them unusable as flashcards AND wrong as segmentation candidates. The hosted
+    // forms (一会儿, 一辈子, 一家子) are separate CC-CEDICT entries and still import.
+    if (isZhBoundForm(simplified)) {
+        return null;
+    }
+
     const pinyin = convertPinyinToToneMarks(pinyinWithNumbers);
     
     // Remove trailing / if present and split

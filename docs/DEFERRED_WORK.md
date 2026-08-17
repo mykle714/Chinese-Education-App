@@ -135,6 +135,19 @@ suppressed the guard that exists to report exactly that mismatch. The lesson is 
 
 ---
 
+### 6. Teach learners about bound-form words (the huìzi class)
+
+| | |
+|---|---|
+| **What** | A short learner-facing note on the ~10 **hosted** forms in det (`一会儿`, `一辈子`, `一家子`, `一阵子`, `这会儿` …) saying the word is a fixed unit and its tail is not a standalone word. Full spec, the complete 14-item class, and four open questions: [BOUND_FORM_WORDS.md](./BOUND_FORM_WORDS.md) § 6 |
+| **Why deferred** | The **data** half shipped on 2026-08-17 — the 6 bound bases were deleted from prod det (+1 vet row) and both re-entry paths are now gated by `boundForms.js`. That stopped the app teaching a bad card, which was the urgent part. The **teaching** half is new UI with an undecided surface (eip tab vs. bt inline copy vs. cdp chip) and so is not a same-day change |
+| **Cost of leaving it** | Moderate and silent. A learner meeting `一会儿` has no way to know `会儿` is not a word, and the bt actively misleads by decomposing the word into `一` + `会` + `儿` — implying a compositional reading that does not hold. They will infer wrong and produce ungrammatical Mandarin. Nothing in the app currently corrects this |
+| **Trigger** | The next piece of eip/cdp work that touches the bt or adds a tab — the note should ride along rather than claim a surface of its own. Decide open question § 6.1 (where it lives) at that point |
+| **⚠️ Do not** | Add a det column for this without asking first (CLAUDE.md rule). The note is derivable at read time from `ZH_BOUND_FORMS`, which needs no migration and cannot drift from the denylist — that is the recommended route |
+| **References** | [BOUND_FORM_WORDS.md](./BOUND_FORM_WORDS.md), `server/scripts/backfill/shared/lib/boundForms.js` |
+
+---
+
 ## Recently closed
 
 ### Study Challenge deploy-order constraints (closed 2026-08-16)

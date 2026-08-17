@@ -57,9 +57,21 @@ curl -s https://api.anthropic.com/api/oauth/usage \
 ```
 
 `five_hour.utilization` is a **percentage** (the dollar fields are always null on
-this plan). Note `resets_at`; budget rounds against the time left; stop at ~95%.
+this plan). Note `resets_at` — it is the boundary of the *current* window, **not the
+end of the run**. A run spans as many windows as it takes; at ~95% you park and wait
+for the reset rather than finishing (§6a). Size the round you start next against the
+time left in the window: near the boundary, prefer parking over starting a batch that
+will be interrupted mid-manifest.
 
-3. **Do not confirm the word batch with the user.** The planner curates and ranks
+`resets_at` is `null` when utilization is 0 (no window is open yet); the window opens
+on the next request and runs five hours from there.
+
+3. **Check for a parked run**: if `server/logs/oracle-resume.md` exists, a previous
+   window parked mid-run (§6a). Read it and continue *that* run — its batch, its
+   script in flight, its accumulated report notes — instead of planning a fresh
+   round. Delete the file once its batch is promoted and its notes are folded into
+   your working notes for §7.
+4. **Do not confirm the word batch with the user.** The planner curates and ranks
    every batch (§3/§3b); invoking this skill is standing authorization to enrich
    whatever it selects, for the whole run. Take the first batch and go straight to
    §2 → §4 — no pre-write check-in, no per-round batch approval.
@@ -322,8 +334,15 @@ Non-zero means something set `discoverable` outside `promote-discoverable.js` /
 ## 6. Loop — running to exhaustion is MANDATORY
 
 **The purpose of this skill is to consume the session budget. Do not stop early.**
-Keep looping §3 → §5 with a fresh batch until `five_hour.utilization` reaches ~95%
-or `resets_at` passes. That is the *only* successful end state.
+Keep looping §3 → §5 with a fresh batch, **across session windows**, until a §6
+guardrail trips or the user stops you. That is the *only* successful end state.
+
+> **A window boundary is not an ending.** `five_hour.utilization` reaching ~95%, or
+> `resets_at` passing, means *this five-hour window* is spent — not the run. The
+> corpus is ~113k unenriched zh rows deep; no single window can finish it, so
+> treating the boundary as a finish line ends the run at an arbitrary point that has
+> nothing to do with the work. At the boundary you **park and resume** (§6a), you do
+> not write the report and hand back.
 
 Work is drawn in this priority order, falling through when a scope is exhausted:
 **(1)** `--discoverable` refresh/heal on shipped rows → **(2)** §3b `--new`: take a
@@ -338,10 +357,11 @@ final report:
 - You found a bug, an inefficiency, or work that will need redoing (e.g. unstamped
   rows). Record it; do not stop to fix it, and do not stop to ask whether to fix it.
 - You want to check in, summarize progress, or confirm the batch. Batches are never
-  confirmed with the user (§1.3); invoking the skill authorizes the whole run.
+  confirmed with the user (§1.4); invoking the skill authorizes the whole run.
 - Quality self-doubt about authoring and reviewing your own answers. That tension is
   inherent to oracle mode and is disclosed in the report — it is not a stop condition.
 - A round finished cleanly and it feels like a natural place to hand back. It isn't.
+- **The session window ended, or is about to.** Go to §6a, not to §7.
 - **`--discoverable` reports nothing pending.** The refresh backlog draining is a
   *scope change*, not an ending: drop to §3b and start shipping new words (~113k zh
   rows have never been enriched). "Out of work" is only ever true if §3b's `--new`
@@ -355,7 +375,9 @@ final report:
 1. The flat-usage check below leaves you actually believing something is wrong.
 2. The §2 backup failed, or a fresh one cannot be taken when required.
 3. Evidence a validator-approved/flagged field was overwritten (§5).
-4. The user interrupts, or the session/window actually ends.
+4. The user interrupts, or the **conversation** actually ends (context exhausted, the
+   user closes the session). Note what this does *not* include: the five-hour
+   **window** rolling over. That is §6a, and the loop survives it.
 
 Re-check §1 and compare `five_hour.utilization` against the previous round.
 
@@ -394,26 +416,91 @@ Re-check §1 and compare `five_hour.utilization` against the previous round.
 > Either way, **record the flat reading and your reasoning in the run report** — whether
 > you halted or kept going.
 
-If utilization < ~95% and time remains before `resets_at`, return to §3 with a fresh
-batch **immediately** — do not write the report, do not summarize, do not hand back.
-Only once ~95% is reached (or a guardrail above tripped) does the run end.
+If utilization < ~95%, return to §3 with a fresh batch **immediately** — do not write
+the report, do not summarize, do not hand back. At ~95%, go to §6a. The run ends only
+when a guardrail above trips.
 
 > Note the asymmetry: the flat-usage check is the one stop condition that asks for
 > judgment, and the judgment it asks for is *whether to stop*. Everything else in §6
 > pushes toward continuing. A flat reading you have explained is a reason to keep
 > going, not a reason to pause and check in.
 
+### 6a. Crossing the window boundary — park, wait, resume
+
+At ~95% utilization the plan's rate limit will start refusing requests; you cannot
+author through it. The run does not end there — it **pauses**. Three steps:
+
+**1. Park the current batch cleanly.** Do not abandon mid-script. Either finish the
+script in flight and stop before starting the next, or stop where you are — both are
+safe, because an incomplete row simply stays `discoverable = FALSE` and a later
+`promote-discoverable.js --words=<batch>` picks it up once its steps land. What is
+*not* safe is leaving `server/logs/oracle-answers.jsonl` ambiguous: it is the run's
+memory across the gap, so leave it intact (append-only, last-line-wins) and never
+`rm` it at a boundary. Only `oracle-prompts.jsonl` is per-script disposable.
+
+**2. Write the resume note** to `server/logs/oracle-resume.md` (gitignored scratch,
+overwritten each boundary). This is the *only* prose allowed before §7, and it is for
+you, not the user — keep it terse:
+
+```markdown
+# Oracle run — parked <UTC timestamp>, resumes <resets_at>
+Batch: <the exact --words= list>
+Scripts done: tones, numbered-pinyin, …
+Script in flight: backfill-example-sentences (apply reported Failed : 4 — the
+  per-sentence label link for 点字/高音 still needs authoring)
+Scratch files: $SP/zhbatch4.txt, $SP/zhsent4.py, …
+Carry to the §7 report: <cluster-review flags, dropped words, findings so far>
+```
+
+The report notes accumulated so far live here too. Everything §7 asks for must
+survive the gap — a boundary that loses the run's findings has cost more than the
+budget it saved.
+
+**3. Wait out the window, then resume.** Compute the seconds to `resets_at` and sleep
+them out in a **background** shell command; when it exits you are re-invoked and the
+run continues:
+
+```bash
+# background this; on exit, resume at §1 → §2 → §3 with a fresh batch
+python3 -c "
+import json,urllib.request,os,time,datetime
+tok=json.load(open(os.path.expanduser('~/.claude/.credentials.json')))['claudeAiOauth']['accessToken']
+r=urllib.request.Request('https://api.anthropic.com/api/oauth/usage',
+  headers={'Authorization':'Bearer '+tok,'anthropic-beta':'oauth-2025-04-20'})
+ra=json.load(urllib.request.urlopen(r))['five_hour']['resets_at']
+if not ra: raise SystemExit('no open window')
+d=(datetime.datetime.fromisoformat(ra)-datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+print('sleeping', int(d)+60); time.sleep(max(0,d)+60)"
+```
+
+On resume: **re-check §1** (utilization should read ~0 and `resets_at` may be `null`
+until the first request opens the new window), **take a fresh §2 backup** — every
+window is a new run for backup purposes, no exceptions — read
+`server/logs/oracle-resume.md`, and pick the parked batch back up at the script it
+names. Then keep looping §3 → §5 as before.
+
+If the wait cannot be bridged (the conversation ends first, the context runs out),
+that *is* stop condition 4 — write the §7 report from the resume note before the
+session dies if you have the budget for it, and otherwise leave the resume note as
+the handoff. A later invocation of this skill should read
+`server/logs/oracle-resume.md` first and continue that run rather than starting a
+fresh one.
+
 ## 7. Write the run report — required, and ONLY at the end
 
-**Do not write the report until the session is exhausted** (or a §6 guardrail ended
-the run). The report is the final act of the whole run, not a per-round artifact —
-writing one mid-run burns budget on prose instead of enrichment and tempts you to
-treat it as a stopping point. Carry per-round notes in working memory (or a scratch
-file) and write the document once, covering every round.
+**Do not write the report until a §6 guardrail has ended the run.** The report is the
+final act of the whole run, not a per-round — or **per-window** — artifact. Writing
+one mid-run burns budget on prose instead of enrichment and tempts you to treat it as
+a stopping point, and a window boundary is exactly the moment that temptation looks
+most reasonable. At a boundary you write the terse resume note (§6a step 2) and
+nothing else. Carry per-round notes there and write this document once, covering
+every round of every window the run spanned.
 
 Write `docs/oracle-runs/oracle-run-<UTC-timestamp>.md` covering:
 
-- **Session budget**: utilization before/after, `resets_at`, rounds completed.
+- **Session budget**: one row per window the run spanned — window start/end,
+  utilization before/after, rounds completed in it, and how long the §6a park lasted.
+  State plainly which guardrail ended the run.
 - **Backup**: path from §2, plus the restore command.
 - **Words**: every word newly marked discoverable (id + pronunciation), and every
   already-discoverable row refreshed and why (null column vs `--stale`).

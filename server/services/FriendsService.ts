@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { dbManager } from '../dal/base/DatabaseManager.js';
+import type { ITransaction } from '../types/dal.js';
 import { IFriendshipDAL } from '../dal/interfaces/IFriendshipDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { ICategoryPromotionDAL } from '../dal/interfaces/ICategoryPromotionDAL.js';
@@ -33,6 +34,21 @@ export interface UnfriendChallengeResolver {
 }
 
 /**
+ * The slice of DatabaseManager this service needs: run a unit of work in one
+ * transaction (docs/BACKEND_LAYERING.md § 3).
+ *
+ * INJECTED rather than imported as the `dbManager` singleton, because
+ * BACKEND_LAYERING § 1 says nothing constructs or imports its own dependency —
+ * everything comes from the composition root. It is also what makes `removeFriend`
+ * unit-testable: the module singleton opens a REAL connection the moment it is
+ * touched, so a service test with fully stubbed DALs still failed on database
+ * credentials. Narrowed to one method so a test fake is a one-liner.
+ */
+export interface TransactionRunner {
+  executeInTransaction<T>(operation: (transaction: ITransaction) => Promise<T>): Promise<T>;
+}
+
+/**
  * Friend-graph policy (docs/FRIENDS_FEATURE.md).
  *
  * LAYER: service. Owns every rule about who may do what to a `friendships` row;
@@ -57,7 +73,12 @@ export class FriendsService {
     private categoryPromotionDAL: ICategoryPromotionDAL,
     private userLanguagesDAL: IUserLanguagesDAL,
     /** Optional — see UnfriendChallengeResolver. Omitted, unfriending just deletes the edge. */
-    private challengeResolver?: UnfriendChallengeResolver
+    private challengeResolver?: UnfriendChallengeResolver,
+    /**
+     * Optional — see TransactionRunner. Defaults to the process-wide manager so the
+     * composition root and every existing caller are unchanged; tests pass a fake.
+     */
+    private txRunner: TransactionRunner = dbManager
   ) {}
 
   /** The viewer's accepted friends. */
@@ -287,7 +308,7 @@ export class FriendsService {
       throw new NotFoundError('You are not friends with this user');
     }
 
-    await dbManager.executeInTransaction(async (tx) => {
+    await this.txRunner.executeInTransaction(async (tx) => {
       const client = tx.getClient();
       // Challenges first, then the edge. Either order is correct inside one
       // transaction; this order means that if the hook throws, the friendship is

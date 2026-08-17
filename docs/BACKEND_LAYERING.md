@@ -58,10 +58,12 @@ A transaction spans several writes that must commit or roll back together, so th
 **client** has to outlive any single DAL call. That coordination is business logic
 and belongs in the service.
 
-Permitted shape:
+Permitted shape (the real method is `executeInTransaction`, and it hands the callback
+an `ITransaction` — the client comes off it via `getClient()`):
 
 ```ts
-await this.dbManager.executeTransaction(async (client) => {
+await this.txRunner.executeInTransaction(async (tx) => {
+  const client = tx.getClient();
   await this.vocabEntryDAL.markReviewed(id, client);   // DAL method, passed the client
   await this.userDAL.incrementMinutePoints(userId, client);
 });
@@ -70,14 +72,40 @@ await this.dbManager.executeTransaction(async (client) => {
 Not permitted, even inside a transaction:
 
 ```ts
-await this.dbManager.executeTransaction(async (client) => {
-  await client.query(`UPDATE vocabentries_zh SET ...`);   // ← table name in a service
+await this.txRunner.executeInTransaction(async (tx) => {
+  await tx.getClient().query(`UPDATE vocabentries_zh SET ...`);  // ← table name in a service
 });
 ```
 
 The rule inside a transaction is unchanged — only the *connection* moves up a
 layer, never the SQL. Where a DAL method does not yet take an optional client,
 adding that parameter is the correct fix.
+
+### Inject the runner; do not import the `dbManager` singleton
+
+§1 says nothing imports a singleton instance from another module, and the transaction
+runner is not an exception to that. Take it as a constructor dependency — narrowed to
+the one method, defaulted to `dbManager` so the composition root and existing callers
+are unchanged:
+
+```ts
+export interface TransactionRunner {
+  executeInTransaction<T>(operation: (transaction: ITransaction) => Promise<T>): Promise<T>;
+}
+// …
+constructor(/* …DALs… */, private txRunner: TransactionRunner = dbManager) {}
+```
+
+This is not style. `dbManager` opens a **real connection** the moment it is touched, so
+a service that reaches for the singleton cannot be unit-tested even with every DAL
+stubbed — the test dies on database credentials. That is exactly what happened to
+`server/__tests__/friends.test.ts` when `FriendsService.removeFriend` gained its
+unfriend hook: a fully-stubbed suite started requiring a live database, and the
+transactional path itself stayed untested because there was no seam to assert on.
+
+**Conforming:** `services/FriendsService.ts` → `removeFriend` (see `TransactionRunner`
+in that file). **Still importing the singleton:** `services/StudyChallengeService.ts`
+— same conversion applies whenever it next needs tests.
 
 ---
 

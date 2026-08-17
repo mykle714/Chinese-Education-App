@@ -88,9 +88,46 @@ function makeService(
     friendshipDAL: IFriendshipDAL,
     userDAL: any,
     categoryPromotionDAL: any = { getVelocityBuckets: async () => [] },
-    userLanguagesDAL: any = { getNetPointsForUsers: async () => new Map() }
+    userLanguagesDAL: any = { getNetPointsForUsers: async () => new Map() },
+    challengeResolver?: any,
+    txRunner: any = makeTxRunner().runner
 ) {
-    return new FriendsService(friendshipDAL, userDAL, categoryPromotionDAL, userLanguagesDAL);
+    return new FriendsService(
+        friendshipDAL,
+        userDAL,
+        categoryPromotionDAL,
+        userLanguagesDAL,
+        challengeResolver,
+        txRunner
+    );
+}
+
+/**
+ * A fake TransactionRunner: runs the body immediately against a sentinel client and
+ * records that it was entered.
+ *
+ * `removeFriend` is the one method here that opens a transaction, and the real
+ * `dbManager` connects to a live database the moment it is touched — which made this
+ * otherwise fully-stubbed suite fail on database credentials as soon as the unfriend
+ * hook landed. Faking the runner keeps the suite hermetic AND lets the tests assert
+ * the two things that actually matter about the transaction: that the challenge
+ * cleanup and the edge delete are both inside it, and that they get the same client.
+ */
+function makeTxRunner() {
+    const client = { __fake: 'client' } as any;
+    const state = { entered: 0 };
+    const runner = {
+        executeInTransaction: async (operation: (tx: any) => Promise<unknown>) => {
+            state.entered += 1;
+            return operation({
+                getClient: () => client,
+                commit: async () => {},
+                rollback: async () => {},
+                isActive: true,
+            });
+        },
+    };
+    return { runner, state, client };
 }
 
 describe('FriendsService.sendRequest', () => {
@@ -232,9 +269,65 @@ describe('FriendsService.removeFriend', () => {
 
     it('404s when the pair only has a pending request — unfriending is not a decline', async () => {
         const { dal, calls } = makeFriendshipDAL({ findBetween: async () => pendingRow() });
-        const service = makeService(dal, userDAL);
+        const { runner, state } = makeTxRunner();
+        const service = makeService(dal, userDAL, undefined, undefined, undefined, runner);
         await expect(service.removeFriend(ALICE, BOB)).rejects.toBeInstanceOf(NotFoundError);
         expect(calls).not.toContain('deleteBetween');
+        // The authorization check must reject BEFORE a connection is taken out.
+        expect(state.entered).toBe(0);
+    });
+
+    /**
+     * The unfriend hook (docs/STUDY_CHALLENGE.md § 6, Q41). A challenge must never
+     * outlive the friendship it depended on, so both writes share one transaction —
+     * and the challenge cleanup goes FIRST, so a failure leaves the pair still
+     * friends and retryable rather than unfriended with orphaned challenge state.
+     */
+    it('ends the pair\'s challenges and deletes the edge in ONE transaction, same client', async () => {
+        const { dal, calls } = makeFriendshipDAL({
+            findBetween: async () => pendingRow({ status: 'accepted' }),
+        });
+        const { runner, state, client } = makeTxRunner();
+        const seen: { clients: unknown[] } = { clients: [] };
+        const resolver = {
+            resolveForUnfriend: async (_a: string, _b: string, c?: unknown) => {
+                seen.clients.push(c);
+                calls.push('resolveForUnfriend');
+            },
+        };
+        await makeService(dal, userDAL, undefined, undefined, resolver, runner)
+            .removeFriend(ALICE, BOB);
+
+        expect(state.entered).toBe(1);
+        // Challenges first, then the edge — the order is the retry-safety guarantee.
+        expect(calls.filter((c) => c === 'resolveForUnfriend' || c === 'deleteBetween'))
+            .toEqual(['resolveForUnfriend', 'deleteBetween']);
+        // Same transaction means the same client reaches the hook.
+        expect(seen.clients).toEqual([client]);
+    });
+
+    it('leaves the friendship intact when the challenge cleanup throws', async () => {
+        const { dal, calls } = makeFriendshipDAL({
+            findBetween: async () => pendingRow({ status: 'accepted' }),
+        });
+        const resolver = {
+            resolveForUnfriend: async () => {
+                throw new Error('challenge cleanup exploded');
+            },
+        };
+        const service = makeService(
+            dal, userDAL, undefined, undefined, resolver, makeTxRunner().runner
+        );
+        await expect(service.removeFriend(ALICE, BOB)).rejects.toThrow('challenge cleanup exploded');
+        expect(calls).not.toContain('deleteBetween');
+    });
+
+    it('still unfriends when no challenge resolver is wired', async () => {
+        const { dal, calls } = makeFriendshipDAL({
+            findBetween: async () => pendingRow({ status: 'accepted' }),
+        });
+        await makeService(dal, userDAL).removeFriend(ALICE, BOB);
+        expect(calls).toContain('deleteBetween');
     });
 });
 

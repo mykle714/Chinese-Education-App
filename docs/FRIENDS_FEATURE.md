@@ -232,6 +232,13 @@ All require `authenticateToken`. Wire types: `server/types/friends.ts`, mirrored
 * **An accepted row is not a request.** `deleteRequest` refuses it, so "decline"
   can never act as a hidden unfriend; `removeFriend` conversely refuses a pending
   row.
+* **Unfriending is transactional.** `removeFriend` ends the pair's in-flight study
+  challenges and deletes the edge inside one transaction, challenges first, so a
+  failure leaves the pair still friends and the action retryable rather than
+  unfriended with orphaned challenge state (docs/STUDY_CHALLENGE.md § 6, Q41). The
+  transaction runner is **injected** (`TransactionRunner` in
+  `server/services/FriendsService.ts`), not the `dbManager` singleton — see
+  docs/BACKEND_LAYERING.md § 3.
 * Errors map through `handleControllerError`: `ValidationError` → 400,
   `NotFoundError` → 404, `DuplicateError` → 409.
 

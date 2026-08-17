@@ -1,0 +1,890 @@
+# Oracle run 2026-08-15T18:13Z — full review-flag dump
+
+Companion to [oracle-run-20260815T181336Z.md](./oracle-run-20260815T181336Z.md).
+Every `⚠ CLUSTER REVIEW` and `⚠ BREAKDOWN SENSE REVIEW` line the pipeline
+printed during the run, in the order it printed them. These are the pipeline's own
+self-flagged uncertain calls, recovered from the session transcript; each was also
+surfaced to the user in-session at the round it occurred.
+
+A flag is **not** an error report. It marks a judgement call the answerer was not
+confident about, so a human (or a validator account, see
+[DATA_VALIDATION_SYSTEM.md](../DATA_VALIDATION_SYSTEM.md)) can second-guess it. The
+rows are live and `discoverable` either way.
+
+## Cluster review (404)
+
+Sense-clustering calls where the split or grouping was arguable.
+
+- 天时 (id=28617): 'the time' is a vague cedict gloss; grouped with 'the right time' as the opportune-timing sense (as in 天时地利人和) but it could arguably sit with the literary 'course of time' cluster.
+- 天时 (id=28617): Register split: the third cluster ('course of time'/'destiny'/'heaven's natural order') is classical/literary, unlike the everyday timing and weather senses.
+- 天时 (id=28617): 'the time' is a vague cedict gloss; grouped with 'the right time' as the opportune-timing sense (as in 天时地利人和) but it could arguably sit with the literary 'course of time' cluster.` and `天时 (id=28617): Register split: the third cluster ('course of time'/'destiny'/'hea
+- 学分小时 (id=31477): The third gloss is a cross-reference, not a definition; kept in the only cluster since every gloss must be placed.
+- 学时 (id=31507):
+- 平时 (id=37503): Split
+- 学分小时 (id=31477): The third gloss is a cross-reference, not a definition; kept in the only cluster since every gloss must be placed.`
+- 化工 (id=16045): 'chemical industry' (the sector) and 'chemical engineering' (the discipline) are arguably two senses, but 化工 is one abbreviation used for both; kept together.
+- 时事 (id=52981): All three cedict glosses are loose paraphrases of 'current affairs'; kept as one sense.
+- 人工 (id=5718): Split the attributive 'artificial' from the noun 'manual work / manpower'; they share one origin (work done by people) so a merge would also be defensible.
+- 时分 (id=52995): Split the classical earthly-branch sense from the everyday 'time of day' sense on register.
+- 时日 (id=53022): 'auspicious time' and 'this day' are classical senses of 时日; grouped together and split from the everyday duration sense on register.
+- 时日 (id=53022): 'time and date' could arguably belong with the classical cluster instead.
+- 时 (id=52975): 'season' is a bound, literary sense of 时 (as in 四时) unlike the everyday time senses — split on register.
+- 时 (id=52975): 'when' is the …的时候 subordinating use; it could arguably sit with the general 'time' cluster.
+- 人工 (id=5718): Split the attributive 'artificial' from the noun 'manual work / manpower'; they share one origin (work done by people) so a merge would also be defensible.`
+- 化工 (id=16045): 'chemical industry' (the sector) and 'chemical engineering' (the discipline) are arguably two senses, but 化工 is one abbreviation used for both; kept together.`
+- 时事 (id=52981): All three cedict glosses are loose paraphrases of 'current affairs'; kept as one sense.`
+- 时分 (id=52995): Split the classical earthly-branch sense from the everyday 'time of day' sense on register.`
+- 时日 (id=53022): 'auspicious time' and 'this day' are classical senses of 时日; grouped together and split from the everyday duration sense on register.` and `'time and date' could arguably belong with the classical cluster instead.`
+- 时 (id=52975): 'season' is a bound, literary sense of 时 (as in 四时) unlike the everyday time senses — split on register.` and `'when' is the …的时候 subordinating use; it could arguably sit with the general 'time' cluster.`
+- 小时工 (id=34333): Person-vs-job split: 小时工 names both the worker and the work; you may prefer a single cluster.
+- 工行 (id=36215): Abbreviation of 工商银行; the reading gong1 hang2 (not gong1 xing2) is the bank-name reading.
+- 手工 (id=44025): 'handwork' (noun) and 'manual' (attributive) kept together as one by-hand sense despite the pos difference.
+- 理工大学 (id=72849): 'also sometimes Institute of Technology' is a source-gloss fragment rather than a standalone definition.
+- 多工 (id=27188): Split the technical verb 'to multiplex' from the attributive 'multi-/multiple' root; they could arguably be one sense since the attributive use is just the verb root in compounds.
+- 水电工 (id=61976): Person-vs-trade split; the trade-name reading is much less common than the person reading.
+- 成人 (id=43390): Noun and verb senses split; they are one origin, so a merge would also be defensible.
+- 车工 (id=104714): Person vs. activity split; one origin, so merging is also defensible.
+- 高工 (id=120589): Two unrelated abbreviations sharing a form (高级工程师 vs. 高级工业职业学校); kept separate.
+- 合成物 (id=19647): 'cocktail' is a cryptic source gloss — presumably a drug/chemical cocktail; kept with the compound sense but worth a human check.
+- 不成 (id=2498): Split the sentence-final rhetorical 不成 from the predicate 'won't do' sense; they share an origin but differ in grammatical role and register.
+- 成分 (id=43404): The 'class background' sense is a distinct Maoist-era political usage; split from the everyday 'ingredient' sense on both meaning and register.
+- 电工 (id=115911): Person vs. trade/field split; 'electrical engineering' is markedly more technical than 'electrical work in a house' and could arguably split again.
+- 成性 (id=43452): Kept nominal 'second nature' and verbal 'to become second nature' in one cluster (same core idea, different grammatical frame); flag if you'd split by pos.
+- 成行 (id=43510): 成行 also reads cheng2 hang2 'to form a row', but no such gloss is present in the input.
+- 成语 (id=43516): Kept 'proverb/saying/adage' with 'idiom' as one sense — they are loose English renderings of the same 成语 concept, not a separate origin; flag in case you'd split the strict 4-character sense from the looser 'saying' renderings.
+- 成体 (id=43534): 'adult' here is the biological adult form (成体 in zoology); kept with 'fully formed/developed' as one sense. Flag: source glosses are terse and could be read as two senses (noun 'adult organism' vs adjective 'fully formed').
+- 有成 (id=54522): Both glosses are the same sense, one marked (literary); kept together rather than making a register split out of duplicate text. Flag.
+- 成家 (id=43438): Two clusters: 成家 'marry' vs 成家 'become an established authority (一家之言)' — same reading, genuinely different senses.
+- 打成 (id=44354): Split the political 打成(右派) 'to brand/denounce as' from the literal 'beat into' — arguably one extended origin; flag.
+- 下里巴人 (id=2044): Split the original Chu folk-song sense from the extended 'popular art' sense on register grounds; they could reasonably be one cluster.
+- 中巴 (id=3499): Kept the two country-pair abbreviations in one cluster although 巴 stands for different countries; they share the 'China-X relations' frame.
+- 巴利文 (id=36510): Source gloss has a typo ('Theravad').
+- 巴巴 (id=36552): Both glosses describe the same bound intensifier (干巴巴, 紧巴巴); tagged adjective as the whole-word role.
+- 巴德尔 (id=36570): The lead gloss 'Baldr; Baader' covers both transliterations; placed with the Norse-god cluster.
+- 巴斯克 (id=36588): Kept 'Basque' (people/language) and 'the Basque Country' (place) in one cluster as one origin; they could be split into an ethnonym sense and a place-name sense.
+- 巴特 (id=36629): Kept the generic surname gloss and the specific Roland Barthes gloss in one cluster; a split into 'surname' vs 'the critic' is defensible.
+- 巴县 (id=36640): Source gloss says 'in Chongqing … , Sichuan', which is geographically outdated (Chongqing is no longer part of Sichuan).
+- 利器 (id=13962): Split the 'able person' gloss from the tool senses as a separate metaphorical extension; it could arguably stay in one cluster with the tool sense.
+- 公石 (id=11874): 'quintal' is a mass unit while 'hectoliter' is a volume unit; kept together as the single metric-unit sense of 公石, but the source glosses may conflate two different units.
+- 安新县 (id=31838): The stored reading 'an xin1 xian4' is missing a tone on the first syllable (should be an1).
+- 新天地 (id=51442): The literal reading 'a whole new world' is common in ordinary speech (开创新天地) but is not in the source glosses, so it was not clustered.
+- 新市区 (id=51468): Two different districts (Ürümqi and Tainan) share the headword; kept as one place-name cluster since they differ only in referent, not in sense.
+- 新金县 (id=51671): Xinjin County was merged into Pulandian in 1991, so the source gloss describes a defunct administrative unit.
+- 新生 (id=51559): 'newborn' was placed with the adjectival 'emerging / nascent' group rather than with 'new life'; it can also read as a noun ('a newborn').
+- 一眼 (id=754): Tagged numeral as well as noun: 一眼 is a numeral+verbal-classifier phrase (看一眼) as much as a noun.
+- 合眼 (id=19690): Kept 'to get to sleep' with the literal sense as one origin (eyes closing -> sleeping, 没合眼); could reasonably be split as an extended sense.
+- 天眼 (id=28710): Source glosses cover only the telescope nickname; 天眼 also has a Buddhist 'divine eye' sense and a colloquial 'surveillance camera network' sense that are absent from the input.
+- 心眼多 (id=40609): 心眼多 in ordinary use more often means 'calculating / full of guile' than 'suspicious'; the source glosses capture only the suspicion reading.
+- 石化 (id=78414): The 'petrochemical' sense is an abbreviation of 石油化工 and is unrelated in origin to 'petrify' despite the identical form.
+- 石工 (id=78451): Kept the worker and the craft in one cluster per the same-origin rule; they could be split as person-vs-activity.
+- 金石 (id=110208): Split the epigraphy sense from the literal 'metal and stone' on register grounds (the former is a specialist antiquarian term).
+- 心眼大 (id=40610): Kept 'magnanimous' (broad-minded, not petty) together with 'considerate/thoughtful'; these are arguably two related but distinguishable readings of 心眼大 — the dominant modern sense is 'not petty, doesn't take offence'. Flagging in case you would split off the 'thoughtful/attentive' gl
+- 有心眼 (id=54500): The source glosses 'clever; sharp' understate the word: 有心眼 usually means 'shrewd/calculating', often with a mildly negative edge. Flagging the gloss quality rather than the clustering.
+- 长眼 (id=112079): 'to have eyes' is the literal base but in practice 长眼 is used almost only in the reproachful figurative sense (你长眼没有?); kept as one cluster since the literal use is not independent.
+- 眼下 (id=77718): The '(anatomy) subocular' gloss is a narrowly technical literal reading, split off from the everyday temporal sense per the register rule.
+- 眼力 (id=77732): Literal eyesight and figurative discernment are one origin; split because they are distinct senses in use. Flag in case you would merge.
+- 眼高 (id=77842): Split 'high standards' from 'haughty': the same image (眼光高) but the second carries a clearly negative judgment of the person. Flag in case you would merge them.
+- 电子眼 (id=115886): Split the everyday 'traffic/surveillance camera' sense from the technical 'photoelectric sensor / bionic eye' sense; they share the name but are different referents.
+- 不光 (id=2171): Kept 'not the only one' with 'not only'; both come from the same negation of 'solely', though the first is predicative and the second conjunctive.
+- 光大 (id=10559): Source glosses omit the very common verbal sense 发扬光大 'to carry forward / make flourish'; only the adjectival sense is available to cluster.
+- 打光 (id=44258): Two unrelated senses of 光 (light thrown on a scene vs. luster raised on a surface); kept apart deliberately.
+- 分外 (id=13379): 分外: the adverbial intensifier and the 'beyond one's duty' sense share the 本分 'allotted share' origin but are used in completely different slots, so they are split.
+- 外人 (id=26884): 外人: 'foreigner' is kept in the same cluster as 'outsider/stranger' — modern usage is overwhelmingly 'someone outside the family/group', and the 'foreigner' reading is an older, now marginal use of the same not-one-of-us core.
+- 高光 (id=120492): 高光: the cosmetics 'highlighter' product is kept with the visual 'highlight' sense — it is named directly after it — but it could be split as its own product noun.
+- 眼光 (id=77727): 眼光: the literal 'gaze' sense and the figurative 'discernment/taste' sense (他很有眼光) are both common and are split.
+- 电光 (id=115823): 电光: the technical 'electric light / electro-optical' sense and the 电光石火 'lightning flash' sense are split.
+- 风光 (id=118252): 风光: the concrete 'scenery' noun and the predicative 'enviably successful' adjective are split.
+- 打通 (id=44507): Kept the phone sense with the general 'open a way through' sense as one origin; flag in case the telephone use should be its own cluster.
+- 里外 (id=97955): 'or so' is a post-numeral approximation marker (三十岁里外) unrelated to the locative 'inside and out'; split. Its pos is uncertain — tagged noun to match the entry.
+- 开外 (id=112431): 'beyond (budget)' may be a distinct financial use rather than the general post-numeral 'and above'; kept together.
+- 体外 (id=120372): 'in vitro' is the technical/medical rendering of the same locative sense; kept in one cluster rather than making a register split.
+- 三通 (id=1503): 'three links' is the cross-Strait mail/transport/trade policy term — a wholly separate sense from the plumbing fitting; split accordingly.
+- 通力 (id=106681): 'to cooperate' (verbal) and 'concerted effort' (nominal) are one origin-sense in different English framings; flagging in case you would split by pos.
+- 通海 (id=106739): This headword 通海 duplicates 通海县; both entries carry the same two glosses.
+- 通县 (id=106771): Tong County was abolished in 1997 and is now Tongzhou District 通州区; the gloss describes a historical administrative unit.
+- 通行 (id=106781): Split physical passage from 'current/in general use' (tong1 xing2 zuo4 fa3); same origin (circulates freely) but clearly two modern senses.
+- 通车 (id=106812): Split the Taiwan-only 'commute' sense out as a regional/register-distinct cluster; it is a different reference point (the traveller, not the route).
+- 通通 (id=106815): 'entire'/'complete' read as adjectives in English but 通通 is adverbial in Chinese (通通拿走); kept as one adverbial cluster.
+- 通道 (id=106817): Split the technical 'channel' sense from the physical passageway; it is a metaphorical extension and much more domain-specific, so a merge would also be defensible.
+- 通电 (id=106830): Register split: 'open telegram' (a public circular telegram) is Republican-era historical usage and shares no modern frequency with the electrical sense.
+- 通电 (id=106830): Marked the telegram cluster as noun even though the entry's partsOfSpeech is verb-only; flagging the mismatch.
+- 通风 (id=106837): Kept 'ventilation' (nominal English) with 'to ventilate'/'airy' as one origin-sense; the pos array covers both framings.
+- 通风 (id=106837): 'to disclose information' is 通风报信 - an extension of the same air-passes image but a distinct modern sense.
+- 通气 (id=106730): The English glosses 'ventilation'/'aeration' are nominal, but the Chinese word is verb-object (tong1 qi4 = let air through); I kept pos as verb to match the entry. Flagging the pos call.
+- 通气 (id=106730): Two clusters share an image (let air/word through) but are clearly different senses in modern use.
+- 通 (id=106654): Split the two classifier senses on reading: the message classifier is tong1, the 'bout/tirade' classifier is conventionally tong4 (yi1 tong4 luan4 ma4) - please confirm the tong4 reading.
+- 通 (id=106654): Kept 'to communicate' apart from the physical 'go through / connect' cluster; they are arguably one origin (channel open -> word passes), so a merge would also be defensible.
+- 通 (id=106654): '(suffix) expert' is nominal while 'to know well' is verbal, but both are the same origin-sense (thorough knowledge).
+- 通 (id=106654): possible tone mix-up: clusters on tong1/tong4 share syllable
+- 日神 (id=52241): 日神: 'Apollo' is really a culture-specific instance of the generic sun god rather than a separate sense; kept together.
+- 海神 (id=64874): 海神: 'Emperor of the Sea' is the Chinese folk figure and 'Neptune' the Roman one; kept in one cluster as the same generic 'god of the sea' sense.
+- 神人 (id=79760): 神人: the very common modern colloquial use ('an amazing person', often ironic) is absent from the glosses, so this row covers only the classical sense.
+- 神化 (id=79775): 神化: 'apotheosis' is the nominalization of the same act, so it shares the cluster although its POS differs.
+- 通体 (id=106841): 通体: both glosses are nominal in English, but the word is used adverbially (通体透明); the cluster POS reflects the Chinese usage, not the gloss wording.
+- 分神 (id=13497): 分神: the polite request sense (劳您分神) and the 'become distracted' sense share one origin but point in opposite directions; split so each gets its own frequency score.
+- 大神 (id=28103): 大神: the internet-slang 'guru' sense is by far the more common one today, but it is kept apart from the literal 'deity' sense because their registers differ sharply.
+- 心神 (id=40617): 心神: the Chinese-medicine sense is technical and split off so it does not share a frequency score with the everyday 'mind / attention' sense.
+- 眼神 (id=77792): 眼神: 'wink' is a marginal fit with the 'expression in the eyes' cluster — please confirm it should not stand alone.
+- 神器 (id=79776): 神器: the modern colloquial 'killer gadget' sense is split from the literal 'magical artifact' on register grounds; the classical regalia sense is split off as archaic.
+- 主义 (id=3984): Kept '-ism' (a suffix-like bound use) with 'ideology' as one origin; flag in case the suffix use should be its own cluster.
+- 人道主义 (id=5940): 'humanism' here is the humanitarian-doctrine sense, not 人文主义 (Renaissance humanism); kept together but flagged as a potentially misleading gloss.
+- 多义 (id=27292): 'ambiguity (linguistics)' is arguably a distinct sense (ambiguity vs. multiple established senses); kept as one linguistic-technical origin.
+- 神学 (id=79787): 'theological' is the attributive use of the same noun, kept in one cluster.
+- 神道 (id=79911): Source lists 'Shinto' twice with different parentheticals; treated as one sense. Note 神道 also means 'spirit path / tomb approach' in Chinese, a sense the glosses omit.
+- 神通 (id=79907): The everyday figurative 'remarkable ability' (大显神通) is split from the Buddhist/mythical 'magical power' on register grounds; they share one origin.
+- 神马 (id=79922): The slang pronoun and the literal 'divine horse' are unrelated senses kept apart; the slang sense is by far the more common today.
+- 大义 (id=28146): 'a woman's marriage' is an archaic sense split off on register grounds.
+- 大义 (id=28146): 'main points of a piece of writing' overlaps with 大意 da4 yi4 'gist'; flag in case the source gloss belongs to a different headword.
+- 神气 (id=79824): 'impressive/vigorous' and 'pretentious/lofty' are the positive and negative faces of one 'showing off spirit' sense; split because a learner needs the praise/criticism distinction, but they could be merged.
+- flags (round 19):** 主义 (kept the
+- 义理 (id=87365): Split doctrine from argumentation; both descend from 'meaning + principle' and could reasonably be one cluster.
+- 机会主义 (id=58992): Kept 'pragmatism' with 'opportunism': in Chinese political usage 机会主义 is pejorative and 'pragmatism' here renders the same disapproving idea, not the philosophical school (that is 实用主义) — flag in case you would split it off.
+- 义工 (id=87350): Kept the person and the activity in one cluster — Chinese 义工 covers both with no change of form; flag if the card should separate agent from activity.
+- 义气 (id=87358): 'also pr. [yi4 qi5]' is a pronunciation note, not a gloss; rule 1 forbids dropping it, so it stays in the single cluster — it should be filtered upstream.
+- 语义 (id=100281): 'semantic' is an adjectival English gloss of the same noun sense; kept together rather than split by part of speech.
+- 无义 (id=69445): Split on the two senses of 义 (righteousness vs meaning); both are literary, so no register split was made.
+- 无义 (id=69445): Ordered the moral sense first as the more commonly encountered one — flag if the linguistic sense should lead.
+- 天马行空 (id=28805): Kept the literal idiom image with its figurative use as one cluster; the literal gloss is only ever a gloss of the idiom.
+- 空口 (id=81277): The three glosses point in opposite directions (dish without staple vs. staple without dish); kept as one 'eaten unaccompanied' sense, but the source glosses are muddled.
+- 空地 (id=81283): Reading split: the 'vacant land' sense is kong4 di4, the military 'air-to-ground' sense is kong1 di4.
+- 上空 (id=1758): '(Tw) topless' is a separate origin (上 'upper body' + 空 'bare'), not the sky sense; split accordingly.
+- 利空 (id=14017): Noun and adjective uses share one finance origin; split only because the glosses divide cleanly by part of speech — merging is also defensible.
+- 时空 (id=53033): Register split: the everyday 'time and setting' sense vs. the technical physics term.
+- 空子 (id=81289): The figurative 'loophole' sense (钻空子) is split from the literal gap; merging is also defensible.
+- 空 (id=81253): 'free time' and 'leisure' take the kong4 reading — a hard reading boundary against the rest.
+- 空 (id=81253): 'in vain' is adverbial; the entry's POS list has no adverb tag, so flagging the mismatch.
+- 空 (id=81253): possible tone mix-up: clusters on kong1/kong4 share syllable
+- 空心 (id=81298): 'on an empty stomach' is adverbial and the entry's POS list has no adverb tag
+- 空心 (id=81298): The basketball sense is an extension of 'hollow' (nothing but net) — split, but a merge is defensible
+- 空手 (id=81316): 'karate' is a clipping of 空手道 and arguably the same 'bare-handed' origin; kept separate because it is a proper discipline name
+- 空手 (id=81316): 'unarmed' could stand as its own sense
+- 空头 (id=81414): Register/domain split: everyday 'phony' vs. the technical trading term
+- 长空 (id=112084): The source lists 'the vast sky' twice, once tagged (literary); both kept in one cluster
+- 长空 (id=112084): The finance sense is a different origin (长 'long-term' + 空 'short position'), not the sky image
+- 空空 (id=81362): 'nothing' is nominal but expresses the same 'empty' idea; kept with the adjectives
+- 空空 (id=81362): The air-to-air sense is a different origin (空 'air' twice), not the 'empty' reduplication
+- 中线 (id=3653): Merged the sports half-way line and the geometric median line as one
+- 外线 (id=27033): The bare gloss
+- 出线 (id=13191): Both senses come from the same image of crossing a line, but one is positive (advancing) and one is negative (out of play), so they are kept apart.
+- 上线 (id=1773):
+- 线下 (id=85752): 线下: the everyday 'offline / in the physical world' sense and the accounting 'below the line' sense are unrelated
+- 眼线 (id=77805): 眼线: the informer sense and the cosmetic eyeliner sense share no meaning beyond the character 线
+- 线 (id=85749): 线: the city-tier sense is a modern extension used only after a numeral
+- 多大点事 (id=27166): 多大点事: 'trivial matter' is a paraphrase of the same exclamation, not a separate nominal sense
+- 打点 (id=44562): 打点: the baseball RBI sense takes the full tone da3 dian3 while the everyday senses are neutral-tone da3 dian
+- 出发点 (id=13175): 出发点: the literal travel sense and the figurative 'what one is acting from' sense are close but used quite differently
+- 西点 (id=98617): 西点 has an everyday food sense and an unrelated proper-noun sense
+- 行者 (id=97193): 行者 splits between the plain 'walker' sense and the Buddhist mendicant sense; they share a reading but are unrelated
+- 者 (id=88008): 者 is a bound suffix in modern Mandarin; it never stands alone, so all clusters are suffix uses
+- 点化 (id=123252): 点化 has a religious/mythological sense (an immortal transforming matter) and a derived everyday sense of enlightening someone with a word
+- 点数 (id=123278): 点数 is read dian3 shu4 for the noun 'points' and also covers the verb 'to count off'; the two are related but grammatically distinct
+- 点点 (id=123351): 点点 carries an unrelated proper-noun sense (a website name) alongside the ordinary 'dot/speck' sense
+- 小可 (id=34188): 小可 has an adjectival 'trifling' sense and a separate archaic self-deprecating pronoun 'my humble self'
+- 一族 (id=627): 一族 is now most often the '-crowd / -set' suffix naming a subculture; the older 'clan' sense is separate
+- 三重 (id=1514): 三重: the common noun 'treble' and the two place names share one spelling and reading; only context separates them
+- 族人 (id=52049): 族人: 'ethnic minority' is a loose gloss — the word names a member of the group, not the group itself
+- 心病 (id=40601): The everyday sense is a private worry; the two medical senses (cardiac and psychiatric) are separate technical uses of the same spelling.
+- 红海 (id=83843): The business neologism reuses the sea name as a metaphor for a bloodied, saturated market; unrelated to the geography.
+- 红人 (id=83739): The 'American Indian' gloss is a dated calque of 'redskin' and is rare in current use.
+- 眼红 (id=77802): The 'furious' sense is the same red-eyed image pushed to anger rather than envy; kept apart because the English senses do not overlap.
+- 红眼 (id=83871): The last cluster bundles three unrelated technical uses (conjunctivitis, overnight flights, photographic red-eye) that the source gloss ran together.
+- 重文 (id=109743): 重文: a philological term; the two senses belong to textual criticism and to palaeography respectively.
+- 自重 (id=91145): 自重: the dignity sense and the engineering deadweight sense share no English overlap.
+- 花红 (id=92411): 花红: the fruit sense is unrelated to the money sense.
+- 重重 (id=109871): 重重: the two senses take different readings (zhong4 zhong4 'heavily' vs chong2 chong2 'layer upon layer'); the entry's primary reading is listed as chong2 chong2
+- 重头 (id=109889): 重头: 'most important/main' is zhong4 tou2 while 'from the beginning' and the poetry sense are chong2 tou2
+- 重点 (id=109893): 重点: the common senses are zhong4 dian3; 'to recount/re-evaluate' is chong2 dian3, but the entry's primary reading is recorded as chong2 dian3
+- 新罗 (id=51594): 新罗: the second gloss is only a cross-reference to the Xinluo district entry, not an independent sense
+- 罗斯 (id=86859): 罗斯: the surname transliteration and the historical Rus' polity share a spelling but are unrelated senses
+- lines for 新罗 (51594) and 罗斯 (86859). A polling task (`bqi3znppe`: `sleep 150; tail -14 …/b8l52yzvt.output`) was in flight when the summary was requested.
+- 相 (id=77197): 相: the entry's primary reading is stored as xiang1, but only the 'each other / mutually' cluster takes that reading; every nominal and verbal sense is xiang4
+- 相 (id=77197): possible tone mix-up: clusters on xiang1/xiang4 share syllable
+- 明 (id=52493): possible tone mix-up: clusters on ming2/Ming2 share syllable
+- 明 (id=52493): possible tone mix-up — clusters on ming2/Ming2 share syllable
+- 发明 (id=75596): Verb and noun are the same origin-sense; split so the noun reading of the card is available separately — merge if you prefer one cluster.
+- 山阿 (id=35505): Literary/classical word; single sense, but the reading e1 for 阿 is the literary one — worth a check.
+- 明体 (id=52629): 'Mincho' is the Japanese name for the same typeface; kept in one cluster as a single typographic sense.
+- 明眼人 (id=52598): Split the literal 'sighted (not blind)' sense from the figurative 'discerning' sense; they share an image but are used in different frames.
+- 开明 (id=112514): The noun 'enlightenment' is the nominalization of the adjective sense; split only on part of speech — merge if you prefer.
+- 阿 (id=113285): The literary 'to flatter' sense takes the reading e1, unlike the everyday prefix a1 — flagging the heteronym split.
+- 阿 (id=113285): 'also pr. [a4]' is a pronunciation note, not a meaning; parked with the transliteration cluster because it has nowhere better to go.
+- 阿公 (id=113328): Split the kinship 'grandfather' sense from the broader polite address; they could reasonably be merged as one honorific origin.
+- 阿巴 (id=113394): Two unrelated transliterations that happen to share the characters; kept apart.
+- 阿巴斯 (id=113397): The generic name and the specific bearer are kept in one cluster; the second gloss is just an instance of the first.
+- 阿拉 (id=113418): Two entirely unrelated words sharing the characters; the Wu pronoun reading is dialectal and may not be a1 la1 in every source.
+- 阿拉尔市 (id=113453): This entry duplicates 阿拉尔 exactly; the two det rows carry identical definitions.
+- 阿法尔 (id=113503): Region and ethnic group split apart; a merge into one 'Afar' cluster would also be defensible.
+- 阿物儿 (id=113551): Both glosses are the same dialectal word; the second just adds the scolding tone it usually carries.
+- 阿特拉斯 (id=113552): The mountain range is named after the Titan; split because a learner meets them in different contexts.
+- 人流 (id=5827): 'abortion' is an abbreviation of 人工流产 that happens to be homographic with the everyday 'stream of people' sense; kept separate as unrelated senses.
+- 阿里巴巴 (id=113642): The company is named after the folk-tale character, but a learner meets them as two unrelated referents; split.
+- 下流 (id=1970): 'low-class' and 'mean and lowly' describe social standing rather than obscenity; kept with the vulgar cluster as one moral-lowness origin, but they could reasonably form their own cluster.
+- 主流 (id=3968): The literal river sense is the origin of the figurative one; split because a learner meets the figurative sense far more often. 'fig. the essential point' grouped with the figurative cluster.
+- 阿里 (id=113638): The last gloss is a bare cross-reference stub rather than a definition; clustered on its own as the Tibetan place name.
+- 分流 (id=13482): The people-management senses are extensions of the same water image; split because the administrative use is a distinct modern sense a learner meets separately.
+- 南 (id=16918): The entry's stored primary reading is na1, but the everyday 'south' sense is nan2 — the source reading belongs to the rare Buddhist-transliteration sense.
+- 南 (id=16918): 'Taiwan pr. [na2]' is a pronunciation note rather than a sense; parked with the na1 cluster it annotates.
+- 南天门 (id=16966): The real mountain gates are named after the mythological one; split because one is a myth and the other a place a tourist visits.
+- 南山区 (id=16979): Two different districts in different provinces share the name; kept in one cluster as the same place-name word.
+- 南无 (id=17077): 'Taiwan pr. [na2 mo2]' is a pronunciation note rather than a sense, but it is stored in the definitions array
+- 合流 (id=19677): the figurative 'act alike' sense is often pejorative (colluding with a bad crowd); the literal river sense is neutral
+- 山南市 (id=35363): the Chinese name reads 'south of the mountains' but the English gloss uses the Tibetan name Lhoka
+- 气流 (id=61507): 'breath' is the phonetics/physiology sense (the airstream used in speech), distinct from the meteorological air current
+- 安南 (id=31729): the same two characters cover a country name, a personal name transliterated from Akan, and a Taiwanese district; only the shared sound links them
+- 流水 (id=64391): The business sense derives from 流水账 (running account) and is unrelated to water for a learner
+- 流行性 (id=64440): The two senses share no meaning: one is epidemiological, the other is about fashion
+- 流里流气 (id=64447): cedict glosses this reduplicated adjective with two abstract nouns; it actually describes how a person behaves
+- 海南区 (id=64695): Unrelated to Hainan Island province despite the identical name
+- 电流 (id=115957): The second gloss is an obsolete term for amperage, not a separate phenomenon
+- 风流 (id=118315): The two clusters are near-opposite in tone: one admiring, one disparaging
+- 下方 (id=1941): The mortal-world senses are literary/mythological and share no everyday meaning with the spatial sense
+- 方山 (id=51799): cedict gives 方山 exactly the county definition of 方山县; the bare form has no separate sense recorded
+- 大方 (id=27857): The tea name and the literary 'mother earth' sense share nothing with the everyday 'generous' sense
+- 开方 (id=112513): The medical and mathematical senses share only the literal 'open up a formula' image, nothing a learner would connect
+- 加里 (id=15241): The personal name and the chemical element share only their sound; they are unrelated words written the same way
+- 加重语气 (id=15251): 'with emphasis' is the adverbial framing of the same act; kept in one cluster with a two-pos list.
+- 可加 (id=19038): Transliteration of 'coca'; the bare gloss 'coca' and the botanical gloss are the same sense.
+- 国民中学 (id=24225): The second gloss is a cedict cross-reference rather than a definition; kept with the sense it annotates.
+- 外加 (id=26913): 'in addition' is adverbial/conjunctive and 'extra' attributive; same origin, so one cluster with both pos.
+- 大加 (id=27568): All glosses are the same intensifying adverb shown with different collocations, not distinct senses.
+- 平民 (id=37524): The military contrast and the privileged-class contrast are two framings of one 'not of the elite/army' idea; could be split if you want the contrasts separate.
+- 文不加点 (id=50882): Second gloss states the implied praise of the writer rather than the act; kept as one idiom sense.
+- 有加 (id=54438): Literary/formal postposed intensifier; both glosses are the same sense with a usage note.
+- 相加 (id=77225): The figurative use is close enough to the arithmetic one that these could be merged; split because the example sentences differ sharply.
+- 马拉加 (id=119498): Two unrelated places share the transliteration; split so the Spanish city can be scored as the common one.
+- 不定 (id=2385): The botanical term is a fixed technical use of the same word; split so its rarity can be scored separately.
+- 安定器 (id=31770): The two glosses are the same sense; the second only marks it as Taiwan usage.
+- 定分 (id=32165): The abstract doctrine and the personal share of fortune are two framings of one literary sense; merged.
+- 定力 (id=32167): Originally a Buddhist term for meditative concentration; the modern glosses cover the everyday use.
+- 天色 (id=28746): 'weather' is a loose extension of the sky-appearance sense; kept with it rather than given its own cluster.
+- 天色 (id=28746): The time-of-day use is split off because a learner meets it in a different frame (it is late) from the literal colour.
+- 安定 (id=31767): The drug name is an unrelated homograph of the stability sense; split.
+- 安定 (id=31767): The stative adjective and the causative verb are one sense with two parts of speech.
+- 定 (id=32155): The ordering sense is written 訂|订 in careful writing; kept here because the entry lists it.
+- 定 (id=32155): 'to congeal' is a concrete extension of the settle sense; split so it can be scored on its own.
+- 定海 (id=32226): The modern district and the Qing-era name of the whole city are the same place name at different scales; kept together.
+- 定义 (id=32247): The noun and the verb are one sense in Chinese; kept as a single cluster with two parts of speech.
+- 定性 (id=32200): The adjective use is an attributive form of the same act of determining a nature; split so a learner sees the two grammars apart.
+- 定数 (id=32205): 'destiny' is a figurative extension of the fixed-quantity sense; split so it can be scored on its own.
+- 定时 (id=32210): The verb and the attributive 'timed' use one idea; split because the learner meets 'timed bomb' as a fixed phrase.
+- 定点 (id=32287): The 'designated' sense (as in a designated hospital or supplier) is the commonest modern use and is split from the literal act of fixing a spot.
+- 定点 (id=32287): The two mathematical glosses are different technical terms in English but one Chinese sense; kept together.
+- 平定 (id=37448): The place name is written with the same characters but is unrelated in use; split from the verb.
+- 家老 (id=32660): Both glosses name one old-fashioned sense; merged.
+- 手定 (id=44020): Literary word; both glosses are one sense.
+- 有色 (id=54677): The metals sense is a fixed technical term (有色金属) and the people sense is a social category; both split from the plain colour sense.
+- 法定 (id=63304): 'legal' here means 'prescribed by statute', not 'lawful'; kept with the statutory sense.
+- 成色 (id=43504): 'quality' is the extended, non-metallurgical use; split so its frequency can be scored on its own.
+- 物色 (id=71149): All three glosses describe one act of searching with a view to selecting; merged.
+- 特定 (id=71212): 'special' is a weaker rendering of the same 'singled out' idea; kept in the one cluster but ranked last.
+- 眼色 (id=77809): Cedict does not record the common extended sense 'ability to read a situation' (as in 有眼色); only the literal glance sense is covered here.
+- 空心老大 (id=81304): A set phrase; both glosses render the same image of an empty-cored boss.
+- 老化 (id=87714): Both are the -化 'become' suffix on 老; split because the material/population sense is a technical term and the knowledge sense is figurative.
+- 老人家 (id=87694): 老人家 is also used as a respectful second-person address to one's own parents, a use cedict does not list.
+- 老儿 (id=87706): 'father' and 'husband' are colloquial/dialect uses of the same word for an old man; split so the family senses score separately.
+- 老外 (id=87733): The 'outsider/layman' sense is the older one and the 'foreigner' sense is its modern colloquial extension; split because they take quite different contexts.
+- 老公公 (id=87711): 'father-in-law' here is specifically the husband's father, so it is merged with that gloss rather than left general.
+- 老大 (id=87734): 'leader of a criminal gang' is the same boss sense in an underworld context; kept in one cluster rather than split by register.
+- 老大 (id=87734): The adverbial 'very' (as in 心里老大不高兴) is a distinct grammatical use and is split off from the noun senses.
+- 老天 (id=87741): 'God' and 'Heavens' are the same folk notion of Heaven as a personal power; merged.
+- 老家 (id=87770): 老家 is also a euphemism for the grave (回老家 'to die'), a sense cedict does not list here.
+- 老小 (id=87777): The first is a coordinate compound covering a whole household; the second is a fixed term for one person. Split because a learner would otherwise read them as one.
+- 老小老小 (id=87778): This is a reduplicated colloquial saying rather than an ordinary adjective; 'adjective' is the closest available tag.
+- 老成 (id=87797): 'sophisticated' shades toward worldly-wise here rather than refined; kept with the maturity sense.
+- 老生 (id=87850): Both glosses name the same role type in Chinese opera; merged.
+- 老老 (id=87867): 'same as 姥姥' is a bare cross-reference pseudo-gloss from cedict, not a distinct sense; kept inside the grandmother cluster only because every gloss must be assigned.
+- 老者 (id=87869): Literary/formal register; the two glosses are one sense.
+- 老头子 (id=87915): The husband use is the same word spoken by a wife; split because the register and reference differ sharply.
+- 自定义 (id=90855): A computing term; both glosses render one sense.
+- 色长 (id=92054): A historical office title; both glosses are one sense.
+- 老头 (id=87913): The family uses (father, husband) are affectionate extensions of the plain 'old man' sense; split so a learner is not surprised by 'husband'.
+- 色相 (id=92032): The technical color-theory sense and the 'good looks traded on' sense share the characters but not the register; split.
+- 色 (id=91998): The last gloss is not a sense at all but a note that the character is read shai3 in the word for dice; it is given its own cluster only because every gloss must be assigned.
+- 色 (id=91998): 'sex' here means sensuality or lust as a topic (as in 色情), not the act.
+- 长老 (id=112095): The Buddhist title is a fixed religious use of the general elder sense; split because a learner meets it only in temple contexts.
+- 一路平安 (id=904): The set phrase works both as a parting wish and as a predicate about a trip; kept as one sense.
+- 花色 (id=92425): 'variety' grew out of the fabric-pattern sense (the assortment of patterns) but is now used of goods generally; split.
+- 花色 (id=92425): The card-suit sense is a fixed technical use and belongs on its own.
+- 一路上 (id=902): The figurative time sense drops the travel imagery entirely; split from the literal journey sense.
+- 路人 (id=104098): 'stranger' is the figurative use (treating a friend like a passer-by); split so it can be scored separately.
+- 行路 (id=97209): 'transport' is a stretched nominal reading of the same literary verb; kept in one cluster.
+- 生路 (id=73880): The livelihood sense and the escape-with-one's-life sense both read as 'road to living'; split because they occur in quite different sentences.
+- 老路 (id=87900): The figurative 'going back to the old ways' sense is the common one; the literal old road is split off from it.
+- 线路 (id=85784): The transport-route sense and the electrical-circuit sense are the two live meanings; split because a learner meets them in unrelated contexts.
+- 心路 (id=40685): This headword is unusually spread out: cedict lumps five quite different senses under it, and only the train-of-thought sense is common in modern speech.
+- 心路 (id=40685): 'tolerance' (a broad mind that puts up with things) is the odd one out and may be dialectal; kept as its own cluster so it can be scored low.
+- 路加 (id=104101): Both glosses name the same biblical figure; the bare 'Luke' is the transliteration used for the gospel.
+- 路德 (id=104117): The surname as such and the reformer it usually refers to are kept together.
+- 路数 (id=104124): This word is unusually spread: the connections sense and the background-story sense are colloquial and quite distinct from the plain 'method' sense.
+- 路数 (id=104124): The martial-arts sense is a fixed technical use of the same 'sequence of steps' image.
+- 路线 (id=104156): The political sense is a fixed Party-discourse use of the route metaphor; split because it is learned separately.
+- 路面电车 (id=104183): 'streetcar' and 'tram' are the American and British names for one thing; merged.
+- 道路 (id=107720): The literal road and the figurative 'the road to success' framing share one cluster; the figurative use is not separately glossed in the source.
+- 通路 (id=106811): 'channel' is the figurative extension (a channel for goods or information) and is split so it can be scored on its own.
+- 门路 (id=112252): The 'pull/connections' sense and the 'knack, way in' sense are close in Chinese but land very differently in English; split.
+- 开路 (id=112645): The electrical sense is a technical homograph, unrelated in use to the road sense; split.
+- 头路 (id=117896): 'mate' is a dialectal sense meaning a marriage partner and is unrelated to the clue sense; split.
+- 头路 (id=117896): 'first class' is the 'number one grade' sense of tou2 and is also unrelated to the clue sense.
+- 布道 (id=7087): The act of preaching and the sermon itself are one word in Chinese; split so each part of speech reads cleanly.
+- 分布 (id=13348): The statistical noun sense is a technical use of the same word; split so it can be scored on its own.
+- 布 (id=36775): The 'declare' and 'spread out' verb senses are related (spreading word versus spreading things); split because their English usage differs.
+- 布尔 (id=36856): The mathematician's name and the adjective derived from it are split so the technical use can be scored separately.
+- 拉布 (id=45678): Both glosses are the same sense; the source marks it as Hong Kong usage.
+- 拉布拉多 (id=45679): The dog breed and the Canadian region share a name; split because learners meet the dog far more often.
+- 下作 (id=1879): 'contemptible' (of a person's conduct) and 'disgusting' are one colloquial term of abuse; merged.
+- 白布 (id=75830): 'calico' is a loose English equivalent; kept with the plain-white-cloth sense.
+- 马布多 (id=119475): The (Tw) tag marks this as the Taiwan transliteration; the mainland form is 馬普托|马普托.
+- 发布 (id=75567): 'to distribute' is a weaker, older use; split so the dominant 'announce/release' sense can be scored on its own.
+- 罗布 (id=86836): The ruble sense is a superseded transliteration unrelated to the verb; split off.
+- 不名一文 (id=2311): All three glosses are one four-character idiom; merged.
+- 作下 (id=7401): The 'bad connotation' note describes the usual context of the same sense, not a separate one; merged.
+- 作手 (id=7436): The literary 'writer' sense and the general 'expert hand' sense are distinct enough to score separately.
+- 作人 (id=7404): 'same as 做人' is a cedict cross-reference, not a gloss; kept with the one real sense.
+- 作合 (id=7413): 'to get married' is the outcome of the same matchmaking sense; merged, though it could be split.
+- 作 (id=7399): The bound-form worker/workshop sense and the slang high-maintenance sense both read zuo1, unlike the rest of the entry which reads zuo4.
+- 作 (id=7399): possible tone mix-up: clusters on zuo4/zuo1 share syllable
+- 出名 (id=13064): The 'lend one's name' sense is a separate legal/organizational use, not simply becoming famous.
+- 合作者 (id=19601): Split the neutral work-partner sense from the pejorative wartime 'collaborator with the enemy' sense; they share a form but a learner needs them apart.
+- 名 (id=20081): 'place (e.g. among winners)' arguably extends the classifier sense (counting ranks) rather than standing alone; flagged.
+- 名 (id=20081): 'noun (part of speech)' is a technical grammar term (abbreviation of 名词) and was kept apart from the everyday 'name' sense on register grounds.
+- 名儿 (id=20095): 'name' and 'fame' arguably form one origin (a name that is known); split because a learner meets them in different frames.
+- 名家 (id=20123): The source list contains both 'master' and 'master (of an art or craft)'; they were kept in one cluster as duplicates of the same sense.
+- 名家 (id=20123): The philosophical-school sense is capitalized as a proper noun in the source reading; flagged in case the readings should not differ.
+- 名数 (id=20136): The census sense is archaic administrative usage and was split from the modern maths/grammar sense on register grounds.
+- 名流 (id=20144): 'gentry' is the older social-class reading of the same word; split from the modern 'celebrities' sense on register grounds, but they could be merged.
+- 名相 (id=20159): The Buddhist technical sense shares the written form but is a separate origin; flagged in case the reading differs.
+- 名义 (id=20168): 'in name' could sit with either the noun or the nominal-adjective cluster; flagged.
+- 地名 (id=24874): 'toponym' is the technical register of the same sense; kept in one cluster.
+- 大名县 (id=27610): The second gloss is a raw cedict place-name entry carrying cross-reference markup.
+- 大名 (id=27609): 'famous name' and 'your distinguished name' arguably form one origin (a great name), split here on register: fame vs. polite address.
+- 大名 (id=27609): The daimyo sense is a Japanese historical loan of the same characters and is kept apart.
+- 大作 (id=27510): The honorific noun and the 'break out' verb share the characters but are separate origins (great composition vs. to act greatly); flag in case you would merge.
+- 学名 (id=31486): Both senses come from 'the name used in study', so the split is on modern vs. historical use rather than a clean origin boundary.
+- 小动作 (id=34177): Both senses are literally 'small movements'; split on whether the movement is sneaky (underhand tactics) or merely fidgety, which a reader might prefer to merge.
+- 工作日 (id=36116): 'weekday' is a slightly different angle (Mon-Fri rather than a day of work) but the source treats it as the same sense.
+- 工作面 (id=36133): Kept the mining coalface and the machining workpiece surface in one cluster as two domain applications of one image (the surface actually being worked); flag in case the two industries deserve separate senses.
+- 性工作 (id=41279): 'prostitution' is a markedly more loaded register than the neutral 'sex work', but it names the same activity, so it was not split off.
+- 法名 (id=63278): The third gloss is a raw cedict cross-reference rather than a definition; it names the same sense, so it was kept in the one cluster.
+- 无名 (id=69205): 'obscure' is the extended reading (little known) of the literal 'having no name'; kept as one sense.
+- 空名 (id=81281): 'in name only' and 'so-called' are adjectival renderings of the same idea as the two noun glosses; merged per the rule that part of speech alone is not a split.
+- 通名 (id=106690): The verb sense uses 通 'to pass on' while the noun sense uses 通 'general'; kept apart as separate origins.
+- 重名 (id=109691): Heteronym: the duplicate-name sense is chong2 ming2, the renown sense is zhong4 ming2; the reading for the renown cluster is inferred from 重 'weighty; esteemed' and should be double-checked.
+- 花名 (id=92287): Split the assumed-name senses from the roll-entry senses (as in 花名册 roster); they may share one origin, in which case they should merge.
+- 花名 (id=92287): 'professional name of a prostitute' is the narrow historical use of the assumed-name sense and could stand alone.
+- 之后 (id=4094): Split the spatial 'behind' from the temporal 'after'; they share one origin (position in a sequence) and could reasonably be merged.
+- 天后 (id=28530): The place name is derived from the goddess (the temple there), so the split is by referent rather than by origin.
+- 天后 (id=28530): The source glosses omit the very common modern Mandarin sense 'diva / reigning queen of pop', which a learner is far more likely to meet than either listed sense.
+- 后事 (id=39670): 'Funeral arrangements' is literally 'the matters that come after (a death)', so it may be one origin with 'future events'; kept apart because a learner meets it as a fixed sense in 料理后事.
+- 点名 (id=123255): Both senses are literally 'to touch off a name'; the split is by use (attendance vs singling out) and could reasonably be one cluster.
+- 后儿 (id=39683): The two glosses are the same sense written twice; the second is the source gloss and the first the short gloss.
+- 后学 (id=39706): Used both for a younger scholar generally and as a humble self-reference by a scholar; the glosses cover only the first.
+- 后手 (id=39721): The board-game sense (moving second, hence on the defensive) is plausibly the origin of the 'room to fall back on' sense; kept apart because a learner meets them in quite different settings.
+- 后海 (id=39746): Proper noun; the bare gloss 'Houhai' was prepended by the short-gloss step and duplicates the descriptive one.
+- 后生 (id=39755): 'young generation' is collective while 'young man' is an individual; treated as one sense because Chinese uses the word for both without a reading or register change.
+- 后生动物 (id=39756): 'the animal kingdom' is a loose equivalent of the technical term metazoa, not a distinct sense; the source gloss is imprecise.
+- 后日 (id=39733): The calendar sense and the literary 'in days to come' sense share a reading but are met in quite different registers; kept apart.
+- 后路 (id=39803): The literal retreat route, the military supply-line reading and the figurative 'fallback' are close in origin; split because a learner meets the figurative one far more often and in ordinary conversation.
+- 后金 (id=39818): The name was also borne by a tenth-century dynasty; the source glosses cover only the Manchu state that became the Qing.
+- 无后 (id=69256): The traditional force of the word is specifically the lack of a SON to carry the family line, which the first two glosses lose.
+- 后面 (id=39825): Spatial and temporal uses split; Chinese treats them as one word and context alone decides which is meant.
+- 后头 (id=39826): Same spatial/temporal split as the fuller form of this word.
+- 上火 (id=1729): In everyday speech the two are felt as one idea (heat rising in the body = losing one's temper); kept apart because the TCM sense names a physical condition (sore throat, mouth ulcers) a learner will meet in quite different contexts.
+- 开后门 (id=112475): The literal sense is nearly never the intended reading in modern usage; it is kept as its own cluster only because it is the transparent source of the idiom.
+- 开后门 (id=112475): 'to let something in by the back door' is itself half-figurative; grouped with the idiom rather than the literal sense.
+- 明火 (id=52588): The point of the word is that the flame is uncovered and visible, which neither gloss quite says on its own.
+- 火光 (id=68303): The word names the glow or light thrown off by a fire; both glosses render it as the fire itself, which is slightly off.
+- 火力 (id=68308): The bare gloss 'fire' here means gunfire rather than a blaze.
+- 火化 (id=68312): 'to incinerate' is used of rubbish as well as bodies; in Chinese the word is almost always about cremating the dead.
+- 火儿 (id=68304): In speech the anger sense is by far the commoner one; the plain 'fire' sense is largely northern colloquial.
+- 火气 (id=68367): Chinese treats these as one idea, heat in the body showing itself as temper; they are split because English has no single word covering both.
+- 火成 (id=68343): A bound form: it is met inside terms such as 火成岩 rather than standing on its own.
+- 火线 (id=68417): The three senses share a reading but nothing else: household wiring, the battlefront (also figurative, as in 火线入党), and an obsolete transliterated computer interface.
+- 火色 (id=68422): The two glosses are one sense; the first is the short gloss generated for the second.
+- 发火 (id=75620): The everyday sense is losing one's temper; the combustion sense covers both catching fire by itself and a charge going off, kept together as one physical sense.
+- 开火 (id=112550): Shooting and lighting a cooking fire share a reading but are unrelated senses, so they are kept apart.
+- 点火 (id=123292): The literal ignition sense also carries the noun 'ignition' (the car-engine term); the figurative provoking sense is separated.
+- 三得利 (id=1296): A transliterated brand name; the two glosses are the same entity.
+- 安得 (id=31801): Both senses are literary rhetorical questions; the first wishes for something unobtainable, the second expresses disbelief.
+- 得中 (id=39905): The success sense and the 'hitting the middle / moderate' sense share a reading but are unrelated.
+- 得文 (id=39944): Transliterated place name; both glosses name the same entity, so one cluster.
+- 得气 (id=39949): The source gloss mixes a verb reading ('to obtain qi') with a noun reading (the sensation); kept as one cluster tagged both pos.
+- 得无 (id=39951): Only one literary sense; the two glosses are duplicates differing by a register tag.
+- 得道 (id=39975): 'To become an immortal' is the Daoist consequence of attaining the Dao; merged as one origin, but a split is defensible.
+- 得体 (id=39980): The leading gloss duplicates a later one ('fitting'); kept as-is since glosses must be copied verbatim.
+- 心得 (id=40520): 'knowledge' and 'understanding' are broader than the word really is; kept in the same cluster but ranked low.
+- 一字儿 (id=521): The second gloss is a cross-reference note rather than a sense; kept in the same cluster because the word has only this one meaning.
+- 阿得拉 (id=113410): Transliterated brand name; the characters are phonetic only.
+- 阿得拉尔 (id=113411): A longer transliteration variant of the same brand name as 阿得拉; purely phonetic.
+- 主音 (id=4016): Split the phonetics sense 'vowel' from the music senses; both derive from 'principal sound' so they could arguably be one origin cluster.
+- 口音 (id=18715): 'voice' is a loose gloss; grouped with 'accent' because both describe how a person sounds, but it could arguably stand alone.
+- 合音 (id=19738): Split the music sense from the phonetics sense; both come from 'sounds joining', so they could be read as one origin.
+- 国字 (id=24116): Kept the generic 'a nation's own script' apart from the Hanzi sense; in Taiwan usage the two overlap, so a merge is defensible.
+
+## Breakdown sense review (464)
+
+Per-character sense assignments where the candidate-label set had no good match.
+
+- 时大时小: 时: in the 时A时B pattern 时 means 'sometimes', closest to the 'at the time when' sense.
+- 风行一时: 风: 风行 'to spread like the wind'; the literal wind sense is meant metaphorically.
+- 风行一时: 一: 一时 here means 'for a period', so 一 is the 'whole / throughout' sense rather than the numeral.
+- 小时工: 小: 小时 'hour' is a fixed compound here, so 小 carries no independent 'small' meaning; the label is the closest available.
+- 工行: 工: 工 here abbreviates 工商 'industry and commerce', not plain 'work'; no candidate label covers the abbreviation.
+- 理工大学: 大: 大学 'university' is a fixed compound; 大 does not contribute 'big' independently.
+- 西工区: 工: in this place name 工 is part of an opaque toponym and carries no live 'work' meaning.
+- 平成: 平: 平成 is a Japanese era name drawn from the classical phrases 内平外成 / 地平天成, so neither character carries an ordinary compositional sense here; 'calm, peaceful' is the closest reading of 平 in that source phrase.
+- 平成: 成: same caveat — 成 in the source phrase means 'to be accomplished/settled', mapped here to 'to accomplish / complete'.
+- 成化: 成: 成化 is a Ming reign title chosen for auspicious meaning, not a compositional compound; both characters are best-guess readings.
+- 成化: 化: likewise — 'to transform' is the source sense but the word as used is simply a proper-noun era label.
+- 成大: 成: 成大 abbreviates 國立成功大學, so 成 is the first character of the founder-honouring name 成功 and 大 is short for 大學 ('university'), not 'big'. Both assignments are forced by the candidate lists.
+- 车工: 工: 车工 has two senses — 'lathe operator' (工 = worker) and 'lathe work' (工 = work / labor). 'worker' is chosen for the primary personal sense.
+- 开工: 开: in 开工 the character means 'to start / commence', which none of the candidate labels states; 'to open' is the nearest.
+- 电工: 工: 电工 covers both 'electrician' (工 = worker) and 'electrical work / electrical engineering' (工 = work / craft); 'worker' is chosen for the primary personal sense.
+- 高工: 工: in the mainland sense 高工 abbreviates 高级工程师, so 工 stands for 工程师 ('engineer'); in the Taiwanese sense it abbreviates 高级工业职业学校, where 工 means 'industry'. Neither is a listed candidate; 'worker' is the nearest for the primary sense.
+- 成天: 成: in 成天 it is a fused adverbial 'whole/all', closest to the 'become' sense but not a clean fit
+- 成安县: 成: a place-name element in 成安县, not a productive sense; picked the proper-name label
+- 成心: 成: here it means 'set/settled (intent)', approximated by the 'become' sense
+- 成日: 成: adverbial 'whole/all' as in 成天; mapped to the 'become' sense
+- 成县: 成: a place-name element in 成县 (Gansu); picked the proper-name label
+- 成行: 行: in 成行 'a planned trip comes off', 行 is the journey sense; the alternate reading cheng2 hang2 'form a row' would take 'a row; a line'
+- 成语: 成: 'set/fixed (phrase)', approximated by 'to accomplish / complete'
+- 成道: 道: Buddhist enlightenment (bodhi) rather than the Daoist Dao; no candidate covers it exactly
+- 打成平手: 手: in 平手 it is closer to a bare 'hand' as a game-outcome noun than to a person
+- 文成: 成: 文成 is a place/person name; both chars are name elements here
+- 文成县: 成: place-name element in 文成县 (Zhejiang)
+- 生成: 生: in 生成 'to generate/form', 生 is closer to 'to produce' than any candidate; picked 'to grow'
+- 下巴: 巴: in 下巴 the character is a bound body-part element with no independent meaning; the noun-suffix label is the closest fit.
+- 下里巴人: 巴: 下里巴人 names the common villages of the ancient Ba-Chu area, so the region sense fits, but the phrase is fossilized.
+- 中巴: 巴: the entry covers both the minibus reading and the China-Pakistan reading; the bus sense was chosen because 中巴 as a vehicle is the everyday use.
+- 中巴: 中: in the country-pair reading 中 abbreviates China, which no candidate label covers.
+- 亚拉巴马: All four characters are purely phonetic in this transliteration of Alabama; no candidate label carries the real function.
+- 巴中市: 中: 巴中 is a fixed place name, so 中 is not semantically 'middle' here.
+- 巴克斯: 巴 and 克 are phonetic in this transliteration of Bacchus; only 斯 has a phonetic candidate label.
+- 巴利: Both characters are phonetic in this transliteration of Pali; no candidate label covers that role.
+- 巴利文: 巴 and 利 are phonetic here; only 文 carries real meaning ('written language').
+- 巴力: Both characters are phonetic in this transliteration of Baal.
+- 巴力门: All three characters are phonetic in this old loanword for parliament.
+- 巴巴: 巴: as a reduplicated adjective ending 巴巴 is a bound suffix; the noun-suffix label is the nearest available.
+- 巴巴多斯: 巴 and 多 are phonetic in this transliteration of Barbados.
+- 巴巴拉: Both characters are phonetic in this transliteration of Barbara.
+- 巴德尔: All three characters are phonetic in this transliteration; 德 is not the Germany abbreviation here.
+- 金日成: 日 and 成 are given-name characters here, so the chosen labels are their literal readings rather than a function in the name.
+- 心眼大: 眼: in 心眼 the pair is figurative ('mind's eye' → shrewdness/tolerance); the literal 'eye' label is the closest available
+- 打心眼里: 打: here it is the colloquial preposition 'from', not the verb 'to hit'
+- 打眼: 打眼: the word carries two senses (to drill a hole / to be eye-catching); 打='to hit; to strike' and 眼='eye' fit the eye-catching sense, while the drilling sense would want 眼='small hole / aperture'
+- 法眼: 法: 法眼 originates as a Buddhist term (the dharma eye) before generalizing to 'discerning eye'
+- 白眼: 白: the candidate 'to stare coldly at' is itself derived from 白眼; the literal 'white' (showing the whites of the eyes) is the compositional reading
+- 眼下: 下: literally 'below the eye'; the dominant sense 'at present' is an idiomatic extension of that spatial reading
+- 眼巴巴: 巴: 巴巴 is a reduplicated suffix here; 'to long for' matches the eager-waiting sense best
+- 眼生: 生: the 'unfamiliar' reading of 生 is an extension of 'raw'; no 'unfamiliar' candidate is listed
+- 眼花: 花: means 'blurred/dazzled' here, an extension of the 'patterned, dappled' sense
+- 眼风: 风: metaphorical — a glance is figured as a wind sent from the eyes; no figurative candidate is listed
+- 电子眼: 子: part of the fixed compound 电子 'electronic', where 子 is the noun suffix
+- 电眼: 电: figurative — eyes that 'electrify' the viewer
+- 光光: 光: the reduplicated word also carries the 'bare; stripped' sense, but only one label can be assigned, so the shiny/bright sense was chosen as the base.
+- 光合: 合: here it means 'to combine (into a compound)'; the closest candidate is the join label.
+- 光天化日: 化: in this idiom 化日 is the transforming light of a peaceful reign, a classical use the candidate labels do not cover.
+- 光子: 子: the modern physics use is the elementary-particle suffix (as in 电子, 中子); no candidate label covers it, so the small-object label was chosen.
+- 光山县: 光: this is a place name, so the characters carry no compositional meaning; the literal senses were assigned.
+- 光电子: 子: functions as the elementary-particle suffix here; no candidate label covers that function.
+- 时光: 光: bleached here — the brightness sense supplies the metaphor for passing time rather than literal light.
+- 时光机: 光: bleached here — it contributes to the compound 时光 (time) rather than meaning literal light.
+- 不外: 外: in 不外 外 means 'to go beyond'; no candidate label covers the 'exceed the limits of' function, 'besides / in addition' is the nearest
+- 中外: 中: here 中 abbreviates 中国 'China'; no candidate label covers the country-abbreviation function
+- 分外: 分: 分 = one's allotted share/duty here; the adverbial 'exceptionally' reading of 分外 is an extension no candidate label covers
+- 化外: 化: 化 here means the transforming/civilizing influence of government, a nominal use the 'to transform' label only partly covers
+- 外公: 公: in kinship terms 公 is a respectful term for an older male relative; 'honorific for a gentleman' is the nearest label but not exact
+- 有眼光: 光: in 眼光 光 is the figurative 'gaze/vision' extension of 'light'; no candidate label covers the figurative use
+- 理光: 理光 is the transliterated brand name Ricoh; neither character carries its dictionary sense here and no candidate label covers a transliteration role
+- 生光: 生: in the astronomical 生光 'to give out light again' 生 means 'to produce/emerge'; 'to grow' is the nearest candidate
+- 眼光: 光: figurative 'vision/discernment' extension of 'light'; no candidate label covers the figurative use
+- 道光: 道光 is a Qing reign-era name; the characters are chosen for auspicious meaning rather than compositional sense, and no candidate label covers a proper-noun/era-name role
+- 电光: 电: the entry also carries the 'lightning' sense of 电光, where 电 would be 'lightning' instead; the electric-light reading is the more common one
+- 风光: 风光 'scenery' is a lexicalized pair (wind and light = natural sights); neither character is used in a literal compositional sense
+- 三通: 通: in the political term 三通 this is the noun 'link/connection' derived from the verb; no nominalized label is offered
+- 中国通: 中: here it is the abbreviation for 中国 (China), a proper-noun use no candidate label covers
+- 克拉通: 克: purely phonetic in the transliteration 克拉通 (craton); no transliteration label exists
+- 克拉通: 拉: purely phonetic in the transliteration 克拉通 (craton)
+- 克拉通: 通: purely phonetic in the transliteration 克拉通 (craton)
+- 利通区: 利: part of the place name 利通, chosen for auspicious meaning rather than a compositional sense
+- 大通区: 大/通: part of the place name 大通; the characters are not compositional here
+- 大通县: 大/通: part of the place name 大通; the characters are not compositional here
+- 打通: 打: here it is the generic 'do/work at' light verb of a resultative compound, not literally 'to hit'
+- 语数外: 语/数/外: each is an abbreviation of a school subject (语文, 数学, 外语); no abbreviation label is offered
+- 道外区: 道/外: part of the Harbin place name 道外 (literally 'outside the road'), semi-compositional
+- 开外: 开: in the post-numeral 开外 ('and over') neither character carries its literal sense
+- 通人: 通: in 通人 (an erudite person) 通 is the 'expert / well-versed' sense used attributively; no candidate covers the nominalized 'one who knows everything'.
+- 通力: 通: in 通力 (to make a concerted effort) 通 means 'entire / all together', a quantifier-like sense missing from the candidate list; 'to go through / be connected' is the nearest.
+- 通化市: 通: 通化 is a place name; the characters are not semantically compositional here.
+- 通化县: 通: 通化 is a place name; no candidate label marks proper-noun use.
+- 通学: 通: in 通学 (to commute to school) 通 means 'to commute / travel to and fro', a sense not in the candidate list; 'to go through / be connected' is the nearest.
+- 通山县: 通: 通山 is a place name; the label chosen is the literal sense of the character, not a compositional reading.
+- 通气会: 气: in 通气会 (a briefing) 通气 is figurative ('to pass on word'), so 气 is not literally air; no figurative/extended label exists.
+- 通海: 通: 通海 is a place name (a county in Yunnan); labels are literal character senses only.
+- 通海县: 通: 通海 is a place name; labels are literal character senses only.
+- 通县: 通: 通县 is a former place name (abolished 1997); no candidate label marks proper-noun use.
+- 通通: 通: 通通 is an adverb ('entirely'); the reduplication means 'all / whole', a quantifier sense the candidate list does not offer.
+- 通电: 电: the row also carries the 'circular telegram' sense, where 电 would be 'a telegram or phone call'; the assignment reflects the primary 'to electrify' sense.
+- 通风: 风: the 通风报信 sense ('to tip somebody off') would take 'word of what is going around'; the assignment reflects the primary ventilation sense.
+- 出神: 出: the sense here is the spirit leaving the body, an extended use of the literal 'go out' label.
+- 大神: 神: in the common internet-slang 'guru' reading this is figurative; no candidate label covers a person praised as god-like.
+- 水神: 水: the entry glosses the word as 'river God', but the character contributes the general 'water' sense, not the '... River' name-forming one.
+- 神化: 化: here it is the verb-forming suffix turning 神 into 'to deify', not an independent 'to transform'.
+- 神器: 神: in the modern 'killer gadget' reading the character is hyperbolic rather than literally divine; no candidate label covers that figurative use.
+- 通风口: 口: the character means an opening/aperture here; the candidate list offers only 'mouth' and two classifier senses.
+- 通体: 通: the function here is quantifying ('the whole of, every part of'); no candidate label covers that use.
+- 主义: 主: in the -ism suffix 主义 the character is the bound 'chief//main' element; no candidate covers this suffix use directly
+- 人文主义: 主: bound element of the -ism suffix rather than a free 'main' modifier
+- 人道主义: 主: bound element of the -ism suffix
+- 公义: 公: here means 'fair / impartial'; no candidate label carries that sense, 'public / communal' is the nearest
+- 国家主义: 家: part of 国家 'country', where 家 is the bound 'household' element rather than a free 'home/family'
+- 大义: 大: figurative 'great / weighty' rather than physically big; no figurative candidate offered
+- 神山: 神: 'sacred / of the gods'; between 'god; deity' and 'supernatural; magical' the deity reading fits a mountain believed to house gods
+- 神气: 气: here 'air / bearing' of a person, closest to the vital-energy sense; no 'manner / bearing' candidate exists
+- 神神道道: 道: in the reduplicated 神神道道 the character echoes superstitious/Daoist connotations rather than carrying a clean lexical sense
+- 神通: 通: 'penetrating mastery'; 'to be expert in' is the nearest candidate
+- 神马: 神马: the lead net-slang sense is a homophone of 什么 and carries no compositional meaning; assignments describe the literal 'mythical horse' sense
+- 义马市: 义: no proper-noun/place-name label exists; the character is only phonetic/auspicious in this place name
+- 行动主义: 主: no '-ism suffix' label exists; 主义 is a fixed suffix, 主 chosen as 'main; primary' as the closest fit
+- 行动主义: 义: no '-ism suffix' label exists; in 主义 the character means 'doctrine', tagged as 'meaning / sense'
+- 一空: 一: in 一空 the 一 is the 'completely/throughout' adverbial use, not the numeral
+- 中空: 中: 'middle' and 'within' both fit 中空 'empty in the middle/inside'; chose the nominal 'middle / centre'
+- 利空: 空: the finance sense here is the 'short/bearish' 空 of 做空/看空, which is not among the candidate labels; 'empty; unoccupied' is the nearest available
+- 平行时空: 行: in 平行 'parallel' the 行 is the literary 'to go/run', read as lines running level with each other
+- 空口: 空口: literally 'an empty mouth' — eating one thing with nothing to go with it
+- 空性: 空: the Buddhist sense here is sunyata — the absence of inherent essence — which none of the candidate labels names;
+- 空手: 空: fits the empty-handed/unarmed senses; the karate sense is a clipping of 空手道 and does not decompose this way.
+- 空气动力: 空: 空气 (air) is itself a compound; 空 alone reads as
+- 空空: 空: correct for the reduplicated
+- 空头: 头: a bare noun suffix here; the finance
+- 小不点: 不: 小不点 is a fixed affectionate form; the negative contributes nothing literal
+- 打点: 点: the baseball RBI sense (dǎ diǎn) counts runs driven in; no candidate label covers a scoring tally
+- 面线: 面: misua is made of wheat flour drawn into threads, so 'flour' and 'noodles' both apply; 'noodles' is the compound-level reading
+- 有一点: 点: 'a small amount' is the quantity sense; the whole phrase is idiomatic
+- 特点: 点: an abstract 'point/feature' rather than a physical dot; no figurative-point label is offered
+- 花点子: 花: the 'showy/gaudy' sense behind 'flashy trick' is closest to 'patterned; multicolored'; no deceptive/showy label exists
+- 花点子: 点子 is a fixed word meaning 'idea'; the per-character split understates it
+- 西点: 西点 has two unrelated readings: 'Western pastry' (西 = Western) and the transliteration of West Point; no proper-noun label is offered
+- 长点心眼: 心眼 is a fixed word for shrewdness/wits; character-by-character it reads as 'heart-eye', which does not carry the meaning
+- 面点: 面 is 'flour' (the dough base), not 'noodles'; 点 comes from 点心 'snack', a sense the candidate list does not offer
+- 可人: 可: no candidate label covers 'pleasing to' — 'to suit' is the closest fit
+- 可儿: 可: same 'pleasing to' gap as 可人; 儿 here is a fond nominal suffix rather than true erhua
+- 点子: 点: the common 'idea' sense of 点子 is figurative; no candidate label covers it, so the literal 'dot' sense is used
+- 点心: 点心: the word means a snack/pastry; no candidate label covers 'snack', so the traditional reading 'to touch the heart lightly' is used
+- 点数: 点: the candidate set lacks 'to count off one by one', which is the sense in 点数
+- 点发: 点: 点发 is burst fire — 点 is the short tap on the trigger; no candidate label names this military use
+- 三重县: 重: in the place name 三重县 the character is phonetic/historical; the 'layers' reading is the literal source but carries no meaning here
+- 中国红: 中: 中国红 abbreviates 中国 'China'; no candidate label marks abbreviation of a country name
+- 人口红利: 口: here 人口 means 'population'; the label chosen is the closest, but the compound sense is not among the candidates
+- 人族: 族: in the taxonomic term 人族 (Hominini) 族 is the rank 'tribe'; no scientific-rank label exists among the candidates
+- 公主病: 公: 公主 'princess' is a fixed compound; neither character carries its listed sense on its own
+- 水族: 水: the aquatic-animal sense uses 水 'water' literally, but the ethnic-group sense 水族 is a name and 水 is not literal there
+- 语族: 族: here 族 is the taxonomic 'branch/family' of a language grouping, not an ethnic group; no such label exists
+- 门巴族: 门: 门巴 transliterates the Tibetan name Monpa; neither 门 nor 巴 carries its dictionary sense
+- 发病: 发: here means the illness breaking out / onsetting; the candidate 'to send out; to issue' is the nearest label but the sense is intransitive 'to occur'.
+- 发红: 发: here marks becoming/turning a colour, not showing a feeling; no 'to become' candidate exists.
+- 眼红: 红: the word is figurative (envy/fury); the literal 'red' of the eyes is the source image.
+- 红外: 外: 'beyond' the red end of the spectrum — an extension of 'outside'.
+- 红外线: 线: here a ray/wave of radiation, an extension of 'line'.
+- 红学: 红: abbreviates the novel title 红楼梦; no abbreviation candidate exists.
+- 红安县: The word is a place name; 安 is the historical county name element, not a live sense.
+- 红山区: Place name; 红山 is the proper name of the district.
+- 红机: 机 here is specifically a telephone set; 'machine; mechanism' is the nearest candidate.
+- 红海: Proper name of the sea, reused as a business metaphor; no proper-noun candidate exists.
+- 红线: Figurative in the modern 'red line / limit' sense; the literal thread is the source image.
+- 红通: 红通 abbreviates 红色通缉令 ('red notice'); 通 stands for 通缉 'to put out a wanted order'.
+- 自重: In the deadweight sense 重 is instead 'heavy'; the label chosen fits the primary 'self-respect' sense.
+- 花红: For the bonus sense the pair is idiomatic (red flowers as a token of reward), not compositional.
+- 通病: 通 here means 'running through all of them' — general/common; the candidate set has no 'general' label.
+- 通红: 通 means 'right through', i.e. thoroughly red.
+- 重利: 重 is 'heavy' in the sense of large/steep for the interest reading, and 'to value' in the verb reading.
+- 重子: 子 here is the physics particle suffix ('-on'), a specialised use of the noun suffix.
+- 重工: 重工 abbreviates 重工业 'heavy industry'.
+- 开门红: 红: here 红 means auspicious/lucky success, and no 'auspicious; lucky' candidate label exists
+- 体重: 重: functions nominally as 'weight' here; the candidate set has no 'weight' label
+- 体重器: 重: functions nominally as 'weight' here; the candidate set has no 'weight' label
+- 巴罗克: 巴/罗/克: all three are purely phonetic in this loanword for 'baroque'; no transliteration-syllable label exists among the candidates
+- 平罗: 平罗: a place name; 平 and 罗 are not semantically compositional here
+- 平罗: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 平罗县: 平罗县: a place name; 平 and 罗 are not semantically compositional here
+- 平罗县: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 新罗: 新罗: transliterated name of the Korean kingdom Silla; neither character is semantically compositional
+- 新罗: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 新罗区: 新罗区: 新罗 is a proper name, only 区 ('district') contributes meaning
+- 新罗区: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 特罗多斯: 特罗多斯: a four-syllable transliteration of Troodos; only 斯 has a phonetic candidate label
+- 特罗多斯: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 白罗斯: 白罗斯: transliteration of Belarus ('White Rus''); 白 does carry 'white', but 罗斯 is purely phonetic
+- 白罗斯: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗利: 罗利: transliteration of Raleigh; neither character is semantically compositional
+- 罗利: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗口: 罗口: 罗 refers to the gauze-like ribbed knit and 口 to the garment opening; both are extended, not literal, uses
+- 罗山县: 罗山县: a place name; only 山 ('mountain') is transparent
+- 罗山县: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗平: 罗平: a place name; not semantically compositional
+- 罗平: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗平县: 罗平县: a place name; not semantically compositional
+- 罗平县: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗拉: 罗拉: a loanword from English 'roller'; both characters are phonetic
+- 罗拉: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗文: 罗文: a personal name (Roman Tam); 罗 is the surname and 文 the given name, neither semantically compositional
+- 罗文: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗斯: 罗斯: a transliteration of Western surnames and of Rus'; purely phonetic
+- 罗斯: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗水: 罗水: 水 carries the 'River' sense; 罗 is the phonetic name element
+- 罗水: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗生门: 罗生门: a transliteration of Japanese Rashomon; only 门 ('gate') is transparent
+- 罗生门: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗语: 罗语: 罗 abbreviates 罗马尼亚 (Romania) and is phonetic; no abbreviation candidate label exists
+- 罗语: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗马: 罗马: transliteration of Rome; both characters are purely phonetic
+- 罗马: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 罗马化: 罗马化: 罗马 is the phonetic name Rome; only 化 ('-ization') is transparent
+- 罗马化: 罗: purely phonetic transliteration syllable here; no transliteration-syllable candidate label exists, so the base verb sense was selected
+- 三明市: 明: place-name syllable in Sanming, not a meaning-bearing use; no transliteration/place-name candidate label exists
+- 相山区: 相: proper-noun syllable in the hill name Xiangshan; no place-name candidate label exists
+- 相机行事: 相: here means to size up / observe the situation; the closest candidate is the face-reading label, which is narrower than the actual use
+- 平明: 平: in this word 平 is closer to 'even/level' in the sense of the sky evening out into light; 'flat, level' is the nearest candidate
+- 平明: 明: the daybreak sense is 'growing bright', best matched by 'bright; light'
+- 明光市: 明: this is a place-name syllable; no candidate label covers proper-noun use, so the literal 'bright' sense is used
+- 明山区: 明: place-name syllable in the district name; no proper-noun candidate label exists
+- 明德: 明: here 明 means 'to make bright / illustrious'; the closest candidate is 'bright; light'
+- 明斯克: 明: transliteration syllable in Minsk; no candidate label covers phonetic use
+- 明斯克: 克: transliteration syllable; 'gram' is the closest candidate but carries no meaning here
+- 明明: 明: the reduplicated adverb means 'plainly, obviously'; 'clear; to understand' is the closest candidate
+- 明水县: 明: place-name syllable in the county name; no proper-noun candidate label exists
+- 山阿: 阿 (the 'nook/bend' sense, read e1) has no candidate list here; only 山 was offered.
+- 巴阿: 巴 here abbreviates Pakistan specifically; the candidate label lumps three countries together.
+- 明眼人: 明: in 明眼人 the character is closer to 'sighted / able to see clearly'; 'bright; light' is the nearest candidate.
+- 明里: 里: here it is a bare locative suffix ('in the open'), not literally 'inside'; no suffix label exists.
+- 明体: 明: names the Ming dynasty in which this typeface was cut; flagged because the word today just means the printing face.
+- 发明: Literally 'to bring to light'; both characters are used figuratively here, no extended-sense label exists.
+- 发明人: 人 was not offered as a candidate; 发明 is the same figurative 'bring to light' compound.
+- 神明: 明: in this binome 明 also means 'divine/luminous being'; 'bright; light' is the closest candidate.
+- 高明区: 高 and 明 are place-name syllables in Gaoming; no proper-noun candidate label exists.
+- 中方: 中: here it abbreviates 中国 (China); no candidate label covers abbreviation of a country name
+- 中方县: 中方: a fixed place name; neither character contributes its ordinary meaning, and no proper-noun candidate exists
+- 海南大学: 海南: a province name here rather than a compositional 'south of the sea'; no place-name candidate exists
+- 石南花: 石南: a fixed plant name; the stone and south characters do not describe heather
+- 风流: 风流: an idiomatic compound; neither the wind nor the flowing sense predicts the modern 'gifted and unconventional' or 'amorous' meanings
+- 地方主义: 主义 is a fixed two-character suffix meaning '-ism'; neither character carries its own sense here
+- 大大方方: This is the reduplication of 大方; neither character predicts the 'poised, unfussy' meaning
+- 大方: No candidate sense explains the modern 'generous / in good taste' meaning; the compound is idiomatic
+- 大方县: 大方 here is a fixed place name; no candidate label covers proper-noun use
+- 天方: An old name for Arabia; the literal 'heaven's place' reading does not give the meaning
+- 平方公里: 公里 is a fixed compound for kilometer; 公 is not 'public' in that unit name
+- 方山: A fixed place name; the flat-topped-mountain reading is historical, not the county's meaning
+- 方山县: 方山 is a fixed place name here; no candidate label covers proper-noun use
+- 方文山: A personal name: 方 is a surname and 文山 a given name; no candidate label covers personal-name characters
+- 方方面面: A reduplication of 方面; the doubling itself carries the 'every single one' force
+- 三民主义: 主义 is a fixed suffix meaning '-ism'; neither character's candidate senses explain it
+- 三民区: Fixed place name (a district of Kaohsiung)
+- 日方: 日 here abbreviates 日本 (Japan); no candidate sense covers the country abbreviation
+- 长方体: 体 here means a geometric solid (a body of matter); no candidate label names that use
+- 开方: The mathematical sense (to extract a root) uses 方 as 'power (mathematics)'; the assignment reflects the medical sense only
+- 加之: 之 here is a fossilized literary object pronoun; 加之 works as a fixed connective, not as 'add it'
+- 加利利: Every character here is a transliteration syllable chosen for sound only; the candidate sets offer no 'transliteration syllable' label, so the picks are meaningless for this word
+- 加利西亚: Every character here is a transliteration syllable chosen for sound only; the candidate sets offer no 'transliteration syllable' label, so the picks are meaningless for this word
+- 加德西: Every character here is a transliteration syllable chosen for sound only; the candidate sets offer no 'transliteration syllable' label, so the picks are meaningless for this word
+- 加拉加斯: Every character here is a transliteration syllable chosen for sound only; the candidate sets offer no 'transliteration syllable' label, so the picks are meaningless for this word
+- 加尔文: Every character here is a transliteration syllable chosen for sound only; the candidate sets offer no 'transliteration syllable' label, so the picks are meaningless for this word
+- 加西亚: Every character here is a transliteration syllable chosen for sound only; the candidate sets offer no 'transliteration syllable' label, so the picks are meaningless for this word
+- 加里: Both senses of 加里 (the name Gary, and potassium) are sound loans; the characters carry no meaning here
+- 加重语气: 气 here is the 'air/manner' of speech (tone of voice), not literal air or gas; no candidate sense covers that.
+- 加点: 点 here counts working hours (adding hours to a shift); tagged with the 'o'clock / point in time' sense.
+- 可加: 可加 is a transliteration of 'coca'; both characters are sound loans and neither candidate sense really applies.
+- 国民中学: 学 here means 'school' (an institution), which is not among the candidate senses.
+- 国民小学: 学 here means 'school' (an institution), not a field of study; no candidate covers it.
+- 子民: 子 here marks people as subjects in the care of a ruler or a god, an extension of 'child' rather than the literal sense.
+- 小民: 小 here means lowly or of no standing, not physically small; no candidate covers the humble-status use.
+- 平民: 平 here means ordinary or common (level with everyone else); there is no 'ordinary' candidate sense.
+- 文不加点: 点 in this idiom is the correction blot a writer adds when revising; tagged with the 'dot' sense as the closest fit.
+- 新民市: 新民市 is a fixed place name; the characters carry their literal senses only historically.
+- 有加: 有加 is a fossilized literary intensifier placed after a verb; the characters no longer contribute their own senses.
+- 民主: 主 here is 'to rule / be sovereign' (the people are the masters); tagged with 'owner; master' as the nearest candidate.
+- 民主主义: 主: the first 主 of 民主 is the 'people are master' sense; the second is part of the suffix 主义 '-ism', which has no candidate label.
+- 民主主义: 义: here part of 主义 '-ism', meaning doctrine or principle; no candidate covers that, 'meaning / sense' is the closest.
+- 民族主义: 主: used here inside the fixed suffix 主义 '-ism'; no candidate covers that bound use, 'main; primary' is the closest.
+- 民族主义: 义: here part of 主义 '-ism', meaning doctrine or principle; no candidate covers that, 'meaning / sense' is the closest.
+- 民族大学: 学: in 大学 'university' 学 names a school as an institution; no candidate covers that, 'a field of study' is the closest.
+- 民生主义: 主: used here inside the fixed suffix 主义 '-ism'; no candidate covers that bound use, 'main; primary' is the closest.
+- 民生主义: 义: here part of 主义 '-ism', meaning doctrine or principle; no candidate covers that, 'meaning / sense' is the closest.
+- 安定区: This is a fixed place name; the characters are not read for their separate meanings, so the labels are the closest literal fit only.
+- 安定器: The device sense comes from the whole compound: it steadies the current, so 安定 is read as 'to steady' plus the -qi device suffix.
+- 安定门: This is a fixed place name; the characters are not read for their separate meanings, so the labels are the closest literal fit only.
+- 定分: Here 分 is one's allotted share of fortune, a sense close to but narrower than the listed 'part; share'.
+- 定力: 定 here is the Buddhist 'settled concentration' rather than the everyday 'to fix'; no candidate label covers that.
+- 定南县: This is a fixed place name; the characters are not read for their separate meanings, so the labels are the closest literal fit only.
+- 定子: 定子 contrasts with 转子 (rotor): the fixed part versus the turning part.
+- 定安: This is a fixed place name; the characters are not read for their separate meanings, so the labels are the closest literal fit only.
+- 定安县: This is a fixed place name; the characters are not read for their separate meanings, so the labels are the closest literal fit only.
+- 定性: In the adjective reading 'qualitative', 性 is really the -ness/quality suffix used attributively; no candidate label covers that adjectival use.
+- 定数: For the 'destiny' sense the pair is idiomatic (a number fixed by fate); the literal assignment still reads sensibly.
+- 定日: Fixed place name — the characters are not read literally here. 定日 transliterates Tibetan Ding-ri.
+- 定日县: Fixed place name — the characters are not read literally here. 定日 transliterates Tibetan Ding-ri.
+- 定时器: The device sense comes from the whole compound plus the -qi instrument suffix, which has no candidate entry here.
+- 定海: Place name; the literal 'calm the sea' reading is the historical etymology, not the current meaning.
+- 定海区: Place name plus the administrative-district suffix.
+- 定西市: Fixed place name — the characters are not read literally here. Only 市 is read literally.
+- 定语: Here 语 means a grammatical sentence element (as in 主语/宾语), a narrower technical use than 'language; speech'.
+- 定点: In the adjective 'designated' sense 点 means a designated site rather than a geometric point.
+- 平定: Here 平 is causative — to make calm — which none of the candidate labels expresses; the place name reuses the same pair non-literally.
+- 平定县: Fixed place name — the characters are not read literally here.
+- 成色: 色 here means the colour of a metal as a sign of its purity, an extended technical use not covered by a candidate label.
+- 有色: In the non-ferrous-metal and non-white-people senses the pair is a fixed technical term, not read literally.
+- 水天一色: 一 here means 'one and the same' rather than a count; no candidate label covers that use.
+- 老大: In the adverbial sense 'greatly; very' the 老 is really the 'always; very' sense and 大 is 'greatly'; the noun senses dominate so the age reading was chosen.
+- 老大不小: The idiom is literally 'old and big, not small'; 大/小 are the plain size adjectives used of age.
+- 老天: 老 here is the affectionate/familiar prefix used when addressing Heaven, not 'aged'; no candidate label covers that exact 'venerable address' use.
+- 老子: 子 in the philosopher's name is the honorific 'Master' suffix (as in 孔子, 孟子), which is not among the candidate senses; 'child / son' is its nearest literal ancestor.
+- 老家: 老 here means 'original, of long standing' rather than 'aged'.
+- 老小老小: The word reduplicates 老小; the reduplication itself carries the 'turns back into' meaning and has no character-level label.
+- 老成: 成 here is the 'fully formed, finished' sense; 'to accomplish / complete' is the nearest label, but a 'fully formed; ripe' label would fit better.
+- 老生: 生 in opera role names (老生, 小生, 武生) is the fixed male-role label, which descends from the 'scholar/student' sense; no candidate covers the theatrical use.
+- 老老: The word is a reduplication used as a kinship term; 老 is neither 'aged' nor a name prefix in the ordinary sense, and no label covers reduplicated kinship address.
+- 老者: 者 attaches to an adjective here ('the one who is old'), a slightly wider use than the agentive label suggests.
+- 老花: 花 here means 'blurred, dazzled' (as in 眼花), an extended sense of the patterned/dappled reading; no candidate label names the blurred-vision use.
+- 老花眼: Same blurred-vision use of 花 as in 老花; the candidate list offers no label for it.
+- 老头: 头 here is the empty noun suffix that turns the adjective into a person word; it carries no 'head' meaning.
+- 老头子: Two stacked empty suffixes; the 子 adds the familiar, slightly disrespectful colouring rather than any meaning.
+- 自定义: A modern computing coinage read as 'self-set meaning'; the parts are transparent but the whole is a fixed technical term.
+- 色子: 色 is read shai3 in this word; the 'dice reading' label exists only to record that, not to give a meaning.
+- 色拉: Both characters are used purely for sound in this loanword from English salad; neither meaning applies.
+- 色相: In the 'physical allure' sense 色 shifts to the sensuality reading; the color reading was chosen because the hue sense is the primary one.
+- 色长: 色 here is an old administrative word meaning 'category, division of duty', not color; no candidate label covers that use.
+- 一路: For the 'of the same kind' sense 路 is really 'sort; kind'; the journey reading was chosen because it drives the main sense.
+- 花色: The card-suit sense of the word is idiomatic; neither character carries 'suit' on its own.
+- 长生不老: 长 here is the adjective 'long' modifying 'life' (chang2), not the 'chief' reading zhang3.
+- 长老: Read zhang3 lao3: both characters carry a seniority sense and the word doubles them for emphasis.
+- 长老会: The word is a calque: 'elder' plus the church-body suffix; 会 here names a denomination rather than a meeting.
+- 面无人色: Literally 'the face lacks a human color'; 人 is missing from the candidate list for this word.
+- 面色: 色 here is closer to 'color of the face' than to the 'look/expression' label, but the expression sense is the nearer of the two offered.
+- 上路: 'to get onto the road' — 上 is the verb 'to get on', a use the candidate label 'to go up / to board' covers only loosely.
+- 中路: For the 'mediocre' sense the pair means 'middle grade'; 路 there is closer to 'sort; kind' than to 'road'.
+- 公路车: The word is 'highway' plus 'vehicle'; the first two characters work as one unit rather than separately.
+- 分流电路: The word parses as 分流 (to divide the flow) plus 电路 (electric circuit); 路 here means 'circuit', a technical sense not in the candidate list.
+- 分头路: Literally 'the dividing line of the hair'; 路 is a 'line' here rather than a road.
+- 子路: A personal name: neither character carries its ordinary meaning, and no candidate label marks name characters.
+- 心路: Both characters are figurative here: the 'road' is a path of thought, and no candidate label covers that extended use.
+- 理路: '路' is again a figurative line of reasoning rather than a physical road.
+- 线路: For the electrical sense '路' means 'circuit', a technical sense absent from the candidate list.
+- 老路: In the figurative sense '老' is closer to 'same as before' than to 'aged'; no candidate label covers that.
+- 路人: The candidate list omits 人 entirely, so the 'person' half of this word is left unlabelled.
+- 路加: Both characters are used only for their sound in this transliteration; no candidate label marks a phonetic-loan use.
+- 路南区: '路' here is part of a fixed place name (the district south of the railway), not a road in its own right.
+- 路口: '口' is the extended 'opening' sense — the mouth of a road — which the candidate list does not offer.
+- 路德: Both characters are used only for their sound in this transliteration; no candidate label marks a phonetic-loan use.
+- 路德会: '路德' is a transliteration of Luther; only '会' carries real meaning here.
+- 路数: Neither character is literal: the word means a way of proceeding, and no candidate covers that figurative reading.
+- 路西法: Both characters are used only for their sound in this transliteration; no candidate label marks a phonetic-loan use.
+- 路面电车: The word divides as 路面 + 电车; character-by-character labels hide that two-part structure.
+- 通路: The figurative 'channel for goods or information' sense is not represented in the candidate labels for 路; 'road; route' is the closest.
+- 门路: For the 'social connections' sense neither character carries the meaning literally; 门 as 'the knack' plus 路 'route' is the nearest reading.
+- 开路: The electrical 'open circuit' sense uses 路 in a technical 'circuit' meaning that the candidate list does not offer.
+- 电路: 路 here means an electrical circuit or line, a technical sense absent from the candidate list.
+- 头路: The 'clue' and dialectal 'spouse' senses are idiomatic; the labels chosen fit the 'first class' sense best.
+- 马路口: 马路 is a fixed word for a paved street; 马 is not read as 'horse' in it.
+- 马路口: 口 here means the opening or mouth of a road, a sense the candidate list does not offer separately.
+- 作人: No candidate sense was offered for 人 in this word.
+- 作马: 马 here is the extended sense of a four-legged stand or trestle, not a literal horse; no candidate label covers that.
+- 出名: 出名 is literally 'to put out a name'; no candidate label covers 出 in the sense of one's name becoming public.
+- 化作: 作 here is a resultative complement meaning 'into'; no candidate label covers that grammatical use.
+- 合作市: 合作市 is a place name written with the ordinary word 合作 'cooperation'; the character senses are literal only in the source word, not in the city name.
+- 名下: 下 here is the locative 'under (a heading)' rather than physically lower; no candidate sense covers that use.
+- 名人: No candidate sense was offered for 人 in this word, so it is left unassigned.
+- 名分: 分 here is the allotted share or lot that goes with a title; the 'part; share' candidate is the closest fit but not exact.
+- 名学: 名 here means 'names/terms' as the object of the discipline, close to but not the same as the everyday 'name' sense.
+- 名家: For the philosophical-school sense of 名家 the characters read differently (名 'names' + 家 'philosophical school'); the assignment shown fits only the 'renowned expert' sense.
+- 名气: 名: here it is the noun 'fame/reputation'; the closest candidate is the adjective label
+- 名气: 气: used in the abstract 'aura, air about someone' sense rather than literal qi
+- 名头: 名: the word means reputation, so 名 is closer to the noun 'fame' than to a bare 'name'
+- 国名: No candidate list was offered for 国 in this word
+- 大作: Both labels fit the honorific noun sense; the verb sense 'to break out suddenly' instead reads 大 'greatly / to a large extent' + 作 'to do'
+- 大名县: This is a place name written with the ordinary word 大名; the characters are not chosen for their meanings
+- 大名县: No candidate list was offered for 县 in this word
+- 天作之合: 合: here it is the noun 'a union / a match', which the candidate list only covers as the verb 'to close / to join'
+- 学名: 学: for the school-name sense it is instead 'to learn / study' (the name taken on entering school)
+- 定作: 作: here it means 'to make / produce', closest to the general 'to do' label
+- 小动作: 动作 is itself the fixed word 'movement'; the two characters are not really separable here
+- 小名: 小: could equally be read as 'small' (a lesser, informal name) rather than 'young'
+- 工作日: 工作 is itself the fixed word 'work'; the split into 工 + 作 is only historical
+- 工作流: 工作 is a fixed modern word; the 工+作 split is only historical.
+- 工作流: 流 here is a calque of English
+- 工作者: 工作 is a fixed modern word; the 工+作 split is only historical.
+- 工作面: 工作 is a fixed modern word; the 工+作 split is only historical.
+- 性工作: 工作 is a fixed modern word; the 工+作 split is only historical.
+- 性工作者: 工作 is a fixed modern word; the 工+作 split is only historical.
+- 成名: 名 here is closer to fame or reputation than to a literal name; no candidate label covers that reading.
+- 成名作: 名 here is closer to fame than to a literal name.
+- 成名作: 成名 is itself a fixed word inside 成名作, so the three-way character split is a little artificial.
+- 有名: 名 here is really fame or reputation (to have a name); the plain name label is the closest candidate.
+- 法名: The word also covers Daoist monastic names, where the dharma label is a Buddhist-specific fit.
+- 发作: 发 is used here in the sense of something breaking out or being set off; the show a feeling label is the nearest candidate but is narrower than the usage.
+- 发作: 作 works as a resultative second element rather than a full verb to do.
+- 神作: 神 in this slang word is closer to god-tier, sitting between the god deity and the awesome amazing labels.
+- 空名: 空 could equally take the empty unoccupied label here; the sense is a name that is empty of substance.
+- 通名: 通: in the noun sense 通名 'generic term' 通 means 'general; common', and in the verb sense 'to give one's name' it means 'to communicate' - one label cannot cover both
+- 重名: 重: this fits the chong2 ming2 'same name' reading only; for the zhong4 ming2 'great renown' cluster 重 would be 'serious; important' and 名 'famous; renowned'
+- 高名: 名: 名 here is the noun 'fame; reputation'; the candidate list has only the adjective 'famous; renowned'
+- 之后: 之: 之 here is a bound literary linker with no meaning of its own; the possessive label is the nearest fit but overstates it
+- 大后天: 大: in 大后天 大 is an intensifier meaning one step further out in time, not literally greatly
+- 点名: 点: for the roll-call sense to check off fits; for the single-out-by-name sense to mention; to hint at is closer
+- 后天性: 性: 后天性 is used adjectivally ('acquired'), so the -ness/-ity noun-suffix label is only a partial fit.
+- 后学: 学: here it denotes the person who studies (a scholar), a sense the candidate list lacks.
+- 后手: 手: in 后手 the character means a move/turn in a board game (and by extension a fallback move); no such label is offered.
+- 后海: Place name: 海 here names a lake in the old Beijing usage, not a sea; no such label is offered.
+- 后生: 生 here means one born later, i.e. a younger person; the candidate list has no 'a person born (at some time)' label.
+- 后生动物: 动物 is a fixed compound meaning animal; the per-character labels 'to move' + 'thing' only hint at it.
+- 后面: 面 here is the bare locative suffix that turns a direction word into a place word; the 'side; aspect' label is the closest fit.
+- 无后: 后 here means offspring, those who come after; the candidate list has no 'descendant' label.
+- 尔后: 尔 in this literary compound points back to the moment just mentioned ('that'), which the 'thus; so' label only partly covers.
+- 上火: 上: the word pictures heat rising in the body, so the plain 'go up' sense is the closest fit, but no candidate covers this figurative 'rise up in one' use.
+- 上火: 火: covers both the TCM condition and the anger sense; the anger reading has no candidate of its own.
+- 打火机: 打: here it is closer to 'to strike (a light)' than to the empty light verb, but the strike sense is only offered as 'to hit; to strike; to fight'.
+- 文火: 文: in this word 文 means gentle or mild (the opposite of 武火, a fierce flame). No candidate names that 'gentle / mild' sense; 'refined / literary in manner' is only the nearest neighbour.
+- 火儿: 火: in the commoner 'anger' reading of this word the fire sense is figurative; the candidate list has no label for that extension.
+- 火力: 火: here it means gunfire rather than a blaze; no candidate names that military sense except 'ammunition', which is a different thing.
+- 火力发电: The word divides as 火力 + 发电 rather than character by character, so the per-character labels read oddly on their own.
+- 火大: 火: here it is the figurative anger/heat sense; the candidate list has no plain 'anger' label so the TCM 'internal heat' label is the nearest.
+- 火山口: 口: means opening/vent here, not a mouth; no 'opening' candidate is offered.
+- 火山学: The word divides as 火山 + 学, not character by character.
+- 火成: 成: 'formed by' (rock formed from fire); 'to become / turn into' is the nearest candidate.
+- 火气: Both characters are used in the TCM/temper sense here; the everyday reading of 火气 is plain anger.
+- 火眼: 火: the traditional account is that the eye is inflamed by internal heat; 'fire' would read too literally.
+- 火红: 火 works as an intensifier here (red as fire), not as a separate thing named.
+- 火线: 火: in the live-wire sense this is electricity rather than fire; no 'electric current' candidate is offered.
+- 火色: 色: means the visible look of the fire, i.e. how strongly it burns; the candidate labels only cover a person's expression.
+- 火花: 花: the spark is pictured as a flower of fire, an extended use rather than a literal flower.
+- 火车头: The word divides as 火车 + 头; 头 marks the leading unit of the train.
+- 火电: Abbreviation of 火力发电; 火 stands for the whole burning-fuel method.
+- 生火: 生: here it means to bring a fire into being; 'to grow' is the nearest candidate to that causative use.
+- 发火: In the combustion sense 发 is closer to 'to send out' and 火 to plain fire; the labels chosen fit the commoner temper sense.
+- 红火: Both characters carry the 'doing well, drawing a crowd' idea rather than colour or flame.
+- 花火: 花: the colour and pattern the fire makes in the sky.
+- 不可多得: The idiom reads 'cannot be obtained in quantity'; 多 is adverbial here rather than a plain quantity word.
+- 不得不: The double negative 不得不 works as a whole; the two 不 characters share one candidate set.
+- 不得人心: 人心 means popular feeling / public support; 心 carries that collective-sentiment sense, which has no candidate label.
+- 开火: 火: in the shooting sense this is gunfire rather than ammunition; 'ammunition' is the nearest candidate.
+- 电火花: 花: the spark is called a 'flower of fire'; the figurative flower-shaped-burst sense has no candidate label.
+- 风风火火: Both characters are reduplicated and used as images of speed and heat, not literally.
+- 三得利: The three characters were chosen for their sound to write a Japanese brand name; none of them carries its own meaning here.
+- 安得: 安: in this literary phrase it is the interrogative 'how / where', a classical use with no candidate label offered.
+- 巴不得: The three characters literally say 'long for but cannot get', which is how the eager sense arises.
+- 得中: 中: here it is the verb 'to hit the mark' (zhong4), a reading with no candidate label offered.
+- 得主: 主 here means 'the person who holds/receives something' (agentive suffix); 'owner; master; host' is the nearest candidate but not exact
+- 得手: 得手 is idiomatic: literally 'get (it) to hand'; 手 as the literal 'hand' is only a loose fit
+- 得文: 得文 is a pure transliteration of 'Devon'; neither character carries its own meaning here, so no candidate sense really fits.
+- 得无: 得无 is a fixed classical construction; 得 here is not really 'to get' but part of the rhetorical frame, and no candidate covers that.
+- 心得安: The word is a phonetic brand transliteration of propranolol; the characters were chosen for sound and for the drug's calming effect on the heart, so none of them contributes its literal meaning compositionally.
+- 数得上: The 得 here is the potential-complement marker (V-de-C, 'can be counted up among'); no candidate sense covers that use, so the closest one ('to allow') was chosen.
+- 行得通: The 得 is again the potential-complement marker ('can go through'); mapped to 'to allow' for lack of a matching candidate.
+- 路得: A pure phonetic transliteration of the Biblical name Ruth; neither character carries its literal sense here.
+- 一字: The sense is 'like the character yi', i.e. a straight horizontal line; the meaning comes from the shape of the character, not from 'one' plus 'word'.
+- 一字儿: Same shape-based origin as 一字, with the r-suffix added.
+- 一字马: 马 here names a stance (as in 马步, horse stance), not an animal; no candidate sense covers that use.
+- 主音: For the 'vowel' sense 音 is closer to 'sound', but the music sense leads, so the note reading was chosen.
+- 之字路: The road is named for the zigzag shape of the character 之; the particle sense of 之 is not what is meant here, but no shape-of-the-character candidate exists.
+- 阿得拉: A phonetic transliteration of Adderall; 得 and 拉 are sound-only here and carry none of their listed meanings.
+- 阿得拉尔: Longer transliteration of the same brand name; all four characters are phonetic only.
+- 合成语音: 合成 is a set compound meaning 'to synthesize'; the two characters were labelled separately, which slightly overstates their independence.
+- 合音: Chose the syllable reading for the phonetics sense; for the 'backing vocals' sense 音 is closer to 'sound'.
+- 名字: Historically 名 and 字 were two separate kinds of personal name; in the modern word they simply fuse into 'name'.

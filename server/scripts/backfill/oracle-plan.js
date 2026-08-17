@@ -70,6 +70,8 @@ const LANG = val('lang') || 'zh';
 const ONLY_DISCOVERABLE = has('--discoverable');
 const ONLY_NEW = has('--new');
 const AS_JSON = has('--json');
+// Print untruncated --words= lists (the default preview caps at 8 words).
+const FULL_LISTS = has('--full');
 // Opt-in for the manifest's `optional` steps (today: backfill-icons). Off by default.
 const WITH_ICONS = has('--with-icons');
 const LIMIT = Number(val('limit') || 50);
@@ -237,7 +239,11 @@ async function main() {
       const words = byScript.get(step.id);
       if (!words.length) continue;
       total += words.length;
-      const preview = words.slice(0, 8).join(',') + (words.length > 8 ? ` …+${words.length - 8}` : '');
+      // `--full` prints untruncated --words= lists so they can be copy-pasted
+      // straight into each script; the default 8-word preview stays readable.
+      const preview = FULL_LISTS
+        ? words.join(',')
+        : words.slice(0, 8).join(',') + (words.length > 8 ? ` …+${words.length - 8}` : '');
       console.log(`  ${String(words.length).padStart(4)}  ${step.id.replace(/^(chinese|spanish)\//, '')}  (v${step.version}, ${step.when})`);
       console.log(`        --words=${preview}`);
     }

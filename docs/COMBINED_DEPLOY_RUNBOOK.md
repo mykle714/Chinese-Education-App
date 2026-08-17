@@ -1,216 +1,261 @@
-# ⚠️ TEMPORARY — Combined deploy runbook (the 2026-08-16 backlog drop)
+# ⚠️ TEMPORARY — Combined deploy runbook (the 2026-08-16 Arena drop)
 
 **Delete this file once verified on prod.**
-**Deployed to prod yet? NO.**
+**Deployed to prod yet? YES — 2026-08-16, migrations 145 + 146 applied and verified.**
+All § Verification queries passed; both timers armed. This file is now retained only as
+the record of *why* the previous version's two hazards were retracted — it is safe to
+delete along with the four runbooks listed under § Runbook cleanup.
 
-Four runbooks' worth of work has accumulated unshipped and now goes out together. Deployed
-individually each was fine; deployed **together** they interact in two ways that neither
-file mentions, and both will stop the deploy dead if discovered live. Read this file first;
-the four per-feature runbooks remain the authority on *verification*, this one on *order*.
+> **Rewritten 2026-08-16 against prod's real state.** The previous version of this file
+> was authored on the assumption that a five-migration backlog (130, 132, 133, 134, 140)
+> was still unshipped. **It is not** — it went out in the 2026-08-08 and 2026-08-11
+> deploys. Both hazards that version was built around are therefore **void**, and acting
+> on them would have been actively harmful (see § Retracted). What remains is a two-file
+> migration and one new systemd timer.
 
-| Runbook | Ships | Migrations |
-|---|---|---|
-| [PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md](./PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md) | per-language minute points + night markets | 130, 134, **145** |
-| [PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md](./PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md) | provisional cards | 140 |
-| [UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md](./UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md) | unit-slot unlocks + generated unlock schedule | none (cron SQL only) |
-| [ARENA_DEPLOY_RUNBOOK.md](./ARENA_DEPLOY_RUNBOOK.md) | Arena weekly leaderboard | 146 |
+| Ships | Migrations |
+|---|---|
+| `user_language_points` → `user_languages` rename | **145** |
+| [ARENA_DEPLOY_RUNBOOK.md](./ARENA_DEPLOY_RUNBOOK.md) — Arena weekly leaderboard | **146** |
 
-Plus unrelated additive migrations swept along: 132, 133.
-
-**Arena joined this batch on 2026-08-16.** It was originally sequenced *after* the batch,
-because 146 adds columns to `user_languages` — a table 145 creates by rename, so prod does
-not have it yet. Folding it in is safe **only because `migrate.sh` applies in `sort -V`
-order within a single run**: 145 lands before 146 in the same pass. It also brings one new
-step that none of the other three have — a **second systemd timer** (§ step 7a).
-
----
-
-## ⚠️ Problem 1 — `migrate.sh` will HALT before applying anything
-
-**This is not a warning you can skip past. The script exits 1 and applies nothing.**
-
-`migrate.sh` no longer selects work with a high-water mark; it uses a **set difference**,
-and it **stops** when a pending migration's version is *below* the highest recorded
-version. Prod's highest recorded version is **144** (the mastery-bars drop, verified
-2026-08-11). Every migration in this batch except 145 is below it:
-
-```
-pending on prod:  130  132  133  134  140      ← all < 144, triggers the guard
-                  145  146                     ← above, fine
-```
-
-So the per-language runbook's instruction — *"Run the normal `/deploy` skill, unmodified.
-`migrate.sh` applies 130, 132, 133, 134, 145 in order"* — **is wrong as written.** It was
-authored before the runner was rewritten. The run will stop with
-`STOPPING: 5 pending migration(s) are BELOW the highest recorded version`.
-
-### The fix, and why it is the *correct* one and not just the one that proceeds
-
-The script stops because it cannot distinguish two cases. **Decide deliberately:**
-
-| Case | Meaning | Flag |
-|---|---|---|
-| **(a)** They genuinely never ran — the old high-water-mark runner skipped them | ✅ **This is us.** 130/132/133/134/140 landed on `main` *after* 141–144 were cut, so prod's runner never saw them | `--allow-out-of-order` |
-| (b) They *did* run but were never recorded — DB bootstrapped from `database/init/01-init-schema.sql` | ❌ Not us. Prod has a real replayed migration history | `--baseline 144` |
-
-**Confirm case (a) before running it** — this is a thirty-second check and choosing wrong
-is unrecoverable:
-
-```sql
--- If these return rows/columns, the migration ALREADY ran and this is case (b) — STOP.
--- Expected on prod TODAY (case a): all three come back empty/false.
-SELECT to_regclass('user_languages')       AS ul_should_be_null,
-       to_regclass('user_language_points') AS ulp_should_be_null;
-
-SELECT EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_name='users' AND column_name='totalMinutePoints')
-       AS users_still_has_global_columns_should_be_TRUE;
-
-SELECT pg_get_constraintdef(oid) AS bucket_check_should_lack_provisional
-FROM pg_constraint WHERE conname='chk_zh_starter_pack_bucket';
-```
-
-If `user_languages` is null, `users."totalMinutePoints"` still exists, and the CHECK still
-reads `('library','skip')` — it is case (a), the migrations truly never ran, and
-`--allow-out-of-order` is right.
-
-> ⚠️ **Never run `--baseline` here.** It records migrations as applied *without running
-> them*. Baselining past 130 would mean `user_languages` is never created, and the app
-> would come up pointing at a table that does not exist. 145 would then also fail (it
-> self-verifies the old table's presence) — so it fails loudly rather than silently, but
-> only after you have already burned the version numbers.
-
-### Version numbers 135 and 136 are burned
-
-Dev records 135/136 with no matching files (superseded during the reconciliation described
-in the per-language runbook's History note). **Do not author a new migration as 135 or
-136** — `is_applied` would report it as already applied and silently skip it. `migrate.sh`
-prints these as `recorded but no longer present as files`. Harmless here; prod never
-recorded them, so it will not print the note.
+Everything else previously listed here (per-language minutes, provisional cards,
+unit-slot unlocks) is **already on prod**. Their runbooks are stale in the same way; see
+§ Runbook cleanup.
 
 ---
 
-## ⚠️ Problem 2 — the two runbooks disagree on step order
+## Prod's actual state (measured 2026-08-16, keep this evidence)
 
-They were written independently and give **opposite** instructions:
+```
+==> 137 migration(s) already recorded (highest: 144)
+    PENDING: 145-rename-user-language-points-to-user-languages.sql
+    PENDING: 146-create-arenas.sql
+==> 2 migration(s) pending.
+```
 
-| Runbook | Says | Because |
+`schema_migrations` contains 130, 132, 133, 134, 140 — applied 2026-07-30 and 2026-08-08.
+Confirmed independently against the schema:
+
+| Check | Result | Means |
 |---|---|---|
-| Provisional cards (140) | **DB first**, explicitly: *"do this before starting the new code"* | New code writes `starterPackBucket = 'provisional'`, which the current prod CHECK **rejects**. Code-first ⇒ every game/flp top-up throws a constraint violation |
-| Per-language minutes (130) | **Code first** — the standard `/deploy` order | Migration 130 drops the `users` columns the old code reads, so DB-first opens a 5xx window on minute-points/night-market endpoints |
+| `to_regclass('user_language_points')` | **not null** | 130 ran; the table 145 renames exists |
+| `to_regclass('user_languages')` | null | 145 has not run |
+| `users."totalMinutePoints"` exists | **false** | 130 ran; global columns already dropped |
+| `chk_zh_starter_pack_bucket` | **includes `'provisional'`** | 140 ran |
+| `nightmarket_unlocks_for_minutes(int)` | **exists** | unit-slot cron SQL already deployed |
 
-Only one order can be used. **Resolution: DB FIRST.** The two constraints are not
-symmetrical:
+Both pending versions are **above** prod's highest recorded version (144), so the
+out-of-order guard does not fire and `migrate.sh` needs **no flags at all**.
 
-* 140's is a **correctness** constraint — wrong order produces constraint violations on
-  real writes.
-* 130's is an **availability** constraint — wrong order produces a few seconds of 5xx on
-  two endpoint families.
+## Retracted: the two "problems" the previous version warned about
 
-Availability yields to correctness, and the availability cost is **zero here**: prod has no
-real customers yet. The per-language runbook's "keep the standard order" recommendation was
-written for a solo deploy where 140 did not exist; it is **superseded by this file.**
+**Do not reintroduce either.** Both were real for the state the file assumed and are
+wrong for the state prod is in.
+
+* **~~Problem 1 — `migrate.sh` halts, pass `--allow-out-of-order`~~.** Void. Nothing is
+  pending below 144. The dry-run above completes cleanly. Passing
+  `--allow-out-of-order` here would be a no-op, but it is still wrong to paste blindly:
+  it exists to suppress a safety guard, and the guard is what would tell you prod is not
+  where you think it is. **Never `--baseline`** — it records migrations as applied
+  *without running them*.
+* **~~Problem 2 — the runbooks give opposite step orders~~.** Void as argued. Both
+  drivers (140's CHECK, 130's column drop) are already on prod.
+
+**DB-first is still the order used below**, for a different and simpler reason stated in
+its own right: **145 is a rename**, so it breaks old code (reads `user_language_points`)
+and new code (reads `user_languages`) in *opposite* directions. There is no ordering that
+avoids a window; stopping the app containers across the migration makes that window
+deliberate and short rather than served as errors.
+
+---
+
+## ⚠️ Live hazard: pulling breaks the hourly cron until 145 lands
+
+`cow-maintenance.service` runs `database/cron/expire-stale-streaks.sql` **straight from
+the working tree**:
+
+```
+ExecStart=... psql -U cow_user -d cow_db < /home/michael/vocabulary-app/database/cron/expire-stale-streaks.sql
+```
+
+That file was updated to say `user_languages` in the same commit as migration 145. So the
+moment you `git pull`, **every hourly tick fails** with `relation "user_languages" does
+not exist` until the migration runs. This is already observable in
+`logs/streak-expire.log`.
+
+**Severity: low, but do not leave it sitting.** The penalty logic keys off each balance's
+`lastStreakDate` versus the local day, not off "did the previous hour run", so a skipped
+tick is caught up by the next successful one — no penalty is permanently lost. It does
+mean inactivity penalties and night-market occupant decay are **paused** between the pull
+and step 4.
+
+Consequence for sequencing: **pull and migrate in the same session.** Do not pull, walk
+away, and migrate tomorrow.
 
 ---
 
 ## Step order (authoritative)
 
-1. **Pre-deploy dump.** Standard `/deploy` step, and non-negotiable in this batch — 130
-   drops four `users` columns and its rollback path is manual (per-language runbook
-   § Rollback).
-
-2. **Stop the app containers** (not the DB). This makes the DB-first window explicit and
-   short instead of leaving old code live against a half-migrated schema.
-
-3. **Dry-run the migrations** and read the list before applying:
+1. **Pre-deploy dump.**
    ```bash
-   ./database/deploy/migrate.sh --dry-run --allow-out-of-order <host> <port> cow_db cow_user
+   docker exec cow-postgres-prod pg_dump -U cow_user -d cow_db --format=custom \
+     > ~/db-backups/prod-predeploy-$(date +%Y%m%d)-arena.dump
    ```
-   **Expect exactly:** 130, 132, 133, 134, 140, 145, **146** — seven files, in that order.
-   More or fewer than seven means prod's state is not what this runbook assumes: **stop and
-   re-derive**, do not proceed.
+   145 is a rename and 146 is additive, so both are cleanly reversible — but 145's
+   rollback also has to undo the index/constraint renames, so take the dump.
 
-   ⚠️ 146 must appear **after** 145 in the printed list. 146 adds columns to
-   `user_languages`, which does not exist until 145 renames `user_language_points` into it.
-   `sort -V` guarantees this, but read the list rather than assuming it.
+2. **Verify the build before stopping anything.** `npm run build`. A failure discovered
+   after the containers are down turns a 2-minute window into however long the fix takes.
 
-4. **Apply:**
+3. **Stop the app containers, leaving the DB up.**
    ```bash
-   ./database/deploy/migrate.sh --allow-out-of-order <host> <port> cow_db cow_user
+   docker stop cow-frontend-prod cow-backend-prod
+   ```
+
+4. **Dry-run, read the list, then apply.** Expect **exactly two** files, 145 then 146 —
+   146 adds columns to `user_languages`, which does not exist until 145 renames it.
+   `sort -V` guarantees the order; read it rather than assuming. Anything other than
+   these two means prod is not where this runbook says: **stop and re-derive.**
+   ```bash
+   export PGPASSWORD=$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)
+   ./database/deploy/migrate.sh --dry-run 127.0.0.1 5432 cow_db cow_user
+   ./database/deploy/migrate.sh           127.0.0.1 5432 cow_db cow_user
    ```
    Each file runs in its own transaction with its `schema_migrations` row, so a failure
-   leaves that migration neither applied nor recorded. Migration 130 additionally
-   self-verifies (wallet conservation + every ledger language has a progress row) and
-   `RAISE EXCEPTION`s on bad data, aborting cleanly.
+   leaves that migration neither applied nor recorded.
 
-5. **Verify the DB before starting any code** — run § Verification below. Specifically
-   confirm 140's CHECK widened and 145's rename landed. Starting the backend against a
-   half-migrated schema is the one thing this order exists to prevent.
+5. **Verify the schema before any code starts** — § Verification, queries 1–2.
 
-6. **Rebuild and start the containers** (`docker-compose -f docker-compose.prod.yml up
-   --build -d`). ⚠️ Never with `-v`.
-
-7. **Redeploy the cron SQL** — `database/cron/expire-stale-streaks.sql`. **MANDATORY, not
-   cleanup.** The prod copy reads the four `users` columns migration 130 just dropped, so
-   from step 4 onward *every tick aborts* — no inactivity penalty, no occupant decay,
-   silent apart from the cron log. This file is also the entire install of
-   `nightmarket_unlocks_for_minutes(int)`. Order is free relative to steps 5–6 (the app
-   never calls the function; the cron never calls the app), but do not end the session
-   without it.
-
-7a. **Install the systemd timers** — `bash database/cron/install-timers.sh`. **New in this
-   batch**, and easy to skip because the old deploy block named a different file:
-
-   - The script was **renamed** from `install-maintenance-timer.sh`. A pasted old block
-     fails with "No such file" — loud, not silent, but only if you read the output.
-   - It now installs **two** timers: the existing `cow-maintenance` (HH:01) and the new
-     `cow-arena` (HH:06). Idempotent; safe to re-run.
-   - It must run **after** step 6, because `cow-arena` executes
-     `dist/scripts/arena-cron.js` inside the rebuilt backend container, and **after**
-     step 4, or the first pass fails on missing tables. (That failure is harmless — it
-     logs, exits 1, and retries the next hour — but it is noise you do not want.)
-   - Without this, Arena ships **inert**: every user sees a Join button that silently
-     never produces a board.
-
-   Confirm both timers are armed before moving on:
+6. **Rebuild and start.** ⚠️ Never with `-v`.
    ```bash
-   systemctl --user list-timers cow-maintenance.timer cow-arena.timer --no-pager
+   docker-compose -f docker-compose.prod.yml up --build -d
    ```
 
-8. **Post-deploy verification** — the four per-feature runbooks' own sections.
+7. **Install the systemd timers.**
+   ```bash
+   bash database/cron/install-timers.sh
+   ```
+   **No sudo** — these are systemd *user* units. Two things make this the step most
+   likely to be skipped:
+   - The script was **renamed** from `install-maintenance-timer.sh`. Any older pasted
+     deploy block fails with "No such file" — loud, but only if you read the output.
+   - It now installs **two** timers: the existing `cow-maintenance` (HH:01) and the new
+     `cow-arena` (HH:06). Idempotent; safe to re-run.
+
+   It must run **after** step 4 (or the first arena pass fails on missing tables —
+   harmless, it logs and retries) and **after** step 6 (`cow-arena` executes
+   `dist/scripts/arena-cron.js` inside the rebuilt backend image). Without it **Arena
+   ships inert**: every user sees a Join button that never produces a board.
+
+   The cron SQL itself needs no separate redeploy step — the unit reads it from the
+   working tree, so the `git pull` already updated it. Step 4 is what makes it run again.
+
+8. **Post-deploy verification** — § Verification, and [ARENA_DEPLOY_RUNBOOK.md](./ARENA_DEPLOY_RUNBOOK.md).
 
 ---
 
 ## Verification
 
-Run each runbook's SQL; they do not overlap. In dependency order:
+```sql
+-- 1. The rename landed, in both directions. Expect: <not null> | <null>
+SELECT to_regclass('user_languages')       AS should_exist,
+       to_regclass('user_language_points') AS should_be_null;
 
-| After step | Check | File |
-|---|---|---|
-| 4 | rename landed, no stale index names, wallet conserved, global columns gone, night-market `language` NOT NULL | per-language § Verification SQL (queries 0–5, **all of 1–4 must return 0**) |
-| 4 | `chk_zh/es_starter_pack_bucket` includes `'provisional'`; two partial indexes exist | provisional § After step 2 |
-| 4 | `arenas` + `arena_members` exist, `uq_arena_member_live` present, everyone in division 1 | arena § Verification SQL |
-| 7 | `nightmarket_unlocks_for_minutes` exists; one clean `inactivity-cron` NOTICE on the next tick | unit-slot § Verification SQL |
-| 7a | both timers armed; a forced `cow-arena` run logs `resolved N, formed M` | arena § Verifying the timer after deploy |
-| 8 | per-language summary returns **different** values for `zh` vs `es`; night market differs per language | per-language § smoke test |
+-- 2. No stale index/constraint names survived the rename. Expect 0 rows.
+SELECT indexname FROM pg_indexes WHERE indexname LIKE '%language_points%';
+
+-- 3. Arena tables + the constraint that matters most. Expect: t | t | t
+SELECT to_regclass('arenas')        IS NOT NULL AS arenas,
+       to_regclass('arena_members') IS NOT NULL AS members,
+       EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'uq_arena_member_live') AS live_uq;
+
+-- 4. Arena columns landed. Expect 3 rows.
+SELECT table_name, column_name FROM information_schema.columns
+WHERE (table_name = 'user_languages' AND column_name IN ('division','arenaOptInWeek'))
+   OR (table_name = 'users' AND column_name = 'geoCell');
+
+-- 5. Everyone starts at the bottom rung. Expect one row: 1 | <all rows>
+SELECT division, count(*) FROM user_languages GROUP BY division ORDER BY division;
+
+-- 6. Nothing backfills location; it is opt-in. Expect 0.
+SELECT count(*) AS with_location FROM users WHERE "geoCell" IS NOT NULL;
+```
+
+```bash
+# 7. Both timers armed.
+systemctl --user list-timers cow-maintenance.timer cow-arena.timer --no-pager
+
+# 8. The cron is healthy again — no more "relation ... does not exist".
+tail -n 20 logs/streak-expire.log
+
+# 9. A forced arena pass wires end to end.
+systemctl --user start cow-arena.service
+tail -n 20 logs/arena-cron.log      # expect "arena-cron: done — resolved N, formed M"
+```
+
+### The one invariant to re-check after every arena resolves
+
+```sql
+-- A resolved arena must have NO live members. Expect 0 rows, forever.
+-- Rows here mean the isLive flip was missed and those users are LOCKED OUT of every
+-- future arena (docs/ARENA_FEATURE.md § 9, Q21).
+SELECT a.id, count(*) AS stuck_live
+FROM arenas a JOIN arena_members m ON m."arenaId" = a.id
+WHERE a."resolvedAt" IS NOT NULL AND m."isLive"
+GROUP BY a.id;
+```
+
+The fix is idempotent and safe to run at any time:
+
+```sql
+UPDATE arena_members m SET "isLive" = false
+FROM arenas a WHERE a.id = m."arenaId" AND a."resolvedAt" IS NOT NULL AND m."isLive";
+```
 
 ## Rollback
 
-Per-runbook, and **fix forward wherever possible** — 130's rollback is a manual column
-restore (per-language § Rollback) and collapses two streaks into their max, losing the
-split. The reason a clean-aborting migration matters more than a rehearsed rollback here is
-that 130 either fully applies or leaves the DB untouched.
+Both migrations are cleanly reversible and no data is transformed. Prefer fixing forward.
+
+```sql
+-- 146
+DROP TABLE IF EXISTS arena_members;
+DROP TABLE IF EXISTS arenas;
+ALTER TABLE user_languages DROP COLUMN IF EXISTS division,
+                           DROP COLUMN IF EXISTS "arenaOptInWeek";
+ALTER TABLE users DROP COLUMN IF EXISTS "geoCell";
+DELETE FROM schema_migrations WHERE version = 146;
+
+-- 145 — see the migration file for the index/constraint names to rename back.
+DELETE FROM schema_migrations WHERE version = 145;
+```
+
+⚠️ Rolling back 145 without also reverting the checkout re-breaks the cron, which reads
+`user_languages` from the working tree.
 
 ## Expected user-visible changes
 
-Each feature runbook lists its own. The headline: **wallets and streaks become
-per-language**, so a user who studied both languages sees their whole balance on their
-primary language and 0 on the other. That is the intended backfill, not data loss — the
-`userminutepoints` ledger is untouched and remains the source of truth.
+- A new **Arena** row on the Home hub, leading to `/arena`.
+- On first Join, a **browser location permission prompt**, preceded by our own
+  explanatory line. Declining is fully supported — the user joins the location-less pool.
+  This is the app's first use of the Geolocation API; expect questions about it.
+- Everyone starts in **division 1**, one arena per language at a time.
+- The rename is invisible to users.
 
 ---
 
-## After prod is verified
+## Runbook cleanup
 
-Delete **all four** files — this one and the three it references — and drop the
-"Current open runbooks" entries from [CLAUDE.md](../CLAUDE.md).
+Once prod is verified, delete this file **and** the three now-shipped runbooks, and drop
+their "Current open runbooks" entries from [CLAUDE.md](../CLAUDE.md):
+
+| File | Status |
+|---|---|
+| `COMBINED_DEPLOY_RUNBOOK.md` (this file) | delete after verification |
+| `ARENA_DEPLOY_RUNBOOK.md` | delete after verification |
+| `PROVISIONAL_CARDS_DEPLOY_RUNBOOK.md` | **already shipped** (140, 2026-08-08) — safe to delete now |
+| `UNIT_SLOT_UNLOCKS_DEPLOY_RUNBOOK.md` | **already shipped** (function present on prod) — safe to delete now |
+| `PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md` | 130/134 shipped; **145 is in this deploy** — delete with this file |
+
+**Also outstanding, unrelated to this deploy:** `compute_utcm_category(jsonb, boolean,
+boolean)` is dead but deliberately not dropped (143 retained it for its deploy window).
+It still needs a contract migration.

@@ -471,7 +471,15 @@ async function run() {
             try {
               const s = await scoreFrequency(row.word1, cluster.reading, glosses);
               frequencyScore = s.score;
-            } catch {
+            } catch (e) {
+              // An oracle export capture is a control-flow signal, not a scoring
+              // failure — it must propagate so the round can author the frequency
+              // prompt. Swallowing it (the old bare `catch`) stamped the row as
+              // clustered with frequencyScore NULL on EVERY cluster, and the
+              // not-yet-clustered doneGate then skipped the row forever. Same bug
+              // (and same fix) as backfill-breakdown-senses.js:165 and
+              // backfill-example-sentences.js:785. See run-log.js § ORACLE MODE.
+              if (e?.oracleExport) throw e;
               reviewNotes.push(`frequency score failed for "${cluster.sense}" cluster (left null)`);
             }
 

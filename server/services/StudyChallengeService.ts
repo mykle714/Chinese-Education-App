@@ -4,6 +4,7 @@ import type { IDeckDAL } from '../dal/interfaces/IDeckDAL.js';
 import type { StarterPacksService } from './StarterPacksService.js';
 import type { DeckService } from './DeckService.js';
 import { dbManager } from '../dal/base/DatabaseManager.js';
+import type { TransactionRunner } from '../types/dal.js';
 import { ValidationError, NotFoundError, DuplicateError } from '../types/dal.js';
 import {
   CHALLENGE_WORD_COUNT,
@@ -118,7 +119,12 @@ export class StudyChallengeService {
     private userDAL: ChallengeUserLookup,
     private deckDAL: IDeckDAL,
     private deckService: DeckService,
-    private starterPacksService: StarterPacksService
+    private starterPacksService: StarterPacksService,
+    /**
+     * Injected, not the imported singleton — docs/BACKEND_LAYERING.md § 3. Defaulted
+     * to `dbManager` so the composition root and every existing caller are unchanged.
+     */
+    private txRunner: TransactionRunner = dbManager
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -456,7 +462,7 @@ export class StudyChallengeService {
       words[opponentId] = myWords.map((w) => ({ ...w }));
     }
 
-    const summary = await dbManager.executeInTransaction(async (tx) => {
+    const summary = await this.txRunner.executeInTransaction(async (tx) => {
       const client = tx.getClient();
 
       // Materialise both players' sets and create both decks inside the same

@@ -89,9 +89,7 @@ the one method, defaulted to `dbManager` so the composition root and existing ca
 are unchanged:
 
 ```ts
-export interface TransactionRunner {
-  executeInTransaction<T>(operation: (transaction: ITransaction) => Promise<T>): Promise<T>;
-}
+import type { TransactionRunner } from '../types/dal.js';   // beside ITransaction
 // …
 constructor(/* …DALs… */, private txRunner: TransactionRunner = dbManager) {}
 ```
@@ -103,9 +101,15 @@ stubbed — the test dies on database credentials. That is exactly what happened
 unfriend hook: a fully-stubbed suite started requiring a live database, and the
 transactional path itself stayed untested because there was no seam to assert on.
 
-**Conforming:** `services/FriendsService.ts` → `removeFriend` (see `TransactionRunner`
-in that file). **Still importing the singleton:** `services/StudyChallengeService.ts`
-— same conversion applies whenever it next needs tests.
+`TransactionRunner` is declared in `server/types/dal.ts` beside `ITransaction`, not in
+any one service, so the second and third adopters do not import a type from a sibling.
+
+**Both transaction sites in the codebase conform** (2026-08-17):
+`services/FriendsService.ts` → `removeFriend`, and `services/StudyChallengeService.ts`
+→ `acceptChallenge`. Note this rule is about the *transaction runner* specifically;
+the `dbManager.executeQuery` calls in `TextService`, `ValidationService`,
+`NightMarketTemplateService` and `LazyEnrichmentService` are the separate
+service-writes-SQL problem tracked in § 4 below.
 
 ---
 

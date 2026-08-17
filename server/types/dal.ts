@@ -126,6 +126,24 @@ export interface ITransaction {
   isActive: boolean;
 }
 
+/**
+ * The slice of DatabaseManager a service needs to run a unit of work in one
+ * transaction (docs/BACKEND_LAYERING.md § 3).
+ *
+ * Services take this as a CONSTRUCTOR DEPENDENCY defaulted to `dbManager`, rather
+ * than importing the singleton — § 1 ("nothing imports a singleton instance from
+ * another module"). The practical reason is testability: `dbManager` opens a real
+ * connection the moment it is touched, so a service that reaches for it cannot be
+ * unit-tested even with every DAL stubbed. Narrowed to the one method so a test fake
+ * is a one-liner.
+ *
+ * Lives here beside ITransaction rather than in any one service, so the second and
+ * third adopters do not import a type from a sibling service.
+ */
+export interface TransactionRunner {
+  executeInTransaction<T>(operation: (transaction: ITransaction) => Promise<T>): Promise<T>;
+}
+
 // Generic pagination interface
 export interface PaginationOptions {
   limit?: number;

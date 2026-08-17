@@ -1,8 +1,8 @@
-import { IProvisionalCardDAL, ProvisionalCandidate } from '../interfaces/IProvisionalCardDAL.js';
+import { IProvisionalCardDAL, ProvisionalCandidate, OwnCardCandidate } from '../interfaces/IProvisionalCardDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { ValidationError } from '../../types/dal.js';
 import { dictTableForLanguage } from '../shared/dictTable.js';
-import { vetTableForLanguage, vetPlayableClause, vetProvisionalClause } from '../shared/vetTable.js';
+import { vetTableForLanguage, vetPlayableClause, vetProvisionalClause, vetSortedClause, CORE_CATEGORY_EXPR } from '../shared/vetTable.js';
 
 /**
  * Data access for provisional cards — see IProvisionalCardDAL and
@@ -130,6 +130,64 @@ export class ProvisionalCardDAL implements IProvisionalCardDAL {
     });
 
     return result.recordset.map((row) => row.id);
+  }
+
+  async findOwnCardsByBand(
+    userId: string,
+    language: string,
+    limit: number,
+    opts: { excludeWords?: string[] } = {}
+  ): Promise<OwnCardCandidate[]> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (!language) throw new ValidationError('language is required');
+    if (limit <= 0) return [];
+
+    const det = dictTableForLanguage(language);
+    const vet = vetTableForLanguage(language);
+    const excludeWords = opts.excludeWords ?? [];
+
+    const result = await this.dbManager.executeQuery<OwnCardCandidate>(async (client) => {
+      return await client.query(
+        `
+        SELECT ve.id,
+               ve."entryKey",
+               ${CORE_CATEGORY_EXPR} AS category
+        FROM ${vet} ve
+        -- LEFT JOIN, not JOIN: a card whose det row vanished in a data re-import is
+        -- still the user's card and still legitimate filler. Inner-joining would
+        -- silently shrink the ladder for exactly the learners with the oldest cards.
+        LEFT JOIN ${det} de
+          ON de.word1 = ve."entryKey" AND de.language = ve.language
+        WHERE ve."userId" = $1
+          AND ve.language = $2
+          -- The player's OWN cards only. A provisional (lent) row is not theirs yet,
+          -- and including it here would make the last rung of the ladder overlap the
+          -- one before it.
+          AND ${vetSortedClause()}
+          AND ve."entryKey" <> ALL($3::text[])
+        ORDER BY
+          -- HARDEST-KNOWN FIRST: descend the core bands. The CASE is what makes this
+          -- the "mastered-first" ladder rather than a flat commonality sort.
+          CASE ${CORE_CATEGORY_EXPR}
+            WHEN 'Mastered'    THEN 0
+            WHEN 'Comfortable' THEN 1
+            WHEN 'Target'      THEN 2
+            ELSE 3                        -- Unfamiliar, and any unexpected value
+          END ASC,
+          -- Within Mastered, most recently mastered first (migration 142). masteredAt
+          -- is a PER-BAR jsonb object since 143, so the core bar's value is read out of
+          -- it by key; NULLS LAST keeps a card mastered before the column existed from
+          -- jumping the queue.
+          (ve."masteredAt" ->> 'core') DESC NULLS LAST,
+          de."frequencyScore" DESC NULLS LAST,
+          ve.id ASC
+        LIMIT $4
+        `,
+        [userId, language, excludeWords, Math.floor(limit)]
+      );
+    });
+
+    return result.recordset;
   }
 
   async listProvisionalKeys(userId: string, language: string): Promise<string[]> {

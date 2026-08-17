@@ -19,6 +19,7 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 import {
     divisionColor,
     divisionName,
+    divisionTextColor,
     errorTextSx,
     formatRemaining,
     joinButtonSx,
@@ -205,13 +206,20 @@ function DivisionHeader({ division }: { division: number }) {
                     fontFamily: FONTS.sans,
                     fontSize: SIZE.subtitle,
                     fontWeight: WEIGHT.bold,
-                    color: COLORS.onSurface,
+                    color: divisionTextColor(division),
                 }}
             >
                 {divisionName(division)}
             </Typography>
             <Typography
-                sx={{ fontFamily: FONTS.sans, fontSize: SIZE.micro, color: COLORS.textSecondary }}
+                sx={{
+                    fontFamily: FONTS.sans,
+                    fontSize: SIZE.micro,
+                    // On a dark rung the muted grey disappears, so the secondary line
+                    // takes the same inverted colour and leans on opacity instead.
+                    color: divisionTextColor(division),
+                    opacity: 0.7,
+                }}
             >
                 Division {division} of 12
             </Typography>

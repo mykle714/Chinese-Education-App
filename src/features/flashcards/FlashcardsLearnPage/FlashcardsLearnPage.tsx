@@ -26,7 +26,7 @@ import CardIconCanvas from "../../../cardIcons/editor/CardIconCanvas";
 import { measureDefaultEnglishCenterY } from "../../../cardIcons/cardTextLayout";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../../cardIcons/editor/CardEditToolbar";
 import IconPickerDialog from "../../../components/IconPickerDialog";
-import { iconSearchTerm, resolveSelectedSenseIndex, resolveDisplayDefinition } from "../../../utils/definitionUtils";
+import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveDisplayDefinition } from "../../../utils/definitionUtils";
 import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
 import SettingsPanelBody from "./SettingsPanelBody";
 import {
@@ -727,6 +727,9 @@ const FlashcardsLearnPage: React.FC = () => {
                     const panelEntry = (active?.kind === "entry" ? active.entry : null) ?? displayCurrentEntry;
                     const panelBreakdown = (active?.kind === "entry" ? active.breakdownItems : null) ?? breakdownItems;
                     const panelSubTab = active?.kind === "entry" ? active.selectedSubTab : 0;
+                    // The panel's live sense pick. Seeded per entry tab from the entry's
+                    // persisted `selectedSense`, so it agrees with the flashcard face on open.
+                    const panelSenseIndex = active?.kind === "entry" ? active.selectedSenseIndex : 0;
                     // Hide the Add button once this entry is known to be in the library:
                     // drop the handler so InfoCardPanelBody's `onAddToLibrary` gate fails.
                     const panelAlreadyInLibrary = panelEntry ? addedLibraryKeys.has(libraryKeyOf(panelEntry)) : false;
@@ -749,6 +752,17 @@ const FlashcardsLearnPage: React.FC = () => {
                             speakingKey={tts.speakingKey}
                             onAddToLibrary={panelAlreadyInLibrary ? undefined : handleAddToLibrary}
                             onOpenCompare={eip.openCompareTab}
+                            selectedSenseIndex={panelSenseIndex}
+                            // A pick in the eip header mirrors the flashcard's own picker:
+                            // record it on the tab (so the panel re-renders immediately) and
+                            // persist the chosen cluster's LABEL for saved cards. A drilled-in
+                            // dictionary word has no vet row (id 0), so its pick stays local to
+                            // the tab. Persisting the ROOT card's pick also feeds back through
+                            // the syncEntry effect above, keeping the card face in step.
+                            onSelectSense={(index) => {
+                                eip.setActiveSenseIndex(index);
+                                if (panelEntry?.id) persistSelectedSense(panelEntry, senseLabelForIndex(panelEntry, index));
+                            }}
                             compareTab={compareTab}
                             onSetCompareSlot={eip.setCompareSlot}
                             onCompareResult={eip.setCompareResult}

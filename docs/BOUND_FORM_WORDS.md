@@ -2,7 +2,7 @@
 
 **Status:** the data cleanup is **DONE on prod (2026-08-17)**. The learner-facing
 teaching work is **NOT BUILT** — it is tracked as an open item in
-[DEFERRED_WORK.md](./DEFERRED_WORK.md) § 6 and specified in § 4 below.
+[DEFERRED_WORK.md](./DEFERRED_WORK.md) § 2 and specified in § 4 below.
 
 This doc owns one narrow linguistic class and everything the app does about it.
 
@@ -158,7 +158,7 @@ The hosted forms are unaffected and still import and promote normally: `一会�
 
 ## 6. Open work — teach the learner about bound forms
 
-**Not built.** Tracked as [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 6.
+**Not built.** Tracked as [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 2.
 
 ### The problem the removal does not solve
 
@@ -249,7 +249,7 @@ ways that likely affect other entries. Not investigated further:
 `server/scripts/import-cedict-pg.ts` → `parseCEDICTLine`,
 `server/scripts/backfill/promote-discoverable.js` → `main`.
 
-**Docs:** [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 6 (the work item),
+**Docs:** [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 2 (the work item),
 [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) (definition forms),
 [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) (`frequencyScore` rubric and the
 Commonality chip), [CONSTRUCTS.md](./CONSTRUCTS.md) (`difficulty` = HSK 1..6),

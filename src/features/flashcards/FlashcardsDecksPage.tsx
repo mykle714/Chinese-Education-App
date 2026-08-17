@@ -217,6 +217,12 @@ const FlashcardsDecksPage: React.FC = () => {
 
     // The user's decks in their current language.
     const [decks, setDecks] = useState<DeckSummary[]>([]);
+    // `/api/decks` returns BOTH kinds since migration 148, so the page splits them:
+    // generated ("preset") decks get their own captioned section ABOVE the user's own,
+    // which is what keeps a new challenge from shuffling the authored decks the user
+    // knows the position of. See docs/STUDY_CHALLENGE.md § 4.
+    const challengeDecks = decks.filter((deck) => deck.editMode === "preset");
+    const authoredDecks = decks.filter((deck) => deck.editMode !== "preset");
     const [decksLoading, setDecksLoading] = useState(true);
     const [decksError, setDecksError] = useState<string | null>(null);
     const [newDeckOpen, setNewDeckOpen] = useState(false);
@@ -397,6 +403,56 @@ const FlashcardsDecksPage: React.FC = () => {
                         </>
                     )}
 
+                    {/* ── Challenges ── the FIFTH section (docs/STUDY_CHALLENGE.md § 4).
+                        Placed immediately BEFORE the user's own Decks so generated sets sit
+                        above authored ones and the user's decks keep a stable position at the
+                        bottom of the page.
+
+                        OMITTED ENTIRELY when there is no active challenge deck, exactly as
+                        Mastered is when no reading/writing goal is set — an empty captioned
+                        section is noise on a page whose job is to be scannable.
+
+                        The tile is the same `DeckTile` as every other set here: the page's
+                        governing idea is that a built-in collection, a mastery bar and a deck
+                        are all just "a set of your cards". There is NO lock badge; the deck's
+                        immutability shows up as the absence of controls on its own page. */}
+                    {challengeDecks.length > 0 && (
+                        <>
+                            <Box
+                                className="flashcards-decks__challenges-header"
+                                sx={{ width: "100%", px: 3.5, pt: 2, pb: 1 }}
+                            >
+                                <Typography
+                                    className="flashcards-decks__challenges-label"
+                                    sx={{
+                                        fontSize: SIZE.body,
+                                        fontWeight: WEIGHT.medium,
+                                        color: COLORS.onSurface,
+                                        fontFamily: FONTS.sans,
+                                    }}
+                                >
+                                    Challenges
+                                </Typography>
+                            </Box>
+                            <TileGrid className="flashcards-decks__challenges-list" alignLeft>
+                                {challengeDecks.map((deck, index) => (
+                                    <DeckTile
+                                        key={deck.id}
+                                        className="flashcards-decks__challenge-tile"
+                                        label={deck.name}
+                                        count={deck.cardCount}
+                                        icon={collectionIcon({ kind: "deck", deckId: deck.id })}
+                                        mainColor={deckTileColors(deck.id).main}
+                                        accentColor={deckTileColors(deck.id).accent}
+                                        animationDelay={Math.min(index, 5) * 70}
+                                        onClick={() => slideNavigate(`/flashcards/deck/${deck.id}`)}
+                                    />
+                                ))}
+                            </TileGrid>
+                            <LineSeparator className="challenges-line-separator" />
+                        </>
+                    )}
+
                     {/* ── Decks ── the space the Learn Now grid used to occupy. */}
                     <Box
                         className="flashcards-decks__decks-header"
@@ -424,7 +480,7 @@ const FlashcardsDecksPage: React.FC = () => {
                         </IconButton>
                     </Box>
 
-                    {(decksError || (!decksLoading && decks.length === 0)) && (
+                    {(decksError || (!decksLoading && authoredDecks.length === 0)) && (
                         <Box className="flashcards-decks__decks-message" sx={{ width: "100%", px: 3.5, pb: 1 }}>
                             <Typography
                                 className={decksError ? "flashcards-decks__decks-error" : "flashcards-decks__decks-empty"}
@@ -440,7 +496,7 @@ const FlashcardsDecksPage: React.FC = () => {
                         every built-in set above, carrying the deck's derived pastel
                         (deckAccentColor: computed from the id, never stored). */}
                     <TileGrid className="flashcards-decks__decks-list" alignLeft>
-                        {decks.map((deck, index) => (
+                        {authoredDecks.map((deck, index) => (
                             <DeckTile
                                 key={deck.id}
                                 className="flashcards-decks__deck-tile"

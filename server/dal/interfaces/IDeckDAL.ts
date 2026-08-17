@@ -43,6 +43,43 @@ export interface IDeckDAL {
   createDeck(userId: string, language: string, name: string, client?: PoolClient): Promise<DeckSummary>;
 
   /**
+   * Insert a GENERATED deck (`editMode = 'preset'`) with its cards, in one
+   * transaction (migration 148, docs/STUDY_CHALLENGE.md § 4).
+   *
+   * Row and membership together, because a preset deck with no cards is one the
+   * learner can neither study from NOR delete — the user-facing delete control does
+   * not exist for preset decks.
+   *
+   * Duplicate names are ALLOWED here and this never throws DuplicateError: the name
+   * uniqueness index is partial on `editMode = 'custom'`, so two live challenges
+   * against the same friend may both yield `vs Bob` (Q30). Safe because a preset
+   * deck never appears in the add-to-deck checkbox menu, which is the only place two
+   * same-named decks were ever confusable.
+   */
+  createPresetDeck(
+    userId: string,
+    language: string,
+    name: string,
+    vocabEntryIds: number[],
+    client?: PoolClient
+  ): Promise<DeckSummary>;
+
+  /**
+   * How many AUTHORED decks the user holds in one language — the number the
+   * 100-deck cap is checked against.
+   *
+   * Separate from `listDecks().length` because that list now includes generated
+   * decks, and generated decks deliberately do not count (Q11).
+   */
+  countCustomDecks(userId: string, language: string, client?: PoolClient): Promise<number>;
+
+  /**
+   * A deck's `editMode`, or null when the deck is gone or not the caller's — the
+   * single read behind DeckService's preset mutation guard.
+   */
+  findDeckEditMode(userId: string, deckId: number, client?: PoolClient): Promise<string | null>;
+
+  /**
    * Rename a deck and bump `updatedAt`. Returns null if the deck is gone or not
    * the caller's. Throws DuplicateError on a name collision.
    */

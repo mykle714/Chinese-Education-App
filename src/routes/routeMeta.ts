@@ -126,6 +126,13 @@ const PAGE_ROUTES: RouteMeta[] = [
   { path: "/friends/requests", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/friends/sent", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/friends/remove", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  // Study Challenge — four more Node drill-ins under /friends, all with back arrows
+  // that return to /friends/challenges rather than to Home (docs/STUDY_CHALLENGE.md § 1).
+  { path: "/friends/challenges", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/friends/challenges/history", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/friends/challenges/new/:friendUserId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/friends/challenges/review/:challengeId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/friends/challenges/:challengeId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/dictionary", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/compare", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/reader", access: "any", shell: "frame", chrome: "node", footerTab: "home" },

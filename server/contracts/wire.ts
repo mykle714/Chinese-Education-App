@@ -959,10 +959,6 @@ export interface VocabEntryBase {
 
   /** Per-type mark streams (migration 101); see docs/MASTERY_REWORK.md. */
   typedMarkHistory?: TypedMarkHistory;
-  /** Total cumulative count of all marks. */
-  totalMarkCount?: number;
-  /** Lifetime count of correct marks. */
-  totalCorrectCount?: number;
   /**
    * The CORE bar's utcm level (recognition + production), computed from
    * typedMarkHistory. Goal-independent since migration 143 — the reading/writing
@@ -1278,3 +1274,390 @@ export const ARENA_RELEGATE_COUNT = 5;
  * before transmitting, and the DB CHECK refuses anything else.
  */
 export const ARENA_GEOCELL_LENGTH = 5;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Study Challenge (docs/STUDY_CHALLENGE.md) — migration 148
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Words in a challenge set — fixed at 10, deliberately not a choice (Q27, § 8.4).
+ *
+ * Set size decides how many points are available, so both players must use the
+ * same number anyway; making it selectable would add a negotiation round trip to
+ * buy nothing. Being a constant, it can be changed globally later without a
+ * schema or protocol change.
+ */
+export const CHALLENGE_WORD_COUNT = 10;
+
+/**
+ * Rounds (games) in a test — 3, drawn without repetition from the eligible pool.
+ *
+ * A CEILING, not a guarantee. When fewer games qualify the test is simply that
+ * many rounds: an es-vs-es challenge has two eligible games today because Word
+ * Search is zh-only, and a cross-language pair likewise (§ 5.1, § 8.3). The
+ * format bends; it never blocks.
+ */
+export const CHALLENGE_ROUND_COUNT = 3;
+
+/**
+ * How many challenges one learner may be committed to at once, PER (user,
+ * language) — six decks and up to eighteen rounds in a weekend, which is already
+ * past the point where any of them gets real preparation (Q65, § 1).
+ *
+ * Two properties that are easy to lose in an implementation:
+ *
+ * 1. It counts challenges you are COMMITTED to — issued-and-still-pending, plus
+ *    accepted — in either role. **Incoming invitations do not count until you
+ *    accept.** If they did, one friend could fill your quota with invitations you
+ *    never asked for and lock you out of challenging anyone. So the cap is checked
+ *    TWICE, on issue and again on accept, and is only ever spent by your own
+ *    decisions.
+ * 2. It is per (user, language), like decks, minute points (migration 130) and the
+ *    vet layer. A single account-wide budget was rejected because it would be the
+ *    only place in the app where two languages compete for a resource.
+ */
+export const MAX_ACTIVE_CHALLENGES = 6;
+
+/**
+ * How a surface wants its short card pool topped up
+ * (docs/PROVISIONAL_CARDS.md, § 5.2).
+ *
+ * 'default'        — nearest level → commonality → id. Everything today.
+ * 'mastered-first' — exhaust the player's OWN cards, hardest-known first, before
+ *                    borrowing: Mastered (most recently mastered first, via
+ *                    `masteredAt`, migration 142) → Comfortable → Target →
+ *                    Unfamiliar → and only then 'default' lending.
+ *
+ * Study Challenge needs the second mode because a round plays against a 10-card
+ * deck, so every game will be short and will lend heavily — and filler must not
+ * be a source of difficulty. A challenge measures the ten contested words;
+ * padding the board with words the player has never seen would add noise and,
+ * worse, reward whoever got luckier filler. Filler the player already owns is
+ * near-free points for both sides, which is why it scores 20 rather than 100.
+ *
+ * Every step degrades silently to the next, so no caller ever has to check
+ * whether a player has mastered cards.
+ */
+export type ProvisionMode = 'default' | 'mastered-first';
+
+/** `'same_word'`: one negotiated set used by both. `'different_word'`: one set each (§ 8). */
+export type ChallengeVariant = 'same_word' | 'different_word';
+
+/**
+ * Lifecycle of a challenge (§ 6, § 8.2).
+ *
+ * `expired` and `no_contest` are deliberately DISTINCT (Q17): an expired
+ * challenge never had a word set both players agreed to and never created a deck,
+ * whereas a no_contest was fully agreed and simply ran out of window (or was
+ * ended by an unfriend, Q41).
+ *
+ * There is no "accepted but unpicked" state — the challengee picks their words
+ * before the challenge is accepted, so the backend never holds a set-less
+ * accepted challenge.
+ */
+export type ChallengeStatus =
+  | 'pending'
+  | 'accepted'
+  | 'declined'
+  | 'expired'
+  | 'complete'
+  | 'no_contest';
+
+/**
+ * One entry in a challenge's game sequence.
+ *
+ * A `(gameId, mode)` PAIR, never a bare id: eligibility is per MODE, so Word
+ * Search qualifies as *Pinyin* (production) and not as *No Pinyin* (reading). A
+ * bare id would let a challenge draw the ineligible mode
+ * (docs/GAMES_FEATURE.md § Challenge-eligible games).
+ *
+ * `mode` is null for a game that has only one.
+ */
+export interface ChallengeGameRef {
+  gameId: string;
+  mode: string | null;
+}
+
+/**
+ * One of the ten contested words, as stored on the challenge.
+ *
+ * `word1` + `language` is the identity, denormalised, so history survives a det
+ * data deploy — det ids are not stable across re-imports (Q49).
+ *
+ * `vocabEntryId` is filled in when the set is materialised on accept (§ 3.3) and
+ * is null before then. It is a CONVENIENCE POINTER, never an identity and never a
+ * claim of library membership, and it may dangle: the challenge owns "which ten
+ * words", the vet row owns "is this word in the user's library" (Q54). A player
+ * who deletes a contested card mid-challenge still plays it — they just lose the
+ * ability to study it.
+ */
+export interface ChallengeWord {
+  position: number;
+  word1: string;
+  language: Language;
+  vocabEntryId: number | null;
+}
+
+/**
+ * A submitted round. Insert-only: a submitted round is final, there is no replay,
+ * and the server refuses round n+1 until n is present (Q40, § 5.1a).
+ *
+ * `gameId`/`mode` are stored per round even though they are derivable from the
+ * challenge's `gameSequence`, so the history page's game filter does not have to
+ * correlate two arrays (§ 1).
+ *
+ * `breakdown` must be derived from the SAME accumulator as `score`, never
+ * recomputed for display, or the two can disagree on screen with nothing to
+ * arbitrate (§ 5.6). It is an open shape on purpose — the results page renders
+ * whatever lines the game's spec produced, and a game may enrich it later without
+ * a migration.
+ */
+export interface ChallengeRound {
+  gameId: string;
+  mode: string | null;
+  score: number;
+  breakdown: ChallengeScoreBreakdown;
+  completedAt: string;
+}
+
+/**
+ * The itemised lines the between-games scoreboard (§ 5.5) and the results page
+ * render, plus the total they must sum to.
+ *
+ * `lines` is ordered for display and each entry is already resolved to points, so
+ * the card can never disagree with the number it is showing.
+ */
+export interface ChallengeScoreBreakdown {
+  lines: ChallengeScoreLine[];
+  total: number;
+}
+
+/** One row of a score breakdown, e.g. `contested matches  7 × 100  +700`. */
+export interface ChallengeScoreLine {
+  /** Stable key of the rule that produced this line, e.g. `contestedHit`. */
+  ruleId: string;
+  /** Display label, e.g. "contested matches". */
+  label: string;
+  /** How many times it fired. Null for a one-off line such as a survival bonus. */
+  count: number | null;
+  /** Points per occurrence. Null when the line is not a simple multiple. */
+  unitPoints: number | null;
+  /** The line's contribution to the total. May be negative. */
+  points: number;
+}
+
+/**
+ * How one challenge-eligible game turns events into points (§ 5.4, Q76).
+ *
+ * ⚠️ DECLARATIVE DATA, NOT A CALLBACK — this is the single constraint that decides
+ * the shape, and it is easy to violate accidentally by "just" exporting a scoring
+ * function. Live mode (phase 2) must be able to score the same events SERVER-SIDE
+ * with no game page mounted: a callback is code the server cannot reuse, a spec is
+ * a table of numbers it can.
+ *
+ * Three rules a spec must respect:
+ *  * **Nothing may depend on mastery.** Contested/filler is fixed when the board
+ *    is generated and never re-read. A challenge round writes real marks, so bands
+ *    move DURING a round and band-dependent scoring would be non-deterministic.
+ *  * **The board must not reveal which words are contested** (Q74) — the split is
+ *    invisible until the results screen.
+ *  * **A run can end without completing** (live forfeit), so the score must be
+ *    running, never computed only in an end-of-run branch.
+ */
+export interface ChallengeScoringSpec {
+  /** Points for matching / mistaking one of the challenge's ten words. */
+  contestedHit: number;
+  contestedMiss: number;
+  /** Points for matching / mistaking any other card on the board. */
+  fillerHit: number;
+  fillerMiss: number;
+  /**
+   * When true, a miss is charged AT MOST ONCE per foreign word per run — the
+   * per-run set is keyed by the foreign word, not the card id, so es and zh
+   * behave identically (§ 5.4).
+   */
+  missChargedOncePerWord: boolean;
+  /** Per-game extras: Bubble Match's survival bonus, Word Search's time penalty. */
+  bonuses?: ChallengeScoringBonus[];
+}
+
+/**
+ * A per-game scoring extra, expressed as data so the server can evaluate it too.
+ *
+ * `survival` — awarded `points` at `trigger`, decaying `decayPoints` every
+ *   `decayIntervalMs` down to `floor`, and forfeited entirely if the run is LOST.
+ *   Bubble Match's +500 is deliberately large and all-or-nothing (Q68): Bubble
+ *   Match *is* a survival game, so a challenge score that ignored survival would
+ *   be scoring a different game than the one played.
+ * `elapsedPenalty` — `points` (negative) per `decayIntervalMs` after
+ *   `graceMs` of ACCUMULATED ACTIVE time. Word Search's −10/s after 1:00.
+ * `perUse` — `points` each time the player uses something. Word Search's −20 hint.
+ *
+ * ⚠️ Every time-based bonus rides ACCUMULATED ACTIVE TIME, never
+ * `now − startedAt`, so it honours both pause sources — input-blocking popups and
+ * backgrounding (docs/GAMES_FEATURE.md). Otherwise reading a pre-round
+ * provisional notice costs the player points.
+ */
+export interface ChallengeScoringBonus {
+  ruleId: string;
+  label: string;
+  kind: 'survival' | 'elapsedPenalty' | 'perUse';
+  points: number;
+  /** `survival` only: what starts the decay, e.g. Bubble Match's dropping ceiling. */
+  trigger?: 'ceilingDrop';
+  decayPoints?: number;
+  decayIntervalMs?: number;
+  floor?: number;
+  /** `elapsedPenalty` only: free time before the penalty starts accruing. */
+  graceMs?: number;
+  /** `survival` only: forfeit the whole bonus when the run is lost. */
+  forfeitOnLoss?: boolean;
+}
+
+/**
+ * One challenge-eligible game (or game MODE), with the spec it is scored by.
+ *
+ * `languages` omitted = playable in every language. Word Search is the outlier
+ * because its grid is built from characters.
+ */
+export interface ChallengeGameSpec {
+  gameId: string;
+  /** Null for a game with one mode; the mode's id for a moded game. */
+  mode: string | null;
+  /** Display name including the mode, e.g. "Word Search (Pinyin)". */
+  title: string;
+  /** Must be 'recognition' or 'production' — reading/writing games are not eligible. */
+  markType: Extract<MarkType, 'recognition' | 'production'>;
+  languages?: Language[];
+  scoring: ChallengeScoringSpec;
+}
+
+/**
+ * THE challenge-eligible pool (§ 5.1) — the games a test may draw from, with the
+ * numbers each is scored by.
+ *
+ * ⚠️ WHY THIS LIVES IN THE CONTRACT AND NOT ONLY IN `src/games/registry.ts`.
+ * docs/GAMES_FEATURE.md says eligibility is "derived from the registry, never
+ * hand-listed", and that is still how a game becomes eligible — but the registry
+ * cannot be the physical home of these numbers, because THE SERVER DRAWS THE GAME
+ * SEQUENCE (at issue time, § 5.1b) and `src/games/registry.ts` imports lazy React
+ * components that the Node build cannot load. Live mode (phase 2) additionally has
+ * to score these same events server-side with no game page mounted, which is the
+ * constraint that made the spec declarative data in the first place (Q76).
+ *
+ * So: this table is the source of truth, the registry attaches each entry to its
+ * `GameDef.challengeScoring` by lookup, and `src/games/__tests__/challengePool.test.ts`
+ * fails if a recognition/production game exists in the registry without an entry
+ * here. That test is what preserves "derived from the registry" — adding a game and
+ * forgetting this table is a red test, not a silently ineligible game.
+ *
+ * Three entries today, so today's "random" draw of 3 has one possible answer. The
+ * randomisation is built for the games that do not exist yet: the draw is without
+ * repetition, and a fourth recognition/production game joins the rotation with no
+ * code change beyond its own entry.
+ */
+export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
+  {
+    gameId: 'bubble-match',
+    mode: null,
+    title: 'Bubble Match',
+    markType: 'recognition',
+    scoring: {
+      contestedHit: 100,
+      contestedMiss: -100,
+      fillerHit: 20,
+      fillerMiss: -20,
+      missChargedOncePerWord: true,
+      bonuses: [
+        {
+          ruleId: 'survival',
+          label: 'survival bonus',
+          kind: 'survival',
+          points: 500,
+          trigger: 'ceilingDrop',
+          decayPoints: -100,
+          decayIntervalMs: 2000,
+          floor: 0,
+          // Losing forfeits the whole thing (Q68). Bubble Match IS a survival
+          // game, so a challenge score that ignored survival would be scoring a
+          // different game than the one played — and the cliff is what makes the
+          // last thirty seconds tense.
+          forfeitOnLoss: true,
+        },
+      ],
+    },
+  },
+  {
+    gameId: 'match-speed',
+    mode: null,
+    title: 'Match Speed',
+    markType: 'recognition',
+    scoring: {
+      contestedHit: 100,
+      contestedMiss: -100,
+      fillerHit: 20,
+      fillerMiss: -20,
+      missChargedOncePerWord: true,
+      // No bonus. Match Speed's challenge shape is the ALTERNATION RULE instead
+      // (§ 5.3): every other pair dealt must be contested, and when the ten run out
+      // the alternation lapses to filler rather than recycling them. That gives its
+      // contested score a hard 1000 ceiling and makes CLEARING THE SET the goal of
+      // the round rather than raw taps-per-second.
+    },
+  },
+  {
+    gameId: 'word-search',
+    mode: 'pinyin',
+    title: 'Word Search (Pinyin)',
+    // Eligible as Pinyin ONLY. The No-Pinyin mode is a reading game, so a bare
+    // gameId here would let a challenge draw the ineligible mode.
+    markType: 'production',
+    languages: ['zh'],
+    scoring: {
+      contestedHit: 100,
+      // No mistake penalty: a Word Search selection either spells a word or it does
+      // not, so there is no "mismatch" event to charge for the way the two matching
+      // games have. Time is the penalty here instead.
+      contestedMiss: 0,
+      fillerHit: 20,
+      fillerMiss: 0,
+      missChargedOncePerWord: false,
+      bonuses: [
+        {
+          ruleId: 'timePenalty',
+          label: 'time penalty',
+          kind: 'elapsedPenalty',
+          points: -10,
+          decayIntervalMs: 1000,
+          // Free until 1:00 of ACCUMULATED ACTIVE time — so reading a pre-round
+          // provisional notice, or backgrounding the app, costs nothing.
+          graceMs: 60_000,
+        },
+        {
+          ruleId: 'hintUsed',
+          label: 'hints used',
+          kind: 'perUse',
+          points: -20,
+        },
+      ],
+    },
+  },
+] as const;
+
+/**
+ * The eligible pool for one language pair, in the order it is drawn from.
+ *
+ * Cross-language challenges (different-word only, § 8) can draw only games
+ * playable in BOTH languages, which is why this takes two languages rather than
+ * one. A zh-vs-es challenge therefore has two eligible games today and plays two
+ * rounds — the format bends rather than blocking (§ 8.3).
+ */
+export function challengeGamesForLanguages(
+  languageA: Language,
+  languageB: Language
+): ChallengeGameSpec[] {
+  return CHALLENGE_GAMES.filter((game) =>
+    !game.languages
+      || (game.languages.includes(languageA) && game.languages.includes(languageB))
+  );
+}

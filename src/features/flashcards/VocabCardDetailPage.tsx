@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { iconSearchTerm, resolveSelectedSenseIndex, sortedSenseClusters, resolveDisplayDefinition } from "../../utils/definitionUtils";
+import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveDisplayDefinition } from "../../utils/definitionUtils";
 import { useParams, useNavigate } from "react-router-dom";
 import {
     Box, IconButton, Alert, useTheme,
@@ -161,8 +161,7 @@ const VocabCardDetailPage: React.FC = () => {
     const handleSelectSense = useCallback((index: number) => {
         setSelectedSenseIndex(index);
         if (!entry) return;
-        const sorted = sortedSenseClusters(entry);
-        persistSelectedSense(entry, index === 0 ? null : sorted?.[index]?.sense ?? null);
+        persistSelectedSense(entry, senseLabelForIndex(entry, index));
     }, [entry, persistSelectedSense]);
 
     // Outside-tap deselect: a tap on the page outside the canvas/toolbar (and

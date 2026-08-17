@@ -9,7 +9,7 @@
 ; `psql -f` when testing. See docs/STREAK_EXPIRATION_CRON.md.
 
 [Unit]
-Description=Vocabulary app hourly maintenance (inactivity penalty + dangling-template prune)
+Description=Vocabulary app hourly maintenance (inactivity penalty + dangling-template prune + study-challenge expiry)
 Documentation=file://__REPO_DIR__/docs/STREAK_EXPIRATION_CRON.md
 ; Nothing to order against: the jobs talk to Docker containers, not host services,
 ; and both tolerate the container being down (they fail, log, and retry next hour).
@@ -43,6 +43,23 @@ ExecStart=/bin/bash -c '/usr/bin/docker exec -i cow-postgres-prod psql -U cow_us
 ; failure is visible in `systemctl --user status cow-maintenance` instead of being
 ; buried in a log file.
 ExecStart=/bin/bash -c '/usr/bin/docker exec cow-backend-prod node dist/scripts/night-market/prune-dangling-templates.js >> __REPO_DIR__/logs/prune-templates.log 2>&1'
+
+; Step 3 — Study Challenge expiry: lapse unaccepted invitations, close finished test
+; windows (declaring the winner or a no-contest), and drop the generated study decks
+; those closures leave behind. Pure SQL, one transaction, four idempotent passes.
+; See docs/STUDY_CHALLENGE.md § 9 "The maintenance job".
+;
+; LAST of the three ON PURPOSE, and independent of the other two. It shares nothing
+; with them — different tables, no ordering constraint either way — so it goes last
+; where a failure cannot stop the two jobs that were here first. The converse also
+; holds: because systemd aborts the unit when an earlier ExecStart fails, a broken
+; step 1 means challenges are not expired this tick. That is acceptable (the passes
+; are idempotent and the next hourly tick catches up) but it is worth knowing when
+; reading a log that shows nothing happening.
+;
+; HOURLY IS THE REQUIRED GRANULARITY, not a convenience: every challenge boundary is
+; 04:00 local, so exactly one timezone crosses one each hour.
+ExecStart=/bin/bash -c '/usr/bin/docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < __REPO_DIR__/database/cron/expire-study-challenges.sql >> __REPO_DIR__/logs/study-challenges.log 2>&1'
 
 ; Both steps append to their own log file (unchanged from the cron setup, so the
 ; verification steps in the docs still apply). systemd additionally records each

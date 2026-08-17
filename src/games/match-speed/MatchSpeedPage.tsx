@@ -45,6 +45,8 @@ import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { provisionalWords } from "../../utils/provisionalCards";
+import GamePausedOverlay from "../runtime/GamePausedOverlay";
+import { useBackgroundPause } from "../runtime/useBackgroundPause";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
 interface GamePoolResponse {
@@ -356,7 +358,13 @@ const MatchSpeedPage: React.FC = () => {
     // free. The end popup is deliberately absent: by then the clock has stopped.
     // Shared rule across all four games — see docs/GAMES_FEATURE.md § Popups pause
     // the clock.
-    const clockPaused = noticeOpen || settingsOpen;
+    // BACKGROUNDING IS THE SECOND SOURCE for this same boolean — the app-wide rule
+    // (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). The 30-second run
+    // clock is the thing being protected here: without this, backgrounding the app
+    // spent the whole run.
+    const { paused: backgroundPaused, resume: resumeFromBackground } =
+        useBackgroundPause(phase === "countdown" || phase === "playing");
+    const clockPaused = noticeOpen || settingsOpen || backgroundPaused;
 
     // The 3·2·1·Go countdown. The board is already primed and readable behind it,
     // so the opening board gets a beat to be read and the run clock starts from an
@@ -704,6 +712,17 @@ const MatchSpeedPage: React.FC = () => {
                     </>
                 )}
             </Box>
+
+            {/* Backgrounding paused the round — the app-wide rule
+                (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). A SIBLING of
+                the board, like GameEndPopup, so the layout does not change shape when
+                paused; it covers the board so the pause cannot be used as a free look
+                at it, and the clock only restarts when the player taps Resume. */}
+            <GamePausedOverlay
+                open={backgroundPaused}
+                onResume={resumeFromBackground}
+                classPrefix="match-speed"
+            />
         </LeafPage>
         </>
     );

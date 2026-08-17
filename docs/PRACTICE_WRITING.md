@@ -37,7 +37,9 @@ The button renders only for **`language === "zh"`** and **1–4 code points**
 (`charCount`), else `null` (the recognizer is `zh_CN`; the 2×2 grid has only four
 slots). Placements:
 
-- **eip** header (icon variant) — `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`
+- **eip** definition tab, in the action bar at the end of the content (labelled variant,
+  beside "Add to Deck…" and "Compare To…") —
+  `src/features/flashcards/FlashcardsLearnPage/InfoCardActionBar.tsx`
 - **flp main flashcard** front face, stacked above the audio icon (icon variant) —
   `src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` (`ChineseBlock`)
 - **cdp** (word details) — `src/features/flashcards/VocabCardDetailPage.tsx`

@@ -2,9 +2,10 @@
  * PracticeWritingButton — the "Practice Writing Me" entry point.
  *
  * A self-contained button that opens the writing-practice popup for a target
- * word. Placed on the eip, the flp main flashcard (back face only, stacked above
- * the audio icon), and the word details page (cdp). Chinese-only for now (the
- * recognizer is zh_CN); renders nothing for other languages.
+ * word. Placed in the eip definition tab's action bar (labelled variant), on the
+ * flp main flashcard (back face only, stacked above the audio icon — icon variant),
+ * and on the word details page (cdp). Chinese-only for now (the recognizer is
+ * zh_CN); renders nothing for other languages.
  *
  * Spec: docs/HANDWRITING_RECOGNITION.md ("Entry points").
  */
@@ -31,7 +32,7 @@ interface PracticeWritingButtonProps {
   /** Override the default outlined look. */
   variant?: "text" | "outlined" | "contained";
   size?: "small" | "medium" | "large";
-  /** Compact icon button for tight headers (e.g. the eip). */
+  /** Compact icon button for tight headers (e.g. the flashcard's action column). */
   iconOnly?: boolean;
   /** Hide the gold ★N completion superscript (e.g. on the flashcard, for a clean face). */
   hideStarBadge?: boolean;

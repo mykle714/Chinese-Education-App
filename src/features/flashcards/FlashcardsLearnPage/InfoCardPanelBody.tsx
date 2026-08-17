@@ -1,10 +1,9 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
-import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
+import SensePicker from "../card/SensePicker";
 import { ddTextColor } from "../../../utils/cardTextColor";
 import InfoCardTabContent from "./InfoCardTabContent";
 import { tabAvailability } from "./infoCardTabAvailability";
@@ -26,7 +25,6 @@ import { SIZE, WEIGHT } from "../../../theme/scale";
 import { SpeakerButton } from "./FlashCardSection";
 import { isHorizontalGestureClaimed } from "../../../utils/segmentScrubLock";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
-import AddToDeckMenu from "../AddToDeckMenu";
 
 // Resting track offset for a tab: the track is (N·100%) wide with N equal
 // panes, so showing tab k means shifting the track left by exactly k panes,
@@ -53,8 +51,8 @@ export interface InfoCardPanelBodyProps {
     // omits it because those cards are already in the library by definition.
     onAddToLibrary?: (entry: VocabEntry) => void;
     // Opens (or focuses/refills) the singleton Compare tab for the current entry
-    // (docs/WORD_COMPARE_FEATURE.md). Renders the Compare icon button in the header
-    // actions column; undefined hides it.
+    // (docs/WORD_COMPARE_FEATURE.md). Renders the "Compare To…" button in the
+    // definition tab's action bar; undefined hides it.
     onOpenCompare?: (entry: VocabEntry) => void;
     // Speaker callback for an example sentence. When provided, each sentence
     // block in the Examples tab renders a SpeakerButton in its top-right
@@ -75,6 +73,15 @@ export interface InfoCardPanelBodyProps {
     // header so it shares the grabber's drag-to-resize gesture. useDrag's
     // filterTaps keeps icon taps (speaker, +, etc.) working normally.
     headerDragBind?: () => Record<string, unknown>;
+    // Which definitionClusters sense the panel is showing — an index into
+    // sortedSenseClusters(currentEntry), owned by the host (useEipTabs, per entry tab)
+    // so it survives tab switches. Drives the header's SensePicker, the header dd +
+    // pronunciation, and the definition tab's long definition / commonality.
+    selectedSenseIndex?: number;
+    // A pick in the header's SensePicker. The host both records it (so the panel
+    // re-renders) and persists it to the vet row when there is one — mirroring the
+    // flashcard/cdp pickers. Undefined hides the picker entirely.
+    onSelectSense?: (index: number) => void;
 }
 
 // Imperative handle exposing the two elements the bottom-sheet wrapper needs:
@@ -89,8 +96,8 @@ export interface InfoCardPanelBodyHandle {
 }
 
 /**
- * Shared inner content of the EIP: entry header (CPCD + English + speaker),
- * underline tab strip, and the scrollable tab body (definition / examples /
+ * Shared inner content of the EIP: entry header (CPCD + English + sense picker +
+ * speaker), underline tab strip, and the scrollable tab body (definition / examples /
  * breakdown-or-used-in). Reused by InfoCardSection (bottom-sheet wrapper)
  * and InfoCardPopup (centered-popup wrapper) — anything that changes here
  * shows up in both variants.
@@ -118,6 +125,8 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     headerCpcdSize = "md",
     scrollTouchAction = "auto",
     headerDragBind,
+    selectedSenseIndex,
+    onSelectSense,
 }, ref) {
     const rootRef = useRef<HTMLDivElement | null>(null);
     // Clipping viewport around the sliding tab track. NOT itself scrollable —
@@ -144,7 +153,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     // Per-tab emptiness + the entry-derived values the tab bodies render. Derived ONCE
     // and shared with InfoCardTabContent so the greyed-out tab labels and the panes
     // can never disagree. See InfoCardTabContent.tsx.
-    const avail = tabAvailability(currentEntry, breakdownItems);
+    const avail = tabAvailability(currentEntry, breakdownItems, selectedSenseIndex);
     const { breakdownTabLabel } = avail;
 
     const tabIsEmpty = [!avail.definition, !avail.examples, !avail.breakdown];
@@ -433,15 +442,23 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         justifyContent="flex-start"
                         className="mobile-demo-eic-header-cpcd"
                         text={currentEntry.entryKey}
-                        // Sense-resolved, like the dd printed beside it: the eip snapshot is
-                        // re-seeded on every sense pick (useEipTabs.syncEntry), so the persisted
-                        // `selectedSense` is always the sense the panel is showing.
-                        pronunciation={resolveDisplayPronunciation(currentEntry)}
+                        // Sense-resolved, like the dd printed beside it. The panel's own live
+                        // pick is the override so the reading changes on the tap, ahead of the
+                        // persisted `selectedSense` round-tripping back (useEipTabs.syncEntry).
+                        pronunciation={resolveDisplayPronunciation(currentEntry, selectedSenseIndex)}
                         useToneColor={showPinyinColor}
                         showPinyin={showPinyin}
                     />
                 )}
+                {/* English gloss + its sense picker, as one row so the triangle trigger
+                    sits immediately after the text (the flp card face and the cdp put it
+                    in the same place). The row carries the flex:1 the Typography used to,
+                    so the header's action column still gets pushed to the far edge. */}
                 {currentEntry && (
+                    <Box
+                        className="mobile-demo-eic-header-english-row"
+                        sx={{ display: "flex", alignItems: "center", gap: 0.25, flex: 1, minWidth: 0 }}
+                    >
                     <Typography
                         className="mobile-demo-eic-header-english"
                         sx={{
@@ -455,30 +472,38 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             color: ddTextColor(currentEntry.language, undefined, fc),
                             fontFamily: FC_FONT,
                             lineHeight: 1.3,
-                            flex: 1,
                             minWidth: 0,
                         }}
                     >
                         {/* The eip header gloss is a dd: it must agree with the flashcard face,
                             so it resolves through the shared resolver (chosen sense →
                             definitions[0] fallback) instead of reading definitions[0] directly. */}
-                        {resolveDisplayDefinition(currentEntry)}
+                        {resolveDisplayDefinition(currentEntry, selectedSenseIndex)}
                     </Typography>
+                    {/* Same picker component the card face mounts (docs/DEFINITION_CLUSTERS.md).
+                        Self-hides when the entry has no real choice of sense. Readings are
+                        never censored here — the eip is a reference surface, not a quiz face. */}
+                    {onSelectSense && (
+                        <SensePicker
+                            entry={currentEntry}
+                            selectedSenseIndex={selectedSenseIndex}
+                            onSelectSense={onSelectSense}
+                            color={fc.textSecondary}
+                            classPrefix="mobile-demo-eic"
+                        />
+                    )}
+                    </Box>
                 )}
                 {/* Header action buttons laid out as a 2-column grid (reading order:
-                    Practice / Speaker · Compare / Add-to-library · Add-to-deck). Any
-                    cell may be absent — Practice self-hides for non-zh, Speaker needs
-                    onSpeak, Compare needs onOpenCompare, Add needs onAddToLibrary on a
-                    discoverable entry, and Add-to-deck needs a saved vet row — so the
-                    grid auto-packs whatever renders and simply grows a third row when
-                    every cell is present.
-                    Add-to-library was previously an inline "+" after the English
-                    text; it now joins this button set. */}
+                    Speaker · Add-to-library). Either cell may be absent — Speaker needs
+                    onSpeak and Add needs onAddToLibrary on a discoverable entry — so the
+                    grid auto-packs whatever renders.
+                    The header keeps only the actions that are about the ENTRY ITSELF
+                    (hear it, save it). Add-to-deck, Compare and Practice Writing moved
+                    out to the definition tab's labelled action bar (InfoCardActionBar),
+                    where they read as named actions instead of unlabelled icons. */}
                 {currentEntry && (
                     onSpeak ||
-                    currentEntry.language === "zh" ||
-                    onOpenCompare ||
-                    currentEntry.id ||
                     (onAddToLibrary && currentEntry.discoverable)
                 ) && (
                     <Box
@@ -492,46 +517,11 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             rowGap: 0.25,
                         }}
                     >
-                        {/* File this card into a deck (docs/DECKS_FEATURE.md). Self-hides
-                            when the eip is showing a dictionary-only entry, which has no
-                            vet row to add. */}
-                        <AddToDeckMenu
-                            vocabEntryId={currentEntry.id}
-                            className="mobile-demo-eic-add-to-deck"
-                        />
-                        <PracticeWritingButton
-                            character={currentEntry.entryKey}
-                            language={currentEntry.language}
-                            vocabEntryId={currentEntry.id}
-                            iconOnly
-                        />
                         {onSpeak && (
                             <SpeakerButton
                                 onClick={() => onSpeak(currentEntry)}
                                 isLoading={speakingKey === currentEntry.entryKey}
                             />
-                        )}
-                        {onOpenCompare && (
-                            <IconButton
-                                className="mobile-demo-eic-compare"
-                                size="small"
-                                aria-label="Compare with another word"
-                                onClick={(e) => {
-                                    // Match SpeakerButton's stop-propagation pattern so taps
-                                    // don't bubble to flip/drag handlers in any wrapping card.
-                                    e.stopPropagation();
-                                    onOpenCompare(currentEntry);
-                                }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onTouchStart={(e) => e.stopPropagation()}
-                                onTouchEnd={(e) => e.stopPropagation()}
-                                sx={{
-                                    color: fc.textSecondary,
-                                    '&:hover': { color: fc.onSurface },
-                                }}
-                            >
-                                <CompareArrowsIcon fontSize="small" />
-                            </IconButton>
                         )}
                         {/* Only discoverable entries can be added to Learn Now —
                             lookup-only (undiscoverable) dictionary words hide the button. */}
@@ -665,6 +655,8 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 onExampleSegmentClick={onExampleSegmentClick}
                                 onSpeakSentence={onSpeakSentence}
                                 speakingKey={speakingKey}
+                                selectedSenseIndex={selectedSenseIndex}
+                                onOpenCompare={onOpenCompare}
                             />
                         </Box>
                     ))}

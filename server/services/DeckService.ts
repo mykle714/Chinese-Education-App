@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { IDeckDAL } from '../dal/interfaces/IDeckDAL.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
 import type { DeckSummary } from '../types/decks.js';
@@ -96,8 +97,13 @@ export class DeckService {
 
     // Checked here rather than as a database constraint: it is a product limit, and
     // the count is cheap (the deck list is already indexed by user+language).
+    //
+    // Counts AUTHORED decks only. A learner in six challenges holds six generated
+    // decks and still has all 100 of their own slots — that is the entire meaning of
+    // "their own pool of deck slots" (Q11, docs/STUDY_CHALLENGE.md § 4).
     const existing = await this.deckDAL.listDecks(userId, language);
-    if (existing.length >= MAX_DECKS_PER_LANGUAGE) {
+    const authoredCount = await this.deckDAL.countCustomDecks(userId, language);
+    if (authoredCount >= MAX_DECKS_PER_LANGUAGE) {
       throw new ValidationError(
         `You already have ${MAX_DECKS_PER_LANGUAGE} decks in this language. Delete one to make room.`
       );
@@ -107,16 +113,69 @@ export class DeckService {
     // still the authority — two simultaneous creates race past this check and the
     // DAL translates the violation — but this path produces the better error for
     // the ordinary case.
-    const clash = existing.find((d) => d.name.trim().toLowerCase() === name.toLowerCase());
+    //
+    // Only AUTHORED decks can clash: the index is partial on `editMode = 'custom'`,
+    // so a generated `vs Bob` deck must not block the user from naming their own
+    // deck "vs Bob".
+    const clash = existing
+      .filter((d) => d.editMode === 'custom')
+      .find((d) => d.name.trim().toLowerCase() === name.toLowerCase());
     if (clash) throw new ValidationError(`You already have a deck called "${name}"`);
 
     return this.deckDAL.createDeck(userId, language, name);
+  }
+
+  /**
+   * Create a GENERATED deck on a user's behalf (docs/STUDY_CHALLENGE.md § 4).
+   *
+   * Not reachable from any HTTP route — there is no endpoint a client could call.
+   * Its only caller is StudyChallengeService's accept transaction, which is why it
+   * takes that transaction's client: the deck and the challenge's `presetDeckIds`
+   * write must land together, or the maintenance job's orphan sweep would have real
+   * work to do instead of being a backstop.
+   *
+   * None of `createDeck`'s user-facing rules apply: the 100-deck cap does not count
+   * generated decks, and duplicate names are allowed (Q30). The name is still length-
+   * validated, because `decks.name` is varchar(64) and an over-long opponent name
+   * would otherwise fail as a Postgres error inside somebody else's transaction.
+   */
+  async createPresetDeck(
+    userId: string,
+    language: string,
+    rawName: string,
+    vocabEntryIds: number[],
+    client?: PoolClient
+  ): Promise<number> {
+    const name = this.normalizeName(rawName).slice(0, MAX_DECK_NAME_LENGTH);
+    const deck = await this.deckDAL.createPresetDeck(
+      userId, language, name, vocabEntryIds, client
+    );
+    return deck.id;
+  }
+
+  /**
+   * Reject a mutation aimed at a GENERATED deck (docs/STUDY_CHALLENGE.md § 4).
+   *
+   * ONE guard, called by every mutation, rather than a check per method — a preset
+   * deck must be immutable through EVERY user-facing path, and the way that
+   * guarantee rots is one new mutation added later that forgets its own check.
+   *
+   * A missing deck is left to the caller's own NotFound handling: this guard's job is
+   * only "may this deck be changed", and reporting "not found" for a deck that does
+   * exist would be a different (and worse) answer.
+   */
+  private async assertMutable(userId: string, deckId: number): Promise<void> {
+    const editMode = await this.deckDAL.findDeckEditMode(userId, deckId);
+    if (editMode && editMode !== 'custom') {
+      throw new ValidationError('This deck was created for you and cannot be changed');
+    }
   }
 
   /** Rename a deck the caller owns. */
   async renameDeck(userId: string, rawDeckId: unknown, rawName: unknown): Promise<DeckSummary> {
     const deckId = this.requireDeckId(rawDeckId);
     const name = this.normalizeName(rawName);
+    await this.assertMutable(userId, deckId);
 
     const updated = await this.deckDAL.renameDeck(userId, deckId, name);
     if (!updated) throw new NotFoundError('Deck not found');
@@ -128,6 +187,8 @@ export class DeckService {
    */
   async deleteDeck(userId: string, rawDeckId: unknown): Promise<void> {
     const deckId = this.requireDeckId(rawDeckId);
+    // A challenge deck is dropped by the challenge's own cleanup, never by the user.
+    await this.assertMutable(userId, deckId);
     const deleted = await this.deckDAL.deleteDeck(userId, deckId);
     if (!deleted) throw new NotFoundError('Deck not found');
   }
@@ -171,6 +232,14 @@ export class DeckService {
     const deckIds = (rawDeckIds as unknown[] | null | undefined ?? [])
       .map((v) => (typeof v === 'number' ? v : parseInt(String(v), 10)))
       .filter((n) => Number.isInteger(n) && n > 0);
+
+    // A generated deck's membership is fixed at creation, so it may neither be
+    // ticked into nor silently dropped from. Rejecting the whole save (rather than
+    // filtering the id out) is the honest answer: a preset deck never appears in the
+    // checkbox menu, so an id naming one did not come from the UI.
+    for (const deckId of deckIds) {
+      await this.assertMutable(userId, deckId);
+    }
 
     return this.deckDAL.setCardMemberships(userId, vocabEntryId, deckIds);
   }

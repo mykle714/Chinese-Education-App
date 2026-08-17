@@ -10,7 +10,8 @@ import type {
 import { ValidationError, DuplicateError } from '../../types/dal.js';
 
 /** Every column of a `friendships` row, in the order the row types expect. */
-const ROW = `id, "requesterId", "addresseeId", status, "createdAt", "respondedAt"`;
+const ROW = `id, "requesterId", "addresseeId", status, "createdAt", "respondedAt",
+             "requesterChallengesBlocked", "addresseeChallengesBlocked"`;
 
 /** Postgres unique-violation SQLSTATE — the pair index firing on a duplicate edge. */
 const PG_UNIQUE_VIOLATION = '23505';
@@ -140,6 +141,32 @@ export class FriendshipDAL implements IFriendshipDAL {
              OR ("requesterId" = $2 AND "addresseeId" = $1)`,
         [userA, userB]
       )
+    );
+    return rowCount > 0;
+  }
+
+  async setChallengesBlocked(
+    id: string,
+    endpoint: 'requester' | 'addressee',
+    blocked: boolean,
+    client?: PoolClient
+  ): Promise<boolean> {
+    this.requireId(id, 'id');
+    if (endpoint !== 'requester' && endpoint !== 'addressee') {
+      throw new ValidationError(`Unknown friendship endpoint: ${endpoint}`);
+    }
+
+    // The COLUMN is chosen from a two-value union, never from user input — which is
+    // what makes writing "only your own flag" a property of the SQL rather than a
+    // check the service has to remember. The caller decides which endpoint they are
+    // by comparing their own id to the row (see StudyChallengeService), so a caller
+    // can never clear the other party's block.
+    const column = endpoint === 'requester'
+      ? '"requesterChallengesBlocked"'
+      : '"addresseeChallengesBlocked"';
+
+    const { rowCount } = await this.run(client, (c) =>
+      c.query(`UPDATE friendships SET ${column} = $2 WHERE id = $1`, [id, blocked])
     );
     return rowCount > 0;
   }

@@ -32,44 +32,15 @@ Delete an item when it is done; this file is a queue, not a history.
 
 ## Open items
 
-### 1. Drop the dead `compute_utcm_category(jsonb, boolean, boolean)`
-
-| | |
-|---|---|
-| **What** | A one-line contract migration: `DROP FUNCTION IF EXISTS compute_utcm_category(jsonb, boolean, boolean);` |
-| **Why deferred** | Migration 143 (three mastery bars) replaced it with `compute_core_category()` but **intentionally retained it** so that old and new application code could both run during the deploy window. That window closed when 143 was verified on prod on **2026-08-11** |
-| **Cost of leaving it** | Low but real. It is a dead function that reads like live schema — the next person adding a mastery column will find it and wonder whether to keep it in sync. It is exactly the kind of thing that gets accidentally resurrected |
-| **Trigger** | Ride it along with the next migration that ships for any reason. It needs no window of its own and nothing calls it |
-| **References** | [MASTERY_REWORK.md](./MASTERY_REWORK.md) (References section), `database/migrations/143-three-mastery-bars.sql` |
-
-### 2. Mastery goal defaults — `users.readingGoal` / `users.writingGoal`
-
-| | |
-|---|---|
-| **What** | Decide the column defaults before the mastery rework is built |
-| **Why deferred** | It is a build-time detail of an unbuilt feature; the doc records `false` as the assumption but it has not been confirmed |
-| **Cost of leaving it** | None today. It becomes urgent the moment the migration is written, because the default silently decides whether every existing account's progress bars change height on deploy day |
-| **Trigger** | Writing the mastery-rework migration |
-| **References** | [MASTERY_REWORK.md](./MASTERY_REWORK.md) § Open questions |
-
-### 3. Per-type vs all-type `totalMarkCount` / `totalCorrectCount`
-
-| | |
-|---|---|
-| **What** | Decide whether these two counters become per-mark-type or stay all-type aggregates |
-| **Why deferred** | Kept all-type for now; nothing depends on the split yet |
-| **Cost of leaving it** | Low. It becomes a data-migration question rather than a schema question if the four typed mark tracks ship first and the counters are split afterwards |
-| **Trigger** | The mastery rework reaching implementation |
-| **References** | [MASTERY_REWORK.md](./MASTERY_REWORK.md) § Open questions |
-
-### 4. Build Study Challenge (phase 1, async) — queued behind Arena
+### 1. Build Study Challenge (phase 1, async) — 🚧 **ONE PIECE LEFT as of 2026-08-17**
 
 | | |
 |---|---|
 | **What** | Implement the async Study Challenge. The design is complete: [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) (Q1–Q68) and [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) (Q69–Q73) have **no open design questions**, and every doc the build depends on was updated on 2026-08-16 |
-| **Why deferred** | Arena is mid-build in the working tree and owns the two things this would collide with: `database/migrations/146-create-arenas.sql` and uncommitted edits to `server/contracts/wire.ts`. Two features editing the same contract file at once buys a merge nobody needs |
+| **Why deferred** | It *was* queued behind Arena, which owned the two things it would have collided with: `database/migrations/146-create-arenas.sql` and then-uncommitted edits to `server/contracts/wire.ts`. **That collision is gone as of 2026-08-16** — Arena is committed (`480c80d`, `12159ef`) and shipped to prod, so `wire.ts` is a normal read rather than a merge |
 | **Cost of leaving it** | None. Nothing depends on it and nothing degrades while it waits |
-| **Trigger** | **Arena's build landing.** Re-check `ls database/migrations \| sort -V \| tail` first — this feature takes **147**, but only if nothing else claimed it meanwhile |
+| **Trigger** | **Met; the build is DONE except one piece.** Migration **148** applied on dev; the contract, the whole async server stack, the client surfaces, `mastered-first` provisioning, the shared scoring runner, pause-on-background for all four games, the maintenance job and the deploy runbook are all built and tested (see the status table at the top of [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)). **The one thing left is the scored round runner** — see the next row. **Next free migration number is 150** — 149 is the lifetime-counter drop |
+| **What is left** | The per-game board integration only: a challenge-board pool read (ten contested cards + `mastered-first` filler, extending `/api/onDeck/gamePool` rather than adding a second loader), contested/filler classification inside Bubble Match / Match Speed / Word Search-Pinyin with `ChallengeEvent`s fed to `src/games/runtime/challengeScoring.ts`, Match Speed's alternation rule (§ 5.3), and the between-games scoreboard + round POST. Everything it depends on exists and is tested; this is wiring inside the three most complex pages in the app, which is why it was not rushed alongside the rest |
 | **References** | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 9–12, [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md), [GAMES_FEATURE.md](./GAMES_FEATURE.md), [DECKS_FEATURE.md](./DECKS_FEATURE.md), [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md), [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) |
 
 #### Deploy-order constraints to resolve before writing the migration
@@ -84,13 +55,14 @@ are now on prod: **140** (provisional cards, shipped 2026-08-08) and **145**
 Steps 1–2 are the contract; everything after depends on them, and 4–7 are largely
 independent of each other.
 
-1. **Migration 147** — `study_challenges` (the single table, [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 9),
+1. **Migration 148** — `study_challenges` (the single table, [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 9),
    `decks."editMode"`, the two `friendships` block booleans, and
    `decks_user_language_name_uniq` rebuilt as a **partial** index
    (`WHERE "editMode" = 'custom'`). All signed off 2026-08-16.
 2. **`server/contracts/wire.ts`** — `CHALLENGE_WORD_COUNT`, `CHALLENGE_ROUND_COUNT`,
    `MAX_ACTIVE_CHALLENGES` (6), `ProvisionMode`, and the challenge-eligible-game
-   derivation. ⚠️ Merge with whatever Arena left here.
+   derivation. Arena's additions to this file are already committed — read the current
+   file and add alongside them; there is nothing to merge.
 3. **Games** ([GAMES_FEATURE.md](./GAMES_FEATURE.md)) — the `challengeScoring` spec on
    `GameDef` and one spec per eligible game; wire the backgrounding signal into the
    existing `clockPaused` gate in **Bubble Match, Match Speed and Speed Reading** (Word
@@ -118,24 +90,7 @@ demand on this build is that nothing in phase 1 forecloses it — see
 
 ---
 
-### 5. Two runbooks still carry false "NOT YET DEPLOYED" banners
-
-`docs/FREQUENCY_SCORE_DEPLOY_RUNBOOK.md` (migration **122**) and
-`docs/SENSE_COMMONALITY_DEPLOY_RUNBOOK.md` (migration **139**) both say they have not
-shipped. Both migrations **are on prod** — 122 and 139 are recorded in `schema_migrations`
-(139 applied 2026-08-08). Either verify and delete them, or correct the banners.
-
-**Why this is worth an item rather than a quiet fix:** the same staleness in four *other*
-runbooks nearly derailed the 2026-08-16 deploy. `COMBINED_DEPLOY_RUNBOOK.md` instructed
-the deployer to pass `migrate.sh --allow-out-of-order` to work around a halt caused by
-five migrations it believed were unshipped. They had all shipped; the flag would have
-suppressed the guard that exists to report exactly that mismatch. The lesson is in
-[CLAUDE.md](../CLAUDE.md) § Current open runbooks: **derive pending work from
-`schema_migrations` and `migrate.sh --dry-run`, never from a runbook's status line.**
-
----
-
-### 6. Teach learners about bound-form words (the huìzi class)
+### 2. Teach learners about bound-form words (the huìzi class)
 
 | | |
 |---|---|
@@ -149,6 +104,71 @@ suppressed the guard that exists to report exactly that mismatch. The lesson is 
 ---
 
 ## Recently closed
+
+### Two runbooks with false "NOT YET DEPLOYED" banners (closed 2026-08-17)
+
+`FREQUENCY_SCORE_DEPLOY_RUNBOOK.md` (migration 122) and `SENSE_COMMONALITY_DEPLOY_RUNBOOK.md`
+(migration 139) **deleted** — both migrations are on prod, and per CLAUDE.md a temporary
+runbook is deleted once prod is verified. Recoverable from git history if ever needed.
+
+Both were read end to end before deletion rather than dropped on their banners, which is
+how the frequency runbook's **§7 re-scoring step** was caught: a post-deploy data step that
+was never run and would have been deleted along with the file. It was **reviewed and
+deliberately not queued** — the re-run costs one Sonnet call per row and the resulting
+mis-ranking is accepted for now; the full state, measurement query and run instructions
+live in [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) § "`frequencyScore` — what the
+1–5 number means", which is the owning doc. The
+sense-commonality runbook held nothing outstanding — its behaviour notes and the
+backfill-guard caveat already live in [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md).
+
+**The transferable lesson:** a deploy runbook can be simultaneously stale about the deploy
+and load-bearing about what comes after it. Read the whole file before deleting one — the
+banner is about the migration, not about every step in the document.
+
+### Per-type vs all-type `totalMarkCount` / `totalCorrectCount` (closed 2026-08-17 — question dissolved)
+
+Resolved by **deleting both columns** (`database/migrations/149-drop-lifetime-mark-counters.sql`)
+rather than by answering the question. A repo-wide search established they had been
+**write-only since migration 101**: 101 dropped the three success-rate columns that were
+their only consumers and kept the raw counters, and nothing picked them up again — no
+sort, filter, aggregate or join, no service, and zero references in `src/`.
+
+The lesson worth keeping: the "per-type or all-type?" framing presumed a reader. Asking
+*who consumes this* before *what shape should it be* dissolved a standing schema decision
+into a deletion. Applied on dev; **not yet on prod** — it is a **contract** migration (the
+code that stopped writing the columns must be live first), which the standard `/deploy`
+order satisfies because `up --build` precedes the migration commands. Verify with:
+
+```sql
+SELECT count(*) FROM information_schema.columns
+WHERE column_name IN ('totalMarkCount','totalCorrectCount');   -- expect 0
+```
+
+Note the ⚠️ one-way door: the lifetime tallies are gone and unreconstructible
+(`typedMarkHistory` keeps only 8 marks per type). Accepted — nothing read them, and a
+future lifetime statistic would start counting from zero.
+
+### Drop the dead `compute_utcm_category()` (closed 2026-08-17 — ⚠️ one loose thread)
+
+Written as `database/migrations/147-drop-compute-utcm-category.sql` and applied to dev
+(dev is now at 147). The contract half of migration 143, whose deploy window closed when
+143 was verified on prod on 2026-08-11.
+
+**It has not reached prod yet**, and it is kept here rather than as an open item because
+nothing needs deciding or doing: it ships no code, has no ordering constraint, and
+`migrate.sh` auto-applies it on the next `/deploy` for any reason. After that deploy,
+confirm and then delete this entry:
+
+```sql
+SELECT p.oid::regprocedure FROM pg_proc p WHERE p.proname LIKE 'compute_%category';
+-- expect exactly two rows: compute_core_category(jsonb), compute_type_category(jsonb,text)
+```
+
+### Mastery goal defaults — `users.readingGoal` / `users.writingGoal` (closed 2026-08-17)
+
+Resolved as the doc assumed: **`boolean NOT NULL DEFAULT false`**, i.e. an existing
+account pursues neither reading nor writing until it opts in, so no account's bars change
+on deploy day. Confirmed against the live columns, not just the design doc.
 
 ### Study Challenge deploy-order constraints (closed 2026-08-16)
 

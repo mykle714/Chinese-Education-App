@@ -4,6 +4,7 @@ import LongDefinitionDisplay from "../../../components/LongDefinitionDisplay";
 import FrequencyScoreDots from "../../../components/FrequencyScoreDots";
 import { aiGeneratedSurfaceSx } from "../../../theme/aiGeneratedStyling";
 import InfoCardBlockButton from "./InfoCardBlockButton";
+import InfoCardActionBar from "./InfoCardActionBar";
 import UsedInPaginatedList from "../UsedInPaginatedList";
 import ExampleSentenceList from "../ExampleSentenceList";
 import MetaChipLabel from "../MetaChipLabel";
@@ -46,6 +47,14 @@ export interface InfoCardTabContentProps {
     onExampleSegmentClick?: (segment: string) => void;
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
     speakingKey?: string | null;
+    /**
+     * The panel's live sense pick (eip header SensePicker) — an index into
+     * sortedSenseClusters(currentEntry). Passed straight through to the per-sense
+     * resolvers so the tab body follows the tap immediately.
+     */
+    selectedSenseIndex?: number;
+    /** Opens the singleton Compare tab; undefined hides the bar's Compare button. */
+    onOpenCompare?: (entry: VocabEntry) => void;
 }
 
 const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
@@ -60,15 +69,18 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
     onExampleSegmentClick,
     onSpeakSentence,
     speakingKey,
+    selectedSenseIndex,
+    onOpenCompare,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     // Commonality follows the SENSE the card is on, not the entry: a polyseme's word-level
-    // score contradicts the definition printed right above it. No index override is needed
-    // — the tab's entry snapshot is re-seeded on every sense pick (useEipTabs.syncEntry),
-    // exactly as the long definition below resolves. See docs/DEFINITION_CLUSTERS.md.
+    // score contradicts the definition printed right above it. The panel's live pick is
+    // passed as the override so the meter changes on the tap, ahead of the persisted
+    // `selectedSense` round-tripping back (useEipTabs.syncEntry) — exactly as the long
+    // definition in `avail` resolves. See docs/DEFINITION_CLUSTERS.md.
     const commonality = currentEntry
-        ? resolveCommonality(currentEntry)
+        ? resolveCommonality(currentEntry, selectedSenseIndex)
         : { score: null, senseLabel: null, approved: false };
     const {
         longDefinition,
@@ -81,6 +93,17 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
     } = avail;
 
         if (tabIndex === 0) {
+            // The definition tab's trailing action bar (InfoCardActionBar.tsx): the
+            // card-level actions that used to be icon buttons in the eip header. It rides
+            // at the END of the scrollable content — the header is for identity (headword,
+            // dd, sense, speaker), the tab body is where the learner acts on the word.
+            // Each button self-hides on its own precondition (no vet row ⇒ no deck menu,
+            // non-zh ⇒ no writing practice, no handler ⇒ no compare), and the remaining
+            // ones re-flex to equal widths.
+            const actionBar = currentEntry && (
+                <InfoCardActionBar currentEntry={currentEntry} onOpenCompare={onOpenCompare} />
+            );
+
             return definitionTabHasContent ? (
                 <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                     {(longDefinition || longDefinitionParts?.length) && (
@@ -219,12 +242,18 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                           )}
                         </Box>
                     )}
+                    {actionBar}
                 </Box>
             ) : (
-                <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
-                    <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
-                        No definition available for this card
-                    </Typography>
+                // Even with nothing to read, the actions still apply to the word — an
+                // un-enriched card can still be filed into a deck, compared, or practised.
+                <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
+                        <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
+                            No definition available for this card
+                        </Typography>
+                    </Box>
+                    {actionBar}
                 </Box>
             );
         }

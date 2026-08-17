@@ -57,7 +57,7 @@ function fontSizeForGloss(gloss: string): number {
  * board resolves `state` and handles every consequence of `onTap`.
  *
  * CARD SIZE IS FIXED BY THE PARENT at a 2.4:1 (CARD_ASPECT) rectangle, identical for
- * all twelve cards. That is a CORRECTNESS requirement, not a style preference: if a
+ * all ten cards. That is a CORRECTNESS requirement, not a style preference: if a
  * long definition made its card taller, size would leak which pair is which and the
  * player could match by silhouette instead of by reading. So this card never grows
  * — a long gloss is absorbed by strip → scale → clamp (see below), never by the

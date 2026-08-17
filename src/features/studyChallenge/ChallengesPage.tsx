@@ -1,0 +1,229 @@
+import { useCallback, useEffect, useState } from "react";
+import { Box, Button, Typography } from "@mui/material";
+import HistoryIcon from "@mui/icons-material/History";
+import NodePage from "../../components/NodePage";
+import { FooterSpacer } from "../../components/MobileFooter";
+import FriendPersonRow from "../friends/FriendPersonRow";
+import { fetchChallengesPage } from "../../api/studyChallenges";
+import type { ChallengeFriendRow, ChallengesPageResponse } from "../../api/studyChallenges";
+import { useAuth } from "../../AuthContext";
+import { usePageTitle } from "../../hooks/usePageTitle";
+import { useSlideNavigate } from "../../hooks/useSlideNavigate";
+import { COLORS } from "../../theme/colors";
+import { FONTS } from "../../theme/fonts";
+import { SIZE, WEIGHT } from "../../theme/scale";
+import {
+    blockedReasonLabel,
+    challengeAction,
+    challengeActionColor,
+    challengeActionLabel,
+    challengeErrorMessage,
+    challengeStatusLine,
+} from "./challengeLabels";
+import { challengeActionSx, challengeMessageSx, challengeMutedSx, crownSx } from "./challengeStyles";
+
+/**
+ * Study Challenges (docs/STUDY_CHALLENGE.md § 1) — a NodePage under the Friends
+ * drill-in, sibling to `/friends/sent` and `/friends/requests`.
+ *
+ * ⚠️ THIS PAGE IS A LIST OF FRIENDS, NOT A LIST OF CHALLENGES. The friend is the
+ * unit: one row per friend, always present, whether or not a challenge is active,
+ * and the row carries that pair's whole lifecycle (Challenge → Waiting on them /
+ * Review words → Play test → See results). There is deliberately never a second
+ * place to look for "what is happening with Bob".
+ *
+ * Two things the row shows and one it deliberately does not:
+ *   * 👑 the REIGNING CHAMPION — whoever won the pair's most recent resolved
+ *     challenge. A draw or a no-contest leaves the previous champion in place, so the
+ *     crown only moves when somebody wins.
+ *   * the single lifecycle control, whose label IS the state.
+ *   * NO LIFETIME W–L, anywhere. A running record makes a losing streak a reason to
+ *     stop playing, and the crown already supplies the rivalry. The data is stored, so
+ *     a record can be added later if it is ever actually wanted.
+ *
+ * LANGUAGE-SCOPED: the row set is "friends who study this language", because the
+ * words, the deck and the minute points a challenge earns are all per-language. A
+ * friend who studies only Spanish does not appear here on a Chinese page. The BADGE on
+ * the Friends row is the one thing that ignores that scoping (§ 1, Q48) — it is the
+ * only thread back to a challenge the viewer cannot otherwise see.
+ */
+function ChallengesPage() {
+    usePageTitle("Challenges");
+    const slideNavigate = useSlideNavigate();
+    const { user, isAuthenticated } = useAuth();
+
+    const [page, setPage] = useState<ChallengesPageResponse | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    // Keyed on isAuthenticated, never on `token`: a silent 15-minute refresh must not
+    // re-fetch and flash the list (CLAUDE.md "Never reload on token refresh").
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        fetchChallengesPage()
+            .then((result) => { if (!cancelled) { setPage(result); setError(null); } })
+            .catch((err: unknown) => {
+                if (!cancelled) setError(challengeErrorMessage(err, "Could not load your challenges"));
+            })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, [isAuthenticated]);
+
+    /**
+     * Every action on the row is a NAVIGATION, not a mutation. Issuing and accepting
+     * both go through the review flow, because both are "look at ten words and confirm
+     * them" — the challengee's Accept button opening a picker is exactly the friendlier
+     * reading § 8.2 allows, with the transition to `accepted` happening on the picker's
+     * final confirm rather than on this tap.
+     */
+    const handleAction = useCallback((row: ChallengeFriendRow) => {
+        const action = challengeAction(row.challenge);
+        switch (action) {
+            case "issue":
+                slideNavigate(`/friends/challenges/new/${row.friend.userId}`);
+                break;
+            case "review":
+                slideNavigate(`/friends/challenges/review/${row.challenge!.id}`);
+                break;
+            case "waiting":
+            case "study":
+            case "play":
+            case "results":
+                slideNavigate(`/friends/challenges/${row.challenge!.id}`);
+                break;
+            default:
+                break;
+        }
+    }, [slideNavigate]);
+
+    const maxActive = page?.maxActive ?? 0;
+
+    return (
+        <NodePage
+            title="Challenges"
+            activePage="home"
+            onBack={() => slideNavigate("/friends")}
+            contentClassName="challenges-page__content"
+        >
+            <Box className="challenges-page" sx={{ display: "flex", flexDirection: "column", gap: 2, px: 2, pt: 1 }}>
+
+                {/* The full log lives behind its own screen: this page is about THIS
+                    week, and a growing history on the same surface would bury it. */}
+                <Button
+                    className="challenges-page__history-button"
+                    onClick={() => slideNavigate("/friends/challenges/history")}
+                    startIcon={<HistoryIcon />}
+                    sx={{
+                        alignSelf: "flex-start",
+                        textTransform: "none",
+                        fontFamily: FONTS.sans,
+                        fontSize: SIZE.body,
+                        fontWeight: WEIGHT.semibold,
+                        color: COLORS.onSurface,
+                        backgroundColor: COLORS.surface,
+                        borderRadius: 3,
+                        px: 2,
+                        py: 0.75,
+                    }}
+                >
+                    History
+                </Button>
+
+                {page && page.activeCount > 0 && (
+                    <Typography className="challenges-page__active-count" sx={challengeMutedSx}>
+                        {page.activeCount} of {maxActive} challenge slots used this week
+                    </Typography>
+                )}
+
+                {error && (
+                    <Typography className="challenges-page__error" sx={challengeMessageSx}>{error}</Typography>
+                )}
+
+                {loading ? (
+                    <Typography className="challenges-page__loading" sx={challengeMutedSx}>Loading…</Typography>
+                ) : (page?.rows.length ?? 0) === 0 ? (
+                    // A BARE empty state, not a feature explainer and not a hidden row
+                    // (Q67). Teaching the feature is not this page's job, and a row that
+                    // vanished until you had a friend would make the feature
+                    // undiscoverable for exactly the people who have not found friends yet.
+                    <Typography className="challenges-page__empty" sx={challengeMutedSx}>
+                        No challenges yet.
+                    </Typography>
+                ) : (
+                    <Box className="challenges-page__list" sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                        {page!.rows.map((row) => {
+                            const action = challengeAction(row.challenge);
+                            const isChampion = !!row.championUserId
+                                && row.championUserId === row.friend.userId;
+                            const viewerIsChampion = !!row.championUserId
+                                && !!user?.id
+                                && row.championUserId === user.id;
+                            const blocked = blockedReasonLabel(row.blockedReason, maxActive);
+                            // "issue" is the only action the server can veto: a live
+                            // challenge already shows its own control, so a blocked
+                            // reason next to one would be nonsense.
+                            const showAction = action !== "issue" || row.canChallenge;
+
+                            return (
+                                <FriendPersonRow
+                                    key={row.friend.userId}
+                                    className="challenges-page__row"
+                                    name={row.friend.name}
+                                    email={row.friend.email}
+                                    avatarIconId={row.friend.avatarIconId}
+                                    secondary={challengeStatusLine(row.challenge) ?? undefined}
+                                    actions={
+                                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+                                            {/* The crown sits on whoever holds it — on the
+                                                friend's row when they do, and on the same row
+                                                as a "you" marker when the viewer does, because
+                                                the claim is about the PAIR and belongs where
+                                                the pair is. */}
+                                            {isChampion && (
+                                                <Box component="span" className="challenges-page__crown" sx={crownSx} title="Reigning champion">👑</Box>
+                                            )}
+                                            {viewerIsChampion && (
+                                                <Typography
+                                                    className="challenges-page__you-champion"
+                                                    sx={{ ...challengeMutedSx, fontSize: SIZE.micro }}
+                                                >
+                                                    👑 you
+                                                </Typography>
+                                            )}
+                                            {showAction ? (
+                                                <Button
+                                                    className={`challenges-page__action challenges-page__action--${action}`}
+                                                    onClick={() => handleAction(row)}
+                                                    // "Waiting on them" is a STATE, not an
+                                                    // invitation to tap twice — it opens the
+                                                    // challenge (where Withdraw lives), so it
+                                                    // stays enabled.
+                                                    disabled={action === "none"}
+                                                    sx={challengeActionSx(challengeActionColor(action))}
+                                                >
+                                                    {challengeActionLabel(action)}
+                                                </Button>
+                                            ) : (
+                                                <Typography
+                                                    className="challenges-page__unavailable"
+                                                    sx={{ ...challengeMutedSx, fontSize: SIZE.micro, textAlign: "right" }}
+                                                >
+                                                    {blocked}
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                    }
+                                />
+                            );
+                        })}
+                    </Box>
+                )}
+
+                <FooterSpacer />
+            </Box>
+        </NodePage>
+    );
+}
+
+export default ChallengesPage;

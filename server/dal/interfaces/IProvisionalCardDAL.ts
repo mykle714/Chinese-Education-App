@@ -76,4 +76,42 @@ export interface IProvisionalCardDAL {
    * the end-of-round "sort these" hand-off.
    */
   listProvisionalKeys(userId: string, language: string): Promise<string[]>;
+
+  /**
+   * The user's OWN cards, hardest-known first — the `mastered-first` filler ladder
+   * (docs/STUDY_CHALLENGE.md § 5.2).
+   *
+   * Ordered by descending core band — **Mastered → Comfortable → Target →
+   * Unfamiliar** — then, within Mastered, most recently mastered first (`masteredAt`,
+   * migration 142), then commonality, then id.
+   *
+   * ⚠️ THIS IS NOT LENDING. Every row it returns is a card the user already holds;
+   * it exists so a Study Challenge round can pad its board with the player's OWN
+   * easiest material before borrowing anything. Filler must not be a source of
+   * difficulty: a challenge measures its ten contested words, and padding the board
+   * with words the player has never seen would add noise and reward whoever got
+   * luckier filler. `default` lending is the LAST rung of the ladder, reached only
+   * when the player's whole library is exhausted — which is exactly a brand-new
+   * learner, and exactly what lending is for.
+   *
+   * Why descend the bands rather than jump straight to lending: the player's own
+   * Unfamiliar card is one they CHOSE to sort, and is still more familiar than a word
+   * the server lent them sight-unseen.
+   */
+  findOwnCardsByBand(
+    userId: string,
+    language: string,
+    limit: number,
+    opts?: { excludeWords?: string[] }
+  ): Promise<OwnCardCandidate[]>;
+}
+
+/** One of the user's own cards, as the `mastered-first` ladder returns it. */
+export interface OwnCardCandidate {
+  /** vet row id. */
+  id: number;
+  /** vet `entryKey` — the word. */
+  entryKey: string;
+  /** The computed core utcm band this card sits in, for logging/telemetry. */
+  category: string;
 }

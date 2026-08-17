@@ -47,7 +47,7 @@ taps, a clock, and a board that keeps refilling.
 
 ## Gameplay
 
-1. The board shows **6 pairs** — 6 foreign-word cards in the left column, their 6
+1. The board shows **5 pairs** — 5 foreign-word cards in the left column, their 5
    English definitions in the right column. Every card on the board always has
    its partner on the board.
 2. Row position is **randomized independently per column**, so vertical alignment
@@ -97,7 +97,7 @@ tap is **queued behind a render**.
 its dependency array. Both halves are required, and together they are an
 input-latency mechanism, not a micro-optimisation:
 
-- Without the memo, every `setSelectedId` re-rendered **all 12 cards**, each
+- Without the memo, every `setSelectedId` re-rendered **all 10 cards**, each
   re-running `resolveDisplayDefinition`, a full cpcd character+pinyin render, and
   MUI/emotion serialization of two large `sx` objects.
 - Without a stable `onTap`, the memo misses on every card and you get the same
@@ -268,12 +268,10 @@ columns' hole counts and `console.error`s the mismatch under `import.meta.env.DE
           │   书      │          │  book    │
   row 4   ├──────────┤          ├──────────┤
           │   谢谢    │          │  thanks  │
-  row 5   ├──────────┤          ├──────────┤
-          │   老师    │          │  teacher │
           └──────────┘          └──────────┘
 ```
 
-The board is **two fixed-length slot arrays** of length `ROWS` (6), not a list of
+The board is **two fixed-length slot arrays** of length `ROWS` (5), not a list of
 live cards. A slot is either occupied by a card or empty:
 
 ```ts
@@ -301,7 +299,7 @@ keys stable so a surviving card's DOM node is never re-created mid-tap.
 ### Card sizing: locked to 2.4:1
 
 **Every card is the same 2.4:1 rectangle** (`CARD_ASPECT` = width ÷ height), and
-the twelve cards on a board are always identical. This is
+the ten cards on a board are always identical. This is
 a correctness requirement, not a style preference: card *shape* must carry no
 information. A card that stretched to fill leftover height would make a
 half-empty board look different from a full one, and any per-row variation would
@@ -368,7 +366,7 @@ where they do, and it's the reason the refill is not per-hole.
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `ROWS` | 6 | rows per column |
+| `ROWS` | 5 | rows per column |
 | `RUN_DURATION_MS` | 30_000 | thirty seconds |
 | `REFILL_TICK_MS` | 3_000 | board refill cadence |
 | `FADE_IN_MAX_DELAY_MS` | 500 | upper bound of the per-card random fade delay |
@@ -409,8 +407,8 @@ its finished state and a second clear would render nothing visible. Same trick
 `MatchSpeedCard` uses for its per-card fade-in (and that Speed Reading's float
 indicator used for repeat taps at one spot, before it was removed).
 
-**Reachability.** With `ROWS` = 6 and a 3-second tick, clearing during live play
-means matching six pairs inside one tick window — very rare, which is the point.
+**Reachability.** With `ROWS` = 5 and a 3-second tick, clearing during live play
+means matching five pairs inside one tick window — very rare, which is the point.
 The common case is the **cleanup phase**, where the board drains and never
 refills; the banner fires there too, on the final pair.
 
@@ -431,7 +429,7 @@ The game defines **three independently-playable modes**, selected via nav
 unlocked by clearing one.
 
 A mode changes **only which mastery buckets the pool may draw from**. The 30s
-clock, the 6×2 board, the 3-second refill tick and the medal thresholds are
+clock, the 5×2 board, the 3-second refill tick and the medal thresholds are
 identical across all three — difficulty comes purely from which cards you are
 asked to recognize, which is exactly what Review/Challenge mean on `/decks`.
 
@@ -455,7 +453,7 @@ asked to recognize, which is exactly what Review/Challenge mean on `/decks`.
   `ceil(BUFFER_TOTAL_TARGET / categories.length)`, so every mode buffers ~24
   pairs no matter how many buckets it spans and the board draws at the same rate.
   `BUFFER_TOTAL_TARGET` is **24** so that even Study Mix's thinnest bucket (24 / 4 = 6)
-  can fill a whole board (`ROWS` = 6) by itself — a per-bucket depth below the
+  can fill a whole board (`ROWS` = 5) by itself — a per-bucket depth below the
   board size would fire the fallback walk on an ordinary tick and quietly pull the
   run off its weight table.
 
@@ -903,7 +901,7 @@ Three steps, in order:
    both ends.
 3. **Clamp at 3 lines** with an ellipsis.
 
-Card size stays **fixed at 2.4:1 and equal across all twelve cards** throughout — see
+Card size stays **fixed at 2.4:1 and equal across all ten cards** throughout — see
 [Card sizing](#card-sizing-locked-to-241) for why this is a correctness
 constraint.
 
@@ -964,7 +962,7 @@ derived avoids a state pair that can disagree.
 ```
 src/games/match-speed/
   MatchSpeedPage.tsx       page shell + phase machine + pool/buffer + marks
-  MatchSpeedBoard.tsx      the 6×2 slot grid (ROWS=6 × 2 columns), tap handling, refill tick
+  MatchSpeedBoard.tsx      the 5×2 slot grid (ROWS=5 × 2 columns), tap handling, refill tick
   MatchSpeedCard.tsx       one card (foreign or english) + its visual states
   MatchSpeedHeader.tsx     right-slot controls: settings cog + fire badge
   MatchSpeedSettingsDialog.tsx  settings sheet: pinyin / tone colors / autoplay

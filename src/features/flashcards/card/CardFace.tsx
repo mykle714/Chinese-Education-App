@@ -1,10 +1,6 @@
 import React from "react";
-import { Box, CardContent, IconButton, ListItemIcon, ListItemText, ListSubheader, Menu, MenuItem, Typography, useTheme } from "@mui/material";
-import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
-import StarIcon from "@mui/icons-material/Star";
-import { ddt, senseGrammarTag, sortedSenseClusters, resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
-import { numberedToTonedPinyin } from "../../../utils/textUtils";
-import { getToneColor } from "../../../utils/toneColors";
+import { Box, CardContent, Typography, useTheme } from "@mui/material";
+import { sortedSenseClusters, resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import {
     CARD_FACE_JUSTIFY,
     CARD_FLIP_MS,
@@ -13,12 +9,12 @@ import {
 } from "../constants";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../../theme/scale";
 import type { VocabEntry } from "../types";
-import type { DefinitionCluster, IconLayoutItem, TextLayout } from "../../../types";
+import type { IconLayoutItem, TextLayout } from "../../../types";
 import CardIconLayer from "../../../cardIcons/CardIconLayer";
 import { defaultLayoutForIcon } from "../../../cardIcons/cardIconLayout";
 import { resolveTextLayout, textItemTransform, defaultEnglishTopAnchorTransform } from "../../../cardIcons/cardTextLayout";
 import ForeignText from "../../../components/ForeignText";
-import FrequencyScoreDots from "../../../components/FrequencyScoreDots";
+import SensePicker from "./SensePicker";
 import { SpeakerButton } from "../../../components/SpeakerButton";
 import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
 import { getCategoryColor } from "../../../utils/categoryColors";
@@ -157,10 +153,11 @@ const englishFontSize = (text: string): number => {
 
 // English definition Typography reused on both Side 1 (when English) and Side 2.
 // When the entry has zh orthogonal sense clusters (definitionClusters, migration 90 —
-// see docs/DEFINITION_CLUSTERS.md), a small triangle trigger appears beside the text,
-// opening a menu of the word's other senses (one item per cluster, via the ddt display
-// transformation). Undiscoverable/unclustered entries (definitionClusters null or a
-// single cluster) render exactly as before — no trigger, no picker.
+// see docs/DEFINITION_CLUSTERS.md), the shared SensePicker (SensePicker.tsx) renders a
+// small triangle trigger beside the text, opening a menu of the word's other senses —
+// the same picker the eip definition header mounts. Undiscoverable/unclustered entries
+// (definitionClusters null or a single cluster) render exactly as before — no trigger,
+// no picker.
 export const EnglishBlock: React.FC<{
     entry: VocabEntry;
     // Index into the frequency-sorted cluster list currently shown. Owned by CardFace
@@ -197,126 +194,31 @@ export const EnglishBlock: React.FC<{
     // starred/default sense.
     const sortedClusters = React.useMemo(() => sortedSenseClusters(entry), [entry]);
 
-    // The picker groups the frequency-sorted clusters into reading sections so the
-    // menu reads as "these senses share this pinyin". Grouping preserves the sort:
-    // readings appear in the order their first (highest-frequency) cluster does, and
-    // clusters stay frequency-ordered within a section — so the starred default (the
-    // global index 0) always heads the first section. Each entry keeps its original
-    // index into `sortedClusters` so `selectedSenseIndex` addressing is unchanged.
-    //
-    // NULL when no cluster carries a reading — i.e. Spanish, whose senses are separated by
-    // pos/gender rather than pronunciation (migration 123). Sectioning those would emit one
-    // meaningless "—" heading over the whole list, so the render falls back to a flat list
-    // and each item shows its own grammar tag instead (see senseGrammarTag).
-    const senseSections = React.useMemo(() => {
-        if (!sortedClusters) return null;
-        if (!sortedClusters.some((c) => c.reading)) return null;
-        const sections: { reading: string; items: { cluster: typeof sortedClusters[number]; index: number }[] }[] = [];
-        sortedClusters.forEach((cluster, index) => {
-            const reading = cluster.reading ?? '';
-            let section = sections.find((s) => s.reading === reading);
-            if (!section) {
-                section = { reading, items: [] };
-                sections.push(section);
-            }
-            section.items.push({ cluster, index });
-        });
-        return sections;
-    }, [sortedClusters]);
-
     // The card face's dd goes through the shared resolver like every other dd surface;
     // the live `selectedSenseIndex` is passed as the override so a pick made this session
     // shows immediately, before the persisted `selectedSense` round-trips back.
     const text = resolveDisplayDefinition(entry, selectedSenseIndex);
 
-    const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
-    // Mirrors SpeakerButton: the trigger sits inside the draggable/flippable card, so
-    // press events must not bubble to the card's own touch/mouse handlers.
-    const stopCardHandlers = (e: React.SyntheticEvent) => e.stopPropagation();
-
-    // One sense row, shared by the sectioned (zh) and flat (es) render paths so the
-    // selection / star / stop-propagation behavior can't drift between them. The grammar
-    // tag ("n · m") is shown only on the flat path, where nothing else distinguishes two
-    // senses that happen to read the same; the zh path's reading heading already does.
-    const renderSenseItem = (
-        cluster: DefinitionCluster,
-        index: number,
-        showGrammarTag: boolean,
-    ) => {
-        const tag = showGrammarTag ? senseGrammarTag(cluster) : null;
-        return (
-            <MenuItem
-                key={`sense-${index}`}
-                selected={index === selectedSenseIndex}
-                // The Menu renders in a portal, but React synthetic events bubble
-                // through the React tree — so a tap here would otherwise reach the
-                // card's flip handlers. Stop every press event, same as the trigger.
-                onClick={(e) => { stopCardHandlers(e); onSelectSense?.(index); setAnchorEl(null); }}
-                onMouseDown={stopCardHandlers}
-                onTouchStart={stopCardHandlers}
-                onTouchEnd={stopCardHandlers}
-            >
-                {index === 0 && (
-                    <ListItemIcon sx={{ minWidth: 28 }}>
-                        <StarIcon fontSize="small" sx={{ color: theme.palette.warning.main }} />
-                    </ListItemIcon>
-                )}
-                <ListItemText inset={index !== 0} primary={ddt(cluster)} />
-                {/* Per-sense commonality (the cluster's own 1–5 conversation-frequency
-                    score, migration 139 / docs/DEFINITION_CLUSTERS.md) — the same meter
-                    the eip and cdp show, shrunk to menu scale and muted to secondary text
-                    so it reads as metadata beside the sense label. It earns its place here
-                    because the zh path GROUPS by reading, so the menu order is no longer
-                    globally frequency-sorted and the learner otherwise can't tell which of
-                    two senses under different readings is the common one. Omitted (rather
-                    than shown as five hollow dots) when scoring failed / never ran. */}
-                {cluster.frequencyScore != null && (
-                    // Wrapper carries the spacing/no-shrink: FrequencyScoreDots takes
-                    // colors and sizes but no sx, so layout is the caller's job.
-                    <Box sx={{ ml: 1.5, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
-                        <FrequencyScoreDots
-                            className="mobile-demo-flashcard-sense-commonality"
-                            score={cluster.frequencyScore}
-                            dotSize={5}
-                            gap={2.5}
-                            filledColor={theme.palette.text.secondary}
-                            emptyBorderColor={theme.palette.divider}
-                        />
-                    </Box>
-                )}
-                {tag && (
-                    <Typography
-                        className="mobile-demo-flashcard-sense-grammar"
-                        sx={{ ml: 1.5, fontSize: SIZE.micro, color: theme.palette.text.secondary, whiteSpace: 'nowrap' }}
-                    >
-                        {tag}
-                    </Typography>
-                )}
-            </MenuItem>
-        );
-    };
-
     // The sense-picker trigger, structured exactly like ChineseBlock's `actions`
     // (writing + speaker buttons): a small column Box, so the two blocks stay
     // visually/structurally consistent even though English currently has only
-    // one action.
+    // one action. The trigger + menu themselves are the shared SensePicker, which
+    // the eip definition header mounts too (see SensePicker.tsx). The
+    // `sortedClusters` gate is duplicated here — not to decide whether the picker
+    // renders (SensePicker self-hides) but because the whole `actions` column, and
+    // the hidden spacer that balances it, must collapse when there is no choice.
     const actions = sortedClusters ? (
         <Box
             className="mobile-demo-flashcard-actions"
             sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}
         >
-            <IconButton
-                className="mobile-demo-flashcard-sense-trigger"
-                size="small"
-                aria-label="Switch definition"
-                onClick={(e) => { stopCardHandlers(e); setAnchorEl(e.currentTarget); }}
-                onMouseDown={stopCardHandlers}
-                onTouchStart={stopCardHandlers}
-                onTouchEnd={stopCardHandlers}
-                sx={{ color: englishColor }}
-            >
-                <ArrowDropDownIcon fontSize="small" />
-            </IconButton>
+            <SensePicker
+                entry={entry}
+                selectedSenseIndex={selectedSenseIndex}
+                onSelectSense={onSelectSense}
+                color={englishColor}
+                censorReadings={censorReadings}
+            />
         </Box>
     ) : null;
 
@@ -365,87 +267,6 @@ export const EnglishBlock: React.FC<{
                             {actions}
                         </Box>
                     )
-                )}
-                {sortedClusters && (
-                    <Menu
-                        className="mobile-demo-flashcard-sense-menu"
-                        anchorEl={anchorEl}
-                        open={Boolean(anchorEl)}
-                        onClose={() => setAnchorEl(null)}
-                        MenuListProps={{ sx: { py: 0.5 } }}
-                        // Backdrop/paper taps also bubble through the portal to the card's
-                        // flip handlers — swallow them at the Menu root too.
-                        onClick={stopCardHandlers}
-                        onMouseDown={stopCardHandlers}
-                        onTouchStart={stopCardHandlers}
-                        onTouchEnd={stopCardHandlers}
-                    >
-                        {/* zh: one pinyin-labelled section per distinct reading; MUI's Menu flattens
-                            this array of fragments, so ListSubheader + MenuItems render inline.
-                            es: no readings to section by, so the clusters render flat with a
-                            per-sense grammar tag ("n · m") carrying the disambiguation instead. */}
-                        {!senseSections && sortedClusters.map((cluster, index) =>
-                            renderSenseItem(cluster, index, true))}
-                        {senseSections?.map((section, sectionIndex) => [
-                            <ListSubheader
-                                key={`heading-${section.reading}`}
-                                className="mobile-demo-flashcard-sense-reading"
-                                disableSticky
-                                sx={{
-                                    lineHeight: 1.6,
-                                    fontWeight: WEIGHT.semibold,
-                                    bgcolor: 'transparent',
-                                    // Row so the heading can carry the right-hand column label
-                                    // (see the "Commonality" caption below) opposite the reading.
-                                    display: 'flex',
-                                    alignItems: 'baseline',
-                                    justifyContent: 'space-between',
-                                    gap: 1.5,
-                                }}
-                            >
-                                <Box component="span">
-                                {/* Front/question side: the reading is the answer, so the heading
-                                    becomes a bare ordinal label ("Group 1"). Sections are already in
-                                    frequency order, so the numbering is stable for a given card. */}
-                                {censorReadings
-                                    ? <span style={{ color: theme.palette.text.secondary }}>{`Group ${sectionIndex + 1}`}</span>
-                                /* Per-syllable tone coloring, matching cpcd/pinyin elsewhere. An
-                                   empty reading (should not happen for a clustered zh entry) falls
-                                   back to a neutral em dash. */
-                                : section.reading
-                                    ? numberedToTonedPinyin(section.reading).split(/\s+/).filter(Boolean).map((syllable, si) => (
-                                        <React.Fragment key={si}>
-                                            {si > 0 && ' '}
-                                            <span style={{ color: getToneColor(syllable) }}>{syllable}</span>
-                                        </React.Fragment>
-                                    ))
-                                    : <span style={{ color: theme.palette.text.secondary }}>—</span>}
-                                </Box>
-                                {/* Column label for the trailing dot meters. Rendered on the FIRST
-                                    section only — repeating it over every reading would read as
-                                    part of each heading rather than as a one-time column header —
-                                    and only when some cluster actually has a score to show. */}
-                                {sectionIndex === 0 && sortedClusters.some((c) => c.frequencyScore != null) && (
-                                    <Box
-                                        component="span"
-                                        className="mobile-demo-flashcard-sense-commonality-label"
-                                        sx={{
-                                            fontSize: SIZE.micro,
-                                            fontWeight: WEIGHT.regular,
-                                            letterSpacing: TRACKING.wide,
-                                            color: theme.palette.text.secondary,
-                                            whiteSpace: 'nowrap',
-                                        }}
-                                    >
-                                        Commonality
-                                    </Box>
-                                )}
-                            </ListSubheader>,
-                            // The reading heading above already disambiguates these senses,
-                            // so the per-item grammar tag would be noise here.
-                            ...section.items.map(({ cluster, index }) => renderSenseItem(cluster, index, false)),
-                        ])}
-                    </Menu>
                 )}
             </Box>
         </Box>

@@ -15,19 +15,26 @@ import { SIZE, WEIGHT } from "../../theme/scale";
  * The twelve rungs.
  *
  * Named rather than numbered because "Division 7" tells a learner nothing about
- * whether that is good, while a named progression does. The colours walk the app's
- * existing pastel accents from cool to warm so the ladder reads as a climb
- * without introducing a new palette.
+ * whether that is good, while a named progression does. The names are a materials
+ * ladder — soft stone, then the medals, then engineered alloys, then gems — so the
+ * climb reads without needing the number beside it.
  */
 export const DIVISION_NAMES = [
-    "Clay", "Slate", "Copper", "Bronze", "Iron", "Silver",
-    "Gold", "Jade", "Amber", "Ruby", "Obsidian", "Celestial",
+    "Slate", "Bronze", "Silver", "Gold", "Steel", "Platinum",
+    "Iridium", "Obsidian", "Titanium", "Jade", "Diamond", "Legendary",
 ] as const;
 
+/**
+ * One accent per rung, index-aligned with DIVISION_NAMES.
+ *
+ * The walk is pale-and-neutral at the bottom → warm through the medal rungs →
+ * dark through the heavy-metal rungs (Iridium, Obsidian) → saturated at the top,
+ * so the ladder reads as a climb using only existing tokens (no new palette).
+ */
 export const DIVISION_COLORS = [
-    COLORS.card, COLORS.iconBg, COLORS.cardBeige, COLORS.yellowAccent,
-    COLORS.rowHoverBg, COLORS.blueAccent, COLORS.yellowMain, COLORS.greenAccent,
-    COLORS.yellowMain, COLORS.redAccent, COLORS.textSecondary, COLORS.purpleAccent,
+    COLORS.card, COLORS.cardBeige, COLORS.header, COLORS.yellowMain,
+    COLORS.rowHoverBg, COLORS.iconBg, COLORS.textSecondary, COLORS.iconColor,
+    COLORS.blueAccent, COLORS.greenMain, COLORS.blueMain, COLORS.purpleAccent,
 ] as const;
 
 /** 1-based division → its display name, clamped so a bad value cannot crash the page. */
@@ -40,6 +47,19 @@ export function divisionName(division: number): string {
 export function divisionColor(division: number): string {
     const i = Math.min(Math.max(Math.round(division), 1), DIVISION_COLORS.length);
     return DIVISION_COLORS[i - 1];
+}
+
+/**
+ * Rungs whose accent is dark enough that the default dark body text on top of it
+ * fails to read — Iridium and Obsidian. Listed explicitly (1-based) rather than
+ * computed from luminance so the set is auditable when the palette is retuned.
+ */
+const DARK_DIVISIONS = new Set<number>([7, 8]);
+
+/** 1-based division → the text colour to use ON its accent. */
+export function divisionTextColor(division: number): string {
+    const i = Math.min(Math.max(Math.round(division), 1), DIVISION_COLORS.length);
+    return DARK_DIVISIONS.has(i) ? COLORS.background : COLORS.onSurface;
 }
 
 /**

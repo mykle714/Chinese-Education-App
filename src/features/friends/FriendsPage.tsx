@@ -4,11 +4,13 @@ import { Box, Button, Typography } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import MarkEmailUnreadIcon from "@mui/icons-material/MarkEmailUnread";
 import PersonRemoveIcon from "@mui/icons-material/PersonRemove";
+import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
 import FriendPersonRow from "./FriendPersonRow";
 import { fetchFriendsLeaderboard, fetchIncomingRequests } from "../../api/friends";
+import { fetchChallengeBadge } from "../../api/studyChallenges";
 import type { FriendLeaderboardEntry } from "../../api/friends";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -125,6 +127,7 @@ function FriendsPage() {
 
     const [entries, setEntries] = useState<FriendLeaderboardEntry[]>([]);
     const [incomingCount, setIncomingCount] = useState(0);
+    const [challengeCount, setChallengeCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
@@ -134,11 +137,19 @@ function FriendsPage() {
     useEffect(() => {
         let cancelled = false;
         setLoading(true);
-        Promise.all([fetchFriendsLeaderboard(), fetchIncomingRequests()])
-            .then(([board, incoming]) => {
+        Promise.all([
+            fetchFriendsLeaderboard(),
+            fetchIncomingRequests(),
+            // The challenge badge must not be able to fail the whole page: it is the
+            // newest of the three reads and the least important to the screen's purpose,
+            // so it degrades to 0 rather than replacing the leaderboard with an error.
+            fetchChallengeBadge().catch(() => ({ count: 0 })),
+        ])
+            .then(([board, incoming, badge]) => {
                 if (cancelled) return;
                 setEntries(board.entries);
                 setIncomingCount(incoming.length);
+                setChallengeCount(badge.count);
                 setError(null);
             })
             .catch((err: unknown) => {
@@ -220,6 +231,47 @@ function FriendsPage() {
                         Remove
                     </Button>
                 </Box>
+
+                {/* Study Challenges (docs/STUDY_CHALLENGE.md § 1) — a fourth drill-in,
+                    on its own row rather than as a fourth equal third, because it is a
+                    FEATURE rather than one of the three friend-list actions, and
+                    squeezing it into that row would make all four labels unreadable.
+
+                    ⚠️ THE BADGE IS THE ONLY WAY A CHALLENGE IS EVER ANNOUNCED. There are
+                    no notifications of any kind — no push, no email, no native badge — so
+                    this dot, and the row's own dot inside it, are the entire discovery
+                    mechanism (Q48). The count is deliberately LANGUAGE-BLIND: a challenge
+                    in a language the viewer is not currently studying is invisible on the
+                    challenges page itself, and this badge is the one thread back to it. */}
+                <Button
+                    className="friends-page__challenges-button"
+                    onClick={() => slideNavigate("/friends/challenges")}
+                    startIcon={<EmojiEventsIcon />}
+                    sx={navButtonSx(COLORS.yellowAccent)}
+                >
+                    Challenges
+                    {challengeCount > 0 && (
+                        <Box
+                            className="friends-page__challenges-badge"
+                            sx={{
+                                ml: 0.75,
+                                minWidth: 20,
+                                height: 20,
+                                px: 0.5,
+                                borderRadius: "10px",
+                                backgroundColor: COLORS.redMain,
+                                color: "#fff",
+                                fontSize: SIZE.micro,
+                                fontWeight: WEIGHT.bold,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                            }}
+                        >
+                            {challengeCount}
+                        </Box>
+                    )}
+                </Button>
 
                 {/* Your own ID — the shareable friend handle. */}
                 <Box

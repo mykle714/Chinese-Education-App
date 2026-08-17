@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { VocabEntryDAL } from '../dal/implementations/VocabEntryDAL.js';
 import { DictionaryDAL } from '../dal/implementations/DictionaryDAL.js';
 import { SortPacksDAL } from '../dal/implementations/SortPacksDAL.js';
@@ -634,8 +635,7 @@ export class StarterPacksService {
         const currentTimestamp: string = new Date().toISOString();
         await this.vocabEntryDAL.updateTypedMarkHistory(
           vocabEntryId,
-          coreMasteredTypedMarkHistory(currentTimestamp),
-          8, 8
+          coreMasteredTypedMarkHistory(currentTimestamp)
         );
         console.log(`[StarterPacks] Marked VocabEntry id=${vocabEntryId} as Mastered with a full typed history`);
       }
@@ -673,6 +673,69 @@ export class StarterPacksService {
     // persisted, so the new vet row is reflected in the estimate and the exclusions.
     const { cards, exhausted, level } = await this.getNextCards(language, userId, excludeIds, 1);
     return { success: true, message: 'Card sorted successfully', bucket: actualBucket, nextCard: cards[0] ?? null, exhausted, level };
+  }
+
+  /**
+   * Ensure `entryKey` exists as a `library` vet row for this user, and return its id.
+   *
+   * Keyed by WORD, not by det id, because the caller that needs it — Study Challenge's
+   * accept transaction (docs/STUDY_CHALLENGE.md § 3.3) — stores its words as the
+   * denormalised (language, word1) pair precisely so history survives a det data
+   * deploy. A det id would be the wrong handle there.
+   *
+   * Shares `sortCard`'s three-way semantics deliberately, because "make sure this
+   * word is in the learner's library" must mean exactly one thing app-wide:
+   *   * no row        → create it in the `library` bucket;
+   *   * provisional   → promote IN PLACE, so every mark earned while it was a lent
+   *                     card survives (docs/PROVISIONAL_CARDS.md);
+   *   * already library → touch NOTHING. Re-materialising a card the learner already
+   *                     owns must not reset its bucket, its marks, its selected sense
+   *                     or its icon layout.
+   *
+   * Takes the caller's client so it can enlist in their transaction — the accept path
+   * creates vet rows and two decks atomically, and a half-applied accept would leave
+   * two players with a challenge they cannot study for.
+   *
+   * Referenced by: StudyChallengeService.materialiseWords.
+   */
+  async ensureLibraryEntry(
+    userId: string,
+    entryKey: string,
+    language: string,
+    client: PoolClient
+  ): Promise<number | null> {
+    if (!userId || !entryKey || !language) return null;
+    const vetTable = this._vetTable(language);
+
+    const existing = await client.query<{ id: number; starterPackBucket: string | null }>(
+      `SELECT id, "starterPackBucket" FROM ${vetTable}
+        WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3`,
+      [userId, entryKey, language]
+    );
+
+    if (existing.rows.length > 0) {
+      const row = existing.rows[0];
+      if (row.starterPackBucket === 'provisional') {
+        await client.query(
+          `UPDATE ${vetTable} SET "starterPackBucket" = 'library' WHERE id = $1`,
+          [row.id]
+        );
+      }
+      return row.id;
+    }
+
+    // ON CONFLICT covers the race where the learner sorts the same word in another
+    // tab between the SELECT and this INSERT; the DO UPDATE is a no-op write whose
+    // only job is to make RETURNING produce the existing row's id.
+    const inserted = await client.query<{ id: number }>(
+      `INSERT INTO ${vetTable} ("userId", "entryKey", language, "starterPackBucket")
+       VALUES ($1, $2, $3, 'library')
+       ON CONFLICT ("userId", "entryKey", language)
+         DO UPDATE SET "starterPackBucket" = ${vetTable}."starterPackBucket"
+       RETURNING id`,
+      [userId, entryKey, language]
+    );
+    return inserted.rows[0]?.id ?? null;
   }
 
   /**

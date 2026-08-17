@@ -19,12 +19,37 @@ export interface DeckSummary {
     /** 'zh' | 'es'. A deck holds cards of exactly one language. */
     language: string;
     name: string;
+    /**
+     * What the USER may do to this deck (docs/STUDY_CHALLENGE.md § 4).
+     *
+     * 'custom' — they authored it: rename, delete, add and remove cards.
+     * 'preset' — generated for them (a Study Challenge study deck): none of those, and
+     *   it does not count against the 100-deck cap.
+     *
+     * ⚠️ EVERY CONSUMER OF `fetchDecks` MUST DECIDE what it does with 'preset', because
+     * the list contains both kinds:
+     *   * `/decks` renders them as their own section, ABOVE the user's own Decks;
+     *   * the games collection selector and the collection view page treat them like any
+     *     other deck — playing and viewing a challenge deck is the whole point of it;
+     *   * the add-to-deck checkbox menu must EXCLUDE them — they cannot be added to, so a
+     *     tickable row there would be a control that does nothing;
+     *   * rename/delete controls must not be offered for one.
+     *
+     * The restriction is expressed by the ABSENCE of controls, never by a lock badge: a
+     * lock invites a tap that does nothing and needs its own copy.
+     */
+    editMode: 'custom' | 'preset';
     cardCount: number;
     createdAt: string;
     updatedAt: string;
 }
 
-/** The caller's decks in their currently selected language, newest first. */
+/**
+ * The caller's decks in their currently selected language, newest first.
+ *
+ * Includes BOTH authored and generated decks — see `DeckSummary.editMode` for what
+ * each caller is expected to do about that.
+ */
 export function fetchDecks(): Promise<DeckSummary[]> {
     return withFallback(apiGet<DeckSummary[]>('/api/decks'), 'Could not load your decks');
 }

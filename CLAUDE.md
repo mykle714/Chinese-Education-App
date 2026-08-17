@@ -263,7 +263,11 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **none.** Prod is current through migration **146**.
+Current open runbooks:
+- [docs/STUDY_CHALLENGE_DEPLOY_RUNBOOK.md](./docs/STUDY_CHALLENGE_DEPLOY_RUNBOOK.md) — Study Challenge (migration **148**); **not yet on prod**. Migration must land before the app restarts (the shipped deck read selects the new `decks."editMode"`), and the **systemd unit must be re-rendered** by `database/cron/install-timers.sh` — a git pull does not roll out a unit-template change, and until it does the feature's entire time-triggered half (invitations lapsing, windows closing, winners declared) stays inert while everything else works
+- Migration **147** (the dead `compute_utcm_category` drop) is applied on dev and rides along in the same batch; it ships no code and needs no runbook of its own
+
+Prod is current through migration **146**.
 
 Deployed and retired on 2026-08-16 (runbooks deleted): the `user_language_points` →
 `user_languages` rename (145) and Arena (146), which also installed the **`cow-arena`**

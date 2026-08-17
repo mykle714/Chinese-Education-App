@@ -34,16 +34,18 @@ export interface TabAvailability {
  * render.
  *
  * The long definition is stored per sense (zh), so it is resolved for the sense this
- * card is on. The tab's entry snapshot is re-seeded (useEipTabs.syncEntry) whenever
- * the flashcard's sense picker changes `selectedSense`, so no index override is
- * needed: resolving from the entry keeps the panel in lockstep with the card.
+ * card is on. `selectedSenseIndex` is the panel's LIVE pick (the eip header's
+ * SensePicker) — passed as an override so the tab body updates on the tap, before the
+ * persisted `selectedSense` round-trips back through useEipTabs.syncEntry. Omit it and
+ * the entry's own persisted sense is used, which is what every non-eip caller wants.
  */
 export function tabAvailability(
     currentEntry: VocabEntry | null,
     breakdownItems: BreakdownItem[],
+    selectedSenseIndex?: number,
 ): TabAvailability {
     const { longDefinition, longDefinitionParts } = currentEntry
-        ? resolveLongDefinitionForSense(currentEntry)
+        ? resolveLongDefinitionForSense(currentEntry, selectedSenseIndex)
         : { longDefinition: null, longDefinitionParts: null };
 
     const isSingleChar = !!currentEntry && [...currentEntry.entryKey].length === 1;

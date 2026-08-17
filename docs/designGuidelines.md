@@ -161,8 +161,6 @@ migration 130, renamed by 145. See [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STRE
 | userId | uuid | NO | — | FK → `users(id)` CASCADE — the card's owner |
 | entryKey | text | NO | — | The headword; joins to `dictionaryentries_*.word1` |
 | language | varchar(10) | NO | `'zh'` / `'es'` | Redundant with the table but kept so the shared read path can union |
-| totalMarkCount | integer | YES | 0 | Legacy aggregate mark counter |
-| totalCorrectCount | integer | YES | 0 | Legacy aggregate correct counter |
 | starterPackBucket | varchar(20) | NO | — | `'library'` (shown as **Learn Now**), `'provisional'` (lent — see [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md)), etc. |
 | createdAt | timestamp | YES | `now()` | When the card entered the library |
 | typedMarkHistory | jsonb | NO | `'{}'` | The four typed mark tracks (Recognition / Production / Reading / Writing) that drive utcm — see [MASTERY_REWORK.md](./MASTERY_REWORK.md) |

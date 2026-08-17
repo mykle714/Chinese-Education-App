@@ -7,6 +7,7 @@ import type { CompareState } from "../../../components/CompareWorkspace";
 import type { VocabEntry, BreakdownItem } from "../types";
 import { FONTS } from "../../../theme/fonts";
 import { lookupVocabEntry } from "../../../api/dictionary";
+import { resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
 
 // A normal word tab — one looked-up dictionary entry with its own definition/examples/breakdown
 // sub-tabs (rendered by InfoCardPanelBody).
@@ -17,6 +18,12 @@ export interface EntryEipTab {
     breakdownItems: BreakdownItem[];
     toneColor: string;     // from TONE_COLORS, picked at creation
     selectedSubTab: number;
+    // Which definitionClusters sense the panel is showing — an index into
+    // sortedSenseClusters(entry), driven by the eip header's SensePicker. Seeded from the
+    // entry's PERSISTED `selectedSense` (migration 99) and re-seeded whenever a fresher
+    // copy of the entry arrives (syncEntry), so a pick made on the flashcard and a pick
+    // made in the panel converge on the same sense. See docs/DEFINITION_CLUSTERS.md.
+    selectedSenseIndex: number;
     measuredWidth: number; // cached pixel width of the tab pill, used for fit checks
 }
 
@@ -97,6 +104,7 @@ function buildEntryTab(entry: VocabEntry, usedColors: Set<string>): EntryEipTab 
         breakdownItems: getBreakdownItems(entry),
         toneColor: pickToneColor(usedColors),
         selectedSubTab: 0,
+        selectedSenseIndex: resolveSelectedSenseIndex(entry),
         measuredWidth: measureTabWidth(entry.entryKey),
     };
 }
@@ -242,11 +250,27 @@ export function useEipTabs({ stripRef, language }: UseEipTabsOptions) {
     // header showing the previous sense's dd. Matched by entryKey; the tab's own UI state
     // (color, measured width, selected sub-tab, breakdown rows) is preserved. No-op when
     // no tab holds that word.
+    //
+    // `selectedSenseIndex` is deliberately RE-DERIVED from the incoming entry rather than
+    // preserved: the panel's own index is an override, and a fresher entry means the
+    // card's persisted `selectedSense` is the newer truth. (A pick made IN the panel
+    // round-trips back through here as the same index, so this is a no-op for it.)
     const syncEntry = useCallback((entry: VocabEntry) => {
         setTabs(prev => prev.map(t =>
-            t.kind === "entry" && t.id === entry.entryKey ? { ...t, entry } : t
+            t.kind === "entry" && t.id === entry.entryKey
+                ? { ...t, entry, selectedSenseIndex: resolveSelectedSenseIndex(entry) }
+                : t
         ));
     }, []);
+
+    // Record the sense pick made by the ACTIVE entry tab's header picker. Panel-local:
+    // persisting it to the vet row is the host page's job (it owns the optimistic
+    // override), wired through InfoCardSection's `onPersistSense`.
+    const setActiveSenseIndex = useCallback((index: number) => {
+        setTabs(prev => prev.map((t, i) =>
+            (i === activeIndex && t.kind === "entry") ? { ...t, selectedSenseIndex: index } : t
+        ));
+    }, [activeIndex]);
 
     const setActive = useCallback((index: number) => {
         setActiveIndex(index);
@@ -293,6 +317,7 @@ export function useEipTabs({ stripRef, language }: UseEipTabsOptions) {
         setCompareResult,
         setActive,
         setActiveSubTab,
+        setActiveSenseIndex,
         closeActiveTab,
         clear,
         overflowSignal,

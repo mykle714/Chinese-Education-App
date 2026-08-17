@@ -1,4 +1,4 @@
-import type { Language, MarkType } from "../types";
+import type { ChallengeScoringSpec, Language, MarkType } from "../types";
 import type { LazyExoticComponent, ComponentType } from "react";
 
 /**
@@ -56,6 +56,24 @@ export interface GameDef {
     unlock?: {
         minVocabEntries?: number;
     };
+    /**
+     * How this game scores a Study Challenge round (docs/STUDY_CHALLENGE.md § 5.4,
+     * docs/GAMES_FEATURE.md § Challenge-eligible games).
+     *
+     * MANDATORY for a game whose `markType` is `recognition` or `production`, not
+     * opt-in: the challenge-eligible pool is DERIVED from this registry (never
+     * hand-listed), so a new recognition/production game joins the rotation the day
+     * it ships and must arrive knowing how to be scored.
+     *
+     * A game is challenge-eligible iff its mark type is recognition/production AND
+     * this field is present — see `challengeEligibleGames()` in registry.ts.
+     *
+     * For a MODED game, eligibility is per mode and so is the spec: omit this field
+     * and put a spec on each eligible mode's config instead. Word Search is the only
+     * such game today — eligible as Pinyin (production), not as No Pinyin (reading) —
+     * which is why a challenge's stored game sequence is a `(gameId, mode)` pair.
+     */
+    challengeScoring?: ChallengeScoringSpec;
 }
 
 /** A single asset row fetched from `/api/games/:gameId/assets`. */

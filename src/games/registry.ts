@@ -9,6 +9,28 @@ import { COLORS } from "../theme/colors";
 import { MARK_TYPE as BUBBLE_MATCH_MARK_TYPE } from "./bubble-match/constants";
 import { MARK_TYPE as MATCH_SPEED_MARK_TYPE } from "./match-speed/constants";
 import { MARK_TYPE as SPEED_READING_MARK_TYPE } from "./speed-reading/constants";
+// The challenge-eligible pool and its scoring numbers (docs/STUDY_CHALLENGE.md § 5.4).
+// They live in the shared wire contract rather than here because THE SERVER draws each
+// challenge's game sequence and cannot load this module (it imports lazy React
+// components), and because live mode must score the same events server-side. This
+// registry is still what makes a game ELIGIBLE — see `challengeScoringFor` below and the
+// test that pins the two together.
+import { CHALLENGE_GAMES } from "../types";
+import type { ChallengeScoringSpec } from "../types";
+
+/**
+ * The scoring spec for a game (or a game MODE), or undefined when it is not
+ * challenge-eligible.
+ *
+ * Looked up rather than restated, so there is exactly one copy of every number. A game
+ * whose `markType` is recognition or production and which has NO entry is a build error
+ * waiting to happen, which is what `src/games/__tests__/challengePool.test.ts` exists to
+ * catch — that test is what keeps eligibility "derived from the registry, never
+ * hand-listed" even though the numbers live in the contract.
+ */
+export function challengeScoringFor(gameId: string, mode: string | null = null): ChallengeScoringSpec | undefined {
+    return CHALLENGE_GAMES.find((game) => game.gameId === gameId && game.mode === mode)?.scoring;
+}
 
 /**
  * Central registry of all games available in the Games hub.
@@ -36,6 +58,7 @@ export const GAME_REGISTRY: GameDef[] = [
         Component: lazy(() => import("./bubble-match/BubbleMatchPage")),
         bgColor: COLORS.redAccent,
         markType: BUBBLE_MATCH_MARK_TYPE,
+        challengeScoring: challengeScoringFor("bubble-match"),
     },
     {
         gameId: "word-search",
@@ -46,6 +69,12 @@ export const GAME_REGISTRY: GameDef[] = [
         bgColor: COLORS.purpleAccent,
         // No `markType`: Pinyin marks production, No Pinyin marks reading, so the
         // label belongs on each mode sub-card (see WordSearchModeConfig.markType).
+        //
+        // No `challengeScoring` either, for the same reason: eligibility is PER MODE here.
+        // Word Search qualifies as Pinyin (production) and not as No Pinyin (reading), so
+        // a spec on the game would claim both. Its mode's spec is read with
+        // `challengeScoringFor("word-search", "pinyin")`, and a challenge's stored game
+        // sequence carries the (gameId, mode) pair rather than a bare id.
     },
     {
         gameId: "match-speed",
@@ -55,6 +84,7 @@ export const GAME_REGISTRY: GameDef[] = [
         Component: lazy(() => import("./match-speed/MatchSpeedPage")),
         bgColor: COLORS.greenAccent,
         markType: MATCH_SPEED_MARK_TYPE,
+        challengeScoring: challengeScoringFor("match-speed"),
     },
     {
         gameId: "speed-reading",

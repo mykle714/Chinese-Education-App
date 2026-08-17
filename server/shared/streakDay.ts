@@ -14,24 +14,17 @@
  * The user's tz is supplied per-call — it is never persisted.
  */
 
+import { MS_PER_DAY } from './zonedTime.js';
+
 export const STREAK_DAY_OFFSET_HOURS = 4;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
- * Validate an IANA timezone identifier. Returns the tz if valid, otherwise 'UTC'.
+ * Re-exported rather than re-implemented. This module and arenaWeek.ts each had
+ * their own byte-identical copy until Study Challenge became the third consumer;
+ * the shared version now lives in zonedTime.ts. Kept as a named export here so
+ * every existing `from '../utils/streakDate.js'` import keeps working.
  */
-export function resolveTimezone(rawTz: unknown): string {
-  if (typeof rawTz !== 'string' || rawTz.trim().length === 0) {
-    return 'UTC';
-  }
-  const tz = rawTz.trim();
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz }).format(new Date());
-    return tz;
-  } catch {
-    return 'UTC';
-  }
-}
+export { resolveTimezone } from './zonedTime.js';
 
 /**
  * Resolve a (timestamp, tz) pair to its streak day label in YYYY-MM-DD form.

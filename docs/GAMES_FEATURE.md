@@ -450,9 +450,122 @@ Three consequences worth keeping in mind when adding a popup or a game:
   paused frame so the whole span doesn't arrive as one giant `dt` (Bubble Match).
 
 Also note Word Search's pause has **two** sources — the popup gate and the
-existing backgrounding (`visibilitychange`) pause. Returning to the foreground
-checks `clockPausedRef` before resuming, so a tab switch cannot restart a clock a
-popup is still holding.
+backgrounding (`visibilitychange`) pause described in the next section. Returning
+to the foreground checks `clockPausedRef` before resuming, so a tab switch cannot
+restart a clock a popup is still holding. **Two sources composing into one
+`clockPaused` boolean is the pattern**; the next section generalises it.
+
+### Backgrounding pauses the clock — everywhere, unconditionally
+
+**The rule:** the same things that freeze behind a popup must freeze when the app
+is **backgrounded** — tab hidden, app switched away, screen locked. Leaving is not
+playing, so it must not be billed to the player either. A player who comes back
+must find the round exactly as they left it.
+
+This is the same mechanism as the section above with a **second source** feeding
+the same `clockPaused` boolean. It is not new machinery.
+
+**Status of the four shipped games (audited 2026-08-16):**
+
+| Game | Pauses on backgrounding today | What it needs |
+| --- | --- | --- |
+| Word Search | ✅ **yes** — `WordSearchPage.tsx` listens for `visibilitychange`, calls `persistSnapshot()` then `pauseTimer()`, and resumes only if `clockPausedRef.current` is false | nothing — **this is the reference implementation** |
+| Bubble Match | ❌ no | feed the visibility signal into the existing `clockPaused` → `BubbleStage` `paused` path (launcher, descending ceiling, overfill check) |
+| Match Speed | ❌ no | feed it into the existing `clockPaused` (countdown + 30 s run clock) |
+| Speed Reading | ❌ no | feed it into the existing `clockPaused` (`pausedAtRef`, the clock effect) |
+
+So three of four games need a **signal wired to a gate they already have**, not a
+new pause implementation.
+
+Two requirements that are easy to miss:
+
+- **Elapsed time must be accumulated active time, never `now − startedAt`.** A
+  game that derives elapsed from a start timestamp has a *cosmetic* pause: the
+  display freezes and the score does not. Word Search's `pauseTimer`/`resumeTimer`
+  pair and Speed Reading's "push `startAtRef` forward by the paused span" are both
+  correct forms of this; copy one.
+- **Snapshot before pausing if the game has a save.** `visibilitychange` may be the
+  last event a backgrounded tab ever fires, so Word Search persists *first* and
+  pauses second. A pause that is never resumed must still leave recoverable state.
+
+**There is no exception to this rule — not even live Study Challenge.** An earlier
+draft of the challenge design carved live mode out, on the grounds that pausing
+would let one player freeze the other's game. It does not: live mode runs an
+**unpausable AFK forfeit timer** alongside the paused game (next section), so
+pausing never benefits the player who does it. Keeping the rule absolute means no
+game needs a live-mode branch in its timer code.
+
+### Challenge-eligible games: the `challengeScoring` contract
+
+⚠️ Applies once [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) ships; written here
+because it is a **registry contract**, not a feature detail.
+
+A Study Challenge round is an ordinary run of an ordinary game over a board that
+mixes **contested** words (the challenge's ten) with **filler** (everything else
+the board needed). The two score differently. A game that wants to be
+challenge-eligible must declare how.
+
+**A game is challenge-eligible iff both hold:**
+
+1. its `markType` is `recognition` or `production` — or, for a moded game, *that
+   mode's* `markType` is; and
+2. it declares a `challengeScoring` spec.
+
+Eligibility is **derived from the registry, never hand-listed**, so a new
+recognition/production game joins the rotation the day it ships. That is why the
+spec is mandatory for those tracks rather than opt-in.
+
+> **A moded game is eligible per-mode, not per-game.** Word Search qualifies as
+> *Pinyin* (production) and not as *No Pinyin* (reading), so a challenge's stored
+> game sequence must identify a `(gameId, mode)` pair for such games — a bare
+> `gameId` is ambiguous and would let a challenge draw the ineligible mode.
+
+**The spec is declarative data, not a callback.** Each game declares point values
+and the shared runner applies them to the events the game emits:
+
+- contested hit / miss, filler hit / miss, and whatever per-game bonuses exist
+  (Bubble Match's ±500 survival bonus, Word Search's per-second penalty);
+- the game emits *events*; the spec turns events into a score.
+
+Why data and not a function: **live mode must be able to score the same events
+server-side, with no game page mounted.** A callback is code the server cannot
+reuse; a spec is a table of numbers it can. This is the single constraint that
+decides the shape, and it is easy to violate accidentally by "just" exporting a
+scoring function.
+
+Three rules the spec must respect:
+
+- **Contested/filler is fixed when the board is generated** and never re-read
+  afterwards. Mastery bands move *during* a round (a challenge round writes real
+  marks), so scoring that consulted a band would be non-deterministic. Nothing in
+  the spec may depend on mastery.
+- **The board must not reveal which words are contested.** No highlight, no accent,
+  no pre-round list — the split is invisible until the results screen. A player who
+  knows which taps pay has been told which taps to be careless about, and those
+  careless taps still write real marks.
+- **A run can end without completing.** Live mode ends a round by forfeit (next
+  section), so a game that only computes its score in an end-of-run branch has
+  nothing to report for a forfeited player. Keep a running score.
+
+### The live idle signal
+
+Live challenge rounds need one thing from a game page that solo play does not: a
+signal that **the player has done nothing for N seconds**.
+
+The challenge layer owns the consequence (after the timeout the player forfeits
+the round and the shared session advances — see
+[STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 6). The game owns only the
+observation, because the game owns the input surface.
+
+- It measures **wall-clock time since the last player input**, and it is
+  **unpausable** — deliberately the one clock backgrounding does *not* freeze.
+  That is the whole point: the game pauses so you are not billed for time you were
+  not playing, and the idle timer runs so you cannot hold another person's session
+  hostage while you are away.
+- It is **live-mode only**. There is nobody to inconvenience in a solo run, so a
+  solo game never mounts it.
+- Reading a definition popup pauses the *game* but is not idleness in the sense
+  that matters; the timeout (60 s) is set to comfortably cover it.
 
 ### Adding a new game — checklist
 
@@ -493,7 +606,18 @@ for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
    in `src/constants.ts` so play time accrues points and streak.
 6. Reuse `GameEndPopup` for the won/lost card so the minimize-to-puck behavior
    matches the other games.
-7. Append the `GameDef` to `GAME_REGISTRY` in `src/games/registry.ts`:
+7. **Derive one `clockPaused` boolean from every pause source** — input-blocking
+   popups *and* backgrounding — and feed it to everything that advances on its own.
+   Express elapsed time as accumulated active time, never `now − startedAt`. See
+   [§ Popups pause the clock](#popups-pause-the-clock) and
+   [§ Backgrounding pauses the clock](#backgrounding-pauses-the-clock--everywhere-unconditionally);
+   copy Word Search, which already composes both sources.
+8. **If the game trains `recognition` or `production`, declare a `challengeScoring`
+   spec** — it is mandatory for those tracks, because the challenge pool is derived
+   from the registry and your game joins it the day it ships. Also emit the live
+   **idle signal**. See
+   [§ Challenge-eligible games](#challenge-eligible-games-the-challengescoring-contract).
+9. Append the `GameDef` to `GAME_REGISTRY` in `src/games/registry.ts`:
 
    ```ts
    {
@@ -505,7 +629,7 @@ for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
    }
    ```
 
-Steps 1–6 are the game. Step 7 is all the wiring: the hub, router, and
+Steps 1–8 are the game. Step 9 is all the wiring: the hub, router, and
 mobile-demo frame configure themselves from the registry, so `GamesPage`, `App`,
 and `Layout` need no edits.
 

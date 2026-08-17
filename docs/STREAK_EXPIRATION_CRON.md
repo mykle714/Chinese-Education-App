@@ -363,6 +363,46 @@ The installer renders each template, substituting `__REPO_DIR__` with the absolu
 repo path, then runs `systemctl --user daemon-reload` and
 `systemctl --user enable --now cow-maintenance.timer`.
 
+### Planned third step — Study Challenge expiry
+
+⚠️ **Not built.** Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 9 (Q60); ships
+with that feature.
+
+The unit gains a **third `ExecStart=` line** running a new pure-SQL file,
+`database/cron/expire-study-challenges.sql`, appending to
+`__REPO_DIR__/logs/study-challenges.log`. Prod only, like everything else here.
+
+It belongs in this unit rather than in a timer of its own for the same reason the prune
+does: it is hourly, it is idempotent, it talks to the same container, and a second timer
+would be a second thing to install, verify and forget.
+
+**⚠️ The unit's `Description=` must be updated with it** — it currently reads
+*"inactivity penalty + dangling-template prune"*, which is what `systemctl --user status`
+prints. A stale description is how an operator concludes the wrong job failed.
+
+Four ordered passes, all idempotent (required, since `Persistent=true` re-runs a tick
+missed to a reboot):
+
+1. **Expire unaccepted challenges** past the challengee's Wednesday 04:00 local.
+2. **Close finished windows** → `complete` (a winner is resolvable) or `no_contest`.
+3. **Drop generated decks** at each player's own window close. Note the
+   *completion*-triggered drop is synchronous in `StudyChallengeService`, not here; this
+   pass only catches windows that closed without completion.
+4. **Sweep orphaned generated decks** — decks whose owning challenge row is gone (an
+   account deletion cascades the challenge away and takes the pointer with it, leaving a
+   deck the user has no control to delete).
+
+⚠️ **Pass 4 is defined negatively and therefore needs two safeguards**, both mandatory:
+
+* match `"editMode" = 'preset'` **first**, so a user-authored deck can never be a
+  candidate no matter what the join does; and
+* **ignore decks younger than a grace period (~1 hour)**, or write the deck row and the
+  challenge's `presetDeckIds` in one transaction — otherwise the sweep can delete a deck
+  created microseconds before its pointer was written.
+
+Passes 1–3 are naturally idempotent (each filters on the status it is leaving); pass 4 is
+idempotent because a deleted deck simply stops matching.
+
 ### Why a user timer replaced `/etc/cron.d` (2026-08-07)
 
 The schedule previously lived in an `/etc/cron.d/cow-maintenance` drop-in. That is
@@ -436,3 +476,11 @@ the SQL is the only thing that runs.
 (`ExecStart=… psql < __REPO_DIR__/database/cron/expire-stale-streaks.sql`), so a
 normal `/deploy` (git pull) is the entire rollout for a change to this file. No
 migration, no manual step, no runbook.
+
+⚠️ **That is true of the SQL only.** A change to the **unit template** — adding an
+`ExecStart` line, editing `Description=` — is *not* picked up by a git pull, because prod
+runs the rendered copy in `~/.config/systemd/user`. It needs
+`database/cron/install-maintenance-timer.sh` to re-render and `systemctl --user
+daemon-reload`. `/deploy` Step 3 runs the installer every deploy, so this is automatic —
+but only if the step is not skipped, which is exactly what happened under the old cron
+setup.

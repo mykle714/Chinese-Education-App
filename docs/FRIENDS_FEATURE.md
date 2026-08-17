@@ -10,8 +10,8 @@ Status: **implemented**, on dev. Migration **138** is not yet on prod (see
 
 ## 1. Surfaces
 
-Four pages, all `chrome: "node"` with `footerTab: "home"`, so the footer stays
-visible and the Home tab stays lit. `/friends` is **read-only**; each of the three
+Four pages today (a **fifth is planned** — § 1b), all `chrome: "node"` with
+`footerTab: "home"`, so the footer stays visible and the Home tab stays lit. `/friends` is **read-only**; each of the three
 mutations (send, answer, unfriend) has its own screen behind a top-row button.
 
 | Route | Component | What it is |
@@ -42,6 +42,43 @@ becomes the lookup and this section is what changes.
 The **Requests** button carries a red count badge when incoming requests exist —
 `FriendsPage` fetches the incoming list alongside the friend list purely for that
 count.
+
+### 1b. Challenges (`/friends/challenges`) — planned
+
+⚠️ **Not built.** Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 1; it ships
+with that feature.
+
+A fifth NodePage, reached by a fourth top-row button on `/friends`, listing the viewer's
+Study Challenges: awaiting your response, accepted and waiting for Friday, open now, and
+recently finished.
+
+**Why it hangs off `/friends` rather than sitting on the Home menu:** a challenge is a
+thing you have *with a person*. Every entry point to it is a friend, unfriending ends it,
+and the per-pair block that suppresses it lives on `friendships`. Home is a menu of
+places; this is a property of a relationship.
+
+#### The badge chain, and the one place language scoping is deliberately violated
+
+A pending challenge is announced **only** by an in-app badge chain the user walks into —
+no push, no email ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 1, Q48):
+
+```
+hp Friends row  →  Challenges button  →  the individual friend's row
+```
+
+This reuses the existing pattern exactly: the count rides along with the friends payload
+`FriendsPage` already fetches, the way the incoming-requests count does today.
+
+⚠️ **The badge must NOT be language-scoped, even though the page is.** Everything else
+about vocabulary is scoped to the learner's active language, and the Challenges *page*
+follows that rule — a zh challenge is invisible while the user is studying Spanish. The
+**badge is the deliberate exception**: it counts challenges in *every* language.
+
+The reason is load-bearing rather than cosmetic. A challenge issued in a language the user
+is not currently studying would otherwise be completely invisible until it silently
+expired — and a badge that hid it would be hiding the only thread back to it. So the
+friends payload must carry the count **even when the user's active language is not the
+challenge's**. Anyone "fixing" this inconsistency later re-breaks the case it exists for.
 
 ### 1a. The leaderboard (`/friends`)
 
@@ -136,6 +173,21 @@ Three decisions worth knowing:
 
 The pair-unique index is direction-blind, which is what makes the "one row per
 pair" rule enforceable rather than merely intended.
+
+### Planned: two challenge-block booleans
+
+Study Challenge adds two columns to this table (signed off 2026-08-16, ships with the
+challenge migration):
+
+```
+"requesterChallengesBlocked"  boolean NOT NULL DEFAULT false
+"addresseeChallengesBlocked"  boolean NOT NULL DEFAULT false
+```
+
+They belong here rather than on `users` because the preference is **about a pair**, which
+is exactly what this table represents. Note this does *not* contradict decision 3 above:
+it adds no `blocked` value to `status`, so the pending/accepted state machine is untouched
+and a block is orthogonal to whether the two are friends. See § 8 for the semantics.
 
 ---
 
@@ -250,7 +302,14 @@ This document describes:
 `src/routes/registry.ts` (four `PAGE_COMPONENTS` entries),
 `src/pages/HomePage.tsx` (the `friends` hub row).
 
-Related docs: [VELOCITY.md](./VELOCITY.md) (the ranked metric),
+Planned additions (with Study Challenge): a fifth `src/features/friends/*` page and its
+`routeMeta`/`registry` entries (§ 1b), the two `friendships` block columns (§ 2), and a
+challenge count on the friends payload that `FriendsService` must assemble **without**
+language scoping (§ 1b).
+
+Related docs: [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) (the Challenges page, the badge,
+and the block columns — all planned),
+[VELOCITY.md](./VELOCITY.md) (the ranked metric),
 [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md) (the net wallet),
 [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md) (the hp row),
 [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) (the NodePage archetype),
@@ -258,7 +317,17 @@ Related docs: [VELOCITY.md](./VELOCITY.md) (the ranked metric),
 
 ## 8. Not built
 
-Deliberately out of scope for this pass — no blocking, no friend-only content
+Deliberately out of scope for this pass — no friend-only content
 beyond the leaderboard's two numbers (no friend's decks, night market or streak), no notification when
 a request arrives (the badge on `/friends` is the only signal), and no
 friend-count limit.
+
+**Blocking is arriving in a narrow form**, with Study Challenge: two booleans on
+`friendships` — `"requesterChallengesBlocked"` / `"addresseeChallengesBlocked"`, both
+`NOT NULL DEFAULT false`. Each player owns their own flag and the **effect is symmetric**:
+a challenge goes through only if neither has blocked, so the read is
+`NOT (requesterBlocked OR addresseeBlocked)`. It blocks *challenges* between the pair, in
+both directions, and nothing else — it is not a general block, does not hide the
+leaderboard row, and does not unfriend. Setting it mid-challenge affects only new ones;
+the in-flight challenge plays out ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 1,
+Q46/Q57).

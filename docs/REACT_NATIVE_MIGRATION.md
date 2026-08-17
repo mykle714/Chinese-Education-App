@@ -593,14 +593,17 @@ re-read.
 |---|---|---|---|
 | **Coarse location** (a ~5 km geohash cell, for arena clustering) | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 5.2 | `navigator.geolocation` at `enableHighAccuracy: false`, HTTPS-only, and on iOS effectively Safari-only | `@capacitor/geolocation` → CoreLocation: the real `NSLocationWhenInUseUsageDescription` **inside** the system prompt instead of a second dialog we render ourselves; explicit reduced-accuracy authorization (and `ACCESS_COARSE_LOCATION` on Android) rather than a hint; and a deep link to the app's Settings pane, so a denial is recoverable instead of permanent |
 | **Notifications** ("your arena opens", "a friend challenged you", "your streak is at risk") | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 13, [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) § 8 | none — web push on iOS needs a Home-Screen install (16.4+) | native push with no install precondition |
-| **Time-critical "join now" invite** (a friend has opened a live Study Challenge room and is waiting) | [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 4 (Q21) | **none that works** — an in-app banner over the live WebSocket reaches only a player who already has the app open, which is precisely the player who did not need summoning | `@capacitor/push-notifications` → APNs/FCM, deep-linked into the waiting room. **This is the demand that decides whether live mode ships at all**, not merely how nice it feels |
+| **Time-critical "join now" invite** (a friend has opened a live Study Challenge room and is waiting) | [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 4 (Q21) | an in-app banner over the live WebSocket, reaching only a player who already has the app open. Live mode is **still fully playable without it** — the waiting room is a permanent rendezvous both players can enter from the challenge screen, so friends coordinate out of band | `@capacitor/push-notifications` → APNs/FCM, deep-linked into the waiting room, capped at one per day per (sender, target). Turns live mode from "arrange it by text first" into something **spontaneous** — a reach improvement, **not** a precondition |
 
 The two notification rows are deliberately separate. The first is a **"come back
 sometime"** class — it can be late, batched, or missed without breaking anything, and the
-in-app badge already covers it. The second is a **60-second, self-expiring summons** whose
-whole value is delivery inside that minute; there is no in-app fallback for it, because a
-player with the app already open is not the player it needs to reach. Implementing the
-first does **not** cover the second.
+in-app badge already covers it. The second is a **self-expiring summons** worth nothing an
+hour later, and its in-app fallback structurally cannot reach the player it is for.
+Implementing the first does **not** cover the second.
+
+Neither is a blocker, and the live-invite row is a **weaker** argument than it first looks:
+the feature was designed so that a permanent waiting-room entrance carries it, precisely so
+that no part of Study Challenge waits on a packaging decision.
 
 The location entry is worth noting for *why* it is not a React Native argument:
 **Capacitor supplies it in full.** It moves the packaging question, not the

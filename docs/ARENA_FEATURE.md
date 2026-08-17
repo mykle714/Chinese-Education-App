@@ -5,12 +5,21 @@ friends. Each week you are placed into an **arena** — a cluster of 25 players 
 division, a timezone and (where known) a rough geographic neighbourhood — and ranked by
 the **minutes you earn while that arena is live**. Top 5 promote, bottom 5 demote.
 
-**Status: DESIGN / DRAFT — schema confirmed, nothing built.** No arena migration has been
-written and no arena table exists yet, but **the data model in § 9 is approved** (product
-owner, 2026-08-16): two new tables and three new columns, as specified. What remains open
-in § 11 is nothing: **every design question this feature raised has been answered**, schema
-and behaviour alike. This document is the spec the implementation will be written from, not
-a record of what shipped.
+**Status: BUILT ON DEV — not yet deployed to prod.** Migration 146 is applied to the dev
+database and the full backend and client are implemented and tested (625 tests pass across
+the repo). Every design question in § 11 was answered before implementation began.
+
+What is NOT done: the prod deploy (see
+[ARENA_DEPLOY_RUNBOOK.md](./ARENA_DEPLOY_RUNBOOK.md)), the prod-only hourly cron, and the
+`src/components/leaderboard/` extraction owed to
+[FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) — Arena ships with its own row component and
+that shared extraction is still outstanding (§ 12).
+
+Two things changed during implementation and are recorded where they belong rather than
+here: the synthetic score curve became **monotonic by construction** (§ 6.2) after the
+first implementation could tick a bot's score *downward* at a day boundary, and the cron
+pass is now **resolve-then-form** (§ 10) after the original order was found to deadlock the
+whole week's formation against an unresolved arena.
 
 One change has already shipped out of this design: `user_language_points` was renamed to
 **`user_languages`** (migration 145) once the division landed on it — see § 7.1.
@@ -588,6 +597,16 @@ no writes, no drift.
 * Determinism matters: the same bot must show the same number to every viewer at the same
   instant, and must never go down. `seed` is stored on the row; the curve is pure.
 
+> **Implementation note — monotonic BY CONSTRUCTION.** The first implementation built the
+> curve as a smooth base with a signed "wobble" added per day. It was wrong: the wobble was
+> redrawn at each day boundary, so a day whose noise came in lower than its predecessor's
+> stepped the displayed score **down** — the single most obvious tell that a member is fake.
+> A guard that clamped against the previous value only hid it *between* boundaries. The
+> shipped curve is a cumulative sum of strictly positive per-segment effort weights,
+> normalised to land exactly on target, so a dip is impossible rather than patched.
+> `server/services/arenaSynthetic.ts` → `syntheticScoreAt`; the property is asserted across
+> 50 seeds × 500 samples.
+
 ### 6.3 They occupy real ranks
 
 A synthetic member in the top 5 **consumes a promotion slot**. Promotion is "the top 5
@@ -885,6 +904,20 @@ No change to `userminutepoints` or any vet table.
 All require `authenticateToken`. Wire types in `server/types/arena.ts`, mirrored in
 `src/api/arena.ts`.
 
+### The cron pass is RESOLVE-then-FORM
+
+⚠️ **The order is load-bearing.** Resolution *releases* each member's live seat
+(`isLive` → false); formation *consumes* a seat by inserting a live membership. Forming
+first means any arena that has closed but not yet resolved still holds its members' seats,
+so `uq_arena_member_live` rejects the new memberships.
+
+This was found in implementation, and the failure was worse than expected: because
+formation ran as one pass, the first blocked candidate threw and **took the entire run
+down** — one stale arena denying every bucket its week. Two changes: `ArenaService.tick()`
+resolves before forming, and each arena's creation is individually guarded so one failure
+costs one arena rather than the week. The scenario is not hypothetical — it is exactly what
+a cron outage produces.
+
 ### The cron is the risky part
 
 Formation and resolution are **the only writes that must not run twice**. Both are
@@ -955,26 +988,35 @@ but deliberately postponed belongs in [DEFERRED_WORK.md](./DEFERRED_WORK.md), no
 
 ## 12. Code ↔ doc dependencies
 
-This document will describe (nothing exists yet):
+This document describes (all of the following now exist except where marked):
 `database/migrations/146+` (`arenas`, `arena_members`, two `user_languages` columns,
 `users."geoCell"`),
-`database/cron/arena-tick.sql`,
+`server/scripts/arena-tick.ts` (the dev trigger; the prod cron is **not yet written**),
 `server/contracts/wire.ts` (arena constants),
 `server/shared/arenaWeek.ts` + `src/utils/arenaWeek.ts`,
 `server/types/arena.ts`,
 `server/dal/{interfaces,implementations}/ArenaDAL`,
 `server/services/ArenaService.ts`,
-`server/services/MinutePointsService.ts` (the `creditMinutes` call),
+`server/services/arenaClustering.ts` (the sort-and-chunk + duplicate-human pass),
+`server/services/arenaSynthetic.ts` (the bot curve and name pool),
+`server/services/UserMinutePointsService.ts` (the `creditMinutes` call),
 `server/controllers/ArenaController.ts`,
 `server/routes/arenaRoutes.ts`,
 `server/dal/setup.ts` (arena wiring), `server/server.ts` (mount),
 `src/api/arena.ts`,
+`src/utils/geohash.ts` (client-side truncation — the privacy contract),
 `src/features/arena/*`,
-`src/components/leaderboard/*` (extracted from `src/features/friends/`),
+`src/components/leaderboard/*` (**not done** — extraction from `src/features/friends/`
+is still owed; Arena ships `ArenaEntryRow` of its own),
 `src/pages/HomePage.tsx` (the Arena hub row),
 `src/routes/routeMeta.ts` + `src/routes/registry.ts`.
 
-**Owed to other docs before this is built:**
+Tests: `server/__tests__/arenaWeek.test.ts` (boundary maths incl. DST),
+`server/__tests__/arenaDal.test.ts` (the resolution statement shape — the isLive flip),
+`server/__tests__/arenaClustering.test.ts`, `server/__tests__/arenaSynthetic.test.ts`,
+`src/__tests__/geohash.test.ts` (reference values).
+
+**Owed to other docs — still outstanding after implementation:**
 * [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) — `FriendPersonRow` / `friendStyles.ts` move
   to `src/components/leaderboard/`; its § 1a and § 7 both name those paths (§ 2.1).
 * [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md) — the credit path gains an arena

@@ -120,6 +120,8 @@ const PAGE_ROUTES: RouteMeta[] = [
   // four keep the Home tab lit — they are reached from the Home menu, and the three
   // action pages drill in one level further (their back arrows return to /friends,
   // not to Home). /friends itself is read-only; every mutation lives on a screen.
+  // Arena is a Home-hub drill-in, the same Node archetype as /friends.
+  { path: "/arena", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/friends", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/friends/requests", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/friends/sent", access: "any", shell: "frame", chrome: "node", footerTab: "home" },

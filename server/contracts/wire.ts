@@ -1247,3 +1247,34 @@ export interface ApiResponse<T> {
   error?: string;
   code?: string;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Arena (docs/ARENA_FEATURE.md)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Exactly 25 members per arena, humans plus synthetic padding (§ 6).
+ *
+ * The number is load-bearing, not cosmetic: promotion takes the top 5 and
+ * relegation the bottom 5, so an arena must be comfortably larger than 10 or the
+ * two zones meet and every member both promotes and relegates. 25 also fits a
+ * scrollable board without paging.
+ */
+export const ARENA_SIZE = 25;
+
+/** Rungs on the ladder, 1 (bottom) through 12 (top). */
+export const ARENA_DIVISION_COUNT = 12;
+
+/** Top N promote, bottom N relegate (§ 7). Synthetic members occupy real ranks. */
+export const ARENA_PROMOTE_COUNT = 5;
+export const ARENA_RELEGATE_COUNT = 5;
+
+/**
+ * Length of a geohash cell stored in `users."geoCell"` — 5 characters, a tile of
+ * roughly 5 km x 5 km (§ 5.2).
+ *
+ * This is the privacy contract, not a tuning knob. Five characters name a
+ * neighbourhood and cannot name a home; the client truncates to this length
+ * before transmitting, and the DB CHECK refuses anything else.
+ */
+export const ARENA_GEOCELL_LENGTH = 5;

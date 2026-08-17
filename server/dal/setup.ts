@@ -57,8 +57,11 @@ import { TTSController } from '../controllers/TTSController.js';
 import { CategoryPromotionDAL } from './implementations/CategoryPromotionDAL.js';
 import { VelocityController } from '../controllers/VelocityController.js';
 import { FriendshipDAL } from './implementations/FriendshipDAL.js';
+import { ArenaDAL } from './implementations/ArenaDAL.js';
 import { DeckDAL } from './implementations/DeckDAL.js';
 import { FriendsService } from '../services/FriendsService.js';
+import { ArenaService } from '../services/ArenaService.js';
+import { ArenaController } from '../controllers/ArenaController.js';
 import { DeckService } from '../services/DeckService.js';
 import { FriendsController } from '../controllers/FriendsController.js';
 import { DecksController } from '../controllers/DecksController.js';
@@ -91,6 +94,13 @@ const categoryPromotionDAL = new CategoryPromotionDAL();
 // The friend graph — one row per unordered pair, pending or accepted
 // (migration 138, docs/FRIENDS_FEATURE.md).
 const friendshipDAL = new FriendshipDAL();
+const arenaDAL = new ArenaDAL();
+// Constructed here rather than beside the other controllers because
+// UserMinutePointsService takes it as a dependency below — every credited minute
+// is also credited to the user's live arena. Arena reads users only to render a
+// board row (name + avatar), so it takes the narrow ArenaUserLookup shape rather
+// than the whole UserDAL surface.
+const arenaService = new ArenaService(arenaDAL, userDAL);
 // Baseline top-up for games/flp: lends words as 'provisional' vet rows so no surface
 // ever blocks on card count (migration 140, docs/PROVISIONAL_CARDS.md).
 const provisionalCardDAL = new ProvisionalCardDAL();
@@ -124,7 +134,7 @@ const nightMarketPlacementService = new NightMarketPlacementService(nightMarketP
 // Constructed after the placement service — the sandbox's Iterate action reuses its growth planner.
 const nightMarketSandboxService = new NightMarketSandboxService(nightMarketSandboxDAL, userDAL, nightMarketPlacementService);
 // Constructed after the placement service so the grant hook can be wired in.
-const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, userLanguagesDAL, nightMarketPlacementService);
+const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, userLanguagesDAL, nightMarketPlacementService, arenaService);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
 // Community shared-layout feeds + votes; reuses vocabEntryService for the apply-to-card flow.
@@ -183,6 +193,7 @@ const communityLayoutController = new CommunityLayoutController(communityLayoutS
 const leaderboardController = new LeaderboardController(leaderboardService);
 const ttsController = new TTSController(ttsService);
 const friendsController = new FriendsController(friendsService);
+const arenaController = new ArenaController(arenaService);
 const decksController = new DecksController(deckService);
 
 export {
@@ -245,6 +256,9 @@ export {
   friendshipDAL,
   friendsService,
   friendsController,
+  arenaController,
+  arenaService,
+  arenaDAL,
   provisionalCardDAL,
   provisionalCardService,
   deckDAL,

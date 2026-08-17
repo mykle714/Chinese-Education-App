@@ -44,7 +44,11 @@ export class UserMinutePointsService {
     // Optional: the night-market grant flow. When present, earning a minute reconciles the
     // user's unlock entitlement (fill slots / spawn templates). Best-effort — a failure here
     // must never break the minute-point increment, so the call is wrapped + swallowed below.
-    private nightMarketPlacementService?: NightMarketPlacementService
+    private nightMarketPlacementService?: NightMarketPlacementService,
+    // Optional: the arena. When present, every credited minute is also added to
+    // the user's live arena membership for THIS language. Best-effort in exactly
+    // the same way the night-market grant is — see the call site below.
+    private arenaService?: { creditMinutes(userId: string, language: string, minutes: number): Promise<void> }
   ) {}
 
   /**
@@ -117,6 +121,23 @@ export class UserMinutePointsService {
         await this.nightMarketPlacementService.grantUnlocks(userId, language, totalMinutePoints);
       } catch (err) {
         console.error(`[MINUTE-POINTS-SERVICE] night-market grant failed for user ${userId.substring(0, 8)}… (${language})`, err);
+      }
+    }
+
+    // Credit the same minute to this language's live arena membership, if any
+    // (docs/ARENA_FEATURE.md § 4.1). Scoped to the language for the same reason
+    // the streak and the market are: an arena membership IS a (user, language).
+    //
+    // Best-effort and deliberately last. The ledger (userminutepoints) is the
+    // source of truth for everything that matters; an arena is a view on top of
+    // it. A broken arena must never be able to stop a minute being banked, so
+    // ArenaService.creditMinutes swallows its own failures and this call is
+    // guarded again here.
+    if (this.arenaService) {
+      try {
+        await this.arenaService.creditMinutes(userId, language, 1);
+      } catch (err) {
+        console.error(`[MINUTE-POINTS-SERVICE] arena credit failed for user ${userId.substring(0, 8)}… (${language})`, err);
       }
     }
   }

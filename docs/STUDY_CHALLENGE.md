@@ -904,6 +904,23 @@ same recognition track that a match in a casual Bubble Match run would. The comp
 is a study session that happens to be scored twice — once for mastery, once for the
 challenge.
 
+**The board looks completely normal, too (Q74).** The ten contested words are **not
+marked, highlighted, or distinguished in any way** during play — no glow, no accent, no
+pre-round "these are the ones that count" list. The contested/filler split is invisible
+until the results screen.
+
+Three reasons, in order of weight:
+
+1. **It keeps filler words honest.** A player who can see which taps are worth points has
+   been told which taps to be careless about — and those careless taps still write real
+   typed marks (below). Hiding the split means the whole board is played at full effort,
+   which is the study outcome the feature exists for.
+2. **It costs every game page nothing.** Marking words would mean a per-word decoration
+   hook in Bubble Match, Word Search and Match Speed, each rendering words in a different
+   structure. Not marking them is zero work in three places, forever.
+3. **It follows from this section's own premise.** A challenge round is normal play; a
+   board that advertises a scoring layer is not a normal board.
+
 Design consequences, stated so nobody is surprised by them later:
 
 * **Contested words gain mastery during the test.** A player can walk out of a challenge
@@ -937,15 +954,38 @@ What it requires:
   time**, not `now − startedAt`, or the pause is cosmetic.
 * A resume affordance on return rather than an instant unfreeze, so the player is not
   dropped back into a live timer they cannot see yet.
-* **Live mode is the deliberate exception.** There, leaving does *not* pause — the round
-  runs on without the deserter, by the rule already specified in § 7, because pausing
-  would let one player freeze the other's game.
+* **No exceptions — live mode included.** An earlier draft carved live mode out on the
+  grounds that pausing would let one player freeze the other's game. It would not: in live
+  mode an **unpausable AFK timer** runs alongside the paused game and forfeits a player who
+  stays away (§ 7, and the live doc § 6). Pausing therefore never helps you, so the rule
+  can stay absolute and no suppression flag is needed anywhere.
 
 Because it is global, this belongs in the games framework, not here:
 → **[docs/GAMES_FEATURE.md](./GAMES_FEATURE.md) needs a section on pause-on-background**
-before this feature is built, and every existing game must be audited against it. The
-per-second scoring in Word Search (−10/s after 1:00) is the loudest thing this rule
-touches — it is currently wall-clock.
+before this feature is built, and every existing game must be audited against it.
+
+**The audit has been done (2026-08-16), and it inverts what this section used to say.**
+An earlier draft claimed Word Search's per-second penalty was the loudest offender because
+it ran on wall-clock. The opposite is true:
+
+| Game | Pauses on backgrounding today? |
+|---|---|
+| **Word Search** | ✅ **yes** — `WordSearchPage.tsx` already listens for `visibilitychange`, snapshots to localStorage and calls `pauseTimer()` |
+| Bubble Match | ❌ no |
+| Match Speed | ❌ no |
+| Speed Reading | ❌ no |
+
+So Word Search is the **only game that already implements the rule**, and its
+`pauseTimer`/`resumeTimer` pair is the reference implementation the other three should be
+generalised from — not the problem case. Its −10/s penalty rides that same paused clock,
+so it is already correct (Q75).
+
+The existing **"Popups pause the clock"** section in `GAMES_FEATURE.md` is the other half
+of the answer: all four games already derive a `clockPaused` boolean and already freeze
+"whatever moves on its own" behind it. Backgrounding is a **second source** for that same
+boolean, which is precisely how Word Search wires it. The global rule is therefore a
+**generalisation of a pattern that already exists in four places**, not new machinery —
+which is a much smaller job than this section originally implied.
 
 ---
 
@@ -1043,9 +1083,10 @@ Rules for the messy parts:
 | Situation | Behaviour |
 |---|---|
 | A player confirms, then **leaves the app** | their confirmation is **revoked** — the room must not advance into a game one player is not present for |
-| A player leaves **after a game has started** | the game runs without them on the server's clock; they score whatever they had banked and risk losing. **No grace period** (Q20) |
-| A game with **no natural time limit** | must gain one for live mode (`GameDef.liveTimeLimitSec`), after which it terminates and banks the points earned so far |
-| The invitee never joins | the waiting room expires after **1 minute** and returns the inviter to the challenge screen — it does **not** fall back to async (Q18) |
+| A player leaves **after a game has started** | the game runs without them; they score whatever they had banked and risk losing. **No grace period** (Q20) |
+| A player never confirms on the scoreboard | the room waits **indefinitely**; the other player leaves via an **Exit live challenge** control when they choose (Q69) |
+| A player stops playing mid-round | the game **pauses** (as everywhere), but an **unpausable AFK timer forfeits** them after ~60s: the round ends where it stands and the room advances. No game needs a live-only time cap (Q20 revised, Q71/Q72 retired) |
+| Nobody joins the waiting room | it expires after **1 minute** and returns the player to the challenge screen — it does **not** fall back to async (Q18) |
 | The window closes mid-session | `no_contest`, same as async |
 | The session collapses **after** a round is banked | the challenge **reverts to async for both players**; banked rounds stand |
 
@@ -1056,9 +1097,11 @@ prerequisites this section used to list as open:
    is one backend container, so rooms live in process memory (Q19);
 2. **room/session model** — in-memory only, **no new table** (Q19b);
 3. **presence** — no grace period at all; the game never waits for anyone (Q20);
-4. **invite delivery** — logged as a **Capacitor/native-push demand** in
-   [REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md); on the web it reaches only a
-   player who already has the app open (Q21).
+4. **invite delivery** — mostly dissolved: the mechanism is a **permanent waiting-room
+   entrance** on the challenge screen, so no notification is required to play. A ping
+   (banner on web, push under Capacitor — logged in
+   [REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md)) widens discovery only, capped
+   at one per day per (sender, target) (Q21, Q70).
 
 **Live mode is phase 2 and has its own document**
 ([STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md)). Everything in §§ 1–6 is buildable
@@ -1070,10 +1113,11 @@ phase 1 must:
   final total, so a synchronous round-by-round comparison has something to read;
 * keep every game's scoring in a declarative `ChallengeScoringSpec` rather than inside
   the page, so a live round can score the same events server-side;
-* give every game a **run length** the server knows about, since live mode's
-  "the game runs without them" rule needs a deterministic end;
-* **not implement pause-on-background as unconditional** (§ 5.8) — live mode is its one
-  documented exception, and an unconditional handler makes live unbuildable.
+* not build scoring that only computes in an end-of-run branch — a live round can end by
+  **forfeit**, and a forfeited run still has to report a score;
+* leave room for a per-game **idle signal** ("no input for N seconds"), which is the only
+  hook live mode needs from a game page. **Pause-on-background is unconditional** (§ 5.8)
+  and needs no live-mode exception.
 
 **Live mode may be cross-language** (§ 8) — both players play the same game
 simultaneously in their own language.
@@ -1169,7 +1213,7 @@ characters.
 
 ✅ **The schema below is signed off** (2026-08-16) — the tables, the columns and the
 index change are approved; only the migration number is still floating. Migration
-numbers start at **146** (145 is the `user_languages` rename). ⚠️ [ARENA_FEATURE.md](./ARENA_FEATURE.md) also targets 146+ — whichever ships first takes the number.
+numbers start at **147**. 145 is the `user_languages` rename and **146 is taken** — `database/migrations/146-create-arenas.sql` exists on disk ([ARENA_FEATURE.md](./ARENA_FEATURE.md)), so Arena won that race. Re-check `ls database/migrations | sort -V | tail` at build time rather than trusting this line.
 
 **Guiding rule (Q52):** a table gets a column only when that column is a property of the
 object the table represents. Everything that is a property of *the challenge* lives on
@@ -1432,8 +1476,8 @@ is worthless the moment the session ends, room state lives in the backend proces
 only durable thing a live round produces is a `rounds` entry written through the same
 `recordRound` path async uses.
 
-**Live mode adds nothing to the database.** Its one contract change is client-side:
-`GameDef.liveTimeLimitSec` (`src/games/types.ts`).
+**Live mode adds nothing to the database, and nothing to `GameDef` either.** Its only
+client-side requirement is that challenge-eligible game pages can emit an idle signal.
 
 ---
 
@@ -1536,23 +1580,26 @@ incoming requests.
 | Q39 | Challenge issued into a language the challengee does not study | **do nothing** — accept the silent expiry; blocking or warning needs a friend's-languages payload not worth adding (§ 1) |
 | Q18 | How long the inviter waits in the live waiting room | **1 minute**, plus an always-available Cancel; on expiry the inviter returns to the challenge screen and does **not** fall back to async. Retry is free and unlimited ([live doc](./STUDY_CHALLENGE_LIVE.md) § 5) |
 | Q19 | Live-mode transport | **WebSocket** at `/api/ws` — nginx already forwards the upgrade, one backend container means in-process rooms ([live doc](./STUDY_CHALLENGE_LIVE.md) § 2) |
-| Q20 | Desertion mid-round | **no grace period at all** — the game continues on the server's clock and banks what the absent player had. Makes live the one exception to § 5.8's pause rule ([live doc](./STUDY_CHALLENGE_LIVE.md) § 6) |
-| Q21 | Live invite delivery with no push infrastructure | **a Capacitor/native-push demand**, logged in [REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md). On the web the invite reaches only a player already in the app ([live doc](./STUDY_CHALLENGE_LIVE.md) § 4) |
+| Q20 | Desertion mid-round | **no grace period at all** — the game continues and banks what the absent player had. Makes live the one exception to § 5.8's pause rule ([live doc](./STUDY_CHALLENGE_LIVE.md) § 6) |
+| Q74 | Are the 10 contested words visible during play? | **No** — the board is completely normal, no marking and no pre-round list. Keeps filler words played at full effort (they write real marks), costs three game pages nothing, and follows from § 5.7's own premise |
+| Q75 | Word Search's per-second penalty under the pause rule | **it pauses with the clock** — and the audit found it **already does**: Word Search is the only game that listens for `visibilitychange` today. Its `pauseTimer`/`resumeTimer` pair is the reference the other three generalise from (§ 5.8) |
+| Q76 | Where contested/filler scoring rules live | **a declarative `ChallengeScoringSpec` on `GameDef`** applied by a shared runner, not a per-game callback or a self-reported total. Only a declarative form lets live mode score the same events server-side without the game page existing (§ 5.4) |
+| Q21 | Live invite delivery with no push infrastructure | **not needed** — a permanent waiting-room entrance is the mechanism; the ping (banner, or push under Capacitor) only widens discovery and is capped at one per day per (sender, target) ([live doc](./STUDY_CHALLENGE_LIVE.md) § 4) |
 
 ### Still open
 
 **Nothing in this document is open.** Q1–Q68 are all settled above; Q18–Q21 were settled
 on 2026-08-16 in [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md), which continues the
-numbering from Q22 with four **implementation-time** questions of its own (gate timeout,
-invite rate-limiting, per-challenge live eligibility, and Bubble Match's survival bonus
-under a time cap). None of those blocks building either phase.
+numbering from Q69. **Q69–Q73 are all settled there too, as of 2026-08-16 — there is no
+open design question left in either document.** What remains before a build is the
+prerequisite doc work listed in § 12, not a decision.
 
 ---
 
 ## 12. Code ↔ doc dependencies
 
 This document will describe (nothing exists yet):
-`database/migrations/146+`,
+`database/migrations/147+`,
 `server/contracts/wire.ts`,
 `server/dal/{interfaces,implementations}/StudyChallengeDAL`,
 `server/services/StudyChallengeService.ts`,
@@ -1566,26 +1613,34 @@ This document will describe (nothing exists yet):
 `src/games/{match-speed,bubble-match,word-search}/*` (scoring emission, challenge mode),
 `src/features/friends/*` (the Challenges NodePage and its badge).
 
-**Owed to other docs before this is built:**
-* [GAMES_FEATURE.md](./GAMES_FEATURE.md) — a **pause-on-background** section (§ 5.8). This
-  is a global games rule, not a challenge rule, and every existing game must be audited
-  against it (Word Search's per-second penalty is currently wall-clock). ⚠️ It must be
-  written as **suppressible**, not unconditional — live mode is its documented exception
-  ([STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 6).
-* [GAMES_FEATURE.md](./GAMES_FEATURE.md) — `GameDef.liveTimeLimitSec` beside
-  `challengeScoring`: Bubble Match and Word Search have no natural end and need a hard cap
-  before they can be played live ([STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 7).
-* [GAMES_FEATURE.md](./GAMES_FEATURE.md) — the `challengeScoring` contract every
-  recognition/production game must declare (§ 5.4).
+**The build queue lives in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 4** — ordered steps,
+the two unshipped migrations this one stacks on, and the trigger (Arena landing).
+
+**Owed to other docs before this is built** — ✅ **all done 2026-08-16**, while Arena was
+being built. Each entry names what landed, so a reader can tell whether the target doc has
+drifted since:
+* ✅ [GAMES_FEATURE.md](./GAMES_FEATURE.md) — **"Backgrounding pauses the clock"**, written
+  unconditionally (live mode is *not* an exception; it bounds absence with an AFK forfeit
+  instead), with the four-game audit table: **Word Search already implements it**, the
+  other three need the signal wired into a `clockPaused` gate they already have.
+* ✅ [GAMES_FEATURE.md](./GAMES_FEATURE.md) — **"Challenge-eligible games: the
+  `challengeScoring` contract"** (§ 5.4), including why it must be declarative data rather
+  than a callback, and the finding that a moded game is eligible **per mode**, so a stored
+  game sequence needs a `(gameId, mode)` pair for Word Search rather than a bare id.
+* ✅ [GAMES_FEATURE.md](./GAMES_FEATURE.md) — **"The live idle signal"**, plus two new
+  steps in the add-a-game checklist.
 * [GAMES_FEATURE.md](./GAMES_FEATURE.md) — ✅ **done**: the two-phase game-retirement rule
   (disable for challenges, wait a week, then remove), under "Removing a game" (Q58).
-* [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) — the Challenges NodePage as a fourth
-  friends surface, and the language-scoped badge on the hp Friends row (§ 1).
-* [DECKS_FEATURE.md](./DECKS_FEATURE.md) — `decks."editMode"`, the fifth `/decks` section,
-  and the mutation guard (§ 4).
-* [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) — the third `ExecStart` step
-  and its log file; the unit's description ("inactivity penalty + dangling-template
-  prune") will need updating too (§ 9).
+* ✅ [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) — § 1b (the Challenges NodePage, and the
+  badge chain with its deliberate language-scoping exception), the two block booleans in
+  § 2, and § 8 rewritten (blocking is no longer "not built").
+* ✅ [DECKS_FEATURE.md](./DECKS_FEATURE.md) — `decks."editMode"` and the partial-index
+  change in § 1, the preset mutation guard in § 2, and the fifth `/decks` section
+  (Challenges) in § 4.
+* ✅ [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) — the planned third
+  `ExecStart` step with its four passes and pass-4 safeguards, the `Description=` update,
+  and a new warning that a **unit-template** change (unlike a SQL change) is not rolled out
+  by a git pull alone.
 
 Related docs:
 [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) (**phase 2** — the live/synchronous

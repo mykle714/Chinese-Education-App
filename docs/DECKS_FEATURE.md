@@ -21,7 +21,7 @@ Two things landed together here, because one made the other possible:
 
 | Table | Columns | Notes |
 |---|---|---|
-| `decks` | `id` serial PK · `userId` uuid → `users(id)` CASCADE · `language` varchar(8) · `name` varchar(64) · `createdAt` · `updatedAt` | Unique on (`userId`, `language`, `lower(btrim(name))`); CHECK `btrim(name) <> ''`; index on (`userId`, `language`) |
+| `decks` | `id` serial PK · `userId` uuid → `users(id)` CASCADE · `language` varchar(8) · `name` varchar(64) · `createdAt` · `updatedAt` · **`editMode`** (planned) | Unique on (`userId`, `language`, `lower(btrim(name))`) — **becomes partial**, see below; CHECK `btrim(name) <> ''`; index on (`userId`, `language`) |
 | `deck_cards` | `deckId` int → `decks(id)` CASCADE · `vocabEntryId` int · `addedAt` | PK (`deckId`, `vocabEntryId`); index on `vocabEntryId` |
 
 ### A deck carries no study state
@@ -58,6 +58,45 @@ of these two". The integrity an FK would have given us comes from two places:
   and every deck holding it would report an inflated `cardCount` forever.
 
 If the vet is ever unified into one table, add the FK and delete that cleanup.
+
+### `editMode` — user-authored vs. generated decks (planned, Study Challenge)
+
+⚠️ **Not built.** Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 4 and
+signed off 2026-08-16; it ships with that feature's migration.
+
+Study Challenge generates a deck per player per challenge (`vs Bob`) holding the ten
+contested words. Those decks are real `decks` rows — they render in the deck list, open a
+normal collection view, and launch games — but the user may not edit them, and they are
+deleted when the challenge's window closes.
+
+One new column expresses all of that:
+
+```
+decks."editMode"  'custom' | 'preset'   NOT NULL DEFAULT 'custom'
+```
+
+* **`'custom'`** — every deck that exists today. Fully mutable.
+* **`'preset'`** — generated. Rename, delete, and membership changes are **rejected by
+  `DeckService`**, and it does not count against `MAX_DECKS_PER_LANGUAGE`.
+
+**There is deliberately no `challengeId` on `decks`.** The owning challenge holds the
+pointer (`study_challenges.presetDeckIds`, a jsonb map of player → deck id), not the other
+way round. A deck is a named set of cards; *why* it exists is the challenge's business.
+That keeps this table free of a column that would be NULL for every row a user made.
+
+⚠️ **This requires relaxing `decks_user_language_name_uniq` to a partial index:**
+
+```sql
+CREATE UNIQUE INDEX decks_user_language_name_uniq
+  ON decks ("userId", language, lower(btrim(name)))
+  WHERE "editMode" = 'custom';
+```
+
+The index exists because two decks called "Food" are indistinguishable in the
+add-to-deck checkbox menu. **Generated decks never appear in that menu**, so exempting
+them costs nothing — and they need the exemption, because two challenges against the same
+friend would both want to be called `vs Bob`. The rows are told apart in the deck list by
+the friend's icon on the tile.
 
 ### `color` is derived, not stored
 
@@ -105,6 +144,10 @@ PUT    /api/decks/memberships  {vocabEntryId, deckIds} → number[]
 * Name ≤ 64 chars (mirrors the column), non-blank, unique per (user, language)
   case-insensitively. The unique index is the authority; the service's pre-check
   only produces a nicer message for the ordinary case.
+* **A `'preset'` deck rejects every mutation** (planned, above): rename, delete, and
+  membership writes all fail on it, and it is excluded from the 100-deck count. The guard
+  belongs in `DeckService` beside the ownership check — one place, not one per endpoint,
+  and *not* in the controller, where a future endpoint would forget it.
 * Membership saves are **whole-set**, not deltas: `deckIds` is what the card's
   membership should *be*. Deck ids the caller does not own are silently ignored, so
   a menu left open across a deck deletion still saves the ticks the user did make.
@@ -331,6 +374,23 @@ collection's definition and its number cannot drift.
    the page.
 4. **Decks** — the user's sets, wrapping at **three per row**, plus a `+` to create
    one.
+5. **Challenges** *(planned)* — generated challenge decks (`editMode = 'preset'`), same
+   `DeckTile`, same wrapping, but with the **opponent's friend icon** in the tile's icon
+   slot instead of the `+`. See [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 4.
+
+**Why a fifth section rather than mixing generated decks into *Decks*:** the two behave
+differently in every way a user can touch — a challenge deck cannot be renamed, deleted or
+added to, appears without being asked for, and vanishes when its window closes. Sorted in
+among decks the user built, "why can't I delete this?" has no answer on screen. In its own
+section the difference is stated by position before anyone taps.
+
+The section is **absent, not empty**, when the user has no live challenges — the same rule
+the Mastered section already follows. And it is where the ~5-entry tidiness note the deck
+list carries is enforced from the other side: `MAX_ACTIVE_CHALLENGES = 6` bounds it.
+
+⚠️ The friend icon is **not** on the deck row. `decks` carries no `challengeId`
+(§ 1), so the read path inverts `study_challenges.presetDeckIds` in memory to map deck →
+opponent. That keeps the pointer in one direction only.
 
 Every section shares one row component (`TileGrid`): a **centered wrapping flex**
 capped at exactly three tiles' worth of width (`3 × TILE_WIDTH + 2 × TILE_GAP`,
@@ -606,6 +666,7 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §3 Games-hub selector | `src/features/flashcards/selectedCollection.ts`; `src/games/GamesCollectionSelector.tsx`; `src/games/GamesPage.tsx` (`launchPath`); `src/games/word-search/WordSearchHubItem.tsx` (`newGamePath`); `src/api/decks.ts` (`fetchDecks`) |
 | §4 Client | `src/api/decks.ts`, `collectionRef.ts`, `useLaunchCollection.ts`, `CollectionViewPage.tsx`, `FlashcardsDecksPage.tsx`, `AddToDeckMenu.tsx`, `routes/routeMeta.ts`, `routes/registry.ts` |
 | §4 Tiles & built-in collections | `src/components/DeckTile.tsx` (+ `DeckBuckets.tsx`, its other host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`builtinCollectionEntries`, `hasMasteredSection`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
+| §1 `editMode` + §4 Challenges section (planned) | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; the challenge migration (147+); `DeckService` (the preset mutation guard); `study_challenges.presetDeckIds` |
 | §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `CollectionViewPage.tsx` (the sort row + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |
 
 Related docs: [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (small-deck top-up),

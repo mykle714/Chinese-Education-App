@@ -65,6 +65,7 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/account": lazy(() => import("../pages/AccountPage")),
   "/games": lazy(() => import("../games/GamesPage")),
   "/community": lazy(() => import("../features/community/CommunityPage")),
+  "/arena": lazy(() => import("../features/arena/ArenaPage")),
   "/friends": lazy(() => import("../features/friends/FriendsPage")),
   "/friends/requests": lazy(() => import("../features/friends/IncomingRequestsPage")),
   "/friends/sent": lazy(() => import("../features/friends/SentRequestsPage")),

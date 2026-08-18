@@ -133,6 +133,10 @@ const PAGE_ROUTES: RouteMeta[] = [
   { path: "/friends/challenges/new/:friendUserId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/friends/challenges/review/:challengeId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/friends/challenges/:challengeId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  // User profile — the one screen for looking at somebody who is not you. A Node drill-in
+  // reachable from the friends list, the leaderboard and the challenges page, so its back
+  // arrow goes to actual history rather than a fixed parent (docs/USER_PROFILE_PAGE.md).
+  { path: "/users/:userId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/dictionary", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/compare", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/reader", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
@@ -169,6 +173,9 @@ const PAGE_ROUTES: RouteMeta[] = [
 
   // ── Leaf pages (slide up, no footer) ──
   { path: "/night-market", access: "any", shell: "frame", chrome: "leaf" },
+  // Read-only visit to another user's market, from their profile page. A LEAF like the
+  // owner's page (docs/USER_PROFILE_PAGE.md § Night market visit).
+  { path: "/night-market/user/:userId", access: "any", shell: "frame", chrome: "leaf" },
   {
     path: "/tester-dashboard",
     access: "any",

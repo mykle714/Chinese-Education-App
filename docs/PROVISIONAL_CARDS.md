@@ -159,6 +159,43 @@ to a **full** pool fetch, which does provision.
 An unrecognized or missing `surface` param (an older client) falls back to the requested
 distribution's own total, so it still never blocks.
 
+### 4b. Lend before you borrow — where lending sits in the selection order
+
+*Code: `OnDeckVocabService` → `getDistributedWorkingLoop`, `getNextLibraryCardWithFallback`,
+`getGameVocabPool`, `getWordSearchGrid`, `lendGameCandidates`, `lendIntoLoop`.*
+
+Every card-serving surface asks its **requested bucket** first (the flp's per-category
+quotas, a game's `distribution`). When that bucket cannot fill its share, the surface
+**lends before it borrows from another bucket** — decided 2026-08-17. Lending sits at
+tier 2 everywhere:
+
+| Tier | flp working loop | Game pool / Word Search grid |
+|---|---|---|
+| 1 | each quota, from its own category (longest-waiting first) | each requested bucket, FRESH cards only |
+| **2** | **lend the shortfall** | **lend the shortfall** |
+| 3 | borrow across categories in the mode's `fillOrder` | borrow FRESH cards in `GAME_FALLBACK_ORDER` |
+| 4 | — (a cooling card is never re-served on the flp) | COOLED cards (requested buckets → fallback) |
+| 5 | — | soft-`avoid`ed cards (just cleared) |
+
+**A lent card is always `Unfamiliar`** — it has no mark history — so this deliberately
+skews a short round toward `Unfamiliar` instead of skewing it toward whichever bucket
+happened to have surplus. That is the point: a brand-new word is closer to what the
+missing quota was asking for than another bucket's leftovers.
+
+Note the ordering only bites when a quota **underfills**, and a quota underfills exactly
+when its own category is spent — so tier 3 could never have served that same category
+anyway. The real choice being made is *"lend"* vs *"deepen a different bucket"*.
+
+Two sessions skip tier 2 entirely and fall straight to tier 3:
+
+* **collection-restricted rounds** (`?deck=`, `?collection=`) — see the table in § 6;
+* **partial game refills** (`need` is set) — Bubble Match's *Play Again*, per the
+  "partial refills never provision" rule above.
+
+There is still **no cap** on how much a single round may lend; the shortfall is lent in
+full. On a small library that grows the provisional holding quickly, which is the accepted
+cost of never re-serving a resting card (see the "no cap" note above).
+
 ---
 
 ## 5. What the learner sees
@@ -309,6 +346,9 @@ The same asymmetry decides who gets a mid-loop top-up when every card is cooling
 
 > Lend only when **`Unfamiliar` is a servable category** for this round **and** the round is
 > **unrestricted** (no `?deck=`, no `?collection=mastered`).
+
+This same predicate now gates the **tier-2 lend** described in § 4b, not just the
+all-cards-cooling case below — the two are the same call site.
 
 | Session | All cards cooling ⇒ |
 |---|---|

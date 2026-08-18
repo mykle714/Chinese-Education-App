@@ -509,6 +509,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 // draft, unpausing minute points), then performs the normal back nav.
                 onBack={handleBack}
                 onUndo={handleUndoLastMark}
+                language={(user?.selectedLanguage ?? "zh") as Language}
                 showPinyin={showPinyin}
                 onTogglePinyin={() => updateLearnSettings({ showPinyin: !showPinyin })}
                 isFlipped={isFlipped}

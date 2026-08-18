@@ -338,6 +338,7 @@ function FriendsPage() {
                                 highlighted={entry.isCurrentUser}
                                 secondary={netMinutesLabel(entry.netMinutes, entry.language)}
                                 leading={<RankBadge rank={entry.rank} />}
+                                onPersonPress={() => slideNavigate(`/users/${entry.userId}`)}
                                 // The board is read-only: the row's only right-hand
                                 // element is the score it is ranked on. Unfriending
                                 // moved to /friends/remove.

@@ -840,20 +840,24 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     inset: 0,
                     pointerEvents: "none",
                     zIndex: 40,
-                    // Vignette: clear well into the field, then ramp to a strong red
-                    // at the very edges. The early transparent stop (28%) is what
-                    // makes it extend "much deeper" than the old 4px border.
+                    // Vignette: clear only at the very center, then ramp hard to a
+                    // saturated red at the edges. The transparent core stops early
+                    // (18%) and the mid stop is much heavier than the rim used to
+                    // be, so the alarm reads as an intense red wash over most of
+                    // the field rather than a rim highlight.
                     background:
-                        "radial-gradient(125% 125% at 50% 50%, rgba(244,67,54,0) 28%, rgba(244,67,54,0.28) 62%, rgba(244,67,54,0.6) 100%)",
+                        "radial-gradient(125% 125% at 50% 50%, rgba(244,67,54,0) 18%, rgba(244,67,54,0.45) 48%, rgba(229,57,53,0.78) 76%, rgba(198,40,40,0.95) 100%)",
                     // Dismissed for good once the player has collapsed the game-over
                     // popup to inspect the (still-packed) field — the alarm is no
                     // longer meaningful, and it must not flash back if they re-expand.
                     opacity: danger && !dangerDismissed ? 1 : 0,
                     // Fade in/out when danger toggles; the pulse drives the in-danger feel.
                     transition: "opacity 0.35s ease",
-                    animation: danger && !dangerDismissed ? "bubbleDangerPulse 1.15s ease-in-out infinite" : "none",
+                    // Faster, higher-floor pulse: it never fades back to a calm
+                    // level, it only breathes between "strong" and "full".
+                    animation: danger && !dangerDismissed ? "bubbleDangerPulse 0.9s ease-in-out infinite" : "none",
                     "@keyframes bubbleDangerPulse": {
-                        "0%, 100%": { opacity: 0.45 },
+                        "0%, 100%": { opacity: 0.7 },
                         "50%": { opacity: 1 },
                     },
                 }}

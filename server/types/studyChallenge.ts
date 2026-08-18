@@ -50,13 +50,16 @@ export interface StudyChallengeRow {
   presetDeckIds: Record<string, number>;
   issuedAt: string;
   /**
-   * The challenger's Monday 04:00 local, as a UTC instant — the challenge's WEEK
-   * IDENTITY, not a deadline. Every deadline is recomputed per read from
-   * `issuedAt`/`weekStart` plus the player's CURRENT timezone (Q50); this one field
-   * is snapshotted because the unique index keys on it and an identity must not
-   * move. See shared/challengeWeek.ts.
+   * Whole weeks since Monday 2026-01-05 00:00 UTC — the challenge's WEEK IDENTITY,
+   * not a deadline, and the second half of the pair-week unique index.
+   *
+   * A COUNTER RATHER THAN AN INSTANT because both players must agree on it: the
+   * previous `weekStart` timestamptz was the CHALLENGER's local Monday, so a pair in
+   * two timezones stored two different values for the same week and the unique index
+   * never fired. Every deadline is still recomputed per read from this index plus
+   * the player's CURRENT timezone (Q50). See shared/challengeWeek.ts, migration 150.
    */
-  weekStart: string;
+  weekIndex: number;
   acceptedAt: string | null;
   completedAt: string | null;
   /** Null for a draw and for no_contest. Always one of the two players otherwise. */
@@ -179,6 +182,40 @@ export interface ChallengeCandidate {
   definition: string | null;
   difficulty: number | null;
   frequencyScore: number | null;
+  /** icons8 icon for the mini preview card (migration 72); null when unassigned. */
+  iconId: string | null;
+}
+
+/**
+ * The det-resolved fields a stored challenge word needs in order to DRAW.
+ *
+ * A challenge row stores identity only (Q49), so these are looked up on the way out
+ * (`findDisplayFieldsByWords`). Deliberately the same fields a `ChallengeCandidate`
+ * carries, so the review screen renders a stored word and a freshly drawn
+ * replacement through one card component with no branch.
+ */
+export interface ChallengeWordDisplayFields {
+  dictionaryEntryId: number;
+  pronunciation: string | null;
+  definition: string | null;
+  frequencyScore: number | null;
+  iconId: string | null;
+}
+
+/**
+ * What a strike needs in order to hand back a replacement word (§ 3.2).
+ *
+ * Exactly one of `friendUserId` (the challenger, before the challenge exists) or
+ * `challengeId` (the challengee, reviewing a stored set) identifies the draw's
+ * "other player"; `exclude` is every word already on the reviewer's screen plus
+ * every word they have struck this session. Omitting the whole object keeps the
+ * strike a bare Mastered write with no replacement.
+ */
+export interface StrikeReplacementContext {
+  friendUserId?: string;
+  challengeId?: string;
+  variant?: ChallengeVariant;
+  exclude?: string[];
 }
 
 /** Body of `POST /api/studyChallenges`. */
@@ -187,10 +224,23 @@ export interface IssueChallengeBody {
   variant: ChallengeVariant;
 }
 
-/** Body of `POST /api/studyChallenges/:id/accept`. */
+/**
+ * Body of `POST /api/studyChallenges/:id/accept`.
+ *
+ * WORDS, NOT DET IDS (Q49): a challenge stores its set as the denormalised
+ * (language, word1) pair, which survives a det data deploy, so the picker submits
+ * the same handle. (This interface previously declared `struckEntryIds: number[]`,
+ * which no caller ever sent and no handler ever read.)
+ */
 export interface AcceptChallengeBody {
-  /** The det ids the challengee struck as already known, in the order they struck them. */
-  struckEntryIds?: number[];
+  /** The words the challengee struck as already known, in the order they struck them. */
+  struckWords?: string[];
+  /**
+   * The replacements the server handed back for those strikes, so the committed set
+   * is the set the challengee had on screen. Every word is re-resolved against the
+   * det before it is honoured; anything unresolvable is topped up by a fresh draw.
+   */
+  replacementWords?: string[];
 }
 
 /** Body of `POST /api/studyChallenges/:id/rounds`. */

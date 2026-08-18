@@ -11,6 +11,13 @@ A discovery surface where learners browse, upvote, and copy **advanced card-icon
 users have saved. The page (`CommunityPage.tsx`, a Home-hub `NodePage`) has a search bar
 (`CommunitySearchBar`) above two horizontally-scrolling, infinitely-paginated feeds:
 
+A **fourth surface** renders the same tiles outside this page: the user profile's card-design
+grid ([USER_PROFILE_PAGE.md](./USER_PROFILE_PAGE.md)) lists one account's advanced layouts via
+`ICommunityLayoutDAL.getDesignsByOwner`, reusing `CommunityDesignCard`/`CommunityDesignZoom`
+and the vote/apply flow verbatim. It differs from the three feeds below in three ways — it
+does not exclude the viewer's own rows, does not collapse duplicates, and pages by keyset
+cursor rather than the exclude-arrays — all for reasons documented there.
+
 1. **"For words you're learning"** — other users' advanced layouts for words in the viewer's
    **non-mastered library** (`starterPackBucket = 'library'` and the **core** mastery bar
    ≠ `Mastered` — `coreCategoryExpr('lib')` in `CommunityLayoutDAL.ts`).

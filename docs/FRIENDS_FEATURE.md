@@ -24,6 +24,26 @@ mutations (send, answer, unfriend) has its own screen behind a top-row button.
 Back-arrow targets: `/friends` → `/` (Home); all three action pages → `/friends`.
 Every action page navigates via `useSlideNavigate` so the drill-in animates.
 
+**Every person row on all four screens opens that person's profile** — tapping the
+avatar/name half of a `FriendPersonRow` navigates to `/users/:userId`
+([USER_PROFILE_PAGE.md](./USER_PROFILE_PAGE.md)). The `actions` slot stays outside the
+tappable area, so tapping Remove or Decline can never be read as a tap on the person.
+
+`FriendPersonRow` supports **two tap models**, and a screen uses exactly one:
+
+| Prop | Tap target | `actions` slot | Used by |
+|---|---|---|---|
+| `onPersonPress` | the avatar + name half | real buttons, outside the tap target | these four screens (→ the profile) and the leaderboard |
+| `onRowPress` | the **whole row** | must be **presentational only** | the challenges page (docs/STUDY_CHALLENGE.md § 1) |
+
+The handler is `onPersonPress`, not the older `onOpenProfile`, because the challenges
+page binds the tap to the challenge action instead of a profile. Passing both is not an
+error — `onRowPress` wins — but a row should only ever want one, and with `onRowPress`
+a `<button>` inside `actions` would compete with the row for taps and tab stops.
+The profile is where a friendship is now most naturally removed, where a request is
+accepted or revoked, and — for friends — where the per-pair Study Challenge block is
+set.
+
 Shared pieces:
 * `FriendPersonRow.tsx` — the avatar + name + secondary-line + actions row used by
   all four screens (they differ only in the `actions` slot; the leaderboard also

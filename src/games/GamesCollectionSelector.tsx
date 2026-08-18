@@ -56,7 +56,7 @@ interface CollectionOption {
     color: string;
     /** Section this option is listed under, matching the decks page's sections.
         "Mastered" appears only when the fdp shows it as a section too — with core
-        alone, the shared list files that collection under "Cards". */
+        alone, the shared list files that collection under "Collections". */
     group: CollectionGroup | "Decks";
 }
 
@@ -197,7 +197,7 @@ const GamesCollectionSelector: React.FC<{ className?: string }> = ({ className }
             >
                 {options.map((option, index) => [
                     // Section caption whenever the group changes — the same three
-                    // bands the decks page stacks (Cards / Mastered / Decks).
+                    // bands the decks page stacks (Collections / Mastered / Decks).
                     option.group !== options[index - 1]?.group ? (
                         <ListSubheader
                             key={`${option.key}-header`}

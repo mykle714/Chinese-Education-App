@@ -17,19 +17,27 @@
 -- Both this file and that module answer "when is this player's Wednesday/Monday
 -- 04:00", and if they ever disagree the visible symptom is ugly: a player is shown a
 -- deadline the server has already acted on, or an Accept button that 500s. The shared
--- rule, applied identically in both places:
+-- rule, applied identically in both places (`weekBoundary` there):
 --
---     take `weekStart`'s LOCAL CALENDAR DATE in THAT PLAYER'S timezone,
---     add N days, take 04:00 local, convert back to UTC.
+--     take the week's MONDAY DATE, add N days, take 04:00 in THAT PLAYER'S
+--     timezone, convert back to UTC.
 --
--- `weekStart` is the CHALLENGER's Monday 04:00 as a UTC instant, so in a distant
--- timezone that instant can land on the challengee's Sunday or Tuesday. Reading its
--- local date per player rather than assuming "Monday" is what makes the two layers
--- agree — and it is why the offsets below are relative to that date, not to a
--- day-of-week lookup.
+-- The week's Monday date is derived from the stored COUNTER (migration 150):
 --
---     accept deadline  = weekStart's local date + 2 days at 04:00, CHALLENGEE's tz
---     test window ends = weekStart's local date + 7 days at 04:00, EACH player's tz
+--     monday(weekIndex) = DATE '2026-01-05' + 7 * "weekIndex"
+--
+-- ⚠️ THE EPOCH IS DUPLICATED — it is `CHALLENGE_WEEK_EPOCH_UTC` in
+-- server/shared/challengeWeek.ts and `DATE '2026-01-05'` here and in migration 150.
+-- Change one alone and every deadline in this file moves by a week.
+--
+-- This replaced `(weekStart AT TIME ZONE tz)::date + N`. The old column was the
+-- CHALLENGER's Monday 04:00 as an instant, so in a distant zone it landed on the
+-- challengee's Sunday or Tuesday and each player's local date had to be re-read to
+-- recover "the Monday". A counter names the Monday directly, in every zone, with no
+-- conversion — which is also why the pair-week unique index now actually fires.
+--
+--     accept deadline  = monday + 2 days at 04:00, CHALLENGEE's tz
+--     test window ends = monday + 7 days at 04:00, EACH player's tz
 --
 -- ── FOUR PASSES, AND THE ORDER MATTERS ───────────────────────────────────────
 --   1. expire unaccepted invitations
@@ -80,8 +88,8 @@ BEGIN
       JOIN users ce ON ce.id = sc."challengeeId"
      WHERE sc.status = 'pending'
        AND now() >= (
-             (((sc."weekStart" AT TIME ZONE COALESCE(ce.timezone, 'UTC'))::date + 2)
-               + TIME '04:00') AT TIME ZONE COALESCE(ce.timezone, 'UTC')
+             (((DATE '2026-01-05' + 7 * sc."weekIndex" + 2)
+               + TIME '04:00') AT TIME ZONE COALESCE(ce.timezone, 'UTC'))
            )
   ), updated AS (
     UPDATE study_challenges sc
@@ -135,10 +143,10 @@ BEGIN
       JOIN users ce ON ce.id = sc."challengeeId"
      WHERE sc.status = 'accepted'
        AND now() >= GREATEST(
-             (((sc."weekStart" AT TIME ZONE COALESCE(cr.timezone, 'UTC'))::date + 7)
-               + TIME '04:00') AT TIME ZONE COALESCE(cr.timezone, 'UTC'),
-             (((sc."weekStart" AT TIME ZONE COALESCE(ce.timezone, 'UTC'))::date + 7)
-               + TIME '04:00') AT TIME ZONE COALESCE(ce.timezone, 'UTC')
+             (((DATE '2026-01-05' + 7 * sc."weekIndex" + 7)
+               + TIME '04:00') AT TIME ZONE COALESCE(cr.timezone, 'UTC')),
+             (((DATE '2026-01-05' + 7 * sc."weekIndex" + 7)
+               + TIME '04:00') AT TIME ZONE COALESCE(ce.timezone, 'UTC'))
            )
   ), resolved AS (
     UPDATE study_challenges sc
@@ -192,8 +200,8 @@ BEGIN
       CROSS JOIN LATERAL jsonb_each(COALESCE(sc."presetDeckIds", '{}'::jsonb)) AS e(key, value)
       JOIN users u ON u.id = (e.key)::uuid
      WHERE now() >= (
-             (((sc."weekStart" AT TIME ZONE COALESCE(u.timezone, 'UTC'))::date + 7)
-               + TIME '04:00') AT TIME ZONE COALESCE(u.timezone, 'UTC')
+             (((DATE '2026-01-05' + 7 * sc."weekIndex" + 7)
+               + TIME '04:00') AT TIME ZONE COALESCE(u.timezone, 'UTC'))
            )
   ), deleted AS (
     -- `"editMode" = 'preset'` is asserted even though the id came from a challenge:

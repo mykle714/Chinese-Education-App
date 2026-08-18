@@ -20,7 +20,13 @@ import {
     challengeErrorMessage,
     challengeStatusLine,
 } from "./challengeLabels";
-import { challengeActionSx, challengeMessageSx, challengeMutedSx, crownSx } from "./challengeStyles";
+import {
+    challengeActionPillMutedSx,
+    challengeActionPillSx,
+    challengeMessageSx,
+    challengeMutedSx,
+    crownSx,
+} from "./challengeStyles";
 
 /**
  * Study Challenges (docs/STUDY_CHALLENGE.md § 1) — a NodePage under the Friends
@@ -31,6 +37,13 @@ import { challengeActionSx, challengeMessageSx, challengeMutedSx, crownSx } from
  * and the row carries that pair's whole lifecycle (Challenge → Waiting on them /
  * Review words → Play test → See results). There is deliberately never a second
  * place to look for "what is happening with Bob".
+ *
+ * ⚠️ THE ROW IS THE BUTTON. Unlike every other `FriendPersonRow` in the app, this one
+ * is a single tap target (`onRowPress`) whose action is the row's own lifecycle step —
+ * issue, accept, or open the challenge — and it never opens a profile. The pill on the
+ * right only NAMES that action; it is a Box, not a Button, because a control nested in
+ * a clickable row competes with it for taps and for the tab order. A row with no
+ * available action is inert rather than falling back to anything.
  *
  * Two things the row shows and one it deliberately does not:
  *   * 👑 the REIGNING CHAMPION — whoever won the pair's most recent resolved
@@ -71,7 +84,9 @@ function ChallengesPage() {
     }, [isAuthenticated]);
 
     /**
-     * Every action on the row is a NAVIGATION, not a mutation. Issuing and accepting
+     * What tapping a row does — it is bound to the ROW, not to the pill (`onRowPress`).
+     *
+     * Every action here is a NAVIGATION, not a mutation. Issuing and accepting
      * both go through the review flow, because both are "look at ten words and confirm
      * them" — the challengee's Accept button opening a picker is exactly the friendlier
      * reading § 8.2 allows, with the transition to `accepted` happening on the picker's
@@ -164,6 +179,10 @@ function ChallengesPage() {
                             // challenge already shows its own control, so a blocked
                             // reason next to one would be nonsense.
                             const showAction = action !== "issue" || row.canChallenge;
+                            // Whether the ROW does anything when tapped. "none" is a
+                            // state with no destination; a vetoed issue has nothing to
+                            // open either.
+                            const rowIsActionable = showAction && action !== "none";
 
                             return (
                                 <FriendPersonRow
@@ -173,6 +192,20 @@ function ChallengesPage() {
                                     email={row.friend.email}
                                     avatarIconId={row.friend.avatarIconId}
                                     secondary={challengeStatusLine(row.challenge) ?? undefined}
+                                    // ⚠️ THE WHOLE ROW IS THE BUTTON, and it never
+                                    // opens a profile. One row = one action (issue,
+                                    // accept, or open the challenge), so the entire
+                                    // row is that action's target rather than a
+                                    // composition of a tappable person half and a
+                                    // small button — those two made the row's largest
+                                    // region do something other than the row's job.
+                                    // A row with no available action (blocked, or at
+                                    // the cap) gets NO handler: it is inert, with no
+                                    // cursor and no focus stop, because a tap that
+                                    // quietly goes somewhere else is worse than a tap
+                                    // that does nothing. Profiles stay reachable from
+                                    // /friends. (docs/STUDY_CHALLENGE.md § 1)
+                                    onRowPress={rowIsActionable ? () => handleAction(row) : undefined}
                                     actions={
                                         <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
                                             {/* The crown sits on whoever holds it — on the
@@ -191,19 +224,18 @@ function ChallengesPage() {
                                                     👑 you
                                                 </Typography>
                                             )}
+                                            {/* PRESENTATIONAL, not a control — see
+                                                challengeActionPillSx. The row owns the
+                                                tap; this only names what the tap does. */}
                                             {showAction ? (
-                                                <Button
+                                                <Box
                                                     className={`challenges-page__action challenges-page__action--${action}`}
-                                                    onClick={() => handleAction(row)}
-                                                    // "Waiting on them" is a STATE, not an
-                                                    // invitation to tap twice — it opens the
-                                                    // challenge (where Withdraw lives), so it
-                                                    // stays enabled.
-                                                    disabled={action === "none"}
-                                                    sx={challengeActionSx(challengeActionColor(action))}
+                                                    sx={rowIsActionable
+                                                        ? challengeActionPillSx(challengeActionColor(action))
+                                                        : challengeActionPillMutedSx}
                                                 >
                                                     {challengeActionLabel(action)}
-                                                </Button>
+                                                </Box>
                                             ) : (
                                                 <Typography
                                                     className="challenges-page__unavailable"

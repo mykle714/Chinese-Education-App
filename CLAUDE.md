@@ -263,7 +263,10 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **none.** Prod is current through migration **149**.
+Current open runbooks:
+- [docs/STUDY_CHALLENGE_WEEK_INDEX_RUNBOOK.md](./docs/STUDY_CHALLENGE_WEEK_INDEX_RUNBOOK.md) — migration **150**, the `study_challenges."weekStart"` → `"weekIndex"` conversion; **not yet on prod**. It is a RENAME, so old code and new code cannot both run against one schema: the migration and the container rebuild must land together, migration first. Harmless on prod today because the feature has never been played there (the table is empty).
+
+Prod is current through migration **149**.
 
 Deployed and retired on 2026-08-17 (runbook deleted): Study Challenge phase 1 async
 (**148**), the dead `compute_utcm_category` drop (**147**) and the lifetime-mark-counter

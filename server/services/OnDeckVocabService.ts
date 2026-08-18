@@ -400,6 +400,42 @@ export class OnDeckVocabService {
   }
 
   /**
+   * Lend `need` cards for a GAME pool and hand them back as FRESH candidates.
+   *
+   * The game equivalent of lendIntoLoop. A lent row has no mark history, so it bands
+   * Unfamiliar on every track and can never be on cooldown — re-querying the Unfamiliar
+   * bucket with the caller's exclusions therefore returns essentially just the new rows.
+   *
+   * Returns [] when dictionary supply is exhausted, so the caller falls through to its
+   * borrow/cooled tiers exactly as it did before lending existed here.
+   *
+   * NOTE the length cap: Word Search passes `maxEntryKeyLen`, but nothing constrains
+   * lending itself to short words, so a lend can legitimately yield zero usable rows
+   * for that game. That is the same over-lend the controller's PROVISION_RETRY_FACTOR
+   * loop already accepts (docs/PROVISIONAL_CARDS.md).
+   */
+  private async lendGameCandidates(
+    client: PoolClient,
+    userId: string,
+    language: string,
+    need: number,
+    markType: MarkType,
+    now: number,
+    cap: number,
+    maxEntryKeyLen: number | undefined,
+    excludeIds: number[],
+    collection?: CollectionFilter | null
+  ): Promise<VocabEntry[]> {
+    if (need <= 0) return [];
+    const { granted } = await this.provisionalCardService.lendCards(userId, language, need);
+    if (granted === 0) return [];
+    const { eligible } = await this.fetchGameCandidates(
+      client, userId, language, ['Unfamiliar'], markType, now, cap, maxEntryKeyLen, excludeIds, collection
+    );
+    return eligible['Unfamiliar'] ?? [];
+  }
+
+  /**
    * Enrich a vocab entry with related words that share characters.
    * Only applies to Chinese words.
    */
@@ -742,10 +778,18 @@ export class OnDeckVocabService {
    * Get the next library card for a correct-mark refill, honoring PER-TYPE
    * cooldowns (docs/MASTERY_REWORK.md § Per-type cooldown).
    *
-   * Priority: the preferred category first, then Target -> Unfamiliar ->
+   * Priority: the preferred category, then a LENT card, then Target -> Unfamiliar ->
    * Comfortable -> Mastered. At each step we take the head of that category's queue —
    * the card waiting longest since it came off cooldown (rankFlpEligible) — stamping
    * `readyMarkTypes` so the client shows a face for a ready type. `excludeIds` keeps cards already in the loop out.
+   *
+   * LEND BEFORE BORROWING (2026-08-17), mirroring the initial loop: once the preferred
+   * category is spent we lend a fresh card rather than reaching into another category.
+   * The lent card is Unfamiliar whatever was asked for, which is the accepted cost.
+   * Skipped when the preferred category was not servable at all (a mode session whose
+   * `preferredCategory` is outside `allowedCategories`) — there was no requested bucket
+   * to come up short, so borrowing is the honest first move there and lending stays a
+   * last resort.
    *
    * WHEN EVERY CANDIDATE IS COOLING the cooldown is HONORED rather than broken: an
    * unrestricted Mix/Challenge session lends one provisional card and serves that
@@ -785,35 +829,56 @@ export class OnDeckVocabService {
     const preferredFirst = !allowedCategories || allowedCategories.includes(preferredCategory)
       ? [preferredCategory]
       : [];
-    const categoryOrder: string[] = [
-      ...preferredFirst,
-      ...fallbackBase.filter(cat => cat !== preferredCategory),
-    ];
+    // Everything the preferred category may fall back to, in priority order.
+    const borrowOrder = fallbackBase.filter(cat => cat !== preferredCategory);
 
     const now = Date.now();
     const client = await db.getClient();
     try {
       let winner: VocabEntry | null = null;
 
-      for (const category of categoryOrder) {
-        const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection);
-        if (cards.length === 0) continue;
+      // Take the head of the first category queue that has an eligible card.
+      const serveFrom = async (categories: string[]): Promise<VocabEntry | null> => {
+        for (const category of categories) {
+          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection);
+          if (cards.length === 0) continue;
+          const ranked = this.rankFlpEligible(cards, now);
+          if (ranked.length > 0) return ranked[0];
+        }
+        return null;
+      };
 
-        const ranked = this.rankFlpEligible(cards, now);
-        if (ranked.length > 0) { winner = ranked[0]; break; }
+      // Lend one card and serve it. The lent row has no mark history, so it is
+      // Unfamiliar and immediately eligible; re-querying Unfamiliar returns it (any
+      // Unfamiliar card that WAS eligible has already been considered by the caller's
+      // passes). Returns null when dictionary supply is exhausted.
+      let lendAttempted = false;
+      const serveLent = async (): Promise<VocabEntry | null> => {
+        lendAttempted = true;
+        const { granted } = await this.provisionalCardService.lendCards(userId, language, 1);
+        if (granted === 0) return null;
+        const lent = await this.fetchFlpCandidates(client, userId, 'Unfamiliar', language, excludeIds, collection);
+        return this.rankFlpEligible(lent, now)[0] ?? null;
+      };
+
+      // 1. The category the caller actually asked for.
+      winner = await serveFrom(preferredFirst);
+
+      // 2. LEND rather than borrow — but only when there really was a requested
+      //    bucket (see the docblock) and the session may show a lent card.
+      if (!winner && preferredFirst.length > 0 && this.canLendProvisional(fallbackBase, collection)) {
+        winner = await serveLent();
       }
 
-      // Nothing anywhere is off cooldown. Rather than re-serve a resting card, lend a
-      // fresh one — but only for a session that can actually show it (see
-      // canLendProvisional). The lent row has no mark history, so it is Unfamiliar and
-      // immediately eligible; it is also the only eligible Unfamiliar card left, since
-      // the scan above just found none.
-      if (!winner && this.canLendProvisional(fallbackBase, collection)) {
-        const { granted } = await this.provisionalCardService.lendCards(userId, language, 1);
-        if (granted > 0) {
-          const lent = await this.fetchFlpCandidates(client, userId, 'Unfamiliar', language, excludeIds, collection);
-          winner = this.rankFlpEligible(lent, now)[0] ?? null;
-        }
+      // 3. Borrow across the remaining allowed categories.
+      if (!winner) winner = await serveFrom(borrowOrder);
+
+      // 4. Nothing anywhere is off cooldown. Rather than re-serve a resting card, lend
+      //    — the last-resort case, and the only lend a no-preferred-bucket session gets.
+      //    `lendAttempted` skips a second round trip when step 2 already found supply
+      //    exhausted.
+      if (!winner && !lendAttempted && this.canLendProvisional(fallbackBase, collection)) {
+        winner = await serveLent();
       }
 
       if (!winner) return null;
@@ -903,10 +968,16 @@ export class OnDeckVocabService {
    * yet sort last. Enriches cards with related words that share
    * characters.
    *
-   * WHEN THE POOL IS SPENT the cooldown is never broken. An unrestricted
-   * Mix/Challenge loop lends provisional cards to cover the shortfall; a Review,
-   * Mastered or deck round returns short (possibly empty) and the client shows its
-   * "nothing ready" state. See canLendProvisional and docs/PROVISIONAL_CARDS.md.
+   * WHEN A QUOTA IS SHORT the loop LENDS BEFORE IT BORROWS: the shortfall is covered
+   * with freshly lent provisional cards first, and only what lending cannot cover is
+   * taken from other categories via the mode's fill order. Lent cards are always
+   * Unfamiliar, so this deliberately skews a short loop Unfamiliar rather than
+   * deepening whichever bucket had surplus.
+   *
+   * The cooldown is never broken either way. A restricted session (Review, a builtin
+   * collection, a deck) cannot lend, so it returns short (possibly empty) and the
+   * client shows its "nothing ready" state. See canLendProvisional and
+   * docs/PROVISIONAL_CARDS.md.
    *
    * `deckId` (docs/DECKS_FEATURE.md) restricts the whole loop — quotas, top-up and
    * the cooled last-resort fill alike — to one user-authored deck. It composes with
@@ -933,6 +1004,9 @@ export class OnDeckVocabService {
       // The categories this loop may draw from, in fallback priority — also the
       // pool for the cooled last-resort fill below.
       let loopCategories: string[];
+      // Cross-category borrow order, applied only AFTER lending (see the LEND-FIRST
+      // pass below). Empty for the legacy single-category path, which never borrows.
+      let fillOrder: string[] = [];
 
       if (categoryFilter) {
         // Legacy deck-tap path: up to WORKING_LOOP_SIZE eligible cards from the
@@ -958,29 +1032,46 @@ export class OnDeckVocabService {
           workingLoop.push(...rows);
         }
 
-        // Top up toward the loop size by fill-order priority.
-        if (workingLoop.length < WORKING_LOOP_SIZE) {
-          for (const category of config.fillOrder) {
-            if (workingLoop.length >= WORKING_LOOP_SIZE) break;
-            const rows = await this.fetchEligibleCategoryCards(
-              client, userId, language, category,
-              WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection
-            );
-            workingLoop.push(...rows);
-          }
-        }
+        // The cross-category top-up is deliberately NOT run here; it happens after
+        // the lend pass below.
+        fillOrder = config.fillOrder;
       }
 
-      // The learner's own cards could not fill the loop — every remaining card is
-      // resting. HONOR THE COOLDOWN and lend the difference rather than re-serving a
-      // cooling card. Restricted sessions (Review, Mastered, a deck) cannot show a lent
-      // card and so come back short or empty on purpose; see canLendProvisional.
+      // LEND FIRST, BORROW SECOND (2026-08-17).
+      //
+      // A quota that its own category could not fill is topped up with FRESHLY LENT
+      // cards BEFORE we borrow from any other category. A lent row has no mark
+      // history, so it always arrives as Unfamiliar — the loop's mix therefore skews
+      // Unfamiliar rather than skewing toward whichever category happened to have
+      // surplus, and that is the intended trade: a brand-new word is closer to what
+      // the missing quota was asking for than someone else's leftovers.
+      //
+      // Note this ordering only bites when a quota underfills, and a quota underfills
+      // exactly when that category's eligible pool is spent — so the borrow pass below
+      // can never have served the *same* category anyway. What we are choosing between
+      // is "lend" and "deepen a different bucket".
+      //
+      // Restricted sessions (Review, a builtin collection, a deck) still never lend:
+      // a Review round padded with never-seen words is not a review, and a deck round
+      // made of non-deck words is not that deck. They come back short on purpose.
+      // See canLendProvisional and docs/PROVISIONAL_CARDS.md.
       if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(loopCategories, collection)) {
         const lent = await this.lendIntoLoop(
           client, userId, language, WORKING_LOOP_SIZE - workingLoop.length,
           workingLoop.map(c => c.id), now, collection
         );
         workingLoop.push(...lent);
+      }
+
+      // Only once lending is spent (or banned) do we borrow across categories, in the
+      // mode's fill-order priority.
+      for (const category of fillOrder) {
+        if (workingLoop.length >= WORKING_LOOP_SIZE) break;
+        const rows = await this.fetchEligibleCategoryCards(
+          client, userId, language, category,
+          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection
+        );
+        workingLoop.push(...rows);
       }
 
       // Randomize play order. The ranking above chose WHICH cards are in the loop;
@@ -1225,19 +1316,40 @@ export class OnDeckVocabService {
         if (cards.length >= target) break;
         drain(eligible[category] ?? [], Math.min(count, target - cards.length));
       }
-      // 2. Still short → top up to `target` with FRESH cards from the fallback
+      // 2. LEND BEFORE BORROWING (2026-08-17) → a requested bucket that came up short
+      //    is covered with freshly lent cards before we touch another bucket. Lent
+      //    rows are always Unfamiliar, so a short board skews Unfamiliar rather than
+      //    skewing toward whichever bucket had surplus — the accepted trade.
+      //
+      //    Two sessions never reach here:
+      //      * a COLLECTION-restricted pool (a deck / builtin) — a deck round made of
+      //        non-deck words is not that deck (same rule as canLendProvisional);
+      //      * a PARTIAL REFILL (`opts.need`) — Bubble Match's Play Again is mid-session
+      //        with a board in hand, and lending there would grow the player's deck on
+      //        every tap. That exemption predates this change (see
+      //        OnDeckVocabController.getGamePool) and is deliberately preserved.
+      if (cards.length < target && !opts.collection && opts.need === undefined) {
+        const lent = await this.lendGameCandidates(
+          client, userId, language, target - cards.length, gameMarkType, now,
+          OnDeckVocabService.GAME_CANDIDATE_CAP, undefined,
+          [...excludeIds, ...selectedIds], opts.collection
+        );
+        // The re-query is unaware of the soft-avoid tier, so filter those back out.
+        drain(lent.filter((card) => !avoidIds.has(card.id)), target - cards.length);
+      }
+      // 3. Still short → top up to `target` with FRESH cards from the fallback
       //    buckets (Target → Comfortable → Unfamiliar → Mastered).
       for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
         if (cards.length >= target) break;
         drain(eligible[category] ?? [], target - cards.length);
       }
-      // 3. Last resort → COOLED cards (requested buckets first, then fallback),
+      // 4. Last resort → COOLED cards (requested buckets first, then fallback),
       //    so a just-played library still assembles a full board.
       for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
         if (cards.length >= target) break;
         drain(cooled[category] ?? [], target - cards.length);
       }
-      // 4. Absolute last resort → AVOIDED cards (just cleared by the caller). Only
+      // 5. Absolute last resort → AVOIDED cards (just cleared by the caller). Only
       //    reached when the library is too small to fill the board without reusing
       //    them; a roomy library never gets here.
       for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
@@ -1398,9 +1510,27 @@ export class OnDeckVocabService {
       };
 
       // 1. Fill each requested bucket up to its quota from FRESH cards, then
-      //    2. top up to `total` with FRESH fallback cards, then 3. backfill any
-      //    remaining shortfall with COOLED cards (requested buckets → fallback).
+      //    2. LEND to cover any shortfall, then 3. top up to `total` with FRESH
+      //    fallback cards, then 4. backfill the remainder with COOLED cards
+      //    (requested buckets → fallback).
       for (const [category, count] of Object.entries(distribution)) drain(eligible[category] ?? [], count);
+
+      // LEND BEFORE BORROWING (2026-08-17), same rule as the bubble-match pool. The
+      // lent rows are pushed onto the Unfamiliar FRESH queue rather than drained
+      // straight into `selected`, so the substring-dedup replacement loop below can
+      // draw on them too — otherwise a lent word dropped as a substring could not be
+      // replaced by another lent word. A collection-restricted grid never lends.
+      if (selected.length < total && !collection) {
+        const lent = await this.lendGameCandidates(
+          client, userId, language, total - selected.length, gameMarkType, now,
+          OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4, [...selectedIds], collection
+        );
+        // Unshift: freshly lent words go to the FRONT of the Unfamiliar queue, ahead
+        // of any Unfamiliar card the quota pass left behind.
+        (eligible['Unfamiliar'] ??= []).unshift(...lent);
+        drain(eligible['Unfamiliar'], total - selected.length);
+      }
+
       for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
         if (selected.length >= total) break;
         drain(eligible[category] ?? [], total - selected.length);

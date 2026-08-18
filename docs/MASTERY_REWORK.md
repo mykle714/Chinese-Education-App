@@ -441,7 +441,11 @@ random subset and return the wrong card.
 
 There is **no cooled-card last resort**. A resting card is never re-served. Instead:
 
-| Session | All cards cooling ⇒ |
+Since 2026-08-17 lending is not only the all-cooling escape hatch: it runs whenever a
+**quota** underfills, ahead of any cross-category borrow (docs/PROVISIONAL_CARDS.md § 4b).
+The gate below is the same one.
+
+| Session | A quota short / all cards cooling ⇒ |
 |---|---|
 | Mix, Challenge (unrestricted) | **lend provisional cards** to fill the shortfall (`lendIntoLoop` → `ProvisionalCardService.lendCards`) |
 | Review, `?collection=mastered`, `?deck=` | return **short or empty**; the client shows a "resting" empty state |
@@ -509,14 +513,19 @@ variants of this chip) one track is one hue. See
 
 A card is **fresh** for a game when its game mark type is off cooldown, **cooled**
 otherwise. `fetchGameCandidates` overfetches a per-category shuffled pool and
-splits it fresh/cooled. Both games fill in three phases (the confirmed policy —
-*prefer fresh; when out of fresh, first borrow fresh from other categories; use
-cooled only as a last resort*):
+splits it fresh/cooled. Both games fill in four phases (the confirmed policy —
+*prefer fresh; lend before borrowing from another category; use cooled only as a
+last resort*):
 
 1. Requested-category quotas from **fresh** cards.
-2. Top up to `total` with **fresh** cards from the fallback categories
+2. **Lend** the shortfall (`lendGameCandidates` → `ProvisionalCardService.lendCards`),
+   2026-08-17. A lent row has no marks, so it is always `Unfamiliar` and always fresh
+   — a short board therefore skews `Unfamiliar` rather than skewing toward whichever
+   bucket had surplus. Skipped for a collection-restricted pool and for a partial
+   refill (`need`); see docs/PROVISIONAL_CARDS.md § 4b.
+3. Top up to `total` with **fresh** cards from the fallback categories
    (Target → Comfortable → Unfamiliar → Mastered).
-3. Backfill any remaining shortfall with **cooled** cards (requested categories
+4. Backfill any remaining shortfall with **cooled** cards (requested categories
    first, then fallback) — so a just-played library still assembles a full board
    and entry is **never blocked more than an un-cooled library would**.
 

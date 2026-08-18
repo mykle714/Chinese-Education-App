@@ -186,6 +186,57 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
     return result.recordset.map(this.normalize);
   }
 
+  async getDesignsByOwner(
+    viewerUserId: string,
+    ownerUserId: string,
+    language: string,
+    afterEntryKey: string | null,
+    limit: number,
+  ): Promise<CommunityDesign[]> {
+    if (!viewerUserId) throw new ValidationError('viewerUserId is required');
+    if (!ownerUserId) throw new ValidationError('ownerUserId is required');
+    const libTable = vetTableForLanguage(language);
+
+    const result = await this.dbManager.executeQuery<CommunityDesign>(async (client) => {
+      // THREE deliberate differences from the feeds above, all of them because this
+      // query answers "what has THIS person designed" rather than "what should the
+      // viewer be shown":
+      //
+      //  1. No `ve."userId" <> $1` exclusion. A viewer may open their OWN profile,
+      //     and a profile that hid its owner's designs from its owner would be
+      //     absurd. The feeds exclude self because a feed is a discovery surface.
+      //  2. No dupRank. Duplicate collapsing exists to stop one design appearing as
+      //     N tiles across N owners; within ONE owner a (word, layout) pair is
+      //     unique by the vet row's own identity, so there is nothing to collapse.
+      //  3. Keyset pagination on `entryKey`, not the feeds' exclude-arrays. The
+      //     exclude arrays exist because the feeds are randomly/vote ordered and
+      //     therefore unstable; this list has a total, stable order, so a cursor is
+      //     both cheaper and immune to the arrays growing without bound as a
+      //     prolific designer's list is scrolled.
+      return await client.query(`
+        SELECT
+          ${this.feedSelect()},
+          EXISTS (
+            SELECT 1 FROM ${libTable} mine
+            WHERE mine."userId" = $1 AND mine.language = $3 AND mine."entryKey" = ve."entryKey"
+          ) AS "inLibrary"
+        FROM ${vetReadFrom(language)}
+        JOIN users u ON u.id = $1                   -- viewer row → week-boundary timezone
+        JOIN users owner ON owner.id = ve."userId"  -- row owner → display name
+        ${AUTHOR_JOIN}
+        ${DICT_JOIN}
+        WHERE ve.language = $3
+          AND ve."userId" = $2
+          AND ${IS_ADVANCED_LAYOUT}
+          AND ($4::text IS NULL OR ve."entryKey" > $4::text)
+        ORDER BY ve."entryKey"
+        LIMIT $5
+      `, [viewerUserId, ownerUserId, language, afterEntryKey, limit]);
+    });
+
+    return result.recordset.map(this.normalize);
+  }
+
   async getDesignsForEntry(
     viewerUserId: string,
     language: string,

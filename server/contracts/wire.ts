@@ -1280,14 +1280,24 @@ export const ARENA_GEOCELL_LENGTH = 5;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Words in a challenge set — fixed at 10, deliberately not a choice (Q27, § 8.4).
+ * Words in a challenge set — fixed at 12, deliberately not a choice (Q27, § 8.4).
  *
  * Set size decides how many points are available, so both players must use the
  * same number anyway; making it selectable would add a negotiation round trip to
- * buy nothing. Being a constant, it can be changed globally later without a
- * schema or protocol change.
+ * buy nothing. Being a constant, it changes globally with no schema or protocol
+ * change — 10 → 12 on 2026-08-17 was exactly this edit plus copy.
+ *
+ * ⚠️ TWO THINGS ARE DERIVED FROM IT RATHER THAN STORED, and both move when it does:
+ *   * the CONTESTED CEILING per round — `contestedHit` × this count, so 1200 at 12
+ *     (the § 5.3/5.4 prose still quotes the ceiling in words; the specs below carry
+ *     only the per-event values, which is why they need no edit here);
+ *   * WORD SEARCH's board, whose grid is built for `TOTAL_WORDS = 10`
+ *     (src/games/word-search/constants.ts). § 5.2 requires every contested word to
+ *     appear in every round, so a challenge-mode grid has to grow to this count —
+ *     see docs/STUDY_CHALLENGE.md § 5.2. The round runner is not built yet, so this
+ *     is a spec obligation on that build, not a live defect.
  */
-export const CHALLENGE_WORD_COUNT = 10;
+export const CHALLENGE_WORD_COUNT = 12;
 
 /**
  * Rounds (games) in a test — 3, drawn without repetition from the eligible pool.
@@ -1396,6 +1406,21 @@ export interface ChallengeWord {
   word1: string;
   language: Language;
   vocabEntryId: number | null;
+  /**
+   * READ-PATH ONLY, and never persisted. The stored row carries identity alone
+   * (Q49); `toSummary` resolves these from the det on the way out
+   * (`findDisplayFieldsByWords`) so every surface that draws a challenge word can
+   * render the SAME mini preview card a candidate renders — pinyin through
+   * ForeignText, the English lead gloss, the conversation-frequency badge, the icon,
+   * and a det id to strike by. All absent on the stored jsonb, and all absent for a
+   * word whose det row has since gone away, which draws as a bare word rather than
+   * failing the read.
+   */
+  pronunciation?: string | null;
+  definition?: string | null;
+  frequencyScore?: number | null;
+  iconId?: string | null;
+  dictionaryEntryId?: number | null;
 }
 
 /**
@@ -1599,10 +1624,11 @@ export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
       fillerMiss: -20,
       missChargedOncePerWord: true,
       // No bonus. Match Speed's challenge shape is the ALTERNATION RULE instead
-      // (§ 5.3): every other pair dealt must be contested, and when the ten run out
-      // the alternation lapses to filler rather than recycling them. That gives its
-      // contested score a hard 1000 ceiling and makes CLEARING THE SET the goal of
-      // the round rather than raw taps-per-second.
+      // (§ 5.3): every other pair dealt must be contested, and when the contested
+      // words run out the alternation lapses to filler rather than recycling them.
+      // That gives its contested score a hard ceiling of
+      // CHALLENGE_WORD_COUNT × contestedHit (1200 at 12) and makes CLEARING THE SET
+      // the goal of the round rather than raw taps-per-second.
     },
   },
   {

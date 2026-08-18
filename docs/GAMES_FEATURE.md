@@ -756,8 +756,9 @@ deleted (§ Layer 2). It owns its page shell (`LeafPage` + its own flp-style hea
 - A game uses the **full pool**: the `GAME_DISTRIBUTION` mix (`constants.ts`)
   of 2 Unfamiliar + 10 Target + 6 Comfortable + 2 Mastered library cards =
   **20 pairs (`TOTAL_PAIRS`) → 40 bubbles**. That mix is *preferred*, not strict —
-  the server tops the pool up to 20 from the fallback buckets when one can't fill
-  its quota. Each pair = one **word** bubble (cpcd) and one
+  when a bucket can't fill its quota the server first **lends** the shortfall
+  (provisional cards, always `Unfamiliar`) and only then tops up from the fallback
+  buckets; see [PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md). Each pair = one **word** bubble (cpcd) and one
   **definition** bubble (the flashcard's dd, via `resolveDisplayDefinition` — so a bubble
   shows the learner's chosen sense, matching the card face; see
   [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3).
@@ -829,8 +830,11 @@ deleted (§ Layer 2). It owns its page shell (`LeafPage` + its own flp-style hea
   whole pool has launched, on the next launch-tick a **descending ceiling**
   (`boundsRef.top`, rising at the level's `shrinkSpeedPxPerSec`) starts closing
   in from the top, compressing the field. Win = clear all pairs. Lose = the field
-  over-packs under the ceiling (area ≥ `LOSE_FILL_RATIO`, or sustained residual
-  overlap) — the border glows red at ≥85% fill as a warning first. Tunables live
+  over-packs under the ceiling (area ≥ `LOSE_FILL_RATIO`, currently a deliberately
+  lenient **0.94**, or residual pairwise overlap that stays above
+  `OVERFILL_RESIDUAL_PX` for `OVERFILL_SUSTAIN_MS`) — an intense pulsing red
+  vignette warns from `DANGER_FILL_RATIO` (0.72) onward, so the field can be
+  squeezed a long way while the alarm is up before the run actually ends. Tunables live
   in `constants.ts` (`LEVEL_CONFIGS`, `GAME_DISTRIBUTION`, `MIN_PLAY_HEIGHT`,
   sizes, physics).
 - Minute-points: `/games/bubble-match` is in `MINUTE_POINTS_ELIGIBLE_PAGES`

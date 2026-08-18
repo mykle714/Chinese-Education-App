@@ -69,6 +69,8 @@ import { ProvisionalCardDAL } from './implementations/ProvisionalCardDAL.js';
 import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
 import { StudyChallengeDAL } from './implementations/StudyChallengeDAL.js';
 import { StudyChallengeService } from '../services/StudyChallengeService.js';
+import { UserProfileService } from '../services/UserProfileService.js';
+import { UserProfileController } from '../controllers/UserProfileController.js';
 import { StudyChallengeController } from '../controllers/StudyChallengeController.js';
 
 // DAL instances
@@ -170,6 +172,14 @@ const deckService = new DeckService(deckDAL, onDeckVocabService);
 const studyChallengeService = new StudyChallengeService(
   studyChallengeDAL, friendshipDAL, userDAL, deckDAL, deckService, starterPacksService
 );
+// User profile page (docs/USER_PROFILE_PAGE.md) — a pure COMPOSITION service: it owns
+// no table of its own and reads through five DALs plus onDeckVocabService, whose
+// getCategoryCounts is the single definition of a per-band card count. Constructed
+// after onDeckVocabService for that reason; nothing depends on it in turn.
+const userProfileService = new UserProfileService(
+  userDAL, friendshipDAL, categoryPromotionDAL, userLanguagesDAL, communityLayoutDAL, onDeckVocabService
+);
+
 // Friend-request policy (who may accept/revoke, crossing-request auto-accept).
 // userDAL supplies the target account's existence check and public identity; the
 // next two DALs are read-only and feed the velocity leaderboard (each friend scored
@@ -186,6 +196,7 @@ const friendsService = new FriendsService(
 
 // Controller instances
 const userController = new UserController(userService, icons8DAL, nightMarketWorldService);
+const userProfileController = new UserProfileController(userProfileService);
 const vocabEntryController = new VocabEntryController(vocabEntryService, dictionaryService);
 // Takes deckService as well: its game/flp endpoints accept an optional `?deck=`
 // restriction and must authorize that id before assembling a round.
@@ -290,4 +301,6 @@ export {
   studyChallengeDAL,
   studyChallengeService,
   studyChallengeController,
+  userProfileService,
+  userProfileController,
 };

@@ -21,10 +21,16 @@ Reuses Bubble Match's pool machinery so the two games feel like siblings.
   (derived from `GAME_DISTRIBUTION` in `src/games/bubble-match/constants.ts`):
   `1 Unfamiliar + 5 Target + 3 Comfortable + 1 Mastered = 10`. The word-search
   `GAME_DISTRIBUTION` (`src/games/word-search/constants.ts`) halves each bucket.
-- **Same fallback top-up** when a bucket is short: borrow from the fallback
-  buckets in priority order (Target → Comfortable → Unfamiliar → Mastered),
-  matching `OnDeckVocabService.getGameVocabPool` /
-  `OnDeckVocabService.GAME_FALLBACK_ORDER`.
+- **Same lend-then-borrow top-up** when a bucket is short: first **lend** the
+  shortfall (`OnDeckVocabService.lendGameCandidates`, 2026-08-17 — lent words are
+  unshifted onto the fresh `Unfamiliar` queue so the substring-dedup replacement
+  loop can draw on them too), and only then borrow from the fallback buckets in
+  priority order (Target → Comfortable → Unfamiliar → Mastered), matching
+  `OnDeckVocabService.getGameVocabPool` / `OnDeckVocabService.GAME_FALLBACK_ORDER`.
+  A collection-restricted grid never lends. See docs/PROVISIONAL_CARDS.md § 4b.
+  Caveat: lending is not length-aware, so a lend for this game can return words
+  longer than the 4-character grid cap and yield nothing usable — the same
+  over-lend the `PROVISION_RETRY_FACTOR` loop already accepts.
 - Cards are library (`starterPackBucket = 'library'`), language-scoped, same as
   the bubble-match pool.
 - **Buckets are per mark type, and differ by mode.** A candidate's
@@ -72,6 +78,15 @@ Algorithm (server-side):
 ---
 
 ## 2. Grid generation (new, server-side per user request)
+
+> ⚠️ **Challenge mode wants 12, not 10.** Everything in this document describes the
+> normal board, whose size is `TOTAL_WORDS = 10` (`src/games/word-search/constants.ts`,
+> derived as half the Bubble Match distribution). A study-challenge round must contain
+> every contested word (docs/STUDY_CHALLENGE.md § 5.2) and that set is
+> `CHALLENGE_WORD_COUNT = 12` since 2026-08-17, so a challenge grid takes its
+> target-word count from that constant instead and scales the distribution to it. Not
+> built yet — the scored round runner is the outstanding piece — but the 7×7 grid and
+> the distinct-character rule below are what that build has to satisfy with 12 words.
 
 Grid is **7 columns wide × 7 rows tall** (portrait; fills the play rectangle).
 Each cell holds exactly one Chinese character (one cpcd cell).

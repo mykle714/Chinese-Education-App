@@ -54,9 +54,9 @@ const CARD_HEIGHT_PX = 132; // MiniVocabCard fixed height
 const ROW_GAP_PX = 16; // CardsPreviewContainer `gap`
 const GRID_PADDING_PX = 28; // CardsPreviewContainer `padding`
 
-const reservedGridHeight = (count: number): number => {
+const reservedGridHeight = (count: number, cardHeightPx: number): number => {
     const rows = Math.ceil(count / CARDS_PER_ROW);
-    return GRID_PADDING_PX * 2 + rows * CARD_HEIGHT_PX + Math.max(rows - 1, 0) * ROW_GAP_PX;
+    return GRID_PADDING_PX * 2 + rows * cardHeightPx + Math.max(rows - 1, 0) * ROW_GAP_PX;
 };
 
 interface MiniVocabCardGridProps {
@@ -95,6 +95,12 @@ interface MiniVocabCardGridProps {
     //     Mark paginates ~100/page and its cards use contentVisibility), this avoids the
     //     paced reveal's "3, then a batch, then the rest" stepping.
     staggerReveal?: boolean;
+    // Row height to reserve, when a custom `renderCard` draws something taller than
+    // the standard 132px thumbnail (the challenge review card carries a button below
+    // its thumbnail). Only affects the up-front height reservation — get it wrong and
+    // sibling sections below the grid shift as rows fill in, which is the exact
+    // reflow this reservation exists to prevent.
+    cardHeightPx?: number;
 }
 
 const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
@@ -108,6 +114,7 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
     renderCard,
     footer,
     staggerReveal = false,
+    cardHeightPx = CARD_HEIGHT_PX,
 }) => {
     // Progressively reveal the deck so a large list never mounts in one blocking
     // render (keeps taps on surrounding buttons responsive). In staggerReveal mode the
@@ -123,7 +130,7 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
     return (
         <CardsPreviewContainer
             className={containerClassName}
-            sx={showingCards ? { minHeight: reservedGridHeight(entries.length) } : undefined}
+            sx={showingCards ? { minHeight: reservedGridHeight(entries.length, cardHeightPx) } : undefined}
         >
             {loading ? (
                 <Box

@@ -165,6 +165,7 @@ function SentRequestsPage() {
                                 email={request.email}
                                 avatarIconId={request.avatarIconId}
                                 secondary={requestedAtLabel(request.requestedAt, "outgoing")}
+                                onPersonPress={() => slideNavigate(`/users/${request.userId}`)}
                                 actions={
                                     <Button
                                         className="sent-requests-page__revoke-button"

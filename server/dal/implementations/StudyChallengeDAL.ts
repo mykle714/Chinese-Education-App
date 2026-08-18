@@ -11,7 +11,11 @@ import type {
   ChallengeVariant,
   ChallengeWord,
 } from '../../contracts/wire.js';
-import type { StudyChallengeRow, ChallengeCandidate } from '../../types/studyChallenge.js';
+import type {
+  StudyChallengeRow,
+  ChallengeCandidate,
+  ChallengeWordDisplayFields,
+} from '../../types/studyChallenge.js';
 
 /**
  * Every column of a `study_challenges` row, in the order StudyChallengeRow expects.
@@ -25,7 +29,7 @@ const ROW_COLUMNS = [
   'id', '"challengerId"', '"challengeeId"', 'variant',
   '"challengerLanguage"', '"challengeeLanguage"', 'status',
   '"gameSequence"', 'words', 'rounds', '"presetDeckIds"',
-  '"issuedAt"', '"weekStart"', '"acceptedAt"', '"completedAt"', '"winnerUserId"',
+  '"issuedAt"', '"weekIndex"', '"acceptedAt"', '"completedAt"', '"winnerUserId"',
 ] as const;
 
 /** Unqualified column list, for the queries that select from `study_challenges` alone. */
@@ -104,7 +108,7 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
   async findForPairInWeek(
     userA: string,
     userB: string,
-    weekStart: Date,
+    weekIndex: number,
     client?: PoolClient
   ): Promise<StudyChallengeRow | null> {
     this.requireId(userA, 'userA');
@@ -117,8 +121,8 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
         `SELECT ${ROW} FROM study_challenges
           WHERE LEAST("challengerId", "challengeeId") = LEAST($1::uuid, $2::uuid)
             AND GREATEST("challengerId", "challengeeId") = GREATEST($1::uuid, $2::uuid)
-            AND "weekStart" = $3`,
-        [userA, userB, weekStart]
+            AND "weekIndex" = $3`,
+        [userA, userB, weekIndex]
       )
     );
     return rows[0] ?? null;
@@ -228,7 +232,7 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
       challengeeLanguage: string;
       gameSequence: ChallengeGameRef[];
       words: Record<string, ChallengeWord[]>;
-      weekStart: Date;
+      weekIndex: number;
     },
     client?: PoolClient
   ): Promise<StudyChallengeRow> {
@@ -247,7 +251,7 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
           `INSERT INTO study_challenges (
              "challengerId", "challengeeId", variant,
              "challengerLanguage", "challengeeLanguage",
-             "gameSequence", words, "weekStart"
+             "gameSequence", words, "weekIndex"
            )
            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
            RETURNING ${ROW}`,
@@ -259,7 +263,7 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
             input.challengeeLanguage,
             JSON.stringify(input.gameSequence),
             JSON.stringify(input.words),
-            input.weekStart,
+            input.weekIndex,
           ]
         )
       );
@@ -493,7 +497,8 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
                 de.pronunciation    AS "pronunciation",
                 de.definitions->>0  AS "definition",
                 de."difficulty"     AS "difficulty",
-                de."frequencyScore" AS "frequencyScore"
+                de."frequencyScore" AS "frequencyScore",
+                de."iconId"         AS "iconId"
            FROM ${det} de
           WHERE de.language = $1
             AND de.discoverable = TRUE
@@ -531,6 +536,49 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
       )
     );
     return rows[0]?.id ?? null;
+  }
+
+  async findDisplayFieldsByWords(
+    word1s: string[],
+    language: string,
+    client?: PoolClient
+  ): Promise<Record<string, ChallengeWordDisplayFields>> {
+    this.requireLanguage(language);
+    if (word1s.length === 0) return {};
+
+    // Same late-resolution rule as findEntryIdByWord, and deliberately not filtered
+    // on `discoverable` for the same reason: a stored challenge word must still draw
+    // with its pinyin and gloss after the det row has been un-flagged. One query for
+    // the whole set — the read path calls this once per challenge, not once per word.
+    //
+    // `definitions->>0` is the entry's lead gloss, the same value `findCandidates`
+    // exposes as `definition` (docs/DEFINITION_MAPPING.md), so a stored word and a
+    // candidate carry the SAME English on the review screen.
+    const { rows } = await this.run<ChallengeWordDisplayFields & { word1: string }>(client, (c) =>
+      c.query(
+        `SELECT word1,
+                id                 AS "dictionaryEntryId",
+                pronunciation,
+                definitions->>0    AS "definition",
+                "frequencyScore",
+                "iconId"
+           FROM ${dictTableForLanguage(language)}
+          WHERE language = $1 AND word1 = ANY($2::text[])`,
+        [language, word1s]
+      )
+    );
+
+    const map: Record<string, ChallengeWordDisplayFields> = {};
+    for (const row of rows) {
+      map[row.word1] = {
+        dictionaryEntryId: row.dictionaryEntryId,
+        pronunciation: row.pronunciation,
+        definition: row.definition,
+        frequencyScore: row.frequencyScore,
+        iconId: row.iconId,
+      };
+    }
+    return map;
   }
 
   async listPendingWithTimezones(client?: PoolClient): Promise<StudyChallengeWithTimezones[]> {

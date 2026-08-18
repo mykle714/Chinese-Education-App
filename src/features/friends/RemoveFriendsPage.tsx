@@ -96,6 +96,7 @@ function RemoveFriendsPage() {
                             email={friend.email}
                             avatarIconId={friend.avatarIconId}
                             secondary={friendsSinceLabel(friend.friendsSince)}
+                            onPersonPress={() => slideNavigate(`/users/${friend.userId}`)}
                             actions={
                                 <Button
                                     className="remove-friends-page__remove-button"

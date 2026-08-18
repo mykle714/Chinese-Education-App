@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
-import { userController, userMinutePointsController, winsController, velocityController } from '../dal/setup.js';
+import { userController, userMinutePointsController, winsController, velocityController, userProfileController } from '../dal/setup.js';
 import { handle } from './asyncHandler.js';
 
 /**
@@ -51,6 +51,15 @@ router.post('/api/users/me/wins', authenticateToken, handle(winsController.recor
 // Velocity — utcm band-steps climbed in the last 7 days, per language
 // (derived from the category_promotions log; see docs/VELOCITY.md).
 router.get('/api/users/me/velocity', authenticateToken, handle(velocityController.getVelocity, velocityController));
+
+// ── Public profile (docs/USER_PROFILE_PAGE.md) ────────────────────────────────
+// Any signed-in user may read any account's profile. Registered above GET
+// /api/users/:id only for grouping — neither can shadow the other, since both of
+// these carry a second path segment the bare :id route does not.
+router.get('/api/users/:userId/profile', authenticateToken, handle(userProfileController.getProfile, userProfileController));
+
+// One keyset page of that account's card designs: ?after=<last entryKey>&limit=
+router.get('/api/users/:userId/designs', authenticateToken, handle(userProfileController.getDesigns, userProfileController));
 
 // Get user by ID (kept after the literal paths above)
 router.get('/api/users/:id', authenticateToken, handle(userController.getUserById, userController));

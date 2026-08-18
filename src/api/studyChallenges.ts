@@ -116,6 +116,8 @@ export interface ChallengeCandidate {
   definition: string | null;
   difficulty: number | null;
   frequencyScore: number | null;
+  /** icons8 icon for the mini preview card; null when unassigned. */
+  iconId: string | null;
 }
 
 /**
@@ -206,6 +208,20 @@ export function issueChallenge(
 }
 
 /**
+ * What a strike sends alongside the word so the server can draw its replacement.
+ *
+ * `friendUserId` (challenger, no challenge exists yet) or `challengeId` (challengee,
+ * reviewing a stored set) picks the band's other player; `exclude` is every word on
+ * screen plus every word struck this session, so the draw cannot return a duplicate.
+ */
+export interface StrikeReplacementContext {
+  friendUserId?: string;
+  challengeId?: string;
+  variant?: ChallengeVariant;
+  exclude?: string[];
+}
+
+/**
  * "I already know this word."
  *
  * ⚠️ THIS WRITES TO THE USER'S OWN CARD — it promotes the word to Mastered on the
@@ -215,26 +231,43 @@ export function issueChallenge(
  * falls entirely on the striker, which is what makes the picker self-policing.
  */
 export function strikeChallengeWord(
-  target: { dictionaryEntryId?: number; word1?: string }
-): Promise<void> {
+  target: { dictionaryEntryId?: number; word1?: string },
+  context: StrikeReplacementContext = {}
+): Promise<ChallengeCandidate | null> {
   // Either handle works. The challenger holds candidate det ids; the challengee is
   // reviewing a STORED set that carries only the word, so they pass `word1` and the
   // server resolves it.
+  //
+  // The response carries the ONE word that takes the struck word's slot, so the
+  // caller splices a single tile instead of reloading the list. `null` means the
+  // discoverable supply is exhausted — the slot simply goes away and the set is
+  // short, which § 3.1 allows.
   return withFallback(
-    apiPost<void>('/api/studyChallenges/strike', target),
+    apiPost<{ replacement: ChallengeCandidate | null }>(
+      '/api/studyChallenges/strike',
+      { ...target, ...context }
+    ).then((res) => res?.replacement ?? null),
     'Could not mark that word as known'
   );
 }
 
-/** Accept, with whatever words the challengee struck while reviewing the set. */
+/**
+ * Accept, with whatever words the challengee struck while reviewing the set — and
+ * the replacements the server handed back for them.
+ *
+ * `replacementWords` is echoed so the accepted set is the set that was ON SCREEN.
+ * The server re-resolves every word against the det before honouring it, so this is
+ * a verified echo rather than a trusted client-authored word list.
+ */
 export function acceptChallenge(
   challengeId: string,
-  struckWords: string[] = []
+  struckWords: string[] = [],
+  replacementWords: string[] = []
 ): Promise<ChallengeSummary> {
   return withFallback(
     apiPost<ChallengeSummary>(
       `/api/studyChallenges/${encodeURIComponent(challengeId)}/accept`,
-      { struckWords }
+      { struckWords, replacementWords }
     ),
     'Could not accept the challenge'
   );

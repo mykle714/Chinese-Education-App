@@ -7,7 +7,8 @@ all of it: `src/features/flashcards/FlashcardsLearnPage/SheetPanel.tsx`.
 optional tab strip). It hosts a *body* that exposes `{root, scroll}` through a
 `SheetPanelBodyHandle` ref: `root` is the element the raw touch listeners bind to,
 `scroll` is the element whose `scrollTop` decides resize-vs-scroll. Current bodies:
-`InfoCardPanelBody` (eip), `CompareWorkspace` (compare tab), `SettingsPanelBody`.
+`InfoCardPanelBody` (eip), `CompareWorkspace` (compare tab), `SettingsPanelBody`,
+`DecksSheetBody` (the /decks sets sheet — see **Persistent mode** below).
 
 **Mount sites.** Despite living under `FlashcardsLearnPage/`, the eip sheet is no longer
 flp-private: the sort cards page (scp) mounts the same `InfoCardSection` + `EipTabStrip`
@@ -25,6 +26,42 @@ one (scp's draggable cards sit at 1000).
 
 ---
 
+## Two modes: modal (eip) and persistent (/decks)
+
+Everything below describes the **modal** sheet — the eip — which opens with an
+animation, dims the page behind a scrim, and is dismissed by dragging it down.
+
+Passing **`minHeight` > 0** switches the same component into **persistent** mode,
+used by the /decks sets sheet (`FlashcardsDecksPage` → `DecksSheetBody`). A
+persistent sheet is page furniture rather than a modal:
+
+| | modal (`minHeight = 0`, default) | persistent (`minHeight > 0`) |
+|---|---|---|
+| stops | `{0, default, max}` | `{minHeight, max}` — `default` **is** `minHeight` |
+| on mount | animates `0 → default` | painted **at** `minHeight`, no animation |
+| drag to the bottom | dismisses (`onClose` after the shrink) | stops dead at `minHeight` |
+| release below default | dismiss | snap back to `minHeight` |
+| fling down | floors at `default` (never dismisses) | floors at `minHeight` |
+| scrim | yes | `showScrim={false}` — it is always on screen, so a permanent dim, and a scrim tap would have nothing to dismiss to |
+| `onClose` | required in practice | **omitted** — nothing to report |
+
+The three constants are the only branch points in the code (`persistent =
+minHeight > 0`): `computeSnapTarget` drops its dismiss stop, the mount effect skips
+the open animation, and every `applyResize` floor becomes `minHeightRef.current`
+instead of `0`. There is no second implementation of the gesture model.
+
+**Choosing the resting height.** /decks derives it from the floating footer's own
+geometry — `FLOATING_FOOTER_INSET + FLOATING_FOOTER_HEIGHT + FLOATING_FOOTER_EXTRA_GAP
++ SHEET_LIP` — so the lip that shows above the pill (grabber + first caption) survives
+any change to the footer. The footer is rendered at frame level with `zIndex: 100`
+(`FooterPresenter`), well above the sheet's internal `11`, so the pill floats **over**
+the sheet at every height; a persistent sheet's body must therefore reserve
+`FLOATING_FOOTER_CLEARANCE` of bottom padding exactly as a page's scroll area does,
+and wear its bottom edge-fade (`EDGE_FADE_MASK_NO_TOP` from `MobileTabScreen`) so the
+content dissolves under the pill rather than being cut by it.
+
+---
+
 ## Height model — three stops, one floor
 
 | Stop | Value | Meaning |
@@ -33,9 +70,10 @@ one (scp's draggable cards sit at 1000).
 | **default** | `parentHeight * DEFAULT_HEIGHT_RATIO` (0.6), or `initialHeight` for a stacked child panel | the open height; **also the floor** |
 | **max** | `parentHeight * MAX_HEIGHT_RATIO` (0.92) | fully expanded |
 
-There is **no resting stop between 0 and default**. `computeSnapTarget(h, default, max)`
-is the single rule every release path uses: below default → `0` (dismiss); at or
-above → whichever of `{default, max}` is nearer.
+There is **no resting stop between 0 and default**. `computeSnapTarget(h, default,
+max, min)` is the single rule every release path uses: below default → `0` (dismiss);
+at or above → whichever of `{default, max}` is nearer. A persistent sheet passes
+`min > 0`, which suppresses the dismiss stop (see above).
 
 The open height is a fixed fraction of the screen, deliberately *not* measured from
 content, so every eip tab opens to the same extent.
@@ -163,6 +201,8 @@ change. See `InfoCardPanelBody.tsx`'s touchmove handler and the constants block 
 - `src/features/flashcards/constants.ts` — `TAB_SWIPE_*` gesture constants
   (axis lock, commit ratio, transition, edge rubber-band)
 - `src/components/CompareWorkspace.tsx`, `SettingsPanelBody.tsx` — other sheet bodies
+- `src/features/flashcards/DecksSheetBody.tsx` + `FlashcardsDecksPage.tsx` — the
+  persistent-mode host (`SHEET_LIP`/`SHEET_CLOSED_HEIGHT`, `minHeight`, `showScrim={false}`)
 - `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` — tab state + drill-in
   lookups (`openForRoot`, `openForEntryKey`, `clear`); takes an optional `language` that
   scopes those lookups

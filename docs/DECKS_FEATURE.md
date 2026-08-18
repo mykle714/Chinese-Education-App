@@ -288,7 +288,8 @@ deck would make the deck itself the answer key.
 | `src/games/GamesCollectionSelector.tsx` | The hub-header "Playing with …" pill + menu (see [GAMES_FEATURE.md](./GAMES_FEATURE.md)) |
 | `src/features/flashcards/CollectionViewPage.tsx` | The generalized page (all three collection kinds) |
 | `src/features/flashcards/MasteredRedirect.tsx` | `/flashcards/mastered` → `/flashcards/collection/mastered` |
-| `src/features/flashcards/FlashcardsDecksPage.tsx` | `/decks`, now the deck list |
+| `src/features/flashcards/FlashcardsDecksPage.tsx` | `/decks` — the study-button row, all of the page's data (counts, deck fetch, create dialog), and the persistent sheet's mounting |
+| `src/features/flashcards/DecksSheetBody.tsx` | Body of that sheet: the Cards / Mastered / Challenges / Decks tile sections (`TileGrid`, `SectionLabel`, `LineSeparator`) |
 | `src/features/flashcards/AddToDeckMenu.tsx` | The checkbox menu, mounted on the cdp and the eip |
 
 ### Routes
@@ -340,7 +341,7 @@ chip — just not as collections. Consequence: `?collection=target` no longer re
 
 **One conditional rule: is *Mastered* its own section?** Only when the account pursues
 a reading or writing goal, i.e. only when there is more than one Mastered collection
-to tell apart. With `core` alone that tile joins the **Cards** section, because a
+to tell apart. With `core` alone that tile joins the **Collections** section, because a
 captioned section holding a single tile is a heading for nothing.
 
 **One shared list, two surfaces.** `src/features/flashcards/builtinCollections.ts`
@@ -351,10 +352,71 @@ learner can open on `/decks` but cannot play a game with would be a silent
 inconsistency. Counts come from the same module (`builtinCollectionCount`), so a
 collection's definition and its number cannot drift.
 
-### `/decks` is now four sections
+### `/decks` = a button row + a persistent pull-up sheet
 
-1. **Review / Study Mix / Challenge** — *whole-library* study entry points. To study
-   one collection, open it and use its launch button.
+The page is split across **two surfaces**:
+
+* **Page (behind)** — section 1 only, the study-entry buttons. `MobileTabScreen` is
+  mounted with **`scrollable={false}`**: nothing behind the sheet scrolls any more.
+* **Sheet (front)** — sections 2–5, every *set* of cards, in `DecksSheetBody`.
+
+The sheet is the **same component as the eip bottom sheet**,
+`SheetPanel`, in its **persistent** mode (`minHeight` > 0, `showScrim={false}`, no
+`onClose`) — so the drag/fling/scroll-coupling model is shared code, not a second
+implementation. See [EIP_SHEET_GESTURES.md § Two modes](./EIP_SHEET_GESTURES.md).
+Its two stops are:
+
+| Stop | Value | What shows |
+|---|---|---|
+| **resting** ("closed") | `FLOATING_FOOTER_INSET + FLOATING_FOOTER_HEIGHT + FLOATING_FOOTER_EXTRA_GAP + SHEET_LIP` (44) | the grabber and the first caption, sitting just above the floating footer pill |
+| **max** | `parentHeight × 0.92` | the full list |
+
+It **cannot be dismissed** and has **no open animation** — it is painted at its
+resting height on the first frame. The floating footer (frame-level, `zIndex: 100`)
+hovers *over* the sheet at every height, so the sheet's scroller both reserves
+`FLOATING_FOOTER_CLEARANCE` at its bottom **and wears the same bottom edge-fade mask**
+(`EDGE_FADE_MASK_NO_TOP`, exported from `MobileTabScreen` rather than re-derived) —
+tiles dissolve as they pass behind the pill instead of being sliced by it. The top
+band of that mask is dropped: the sheet's top edge is its own grabber, which stays
+solid.
+`FlashcardsDecksPage` wraps both surfaces in one `position: relative` box, because
+that box — not the viewport — is what caps the sheet's height.
+
+**Data stays on the page, presentation moves to the sheet.** The count hooks, the
+deck fetch, the create-deck dialog and the snackbar all remain in
+`FlashcardsDecksPage`; `DecksSheetBody` takes them as props.
+
+1. **Review / Study Mix / Challenge** — *whole-library* study entry points, the only
+   thing left on the page itself. To study one collection, open it from the sheet and
+   use its launch button.
+
+   Laid out as a **row + a slab**: Review and Challenge sit together on one row at
+   **equal width** (peers — the two halves of one difficulty axis), and **Study Mix**
+   is a **fixed 3:4 (w:h) portrait slab**, centred in the space between that row and
+   the resting sheet and grown until it hits the first edge — width or height,
+   whichever runs out first. Study Mix is the
+   biggest target because it is the one that always works: Review is greyed without
+   earned Comfortable/Mastered cards, and Challenge is a mode choice, while a mixed
+   session is the default thing to do. Its type steps up to `SIZE.title` to match the
+   footprint, and Review/Challenge return to the base `bodyLg` now that each has half
+   a row rather than a quarter.
+
+   **How the ratio holds.** The slab's slot (`flashcards-decks__mix-slot`) declares
+   `container-type: size`, and the button is `flex: none` with
+   `width: min(100cqw, 75cqh)` + `aspect-ratio: 3 / 4` — `75cqh` being the width a 3:4
+   box has at the slot's full height, so the smaller term wins and the box fills
+   without ever overflowing. It is deliberately **not** `flex: 1`: a flex-grown item
+   has a definite height, and a definite height overrides `aspect-ratio`. The obvious
+   alternative (`height: 100%; width: auto; max-width: 100%`) breaks the ratio too —
+   when `max-width` clamps, the definite height stays put. Container-query units
+   resolve against the slot's **content box**, so the slot's padding is genuine margin
+   around the slab.
+
+   The slab's bottom padding is **derived**, not typed:
+   `SHEET_CLOSED_HEIGHT - FLOATING_FOOTER_CLEARANCE + STUDY_AREA_GAP` — the scroll
+   area already reserves the footer's clearance, so only the amount by which the
+   resting sheet out-stands it is missing. Change `SHEET_LIP` and the button still
+   stops just above the sheet instead of sliding under it.
 
    > **Renamed (was Easy / Mix / Hard).** The rename went all the way down — the
    > `StudyMode` values are `'review'` and `'challenge'` in both
@@ -364,8 +426,16 @@ collection's definition and its number cannot drift.
    > `?mode=easy` bookmark fails the validity check and opens a **Study Mix**
    > session rather than dead-ending; Match Speed's `modeConfigFor` does the same
    > with an old nav-state value.
-2. **Cards** — *All Cards* and *Learn Now* as **deck tiles**, plus *Mastered Cards*
+2. **Collections** — *All Cards* and *Learn Now* as **deck tiles**, plus *Mastered Cards*
    when it has no section of its own (no reading/writing goal).
+
+   > **`CollectionGroup` values are user-visible strings.** The /decks sheet uses
+   > them as its captions and `GamesCollectionSelector` renders `entry.group`
+   > verbatim as its menu `ListSubheader`, so the caption was renamed at the source
+   > (`builtinCollections.ts`: `'Cards' → 'Collections'`) rather than in the sheet —
+   > otherwise the two surfaces, which are documented as sharing one grouping, would
+   > have disagreed. Client-side only: no API path, DB value or `CollectionRef` kind
+   > carries this string.
 3. **Mastered** — one tile per **active** mastery bar: *Mastered Cards* (core,
    always), *Mastered Reading* and *Mastered Writing* (each gated on that account
    goal) — **rendered only when a reading or writing goal is set**
@@ -392,7 +462,7 @@ list carries is enforced from the other side: `MAX_ACTIVE_CHALLENGES = 6` bounds
 (§ 1), so the read path inverts `study_challenges.presetDeckIds` in memory to map deck →
 opponent. That keeps the pointer in one direction only.
 
-Every section shares one row component (`TileGrid`): a **centered wrapping flex**
+Every section shares one row component (`TileGrid`, now in `DecksSheetBody.tsx`): a **centered wrapping flex**
 capped at exactly three tiles' worth of width (`3 × TILE_WIDTH + 2 × TILE_GAP`,
 derived rather than typed twice — a wider gap with a stale cap would push the third
 tile onto its own line, a narrower one would let a fourth up). It is not a
@@ -403,7 +473,7 @@ tiles rather than stretched ones.
 
 It takes **two alignments**, deliberately:
 
-* **Centered** — *Cards* and *Mastered*. Fixed sets of two or three tiles that never
+* **Centered** — *Collections* and *Mastered*. Fixed sets of two or three tiles that never
   wrap, so there is no column structure to preserve, and left-aligning them would
   leave an obvious hole where the third tile isn't.
 * **Left** (`alignLeft`) — *Decks*. A growing, wrapping list: centered, adding a
@@ -413,7 +483,7 @@ It takes **two alignments**, deliberately:
 
 ### Every set on the page is the same object
 
-Sections 2–4 all render **`DeckTile`** (`src/components/DeckTile.tsx`) — the
+Sections 2–5 all render **`DeckTile`** (`src/components/DeckTile.tsx`) — the
 stacked-card icon — and all navigate to that set's CollectionViewPage. They differ
 only in what fills them, which is the point: a built-in collection, a mastery bar and
 a user-authored deck are all just "a set of your cards", and the page should not
@@ -525,7 +595,7 @@ The tile's natural size is **100 × 146** (`SIZING` in `DeckTile.tsx`), chosen s
 of them **fill the fdp's row**: the page's content column is 337px (a 393px frame less
 the 28px gutter its section headings use), and 3 × 100 + 2 × 18px of gap is 336, so the
 row's outer edges land on the headings above it. `TILE_WIDTH` in
-`FlashcardsDecksPage.tsx` must stay equal to `SIZING.cardWidth` — `ROW_MAX_WIDTH` is
+`DecksSheetBody.tsx` must stay equal to `SIZING.cardWidth` — `ROW_MAX_WIDTH` is
 derived from it, and a mismatch either pushes the third tile onto its own line or lets
 a fourth up.
 
@@ -668,7 +738,7 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §2 Deck card read | `OnDeckVocabService.getDeckCards` |
 | §3 Launch filter | `vetTable.ts` (`vetDeckClause`, `vetDeckOrProvisionalClause`); `OnDeckVocabService.deckPlayFilter` + its three fetchers; `OnDeckVocabController.resolveCollection`; `routes/flashcardRoutes.ts` (mark body) |
 | §3 Games-hub selector | `src/features/flashcards/selectedCollection.ts`; `src/games/GamesCollectionSelector.tsx`; `src/games/GamesPage.tsx` (`launchPath`); `src/games/word-search/WordSearchHubItem.tsx` (`newGamePath`); `src/api/decks.ts` (`fetchDecks`) |
-| §4 Client | `src/api/decks.ts`, `collectionRef.ts`, `useLaunchCollection.ts`, `CollectionViewPage.tsx`, `FlashcardsDecksPage.tsx`, `AddToDeckMenu.tsx`, `routes/routeMeta.ts`, `routes/registry.ts` |
+| §4 Client | `src/api/decks.ts`, `collectionRef.ts`, `useLaunchCollection.ts`, `CollectionViewPage.tsx`, `FlashcardsDecksPage.tsx`, `DecksSheetBody.tsx`, `AddToDeckMenu.tsx`, `routes/routeMeta.ts`, `routes/registry.ts` |
 | §4 Tiles & built-in collections | `src/components/DeckTile.tsx` (+ `DeckBuckets.tsx`, its other host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`builtinCollectionEntries`, `hasMasteredSection`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
 | §1 `editMode` + §4 Challenges section | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; `database/migrations/148-create-study-challenges.sql`; `DeckService` → `assertMutable` (the preset mutation guard) and `createPresetDeck`; `DeckDAL` → `createPresetDeck` / `countCustomDecks` / `findDeckEditMode`; `study_challenges.presetDeckIds` |
 | §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `CollectionViewPage.tsx` (the sort row + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |

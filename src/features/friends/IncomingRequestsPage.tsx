@@ -93,6 +93,7 @@ function IncomingRequestsPage() {
                             email={request.email}
                             avatarIconId={request.avatarIconId}
                             secondary={requestedAtLabel(request.requestedAt, "incoming")}
+                            onPersonPress={() => slideNavigate(`/users/${request.userId}`)}
                             actions={
                                 <>
                                     <Button

@@ -23,7 +23,7 @@ import type {
 } from '../contracts/wire.js';
 import {
   acceptDeadline,
-  challengeWeekStart,
+  challengeWeekIndex,
   isAcceptWindowOpen,
   isTestWindowOpen,
   latestTestWindowClose,
@@ -37,6 +37,8 @@ import type {
   ChallengeOpponent,
   ChallengeSummary,
   ChallengesPageResponse,
+  ChallengeWordDisplayFields,
+  StrikeReplacementContext,
   StudyChallengeRow,
 } from '../types/studyChallenge.js';
 
@@ -86,7 +88,7 @@ export interface ChallengeUserLookup {
  *
  * The rules, in one place:
  *   • ONE CHALLENGE PER PAIR PER WEEK, unordered. Enforced by a unique index on
- *     (pair key, weekStart) — so the decline cooldown falls out of it for free: a
+ *     (pair key, weekIndex) — so the decline cooldown falls out of it for free: a
  *     declined row still holds its week. A withdraw DELETES the row and frees the
  *     slot, which is the only repair for a challenge sent to the wrong friend.
  *   • SIX ACTIVE, per (user, language), and only ever spent by your own decisions —
@@ -153,7 +155,9 @@ export class StudyChallengeService {
 
     const now = new Date();
     const viewerTz = await this.timezoneOf(userId);
-    const weekStart = challengeWeekStart(now, viewerTz);
+    // The week is a GLOBAL counter, not this viewer's local Monday — see
+    // shared/challengeWeek.ts. Their timezone still decides every deadline below.
+    const weekIndex = challengeWeekIndex(now);
 
     // Index the live challenges by the OTHER player, so each friend row is a map
     // lookup rather than a scan of every challenge per friend.
@@ -183,7 +187,7 @@ export class StudyChallengeService {
       const championUserId = lastResolved?.winnerUserId ?? null;
 
       const { canChallenge, blockedReason, viewerBlocked } = await this.challengeability(
-        userId, friend.userId, language, weekStart, activeCount, row
+        userId, friend.userId, language, weekIndex, activeCount, row
       );
 
       rows.push({
@@ -218,16 +222,15 @@ export class StudyChallengeService {
 
     let count = 0;
     for (const row of live) {
-      const weekStart = new Date(row.weekStart);
       // An invitation awaiting THIS user's answer.
       if (row.status === 'pending' && row.challengeeId === userId
-          && isAcceptWindowOpen(weekStart, tz, now)) {
+          && isAcceptWindowOpen(row.weekIndex, tz, now)) {
         count += 1;
         continue;
       }
       // An accepted challenge whose test window is open and which this user has not
       // finished — "your test is open".
-      if (row.status === 'accepted' && isTestWindowOpen(weekStart, tz, now)
+      if (row.status === 'accepted' && isTestWindowOpen(row.weekIndex, tz, now)
           && !this.hasFinished(row, userId)) {
         count += 1;
       }
@@ -306,12 +309,17 @@ export class StudyChallengeService {
 
     const now = new Date();
     const challengerTz = await this.timezoneOf(userId);
-    const weekStart = challengeWeekStart(now, challengerTz);
+    // ⚠️ ONE COUNTER FOR BOTH PLAYERS. This used to be the challenger's local Monday
+    // as an instant, which meant a pair in two timezones stored two different
+    // `weekStart`s for the same week and the pair-week unique index never fired —
+    // both crossing challenges were created. The index is global, so the second
+    // insert now always collides and the loser gets a 409 (shared/challengeWeek.ts).
+    const weekIndex = challengeWeekIndex(now);
 
     // ── The three gates, in the order a user would hit them ──
     // 1. The pair's week. Any status counts, including declined/expired, which is
     //    what makes the decline cooldown work without a rate limiter.
-    const existing = await this.studyChallengeDAL.findForPairInWeek(userId, friendUserId, weekStart);
+    const existing = await this.studyChallengeDAL.findForPairInWeek(userId, friendUserId, weekIndex);
     if (existing) {
       throw new DuplicateError('You already have a challenge with this friend this week');
     }
@@ -374,7 +382,7 @@ export class StudyChallengeService {
       challengeeLanguage: storedChallengeeLanguage,
       gameSequence,
       words,
-      weekStart,
+      weekIndex,
     });
 
     void challengeeTz; // resolved above so a bad tz fails here, not at deadline render
@@ -402,7 +410,8 @@ export class StudyChallengeService {
   async acceptChallenge(
     userId: string,
     challengeId: string,
-    struckWords: string[] = []
+    struckWords: string[] = [],
+    replacementWords: string[] = []
   ): Promise<ChallengeSummary> {
     const row = await this.requireParty(userId, challengeId);
     if (row.status !== 'pending') {
@@ -413,9 +422,8 @@ export class StudyChallengeService {
     }
 
     const now = new Date();
-    const weekStart = new Date(row.weekStart);
     const myTz = await this.timezoneOf(userId);
-    if (!isAcceptWindowOpen(weekStart, myTz, now)) {
+    if (!isAcceptWindowOpen(row.weekIndex, myTz, now)) {
       throw new ValidationError('The time to accept this challenge has passed');
     }
 
@@ -437,15 +445,51 @@ export class StudyChallengeService {
     let myWords = row.words[userId] ?? [];
     if (struckWords.length > 0) {
       const kept = myWords.filter((w) => !struckWords.includes(w.word1));
-      const replacements = await this.buildCandidateSet(
-        userId,
-        row.variant === 'same_word' ? row.challengerId : null,
-        myLanguage,
-        [...struckWords, ...kept.map((w) => w.word1)],
-        CHALLENGE_WORD_COUNT - kept.length
-      );
+
+      // THE WORDS THE CHALLENGEE SAW ARE THE WORDS THEY GET. Each strike already
+      // asked the server for a named replacement and the reviewer accepted the set
+      // WITH it on screen, so re-drawing here would swap words out from under a
+      // decision that was just made. `replacementWords` is therefore honoured, not
+      // recomputed — the client can only echo back words this server handed it.
+      const seen = new Set([...struckWords, ...kept.map((w) => w.word1)]);
+      const honoured: ChallengeCandidate[] = [];
+      for (const word of replacementWords) {
+        if (seen.has(word)) continue;                 // a dupe or a word already kept
+        if (honoured.length >= CHALLENGE_WORD_COUNT - kept.length) break;
+        // Resolve against the det so a fabricated word cannot enter the set. Not
+        // filtered on `discoverable`, matching every other read of a challenge's
+        // words (see StudyChallengeDAL.findEntryIdByWord).
+        const entryId = await this.studyChallengeDAL.findEntryIdByWord(word, myLanguage);
+        if (!entryId) continue;
+        seen.add(word);
+        honoured.push({
+          dictionaryEntryId: entryId,
+          word1: word,
+          language: myLanguage,
+          pronunciation: null,
+          definition: null,
+          difficulty: null,
+          frequencyScore: null,
+          iconId: null,
+        });
+      }
+
+      // Top up only what the echo could not cover — an old client that sends no
+      // replacements at all still gets a full set, which is the pre-existing
+      // behaviour and the reason this is a fallback rather than a hard requirement.
+      const short = CHALLENGE_WORD_COUNT - kept.length - honoured.length;
+      const drawn = short > 0
+        ? await this.buildCandidateSet(
+            userId,
+            row.variant === 'same_word' ? row.challengerId : null,
+            myLanguage,
+            [...seen],
+            short
+          )
+        : [];
+
       myWords = this.toWordSet(
-        [...kept.map(this.wordToCandidate), ...replacements],
+        [...kept.map(this.wordToCandidate), ...honoured, ...drawn],
         myLanguage
       );
     }
@@ -577,9 +621,8 @@ export class StudyChallengeService {
     if (!Number.isFinite(score)) throw new ValidationError('score must be a number');
 
     const now = new Date();
-    const weekStart = new Date(row.weekStart);
     const myTz = await this.timezoneOf(userId);
-    if (!isTestWindowOpen(weekStart, myTz, now)) {
+    if (!isTestWindowOpen(row.weekIndex, myTz, now)) {
       throw new ValidationError('Your test window is not open');
     }
 
@@ -646,8 +689,9 @@ export class StudyChallengeService {
   async strikeWord(
     userId: string,
     target: { dictionaryEntryId?: number; word1?: string },
-    language: Language
-  ): Promise<void> {
+    language: Language,
+    replacement?: StrikeReplacementContext
+  ): Promise<ChallengeCandidate | null> {
     // A word may be named EITHER way, because the two sides of the review flow hold
     // different handles: the challenger is looking at candidates that still carry
     // their det ids, while the challengee is looking at a STORED set that carries
@@ -665,6 +709,64 @@ export class StudyChallengeService {
     // 'already-learned' is the bucket NAME the sort endpoint accepts; it persists as
     // the internal 'library' bucket plus the perfect core history.
     await this.starterPacksService.sortCard(userId, entryId as number, 'already-learned', language);
+
+    // ── The replacement, drawn AFTER the Mastered write ──
+    // Order matters: the sort above removes the struck word from this player's
+    // discoverable supply, so drawing afterwards can never rank the same word
+    // straight back in. Without a context the endpoint is still the old fire-and-
+    // forget strike (the caller just wants the mark), so this stays optional.
+    if (!replacement) return null;
+    return this.drawReplacement(userId, language, replacement);
+  }
+
+  /**
+   * One replacement word for a struck one — the per-strike half of § 3.2's
+   * replacement loop.
+   *
+   * BOTH SIDES OF THE REVIEW FLOW USE THIS, which is the point: the challenger and
+   * the challengee see a struck word swapped for a named word at the same moment,
+   * instead of the challengee's list silently shrinking and the real replacement
+   * appearing only inside the accept transaction. What differs is only where the
+   * "other player" for the band comes from — a friend id before the challenge
+   * exists, the stored row afterwards.
+   *
+   * `exclude` is everything currently on the reviewer's screen plus everything they
+   * have struck this session, so the draw cannot return a word they can already see.
+   */
+  private async drawReplacement(
+    userId: string,
+    language: Language,
+    context: StrikeReplacementContext
+  ): Promise<ChallengeCandidate | null> {
+    let otherUserId: string | null = null;
+    let drawLanguage: Language = language;
+
+    if (context.challengeId) {
+      // Reviewing a stored set: the band and the language must come from the ROW,
+      // not from the caller's current language — a same-word challenge is one
+      // language by definition and the reviewer may have switched since.
+      const row = await this.requireParty(userId, context.challengeId);
+      drawLanguage = row.challengeeId === userId ? row.challengeeLanguage : row.challengerLanguage;
+      if (row.variant === 'same_word') {
+        otherUserId = row.challengerId === userId ? row.challengeeId : row.challengerId;
+      }
+    } else if (context.friendUserId) {
+      await this.requireFriend(userId, context.friendUserId);
+      if (context.variant !== 'different_word') otherUserId = context.friendUserId;
+    } else {
+      return null;
+    }
+
+    const drawn = await this.buildCandidateSet(
+      userId,
+      otherUserId,
+      drawLanguage,
+      context.exclude ?? [],
+      1
+    );
+    // Null, not a throw: the discoverable supply can genuinely be exhausted (§ 3.1
+    // lets a set be SHORT rather than refusing), and the strike itself succeeded.
+    return drawn[0] ?? null;
   }
 
   /**
@@ -756,14 +858,26 @@ export class StudyChallengeService {
     const opponentId = isChallenger ? row.challengeeId : row.challengerId;
     const myLanguage = isChallenger ? row.challengerLanguage : row.challengeeLanguage;
 
-    const [myTz, challengeeTz, opponent] = await Promise.all([
+    const myWords = row.words?.[userId] ?? [];
+
+    const [myTz, challengeeTz, opponent, display] = await Promise.all([
       this.timezoneOf(userId),
       this.timezoneOf(row.challengeeId),
       this.opponentOf(opponentId),
+      // The stored word set is identity only (Q49), so everything needed to DRAW a
+      // word is resolved HERE, on the way out — otherwise the review screen the
+      // challengee accepts from renders Chinese with no pinyin and no English, while
+      // the challenger's identical screen (built from candidates) shows both. One
+      // query per challenge, and a word whose det row has gone away simply misses.
+      myWords.length > 0
+        ? this.studyChallengeDAL.findDisplayFieldsByWords(
+            myWords.map((w) => w.word1),
+            myLanguage
+          )
+        : Promise.resolve({} as Record<string, ChallengeWordDisplayFields>),
     ]);
 
-    const weekStart = new Date(row.weekStart);
-    const windowOpen = isTestWindowOpen(weekStart, myTz, now);
+    const windowOpen = isTestWindowOpen(row.weekIndex, myTz, now);
     const opponentFinished = this.hasFinished(row, opponentId);
     const bothFinished = opponentFinished && this.hasFinished(row, userId);
     const sequence = row.gameSequence ?? [];
@@ -775,7 +889,13 @@ export class StudyChallengeService {
       isChallenger,
       opponent,
       language: myLanguage,
-      words: row.words?.[userId] ?? [],
+      words: myWords.map((word) => ({
+        ...word,
+        // Spread the det fields rather than picking them one by one, so adding a
+        // field to ChallengeWordDisplayFields reaches the client without a second
+        // edit here. `?? {}` keeps a word whose det row is gone as a bare word.
+        ...(display[word.word1] ?? {}),
+      })),
       rounds: row.rounds?.[userId] ?? {},
       opponentFinished,
       // Rule 2. Present only once the comparison is legitimate — which includes
@@ -790,9 +910,9 @@ export class StudyChallengeService {
       gameSequence: windowOpen || row.completedAt ? sequence : undefined,
       roundCount: Math.min(sequence.length, CHALLENGE_ROUND_COUNT),
       deadlines: {
-        acceptDeadline: acceptDeadline(weekStart, challengeeTz).toISOString(),
-        testOpensAt: testWindowOpen(weekStart, myTz).toISOString(),
-        testClosesAt: testWindowClose(weekStart, myTz).toISOString(),
+        acceptDeadline: acceptDeadline(row.weekIndex, challengeeTz).toISOString(),
+        testOpensAt: testWindowOpen(row.weekIndex, myTz).toISOString(),
+        testClosesAt: testWindowClose(row.weekIndex, myTz).toISOString(),
       },
       issuedAt: row.issuedAt,
       completedAt: row.completedAt,
@@ -900,6 +1020,7 @@ export class StudyChallengeService {
     definition: null,
     difficulty: null,
     frequencyScore: null,
+    iconId: null,
   });
 
   /**
@@ -980,7 +1101,7 @@ export class StudyChallengeService {
     userId: string,
     friendUserId: string,
     language: Language,
-    weekStart: Date,
+    weekIndex: number,
     activeCount: number,
     liveRow: StudyChallengeRow | undefined
   ): Promise<Pick<ChallengeFriendRow, 'canChallenge' | 'blockedReason' | 'viewerBlocked'>> {
@@ -1005,7 +1126,7 @@ export class StudyChallengeService {
 
     // A resolved row still occupies the pair's week — the decline cooldown, and the
     // "already played this week" rule, are the same fact.
-    const thisWeek = await this.studyChallengeDAL.findForPairInWeek(userId, friendUserId, weekStart);
+    const thisWeek = await this.studyChallengeDAL.findForPairInWeek(userId, friendUserId, weekIndex);
     if (thisWeek) return { canChallenge: false, blockedReason: 'declined-this-week', viewerBlocked };
 
     return { canChallenge: true, blockedReason: null, viewerBlocked };

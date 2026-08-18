@@ -8,6 +8,7 @@ import BrushIcon from "@mui/icons-material/Brush";
 import PageHeader from "../../../components/PageHeader";
 import MinutePointsFireBadge from "../../../minutePoints/MinutePointsFireBadge";
 import type { LastMarkUndoSnapshot } from "../types";
+import type { Language } from "../../../types";
 import { SIZE } from "../../../theme/scale";
 
 interface FlashcardsLearnHeaderProps {
@@ -17,6 +18,9 @@ interface FlashcardsLearnHeaderProps {
     isUndoing: boolean;
     onBack: () => void;
     onUndo: () => void;
+    // Deck language. Pinyin is a Chinese-only concept, so the quick pinyin
+    // toggle is rendered only for 'zh' (Spanish has no reading line).
+    language: Language;
     showPinyin: boolean;
     onTogglePinyin: () => void;
     // Whether the active card is showing its back (Side 2). The icon-layout editor
@@ -35,6 +39,7 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
     isUndoing,
     onBack,
     onUndo,
+    language,
     showPinyin,
     onTogglePinyin,
     isFlipped,
@@ -80,16 +85,18 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
             >
                 <UndoIcon />
             </IconButton>
-            {/* Pinyin visibility toggle */}
-            <Button
-                className="pinyin-toggle-btn"
-                variant={showPinyin ? "contained" : "text"}
-                size="small"
-                onClick={onTogglePinyin}
-                sx={toggleSx(showPinyin)}
-            >
-                pinyin
-            </Button>
+            {/* Pinyin visibility toggle — Chinese only. */}
+            {language === "zh" && (
+                <Button
+                    className="pinyin-toggle-btn"
+                    variant={showPinyin ? "contained" : "text"}
+                    size="small"
+                    onClick={onTogglePinyin}
+                    sx={toggleSx(showPinyin)}
+                >
+                    pinyin
+                </Button>
+            )}
             {/* Custom icon-layout editor toggle — back face only. */}
             <Button
                 className="card-edit-toggle-btn"

@@ -37,12 +37,17 @@ type ActivePage = FooterTab;
 //   • bottom — sized to roughly the floating-footer zone so the last rows fade
 //     out right where they pass behind the pill.
 const EDGE_FADE_TOP = 28;
-const EDGE_FADE_BOTTOM = FLOATING_FOOTER_CLEARANCE - FLOATING_FOOTER_INSET;
+// Exported: the /decks pull-up sheet (DecksSheetBody) is a second scroller that
+// ends behind the same floating pill, so it fades its last rows out over the same
+// band. One constant, or the two surfaces drift apart.
+export const EDGE_FADE_BOTTOM = FLOATING_FOOTER_CLEARANCE - FLOATING_FOOTER_INSET;
 // Full mask fades both edges; when a page opts out of the top fade (topFade=false)
 // the top band is dropped so the first rows stay fully opaque (only the bottom
 // fades out behind the floating footer).
 const EDGE_FADE_MASK = `linear-gradient(to bottom, transparent 0, #000 ${EDGE_FADE_TOP}px, #000 calc(100% - ${EDGE_FADE_BOTTOM}px), transparent 100%)`;
-const EDGE_FADE_MASK_NO_TOP = `linear-gradient(to bottom, #000 0, #000 calc(100% - ${EDGE_FADE_BOTTOM}px), transparent 100%)`;
+// Bottom band only — no top fade. Also used by the /decks sheet, whose top edge is
+// its own grabber (nothing there should dissolve).
+export const EDGE_FADE_MASK_NO_TOP = `linear-gradient(to bottom, #000 0, #000 calc(100% - ${EDGE_FADE_BOTTOM}px), transparent 100%)`;
 
 // Positioning context for the floating footer pill + full-height flex column.
 const ScreenRoot = styled(Box)(() => ({

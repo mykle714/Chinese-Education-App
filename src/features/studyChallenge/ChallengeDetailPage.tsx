@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Box, Button, Typography } from "@mui/material";
 import UndoIcon from "@mui/icons-material/Undo";
 import StyleIcon from "@mui/icons-material/Style";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
-import ForeignText from "../../components/ForeignText";
+import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import ChallengeScoreTable from "./ChallengeScoreTable";
+import ChallengeWordCard from "./ChallengeWordCard";
+import { storedWordToReviewWord } from "./reviewWord";
 import { fetchChallenge, withdrawChallenge } from "../../api/studyChallenges";
 import type { ChallengeSummary } from "../../api/studyChallenges";
+import type { VocabEntry } from "../../types";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
@@ -16,7 +19,7 @@ import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { challengeErrorMessage, challengeStatusLine, deadlineLabel, roundsTotal } from "./challengeLabels";
-import { challengeCardSx, challengeMessageSx, challengeMutedSx, wordTileSx } from "./challengeStyles";
+import { challengeCardSx, challengeMessageSx, challengeMutedSx, challengeWordCardHeight } from "./challengeStyles";
 
 /**
  * One challenge, in every state after `pending`-on-the-challenger's-side
@@ -78,6 +81,41 @@ function ChallengeDetailPage() {
             setBusy(false);
         }
     }, [busy, challengeId, slideNavigate]);
+
+    /**
+     * The word set as mini preview cards. Same trick as the review screen and Quick
+     * Mark: MiniVocabCardGrid is typed for VocabEntry[], but a challenge word is a
+     * stored (language, word1) pair (Q49) — never a vet row here — so the list is
+     * cast for the grid and looked up by `word1` in the renderer. Keyed on the det id
+     * where the read path resolved one, falling back to `position`, which is unique
+     * within a set.
+     */
+    const words = useMemo(
+        () => (challenge?.words ?? []).map(storedWordToReviewWord),
+        [challenge?.words]
+    );
+    const wordGridEntries = useMemo(
+        () => (challenge?.words ?? []).map((w) => ({
+            id: w.dictionaryEntryId ?? w.position,
+            entryKey: w.word1,
+        })) as unknown as VocabEntry[],
+        [challenge?.words]
+    );
+    const renderWordCard = useCallback(
+        (entry: VocabEntry, _index: number, animationDelayMs?: number) => {
+            const word = words.find((w) => w.word1 === entry.entryKey);
+            if (!word) return null;
+            // No onStrike: after accept the set is final (§ 3.3).
+            return (
+                <ChallengeWordCard
+                    key={word.word1}
+                    word={word}
+                    animationDelayMs={animationDelayMs}
+                />
+            );
+        },
+        [words]
+    );
 
     const myTotal = roundsTotal(challenge?.rounds);
     const theirTotal = roundsTotal(challenge?.opponentRounds);
@@ -206,11 +244,22 @@ function ChallengeDetailPage() {
                                 <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: COLORS.onSurface }}>
                                     The {challenge.words.length} words
                                 </Typography>
-                                {challenge.words.map((word) => (
-                                    <Box key={`${word.position}-${word.word1}`} className="challenge-detail-page__word" sx={wordTileSx}>
-                                        <ForeignText text={word.word1} language={word.language} size="sm" />
-                                    </Box>
-                                ))}
+                                {/* The SAME mini preview card the review screen strikes
+                                    from, minus the button: the ten are settled once the
+                                    challenge is accepted, so there is nothing to act on
+                                    here — but a learner should recognise the set they
+                                    confirmed, which means it has to look the same. */}
+                                <MiniVocabCardGrid
+                                    containerClassName="challenge-detail-page__word-grid"
+                                    classPrefix="challenge-detail-page__words"
+                                    loading={false}
+                                    entries={wordGridEntries}
+                                    emptyMessage="This challenge has no words."
+                                    onCardClick={() => {}}
+                                    renderCard={renderWordCard}
+                                    cardHeightPx={challengeWordCardHeight(false)}
+                                    staggerReveal
+                                />
                             </Box>
                         )}
 

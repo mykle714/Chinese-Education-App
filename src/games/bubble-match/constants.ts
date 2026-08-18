@@ -164,9 +164,18 @@ export const SCALE_LERP = 0.25; // per-frame approach factor toward targetScale
 //
 // DANGER_FILL_RATIO is a *warning* glow and must sit below LOSE_FILL_RATIO.
 export const DANGER_FILL_RATIO = 0.72; // border glows red — "you're getting full"
-export const LOSE_FILL_RATIO = 0.85; // area coverage at which the field is unwinnable
-export const OVERFILL_RESIDUAL_PX = 220; // total pairwise penetration (px) that counts as "stuck"
-export const OVERFILL_SUSTAIN_MS = 600; // residual must persist this long before we lose
+// Loss line. Deliberately LENIENT: soft bodies with mixed radii can be squeezed
+// well past a "comfortable" pack before the field is genuinely unplayable, and
+// ending the run at 0.85 cut players off while they could still see matches. At
+// 0.94 the board is visibly wall-to-wall before we call it, which also stretches
+// the red-glow danger band (0.72 → 0.94) into a long, readable warning.
+export const LOSE_FILL_RATIO = 0.94; // area coverage at which the field is unwinnable
+// Safety net for the case where area is borderline but the separation solver is
+// provably stuck. Both knobs are generous so a transient jam (a wrong drop, a
+// burst of spawns, the ceiling stepping down) never ends the run on its own —
+// the overlap has to be both deep AND persistent.
+export const OVERFILL_RESIDUAL_PX = 520; // total pairwise penetration (px) that counts as "stuck"
+export const OVERFILL_SUSTAIN_MS = 1600; // residual must persist this long before we lose
 
 // ---- Descending ceiling ---------------------------------------------------
 // Once the whole pool has launched, the play area's TOP wall starts moving down

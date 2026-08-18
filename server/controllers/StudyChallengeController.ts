@@ -16,10 +16,11 @@ import type {
  *   GET    /api/studyChallenges/history                  → ChallengeSummary[]
  *   GET    /api/studyChallenges/candidates?friendUserId&variant&struck → ChallengeCandidate[]
  *   POST   /api/studyChallenges         {friendUserId, variant, struckWords} → ChallengeSummary
- *   POST   /api/studyChallenges/strike  {dictionaryEntryId}   → 204
+ *   POST   /api/studyChallenges/strike  {dictionaryEntryId|word1, friendUserId|challengeId, variant, exclude}
+ *                                                        → { replacement: ChallengeCandidate | null }
  *   PUT    /api/studyChallenges/blocks/:friendUserId {blocked} → 204
  *   GET    /api/studyChallenges/:id                      → ChallengeSummary
- *   POST   /api/studyChallenges/:id/accept  {struckEntryIds} → ChallengeSummary
+ *   POST   /api/studyChallenges/:id/accept  {struckWords, replacementWords} → ChallengeSummary
  *   POST   /api/studyChallenges/:id/decline              → 204
  *   DELETE /api/studyChallenges/:id                      → 204 (withdraw)
  *   POST   /api/studyChallenges/:id/rounds  {roundIndex, score, breakdown} → ChallengeSummary
@@ -132,10 +133,16 @@ export class StudyChallengeController {
   };
 
   /**
-   * POST /api/studyChallenges/strike — body { dictionaryEntryId }
+   * POST /api/studyChallenges/strike
+   * body { dictionaryEntryId | word1, friendUserId | challengeId, variant?, exclude? }
    *
    * "I already know this." Writes Mastered to the CALLER'S OWN card through the same
    * path discover's Already-Learned sort uses, so the two can never diverge.
+   *
+   * It answers with the ONE replacement word for the struck slot, so the reviewer's
+   * list swaps a single tile instead of reloading (§ 3.2). The replacement half is
+   * optional: with no `friendUserId`/`challengeId` the response is
+   * `{ replacement: null }` and the call is a bare strike.
    */
   strikeWord = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -143,19 +150,34 @@ export class StudyChallengeController {
       if (!userId) return;
 
       const language = await getUserLanguage(userId);
-      const body = (req.body ?? {}) as { dictionaryEntryId?: unknown; word1?: unknown };
+      const body = (req.body ?? {}) as {
+        dictionaryEntryId?: unknown;
+        word1?: unknown;
+        friendUserId?: unknown;
+        challengeId?: unknown;
+        variant?: unknown;
+        exclude?: unknown;
+      };
       const parsedId = parseInt(String(body.dictionaryEntryId ?? ''), 10);
       // Either handle is accepted — see the service for why the challengee only has
       // the word, not its det id.
-      await this.studyChallengeService.strikeWord(
+      const replacement = await this.studyChallengeService.strikeWord(
         userId,
         {
           dictionaryEntryId: Number.isFinite(parsedId) ? parsedId : undefined,
           word1: typeof body.word1 === 'string' ? body.word1 : undefined,
         },
-        language
+        language,
+        {
+          friendUserId: typeof body.friendUserId === 'string' ? body.friendUserId : undefined,
+          challengeId: typeof body.challengeId === 'string' ? body.challengeId : undefined,
+          variant: body.variant === 'different_word' ? 'different_word' : 'same_word',
+          exclude: Array.isArray(body.exclude)
+            ? body.exclude.filter((w): w is string => typeof w === 'string')
+            : [],
+        }
       );
-      res.status(204).send();
+      res.json({ replacement });
     } catch (error) {
       handleControllerError(error, res, 'StudyChallengeController.strikeWord');
     }
@@ -197,13 +219,19 @@ export class StudyChallengeController {
       // The picker submits the WORDS it struck, not their det ids: the challenge
       // stores words as the denormalised (language, word1) pair, and a det id would
       // not survive a data deploy (Q49).
-      const body = (req.body ?? {}) as AcceptChallengeBody & { struckWords?: string[] };
+      const body = (req.body ?? {}) as AcceptChallengeBody;
       const struckWords = Array.isArray(body.struckWords)
         ? body.struckWords.filter((w): w is string => typeof w === 'string')
         : [];
+      // The replacements the picker was SHOWN, echoed back so the accepted set is the
+      // set on screen rather than a fresh draw. The service re-resolves each word
+      // against the det, so this is an echo the server verifies, not a trusted input.
+      const replacementWords = Array.isArray(body.replacementWords)
+        ? body.replacementWords.filter((w): w is string => typeof w === 'string')
+        : [];
 
       res.json(await this.studyChallengeService.acceptChallenge(
-        userId, String(req.params.id), struckWords
+        userId, String(req.params.id), struckWords, replacementWords
       ));
     } catch (error) {
       handleControllerError(error, res, 'StudyChallengeController.acceptChallenge');

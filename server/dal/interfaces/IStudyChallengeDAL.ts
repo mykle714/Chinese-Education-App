@@ -1,6 +1,10 @@
 import type { PoolClient } from 'pg';
 import type { ChallengeRound, ChallengeGameRef, ChallengeStatus, ChallengeVariant, ChallengeWord } from '../../contracts/wire.js';
-import type { StudyChallengeRow, ChallengeCandidate } from '../../types/studyChallenge.js';
+import type {
+  StudyChallengeRow,
+  ChallengeCandidate,
+  ChallengeWordDisplayFields,
+} from '../../types/studyChallenge.js';
 
 /**
  * Data access for Study Challenge (`study_challenges`, migration 148).
@@ -46,7 +50,7 @@ export interface IStudyChallengeDAL {
   findForPairInWeek(
     userA: string,
     userB: string,
-    weekStart: Date,
+    weekIndex: number,
     client?: PoolClient
   ): Promise<StudyChallengeRow | null>;
 
@@ -101,7 +105,7 @@ export interface IStudyChallengeDAL {
       challengeeLanguage: string;
       gameSequence: ChallengeGameRef[];
       words: Record<string, ChallengeWord[]>;
-      weekStart: Date;
+      weekIndex: number;
     },
     client?: PoolClient
   ): Promise<StudyChallengeRow>;
@@ -214,6 +218,29 @@ export interface IStudyChallengeDAL {
    * a mark against the wrong entry.
    */
   findEntryIdByWord(word1: string, language: string, client?: PoolClient): Promise<number | null>;
+
+  /**
+   * Everything needed to DRAW a stored challenge's words, as a `word1 -> fields` map.
+   *
+   * The challenge row stores word IDENTITY only (Q49), so every read path that has
+   * to draw a word — the review screen the challengee accepts from, the detail
+   * page's word set — has to resolve its display fields late, exactly like
+   * `findEntryIdByWord` resolves the det id late. A word missing from the det
+   * (un-flagged or removed by a data deploy) is simply absent from the map, which
+   * renders as a bare word rather than failing the read.
+   *
+   * The set is the same one a candidate carries, so a stored word and a freshly
+   * drawn replacement render through ONE card component: pronunciation, the lead
+   * gloss, the conversation-frequency badge, the icon, and the det id.
+   *
+   * (Was `findPronunciationsByWords`, which returned pinyin alone — renamed when the
+   * review screen moved to mini preview cards and needed the English too.)
+   */
+  findDisplayFieldsByWords(
+    word1s: string[],
+    language: string,
+    client?: PoolClient
+  ): Promise<Record<string, ChallengeWordDisplayFields>>;
 
   /**
    * Every `pending` challenge, for the maintenance job's accept-deadline pass.

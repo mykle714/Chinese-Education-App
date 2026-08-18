@@ -53,6 +53,27 @@ export interface ICommunityLayoutDAL {
     limit: number,
   ): Promise<CommunityDesign[]>;
 
+  /**
+   * Every advanced layout ONE user has, oldest-entryKey-first — the card-design list on
+   * their profile page (docs/USER_PROFILE_PAGE.md).
+   *
+   * Unlike the three feeds this is not a discovery surface, so it does NOT exclude the
+   * viewer's own rows (a viewer may open their own profile) and does not collapse
+   * duplicates (within one owner there are none). It pages by KEYSET on `entryKey`
+   * — pass the previous page's last `entryKey` as `afterEntryKey`, or null for the
+   * first page — because the order here is total and stable, unlike the feeds'.
+   *
+   * `voteCountThisWeek` and `inLibrary` are still resolved against the VIEWER, so the
+   * same vote/apply controls work on a profile tile as on a feed tile.
+   */
+  getDesignsByOwner(
+    viewerUserId: string,
+    ownerUserId: string,
+    language: string,
+    afterEntryKey: string | null,
+    limit: number,
+  ): Promise<CommunityDesign[]>;
+
   /** The design keys the viewer has voted on since their current week boundary. */
   getMyVotesThisWeek(viewerUserId: string): Promise<VotedDesignKey[]>;
 

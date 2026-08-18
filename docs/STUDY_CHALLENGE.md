@@ -10,27 +10,40 @@ order and remaining steps: [DEFERRED_WORK.md](./DEFERRED_WORK.md).
 | Step | State |
 |---|---|
 | **Migration 148** — `study_challenges`, `decks."editMode"`, the two `friendships` block booleans, the partial name index | ✅ applied and verified on dev |
+| **Migration 150** — `weekStart` timestamptz → `weekIndex` integer, pair-week unique index rebuilt on it | ✅ applied and verified on dev (2026-08-17). Must ship in the SAME pass as 148 — the code reads only the new name |
 | **Contract** — `CHALLENGE_WORD_COUNT`/`ROUND_COUNT`, `MAX_ACTIVE_CHALLENGES`, `ProvisionMode`, `CHALLENGE_GAMES`, the scoring/breakdown types | ✅ `server/contracts/wire.ts` |
 | **Server** — DAL, service, controller, routes, DI, the preset-deck guard, the unfriend hook | ✅ smoke-tested end to end on dev |
 | **`mastered-first` provisioning** | ✅ `ProvisionalCardDAL.findOwnCardsByBand` + `ProvisionalCardService.getFillerPool` (the full ladder: Mastered → Comfortable → Target → Unfamiliar → lent), and the `ProvisionMode` parameter threaded through `ensureBaseline`/`lendCards`. Band ordering verified against dev data |
 | **Games** — the shared scoring runner, the registry↔pool sync test, pause-on-background | ⚠️ **partly built.** Done: `src/games/runtime/challengeScoring.ts` (the declarative spec runner, 15 unit tests against the real specs), `challengeScoringFor` on the registry, `src/games/__tests__/challengePool.test.ts` (5 tests — the thing that keeps eligibility registry-derived), and **pause-on-background wired into Bubble Match, Match Speed and Speed Reading** via `useBackgroundPause` + `GamePausedOverlay`. **Not done: the per-game board integration** — see the row below |
-| **The scored round runner** — the one remaining piece | ❌ not started. Needs (a) a challenge-board pool read that returns the ten contested cards plus `mastered-first` filler, extending the existing `/api/onDeck/gamePool` path rather than adding a second pool loader; (b) each of the three eligible games classifying its board cards as contested/filler at generation and emitting `ChallengeEvent`s into the runner; (c) Match Speed's alternation rule (§ 5.3); (d) the between-games scoreboard and the round POST. The server, the contract, the scoring maths and the provisioning ladder for all of this exist and are tested — what is missing is the wiring inside the three game pages |
+| **The scored round runner** — the one remaining piece | ❌ not started. Needs (a) a challenge-board pool read that returns the contested cards plus `mastered-first` filler, extending the existing `/api/onDeck/gamePool` path rather than adding a second pool loader; (b) each of the three eligible games classifying its board cards as contested/filler at generation and emitting `ChallengeEvent`s into the runner; (c) Match Speed's alternation rule (§ 5.3); (d) the between-games scoreboard and the round POST. The server, the contract, the scoring maths and the provisioning ladder for all of this exist and are tested — what is missing is the wiring inside the three game pages |
 | **Client** — `src/api/studyChallenges.ts`, `src/features/studyChallenge/*`, the `/friends/challenges` NodePage + its badge, the fifth `/decks` section | ✅ built on dev. The one gap is the **scored round runner**, which belongs to the games step — the detail page lists the drawn rounds but cannot play them yet, and says so on screen |
 | **Maintenance job** — `database/cron/expire-study-challenges.sql` and its `ExecStart` step | ✅ written; all four passes exercised on dev with backdated fixtures, and idempotent on re-run. ⚠️ **Inert on prod until `install-timers.sh` re-renders the unit** — a git pull does not roll out a unit-template change, and until it does nothing expires |
 | **Runbook** | ✅ Retired 2026-08-17 — **shipped to prod**. Migration 148 was applied before the container rebuild (the deck read selects `decks."editMode"`), and the systemd unit was **re-rendered** by `database/cron/install-timers.sh`, without which the whole time-triggered half stays inert |
+| **Week-counter follow-up (150)** | ⚠️ [STUDY_CHALLENGE_WEEK_INDEX_RUNBOOK.md](./STUDY_CHALLENGE_WEEK_INDEX_RUNBOOK.md) — **not yet on prod**. `"weekStart"` → `"weekIndex"` is a rename, so the migration and the app restart must land together |
 
 ⚠️ **Migration 148, not 147.** 147 was claimed by the `compute_utcm_category` drop and
 had already been applied to dev, so this one moved (CLAUDE.md § Migration number
 collisions).
 
-⚠️ **One column was added that § 9 does not list: `study_challenges."weekStart"`.**
+⚠️ **One column was added that § 9 does not list: `study_challenges."weekIndex"`.**
 § 1 specifies uniqueness as `(challengerId, challengeeId, week)` unordered, but a week
 cannot be an index expression — resolving `users.timezone` is not `IMMUTABLE`, so
-Postgres refuses it. `weekStart` stores the challenger's Monday 04:00 local as a UTC
-instant, and the unique index over `(LEAST, GREATEST, weekStart)` then enforces the
+Postgres refuses it. `weekIndex` stores **whole weeks since Monday 2026-01-05 00:00
+UTC**, and the unique index over `(LEAST, GREATEST, weekIndex)` then enforces the
 weekly pair rule **and** the § 1 decline cooldown with no separate rate limiter.
 Signed off 2026-08-17. It does not contradict Q50: deadlines are still recomputed live
 from the player's current timezone, and only the challenge's *week identity* is fixed.
+
+⚠️ **It shipped first as `weekStart timestamptz` and that was a bug (fixed by migration
+150, 2026-08-17).** `weekStart` held the CHALLENGER's Monday 04:00 local as an instant,
+which is a **different value in every timezone for the same calendar week** — measured
+on 2026-08-19: `Asia/Shanghai` → `2026-08-16T20:00Z`, `America/New_York` →
+`2026-08-17T08:00Z`, `Europe/London` → `2026-08-17T03:00Z`. The unique index therefore
+never fired for a pair in two zones, and two friends challenging each other at the same
+moment both succeeded: one pair, one week, **two** live challenges, two generated decks,
+two cap slots, and a crown that could change hands twice. A global counter forces the
+collision — every instant maps to exactly one index, so the second insert always hits
+the index and gets a 409. See Q77.
 
 The **data model (§ 9) was signed off** on 2026-08-16. §§ 1–6 and 8 remain the spec the
 rest of the build is written from; § 7 (live mode) is phase 2.
@@ -52,8 +65,8 @@ Two variants, chosen by the challenger right after picking the friend:
 
 | Variant | Word set | Language |
 |---|---|---|
-| **Same-word** | ONE set of 10, negotiated by both players, used by both | both players play the **same** language |
-| **Different-word** | each player gets their **own** 10, chosen by their own flow | may be **cross-language** (§ 8) |
+| **Same-word** | ONE set of 12, negotiated by both players, used by both | both players play the **same** language |
+| **Different-word** | each player gets their **own** 12, chosen by their own flow | may be **cross-language** (§ 8) |
 
 Everything else — the timeline, the temp decks, the three games, the scoring, live
 mode, expiry — is shared between the two variants.
@@ -134,6 +147,33 @@ each row carries everything about your standing with that person:
   challenge. It sits on the row as a standing claim, and the next challenge is framed as
   taking it. A `no_contest` or a draw leaves the previous champion in place — the crown
   changes hands only when someone wins.
+* **THE WHOLE ROW IS THE BUTTON, and it never opens a profile** (2026-08-17). The
+  entire row — avatar, name, status line, pill and the padding between them — is ONE
+  tap target that runs the row's lifecycle step: issue, accept, or open the challenge.
+  It does not navigate to `/users/:userId` the way a `FriendPersonRow` does everywhere
+  else in the app.
+
+  This page exists to do one thing per friend, so its largest region must BE that thing.
+  The row was previously a composition — a tappable person half that opened the profile,
+  plus a small button that did the actual work — which put the trap where the target
+  should have been and split one action across two controls.
+
+  Consequences, each deliberate:
+  * **The pill is presentational.** `challengeActionPillSx` renders a `Box`, not a
+    `Button`, with `pointerEvents: none`. A real control nested inside a clickable row
+    steals taps near its own edges, adds a second tab stop for the same action, and lets
+    the two drift apart. The pill's job is to NAME what the row does.
+  * **An unavailable row is inert** (blocked, at the cap, or `action === 'none'`): no
+    handler, no pointer cursor, no focus stop. A tap that does nothing is honest; a tap
+    that quietly goes somewhere else is not.
+  * **The row is keyboard-operable** — `role="button"`, `tabIndex={0}`, Enter/Space —
+    because it replaced a real `<button>` and must not lose what that gave for free.
+  * Profiles stay reachable from `/friends`, which is also where the per-pair challenge
+    block lives.
+
+  The shared row therefore takes `onRowPress` (whole row, presentational actions) or
+  `onPersonPress` (person half only, real action buttons) — one or the other, never
+  both (docs/FRIENDS_FEATURE.md, docs/USER_PROFILE_PAGE.md).
 * **No lifetime W–L anywhere.** Deliberate: a running record makes a losing streak a
   reason to stop playing, and the crown already supplies the rivalry. The data is stored
   regardless, so a record can be added later if it is ever wanted.
@@ -211,8 +251,11 @@ friends yet.
   letting it expire. Declining **blocks a new challenge to that pair until the next
   Monday**, so the weekly rhythm doubles as the cooldown and no separate rate limiter is
   needed. (Any Mastered writes made while reviewing the set persist — Q25.)
-* **"No challenges with this friend"** — a per-friend toggle on the friend row, a
-  durable opt-out independent of the weekly cooldown.
+* **"No challenges with this friend"** — a per-friend toggle, a durable opt-out
+  independent of the weekly cooldown. **It lives on the profile page**
+  ([USER_PROFILE_PAGE.md](./USER_PROFILE_PAGE.md)), shown only for friends because the
+  flags live on the friendship row. (It was designed as a control on the friend row; it
+  shipped without one and was unreachable until the profile page gave it a home.)
 
   **Each player owns their own flag; the effect is symmetric.** Either player may set a
   block independently, and **a challenge goes through only if neither has blocked**.
@@ -309,7 +352,7 @@ use. "Monday" here therefore means Monday 04:00 → Tuesday 04:00 in that user's
 
 | Boundary | Whose clock | Exact instant |
 |---|---|---|
-| Issue window opens | **challenger's** | Monday 04:00 local |
+| Issue window opens | **nobody's — it is global** | Monday **00:00 UTC** (see the week counter below) |
 | Accept deadline | **challengee's** | **Wednesday 04:00 local** (i.e. the end of their Tuesday) |
 | Test window opens | **each player's own** | Friday 04:00 local |
 | Test window closes | **each player's own** | Monday 04:00 local — the instant the next issue window opens |
@@ -329,9 +372,40 @@ Consequences that the design must accept rather than paper over:
 * Expiry (§ 6) fires on the **later** of the two players' window closes, so nobody is
   timed out by someone else's clock.
 
-Boundaries are computed on demand from a stored UTC anchor plus each user's timezone —
-**not** stored as pre-computed local timestamps, which would go stale the moment a
-player travels.
+Boundaries are computed on demand from the stored **week index** plus each user's
+timezone — **not** stored as pre-computed local timestamps, which would go stale the
+moment a player travels.
+
+### The week is a global counter (Q77)
+
+`study_challenges."weekIndex"` is an integer: **whole weeks since Monday 2026-01-05
+00:00 UTC**. The epoch is a Monday, which is what lines the counter's weeks up with the
+app's Monday→Monday week.
+
+**It has no timezone parameter, and that is the point.** The week is the challenge's
+IDENTITY — the third column of `study_challenges_pair_week_uniq`, which is simultaneously
+the one-per-pair-per-week rule and the § 1 decline cooldown. An identity that varies by
+who is asking cannot be a unique key, which is exactly how the first implementation
+failed: it stored the challenger's local Monday 04:00 as an instant, so a pair in two
+zones wrote two different values for one week and BOTH crossing challenges were created
+(migration 150 fixed this; see the banner at the top of this document).
+
+Two consequences, stated plainly:
+
+* **The issue window is the one boundary that is not local.** A new week's challenge
+  slot opens at Monday 00:00 UTC — up to 4h after local Monday 04:00 in Shanghai, up to
+  11h before it in Los Angeles. This is the price of two players agreeing on which week
+  they are in, and it is paid by the *slot*, not by any deadline.
+* **Every deadline stays per-player local.** They are derived from the index's Monday
+  DATE plus each player's own zone: `weekBoundary` in `server/shared/challengeWeek.ts`,
+  and the identical `DATE '2026-01-05' + 7 * "weekIndex" + N` at 04:00 in
+  `database/cron/expire-study-challenges.sql`. The two are cross-checked instant-for-
+  instant in `server/__tests__/challengeWeek.test.ts` — if they ever drift, a player is
+  shown a deadline the maintenance job has already acted on.
+
+⚠️ **The epoch is duplicated in three places** — `CHALLENGE_WEEK_EPOCH_UTC`
+(`server/shared/challengeWeek.ts`), migration 150, and the cron SQL. Changing one alone
+renumbers every stored week and silently moves every deadline.
 
 ### If a player's timezone changes mid-challenge (Q50)
 
@@ -354,7 +428,7 @@ Consequences accepted rather than engineered away:
 
 ---
 
-## 3. Same-word challenge — choosing the 10 words
+## 3. Same-word challenge — choosing the 12 words
 
 ### 3.1 Candidate pool (server)
 
@@ -433,13 +507,45 @@ itself.
 Both players run the **same** screen, at different times:
 
 ```
-challenger:  [see 10 words] → mark any "I already know this" → replaced → confirm → PENDING
-challengee:  [see the 10]   → mark any "I already know this" → replaced → accept  → ACCEPTED
+challenger:  [see 12 words] → mark any "I already know this" → replaced → confirm → PENDING
+challengee:  [see the 12]   → mark any "I already know this" → replaced → accept  → ACCEPTED
 ```
 
 * Marking a word **already learned** removes it and pulls the next word from the same
   ranked candidate list — the replacement runs through the identical logic, with every
   word already shown (and every word rejected) excluded.
+
+  **One strike = one round trip = one swapped tile, on BOTH sides.** `POST
+  /api/studyChallenges/strike` does the Mastered write and *then* draws the
+  replacement (that order matters — drawing first would rank the struck word straight
+  back in), and answers `{ replacement }`. The client splices that single word into
+  the struck slot; it never re-fetches the list, so the untouched nine tiles do not
+  re-render or reorder under the reviewer's thumb. The request carries the draw's
+  context: `friendUserId` + `variant` when issuing, `challengeId` when reviewing, plus
+  `exclude` — every word on screen plus every word struck this session. A `null`
+  replacement means the supply is exhausted; the slot is dropped and the set ships
+  short (§ 3.1), never refused.
+  Code: `StudyChallengeService.strikeWord` → `drawReplacement`;
+  `src/api/studyChallenges.ts` → `strikeChallengeWord`;
+  `src/features/studyChallenge/ChallengeReviewPage.tsx` → `handleStrike`.
+* **The words are drawn as the app's mini preview cards, not as text rows.** Both the
+  review screen and the detail page's word set render each word through
+  `ChallengeWordCard` inside the shared `MiniVocabCardGrid` — the same 92×132 thumbnail
+  `MiniVocabCard` (decks) and `QuickMarkCard` (Quick Mark) use, carrying the word +
+  pinyin (always via `ForeignText`), the **English lead gloss**, the
+  conversation-frequency badge and the icons8 icon. The English is not decoration: "do
+  I already know this word" cannot be answered from the characters alone, because a
+  learner may know a different sense of a word they recognise.
+
+  The strike button sits **below** the card, and the card itself is inert. Quick Mark
+  cycles its mark by tapping the thumbnail, but that mark is provisional until Save;
+  a strike here writes Mastered immediately and permanently, so it gets an explicit
+  labelled control that a mis-aimed tap on the word cannot trigger. On the detail page
+  the card is drawn with no button at all — after accept the set is settled (§ 3.3).
+  Code: `src/features/studyChallenge/ChallengeWordCard.tsx`;
+  `reviewWord.ts` (`ChallengeReviewWord`, the one shape a candidate and a stored word
+  both collapse into); geometry in `challengeStyles.ts` → `challengeWordCardHeight`.
+
 * **A rejection writes to that user's own card.** "I already know this" is a real
   statement about the learner's knowledge, so it does not stay inside the challenge: the
   word is promoted out of `Unfamiliar` on that user's account, which means it stops
@@ -465,9 +571,22 @@ challengee:  [see the 10]   → mark any "I already know this" → replaced → 
   reshape it. The **final** set is the one the challengee accepts; the challenger does
   not get a second veto. (Q7 — alternative is a round trip, which costs a day out of a
   one-week window and is probably not worth it.)
-* No word may repeat within the set, and the set is exactly 10 (`CHALLENGE_WORD_COUNT`).
 
-**There is no limit on strikes.** A player may reject all 10, and the 10 replacements
+  **The accepted set is the set that was on screen.** The accept body carries
+  `replacementWords` alongside `struckWords`, and the service honours the echo instead
+  of re-drawing inside the transaction — re-drawing would swap words out from under a
+  decision the challengee just made. It is a *verified* echo, not a trusted word list:
+  every word is re-resolved against the det (`findEntryIdByWord`, language-scoped) and
+  anything unresolvable, duplicated, or missing is topped up by a fresh
+  `buildCandidateSet` draw, which is also what an older client sending no replacements
+  falls back to. The issue path needs no echo: the candidate ranking is deterministic
+  (both-chose, then `frequencyScore`, then `id`), so "the top ten excluding what I
+  struck" rebuilds the shown list exactly. Code:
+  `StudyChallengeService.acceptChallenge`; `AcceptChallengeBody`
+  (`server/types/studyChallenge.ts`).
+* No word may repeat within the set, and the set is exactly 12 (`CHALLENGE_WORD_COUNT`).
+
+**There is no limit on strikes.** A player may reject all 12, and the 12 replacements
 after that, indefinitely. No cap, no "you have 3 left" copy, no special state — the
 mechanism polices itself, because **every strike writes Mastered onto the striker's own
 card**. Reshuffling toward an easier set costs you a permanently inflated mastery record
@@ -477,7 +596,8 @@ games the picker is the only one harmed by it.
 Two things this leaves the implementation responsible for:
 
 * The replacement query re-runs per strike against an ever-growing exclusion list, so it
-  must be **cheap and paged**, not a full re-rank of the candidate pool each time.
+  must be **cheap and paged**, not a full re-rank of the candidate pool each time. It
+  draws with `limit = 1` — one strike asks for one word, not for ten.
 * The supply can genuinely run out for a determined striker; when it does, the
   band-widening rule (§ 3.1) applies exactly as it does at first build, and if even that
   is exhausted the set is short — the same graceful degradation, never a refusal.
@@ -498,7 +618,7 @@ Atomically, in one transaction:
 
 ### Why `library` and not `provisional`
 
-Accepting a challenge **is** the sorting decision. Both players saw all ten words, were
+Accepting a challenge **is** the sorting decision. Both players saw all twelve words, were
 invited to strike any they already knew, and confirmed the rest — that is a stronger,
 more deliberate act of choosing than a discover swipe, so there is nothing left for a
 later "keep these cards?" prompt to ask. Handing them over as `provisional` would mean
@@ -599,7 +719,7 @@ entirely** when the user has no active challenge deck, exactly as the `Mastered`
 is when no reading/writing goal is set.
 
 **Each deck is named after the opponent — `vs Bob`** — because that is what the learner
-actually remembers about a set of ten words.
+actually remembers about a set of twelve words.
 
 **Duplicate names are allowed for challenge decks (Q30).** Two live challenges against
 the same friend in the same language may both be called `vs Bob`; they are distinguished
@@ -739,7 +859,7 @@ player's own cards, hardest-known first, before borrowing*:
    exhausted
 
 Within each band the order is the same as `default`'s tiebreak (commonality, then id).
-The contested 10 are removed from the pool first, so a contested word can never also
+The contested 12 are removed from the pool first, so a contested word can never also
 appear as filler. A player with a real library never reaches step 5; a brand-new player
 (Q47) reaches it immediately, which is exactly the never-block behaviour
 [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) already guarantees.
@@ -750,7 +870,7 @@ card — one they chose to sort — is still more familiar than a word the serve
 sight-unseen.
 
 `mastered-first` exists so the filler is *not* a source of difficulty: a challenge is
-meant to measure the 10 contested words, and padding the board with words the player
+meant to measure the 12 contested words, and padding the board with words the player
 has never seen would add noise (and, worse, would reward whoever got luckier filler).
 Filler the player already owns is near-free points for both sides — which is why filler
 is worth **20 points instead of 100** (§ 5.4).
@@ -759,20 +879,29 @@ The mode is a parameter on `ProvisionalCardService.ensureBaseline` / `lendCards`
 travels on the pool request as `?provisionMode=`. Every step degrades silently to the
 next, so no caller ever has to check whether a player has mastered cards.
 
-**All 10 contested words must appear in every round.** Filler pads the board out to the
-game's natural size; it never displaces a contested word. This is what makes the
+**All 12 contested words must appear in every round.** Filler pads the board out to the
+game's natural size; it never displaces a contested word.
+
+> ⚠️ **WORD SEARCH'S BOARD IS BUILT FOR 10 AND MUST GROW TO 12 IN CHALLENGE MODE.**
+> `TOTAL_WORDS` (`src/games/word-search/constants.ts`) is derived as half the Bubble
+> Match distribution and sums to 10, so at `CHALLENGE_WORD_COUNT = 12` (raised from 10
+> on 2026-08-17) a normal grid physically cannot hold the set. The round runner is not
+> built yet, so this is an obligation ON that build, not a live defect: a challenge-mode
+> Word Search grid takes its target-word count from `CHALLENGE_WORD_COUNT`, not from
+> `TOTAL_WORDS`, and the distribution is scaled to it. Bubble Match (20) and Match
+> Speed (rolling buffer) are unaffected. This is what makes the
 contested ceiling of 1000 points real in all three games and what makes the rounds
 comparable to each other — a game whose natural board is smaller than 10 must run
 longer in challenge mode rather than drop words. The one deliberate exception is Match
 Speed, whose rolling buffer expresses this as an alternation rule instead (§ 5.3), and
-whose alternation lapses to filler only once **all 10 have been dealt**.
+whose alternation lapses to filler only once **all 12 have been dealt**.
 
 **Vocabulary (settled).** The cards a challenge game pads with are not "provisional" in
 the lending sense — they are usually the player's own mastered cards. So:
 
 | Term | Means |
 |---|---|
-| **contested** | one of the challenge's 10 words — what the challenge is actually measuring |
+| **contested** | one of the challenge's 12 words — what the challenge is actually measuring |
 | **filler** | every other card on the board, whatever its origin |
 | **provisional** | reserved for its existing meaning: a card the server *lent* (`starterPackBucket = 'provisional'`) |
 
@@ -783,7 +912,7 @@ Filler is often provisional and often not; the scoring tables below key on
 
 Match Speed deals from a rolling buffer rather than a fixed board, so it needs an
 explicit challenge mode: **every other pair filled must be a contested (non-filler)
-pair.** With 10 contested words and a 30-second run this keeps contested words on the
+pair.** With 12 contested words and a 30-second run this keeps contested words on the
 board continuously without letting the board become 100% contested (which would
 exhaust the set in the first few seconds).
 
@@ -791,10 +920,10 @@ exhaust the set in the first few seconds).
 run is filler.** Contested words are **not** recycled back into the buffer.
 
 The consequence is deliberate and worth stating: Match Speed's contested scoring has a
-hard ceiling of **1000 points** (10 × 100), and a player who clears the set early spends
+hard ceiling of **1200 points** (12 × 100), and a player who clears the set early spends
 the rest of the run earning 20s. That makes *clearing the set* the goal of the round
-rather than raw taps-per-second — the challenge is a measure of the ten words, so once
-the ten words are answered the round has already said what it was built to say.
+rather than raw taps-per-second — the challenge is a measure of the twelve words, so once
+those twelve are answered the round has already said what it was built to say.
 
 It also means the two players' Match Speed scores converge near the top of the range,
 which is the intended shape: past a certain point the round stops separating them and
@@ -844,7 +973,7 @@ Per-game rules as specified:
 | bonus if the run is **lost** | **0** |
 
 > **The bonus is deliberately large and deliberately all-or-nothing (Q68).** At up to
-> +500 against +1000 for ten contested matches, surviving is worth roughly a third of the
+> +500 against +1200 for twelve contested matches, surviving is worth roughly a third of the
 > round, and losing forfeits it entirely. That is not an imbalance to tune away: Bubble
 > Match *is* a survival game, and a challenge score that ignored whether the player
 > survived would be scoring a different game than the one they played. The cliff is also
@@ -860,12 +989,12 @@ Per-game rules as specified:
 | hint used | **−20 each** |
 
 > **Why Word Search gets the contested/filler split too**, despite the original spec
-> stating a flat 100: its grid needs ten words with **mutually distinct characters**
-> ([WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) § 2), and an arbitrary set of ten
-> contested words will not reliably satisfy that. The generator substitutes, so filler
-> *does* reach a challenge grid — and at a flat rate a player whose set forced four
-> substitutions is paid full price for four easy words. When all ten place cleanly the
-> split is invisible, so it costs nothing and covers the case that will actually occur.
+> stating a flat 100: its grid needs words with **mutually distinct characters**
+> ([WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) § 2), and an arbitrary contested set
+> will not reliably satisfy that. The generator substitutes, so filler *does* reach a
+> challenge grid — and at a flat rate a player whose set forced four substitutions is
+> paid full price for four easy words. When the whole set places cleanly the split is
+> invisible, so it costs nothing and covers the case that will actually occur.
 
 Notes and open items:
 
@@ -940,7 +1069,7 @@ same recognition track that a match in a casual Bubble Match run would. The comp
 is a study session that happens to be scored twice — once for mastery, once for the
 challenge.
 
-**The board looks completely normal, too (Q74).** The ten contested words are **not
+**The board looks completely normal, too (Q74).** The twelve contested words are **not
 marked, highlighted, or distinguished in any way** during play — no glow, no accent, no
 pre-round "these are the ones that count" list. The contested/filler split is invisible
 until the results screen.
@@ -960,7 +1089,7 @@ Three reasons, in order of weight:
 Design consequences, stated so nobody is surprised by them later:
 
 * **Contested words gain mastery during the test.** A player can walk out of a challenge
-  with several of the ten words banded up. That is the feature working, not a leak.
+  with several of the twelve words banded up. That is the feature working, not a leak.
 * **A word can cross into Mastered mid-test.** Banding is a service-layer compute over
   `typedMarkHistory`, so round 3 may see a word that was Unfamiliar in round 1. Nothing
   in the scoring reads the band — contested/filler is fixed when the round's board is
@@ -1168,7 +1297,7 @@ have no such band. Different-word mode drops the shared set so each plays at the
 edge — the contest is "who studied harder this week", not "who is further along".
 
 That purpose settles the fairness question. **Scores are compared raw, with no
-normalisation** by level or by the set's mean `frequencyScore`: each player's 10 words
+normalisation** by level or by the set's mean `frequencyScore`: each player's 12 words
 are hard *for them*, which is the whole premise. Adding a handicap would re-introduce
 exactly the level comparison the mode exists to avoid.
 
@@ -1176,7 +1305,7 @@ Identical in every respect except word selection, and therefore in language scop
 
 | | Same-word | Different-word |
 |---|---|---|
-| Word set | one shared set of 10 | one set of 10 **per player** |
+| Word set | one shared set of 12 | one set of 12 **per player** |
 | Who picks | challenger proposes, challengee revises, both accept the result | **each player picks their own**, from their own pool |
 | Candidate pool | level band spanning both players; excludes words *either* knows | **the same algorithm**, run per player: their own level, excluding words *that player* knows |
 | Language | must match | **may differ** (zh vs es), live mode included |
@@ -1233,7 +1362,7 @@ characters.
 
 ### 8.4 Settled here
 
-* **Q27 — Set size is fixed at 10** (`CHALLENGE_WORD_COUNT`), not a choice. Set size
+* **Q27 — Set size is fixed at 12** (`CHALLENGE_WORD_COUNT`, raised from 10 on 2026-08-17), not a choice. Set size
   determines how many points are available, so both players must use the same number
   anyway — making it selectable would add a negotiation to buy nothing. It is a constant,
   so it can be changed globally later without a schema or protocol change.
@@ -1255,14 +1384,14 @@ numbers start at **147**. 145 is the `user_languages` rename and **146 is taken*
 object the table represents. Everything that is a property of *the challenge* lives on
 the challenge — including the word sets, the round scores and the generated deck ids, as
 jsonb — rather than being scattered across the vet and deck tables as foreign
-bookkeeping. This is safe because a challenge is **bounded**: exactly 2 players, 10 words
+bookkeeping. This is safe because a challenge is **bounded**: exactly 2 players, 12 words
 each, 3 rounds each, then it is finished forever. Unbounded collections would still
 deserve their own table.
 
 ### `study_challenges` — the only new table
 
 The whole feature is **one table**. A challenge is a small, bounded, self-contained
-object: two players, ten words each, three rounds each, one outcome. Everything about it
+object: two players, twelve words each, three rounds each, one outcome. Everything about it
 is intrinsic to it, so everything lives on it.
 
 | Column | Type | Notes |
@@ -1273,10 +1402,11 @@ is intrinsic to it, so everything lives on it.
 | `challengerLanguage` / `challengeeLanguage` | varchar(8) | equal unless cross-language |
 | `status` | varchar(16) | `pending \| accepted \| declined \| expired \| complete \| no_contest`. There is **no** "accepted but unpicked" state — see § 8.2 |
 | `gameSequence` | jsonb | the 3 chosen game ids **in order**, drawn once, shared |
-| `words` | jsonb | **each player's 10 words**, keyed by user id — see below |
+| `words` | jsonb | **each player's 12 words**, keyed by user id — see below |
 | `rounds` | jsonb | **each player's played rounds**, keyed by user id — see below |
 | `presetDeckIds` | jsonb | `{ "<userId>": <deckId>, ... }` — the generated decks to drop on cleanup (§ 4) |
-| `issuedAt` | timestamptz | the UTC anchor every local boundary is derived from |
+| `issuedAt` | timestamptz | when it was sent; a log field, not a boundary anchor |
+| `weekIndex` | integer | **the week identity** — whole weeks since Monday 2026-01-05 00:00 UTC, and what every local boundary is derived from. Third column of `study_challenges_pair_week_uniq`. See § 2 "The week is a global counter" and Q77 (migration 150; shipped in 148 as a per-challenger `weekStart` timestamptz, which did not collide across timezones) |
 | `acceptedAt`, `completedAt` | timestamptz null | |
 | `winnerUserId` | uuid null | null for draw / no contest |
 
@@ -1303,7 +1433,7 @@ sharply because it is the one place they could:
 
 | Question | Source of truth |
 |---|---|
-| **Which 10 words is this challenge about?** | `study_challenges.words` — always, forever |
+| **Which 12 words is this challenge about?** | `study_challenges.words` — always, forever |
 | **Is this word in the user's library?** | the **vet row** — always |
 
 `vocabEntryId` is a **convenience pointer, never an identity and never a claim of
@@ -1322,7 +1452,7 @@ and nothing needs repairing.
 separate lookups and they resolve in a fixed order:
 
 1. **Which words** — `study_challenges.words`, and only ever that. Never a vet query,
-   never a deck query. This is what guarantees all 10 appear on every board (§ 5.2)
+   never a deck query. This is what guarantees all 12 appear on every board (§ 5.2)
    regardless of the state of anyone's library.
 2. **What each word looks like** — hydrate from the player's own **vet row** first,
    falling back to the **det row** when there is no vet row.
@@ -1570,7 +1700,7 @@ incoming requests.
 | Q16 | Tie | **draw**, no hidden tiebreak |
 | Q17 | `expired` vs `no_contest` | **distinct** — expired never had an agreed set or decks |
 | Q25 | Challenger's set on decline | **discarded**; no deck before `accepted`. Mastered writes made while reviewing persist |
-| Q27 | Set size | **fixed 10** (`CHALLENGE_WORD_COUNT`) — size changes the points available, so it must be equal anyway |
+| Q27 | Set size | **fixed 12** (`CHALLENGE_WORD_COUNT`; 10 until 2026-08-17) — size changes the points available, so it must be equal anyway |
 | Q29 | Who chooses the variant | **the challenger**, stated in the invitation. Cross-language pairs are offered different-word only |
 
 | Q8 | Bucket for materialised contested words | **`library`** — accepting the set *is* the sorting decision; see § 3.3 |
@@ -1582,7 +1712,7 @@ incoming requests.
 | Q36 | Study the challenge deck before Friday | **yes, that is the point** — and this *revised Q9*: the deck drops **when that player finishes the test**, else at their window close (§ 4) |
 | Q37 | Score authority | **client reports, server stores** — unverifiable by design, upgradeable to event-based later (§ 5.6) |
 | Q44 | Cap on "already learned" strikes | **none** — every strike writes Mastered to the striker's own card, so it is self-policing (§ 3.2) |
-| Q45 | Challenge round length / filler ladder | **all 10 contested words appear in every round**; filler descends **Mastered → Comfortable → Target → Unfamiliar → lent** (§ 5.2) |
+| Q45 | Challenge round length / filler ladder | **all 12 contested words appear in every round**; filler descends **Mastered → Comfortable → Target → Unfamiliar → lent** (§ 5.2) |
 | Q46 | Withdraw, decline, and challenge spam | **withdraw** (row deleted) + **decline** (blocks the pair until next Monday) + a per-pair **"no challenges" block**: two booleans on `friendships`, either one suppresses challenges both ways (§ 1) |
 | Q52 | Shape of the data model | **one table** — words, rounds and deck ids are jsonb on `study_challenges`; nothing about a challenge is stored on `vet` or `decks` (§ 9) |
 | Q53 | Race on the shared `rounds` jsonb | **one DAL function, one statement** — `jsonb_set` with an `IS NULL` path guard; no ETag/version column, which would solve a round-trip problem this shape does not have (§ 9) |
@@ -1592,7 +1722,7 @@ incoming requests.
 | Q57 | Setting the block mid-challenge | **only blocks new challenges** — the in-flight one plays out. Keeps a one-tap toggle from becoming an escape hatch; unfriending remains the hard exit (§ 1) |
 | Q58 | A game is removed while challenges hold its id | **a scheduling rule, not runtime handling** — retire it from the challenge-eligible pool a week before deleting it. Written into [GAMES_FEATURE.md](./GAMES_FEATURE.md) |
 | Q59 | Account deletion mid-challenge | **let it cascade** — the challenge row and its history vanish for both sides, matching how `friendships` already treats a deleted account (§ 9) |
-| Q27 | Set size | **fixed at 10** (`CHALLENGE_WORD_COUNT`) — a constant, not a choice (§ 8.4) |
+| Q27 | Set size | **fixed at 12** (`CHALLENGE_WORD_COUNT`; 10 until 2026-08-17) — a constant, not a choice (§ 8.4). Raising it is one edit plus copy, but it moves the per-round contested ceiling (12 × 100 = 1200) and obliges Word Search's challenge grid to hold 12 (§ 5.2) |
 | Q60 | Where the time-triggered work runs | **a third step in the hourly `cow-maintenance` unit**, not a new schedule; four passes, including a sweep for preset decks orphaned by Q59's cascade (§ 9) |
 | Q61 | Testing a week-long, cron-driven feature | **test on prod** — it has no users yet and is effectively a PPE. No dev-only clock offset and no trigger endpoints (§ 9) |
 | Q62 | Who chooses the variant | **the challenger**, stated in the invitation; cross-language pairs get different-word only (§ 8.4) |
@@ -1610,6 +1740,7 @@ incoming requests.
 | Q38 | Which language a same-word challenge uses | the **challenger's active language**; the challenges page is language-scoped, so the challengee must be in that language to see it (§ 1) |
 | Q48 | How a challenge is announced | **in-app badge chain only** — no push, no email; a player who never opens the app in the window misses it, and the badge must ignore language scoping (§ 1) |
 | Q49 | Word identity of a challenge word | **`(language, word1)` denormalised**, no det FK — det ids are not stable across data deploys (§ 9) |
+| Q49a | How a stored challenge word gets the fields it DRAWS with | **Resolved late, on the read path.** `StudyChallengeService.toSummary` calls `IStudyChallengeDAL.findDisplayFieldsByWords` once per challenge and attaches `pronunciation`, `definition` (the lead gloss), `frequencyScore`, `iconId` and `dictionaryEntryId` to each `ChallengeWord` in the payload. They are read-path fields only — never written to the `words` jsonb, which stays identity-only per Q49 — and all are absent for a word whose det row has gone away, which draws as a bare word rather than failing the read. Without them the challengee's review screen shows characters with no pinyin and no English while the challenger's identical screen (built from candidates) shows both, and "do I already know this word" is not answerable from the characters alone. (Was `findPronunciationsByWords`, pinyin only, until the review screen moved to mini preview cards.) |
 | Q50 | Player's timezone changes mid-challenge | **live** — always the current `users.timezone`, nothing snapshotted; a window may move, and closing early yields `no_contest`, never a loss (§ 2) |
 | Q51 | Reward for winning | **none** — crown only. Rounds already pay normal minute points, and any payout is farmable by colluding friends (§ 6) |
 | Q30 | Deck-name collisions | **allow duplicates** — the owning challenge distinguishes them internally, the friend's icon visually. Requires making `decks_user_language_name_uniq` partial (`WHERE "editMode" = 'custom'`) (§ 4) |
@@ -1617,8 +1748,9 @@ incoming requests.
 | Q18 | How long the inviter waits in the live waiting room | **1 minute**, plus an always-available Cancel; on expiry the inviter returns to the challenge screen and does **not** fall back to async. Retry is free and unlimited ([live doc](./STUDY_CHALLENGE_LIVE.md) § 5) |
 | Q19 | Live-mode transport | **WebSocket** at `/api/ws` — nginx already forwards the upgrade, one backend container means in-process rooms ([live doc](./STUDY_CHALLENGE_LIVE.md) § 2) |
 | Q20 | Desertion mid-round | **no grace period at all** — the game continues and banks what the absent player had. Makes live the one exception to § 5.8's pause rule ([live doc](./STUDY_CHALLENGE_LIVE.md) § 6) |
-| Q74 | Are the 10 contested words visible during play? | **No** — the board is completely normal, no marking and no pre-round list. Keeps filler words played at full effort (they write real marks), costs three game pages nothing, and follows from § 5.7's own premise |
+| Q74 | Are the 12 contested words visible during play? | **No** — the board is completely normal, no marking and no pre-round list. Keeps filler words played at full effort (they write real marks), costs three game pages nothing, and follows from § 5.7's own premise |
 | Q75 | Word Search's per-second penalty under the pause rule | **it pauses with the clock** — and the audit found it **already does**: Word Search is the only game that listens for `visibilitychange` today. Its `pauseTimer`/`resumeTimer` pair is the reference the other three generalise from (§ 5.8) |
+| Q77 | What identifies a challenge's WEEK | **an integer counter — whole weeks since Monday 2026-01-05 00:00 UTC** (`study_challenges."weekIndex"`, migration 150), not a per-challenger instant. Decided 2026-08-17 after the timestamptz version let a crossing cross-timezone pair create two challenges in one week. The counter has no timezone parameter ON PURPOSE: a week identity that varies by who is asking cannot be a unique index. Accepted cost: the ISSUE window rolls at Monday 00:00 UTC rather than each player's local Monday 04:00 (≤4h late in Shanghai, ≤11h early in Los Angeles). Deadlines are untouched and stay per-player local — they are derived from the index's Monday DATE plus each player's own zone (`weekBoundary`, `server/shared/challengeWeek.ts`; the same arithmetic as `DATE '2026-01-05' + 7 * "weekIndex" + N` in the cron SQL). The epoch is duplicated in three files and is called out in all three. Pinned by `server/__tests__/challengeWeek.test.ts`. |
 | Q76 | Where contested/filler scoring rules live | **a declarative `ChallengeScoringSpec` on `GameDef`** applied by a shared runner, not a per-game callback or a self-reported total. Only a declarative form lets live mode score the same events server-side without the game page existing (§ 5.4) |
 | Q21 | Live invite delivery with no push infrastructure | **not needed** — a permanent waiting-room entrance is the mechanism; the ping (banner, or push under Capacitor) only widens discovery and is capped at one per day per (sender, target) ([live doc](./STUDY_CHALLENGE_LIVE.md) § 4) |
 

@@ -21,6 +21,12 @@ their own continent as they earn.
 > templates tiled together — see [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)
 > (DESIGN stage).
 
+> **Visiting someone else's market:** `/night-market/user/:userId`, reached from the
+> profile page — see [USER_PROFILE_PAGE.md](./USER_PROFILE_PAGE.md) § Night market visit.
+> It is a SEPARATE page (`NightMarketVisitPage`) from the owner's, not a mode of it, and
+> the layout read takes `{ seedIfEmpty: false }` so a visitor never materialises a hub in
+> somebody else's account.
+
 > **Terrain throughput at scale:** zoomed-out ground can be served from a cache of
 > pre-rasterised 256×256 chunks instead of per-cell sprites, so terrain cost stops
 > scaling with market size — see

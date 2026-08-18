@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Box, Button, Typography } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
-import CloseIcon from "@mui/icons-material/Close";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
-import ForeignText from "../../components/ForeignText";
+import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import {
     acceptChallenge,
     declineChallenge,
@@ -14,8 +13,8 @@ import {
     issueChallenge,
     strikeChallengeWord,
 } from "../../api/studyChallenges";
-import type { ChallengeCandidate, ChallengeSummary } from "../../api/studyChallenges";
-import type { ChallengeVariant, Language } from "../../types";
+import type { ChallengeSummary } from "../../api/studyChallenges";
+import type { ChallengeVariant, VocabEntry } from "../../types";
 import { CHALLENGE_WORD_COUNT } from "../../types";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -24,7 +23,10 @@ import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { acceptByLabel, challengeErrorMessage } from "./challengeLabels";
-import { challengeCardSx, challengeMessageSx, challengeMutedSx, wordTileSx } from "./challengeStyles";
+import { challengeCardSx, challengeMessageSx, challengeMutedSx, challengeWordCardHeight } from "./challengeStyles";
+import ChallengeWordCard from "./ChallengeWordCard";
+import { candidateToReviewWord, storedWordToReviewWord } from "./reviewWord";
+import type { ChallengeReviewWord } from "./reviewWord";
 
 /**
  * The word-set review flow (docs/STUDY_CHALLENGE.md § 3.2) — ONE screen for BOTH
@@ -56,58 +58,57 @@ function ChallengeReviewPage() {
     const { isAuthenticated } = useAuth();
 
     const [challenge, setChallenge] = useState<ChallengeSummary | null>(null);
-    const [candidates, setCandidates] = useState<ChallengeCandidate[]>([]);
+    /**
+     * The list the page draws — ONE state for both flows, and the only source the
+     * tiles read.
+     *
+     * It is loaded once and then edited IN PLACE by `handleStrike`: a strike swaps
+     * exactly the struck tile for the replacement the server just named. The list is
+     * never re-fetched on a strike, because a reload would re-render all ten rows and
+     * could reorder the untouched nine under the reviewer's thumb.
+     */
+    const [words, setWords] = useState<ChallengeReviewWord[]>([]);
     const [struck, setStruck] = useState<string[]>([]);
+    /**
+     * The replacements the server handed back, in the order it handed them back.
+     *
+     * Reviewing only: the accept call echoes these so the set that is COMMITTED is
+     * the set that was on screen. Issuing does not need them — the issue call rebuilds
+     * the same ranked prefix from `struck` alone.
+     */
+    const [replacements, setReplacements] = useState<string[]>([]);
     const [variant] = useState<ChallengeVariant>("same_word");
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     /**
-     * The word list the page draws.
+     * Load the initial ten.
      *
      * Issuing reads CANDIDATES (there is no challenge yet); reviewing reads the
      * challenge's own stored words — which is the rule from § 9, Q55: the LIST always
      * comes from the challenge, never from a vet or deck query. That is what guarantees
      * both players see the same ten regardless of the state of anyone's library.
+     *
+     * Keyed on isAuthenticated + the route ids, never on `token` — and NEVER on
+     * `struck`, which is what used to make a strike reload the whole list.
      */
-    const words: { word1: string; language: Language; pronunciation: string | null; definition: string | null; dictionaryEntryId: number | null }[] =
-        isIssuing
-            ? candidates.map((c) => ({ ...c, dictionaryEntryId: c.dictionaryEntryId }))
-            : (challenge?.words ?? [])
-                // WHEN REPLACEMENTS APPEAR DIFFERS BETWEEN THE TWO FLOWS, and the UI
-                // must not pretend otherwise. Issuing re-asks the server per strike, so
-                // a replacement slides in immediately. Reviewing cannot: the server
-                // computes the challengee's replacements inside the ACCEPT transaction
-                // (§ 3.3), so here a struck word simply disappears and the count below
-                // says how many will be drawn. Faking a replacement client-side would
-                // show a word the server may not choose.
-                .filter((w) => !struck.includes(w.word1))
-                .map((w) => ({
-                    word1: w.word1,
-                    language: w.language,
-                    // A stored challenge word carries no pronunciation or gloss — the
-                    // challenge stores identity only (Q49). The tile renders the word
-                    // itself, which is what the reviewer is judging.
-                    pronunciation: null,
-                    definition: null,
-                    dictionaryEntryId: null,
-                }));
-
-    /** How many words the accept will replace — reviewing only (see the filter above). */
-    const pendingReplacements = isIssuing ? 0 : struck.length;
-
-    // Keyed on isAuthenticated + the route ids, never on `token`.
     useEffect(() => {
         let cancelled = false;
         setLoading(true);
 
         const load = isIssuing
-            ? fetchChallengeCandidates(friendUserId!, variant, struck).then((list) => {
-                if (!cancelled) setCandidates(list);
+            ? fetchChallengeCandidates(friendUserId!, variant).then((list) => {
+                if (!cancelled) setWords(list.map(candidateToReviewWord));
             })
             : fetchChallenge(challengeId!).then((result) => {
-                if (!cancelled) setChallenge(result);
+                if (cancelled) return;
+                setChallenge(result);
+                // The challenge stores identity only (Q49); the server resolves the det
+                // display fields on the way out, so a stored word carries the same
+                // pinyin, English, frequency and icon a candidate does and draws through
+                // the same card.
+                setWords(result.words.map(storedWordToReviewWord));
             });
 
         load
@@ -118,40 +119,67 @@ function ChallengeReviewPage() {
             .finally(() => { if (!cancelled) setLoading(false); });
 
         return () => { cancelled = true; };
-        // `struck` is a dependency on purpose for the issuing case: each strike re-asks
-        // the server for a replacement, which is the § 3.2 replacement loop. It is a
-        // cheap, paged query rather than a re-rank of the whole pool.
-    }, [isAuthenticated, isIssuing, friendUserId, challengeId, variant, struck]);
+    }, [isAuthenticated, isIssuing, friendUserId, challengeId, variant]);
 
     /**
-     * Strike a word. Two writes, in this order, and the order matters: the Mastered
-     * write must land BEFORE the replacement is requested, or the server would rank
-     * the same word straight back in.
+     * Strike a word — IDENTICAL ON BOTH SIDES (§ 3.2).
+     *
+     * One round trip does two things in a fixed order: it writes Mastered to the
+     * striker's own card, and only then draws the replacement — drawing first would
+     * rank the very word being struck straight back in. The response is that one
+     * replacement, which is spliced into the struck word's slot so the other nine
+     * tiles never move.
+     *
+     * The exclusion set is everything currently on screen plus everything struck this
+     * session, so a replacement can never duplicate a visible word.
      */
-    const handleStrike = useCallback(async (word: { word1: string; dictionaryEntryId: number | null }) => {
+    const handleStrike = useCallback(async (word: ChallengeReviewWord) => {
         if (busy) return;
         setBusy(true);
         try {
+            const exclude = [...words.map((w) => w.word1), ...struck];
             // Pass whichever handle this side holds: the challenger has the candidate's
             // det id, the challengee has only the stored word. The server resolves the
-            // latter, so BOTH sides can strike (§ 3.2).
-            await strikeChallengeWord(
+            // latter, so BOTH sides can strike.
+            const replacement = await strikeChallengeWord(
                 word.dictionaryEntryId
                     ? { dictionaryEntryId: word.dictionaryEntryId }
-                    : { word1: word.word1 }
+                    : { word1: word.word1 },
+                isIssuing
+                    ? { friendUserId, variant, exclude }
+                    : { challengeId, exclude }
             );
-            // Adding to `struck` re-runs the load effect, which asks for a replacement
-            // excluding everything already shown or struck.
+
             setStruck((prev) => [...prev, word.word1]);
+            setWords((prev) => {
+                const index = prev.findIndex((w) => w.word1 === word.word1);
+                if (index < 0) return prev;
+                // No replacement means the discoverable supply is exhausted — the slot
+                // is dropped and the set ships short, which § 3.1 prefers to refusing.
+                if (!replacement) return prev.filter((_, i) => i !== index);
+                const next = [...prev];
+                next[index] = candidateToReviewWord(replacement);
+                return next;
+            });
+            if (replacement) setReplacements((prev) => [...prev, replacement.word1]);
             setError(null);
         } catch (err: unknown) {
             setError(challengeErrorMessage(err, "Could not mark that word as known"));
         } finally {
             setBusy(false);
         }
-    }, [busy]);
+    }, [busy, words, struck, isIssuing, friendUserId, challengeId, variant]);
 
-    /** The final confirm — the tap that actually creates or accepts the challenge. */
+    /**
+     * The final confirm — the tap that actually creates or accepts the challenge.
+     *
+     * ONLY THE ACCEPT ECHOES ITS REPLACEMENTS. Issuing does not need to: the
+     * candidate query is a deterministic ranking (both-chose, then frequency, then
+     * det id), so "the top ten excluding what I struck" — what `issueChallenge`
+     * rebuilds from `struck` alone — is exactly the list on screen. A stored set has
+     * no such ranking to rebuild from, so the challengee's replacements travel with
+     * the accept.
+     */
     const handleConfirm = useCallback(async () => {
         if (busy) return;
         setBusy(true);
@@ -159,7 +187,7 @@ function ChallengeReviewPage() {
             if (isIssuing) {
                 await issueChallenge(friendUserId!, variant, struck);
             } else {
-                await acceptChallenge(challengeId!, struck);
+                await acceptChallenge(challengeId!, struck, replacements);
             }
             slideNavigate("/friends/challenges");
         } catch (err: unknown) {
@@ -167,7 +195,7 @@ function ChallengeReviewPage() {
         } finally {
             setBusy(false);
         }
-    }, [busy, isIssuing, friendUserId, challengeId, variant, struck, slideNavigate]);
+    }, [busy, isIssuing, friendUserId, challengeId, variant, struck, replacements, slideNavigate]);
 
     /**
      * Decline (challengee only). Ends the invitation explicitly rather than letting it
@@ -187,6 +215,41 @@ function ChallengeReviewPage() {
             setBusy(false);
         }
     }, [busy, challengeId, slideNavigate]);
+
+    /**
+     * MiniVocabCardGrid takes VocabEntry[] and hands each entry back to `renderCard`.
+     * A challenge word is NOT a vet row (it becomes one only on accept, § 3.3), so —
+     * exactly as Quick Mark does with a DiscoverCard — the list is cast for the grid
+     * and the real word is looked up by `word1` in `renderCard`.
+     *
+     * `id` is the det id where there is one, falling back to the word's index: the
+     * grid only uses it as a React key, and a word whose det row has gone away still
+     * has to draw.
+     */
+    const gridEntries = useMemo(
+        () => words.map((w, index) => ({
+            id: w.dictionaryEntryId ?? index,
+            entryKey: w.word1,
+        })) as unknown as VocabEntry[],
+        [words]
+    );
+
+    const renderCard = useCallback(
+        (entry: VocabEntry, _index: number, animationDelayMs?: number) => {
+            const word = words.find((w) => w.word1 === entry.entryKey);
+            if (!word) return null;
+            return (
+                <ChallengeWordCard
+                    key={word.word1}
+                    word={word}
+                    onStrike={handleStrike}
+                    disabled={busy}
+                    animationDelayMs={animationDelayMs}
+                />
+            );
+        },
+        [words, handleStrike, busy]
+    );
 
     const title = isIssuing ? "New Challenge" : "Review Words";
 
@@ -220,47 +283,19 @@ function ChallengeReviewPage() {
                     <Typography className="challenge-review-page__error" sx={challengeMessageSx}>{error}</Typography>
                 )}
 
-                {loading ? (
-                    <Typography className="challenge-review-page__loading" sx={challengeMutedSx}>Loading…</Typography>
-                ) : (
-                    <Box className="challenge-review-page__words" sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-                        {words.map((word, index) => (
-                            <Box key={`${word.word1}-${index}`} className="challenge-review-page__word" sx={wordTileSx}>
-                                <Box sx={{ flex: 1, minWidth: 0 }}>
-                                    {/* Foreign text ALWAYS goes through ForeignText — it is the
-                                        public container that decides cpcd vs plain Latin text
-                                        per language. Never render a foreign word directly. */}
-                                    <ForeignText
-                                        text={word.word1}
-                                        pronunciation={word.pronunciation}
-                                        language={word.language}
-                                        size="sm"
-                                    />
-                                    {word.definition && (
-                                        <Typography sx={{ ...challengeMutedSx, fontSize: SIZE.micro }}>
-                                            {word.definition}
-                                        </Typography>
-                                    )}
-                                </Box>
-                                <Button
-                                    className="challenge-review-page__strike"
-                                    onClick={() => handleStrike({ word1: word.word1, dictionaryEntryId: word.dictionaryEntryId })}
-                                    disabled={busy}
-                                    startIcon={<CloseIcon sx={{ fontSize: 16 }} />}
-                                    sx={{
-                                        textTransform: "none",
-                                        fontFamily: FONTS.sans,
-                                        fontSize: SIZE.micro,
-                                        color: COLORS.textSecondary,
-                                        whiteSpace: "nowrap",
-                                    }}
-                                >
-                                    I know this
-                                </Button>
-                            </Box>
-                        ))}
-                    </Box>
-                )}
+                <MiniVocabCardGrid
+                    containerClassName="challenge-review-page__words"
+                    classPrefix="challenge-review-page"
+                    loading={loading}
+                    entries={gridEntries}
+                    emptyMessage="No words are available for this challenge right now."
+                    onCardClick={() => {}}
+                    renderCard={renderCard}
+                    cardHeightPx={challengeWordCardHeight(true)}
+                    // The list is exactly ten, so there is nothing to pace: render them
+                    // all and let the first cards fan in.
+                    staggerReveal
+                />
 
                 {/* The consequence of a strike, stated at the moment it can be tapped.
                     § 3.2 flags exactly this as the thing to watch after launch: the
@@ -268,16 +303,8 @@ function ChallengeReviewPage() {
                     invisible. If mastery data starts looking inflated, this copy is the
                     fix — not a cap. */}
                 <Typography className="challenge-review-page__strike-note" sx={{ ...challengeMutedSx, fontSize: SIZE.micro }}>
-                    "I know this" marks the word Mastered on your own cards and swaps in another word.
+                    "I know it" marks that word Mastered on your own cards and swaps in another word.
                 </Typography>
-
-                {pendingReplacements > 0 && (
-                    <Typography className="challenge-review-page__pending-replacements" sx={{ ...challengeMutedSx, fontSize: SIZE.micro }}>
-                        {pendingReplacements === 1
-                            ? "1 replacement word will be drawn when you accept."
-                            : `${pendingReplacements} replacement words will be drawn when you accept.`}
-                    </Typography>
-                )}
 
                 <Box className="challenge-review-page__actions" sx={{ display: "flex", gap: 1 }}>
                     <Button

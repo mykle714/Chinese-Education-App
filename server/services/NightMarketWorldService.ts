@@ -93,7 +93,17 @@ export class NightMarketWorldService {
    * ~45 sequential queries; it is now a handful regardless of size. Keep it that way — an `await`
    * added inside a loop here is a latency regression that scales with how much a user has played.
    */
-  async getUserLayout(userId: string, language: string): Promise<UserLayoutResponse> {
+  async getUserLayout(
+    userId: string,
+    language: string,
+    options: { seedIfEmpty?: boolean } = {}
+  ): Promise<UserLayoutResponse> {
+    // VISITOR READS MUST NOT WRITE. When one user opens another's market
+    // (docs/USER_PROFILE_PAGE.md § Night market visit) the seeding branch below is
+    // suppressed: seeding is a write, and a stranger's page view must never
+    // materialise a hub in someone else's world. A visited market with no placements
+    // simply comes back empty and the client says so.
+    const seedIfEmpty = options.seedIfEmpty !== false;
     // Independent reads — issue them together rather than stacking two round trips.
     let [placements, occupants] = await Promise.all([
       this.placementDAL.findPlacementsByUser(userId, language),
@@ -108,7 +118,7 @@ export class NightMarketWorldService {
     // answered above, so the previous `seedHubIfAbsent` pre-check was a query on EVERY layout
     // read to detect a condition that is true at most once per (user, language). The extra
     // re-read below is paid only on that one first load.
-    if (placements.length === 0) {
+    if (placements.length === 0 && seedIfEmpty) {
       await this.seedHubPlacement(userId, language);
       placements = await this.placementDAL.findPlacementsByUser(userId, language);
     }

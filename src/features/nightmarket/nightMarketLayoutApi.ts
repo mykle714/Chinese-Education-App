@@ -46,10 +46,17 @@ export interface UserLayoutResponse {
  * re-creating the caller (CLAUDE.md token rule) — callers must key their load effect on a
  * stable auth identity plus the language, never on `token`.
  */
-export async function loadUserLayout(language: string): Promise<PlacedTemplatePayload[]> {
-  const data = await apiGet<UserLayoutResponse>(
-    `/api/nightMarket/layout?language=${encodeURIComponent(language)}`,
-  );
+export async function loadUserLayout(
+  language: string,
+  visitedUserId?: string | null,
+): Promise<PlacedTemplatePayload[]> {
+  // VISIT MODE. With a `userId` the server renders THAT account's market, in THEIR
+  // language (so the `language` argument is ignored server-side), and suppresses the
+  // first-load hub seeding — a visitor's page view must never write to someone else's
+  // world. See docs/USER_PROFILE_PAGE.md § Night market visit.
+  const params = new URLSearchParams({ language });
+  if (visitedUserId) params.set('userId', visitedUserId);
+  const data = await apiGet<UserLayoutResponse>(`/api/nightMarket/layout?${params}`);
   return data.layout ?? [];
 }
 

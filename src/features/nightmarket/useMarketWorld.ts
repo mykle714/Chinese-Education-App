@@ -97,7 +97,7 @@ const EMPTY_FIELD: TerrainField = { originCol: 0, originRow: 0, contains: () => 
  *   the auth token; this is a deliberate manual trigger, so keying the effect on it is correct
  *   (it is NOT the rotating access token the CLAUDE.md reload rule warns against).
  */
-export function useMarketWorld(reloadToken = 0): UseMarketWorldResult {
+export function useMarketWorld(reloadToken = 0, visitedUserId: string | null = null): UseMarketWorldResult {
   const { isAuthenticated, user } = useAuth();
   // Which market to render. Falls back to 'zh' before the user object has loaded, matching the
   // server-side default in resolveLanguage(). `||` not `??` so a blank stored language also
@@ -125,12 +125,18 @@ export function useMarketWorld(reloadToken = 0): UseMarketWorldResult {
       try {
         // The server returns the user's persisted placements (each with its resolved
         // activeVersion + loaded definition) and seeds the origin hub on first load.
-        const placements = await loadUserLayout(language);
+        const placements = await loadUserLayout(language, visitedUserId);
         if (cancelled) return;
         if (placements.length === 0) {
-          // Should not happen (the server always seeds the hub), but guard so the render
-          // host shows a clear error rather than an empty/degenerate world.
-          throw new Error('The night market has no templates to render.');
+          // For the OWN-market read this should not happen (the server always seeds the
+          // hub) and means something is wrong. For a VISIT it is an ordinary outcome —
+          // seeding is suppressed, so a market nobody has built yet is legitimately
+          // empty — hence the two different messages.
+          throw new Error(
+            visitedUserId
+              ? "They haven't built a night market yet."
+              : 'The night market has no templates to render.',
+          );
         }
 
         const placed: PlacedTemplate[] = placements.map((p) => ({
@@ -195,7 +201,7 @@ export function useMarketWorld(reloadToken = 0): UseMarketWorldResult {
       cancelled = true;
     };
     // Keyed on the stable auth identity + the manual reloadToken — see the TOKEN RULE note above.
-  }, [isAuthenticated, language, reloadToken]);
+  }, [isAuthenticated, language, reloadToken, visitedUserId]);
 
   return {
     world: state?.world ?? null,

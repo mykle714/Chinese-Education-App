@@ -524,7 +524,11 @@ this game emits), not the whole-card **core** mastery bar the decks page
 shows. The `game-pool` endpoint already buckets this way — see
 [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md).
 
-**Empty-category fallback.** If the rolled category's buffer is empty, walk the
+**Empty-category fallback.** This is the *client-side* buffer's recovery, and it is
+distinct from the server's tier order — the server lends before it borrows across
+buckets ([PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md)), so a buffer top-up for a
+short bucket tends to arrive as lent `Unfamiliar` cards before this walk ever fires.
+If the rolled category's buffer is still empty, walk the
 mode's fallback order — in Study Mix, the existing bubble-match one —
 **Target → Comfortable → Unfamiliar → Mastered**
 (`OnDeckVocabService.GAME_FALLBACK_ORDER`, `server/services/OnDeckVocabService.ts`)

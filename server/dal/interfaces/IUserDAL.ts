@@ -49,6 +49,28 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
    * assume the array is the same length as its input.
    */
   findScoringProfilesByIds(userIds: string[]): Promise<UserScoringProfile[]>;
+
+  /**
+   * One account's PUBLIC identity by id, or null if there is no such account.
+   *
+   * Backs the user profile page (docs/USER_PROFILE_PAGE.md), which any signed-in
+   * user may open for any other account. The column list is enumerated in the query
+   * rather than selected with `*` precisely because this row leaves the account it
+   * belongs to: adding a private column to `users` must not silently widen this
+   * payload.
+   */
+  findPublicProfileById(userId: string): Promise<UserPublicProfile | null>;
+}
+
+/**
+ * What {@link IUserDAL.findPublicProfileById} returns. A superset of
+ * {@link UserScoringProfile} by `createdAt` — the two are kept as separate types
+ * rather than one optional field so the leaderboard's bulk read is not silently
+ * widened by a column only the profile needs.
+ */
+export interface UserPublicProfile extends UserScoringProfile {
+  /** ISO timestamp, or null for a row predating the column's default. */
+  createdAt: string | null;
 }
 
 /** What {@link IUserDAL.findScoringProfilesByIds} returns for one account. */

@@ -1,6 +1,6 @@
 import { PoolClient } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
-import { IUserDAL, UserScoringProfile } from '../interfaces/IUserDAL.js';
+import { IUserDAL, UserScoringProfile, UserPublicProfile } from '../interfaces/IUserDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { User, UserCreateData, UserUpdateData } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
@@ -307,6 +307,52 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       readingGoal: row.readinggoal === true,
       writingGoal: row.writinggoal === true,
     }));
+  }
+
+  async findPublicProfileById(userId: string): Promise<UserPublicProfile | null> {
+    if (!userId) return null;
+
+    const result = await this.dbManager.executeQuery<{
+      id: string;
+      email: string;
+      name: string | null;
+      avatariconid: string | null;
+      selectedlanguage: string | null;
+      readinggoal: boolean | null;
+      writinggoal: boolean | null;
+      createdat: Date | string | null;
+    }>(async (client) => {
+      // Deliberately the same column set as findScoringProfilesByIds plus createdAt,
+      // and deliberately NOT `SELECT *`: this row is shipped to another user, so the
+      // columns it may contain are enumerated here rather than filtered downstream.
+      // `password` must never be one query away from a public payload.
+      return await client.query(`
+        SELECT
+          id,
+          email,
+          name,
+          "avatarIconId"     AS avatariconid,
+          "selectedLanguage" AS selectedlanguage,
+          "readingGoal"      AS readinggoal,
+          "writingGoal"      AS writinggoal,
+          "createdAt"        AS createdat
+        FROM Users
+        WHERE id = $1::uuid
+      `, [userId]);
+    });
+
+    const row = result.recordset[0];
+    if (!row) return null;
+    return {
+      userId: row.id,
+      email: row.email,
+      name: row.name ?? null,
+      avatarIconId: row.avatariconid ?? null,
+      selectedLanguage: row.selectedlanguage ?? null,
+      readingGoal: row.readinggoal === true,
+      writingGoal: row.writinggoal === true,
+      createdAt: row.createdat ? new Date(row.createdat).toISOString() : null,
+    };
   }
 
 }

@@ -17,7 +17,7 @@
  * Mastered is its own SECTION only when the account pursues a reading or writing
  * goal, i.e. only when there is more than one Mastered collection to distinguish.
  * With core alone, a captioned section holding a single tile is a heading for
- * nothing, so that tile joins the Cards section and the list reads as three peers.
+ * nothing, so that tile joins the Collections section and the list reads as three peers.
  *
  * ── Why it is shared ──────────────────────────────────────────────────────────
  * Two surfaces render this list — the fdp tile rows and the Games hub's "Playing
@@ -39,8 +39,16 @@ import { activeBars, type MasteryGoals, type MasteryBarId } from '../../utils/ma
 import { BAND_COLORS, LEARN_NOW_COLORS, MASTERY_BAR_COLORS } from '../../utils/categoryColors';
 import { collectionTitle, type CollectionRef } from './collectionRef';
 
-/** The two sections a built-in collection can be listed under. */
-export type CollectionGroup = 'Cards' | 'Mastered';
+/**
+ * The two sections a built-in collection can be listed under.
+ *
+ * These strings are USER-VISIBLE: the /decks sheet uses them as its section
+ * captions and the Games hub's collection selector renders `entry.group`
+ * verbatim as its `ListSubheader`. Rename here and both surfaces follow — which
+ * is the point, since the selector's grouping is documented as "matching the
+ * decks page's sections".
+ */
+export type CollectionGroup = 'Collections' | 'Mastered';
 
 export interface BuiltinCollectionEntry {
     /** Stable per-entry key — a React key, and the class-name/test suffix each surface appends. */
@@ -71,7 +79,7 @@ export function hasMasteredSection(goals: MasteryGoals): boolean {
  */
 export function builtinCollectionEntries(goals: MasteryGoals): BuiltinCollectionEntry[] {
     const separateMastered = hasMasteredSection(goals);
-    const masteredGroup: CollectionGroup = separateMastered ? 'Mastered' : 'Cards';
+    const masteredGroup: CollectionGroup = separateMastered ? 'Mastered' : 'Collections';
 
     const cards: BuiltinCollectionEntry[] = [
         {
@@ -79,14 +87,14 @@ export function builtinCollectionEntries(goals: MasteryGoals): BuiltinCollection
             ref: { kind: 'all' },
             label: collectionTitle({ kind: 'all' }),
             colors: BAND_COLORS.All,
-            group: 'Cards',
+            group: 'Collections',
         },
         {
             key: 'learn-now',
             ref: { kind: 'learn-now' },
             label: collectionTitle({ kind: 'learn-now' }),
             colors: LEARN_NOW_COLORS,
-            group: 'Cards',
+            group: 'Collections',
         },
     ];
 

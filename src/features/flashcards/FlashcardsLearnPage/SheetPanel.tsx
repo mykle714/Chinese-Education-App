@@ -20,7 +20,21 @@ export interface SheetPanelHandle {
 }
 
 interface SheetPanelProps {
-    onClose: () => void;
+    // Called once the dismiss animation has finished, so the host can unmount
+    // the panel. OPTIONAL: a PERSISTENT panel (minHeight > 0) never dismisses,
+    // so it has nothing to report. See the minHeight prop below.
+    onClose?: () => void;
+    // Resting FLOOR height in px. 0 (default) = the modal eip behaviour: the
+    // panel can be dragged all the way down and that dismisses it.
+    // > 0 makes the panel PERSISTENT page furniture (the /decks sheet): it
+    // opens at this height, can never be dragged below it, and never closes.
+    // The two resting stops become {minHeight, max} — there is no middle stop,
+    // because a permanent sheet's "closed" state IS its floor.
+    minHeight?: number;
+    // Render the dimming scrim behind the sheet (default true). A persistent
+    // sheet passes false: it is always on screen, so a scrim would darken the
+    // page permanently and would have nothing to dismiss to on tap.
+    showScrim?: boolean;
     // When provided, panel animates 0 → initialHeight on open instead of
     // 0 → natural-content height. Used by child panels stacked on top of a
     // parent so they appear at the same vertical extent.
@@ -101,12 +115,16 @@ const AT_MAX_EPSILON_PX = 1;
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-// Shared 3-stop snap rule used by every release path (grabber drag, touch
-// release, momentum decay): below default → dismiss (0); at or above it →
-// whichever of {default, max} is nearer. The default height is the floor —
-// there is no resting stop between 0 and it.
-function computeSnapTarget(h: number, defaultH: number, maxH: number): number {
-    if (h < defaultH) return 0;
+// Shared snap rule used by every release path (grabber drag, touch release,
+// momentum decay): below default → dismiss (0); at or above it → whichever of
+// {default, max} is nearer. The default height is the floor — there is no
+// resting stop between 0 and it.
+//
+// A PERSISTENT panel (minH > 0) has no dismiss stop at all: `defaultH` IS
+// `minH`, nothing can go below it, so the rule degrades to "nearest of
+// {minH, max}" via the same comparison.
+function computeSnapTarget(h: number, defaultH: number, maxH: number, minH: number): number {
+    if (h < defaultH && minH === 0) return 0;
     return Math.abs(defaultH - h) <= Math.abs(maxH - h) ? defaultH : maxH;
 }
 
@@ -118,6 +136,8 @@ const mountedDepths = new Set<number>();
 const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     onClose,
     initialHeight,
+    minHeight = 0,
+    showScrim = true,
     depth = 0,
     bodyRef,
     bodyKey,
@@ -155,7 +175,14 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
 
+    // A panel with a floor is persistent: it cannot be dismissed, and every
+    // path that would have shrunk it to 0 stops at the floor instead.
+    const persistent = minHeight > 0;
     const maxHeight = useCallback(() => parentHeightRef.current * MAX_HEIGHT_RATIO, []);
+    // Read from gesture handlers bound once per bodyKey, so the live value is
+    // used rather than the one captured at bind time.
+    const minHeightRef = useRef(minHeight);
+    minHeightRef.current = minHeight;
 
     // The single writer for the sheet's height. `animate` turns the CSS height
     // transition on for this write and off for every other one — so grabbing a
@@ -192,20 +219,27 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // transitionend: the duration is ours, and a timer can't be missed if the
     // element is interrupted or the transition never fires.
     const dismiss = useCallback(() => {
+        // A persistent panel has no closed state — every would-be dismiss snaps
+        // back to the floor instead. This is a safety net: the gesture paths
+        // below already refuse to dismiss when `persistent`.
+        if (persistent) {
+            writeHeight(minHeightRef.current, true);
+            return;
+        }
         if (dismissingRef.current) return;
         dismissingRef.current = true;
         stopMomentum();
         writeHeight(0, true);
         dismissTimerRef.current = window.setTimeout(() => {
             dismissTimerRef.current = null;
-            onCloseRef.current();
+            onCloseRef.current?.();
         }, SNAP_DURATION_MS + 20);
-    }, [stopMomentum, writeHeight]);
+    }, [persistent, stopMomentum, writeHeight]);
 
     // The one release rule, shared by every path that ends a gesture (grabber
     // drag release, touch release, momentum decay, momentum hitting a stop).
     const settle = useCallback(() => {
-        const target = computeSnapTarget(heightRef.current, defaultHeightRef.current, maxHeight());
+        const target = computeSnapTarget(heightRef.current, defaultHeightRef.current, maxHeight(), minHeightRef.current);
         if (target === 0) {
             dismiss();
             return;
@@ -235,10 +269,22 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         if (!sheetContainerRef.current) return;
         const parentH = sheetContainerRef.current.parentElement?.clientHeight ?? window.innerHeight;
         parentHeightRef.current = parentH;
+        // Resting height on mount, in priority order:
+        //   1. explicit initialHeight (a child panel matching its parent's extent)
+        //   2. the floor, for a persistent panel — it is already "closed", so
+        //      there is no open animation to play and no default stop to grow to
+        //   3. the modal default fraction of the screen
         const targetHeight = initialHeight != null
             ? Math.min(initialHeight, parentH * MAX_HEIGHT_RATIO)
-            : parentH * DEFAULT_HEIGHT_RATIO;
+            : persistent
+                ? Math.min(minHeight, parentH * MAX_HEIGHT_RATIO)
+                : parentH * DEFAULT_HEIGHT_RATIO;
         defaultHeightRef.current = targetHeight;
+        if (persistent) {
+            // Sits at its floor from the first paint — no 0 → height slide.
+            writeHeight(targetHeight);
+            return;
+        }
         // Written before paint, so the sheet never flashes at its natural height.
         writeHeight(0);
         requestAnimationFrame(() => writeHeight(targetHeight, true));
@@ -274,7 +320,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             }
             // Absolute tracking from the gesture's start height (useDrag gives
             // cumulative movement), so the sheet can't drift over a long drag.
-            writeHeight(clamp(dragStartHeightRef.current - my * RESIZE_SENSITIVITY, 0, maxHeight()));
+            writeHeight(clamp(dragStartHeightRef.current - my * RESIZE_SENSITIVITY, minHeightRef.current, maxHeight()));
             if (last) {
                 dragStartHeightRef.current = null;
                 settle();
@@ -314,9 +360,9 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             // Shrinking is only allowed from the top of the content; otherwise
             // let the content scroll normally.
             if (dy < 0 && scrollEl.scrollTop > 0) return;
-            if (!applyResize(dy, 0)) return;
+            if (!applyResize(dy, minHeightRef.current)) return;
             e.preventDefault();
-            if (heightRef.current < defaultHeightRef.current) dismiss();
+            if (!persistent && heightRef.current < defaultHeightRef.current) dismiss();
         };
 
         // --- Touch ----------------------------------------------------------
@@ -378,10 +424,11 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             if (gestureMode === "scroll") {
                 scrollEl.scrollTop += dy;
             } else {
-                // A live finger may drag all the way down to 0 — that is the
-                // dismiss gesture. Hitting a boundary swallows the delta rather
-                // than spilling over into a content scroll.
-                applyResize(dy, 0);
+                // A live finger may drag all the way down to the floor — 0 for a
+                // modal panel (that is the dismiss gesture), the resting height
+                // for a persistent one. Hitting a boundary swallows the delta
+                // rather than spilling over into a content scroll.
+                applyResize(dy, minHeightRef.current);
             }
             e.preventDefault();
         };
@@ -396,7 +443,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             gestureMode = null;
             if (mode === null || dismissingRef.current) return;
 
-            if (mode === "resize" && heightRef.current < defaultHeightRef.current) {
+            if (!persistent && mode === "resize" && heightRef.current < defaultHeightRef.current) {
                 // Dragged below the default height and released → dismiss.
                 // This is the ONLY way a swipe closes the panel; momentum never
                 // carries it below the default height (see startMomentum).
@@ -475,11 +522,13 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
 
     return (
         <>
-            <EicScrim
-                className="mobile-demo-eic-scrim"
-                onClick={onClose}
-                style={scrimStyle}
-            />
+            {showScrim && (
+                <EicScrim
+                    className="mobile-demo-eic-scrim"
+                    onClick={onClose}
+                    style={scrimStyle}
+                />
+            )}
             <InfoSheetContainer
                 ref={sheetContainerRef}
                 className="mobile-demo-eic-sheet"

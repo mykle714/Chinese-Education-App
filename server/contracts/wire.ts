@@ -748,6 +748,38 @@ export const CARD_BASELINES: Record<CardBaselineSurface, number> = {
 };
 
 /**
+ * Surfaces whose ENTIRE supply model is the partial refill.
+ *
+ * Background. `GET /api/onDeck/gamePool` treats a request carrying `need` as a
+ * mid-session top-up and, historically, refused to lend on it: Bubble Match's
+ * "Play Again" keeps the pairs you missed and refills the ones you cleared, and
+ * lending there would quietly grow the player's deck on every tap.
+ *
+ * That rule assumes a game rolls its board ONCE and refills are the exception.
+ * Hydra Bubbles inverts it — it is endless, it fetches every spawn as a refill,
+ * and it declares no baseline at all, so under the blanket exemption it could
+ * never lend a single card at any point in a run (docs/HYDRA_BUBBLES.md § 6.1).
+ *
+ * So the exemption becomes opt-out rather than universal: a surface listed here
+ * may lend on a refill. Nothing else changes — the collection/deck restriction
+ * still blocks lending outright, because a deck round made of non-deck words is
+ * not that deck.
+ *
+ * Deliberately NOT folded into `CardBaselineSurface`: these are orthogonal
+ * questions ("how many cards do you need up front?" vs "may you lend mid-run?"),
+ * and Hydra answers the first with "none". Memory Map sets the same precedent by
+ * staying out of `CARD_BASELINES` entirely rather than declaring a baseline of 0.
+ */
+export type RollingSupplySurface = 'hydra-bubbles';
+
+export const ROLLING_SUPPLY_SURFACES: readonly RollingSupplySurface[] = ['hydra-bubbles'];
+
+/** Narrow an untrusted `?surface=` value to a rolling-supply surface. */
+export function isRollingSupplySurface(raw: string | null | undefined): boolean {
+  return ROLLING_SUPPLY_SURFACES.includes(raw as RollingSupplySurface);
+}
+
+/**
  * Ceiling on over-provisioning, as a multiple of the surface's baseline.
  *
  * Word Search can be handed exactly `baseline` cards and still fail to build a grid,
@@ -779,6 +811,113 @@ export const CARD_BASELINE_ITEMIZED: Record<CardBaselineSurface, boolean> = {
   'word-search': true,
   flp: false,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Memory Map (docs/MEMORY_MAP_GAME.md)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How many words a Memory Map may hold at once.
+ *
+ * Deliberately NOT in `CARD_BASELINES`: a baseline is a floor the server tops up to
+ * with lent cards, and Memory Map declares no floor at all (§ 10 — a small library is
+ * simply a small map). This is the opposite quantity, a CEILING, and it exists for two
+ * unrelated reasons that happen to agree on the same number:
+ *
+ *   1. Performance. 100 absolutely-positioned DOM nodes need no viewport culling, so
+ *      the whole rendering layer stays "a CSS transform over a world div" (§ 7).
+ *   2. A run has to end. "Colour the entire map" is only a playable goal if the map
+ *      is bounded; a learner with 4,000 cards would otherwise face a run that never
+ *      finishes (§ 2.2).
+ *
+ * Shared rather than duplicated because BOTH sides need it: the server enforces it
+ * when topping the map up, and the client renders it as the `23 / 100` header count.
+ */
+export const MEMORY_MAP_CAPACITY = 100;
+
+/**
+ * The random size multiplier drawn once per word at spawn and then FROZEN forever
+ * (§ 2.3). Server-side only in practice — the client just renders what it is given —
+ * but it lives on the wire so the range is documented next to the field it fills.
+ *
+ * Size carries NO meaning. It is not word length, not frequency, not mastery. It
+ * exists so the archipelago looks hand-drawn rather than typeset, and it is frozen
+ * because a size that tracked mastery would reflow every neighbouring word every time
+ * the learner studied — the map's stability is what makes it memorable.
+ *
+ * ── WHAT THIS RANGE ACTUALLY CONTROLS ────────────────────────────────────────
+ * Its RATIO, not its magnitude. The camera fits the whole map on load, so scaling every
+ * word by the same factor grows the map's world extent and shrinks the fitted zoom by
+ * exactly as much — a wash on screen. Only max/min changes what a player sees: it is the
+ * SIZE CONTRAST between the biggest and smallest words on the map.
+ *
+ * Widened from 0.7–1.6 (ratio 2.3) to 0.95–1.8 (ratio 1.9), so the smallest words read
+ * comfortably rather than as specks beside their neighbours.
+ *
+ * To make EVERYTHING bigger on screen instead, the lever is the camera, not this:
+ * `FIT_PADDING` in the game's constants decides how tightly the fitted map fills the
+ * viewport.
+ */
+export const MEMORY_MAP_SCALE_RANGE = { min: 0.95, max: 1.8 } as const;
+
+/**
+ * One word's permanent spot on the map, as stored and as sent to the client.
+ *
+ * `x`/`y` are the CENTRE of the word's axis-aligned bounding box in world
+ * coordinates, which are continuous and unitless — the client picks the pixels-per-
+ * world-unit at render time. `width`/`height` are NOT stored: they are derived from
+ * the rendered text and the frozen `scale`, and the server recomputes them the same
+ * way when it needs to place a neighbour (see server/services/memoryMapSpawn.ts).
+ */
+export interface MemoryMapPlacement {
+  /** vet id. Unique per user across the map, and the FK target of the placement row. */
+  vocabEntryId: number;
+  x: number;
+  y: number;
+  scale: number;
+}
+
+/**
+ * A placed word with everything the client needs to draw and prompt it.
+ *
+ * `definition` is the dd, already resolved through the learner's `selectedSense` —
+ * the games-wide sense-correctness rule. Resolving it server-side (rather than
+ * shipping the raw cluster set and letting the game pick) is what stops a prompt
+ * showing a gloss the learner's own flashcard does not read.
+ */
+export interface MemoryMapWord extends MemoryMapPlacement {
+  entryKey: string;
+  pronunciation: string | null;
+  definition: string;
+  language: string;
+}
+
+/** GET /api/memoryMap — the whole map, plus what just changed about it. */
+export interface MemoryMapResponse {
+  words: MemoryMapWord[];
+  /**
+   * vet ids of the words placed BY THIS REQUEST, so the client can announce growth
+   * ("3 new words joined your map", § 2.5). Without it the map's growth is invisible,
+   * which is the feature's entire emotional payload.
+   */
+  newlyPlaced: number[];
+  /** `MEMORY_MAP_CAPACITY`, echoed so the header count needs no second import path. */
+  capacity: number;
+}
+
+/**
+ * POST /api/memoryMap/graduate — a word left the map, so refill it.
+ *
+ * Called after a mark leaves the word reading-mastered (§ 3.6). The server deletes the
+ * placement and immediately spawns the next word in priority order into the freed
+ * space, returning it so the client can drop it straight into the running queue.
+ */
+export interface MemoryMapGraduateResponse {
+  /** True when the word was in fact reading-mastered and its row was deleted. */
+  graduated: boolean;
+  /** The word spawned to replace it, or null if the eligible pool is exhausted. */
+  replacement: MemoryMapWord | null;
+}
 
 /** The bucket NAMES the discover sort endpoint accepts as input (not all of them persist). */
 export type DiscoverSortBucket = 'library' | 'skip' | 'already-learned';
@@ -1576,10 +1715,9 @@ export interface ChallengeGameSpec {
  * here. That test is what preserves "derived from the registry" — adding a game and
  * forgetting this table is a red test, not a silently ineligible game.
  *
- * Three entries today, so today's "random" draw of 3 has one possible answer. The
- * randomisation is built for the games that do not exist yet: the draw is without
- * repetition, and a fourth recognition/production game joins the rotation with no
- * code change beyond its own entry.
+ * Four entries today, so a draw of 3 finally has real choice in it — Hydra Bubbles
+ * was the fourth. The draw is without repetition, and a fifth recognition/production
+ * game joins the rotation with no code change beyond its own entry.
  */
 export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
   {
@@ -1629,6 +1767,37 @@ export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
       // That gives its contested score a hard ceiling of
       // CHALLENGE_WORD_COUNT × contestedHit (1200 at 12) and makes CLEARING THE SET
       // the goal of the round rather than raw taps-per-second.
+    },
+  },
+  {
+    gameId: 'hydra-bubbles',
+    mode: null,
+    title: 'Hydra Bubbles',
+    markType: 'recognition',
+    scoring: {
+      contestedHit: 100,
+      contestedMiss: -100,
+      fillerHit: 20,
+      fillerMiss: -20,
+      missChargedOncePerWord: true,
+      // NO BONUS, and no survival bonus in particular — which is the opposite call
+      // from Bubble Match's, on purpose. Bubble Match's run has a fixed length (its
+      // 20 pairs), so "how long did you last" is a comparable number. Hydra is
+      // ENDLESS: a free-play run ends only when the player errs, so survival time is
+      // unbounded and would swamp every other term.
+      //
+      // Instead the challenge SHAPE carries the difficulty, exactly as Match Speed's
+      // alternation rule does (docs/HYDRA_BUBBLES.md § 7.5): challenge words ride the
+      // yellow slot, the run ends the moment the tenth is cleared, and a wrong match
+      // ends it early with the unmatched words scoring zero. That makes CLEARING THE
+      // SET the goal — a player who cleared 8 of 10 outranks one who cleared 3, which
+      // speed alone could not express — and gives the contested score a hard ceiling
+      // of CHALLENGE_WORD_COUNT × contestedHit.
+      //
+      // ⚠️ OPEN (docs/HYDRA_BUBBLES.md § 11 O2): how a PARTIAL run's time is compared
+      // against a complete one is not yet decided. Until it is, these numbers rank a
+      // partial run below a complete one on contested hits alone, and time is not
+      // scored at all. That is a defensible floor, not the final design.
     },
   },
   {

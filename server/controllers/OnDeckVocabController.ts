@@ -7,6 +7,7 @@ import {
   CardBaselineSurface,
   CARD_BASELINES,
   PROVISION_RETRY_FACTOR,
+  isRollingSupplySurface,
   masteredCollectionBar,
 } from '../contracts/wire.js';
 import { parseBuiltinCollectionId } from '../dal/shared/vetTable.js';
@@ -283,8 +284,28 @@ export class OnDeckVocabController {
         await this.provisionalCardService.ensureBaseline(userId, language, baseline);
       }
 
+      // ROLLING SUPPLY (ROLLING_SUPPLY_SURFACES, contracts/wire.ts). A surface whose
+      // every spawn is a refill opts out of the "refills never lend" rule above —
+      // without it, a game that declares no baseline could never lend at any point in
+      // a run. It is read from the SAME `?surface=` param as the baseline lookup;
+      // a rolling-supply surface simply isn't in CARD_BASELINES, so `parseSurface`
+      // returns null for it and the baseline branch above is a no-op even when a
+      // malformed request omits `need`.
+      const lendOnRefill = isRollingSupplySurface(
+        typeof req.query.surface === 'string' ? req.query.surface : null
+      );
+      // Optional TIER OFFSET — how many levels away from the learner's own estimated
+      // level to lend. Hydra maps a rolled color to one (red 0, yellow -1, green -2,
+      // blue -3; docs/HYDRA_BUBBLES.md § 6.2); the server resolves it against `L`,
+      // which the client never sees. Bounded to the width of the 1..6 level range in
+      // both directions, so a malformed value cannot be used to probe the clamp.
+      const rawOffset = parseInt(String(req.query.lendLevelOffset ?? ''), 10);
+      const lendLevelOffset =
+        Number.isInteger(rawOffset) && rawOffset >= -5 && rawOffset <= 5 ? rawOffset : undefined;
+
       const pool = await this.onDeckVocabService.getGameVocabPool(
-        userId, language, distribution, markType, { need, excludeIds, avoidIds, collection }
+        userId, language, distribution, markType,
+        { need, excludeIds, avoidIds, collection, lendOnRefill, lendLevelOffset }
       );
       res.json(pool);
     } catch (error: any) {

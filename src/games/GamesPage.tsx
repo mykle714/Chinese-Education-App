@@ -129,6 +129,13 @@ const GamesPage: React.FC = () => {
         // visible row that dead-ends reads as a bug. Speed Reading is the only
         // such game today (zh-only; it substitutes single characters).
         if (g.languages && user?.selectedLanguage && !g.languages.includes(user.selectedLanguage)) return false;
+        // Collection gate: Memory Map cannot be scoped to a collection — the map IS
+        // your library, drawn from every playable card you have not read-mastered, and
+        // it ignores `?deck=` / `?collection=` entirely. So it is HIDDEN whenever the
+        // selector is set to anything but All Cards, for the same reason the language
+        // gate hides rather than blocks: a visible row that quietly ignored the
+        // selector reads as a bug. See docs/MEMORY_MAP_GAME.md § 10 (Q21).
+        if (g.gameId === "memory-map" && selectedCollection.kind !== "all") return false;
         return true;
     });
 

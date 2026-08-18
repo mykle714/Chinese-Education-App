@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import {
@@ -22,6 +22,11 @@ import {
     FLOATING_FOOTER_CLEARANCE,
 } from "../../components/MobileFooter";
 import { fetchDecks, createDeck, type DeckSummary } from "../../api/decks";
+import { fetchCollectionCards } from "../../api/collections";
+import { ALL_COLLECTION_ID } from "../../../server/contracts/wire";
+import type { VocabEntry } from "../../types";
+import { filterVocabEntries } from "../../utils/vocabSearch";
+import { sortVocabEntries, defaultSortKey, type VocabSortKey } from "../../utils/vocabSort";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
@@ -39,10 +44,17 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 //   PAGE (behind)  — the Review / Study Mix / Challenge row: whole-library study
 //                    entry points, always reachable without moving anything.
 //   SHEET (front)  — a PERSISTENT pull-up panel holding every SET of cards:
-//                    Cards, Mastered, Challenges and the user's Decks. It rests
-//                    just above the floating footer, showing its grabber and the
-//                    first caption, and is dragged up to browse (see
+//                    Cards, Mastered, Challenges and the user's Decks, and BELOW
+//                    them the learner's whole card library as a searchable grid.
+//                    It rests just above the floating footer, showing its grabber
+//                    and the first caption, and is dragged up to browse (see
 //                    DecksSheetBody for the sections themselves).
+//
+// The "All Cards" TILE is deliberately absent from the sheet's Collections row:
+// its grid is rendered inline at the bottom of the sheet instead, so finding a
+// single card costs no navigation. The collection itself is untouched — its route
+// (/flashcards/collection/all) and its entry in the shared list still exist, since
+// the Games hub offers it as a playable set. Only this surface hides the tile.
 //
 // The sheet is the SAME component as the eip bottom sheet on flp — `SheetPanel`,
 // in persistent mode (`minHeight` > 0, no scrim), so the resize/fling/scroll
@@ -75,6 +87,13 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 const SHEET_LIP = 44;
 const SHEET_CLOSED_HEIGHT =
     FLOATING_FOOTER_INSET + FLOATING_FOOTER_HEIGHT + FLOATING_FOOTER_EXTRA_GAP + SHEET_LIP;
+
+// How far down the sheet must be dragged before a release collapses it back to
+// SHEET_CLOSED_HEIGHT instead of springing open to the max, as a fraction of the
+// closed→max travel. SheetPanel's default is 0.5 (nearest stop wins); the
+// collections sheet is deliberately much stickier open — it only closes once
+// pulled below 30% of the way up, so a small downward nudge doesn't shut it.
+const SHEET_COLLAPSE_THRESHOLD_RATIO = 0.3;
 
 // Extra bottom padding the study area needs so Study Mix ends just ABOVE the resting
 // sheet rather than behind it. `MobileTabScreen`'s scroll area already reserves
@@ -200,14 +219,21 @@ const FlashcardsDecksPage: React.FC = () => {
     // The account's goals decide BOTH which Mastered collections exist (core always,
     // reading/writing only when that goal is set — the same gate as the card bars
     // themselves) and whether Mastered is its own captioned section at all.
-    const goals: MasteryGoals = {
-        reading: user?.readingGoal === true,
-        writing: user?.writingGoal === true,
-    };
+    // Memoized: a fresh object each render would invalidate the sort control's own
+    // bundle memo (and the entries list below) on every unrelated re-render.
+    const goals: MasteryGoals = useMemo(
+        () => ({ reading: user?.readingGoal === true, writing: user?.writingGoal === true }),
+        [user?.readingGoal, user?.writingGoal]
+    );
     // The built-in collections, already grouped. Shared with the Games hub selector
     // (builtinCollections.ts) so the two surfaces cannot offer different sets.
     const builtins = builtinCollectionEntries(goals);
-    const collectionsSection = builtins.filter((entry) => entry.group === "Collections");
+    // …minus All Cards, whose grid this page now renders inline at the bottom of the
+    // sheet (see the header note). Filtered HERE rather than removed from
+    // builtinCollections.ts, because the Games hub still lists it as a playable set.
+    const collectionsSection = builtins.filter(
+        (entry) => entry.group === "Collections" && entry.ref.kind !== "all"
+    );
     const masteredSection = builtins.filter((entry) => entry.group === "Mastered");
     const showMasteredSection = hasMasteredSection(goals);
     // Body of the persistent sets sheet; SheetPanel reads {root, scroll} off this
@@ -226,6 +252,20 @@ const FlashcardsDecksPage: React.FC = () => {
     const authoredDecks = decks.filter((deck) => deck.editMode !== "preset");
     const [decksLoading, setDecksLoading] = useState(true);
     const [decksError, setDecksError] = useState<string | null>(null);
+    // ── The sheet's inline card library ──────────────────────────────────────
+    // The "all" collection — every SORTED card, mastered or not — loaded once per
+    // visit and searched client-side, which is how /decks worked before the
+    // collection pages existed. It is a single indexed read and the grid paces its
+    // own reveal (MiniVocabCardGrid), so it costs the sheet nothing while folded.
+    const [cards, setCards] = useState<VocabEntry[]>([]);
+    const [cardsLoading, setCardsLoading] = useState(true);
+    const [cardsError, setCardsError] = useState<string | null>(null);
+    const [cardsSearch, setCardsSearch] = useState("");
+    // Ordering of that grid. Held per-visit rather than persisted, the same rule the
+    // collection page follows: it is a way of LOOKING at the set, not a property of
+    // it. `false` = not a deck, so the default is card age ("Recently added").
+    const [cardsSortKey, setCardsSortKey] = useState<VocabSortKey>(() => defaultSortKey(false));
+
     const [newDeckOpen, setNewDeckOpen] = useState(false);
     const [newDeckName, setNewDeckName] = useState("");
     const [createError, setCreateError] = useState<string | null>(null);
@@ -249,6 +289,53 @@ const FlashcardsDecksPage: React.FC = () => {
     useEffect(() => {
         if (isAuthenticated) loadDecks();
     }, [isAuthenticated, loadDecks]);
+
+    // The card library. Same auth keying as the deck list, and `cancelled` guards the
+    // setState so a fast navigation away can't write into an unmounted page.
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        let cancelled = false;
+
+        (async () => {
+            try {
+                setCardsLoading(true);
+                setCardsError(null);
+                const loaded = await fetchCollectionCards(ALL_COLLECTION_ID);
+                if (!cancelled) setCards(loaded);
+            } catch (err: unknown) {
+                console.error("Error loading cards:", err);
+                if (!cancelled) setCardsError(err instanceof Error ? err.message : "Failed to load cards");
+            } finally {
+                if (!cancelled) setCardsLoading(false);
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [isAuthenticated]);
+
+    // Filter, then order — the same two-step (and the same shared utilities) the
+    // collection page uses. Client-side on both counts: the whole collection is
+    // already in memory, so neither costs a round trip and neither introduces a
+    // second notion of "matches" or "order".
+    //
+    // Sorting AFTER filtering keeps the work proportional to what is actually on
+    // screen while the user types. Both memos stay referentially stable while their
+    // inputs are unchanged, so MiniVocabCardGrid's reveal cascade isn't restarted by
+    // an unrelated re-render.
+    const filteredCards = useMemo(
+        () => filterVocabEntries(cards, cardsSearch),
+        [cards, cardsSearch]
+    );
+    const visibleCards = useMemo(
+        () => sortVocabEntries(filteredCards, cardsSortKey),
+        [filteredCards, cardsSortKey]
+    );
+
+    // Card Detail is a leaf that slides over this page.
+    const handleOpenCard = useCallback(
+        (entry: VocabEntry) => slideNavigate(`/flashcards/card/${entry.id}`),
+        [slideNavigate]
+    );
 
     // NO CARD-COUNT GATE into /flashcards/learn (docs/PROVISIONAL_CARDS.md).
     //
@@ -390,6 +477,7 @@ const FlashcardsDecksPage: React.FC = () => {
                 <SheetPanel
                     minHeight={SHEET_CLOSED_HEIGHT}
                     showScrim={false}
+                    collapseThresholdRatio={SHEET_COLLAPSE_THRESHOLD_RATIO}
                     bodyRef={sheetBodyRef}
                     // The body's scroll element is stable, but its identity changes
                     // when the deck list first arrives (the empty-state message and
@@ -409,6 +497,17 @@ const FlashcardsDecksPage: React.FC = () => {
                             decksError={decksError}
                             onOpenPath={slideNavigate}
                             onNewDeck={() => { setNewDeckName(""); setCreateError(null); setNewDeckOpen(true); }}
+                            cards={visibleCards}
+                            cardsLoading={cardsLoading}
+                            cardsError={cardsError}
+                            cardsTotal={cards.length}
+                            cardsSearch={cardsSearch}
+                            onCardsSearchChange={setCardsSearch}
+                            onOpenCard={handleOpenCard}
+                            cardsSortKey={cardsSortKey}
+                            onCardsSortKeyChange={setCardsSortKey}
+                            cardsSortLanguage={user?.selectedLanguage}
+                            cardsSortGoals={goals}
                             headerDragBind={bindHeaderDrag}
                         />
                     )}

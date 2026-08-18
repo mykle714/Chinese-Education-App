@@ -15,6 +15,13 @@ import type { MarkType } from "../types";
 import type { MasteryBarId } from "../../server/contracts/wire";
 
 export type { MasteryGoals, MasteryBar, MasteryBarSegment } from "../../server/contracts/mastery";
+export {
+  COOLDOWN_MS_BY_CATEGORY,
+  lastCorrectMarkTimestamp,
+  cooldownRemainingMs,
+  isTypeOnCooldown,
+  readyMarkTypes,
+} from "../../server/contracts/cooldown";
 export type { MasteryBarId } from "../../server/contracts/wire";
 export {
   PBH_FULL,

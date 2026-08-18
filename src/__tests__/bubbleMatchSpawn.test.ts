@@ -5,9 +5,9 @@ import {
     selectNextBubble,
     type Rng,
 } from "../games/bubble-match/spawnSelection";
-import { planSpawn } from "../games/bubble-match/physics";
-import { SPAWN_OVERLAP_FRACTION } from "../games/bubble-match/constants";
-import type { BubbleBody, BubbleKind } from "../games/bubble-match/types";
+import { planSpawn } from "../games/bubbles/physics";
+import { SPAWN_OVERLAP_FRACTION } from "../games/bubbles/constants";
+import type { BubbleBody, BubbleKind } from "../games/bubbles/types";
 
 // Minimal BubbleBody factory — selection only reads id, pairId, kind.
 let seq = 0;

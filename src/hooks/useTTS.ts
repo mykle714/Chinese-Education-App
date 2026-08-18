@@ -4,6 +4,7 @@ import { tts } from '../services/tts';
 import type { TTSLang, TTSProvider } from '../services/tts';
 import { useTTSSettings } from './useTTSSettings';
 import { useAuth } from '../AuthContext';
+import { resolveDisplayPronunciation } from '../utils/definitionUtils';
 
 // Playback-speed multiplier for the flp "slow example sentences" toggle. The
 // only non-1× speed in the app; the provider time-stretches pitch-preservingly
@@ -108,9 +109,26 @@ export function useTTS() {
 
     // The flashcard WORD is always narrated at normal speed (1×). Slowing is
     // offered only for example sentences (see speakSentence).
-    const speak = useCallback(async (entry: VocabEntry) => {
+    //
+    // ⚠️ THE PRONUNCIATION HINT MUST BE THE ONE ON SCREEN. It is passed to the cloud
+    // provider and reaches Google TTS as an SSML <phoneme> tag, so it genuinely
+    // decides which reading is spoken — which makes a disagreement with the displayed
+    // pinyin audible, not cosmetic.
+    //
+    // This used to send the raw `entry.pronunciation` column while every card face
+    // rendered `resolveDisplayPronunciation` (the SENSE-AWARE reading). For a
+    // polyphone the two differ by construction: 和 displays huó on its "to blend"
+    // sense and was narrated hé from the headword column. A learner hearing one
+    // syllable while reading another has no way to tell which is wrong — and for a
+    // beginner drilling recognition, that is worse than no audio.
+    //
+    // `senseIndexOverride` mirrors the resolver's own parameter, for a caller holding
+    // a LIVE sense pick that has not yet round-tripped to `entry.selectedSense`
+    // (the flp's eip picker). Omit it and the entry's persisted sense is used, which
+    // is correct for every surface that has no picker — the games, the cdp, discover.
+    const speak = useCallback(async (entry: VocabEntry, senseIndexOverride?: number) => {
         if (!entry || !entry.entryKey) return;
-        await speakText(entry.entryKey, entry.pronunciation);
+        await speakText(entry.entryKey, resolveDisplayPronunciation(entry, senseIndexOverride));
     }, [speakText]);
 
     // Narrate an arbitrary Chinese sentence. Pronunciation is the optional
@@ -140,7 +158,9 @@ export function useTTS() {
         if (!entry || !entry.entryKey) return;
         if (!settings.enabled) return;
         if (entry.hasAudio === false) return;
-        tts.cloud.prefetch(entry.entryKey, ttsLang, entry.pronunciation);
+        // Same resolver as `speak`, or the prefetch warms a cache key nothing will
+        // ever ask for (the buffer is keyed on text + pinyin + voice).
+        tts.cloud.prefetch(entry.entryKey, ttsLang, resolveDisplayPronunciation(entry));
     }, [settings.enabled, ttsLang]);
 
     /**

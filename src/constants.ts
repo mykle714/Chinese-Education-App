@@ -18,7 +18,9 @@ export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/games/bubble-match',
   '/games/word-search',
   '/games/match-speed',
-  '/games/speed-reading'
+  '/games/speed-reading',
+  '/games/memory-map',
+  '/games/hydra-bubbles'
 ];
 
 // Subset of eligible pages that should start accruing time on entry, WITHOUT

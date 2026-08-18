@@ -50,6 +50,9 @@ import { GamesController } from '../controllers/GamesController.js';
 import { SpeedReadingDAL } from './implementations/SpeedReadingDAL.js';
 import { SpeedReadingService } from '../services/SpeedReadingService.js';
 import { SpeedReadingController } from '../controllers/SpeedReadingController.js';
+import { MemoryMapDAL } from './implementations/MemoryMapDAL.js';
+import { MemoryMapService } from '../services/MemoryMapService.js';
+import { MemoryMapController } from '../controllers/MemoryMapController.js';
 import { LeaderboardService } from '../services/LeaderboardService.js';
 import { LeaderboardController } from '../controllers/LeaderboardController.js';
 import { TTSService } from '../services/TTSService.js';
@@ -215,6 +218,13 @@ const gamesController = new GamesController(gameAssetService, gameProgressServic
 // growing the game-agnostic GamesController.
 const speedReadingService = new SpeedReadingService(speedReadingDAL);
 const speedReadingController = new SpeedReadingController(speedReadingService);
+// Memory Map likewise owns tables of its own (migration 151), so it gets the full
+// DAL/Service/Controller stack rather than joining the game-agnostic GamesController.
+// The service's `rng` argument is left at its Math.random default here; it exists so a
+// test can pin every spawn (docs/MEMORY_MAP_GAME.md § 9).
+const memoryMapDAL = new MemoryMapDAL();
+const memoryMapService = new MemoryMapService(memoryMapDAL);
+const memoryMapController = new MemoryMapController(memoryMapService);
 // icons8 image serving is a thin DB read → no service layer; the controller takes the DAL directly.
 const icons8Controller = new Icons8Controller(icons8DAL);
 // wins is a thin per-user event log → no service layer; controller takes the DAL directly.
@@ -273,6 +283,9 @@ export {
   gamesController,
   speedReadingDAL,
   speedReadingService,
+  memoryMapDAL,
+  memoryMapService,
+  memoryMapController,
   speedReadingController,
   icons8DAL,
   icons8Controller,

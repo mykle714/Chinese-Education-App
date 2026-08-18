@@ -3,27 +3,24 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
     Box, TextField, InputAdornment, IconButton, Typography, Button, Menu, MenuItem,
     Dialog, DialogTitle, DialogContent, DialogActions, ListItemIcon,
-    ToggleButtonGroup, ToggleButton,
 } from "@mui/material";
 import { Search, Clear } from "@mui/icons-material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import SwapVertIcon from "@mui/icons-material/SwapVert";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import StyleOutlinedIcon from "@mui/icons-material/StyleOutlined";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
+import CollectionSortControl from "./CollectionSortControl";
 import { useAuth } from "../../AuthContext";
-import { API_BASE_URL } from "../../constants";
 import type { VocabEntry } from "../../types";
 import { filterVocabEntries } from "../../utils/vocabSearch";
-import {
-    sortVocabEntries, sortBundles, sortLabel, defaultSortKey, type VocabSortKey,
-} from "../../utils/vocabSort";
+import { sortVocabEntries, defaultSortKey, type VocabSortKey } from "../../utils/vocabSort";
 import type { MasteryGoals } from "../../utils/masteryCompute";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { fetchDeckCards, fetchDecks, renameDeck, deleteDeck } from "../../api/decks";
+import { fetchCollectionCards } from "../../api/collections";
 import {
     type CollectionRef, collectionTitle, withCollectionParams, parseBuiltinCollection,
     builtinCollectionRef,
@@ -65,7 +62,7 @@ const CollectionViewPage: React.FC = () => {
     // Card Detail (leaf) slides over this page; keep the collection held beneath.
     const slideNavigate = useSlideNavigate();
     const params = useParams();
-    const { user, token, isAuthenticated } = useAuth();
+    const { user, isAuthenticated } = useAuth();
 
     // Which collection is this? Derived from the route, so the two routes share
     // every line below. `deckId` is NaN-guarded because the segment is user-typed.
@@ -90,7 +87,6 @@ const CollectionViewPage: React.FC = () => {
     const [sortKey, setSortKey] = useState<VocabSortKey>(() => defaultSortKey(isDeck));
     // Whether this deck was generated for the user rather than authored by them.
     const [deckIsPreset, setDeckIsPreset] = useState(false);
-    const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
     // Anchor for the deck-only overflow menu (rename / delete).
     const [deckMenuAnchor, setDeckMenuAnchor] = useState<HTMLElement | null>(null);
     const [renameOpen, setRenameOpen] = useState(false);
@@ -146,19 +142,11 @@ const CollectionViewPage: React.FC = () => {
                         setDeckIsPreset(match?.editMode === "preset");
                     }
                 } else if (builtin) {
-                    // ONE endpoint for all eight built-in collections — the id is the
-                    // only thing that varies, and the server owns what each one means
-                    // (`builtinCollectionClause`). Still a raw fetch rather than
-                    // src/api/http: pre-existing OnDeck endpoint, converting it is a
-                    // separate cleanup.
-                    const path = `/api/onDeck/collectionCards?collection=${encodeURIComponent(builtin)}`;
-                    const response = await fetch(`${API_BASE_URL}${path}`, {
-                        credentials: "include",
-                        headers: { Authorization: `Bearer ${token}` },
-                    });
-                    if (!response.ok) throw new Error("Failed to fetch cards");
-                    const data = await response.json();
-                    cards = Array.isArray(data) ? data : [];
+                    // ONE endpoint for all built-in collections — the id is the only
+                    // thing that varies, and the server owns what each one means
+                    // (`builtinCollectionClause`). Shared with the /decks sheet's
+                    // inline Cards section via src/api/collections.ts.
+                    cards = await fetchCollectionCards(builtin);
                 }
 
                 if (!cancelled) setEntries(cards);
@@ -174,8 +162,8 @@ const CollectionViewPage: React.FC = () => {
         return () => { cancelled = true; };
     // Keyed on isAuthenticated — the stable auth-presence flag, not the `token`
     // string — so a silent refresh doesn't re-fetch mid-scroll. See CLAUDE.md
-    // "Never reload on token refresh". `token` is read inside the callback only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // "Never reload on token refresh". The api layer resolves the header itself,
+    // so no token is captured here at all.
     }, [isAuthenticated, isDeck, deckId, builtin]);
 
     // Stable tap handler so the memoized cards don't all re-render on parent renders.
@@ -205,13 +193,6 @@ const CollectionViewPage: React.FC = () => {
         [filteredEntries, sortKey]
     );
     const isSearching = searchInput.trim().length > 0;
-
-    // Deck-only rows are hidden where the field they read does not exist —
-    // `deckAddedAt` is selected only by the deck read (OnDeckVocabService.getDeckCards).
-    const visibleSortBundles = useMemo(
-        () => sortBundles(user?.selectedLanguage, goals).filter((b) => !b.deckOnly || isDeck),
-        [user?.selectedLanguage, goals, isDeck]
-    );
 
     // ── Launch ────────────────────────────────────────────────────────────────
     //
@@ -337,108 +318,18 @@ const CollectionViewPage: React.FC = () => {
                 />
             </Box>
 
-            {/* Sort row. A text button rather than a bare icon: the ACTIVE ordering is
-                the thing worth showing — a learner who sorted by "Least mastered" and
-                then scrolled needs to see why the order looks the way it does. Right
-                aligned under the search field, on the same 364px column as the grid. */}
-            <Box
-                className="collection-view__sort"
-                sx={{
-                    width: 364, maxWidth: "100%", px: 3.5, pt: 1,
-                    display: "flex", justifyContent: "flex-end",
-                }}
-            >
-                <Button
-                    className="collection-view__sort-button"
-                    startIcon={<SwapVertIcon />}
-                    onClick={(e) => setSortAnchor(e.currentTarget)}
-                    sx={{
-                        textTransform: "none",
-                        fontFamily: FONTS.sans,
-                        fontSize: SIZE.body,
-                        fontWeight: WEIGHT.medium,
-                        color: COLORS.textSecondary,
-                        padding: "2px 8px",
-                        minWidth: 0,
-                    }}
-                >
-                    {sortLabel(sortKey, user?.selectedLanguage, goals)}
-                </Button>
-            </Box>
-
-            <Menu
-                className="collection-view__sort-menu"
-                anchorEl={sortAnchor}
-                open={Boolean(sortAnchor)}
-                onClose={() => setSortAnchor(null)}
-            >
-                {/* One row per DIMENSION, with both directions as toggles on the right.
-                    Not MenuItems: a row is not itself selectable — the two toggles are —
-                    and nesting buttons inside a MenuItem would give the row a second,
-                    ambiguous tap target that swallowed the toggles' clicks. */}
-                {visibleSortBundles.map((bundle) => (
-                    <Box
-                        key={bundle.id}
-                        className={`collection-view__sort-row collection-view__sort-row--${bundle.id}`}
-                        sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            gap: "16px",
-                            padding: "6px 16px",
-                        }}
-                    >
-                        <Typography
-                            className="collection-view__sort-row-label"
-                            sx={{
-                                fontFamily: FONTS.sans,
-                                fontSize: SIZE.body,
-                                fontWeight: WEIGHT.medium,
-                                color: COLORS.onSurface,
-                                whiteSpace: "nowrap",
-                            }}
-                        >
-                            {bundle.label}
-                        </Typography>
-
-                        <ToggleButtonGroup
-                            className="collection-view__sort-directions"
-                            size="small"
-                            exclusive
-                            // null unless the applied key belongs to THIS row, so exactly
-                            // one toggle in the whole menu ever reads as selected.
-                            value={bundle.directions.some((d) => d.key === sortKey) ? sortKey : null}
-                            onChange={(_e, next: VocabSortKey | null) => {
-                                // MUI emits null when the selected toggle is tapped again.
-                                // An ordering cannot be "off", so that tap is a no-op
-                                // rather than a fall back to some default.
-                                if (!next) return;
-                                setSortKey(next);
-                                setSortAnchor(null);
-                            }}
-                        >
-                            {bundle.directions.map((direction) => (
-                                <ToggleButton
-                                    key={direction.key}
-                                    value={direction.key}
-                                    className={`collection-view__sort-direction collection-view__sort-direction--${direction.key}`}
-                                    sx={{
-                                        textTransform: "none",
-                                        fontFamily: FONTS.sans,
-                                        fontSize: SIZE.caption,
-                                        fontWeight: WEIGHT.medium,
-                                        padding: "2px 10px",
-                                        lineHeight: 1.5,
-                                        whiteSpace: "nowrap",
-                                    }}
-                                >
-                                    {direction.label}
-                                </ToggleButton>
-                            ))}
-                        </ToggleButtonGroup>
-                    </Box>
-                ))}
-            </Menu>
+            <CollectionSortControl
+                classPrefix="collection-view"
+                sortKey={sortKey}
+                onSortKeyChange={setSortKey}
+                language={user?.selectedLanguage}
+                goals={goals}
+                // "Date added" reads `deckAddedAt`, which only the deck read selects.
+                allowDeckOnly={isDeck}
+                // Right-aligned under the search field, on the same 364px column as
+                // the grid.
+                sx={{ width: 364, maxWidth: "100%", px: 3.5, pt: 1 }}
+            />
 
             {actionError && (
                 <Typography

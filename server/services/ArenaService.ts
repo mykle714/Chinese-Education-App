@@ -114,7 +114,8 @@ export class ArenaService {
       };
     }
 
-    // 3. Not racing. Either the door is open or it is not.
+    // 3. Not racing. Both states offer the same Join button since § 8 — they
+    // differ only in whether last week's break is still open.
     return {
       state: isBreakPeriod(now, tz) ? 'opt-in' : 'closed',
       division,
@@ -221,25 +222,39 @@ export class ArenaService {
   /**
    * Opt a (user, language) into next week's arena.
    *
-   * Only legal during the break (§ 8). Outside it the answer is a 400, not a
-   * silent no-op: a user tapping "join" during a live week has misunderstood
-   * something and deserves to be told.
+   * THE GATE IS A SEAT, NOT THE CLOCK (§ 8). Someone who is not in this week's
+   * arena may enrol in next week's at any time, including while the current
+   * arena is running — being told "come back on Sunday" is the worst possible
+   * answer to a learner who has just decided they want to compete.
+   *
+   * Someone already racing is still refused, and loudly rather than silently:
+   * they hold a seat this week, a second one cannot exist
+   * (uq_arena_member_live), and they can enrol again the moment it closes.
    */
   async optIn(userId: string, language: string, tz: string, now = new Date()): Promise<string> {
     const zone = resolveTimezone(tz);
-    if (!isBreakPeriod(now, zone)) {
-      throw new ValidationError('The arena is currently running; you can join during the break.');
+    const live = await this.arenaDAL.findLiveArenaForUser(userId, language);
+    if (live) {
+      throw new ValidationError(
+        "You're already in this week's arena; you can join the next one once it closes.",
+      );
     }
     const weekKey = nextArenaWeekKey(now, zone);
     await this.arenaDAL.setOptInWeek(userId, language, weekKey);
     return weekKey;
   }
 
-  /** Withdraw before formation. After formation the seat is already taken. */
-  async withdraw(userId: string, language: string, tz: string, now = new Date()): Promise<void> {
-    const zone = resolveTimezone(tz);
-    if (!isBreakPeriod(now, zone)) {
-      throw new ValidationError('The arena has already formed for this week.');
+  /**
+   * Withdraw a pending enrolment.
+   *
+   * Legal exactly as long as opting in is, and gated on the same thing: once
+   * formation has seated you, the live seat is the refusal — membership is
+   * frozen for the week (§ 3) and there is nothing left to withdraw from.
+   */
+  async withdraw(userId: string, language: string): Promise<void> {
+    const live = await this.arenaDAL.findLiveArenaForUser(userId, language);
+    if (live) {
+      throw new ValidationError('Your arena has already formed; you are in it for the week.');
     }
     await this.arenaDAL.setOptInWeek(userId, language, null);
   }
@@ -316,6 +331,16 @@ export class ArenaService {
       // Each bucket's boundaries are computed in ITS OWN timezone. This is why
       // timezone is a hard partition: one arena, one unambiguous close instant.
       const weekStart = this.nextWeekStartFor(now, bucket.timezone);
+
+      // Only form the week these candidates actually opted into.
+      //
+      // Load-bearing since opt-in stopped being confined to the break (§ 8):
+      // mid-week, `weekStart` is the week ALREADY RUNNING (nextWeekStartFor only
+      // rolls forward past the close) while every candidate's key is next
+      // Tuesday's. Without this guard a Wednesday enrolment would be seated in
+      // an arena two days old, alone with 24 bots.
+      if (arenaWeekKey(weekStart, bucket.timezone) !== weekKey) continue;
+
       const closesAt = arenaCloseFor(weekStart, bucket.timezone);
 
       if (kind === 'batch') {

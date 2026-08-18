@@ -20,6 +20,18 @@ interface MiniVocabCardProps {
     onClick?: (entry: VocabEntry) => void;
     onDelete?: (entry: VocabEntry) => void;
     onCycle?: (entry: VocabEntry) => void;
+    /**
+     * Draw the bottom-left mastery strip. Default true — every deck/collection surface
+     * wants it, because there the card's job is partly to report progress.
+     *
+     * Set false where the card is a PREVIEW of a word rather than a readout of the
+     * learner's standing on it (the provisional lent-card notice and sort offer): a
+     * borrowed card's bars are either empty or a half-round's worth of marks, so the
+     * strip is noise at best and a discouraging "you know nothing" mark at worst, in a
+     * dialog whose only question is "do you want this word?". Suppressing it also drops
+     * the strip's reserved height, so the definition sits lower and the card breathes.
+     */
+    showMasteryStrip?: boolean;
     // When set, the card plays the shared `cardPopIn` animation on mount, delayed
     // by this many ms. Callers (e.g. the /decks card previews) pass `index * step`
     // to stagger a freshly-loaded row into a left-to-right cascade. Omit elsewhere
@@ -47,17 +59,22 @@ const BAR_STRIP = {
 const barStripHeight = (n: number): number =>
     n === 0 ? 0 : n * BAR_STRIP.height + (n - 1) * BAR_STRIP.gap;
 
-const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs }) => {
+const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs, showMasteryStrip = true }) => {
     // The account's goals decide how many bars this strip has (core always, plus each
     // opted-in goal). Read here rather than passed down: every host of this card would
     // otherwise have to thread the same two flags through, and they are already in
     // context. The bar COUNT is per-account, so it is uniform across a grid and the
     // definition below sits at the same height on every card.
     const { user } = useAuth();
-    const bars = masteryBars(entry.typedMarkHistory, {
-        reading: user?.readingGoal === true,
-        writing: user?.writingGoal === true,
-    });
+    // An empty list when the strip is suppressed, so the ONE array drives both the
+    // rendering below and the definition's bottom offset — there is no second way for
+    // the two to disagree about how much room the strip takes.
+    const bars = showMasteryStrip
+        ? masteryBars(entry.typedMarkHistory, {
+            reading: user?.readingGoal === true,
+            writing: user?.writingGoal === true,
+        })
+        : [];
     // Render a custom icon arrangement behind the text only for ADVANCED layouts:
     // multiple icons, OR a single icon that has been moved/resized/rotated off its
     // default placement. Plain default-icon cards keep the icon-free thumbnail. Uses
@@ -332,7 +349,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 pbh. Left-justified against BAR_STRIP.left rather than centered, so the
                 strip reads as a margin annotation and does not compete with the
                 centered word and definition above it. */}
-            <Box
+            {bars.length > 0 && <Box
                 className="mini-vocab-card__mastery-strip"
                 sx={{
                     position: 'absolute',
@@ -396,7 +413,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                         </Box>
                     </Box>
                 ))}
-            </Box>
+            </Box>}
         </Box>
     );
 };

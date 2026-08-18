@@ -85,3 +85,64 @@ describe("resolveDisplayPronunciation", () => {
     expect(resolveDisplayPronunciation(e)).toBeNull();
   });
 });
+
+
+/**
+ * THE AUDIO MUST SAY WHAT THE SCREEN SHOWS.
+ *
+ * `useTTS.speak` passes its pronunciation hint to the cloud provider, which sends it to
+ * Google TTS as an SSML <phoneme> tag — so the hint decides which reading is actually
+ * SPOKEN. It used to send the raw `pronunciation` column while every card face rendered
+ * `resolveDisplayPronunciation`. For a polyphone those differ by construction, and the
+ * learner hears one syllable while reading another.
+ *
+ * These pin the property at the resolver, which is the shared seam: `speak` and every
+ * card face now call the same function with the same arguments, so a future change that
+ * reintroduces the split has to go through here.
+ */
+describe("display pinyin and narrated pinyin agree", () => {
+  // 和 — the real report: hé on "and", huó on "to blend".
+  const AND = cluster("and / with", "he2", 3, ["and; with"]);
+  const BLEND = cluster("to mix / blend", "huo2", 1, ["to blend"]);
+  const he = (over: Partial<VocabEntry> = {}): VocabEntry =>
+    ({
+      entryKey: "和",
+      language: "zh",
+      definition: "and; with",
+      pronunciation: "hé",
+      definitionClusters: [AND, BLEND],
+      selectedSense: null,
+      ...over,
+    }) as unknown as VocabEntry;
+
+  it("resolves the SELECTED sense's reading, not the headword column", () => {
+    // The bug, stated directly: the column says hé, the chosen sense says huó, and the
+    // card shows huó. Anything narrating the column contradicts the screen.
+    const blending = he({ selectedSense: "to mix / blend" });
+    expect(resolveDisplayPronunciation(blending)).toBe("huó");
+    expect(blending.pronunciation).toBe("hé");
+  });
+
+  it("agrees for every sense of a polyphone", () => {
+    for (let i = 0; i < 2; i++) {
+      const displayed = resolveDisplayPronunciation(he(), i);
+      const narrated = resolveDisplayPronunciation(he(), i);
+      expect(narrated).toBe(displayed);
+    }
+  });
+
+  it("honors a live sense override ahead of the persisted one", () => {
+    // The flp picker moves `selectedSenseIndex` immediately while `selectedSense` only
+    // catches up after the persist round-trips. Narration takes the override so the
+    // audio never lags the pinyin printed above it.
+    const persistedAsAnd = he({ selectedSense: "and / with" });
+    expect(resolveDisplayPronunciation(persistedAsAnd)).toBe("hé");
+    expect(resolveDisplayPronunciation(persistedAsAnd, 1)).toBe("huó");
+  });
+
+  it("falls back to the column when a cluster has no reading", () => {
+    // A partially-enriched entry must narrate SOMETHING rather than nothing.
+    const noReading = he({ definitionClusters: [cluster("and / with", null, 3)] });
+    expect(resolveDisplayPronunciation(noReading)).toBe("hé");
+  });
+});

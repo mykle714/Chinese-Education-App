@@ -57,6 +57,14 @@ interface SheetPanelProps {
     // share the grabber's drag-to-resize gesture. useDrag's filterTaps option
     // keeps proper taps on header icons working.
     children: React.ReactNode | ((api: { bindHeaderDrag: ReturnType<typeof useDrag> }) => React.ReactNode);
+    // Where, between the lower stop and the max, a release stops springing back
+    // up and collapses instead. 0.5 (default) = the midpoint rule: whichever
+    // stop is nearer wins. A SMALLER value makes the panel collapse from a much
+    // lower height — the sheet has to be pulled most of the way down before it
+    // will spring back up, so a partial pull-down reads as "close it". Only the
+    // {lower stop, max} choice is affected; a modal panel's dismiss floor (its
+    // default height) is untouched.
+    collapseThresholdRatio?: number;
     // Optional row rendered above the grabber (e.g. entry-tabs strip). Rendered
     // inside a drag-to-resize zone bound to bindHeaderDrag so a vertical drag
     // started on the entry tabs resizes the sheet just like the grabber/header
@@ -116,16 +124,22 @@ const AT_MAX_EPSILON_PX = 1;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 // Shared snap rule used by every release path (grabber drag, touch release,
-// momentum decay): below default → dismiss (0); at or above it → whichever of
-// {default, max} is nearer. The default height is the floor — there is no
-// resting stop between 0 and it.
+// momentum decay): below default → dismiss (0); at or above it → the lower
+// stop if the sheet sits below `collapseRatio` of the way up to the max,
+// otherwise the max. The default height is the floor — there is no resting
+// stop between 0 and it.
+//
+// `collapseRatio` of 0.5 is the plain nearest-stop rule; anything smaller moves
+// the collapse point DOWN, so the sheet keeps springing open until it has been
+// pulled well past halfway.
 //
 // A PERSISTENT panel (minH > 0) has no dismiss stop at all: `defaultH` IS
-// `minH`, nothing can go below it, so the rule degrades to "nearest of
-// {minH, max}" via the same comparison.
-function computeSnapTarget(h: number, defaultH: number, maxH: number, minH: number): number {
+// `minH`, nothing can go below it, so the rule degrades to "collapse to minH or
+// grow to max" via the same comparison.
+function computeSnapTarget(h: number, defaultH: number, maxH: number, minH: number, collapseRatio: number): number {
     if (h < defaultH && minH === 0) return 0;
-    return Math.abs(defaultH - h) <= Math.abs(maxH - h) ? defaultH : maxH;
+    const collapseBelow = defaultH + (maxH - defaultH) * collapseRatio;
+    return h < collapseBelow ? defaultH : maxH;
 }
 
 // Module-level set of currently mounted panel depths. The window-level wheel
@@ -141,6 +155,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     depth = 0,
     bodyRef,
     bodyKey,
+    collapseThresholdRatio = 0.5,
     children,
     tabStrip,
 }, ref) => {
@@ -183,6 +198,9 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // used rather than the one captured at bind time.
     const minHeightRef = useRef(minHeight);
     minHeightRef.current = minHeight;
+    // Read from settle() without re-binding it when the prop changes.
+    const collapseRatioRef = useRef(collapseThresholdRatio);
+    collapseRatioRef.current = collapseThresholdRatio;
 
     // The single writer for the sheet's height. `animate` turns the CSS height
     // transition on for this write and off for every other one — so grabbing a
@@ -239,7 +257,13 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // The one release rule, shared by every path that ends a gesture (grabber
     // drag release, touch release, momentum decay, momentum hitting a stop).
     const settle = useCallback(() => {
-        const target = computeSnapTarget(heightRef.current, defaultHeightRef.current, maxHeight(), minHeightRef.current);
+        const target = computeSnapTarget(
+            heightRef.current,
+            defaultHeightRef.current,
+            maxHeight(),
+            minHeightRef.current,
+            collapseRatioRef.current,
+        );
         if (target === 0) {
             dismiss();
             return;

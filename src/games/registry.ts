@@ -9,6 +9,8 @@ import { COLORS } from "../theme/colors";
 import { MARK_TYPE as BUBBLE_MATCH_MARK_TYPE } from "./bubble-match/constants";
 import { MARK_TYPE as MATCH_SPEED_MARK_TYPE } from "./match-speed/constants";
 import { MARK_TYPE as SPEED_READING_MARK_TYPE } from "./speed-reading/constants";
+import { MARK_TYPE as MEMORY_MAP_MARK_TYPE } from "./memory-map/constants";
+import { MARK_TYPE as HYDRA_MARK_TYPE } from "./hydra-bubbles/constants";
 // The challenge-eligible pool and its scoring numbers (docs/STUDY_CHALLENGE.md § 5.4).
 // They live in the shared wire contract rather than here because THE SERVER draws each
 // challenge's game sequence and cannot load this module (it imports lazy React
@@ -98,6 +100,44 @@ export const GAME_REGISTRY: GameDef[] = [
         // headword, which presupposes a character-based script. See
         // GameDef.languages.
         languages: ["zh"],
+    },
+    {
+        gameId: "hydra-bubbles",
+        title: "Hydra Bubbles",
+        subtitle: "Cut one head off and more grow back — clear pairs before the board buries you",
+        route: "/games/hydra-bubbles",
+        Component: lazy(() => import("./hydra-bubbles/HydraBubblesPage")),
+        bgColor: COLORS.tealAccent,
+        markType: HYDRA_MARK_TYPE,
+        challengeScoring: challengeScoringFor("hydra-bubbles"),
+        // No `languages` gate: levels 1..6 exist for every language and nothing in
+        // the payout or spawn logic is zh-specific (docs/HYDRA_BUBBLES.md § 9).
+        //
+        // No `unlock` and NO LEVELS: Hydra has one mode — board size is its difficulty
+        // curve — so it takes a single hub row rather than a HubMenuArrayItem strip.
+        // It also declares no card baseline at all (it is absent from CARD_BASELINES,
+        // following Memory Map's precedent), so there is nothing to gate on: a run may
+        // lend from the very first bubble (§ 6.5).
+    },
+    {
+        gameId: "memory-map",
+        title: "Memory Map",
+        subtitle: "Find each word on your ever-growing map of what you can read",
+        route: "/games/memory-map",
+        Component: lazy(() => import("./memory-map/MemoryMapPage")),
+        bgColor: COLORS.yellowAccent,
+        markType: MEMORY_MAP_MARK_TYPE,
+        // No `languages` gate: the map renders through ForeignText, so Spanish works
+        // unchanged. No `challengeScoring` either — a challenge round is recognition
+        // or production only, and this game marks READING (docs/STUDY_CHALLENGE.md
+        // § 5.4). No `unlock`: it declares no card baseline at all, and a learner with
+        // no cards gets an empty-state pointing at Discover rather than a locked row
+        // (docs/MEMORY_MAP_GAME.md § 10).
+        //
+        // NOT VISIBLE UNDER A COLLECTION FILTER: GamesPage hides this row whenever the
+        // selected collection is anything but All Cards. The map IS your library and
+        // cannot be scoped to a deck, and a visible row that ignored the selector would
+        // read as a bug (Q21).
     },
 ];
 

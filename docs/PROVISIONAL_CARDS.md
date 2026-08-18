@@ -119,6 +119,81 @@ discoverable word gets `shortfall > 0` and a smaller round. Never a block screen
 
 ---
 
+### 3b. Re-lend before minting (app-wide, 2026-08-18)
+
+*Code: `ProvisionalCardService.lendCards`, `ProvisionalCardDAL.findCandidates`.*
+
+`findCandidates` refuses any word the learner already holds **in either bucket** —
+`'library'` means it is in their deck, `'provisional'` means it is already lent. That
+is correct for *minting* a new row, but it made minting the **only** thing lending
+ever did, so every unfilled slot grew the provisional holding by one row forever.
+
+Lending is now two steps, in order:
+
+1. **Re-lend** — draw from the provisional rows the learner **already holds** and that
+   are **off cooldown**.
+2. **Mint** — only when step 1 cannot cover the shortfall, create new rows via
+   `findCandidates` exactly as before.
+
+The cooldown is **never broken** to re-lend: a held provisional card that is still
+resting is skipped and step 2 runs instead. Re-lending is a cheaper way to fill a
+slot, not a licence to re-serve a resting card.
+
+The rule is **app-wide**, but it attaches to the *tier-targeted draw*, not to
+`lendCards`. This distinction was found while implementing it (2026-08-18) and is a
+correctness constraint, not a preference:
+
+* **`lendCards` mints, and must keep minting.** Its contract is "make `N` more
+  playable rows exist", and `ensureBaseline` is built on that — it compares
+  `countPlayable` before and after. A re-lent card is **already** playable, so it adds
+  nothing to that count. Folding re-lend into `lendCards` would let it report `granted
+  = 5` while the learner gained zero playable cards, and `ensureBaseline` would stop
+  short of the baseline believing it had succeeded.
+* **A tier-targeted draw names a card, and should re-lend first.** "Give me a card at
+  tier 2 to put on the board" is answered perfectly well by a card the learner already
+  holds. Here re-lending is the whole point, and minting is the fallback.
+
+> The two also read different sources, which is why the ordinary path loses nothing by
+> being mint-only. A held provisional card that is off cooldown is *already* reachable
+> by the normal pool query (`fetchGameCandidates` is PLAYABLE), so in an ordinary round
+> it is drawn at fill tier 1 or 3 and never reaches the lend step. Re-lending only
+> changes an outcome where the pool query could not use the card — which is exactly the
+> tier-targeted case, because no ordinary query selects by difficulty.
+
+Net effect on the "no cap on outstanding lent cards" trade above: unchanged for every
+surface that exists today, and bounded for Hydra Bubbles, whose long runs would
+otherwise mint a row per unfilled color slot forever.
+
+**Status: BUILT 2026-08-18, with Hydra Bubbles.** `OnDeckVocabService.fetchRelendable`
+is the re-lend query; `lendGameCandidates` runs it before minting whenever the caller
+supplied a tier. Cooldown is filtered in app code (`isTypeOnCooldown`) rather than SQL,
+because that is where the cooldown lives.
+
+### 3c. A lent card keeps its lend tier while it is lent
+
+A provisional card's **difficulty tier** is what a caller means when it asks to lend
+"a green card". The tier is *not stored* — there is no new column — it is derived at
+read time from the det row's existing `difficulty` (1..6, already joined by
+`dictJoin.ts` and already present on `VocabEntry`) relative to the learner's estimated
+level `L` (`StarterPacksService.estimateLevel`).
+
+**While a card is lent, its tier is what the caller sees, even after it has marks.**
+A card lent as a level-3 "green" stays green for as long as it is provisional, and does
+not switch to its real utcm category once mark history accumulates. Payouts and pool
+membership stay stable across a run, which is what the caller asked for when it drew
+from that tier.
+
+The card's real `typedMarkHistory` is untouched by this and keeps banding normally —
+the tier is a *serving* label, not a mastery claim. On promotion (§ 7) the tier stops
+applying and the card bands like any library card, off the history it accumulated while
+lent.
+
+> Consequence: tiers move when `L` moves. A learner whose estimated level rises
+> re-labels their whole holding one step easier. That is accepted — the tier is
+> relative to the learner by definition.
+
+---
+
 ## 4. Where provisioning happens
 
 Always server-side, implicitly, when a surface fetches its card set. The client never
@@ -129,7 +204,22 @@ There are **two triggers**, and they answer different questions:
 | Entry point | Question | Caller |
 |---|---|---|
 | `ensureBaseline(userId, language, N)` | "does this learner hold at least N playable cards?" | `OnDeckVocabController`, before assembling any set |
-| `lendCards(userId, language, n)` | "lend exactly n, whatever they hold" | `OnDeckVocabService`, mid-algorithm, when the flp loop can't be filled |
+| `lendCards(userId, language, n, mode, { level? })` | "mint exactly n, whatever they hold" — and, when `level` is given, mint them **around that difficulty** rather than around the learner's own estimated level | `OnDeckVocabService`, mid-algorithm, when the flp loop can't be filled; Hydra, when a rolled color has no uncooled card |
+
+`level` is a **centre, not a filter**. `findCandidates` orders by
+`ABS(difficulty - level)`, so an exhausted level widens outward instead of returning
+nothing — which is both Hydra's documented "pull from the next level up" fallback
+(docs/HYDRA_BUBBLES.md § 6.2) and the reason a nonsense level can never starve a round.
+
+**Callers that think in TIERS pass an offset, not a level**, and resolve it with
+`resolveLendLevel(userId, language, offset)` first. The split is deliberate: only the
+server knows the learner's estimated level `L` (`StarterPacksService.estimateLevel` is
+not exposed to the client and there is no reason to expose it), while the per-color
+offsets are the calling game's own design. Hydra sends `?lendLevelOffset=` and the
+server resolves it — the alternative was an endpoint whose only job was to ship `L`
+out so the client could send a level back that the server already had. The clamp into
+1..6 inside `resolveLendLevel` is also what implements Hydra's "floored at L <= 4"
+rule, with no special case for a beginner.
 
 `lendCards` exists because the baseline **cannot express the flp's case**. A learner with
 400 sorted cards is far past the 20-card flp baseline, so `ensureBaseline` no-ops — yet
@@ -151,10 +241,26 @@ the end-of-session "sort these cards" CTA is the pressure valve.
 | `GET /api/onDeck/wordSearchGrid?surface=word-search` | Word Search | Escalating retry, see §6 |
 | `GET /api/onDeck/distributedWorkingLoop` | flp | Always `'flp'` |
 
-**Partial refills never provision.** Bubble Match's *Play Again* sends `need=N` to swap
-out only the pairs the player matched; lending cards on every tap would quietly grow
-their deck. If such a refill comes back below `MIN_REPLAY_PAIRS`, the client falls back
-to a **full** pool fetch, which does provision.
+**Partial refills provision only if the game opts in.** Bubble Match's *Play Again*
+sends `need=N` to swap out only the pairs the player matched; lending on every tap
+would quietly grow their deck, so it does not provision, and a refill that comes back
+below `MIN_REPLAY_PAIRS` falls back to a **full** pool fetch, which does.
+
+That exemption used to be a blanket rule on `need` being set. It is now **per game**,
+because a game whose whole supply model is the partial refill — Hydra Bubbles, which
+fetches every spawn that way (docs/HYDRA_BUBBLES.md § 6) — would otherwise be unable
+to lend at all, at any point in a run. Games that roll their board once keep the
+exemption; games with a rolling supply declare out of it.
+
+A game declares out by naming itself in **`ROLLING_SUPPLY_SURFACES`**
+(`server/contracts/wire.ts`) and sending `?surface=<its id>`; the controller turns that
+into `lendOnRefill` on the pool call, and `getGameVocabPool` widens its fill-tier-2
+guard from `need === undefined` to `need === undefined || lendOnRefill`. Hydra Bubbles
+is the only such surface today (built 2026-08-18). This is
+deliberately a **separate list from `CardBaselineSurface`**: "how many cards do you need
+up front" and "may you lend mid-run" are orthogonal, and Hydra answers the first with
+"none". The collection/deck restriction has **no** opt-out — a restricted round plays
+the set the learner chose, rolling supply or not.
 
 An unrecognized or missing `surface` param (an older client) falls back to the requested
 distribution's own total, so it still never blocks.
@@ -172,29 +278,43 @@ tier 2 everywhere:
 | Tier | flp working loop | Game pool / Word Search grid |
 |---|---|---|
 | 1 | each quota, from its own category (longest-waiting first) | each requested bucket, FRESH cards only |
-| **2** | **lend the shortfall** | **lend the shortfall** |
+| **2** | **lend the shortfall** (re-lend, then mint — § 3b) | **lend the shortfall** (re-lend, then mint — § 3b) |
 | 3 | borrow across categories in the mode's `fillOrder` | borrow FRESH cards in `GAME_FALLBACK_ORDER` |
 | 4 | — (a cooling card is never re-served on the flp) | COOLED cards (requested buckets → fallback) |
 | 5 | — | soft-`avoid`ed cards (just cleared) |
 
-**A lent card is always `Unfamiliar`** — it has no mark history — so this deliberately
-skews a short round toward `Unfamiliar` instead of skewing it toward whichever bucket
-happened to have surplus. That is the point: a brand-new word is closer to what the
-missing quota was asking for than another bucket's leftovers.
+**A newly minted card is always `Unfamiliar`** — it has no mark history — so this
+deliberately skews a short round toward `Unfamiliar` instead of skewing it toward
+whichever bucket happened to have surplus. That is the point: a brand-new word is closer
+to what the missing quota was asking for than another bucket's leftovers.
+
+Since § 3b, a lent card is **not** always Unfamiliar: a re-lent card carries whatever
+history it earned the last time it was out. Any code that assumed "lent ⇒ Unfamiliar"
+(the `canLendProvisional` rationale in `OnDeckVocabService`, and the tier-2 skew
+argument above) holds only for the minting half.
 
 Note the ordering only bites when a quota **underfills**, and a quota underfills exactly
 when its own category is spent — so tier 3 could never have served that same category
 anyway. The real choice being made is *"lend"* vs *"deepen a different bucket"*.
 
+A **single-bucket** request (Hydra Bubbles asking for one color) does not reach tier 3
+at all — for that caller tiers 3–5 collapse to the requested bucket, because a
+substituted bucket is a card whose category the caller misreports. See
+[GAMES_FEATURE.md](./GAMES_FEATURE.md) and [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md)
+§ 6.2d. Its tier 4 therefore carries real weight: cooling cards of the requested
+category are preferred over any other category's fresh ones.
+
 Two sessions skip tier 2 entirely and fall straight to tier 3:
 
 * **collection-restricted rounds** (`?deck=`, `?collection=`) — see the table in § 6;
-* **partial game refills** (`need` is set) — Bubble Match's *Play Again*, per the
-  "partial refills never provision" rule above.
+* **partial game refills** (`need` is set) for games that keep the exemption —
+  Bubble Match's *Play Again*. A game with a rolling supply (Hydra Bubbles) opts out
+  and lends on refills like any other fetch.
 
 There is still **no cap** on how much a single round may lend; the shortfall is lent in
 full. On a small library that grows the provisional holding quickly, which is the accepted
-cost of never re-serving a resting card (see the "no cap" note above).
+cost of never re-serving a resting card (see the "no cap" note above) — though § 3b's
+re-lend step now absorbs much of that growth on repeat sessions.
 
 ---
 
@@ -214,12 +334,47 @@ Whether the notice can **name** the words is a per-surface property, shared as
 | Match Speed | no — generic message | deals from a rolling buffer |
 | flp | no — generic message | working loop refills as you go |
 
-An itemized notice shows a **table**, one row per lent card: **word1 · pinyin · dd**
-(`src/components/ProvisionalCardTable.tsx`). A bare word list was the first version and
-was not enough — a learner handed words they never sorted cannot judge them without the
-meaning. Both the pinyin and the dd go through the sense-aware resolvers
-(`resolveDisplayPronunciation` / `resolveDisplayDefinition`), so the table agrees with
-the card face the learner is about to meet.
+An itemized notice shows a **grid of the app's real mini vocab cards, two per row**,
+one per lent card (`src/components/ProvisionalCardGrid.tsx`). The cards are
+`MiniVocabCard` itself — the same 92×132 thumbnail the decks page, the collection view,
+Quick Mark and the flashcard back render — not a preview-only card design. A bare word
+list was the first version and was not enough: a learner handed words they never sorted
+cannot judge them without the meaning, and cannot recognise them later if the preview
+looks nothing like the card they end up with. Because the card resolves everything from
+the entry it is given (sense-aware dd + pinyin, icon or icon layout, per-card color and
+text-color overrides, the utcm badge), the preview agrees with the card face the learner
+is about to meet by construction rather than by re-implementing it.
+
+The **mastery strip is suppressed** here (`showMasteryStrip={false}`, a prop added to
+`MiniVocabCard` for this): a borrowed card's bars are empty before the round and a
+partial round's marks after it, and the dialog is asking whether the learner wants the
+word, not how well they know it. Suppressing it also drops the strip's reserved height,
+so the definition sits lower on the card.
+
+Layout history, all of it driven by the same ~276–340px-wide popup: a three-column
+`word1 · pinyin · dd` table → one full-width pill per card → the 2-column
+`MiniVocabCard` grid (all three on 2026-08-18). The table spent two nowrap columns before
+the definition got any width, so long dds clipped. The pills fixed the clipping but were
+still a bespoke shape describing a card rather than showing one. Two per row is
+arithmetic, not taste: the card's width is fixed at 92px, so a row is 2 × 92 + 16 = 200px
+— three per row (what `MiniVocabCardGrid` does at 364px) does not fit the popup, two does
+comfortably, and it halves the vertical run so a typical lent set (4–8 cards) is fully
+visible inside the popup's `maxHeight` instead of scrolling. The grid is deliberately
+NOT `MiniVocabCardGrid`: that component owns a 3-per-row track plus paced incremental
+reveal for decks of hundreds, where a lent set is a handful of cards in a dialog. There
+is deliberately **no container box** behind the cards — the beige panel the original
+table sat in read as a mis-drawn frame on the notice's equally-beige card.
+
+The preview is READ-ONLY: no `onClick` is passed, so the card renders with a default
+cursor and no hover lift. Tapping a lent card does nothing; the dialog's own buttons are
+the decision.
+
+**Known gap.** A card previewed from the fetched path (below) is adapted from a
+`DiscoverCard` by `discoverCardToProvisionalEntry`, which cannot supply `category` — so
+those previews carry no utcm badge where the surfaces holding real vet rows (Bubble
+Match, Speed Reading) do. Closing it means serving vet rows from `GET /provisionalSet`.
+The matching `typedMarkHistory` gap no longer shows, since the strip is off on both
+paths.
 
 There is no way to decline. Declining would mean not playing, which is the outcome this
 whole rework removed.
@@ -230,12 +385,12 @@ which cards were lent to you is not playing, so it isn't charged to the run. See
 [GAMES_FEATURE.md](./GAMES_FEATURE.md) § Popups pause the clock for the per-game table.
 
 The client derives the notice from the served cards themselves
-(`card.starterPackBucket === 'provisional'`, via `provisionalRows` in
+(`card.starterPackBucket === 'provisional'`, via `provisionalEntries` in
 `src/utils/provisionalCards.ts`), so nothing extra rides on the wire. Word Search is the
 one exception: its grid payload carries `PlacedWord`s rather than vet rows, so the server
 reports a flat `provisionalWords: string[]` instead of threading a flag through the grid
-generator — and the notice turns those words into rows by fetching them
-(`useProvisionalRows`, `src/hooks/useProvisionalRows.ts`).
+generator — and the notice turns those words into cards by fetching them
+(`useProvisionalEntries`, `src/hooks/useProvisionalEntries.ts`).
 
 ### After the round — `src/components/ProvisionalSortOffer.tsx`
 
@@ -244,11 +399,11 @@ The same table comes back as a **popup** asking *"Keep these N cards?"*, with
 just spent a whole round with those words. Accepting opens the sort flow in set mode
 (§ 7) on exactly those words.
 
-**On a game** the offer is sequenced *behind* the run's own result. The end-of-run popup
-lands first and the offer opens over it `SORT_OFFER_DELAY_MS` (1.4 s) later, so the medal
-or time gets its own beat — `useProvisionalSortOffer` (`src/hooks/useProvisionalSortOffer.ts`)
-owns that timer plus the open/minimized/dismissed state, and resets the whole thing on a
-replay so a second run is judged on its own.
+**On a game** the offer stacks over the run's own result and opens **immediately** when
+the round ends — there is no delay (there used to be a 1.4 s `SORT_OFFER_DELAY_MS` beat;
+it was removed). `useProvisionalSortOffer` (`src/hooks/useProvisionalSortOffer.ts`) owns
+the open/minimized/dismissed state and resets the whole thing on a replay so a second run
+is judged on its own.
 
 Both popups are on screen together, so they must never read as one thing:
 
@@ -384,8 +539,15 @@ promoted into the real deck.
 set** instead of the open-ended level-based supply. Each card becomes its own pack-of-1,
 so all the existing pack machinery (drag, undo, resolved markers) works unchanged.
 
-Two differences: the queue is **never replenished**, and the page **closes itself**
-(`navigate(-1)`) once the last card of the set is sorted.
+Two differences: the queue is **never replenished**, and the page **closes itself** as
+soon as the queue empties. The exit is an effect on `queue.length` (SortCardsPage's
+set-mode auto-exit effect), not a call inside the sorting handler, so *every* way of
+emptying the set exits: the last card sorted, the last card skipped, a failed sort POST,
+or a set that came back already empty because the cards were sorted in another tab. It
+goes `navigate(-1)` back to whatever opened the offer, falling back to `/discover` when
+this page is the first history entry (deep-link or reload). Without this the empty queue
+renders as a permanent spinner — the empty-state branch only shows a message when
+`exhausted`, and a fixed set never is.
 
 `words` narrows the set to one round's cards; omitting it offers every outstanding
 provisional card. The server **intersects** whatever is asked for with what the learner
@@ -396,7 +558,9 @@ only ever return fewer cards, never smuggle in extra ones.
 
 `StarterPacksService.sortCard` **promotes in place**: if the row already exists and is
 `'provisional'`, it flips the bucket to `'library'` and **touches nothing else**. Every
-mark earned while the card was temporary survives.
+mark earned while the card was temporary survives — including marks earned on it during a
+run where it was serving under a difficulty tier (§ 3c). The tier was only ever a serving
+label; promotion drops it and the card bands off its real history from then on.
 
 An already-`'library'` row is left completely alone (re-sorting must not reset anything).
 
@@ -431,6 +595,29 @@ two features honest about each other:
 The strict `vetDeckClause` (no provisional branch) is used by every read that means
 "the deck itself" — the deck's card list, its count — so those never show a lent card.
 
+## 7c. Memory Map declares NO baseline — deliberately
+
+[MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) has **no entry in `CARD_BASELINES`** and is
+never topped up. It is the only game like this, and the omission is a decision rather
+than an oversight, so do not "complete" the table by adding it.
+
+Two reasons, and the second is the important one:
+
+* **Nothing to block.** The map has no minimum viable size — a learner with four cards
+  gets a four-word map and a perfectly playable run. There is no round to fail to build,
+  which is what a baseline exists to prevent.
+* **A lent card must not homestead a permanent map.** Every other surface's selection is
+  transient: a provisional card appears for one round and is gone. Memory Map's
+  selection writes a DURABLE placement row — the word takes a permanent spot on a map
+  meant to portray the learner's own library. A borrowed word does not belong there.
+
+That second point makes Memory Map **the app's only game that selects on
+`vetSortedClause()`** rather than `vetPlayableClause()`. The rule of thumb in
+`vetTable.ts` still holds — "if it answers *what can I put in front of the player right
+now?* it is PLAYABLE" — because Memory Map is asking a different question: *what belongs
+on this learner's map forever?* When a future surface's selection creates something that
+outlives the session, it should reach for SORTED for the same reason.
+
 ## 8. Layering map
 
 | Layer | File | Responsibility |
@@ -442,11 +629,11 @@ The strict `vetDeckClause` (no provisional branch) is used by every read that me
 | Service | `server/services/StarterPacksService.ts` | `getCardsForWords`, in-place promotion, undo demotion |
 | Controller | `server/controllers/OnDeckVocabController.ts` | `ensureBaseline` before every set; Word Search retry ladder |
 | Controller | `server/controllers/StarterPacksController.ts` | `GET /api/starterPacks/:language/provisionalSet` |
-| Client (shared) | `src/api/provisional.ts`, `src/utils/provisionalCards.ts` | typed call; derive lent cards (`provisionalWords` / `provisionalRows`) from a served set |
-| Client (shared) | `src/hooks/useProvisionalRows.ts` | word1/pinyin/dd rows — local when the caller holds the cards, fetched when it holds only words |
+| Client (shared) | `src/api/provisional.ts`, `src/utils/provisionalCards.ts` | typed call; derive lent cards (`provisionalWords` / `provisionalEntries`) from a served set, and adapt a `DiscoverCard` into the mini card's `VocabEntry` |
+| Client (shared) | `src/hooks/useProvisionalEntries.ts` | the lent cards as `VocabEntry` rows — local when the caller holds them, fetched when it holds only words |
 | Client (shared) | `src/hooks/useProvisionalSortOffer.ts` | a game's offer timing + open/minimized/dismissed state |
 | Client (shared) | `src/components/MinimizablePopup.tsx` | the scrim / card / corner-puck collapse shell (also backs `GameEndPopup`) |
-| Client (shared) | `src/components/ProvisionalCardTable.tsx` | the word1 · pinyin · dd table |
+| Client (shared) | `src/components/ProvisionalCardGrid.tsx` | the lent cards as `MiniVocabCard` thumbnails, 2 per row |
 | Client (shared) | `src/components/ProvisionalCardsNotice.tsx`, `src/components/ProvisionalSortOffer.tsx` | the pre-round notice; the end-of-round offer popup |
 
 ---
@@ -457,3 +644,5 @@ The strict `vetDeckClause` (no provisional branch) is used by every read that me
 * [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) — the sort flow this hands off to
 * [MASTERY_REWORK.md](./MASTERY_REWORK.md) — typed marks, per-type cooldowns, utcm banding
 * [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) — `frequencyScore`, the commonality ordering key
+* [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) — the first surface to lend **by tier** (§ 3c) and
+  the reason partial refills became per-game (§ 4)

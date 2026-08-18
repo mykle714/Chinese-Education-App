@@ -52,13 +52,38 @@ export interface MarkFlashcardRequest {
      */
     deckId?: number;
     collection?: string;
+    /**
+     * Which surface produced this mark ("bubble-match", "flp", …).
+     *
+     * PURELY DIAGNOSTIC — no server behavior branches on it. It exists so the
+     * suppressed-mark log (docs/HYDRA_BUBBLES.md § 8.1) can tell apart the two
+     * reasons a mark gets dropped: a card served by fill tier 4 (cooled cards on an
+     * ordinary run — the collision we do NOT want and are measuring), versus a
+     * deck/collection round that deliberately ignores cooldown (§ 6.3 — intended).
+     * Without it the log is one undifferentiated count and answers nothing.
+     */
+    surface?: string;
 }
 
 export interface MarkFlashcardResponse {
     /** The replacement card, or null when the caller sent no `mode`/none is available. */
     newCard: VocabEntry | null;
-    /** Server-assigned timestamp of the mark just written — the undo key. */
-    markTimestamp: string;
+    /**
+     * The server DECLINED to record this mark because the card's track had not
+     * finished cooling down (docs/HYDRA_BUBBLES.md § 8 — cooldown is a hard
+     * "next markable at"). Not an error: the review happened, it just did not
+     * change any history, so `markTimestamp` is null and there is nothing to undo.
+     *
+     * Callers that only fire-and-forget (every game) can ignore this. Callers that
+     * offer UNDO must check it — an undo keyed on a mark that was never written
+     * would be rejected by the server and read to the user as a failure.
+     */
+    suppressed: boolean;
+    /**
+     * Server-assigned timestamp of the mark just written — the undo key. NULL when
+     * `suppressed`, which is the only case where no mark exists to undo.
+     */
+    markTimestamp: string | null;
     /** Echoed back so undo reverts the same typed stream. */
     markType: MarkType;
     /** The mark pushed out of a full 8-slot window, so undo can restore it. */
@@ -86,18 +111,25 @@ export async function markFlashcard(
         mode: request.mode,
         deckId: request.deckId,
         collection: request.collection,
+        surface: request.surface,
     });
+
+    // A SUPPRESSED mark is a legitimate success with no timestamp (see the field's
+    // docs), so it is checked before the durability guard below — otherwise the
+    // cooldown rule would surface to the user as "failed to save progress".
+    const suppressed = data?.suppressed === true;
 
     // The mark is only durable if the server assigned it a timestamp; without one
     // there is nothing to undo against. The working loop treats this as a retryable
     // failure, so it must throw rather than return a half-formed result.
-    if (!data?.markTimestamp) {
+    if (!suppressed && !data?.markTimestamp) {
         throw new Error('Mark response missing mark timestamp');
     }
 
     return {
         newCard: data.newCard ?? null,
-        markTimestamp: data.markTimestamp,
+        suppressed,
+        markTimestamp: data.markTimestamp ?? null,
         // Prefer the server's echo; fall back to what we asked for.
         markType: data.markType ?? request.type,
         displacedMark: data.displacedMark ?? null,

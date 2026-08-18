@@ -162,6 +162,27 @@ which sense is showing:
    or a reading whose **syllable count disagrees with the column** → the entry-level
    `pronunciation`, unchanged from before this feature.
 
+**The narrated audio uses the same resolver** (fixed 2026-08-18). `useTTS.speak` passes
+its pronunciation hint through to `CloudTTSProvider`, which sends it to Google TTS as an
+SSML `<phoneme>` tag — so the hint genuinely decides **which reading is spoken**, and a
+disagreement with the displayed pinyin is audible rather than cosmetic.
+
+`speak` used to send the raw `entry.pronunciation` column while every card face rendered
+`resolveDisplayPronunciation`. For a polyphone the two differ by construction: 和 shows
+**huó** on its "to mix / blend" sense and was narrated **hé** from the headword column.
+Reported from live play in Hydra Bubbles, but it affected every surface with audio — the
+games, the cdp, discover, and the flp. A learner hearing one syllable while reading
+another has no way to know which is wrong, which is worse for a beginner than no audio.
+
+`speak(entry, senseIndexOverride?)` now mirrors the resolver's own signature. The
+override exists for a caller holding a **live** sense pick that has not yet round-tripped
+to `entry.selectedSense` — the flp's picker moves `selectedSenseIndex` on tap, so
+`FlashCardSection` narrates through a `speakWithSense` wrapper. Every surface without a
+picker omits it and gets the persisted sense, which is what its face is showing anyway.
+`prefetch` uses the resolver too, or it would warm a cache key nothing ever asks for (the
+buffer is keyed on text + pinyin + voice). Pinned by
+`src/__tests__/resolveDisplayPronunciation.test.ts`.
+
 That syllable-count guard exists because cpcd zips syllables to characters positionally
 (see [CPCD_PINYIN_SHIFT.md](./CPCD_PINYIN_SHIFT.md)): a mis-shaped cluster reading would
 shift every character's pinyin one column over rather than fail loudly.

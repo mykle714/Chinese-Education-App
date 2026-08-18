@@ -1,7 +1,11 @@
-import type { BubbleBody, BubbleKind } from "./types";
+import type { BubbleBody, BubbleKind } from "../bubbles/types";
 
 /**
  * Bubble Match — next-bubble selection.
+ *
+ * Bubble-Match-specific: it draws from a FIXED, finite queue built once per run.
+ * Hydra Bubbles has no queue (it is endless and spawns off a payout ladder), so
+ * this deliberately did NOT move to src/games/bubbles/.
  *
  * The launcher doesn't pull the next bubble off the queue in order; it *chooses*
  * one to keep the playfield balanced and the difficulty self-regulating. Two

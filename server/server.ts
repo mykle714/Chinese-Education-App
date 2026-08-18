@@ -20,6 +20,7 @@ import starterPacksRoutes from './routes/starterPacksRoutes.js';
 import dictionaryRoutes from './routes/dictionaryRoutes.js';
 import gamesRoutes from './routes/gamesRoutes.js';
 import speedReadingRoutes from './routes/speedReadingRoutes.js';
+import memoryMapRoutes from './routes/memoryMapRoutes.js';
 import nightMarketRoutes from './routes/nightMarketRoutes.js';
 import communityRoutes from './routes/communityRoutes.js';
 import leaderboardRoutes from './routes/leaderboardRoutes.js';
@@ -109,6 +110,7 @@ app.use(dictionaryRoutes);
 // generic /api/games/:gameId/* framework routes, so a future parameterized route
 // can never shadow it.
 app.use(speedReadingRoutes);
+app.use(memoryMapRoutes);
 app.use(gamesRoutes);
 app.use(nightMarketRoutes);
 app.use(communityRoutes);

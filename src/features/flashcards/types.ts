@@ -22,8 +22,15 @@ export interface ReviewMark {
 export type MarkType = 'recognition' | 'production' | 'reading' | 'writing';
 
 export interface MarkCardResult {
+    /**
+     * The server declined to record the mark because the card's track had not
+     * finished cooling down (docs/HYDRA_BUBBLES.md § 8). Nothing was written, so
+     * `markTimestamp` and `displacedMark` are null and there is nothing to undo.
+     */
+    suppressed: boolean;
     newCard: VocabEntry | null;
-    markTimestamp: string;
+    /** Null only when `suppressed` — the one case where no mark exists to undo. */
+    markTimestamp: string | null;
     markType: MarkType;
     displacedMark: ReviewMark | null;
 }

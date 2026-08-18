@@ -7,8 +7,9 @@ import { StarterPacksService } from './StarterPacksService.js';
 import { ValidationError } from '../types/dal.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, vetPlayableClause, vetDeckOrProvisionalClause } from '../dal/shared/vetTable.js';
+import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, vetPlayableClause, vetProvisionalClause, vetDeckOrProvisionalClause } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
+import { rankCardQueue, isTypeOnCooldown } from './cardQueueRanking.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import type { TTSService } from './TTSService.js';
 import type { ProvisionalCardService } from './ProvisionalCardService.js';
@@ -127,105 +128,23 @@ export class OnDeckVocabService {
     private provisionalCardService: ProvisionalCardService
   ) {}
 
-  // Per-category cooldown after a correct mark: a card that was recently marked
-  // correct should not reappear in the working loop until its cooldown elapses.
-  // Shorter windows for weaker categories so the user gets more repetition.
-  //
-  // The timer is always applied PER MARK TYPE (see isTypeOnCooldown): recognition
-  // and production cool down on independent clocks. The window DURATION is keyed on
-  // a utcm category the CALLER chooses — the flp uses the card's overall (goal-
-  // blended) category, while the games use the per-type category of the single track
-  // they exercise, so a card weak in one track rests briefly for that track's game
-  // even when it is strong overall. See docs/MASTERY_REWORK.md (§ Per-type cooldown).
-  private static readonly COOLDOWN_MS_BY_CATEGORY: Record<string, number> = {
-    Unfamiliar: 5 * 60 * 1000,            // 5 minutes
-    Target: 24 * 60 * 60 * 1000,          // 24 hours
-    Comfortable: 14 * 24 * 60 * 60 * 1000, // 14 days
-    Mastered: 180 * 24 * 60 * 60 * 1000,   // 6 months (180 days)
-  };
-
   // The mark types the flp can actually present (docs/MASTERY_REWORK.md § 1): a
   // foreign-first prompt is a RECOGNITION review, an English-first prompt is a
   // PRODUCTION review. Reading/Writing marks come from other games (Word Search /
-  // Practice Writing) and are never shown in the working loop, so flp cooldown
-  // eligibility consults only these two tracks — a correct mark earned in another
-  // game no longer suppresses a card from the flp.
+  // Practice Writing / Memory Map) and are never shown in the working loop, so flp
+  // cooldown eligibility consults only these two tracks — a correct mark earned in
+  // another game no longer suppresses a card from the flp.
   private static readonly FLP_MARK_TYPES: readonly MarkType[] = ['recognition', 'production'];
 
-  // Newest correct-mark timestamp within ONE type's track (null if that track has
-  // no valid correct mark). Per-type so each mark type cools down on its own clock.
-  private getLastCorrectMarkTimestampForType(
-    typedMarkHistory: TypedMarkHistory | undefined,
-    type: MarkType
-  ): number | null {
-    const track = typedMarkHistory?.[type];
-    if (!Array.isArray(track)) return null;
-
-    let latest: number | null = null;
-    for (const mark of track) {
-      if (!mark?.isCorrect || !mark.timestamp) continue;
-      const ts = new Date(mark.timestamp).getTime();
-      if (Number.isNaN(ts)) continue;
-      if (latest === null || ts > latest) latest = ts;
-    }
-    return latest;
-  }
-
-  // Whether ONE mark type of a card is still cooling down. `windowCategory` selects
-  // the window DURATION (flp: the card's overall category; games: the per-type
-  // category of the track being played); the elapsed time is always measured from
-  // that type's own last correct mark. An unrecognized/absent category means "no
-  // cooldown configured" ⇒ never cooling.
-  private isTypeOnCooldown(
-    card: VocabEntry,
-    type: MarkType,
-    now: number,
-    windowCategory: string | null | undefined
-  ): boolean {
-    const cooldownMs = OnDeckVocabService.COOLDOWN_MS_BY_CATEGORY[windowCategory ?? ''];
-    if (cooldownMs === undefined) return false;
-
-    const lastCorrect = this.getLastCorrectMarkTimestampForType(card.typedMarkHistory, type);
-    if (lastCorrect === null) return false;
-
-    return now - lastCorrect < cooldownMs;
-  }
-
-  // The flp-reviewable mark types whose per-type cooldown has elapsed. Empty ⇒ the
-  // card is fully on cooldown for the flp and should be skipped. Stamped onto the
-  // returned card as `readyMarkTypes` so the client can steer which face it shows.
-  private flpReadyMarkTypes(card: VocabEntry, now: number): MarkType[] {
-    // flp windows are keyed on the card's OVERALL category: the loop presents two
-    // mark types on one card, so a single whole-card window is the coherent choice.
-    return OnDeckVocabService.FLP_MARK_TYPES.filter(
-      type => !this.isTypeOnCooldown(card, type, now, card.category)
-    );
-  }
-
-  // The card's ARRIVAL TIME in the flp queue: the moment it FIRST became reviewable,
-  // as epoch ms. Cards are served longest-waiting first, so this is the queue key.
+  // The flp's cooldown WINDOW is keyed on the card's OVERALL (core) category: the loop
+  // presents two mark types on one card, so a single whole-card window is the coherent
+  // choice. Games that exercise ONE track pass that track's per-type category instead.
   //
-  // Per ready type the card came off cooldown at `lastCorrect + window`; we take the
-  // MIN across the ready types, because a card has been waiting since the earliest of
-  // them. MIN rather than MAX is what makes this a queue: a card whose recognition
-  // track has been ready for ten days is ten days overdue, even if its production
-  // track only came off cooldown yesterday.
-  //
-  // Tracks with no correct mark are SKIPPED rather than treated as ready-since-forever.
-  // Counting them would score -Infinity for any partially-marked card and drag it into
-  // the never-marked tail below, which is wrong — the learner HAS gotten that card
-  // right, just in one track. A card scores -Infinity only when NEITHER flp track has
-  // a correct mark, and that is the definition of "never marked" this class uses.
-  private flpReadyAt(card: VocabEntry, readyTypes: MarkType[]): number {
-    const window = OnDeckVocabService.COOLDOWN_MS_BY_CATEGORY[card.category ?? ''] ?? 0;
-    let readyAt = Infinity;
-    for (const type of readyTypes) {
-      const lastCorrect = this.getLastCorrectMarkTimestampForType(card.typedMarkHistory, type);
-      if (lastCorrect === null) continue; // no correct mark in this track — see above
-      readyAt = Math.min(readyAt, lastCorrect + window);
-    }
-    // No ready type carried a correct mark ⇒ never marked ⇒ the back of the queue.
-    return readyAt === Infinity ? -Infinity : readyAt;
+  // The cooldown table and the queue maths themselves live in services/cardQueueRanking.ts
+  // — a pure module shared with Memory Map, which needs the identical discipline on the
+  // reading track (docs/MEMORY_MAP_GAME.md § 13.1). They used to be private methods here.
+  private flpWindowCategory(card: VocabEntry): string | null | undefined {
+    return card.category;
   }
 
   /**
@@ -240,7 +159,7 @@ export class OnDeckVocabService {
    * TWO TIERS, and the second is the reason this can't be a plain ascending sort:
    *
    *   1. cards with review history, by arrival time ASC — the card that came off
-   *      cooldown earliest is served first (see flpReadyAt);
+   *      cooldown earliest is served first (see cardQueueRanking.queueArrivalAt);
    *   2. never-marked cards (no correct mark in either flp track) — always LAST,
    *      however long they have technically been "available".
    *
@@ -252,26 +171,13 @@ export class OnDeckVocabService {
    * is `createdAt DESC` — newest first. Array.sort is stable.
    */
   private rankFlpEligible(cards: VocabEntry[], now: number): VocabEntry[] {
-    const scored: { card: VocabEntry; readyAt: number; neverMarked: boolean }[] = [];
-    for (const card of cards) {
-      const ready = this.flpReadyMarkTypes(card, now);
-      if (ready.length === 0) continue;
-      const readyAt = this.flpReadyAt(card, ready);
-      scored.push({
-        card: { ...card, readyMarkTypes: ready },
-        readyAt,
-        neverMarked: readyAt === -Infinity,
-      });
-    }
-    scored.sort((a, b) => {
-      // Tier first: never-marked cards sink below every card with history.
-      if (a.neverMarked !== b.neverMarked) return a.neverMarked ? 1 : -1;
-      // Within a tier, oldest arrival first. Equal (incl. the whole never-marked
-      // tail at -Infinity) returns 0 to keep the stable incoming order — subtracting
-      // would yield NaN for -Infinity - -Infinity and leave the sort undefined.
-      return a.readyAt === b.readyAt ? 0 : a.readyAt - b.readyAt;
-    });
-    return scored.map(({ card }) => card);
+    // The ordering rule itself is shared (rankCardQueue); what the flp adds is stamping
+    // the ready tracks onto the returned card as `readyMarkTypes`, which the client uses
+    // to steer which face it shows.
+    return rankCardQueue(cards, now, {
+      markTypes: OnDeckVocabService.FLP_MARK_TYPES,
+      windowCategoryOf: (card) => this.flpWindowCategory(card),
+    }).map(({ card, readyTypes }) => ({ ...card, readyMarkTypes: readyTypes }));
   }
 
   /**
@@ -307,7 +213,7 @@ export class OnDeckVocabService {
   // See docs/MASTERY_REWORK.md § Per-type cooldown ("Games").
   private isCardGameEligible(card: VocabEntry, markType: MarkType, now: number): boolean {
     const windowCategory = computeTypeCategory(card.typedMarkHistory, markType);
-    return !this.isTypeOnCooldown(card, markType, now, windowCategory);
+    return !isTypeOnCooldown(card.typedMarkHistory, markType, now, windowCategory);
   }
 
   /**
@@ -400,13 +306,74 @@ export class OnDeckVocabService {
   }
 
   /**
+   * Held PROVISIONAL cards near a difficulty, off cooldown — the RE-LEND source
+   * (docs/PROVISIONAL_CARDS.md § 3b).
+   *
+   * Only meaningful for a TIER-TARGETED caller. Every other caller has already had
+   * its chance at these rows: they are `vetPlayableClause()`, so an ordinary pool
+   * query picks them up in its own bucket at fill tier 1 or 3. What no ordinary query
+   * can do is ask for them BY DIFFICULTY, which is exactly what a rolled Hydra color
+   * needs — and without this, a long run mints a brand-new row for every color slot
+   * the library cannot cover, forever.
+   *
+   * Ordered nearest-difficulty-first (the same `ABS(difficulty - level)` widening the
+   * minting query uses, so re-lend and mint agree about what "tier 3" means), then
+   * randomly within a distance so a run does not replay one fixed sequence.
+   *
+   * Cooldown is filtered in APP CODE, not SQL, because that is where it lives
+   * (`cardQueueRanking.isTypeOnCooldown` reads `typedMarkHistory`). A still-resting
+   * card is dropped rather than served: the cooldown is never broken to re-lend.
+   */
+  private async fetchRelendable(
+    client: PoolClient,
+    userId: string,
+    language: string,
+    targetLevel: number,
+    markType: MarkType,
+    now: number,
+    limit: number,
+    excludeIds: number[],
+    collection?: CollectionFilter | null
+  ): Promise<VocabEntry[]> {
+    if (limit <= 0) return [];
+    // $6 is the next free placeholder after the five bound below.
+    const deck = this.deckPlayFilter(collection, 6);
+    const result = await client.query<VocabEntry>(`
+      SELECT ve.*, ${DICT_COLS}, ${CORE_CATEGORY_SELECT}
+      FROM ${vetReadFrom(language)} ${DICT_JOIN}
+      WHERE ve."userId" = $1
+      AND ve."language" = $2
+      AND ${vetProvisionalClause()}
+      AND NOT (ve.id = ANY($4::int[]))
+      ${deck.clause}
+      ORDER BY ABS(COALESCE(de."difficulty", 99) - $3) ASC, RANDOM()
+      LIMIT $5
+    `, [userId, language, targetLevel, excludeIds, limit, ...deck.params]);
+
+    return result.rows.filter((row) => this.isCardGameEligible(row, markType, now));
+  }
+
+  /**
    * Lend `need` cards for a GAME pool and hand them back as FRESH candidates.
    *
-   * The game equivalent of lendIntoLoop. A lent row has no mark history, so it bands
-   * Unfamiliar on every track and can never be on cooldown — re-querying the Unfamiliar
-   * bucket with the caller's exclusions therefore returns essentially just the new rows.
+   * The game equivalent of lendIntoLoop. Two steps, in order
+   * (docs/PROVISIONAL_CARDS.md § 3b):
    *
-   * Returns [] when dictionary supply is exhausted, so the caller falls through to its
+   *   1. RE-LEND — when the caller pinned a `targetLevel`, first draw from
+   *      provisional rows the learner already holds near that difficulty and that
+   *      are off cooldown. Costs nothing and mints nothing.
+   *   2. MINT — cover whatever step 1 could not, exactly as before.
+   *
+   * Step 1 is skipped without a `levelOffset`, and that is not an oversight: an
+   * untargeted caller's held provisional rows are already reachable through its own
+   * bucket query, so re-lending them here would return rows the fill loop has either
+   * taken already or deliberately passed over.
+   *
+   * A minted row has no mark history, so it bands Unfamiliar on every track and can
+   * never be on cooldown — re-querying the Unfamiliar bucket with the caller's
+   * exclusions therefore returns essentially just the new rows.
+   *
+   * Returns [] when both steps come up empty, so the caller falls through to its
    * borrow/cooled tiers exactly as it did before lending existed here.
    *
    * NOTE the length cap: Word Search passes `maxEntryKeyLen`, but nothing constrains
@@ -424,15 +391,36 @@ export class OnDeckVocabService {
     cap: number,
     maxEntryKeyLen: number | undefined,
     excludeIds: number[],
-    collection?: CollectionFilter | null
+    collection?: CollectionFilter | null,
+    levelOffset?: number
   ): Promise<VocabEntry[]> {
     if (need <= 0) return [];
-    const { granted } = await this.provisionalCardService.lendCards(userId, language, need);
-    if (granted === 0) return [];
-    const { eligible } = await this.fetchGameCandidates(
-      client, userId, language, ['Unfamiliar'], markType, now, cap, maxEntryKeyLen, excludeIds, collection
+
+    // Resolve the tier ONCE, so the re-lend query and the mint agree about what this
+    // color means and the learner's level is estimated a single time.
+    const level = levelOffset !== undefined
+      ? await this.provisionalCardService.resolveLendLevel(userId, language, levelOffset)
+      : undefined;
+
+    // 1. Re-lend what the learner already holds at this tier.
+    const relent = level !== undefined
+      ? await this.fetchRelendable(
+          client, userId, language, level, markType, now, need, excludeIds, collection
+        )
+      : [];
+    if (relent.length >= need) return relent.slice(0, need);
+
+    // 2. Mint the shortfall. The re-lent rows are added to the exclusion list so the
+    //    post-mint re-query cannot hand the same card back twice.
+    const { granted } = await this.provisionalCardService.lendCards(
+      userId, language, need - relent.length, 'default', { level }
     );
-    return eligible['Unfamiliar'] ?? [];
+    if (granted === 0) return relent;
+    const { eligible } = await this.fetchGameCandidates(
+      client, userId, language, ['Unfamiliar'], markType, now, cap, maxEntryKeyLen,
+      [...excludeIds, ...relent.map((card) => card.id)], collection
+    );
+    return [...relent, ...(eligible['Unfamiliar'] ?? [])];
   }
 
   /**
@@ -1233,7 +1221,22 @@ export class OnDeckVocabService {
     gameMarkType: MarkType,
     // `collection` (docs/DECKS_FEATURE.md) restricts the whole pool to one
     // collection — for a deck, its cards plus any card lent to reach the baseline.
-    opts: { need?: number; excludeIds?: number[]; avoidIds?: number[]; collection?: CollectionFilter | null } = {}
+    opts: {
+      need?: number;
+      excludeIds?: number[];
+      avoidIds?: number[];
+      collection?: CollectionFilter | null;
+      /** Let this call lend even though it is a partial refill. Set only for a
+          ROLLING-SUPPLY surface (`ROLLING_SUPPLY_SURFACES`, contracts/wire.ts),
+          whose every spawn is a refill and which would otherwise never lend. */
+      lendOnRefill?: boolean;
+      /** Lend this many levels away from the learner's estimated level, instead of
+          at it — Hydra rolls a color and maps it to a tier offset
+          (docs/HYDRA_BUBBLES.md § 6.2). Resolved to an absolute level by
+          `ProvisionalCardService.resolveLendLevel`, and ignored unless lending
+          actually fires. */
+      lendLevelOffset?: number;
+    } = {}
   ): Promise<{
     cards: VocabEntry[];
     requested: Record<string, number>;
@@ -1327,32 +1330,70 @@ export class OnDeckVocabService {
       //      * a PARTIAL REFILL (`opts.need`) — Bubble Match's Play Again is mid-session
       //        with a board in hand, and lending there would grow the player's deck on
       //        every tap. That exemption predates this change (see
-      //        OnDeckVocabController.getGamePool) and is deliberately preserved.
-      if (cards.length < target && !opts.collection && opts.need === undefined) {
+      //        OnDeckVocabController.getGamePool) and is deliberately preserved —
+      //        EXCEPT for a rolling-supply surface (`opts.lendOnRefill`), whose every
+      //        spawn is a refill and which would otherwise never lend at all. See
+      //        ROLLING_SUPPLY_SURFACES in contracts/wire.ts.
+      //
+      //    The collection exemption has NO opt-out: a restricted round plays the set
+      //    the learner chose, rolling supply or not (docs/HYDRA_BUBBLES.md § 6.3).
+      const mayLend = opts.need === undefined || opts.lendOnRefill === true;
+      if (cards.length < target && !opts.collection && mayLend) {
         const lent = await this.lendGameCandidates(
           client, userId, language, target - cards.length, gameMarkType, now,
           OnDeckVocabService.GAME_CANDIDATE_CAP, undefined,
-          [...excludeIds, ...selectedIds], opts.collection
+          [...excludeIds, ...selectedIds], opts.collection, opts.lendLevelOffset
         );
         // The re-query is unaware of the soft-avoid tier, so filter those back out.
         drain(lent.filter((card) => !avoidIds.has(card.id)), target - cards.length);
       }
+      // SINGLE-BUCKET REQUESTS NEVER SUBSTITUTE A BUCKET (2026-08-18).
+      //
+      // A caller that asks for ONE category is not describing a difficulty MIX it
+      // would like — it is asking a question whose answer is the category itself.
+      // Hydra Bubbles rolls a color, requests that color, and pays the player
+      // according to it (docs/HYDRA_BUBBLES.md § 2, § 5); topping its request up from
+      // another bucket hands back a card whose real category the caller then
+      // misreports to the player, and misprices. So for a single-bucket request the
+      // fallback ORDER collapses to the requested bucket alone: it would rather come
+      // back short — the caller can wait or skip the slot — than come back wrong.
+      //
+      // A multi-bucket caller (every other game) is unaffected: it asked for a
+      // distribution, and topping one quota up from another is exactly the
+      // best-effort fill it wants.
+      const requested = Object.keys(distribution);
+      const substituting = requested.length > 1;
+      const fallbackOrder = substituting ? OnDeckVocabService.GAME_FALLBACK_ORDER : requested;
+      const lastResortOrder = substituting
+        ? [...requested, ...OnDeckVocabService.GAME_FALLBACK_ORDER]
+        : requested;
+
       // 3. Still short → top up to `target` with FRESH cards from the fallback
       //    buckets (Target → Comfortable → Unfamiliar → Mastered).
-      for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
+      for (const category of fallbackOrder) {
         if (cards.length >= target) break;
         drain(eligible[category] ?? [], target - cards.length);
       }
-      // 4. Last resort → COOLED cards (requested buckets first, then fallback),
-      //    so a just-played library still assembles a full board.
-      for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
+      // 4. Last resort → COOLING cards (requested buckets first, then fallback), so a
+      //    just-played library still assembles a full board.
+      //
+      //    For a single-bucket caller this is the tier that MATTERS, and it is
+      //    deliberately allowed to break the per-type cooldown: a genuinely Mastered
+      //    card that is merely resting is a truthful blue bubble, whereas a minted
+      //    HSK-1 word colored blue by its lend tier is not. Note the consequence —
+      //    a mark on a still-cooling card is dropped by the guard at
+      //    POST /api/flashcards/mark (docs/HYDRA_BUBBLES.md § 8), so these cards are
+      //    playable but do not advance mastery. That is the accepted trade: the
+      //    cooldown exists precisely so re-answering a Mastered card inside its
+      //    window earns nothing.
+      for (const category of lastResortOrder) {
         if (cards.length >= target) break;
         drain(cooled[category] ?? [], target - cards.length);
       }
       // 5. Absolute last resort → AVOIDED cards (just cleared by the caller). Only
       //    reached when the library is too small to fill the board without reusing
       //    them; a roomy library never gets here.
-      for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
+      for (const category of lastResortOrder) {
         if (cards.length >= target) break;
         drain(avoided[category] ?? [], target - cards.length);
       }

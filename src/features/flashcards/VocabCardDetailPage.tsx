@@ -27,7 +27,7 @@ import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT, FC_FONT } from "./constants";
 import { useCardIconEditor } from "../../cardIcons/editor/useCardIconEditor";
 import CardIconCanvas from "../../cardIcons/editor/CardIconCanvas";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../cardIcons/editor/CardEditToolbar";
-import { VocabCardBadges, VocabCardSections } from "./VocabCardDetailBody";
+import { VocabCardBadges, VocabCardSections, SectionCard, SectionLabel } from "./VocabCardDetailBody";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { useOpenWordCard } from "../../hooks/useOpenWordCard";
 import MasteryProgressBar from "./MasteryProgressBar";
@@ -358,12 +358,12 @@ const VocabCardDetailPage: React.FC = () => {
 
                             <VocabCardBadges entry={entry} />
 
-                            {/* Mastery progress bar (docs/MASTERY_REWORK.md): the pbh
-                                stacked bar + per-type composition for this saved card, with
-                                a cpcd block of the card's word to its left. Block layout
-                                falls back to a row automatically past 4 characters (see
-                                ForeignText.layout), so longer words just read as before. */}
-                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 1.5, my: 1.5 }}>
+                            {/* The card's word as a cpcd block. Block layout falls back to
+                                a row automatically past 4 characters (see ForeignText.layout),
+                                so longer words just read as before. The mastery bars used to
+                                sit beside it; they now have their own section below the hero
+                                card, where there is room for the per-track cooldowns. */}
+                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", my: 1.5 }}>
                                 <ForeignText
                                     size="xl"
                                     layout="block"
@@ -373,7 +373,6 @@ const VocabCardDetailPage: React.FC = () => {
                                     showPinyin={showPinyin}
                                     useToneColor={showPinyinColor}
                                 />
-                                <MasteryProgressBar entry={entry} />
                             </Box>
 
                             {/* Hero card — the same size/style as the flp (learn page)
@@ -459,6 +458,22 @@ const VocabCardDetailPage: React.FC = () => {
                                     ) : undefined}
                                 />
                             </Box>
+
+                            {/* Mastery (docs/MASTERY_REWORK.md): one pbh track per active
+                                bar, each with its band chip and the PER-TRACK COOLDOWN
+                                underneath ("Ready", or the time left before that mark type
+                                can next be earned). Its own SectionCard rather than a strip
+                                beside the word, because three bars x two cooldown rows needs
+                                the width — and it reads as one more info box alongside
+                                Definition/Breakdown/Examples. Saved cards only: the read-only
+                                dictionary cdp has no marks, which is why this lives here and
+                                not in the shared VocabCardSections. */}
+                            {/* Extra bottom padding: the cooldown rows are the last thing in the box
+                                    and the default 14px reads tight under two stacked rows. */}
+                            <SectionCard className="vocab-card-detail__mastery" sx={{ paddingBottom: "18px", gap: "12px" }}>
+                                <SectionLabel className="vocab-card-detail__section-label">Mastery</SectionLabel>
+                                <MasteryProgressBar entry={entry} />
+                            </SectionCard>
 
                             {/* Info boxes (definition / breakdown / examples / synonyms) —
                                 shared with the read-only dictionary cdp. onWordOpen makes the

@@ -273,10 +273,21 @@ export function useWorkingLoop({
                 type: markType,
                 excludeIds,
                 mode: mode ?? undefined,
+                surface: "flp",
                 ...collectionMarkFields(launchCollection),
             });
 
+            // A SUPPRESSED mark (the card's track had not finished cooling —
+            // docs/HYDRA_BUBBLES.md § 8) wrote nothing, so there is no timestamp and
+            // nothing to undo. Reported as its own result rather than an error: the
+            // review DID happen, it just did not change any history, and surfacing it
+            // as a failure would show "Failed to save progress" for a working app.
+            if (data.suppressed || data.markTimestamp === null) {
+                return { suppressed: true, newCard: null, markTimestamp: null, markType, displacedMark: null };
+            }
+
             return {
+                suppressed: false,
                 newCard: data.newCard,
                 markTimestamp: data.markTimestamp,
                 markType,
@@ -340,6 +351,15 @@ export function useWorkingLoop({
         markCard(currentCard.id, isCorrect, markType, excludeIds)
             .then(markResult => {
                 if (!markResult) return;
+                // Nothing was written server-side, so leave the loop exactly as it is:
+                // no replacement to patch in, no card to wind down, and no undo
+                // snapshot (an undo keyed on a mark that never existed would be
+                // rejected and read to the user as a failure). The card stays in the
+                // loop and comes around again once its cooldown has actually elapsed.
+                if (markResult.suppressed || markResult.markTimestamp === null) {
+                    console.log(`Mark suppressed (still cooling): ${currentCard.entryKey}`);
+                    return;
+                }
                 const { newCard, markTimestamp, displacedMark } = markResult;
                 console.log(`Card marked: ${currentCard.entryKey} (${isCorrect ? "correct" : "incorrect"})`);
                 if (isCorrect && newCard) {

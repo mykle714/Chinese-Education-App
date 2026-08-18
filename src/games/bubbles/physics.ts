@@ -1,3 +1,16 @@
+/**
+ * Bubbles — the field simulation, shared by every bubble game.
+ *
+ * Pure functions over a `BubbleBody[]` plus a `Bounds`; no React, no game rules,
+ * no knowledge of which game is running. Bubble Match's descending ceiling is
+ * expressed entirely as the caller raising `bounds.top` between frames, which is
+ * why this file has no ceiling concept of its own and Hydra (which has no
+ * ceiling) can reuse it unchanged.
+ *
+ * Referenced by: src/games/bubble-match/BubbleStage.tsx,
+ * src/__tests__/bubbleMatchSpawn.test.ts.
+ * Docs: docs/GAMES_FEATURE.md, docs/HYDRA_BUBBLES.md.
+ */
 import type { BubbleBody } from "./types";
 import {
     GROW_LERP,
@@ -21,6 +34,20 @@ export interface Bounds {
 }
 
 export type Rng = () => number;
+
+/** Per-game switches on the simulation. */
+export interface StepOptions {
+    /**
+     * Whether settled bubbles WANDER (the lava-lamp float).
+     *
+     * Bubble Match drifts; Hydra Bubbles does not — its bubbles are placed and then
+     * stay put (docs/HYDRA_BUBBLES.md § 1), because its tension comes from a board
+     * that grows rather than a field that churns, and a drifting board would keep
+     * re-arranging the spatial memory the player is building. Separation still runs
+     * with drift off: a growing bubble must still shove its neighbors aside.
+     */
+    drift?: boolean;
+}
 
 export const randRange = (min: number, max: number, rng: Rng = Math.random): number =>
     min + rng() * (max - min);
@@ -70,7 +97,13 @@ function clampSpeed(b: BubbleBody): void {
  * frame after frame; the caller uses a sustained-residual threshold as an
  * overfill (game-over) safety net alongside the area-packing check.
  */
-export function stepPhysics(bodies: BubbleBody[], dt: number, bounds: Bounds): number {
+export function stepPhysics(
+    bodies: BubbleBody[],
+    dt: number,
+    bounds: Bounds,
+    options: StepOptions = {}
+): number {
+    const drift = options.drift !== false;
     // --- Grow-in + drift + wall clamp ----------------------------------------
     for (const b of bodies) {
         // Held bubbles are positioned by the pointer; physics never moves them.
@@ -86,6 +119,12 @@ export function stepPhysics(bodies: BubbleBody[], dt: number, bounds: Bounds): n
                 b.radius = b.targetRadius;
                 b.status = "idle";
             }
+        } else if (!drift) {
+            // Drift disabled: a settled bubble holds its position exactly. It is
+            // still moved by the separation solver below (and by the wall clamp), so
+            // a growing neighbor can push it — it simply has no motion of its own.
+            b.vx = 0;
+            b.vy = 0;
         } else {
             // Small random wander keeps the float lively and breaks up clusters.
             b.vx += randRange(-WANDER_ACCEL, WANDER_ACCEL) * dt;

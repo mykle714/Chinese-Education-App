@@ -9,7 +9,7 @@ games; each game lives as its own page linked from the hub.
 - Hub page (`/games`) — shipped. Renders `GAME_REGISTRY` through the shared
   `HubMenu`; the empty state is now only a fallback for when every game is gated
   out (public/demo accounts).
-- Games — **four shipped**, all registered in `src/games/registry.ts`:
+- Games — **six shipped**, all registered in `src/games/registry.ts`:
   - **Bubble Match** (`/games/bubble-match`) — see [§ Game: Bubble Match](#game-bubble-match-gamesbubble-match).
   - **Word Search** (`/games/word-search`) — see [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
   - **Match Speed** (`/games/match-speed`) — see [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md).
@@ -25,6 +25,13 @@ games; each game lives as its own page linked from the hub.
     with a count-**up** clock, medals by finishing TIME (lower is better), and a
     3-second penalty per wrong answer (shown as a red +3s floating from the tap).
     Every round must be answered — it has **no Skip**.
+  - **Hydra Bubbles** (`/games/hydra-bubbles`) — see
+    [§ Game: Hydra Bubbles](#game-hydra-bubbles-gameshydra-bubbles) and
+    [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md). An **endless, clockless** recognition
+    drill on Bubble Match's bubbles, with the opposite pressure model: clearing a
+    pair spawns 0–3 new bubbles depending on the cleared word's mastery **color**,
+    so the board grows on its own and the only way to hold it back is to take on the
+    words you know least well. One wrong match ends the run.
 
   Bubble Match and Word Search are **DOM + `requestAnimationFrame`** games; Match
   Speed and Speed Reading are **DOM + timers only** (no rAF loop — no physics and no
@@ -32,6 +39,50 @@ games; each game lives as its own page linked from the hub.
   runtime any more** — the never-used `GameStage` / `GamePage` / `useGameActors`
   scaffolding was deleted (commit `70dc441`); see
   [§ Layer 2](#layer-2--runtime-srcgamesruntime).
+
+- **Memory Map** (`/games/memory-map`) — see [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md).
+  **BUILT ON DEV (migration 151), not on prod.** A persistent, pan/zoom **reading** map:
+  every card the learner sorted that is **not reading-mastered** owns a permanent spot
+  (capped at 100, chosen by the flp offering priority list evaluated on the reading
+  track), new words spawn touching an existing island (10% start a new one), and an
+  English gloss at the top must be found and tapped within three tries. No winning or
+  losing — the outputs are one reading mark per word and a green/orange/red colour.
+  It is DOM + a CSS transform like the rest; the 100-word cap is what keeps it there.
+
+### What Memory Map introduced
+
+Memory Map is the first game that is not disposable — its map outlives every run — and
+almost everything below follows from that one difference:
+
+- **Durable per-game server state.** The first game with tables of its own:
+  `memory_map_placements_zh` / `memory_map_placements_es` (migration 151). Split per
+  language to mirror the vet split, which is what buys a real
+  `REFERENCES vocabentries_*(id) ON DELETE CASCADE` — so an orphaned placement cannot
+  exist and the feature needs no sweep. Word Search's board, by contrast, is
+  localStorage only, because a board is disposable and a map is not.
+- **Selection on `vetSortedClause()` instead of `vetPlayableClause()`.** Every other
+  game pool is PLAYABLE — a lent provisional card is fine for one round. Memory Map's
+  selection creates a durable artifact, so a borrowed word must not homestead a
+  permanent spot. This is the only game that draws from the sorted deck alone.
+- **A shared, track-parameterized queue ranking.** `rankFlpEligible`'s logic moved out
+  of `OnDeckVocabService` into `server/services/cardQueueRanking.ts`, a pure module
+  parameterized on which mark types count as ready and which utcm category supplies the
+  cooldown window. The flp's behaviour is unchanged; Memory Map ranks the same way on
+  the **reading** track. Any future game wanting "longest-waiting first, never-marked
+  last" on its own track should use this rather than copy it.
+- **A game that declares NO card baseline.** No entry in `CARD_BASELINES`, no
+  provisional top-up. Nothing blocks on card count because nothing can — a small library
+  is simply a small map, and an empty one gets an empty state pointing at Discover.
+- **A game that opts out of the collection selector.** The hub HIDES the Memory Map row
+  whenever the selected collection is anything but All Cards, rather than showing a row
+  that would silently ignore it. Same hide-don't-block principle as the language gate.
+- **A game that deliberately skips pause-on-background.** No `useBackgroundPause`, no
+  `GamePausedOverlay`. That rule exists to stop a CLOCK draining while backgrounded;
+  this game has no clock, so the overlay would protect nothing. Recorded so it is not
+  later "fixed" by an audit against the framework checklist.
+- **A second pan/zoom surface** after the night market — and the first built as plain
+  DOM + a CSS transform rather than Pixi. The 100-word cap
+  (`MEMORY_MAP_CAPACITY`) is what makes that safe: at that size there is nothing to cull.
 
 ### What Speed Reading introduced
 
@@ -104,15 +155,22 @@ Every game is played with **the collection selected in the Games hub header**.
 
 `src/games/GamesCollectionSelector.tsx`, rendered into `HubMenu`'s `header` slot
 above the TipBox: a full-width pill reading **"Playing with: &lt;collection&gt;"** that
-opens a menu of every set the fdp offers — *Cards* (All Cards + Learn Now), *Mastered*
-(one row per **active** bar), and the learner's *Decks* (`fetchDecks`).
+opens a menu of every set the fdp offers — *Collections* (All Cards, Learn Now and
+Mastered Cards), *Mastered* (the per-skill bars), and the learner's *Decks*
+(`fetchDecks`).
+
+⚠️ **All Cards has a row here but no tile on the fdp**, which now renders those cards
+inline instead. The entry stays in the shared list precisely so this selector keeps
+offering it; only the fdp filters it out. See
+[DECKS_FEATURE.md § "Which collections exist"](./DECKS_FEATURE.md).
 
 **The fdp is the source of truth for that list.** The built-in rows come from
 `builtinCollectionEntries` (`src/features/flashcards/builtinCollections.ts`), the same
 function the fdp renders as tiles, so the two surfaces cannot drift on which
 collections exist, their order, their grouping or their colors — including the rule
-that *Mastered* is a separate group only when a reading or writing goal is set
-(otherwise its single row is listed under *Cards*). This component decides only how a
+that core *Mastered Cards* is always a *Collections* row while the *Mastered* group
+holds the per-skill bars alone and appears only when a reading or writing goal is set.
+This component decides only how a
 row LOOKS. Each row carries the same identifying color its fdp tile does; a deck's dot
 uses `deckTileColors(id).main`.
 
@@ -469,6 +527,15 @@ must find the round exactly as they left it.
 
 This is the same mechanism as the section above with a **second source** feeding
 the same `clockPaused` boolean. It is not new machinery.
+
+**The rule protects a CLOCK, so a genuinely clockless game is exempt.** Hydra Bubbles
+opts out (docs/HYDRA_BUBBLES.md § 7.1c): it has no timer, its bubbles do not drift,
+and nothing on its board advances except in response to a match, so a returning player
+finds the run exactly as they left it without any pause machinery — and a
+tap-to-resume overlay would be friction over a board that never moved. A game
+qualifies for this exemption only if **nothing** advances unattended; if any part of
+it is timed (Hydra's own challenge variant is scored on time to clear) the rule applies
+in full to that part.
 
 **Status of the four shipped games — ✅ ALL FOUR PAUSE (completed 2026-08-17):**
 
@@ -887,13 +954,47 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   to `need`. All three params are optional; omitting them is the original
   full-board behavior.
 
-  **Three fill tiers** (`getGameVocabPool`), drained in order until `need` is met:
+  **Five fill tiers** (`getGameVocabPool`), drained in order until `need` is met.
+  (This table said *three* until 2026-08-18; lending was inserted at tier 2 when
+  provisional cards shipped, and the fresh pass has always split requested buckets
+  from the fallback order.)
 
   | Tier | Contents | Drained |
   |---|---|---|
-  | 1. fresh | game mark type off cooldown | requested buckets, then fallback order |
-  | 2. cooled | on the per-type cooldown | requested buckets, then fallback order |
-  | 3. avoided | ids passed as `avoid` (just cleared) | requested buckets, then fallback order |
+  | 1. fresh (requested) | game mark type off cooldown | the requested buckets only |
+  | 2. **lend** | newly minted — or **re-lent** — provisional cards | see below |
+  | 3. fresh (fallback) | game mark type off cooldown | Target → Comfortable → Unfamiliar → Mastered |
+  | 4. cooled | on the per-type cooldown | requested buckets, then fallback order |
+  | 5. avoided | ids passed as `avoid` (just cleared) | requested buckets, then fallback order |
+
+  ⚠️ **A single-bucket request collapses tiers 3–5 to the requested bucket.** When the
+  distribution names exactly ONE category, the caller is not expressing a difficulty
+  mix — it is asking a question whose answer is the category. Substituting another
+  bucket returns a card the caller then misreports to the player. So tier 3 is
+  skipped entirely and tiers 4–5 drop the fallback order; the request would rather
+  come back short than come back wrong. Hydra Bubbles is the only such caller today
+  (it requests one color at a time and pays the player by it —
+  [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 6.2d). Multi-bucket callers — every other
+  game — are unaffected.
+
+  Tier 2 is **skipped for a collection-restricted round** (a deck round made of
+  non-deck words is not that deck) and, historically, for any **partial refill**.
+  That second exemption is now per-game: a surface in `ROLLING_SUPPLY_SURFACES`
+  (`server/contracts/wire.ts`) may lend on a refill, because its whole supply model
+  IS the refill. Hydra Bubbles is the only one today. Such a surface may also send
+  `?lendLevelOffset=` to lend at a difficulty **tier** relative to the learner's
+  estimated level, in which case tier 2 first **re-lends** provisional cards the
+  learner already holds near that difficulty and off cooldown, and mints only the
+  shortfall. See [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) §§ 3b, 4.
+
+  ⚠️ **Tier 4 hands out cards the learner cannot be marked on.** Since the cooldown
+  became a hard "next markable at" (2026-08-18), `POST /api/flashcards/mark`
+  silently declines a mark on a still-cooling track. Tier 4 exists precisely to
+  serve cooling cards, so a small-library learner playing two rounds back to back
+  can clear a board and see no history move. This is **known, accepted and
+  instrumented** — every dropped mark is logged as `[MarkSuppressed]`. See
+  [HYDRA_BUBBLES.md § 8.1](./HYDRA_BUBBLES.md) and
+  [DEFERRED_WORK.md](./DEFERRED_WORK.md).
 
   `exclude` is enforced in SQL (`fetchGameCandidates`'s `excludeIds`) and is
   absolute; `avoid` is a *tier demotion*, so a library too small to fill the board
@@ -905,3 +1006,92 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   handed back the cards the player had just cleared.
 - `GET /api/onDeck/categoryCounts` → `{ Unfamiliar, Target, Comfortable, Mastered }`,
   also surfaced under each bucket label on the decks page.
+
+---
+
+## Game: Hydra Bubbles (`/games/hydra-bubbles`)
+
+**Built 2026-08-18. Not yet validated by play** — the spawn numbers are a first
+tuning. Full spec: [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md). This section is the
+summary and the cross-references; that doc owns the design.
+
+Named for the myth: cut off one head and more grow back.
+
+### Gameplay
+
+An **endless, clockless** recognition drill on Bubble Match's bubbles, built to be
+the opposite of it. Bubble Match's tension is a shrinking play area against a fixed
+pool of 20 pairs; Hydra's is a board that **grows on its own**.
+
+- The run opens with **3 bubbles** — one live pair plus one English stray.
+- Drag a bubble onto its partner to match. A match clears both and scores **+2**.
+- **The cleared Chinese bubble's color decides what you pay for it:** red spawns 0
+  new bubbles, yellow 1, green 2, blue 3. Since a match removes two, blue and green
+  grow or hold the board and only yellow and red shrink it — and those are, by
+  construction, the words the learner knows least well.
+- **One wrong match ends the run**, immediately and without confirmation.
+- The other loss is **overflow**: the same fill-ratio measure Bubble Match uses
+  (`LOSE_FILL_RATIO` 0.94, danger vignette from 0.72), but with **no descending
+  ceiling** — the field only ever fills from spawns the player caused.
+- Score is bubbles cleared, **session-only**: nothing is persisted, and there is no
+  `wins` row, so no weekly badge and no level strip on the hub.
+
+### What Hydra introduced
+
+- **A deliberately non-self-stabilizing economy.** The spawn table keeps expected
+  payout above the break-even 2 everywhere below 0.75 fill, so a board left alone
+  always creeps up. At 0.75 it **steps** to red-only — nothing but the hardest words,
+  each paying 0 — which is the squeeze the player has to fight out of. This is the
+  one thing in the game that is pinned by tests rather than left to tuning
+  (`src/__tests__/hydraSpawnTable.test.ts`).
+- **The spawn table is keyed on FILL RATIO, not bubble count**, so the system that
+  decides payouts and the system that decides loss read the same number and cannot
+  disagree about how full a board is on a phone versus a tablet.
+- **Color and mastery are allowed to disagree.** A library card is colored by its
+  real recognition category; a **lent** card is colored by its difficulty tier
+  instead. Coloring lent cards by mastery would make every one of them red (a fresh
+  row has no history), paying 0 and collapsing the board for exactly the learners
+  most likely to be playing on lent cards.
+- **Four client-side color buffers** (`useColorBuffers`), one per color, popped at
+  spawn and topped up asynchronously. This is what makes the color system tractable:
+  the game never asks "what color is this card?", because the card came out of that
+  color's buffer. No table, no server state.
+- **The first rolling-supply surface.** Every spawn is a partial refill, which is the
+  one call shape that historically never lent. See the fill-tier table above.
+- **The first game with no card baseline of any kind** — alongside Memory Map, which
+  also declares none. A run may lend from the very first bubble, and there is no
+  library size at which the hub row is gated.
+- **Grey is reserved for English**, so Hydra could not reuse Bubble Match's grey
+  held/hovered wash. Its pickup cue is an **outline ring** instead — which is why the
+  shared `Bubble` takes a `heldCue` prop.
+
+### Files
+
+- `src/games/bubbles/` — the **shared** substrate, extracted from Bubble Match ahead
+  of this game: `types.ts`, `constants.ts`, `physics.ts`, `bodyFactory.ts`,
+  `Bubble.tsx`. Bubble Match was converted to import from it with no behavior change.
+- `src/games/hydra-bubbles/` — `HydraBubblesPage.tsx` (loading → playing → over →
+  playing), `HydraStage.tsx` (rAF loop, drag/hover/match, payout, HUD, danger glow),
+  `spawnTable.ts`, `spawnPlanner.ts`, `useColorBuffers.ts`, `HydraLendNotice.tsx`,
+  `constants.ts`, `types.ts`.
+- Reuses Bubble Match's `BubbleMatchHeader` and `BubbleMatchEndPopup` unchanged.
+
+### Backend
+
+**No new tables, no new columns, no migration.** Reuses the OnDeck vocab stack:
+
+- `GET /api/onDeck/gamePool` with `?surface=hydra-bubbles` (opting into refill
+  lending) and `?lendLevelOffset=` (the rolled color's difficulty tier, resolved
+  against the learner's estimated level server-side — the client never sees `L`).
+- `POST /api/flashcards/mark` as every other game, with `?type=recognition`.
+
+### Study Challenge
+
+Challenge-eligible as a recognition game, but scored on a different axis from free
+play, because an endless run has no comparable length: **time to clear the ten
+challenge words**, which always ride the yellow slot. A wrong match still ends the
+run, banking what was matched and scoring zero for the rest. The
+`ChallengeScoringSpec` deliberately carries **no survival bonus** — Bubble Match's
+makes sense because its run has a fixed length; Hydra's does not.
+⚠️ How a partial run's time compares to a complete one is still open
+([HYDRA_BUBBLES.md § 11 O2](./HYDRA_BUBBLES.md)).

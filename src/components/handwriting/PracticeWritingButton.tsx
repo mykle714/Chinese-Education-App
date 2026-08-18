@@ -94,7 +94,7 @@ export default function PracticeWritingButton({
     // (the raw token rotates every ~15 min). markFlashcard supplies the header.
     if (vocabEntryId == null || !isAuthenticated) return;
     // excludeIds defaults to []: the drill doesn't use the endpoint's replacement card.
-    markFlashcard({ cardId: vocabEntryId, isCorrect, type: "writing" })
+    markFlashcard({ cardId: vocabEntryId, isCorrect, type: "writing", surface: "practice-writing" })
       .catch((err) => console.error(`[PracticeWriting] writing mark failed → card ${vocabEntryId}:`, err));
   }, [vocabEntryId, isAuthenticated]);
 

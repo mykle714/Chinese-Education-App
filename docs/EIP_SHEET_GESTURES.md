@@ -41,6 +41,7 @@ persistent sheet is page furniture rather than a modal:
 | on mount | animates `0 → default` | painted **at** `minHeight`, no animation |
 | drag to the bottom | dismisses (`onClose` after the shrink) | stops dead at `minHeight` |
 | release below default | dismiss | snap back to `minHeight` |
+| release between the stops | collapse below `collapseThresholdRatio` of the travel, else grow to max | same rule, from `minHeight` |
 | fling down | floors at `default` (never dismisses) | floors at `minHeight` |
 | scrim | yes | `showScrim={false}` — it is always on screen, so a permanent dim, and a scrim tap would have nothing to dismiss to |
 | `onClose` | required in practice | **omitted** — nothing to report |
@@ -71,9 +72,19 @@ content dissolves under the pill rather than being cut by it.
 | **max** | `parentHeight * MAX_HEIGHT_RATIO` (0.92) | fully expanded |
 
 There is **no resting stop between 0 and default**. `computeSnapTarget(h, default,
-max, min)` is the single rule every release path uses: below default → `0` (dismiss);
-at or above → whichever of `{default, max}` is nearer. A persistent sheet passes
-`min > 0`, which suppresses the dismiss stop (see above).
+max, min, collapseRatio)` is the single rule every release path uses: below default →
+`0` (dismiss); at or above → collapse back to `default` while the sheet sits below
+`default + (max - default) * collapseRatio`, otherwise grow to `max`. A persistent
+sheet passes `min > 0`, which suppresses the dismiss stop (see above).
+
+`collapseRatio` comes from the **`collapseThresholdRatio`** prop and defaults to
+**0.5**, which is exactly the plain "nearest stop wins" midpoint rule. A smaller value
+moves the collapse point **down**, so the sheet springs back open from heights that
+used to close it — a partial pull-down no longer counts as "close it". The /decks
+collections sheet passes **0.3** (`SHEET_COLLAPSE_THRESHOLD_RATIO` in
+`FlashcardsDecksPage.tsx`): it must be dragged below 30% of the closed→max travel
+before a release collapses it. Note this only decides between the two upper stops; a
+modal panel's dismiss floor is still its default height, untouched by the ratio.
 
 The open height is a fixed fraction of the screen, deliberately *not* measured from
 content, so every eip tab opens to the same extent.
@@ -202,7 +213,8 @@ change. See `InfoCardPanelBody.tsx`'s touchmove handler and the constants block 
   (axis lock, commit ratio, transition, edge rubber-band)
 - `src/components/CompareWorkspace.tsx`, `SettingsPanelBody.tsx` — other sheet bodies
 - `src/features/flashcards/DecksSheetBody.tsx` + `FlashcardsDecksPage.tsx` — the
-  persistent-mode host (`SHEET_LIP`/`SHEET_CLOSED_HEIGHT`, `minHeight`, `showScrim={false}`)
+  persistent-mode host (`SHEET_LIP`/`SHEET_CLOSED_HEIGHT`, `SHEET_COLLAPSE_THRESHOLD_RATIO`,
+  `minHeight`, `showScrim={false}`, `collapseThresholdRatio`)
 - `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` — tab state + drill-in
   lookups (`openForRoot`, `openForEntryKey`, `clear`); takes an optional `language` that
   scopes those lookups

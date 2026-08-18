@@ -3,25 +3,14 @@ import { COLORS } from "../../theme/colors";
 import { Box, Typography } from "@mui/material";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import type { VocabEntry } from "../../types";
-import { resolveDisplayDefinition } from "../../utils/definitionUtils";
-import Bubble from "./Bubble";
-import { stepPhysics, planSpawn, fillRatio, randRange, type Bounds } from "./physics";
+import Bubble from "../bubbles/Bubble";
+import { stepPhysics, planSpawn, fillRatio, type Bounds } from "../bubbles/physics";
+import { makePair, launchBody } from "../bubbles/bodyFactory";
 import { selectNextBubble } from "./spawnSelection";
-import type { BubbleBody, LevelConfig } from "./types";
+import type { BubbleBody, BubbleFill } from "../bubbles/types";
+import type { LevelConfig } from "./types";
 import {
-    WORD_RADIUS_MIN,
-    WORD_RADIUS_MAX,
-    WORD_LEN_MIN,
-    WORD_LEN_MAX,
-    WORD_RADIUS_JITTER,
-    DEFINITION_RADIUS_MIN,
-    DEFINITION_RADIUS_MAX,
-    DEFINITION_LEN_MIN,
-    DEFINITION_LEN_MAX,
-    DEFINITION_RADIUS_JITTER,
     MAX_DT,
-    IDLE_SPEED,
-    SPAWN_SEED_RADIUS,
     SCALE_IDLE,
     SCALE_HELD,
     SCALE_HOVER,
@@ -34,8 +23,24 @@ import {
     WRONG_FEEDBACK_MS,
     CANCEL_ZONE_HEIGHT,
     POST_DONE_SETTLE_MS,
+} from "../bubbles/constants";
+import {
     MIN_PLAY_HEIGHT,
+    WORD_BUBBLE_BG,
+    WORD_BUBBLE_BORDER,
+    DEFINITION_BUBBLE_BG,
+    DEFINITION_BUBBLE_BORDER,
 } from "./constants";
+
+/**
+ * Bubble Match's base palette rule: a bubble is colored by its KIND. The two
+ * objects are module constants (not built per render) so the memoized Bubble's
+ * field-by-field fill comparison always sees the same strings.
+ */
+const WORD_FILL: BubbleFill = { bg: WORD_BUBBLE_BG, border: WORD_BUBBLE_BORDER };
+const DEFINITION_FILL: BubbleFill = { bg: DEFINITION_BUBBLE_BG, border: DEFINITION_BUBBLE_BORDER };
+const fillForKind = (body: BubbleBody): BubbleFill =>
+    body.kind === "word" ? WORD_FILL : DEFINITION_FILL;
 
 interface BubbleStageProps {
     /** The pairs (vocab entries) tested in this level. */
@@ -68,90 +73,6 @@ interface BubbleStageProps {
         what loses the level. Physics resumes exactly where it froze — the frame
         clock is re-based on every paused frame, so no `dt` debt accumulates. */
     paused: boolean;
-}
-
-let bodySeq = 0;
-
-/**
- * Map a text length onto a bubble radius so wordier content gets a roomier
- * circle. `len` is normalized across [lenMin, lenMax] (clamped at both ends),
- * then interpolated across the [radiusMin, radiusMax] band *inset* by `jitter`,
- * and finally a small ± jitter is added back so two same-length bubbles don't
- * render as identical circles. Insetting first guarantees the jitter always has
- * room and the final value stays in band — even the shortest and longest texts
- * keep some variance. Shared by both bubble kinds (English definitions and
- * Chinese words) so they scale with their text the same way.
- */
-function lengthScaledRadius(
-    len: number,
-    lenMin: number,
-    lenMax: number,
-    radiusMin: number,
-    radiusMax: number,
-    jitter: number
-): number {
-    const t = Math.max(0, Math.min(1, (len - lenMin) / (lenMax - lenMin)));
-    const lo = radiusMin + jitter;
-    const hi = radiusMax - jitter;
-    const base = lo + t * (hi - lo);
-    return base + randRange(-jitter, jitter);
-}
-
-/** Radius for a definition bubble, scaled to the length of its English text. */
-function definitionRadius(entry: VocabEntry): number {
-    // MUST match Bubble.tsx's defText transform — this length drives the bubble's radius,
-    // so measuring a different string than the one rendered would mis-size the bubble.
-    const len = resolveDisplayDefinition(entry).length;
-    return lengthScaledRadius(
-        len,
-        DEFINITION_LEN_MIN,
-        DEFINITION_LEN_MAX,
-        DEFINITION_RADIUS_MIN,
-        DEFINITION_RADIUS_MAX,
-        DEFINITION_RADIUS_JITTER
-    );
-}
-
-/** Radius for a word bubble, scaled to its Chinese character count. */
-function wordRadius(entry: VocabEntry): number {
-    // Count by code points so multi-byte CJK characters each count once.
-    const len = [...(entry.entryKey ?? "")].length;
-    return lengthScaledRadius(
-        len,
-        WORD_LEN_MIN,
-        WORD_LEN_MAX,
-        WORD_RADIUS_MIN,
-        WORD_RADIUS_MAX,
-        WORD_RADIUS_JITTER
-    );
-}
-
-function makeBody(
-    pairId: string,
-    kind: "word" | "definition",
-    entry: VocabEntry,
-    radius: number
-): BubbleBody {
-    // Seed the drift in a random direction at the idle speed, so a bubble starts
-    // floating the instant it finishes growing (physics ignores vx/vy until then).
-    const heading = Math.random() * Math.PI * 2;
-    return {
-        id: `b${bodySeq++}`,
-        pairId,
-        kind,
-        entry,
-        x: 0,
-        y: 0,
-        vx: Math.cos(heading) * IDLE_SPEED,
-        vy: Math.sin(heading) * IDLE_SPEED,
-        // Start at the seed size; the bubble inflates to targetRadius once spawned.
-        radius: SPAWN_SEED_RADIUS,
-        targetRadius: radius,
-        mass: radius * radius, // ∝ full-size area (π constant drops out)
-        scale: SCALE_IDLE,
-        targetScale: SCALE_IDLE,
-        status: "idle",
-    };
 }
 
 /**
@@ -434,9 +355,8 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
         // order is decided dynamically by selectNextBubble, not by array order.
         const built: BubbleBody[] = [];
         levelPairs.forEach((entry, idx) => {
-            const pairId = `${entry.id}-${idx}`;
-            built.push(makeBody(pairId, "word", entry, wordRadius(entry)));
-            built.push(makeBody(pairId, "definition", entry, definitionRadius(entry)));
+            // pairId disambiguates a duplicated entry within one pool.
+            built.push(...makePair(`${entry.id}-${idx}`, entry));
         });
         queueRef.current = built;
 
@@ -470,10 +390,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             if (!next) return; // queue drained — nothing left to spawn
             queueRef.current = queueRef.current.filter((b) => b.id !== next.id);
             const { x, y } = planSpawn(next.targetRadius, boundsRef.current, bodiesRef.current);
-            next.x = x;
-            next.y = y;
-            next.radius = SPAWN_SEED_RADIUS;
-            next.status = "growing";
+            launchBody(next, x, y);
             bodiesRef.current.push(next);
             forceRender();
         };
@@ -915,6 +832,9 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     key={body.id}
                     body={body}
                     status={body.status}
+                    fill={fillForKind(body)}
+                    // Bubble Match's long-standing pickup cue: a grey wash.
+                    heldCue="dim"
                     showPinyin={showPinyin}
                     showPinyinColor={showPinyinColor}
                     registerNode={registerNode}

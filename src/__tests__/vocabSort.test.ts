@@ -156,6 +156,83 @@ describe("sortVocabEntries — alphabetical", () => {
   });
 });
 
+describe("sortVocabEntries — cooldown", () => {
+  const NOW = Date.parse("2026-06-01T12:00:00.000Z");
+  const MINUTE = 60 * 1000;
+  const HOUR = 60 * MINUTE;
+
+  /** A card whose only correct mark on `type` landed `agoMs` before NOW. */
+  const marked = (id: number, type: string, agoMs: number, count = 1): VocabEntry =>
+    card({
+      id,
+      typedMarkHistory: {
+        [type]: Array.from({ length: count }, () => ({
+          timestamp: new Date(NOW - agoMs).toISOString(),
+          isCorrect: true,
+        })),
+      },
+    } as Partial<VocabEntry> & { id: number });
+
+  it("orders by the LONGEST-resting track, both ways", () => {
+    // One correct mark ⇒ per-type category Unfamiliar ⇒ a 5-minute window.
+    const rested = marked(1, "recognition", 10 * MINUTE);   // window elapsed ⇒ 0
+    const resting = marked(2, "recognition", 1 * MINUTE);   // ~4 minutes left
+    const fresh = marked(3, "recognition", 0);              // ~5 minutes left
+
+    expect(ids(sortVocabEntries([fresh, resting, rested], "cooldownReady", NOW)))
+      .toEqual([1, 2, 3]);
+    expect(ids(sortVocabEntries([rested, resting, fresh], "cooldownLongest", NOW)))
+      .toEqual([3, 2, 1]);
+  });
+
+  it("ignores UNTOUCHED tracks instead of collapsing every card to ready", () => {
+    // This is why the key is the maximum and not the minimum: outside the
+    // reading/writing goals most cards have tracks that were never marked, and those
+    // report 0. Under a minimum they would drag every card to 0 and the whole
+    // ordering would be one tie.
+    const hotRecognition = marked(1, "recognition", 1 * MINUTE);  // ~4 min left
+    const untouched = card({ id: 2 });                            // 0
+
+    expect(ids(sortVocabEntries([hotRecognition, untouched], "cooldownReady", NOW)))
+      .toEqual([2, 1]);
+  });
+
+  it("takes the longest window when two tracks are cooling at once", () => {
+    // recognition: 8 correct ⇒ Mastered ⇒ 180 days, marked an hour ago.
+    // production:  1 correct ⇒ Unfamiliar ⇒ 5 minutes, marked a minute ago.
+    // The card is not fully rested until the 180-day window closes.
+    const twoTracks = card({
+      id: 1,
+      typedMarkHistory: {
+        recognition: positives(8).map(() => ({
+          timestamp: new Date(NOW - HOUR).toISOString(),
+          isCorrect: true,
+        })),
+        production: [{ timestamp: new Date(NOW - MINUTE).toISOString(), isCorrect: true }],
+      },
+    } as Partial<VocabEntry> & { id: number });
+    const shortWait = marked(2, "recognition", 1 * MINUTE);
+
+    expect(ids(sortVocabEntries([shortWait, twoTracks], "cooldownLongest", NOW)))
+      .toEqual([1, 2]);
+  });
+
+  it("puts a never-studied card at the TOP of 'Ready first', not the bottom", () => {
+    // 0 here means "ready", not "no date" — so cooldown must NOT get the
+    // missing-timestamp sinking that the date keys have.
+    const untouched = card({ id: 1 });
+    const resting = marked(2, "recognition", 1 * MINUTE);
+    expect(ids(sortVocabEntries([resting, untouched], "cooldownReady", NOW))).toEqual([1, 2]);
+  });
+
+  it("breaks ties on the incoming order, so equal-cooldown cards do not reshuffle", () => {
+    const a = card({ id: 7 });
+    const b = card({ id: 3 });
+    const c = card({ id: 5 });
+    expect(ids(sortVocabEntries([a, b, c], "cooldownReady", NOW))).toEqual([7, 3, 5]);
+  });
+});
+
 describe("sort menu", () => {
   const keysOf = (goals: MasteryGoals, language = "zh") =>
     sortBundles(language, goals).flatMap((b) => b.directions.map((d) => d.key));
@@ -211,6 +288,24 @@ describe("sort menu", () => {
     const multi = sortBundles("zh", { reading: true, writing: false }).map((b) => b.label);
     expect(multi).toContain("Mastery (Know)");
     expect(multi).toContain("Mastery (Read)");
+  });
+
+  it("offers Cooldown to every account, tagged to no bar", () => {
+    // The key is the card's soonest-ready TRACK, not a bar's, so no goal gates it and
+    // the per-skill filter (CollectionSortControl `allowPerSkillBars`) must not catch it.
+    const cooldown = sortBundles("zh", GOALS).find((b) => b.id === "cooldown");
+    expect(cooldown?.bar).toBeUndefined();
+    expect(cooldown?.directions.map((d) => d.key)).toEqual(["cooldownReady", "cooldownLongest"]);
+    expect(keysOf({ reading: true, writing: true })).toContain("cooldownReady");
+  });
+
+  it("tags every per-bar row with the bar it reads", () => {
+    // What `allowPerSkillBars` filters on — an `id` match would have missed a new bar.
+    const bundles = sortBundles("zh", { reading: true, writing: true });
+    expect(bundles.find((b) => b.id === "mastery:core")?.bar).toBe("core");
+    expect(bundles.find((b) => b.id === "mastery:reading")?.bar).toBe("reading");
+    expect(bundles.find((b) => b.id === "masteredAt:writing")?.bar).toBe("writing");
+    expect(bundles.filter((b) => b.bar && b.bar !== "core")).toHaveLength(4);
   });
 
   it("captions the toolbar button as dimension + direction", () => {

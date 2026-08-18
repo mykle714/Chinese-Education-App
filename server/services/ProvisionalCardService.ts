@@ -48,6 +48,15 @@ import { DiscoverCard } from '../types/index.js';
  * loop), OnDeckVocabService (the flp cooldown-exhaustion top-up).
  * Depends on: ProvisionalCardDAL, StarterPacksService.estimateLevel.
  */
+/**
+ * The difficulty range that exists for every language (`de."difficulty" BETWEEN 1
+ * AND 6`). A shifted lend level is clamped into it, which is also what implements
+ * Hydra's "floored at L <= 4" tier rule without a special case
+ * (docs/HYDRA_BUBBLES.md § 6.2).
+ */
+const PROVISIONAL_MIN_LEVEL = 1;
+const PROVISIONAL_MAX_LEVEL = 6;
+
 export class ProvisionalCardService {
   constructor(
     private provisionalCardDAL: ProvisionalCardDAL,
@@ -97,6 +106,30 @@ export class ProvisionalCardService {
   }
 
   /**
+   * Turn a TIER OFFSET into an absolute lend level, clamped into 1..6.
+   *
+   * WHY AN OFFSET CROSSES THE WIRE AND A LEVEL DOES NOT. Hydra Bubbles maps a rolled
+   * color to a tier relative to the learner: red = L, yellow = L-1, green = L-2,
+   * blue = L-3 (docs/HYDRA_BUBBLES.md § 6.2). Only the SERVER knows `L` —
+   * `estimateLevel` is not exposed to the client and there is no reason to expose it.
+   * Splitting the computation here keeps each half where its data already lives: the
+   * client owns the per-color offsets, the server owns the learner's level. The
+   * alternative was an endpoint whose only job was to ship `L` out so the client
+   * could send a number back that the server already knew.
+   *
+   * The clamp is also what implements the doc's "floored at L <= 4" rule — at L = 4
+   * the offsets already land on 4/3/2/1, and below that the clamp holds them there —
+   * so there is no special case for a beginner.
+   */
+  async resolveLendLevel(userId: string, language: string, offset: number): Promise<number> {
+    const base = await this.starterPacksService.estimateLevel(userId, language);
+    return Math.max(
+      PROVISIONAL_MIN_LEVEL,
+      Math.min(PROVISIONAL_MAX_LEVEL, base + Math.round(offset))
+    );
+  }
+
+  /**
    * Lend exactly `count` cards, REGARDLESS of how many the user already holds.
    *
    * This is the unconditional primitive `ensureBaseline` is built on, and it exists
@@ -111,6 +144,11 @@ export class ProvisionalCardService {
    * when fresh supply cannot cover the gap, and recycles words the user skipped in
    * discover.
    *
+   * `opts.level` pins the difficulty this lends around, overriding the learner's own
+   * estimated level. Callers that think in TIERS resolve one with `resolveLendLevel`
+   * first. It does NOT change how many cards are lent, and it does not narrow supply
+   * — an exhausted level widens outward like any other.
+   *
    * `granted` counts rows that actually landed. `grantedWords` lists every word
    * ATTEMPTED, so it can slightly overstate when a concurrent request won the same
    * word — harmless, because a word lost that way is one the user now holds anyway,
@@ -121,7 +159,8 @@ export class ProvisionalCardService {
     userId: string,
     language: string,
     count: number,
-    mode: ProvisionMode = 'default'
+    mode: ProvisionMode = 'default',
+    opts: { level?: number } = {}
   ): Promise<{ granted: number; grantedWords: string[] }> {
     if (!userId) throw new ValidationError('User ID is required');
     if (!language) throw new ValidationError('Language is required');
@@ -129,7 +168,13 @@ export class ProvisionalCardService {
     const want = Math.max(0, Math.floor(count));
     if (want === 0) return { granted: 0, grantedWords: [] };
 
-    const level = await this.starterPacksService.estimateLevel(userId, language);
+    // Which difficulty to lend AROUND — the learner's own estimated level unless the
+    // caller pinned one. Either way it is a CENTRE, not a filter: findCandidates
+    // orders by ABS(difficulty - level), so an exhausted level widens outward rather
+    // than returning nothing. That is exactly Hydra's "pull from the next level up"
+    // fallback (docs/HYDRA_BUBBLES.md § 6.2), and it means a nonsense level can never
+    // starve a round.
+    const level = opts.level ?? (await this.starterPacksService.estimateLevel(userId, language));
     const grantedWords: string[] = [];
     let granted = 0;
 
@@ -155,7 +200,7 @@ export class ProvisionalCardService {
     if (granted > 0) {
       console.log(
         `[Provisional] Lent ${granted} card(s) to user=${userId.substring(0, 8)}… language=${language} ` +
-          `level=${level} mode=${mode} requested=${want}` +
+          `level=${level}${opts.level !== undefined ? ' (pinned)' : ''} mode=${mode} requested=${want}` +
           (granted < want ? ` (${want - granted} short — dictionary supply exhausted)` : '')
       );
     }

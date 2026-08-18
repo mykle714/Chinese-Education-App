@@ -63,8 +63,9 @@ export class ArenaController {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const { language, tz } = this.contextOf(req);
-      await this.arenaService.withdraw(userId, language, tz);
+      // No tz: withdrawal is gated on holding a live seat, not on the clock.
+      const { language } = this.contextOf(req);
+      await this.arenaService.withdraw(userId, language);
       res.status(204).send();
     } catch (error) {
       handleControllerError(error, res, 'ArenaController.withdraw');

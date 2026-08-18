@@ -91,7 +91,44 @@ demand on this build is that nothing in phase 1 forecloses it — see
 
 ---
 
-### 2. Teach learners about bound-form words (the huìzi class)
+### 2. Read the `[MarkSuppressed]` log and decide whether fill tier 4 should go
+
+*Added 2026-08-18 with Hydra Bubbles. Code: `server/routes/flashcardRoutes.ts` (the
+`[MarkSuppressed]` branch), `OnDeckVocabService.getGameVocabPool` (the fill tiers).
+Docs: [HYDRA_BUBBLES.md § 8.1](./HYDRA_BUBBLES.md),
+[GAMES_FEATURE.md](./GAMES_FEATURE.md) § the five fill tiers.*
+
+**What changed.** A card's per-type cooldown is now a hard **"next markable at"**: a
+mark landing inside the window is not recorded. Enforced once, server-side, at
+`POST /api/flashcards/mark`, so no surface opts in or out.
+
+**The collision this creates.** `getGameVocabPool`'s fill **tier 4 serves cooled
+cards on purpose** — it is what lets a small library still assemble a full board on a
+second round back to back. Those marks were recorded before this change and are
+silently dropped now. The learner sees a normal round with normal scoring and **no
+movement in their history**, with nothing in the UI to explain it.
+
+**Why it shipped anyway.** The frequency of the collision is unknown, and both
+alternatives trade a known cost for an unmeasured one: deleting tier 4 and lending
+instead grows every small learner's provisional holding, and scoping the guard by
+serving context needs a per-request trust flag, which is exactly the thing the
+single-chokepoint design rules out.
+
+**The task.** Read the log, then choose. It carries user, card, language, mark type,
+the cooldown window in force, the serving `surface`, and whether the mark was
+positive — the `surface` is there to separate the two cases, because
+deck/collection rounds also suppress marks and **that** suppression is intended
+(HYDRA_BUBBLES.md § 6.3). Specifically:
+
+1. What share of suppressed marks come from tier 4 on an unrestricted round?
+2. Is it concentrated in a few small-library accounts, or spread across everyone?
+3. If it is material: delete tier 4 in favour of lending, or give the learner
+   feedback ("resting until tomorrow") rather than silence?
+
+**Until then:** a small-library learner can play a full round and earn nothing, with
+no error and nothing visibly different.
+
+### 3. Teach learners about bound-form words (the huìzi class)
 
 | | |
 |---|---|

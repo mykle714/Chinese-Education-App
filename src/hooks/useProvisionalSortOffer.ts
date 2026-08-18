@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
-import { SORT_OFFER_DELAY_MS } from "../components/ProvisionalSortOffer";
 
 /**
  * useProvisionalSortOffer — the timing/state of a game's end-of-round sort offer
  * (docs/PROVISIONAL_CARDS.md § 5).
  *
- * All four games sequence the offer identically: the run's own end popup lands first,
- * then a beat later the offer opens over it. This hook owns that beat plus the three
- * pieces of state around it — open / minimized / dismissed — so the pages only have
- * to say WHEN the round ended and WHICH words it borrowed.
+ * All four games sequence the offer identically: the offer opens as soon as the round
+ * ends, stacked over the run's own end popup. This hook owns that transition plus the
+ * three pieces of state around it — open / minimized / dismissed — so the pages only
+ * have to say WHEN the round ended and WHICH words it borrowed.
  *
  * The whole thing resets when `active` goes false, which is what a replay does: a
  * second run gets its own offer rather than inheriting the first run's dismissal.
@@ -43,8 +42,8 @@ export function useProvisionalSortOffer(
             return;
         }
         if (dismissed) return;
-        const timer = setTimeout(() => setOpen(true), SORT_OFFER_DELAY_MS);
-        return () => clearTimeout(timer);
+        // No delay: the offer opens on the same beat as the end popup.
+        setOpen(true);
     }, [active, wordsKey, dismissed]);
 
     return {

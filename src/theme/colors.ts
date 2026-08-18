@@ -38,6 +38,12 @@ export const COLORS = {
     blueMain: CATEGORY_COLORS.Mastered,     // #779BE7 — Mastered
     blueAccent: "#BAD7F2",
     purpleAccent: "#D8BAF2",                // pastel purple, same accent family (fie "card" fill)
+    // Pastel teal, same accent family. Added for the SIXTH game's hub row: the five
+    // accents above were each already claimed by a game (`GameDef.bgColor` is a
+    // persistent per-game color, not a random one), so Hydra Bubbles needed a hue no
+    // other row was using. Teal sits between the mint green and the periwinkle blue
+    // and is the largest gap left in the family.
+    tealAccent: "#BAECF2",
     hskChip: "#779BE7",
 
     // ── Streak / activity ─────────────────────────────────────────

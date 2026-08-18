@@ -271,7 +271,9 @@ offered until the learner decides. See [PROVISIONAL_CARDS.md](./PROVISIONAL_CARD
 instead of the open-ended level-based supply: the temporary cards a game just lent,
 reached from the round's "Keep these cards" button. Each card becomes its own pack-of-1,
 so all the pack machinery above applies unchanged, except that the queue is **never
-replenished** and the page **closes itself** once the last card is sorted.
+replenished** and the page **closes itself** as soon as the queue empties — by any route
+(sorted, skipped, or already empty on arrival), via a `queue.length` effect rather than
+from the sort handler. See [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) § Set mode.
 
 ### 5.3 Library tally (level bar corners)
 The level bar carries a two-figure running tally of the account's library, one figure in

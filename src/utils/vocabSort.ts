@@ -5,10 +5,13 @@ import {
   activeBars,
   barProgressBarHeight,
   masteredAtForBar,
+  cooldownRemainingMs,
+  computeTypeCategory,
   BAR_LABELS,
   type MasteryBarId,
   type MasteryGoals,
 } from "./masteryCompute";
+import { MARK_TYPES } from "../../server/contracts/wire";
 
 /**
  * Client-side "Sort by" for an already-loaded collection of cards
@@ -67,6 +70,9 @@ export type VocabSortKey =
   | "masteryReadingDesc"
   | "masteryWritingAsc"
   | "masteryWritingDesc"
+  // time left before the card can next be marked
+  | "cooldownReady"
+  | "cooldownLongest"
   // date that bar crossed into Mastered, per bar
   | "masteredRecent"
   | "masteredOldest"
@@ -108,6 +114,7 @@ const REVERSED_ALPHA_KEYS: readonly VocabSortKey[] = [
 /** NUMERIC keys that order smallest-first. Everything else is biggest-first. */
 const ASCENDING_KEYS: readonly VocabSortKey[] = [
   "oldest",
+  "cooldownReady",
   "deckAddedOldest",
   "masteryAsc",
   "masteryReadingAsc",
@@ -167,6 +174,13 @@ export interface SortBundle {
   directions: SortDirection[];
   /** Deck-only rows are hidden on Learn Now / Mastered, where the key is absent. */
   deckOnly?: boolean;
+  /**
+   * The mastery bar this row reads, when it reads one. Lets a surface drop the
+   * PER-SKILL rows (reading / writing) without matching on `id` strings — the /decks
+   * sheet's Cards section does exactly that, keeping its menu to the orderings that
+   * apply to every card. Absent = the row is bar-independent.
+   */
+  bar?: MasteryBarId;
 }
 
 /**
@@ -192,6 +206,7 @@ export const sortBundles = (
   const masteryRow = (bar: MasteryBarId): SortBundle => ({
     id: `mastery:${bar}`,
     label: qualify("Mastery", bar),
+    bar,
     directions: [
       { key: MASTERY_KEYS[bar].desc, label: "Highest" },
       { key: MASTERY_KEYS[bar].asc, label: "Lowest" },
@@ -201,6 +216,7 @@ export const sortBundles = (
   const masteredAtRow = (bar: MasteryBarId): SortBundle => ({
     id: `masteredAt:${bar}`,
     label: qualify("Date mastered", bar),
+    bar,
     directions: [
       { key: MASTERED_AT_KEYS[bar].desc, label: "Newest" },
       { key: MASTERED_AT_KEYS[bar].asc, label: "Oldest" },
@@ -239,6 +255,16 @@ export const sortBundles = (
       directions: [
         { key: "alphaDefinition", label: "A–Z" },
         { key: "alphaDefinitionDesc", label: "Z–A" },
+      ],
+    },
+    {
+      // Bar-independent by design: the key is the card's longest-resting TRACK, not a
+      // bar's (see `cooldownKey`), so this row is offered whatever the goals are.
+      id: "cooldown",
+      label: "Cooldown",
+      directions: [
+        { key: "cooldownReady", label: "Ready first" },
+        { key: "cooldownLongest", label: "Longest" },
       ],
     },
     ...bars.map(masteryRow),
@@ -303,6 +329,55 @@ const pronunciationKey = (entry: VocabEntry): string => {
   return toneless || (entry.entryKey ?? "").toLowerCase();
 };
 
+/**
+ * Milliseconds until the card is FULLY off cooldown — the maximum remaining window
+ * across its four mark types (`server/contracts/cooldown.ts`).
+ *
+ * ── Why the maximum, and not the soonest-ready track ──────────────────────────
+ * "When can I drill this at all?" is the more natural question, but its key (the
+ * MINIMUM) is degenerate here: a track with no correct mark reports 0, and outside
+ * the reading/writing goals most cards have two such tracks — so nearly every card
+ * would score 0 and the ordering would collapse into one enormous tie. The maximum
+ * has no such problem: an untouched track contributes 0 and simply loses, so the key
+ * is the longest-resting track, and it moves whenever ANY track is marked.
+ *
+ * What it means to a learner:
+ *   Ready first — the cards nothing is holding back: never studied, or fully rested.
+ *                 This is the "what have I been neglecting" ordering.
+ *   Longest     — the cards deepest into their rest, which is roughly the ones most
+ *                 recently and most strongly marked (a Mastered track rests 6 months,
+ *                 an Unfamiliar one 5 minutes).
+ *
+ * All four types rather than the account's active bars, because every key in this
+ * module is deliberately GOAL-INDEPENDENT (see `sortVocabEntries`): an ordering must
+ * not change under a settings toggle. Costless here — a track the learner never marks
+ * simply never wins the maximum.
+ *
+ * ⚠️ **0 is a real value, not a missing one**, so cooldown is NOT a DATE_KEY: a
+ * never-studied card is genuinely ready and belongs at the TOP of "Ready first", not
+ * sunk to the bottom with the dateless cards.
+ *
+ * WINDOW CATEGORY: the card's PER-TYPE category, which is what the games enforce and
+ * what the cdp prints under each bar (MasteryProgressBar → `cooldownRows`). The flp
+ * widens the window to the card's core category because one flp card shows two types
+ * at once, so a flp refill can hold a track back slightly longer than this number —
+ * the same caveat the cdp display carries, and for the same reason: a sort can only
+ * name one window, and the per-type one is the track's own.
+ */
+const cooldownKey = (entry: VocabEntry, now: number): number => {
+  let longest = 0;
+  for (const type of MARK_TYPES) {
+    const remaining = cooldownRemainingMs(
+      entry.typedMarkHistory,
+      type,
+      now,
+      computeTypeCategory(entry.typedMarkHistory, type)
+    );
+    if (remaining > longest) longest = remaining;
+  }
+  return longest;
+};
+
 /** Alphabetical key for the dd — the definition the card face actually renders. */
 const definitionKey = (entry: VocabEntry): string =>
   resolveDisplayDefinition(entry).trim().toLowerCase();
@@ -320,7 +395,11 @@ const definitionKey = (entry: VocabEntry): string =>
  */
 export function sortVocabEntries(
   entries: VocabEntry[],
-  key: VocabSortKey
+  key: VocabSortKey,
+  // Read ONCE per sort and passed down, rather than each comparator reading a clock:
+  // a key that drifted mid-sort would make the comparator inconsistent (and the result
+  // engine-dependent). Injectable so the cooldown orderings are testable.
+  now: number = Date.now()
 ): VocabEntry[] {
   // pbh is the expensive key (it walks the bar's mark tracks), and a comparator is called
   // O(n log n) times — so compute each card's key ONCE up front rather than inside
@@ -328,6 +407,7 @@ export function sortVocabEntries(
   const isAlpha = key === "alphaPronunciation" || key === "alphaPronunciationDesc"
     || key === "alphaDefinition" || key === "alphaDefinitionDesc";
   const isPronunciation = key === "alphaPronunciation" || key === "alphaPronunciationDesc";
+  const isCooldown = key === "cooldownReady" || key === "cooldownLongest";
   const heightBar = MASTERY_KEY_BAR[key];
   const stampBar = MASTERED_AT_KEY_BAR[key];
   const ascending = ASCENDING_KEYS.includes(key);
@@ -341,8 +421,9 @@ export function sortVocabEntries(
     num:
       heightBar ? barProgressBarHeight(entry.typedMarkHistory, heightBar)
         : stampBar ? masteredAtForBar(entry.masteredAt, stampBar)
-          : key === "deckAdded" || key === "deckAddedOldest" ? timeOrZero(entry.deckAddedAt)
-            : timeOrZero(entry.createdAt),
+          : isCooldown ? cooldownKey(entry, now)
+            : key === "deckAdded" || key === "deckAddedOldest" ? timeOrZero(entry.deckAddedAt)
+              : timeOrZero(entry.createdAt),
   }));
 
   // Ties break on the ORIGINAL position, which is the server's ordering — so equal

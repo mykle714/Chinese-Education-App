@@ -509,6 +509,7 @@ const WordSearchPage: React.FC = () => {
             cardId: word.id,
             isCorrect: true,
             type: markType,
+            surface: "word-search",
         }).catch((err) => console.error(`[WordSearch] mark failed → card ${word.id}:`, err));
         // No `token` dep — markFlashcard reads the header at call time, so this
         // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).

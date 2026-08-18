@@ -12,6 +12,8 @@ import {
   MARK_WINDOW_SIZE,
   TypedMarkHistory,
 } from '../types/index.js';
+import { computeTypeCategory } from '../utils/masteryCompute.js';
+import { isTypeOnCooldown } from '../services/cardQueueRanking.js';
 import {
   computeCoreCategory,
   appendTypedMark,
@@ -136,6 +138,52 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     const existingHistory: TypedMarkHistory = entryResult.rows[0].typedMarkHistory || {};
     // The replacement card must be in the same language as the card just marked.
     const cardLanguage: string = entryResult.rows[0].language || 'zh';
+
+    // ── COOLDOWN IS A HARD "NEXT MARKABLE AT" (docs/HYDRA_BUBBLES.md § 8) ──────
+    // A mark on a track that has not finished cooling is NOT RECORDED. Enforced
+    // here, at the single chokepoint every surface writes through, so no game and
+    // no future surface has to know the rule exists — which is the whole design.
+    //
+    // The response is a SUCCESS, not an error: the caller genuinely did the review,
+    // and the games score the clear regardless (Hydra still pays +2). Failing the
+    // request would turn an invisible policy into a visible one, and every caller
+    // would have to learn about cooldowns to handle it.
+    //
+    // `category` is the card's band, which is unchanged because the history is
+    // unchanged; `newCard` is null because no refill is owed for a mark that did
+    // not land. `suppressed` is informational — no client reads it today.
+    const cooldownWindow = computeTypeCategory(existingHistory, markType);
+    if (isTypeOnCooldown(existingHistory, markType, Date.now(), cooldownWindow)) {
+      // ⚠️ INSTRUMENTED, NOT SILENT (§ 8.1, docs/DEFERRED_WORK.md). `getGameVocabPool`
+      // fill tier 4 hands out COOLED cards on ordinary runs whenever the fresh tiers
+      // cannot fill a board — the small-library learner playing two rounds back to
+      // back — so this guard drops marks that are recorded today. The frequency is
+      // unknown, which is why it ships logged: the log is what a follow-up reads to
+      // decide whether tier 4 should be deleted in favour of lending.
+      //
+      // Carries user, card, mark type and the serving surface so tier-4 suppression
+      // can be told apart from the deck/collection suppression that is INTENDED
+      // (docs/HYDRA_BUBBLES.md § 6.3). `surface` is a free-text client hint and is
+      // truncated before it reaches the log.
+      const surface = typeof req.body?.surface === 'string'
+        ? req.body.surface.slice(0, 40)
+        : 'unknown';
+      console.log(
+        `[MarkSuppressed] user=${String(userId).substring(0, 8)}… card=${cardId} ` +
+          `language=${cardLanguage} type=${markType} window=${cooldownWindow} ` +
+          `surface=${surface} isCorrect=${isCorrect}`
+      );
+      client.release();
+      return res.status(200).json({
+        success: true,
+        suppressed: true,
+        category: computeCoreCategory(existingHistory),
+        markTimestamp: null,
+        markType,
+        displacedMark: null,
+        newCard: null,
+      });
+    }
 
     // The bar this mark moves. Every mark lands in exactly one, so the crossing stamp
     // and the velocity row below are each single-bar decisions.

@@ -4,12 +4,8 @@ import ForeignText from "../../components/ForeignText";
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../utils/definitionUtils";
 import { FONTS } from "../../theme/fonts";
 import { API_BASE_URL } from "../../constants";
-import type { BubbleBody, BubbleStatus } from "./types";
+import type { BubbleBody, BubbleFill, BubbleStatus } from "./types";
 import {
-    WORD_BUBBLE_BG,
-    WORD_BUBBLE_BORDER,
-    DEFINITION_BUBBLE_BG,
-    DEFINITION_BUBBLE_BORDER,
     CORRECT_BUBBLE_BG,
     CORRECT_BUBBLE_BORDER,
     WRONG_BUBBLE_BG,
@@ -25,6 +21,17 @@ interface BubbleProps {
         status transitions — the loop mutates `body` in place, so prev/next.body
         are the same object and body.status comparisons would always tie. */
     status: BubbleStatus;
+    /** This bubble's BASE (idle) colors, chosen by the game — Bubble Match keys
+        them on `kind`, Hydra Bubbles on the card's lend/mastery tier. Feedback
+        statuses (correct/wrong/revealed/nomatch) override it; see below. */
+    fill: BubbleFill;
+    /** How "I am picked up / I am the drop target" is drawn.
+        - `"dim"`  — Bubble Match: a grey wash over the bubble.
+        - `"ring"` — Hydra Bubbles: a contrast outline ring, NO grey, because
+                     Hydra reserves grey for English-side bubbles and a grey
+                     wash there would read as a card color (HYDRA_BUBBLES.md § 5.1).
+        Both also enlarge, which is driven by targetScale in the stage. */
+    heldCue: "dim" | "ring";
     showPinyin: boolean;
     showPinyinColor: boolean;
     /** Registers the outer node so the rAF loop can write its transform. */
@@ -49,7 +56,9 @@ const wordContentScale = (charCount: number, radius: number): number => {
 };
 
 /**
- * A single floating bubble. Two layers by design:
+ * A single floating bubble — shared by every bubble game.
+ *
+ * Two layers by design:
  *  - The outer node carries the physics transform (translate + scale) written
  *    every frame by the rAF loop — React never touches it per-frame.
  *  - The inner node carries status-driven CSS feedback (green pop / red shake),
@@ -59,6 +68,8 @@ const wordContentScale = (charCount: number, radius: number): number => {
 const Bubble: React.FC<BubbleProps> = ({
     body,
     status,
+    fill,
+    heldCue,
     showPinyin,
     showPinyinColor,
     registerNode,
@@ -66,7 +77,9 @@ const Bubble: React.FC<BubbleProps> = ({
 }) => {
     const { id, kind, entry, radius, targetRadius } = body;
     const isWord = kind === "word";
-    const dimmed = status === "held" || status === "hovered";
+    // "I am under the pointer" — either the held bubble or the bubble it is
+    // hovering over. Drawn per `heldCue`.
+    const cued = status === "held" || status === "hovered";
     // Only promote a bubble to its own compositor layer while it's actually
     // moving (being dragged, the drop-target growing, or inflating in). A
     // permanent `willChange: transform` on all ~40 bubbles keeps 40 GPU layers
@@ -88,12 +101,10 @@ const Bubble: React.FC<BubbleProps> = ({
     } else if (status === "wrong") {
         bg = WRONG_BUBBLE_BG;
         border = WRONG_BUBBLE_BG;
-    } else if (isWord) {
-        bg = WORD_BUBBLE_BG;
-        border = WORD_BUBBLE_BORDER;
     } else {
-        bg = DEFINITION_BUBBLE_BG;
-        border = DEFINITION_BUBBLE_BORDER;
+        // No feedback status — the game's own base color for this bubble.
+        bg = fill.bg;
+        border = fill.border;
     }
 
     // Lay text out for the bubble's FINAL size; the grow-in is a CSS scale on the
@@ -238,8 +249,12 @@ const Bubble: React.FC<BubbleProps> = ({
                     </Box>
                 )}
 
-                {/* Grey dim overlay shown while held or while a valid drop target. */}
-                {dimmed && (
+                {/* Pickup / drop-target cue. Two treatments (see heldCue): a grey
+                    wash, or an inset contrast ring for games where grey carries
+                    its own meaning. Both are pure overlays — neither changes the
+                    bubble's own colors, so a tier-colored bubble stays readable
+                    as its tier while it is being dragged. */}
+                {cued && heldCue === "dim" && (
                     <Box
                         className="bubble__dim"
                         sx={{
@@ -247,6 +262,24 @@ const Bubble: React.FC<BubbleProps> = ({
                             inset: 0,
                             borderRadius: "50%",
                             backgroundColor: "rgba(90,90,90,0.32)",
+                            pointerEvents: "none",
+                        }}
+                    />
+                )}
+                {cued && heldCue === "ring" && (
+                    <Box
+                        className="bubble__ring"
+                        sx={{
+                            position: "absolute",
+                            // Inset so the ring sits just inside the bubble's own
+                            // 2px border rather than doubling it.
+                            inset: 3,
+                            borderRadius: "50%",
+                            border: "3px solid rgba(24,24,24,0.78)",
+                            // A thin light halo outside the dark ring keeps it
+                            // visible against every tier color, including the
+                            // dark blue one.
+                            boxShadow: "0 0 0 2px rgba(255,255,255,0.85)",
                             pointerEvents: "none",
                         }}
                     />
@@ -263,6 +296,11 @@ export default React.memo(Bubble, (prev, next) => {
     return (
         prev.body.id === next.body.id &&
         prev.status === next.status &&
+        // Compared field-by-field: the stage builds a fresh object each render,
+        // so an identity check would defeat the memo entirely.
+        prev.fill.bg === next.fill.bg &&
+        prev.fill.border === next.fill.border &&
+        prev.heldCue === next.heldCue &&
         prev.showPinyin === next.showPinyin &&
         prev.showPinyinColor === next.showPinyinColor
     );

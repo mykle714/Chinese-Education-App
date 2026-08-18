@@ -431,7 +431,7 @@ const MatchSpeedPage: React.FC = () => {
             // Match Speed is a recognition drill (foreign → meaning), same track
             // as Bubble Match. excludeIds defaults to []: the game doesn't use the
             // replacement card the endpoint returns.
-            markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE })
+            markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE, surface: "match-speed" })
                 .catch((err) => console.error(`[MatchSpeed] mark failed → card ${entry.id}:`, err));
         },
         // No `token` dep — markFlashcard reads the header at call time, so this

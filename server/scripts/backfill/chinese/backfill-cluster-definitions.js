@@ -42,6 +42,7 @@
  *   npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --ids=1,2,3
  *   npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --no-critic   # skip the Stage B critic
  *   npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --merge-pass  # Stage A.5: consolidate over-fine clusters
+ *   npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --rescore-only # Stage C ONLY: re-score existing multi-cluster rows, keep the partition
  */
 
 import dotenv from 'dotenv';
@@ -57,7 +58,7 @@ import { initRunLog, cachedSystem } from '../run-log.js';
 import { createGlossOrderer } from './lib/orderGlosses.js';
 import { createFrequencyScorer } from './lib/frequencyScore.js';
 
-const SCRIPT_VERSION = 5; // bump when this script's logic/prompt changes (v5: Stage C rubric re-pointed from register to everyday-conversation frequency, and the per-cluster key renamed vernacularScore → frequencyScore, migration 122; v4: Stage A.5 merge prompt no longer fuses etymologically-related but context-distinct senses, e.g. 月 moon vs month; v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
+const SCRIPT_VERSION = 6; // bump when this script's logic/prompt changes (v6: Stage C scores the SENSE, not the headword — the per-cluster call now passes `sense` so the scorer switches to sense mode, and its temperature drops 0.1 → 0; this is what made 老 default to "experienced" and 和 to "to mix / blend", and is why 39.4% of clustered entries had tied top scores. Re-run with --rescore-only; v5: Stage C rubric re-pointed from register to everyday-conversation frequency, and the per-cluster key renamed vernacularScore → frequencyScore, migration 122; v4: Stage A.5 merge prompt no longer fuses etymologically-related but context-distinct senses, e.g. 月 moon vs month; v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const includeAll  = process.argv.includes('--all');
@@ -65,6 +66,11 @@ const force       = process.argv.includes('--force');
 const stale       = process.argv.includes('--stale'); // also re-cluster rows stamped below SCRIPT_VERSION
 const skipCritic  = process.argv.includes('--no-critic');
 const mergePass   = process.argv.includes('--merge-pass'); // Stage A.5 consolidation
+// --rescore-only: keep every existing cluster's partition, ordering and glosses EXACTLY
+// as they are and redo Stage C alone. Added for the v6 sense-mode fix, where the
+// partition was never in question — only the scores were — and a full re-cluster would
+// have meant ~4x the API calls plus the risk of churning senses that were already right.
+const rescoreOnly = process.argv.includes('--rescore-only');
 
 const idsArg = process.argv.find(a => a.startsWith('--ids='));
 const targetIds = idsArg ? idsArg.replace('--ids=', '').split(',').map(Number) : null;
@@ -341,7 +347,9 @@ async function run() {
   const modeLabel = isSpotCheck ? 'SPOT CHECK (no writes)'
     : targetWords?.length ? `scoped to: ${targetWords.join(', ')}`
     : includeAll ? 'ALL zh entries' : 'discoverable zh entries';
-  const filterLabel = force ? ' (re-clustering, --force)' : ' (not-yet-clustered only)';
+  const filterLabel = rescoreOnly
+    ? ' (STAGE C ONLY — re-scoring existing clusters, partition untouched)'
+    : force ? ' (re-clustering, --force)' : ' (not-yet-clustered only)';
   console.log(`Starting definition-clustering backfill — ${modeLabel}${filterLabel}${skipCritic ? ' [no critic]' : ''}\n`);
 
   const client = await db.getClient();
@@ -353,22 +361,24 @@ async function run() {
     // them as clustered). --force re-clusters; otherwise skip already-set rows.
     const { rows: entries } = await client.query(
       targetIds
-        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore"
+        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore", "definitionClusters"
            FROM dictionaryentries_zh WHERE id = ANY($1) ORDER BY id ASC`
         : targetWords?.length
-        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore"
+        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore", "definitionClusters"
            FROM dictionaryentries_zh
            WHERE language = 'zh' AND word1 = ANY($1)
              ${validatedFilter}
              AND jsonb_array_length(definitions) >= 1
            ORDER BY id ASC`
-        : `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore"
+        : `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore", "definitionClusters"
            FROM dictionaryentries_zh
            WHERE language = 'zh'
              ${includeAll ? '' : 'AND discoverable = TRUE'}
              ${validatedFilter}
              AND jsonb_array_length(definitions) >= 1
-             ${force ? '' : stale ? `AND ("definitionClusters" IS NULL OR ${staleClause()})` : 'AND "definitionClusters" IS NULL'}
+             ${rescoreOnly
+               ? `AND "definitionClusters" IS NOT NULL AND jsonb_array_length("definitionClusters") > 1`
+               : force ? '' : stale ? `AND ("definitionClusters" IS NULL OR ${staleClause()})` : 'AND "definitionClusters" IS NULL'}
            ORDER BY id ASC
            ${isSpotCheck ? 'LIMIT 5' : ''}`,
       targetIds ? [targetIds] : targetWords?.length ? [targetWords] : []
@@ -393,7 +403,46 @@ async function run() {
         let finalClusters;
         let reviewNotes;
 
-        if (definitions.length === 1) {
+        if (rescoreOnly) {
+          // ── Stage C only ────────────────────────────────────────────────────
+          // Keep the partition, ordering, senses, readings, pos and glosses exactly
+          // as stored and redo the SCORES alone. The v6 fix changed how a cluster is
+          // scored, not how it is formed, so re-running Stage A would spend ~4x the
+          // API calls to re-derive senses that were already correct — and risk
+          // churning them. Single-cluster rows are excluded by the query: their score
+          // comes from the word-level column, which this bug never touched.
+          const existing = Array.isArray(row.definitionClusters)
+            ? row.definitionClusters
+            : JSON.parse(row.definitionClusters || '[]');
+          reviewNotes = [];
+          finalClusters = [];
+          for (const cluster of existing) {
+            const glosses = Array.isArray(cluster.glosses) ? cluster.glosses : [];
+            let frequencyScore = cluster.frequencyScore ?? null;
+            try {
+              const s = await scoreFrequency(row.word1, cluster.reading, glosses, { sense: cluster.sense });
+              frequencyScore = s.score;
+            } catch (e) {
+              // Same oracle-export rule as Stage C proper: a capture is control flow,
+              // not a failure, and must propagate. On a real failure the EXISTING
+              // score is kept rather than nulled — a stale score beats no score, and
+              // nulls sort last, which would silently bury the sense.
+              if (e?.oracleExport) throw e;
+              reviewNotes.push(`re-score failed for "${cluster.sense}" cluster (kept ${cluster.frequencyScore ?? 'null'})`);
+            }
+            finalClusters.push({ ...cluster, frequencyScore });
+          }
+          // Re-sorting is NOT done here: `sortedSenseClusters` orders on read, so the
+          // stored array order stays whatever the clusterer chose. Changing it here
+          // would make the stored order and the read order two competing opinions.
+          const top = finalClusters.reduce((a, b) => ((b.frequencyScore ?? -1) > (a.frequencyScore ?? -1) ? b : a));
+          const tied = finalClusters.filter((c) => (c.frequencyScore ?? -1) === (top.frequencyScore ?? -1)).length;
+          if (tied > 1) {
+            // The tie is the fingerprint of the old bug (every cluster scored as the
+            // headword). After v6 it should be rare, so surface any that survive.
+            reviewNotes.push(`${tied} clusters tied at top score ${top.frequencyScore} — default sense decided by array order`);
+          }
+        } else if (definitions.length === 1) {
           // ── Fast path (zero API calls) ──────────────────────────────────────
           // A single-definition entry is trivially one cluster, so skip EVERY model
           // call — Stage A split, A.5 merge, B ordering, C scoring — and use the lone
@@ -469,7 +518,11 @@ async function run() {
             // Stage C: per-cluster conversation frequency (1–5), scored independently.
             let frequencyScore = null;
             try {
-              const s = await scoreFrequency(row.word1, cluster.reading, glosses);
+              // `sense` is REQUIRED here: without it the scorer asks about the bare
+              // headword while being shown one cluster's glosses, and every cluster of
+              // a word comes back with the same number (see lib/frequencyScore.js §
+              // THE BUG).
+              const s = await scoreFrequency(row.word1, cluster.reading, glosses, { sense: cluster.sense });
               frequencyScore = s.score;
             } catch (e) {
               // An oracle export capture is a control-flow signal, not a scoring

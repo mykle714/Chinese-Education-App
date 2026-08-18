@@ -24,7 +24,7 @@ import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
-import { provisionalRows, provisionalWords } from "../../utils/provisionalCards";
+import { provisionalEntries, provisionalWords } from "../../utils/provisionalCards";
 import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 
@@ -315,7 +315,7 @@ const BubbleMatchPage: React.FC = () => {
         // docs/MASTERY_REWORK.md.
         // excludeIds defaults to []: the game doesn't use the replacement card the
         // endpoint returns, so there's nothing to dedupe against.
-        markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE })
+        markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE, surface: "bubble-match" })
             .catch((err) => console.error(`[BubbleMatch] mark failed → card ${entry.id}:`, err));
         // No `token` dep — markFlashcard reads the header at call time, so this
         // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
@@ -480,8 +480,8 @@ const BubbleMatchPage: React.FC = () => {
             open={noticeOpen}
             onDismiss={() => setNoticeOpen(false)}
             surfaceName="Bubble Match"
-            // The board's cards are in hand, so the table needs no extra round-trip.
-            rows={provisionalRows(pool)}
+            // The board's cards are in hand, so the preview needs no extra round-trip.
+            entries={provisionalEntries(pool)}
             language={(user?.selectedLanguage ?? "zh") as Language}
         />
         <LeafPage

@@ -185,6 +185,17 @@ An hourly Postgres cron on the prod server. For each **(user, language)** balanc
 
 ### Games
 → See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)
+  → Hydra Bubbles: [docs/HYDRA_BUBBLES.md](./docs/HYDRA_BUBBLES.md) — **BUILT 2026-08-18,
+    no migration**: an endless, clockless recognition drill on Bubble Match's bubbles. The
+    color→payout ladder (red 0 / yellow 1 / green 2 / blue 3 spawns per match), a deliberately
+    non-self-stabilizing spawn table keyed on **fill ratio** (the same number the overflow loss
+    reads) that **steps** to red-only at 0.75, the spawn/ratio/anti-zero algorithm, HSK-tier
+    lending where a lent card's color comes from difficulty rather than mastery, four
+    client-side color buffers, and challenge mode (challenge words ride the yellow slot, scored
+    on time-to-clear). Shipped alongside `src/games/bubbles/` — the bubble field extracted out
+    of Bubble Match — and the app-wide rule it introduces: **cooldown is now a hard "next
+    markable at"** enforced at `POST /api/flashcards/mark`, which silently drops fill-tier-4
+    marks that count today (§ 8.1 — ships logged, tracked in DEFERRED_WORK.md).
 
 ### Provisional Cards (no game/flp ever blocks on card count)
 → See [docs/PROVISIONAL_CARDS.md](./docs/PROVISIONAL_CARDS.md) — every game's and flp's old

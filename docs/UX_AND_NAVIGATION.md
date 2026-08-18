@@ -45,6 +45,43 @@ cpcd selectable on desktop but keeps it non-selectable on mobile. Don't sprinkle
 per-component `userSelect: "none"`; rely on the global default and only opt specific
 content into `userSelect: "text"` (desktop-gated) when called out.
 
+### Pan/zoom surfaces
+
+Two surfaces let the user move a camera over a world larger than the screen, and they
+are built differently on purpose:
+
+* **Night market** (`src/features/nightmarket/`) — Pixi, isometric, hundreds of sprites
+  with per-frame animation. It needs a scene graph.
+* **Memory Map** (`src/games/memory-map/MemoryMapWorld.tsx`) — plain DOM, one CSS
+  `transform` on a world div, no rAF loop. It is capped at 100 absolutely-positioned
+  word nodes (`MEMORY_MAP_CAPACITY`), which is what makes that safe: nothing to cull,
+  no scene graph to justify. Its camera is stored as **the world coordinate at the
+  centre of the viewport, plus a zoom** rather than as a pixel offset, so a run saved on
+  one screen size resumes looking at the same place on another.
+
+A future pan/zoom surface should follow whichever of these its content resembles — and
+should not grow a *second* Pixi host if it needs one; borrow the night market's
+(`pixiRuntime.ts`).
+
+> ⚠️ **`@use-gesture` drag + pinch on touch — two traps, same symptom.** Both present as
+> "panning is broken on mobile" (see MEMORY_MAP_GAME.md § 14.5):
+>
+> 1. Binding `drag` and `pinch` together requires `drag: { pointer: { touch: true } }`.
+>    Otherwise the pointer-event stream is cancelled on touch devices once the browser
+>    arbitrates between the two gestures, and the pan **works with a mouse and does
+>    nothing on a phone**. A plain `useDrag` with nothing competing (SortCardsPage) does
+>    not need it — it is the combination that breaks.
+> 2. If you need `eventOptions: { passive: false }` (to preventDefault the browser's own
+>    pinch-zoom), you **must** bind with the `target` option and must **not** spread
+>    `bind()`. React's synthetic listeners are always passive, so asking for both yields
+>    a half-bound gesture rather than an error — and because spread handlers are rebuilt
+>    on every render, the gesture dies the first time the surface re-renders during play.
+>
+> Relatedly: on a surface where draggable content covers most of the screen, child
+> elements with their own tap handlers must distinguish a tap from a pan themselves
+> (a press-position + slop check), or every pan that begins on a child fires that
+> child's tap (§ 14.6).
+
 **Games must block the mobile edge-swipe-back gesture by default.** Every game page
 should call `useBlockEdgeSwipe(true)` (`src/hooks/useBlockEdgeSwipe.ts`) so a swipe
 from the left/right screen edge doesn't navigate away mid-drag. `touch-action: none`

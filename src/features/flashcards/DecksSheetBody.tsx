@@ -1,8 +1,15 @@
-import { forwardRef, useImperativeHandle, useRef } from "react";
-import { Box, Typography, IconButton } from "@mui/material";
+import { forwardRef, useImperativeHandle, useRef, useState, useCallback } from "react";
+import { Box, Typography, IconButton, TextField, InputAdornment, Collapse } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import { Search, Clear } from "@mui/icons-material";
 import { styled } from "@mui/material/styles";
 import DeckTile from "../../components/DeckTile";
+import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
+import CollectionSortControl from "./CollectionSortControl";
+import type { VocabSortKey } from "../../utils/vocabSort";
+import type { MasteryGoals } from "../../utils/masteryCompute";
+import type { VocabEntry } from "../../types";
 import { FLOATING_FOOTER_CLEARANCE } from "../../components/MobileFooter";
 import { EDGE_FADE_MASK_NO_TOP } from "../../components/MobileTabScreen";
 import type { SheetPanelBodyHandle } from "./FlashcardsLearnPage/SheetPanel";
@@ -18,7 +25,20 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 //
 // The BODY of the /decks pull-up sheet: every "set of cards" the page offers —
 // Collections, Mastered, Challenges and the user's own Decks — in the three-per-row
-// tile grid the page used to render inline.
+// tile grid the page used to render inline, followed by the learner's CARDS
+// themselves.
+//
+// ── Why the cards are back on this sheet ──────────────────────────────────────
+// The tile sections answer "which set?"; the Cards section at the bottom answers
+// "where is that one word?", which is the far more frequent errand and used to cost
+// two navigations (All Cards tile → collection page). So the "All Cards" TILE is
+// gone from the Collections row (the fdp filters it out — the collection and its
+// route still exist for the Games hub and for direct links) and its grid lives here
+// instead, under the same search box /decks used to carry.
+//
+// The Decks section above it collapses (chevron on its caption, remembered in
+// localStorage) so a learner with many decks can fold them away and put the card
+// grid straight under the built-in collections.
 //
 // It is a SheetPanel body, so it obeys that contract (see SheetPanel):
 //   • the forwarded {root, scroll} handle — `root` is the gesture target that
@@ -89,6 +109,24 @@ const SectionLabel = styled(Typography)(() => ({
     fontFamily: FONTS.sans,
 }));
 
+// Whether the Decks section is expanded, remembered across visits.
+//
+// It is a VIEW preference rather than account data, so it stays on the device
+// (localStorage) instead of costing a column and a round trip — the same choice
+// useTTSSettings / useDiscoverSettings make. Reads are guarded because a private
+// browsing context can throw on access, and a lost preference must never take the
+// section down with it: the fallback is "expanded", the state the section has when
+// nothing is known about the user.
+const DECKS_OPEN_KEY = "decksSheet.decksOpen";
+
+const readDecksOpen = (): boolean => {
+    try {
+        return window.localStorage.getItem(DECKS_OPEN_KEY) !== "false";
+    } catch {
+        return true;
+    }
+};
+
 export interface DecksSheetBodyProps {
     // Built-in collections, already grouped and filtered by the page.
     collectionsSection: BuiltinCollectionEntry[];
@@ -106,6 +144,26 @@ export interface DecksSheetBodyProps {
     decksError: string | null;
     onOpenPath: (path: string) => void;
     onNewDeck: () => void;
+    // ── The inline Cards section ──────────────────────────────────────────────
+    // Every sorted card in the "all" collection, ALREADY filtered by the page's
+    // search box (the page owns both the fetch and the filter, per this file's
+    // presentation-only contract). Must be referentially stable while unchanged,
+    // or MiniVocabCardGrid restarts its reveal cascade on every render.
+    cards: VocabEntry[];
+    cardsLoading: boolean;
+    cardsError: string | null;
+    /** Total card count before the search filter — the figure on the section caption. */
+    cardsTotal: number;
+    cardsSearch: string;
+    onCardsSearchChange: (value: string) => void;
+    onOpenCard: (entry: VocabEntry) => void;
+    // Ordering of the card grid. The KEY lives on the page (it holds the entries and
+    // applies it); this file only renders the picker. `all` is not a deck, so the
+    // deck-only "Date added" row is never offered here.
+    cardsSortKey: VocabSortKey;
+    onCardsSortKeyChange: (key: VocabSortKey) => void;
+    cardsSortLanguage: string | null | undefined;
+    cardsSortGoals: MasteryGoals;
     // The sheet's grabber-drag binder, spread onto the section headings so a
     // vertical drag started on a caption resizes the sheet like the grabber does.
     headerDragBind?: () => Record<string, unknown>;
@@ -122,10 +180,35 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
     decksError,
     onOpenPath,
     onNewDeck,
+    cards,
+    cardsLoading,
+    cardsError,
+    cardsTotal,
+    cardsSearch,
+    onCardsSearchChange,
+    onOpenCard,
+    cardsSortKey,
+    onCardsSortKeyChange,
+    cardsSortLanguage,
+    cardsSortGoals,
     headerDragBind,
 }, ref) {
     const rootRef = useRef<HTMLDivElement | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
+    // Purely presentational, so it lives here rather than in the page: nothing above
+    // this component behaves differently when the deck tiles are folded away.
+    const [decksOpen, setDecksOpen] = useState(readDecksOpen);
+    const toggleDecksOpen = useCallback(() => {
+        setDecksOpen((open) => {
+            const next = !open;
+            try {
+                window.localStorage.setItem(DECKS_OPEN_KEY, String(next));
+            } catch {
+                // A storage failure costs the memory, not the interaction.
+            }
+            return next;
+        });
+    }, []);
     // Getters rather than captured values: SheetPanel reads the handle inside an
     // effect that may run before these refs are attached on a later re-render.
     useImperativeHandle(ref, () => ({
@@ -153,6 +236,16 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
+                    // ⚠️ NO SHRINKING. This is a SCROLLING column: its content is
+                    // meant to overflow and be scrolled, but a flex item's default
+                    // `flex-shrink: 1` makes every section compress to fit the box
+                    // instead. The visible symptom was the collapsible Decks section
+                    // failing to push the Cards grid down when it expanded — the
+                    // Collapse (which carries `min-height: 0`, so nothing stopped it)
+                    // absorbed its own growth by being squeezed. Pinning every direct
+                    // child to its natural height makes the column's height the honest
+                    // sum of its sections, which is what the scroller wants anyway.
+                    "& > *": { flexShrink: 0 },
                     // The floating footer pill hovers OVER the sheet (it is
                     // rendered at frame level, above the sheet's z-index), so the
                     // last tile row has to clear it exactly as a page's scroll
@@ -271,56 +364,172 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                     </>
                 )}
 
-                {/* ── Decks ── the user's own sets. */}
+                {/* ── Decks ── the user's own sets. COLLAPSIBLE: the whole caption row
+                    is the toggle (a wide target beats a 24px chevron on a phone), while
+                    the + button keeps its own handler and stops the tap from also
+                    folding the section it is about to add to.
+
+                    The caption row still carries headerDragBind, so a vertical DRAG
+                    started on it resizes the sheet; useDrag's filterTaps is what keeps
+                    the tap-to-toggle working through the same binding. */}
                 <Box
                     className="decks-sheet-body__decks-header"
                     {...(headerDragBind?.() ?? {})}
-                    sx={{ width: "100%", px: 3.5, pt: 2, pb: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                    role="button"
+                    aria-expanded={decksOpen}
+                    onClick={toggleDecksOpen}
+                    sx={{
+                        width: "100%", px: 3.5, pt: 2, pb: 1,
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        cursor: "pointer",
+                    }}
                 >
-                    <SectionLabel className="decks-sheet-body__decks-label">Decks</SectionLabel>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        {/* Rotated rather than swapped for a second icon, so the arrow
+                            turns with the section instead of cutting to a new glyph. */}
+                        <ExpandMoreIcon
+                            className="decks-sheet-body__decks-chevron"
+                            sx={{
+                                fontSize: 20,
+                                color: COLORS.onSurface,
+                                transition: "transform 180ms ease",
+                                transform: decksOpen ? "rotate(0deg)" : "rotate(-90deg)",
+                            }}
+                        />
+                        <SectionLabel className="decks-sheet-body__decks-label">
+                            Decks{authoredDecks.length > 0 ? ` (${authoredDecks.length})` : ""}
+                        </SectionLabel>
+                    </Box>
                     <IconButton
                         className="decks-sheet-body__new-deck-button"
                         aria-label="New deck"
                         size="small"
-                        onClick={onNewDeck}
+                        onClick={(e) => { e.stopPropagation(); onNewDeck(); }}
                         sx={{ color: COLORS.onSurface }}
                     >
                         <AddIcon />
                     </IconButton>
                 </Box>
 
-                {(decksError || (!decksLoading && authoredDecks.length === 0)) && (
-                    <Box className="decks-sheet-body__decks-message" sx={{ width: "100%", px: 3.5, pb: 1 }}>
-                        <Typography
-                            className={decksError ? "decks-sheet-body__decks-error" : "decks-sheet-body__decks-empty"}
-                            sx={{ fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.textSecondary }}
-                        >
-                            {decksError ??
-                                "No decks yet. Tap + to make one, then add cards to it from any card's detail page."}
-                        </Typography>
-                    </Box>
-                )}
+                <Collapse in={decksOpen} timeout={180} sx={{ width: "100%" }} unmountOnExit>
+                    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
+                        {(decksError || (!decksLoading && authoredDecks.length === 0)) && (
+                            <Box className="decks-sheet-body__decks-message" sx={{ width: "100%", px: 3.5, pb: 1 }}>
+                                <Typography
+                                    className={decksError ? "decks-sheet-body__decks-error" : "decks-sheet-body__decks-empty"}
+                                    sx={{ fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.textSecondary }}
+                                >
+                                    {decksError ??
+                                        "No decks yet. Tap + to make one, then add cards to it from any card's detail page."}
+                                </Typography>
+                            </Box>
+                        )}
 
-                {/* The user's decks, wrapping at three per row — the same tile as
-                    every built-in set above, carrying the deck's derived pastel
-                    (deckTileColors: computed from the id, never stored). */}
-                <TileGrid className="decks-sheet-body__decks-list" alignLeft>
-                    {authoredDecks.map((deck, index) => (
-                        <DeckTile
-                            key={deck.id}
-                            className="decks-sheet-body__deck-tile"
-                            label={deck.name}
-                            count={deck.cardCount}
-                            icon={collectionIcon({ kind: "deck", deckId: deck.id })}
-                            mainColor={deckTileColors(deck.id).main}
-                            accentColor={deckTileColors(deck.id).accent}
-                            // Stagger only within the first couple of rows; past
-                            // that the cascade would run longer than the scroll.
-                            animationDelay={Math.min(index, 5) * 70}
-                            onClick={() => onOpenPath(`/flashcards/deck/${deck.id}`)}
-                        />
-                    ))}
-                </TileGrid>
+                        {/* The user's decks, wrapping at three per row — the same tile as
+                            every built-in set above, carrying the deck's derived pastel
+                            (deckTileColors: computed from the id, never stored). */}
+                        <TileGrid className="decks-sheet-body__decks-list" alignLeft>
+                            {authoredDecks.map((deck, index) => (
+                                <DeckTile
+                                    key={deck.id}
+                                    className="decks-sheet-body__deck-tile"
+                                    label={deck.name}
+                                    count={deck.cardCount}
+                                    icon={collectionIcon({ kind: "deck", deckId: deck.id })}
+                                    mainColor={deckTileColors(deck.id).main}
+                                    accentColor={deckTileColors(deck.id).accent}
+                                    // Stagger only within the first couple of rows; past
+                                    // that the cascade would run longer than the scroll.
+                                    animationDelay={Math.min(index, 5) * 70}
+                                    onClick={() => onOpenPath(`/flashcards/deck/${deck.id}`)}
+                                />
+                            ))}
+                        </TileGrid>
+                    </Box>
+                </Collapse>
+
+                <LineSeparator className="cards-line-separator" />
+
+                {/* ── Cards ── the learner's whole sorted library, inline, replacing the
+                    All Cards TILE that used to send them to a page to see the same grid.
+                    Search is client-side over the already-loaded set (the page owns the
+                    filter, via the same filterVocabEntries the collection page uses), so
+                    typing costs no round trip.
+
+                    The caption shows the UNFILTERED total: it names the size of the set,
+                    and a number that shrank as you typed would be reporting the search
+                    rather than the library. */}
+                <Box
+                    className="decks-sheet-body__cards-header"
+                    {...(headerDragBind?.() ?? {})}
+                    sx={{ width: "100%", px: 3.5, pt: 2, pb: 1 }}
+                >
+                    <SectionLabel className="decks-sheet-body__cards-label">
+                        Cards{cardsTotal > 0 ? ` (${cardsTotal})` : ""}
+                    </SectionLabel>
+                </Box>
+
+                {/* Sized to the 364px card grid below so the input lines up over the
+                    cards, exactly as it does on the collection page. */}
+                <Box className="decks-sheet-body__cards-search" sx={{ width: 364, maxWidth: "100%", px: 3.5 }}>
+                    <TextField
+                        className="decks-sheet-body__cards-search-input"
+                        fullWidth
+                        size="small"
+                        placeholder="Search your cards..."
+                        value={cardsSearch}
+                        onChange={(e) => onCardsSearchChange(e.target.value)}
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <Search sx={{ color: COLORS.textSecondary }} />
+                                </InputAdornment>
+                            ),
+                            endAdornment: cardsSearch ? (
+                                <InputAdornment position="end">
+                                    <IconButton
+                                        className="decks-sheet-body__cards-search-clear"
+                                        aria-label="Clear search"
+                                        size="small"
+                                        onClick={() => onCardsSearchChange("")}
+                                    >
+                                        <Clear fontSize="small" />
+                                    </IconButton>
+                                </InputAdornment>
+                            ) : undefined,
+                        }}
+                        sx={{ backgroundColor: COLORS.background, borderRadius: "8px" }}
+                    />
+                </Box>
+
+                {/* Same picker as the collection page (CollectionSortControl), on the
+                    same 364px column as the search box and the grid. */}
+                <CollectionSortControl
+                    classPrefix="decks-sheet-body__cards"
+                    sortKey={cardsSortKey}
+                    onSortKeyChange={onCardsSortKeyChange}
+                    language={cardsSortLanguage}
+                    goals={cardsSortGoals}
+                    // Common orderings only: this is the whole library, opened to FIND
+                    // a card, so the per-skill (reading / writing) mastery rows are
+                    // left to the collection pages that are about those bars.
+                    allowPerSkillBars={false}
+                    sx={{ width: 364, maxWidth: "100%", px: 3.5, pt: 1 }}
+                />
+
+                <MiniVocabCardGrid
+                    entries={cards}
+                    loading={cardsLoading}
+                    error={cardsError}
+                    emptyMessage={
+                        cardsSearch.trim()
+                            ? "No cards match your search."
+                            : "Please go to the Discover tab to select cards you would like to learn"
+                    }
+                    onCardClick={onOpenCard}
+                    containerClassName="decks-sheet-body__cards-grid"
+                    classPrefix="decks-sheet-body__cards"
+                />
             </Box>
         </Box>
     );

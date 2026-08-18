@@ -1,70 +1,16 @@
-import type { VocabEntry } from "../../types";
-
 /**
- * Bubble Match — domain types.
+ * Bubble Match — the types specific to THIS game.
  *
- * A "pair" is one vocab word and its definition. Each pair yields two bubbles
- * that share a `pairId`: one `word` bubble (Chinese + colored pinyin via cpcd)
- * and one `definition` bubble (the flashcard's English definition). Matching a
- * pair = dragging either bubble onto its partner (same `pairId`).
+ * The field types every bubble game shares (BubbleKind, BubbleStatus,
+ * BubbleBody, BubbleFill) live in src/games/bubbles/types.ts. What is left here
+ * describes Bubble Match's own structure: a fixed pool of pairs played at one of
+ * three difficulty levels, where difficulty means launch cadence + how fast the
+ * descending ceiling closes in. Hydra Bubbles has neither, which is why neither
+ * of these moved to the shared module.
+ *
+ * Referenced by: BubbleMatchPage, BubbleStage, constants.ts (LEVEL_CONFIGS).
+ * Docs: docs/GAMES_FEATURE.md.
  */
-
-export type BubbleKind = "word" | "definition";
-
-/**
- * Interaction/animation status of a bubble. Drives its visual treatment:
- * - `growing`   — spawned in place and inflating from a tiny seed to its target
- *                 size, shoving any bubbles it overlaps aside (infinite-mass
- *                 while it grows so it holds its chosen spot).
- * - `idle`      — settled at full size and drifting: a gentle random wander plus
- *                 wall/neighbor bounces keep it slowly floating (see DRIFT_SCALE).
- * - `held`      — picked up by the pointer (enlarged + greyed).
- * - `hovered`   — the current drop target under a held bubble (enlarged + greyed).
- * - `correct`   — a valid match just landed (light-green + pop, then removed).
- * - `wrong`     — an invalid match just landed (red flash + shake, then released).
- * - `revealed`  — cleanup mode (post-loss, game-over popup minimized): the held
- *                 bubble's matching partner, highlighted light-green as a drop
- *                 hint while it's being dragged. Persistent (no pop/removal) until
- *                 the drag ends or a different bubble is picked up.
- * - `nomatch`   — cleanup mode: the currently-grabbed bubble has no partner on the
- *                 field (it was still queued when the run was lost), so it can
- *                 never be matched. Rendered light-red (instead of the grey held
- *                 dim) for as long as it's grabbed; released back to idle on drop.
- */
-export type BubbleStatus = "growing" | "idle" | "held" | "hovered" | "correct" | "wrong" | "revealed" | "nomatch";
-
-/**
- * Physics + interaction state for a single bubble. This is the mutable source of
- * truth held in a ref and advanced by the rAF loop; the React layer only reads
- * it (via a version bump) for structural/status renders, never per-frame.
- */
-export interface BubbleBody {
-    id: string;
-    pairId: string;
-    kind: BubbleKind;
-    /** The vocab entry behind this bubble (both members of a pair share it). */
-    entry: VocabEntry;
-    /** Center position (px) within the stage. */
-    x: number;
-    y: number;
-    /** Drift velocity (px/sec). Integrated every frame while the bubble is idle
-        (i.e. neither held nor still growing); nudged by the random wander, eased
-        back toward IDLE_SPEED, and reflected by wall/neighbor bounces. */
-    vx: number;
-    vy: number;
-    /** Current, animating collision radius. While `status === "growing"` it lerps
-        from a tiny seed up to `targetRadius`; once settled it equals `targetRadius`. */
-    radius: number;
-    /** Final radius: the fixed layout size, the collision size once grown, and
-        the denominator for the grow-in scale (rendered scale = radius / targetRadius). */
-    targetRadius: number;
-    /** Collision mass (∝ targetRadius² area) so big bubbles shove small ones. */
-    mass: number;
-    /** Current rendered scale; lerps toward `targetScale` each frame. */
-    scale: number;
-    targetScale: number;
-    status: BubbleStatus;
-}
 
 /**
  * A difficulty level. A single game always uses the full pool (all pairs from

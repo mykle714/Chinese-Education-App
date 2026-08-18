@@ -137,7 +137,7 @@ live":
 | **Active** | you are in a live arena | the board, live scores, countdown to Sunday 16:00 |
 | **Results** | your arena has closed, break period | the final board frozen, your promotion/demotion banner, **Join next week's arena** button |
 | **Waiting** | opted in, arena not yet formed (i.e. it is between your opt-in and Tuesday 04:00) | "You're in — your arena opens Tuesday at 4 AM", with your division |
-| **Out** | not opted in and not in an arena | your division, an explanation of the ladder, and **Join** if the break period is open |
+| **Out** | not opted in and not in an arena | your division, an explanation of the ladder, and **Join** — offered whether or not the break is open (§ 8) |
 
 There is no fifth "you missed it" state — a player who did not opt in before Tuesday
 04:00 simply sits in **Out** until the next break period opens, with copy that says when
@@ -744,8 +744,36 @@ Three things fall out of this choice:
 
 ## 8. Opting in
 
-Opt-in is open **during the break period only** (Sunday 16:00 → Tuesday 04:00 local) and
-applies to exactly one upcoming arena.
+Opt-in applies to exactly one upcoming arena — **next** week's — and **the gate is a seat,
+not the clock**: anyone who is not in this week's live arena may enrol at any time,
+including while that arena is running.
+
+| Caller | Result |
+|---|---|
+| No live seat, any day, any hour | enrolled in next week's arena |
+| Already in a live arena | 400, *"You're already in this week's arena; you can join the next one once it closes."* |
+
+It was originally the break period (Sunday 16:00 → Tuesday 04:00) that opened the door.
+That is coherent with the cycle but hostile at the wrong moment: a learner who finds the
+Arena on a Wednesday, having just decided they want to compete, was told to come back in
+four days — and the decision does not survive four days. The refusal for a live member
+stays loud rather than a silent no-op, because a second live seat cannot exist
+(`uq_arena_member_live`) and someone tapping Join mid-race has misunderstood something.
+
+Withdrawal is gated on the same seat, so it too is legal until formation seats you.
+
+Two consequences worth knowing:
+
+* **Formation must check the week it is forming.** `nextWeekStartFor` only rolls past the
+  close, so mid-week it returns the week ALREADY RUNNING while every candidate's stored
+  key is next Tuesday's. `formArenas` therefore skips any bucket whose week key does not
+  match the candidates' — without it, a Wednesday enrolment would be seated into an arena
+  two days old, alone with 24 bots.
+* **The `closed` page state now renders the same Join card as `opt-in`** (§ 2.3). The two
+  differ only in whether the break is open, which no longer changes what you may do.
+
+**Code:** `server/services/ArenaService.ts` → `optIn`, `withdraw`, `formArenas`;
+`src/features/arena/ArenaPage.tsx` → `OptInCard`.
 
 > **Proposed:** `user_languages."arenaOptInWeek" date NULL` — the date of the
 > Tuesday whose arena this (user, language) opted into. Set by the opt-in endpoint, read
@@ -926,8 +954,8 @@ No change to `userminutepoints` or any vet table.
 | Method | Path | Returns |
 |---|---|---|
 | GET | `/api/arena` | `ArenaBoardResponse` — `{state, division, arena, entries, boundaries}`; entries ranked, viewer flagged |
-| POST | `/api/arena/opt-in` | 200 — 400 outside the break period |
-| DELETE | `/api/arena/opt-in` | 204 — withdraw before formation |
+| POST | `/api/arena/optIn` | 200 `{weekKey}` — 400 only if the caller already holds a live seat (§ 8) |
+| DELETE | `/api/arena/optIn` | 204 — withdraw before formation; 400 once seated |
 
 All require `authenticateToken`. Wire types in `server/types/arena.ts`, mirrored in
 `src/api/arena.ts`.

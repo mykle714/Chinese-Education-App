@@ -1,9 +1,8 @@
 import React from "react";
 import { COLORS, FONTS, SIZE, WEIGHT } from "../theme";
-import ProvisionalCardTable from "./ProvisionalCardTable";
-import { useProvisionalRows } from "../hooks/useProvisionalRows";
-import type { ProvisionalCardRow } from "../utils/provisionalCards";
-import type { Language } from "../types";
+import ProvisionalCardGrid from "./ProvisionalCardGrid";
+import { useProvisionalEntries } from "../hooks/useProvisionalEntries";
+import type { Language, VocabEntry } from "../types";
 
 /**
  * ProvisionalCardsNotice — the pre-round "we lent you some cards" popup.
@@ -17,20 +16,20 @@ import type { Language } from "../types";
  *
  * ITEMIZED VS GENERIC
  * Where the played set is fixed and known up front (Bubble Match, Speed Reading, Word
- * Search) the notice TABULATES the exact cards — word1 · pinyin · dd — so the player
- * knows what they're about to meet and what it means. Where the surface streams cards
- * continuously (Match Speed deals from a rolling buffer, flp refills the working loop
- * as you go) the set isn't known in advance, so the notice just says temporary cards
- * are in play. That policy is shared with the server as `CARD_BASELINE_ITEMIZED` in
+ * Search) the notice ITEMIZES the exact cards — the app's real MiniVocabCard
+ * thumbnails, two per row — so the player knows what they're about to meet, what it
+ * means, and what the card will look like once it is theirs. Where the surface streams cards continuously (Match Speed
+ * deals from a rolling buffer, flp refills the working loop as you go) the set isn't
+ * known in advance, so the notice just says temporary cards are in play. That policy is shared with the server as `CARD_BASELINE_ITEMIZED` in
  * server/contracts/wire.ts; callers pass `rows` (or `words`), or omit both for the
  * generic form.
  *
  * TWO WAYS TO SUPPLY THE CARDS
- * A caller holding the served vet rows passes `rows={provisionalRows(cards)}` — no
- * extra request. Word Search holds only the lent words (its payload carries
- * `provisionalWords`, not vet rows), so it passes `words` and the table is fetched by
- * `useProvisionalRows`. Until that lands the notice shows its generic copy rather
- * than a half-built table.
+ * A caller holding the served vet rows passes `entries={provisionalEntries(cards)}` —
+ * no extra request. Word Search holds only the lent words (its payload carries
+ * `provisionalWords`, not vet rows), so it passes `words` and the cards are fetched by
+ * `useProvisionalEntries`. Until that lands the notice shows its generic copy rather
+ * than a half-built grid.
  *
  * This is a NOTICE, not a decision: there is one dismiss button and no way to refuse,
  * because refusing would mean not playing — the exact outcome the baseline rework
@@ -47,13 +46,13 @@ export interface ProvisionalCardsNoticeProps {
     /** The surface's display name, e.g. "Bubble Match". Used in the copy. */
     surfaceName: string;
     /**
-     * The lent cards to tabulate, when the caller already holds the served rows
-     * (`provisionalRows(cards)`). Takes precedence over `words`.
+     * The lent cards to preview, when the caller already holds the served vet rows
+     * (`provisionalEntries(cards)`). Takes precedence over `words`.
      */
-    rows?: ProvisionalCardRow[];
+    entries?: VocabEntry[];
     /**
-     * The lent words, for a caller that holds only the word list — the table is
-     * fetched from them. Omit both this and `rows` for the generic notice used by the
+     * The lent words, for a caller that holds only the word list — the cards are
+     * fetched from them. Omit both this and `entries` for the generic notice used by the
      * streaming surfaces, which cannot name their set up front.
      */
     words?: string[];
@@ -65,17 +64,17 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
     open,
     onDismiss,
     surfaceName,
-    rows,
+    entries,
     words,
     language,
 }) => {
     // Hooks must run unconditionally, so the fetch is gated by `open` rather than by
     // an early return above it.
-    const { rows: tableRows } = useProvisionalRows(language, words, rows, open);
+    const { entries: previewEntries } = useProvisionalEntries(language, words, entries, open);
 
     if (!open) return null;
 
-    const itemized = tableRows.length > 0;
+    const itemized = previewEntries.length > 0;
 
     return (
         <div
@@ -93,7 +92,7 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
                 padding: 24,
                 background: "rgba(0, 0, 0, 0.45)",
                 // The app shell never scrolls and components default to no touch
-                // panning (CLAUDE.md § Touch & Scroll); the word list opts back in
+                // panning (CLAUDE.md § Touch & Scroll); the card grid opts back in
                 // on its own container below.
                 touchAction: "none",
             }}
@@ -141,9 +140,7 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
                         : `You didn't have enough cards for ${surfaceName}, so we've added some temporary ones to your round.`}
                 </p>
 
-                {itemized && (
-                    <ProvisionalCardTable rows={tableRows} language={language} maxHeight={190} />
-                )}
+                {itemized && <ProvisionalCardGrid entries={previewEntries} maxHeight={190} />}
 
                 <p
                     className="provisional-notice__footnote"

@@ -37,7 +37,8 @@ import {
  *   live     racing; the board plus a countdown to Sunday 16:00
  *   results  the week just closed; the final board plus what it did to your rung
  *   opt-in   not racing, the break is open, one button to join next week
- *   closed   not racing and the break has passed; nothing to do but wait
+ *   closed   not racing, the break has passed — SAME card as opt-in, because
+ *            enrolment is no longer gated on the break (§ 8)
  *
  * The page NEVER re-sorts. The server assigns every rank, including the
  * promotion/relegation zone on each row, so what is drawn is always what
@@ -149,7 +150,6 @@ function ArenaPage() {
 
                 {(board.state === "opt-in" || board.state === "closed") && (
                     <OptInCard
-                        state={board.state}
                         optedIn={board.optedInNextWeek}
                         busy={busy}
                         onJoin={handleJoin}
@@ -313,33 +313,20 @@ function ResultsBanner({ divisionChange }: { divisionChange: number | null }) {
  * your location", so this line is the entire explanation the user gets.
  */
 function OptInCard({
-    state,
     optedIn,
     busy,
     onJoin,
     onWithdraw,
 }: {
-    state: "opt-in" | "closed";
     optedIn: boolean;
     busy: boolean;
     onJoin: () => void;
     onWithdraw: () => void;
 }) {
-    if (state === "closed") {
-        return (
-            <Box className="arena-page__optin" sx={sectionCardSx}>
-                <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.body, color: COLORS.onSurface }}>
-                    This week's arenas have already formed.
-                </Typography>
-                <Typography
-                    sx={{ fontFamily: FONTS.sans, fontSize: SIZE.micro, color: COLORS.textSecondary, mt: 0.5 }}
-                >
-                    You can join the next one after Sunday at 16:00.
-                </Typography>
-            </Box>
-        );
-    }
-
+    // Identical in `opt-in` and `closed`: the only difference between those two
+    // states was whether the break was open, and that stopped gating enrolment
+    // (§ 8). Someone without a seat joins next week's arena either way, so
+    // `closed` no longer means "come back on Sunday".
     if (optedIn) {
         return (
             <Box className="arena-page__optin" sx={sectionCardSx}>

@@ -2,18 +2,10 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { Box, Button, Typography } from "@mui/material";
 import MinimizablePopup from "./MinimizablePopup";
-import ProvisionalCardTable from "./ProvisionalCardTable";
-import { useProvisionalRows } from "../hooks/useProvisionalRows";
+import ProvisionalCardGrid from "./ProvisionalCardGrid";
+import { useProvisionalEntries } from "../hooks/useProvisionalEntries";
 import { COLORS, SIZE, WEIGHT } from "../theme";
 import type { Language } from "../types";
-
-/**
- * Delay between a game's end-of-run popup appearing and this offer opening over it.
- * The run's own result — medal, time, score — gets the first beat to itself; the
- * offer arrives a moment later so it reads as a follow-up question rather than as
- * part of the scoreboard.
- */
-export const SORT_OFFER_DELAY_MS = 1400;
 
 /**
  * ProvisionalSortOffer — the end-of-round "keep the cards you played" popup.
@@ -35,8 +27,9 @@ export const SORT_OFFER_DELAY_MS = 1400;
  * is not minimizable — see FlashcardsLearnPage.
  *
  * WHAT IT SHOWS
- * The same word1 · pinyin · dd table as the pre-round notice, fetched through
- * `useProvisionalRows` — i.e. through the sort-set endpoint, which intersects the
+ * The same mini-card grid as the pre-round notice — the app's real MiniVocabCard
+ * thumbnails, two per row — fetched through
+ * `useProvisionalEntries` — i.e. through the sort-set endpoint, which intersects the
  * asked-for words with what the learner genuinely still holds. So a card sorted in
  * another tab drops out of the table by itself, and when nothing is left the offer
  * does not appear at all.
@@ -89,17 +82,17 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
     dismissLabel = "Not now",
 }) => {
     const navigate = useNavigate();
-    const { rows, loading } = useProvisionalRows(language, words, undefined, open);
+    const { entries, loading } = useProvisionalEntries(language, words, undefined, open);
 
     // Nothing to offer: either the round used no lent cards, or every one of them has
     // since been sorted. Also stay silent while the lookup is in flight so the popup
-    // never pops in empty and then reflows as the table lands.
-    if (!open || loading || rows.length === 0) return null;
+    // never pops in empty and then reflows as the grid lands.
+    if (!open || loading || entries.length === 0) return null;
 
-    // Navigate on the SERVER's list, not the caller's: rows are already narrowed to
-    // what is genuinely still provisional, so the sort flow can't open on a card that
+    // Navigate on the SERVER's list, not the caller's: the entries are already narrowed
+    // to what is genuinely still provisional, so the sort flow can't open on a card that
     // is no longer offerable.
-    const offerWords = rows.map((row) => row.word);
+    const offerWords = entries.map((entry) => entry.entryKey);
 
     const handleSort = (): void => {
         onNavigate?.();
@@ -139,7 +132,7 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
                 {offerWords.length === 1 ? " it" : " them"} into your deck — your progress comes along.
             </Typography>
 
-            <ProvisionalCardTable rows={rows} language={language} maxHeight={200} />
+            <ProvisionalCardGrid entries={entries} maxHeight={200} />
 
             <Box
                 className="provisional-sort-offer__actions"

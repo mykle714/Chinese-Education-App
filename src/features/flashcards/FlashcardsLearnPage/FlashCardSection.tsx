@@ -64,7 +64,7 @@ interface FlashCardSectionProps {
     // Optional speaker callback. When provided, a speaker icon button is
     // rendered on card sides that contain Chinese text. Undefined when narration
     // is disabled in settings — icon is hidden entirely.
-    onSpeak?: (entry: VocabEntry) => void;
+    onSpeak?: (entry: VocabEntry, senseIndexOverride?: number) => void;
     // The text currently being narrated by useTTS, or null when idle. Forwarded
     // to the speaker button so only the active card's icon shows the loading
     // spinner during playback.
@@ -107,7 +107,7 @@ const CardFace: React.FC<{
     // True for both the active front card and the card currently flying off screen —
     // both should show the full shadow and the green/red drag overlay.
     isProminent: boolean;
-    onSpeak?: (entry: VocabEntry) => void;
+    onSpeak?: (entry: VocabEntry, senseIndexOverride?: number) => void;
     speakingKey?: string | null;
     // The live icon-layout edit canvas for THIS card's back face. Only the active
     // front card supplies one (and only while edit mode is on); it replaces the back
@@ -140,6 +140,21 @@ const CardFace: React.FC<{
     // A pick updates the in-sync display index immediately (both faces) AND persists the
     // chosen cluster's `sense` LABEL. Index 0 is the default/starred sense, stored as null so
     // an unchosen/default card keeps a clean NULL row (matching the migration's semantics).
+    /**
+     * Narrate with the LIVE sense pick, not the persisted one.
+     *
+     * The card face renders `resolveDisplayPronunciation(entry, selectedSenseIndex)`,
+     * and a polyphone's reading changes with the sense (和 is hé on "and" and huó on
+     * "to blend"). `selectedSenseIndex` moves the instant the picker is tapped, while
+     * `entry.selectedSense` only catches up after the persist round-trips — so without
+     * this, tapping a new sense leaves the audio one reading behind the pinyin printed
+     * directly above it.
+     */
+    const speakWithSense = React.useCallback(
+        (target: VocabEntry) => onSpeak?.(target, selectedSenseIndex),
+        [onSpeak, selectedSenseIndex]
+    );
+
     const handleSelectSense = React.useCallback((index: number) => {
         setSelectedSenseIndex(index);
         if (!onPersistSense) return;
@@ -195,7 +210,7 @@ const CardFace: React.FC<{
                 inert={isFlipped}
             >
                 {sideOneLanguage === 'zh'
-                    ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={onSpeak} speakingKey={speakingKey} showWriting={false} selectedSenseIndex={selectedSenseIndex} />
+                    ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={speakWithSense} speakingKey={speakingKey} showWriting={false} selectedSenseIndex={selectedSenseIndex} />
                     : <EnglishBlock
                         entry={entry}
                         selectedSenseIndex={selectedSenseIndex}

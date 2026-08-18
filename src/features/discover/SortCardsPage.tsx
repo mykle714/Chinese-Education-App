@@ -938,13 +938,11 @@ const SortCardsPage: React.FC = () => {
         const rest = queue.filter((p) => p.packKey !== completedKey);
         setQueue(rest);
 
-        // Set mode never replenishes — the set is fixed. When its last card is sorted
-        // the page has done its whole job, so close it and hand the user back to where
-        // they came from rather than stranding them on an empty sort board.
-        if (setMode) {
-            if (rest.length === 0) navigate(-1);
-            return;
-        }
+        // Set mode never replenishes — the set is fixed. Emptying the queue IS the exit
+        // condition, but the navigation itself lives in the effect below so that every
+        // path that empties the queue (sort, skip, or a set that came back already done)
+        // closes the page, not just this one.
+        if (setMode) return;
 
         try {
             // Reads autoLevelRef fresh (not a stale closure) — handleSortCard updates it
@@ -984,7 +982,32 @@ const SortCardsPage: React.FC = () => {
             // transient network blips instead of leaving the user with an empty queue.
             if (attempt < 1) setTimeout(() => advancePack(completedKey, attempt + 1), 800);
         }
-    }, [queue, language, selectedLevel, setMode, navigate]);
+    }, [queue, language, selectedLevel, setMode]);
+
+    // SET MODE AUTO-EXIT.
+    //
+    // A fixed set is DONE the moment its queue empties — there is nothing to replenish
+    // and nothing left to decide, so the page closes itself instead of stranding the
+    // user on an empty sort board (which renders as a permanent spinner: the empty-queue
+    // branch below only shows a message when `exhausted`, and a fixed set never is).
+    //
+    // Driven off state rather than fired inline from the sorting handler so that EVERY
+    // way of emptying the queue exits: the last card sorted, the last card skipped, or a
+    // set that came back already empty because the cards were sorted in another tab.
+    // `exitedRef` makes it fire exactly once — the effect can re-run before the route
+    // change commits, and a second navigate(-1) would pop an extra history entry.
+    const exitedRef = useRef(false);
+    useEffect(() => {
+        if (!setMode || loading || queue.length > 0 || exitedRef.current) return;
+        exitedRef.current = true;
+        // Prefer going back to wherever the offer was accepted from (the game's end
+        // screen, or flp). `history.state.idx === 0` means this page IS the first entry
+        // — deep-linked or reloaded — where navigate(-1) would leave the app entirely,
+        // so fall back to the discover hub.
+        const idx = (window.history.state as { idx?: number } | null)?.idx;
+        if (idx == null || idx > 0) navigate(-1);
+        else navigate("/discover");
+    }, [setMode, loading, queue.length, navigate]);
 
     // doneRef helpers — the authoritative resolved-card store. Mutations mirror into
     // `done` state to re-render. Reading from the ref (not the `done` closure) is what
@@ -1065,8 +1088,12 @@ const SortCardsPage: React.FC = () => {
             if (lastInPack) advancePack(pack.packKey);
         } catch (error) {
             console.error("Error sorting card:", error);
+            // Set mode has no replenish request to race, so a failed POST must not pin
+            // the queue: the card is already resolved optimistically and locked, and
+            // leaving the pack in place would strand the set one card short of its exit.
+            if (lastInPack && setMode) advancePack(pack.packKey);
         }
-    }, [currentPack, pushUndo, markResolved, adjustTally, isPackComplete, selectedLevel, applyPackSignal, advancePack, language]);
+    }, [currentPack, pushUndo, markResolved, adjustTally, isPackComplete, selectedLevel, applyPackSignal, advancePack, setMode, language]);
 
     // Skip the whole on-deck pack: defer every remaining unsorted card at once.
     const handleSkipPack = useCallback(async () => {

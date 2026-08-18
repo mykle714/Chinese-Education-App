@@ -37,8 +37,9 @@
 > - Client mark sources: flp (`useWorkingLoop.ts`), Word Search
 >   (`WordSearchPage.tsx`), Bubble Match (`BubbleMatchPage.tsx`), Practice Writing
 >   (`PracticeWritingButton.tsx` → `PracticeWritingPopup.tsx`).
-> - Bars UI: `src/features/flashcards/MasteryProgressBar.tsx` (cdp, one bar per
->   active bar) and `src/components/MiniVocabCard.tsx` (the hairline strip).
+> - Bars UI: `src/features/flashcards/MasteryProgressBar.tsx` (cdp "Mastery"
+>   section — one bar per active bar, each with its band chip and its per-track
+>   cooldowns) and `src/components/MiniVocabCard.tsx` (the hairline strip).
 >
 > **Movement between bands is logged separately** — see
 > [VELOCITY.md](./VELOCITY.md) (migration 137): a bar's band is derived and keeps
@@ -157,6 +158,20 @@ A card carries up to **three independent progress bars**. Each is banded by the
 
 `BAR_MARK_TYPES` (`server/contracts/mastery.ts`) is the one place this mapping
 lives; `barForMarkType()` inverts it.
+
+> **"Active when" governs DISPLAY, not computation.** Since migration 143 every bar is
+> computed for every learner; the goal flag only decides whether a progress bar is drawn
+> for it. A consumer may therefore band and filter on the reading or writing bar
+> regardless of the account's goals — `masteredBarClause('reading')` is goal-independent
+> and needs no `users` join.
+>
+> **Memory Map is the first consumer to depend on that.** Its map holds exactly the
+> cards that are not reading-mastered, so it drives the reading track for every learner
+> — including one with `readingGoal` off, who simply never sees the bar it is filling.
+> A learner in that state can play the game, graduate words off their map, and watch the
+> map shrink, with no reading bar anywhere in the UI to explain why. That is the
+> intended behaviour ([MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 2.1), not a gap.
+> Do not add a goal check to the membership clause.
 
 ### Why split
 
@@ -311,8 +326,41 @@ exactly as it did before the rework: a single bar.
   core bar is a two-color stack (recognition / production) and the reading and
   writing bars are single-color. A segment's fraction is
   `positive(type) / Σ positive(bar's types)`.
-- The **chip** above the bars shows the **core** band — the whole-card answer.
+- **No band chip.** The bars carry no utcm label of their own — the benchmark lines
+  already show where a bar sits, and the card's band is on the badge row at the top of
+  the page. (The single **core**-band chip that used to sit beside the group is gone
+  too; core is still the whole-card answer everywhere else — deck counts, mini card.)
+- Under each label sit that bar's **cooldown rows** — one per mark type in the bar, so
+  the core column shows two — each a live **`4m 1w 3d 5h 37m 26s` countdown**
+  (`formatCooldownRemaining`, `src/utils/formatDuration.ts`). Same unit discipline as
+  the minute-points formatter beside it: leading zero units dropped, **middle zero
+  units kept**, seconds always printed. The middle zeros are load-bearing here — `m`
+  is both months and minutes, so a collapsed `6m 26s` would read as six *minutes*. A
+  **ready track reads `0s`**, not a word, so every row has the same shape. Months are
+  a flat 30 days and weeks a flat 7, so the 180-day Mastered window is exactly
+  `6m 0w 0d 0h 0m 0s` (the one string long enough to wrap to a second line). Rendered
+  monospace + `tabular-nums` so the row doesn't jitter as digits change; a resting row
+  is dimmed, and a ready one adds a small green **check** (12px
+  `CheckCircleRounded`) beside the `0s` so the state is scannable without reading
+  digits; the row tooltip carries the wording. The component ticks on a **1s** interval so an
+  open page runs down to zero without a reload.
+  - Row order is **`COOLDOWN_ROW_ORDER`** — production above recognition — which is
+    deliberately *not* the bar's segment order (the fill stacks recognition below
+    production, per `BAR_TYPE_ORDER`).
+  - The window used for the display is the **per-type** category
+    (`computeTypeCategory`) — the one every *game* uses. ⚠️ The **flp** widens its
+    window to the card's **core** category (§ 6), so on a card whose per-type and core
+    bands differ the flp holds that track back slightly longer than the cdp number
+    suggests. The display can only name one window; the per-type one is the track's own.
 - The legend lists only the types actually on screen.
+
+**Placement.** The bars are their own `SectionCard` ("Mastery") **below the hero
+card**, alongside Definition / Breakdown / Examples — see
+`src/features/flashcards/VocabCardDetailPage.tsx`. They used to be a strip beside a
+cpcd block above the hero; three columns × two cooldown rows needs the full width.
+The cpcd block stays where it was, without the bars. The section lives in the page
+rather than in the shared `VocabCardDetailBody` because the read-only **dictionary**
+cdp has no marks to draw.
 
 ### Mini cards — a hairline strip
 
@@ -398,6 +446,30 @@ production} currently off cooldown:
 Eligible cards are ranked by `rankFlpEligible` (`OnDeckVocabService.ts`), which is the
 **single ordering rule for both flp paths** — the initial loop and the refill draw the
 same way, so a loop and its replacements cannot diverge.
+
+> **The rule itself now lives in `server/services/cardQueueRanking.ts`** (a pure module:
+> `rankCardQueue`, `queueArrivalAt`), over the cooldown primitives in
+> **`server/contracts/cooldown.ts`** (`COOLDOWN_MS_BY_CATEGORY`,
+> `lastCorrectMarkTimestamp`, `cooldownRemainingMs`, `isTypeOnCooldown`,
+> `readyMarkTypes`). The primitives moved into `contracts/` — mirroring what
+> `contracts/mastery.ts` did for the pbh formula — when the cdp started **displaying**
+> the remaining cooldown (§ 5): the client may not import a server service, and a
+> second copy of the table would have drifted. `cardQueueRanking` re-exports them, so
+> every existing server import is unchanged; the client reaches them through
+> `src/utils/masteryCompute.ts`.
+> **A third consumer:** the collection "Sort by" menu's **Cooldown** row
+> (`cooldownKey` in `src/utils/vocabSort.ts`) orders cards by the **maximum** remaining
+> window across all four types — "how long until this card is fully rested" — using the
+> same per-type category the cdp display does. The maximum rather than the soonest-ready
+> track because an unmarked track reports 0, which would flatten nearly every card to
+> "ready". See [DECKS_FEATURE.md § "Sort by"](./DECKS_FEATURE.md).
+> `rankFlpEligible` is a thin wrapper that supplies the flp's two axes — mark types
+> `['recognition','production']`, cooldown window keyed on the card's **core** category —
+> and stamps `readyMarkTypes` onto the result. The extraction happened when Memory Map
+> needed the identical discipline on the **reading** track
+> ([MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 13.1); a second copy would have drifted.
+> Behaviour for the flp is unchanged, and is now covered by
+> `server/__tests__/cardQueueRanking.test.ts`.
 
 The sort key is `flpReadyAt` = the card's **arrival time in the queue**, i.e. when it
 *first* became reviewable:
@@ -810,9 +882,18 @@ Settled since:
   `StarterPacksService.ts` (`estimateLevel` = core only).
 - `server/controllers/OnDeckVocabController.ts` + `server/routes/onDeckRoutes.ts` —
   `GET /api/onDeck/masteredCounts`, `GET /api/onDeck/collectionCards?collection=`.
-- `src/features/flashcards/MasteryProgressBar.tsx` (cdp bars),
+- `server/contracts/cooldown.ts` — `COOLDOWN_MS_BY_CATEGORY`,
+  `lastCorrectMarkTimestamp`, `cooldownRemainingMs`, `isTypeOnCooldown`,
+  `readyMarkTypes`. Re-exported by `server/services/cardQueueRanking.ts` (server) and
+  `src/utils/masteryCompute.ts` (client).
+- `src/features/flashcards/MasteryProgressBar.tsx` (cdp bars + per-track cooldowns),
+- `src/utils/vocabSort.ts` (`cooldownKey` — the Cooldown sort row),
   `src/components/MiniVocabCard.tsx` (hairline strip),
-  `src/features/flashcards/VocabCardDetailBody.tsx` — cdp (progress bar host).
+  `src/features/flashcards/VocabCardDetailPage.tsx` — the "Mastery" `SectionCard`
+  that hosts the bars,
+  `src/features/flashcards/VocabCardDetailBody.tsx` — `SectionCard`/`SectionLabel`.
+- `src/utils/formatDuration.ts` → `formatCooldownRemaining` (tested by
+  `src/__tests__/formatDuration.test.ts`).
 - `src/features/flashcards/collectionRef.ts`, `FlashcardsDecksPage.tsx`,
   `CollectionViewPage.tsx`, `src/hooks/useMasteredCounts.ts` — the three Mastered
   collections. See [DECKS_FEATURE.md](./DECKS_FEATURE.md).

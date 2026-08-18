@@ -403,7 +403,7 @@ const SpeedReadingPage: React.FC = () => {
     // markFlashcard resolves the auth header at call time, so this callback's
     // identity survives the silent refresh (CLAUDE.md).
     const mark = useCallback((cardId: number, isCorrect: boolean) => {
-        markFlashcard({ cardId, isCorrect, type: MARK_TYPE })
+        markFlashcard({ cardId, isCorrect, type: MARK_TYPE, surface: "speed-reading" })
             .catch((err) => console.error(`[SpeedReading] mark failed → card ${cardId}:`, err));
     }, []);
 
@@ -655,8 +655,8 @@ const SpeedReadingPage: React.FC = () => {
             open={noticeOpen}
             onDismiss={() => setNoticeOpen(false)}
             surfaceName="Speed Reading"
-            // Rows come straight from the served queue — no extra round-trip.
-            rows={queue.provisionalTable}
+            // The lent cards come straight from the served queue — no extra round-trip.
+            entries={queue.provisionalTable}
             language={(user?.selectedLanguage ?? "zh") as Language}
         />
         <LeafPage

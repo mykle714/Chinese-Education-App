@@ -13,19 +13,31 @@
  * band is a property of one card's progress, not a set a learner studies, and its
  * membership changes under you on every mark. See the note in server/contracts/wire.ts.
  *
- * ── The one conditional rule ──────────────────────────────────────────────────
- * Mastered is its own SECTION only when the account pursues a reading or writing
- * goal, i.e. only when there is more than one Mastered collection to distinguish.
- * With core alone, a captioned section holding a single tile is a heading for
- * nothing, so that tile joins the Collections section and the list reads as three peers.
+ * ── Where Mastered sits ───────────────────────────────────────────────────────
+ * CORE Mastered is ALWAYS a Collections entry. It is the third of the three peer
+ * ideas above ("everything / still learning / finished"), and it belongs beside them
+ * whatever else the account is pursuing — a learner who turns on a writing goal
+ * should not find their Mastered tile has moved to a different section.
+ *
+ * The separate "Mastered" SECTION therefore holds only the PER-SKILL bars —
+ * Mastered Reading and Mastered Writing — and exists only when at least one of those
+ * goals is set (`hasMasteredSection`). With no goals there is nothing to put in it.
  *
  * ── Why it is shared ──────────────────────────────────────────────────────────
  * Two surfaces render this list — the fdp tile rows and the Games hub's "Playing
  * with …" selector — and they must agree: a collection a learner can open on
  * /decks but cannot play a game with (or the reverse) is a silent inconsistency,
- * and the fdp is the source of truth for what exists. Each surface still owns its
- * own PRESENTATION (tiles vs. menu rows) and its own deck fetch; only the set of
- * built-in collections, their order, their colors and their grouping live here.
+ * and the fdp is the source of truth for what exists.
+ *
+ * ⚠️ ONE surface-local exception: the fdp does not render a TILE for `all`, because
+ * it lists those cards inline at the bottom of its sheet. It filters the entry out
+ * itself; the entry stays here, and the Games hub still offers All Cards as a
+ * playable set. Do not "fix" that by deleting the entry — see
+ * docs/DECKS_FEATURE.md § "Which collections exist".
+ *
+ * Each surface still owns its own PRESENTATION (tiles vs. menu rows) and its own
+ * deck fetch; only the set of built-in collections, their order, their colors and
+ * their grouping live here.
  *
  * Layer: feature module (src/features/flashcards), imported by src/games — the same
  * direction `selectedCollection.ts` is already imported in.
@@ -63,9 +75,9 @@ export interface BuiltinCollectionEntry {
 /**
  * Does the account get a separate Mastered section?
  *
- * True exactly when a second Mastered collection exists to tell apart from the first.
- * Exported because the fdp needs it for the section CAPTION and its separator, which
- * are page furniture rather than list entries.
+ * True exactly when a PER-SKILL Mastered collection exists to fill it — core Mastered
+ * is a Collections entry either way. Exported because the fdp needs it for the section
+ * CAPTION and its separator, which are page furniture rather than list entries.
  */
 export function hasMasteredSection(goals: MasteryGoals): boolean {
     return goals.reading || goals.writing;
@@ -76,10 +88,12 @@ export function hasMasteredSection(goals: MasteryGoals): boolean {
  *
  * Order is All → Learn Now → Mastered(core, reading, writing), which is ascending
  * narrowness: the whole library, the part still in progress, then the finished parts.
+ *
+ * GROUPING is decided per bar, not per list: `core` is always a Collections entry (it
+ * is the third peer idea), and the reading/writing bars are always the Mastered
+ * section — which the surface only renders when it has entries (hasMasteredSection).
  */
 export function builtinCollectionEntries(goals: MasteryGoals): BuiltinCollectionEntry[] {
-    const separateMastered = hasMasteredSection(goals);
-    const masteredGroup: CollectionGroup = separateMastered ? 'Mastered' : 'Collections';
 
     const cards: BuiltinCollectionEntry[] = [
         {
@@ -105,7 +119,8 @@ export function builtinCollectionEntries(goals: MasteryGoals): BuiltinCollection
             ref,
             label: collectionTitle(ref),
             colors: MASTERY_BAR_COLORS[bar],
-            group: masteredGroup,
+            // core beside All/Learn Now; the per-skill bars in their own section.
+            group: bar === 'core' ? 'Collections' : 'Mastered',
         };
     });
 

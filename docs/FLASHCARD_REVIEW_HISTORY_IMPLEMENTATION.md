@@ -102,6 +102,28 @@ POST /api/flashcards/mark
    [VELOCITY.md](./VELOCITY.md).
 8. Returns response (with new card if correct)
 
+## Who emits marks
+
+Every surface below writes through the same `POST /api/flashcards/mark`; the `type`
+field is what decides which track a mark lands in ([MASTERY_REWORK.md](./MASTERY_REWORK.md)).
+
+| Surface | Track(s) |
+|---|---|
+| flp working loop | `recognition`, `production` (per face shown) |
+| Bubble Match | `recognition` |
+| Match Speed | `recognition` |
+| Word Search | `production` (Pinyin) / `reading` (No Pinyin) |
+| Speed Reading | `reading` — positive AND negative |
+| Practice Writing | `writing` |
+| **Memory Map** | **`reading`** — one mark per word per run ([MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md)) |
+
+**Memory Map's mark policy is worth stating explicitly**, because it is the only one
+where a correct answer can produce a NEGATIVE mark. A prompt allows three tries, and
+only a first-try find is positive: recovering on try 2 or 3 (orange) and running out of
+tries (red) both write `isCorrect: false`. The learner did eventually tap the right
+word, but they could not read it on sight, which is what the reading track measures.
+An individual wrong tap emits nothing — one prompt, one mark.
+
 ## Future Use Cases
 
 This review history can be used for:

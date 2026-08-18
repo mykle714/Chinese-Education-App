@@ -39,8 +39,9 @@ import { buildIncompletePredicate } from '../scripts/backfill/shared/lib/require
  * (which runs only the pending steps, honours validator-approved fields, and promotes
  * to discoverable on completion). The spawn is best-effort: if it can't start (e.g.
  * prod, which runs compiled `node` with no `tsx`), it logs and no-ops — enrichment
- * stays a dev/curation activity feeding the normal data-deploy, never mutating prod
- * det rows out-of-band.
+ * stays a dev/curation activity, never mutating prod det rows out-of-band. (Its
+ * output no longer feeds a dev → prod data push — that flow is retired and prod is
+ * the source of truth; prod-side enrichment goes through the backfill scripts.)
  *
  * Referenced by: server/controllers/DictionaryController.ts (lookupTerm),
  * server/services/StarterPacksService.ts (sortCard), docs/DISCOVER_LAZY_ENRICHMENT.md §5.

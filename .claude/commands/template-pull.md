@@ -2,8 +2,9 @@
 
 Pull the Night Market **template catalog** from production down to a local dev
 machine, completely overwriting local's copy. This is the **reverse-direction**
-sibling of [`/data-deploy`](./data-deploy.md): there the source is local and the
-target is prod; here the source is **prod** and the target is **local**.
+sibling of [`/data-prod-to-dev`](./data-prod-to-dev.md), and shares its shape:
+Prod half = SOURCE, Local half = TARGET, transport = Git LFS. Both move **prod →
+local**; there is no supported local → prod direction for either.
 
 Only one table moves:
 
@@ -132,9 +133,10 @@ docker exec cow-postgres-local psql -U cow_user -d cow_db -c \
 - **This table ONLY.** The `-t nightmarkettemplatedefinitions` flag must be present
   on every `pg_dump`/`pg_restore`. Never dump or restore any other table with this
   skill — everything else is live user data.
-- **Direction is prod → local only.** To push *reference* tables the other way
-  (local → prod), use [`/data-deploy`](./data-deploy.md). Never restore this dump
-  into `cow-postgres-prod` — it would clobber the authoritative catalog.
+- **Direction is prod → local only.** There is no way to push templates the other
+  way: the local → prod data push skill has been **deleted** and prod is the source of
+  truth. Never restore this dump into `cow-postgres-prod` — it would clobber the
+  authoritative catalog. Author template changes against prod directly.
 - **Binary format (`-F c`) + `pg_restore`.** Plain SQL causes psql meta-command
   errors from pg_dump version skew; always dump with `-F c` and restore with
   `pg_restore` (not `psql -f`).

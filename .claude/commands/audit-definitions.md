@@ -99,7 +99,7 @@ Always include `AND word1='<word>'` as a guard so a wrong id can't silently edit
 
 ## After applying
 
-Remind the user these are **local-DB** edits — pushing to production is a separate step via `/data-deploy`.
+Remind the user these are **local-DB** edits, and that there is no dev → prod push any more — the local → prod data skill was deleted and prod is the source of truth. A local fix stays local; to change what learners see, run the equivalent edit against prod (backed up first, per `/mark-discoverable`).
 
 ## Notes
 

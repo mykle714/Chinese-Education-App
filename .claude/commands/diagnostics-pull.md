@@ -12,10 +12,10 @@ clears decision gate 1. What the records mean:
 > ⚠️ **This is NOT a database pull, and that is the whole reason it is its own
 > skill.** The diagnostics sinks write append-only JSONL to the prod **host
 > filesystem** (`~/vocabulary-app/server/logs/`). There is no table, so
-> [`/data-pull`](./data-pull.md)'s `pg_dump` machinery does not reach any of it.
+> [`/data-prod-to-dev`](./data-prod-to-dev.md)'s `pg_dump` machinery does not reach any of it.
 > Reaching for that skill here is the most likely mistake.
 
-Like [`/data-pull`](./data-pull.md) and [`/template-pull`](./template-pull.md),
+Like [`/data-prod-to-dev`](./data-prod-to-dev.md) and [`/template-pull`](./template-pull.md),
 the transport is a **git commit**, because there is no cross-machine SSH on this
 project. That constraint is what forces the scrubbing step below.
 
@@ -158,7 +158,7 @@ for asking the question promptly.
 - **Never write these files back to prod.** The import is read-only analysis;
   prod's `server/logs/` is an append-only sink owned by the running container.
 - **Direction is prod → local only.**
-- **Not `/data-pull`.** That skill is Postgres tables (`icons8`, det zh/es,
+- **Not `/data-prod-to-dev`.** That skill is Postgres tables (`icons8`, det zh/es,
   `validations`) and shares nothing with this one but the git transport.
 - Full context: `docs/CLIENT_PERF_DIAGNOSTICS.md` (record shapes, what dominates
   what), `docs/REACT_NATIVE_MIGRATION.md` (why item 4 matters, and the dev load

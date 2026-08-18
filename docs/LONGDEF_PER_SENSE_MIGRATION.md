@@ -358,7 +358,7 @@ running a full revert** — it discards generated content they may have already 
   before editing those files** — they are outside this change's scope and may be stale for
   other reasons too.
 - **Dev/prod drift.** Dev already holds a few v15 rows (坏, 说) from testing. After the prod
-  sweep, `/data-pull` brings dev in line with prod.
+  sweep, `/data-prod-to-dev` brings dev in line with prod.
 
 ---
 

@@ -158,7 +158,7 @@ npx tsx scripts/analyze-client-perf.ts --min 500        # only taps ≥500ms
 ```
 
 **Reading prod's data on a dev box:** these are files on the prod host, not a
-database table, so `/data-pull`'s `pg_dump` path does not reach them. Use
+database table, so `/data-prod-to-dev`'s `pg_dump` path does not reach them. Use
 the dedicated **`/diagnostics-pull`** skill, which runs `export-diagnostics-bundle.ts` on prod
 (IP-stripped + gzipped), commits the bundle, and unpacks it into local
 `server/logs/` where `analyze-client-perf.ts` picks it up with no flag.

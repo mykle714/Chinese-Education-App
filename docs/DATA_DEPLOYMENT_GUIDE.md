@@ -1,20 +1,29 @@
-# Data Deployment Guide
+# Data Deployment Guide — RETIRED (historical reference)
 
-> ⚠️ **DEPRECATED direction.** Prod is now the **source of truth** for these tables.
-> The local → prod push described here (the `/data-deploy` skill) is deprecated;
-> refresh dev boxes by pulling **down** from prod with `/data-pull` (prod → local),
-> which covers `icons8`, `dictionaryentries_zh`, `dictionaryentries_es`, and
-> `validations`. This guide is retained for reference and rare prod-seeding one-offs.
+> 🚫 **This flow no longer exists.** The dev → prod data push it describes, and the
+> `/data-deploy` skill that ran it, have been **deleted**. Prod is the source of truth
+> for every table listed here; nothing is pushed upward any more.
+>
+> - **To refresh a dev box:** [`/data-prod-to-dev`](../.claude/commands/data-prod-to-dev.md)
+>   (prod → local), covering `icons8`, `dictionaryentries_zh`, `dictionaryentries_es`,
+>   `particlesandclassifiers`, `validations`.
+> - **To change det data:** run the enrichment pipeline against prod directly —
+>   `/mark-discoverable` or `/oracle-backfill`, both of which back up first.
+>
+> **Why this file is kept:** the `icons8` FK ordering rule and the 2026-07-02 incident
+> below are still load-bearing knowledge — the same failure mode applies in the
+> prod → dev direction, and `/data-prod-to-dev` encodes the same fix. Read the steps
+> below as history, not as instructions; do not run them.
 
 ## Overview
 
-A "data deployment" syncs one or more local reference tables to production, completely overwriting prod's copy. This is done after running backfill scripts locally that enrich reference data.
+A "data deployment" synced one or more local reference tables to production, completely overwriting prod's copy. It ran after backfill scripts enriched reference data **on dev** — the arrangement that has since been reversed (backfills now run against prod).
 
 The transfer uses **Git LFS** — the binary dump is committed to the repo, pushed to GitHub, then pulled and restored on the server. This avoids SCP and all psql meta-command compatibility issues.
 
 ## Allowable Tables
 
-Only these tables may be data-deployed. All others contain live user data and must never be touched.
+These were the only tables the push was ever allowed to touch. All others contain live user data. (Kept because the list explains *why* each table is or isn't carried by the surviving prod → dev skill.)
 
 > ⚠️ In particular, **never** truncate/restore `validations` (the data-validation
 > review records, migration 104 — see [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md)).
@@ -133,7 +142,8 @@ Run this before any `dictionaryentries_zh`/`_es` restore in the same deploy.
 
 - All dump files under `database/` are tracked by Git LFS (see `.gitattributes`). Do not remove LFS tracking or commit without LFS.
 - Binary format (`-F c`) is required — plain SQL (`--data-only` without `-F c`) causes psql compatibility errors on prod due to version skew between local pg_dump 15.17 and the prod container.
-- Use the `/data-deploy` skill to run this process interactively.
+- The `/data-deploy` skill that ran this interactively has been **deleted**; the
+  surviving direction is `/data-prod-to-dev`.
 
 ## Incident: 2026-07-02 — dictionary tables left empty mid-deploy
 

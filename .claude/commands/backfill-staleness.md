@@ -168,5 +168,7 @@ End by reminding: re-running scripts only touches rows whose target column is
 NULL/eligible unless the script re-processes by version — confirm each script's
 selection query before assuming a plain re-run will refresh stale-version rows
 (many select `WHERE <col> IS NULL`, so stale-but-populated rows need the column
-nulled first). And these are DB writes — on dev they're safe; syncing to prod is a
-separate `/data-deploy` step.
+nulled first). And these are DB writes. Note the target: run against **dev** and they stay local
+and harmless, but there is no longer a dev → prod push step, so a dev-side fix does
+not reach learners at all. Anything that must ship has to be run against prod (see
+`/oracle-backfill` / `/mark-discoverable`, which back up first).

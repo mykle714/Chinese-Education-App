@@ -6,7 +6,7 @@
  *
  * ── Why this exists ────────────────────────────────────────────────────────────
  * The diagnostics sinks write to the prod HOST FILESYSTEM, not to Postgres, so
- * `/data-pull`'s pg_dump machinery does not reach them. And there is no
+ * `/data-prod-to-dev`'s pg_dump machinery does not reach them. And there is no
  * cross-machine SSH on this project, so the only transport is a commit — which
  * makes scrubbing mandatory rather than advisory: every perf batch carries the
  * reporting client's `ip` (stamped from `x-forwarded-for` in

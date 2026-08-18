@@ -200,4 +200,7 @@ LIMIT 20;
 
 ## Section E — Deploying Enriched Entries to Production
 
-Use the `/data-deploy` skill. Full reference: `docs/DATA_DEPLOYMENT_GUIDE.md`.
+**There is no deploy step any more.** The dev → prod data push skill has been deleted
+and enrichment runs directly against prod (`/mark-discoverable`, `/oracle-backfill`),
+so entries are live as soon as the pipeline finishes. To refresh a dev box from prod,
+use `/data-prod-to-dev`. Historical context: `docs/DATA_DEPLOYMENT_GUIDE.md`.

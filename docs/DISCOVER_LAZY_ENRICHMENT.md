@@ -98,8 +98,10 @@ enrichment, which conflicts with that meaning. We therefore split the two concep
   `StarterPacksService._supplyGate(language)` helper (returns `de.sortable = TRUE`
   for zh, `de.discoverable = TRUE` otherwise). Wired at `_fetchSupplyRows`,
   `listQuickMarkCards`, and `getProgress`; the `validPredicate` level gate stays.
-- **`discoverable`** (unchanged) — still means "fully enriched + data-deployed";
-  still gates flashcard/reader/dictionary surfaces and `/data-deploy`.
+- **`discoverable`** (unchanged) — still means "fully enriched"; still gates the
+  flashcard/reader/dictionary surfaces. (It historically also meant "data-deployed",
+  from when det rows were enriched on dev and pushed up; enrichment now writes prod
+  directly, so there is no deploy half any more.)
 
 Migration 110 **backfilled `sortable = TRUE` for existing qualifying rows**
 (`discoverable = TRUE OR difficulty BETWEEN 1 AND 6` → 832 rows on dev) and added a
@@ -328,7 +330,7 @@ natural signal for "spend AI to finish this word."
 **Prod caveat.** `triggerForWord` spawns the worker via `npx tsx`, available in **dev**
 (`tsx server.ts`). Prod runs compiled `node` with no `tsx`, so the spawn fails
 gracefully and the trigger is a **no-op there** — enrichment stays a dev/curation
-activity feeding the normal `/data-deploy`, and never mutates prod det rows out-of-band
+activity, and never mutates prod det rows out-of-band
 (consistent with the "illegal to set `discoverable=TRUE` outside `/mark-discoverable`"
 rule).
 
@@ -431,8 +433,7 @@ both the runtime trigger and the manual CLI):
    trigger's own gate is now `discoverable = TRUE` (migration 144), this is in practice
    a re-affirmation of an already-set flag — the promotion path still matters for the
    manual `--words=` CLI, which targets rows regardless of state. The word drops out of
-   the candidate predicate and is eligible
-   for the next `/data-deploy`. A step that exits non-zero aborts that word (no
+   the candidate predicate and is complete where it was written. A step that exits non-zero aborts that word (no
    promotion), leaving it a candidate for the next drain.
 
 Bounding spend: the runtime trigger fires **one word per validator open/sort**, deduped

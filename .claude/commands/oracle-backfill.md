@@ -7,7 +7,7 @@ and keep going until the Max-plan 5-hour session budget is spent.
 Same pipeline, same prompts, same validators, same DB writes — only the *answerer*
 changes. This is NOT a shortcut around any of the pipeline's checks.
 
-> ⚠️ **Writes directly to PRODUCTION.** The old dev → `/data-deploy` review gate is
+> ⚠️ **Writes directly to PRODUCTION.** The old dev → prod data-deploy review gate is
 > retired; there is no staging copy. Take the backup (§2) every single run.
 
 ---

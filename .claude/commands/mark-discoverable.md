@@ -15,7 +15,7 @@ If the user doesn't say, infer from the script (Han characters → zh; Latin →
 and confirm.
 
 > ⚠️ **This pipeline writes directly to PRODUCTION.** Backfills are no longer run on
-> dev and pushed with `/data-deploy` — they run against the prod det tables, so
+> dev and pushed up to prod — they run against the prod det tables, so
 > every change reaches learners immediately. Read `amIOnTheProdMachine.md`, confirm
 > the word list with the user, and take a backup
 > (`server/scripts/backfill/backup-det.sh <label>`) before the first write.
@@ -147,7 +147,7 @@ single-char batch will report "0 entries" — that is correct, not a failure.
 
 **Scan the `backfill-breakdown-elaboration` output for `⚠ BREAKDOWN ELABORATION REVIEW <word>` lines.** A word is flagged when the model's answer was unparseable, or still over its character budget after one shortening retry. Those rows are left **unwritten AND unstamped** on purpose, so a later run retries them rather than freezing in a truncated sentence — they will simply reappear as pending in the next `oracle-plan` round. Same for `⚠ BREAKDOWN SENSE REVIEW` from the tagger.
 
-**Scan the `backfill-cluster-definitions` output for `⚠ CLUSTER REVIEW <word> (id=...): <reason>` lines and surface every one of them to the user for human review.** It self-flags any sense it is even slightly unsure about (uncertain readings/heteronyms, borderline split/merge calls, low-confidence ordering, etc.). These are the cases most likely to need a manual fix (e.g. a wrong heteronym reading) before `/data-deploy` — and a wrong cluster here now also feeds a wrong `sense` into the example sentences downstream.
+**Scan the `backfill-cluster-definitions` output for `⚠ CLUSTER REVIEW <word> (id=...): <reason>` lines and surface every one of them to the user for human review.** It self-flags any sense it is even slightly unsure about (uncertain readings/heteronyms, borderline split/merge calls, low-confidence ordering, etc.). These are the cases most likely to need a manual fix (e.g. a wrong heteronym reading), and because this pipeline writes straight to prod that fix has to happen *now* rather than at a review gate — and a wrong cluster here now also feeds a wrong `sense` into the example sentences downstream.
 
 ### A4. Verify enrichment
 
@@ -290,7 +290,7 @@ All discoverable rows should have non-null `definitionClusters`, `partsOfSpeech`
 ## Finally (both languages): enrichment is already live
 
 **Enrichment now runs directly against production** — there is no dev→prod push
-step for det data any more, so `/data-deploy` is NOT part of this flow. The rows
+step for det data any more (that skill has been deleted). The rows
 you just enriched are visible to learners as soon as the pipeline finishes, which
 is exactly why the backup and the verification steps above are mandatory rather
 than optional.

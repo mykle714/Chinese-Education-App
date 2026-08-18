@@ -5,7 +5,7 @@
 # LAYER: data-enrichment (backfill) invocation shim.
 #
 # WHY THIS EXISTS: backfills used to run inside `cow-backend-local` on the dev box
-# and reach prod only via /data-deploy. That flow is retired — enrichment now runs
+# and reach prod only via a dev → prod data-deploy push. That flow is retired — enrichment now runs
 # directly against prod. But the prod backend image (`cow-prod-backend`) ships
 # neither scripts/backfill/ nor tsx, so `docker exec cow-backend-prod ...` cannot
 # work. Instead we run the repo's scripts on the host (node + server/node_modules

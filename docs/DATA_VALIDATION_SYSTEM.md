@@ -26,7 +26,7 @@ score is reviewable one sense at a time).
 > **Why a separate table (not a det column):** `dictionaryentries_{zh,es}` are
 > `TRUNCATE`+restored wholesale on every prod data deploy
 > ([DATA_DEPLOYMENT_GUIDE.md](./DATA_DEPLOYMENT_GUIDE.md)), which would wipe any
-> review column. `validations` lives outside the data-deploy allowlist and is keyed
+> review column. `validations` was deliberately kept out of the old dev → prod deploy allowlist, and is keyed
 > by the det row's surrogate `id` (stable across deploys — the binary dump preserves
 > id values) + `language`, so it survives every deploy.
 
@@ -140,7 +140,7 @@ document is the right review surface for it.
   from the DEFAULT, so their uniqueness semantics are unchanged.
   `validatorUserId` **was** `FK users(id) ON DELETE CASCADE`, but **migration 120
   dropped that FK** (the column stays `UUID NOT NULL`). Reason: prod is the source of
-  truth for `validations` and it is pulled DOWN to dev boxes via `/data-pull`; a dev
+  truth for `validations` and it is pulled DOWN to dev boxes via `/data-prod-to-dev`; a dev
   box that lacks a prod validator's account would otherwise abort the restore. The
   column is never JOINed to `users` — it is a scalar identity only (the unique
   constraint + the "did I already validate this?" filters), and display uses the
@@ -164,7 +164,9 @@ document is the right review surface for it.
 
 The consolidated schema files (`database/init/01-init-schema.sql`,
 `database/deploy/01-schema.sql`) mirror the `users` + `texts` + `validations`
-additions. `validations` is intentionally **absent** from the data-deploy allowlist.
+additions. `validations` was intentionally **absent** from the old dev → prod deploy allowlist.
+(It *is* carried by `/data-prod-to-dev`, which is safe: that direction overwrites dev
+from the authoritative prod copy.)
 
 ---
 
@@ -603,7 +605,7 @@ rather than altering the transformation, and a bump would mark the whole table
 stale and trigger a mass re-process.
 
 Under `/oracle-backfill` (which loops the pipeline directly against prod with no
-`/data-deploy` review gate) this guard is the only thing standing between a
+dev-side review gate) this guard is the only thing standing between a
 regeneration loop and a validator's work — treat it as load-bearing.
 
 ---

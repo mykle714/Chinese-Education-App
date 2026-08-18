@@ -4,7 +4,7 @@
 #
 # LAYER: data-enrichment (backfill) safety net.
 #
-# WHY: enrichment now writes directly to prod (the old dev → /data-deploy review
+# WHY: enrichment now writes directly to prod (the old dev → prod data-deploy review
 # gate is retired), so a bad run reaches learners immediately with no staging copy
 # to fall back on. Every oracle-backfill run takes one of these FIRST.
 #

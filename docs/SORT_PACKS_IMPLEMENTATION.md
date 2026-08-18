@@ -35,7 +35,7 @@ Migrations live in `database/migrations/` (run by `database/deploy/migrate.sh`; 
 
 ```sql
 -- Authored sort packs (reference data; delivered via SEED MIGRATIONS — see §2.1.
--- NOT a /data-deploy table: it is absent from that skill's allowlist).
+-- NOT movable by any data-sync skill: prod->dev covers det/icons8/pct/validations only).
 CREATE TABLE sort_packs (
   id                SERIAL PRIMARY KEY,
   language          VARCHAR   NOT NULL,            -- 'zh' | 'es'
@@ -75,9 +75,10 @@ sentence is authored or validated.
 
 ### 2.1 Getting authored packs into another environment (seed migrations)
 
-`sort_packs` is hand-authored reference data, and it is **not** in the `/data-deploy`
-allowlist (`docs/DATA_DEPLOYMENT_GUIDE.md` — that skill covers `dictionaryentries_zh`,
-`dictionaryentries_es`, `particlesandclassifiers`, `icons8` only). There is no dump
+`sort_packs` is hand-authored reference data, and no data-sync skill carries it
+(`/data-prod-to-dev` covers `dictionaryentries_zh`, `dictionaryentries_es`,
+`particlesandclassifiers`, `icons8`, `validations` only — and it only moves prod →
+dev; the old dev → prod push skill has been deleted). There is no dump
 file and no import script. **Authored packs travel as seed migrations, which means
 they ship with the ordinary code deploy** — `/deploy` picks the file up in its pending
 migration set like any other, `database/deploy/migrate.sh` applies it in `sort -V`
@@ -253,7 +254,8 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 - **Build/deploy test (required):** `server/scripts/validate-sort-packs.ts`. For every
   `sort_packs` row it asserts structural validity (1–3 `entryIds`, level in 1..6, every
   `entryId` exists in the per-language det table). Enforced at build time, not runtime.
-- Sync `sort_packs` to prod via `/data-deploy`.
+- Get `sort_packs` onto prod via a **seed migration** (§2.1) — there is no data-sync
+  skill that moves it, and none that moves anything dev → prod.
 
 ## 7. Suggested sequencing
 

@@ -426,4 +426,5 @@ The run summary tallies `Flagged for review: N entries`. The marker string
 detects these lines and surfaces them to the user** (see
 `.claude/commands/mark-discoverable.md`, §A3) — clustering is the last step of
 that pipeline. These flags are the cases most likely to need a manual fix (e.g. a
-wrong heteronym reading) before `/data-deploy`.
+wrong heteronym reading); since that pipeline writes straight to prod, the fix has to
+happen right then rather than at a review gate.

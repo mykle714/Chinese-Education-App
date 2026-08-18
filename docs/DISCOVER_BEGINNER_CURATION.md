@@ -52,9 +52,11 @@ Filters applied to the supply (all in `_fetchSupplyRows`):
 
 ## 2. Export recipe (reproducible)
 
-Run on the **dev** machine (the `discoverable` flag is curated on dev and synced to
-prod via `/data-deploy`, so dev is the source of truth). Swap the table name to do
-the other language.
+Run against **prod**, which is now the source of truth for the det tables: the
+`discoverable` flag is set there by `/mark-discoverable` / `/oracle-backfill`, and the
+old dev-curation + dev → prod push flow is retired (that skill has been deleted). Use
+`/data-prod-to-dev` to refresh a dev box afterwards. Swap the table name to do the
+other language.
 
 | Language | Dict table | Extra columns |
 | --- | --- | --- |
@@ -130,7 +132,8 @@ Exported files live in `discover-beginner-csv/` (gitignored working area):
    just group cards that make sense to sort together (by `id` / `word1`).
 3. Import the packs into `sort_packs` (one row per pack), assigning `packOrder` to
    control the beginner sequence within each level.
-4. Sync `sort_packs` to prod via `/data-deploy` (reference-table change).
+4. Ship `sort_packs` to prod via a **seed migration** — no data-sync skill carries this
+   table (see `docs/SORT_PACKS_IMPLEMENTATION.md` §2.1).
 
 ---
 

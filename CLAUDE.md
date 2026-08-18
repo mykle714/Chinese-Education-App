@@ -318,8 +318,12 @@ explicitly postponed decisions. Add an item here rather than leaving a `⚠️` 
 doc that nobody re-reads. **Not** for bugs, and not for feature design questions (those
 belong in the owning doc's question log).
 
-### Data Deployment (syncing `dictionaryentries_zh` to prod)
-→ See [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)
+### Data Sync (refreshing a dev box from prod)
+Prod is the **source of truth** for the det/reference tables; there is no dev → prod
+push any more (the `/data-deploy` skill was deleted). Use the `/data-prod-to-dev` skill
+to pull `icons8`, `dictionaryentries_zh`, `dictionaryentries_es`,
+`particlesandclassifiers` and `validations` **down** to a dev box.
+→ Retired push flow, kept for the `icons8` FK rule + the 2026-07-02 incident: [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)
 
 ### Docker Commands & Setup
 → See [docs/DOCKER_COMMANDS.md](./docs/DOCKER_COMMANDS.md)

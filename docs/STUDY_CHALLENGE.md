@@ -19,7 +19,7 @@ order and remaining steps: [DEFERRED_WORK.md](./DEFERRED_WORK.md).
 | **Client** — `src/api/studyChallenges.ts`, `src/features/studyChallenge/*`, the `/friends/challenges` NodePage + its badge, the fifth `/decks` section | ✅ built on dev. The one gap is the **scored round runner**, which belongs to the games step — the detail page lists the drawn rounds but cannot play them yet, and says so on screen |
 | **Maintenance job** — `database/cron/expire-study-challenges.sql` and its `ExecStart` step | ✅ written; all four passes exercised on dev with backdated fixtures, and idempotent on re-run. ⚠️ **Inert on prod until `install-timers.sh` re-renders the unit** — a git pull does not roll out a unit-template change, and until it does nothing expires |
 | **Runbook** | ✅ Retired 2026-08-17 — **shipped to prod**. Migration 148 was applied before the container rebuild (the deck read selects `decks."editMode"`), and the systemd unit was **re-rendered** by `database/cron/install-timers.sh`, without which the whole time-triggered half stays inert |
-| **Week-counter follow-up (150)** | ⚠️ [STUDY_CHALLENGE_WEEK_INDEX_RUNBOOK.md](./STUDY_CHALLENGE_WEEK_INDEX_RUNBOOK.md) — **not yet on prod**. `"weekStart"` → `"weekIndex"` is a rename, so the migration and the app restart must land together |
+| **Week-counter follow-up (150)** | ✅ On prod since 2026-08-17. `"weekStart"` → `"weekIndex"`; the rename was applied before the container rebuild (its temporary runbook has been deleted) |
 
 ⚠️ **Migration 148, not 147.** 147 was claimed by the `compute_utcm_category` drop and
 had already been applied to dev, so this one moved (CLAUDE.md § Migration number

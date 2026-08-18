@@ -263,10 +263,19 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks:
-- [docs/STUDY_CHALLENGE_WEEK_INDEX_RUNBOOK.md](./docs/STUDY_CHALLENGE_WEEK_INDEX_RUNBOOK.md) — migration **150**, the `study_challenges."weekStart"` → `"weekIndex"` conversion; **not yet on prod**. It is a RENAME, so old code and new code cannot both run against one schema: the migration and the container rebuild must land together, migration first. Harmless on prod today because the feature has never been played there (the table is empty).
+Current open runbooks: **none.** Prod is current through migration **150**.
 
-Prod is current through migration **149**.
+Deployed and retired on 2026-08-17, second deploy of the day (runbook deleted): the
+Study Challenge week-counter migration (**150**), which renamed
+`study_challenges."weekStart"` (timestamptz) to `"weekIndex"` (integer weeks since
+Monday 2026-01-05 UTC). A rename has no both-versions-work window, so it was applied
+**before** the container rebuild, per its runbook. One wrinkle worth remembering: 150
+carries its own `BEGIN`/`COMMIT`, and `migrate.sh` already wraps each file in a
+transaction — the run printed `WARNING: there is already a transaction in progress`
+and `WARNING: there is no transaction in progress`. It applied and recorded correctly,
+but **migration files should not open their own transaction**; the file's `COMMIT`
+closes the runner's, so the tracking `INSERT` lands outside it and the all-or-nothing
+guarantee is lost.
 
 Deployed and retired on 2026-08-17 (runbook deleted): Study Challenge phase 1 async
 (**148**), the dead `compute_utcm_category` drop (**147**) and the lifetime-mark-counter

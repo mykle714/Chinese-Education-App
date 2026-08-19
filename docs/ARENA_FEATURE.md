@@ -824,9 +824,11 @@ Two consequences worth knowing:
 
 * **Formation must check the week it is forming.** `nextWeekStartFor` only rolls past the
   close, so mid-week it returns the week ALREADY RUNNING while every candidate's stored
-  key is next Tuesday's. `formArenas` therefore skips any bucket whose week key does not
-  match the candidates' — without it, a Wednesday enrolment would be seated into an arena
-  two days old, alone with 24 bots.
+  key is next Tuesday's. `formArenas` therefore keeps only the candidates whose
+  `optInWeek` equals its bucket's own week key (§ 5.3) — without that filter, a Wednesday
+  enrolment would be seated into an arena two days old, alone with 24 bots. It is a
+  per-candidate filter rather than a per-bucket skip because one bucket can legitimately
+  hold both this week's stragglers and a stale opt-in.
 * **The `closed` page state now renders the same Join card as `opt-in`** (§ 2.3). The two
   differ only in whether the break is open, which no longer changes what you may do.
 

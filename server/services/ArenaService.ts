@@ -344,25 +344,24 @@ export class ArenaService {
       // timezone is a hard partition: one arena, one unambiguous close instant.
       const weekStart = this.nextWeekStartFor(now, bucket.timezone);
 
-      // Only form the week these candidates actually opted into.
-      //
-      // Load-bearing since opt-in stopped being confined to the break (§ 8):
-      // mid-week, `weekStart` is the week ALREADY RUNNING (nextWeekStartFor only
-      // rolls forward past the close) while every candidate's key is next
-      // Tuesday's. Without this guard a Wednesday enrolment would be seated in
-      // an arena two days old, alone with 24 bots.
-      if (arenaWeekKey(weekStart, bucket.timezone) !== weekKey) continue;
-
       const closesAt = arenaCloseFor(weekStart, bucket.timezone);
 
       // THE GATE. Too early is not "harmless, it will be re-run" — forming a
       // bucket closes it to every later opt-in.
       if (now.getTime() < arenaFormationAt(weekStart).getTime()) continue;
 
+      // Only seat candidates who opted into the week this bucket is forming.
+      //
       // An opt-in names a week in the OPTER'S zone, so it can only be compared
       // against a week start computed in that same zone — which is exactly what
-      // a bucket is. A candidate carrying a stale key (last week's, from the
-      // self-expiring opt-in column) simply does not match and is dropped here.
+      // a bucket is. Two things fall out of this one filter:
+      //   * a stale key (last week's, from the self-expiring opt-in column) does
+      //     not match and is dropped;
+      //   * since opt-in stopped being confined to the break (§ 8), a mid-week
+      //     enrolment carries NEXT Tuesday's key while `weekStart` is the week
+      //     already running (nextWeekStartFor only rolls past the close) — so it
+      //     does not match either, and is not seated into a two-day-old arena
+      //     alone with 24 bots.
       const weekKey = arenaWeekKey(weekStart, bucket.timezone);
       const forThisWeek = bucket.candidates.filter((c) => c.optInWeek === weekKey);
       if (forThisWeek.length === 0) continue;

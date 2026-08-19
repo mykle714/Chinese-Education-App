@@ -90,4 +90,4 @@ Standard. Already true by construction: edges in the tile graph are pure 4-neigh
 
 ## Suggested test layout
 
-A single test file `src/engine/market/__tests__/graphAssumptions.test.ts` covering all of S1–T2 against the `TILE_GRAPH` / `STREET_GRAPH` that `marketWorld.ts` builds from a stitched world (NOT the empty `tileRegistry` ones — those would pass every invariant vacuously). Tests should run as part of normal CI so any template/recovery change that breaks an invariant fails loudly. **Status: not written** — see the warning at the top.
+A single test file `src/engine/market/__tests__/graphAssumptions.test.ts` covering all of S1–T2 against the `TILE_GRAPH` / `STREET_GRAPH` that `marketWorld.ts` builds from a stitched world (NOT the empty `tileRegistry` ones — those would pass every invariant vacuously). Tests should run as part of normal CI so any template/recovery change that breaks an invariant fails loudly. **Status: deleted, not currently present** (existed until commit `9bedfb5`) — see the warning at the top.

@@ -75,7 +75,7 @@ in flight from the other side (the server auto-accepts crossing requests — see
 docs/FRIENDS_FEATURE.md), so a client that optimistically drew "Request sent" would be
 wrong in exactly the case that matters.
 
-Code: `src/features/profile/UserProfilePage.tsx` → `renderAction`, `runAction`.
+Code: `src/features/profile/UserProfilePage.tsx` → `renderFriendAction`, `renderBlockToggle`, `runAction`.
 
 ## Every relationship control lives in the top bar
 

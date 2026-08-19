@@ -872,7 +872,7 @@ testDictionaryLookup();
 
 ```bash
 cd server
-node tests/test-japanese-dictionary-api.js
+node tests/test-japanese-dictionary-api.js   # ⚠️ this file no longer exists — see the banner
 ```
 
 ### Manual Testing Checklist
@@ -1081,7 +1081,9 @@ docker restart cow-postgres-local
 
 ### Test Files Created
 
-1. **`server/tests/test-japanese-dictionary-api.js`** - API verification
+1. **`server/tests/test-japanese-dictionary-api.js`** - API verification.
+   ⚠️ **No longer in the tree.** `server/tests/` now holds only ad-hoc SQL/JS helpers;
+   the real server suite is `vitest` under `server/__tests__/`.
 
 ---
 

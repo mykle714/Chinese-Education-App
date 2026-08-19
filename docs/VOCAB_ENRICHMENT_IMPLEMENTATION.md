@@ -320,16 +320,22 @@ JSONB array keyed by the cluster's `sense` label. Only generated for `language =
 ### Backfill
 
 ```bash
-docker exec cow-backend-local ./node_modules/.bin/tsx scripts/backfill/chinese/backfill-short-long-definitions.js
+docker exec cow-backend-local ./node_modules/.bin/tsx scripts/backfill/chinese/backfill-long-definitions.js
 ```
 
-Only processes `discoverable = TRUE` zh entries where either column is NULL.
+(The old combined `backfill-short-long-definitions.js` was split in commit `fcbaef1`;
+`shortDefinition` has had no backfill since migration 27 dropped the column — it is
+computed at read time by `generateShortDefinition`, see DEFINITION_MAPPING.md #4.)
+
+Gated on `definitionClusters IS NOT NULL` — run `backfill-cluster-definitions.js` first
+(the `/mark-discoverable` pipeline already orders it so).
 
 ### Service Methods
 
-`server/services/DictionaryService.ts`:
-- `generateShortDefinition(definitions: string[]): string | null` — synchronous, no AI
-- `generateLongDefinition(word, language, shortDef, definitions): Promise<string | null>` — AI call
+- `generateShortDefinition(definitions: string[]): string | null` — synchronous, no AI.
+  Lives in `server/utils/definitions.ts`, **not** on `DictionaryService`.
+- `generateLongDefinition(word, language, partsOfSpeech?): Promise<string | null>` — AI call
+  (`server/services/DictionaryService.ts`).
 
 ---
 

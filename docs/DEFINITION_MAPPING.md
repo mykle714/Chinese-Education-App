@@ -69,8 +69,8 @@ Child docs:
 ### 4. `shortDefinition` — deterministic short gloss
 - **Shape:** `string | null`, resolved at read time, **no AI**.
 - **Rule:** `resolveShortDefinition` = manual override `?.definition`, else
-  `generateShortDefinition(definitions)` (`server/utils/definitions.ts`,
-  `:12`). The generator filters grammatical-note glosses (`(`/`CL:`), splits on
+  `generateShortDefinition(definitions)` (`server/utils/definitions.ts`).
+  The generator filters grammatical-note glosses (`(`/`CL:`), splits on
   `; `, strips trailing parentheticals, and returns the **shortest** surviving
   token.
 - **Override:** `shortDefinitionPronunciationOverride.definition`
@@ -203,14 +203,16 @@ Child docs:
   translation string-match (`pickDefinitionForTranslatedSentence`). See
   [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md).
 - `exampleSentenceDefinitionPronunciationOverride.definition` — manual verbatim
-  override shown in the segment popup (`:114`).
-- `breakdown[char]` — per-component-character breakdown (`:160`). `.definition` is
+  override shown in the segment popup (`server/contracts/wire.ts`; resolved in
+  `server/dal/shared/segmentString.ts`).
+- `breakdown[char]` — per-component-character breakdown (`server/contracts/wire.ts`).
+  `.definition` is
   the character's gloss; `.sense` (added by `backfill-breakdown-senses.js`) is the
   `definitionClusters` **sense label** the character carries **in this word** — a
   stable pointer (like `vet.selectedSense`) resolving form #6 → the correct-sense
   gloss, replacing the naïve `definitions[0]` that `generateBreakdown` first writes.
 - `synonymsMetadata[syn].definition` — computed at read time from
-  `dictionaryentries_zh` (`:371`).
+  `dictionaryentries_zh` (`server/services/DictionaryService.ts`).
 
 ---
 

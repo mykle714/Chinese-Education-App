@@ -49,17 +49,17 @@ The model is two phases:
 ## 2. What actually gates a card in the discover flows
 
 Layer: **service** — `server/services/StarterPacksService.ts`. Every supply query
-(`_fetchSupplyRows` `:317`, `listQuickMarkCards` `:448`) applies two hard gates:
+(`_fetchSupplyRows`, `listQuickMarkCards`) applies two hard gates:
 
 | Gate | SQL fragment | Passing rows (dev zh) |
 |---|---|---|
 | **Curation flag** | `de.discoverable = TRUE` | 148 |
-| **Valid level** | `de.difficulty BETWEEN 1 AND 6` (`validPredicate` `:187`) | 832 |
+| **Valid level** | `de.difficulty BETWEEN 1 AND 6` (`validPredicate`) | 832 |
 
 Corpus total: **114,774 zh**. `difficulty` is `NULL` on **113,942** rows — so the
 *level* gate, not the `discoverable` flag, is the dominant blocker.
 
-### Field tiers (from `_rowsToDiscoverCards` `:126`)
+### Field tiers (from `_rowsToDiscoverCards`)
 
 | Tier | Fields | Coverage (zh) | Role |
 |---|---|---|---|
@@ -254,14 +254,17 @@ AND every applicable pre-pass step is stamped at its current manifest version
 Both halves are needed: `difficulty` alone can predate the current prompt, and
 process-defs writes no column a query can distinguish from raw cedict.
 
-**`promote-sortable.js`** (`server/scripts/backfill/promote-sortable.js`) is the only
-writer of `sortable` outside the lazy worker. Dry-run by default; `--words=` gives a
-per-word verdict, and bare `--limit=N` sweeps up any row that already cleared the bar
-(the self-heal for an interrupted round). It re-asserts the predicate **inside the
-UPDATE**, so a row that changed between SELECT and UPDATE cannot slip through, and it
-**never touches `discoverable`** — that flag keeps its CLAUDE.md prohibition. The
-oracle round then carries the same batch through the remaining manifest steps to
-`discoverable` by the normal completeness gate.
+**`promote-sortable.js`** — **deleted** with the `sortable` gate (commit `0dc907e`,
+migration 144); the file is no longer in the tree and neither is
+`buildSortableReadyPredicate`. It *was* the only writer of `sortable` outside the lazy
+worker: dry-run by default; `--words=` gave a per-word verdict, and bare `--limit=N`
+swept up any row that had already cleared the bar (the self-heal for an interrupted
+round). It re-asserted the predicate **inside the UPDATE**, so a row that changed
+between SELECT and UPDATE could not slip through, and it **never touched
+`discoverable`** — that flag keeps its CLAUDE.md prohibition. The oracle round then
+carried the same batch through the remaining manifest steps to `discoverable` by the
+normal completeness gate. Today `promote-discoverable.js` is the only standalone
+promoter and applies the full-manifest bar directly.
 
 **Planning**: `oracle-plan.js --unsortable` scopes to `sortable = FALSE` and plans
 against `PRE_PASS_SCRIPTS_ZH` only (otherwise all 113,989 rows would report 13 pending

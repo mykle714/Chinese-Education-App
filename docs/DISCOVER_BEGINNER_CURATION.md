@@ -186,6 +186,6 @@ navigation lives in [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)).
 ## Code references
 
 - `server/services/StarterPacksService.ts`
-  - `estimateLevel` (fresh user → level 1): ~`:193`
-  - `_fetchSupplyRows` (the ORDER BY we are changing): ~`:244`–`:308`
-  - `_levelConfig` (`levelExpr`, `validPredicate`): ~`:164`
+  - `estimateLevel` (fresh user → level 1)
+  - `_fetchSupplyRows` (the ORDER BY we are changing)
+  - `_levelConfig` (`levelExpr`, `validPredicate`)

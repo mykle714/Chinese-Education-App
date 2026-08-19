@@ -37,12 +37,13 @@
 --   a table created minutes earlier in the same `migrate.sh` run. That is
 --   harmless and deliberate: 130 is already applied on dev, and an applied
 --   migration is immutable, so the rename is a new file rather than an edit to
---   130. See docs/PER_LANGUAGE_MINUTES_DEPLOY_RUNBOOK.md.
+--   130. (Its deploy runbook was retired after prod was verified on 2026-08-16;
+--   the ordering it specified is recorded in the note below.)
 --
 --   ⚠️ The pg_cron job in database/cron/expire-stale-streaks.sql references this
 --   table by name and MUST be redeployed as part of the same deploy, or the
---   hourly penalty tick starts erroring on a missing relation. The runbook above
---   carries the step.
+--   hourly penalty tick starts erroring on a missing relation. This was done in the
+--   2026-08-16 deploy via database/cron/install-timers.sh.
 
 BEGIN;
 

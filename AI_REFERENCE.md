@@ -24,7 +24,7 @@ All project documentation is organized in the `/docs` directory. This keeps the 
 - **Deployment checklist**: [`docs/deployment-checklist.md`](docs/deployment-checklist.md) - Pre-deployment verification
 - **HTTPS setup**: [`docs/HTTPS_SETUP_GUIDE.md`](docs/HTTPS_SETUP_GUIDE.md) - Let's Encrypt SSL for mren.me
 - **Database queries**: [`POSTGRES_QUERY_GUIDE.md`](POSTGRES_QUERY_GUIDE.md) - PostgreSQL conventions, table naming, running db scripts
-- **Migrations**: `database/migrations/` applied by `database/migrate.sh` - see [`docs/BACKEND_LAYERING.md`](docs/BACKEND_LAYERING.md) § migrate.sh
+- **Migrations**: `database/migrations/` applied by `database/deploy/migrate.sh` - see [`docs/BACKEND_LAYERING.md`](docs/BACKEND_LAYERING.md) § migrate.sh
 
 ### 🌍 Multi-Language Support
 - **System overview**: [`docs/MULTI_LANGUAGE_IMPLEMENTATION.md`](docs/MULTI_LANGUAGE_IMPLEMENTATION.md) - How multi-language works

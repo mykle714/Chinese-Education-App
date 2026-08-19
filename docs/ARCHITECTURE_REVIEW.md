@@ -97,7 +97,7 @@ the other 11 `implements` their interface directly. Server-wide usage of its
 ### The `DictionaryDAL` problem
 
 ```ts
-// server/dal/implementations/DictionaryDAL.ts:168
+// server/dal/implementations/DictionaryDAL.ts -> the DictionaryDAL constructor's super() call
 super(dbManager, 'dictionaryentries_zh', 'id');
 ```
 
@@ -123,7 +123,7 @@ grep -rn "dictionaryDAL\.\(findById\|create\|update\|delete\|findAll\|exists\|co
 - `BaseDAL` shrinks to what `UserDAL` / `VocabEntryDAL` actually call
   (`findById`, `create`, `update`, `delete`, `createWithTransaction`) — roughly
   80 lines — or is deleted and inlined into those two.
-- `assertSafeColumnName` (BaseDAL.ts:291) is a good defense-in-depth guard and
+- `assertSafeColumnName` (`server/dal/base/BaseDAL.ts`) is a good defense-in-depth guard and
   should survive wherever the insert/update builders land.
 
 ### The inheritance tree that is correct
@@ -490,11 +490,12 @@ Most controllers receive dependencies via constructor injection from `dal/setup.
 Three do not:
 
 ```ts
-// server/controllers/LeaderboardController.ts:13,149
+// THE OLD SHAPE (these symbols no longer exist — see the Resolved note at the top of finding 8)
+// server/controllers/LeaderboardController.ts
 this.leaderboardService = new LeaderboardService(...)   // inside its own constructor
 export const leaderboardController = new LeaderboardController();
 
-// server/services/TTSService.ts:228 · server/controllers/TTSController.ts:79
+// server/services/TTSService.ts · server/controllers/TTSController.ts
 export const ttsService = new TTSService();
 export const ttsController = new TTSController();
 ```

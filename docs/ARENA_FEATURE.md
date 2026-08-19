@@ -8,12 +8,17 @@ the **minutes you earn while that arena is live**. Top 5 promote, bottom 5 demot
 **Status: LIVE ON PROD** since 2026-08-16 (migration 146; the `cow-arena` hourly timer is
 installed and armed). Every design question in § 11 was answered before implementation began.
 
-⚠️ **The first prod week (2026-08-18) formed wrong** and the two causes are fixed but **not
-yet deployed** — see § 5.3. Formation had no time gate, so it fired ~31 hours early and
-locked four real users out of the week; the straggler path that should have caught them was
-never wired to a caller. Both were invisible in the logs, which is why `tick()` now returns a
-`stranded` count (§ 10). The affected week's arenas were left as they formed — no prod rows
-were edited.
+**The first prod week (2026-08-18) formed wrong; the fix is deployed** (2026-08-18) — see
+§ 5.3 for both causes. Formation had no time gate, so it fired ~31 hours early and locked
+four real users out of the week; the straggler path that should have caught them was never
+wired to a caller. Both were invisible in the logs, which is why `tick()` now returns a
+`stranded` count (§ 10).
+
+No prod rows were edited by hand. The first hourly pass after the deploy repaired the week
+on its own: the four locked-out users were seated into their bucket's partly-empty batch
+arena via the now-wired straggler path (§ 5.3 step 1), taking synthetic seats rather than
+opening a second arena, and every opted-in (user, language) pair now holds exactly one live
+seat. `stranded 0`, which is the only correct value after 04:00 local.
 
 What is NOT done: the
 `src/components/leaderboard/` extraction owed to

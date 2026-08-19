@@ -274,7 +274,7 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **none.** Prod is current through migration **150**.
+Current open runbooks: **none.** Prod is current through migration **151**.
 
 Deployed and retired on 2026-08-17, second deploy of the day (runbook deleted): the
 Study Challenge week-counter migration (**150**), which renamed

@@ -16,6 +16,7 @@ import {
 import {
   arenaWeekStart,
   arenaCloseFor,
+  arenaFormationAt,
   isBreakPeriod,
   arenaWeekKey,
   nextArenaWeekKey,
@@ -48,10 +49,14 @@ const GEOCELL_PATTERN = /^[0-9bcdefghjkmnpqrstuvwxyz]{5}$/;
  * ArenaDAL only reads and writes rows.
  *
  * ── The three moving parts ───────────────────────────────────────────────────
- *  formArenas()   runs ~03:00 local, one timezone at a time. Freezes the
- *                 candidate set, clusters it, writes arenas. MUST complete
- *                 before 04:00, because 04:00 is when credited minutes start
- *                 looking for a membership to land on.
+ *  formArenas()   gated to 03:00 local (weekStart - the formation lead), one
+ *                 timezone bucket at a time. Freezes the candidate set, clusters
+ *                 it, writes arenas — and on later ticks seats stragglers into
+ *                 the synthetic seats of a bucket it already formed. MUST
+ *                 complete before 04:00, because 04:00 is when credited minutes
+ *                 start looking for a membership to land on. It must equally NOT
+ *                 run long before 03:00: forming a bucket closes it to every
+ *                 later opt-in of that break.
  *  creditMinutes() called from UserMinutePointsService on every credited minute.
  *  resolveDue()   runs after Sunday 16:00 local. Ranks, promotes, relegates,
  *                 and — critically — releases every member's live seat.
@@ -307,24 +312,31 @@ export class ArenaService {
   // ── Formation ──────────────────────────────────────────────────────────────
 
   /**
-   * Form every arena for the week opening at the next Tuesday 04:00, for the
-   * timezones whose formation window has arrived.
+   * Form and fill every arena whose formation window has arrived.
    *
-   * Idempotent per (timezone, division, week) via arenaExistsForBucket, so an
-   * hourly cron can call it repeatedly and a retry is free.
+   * ── The window is the whole point (§ 5.3) ────────────────────────────────────
+   * A bucket is formed at `weekStart - ARENA_FORMATION_LEAD_MINUTES` (Tuesday
+   * 03:00 local), NOT at the first hourly tick that happens to see a candidate.
+   * Before that gate existed, the first opt-in of the break froze its whole
+   * (timezone, division) bucket up to 36 hours early: everyone who joined
+   * afterwards hit `arenaExistsForBucket` and was skipped, silently, for the rest
+   * of the break. That is a lockout with no error line anywhere — the run just
+   * reports "formed 0" — so the gate is load-bearing, not a tidiness.
    *
-   * `formationKind` records whether an arena came from this batch run or from
-   * the straggler path, because straggler arenas are geographically worse BY
-   * CONSTRUCTION and averaging the two makes any cluster-quality metric a lie.
+   * ── One pass, two behaviours per bucket ─────────────────────────────────────
+   * Whether a bucket is a BATCH or a STRAGGLER pass is decided per bucket, from
+   * whether its arenas already exist, rather than by the caller. There is no
+   * caller that could know: a single tick can be the batch run for Los Angeles
+   * and the straggler run for New York in the same second.
+   *
+   * Idempotent in both modes — a batch bucket is guarded by arenaExistsForBucket,
+   * and a straggler bucket only ever sees candidates who hold no live seat — so
+   * an hourly cron, a retry, or a systemd catch-up run is free.
    */
-  async formArenas(now = new Date(), kind: 'batch' | 'straggler' = 'batch'): Promise<Arena[]> {
+  async formArenas(now = new Date()): Promise<Arena[]> {
     const created: Arena[] = [];
 
-    // Candidates are keyed by the week they opted into, which is the NEXT week
-    // during the break — the same key the opt-in wrote.
-    const anyTz = 'UTC';
-    const weekKey = nextArenaWeekKey(now, anyTz);
-    const candidates = await this.arenaDAL.listCandidates(weekKey);
+    const candidates = await this.arenaDAL.listUnseatedCandidates();
     if (candidates.length === 0) return created;
 
     for (const bucket of bucketCandidates(candidates)) {
@@ -343,21 +355,43 @@ export class ArenaService {
 
       const closesAt = arenaCloseFor(weekStart, bucket.timezone);
 
-      if (kind === 'batch') {
-        const exists = await this.arenaDAL.arenaExistsForBucket(
-          bucket.timezone, bucket.division, weekStart,
-        );
-        if (exists) continue; // already formed this week
-      }
+      // THE GATE. Too early is not "harmless, it will be re-run" — forming a
+      // bucket closes it to every later opt-in.
+      if (now.getTime() < arenaFormationAt(weekStart).getTime()) continue;
 
-      for (const chunkMembers of clusterBucket(bucket)) {
+      // An opt-in names a week in the OPTER'S zone, so it can only be compared
+      // against a week start computed in that same zone — which is exactly what
+      // a bucket is. A candidate carrying a stale key (last week's, from the
+      // self-expiring opt-in column) simply does not match and is dropped here.
+      const weekKey = arenaWeekKey(weekStart, bucket.timezone);
+      const forThisWeek = bucket.candidates.filter((c) => c.optInWeek === weekKey);
+      if (forThisWeek.length === 0) continue;
+
+      const alreadyFormed = await this.arenaDAL.arenaExistsForBucket(
+        bucket.timezone, bucket.division, weekStart,
+      );
+
+      // Stragglers first: a real player always beats a synthetic one, and taking
+      // a bot's seat costs nothing and keeps the arena at exactly 25 (§ 5.3).
+      const unplaced = alreadyFormed
+        ? await this.seatStragglers(bucket, weekStart, forThisWeek)
+        : forThisWeek;
+      if (unplaced.length === 0) continue;
+
+      // Whatever is left is chunked among itself. For a fresh bucket that is the
+      // batch run; for a formed one it is a straggler remainder, which is
+      // geographically worse BY CONSTRUCTION — hence the distinct formationKind,
+      // so no cluster-quality metric ever averages the two together.
+      const kind: 'batch' | 'straggler' = alreadyFormed ? 'straggler' : 'batch';
+
+      for (const chunkMembers of clusterBucket({ ...bucket, candidates: unplaced })) {
         // One arena's failure must not abort the whole formation run.
         //
         // The realistic cause is uq_arena_member_live: a candidate still holds a
         // live membership in an arena that was never resolved (a cron outage).
-        // Without this guard the first such candidate throws and NOBODY in any
-        // remaining bucket gets an arena that week — one stale row denying the
-        // whole population. Losing one arena is bad; losing the week is worse.
+        // listUnseatedCandidates filters those out, so this is now a genuine
+        // last resort rather than the expected path — but the guard stays,
+        // because without it one bad row denies the whole population its week.
         try {
           const arena = await this.arenaDAL.createArenaWithMembers(
             {
@@ -375,6 +409,7 @@ export class ArenaService {
           console.error('[ARENA-SERVICE] failed to form one arena; continuing', {
             timezone: bucket.timezone,
             division: bucket.division,
+            kind,
             members: chunkMembers.length,
             error: (err as Error).message,
           });
@@ -383,6 +418,58 @@ export class ArenaService {
     }
 
     return created;
+  }
+
+  /**
+   * Seat late opt-ins into the free synthetic seats of a bucket that has already
+   * formed (§ 5.3 step 1). Returns the candidates that found no seat.
+   *
+   * Naive on purpose: re-clustering an entire bucket for one late arrival is not
+   * worth it, and a straggler taking a bot's chair costs the board nothing.
+   *
+   * At most two seat attempts per straggler. The first uses the arena we already
+   * hold; if that arena filled up underneath us, we re-ask once and stop. An
+   * unbounded retry loop here would be a spin against a bucket whose last seat
+   * was just taken by a concurrent pass.
+   */
+  private async seatStragglers(
+    bucket: { timezone: string; division: number },
+    weekStart: Date,
+    candidates: ArenaCandidate[],
+  ): Promise<ArenaCandidate[]> {
+    const unplaced: ArenaCandidate[] = [];
+    let target = await this.arenaDAL.findArenaWithFreeSeat(
+      bucket.timezone, bucket.division, weekStart,
+    );
+
+    for (const candidate of candidates) {
+      let seated = false;
+      try {
+        for (let attempt = 0; target && attempt < 2 && !seated; attempt++) {
+          seated = await this.arenaDAL.replaceSyntheticWithHuman(
+            target.id, candidate.userId, candidate.language,
+          );
+          if (!seated) {
+            // That arena is full now; the bucket may still hold another.
+            target = await this.arenaDAL.findArenaWithFreeSeat(
+              bucket.timezone, bucket.division, weekStart,
+            );
+          }
+        }
+      } catch (err) {
+        // One straggler's seating must not cost the others theirs. They fall
+        // through to the straggler chunk, which is a worse board but still a
+        // board.
+        console.error('[ARENA-SERVICE] failed to seat one straggler; continuing', {
+          userId: candidate.userId.substring(0, 8),
+          language: candidate.language,
+          error: (err as Error).message,
+        });
+      }
+      if (!seated) unplaced.push(candidate);
+    }
+
+    return unplaced;
   }
 
   /**
@@ -436,34 +523,6 @@ export class ArenaService {
     return seats;
   }
 
-  /**
-   * Place a late opt-in without re-running the algorithm (§ 5.3).
-   *
-   * A straggler is legal and gets a live arena at 04:00 like everyone else; what
-   * they do not get is a re-clustering of the whole bucket for one arrival.
-   * Preference order: take a bot's seat in an existing arena, else fall through
-   * to a straggler batch.
-   */
-  async placeStraggler(
-    userId: string,
-    language: string,
-    now = new Date(),
-  ): Promise<boolean> {
-    const division = await this.arenaDAL.getDivision(userId, language);
-    const user = await this.userLookup.findById(userId);
-    const tz = resolveTimezone(user?.timezone);
-    const weekStart = this.nextWeekStartFor(now, tz);
-
-    // A real player always beats a synthetic one, and it costs nothing.
-    const existing = await this.arenaDAL.arenaExistsForBucket(tz, division, weekStart);
-    if (!existing) return false;
-
-    const live = await this.arenaDAL.findLiveArenaForUser(userId, language);
-    if (live) return true; // already seated
-
-    return false; // caller falls through to a straggler formation run
-  }
-
   // ── Resolution ─────────────────────────────────────────────────────────────
 
   /**
@@ -480,10 +539,47 @@ export class ArenaService {
    * past their close instant and unresolved, and the new week tries to form on
    * top of them. Resolving first makes that self-healing rather than escalating.
    */
-  async tick(now = new Date()): Promise<{ resolved: number; formed: number }> {
+  async tick(now = new Date()): Promise<{ resolved: number; formed: number; stranded: number }> {
     const resolved = await this.resolveDue(now);
     const formed = await this.formArenas(now);
-    return { resolved, formed: formed.length };
+    const stranded = await this.countStranded(now);
+    return { resolved, formed: formed.length, stranded };
+  }
+
+  /**
+   * How many opted-in (user, language) pairs are STILL not in a live arena even
+   * though their week has already opened.
+   *
+   * This is the alarm the feature was missing. Both bugs this check exists for —
+   * a bucket frozen 36 hours early, and a straggler path that was never wired to
+   * a caller — produced a completely quiet failure: `formed 0` every hour, no
+   * error line, and the only visible symptom was a user asking why they were not
+   * on a board. A non-zero count here after 04:00 local means someone opted in
+   * and got nothing, which is never correct.
+   *
+   * Counted, not repaired. A repair would be a write on a path nobody is
+   * watching; the point is to make the next hour's log say so out loud.
+   */
+  private async countStranded(now: Date): Promise<number> {
+    const candidates = await this.arenaDAL.listUnseatedCandidates();
+    let stranded = 0;
+
+    for (const c of candidates) {
+      const weekStart = this.nextWeekStartFor(now, c.timezone);
+      // Not yet their formation window, or an expired opt-in for a past week —
+      // neither is a fault.
+      if (now.getTime() < weekStart.getTime()) continue;
+      if (c.optInWeek !== arenaWeekKey(weekStart, c.timezone)) continue;
+      stranded++;
+    }
+
+    if (stranded > 0) {
+      console.error('[ARENA-SERVICE] opted-in members are not in any live arena', {
+        stranded,
+        hint: 'their arena week has already opened; formation or straggler seating dropped them',
+      });
+    }
+    return stranded;
   }
 
   /**

@@ -21,6 +21,7 @@ function c(
     division: opts.division ?? 1,
     timezone: opts.timezone ?? 'America/New_York',
     geoCell: opts.geoCell === undefined ? 'dr5ru' : opts.geoCell,
+    optInWeek: opts.optInWeek ?? '2026-08-18',
   };
 }
 

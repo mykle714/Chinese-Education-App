@@ -5,12 +5,17 @@ friends. Each week you are placed into an **arena** — a cluster of 25 players 
 division, a timezone and (where known) a rough geographic neighbourhood — and ranked by
 the **minutes you earn while that arena is live**. Top 5 promote, bottom 5 demote.
 
-**Status: BUILT ON DEV — not yet deployed to prod.** Migration 146 is applied to the dev
-database and the full backend and client are implemented and tested (625 tests pass across
-the repo). Every design question in § 11 was answered before implementation began.
+**Status: LIVE ON PROD** since 2026-08-16 (migration 146; the `cow-arena` hourly timer is
+installed and armed). Every design question in § 11 was answered before implementation began.
 
-Deployed to prod 2026-08-16 (migration 146; the `cow-arena` hourly timer is installed and
-armed). What is NOT done: the
+⚠️ **The first prod week (2026-08-18) formed wrong** and the two causes are fixed but **not
+yet deployed** — see § 5.3. Formation had no time gate, so it fired ~31 hours early and
+locked four real users out of the week; the straggler path that should have caught them was
+never wired to a caller. Both were invisible in the logs, which is why `tick()` now returns a
+`stranded` count (§ 10). The affected week's arenas were left as they formed — no prod rows
+were edited.
+
+What is NOT done: the
 `src/components/leaderboard/` extraction owed to
 [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) — Arena ships with its own row component and
 that shared extraction is still outstanding (§ 12).
@@ -528,6 +533,37 @@ The one-hour lead is a **budget, not a measurement** — the sort is fast enough
 could run at 03:55, and the margin exists so a slow run or a retry cannot miss the
 boundary.
 
+#### ⚠️ Forming EARLY is a lockout, not a harmless head start
+
+Running the snapshot before 03:00 is not "the same thing, sooner". Formation is what makes
+`arenaExistsForBucket` true, and that flag closes the bucket to **every subsequent opt-in of
+the break**. A bucket formed on Sunday evening therefore contains whoever happened to have
+joined by Sunday evening, and everyone who joins across the remaining ~31 hours is skipped —
+with no error, because a skipped bucket and a quiet hour both log `formed 0`.
+
+**This happened on prod, 2026-08-17.** `arenaFormationAt()` was written, exported, and never
+called by anything: `formArenas` had no time gate at all, so it fired on the first hourly
+tick that saw any candidate — 21:06 local Sunday. The `America/Los_Angeles` division-1 bucket
+froze around 55 seeded test accounts, and the four real users who opted in later that break
+spent the week in no arena at all.
+
+The gate is now the first thing `formArenas` does per bucket
+(`server/services/ArenaService.ts` → `formArenas`, against
+`server/shared/arenaWeek.ts` → `arenaFormationAt`), and the regression is pinned at the exact
+instant it occurred in `server/__tests__/arenaFormation.test.ts`.
+
+#### A candidate's week key is read in the CANDIDATE's timezone
+
+`user_languages."arenaOptInWeek"` is written by `ArenaService.optIn` as the Tuesday date **in
+the opting user's zone**, so it is only meaningful against a week start computed in that same
+zone. Formation therefore lists *all* opt-ins (`ArenaDAL.listUnseatedCandidates`) and matches
+each one against `arenaWeekKey(weekStart, bucket.timezone)` inside the bucket loop, rather
+than filtering by one server-side "current week" in SQL. The earlier shape asked the DAL for
+`nextArenaWeekKey(now, 'UTC')` — a single UTC key applied to every bucket, which is wrong for
+any zone far enough from UTC to be in a different arena week at the same instant, and which
+additionally goes stale the moment 04:00 passes, hiding exactly the stragglers the next tick
+is supposed to seat.
+
 #### Stragglers — naive placement, still a full 04:00 contract
 
 Anyone who opts in **between the snapshot and 04:00** is legal and gets a live arena at
@@ -537,10 +573,32 @@ order:
 
 1. **Into the bucket's last, partly-empty arena**, at the seat a bot would otherwise take.
    A real player is always better than a synthetic one, and this costs nothing.
+   (`ArenaDAL.findArenaWithFreeSeat` picks it — newest arena of the bucket first, because
+   chunking fills each arena to 25 before opening the next (§ 5.4), so the newest one *is*
+   the remainder — then `ArenaDAL.replaceSyntheticWithHuman` takes the chair.)
 2. **If no partial arena exists**, stragglers accumulate and are chunked among themselves
    by `geoCell` — the same sort, just over a much smaller set, so it is naive only in the
    sense that it cannot see the already-placed candidates.
 3. **Padded with synthetic members** to 25, exactly like a batch arena (§ 6).
+
+**There is no separate straggler entry point.** Whether a bucket gets the batch path or the
+straggler path is decided *per bucket*, inside `formArenas`, from whether its arenas already
+exist — because no caller could know: one tick is routinely the batch run for one timezone
+and the straggler run for another in the same second. `formArenas` consequently takes no
+`kind` argument; `formationKind` is derived.
+
+⚠️ **The straggler path must only ever see UNSEATED candidates.** `createArenaWithMembers`
+inserts all 25 members in one statement with no `ON CONFLICT`, so a single candidate who
+already holds a live seat violates `uq_arena_member_live` and fails the **whole arena**. That
+filter is `NOT EXISTS` inside `ArenaDAL.listUnseatedCandidates`, mirroring the unique index
+column-for-column, rather than a check in the service — a candidate that survives the query
+cannot collide on insert.
+
+The straggler path was **written and then never wired up** (found 2026-08-17):
+`ArenaService.placeStraggler` and `ArenaDAL.replaceSyntheticWithHuman` had no callers, and
+`formArenas(now, 'straggler')` was never invoked, so late opt-ins had nothing to catch them.
+`placeStraggler` has since been deleted — its logic lives in the bucket loop, where the
+timezone, division and week start are already in hand.
 
 So a bucket generally ends with **two** partly-synthetic arenas rather than one: the batch
 remainder and the straggler remainder. That is accepted — the alternative is holding
@@ -937,9 +995,9 @@ No change to `userminutepoints` or any vet table.
 | Layer | File | Responsibility |
 |---|---|---|
 | Contract | `server/contracts/wire.ts` | `ARENA_SIZE = 25`, `ARENA_DIVISION_COUNT = 12`, `ARENA_PROMOTE_COUNT = 5`, `ARENA_RELEGATE_COUNT = 5`, boundary constants |
-| Shared | `server/shared/arenaWeek.ts` | the Tuesday-04:00 / Sunday-16:00 boundary maths, mirrored to `src/utils/` like `streakDay` is, so the countdown can never disagree with the server |
-| DAL | `server/dal/{interfaces,implementations}/ArenaDAL` | `arenas` + `arena_members`. **No policy** |
-| Service | `server/services/ArenaService.ts` | board reads, opt-in policy, `creditMinutes`, formation, resolution, synthetic curve |
+| Shared | `server/shared/arenaWeek.ts` | the Tuesday-04:00 / Sunday-16:00 boundary maths, mirrored to `src/utils/` like `streakDay` is, so the countdown can never disagree with the server. `arenaFormationAt` is the gate `formArenas` gets its window from — see the § 5.3 warning about what happened while nothing called it |
+| DAL | `server/dal/{interfaces,implementations}/ArenaDAL` | `arenas` + `arena_members`. **No policy**. `listUnseatedCandidates` (opt-ins holding no live seat) and `findArenaWithFreeSeat` are the two formation reads |
+| Service | `server/services/ArenaService.ts` | board reads, opt-in policy, `creditMinutes`, formation (`formArenas` + `seatStragglers`), resolution, the `countStranded` alarm, synthetic curve |
 | Service | `server/services/MinutePointsService.ts` | one new call into `ArenaService.creditMinutes` (§ 4.1) |
 | Controller | `server/controllers/ArenaController.ts` | HTTP edge only |
 | Routes | `server/routes/arenaRoutes.ts` | ⚠️ static segments above any `/:id`, as in `friendRoutes` |
@@ -974,6 +1032,28 @@ resolves before forming, and each arena's creation is individually guarded so on
 costs one arena rather than the week. The scenario is not hypothetical — it is exactly what
 a cron outage produces.
 
+### `stranded` — the alarm that was missing
+
+Every failure this feature has actually had was **silent**. A bucket frozen 31 hours early
+and a straggler path with no caller both produce `formed 0`, which is also what a correct
+quiet hour produces. Nothing threw, nothing was logged, and the first signal was a user
+asking why they were not on a board — five days into the week, when it was too late to fix.
+
+So each pass now ends by counting the thing that should be impossible:
+`ArenaService.countStranded` — opted-in (user, language) pairs whose arena week **has already
+opened** and who hold no live seat. Zero is the only correct value after 04:00 local.
+
+* It is **counted, not repaired**. A repair would be an unattended write on a path nobody is
+  watching; the job here is to make the next hour's log say so out loud.
+* `arena-cron.ts` logs it *and* **exits non-zero**, so a non-zero count reaches
+  `systemctl --user status cow-arena` and `journalctl --user -u cow-arena` rather than only
+  the log file. (This is why `main()` exits with `process.exitCode` instead of a hard `0`.)
+* It rides on `tick()`'s return value, so `POST /api/arena/admin/tick` and
+  `server/scripts/arena-tick.ts` report it too.
+
+Members still inside their formation window, and stale opt-ins naming a past week, are **not**
+stranded and are not counted — neither is a fault.
+
 ### The cron is the risky part
 
 Formation and resolution are **the only writes that must not run twice**. Both are
@@ -993,8 +1073,8 @@ The `cow-arena` **systemd user timer**, a sibling of the existing `cow-maintenan
 installed by `database/cron/install-timers.sh` (renamed from `install-maintenance-timer.sh`
 when this second schedule arrived; it now installs both, and `/deploy` runs it every
 deploy). Verify with `systemctl --user list-timers cow-arena.timer --no-pager` and
-`tail logs/arena-cron.log` (expect `arena-cron: done — resolved N, formed M`); force a
-pass with `systemctl --user start cow-arena.service`.
+`tail logs/arena-cron.log` (expect `arena-cron: done — resolved N, formed M, stranded 0`);
+force a pass with `systemctl --user start cow-arena.service`.
 
 Three decisions worth keeping:
 

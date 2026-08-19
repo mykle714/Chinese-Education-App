@@ -8,7 +8,7 @@ import { requireUserId, handleControllerError } from '../utils/controllerUtils.j
  *   GET    /api/arena              → ArenaBoardResponse
  *   POST   /api/arena/optIn        → { weekKey }
  *   DELETE /api/arena/optIn        → 204
- *   POST   /api/arena/admin/tick   → { formed, resolved }  (dev/admin only)
+ *   POST   /api/arena/admin/tick   → { formed, resolved, stranded }  (dev/admin only)
  *
  * LAYER: controller. Extracts the caller and their language/timezone, hands off
  * to ArenaService, maps thrown errors via handleControllerError. No policy here
@@ -100,6 +100,11 @@ export class ArenaController {
    * Gated to validators, who are the closest thing to an admin role this app
    * has. It is idempotent — formation checks arenaExistsForBucket and resolution
    * guards on `resolvedAt IS NULL` — so a double tap is harmless.
+   *
+   * A non-zero `stranded` in the response means opted-in members whose week has
+   * already opened are in no arena — always a bug (ArenaService.countStranded).
+   * It is reported rather than thrown: the tick itself succeeded, and the count
+   * is a diagnostic about the state it found.
    */
   async adminTick(req: Request, res: Response): Promise<void> {
     try {

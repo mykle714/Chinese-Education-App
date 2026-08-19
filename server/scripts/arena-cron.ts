@@ -35,16 +35,32 @@ async function main() {
   // log file, so a bare message cannot be tied back to the hour it came from.
   console.log(`[${startedAt.toISOString()}] arena-cron: start`);
 
-  const { resolved, formed } = await arenaService.tick(startedAt);
+  const { resolved, formed, stranded } = await arenaService.tick(startedAt);
 
   const elapsedMs = Date.now() - startedAt.getTime();
   console.log(
-    `[${new Date().toISOString()}] arena-cron: done — resolved ${resolved}, formed ${formed} (${elapsedMs}ms)`,
+    `[${new Date().toISOString()}] arena-cron: done — resolved ${resolved}, formed ${formed}, ` +
+      `stranded ${stranded} (${elapsedMs}ms)`,
   );
+
+  // `stranded` is the count of opted-in members whose week has opened and who are
+  // in no arena — always a bug (see ArenaService.countStranded). It is logged
+  // here AND exits non-zero so it reaches `systemctl --user status cow-arena`
+  // rather than only this file: the failure it detects is otherwise silent, and
+  // a silent failure in this job costs a user their whole week.
+  if (stranded > 0) {
+    console.error(
+      `[${new Date().toISOString()}] arena-cron: ${stranded} opted-in member(s) have no live arena`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 main()
-  .then(() => process.exit(0))
+  // `process.exitCode` rather than a hard 0: main() sets it to 1 when the pass
+  // detected stranded members, and an unconditional exit(0) here would erase
+  // exactly the signal the systemd unit is watching for.
+  .then(() => process.exit(process.exitCode ?? 0))
   .catch((err) => {
     // The pg pool holds the event loop open, so an explicit exit is required in
     // both directions — without it a successful run would hang the systemd unit

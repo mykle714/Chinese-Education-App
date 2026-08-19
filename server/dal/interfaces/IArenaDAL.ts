@@ -9,6 +9,16 @@ export interface ArenaCandidate {
   timezone: string;
   /** 5-char geohash cell, or null for the location-less pool (§ 5.2a). */
   geoCell: string | null;
+  /**
+   * The week key this candidate opted into (`user_languages."arenaOptInWeek"`,
+   * YYYY-MM-DD), as written by ArenaService.optIn IN THE USER'S OWN TIMEZONE.
+   *
+   * Returned rather than filtered on in SQL because the key is only meaningful
+   * against the candidate's own zone: two users in different zones can be in
+   * different arena weeks at the same instant, so one server-side "current week"
+   * cannot filter both correctly. The service compares it per (timezone) bucket.
+   */
+  optInWeek: string;
 }
 
 /** A member to be inserted at formation — either a human or a bot, never both. */
@@ -57,11 +67,24 @@ export interface IArenaDAL {
   listMembers(arenaId: string, client?: PoolClient): Promise<ArenaMember[]>;
 
   /**
-   * Every (user, language) opted into `weekKey`, with the three clustering
-   * inputs. Ordered by (timezone, division) so the service can bucket without
-   * a second pass.
+   * Every (user, language) holding an opt-in and NOT currently seated in a live
+   * arena, with the clustering inputs and the week they opted into. Ordered by
+   * (timezone, division, geoCell) so the service can bucket without a second
+   * pass.
+   *
+   * ── Why "unseated" is part of the query, not a later filter ────────────────
+   * This one list serves BOTH halves of formation: the batch run (where nobody
+   * in the bucket is seated yet) and the straggler run (where most of the bucket
+   * already is). Excluding live members in SQL is also the only cheap defence
+   * against the hazard `createArenaWithMembers` cannot survive: a candidate who
+   * still holds a live seat makes the multi-row member INSERT violate
+   * uq_arena_member_live, which fails the WHOLE arena, not just that row.
+   *
+   * Stale opt-ins for past weeks are returned too and are discarded by the
+   * service's per-bucket week check — the opt-in column is self-expiring by
+   * design (§ 8) and has no cleanup job to lean on.
    */
-  listCandidates(weekKey: string, client?: PoolClient): Promise<ArenaCandidate[]>;
+  listUnseatedCandidates(client?: PoolClient): Promise<ArenaCandidate[]>;
 
   /** Arenas past their close instant that have not been resolved yet. */
   listUnresolvedArenas(asOf: Date, client?: PoolClient): Promise<Arena[]>;
@@ -73,6 +96,21 @@ export interface IArenaDAL {
     weekStartsAt: Date,
     client?: PoolClient,
   ): Promise<boolean>;
+
+  /**
+   * The bucket's most recent unresolved arena that still holds a synthetic seat,
+   * or null when every arena in the bucket is full of humans (§ 5.3 step 1).
+   *
+   * Most recent first because chunking fills each arena to 25 before opening the
+   * next (§ 5.4), so the newest arena of a bucket is the partly-empty remainder —
+   * the one a straggler should land in.
+   */
+  findArenaWithFreeSeat(
+    timezone: string,
+    division: number,
+    weekStartsAt: Date,
+    client?: PoolClient,
+  ): Promise<Arena | null>;
 
   // ── Writes ─────────────────────────────────────────────────────────────────
 

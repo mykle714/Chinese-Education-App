@@ -120,8 +120,7 @@ export class ArenaDAL implements IArenaDAL {
     return rows;
   }
 
-  async listCandidates(weekKey: string, client?: PoolClient): Promise<ArenaCandidate[]> {
-    this.requireId(weekKey, 'weekKey');
+  async listUnseatedCandidates(client?: PoolClient): Promise<ArenaCandidate[]> {
     // Ordered so the service can walk buckets without re-sorting. geoCell is the
     // locality-preserving sort key (§ 5.1) — a geohash is a space-filling curve,
     // so consecutive runs are geographically tight runs.
@@ -129,14 +128,29 @@ export class ArenaDAL implements IArenaDAL {
     // NULLS LAST is explicit rather than incidental: the location-less pool must
     // be a group of its own, and relying on the collation's NULL ordering here is
     // exactly the bug § 5.2a warns about.
+    //
+    // The NOT EXISTS is the unseated filter (see IArenaDAL for why it lives in
+    // the query). It mirrors uq_arena_member_live exactly — same three columns,
+    // same predicate — so a candidate that survives it cannot collide on insert.
+    //
+    // "arenaOptInWeek" is returned as a TEXT day key rather than a Date because
+    // it is an IDENTITY, not an instant (§ 8): handing it back as a timestamp
+    // would invite a caller to compare it in the server's zone, which is the one
+    // zone that has nothing to do with the answer.
     const { rows } = await this.run<ArenaCandidate>(client, (c) =>
       c.query(
-        `SELECT ul."userId", ul.language, ul.division, u.timezone, u."geoCell"
+        `SELECT ul."userId", ul.language, ul.division, u.timezone, u."geoCell",
+                TO_CHAR(ul."arenaOptInWeek", 'YYYY-MM-DD') AS "optInWeek"
          FROM user_languages ul
          JOIN users u ON u.id = ul."userId"
-         WHERE ul."arenaOptInWeek" = $1::date
+         WHERE ul."arenaOptInWeek" IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM arena_members m
+             WHERE m."userId" = ul."userId"
+               AND m.language = ul.language
+               AND m."isLive"
+           )
          ORDER BY u.timezone, ul.division, u."geoCell" NULLS LAST, ul."userId"`,
-        [weekKey],
       ),
     );
     return rows;
@@ -170,6 +184,38 @@ export class ArenaDAL implements IArenaDAL {
       ),
     );
     return rows[0]?.exists === true;
+  }
+
+  async findArenaWithFreeSeat(
+    timezone: string,
+    division: number,
+    weekStartsAt: Date,
+    client?: PoolClient,
+  ): Promise<Arena | null> {
+    // "createdAt DESC" is the § 5.3 rule, not a tie-break: chunking fills each
+    // arena to 25 humans before opening the next (§ 5.4), so a bucket's newest
+    // arena is its partly-empty remainder and is where a straggler belongs.
+    //
+    // "resolvedAt IS NULL" guards the case where a straggler pass runs against a
+    // week that has already closed — seating someone into a finished board would
+    // hand them a live membership on an arena nobody is racing in.
+    const { rows } = await this.run<Arena>(client, (c) =>
+      c.query(
+        `SELECT ${ARENA_ROW} FROM arenas a
+         WHERE a.timezone = $1
+           AND a.division = $2
+           AND a."weekStartsAt" = $3
+           AND a."resolvedAt" IS NULL
+           AND EXISTS (
+             SELECT 1 FROM arena_members m
+             WHERE m."arenaId" = a.id AND m."userId" IS NULL
+           )
+         ORDER BY a."createdAt" DESC
+         LIMIT 1`,
+        [timezone, division, weekStartsAt],
+      ),
+    );
+    return rows[0] ?? null;
   }
 
   // ── Writes ─────────────────────────────────────────────────────────────────

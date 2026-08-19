@@ -62,13 +62,17 @@ async function main() {
     await seedOptIns(now);
   }
 
-  const candidates = await arenaDAL.listCandidates(nextArenaWeekKey(now, 'UTC'));
-  console.log(`  candidates: ${candidates.length}`);
+  // Unseated == opted in and holding no live seat, so this counts the work the
+  // pass COULD do, not everyone who opted in. Most of them are usually gated out
+  // by the formation window rather than being placeable right now.
+  const candidates = await arenaDAL.listUnseatedCandidates();
+  console.log(`  unseated:   ${candidates.length}`);
 
   // Resolve BEFORE forming — see ArenaService.tick for why the order matters.
-  const { resolved, formed } = await arenaService.tick(now);
+  const { resolved, formed, stranded } = await arenaService.tick(now);
   console.log(`  resolved:   ${resolved} arena(s)`);
   console.log(`  formed:     ${formed} arena(s)`);
+  console.log(`  stranded:   ${stranded} member(s)  ${stranded > 0 ? '<-- BUG: their week is live and they have no arena' : ''}`);
 
   console.log('=== done ===');
   process.exit(0);

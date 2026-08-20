@@ -5,8 +5,9 @@
 -- both run against the same schema, so this migration and the app restart must land
 -- together. The standard /deploy order (compose up --build, then migrate) leaves a
 -- few seconds where the NEW code sees the OLD column and every challenge read 500s.
--- With the feature not yet live on prod that window is harmless — see
--- docs/STUDY_CHALLENGE_DEPLOY_RUNBOOK.md, which sequences 148 + 150 together.
+-- With the feature not yet live on prod that window was harmless. Applied on prod
+-- 2026-08-17 BEFORE the container rebuild (a rename has no both-versions-work window),
+-- together with 148. Its deploy runbook has since been retired.
 --
 -- ── THE BUG THIS FIXES ───────────────────────────────────────────────────────
 -- 148 stored the week as the CHALLENGER'S Monday 04:00 local, as a UTC instant.

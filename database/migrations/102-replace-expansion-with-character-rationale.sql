@@ -25,8 +25,11 @@
 -- like `breakdown`, `classifier`, and `definitionClusters` (the dictJoin substitutes a
 -- typed NULL for the es UNION branch).
 --
--- Written by server/scripts/backfill/chinese/backfill-character-rationale.js.
--- See docs/CHARACTER_RATIONALE.md.
+-- Was to be written by server/scripts/backfill/chinese/backfill-character-rationale.js.
+-- NOTE (added later): that script was never written, nor was the CHARACTER_RATIONALE
+-- design doc named in the COMMENT ON COLUMN below. Migration 111 drops this column
+-- again, so that comment no longer exists in the database. Nothing in server/ or src/
+-- reads characterRationale.
 --
 -- Idempotent: safe to re-run.
 --

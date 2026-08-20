@@ -284,7 +284,7 @@ Consequences worth stating before anyone builds it:
   before Sunday 16:00 but delivered after it is **not** counted. Accepted: the alternative
   (trusting a client-supplied timestamp) is worse, and the app syncs continuously.
 * It makes the sync path depend on the arena domain. Keep the dependency one-way —
-  `MinutePointsService` calls into `ArenaService.creditMinutes(userId, language, minutes)`,
+  `UserMinutePointsService` calls into `ArenaService.creditMinutes(userId, language, minutes)`,
   which is a no-op when there is no live membership, and **never** the reverse.
 * It is the only reason the board can be read with a single indexed query on
   `arena_members` rather than a grouped scan of the minute table per render.
@@ -1005,7 +1005,7 @@ No change to `userminutepoints` or any vet table.
 | Shared | `server/shared/arenaWeek.ts` | the Tuesday-04:00 / Sunday-16:00 boundary maths, mirrored to `src/utils/` like `streakDay` is, so the countdown can never disagree with the server. `arenaFormationAt` is the gate `formArenas` gets its window from — see the § 5.3 warning about what happened while nothing called it |
 | DAL | `server/dal/{interfaces,implementations}/ArenaDAL` | `arenas` + `arena_members`. **No policy**. `listUnseatedCandidates` (opt-ins holding no live seat) and `findArenaWithFreeSeat` are the two formation reads |
 | Service | `server/services/ArenaService.ts` | board reads, opt-in policy, `creditMinutes`, formation (`formArenas` + `seatStragglers`), resolution, the `countStranded` alarm, synthetic curve |
-| Service | `server/services/MinutePointsService.ts` | one new call into `ArenaService.creditMinutes` (§ 4.1) |
+| Service | `server/services/UserMinutePointsService.ts` | one new call into `ArenaService.creditMinutes` (§ 4.1) |
 | Controller | `server/controllers/ArenaController.ts` | HTTP edge only |
 | Routes | `server/routes/arenaRoutes.ts` | ⚠️ static segments above any `/:id`, as in `friendRoutes` |
 | Cron | `server/scripts/arena-cron.ts` + `database/cron/cow-arena.{service,timer}.template` | the `cow-arena` systemd user timer, hourly at **HH:06**: resolve any arena past Sun 16:00, then form for any timezone crossing Tue 04:00 |

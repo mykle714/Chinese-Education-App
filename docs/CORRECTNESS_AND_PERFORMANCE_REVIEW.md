@@ -373,8 +373,8 @@ grep -rn "}, \[.*\btoken\b" src --include=*.ts --include=*.tsx | wc -l   # 17 at
 > token arrays, now route through it; `console.error` calls were left as real errors.
 > Bubble Match's two per-mark logs were deleted with finding 3. 57 → 26.
 
-`src/games/bubble-match/BubbleMatchPage.tsx` and `:299` log every single mark and its
-HTTP status. One console write per bubble matched, shipped. App-wide there are **59**
+`src/games/bubble-match/BubbleMatchPage.tsx` logged every single mark and its
+HTTP status, in two places. One console write per bubble matched, shipped. App-wide there are **59**
 `console.log` calls in `src/`.
 
 ```bash
@@ -469,7 +469,7 @@ binary in git history, and it is not obvious which copy the import scripts read.
 
 Recorded so a future reader does not re-audit these.
 
-- **Security posture.** `helmet()` (`server/server.ts`), configured CORS (`:48`), and
+- **Security posture.** `helmet()` (`server/server.ts`), configured CORS (same file, the `app.use(cors({...}))` block), and
   four purpose-built limiters in `server/middleware/rateLimits.ts` (auth, refresh,
   diagnostics, proxy) attached to the matching route files.
 - **No SQL injection.** All 98 template-literal interpolation sites in `server/dal` and

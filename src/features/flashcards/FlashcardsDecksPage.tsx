@@ -1,32 +1,23 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
-import {
-    Box, Alert, Button, Snackbar,
-    Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-} from "@mui/material";
+import { Box, Alert, Button, Snackbar } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import MobileTabScreen from "../../components/MobileTabScreen";
 import SheetPanel, { type SheetPanelBodyHandle } from "./FlashcardsLearnPage/SheetPanel";
-import DecksSheetBody from "./DecksSheetBody";
-import { useAuth } from "../../AuthContext";
+import DecksPanelBody from "./DecksPanelBody";
+import NewDeckDialog from "./NewDeckDialog";
+import { useDecksPanel } from "./useDecksPanel";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { useCategoryCounts } from "../../hooks/useCategoryCounts";
-import { useMasteredCounts } from "../../hooks/useMasteredCounts";
-import type { MasteryGoals } from "../../utils/masteryCompute";
 import {
-    builtinCollectionCount, builtinCollectionEntries, hasMasteredSection,
-} from "./builtinCollections";
+    activeMasteryCenters, MASTERY_CENTER_PATHS, MASTERY_CENTER_BUTTON_LABELS,
+} from "./masteryCenters";
+import { MARK_TYPE_COLORS } from "../../utils/masteryCompute";
 import {
     FLOATING_FOOTER_HEIGHT, FLOATING_FOOTER_INSET, FLOATING_FOOTER_EXTRA_GAP,
     FLOATING_FOOTER_CLEARANCE,
 } from "../../components/MobileFooter";
-import { fetchDecks, createDeck, type DeckSummary } from "../../api/decks";
-import { fetchCollectionCards } from "../../api/collections";
-import { ALL_COLLECTION_ID } from "../../../server/contracts/wire";
 import type { VocabEntry } from "../../types";
-import { filterVocabEntries } from "../../utils/vocabSearch";
-import { sortVocabEntries, defaultSortKey, type VocabSortKey } from "../../utils/vocabSort";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
@@ -41,20 +32,28 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 //
 // The page is now split across TWO surfaces:
 //
-//   PAGE (behind)  — the Review / Study Mix / Challenge row: whole-library study
-//                    entry points, always reachable without moving anything.
+//   PAGE (behind)  — the study-entry buttons: Review / Challenge, the Study Mix
+//                    slab, and (when the account pursues them) the Reading and
+//                    Writing Center buttons. Always reachable without moving anything.
 //   SHEET (front)  — a PERSISTENT pull-up panel holding every SET of cards:
-//                    Cards, Mastered, Challenges and the user's Decks, and BELOW
-//                    them the learner's whole card library as a searchable grid.
-//                    It rests just above the floating footer, showing its grabber
-//                    and the first caption, and is dragged up to browse (see
-//                    DecksSheetBody for the sections themselves).
+//                    Collections, Challenges and the user's Decks, and BELOW them the
+//                    learner's whole card library as a searchable grid. It rests just
+//                    above the floating footer, showing its grabber and the first
+//                    caption, and is dragged up to browse (see DecksPanelBody).
+//
+// ── This page is the CORE bar, and only the core bar ─────────────────────────
+// Every figure behind the sheet and inside it answers one question: how well does the
+// learner KNOW these words (recognition + production). Reading and writing have their
+// own pages — the Mastery Centers, opened from the two buttons under Study Mix — which
+// render this very same panel through their own bar (masteryCenters.ts,
+// docs/DECKS_FEATURE.md § "Mastery Centers"). Do not put a per-skill tile, count or
+// sort row back on this page: that split is the whole point of the Centers.
 //
 // The "All Cards" TILE is deliberately absent from the sheet's Collections row:
 // its grid is rendered inline at the bottom of the sheet instead, so finding a
 // single card costs no navigation. The collection itself is untouched — its route
 // (/flashcards/collection/all) and its entry in the shared list still exist, since
-// the Games hub offers it as a playable set. Only this surface hides the tile.
+// the Games hub offers it as a playable set. Only the panel hides the tile.
 //
 // The sheet is the SAME component as the eip bottom sheet on flp — `SheetPanel`,
 // in persistent mode (`minHeight` > 0, no scrim), so the resize/fling/scroll
@@ -70,7 +69,9 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 //
 // WHICH built-in collections exist is NOT decided here: `builtinCollections.ts` owns
 // the list, its order, its colors and its grouping, because the Games hub's
-// collection selector renders the same list and this page is its source of truth.
+// collection selector renders a sibling list. The panel's DATA is not owned here
+// either — `useDecksPanel(lens)` owns every fetch and derivation, so this page and
+// both Centers cannot drift.
 //
 // Phone-frame sizing comes from MobileDemoFrame via Layout.tsx; the header comes
 // from MobileTabScreen — which is now NON-scrolling (`scrollable={false}`), because
@@ -198,6 +199,28 @@ const ChallengeButton = styled(Button, {
     shouldForwardProp: (prop) => prop !== "greyed",
 })<{ greyed?: boolean }>(({ greyed }) => difficultyButtonStyle(greyed, COLORS.redAccent, "#EBA6B9"));
 
+// Reading / Writing Center buttons. A skill-accent pair on their own row UNDER the
+// Study Mix slab, so the column reads top-to-bottom as: how hard (Review/Challenge) →
+// the everyday session (Study Mix) → which SKILL (Reading/Writing). They are a
+// different kind of destination from the three above them — a place to look at your
+// library, not a session to start — which is why they sit below the slab rather than
+// joining the difficulty row.
+//
+// Colored by MARK TYPE, not by band: reading is red and writing is yellow everywhere
+// in the app (MARK_TYPE_COLORS, docs/MASTERY_REWORK.md § 5), and these buttons open
+// the pages those two colors annotate.
+const CenterButton = styled(Button)<{ accent: string }>(({ accent }) => ({
+    ...studyButtonBase,
+    flex: 1,
+    // A shorter button than the difficulty row above: this row is taking its height
+    // out of the Study Mix slab, and the slab is the page's primary target.
+    padding: "12px 16px",
+    fontSize: SIZE.body,
+    color: COLORS.onSurface,
+    backgroundColor: accent,
+    "&:hover": { backgroundColor: accent, filter: "brightness(0.96)" },
+}));
+
 // Main Component
 const FlashcardsDecksPage: React.FC = () => {
     usePageTitle("Decks");
@@ -205,133 +228,22 @@ const FlashcardsDecksPage: React.FC = () => {
     // Collection pages are node drill-ins that slide over this page, so they use
     // the view-transition navigate and Decks is held beneath. See useSlideNavigate.
     const slideNavigate = useSlideNavigate();
-    const { isAuthenticated, user } = useAuth();
-    // Per-category library card counts, driving the two collection rows' figures
-    // and the Review eligibility check. These count SORTED cards only — never the
-    // temporary cards a game may have lent (docs/PROVISIONAL_CARDS.md), so the
-    // sizes shown here always mean "cards you chose to keep".
-    const { counts: categoryCounts } = useCategoryCounts();
-    // Mastered totals per mastery bar, for the up-to-three Mastered rows below
-    // (docs/MASTERY_REWORK.md § "Three bars"). The core figure comes from here rather
-    // than from categoryCounts["Mastered"] so all three rows read from one source and
-    // cannot disagree.
-    const { counts: masteredCounts } = useMasteredCounts();
-    // The account's goals decide BOTH which Mastered collections exist (core always,
-    // reading/writing only when that goal is set — the same gate as the card bars
-    // themselves) and whether Mastered is its own captioned section at all.
-    // Memoized: a fresh object each render would invalidate the sort control's own
-    // bundle memo (and the entries list below) on every unrelated re-render.
-    const goals: MasteryGoals = useMemo(
-        () => ({ reading: user?.readingGoal === true, writing: user?.writingGoal === true }),
-        [user?.readingGoal, user?.writingGoal]
-    );
-    // The built-in collections, already grouped. Shared with the Games hub selector
-    // (builtinCollections.ts) so the two surfaces cannot offer different sets.
-    const builtins = builtinCollectionEntries(goals);
-    // …minus All Cards, whose grid this page now renders inline at the bottom of the
-    // sheet (see the header note). Filtered HERE rather than removed from
-    // builtinCollections.ts, because the Games hub still lists it as a playable set.
-    const collectionsSection = builtins.filter(
-        (entry) => entry.group === "Collections" && entry.ref.kind !== "all"
-    );
-    const masteredSection = builtins.filter((entry) => entry.group === "Mastered");
-    const showMasteredSection = hasMasteredSection(goals);
+    // The whole panel, through the CORE lens — this page's one question. Every fetch,
+    // count and ordering behind the sheet lives in the hook, shared verbatim with the
+    // two Mastery Centers (useDecksPanel.ts).
+    const panel = useDecksPanel("core");
+    // Which Center buttons this account gets: one per goal it has set. Read off the
+    // panel's memoized goals rather than `user` again, so the two cannot disagree.
+    const centers = activeMasteryCenters(panel.goals);
     // Body of the persistent sets sheet; SheetPanel reads {root, scroll} off this
     // handle to wire its resize/scroll coupling.
     const sheetBodyRef = useRef<SheetPanelBodyHandle | null>(null);
     // Toast shown when a greyed Review button is tapped (no eligible cards yet).
     const [markMoreSnackOpen, setMarkMoreSnackOpen] = useState(false);
-
-    // The user's decks in their current language.
-    const [decks, setDecks] = useState<DeckSummary[]>([]);
-    // `/api/decks` returns BOTH kinds since migration 148, so the page splits them:
-    // generated ("preset") decks get their own captioned section ABOVE the user's own,
-    // which is what keeps a new challenge from shuffling the authored decks the user
-    // knows the position of. See docs/STUDY_CHALLENGE.md § 4.
-    const challengeDecks = decks.filter((deck) => deck.editMode === "preset");
-    const authoredDecks = decks.filter((deck) => deck.editMode !== "preset");
-    const [decksLoading, setDecksLoading] = useState(true);
-    const [decksError, setDecksError] = useState<string | null>(null);
-    // ── The sheet's inline card library ──────────────────────────────────────
-    // The "all" collection — every SORTED card, mastered or not — loaded once per
-    // visit and searched client-side, which is how /decks worked before the
-    // collection pages existed. It is a single indexed read and the grid paces its
-    // own reveal (MiniVocabCardGrid), so it costs the sheet nothing while folded.
-    const [cards, setCards] = useState<VocabEntry[]>([]);
-    const [cardsLoading, setCardsLoading] = useState(true);
-    const [cardsError, setCardsError] = useState<string | null>(null);
-    const [cardsSearch, setCardsSearch] = useState("");
-    // Ordering of that grid. Held per-visit rather than persisted, the same rule the
-    // collection page follows: it is a way of LOOKING at the set, not a property of
-    // it. `false` = not a deck, so the default is card age ("Recently added").
-    const [cardsSortKey, setCardsSortKey] = useState<VocabSortKey>(() => defaultSortKey(false));
-
     const [newDeckOpen, setNewDeckOpen] = useState(false);
-    const [newDeckName, setNewDeckName] = useState("");
-    const [createError, setCreateError] = useState<string | null>(null);
 
-    const loadDecks = useCallback(async () => {
-        try {
-            setDecksLoading(true);
-            setDecksError(null);
-            setDecks(await fetchDecks());
-        } catch (err: unknown) {
-            console.error("Error loading decks:", err);
-            setDecksError(err instanceof Error ? err.message : "Could not load your decks");
-        } finally {
-            setDecksLoading(false);
-        }
-    }, []);
-
-    // Keyed on isAuthenticated — the stable auth-presence flag, not the `token`
-    // string — so a silent refresh doesn't re-fetch and reset the list.
-    // See CLAUDE.md "Never reload on token refresh".
-    useEffect(() => {
-        if (isAuthenticated) loadDecks();
-    }, [isAuthenticated, loadDecks]);
-
-    // The card library. Same auth keying as the deck list, and `cancelled` guards the
-    // setState so a fast navigation away can't write into an unmounted page.
-    useEffect(() => {
-        if (!isAuthenticated) return;
-        let cancelled = false;
-
-        (async () => {
-            try {
-                setCardsLoading(true);
-                setCardsError(null);
-                const loaded = await fetchCollectionCards(ALL_COLLECTION_ID);
-                if (!cancelled) setCards(loaded);
-            } catch (err: unknown) {
-                console.error("Error loading cards:", err);
-                if (!cancelled) setCardsError(err instanceof Error ? err.message : "Failed to load cards");
-            } finally {
-                if (!cancelled) setCardsLoading(false);
-            }
-        })();
-
-        return () => { cancelled = true; };
-    }, [isAuthenticated]);
-
-    // Filter, then order — the same two-step (and the same shared utilities) the
-    // collection page uses. Client-side on both counts: the whole collection is
-    // already in memory, so neither costs a round trip and neither introduces a
-    // second notion of "matches" or "order".
-    //
-    // Sorting AFTER filtering keeps the work proportional to what is actually on
-    // screen while the user types. Both memos stay referentially stable while their
-    // inputs are unchanged, so MiniVocabCardGrid's reveal cascade isn't restarted by
-    // an unrelated re-render.
-    const filteredCards = useMemo(
-        () => filterVocabEntries(cards, cardsSearch),
-        [cards, cardsSearch]
-    );
-    const visibleCards = useMemo(
-        () => sortVocabEntries(filteredCards, cardsSortKey),
-        [filteredCards, cardsSortKey]
-    );
-
-    // Card Detail is a leaf that slides over this page.
+    // Card Detail is a leaf that slides over this page. No lens param: this page is
+    // the core bar, which is what a card page shows by default.
     const handleOpenCard = useCallback(
         (entry: VocabEntry) => slideNavigate(`/flashcards/card/${entry.id}`),
         [slideNavigate]
@@ -358,7 +270,10 @@ const FlashcardsDecksPage: React.FC = () => {
     // CHALLENGE has NO eligibility check at all. Its buckets are exactly the ones
     // provisioning fills — a lent card is Unfamiliar — so the server can always build
     // a Challenge loop, even for an account with nothing sorted.
-    const reviewEligible = ((categoryCounts["Comfortable"] || 0) + (categoryCounts["Mastered"] || 0)) > 0;
+    //
+    // Both read the CORE bands, because both study modes are core sessions.
+    const reviewEligible =
+        ((panel.categoryCounts["Comfortable"] || 0) + (panel.categoryCounts["Mastered"] || 0)) > 0;
 
     const handleReviewClick = () => {
         if (!reviewEligible) { setMarkMoreSnackOpen(true); return; }
@@ -368,27 +283,6 @@ const FlashcardsDecksPage: React.FC = () => {
     const handleChallengeClick = () => {
         navigate("/flashcards/learn?mode=challenge");
     };
-
-    const handleCreateDeck = async () => {
-        try {
-            const deck = await createDeck(newDeckName);
-            setDecks((prev) => [deck, ...prev]);
-            setNewDeckOpen(false);
-            setNewDeckName("");
-            setCreateError(null);
-        } catch (err: unknown) {
-            // The server owns the rules (blank name, duplicate name, the 100-deck
-            // per-language cap), so its message is shown verbatim rather than
-            // re-deriving them here where they would drift.
-            setCreateError(err instanceof Error ? err.message : "Could not create the deck");
-        }
-    };
-
-    // Every figure on a built-in tile comes from the two count hooks already loaded —
-    // no extra request. The derivation itself lives beside the collection list
-    // (builtinCollectionCount) so a collection's definition and its number cannot drift.
-    const tileCount = (entry: (typeof builtins)[number]) =>
-        builtinCollectionCount(entry.ref, categoryCounts, masteredCounts);
 
     return (
         <>
@@ -412,12 +306,18 @@ const FlashcardsDecksPage: React.FC = () => {
                     scrollable={false}
                 >
                     {/* The study area: the whole space above the resting sheet.
-                        Review and Challenge share ONE row at the top at equal width
-                        (they are peers — two halves of the same difficulty axis),
-                        and Study Mix takes everything left over down to the sheet.
-                        These are WHOLE-LIBRARY entry points; to study one collection,
-                        open it from the sheet below and use its "Study these cards"
-                        button. */}
+                        Three rows, top to bottom:
+                          • Review / Challenge — peers, the two halves of the difficulty
+                            axis, at equal width;
+                          • Study Mix — the slab, taking everything the other two rows
+                            leave (it is the target that always works);
+                          • Reading / Writing — the Mastery Center buttons, present only
+                            for the goals this account pursues. They take their height
+                            out of the slab, which is why the slab shrinks on an account
+                            with goals rather than the page growing a scrollbar.
+                        The first three are WHOLE-LIBRARY study entry points; to study one
+                        collection, open it from the sheet below and use its "Study these
+                        cards" button. */}
                     <Box
                         className="flashcards-decks__study-area"
                         sx={{
@@ -469,6 +369,30 @@ const FlashcardsDecksPage: React.FC = () => {
                                 Study Mix
                             </MixButton>
                         </Box>
+
+                        {/* Mastery Centers. The row is omitted ENTIRELY when the account
+                            pursues neither skill (and always for Spanish, which cannot
+                            accrue those marks) — an empty row would leave the slab short
+                            of the space it would otherwise have. With one goal set the
+                            single button takes the full width, which is correct: it is
+                            the only other place to go. */}
+                        {centers.length > 0 && (
+                            <Box
+                                className="flashcards-decks__center-row"
+                                sx={{ display: "flex", alignItems: "stretch", gap: 1.5, flexShrink: 0 }}
+                            >
+                                {centers.map((bar) => (
+                                    <CenterButton
+                                        key={bar}
+                                        className={`flashcards-decks__center-button flashcards-decks__center-button--${bar}`}
+                                        accent={MARK_TYPE_COLORS[bar]}
+                                        onClick={() => slideNavigate(MASTERY_CENTER_PATHS[bar])}
+                                    >
+                                        {MASTERY_CENTER_BUTTON_LABELS[bar]}
+                                    </CenterButton>
+                                ))}
+                            </Box>
+                        )}
                     </Box>
                 </MobileTabScreen>
 
@@ -482,32 +406,16 @@ const FlashcardsDecksPage: React.FC = () => {
                     // The body's scroll element is stable, but its identity changes
                     // when the deck list first arrives (the empty-state message and
                     // the tiles mount into it), so re-bind once decks have loaded.
-                    bodyKey={decksLoading ? "loading" : "ready"}
+                    bodyKey={panel.decksLoading ? "loading" : "ready"}
                 >
                     {({ bindHeaderDrag }) => (
-                        <DecksSheetBody
+                        <DecksPanelBody
                             ref={sheetBodyRef}
-                            collectionsSection={collectionsSection}
-                            masteredSection={masteredSection}
-                            showMasteredSection={showMasteredSection}
-                            tileCount={tileCount}
-                            challengeDecks={challengeDecks}
-                            authoredDecks={authoredDecks}
-                            decksLoading={decksLoading}
-                            decksError={decksError}
+                            panel={panel}
+                            variant="sheet"
                             onOpenPath={slideNavigate}
-                            onNewDeck={() => { setNewDeckName(""); setCreateError(null); setNewDeckOpen(true); }}
-                            cards={visibleCards}
-                            cardsLoading={cardsLoading}
-                            cardsError={cardsError}
-                            cardsTotal={cards.length}
-                            cardsSearch={cardsSearch}
-                            onCardsSearchChange={setCardsSearch}
                             onOpenCard={handleOpenCard}
-                            cardsSortKey={cardsSortKey}
-                            onCardsSortKeyChange={setCardsSortKey}
-                            cardsSortLanguage={user?.selectedLanguage}
-                            cardsSortGoals={goals}
+                            onNewDeck={() => setNewDeckOpen(true)}
                             headerDragBind={bindHeaderDrag}
                         />
                     )}
@@ -533,32 +441,12 @@ const FlashcardsDecksPage: React.FC = () => {
                     </Alert>
                 </Snackbar>
 
-                <Dialog
-                    className="flashcards-decks__new-deck-dialog"
+                <NewDeckDialog
+                    classPrefix="flashcards-decks"
                     open={newDeckOpen}
                     onClose={() => setNewDeckOpen(false)}
-                >
-                    <DialogTitle>New deck</DialogTitle>
-                    <DialogContent>
-                        <TextField
-                            className="flashcards-decks__new-deck-input"
-                            autoFocus
-                            fullWidth
-                            size="small"
-                            placeholder="Deck name"
-                            value={newDeckName}
-                            onChange={(e) => setNewDeckName(e.target.value)}
-                            inputProps={{ maxLength: 64 }}
-                            error={Boolean(createError)}
-                            helperText={createError ?? " "}
-                            sx={{ mt: 1, minWidth: 260 }}
-                        />
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={() => setNewDeckOpen(false)}>Cancel</Button>
-                        <Button onClick={handleCreateDeck} disabled={!newDeckName.trim()}>Create</Button>
-                    </DialogActions>
-                </Dialog>
+                    onCreate={panel.addDeck}
+                />
         </>
     );
 };

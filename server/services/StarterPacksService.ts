@@ -9,6 +9,7 @@ import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 import { vetTableForLanguage, CORE_CATEGORY_EXPR, vetSortedClause } from '../dal/shared/vetTable.js';
 import { coreMasteredTypedMarkHistory } from '../utils/masteryCompute.js';
 import { LazyEnrichmentService } from './LazyEnrichmentService.js';
+import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/definitions.js';
 
 /**
  * Starter Packs Service
@@ -129,13 +130,28 @@ export class StarterPacksService {
   /**
    * Map raw dictionaryentries rows into DiscoverCard DTOs. Shared by both the
    * Chinese and Spanish flows so the row→card shape stays in one place.
+   *
+   * `definition` and `pronunciation` are SENSE-RESOLVED here rather than read straight off
+   * the row. A discover card is a bare det row — it has no vet row yet, so there is no
+   * `selectedSense` to honor and both resolvers land on the entry's default (highest-
+   * frequency) sense. That still matters: the det `pronunciation` column is the unreviewed
+   * CEDICT seed the clusterer was given, so a heteronym whose clusters were corrected keeps
+   * the wrong reading in the column forever (重点 = `chóng diǎn` in the column,
+   * `zhòng diǎn` in its clusters). Resolving here is what keeps the sort flow agreeing with
+   * the flashcard the learner gets the moment they sort the card.
+   *
+   * The clusters themselves deliberately do NOT travel — `DiscoverCard` is unchanged and the
+   * payload stays the same size. See docs/DEFINITION_CLUSTERS.md.
    */
   private _rowsToDiscoverCards(rows: any[]): DiscoverCard[] {
     return rows.map(row => ({
       id: row.id,
       entryKey: row.word1,
-      definition: Array.isArray(row.definitions) ? row.definitions[0] : row.definitions,
-      pronunciation: row.pronunciation,
+      definition: resolveDisplayDefinition({
+        definition: Array.isArray(row.definitions) ? row.definitions[0] : row.definitions,
+        definitionClusters: row.definitionClusters,
+      }),
+      pronunciation: resolveDisplayPronunciation(row),
       tone: row.tone,
       language: row.language,
       word2: row.word2,
@@ -334,6 +350,7 @@ export class StarterPacksService {
 
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
+               de."definitionClusters",
                de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
                de."exampleSentences",
                de."iconId"
@@ -463,6 +480,7 @@ export class StarterPacksService {
     try {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
+               de."definitionClusters",
                de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
                de."exampleSentences",
                de."iconId"
@@ -970,6 +988,7 @@ export class StarterPacksService {
     try {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
+               de."definitionClusters",
                de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
                de."exampleSentences",
                de."iconId"
@@ -993,6 +1012,7 @@ export class StarterPacksService {
     try {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
+               de."definitionClusters",
                de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
                de."exampleSentences",
                de."iconId",
@@ -1193,6 +1213,7 @@ export class StarterPacksService {
     try {
       const result = await client.query(`
         SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
+               de."definitionClusters",
                de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
                de."exampleSentences",
                de."iconId"

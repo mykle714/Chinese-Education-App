@@ -4,7 +4,6 @@ import NavigationIcon from "@mui/icons-material/Navigation";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import { grid } from "./constants";
 
 /**
  * Edge markers pointing at islands that are entirely off screen
@@ -52,8 +51,8 @@ const MemoryMapIslandCompass: React.FC<{ islands: OffscreenIsland[] }> = ({ isla
                     transform: "translate(-50%, -50%)",
                     display: "flex",
                     alignItems: "center",
-                    gap: grid(1),
-                    padding: `${grid(1)} ${grid(2)}`,
+                    gap: "8px",
+                    padding: "8px",
                     borderRadius: "999px",
                     backgroundColor: COLORS.card,
                     opacity: 0.85,

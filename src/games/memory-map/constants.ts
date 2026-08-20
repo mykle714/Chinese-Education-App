@@ -38,37 +38,34 @@ export const FADE_OUT_MS = 900;
 /** How long the "N new words joined your map" toast stays up (§ 2.5). */
 export const GROWTH_TOAST_MS = 4000;
 
-// ── The 4px grid ─────────────────────────────────────────────────────────────
+// ── The 8px grid ─────────────────────────────────────────────────────────────
 
 /**
- * The game's spacing quantum. EVERY padding, gap, inset and control dimension in
- * Memory Map's chrome is a whole multiple of this, expressed through `grid()` rather
- * than as a bare pixel literal, so that the values cannot drift apart one hand-tuned
- * pixel at a time (which is exactly how this file arrived at `7px 14px`, `3px`, `2px
- * 6px 2px 4px` and a 19px icon).
+ * Memory Map is drawn on an 8px grid, and unlike every other surface in the app that
+ * grid governs BOTH halves of the game:
  *
- * MUI's `sx` shorthands (`gap: 1`, `mb: 2`) are already on this grid — the theme's
- * spacing unit is 8px — so they are left as they are. Only quarter and three-quarter
- * steps (`0.25` → 2px, `0.75` → 6px) would fall off it, and none are used.
+ *  * **The chrome** — every padding, gap, inset and control dimension in the prompt
+ *    bar, the compass markers and the page furniture is a whole multiple of 8, written
+ *    as a plain pixel literal. There is deliberately no `grid(n)` helper: 8 is also
+ *    MUI's spacing unit, so `gap: 1` / `mb: 2` are already on the grid and a second
+ *    spelling of the same number would only invite the two to disagree.
  *
- * ── WHAT THE GRID DOES NOT GOVERN ────────────────────────────────────────────
- * Two things are deliberately exempt, and neither is an oversight:
+ *  * **The world** — word boxes are sized and placed so that every box EDGE falls on
+ *    the same 8px lattice. That is enforced in `server/services/memoryMapSpawn.ts` by
+ *    `WORLD_GRID` (0.2 world units), which is 8px precisely because
+ *    `PIXELS_PER_WORLD_UNIT` below is 40. The two constants are a pair — see the
+ *    `WORLD_GRID` docblock, which carries the reasoning.
  *
- *  1. **Hairlines** (`BORDER_PX`). A 4px fence between two words would be a wall. Border
- *     widths are strokes, not spacing, and `box-sizing: border-box` keeps them from
- *     moving anything else off the grid.
+ * ── THE ONE EXEMPTION ────────────────────────────────────────────────────────
+ * **Hairlines.** `BORDER_PX` in MemoryMapWord (1.5) and stroke widths generally. A
+ * stroke is not spacing, and an 8px fence between two words would be a wall.
+ * `box-sizing: border-box` keeps them from pushing anything else off the grid.
  *
- *  2. **The world layer.** Word boxes are sized by `wordBoxSize` at continuous scales
- *     (0.95–1.8) and then drawn through a continuous camera zoom, so their pixel
- *     dimensions are fractional by construction. Snapping them would open gaps along
- *     the shared edges that make an island read as one landmass — the grid is not worth
- *     breaking the game's central piece of geometry for. `PIXELS_PER_WORLD_UNIT` is on
- *     the grid anyway, so an unscaled box at zoom 1 does land on it.
+ * The world layer used to be exempt too, on the grounds that snapping would open gaps
+ * along the shared edges that fuse an island into one landmass. That turned out to be
+ * true only of snapping sizes OR positions; snapping both makes tangency exact. The
+ * history is in `WORLD_GRID`.
  */
-export const GRID = 4;
-
-/** `grid(3)` → `"12px"`. The only way spacing should be written in this game. */
-export const grid = (steps: number): string => `${steps * GRID}px`;
 
 // ── Camera ───────────────────────────────────────────────────────────────────
 
@@ -76,10 +73,15 @@ export const grid = (steps: number): string => `${steps * GRID}px`;
  * Screen pixels per world unit at zoom 1. One world unit is an unscaled word box's
  * height, so this is effectively the base font size of the map.
  *
- * On the 4px grid (36 = 9 × GRID), nudged up from 34 when the grid went in — which
- * also bought the map a little legibility at the same zoom.
+ * **40 = 5 × 8, and it is one half of a pair.** `WORLD_GRID` in
+ * `server/services/memoryMapSpawn.ts` is 0.2 world units *because* 0.2 × 40 = 8px;
+ * change this number alone and the map's geometry quietly stops being on an 8px grid
+ * without anything failing. Change them together or not at all.
+ *
+ * Successively 34 → 36 → 40, each step also buying a little legibility at the same
+ * zoom.
  */
-export const PIXELS_PER_WORLD_UNIT = 36;
+export const PIXELS_PER_WORLD_UNIT = 40;
 
 /**
  * Zoom clamp. The minimum is the legibility floor — zoomed all the way out, the

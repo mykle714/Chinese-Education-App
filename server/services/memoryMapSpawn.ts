@@ -13,10 +13,19 @@ import { MEMORY_MAP_SCALE_RANGE } from '../contracts/wire.js';
  * island" in SQL.
  *
  * ── WORLD COORDINATES ────────────────────────────────────────────────────────
- * Continuous and unitless. One world unit is the height of an unscaled word box; the
- * client picks pixels-per-unit at render time and nothing here cares. A box is
+ * Unitless. One world unit is the height of an unscaled word box. A box is
  * axis-aligned and identified by its CENTRE, because tangency maths on centres is
  * symmetric in a way that corner-anchored boxes are not.
+ *
+ * ── THE 8px GRID ─────────────────────────────────────────────────────────────
+ * Coordinates are QUANTIZED, not continuous: every box EDGE lands on a lattice of
+ * `WORLD_GRID` world units, which the client renders as exactly 8 screen pixels at
+ * zoom 1. See the `WORLD_GRID` docblock for what that buys and what it costs.
+ *
+ * The invariant is on EDGES, not centres — an edge is what gets drawn (a fence
+ * between two parcels, or a stretch of coastline), whereas a centre is an internal
+ * representation nobody sees. A box that is an odd number of cells wide therefore has
+ * its centre at a half-step, and that is correct rather than a rounding slip.
  *
  * ── SHARED WITH THE CLIENT ───────────────────────────────────────────────────
  * `wordBoxSize` is imported by the game page as well as the service. That is
@@ -170,6 +179,81 @@ const GLYPH_ADVANCE: Record<string, number> = {
 const BOX_PADDING = 0.45;
 
 /**
+ * THE GRID. The map's spacing quantum, in world units — every box edge is a whole
+ * multiple of it, on both axes.
+ *
+ * 0.2 world units is exactly **8 screen pixels** at the client's
+ * `PIXELS_PER_WORLD_UNIT` of 40 (`src/games/memory-map/constants.ts`). The two numbers
+ * are a pair: changing either without the other silently takes the map off the 8px
+ * grid, because nothing downstream re-derives one from the other. There is no import
+ * to enforce it — this module is server-side and may not reach into `src/`.
+ *
+ * ── WHY QUANTIZE AT ALL ──────────────────────────────────────────────────────
+ * The map used to be continuous, on the reasoning that snapping would open gaps along
+ * the shared edges that make an island read as one landmass. That reasoning was wrong
+ * in a specific way worth recording, because it is the thing a future change could
+ * easily undo: snapping opens gaps only if you snap SIZES and leave POSITIONS free
+ * (or the reverse). Quantize both and tangency is not merely preserved, it becomes
+ * EXACT — two neighbours placed on the lattice abut at an identical coordinate rather
+ * than at two floats that agree to within `OVERLAP_EPSILON`.
+ *
+ * ── WHAT IT COSTS ────────────────────────────────────────────────────────────
+ * Box heights quantize to about seven distinct values across the whole
+ * `MEMORY_MAP_SCALE_RANGE` (0.95–1.8). Size CONTRAST across the map — the thing that
+ * range actually controls (§ 2.3) — survives; a word's size is just no longer unique
+ * to it. Nothing reads size as an identity, so this is a cost in texture only.
+ */
+export const WORLD_GRID = 0.2;
+
+/**
+ * Snap to the lattice, killing the float dust that `n * 0.2` leaves behind.
+ *
+ * 0.2 is not representable in binary, so an unrounded lattice value drifts by ~1e-16
+ * per operation. That is far below every tolerance in this module (`OVERLAP_EPSILON`,
+ * `boxesTouch`), so it could not cause a placement bug — but it would make a test that
+ * asserts "on the grid" need a tolerance, and make a stored coordinate read as
+ * `1.4000000000000001`. Six decimals is well inside any meaningful world distance.
+ */
+function quantize(value: number, rounder: (n: number) => number): number {
+  return Number((rounder(value / WORLD_GRID) * WORLD_GRID).toFixed(6));
+}
+
+/** Up to the next lattice line. Used for SIZES — a box may grow to fit, never shrink. */
+const snapUp = (value: number): number =>
+  // The epsilon absorbs a value that is already on the lattice but a hair above it,
+  // which would otherwise be rounded up a whole extra cell.
+  quantize(value, (n) => Math.ceil(n - 1e-9));
+
+/** To the nearest lattice line. Used for POSITIONS, which may move either way. */
+const snapNearest = (value: number): number => quantize(value, Math.round);
+
+/**
+ * A centre that puts this box's leading EDGE on the lattice (see the module docblock
+ * on why the invariant lives on edges). `extent` is the box's full width or height.
+ */
+function snapCentre(centre: number, extent: number): number {
+  return snapNearest(centre - extent / 2) + extent / 2;
+}
+
+/**
+ * The first word on an empty map, which ANCHORS THE LATTICE for every word after it.
+ *
+ * Its top-left corner sits at the origin rather than its centre. That looks like an
+ * off-by-a-half compared with the rest of the module, and it is load-bearing: a box an
+ * odd number of cells wide, centred on the origin, would put its own edges on a
+ * HALF-STEP — and since every later box is placed tangent to an existing edge, the
+ * whole map would inherit that offset lattice and no edge on it would ever be a whole
+ * multiple of `WORLD_GRID`. Anchoring the corner instead makes the invariant hold by
+ * induction from the very first placement.
+ *
+ * The origin is arbitrary either way: the camera fits the map by its bounds and never
+ * looks at (0, 0).
+ */
+function firstBox(size: BoxSize): SpawnResult {
+  return { x: size.width / 2, y: size.height / 2, mode: 'island' };
+}
+
+/**
  * The world-space box a word occupies at a given frozen scale.
  *
  * Called by the server when placing neighbours AND by the client when drawing — see
@@ -184,9 +268,12 @@ const BOX_PADDING = 0.45;
 export function wordBoxSize(entryKey: string, scale: number, language: string): BoxSize {
   const advance = GLYPH_ADVANCE[language] ?? GLYPH_ADVANCE.zh;
   const glyphs = Math.max(1, [...entryKey].length);
+  // Snapped UP, never down: the natural size is the smallest box the text fits in, so
+  // rounding it toward zero would crop a glyph. Growing by at most one 8px cell is
+  // invisible against a box that is 56px tall at its smallest.
   return {
-    width: (glyphs * advance + BOX_PADDING) * scale,
-    height: (1 + BOX_PADDING) * scale,
+    width: snapUp((glyphs * advance + BOX_PADDING) * scale),
+    height: snapUp((1 + BOX_PADDING) * scale),
   };
 }
 
@@ -433,6 +520,13 @@ function pickIslandBearing(rng: Rng): { x: number; y: number } {
  * `offset` is in [-1, 1] and is scaled to the range over which the two boxes still
  * share at least MIN_EDGE_OVERLAP of their common edge — so every value produces a
  * genuinely connected neighbour rather than a corner kiss.
+ *
+ * ── GRID ─────────────────────────────────────────────────────────────────────
+ * Only the SLIDING axis is snapped here. The tangent axis needs no snapping and must
+ * not get any: the newcomer's far edge is the anchor's edge displaced by the
+ * newcomer's own extent, and both of those are already whole multiples of
+ * `WORLD_GRID`, so it lands on the lattice by construction. Snapping it again could
+ * only move it OFF the shared edge and open the seam the tangency exists to close.
  */
 function tangentTo(anchor: MapBox, size: BoxSize, side: Side, offset: number): MapBox {
   // Half the distance the newcomer can slide before the shared edge shrinks below the
@@ -440,29 +534,46 @@ function tangentTo(anchor: MapBox, size: BoxSize, side: Side, offset: number): M
   const slideX = ((anchor.width + size.width) / 2) * (1 - MIN_EDGE_OVERLAP);
   const slideY = ((anchor.height + size.height) / 2) * (1 - MIN_EDGE_OVERLAP);
 
+  /**
+   * Slide along a shared edge and land on the lattice, without sliding so far that the
+   * shared edge drops under MIN_EDGE_OVERLAP.
+   *
+   * Snapping moves the centre by at most half a cell, which can carry it just past the
+   * legal limit, so the result is walked back a whole cell rather than clamped to the
+   * limit itself — clamping would land back off the lattice and defeat the exercise.
+   * One step is always enough, and always legal: the slide range is at least ~0.9
+   * world units wide (the narrowest possible pair of boxes), i.e. several cells.
+   */
+  const slideOnto = (centre: number, extent: number, limit: number, origin: number): number => {
+    let snapped = snapCentre(centre, extent);
+    if (snapped > origin + limit) snapped -= WORLD_GRID;
+    if (snapped < origin - limit) snapped += WORLD_GRID;
+    return Number(snapped.toFixed(6));
+  };
+
   switch (side) {
     case 'top':
       return {
-        x: anchor.x + offset * slideX,
+        x: slideOnto(anchor.x + offset * slideX, size.width, slideX, anchor.x),
         y: anchor.y - (anchor.height + size.height) / 2,
         ...size,
       };
     case 'bottom':
       return {
-        x: anchor.x + offset * slideX,
+        x: slideOnto(anchor.x + offset * slideX, size.width, slideX, anchor.x),
         y: anchor.y + (anchor.height + size.height) / 2,
         ...size,
       };
     case 'left':
       return {
         x: anchor.x - (anchor.width + size.width) / 2,
-        y: anchor.y + offset * slideY,
+        y: slideOnto(anchor.y + offset * slideY, size.height, slideY, anchor.y),
         ...size,
       };
     case 'right':
       return {
         x: anchor.x + (anchor.width + size.width) / 2,
-        y: anchor.y + offset * slideY,
+        y: slideOnto(anchor.y + offset * slideY, size.height, slideY, anchor.y),
         ...size,
       };
   }
@@ -481,7 +592,7 @@ function tangentTo(anchor: MapBox, size: BoxSize, side: Side, offset: number): M
  * the fallback in `spawnPosition`; a word must always get a spot.
  */
 function placeNewIsland(existing: MapBox[], size: BoxSize, rng: Rng): SpawnResult | null {
-  if (existing.length === 0) return { x: 0, y: 0, mode: 'island' };
+  if (existing.length === 0) return firstBox(size);
 
   const anchor = existing[Math.floor(rng() * existing.length)];
   const bearing = pickIslandBearing(rng);
@@ -509,9 +620,12 @@ function placeNewIsland(existing: MapBox[], size: BoxSize, rng: Rng): SpawnResul
   const maxDistance = clearance + span + ISLAND_GAP + ISLAND_MAX_DRIFT;
 
   for (let distance = clearance; distance <= maxDistance; distance += ISLAND_PROBE_STEP) {
+    // Snapped BEFORE the water test, not after: the position that gets returned has to
+    // be the one that was actually verified clear, or a post-hoc snap could nudge the
+    // island back into the coast it was just checked against.
     const candidate: MapBox = {
-      x: anchor.x + dirX * distance,
-      y: anchor.y + dirY * distance,
+      x: snapCentre(anchor.x + dirX * distance, size.width),
+      y: snapCentre(anchor.y + dirY * distance, size.height),
       ...size,
     };
     // Real water on every side, not merely "does not overlap": a candidate a hair off a
@@ -536,7 +650,7 @@ function placeNewIsland(existing: MapBox[], size: BoxSize, rng: Rng): SpawnResul
  */
 function placeBeyondMap(existing: MapBox[], size: BoxSize, rng: Rng): SpawnResult {
   const bounds = mapBounds(existing);
-  if (!bounds) return { x: 0, y: 0, mode: 'island' };
+  if (!bounds) return firstBox(size);
 
   const centreX = (bounds.minX + bounds.maxX) / 2;
   const centreY = (bounds.minY + bounds.maxY) / 2;
@@ -545,8 +659,8 @@ function placeBeyondMap(existing: MapBox[], size: BoxSize, rng: Rng): SpawnResul
 
   const angle = rng() * Math.PI * 2;
   return {
-    x: centreX + Math.cos(angle) * radius,
-    y: centreY + Math.sin(angle) * radius,
+    x: snapCentre(centreX + Math.cos(angle) * radius, size.width),
+    y: snapCentre(centreY + Math.sin(angle) * radius, size.height),
     mode: 'island',
   };
 }
@@ -603,7 +717,7 @@ function bridgesIslands(
  * on the learner's map, which is the one outcome the feature cannot tolerate.
  */
 export function spawnPosition(existing: MapBox[], size: BoxSize, rng: Rng): SpawnResult {
-  if (existing.length === 0) return { x: 0, y: 0, mode: 'island' };
+  if (existing.length === 0) return firstBox(size);
 
   if (rng() < NEW_ISLAND_CHANCE) {
     const island = placeNewIsland(existing, size, rng);

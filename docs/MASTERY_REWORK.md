@@ -38,8 +38,8 @@
 >   (`WordSearchPage.tsx`), Bubble Match (`BubbleMatchPage.tsx`), Practice Writing
 >   (`PracticeWritingButton.tsx` → `PracticeWritingPopup.tsx`).
 > - Bars UI: `src/features/flashcards/MasteryProgressBar.tsx` (cdp "Mastery"
->   section — one bar per active bar, each with its band chip and its per-track
->   cooldowns) and `src/components/MiniVocabCard.tsx` (the hairline strip).
+>   section — **one** bar, the surface's lens, with its per-track cooldowns) and
+>   `src/components/MiniVocabCard.tsx` (the hairline strip, likewise one bar).
 >
 > **Movement between bands is logged separately** — see
 > [VELOCITY.md](./VELOCITY.md) (migration 137): a bar's band is derived and keeps
@@ -227,8 +227,28 @@ users join**:
 | The mini-card badge and the `category` field on the wire | `VocabEntryBase.category` |
 
 The per-bar reads are the exceptions, and each one is a *display* of that bar:
-the Mastered collections (`masteredBarClause(bar)`), the sort options, the bars
-themselves, and velocity.
+the Mastered collections (`masteredBarClause(bar)`), the per-bar Learn Now collections
+(`unmasteredBarClause(bar)`), the sort options, the bars themselves, and velocity.
+
+**Since the Mastery Centers, EVERY SURFACE carries exactly one bar.** A *lens* is a
+`MasteryBarId` a page is read through: the fdp, its collections, its decks and search
+are `core`; the Reading and Writing Centers are their own skill
+(docs/DECKS_FEATURE.md § "Mastery Centers"). The band counts, the collection
+membership, the sort keys, the mini-card strip, the mini-card badge and the cdp's
+Mastery section all come from the lens bar — the badge is the notable one, because it
+is the only place the whole-card answer is *replaced* rather than joined.
+
+⚠️ **A surface never shows a bar it is not about.** `core` is not "no lens", it is the
+recognition/production lens, and it draws ONE bar. Drawing a track per *goal* — which
+is what the fdp, its collections and the cdp did until 2026-08-19 — put reading and
+writing progress onto pages that were asking neither question, which is the whole
+reason the Centers exist. The account's goal flags still decide whether a Center's
+BUTTON appears (`activeMasteryCenters`) and which sort rows a core surface offers; they
+no longer decide how many bars get drawn anywhere.
+It is computed on the client from `typedMarkHistory` (`masteryBar(history, lens)`), not
+fetched: the wire's `category` field is core by definition (`CORE_CATEGORY_SELECT`), and
+every bar is derivable from the history already on the row. `entry.category` therefore
+still means core everywhere, exactly as this section says.
 
 ### Declaring a card already known — core only
 
@@ -313,12 +333,15 @@ orders or filters on it, so it carries no index.
 
 ## 5. The progress bars on screen
 
-### cdp — one vertical bar per active bar
+### cdp — one vertical bar, the surface's lens
 
 `src/features/flashcards/MasteryProgressBar.tsx` renders
-`masteryBars(entry.typedMarkHistory, goals)` — one `BarTrack` each, captioned from
-`BAR_LABELS` (**Know** / **Read** / **Write**). With no goals set the page looks
-exactly as it did before the rework: a single bar.
+`masteryBar(entry.typedMarkHistory, lens)` — a single `BarTrack`, captioned from
+`BAR_LABELS` (**Know** / **Read** / **Write**). The `lens` prop defaults to `core`, so
+a card reached from the fdp, a deck or a search result shows the Know bar alone; a card
+reached from a Mastery Center carries `?bar=` and shows that skill's bar instead
+(`lensFromSearch`, `src/features/flashcards/collectionRef.ts`). The account's goal
+flags are **not** consulted here.
 
 - **Height** = that bar's pbh on a fixed axis where **pbh = 8 fills the bar**
   (Mastered fills; pbh > 8 stays clamped at full).
@@ -357,20 +380,31 @@ exactly as it did before the rework: a single bar.
 **Placement.** The bars are their own `SectionCard` ("Mastery") **below the hero
 card**, alongside Definition / Breakdown / Examples — see
 `src/features/flashcards/VocabCardDetailPage.tsx`. They used to be a strip beside a
-cpcd block above the hero; three columns × two cooldown rows needs the full width.
+cpcd block above the hero (the section briefly held up to three columns, which needed
+the full width; it is one column now, centered, and the placement was kept).
 The cpcd block stays where it was, without the bars. The section lives in the page
 rather than in the shared `VocabCardDetailBody` because the read-only **dictionary**
 cdp has no marks to draw.
 
 ### Mini cards — a hairline strip
 
-`src/components/MiniVocabCard.tsx` draws the active bars as up to three 3px-tall,
-30px-wide tracks stacked bottom-left with a margin (`BAR_STRIP`), each filled to
-`heightFraction`. The English definition is lifted by `barStripHeight(n)` to make
-room, so a one-bar card sits where it always did and only a goal-bearing account
-pays the vertical space. The **badge stays**, colored by the **core** band.
+`src/components/MiniVocabCard.tsx` draws **one** 3px-tall, 30px-wide track bottom-left
+with a margin (`BAR_STRIP`), filled to `heightFraction`: the surface's lens bar, from
+the `lens` prop (default `core`, forwarded by `MiniVocabCardGrid`). The **badge** is
+colored by that same bar's band — under `core` that is `entry.category` by definition,
+and inside a Center it is the skill's band, computed on the client from
+`typedMarkHistory`. A grid of cards badged by their recognition progress, on a page
+whose every other figure is about reading, would answer a question the learner had just
+navigated away from; the mirror of that — reading and writing tracks on a card sitting
+in a recognition/production deck — is why the strip is no longer per-goal.
 
-Each fill carries the **same per-type segment breakdown as the cdp bar** — the core
+The geometry is still written for `n` tracks (`barStripHeight(n)`, a `.map`), which is
+also how the strip disappears entirely when `showMasteryStrip` is false: one array
+drives both the rendering and the definition's bottom offset, so they cannot disagree
+about how much room the strip takes. The definition therefore now sits at the same
+height on every card of every surface.
+
+The fill carries the **same per-type segment breakdown as the cdp bar** — the core
 strip splits between recognition blue and production green in proportion to their
 positive counts, so a card strong one way and weak the other reads that way at
 thumbnail size too. It runs left-to-right where the cdp runs bottom-up, so the first
@@ -586,15 +620,21 @@ variants of this chip) one track is one hue. See
 A card is **fresh** for a game when its game mark type is off cooldown, **cooled**
 otherwise. `fetchGameCandidates` overfetches a per-category shuffled pool and
 splits it fresh/cooled. Both games fill in four phases (the confirmed policy —
-*prefer fresh; lend before borrowing from another category; use cooled only as a
-last resort*):
+*prefer fresh; lend before borrowing from another category, but never lend what
+borrowing could have covered; use cooled only as a last resort*):
 
 1. Requested-category quotas from **fresh** cards.
-2. **Lend** the shortfall (`lendGameCandidates` → `ProvisionalCardService.lendCards`),
-   2026-08-17. A lent row has no marks, so it is always `Unfamiliar` and always fresh
-   — a short board therefore skews `Unfamiliar` rather than skewing toward whichever
-   bucket had surplus. Skipped for a collection-restricted pool and for a partial
-   refill (`need`); see docs/PROVISIONAL_CARDS.md § 4b.
+2. **Lend** the part of the shortfall phase 3 cannot cover (`lendGameCandidates` →
+   `ProvisionalCardService.lendCards`), 2026-08-17, capped 2026-08-19. A lent row has
+   no marks, so it is always `Unfamiliar` and always fresh — a short board therefore
+   skews `Unfamiliar` rather than skewing toward whichever bucket had surplus.
+   ⚠️ The cap matters MOST on this page's own subject: a game bucketed by a sparsely
+   marked TRACK (Speed Reading / Word Search No-Pinyin on `reading`) has nearly every
+   card banding `Unfamiliar`, so its `Target`/`Comfortable`/`Mastered` quotas underfill
+   on a library of any size — and minting, which yields `Unfamiliar`, can never close
+   them. Uncapped, those games lent on every load forever. Skipped for a
+   collection-restricted pool and for a partial refill (`need`); see
+   docs/PROVISIONAL_CARDS.md § 4b.
 3. Top up to `total` with **fresh** cards from the fallback categories
    (Target → Comfortable → Unfamiliar → Mastered).
 4. Backfill any remaining shortfall with **cooled** cards (requested categories

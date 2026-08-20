@@ -88,6 +88,10 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/flashcards/collection/:builtin": lazy(() => import("../features/flashcards/CollectionViewPage")),
   "/flashcards/deck/:id": lazy(() => import("../features/flashcards/CollectionViewPage")),
   "/flashcards/mastered": lazy(() => import("../features/flashcards/MasteredRedirect")),
+  // Two routes, one component — the Reading and Writing Centers differ only by the
+  // mastery bar the page reads its own path for (features/flashcards/masteryCenters.ts).
+  "/flashcards/reading": lazy(() => import("../features/flashcards/MasteryCenterPage")),
+  "/flashcards/writing": lazy(() => import("../features/flashcards/MasteryCenterPage")),
   "/reader/:id": lazy(() => import("../features/reader/ReaderDocumentPage")),
   "/flashcards/card/:id": lazy(() => import("../features/flashcards/VocabCardDetailPage")),
   "/dictionary/card/:word": lazy(() => import("../features/dictionary/DictionaryCardDetailPage")),

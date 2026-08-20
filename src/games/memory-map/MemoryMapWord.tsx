@@ -1,11 +1,12 @@
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
 import { wordBoxSize, type TouchedSides } from "../../../server/services/memoryMapSpawn";
 import type { MemoryMapWord as MemoryMapWordData } from "../../api/memoryMap";
 import type { WordOutcome } from "./types";
 import { COLORS } from "../../theme/colors";
-import { GRID, PIXELS_PER_WORLD_UNIT } from "./constants";
+import { PIXELS_PER_WORLD_UNIT } from "./constants";
+import { useTapGesture } from "./useTapGesture";
 
 /**
  * One word on the map (docs/MEMORY_MAP_GAME.md § 2.3, § 3.3).
@@ -41,19 +42,11 @@ import { GRID, PIXELS_PER_WORLD_UNIT } from "./constants";
  */
 
 /**
- * How far a finger may travel between press and release and still count as a tap
- * rather than a pan, in SCREEN pixels.
- *
- * Screen pixels, not world units, because it models a thumb's wobble — which does not
- * get bigger when the map is zoomed out.
- */
-const TAP_SLOP_PX = GRID * 2;
-
-/**
  * Border weight between two abutting words, in world-layer px (the camera scales it).
  *
- * Off the 4px grid on purpose — a stroke is not spacing, and a 4px fence between two
- * words would be a wall (see `GRID` in ./constants).
+ * Off the 8px grid on purpose, and the game's ONLY exemption from it — a stroke is not
+ * spacing, and an 8px fence between two words would be a wall (see the grid docblock in
+ * ./constants).
  */
 const BORDER_PX = 1.5;
 
@@ -70,7 +63,18 @@ const BORDER_PX = 1.5;
  * reads as a cluster of tiles rather than as one fused landmass. That is a look, not a
  * fault — the geometry underneath is unchanged and the boxes are still exactly tangent.
  */
-const CORNER_RADIUS_PX = GRID * 2;
+const CORNER_RADIUS_PX = 8;
+
+/**
+ * Weight of the ring drawn around the SELECTED word, in world-layer px.
+ *
+ * Heavier than a fence (BORDER_PX) because it has to be findable at MIN_ZOOM — the ring
+ * is the only thing standing between a stray touch and a wrong answer, so it must not
+ * be something the player has to squint for. Drawn as a box-shadow rather than a border
+ * so it costs the parcel no layout: a border would have to eat into the box (hiding a
+ * shared fence) or grow it (pushing tangent neighbours apart).
+ */
+const SELECT_RING_PX = 3;
 
 /**
  * How much of the box the glyphs fill, on whichever axis binds first.
@@ -93,6 +97,8 @@ interface MemoryMapWordProps {
     outcome?: WordOutcome;
     /** True for the failed target: it pulses until tapped (§ 3.3). */
     pulsing: boolean;
+    /** True for the word the player has armed but not yet committed (§ 3.3a). */
+    selected: boolean;
     /** True for a word that just took a wrong tap — a brief red flash. */
     flashing: boolean;
     /** True while it dissolves off the map after graduating (§ 3.6). */
@@ -112,22 +118,20 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
     borders,
     outcome,
     pulsing,
+    selected,
     flashing,
     fading,
     onTap,
 }) => {
-    // Where the finger went down, so a release can tell a tap from a pan (below).
-    const pressRef = useRef<{ x: number; y: number } | null>(null);
-
     const box = wordBoxSize(word.entryKey, word.scale, word.language);
     const widthPx = box.width * PIXELS_PER_WORLD_UNIT;
     const heightPx = box.height * PIXELS_PER_WORLD_UNIT;
     /**
      * Shrink the glyphs to fit inside the box.
      *
-     * NECESSARY, not cosmetic: the box is sized by `wordBoxSize` (~36px per Chinese
+     * NECESSARY, not cosmetic: the box is sized by `wordBoxSize` (~40px per Chinese
      * glyph at scale 1) while ForeignText renders its `md` preset at a 50px column —
-     * roughly 40% wider. With a transparent background that overflow was invisible;
+     * roughly 25% wider. With a transparent background that overflow was invisible;
      * now that each word sits on a white parcel with fences on its shared edges, text
      * would visibly spill across its neighbours.
      *
@@ -165,11 +169,24 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
     // word appear to claim its neighbour's edge.
     const fence = `${BORDER_PX}px solid ${COLORS.rowBorder}`;
 
+    const tap = useTapGesture(
+        useCallback(
+            (event: React.PointerEvent) => {
+                // Stop the tap reaching the world layer, which reads a pointer on open
+                // water as "deselect" (§ 3.3a) and treats a drag there as a pan.
+                event.stopPropagation();
+                onTap(word);
+            },
+            [onTap, word]
+        )
+    );
+
     return (
         <Box
             className={[
                 "memory-map-word",
                 `memory-map-word--${outcome ?? "unanswered"}`,
+                selected ? "memory-map-word--selected" : "",
                 pulsing ? "memory-map-word--pulsing" : "",
                 fading ? "memory-map-word--fading" : "",
             ]
@@ -179,32 +196,10 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
             // On a dense map most drags START on a word, and a bare onPointerUp
             // handler fires for every one of them — so panning across the board
             // answered the prompt (wrongly) with whatever word happened to be under
-            // the finger. The press position is recorded on pointerdown and the tap
-            // only counts if the pointer barely moved.
-            //
-            // Measured here rather than read off the gesture layer on purpose: the
-            // world's drag listens to TOUCH events while this is a POINTER handler,
-            // so the two never see the same event object and cannot be correlated.
-            onPointerDown={(event) => {
-                pressRef.current = { x: event.clientX, y: event.clientY };
-            }}
-            onPointerUp={(event) => {
-                const press = pressRef.current;
-                pressRef.current = null;
-                if (!press) return;
-                const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
-                if (moved > TAP_SLOP_PX) return; // that was a pan, not an answer
-                // Stop the tap reaching the world layer, which treats a pointer on
-                // empty space as the start of a pan (§ 3.3).
-                event.stopPropagation();
-                onTap(word);
-            }}
-            // A pointer that leaves the element mid-gesture (or is cancelled by the
-            // browser) must not leave a stale press behind for the NEXT tap to match
-            // against, which would make an unrelated release count as an answer.
-            onPointerCancel={() => {
-                pressRef.current = null;
-            }}
+            // the finger. `useTapGesture` records the press position and only calls
+            // back when the pointer barely moved; the world's deselect-on-water tap
+            // uses the same hook, so the two ends cannot drift apart.
+            {...tap}
             sx={{
                 position: "absolute",
                 // World coordinates are the box CENTRE, so the node is offset by half
@@ -244,6 +239,18 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
                 opacity: fading ? 0 : 1,
                 // Fading words are on their way out and must not accept another tap.
                 pointerEvents: fading ? "none" : "auto",
+                // ── THE ARMED RING ───────────────────────────────────────────
+                // The first tap does not answer; it ARMS the word, and this ring is the
+                // whole affordance for that (§ 3.3a). Deliberately BLUE rather than any
+                // of the three outcome hues: green/orange/red are results, and a word
+                // that is merely selected has no result yet — borrowing one of those
+                // colours would say the answer had already been graded.
+                //
+                // Outside the box (`0 0 0 Npx`, no inset) so it never covers a shared
+                // fence, and lifted above the neighbours it abuts so half the ring is
+                // not painted over by whichever parcel renders after it.
+                boxShadow: selected ? `0 0 0 ${SELECT_RING_PX}px ${COLORS.blueMain}` : "none",
+                zIndex: selected ? 2 : undefined,
                 "&.memory-map-word--pulsing": {
                     animation: "memory-map-pulse 1.1s ease-in-out infinite",
                 },

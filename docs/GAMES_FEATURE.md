@@ -962,7 +962,7 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   | Tier | Contents | Drained |
   |---|---|---|
   | 1. fresh (requested) | game mark type off cooldown | the requested buckets only |
-  | 2. **lend** | newly minted — or **re-lent** — provisional cards | see below |
+  | 2. **lend** | newly minted — or **re-lent** — provisional cards | only the part of the shortfall tier 3 cannot cover — see below |
   | 3. fresh (fallback) | game mark type off cooldown | Target → Comfortable → Unfamiliar → Mastered |
   | 4. cooled | on the per-type cooldown | requested buckets, then fallback order |
   | 5. avoided | ids passed as `avoid` (just cleared) | requested buckets, then fallback order |
@@ -976,6 +976,16 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   (it requests one color at a time and pays the player by it —
   [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 6.2d). Multi-bucket callers — every other
   game — are unaffected.
+
+  ⚠️ **Tier 2 lends only what tier 3 cannot cover** (2026-08-19). The shortfall is
+  reduced by every FRESH card still queued for tier 3 before anything is minted, so a
+  learner holding playable cards is never lent new ones. Without this, a game whose
+  mark track is sparsely populated lends on **every single load, forever**: Speed
+  Reading buckets by READING, on which a typical learner is ~100% `Unfamiliar`, so 18
+  of its 20 quota slots are unfillable at any library size — and a minted row is itself
+  `Unfamiliar`, so lending can never close them. A single-bucket caller (Hydra) is
+  unaffected: tier 3 is empty for it by construction, so the subtraction is a no-op.
+  See [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) § 4b.
 
   Tier 2 is **skipped for a collection-restricted round** (a deck round made of
   non-deck words is not that deck) and, historically, for any **partial refill**.

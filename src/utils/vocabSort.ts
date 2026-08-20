@@ -8,10 +8,10 @@ import {
   cooldownRemainingMs,
   computeTypeCategory,
   BAR_LABELS,
+  BAR_MARK_TYPES,
   type MasteryBarId,
   type MasteryGoals,
 } from "./masteryCompute";
-import { MARK_TYPES } from "../../server/contracts/wire";
 
 /**
  * Client-side "Sort by" for an already-loaded collection of cards
@@ -70,9 +70,13 @@ export type VocabSortKey =
   | "masteryReadingDesc"
   | "masteryWritingAsc"
   | "masteryWritingDesc"
-  // time left before the card can next be marked
+  // time left before the card can next be marked, per bar
   | "cooldownReady"
   | "cooldownLongest"
+  | "cooldownReadyReading"
+  | "cooldownLongestReading"
+  | "cooldownReadyWriting"
+  | "cooldownLongestWriting"
   // date that bar crossed into Mastered, per bar
   | "masteredRecent"
   | "masteredOldest"
@@ -105,6 +109,24 @@ const MASTERED_AT_KEY_BAR: Partial<Record<VocabSortKey, MasteryBarId>> = {
   masteredOldestWriting: "writing",
 };
 
+/**
+ * The bar each COOLDOWN key measures its rest across.
+ *
+ * The core keys span recognition + production (the two tracks a flp card exercises
+ * at once); reading and writing span their single track. Bar-scoped since the Mastery
+ * Centers shipped: in a Center, "what has rested longest" must mean the skill the page
+ * is about — a card whose recognition has been resting for months tells a learner
+ * nothing about when they last read it.
+ */
+const COOLDOWN_KEY_BAR: Partial<Record<VocabSortKey, MasteryBarId>> = {
+  cooldownReady: "core",
+  cooldownLongest: "core",
+  cooldownReadyReading: "reading",
+  cooldownLongestReading: "reading",
+  cooldownReadyWriting: "writing",
+  cooldownLongestWriting: "writing",
+};
+
 /** The two alphabetical keys that read Z–A. The other two read A–Z. */
 const REVERSED_ALPHA_KEYS: readonly VocabSortKey[] = [
   "alphaPronunciationDesc",
@@ -115,6 +137,8 @@ const REVERSED_ALPHA_KEYS: readonly VocabSortKey[] = [
 const ASCENDING_KEYS: readonly VocabSortKey[] = [
   "oldest",
   "cooldownReady",
+  "cooldownReadyReading",
+  "cooldownReadyWriting",
   "deckAddedOldest",
   "masteryAsc",
   "masteryReadingAsc",
@@ -149,8 +173,26 @@ const MASTERED_AT_KEYS: Record<MasteryBarId, { asc: VocabSortKey; desc: VocabSor
   writing: { asc: "masteredOldestWriting", desc: "masteredRecentWriting" },
 };
 
-/** The default for a collection: a deck orders by when you put cards IN it, everything else by card age. */
-export const defaultSortKey = (isDeck: boolean): VocabSortKey => (isDeck ? "deckAdded" : "recent");
+const COOLDOWN_KEYS: Record<MasteryBarId, { asc: VocabSortKey; desc: VocabSortKey }> = {
+  core: { asc: "cooldownReady", desc: "cooldownLongest" },
+  reading: { asc: "cooldownReadyReading", desc: "cooldownLongestReading" },
+  writing: { asc: "cooldownReadyWriting", desc: "cooldownLongestWriting" },
+};
+
+/**
+ * The default ordering a collection opens in.
+ *
+ * Under the CORE lens: a deck orders by when you put cards IN it, everything else by
+ * card age — a collection opens in its natural order, and nothing is being asked of
+ * it yet.
+ *
+ * Under a SKILL lens (a Mastery Center) it opens on that bar's mastery, LOWEST first.
+ * A Center is opened with one question — "what still needs reading / writing work?" —
+ * and card age does not answer it. The lens overrides the deck rule too: inside the
+ * Reading Center a deck is being read through that same question.
+ */
+export const defaultSortKey = (isDeck: boolean, lens: MasteryBarId = "core"): VocabSortKey =>
+  lens !== "core" ? MASTERY_KEYS[lens].asc : isDeck ? "deckAdded" : "recent";
 
 /** One end of a bundle: the ordering itself, captioned by its direction alone. */
 interface SortDirection {
@@ -192,12 +234,20 @@ export interface SortBundle {
  */
 export const sortBundles = (
   language: string | null | undefined,
-  goals: MasteryGoals
+  goals: MasteryGoals,
+  // The surface's LENS. `core` (the default) is the fdp and every collection opened
+  // from it: the menu then offers one bar-scoped row set per ACTIVE bar, gated on the
+  // goals. A skill lens is a Mastery Center, where the menu offers that ONE bar and
+  // nothing else — the page is about that skill, and a core-mastery row inside it
+  // would order the list by the question the learner just navigated away from.
+  lens: MasteryBarId = "core"
 ): SortBundle[] => {
   // Reading/writing rows appear ONLY when that goal is set — the same gate that decides
   // whether the bar is drawn at all (`activeBars`). Offering "Mastery (Write)" to a
   // learner with no writing bar would sort by a number they cannot see anywhere.
-  const bars = activeBars(goals);
+  // Under a skill lens the account has that goal by construction (the Center's button
+  // is gated on it), so the lens bar is simply the whole list.
+  const bars = lens === "core" ? activeBars(goals) : [lens];
   // A bar is named in a row label only when there is more than one bar to tell apart.
   // A learner with no goals reads "Mastery", not "Mastery (Know)".
   const qualify = (base: string, bar: MasteryBarId): string =>
@@ -210,6 +260,19 @@ export const sortBundles = (
     directions: [
       { key: MASTERY_KEYS[bar].desc, label: "Highest" },
       { key: MASTERY_KEYS[bar].asc, label: "Lowest" },
+    ],
+  });
+
+  // Cooldown is bar-scoped like the other two since the Centers shipped: the key is
+  // the longest-resting track WITHIN the bar (see `cooldownKey`), so "what have I been
+  // neglecting" is answered about the skill the surface is about.
+  const cooldownRow = (bar: MasteryBarId): SortBundle => ({
+    id: `cooldown:${bar}`,
+    label: qualify("Cooldown", bar),
+    bar,
+    directions: [
+      { key: COOLDOWN_KEYS[bar].asc, label: "Ready first" },
+      { key: COOLDOWN_KEYS[bar].desc, label: "Longest" },
     ],
   });
 
@@ -257,16 +320,7 @@ export const sortBundles = (
         { key: "alphaDefinitionDesc", label: "Z–A" },
       ],
     },
-    {
-      // Bar-independent by design: the key is the card's longest-resting TRACK, not a
-      // bar's (see `cooldownKey`), so this row is offered whatever the goals are.
-      id: "cooldown",
-      label: "Cooldown",
-      directions: [
-        { key: "cooldownReady", label: "Ready first" },
-        { key: "cooldownLongest", label: "Longest" },
-      ],
-    },
+    ...bars.map(cooldownRow),
     ...bars.map(masteryRow),
     ...bars.map(masteredAtRow),
   ];
@@ -284,9 +338,10 @@ export const sortBundles = (
 export const sortLabel = (
   key: VocabSortKey,
   language: string | null | undefined,
-  goals: MasteryGoals
+  goals: MasteryGoals,
+  lens: MasteryBarId = "core"
 ): string => {
-  for (const bundle of sortBundles(language, goals)) {
+  for (const bundle of sortBundles(language, goals, lens)) {
     const direction = bundle.directions.find((d) => d.key === key);
     if (direction) return `${bundle.label} · ${direction.label}`;
   }
@@ -330,16 +385,16 @@ const pronunciationKey = (entry: VocabEntry): string => {
 };
 
 /**
- * Milliseconds until the card is FULLY off cooldown — the maximum remaining window
- * across its four mark types (`server/contracts/cooldown.ts`).
+ * Milliseconds until every track of ONE BAR is off cooldown — the maximum remaining
+ * window across that bar's mark types (`server/contracts/cooldown.ts`).
  *
  * ── Why the maximum, and not the soonest-ready track ──────────────────────────
  * "When can I drill this at all?" is the more natural question, but its key (the
- * MINIMUM) is degenerate here: a track with no correct mark reports 0, and outside
- * the reading/writing goals most cards have two such tracks — so nearly every card
- * would score 0 and the ordering would collapse into one enormous tie. The maximum
- * has no such problem: an untouched track contributes 0 and simply loses, so the key
- * is the longest-resting track, and it moves whenever ANY track is marked.
+ * MINIMUM) is degenerate: a track with no correct mark reports 0, so on the two-track
+ * core bar nearly every part-drilled card would score 0 and the ordering would
+ * collapse into one enormous tie. The maximum has no such problem: an untouched track
+ * contributes 0 and simply loses, so the key is the bar's longest-resting track, and
+ * it moves whenever ANY of the bar's tracks is marked.
  *
  * What it means to a learner:
  *   Ready first — the cards nothing is holding back: never studied, or fully rested.
@@ -348,10 +403,14 @@ const pronunciationKey = (entry: VocabEntry): string => {
  *                 recently and most strongly marked (a Mastered track rests 6 months,
  *                 an Unfamiliar one 5 minutes).
  *
- * All four types rather than the account's active bars, because every key in this
- * module is deliberately GOAL-INDEPENDENT (see `sortVocabEntries`): an ordering must
- * not change under a settings toggle. Costless here — a track the learner never marks
- * simply never wins the maximum.
+ * ── Why per BAR and not all four types ────────────────────────────────────────
+ * It used to span all four mark types on the argument that an ordering must be
+ * GOAL-INDEPENDENT. It still is — the key names its bar, and a goal toggle changes
+ * nothing about what any key computes; only which keys the menu offers. What changed
+ * is that a surface now has a LENS (the fdp reads core, a Mastery Center reads its own
+ * skill), and a single all-four-types number cannot answer "what reading have I been
+ * neglecting": a card whose recognition has rested for six months would outrank one
+ * whose reading track is genuinely the stalest thing on the page.
  *
  * ⚠️ **0 is a real value, not a missing one**, so cooldown is NOT a DATE_KEY: a
  * never-studied card is genuinely ready and belongs at the TOP of "Ready first", not
@@ -364,9 +423,9 @@ const pronunciationKey = (entry: VocabEntry): string => {
  * the same caveat the cdp display carries, and for the same reason: a sort can only
  * name one window, and the per-type one is the track's own.
  */
-const cooldownKey = (entry: VocabEntry, now: number): number => {
+const cooldownKey = (entry: VocabEntry, bar: MasteryBarId, now: number): number => {
   let longest = 0;
-  for (const type of MARK_TYPES) {
+  for (const type of BAR_MARK_TYPES[bar]) {
     const remaining = cooldownRemainingMs(
       entry.typedMarkHistory,
       type,
@@ -407,7 +466,7 @@ export function sortVocabEntries(
   const isAlpha = key === "alphaPronunciation" || key === "alphaPronunciationDesc"
     || key === "alphaDefinition" || key === "alphaDefinitionDesc";
   const isPronunciation = key === "alphaPronunciation" || key === "alphaPronunciationDesc";
-  const isCooldown = key === "cooldownReady" || key === "cooldownLongest";
+  const cooldownBar = COOLDOWN_KEY_BAR[key];
   const heightBar = MASTERY_KEY_BAR[key];
   const stampBar = MASTERED_AT_KEY_BAR[key];
   const ascending = ASCENDING_KEYS.includes(key);
@@ -421,7 +480,7 @@ export function sortVocabEntries(
     num:
       heightBar ? barProgressBarHeight(entry.typedMarkHistory, heightBar)
         : stampBar ? masteredAtForBar(entry.masteredAt, stampBar)
-          : isCooldown ? cooldownKey(entry, now)
+          : cooldownBar ? cooldownKey(entry, cooldownBar, now)
             : key === "deckAdded" || key === "deckAddedOldest" ? timeOrZero(entry.deckAddedAt)
               : timeOrZero(entry.createdAt),
   }));

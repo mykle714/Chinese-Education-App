@@ -48,10 +48,25 @@ color information — the color channel is reserved for payout.
 
 | Color | Bucket | Bubbles spawned | Bubbles cleared | **Net board Δ** |
 |---|---|---|---|---|
-| 🔴 red | Unfamiliar | 0 | 2 | **−2** |
-| 🟡 yellow | Target | 1 | 2 | **−1** |
-| 🟢 green | Comfortable | 2 | 2 | **0** |
-| 🔵 blue | Mastered | 3 | 2 | **+1** |
+| 🔴 red | Unfamiliar | 1 | 2 | **−1** |
+| 🟡 yellow | Target | 2 | 2 | **0** |
+| 🟢 green | Comfortable | 3 | 2 | **+1** |
+| 🔵 blue | Mastered | 4 | 2 | **+2** |
+
+**The ladder was raised by 1 across the board on 2026-08-19** (it was 0/1/2/3). The
+one-bubble step between colors — the thing the player actually reads — is unchanged;
+what moved is where the ladder sits against the fixed 2-bubbles-removed cost:
+
+* **Red no longer pays nothing.** It is still the only color that shrinks the board,
+  but at −1 rather than −2, so the squeeze (§ 3.1) takes twice as many correct hard
+  clears to escape.
+* **Yellow is now the break-even color** and green has become a grower. Only red
+  shrinks the board; every other color grows it or holds it.
+* **The steady-state mix had to be reweighted with it.** Expected payout is
+  `2 + (2·blue + green − red)/100`, so raising every payout by 1 moved break-even from
+  `2b+g−r = 100` down to `2b+g−r = 0` — 100 points of slack. The old 48/20/24/8 row
+  under the new ladder would have grown the board at **+1.08** bubbles per match
+  instead of +0.08. That slack was spent on yellow and red; see § 3.1.
 
 Colors are the existing `CATEGORY_COLORS` (`src/utils/categoryColors.ts`) — red
 `#EF476F`, green `#05C793`, blue `#779BE7` — so a bubble's color means the same thing
@@ -106,19 +121,19 @@ The table is **three states**, not a curve:
 ```
 OPENING          fill 0.00
   blue 100%  green 0%  yellow 0%  red 0%
-  E[payout] 3.00   net dN +1.00
+  E[payout] 4.00   net dN +2.00
 
     ↓ interpolated across the first tenth
 
 STEADY STATE     fill 0.10 → 0.75   (one mix, held)
-  blue  48%  green 20%  yellow 24%  red 8%
-  E[payout] 2.08   net dN +0.08
+  blue  25%  green 10%  yellow 30%  red 35%
+  E[payout] 2.25   net dN +0.25
 
     ↓ hard step
 
 SQUEEZE          fill >= 0.75
   blue 0%  green 0%  yellow 0%  red 100%
-  E[payout] 0.00   net dN -2.00
+  E[payout] 1.00   net dN -1.00
 ```
 
 **Simplified to two growth anchors on 2026-08-18.** The table previously carried rows
@@ -127,9 +142,10 @@ flat — four breakpoints describing a change no player could perceive, and four
 numbers a tuning pass had to keep mutually consistent. Difficulty in Hydra comes from
 the board **filling up** and from the 0.75 step, not from a slow drift in the mix.
 
-Flattening also removed a problem the drift had introduced: growth is now a uniform
-+0.08 bubbles per match everywhere in the steady state, rather than decaying to +0.02
-near the squeeze, where a skilled player could have hovered indefinitely.
+Flattening also removed a problem the drift had introduced: growth is uniform
+everywhere in the steady state (**+0.25** bubbles per match since the 2026-08-19
+reweight, +0.08 before it), rather than decaying near the squeeze, where a skilled
+player could have hovered indefinitely.
 `hydraSpawnTable.test.ts` asserts there are exactly **two** growth anchors and that the
 steady state is genuinely flat, so reintroducing an intermediate row is a deliberate
 act rather than an accident.
@@ -138,18 +154,23 @@ act rather than an accident.
 That was a design error rather than a tuning one: red is the player's *only* way to
 shrink the board, so withholding it until the board was already half full meant the
 risky-clear trade § 3 calls "the game" was not on offer during the half of a run where
-the player most wants to practise it. Red is now a flat **8%** from fill 0.10 onward.
+the player most wants to practise it. Red went to a flat 8% from fill 0.10 onward, and
+since the **2026-08-19 reweight it is the largest single share of the steady state at
+35%** — the board is now mostly words the player knows least well.
 
-Yellow's share fell from 25–30% to **24%** to pay for it (blue paid the rest). That is
-a real reduction in how often a challenge word surfaces per spawn (§ 7.5), partly
-offset by the faster board turnover the extra red produces. If challenge rounds start
-feeling starved of contested words, raise yellow and take the points out of blue.
+**Reweighted 2026-08-19: 48/20/24/8 → 25/10/30/35** (blue/green/yellow/red), alongside
+the +1 payout ladder (§ 2). Blue and green come down, yellow and red go up. This is
+only affordable *because* of the raise: the +1 freed 100 points of economy slack, and
+spending it here holds growth at a playable **+0.25** per match instead of the +1.08
+the old mix would have produced under the new ladder. Yellow is back up to **30%** —
+higher than it has ever been — so challenge words (§ 7.5) surface *more* often per
+spawn, reversing the 2026-08-18 reduction that had taken it to 24%.
 
 **The fill-0 row is blue-only** (2026-08-18). An empty board rolls nothing but the
 safest, highest-paying color; the other three ramp back in over the interval to the
 0.25 anchor, where the full mix is restored. A run therefore *opens* on words the
 player certainly knows and has to earn its way into risk — and the steepest growth in
-the game (net +1.00 per match) sits exactly where the player has the most room to
+the game (net +2.00 per match) sits exactly where the player has the most room to
 absorb it. Blue-only is a **point, not a zone**: a step here instead of a ramp would
 hand the player a cliff a few bubbles into every run.
 
@@ -160,8 +181,9 @@ is asserted as **exactly one** zero-yellow anchor in `hydraSpawnTable.test.ts`, 
 future tuning pass cannot quietly starve challenge scoring by adding a second.
 
 Below 0.75 fill every point on the curve is net-positive. At 0.75 and above the table
-**switches** to red-only: nothing but the hardest words spawn, each paying 0, so the
-board can only shrink. That zone is the squeeze — the player has to clear their
+**switches** to red-only: nothing but the hardest words spawn, each paying 1 against
+the 2 a match removes, so the board can only shrink — at −1 per match since the
+2026-08-19 ladder, half the −2 it used to be. That zone is the squeeze — the player has to clear their
 hardest words to climb back out of it, and every one of those clears is a chance to
 lose. The red-only floor sits well below the 0.94 loss line, so the squeeze is
 reachable by construction rather than by luck.
@@ -170,18 +192,20 @@ reachable by construction rather than by luck.
 > interpolated anchor.** This section originally listed red-only as an anchor row at
 > 0.75, blended into like every other. It cannot be, and the reason is arithmetic:
 > interpolating the last growth row down to red-only drags expected payout below the
-> break-even 2 well before 0.75 is reached (it did so from about **fill 0.61** against
-> the then-current numbers). That would make "below 0.75 every point
+> break-even 2 well before 0.75 is reached (from about **fill 0.61** against the
+> 2026-08-18 numbers, and from about **fill 0.23** against the current ones — the
+> reweight made this failure mode worse, not better, because the steady state now sits
+> closer to break-even). That would make "below 0.75 every point
 > is net-positive" false across a fifth of the range and hand the board a
 > self-stabilizing region — the exact economy § 3 exists to reject — while the HUD's
 > "red only" badge stayed dark at 0.73 on a board already rolling ~80% red.
 >
 > Between the last growth anchor and 0.75 the distribution therefore **holds**, then
 > steps. `src/__tests__/hydraSpawnTable.test.ts` pins both signs (net-positive
-> throughout the growth zone, zero inside the squeeze), so a tuning pass can move
+> throughout the growth zone, below break-even inside the squeeze), so a tuning pass can move
 > every number freely without being able to reintroduce this by accident.
 
-**Yellow's share (24%) — everywhere except the blue-only opening — is held above what
+**Yellow's share (30%) — everywhere except the blue-only opening — is held above what
 an economy-only tuning would pick, and it is held in *all* modes** — not only inside a Study Challenge. Challenge words
 ride the yellow slot (§ 7.5), and free-play Hydra must roll the same table as
 challenge Hydra or players would be practicing a different game from the one they
@@ -197,7 +221,7 @@ zh-vs-en side (§ 4.2) and it does not override the match guarantee (§ 4.3).
 ## 4. The spawn algorithm
 
 Run after every correct match, with a slot budget `k` = the cleared pair's payout
-(0–3).
+(1–4).
 
 ### 4.1 Order of operations
 
@@ -238,10 +262,10 @@ on it offers the player no way to shrink it — the one move § 3 says the game 
 Balancing makes availability *predictable*: whatever is scarcest is what comes next.
 
 **It does not move the economy**, and that is the point of targeting the table rather
-than a flat 25% each. Uniform colors would average `(0+1+2+3)/4 = 1.5` payout against
-2 bubbles removed per match, so the board would drift downward on its own — the
-self-stabilizing economy § 3 exists to reject. Targeting the table only reduces
-variance around it; `E[payout]` stays 2.08.
+than a flat 25% each. Uniform colors would average `(1+2+3+4)/4 = 2.5` payout against
+2 bubbles removed per match — a mix nobody tuned, growing the board 10× faster than the
++0.25 § 3.1 asks for. Targeting the table only reduces variance around it;
+`E[payout]` stays 2.25.
 
 Deficits are counted in **absolute cards**, not proportionally, which is what makes
 the long-run frequencies match the weights. An **empty board** has no mix to balance
@@ -495,7 +519,7 @@ names exactly one category:
 | tier | multi-bucket caller (every other game) | single-bucket caller (Hydra) |
 |---|---|---|
 | 1 | fresh, requested buckets | fresh, requested bucket |
-| 2 | lend (if allowed) | lend (if allowed) — tier-colored per § 6.2 |
+| 2 | lend (if allowed), capped by what tier 3 still holds | lend (if allowed) — tier-colored per § 6.2, uncapped in practice: tier 3 is skipped, so there is nothing to subtract |
 | 3 | fresh, **fallback buckets** | *skipped* |
 | 4 | cooling, requested then fallback | **cooling, requested bucket** |
 | 5 | avoided, requested then fallback | avoided, requested bucket |
@@ -644,7 +668,8 @@ different axis from a free-play run, because an endless run has no comparable le
 
 Rules:
 
-* **Challenge words are always yellow.** Their payout is 1 regardless of the
+* **Challenge words are always yellow.** Their payout is yellow's (2 since the
+  2026-08-19 ladder, § 2) regardless of the
   learner's real mastery of them — the same color/mastery disjunction § 5 already
   allows for lent cards.
 * **Only a yellow roll can place a challenge word.** When the table rolls yellow and
@@ -814,9 +839,9 @@ owns each decision (linked below); this section now carries only what is still o
 
 ### Still open
 
-**O1 — The § 3.1 numbers are a first tuning, not a measurement.** The steady-state row
-holds `E[payout]` at 2.08, so the board creeps upward by 0.08 bubbles per match — about
-one extra bubble every dozen matches. Whether that *feels* like a slow squeeze or an
+**O1 — The § 3.1 numbers are a tuning, not a measurement.** The steady-state row
+holds `E[payout]` at 2.25, so the board creeps upward by 0.25 bubbles per match — about
+one extra bubble every four matches. Whether that *feels* like a slow squeeze or an
 unwinnable flood is not knowable on paper. With the table simplified to two growth
 anchors there are only four knobs left, which is the point: the **steady-state mix**,
 the **0.10 ramp end**, the **0.75 red-only floor**, and the 0.94 loss line.

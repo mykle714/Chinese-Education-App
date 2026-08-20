@@ -22,6 +22,8 @@ import { useEipTabs } from "../flashcards/FlashcardsLearnPage/useEipTabs";
 import { API_BASE_URL } from "../../constants";
 import { fetchStarterPacks, fetchNextPack, sortCard, skipPack, undoSort } from "./starterPacksApi";
 import { fetchProvisionalSortSet } from "../../api/provisional";
+import ProvisionalSortDonePopup from "../../components/ProvisionalSortDonePopup";
+import { originLabelFor } from "../../utils/originLabel";
 import { lookupVocabEntry } from "../../api/dictionary";
 import { senseLabelForIndex, stripParentheses } from "../../utils/definitionUtils";
 import { saveSelectedSense } from "../../utils/vocabApi";
@@ -984,30 +986,48 @@ const SortCardsPage: React.FC = () => {
         }
     }, [queue, language, selectedLevel, setMode]);
 
-    // SET MODE AUTO-EXIT.
+    // SET MODE EXIT.
     //
     // A fixed set is DONE the moment its queue empties — there is nothing to replenish
-    // and nothing left to decide, so the page closes itself instead of stranding the
-    // user on an empty sort board (which renders as a permanent spinner: the empty-queue
-    // branch below only shows a message when `exhausted`, and a fixed set never is).
+    // and nothing left to decide, so the page must not strand the user on an empty sort
+    // board (which renders as a permanent spinner: the empty-queue branch below only
+    // shows a message when `exhausted`, and a fixed set never is).
+    //
+    // How it ends depends on whether the learner actually did anything:
+    //  • they sorted/skipped at least one card → stop on ProvisionalSortDonePopup and let
+    //    them choose the exit (back to the game/flp that offered the set, or Home). An
+    //    instant route change here read as "the last card just vanished".
+    //  • the set came back already empty (every card sorted in another tab) → there is
+    //    nothing to confirm, so leave silently the way this page always did.
     //
     // Driven off state rather than fired inline from the sorting handler so that EVERY
-    // way of emptying the queue exits: the last card sorted, the last card skipped, or a
-    // set that came back already empty because the cards were sorted in another tab.
-    // `exitedRef` makes it fire exactly once — the effect can re-run before the route
-    // change commits, and a second navigate(-1) would pop an extra history entry.
+    // way of emptying the queue is covered: the last card sorted, the last card skipped,
+    // a failed sort POST, or an empty set. `exitedRef` makes it settle exactly once — the
+    // effect can re-run before the route change commits, and a second navigate(-1) would
+    // pop an extra history entry.
+    const [setModeDone, setSetModeDone] = useState(false);
+    // Where the offer was accepted from, recorded by ProvisionalSortOffer as `?from=`.
+    const originPath = searchParams.get("from");
+    // Total cards resolved in this pass (sorted or skipped) — also the popup's summary.
+    const resolvedCount = useMemo(
+        () => Object.values(done).reduce((total, ids) => total + ids.size, 0),
+        [done]
+    );
+    // Leave for the page that opened the offer. `history.state.idx === 0` means this page
+    // IS the first entry — deep-linked or reloaded — where navigate(-1) would leave the
+    // app entirely, so fall back to the recorded origin, then to the discover hub.
+    const exitToOrigin = useCallback(() => {
+        const idx = (window.history.state as { idx?: number } | null)?.idx;
+        if (idx == null || idx > 0) navigate(-1);
+        else navigate(originPath ?? "/discover");
+    }, [navigate, originPath]);
     const exitedRef = useRef(false);
     useEffect(() => {
         if (!setMode || loading || queue.length > 0 || exitedRef.current) return;
         exitedRef.current = true;
-        // Prefer going back to wherever the offer was accepted from (the game's end
-        // screen, or flp). `history.state.idx === 0` means this page IS the first entry
-        // — deep-linked or reloaded — where navigate(-1) would leave the app entirely,
-        // so fall back to the discover hub.
-        const idx = (window.history.state as { idx?: number } | null)?.idx;
-        if (idx == null || idx > 0) navigate(-1);
-        else navigate("/discover");
-    }, [setMode, loading, queue.length, navigate]);
+        if (resolvedCount > 0) setSetModeDone(true);
+        else exitToOrigin();
+    }, [setMode, loading, queue.length, resolvedCount, exitToOrigin]);
 
     // doneRef helpers — the authoritative resolved-card store. Mutations mirror into
     // `done` state to re-render. Reading from the ref (not the `done` closure) is what
@@ -1160,6 +1180,23 @@ const SortCardsPage: React.FC = () => {
                 <Box className="sort-cards__loading-wrapper" sx={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
                     <DelayedCircularProgress className="sort-cards__spinner" />
                 </Box>
+            </NodePage>
+        );
+    }
+
+    // Set mode finished: the board is empty on purpose, so the page holds still behind
+    // the completion popup rather than falling through to the spinner branch below.
+    if (setModeDone) {
+        return (
+            <NodePage title="Sort Cards" activePage="discover" onBack={exitToOrigin} scrollable={false} headerExtraActions={<MinutePointsFireBadge />}>
+                <ContentArea className="sort-cards__content sort-cards__content--set-complete">
+                    <ProvisionalSortDonePopup
+                        sortedCount={resolvedCount}
+                        originLabel={originLabelFor(originPath)}
+                        onBack={exitToOrigin}
+                        onHome={() => navigate("/")}
+                    />
+                </ContentArea>
             </NodePage>
         );
     }

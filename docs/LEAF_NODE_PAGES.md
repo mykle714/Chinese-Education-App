@@ -271,24 +271,21 @@ cdp, and an in-flight lookup swallows further taps so one gesture never produces
 navigations. Both routes are node-page prefixes in `pageTransition.ts`, so either
 target slides in from the right.
 
-### Auto-narration on entry
+### Narration on entry: none (removed 2026-08-19)
 
-Both cdp surfaces narrate the word **once, automatically, as soon as the entry
-loads** — the user does not have to press the hero speaker button (that button
-stays available for replays). Shared implementation: `useAutoSpeakEntry(tts, entry)`
-in `src/hooks/useTTS.ts`, called from `VocabCardDetailPage.tsx` and
-`DictionaryCardDetailPage.tsx` right after their `entry` state.
+**Neither cdp narrates on landing.** A card detail page is a reference surface a
+learner opens to *read*, frequently several in a row through the breakdown / "Used In"
+/ example-sentence drill-ins — playback on arrival was unbidden noise, and on a
+drill-in chain it queued overlapping words. Narration on both cdps is now entirely
+manual: the hero card's speaker button, and each example sentence's own button.
 
-Behavior:
-- Fires at most once **per `entryKey`**, guarded by a ref — so edit-mode toggles,
-  sense picks, and a silent token refresh re-running the fetch never re-trigger
-  playback, while drilling into a *different* word does.
-- No-ops when narration is disabled in settings (`tts.enabled`) or when the server
-  flagged the card as unsynthesizable (`entry.hasAudio === false`) — the same guard
-  `useTTS.prefetch` uses.
-- Autoplay is legal here because reaching a cdp always involves a tap, and
-  `CloudTTSProvider` arms a one-shot global gesture listener that resumes its
-  shared `AudioContext`.
+The shared `useAutoSpeakEntry(tts, entry)` hook that implemented the old behavior has
+been **deleted** from `src/hooks/useTTS.ts` — the two cdps were its only callers, so
+nothing else changed. `useTTS`'s manual `speak`/`prefetch` path is untouched, and
+`prefetch` still warms the audio so the first press of the speaker button is instant.
+
+Autoplay elsewhere is unaffected: the flp, Bubble Match, Hydra Bubbles, Match Speed
+and the scp all narrate on their own gestures/toggles and keep doing so.
 
 ## Reader: node list + node-style document page (cdp-style)
 

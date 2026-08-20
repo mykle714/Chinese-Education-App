@@ -151,6 +151,45 @@ export function resolveDisplayDefinition(
 }
 
 /**
+ * The cluster whose `reading` supplies the entry's DISPLAY pinyin. Split out of
+ * `resolveDisplayPronunciation` because pinyin and dd resolve through DIFFERENT gates —
+ * see the asymmetry note on `resolveDisplayPronunciation`.
+ *
+ * Two paths, in order:
+ *   1. **The picker's list** (`sortedSenseClusters`, ≥2 displayable clusters). The reading
+ *      must belong to the sense whose English is on screen, and `senseIndexOverride` is an
+ *      index INTO this exact list — resolving against any other ordering would silently pair
+ *      one sense's gloss with another sense's tones.
+ *   2. **No picker** (unclustered, or fewer than two displayable clusters). There is no
+ *      chosen sense to agree with — the dd side is showing the flat `definitions[0]` — so
+ *      this returns the entry's PRIMARY reading: the highest-frequency cluster, preferring
+ *      one that carries displayable English. That preference matters for the handful of
+ *      entries holding a real sense plus a gloss-less grammatical-particle sense, where the
+ *      particle cluster must not donate its reading to the real gloss's card.
+ *      `senseIndexOverride` is deliberately ignored here: with no picker rendered, there is
+ *      no index a caller could have meaningfully chosen.
+ *
+ * Mirrored by `readingCluster` in server/utils/definitions.ts — keep the two in step.
+ */
+function readingCluster(
+  entry: Pick<VocabEntry, 'definitionClusters' | 'selectedSense'>,
+  senseIndexOverride?: number,
+): DefinitionCluster | null {
+  const clusters = entry.definitionClusters;
+  if (!Array.isArray(clusters) || clusters.length === 0) return null;
+
+  const sorted = sortedSenseClusters(entry);
+  if (sorted) {
+    const index = senseIndexOverride ?? resolveSelectedSenseIndex(entry);
+    return sorted[index] ?? sorted[0] ?? null;
+  }
+
+  const displayable = clusters.filter((c) => ddt(c) !== '');
+  const pool = displayable.length > 0 ? displayable : clusters;
+  return [...pool].sort((a, b) => (b.frequencyScore ?? -1) - (a.frequencyScore ?? -1))[0] ?? null;
+}
+
+/**
  * **The display-pinyin resolver — the pronunciation twin of `resolveDisplayDefinition`.**
  *
  * A heteronym's reading belongs to its SENSE, not to the word: 过去 is `guò qù` for "the
@@ -159,14 +198,26 @@ export function resolveDisplayDefinition(
  * any surface that shows a sense-resolved definition must resolve its pinyin the same way —
  * otherwise the card prints one sense's English over another sense's tones.
  *
- * Resolution order mirrors `resolveDisplayDefinition` step for step so the two can never
- * disagree about which sense is showing:
- *   1. clustered entry (≥2 displayable clusters) whose chosen cluster carries a `reading`
- *      → that reading, converted from the stored numbered form to the tone-marked form the
- *      rest of the app renders (`hui4 ji4` → `huì jì`);
- *   2. otherwise — unclustered, single-cluster, or a Spanish cluster (whose `reading` is
- *      always null, senses being separated by pos/gender) → the entry-level `pronunciation`,
- *      unchanged from before this feature.
+ * Resolution: the sense pick comes from `readingCluster` (below), which agrees with
+ * `resolveDisplayDefinition` on WHICH sense is showing whenever a sense picker exists, and
+ * otherwise falls through to the entry's primary reading. The chosen cluster's `reading` is
+ * converted from the stored numbered form to the tone-marked form the rest of the app
+ * renders (`hui4 ji4` → `huì jì`). Falls back to the entry-level `pronunciation` column
+ * whenever no cluster reading is available — an unclustered entry (the ~110k
+ * non-discoverable det rows) or a Spanish cluster, whose `reading` is always null since es
+ * senses are separated by pos/gender.
+ *
+ * **Why this does NOT share `resolveDisplayDefinition`'s `< 2` displayable-cluster gate.**
+ * The two fields have different fallbacks. dd falls back to `definitions[0]`, a CURATED
+ * artifact — a hand-ordered lead gloss that is often the better string, so bailing to it
+ * when there is no sense to choose is a real editorial choice. Pinyin has no second
+ * artifact: `pronunciation`/`numberedPinyin` is the same fact stored twice, and the column
+ * is the UNREVIEWED copy. backfill-cluster-definitions.js seeds the model with the column
+ * as "primary reading", instructs it to override for genuine heteronyms, and writes back
+ * ONLY `definitionClusters` — so the column is upstream-of-review by construction and drifts
+ * in one direction forever (重点 kept `chong2 dian3` in the column long after its clusters
+ * were corrected to `zhong4 dian3`). Gating pinyin on `< 2` would pin the ~74% of
+ * discoverable entries that are single-cluster to that unreviewed copy.
  *
  * Guard: a reading whose syllable count disagrees with the entry's own `pronunciation` is
  * rejected in favor of the column. cpcd zips syllables to characters positionally, so a
@@ -180,10 +231,7 @@ export function resolveDisplayPronunciation(
   senseIndexOverride?: number,
 ): string | null {
   const columnPinyin = entry.pronunciation ?? null;
-  const sorted = sortedSenseClusters(entry);
-  if (!sorted) return columnPinyin;
-  const index = senseIndexOverride ?? resolveSelectedSenseIndex(entry);
-  const reading = (sorted[index] ?? sorted[0])?.reading;
+  const reading = readingCluster(entry, senseIndexOverride)?.reading;
   if (!reading) return columnPinyin;
   const toned = numberedToTonedPinyin(reading);
   if (!toned) return columnPinyin;

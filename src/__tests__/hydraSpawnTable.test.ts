@@ -66,9 +66,15 @@ describe("hydra spawn table", () => {
         }
     });
 
-    it("pays zero inside the squeeze, so the board can only shrink there", () => {
-        expect(expectedPayoutAt(RED_ONLY_FILL)).toBe(0);
-        expect(expectedPayoutAt(0.9)).toBe(0);
+    it("pays below break-even inside the squeeze, so the board can only shrink there", () => {
+        // Red used to pay 0 (−2 bubbles per match inside the zone). Under the
+        // 2026-08-19 +1 ladder it pays 1, so the zone is −1 per match: still strictly
+        // shrinking, but half as fast to escape. The assertion is on the SIGN, not on
+        // the value, so the next payout tuning cannot silently make the squeeze
+        // survivable-by-standing-still.
+        expect(expectedPayoutAt(RED_ONLY_FILL)).toBeLessThan(2);
+        expect(expectedPayoutAt(0.9)).toBeLessThan(2);
+        expect(expectedPayoutAt(RED_ONLY_FILL)).toBe(PAYOUT_BY_COLOR.Unfamiliar);
     });
 
     it("keeps the squeeze reachable — the red-only floor sits below the loss line", () => {
@@ -81,13 +87,10 @@ describe("hydra spawn table", () => {
         // Challenge words ride the yellow slot (§ 7.5) and free play must roll the
         // same table, so yellow's share is a floor rather than a tuning artifact.
         //
-        // THE FLOOR WAS 25 AND IS NOW 22 (2026-08-18). Pushing red to a flat 8% had to
-        // come out of somewhere, and it came out of blue and yellow. Yellow's range is
-        // now 22–25% rather than 25–30%, so a challenge word surfaces somewhat less
-        // often per spawn — acceptable because the red increase also makes the board
-        // turn over faster, but it is a REAL reduction and not a rounding change. If
-        // challenge rounds start feeling starved of contested words, raise this back
-        // and take the points out of blue instead.
+        // THE FLOOR IS BACK UP TO 30 (2026-08-19). It was 25, then 22 while red was
+        // being raised at yellow's expense; the +1 payout ladder freed enough economy
+        // slack to take the points out of blue and green instead, so yellow now sits
+        // at 30% and a challenge word surfaces MORE often per spawn than it ever has.
         //
         // THE FILL-0 ROW IS EXEMPT, and it is the one exception the floor tolerates:
         // an empty board rolls blue-only, so a challenge word cannot spawn onto it.
@@ -100,7 +103,7 @@ describe("hydra spawn table", () => {
 
         for (const anchor of HYDRA_SPAWN_ANCHORS) {
             if (anchor.fill >= RED_ONLY_FILL || anchor.fill === 0) continue;
-            expect(anchor.weights.Target, `anchor at fill ${anchor.fill}`).toBeGreaterThanOrEqual(22);
+            expect(anchor.weights.Target, `anchor at fill ${anchor.fill}`).toBeGreaterThanOrEqual(30);
         }
     });
 
@@ -127,7 +130,7 @@ describe("hydra spawn table", () => {
         const steady = spawnWeightsAt(0.1);
         for (const fill of [0.1, 0.2, 0.35, 0.5, 0.65, 0.74]) {
             expect(spawnWeightsAt(fill), `fill ${fill}`).toEqual(steady);
-            expect(expectedPayoutAt(fill), `fill ${fill}`).toBeCloseTo(2.08, 10);
+            expect(expectedPayoutAt(fill), `fill ${fill}`).toBeCloseTo(2.25, 10);
         }
         // Exactly two growth anchors: the opening and the steady state.
         expect(HYDRA_SPAWN_ANCHORS).toHaveLength(2);
@@ -136,11 +139,11 @@ describe("hydra spawn table", () => {
     it("offers red early enough to be a real option", () => {
         // Red is the ONLY way to shrink the board, so a table that withholds it until
         // the board is already half full denies the player the very trade § 3 calls
-        // the game. It used to be 0% below fill 0.45; it is now on offer from the
-        // first tenth and flat at 8% thereafter.
-        expect(spawnWeightsAt(0.1).Unfamiliar).toBe(8);
-        expect(spawnWeightsAt(0.3).Unfamiliar).toBe(8);
-        expect(spawnWeightsAt(0.7).Unfamiliar).toBe(8);
+        // the game. It used to be 0% below fill 0.45, then a flat 8%; since the
+        // 2026-08-19 reweight it is the LARGEST share of the steady state at 35%.
+        expect(spawnWeightsAt(0.1).Unfamiliar).toBe(35);
+        expect(spawnWeightsAt(0.3).Unfamiliar).toBe(35);
+        expect(spawnWeightsAt(0.7).Unfamiliar).toBe(35);
         // Still absent from the blue-only opening.
         expect(spawnWeightsAt(0).Unfamiliar).toBe(0);
     });
@@ -160,7 +163,7 @@ describe("hydra spawn table", () => {
         for (let i = 0; i < 200; i++) {
             expect(rollColor(0, () => i / 200)).toBe("Mastered");
         }
-        expect(expectedPayoutAt(0)).toBe(3);
+        expect(expectedPayoutAt(0)).toBe(PAYOUT_BY_COLOR.Mastered); // 4.00 — the fastest growth in the game
     });
 
     it("ramps the other colors in as the board fills", () => {
@@ -170,13 +173,24 @@ describe("hydra spawn table", () => {
         expect(spawnWeightsAt(0).Target).toBe(0);
         expect(spawnWeightsAt(0.05).Target).toBeGreaterThan(0);
         expect(spawnWeightsAt(0.05).Mastered).toBeLessThan(100);
-        expect(spawnWeightsAt(0.25).Target).toBe(24);
+        expect(spawnWeightsAt(0.25).Target).toBe(30);
     });
 
     it("pays out the documented ladder", () => {
-        expect(PAYOUT_BY_COLOR.Unfamiliar).toBe(0);
-        expect(PAYOUT_BY_COLOR.Target).toBe(1);
-        expect(PAYOUT_BY_COLOR.Comfortable).toBe(2);
-        expect(PAYOUT_BY_COLOR.Mastered).toBe(3);
+        // 1/2/3/4 since 2026-08-19 (was 0/1/2/3). Every color now spawns at least one
+        // bubble; the one-step gap between colors is what the payout ordering means,
+        // and the ABSOLUTE values only matter against the 2-per-match removal.
+        expect(PAYOUT_BY_COLOR.Unfamiliar).toBe(1);
+        expect(PAYOUT_BY_COLOR.Target).toBe(2);
+        expect(PAYOUT_BY_COLOR.Comfortable).toBe(3);
+        expect(PAYOUT_BY_COLOR.Mastered).toBe(4);
+    });
+
+    it("keeps the ladder strictly increasing from red to blue", () => {
+        // The economy is expressed as a RANKING — riskier color, smaller payout — and
+        // every § 3 argument rests on that ordering rather than on the four values.
+        expect(PAYOUT_BY_COLOR.Unfamiliar).toBeLessThan(PAYOUT_BY_COLOR.Target);
+        expect(PAYOUT_BY_COLOR.Target).toBeLessThan(PAYOUT_BY_COLOR.Comfortable);
+        expect(PAYOUT_BY_COLOR.Comfortable).toBeLessThan(PAYOUT_BY_COLOR.Mastered);
     });
 });

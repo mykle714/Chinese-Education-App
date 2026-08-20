@@ -12,8 +12,9 @@ import { NEW_CARD_SHARES, SHARES_PER_UNMATCHED_ROUND } from "./constants";
  * invariants in § 4.3 unit-testable without a DOM, a network, or a rAF loop.
  *
  * A SLOT IS ONE BUBBLE. A payout of `k` buys `k` bubbles, so a whole new card
- * (word + definition) costs two slots — which is why only a payout of 3 can afford
- * to open with a fresh matched pair.
+ * (word + definition) costs two slots — which is why a payout of 1 (red, under the
+ * 2026-08-19 ladder) can never open with a fresh matched pair, while blue's 4 buys
+ * two of them.
  *
  * Referenced by: HydraStage.tsx, src/__tests__/hydraSpawnPlanner.test.ts.
  */
@@ -187,10 +188,10 @@ function forceLiveMatch(sim: Sim, rng: Rng, plannedId: string): HydraSpawnAction
  *
  * WHY IT DOES NOT CHANGE THE ECONOMY. The target IS the § 3.1 table — this only
  * reduces variance around it, it does not move it. Long-run color frequencies still
- * converge on the table's weights, so `E[payout]` is untouched at 2.08. That is the
+ * converge on the table's weights, so `E[payout]` is untouched at 2.25. That is the
  * whole reason the target is the table rather than a flat 25% each: uniform colors
- * would average (0+1+2+3)/4 = 1.5 payout against 2 removed per match, and the board
- * would drift downward on its own — the self-stabilizing economy § 3 exists to reject.
+ * would average (1+2+3+4)/4 = 2.5 payout against 2 removed per match, which ignores
+ * the § 3.1 mix entirely and grows the board 10× faster than the tuned +0.25.
  *
  * Deficits are measured in ABSOLUTE cards, not proportionally, which is what makes the
  * long-run frequencies match the weights exactly. Measured against the POST-spawn
@@ -278,7 +279,7 @@ function rollStrayOrComplete(sim: Sim, rng: Rng, plannedId: string): HydraSpawnA
  * Plan the spawns owed for one cleared pair.
  *
  * @param board   the board AFTER the matched pair has been removed
- * @param payout  0–3, from PAYOUT_BY_COLOR for the color that was cleared
+ * @param payout  1–4, from PAYOUT_BY_COLOR for the color that was cleared
  *
  * Order of operations (§ 4.1):
  *   1. `payout - 1` slots by the ratio rule, preferring a fresh matched PAIR while
@@ -286,8 +287,9 @@ function rollStrayOrComplete(sim: Sim, rng: Rng, plannedId: string): HydraSpawnA
  *   2. the last slot goes to the ratio rule if a live match already exists, and is
  *      forced to create one if it does not.
  *   3. ANTI-ZERO (§ 4.3, highest priority): if the board would still be left with no
- *      live match — which is the whole of a red clear, where payout is 0 and steps 1
- *      and 2 spend nothing — force one anyway. Purely REACTIVE: there is no floor
+ *      live match, force one anyway. This used to be the whole of a red clear (payout
+ *      0 spent nothing in steps 1 and 2); since the 2026-08-19 ladder red pays 1, so
+ *      step 2 runs and this is a pure backstop for boards a single stray cannot pair. Purely REACTIVE: there is no floor
  *      count below which the board is topped up regardless, because a floor would
  *      quietly re-stabilize the economy at the low end and player control of board
  *      size is the entire point of § 3.

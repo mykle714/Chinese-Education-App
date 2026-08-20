@@ -8,7 +8,7 @@ optional tab strip). It hosts a *body* that exposes `{root, scroll}` through a
 `SheetPanelBodyHandle` ref: `root` is the element the raw touch listeners bind to,
 `scroll` is the element whose `scrollTop` decides resize-vs-scroll. Current bodies:
 `InfoCardPanelBody` (eip), `CompareWorkspace` (compare tab), `SettingsPanelBody`,
-`DecksSheetBody` (the /decks sets sheet — see **Persistent mode** below).
+`DecksPanelBody` (the /decks sets sheet — see **Persistent mode** below).
 
 **Mount sites.** Despite living under `FlashcardsLearnPage/`, the eip sheet is no longer
 flp-private: the sort cards page (scp) mounts the same `InfoCardSection` + `EipTabStrip`
@@ -32,7 +32,7 @@ Everything below describes the **modal** sheet — the eip — which opens with 
 animation, dims the page behind a scrim, and is dismissed by dragging it down.
 
 Passing **`minHeight` > 0** switches the same component into **persistent** mode,
-used by the /decks sets sheet (`FlashcardsDecksPage` → `DecksSheetBody`). A
+used by the /decks sets sheet (`FlashcardsDecksPage` → `DecksPanelBody`, `variant="sheet"`). A
 persistent sheet is page furniture rather than a modal:
 
 | | modal (`minHeight = 0`, default) | persistent (`minHeight > 0`) |
@@ -212,7 +212,7 @@ change. See `InfoCardPanelBody.tsx`'s touchmove handler and the constants block 
 - `src/features/flashcards/constants.ts` — `TAB_SWIPE_*` gesture constants
   (axis lock, commit ratio, transition, edge rubber-band)
 - `src/components/CompareWorkspace.tsx`, `SettingsPanelBody.tsx` — other sheet bodies
-- `src/features/flashcards/DecksSheetBody.tsx` + `FlashcardsDecksPage.tsx` — the
+- `src/features/flashcards/DecksPanelBody.tsx` + `FlashcardsDecksPage.tsx` — the
   persistent-mode host (`SHEET_LIP`/`SHEET_CLOSED_HEIGHT`, `SHEET_COLLAPSE_THRESHOLD_RATIO`,
   `minHeight`, `showScrim={false}`, `collapseThresholdRatio`)
 - `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` — tab state + drill-in

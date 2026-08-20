@@ -42,11 +42,42 @@ const entry = (over: Partial<VocabEntry>): VocabEntry => ({
 } as unknown as VocabEntry);
 
 describe("resolveDisplayPronunciation", () => {
-  it("falls back to the pronunciation column when the word has no sense choice", () => {
-    // Unclustered, and single-cluster (sortedSenseClusters returns null under 2).
-    for (const clusters of [null, [PAST]]) {
-      expect(resolveDisplayPronunciation(entry({ definitionClusters: clusters }))).toBe("guò qù");
-    }
+  it("falls back to the pronunciation column only when there is no cluster reading at all", () => {
+    // Unclustered — the ~110k non-discoverable det rows. Nothing else to read.
+    expect(resolveDisplayPronunciation(entry({ definitionClusters: null }))).toBe("guò qù");
+  });
+
+  it("reads a SINGLE cluster's reading, unlike resolveDisplayDefinition", () => {
+    // The gate asymmetry, pinned. dd keeps the `< 2` gate because its fallback
+    // (definitions[0]) is a curated artifact; pinyin drops it because its fallback is the
+    // UNREVIEWED CEDICT seed the clusterer was handed. A single-cluster entry whose column
+    // disagrees with its reviewed reading must show the reading — this is the real 安定门
+    // shape, where the column simply lost a tone digit.
+    const e = entry({
+      entryKey: "安定门",
+      definition: "Andingmen",
+      pronunciation: "an dìng mén",     // column: no tone on the first syllable
+      definitionClusters: [cluster("Andingmen", "an1 ding4 men2", 3, ["Andingmen"])],
+    });
+    expect(resolveDisplayPronunciation(e)).toBe("ān dìng mén");
+    // ...while the definition side still falls back to the flat dd, gate intact.
+    expect(resolveDisplayDefinition(e)).toBe("Andingmen");
+  });
+
+  it("prefers a displayable cluster's reading when the gloss-less senses would outrank it", () => {
+    // Multi-cluster but fewer than 2 DISPLAYABLE: a grammatical-particle sense whose lead
+    // gloss is entirely parenthetical has no pickable English, so there is no picker and the
+    // dd side shows the flat definitions[0]. The reading must still come from the sense that
+    // actually carries English, even though the particle scores higher.
+    const particle = cluster("particle", "le5", 5, ["(completed action marker)"]);
+    const real = cluster("to finish", "liao3", 2, ["to finish"]);
+    const e = entry({
+      entryKey: "了",
+      definition: "to finish",
+      pronunciation: "le",
+      definitionClusters: [particle, real],
+    });
+    expect(resolveDisplayPronunciation(e)).toBe("liǎo");
   });
 
   it("reads out the selected sense's own reading, tone-marked", () => {

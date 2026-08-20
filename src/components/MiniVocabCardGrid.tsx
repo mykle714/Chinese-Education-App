@@ -2,6 +2,7 @@ import { type ReactNode } from "react";
 import { Box, Alert } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import MiniVocabCard from "./MiniVocabCard";
+import type { MasteryBarId } from "../utils/masteryCompute";
 import DelayedCircularProgress from "./DelayedCircularProgress";
 import { useIncrementalList } from "../hooks/useIncrementalList";
 import type { VocabEntry } from "../types";
@@ -101,6 +102,11 @@ interface MiniVocabCardGridProps {
     // sibling sections below the grid shift as rows fill in, which is the exact
     // reflow this reservation exists to prevent.
     cardHeightPx?: number;
+    // The surface's mastery LENS, forwarded verbatim to every standard card: inside a
+    // Mastery Center each card shows that ONE bar and badges its band
+    // (docs/DECKS_FEATURE.md § "Mastery Centers"). Ignored when `renderCard` is set —
+    // a custom card owns its own readout.
+    lens?: MasteryBarId;
 }
 
 const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
@@ -115,6 +121,7 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
     footer,
     staggerReveal = false,
     cardHeightPx = CARD_HEIGHT_PX,
+    lens,
 }) => {
     // Progressively reveal the deck so a large list never mounts in one blocking
     // render (keeps taps on surrounding buttons responsive). In staggerReveal mode the
@@ -174,6 +181,7 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
                                 entry={entry}
                                 onClick={onCardClick}
                                 animationDelayMs={animationDelayMs}
+                                lens={lens}
                             />
                         );
                     })}

@@ -1,5 +1,5 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Button, Typography } from "@mui/material";
 import MinimizablePopup from "./MinimizablePopup";
 import ProvisionalCardGrid from "./ProvisionalCardGrid";
@@ -14,8 +14,8 @@ import type { Language } from "../types";
  * offer rather than a silent cleanup: the player just spent a whole round with those
  * words, which is the best possible moment to ask whether they want to keep them.
  * Accepting opens the sort flow in SET MODE, seeded with exactly the words this round
- * used (`?set=provisional` in SortCardsPage), which closes itself once the last card
- * of the set is sorted.
+ * used (`?set=provisional` in SortCardsPage), which ends on its own completion popup
+ * (ProvisionalSortDonePopup) once the last card of the set is resolved.
  *
  * SHAPE
  * On a game it stacks OVER the end-of-run popup — both stay on screen, and the two
@@ -82,6 +82,7 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
     dismissLabel = "Not now",
 }) => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { entries, loading } = useProvisionalEntries(language, words, undefined, open);
 
     // Nothing to offer: either the round used no lent cards, or every one of them has
@@ -96,8 +97,12 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
 
     const handleSort = (): void => {
         onNavigate?.();
+        // `from` records WHERE the offer was accepted, so the sort flow's completion popup
+        // can name its exit button ("Back to Bubble Match") and still have a target when
+        // there is no history to pop (deep link / reload).
         navigate(
-            `/discover/sort/${language}?set=provisional&words=${encodeURIComponent(offerWords.join(","))}`
+            `/discover/sort/${language}?set=provisional&words=${encodeURIComponent(offerWords.join(","))}` +
+                `&from=${encodeURIComponent(location.pathname)}`
         );
     };
 

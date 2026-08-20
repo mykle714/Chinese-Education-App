@@ -788,6 +788,18 @@ See [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md).
 Note the mid-run top-up (`opts` set) deliberately omits `surface`: a refill must not
 keep lending cards.
 
+⚠️ **Why this game over-lent, and the fix (2026-08-19).** Speed Reading kept lending ~18
+cards on *every* load even to learners with hundreds of playable cards. Two facts
+combined: it buckets by the READING track, on which a typical learner has almost no
+history and therefore bands ~100% `Unfamiliar`; and it inherited Bubble Match's
+`GAME_DISTRIBUTION` of 2/10/6/2, whose `Target`/`Comfortable`/`Mastered` quotas are then
+unfillable at any library size. The pool's fill tier 2 lent that 18-card shortfall before
+tier 3 could borrow from the learner's own (large) fresh `Unfamiliar` pile — and since a
+minted row is *itself* `Unfamiliar`, the shortfall could never close, so it recurred
+forever. Tier 2 now lends only what tier 3 cannot cover
+([PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md)); the distribution was deliberately
+left alone, so the quotas simply degrade to a best-effort fill from tier 3.
+
 ---
 
 ## `markType` on the game pool

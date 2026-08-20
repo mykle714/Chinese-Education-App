@@ -3,8 +3,9 @@
 A persistent map of what you are learning to **read**. Every card whose reading track
 is not yet mastered owns a permanent spot on it; the map grows as your library grows,
 and words fade off it as you read-master them. A **run** walks the map: an English
-gloss appears at the top, you find and tap the word it belongs to, and the word takes
-a colour recording how well you knew it.
+gloss appears at the top, you find the word it belongs to and tap it twice — once to
+select, once to confirm (§ 3.3a) — and the word takes a colour recording how well you
+knew it.
 
 **Status: BUILT ON DEV (2026-08-18). Not on prod.** Migration **151** is applied to the
 dev database; the route, page, tables, endpoints and tests all exist. All 32 design
@@ -89,9 +90,42 @@ viewport culling.
 
 ### 2.3 Coordinates, sizes
 
-Continuous world coordinates, **not** a grid. Each placement is an axis-aligned
-**bounding box** centred on `(x, y)`, sized by the word's rendered text at a `scale`
-**drawn randomly at spawn (≈0.95×–1.8×) and frozen forever**.
+**World coordinates on an 8px grid.** Each placement is an axis-aligned **bounding box**
+centred on `(x, y)`, sized by the word's rendered text at a `scale` **drawn randomly at
+spawn (≈0.95×–1.8×) and frozen forever** — and then quantized, so that every box EDGE
+falls on a lattice of `WORLD_GRID` = 0.2 world units, which the client draws as exactly
+8 screen pixels at zoom 1 (`PIXELS_PER_WORLD_UNIT` = 40).
+
+*Code: `server/services/memoryMapSpawn.ts` → `WORLD_GRID`, `wordBoxSize`, `firstBox`,
+`tangentTo`; `src/games/memory-map/constants.ts` → `PIXELS_PER_WORLD_UNIT`.*
+
+Three things about the grid are load-bearing and easy to undo by accident:
+
+* **The invariant is on EDGES, not centres.** An edge is drawn (a fence, or a stretch of
+  coastline); a centre is an internal representation nobody sees. A box an odd number of
+  cells wide therefore has its centre on a half-step, which is correct.
+* **Sizes AND positions are both snapped.** Snapping only one is what would open gaps
+  along the shared edges — the original reason the world layer was left continuous. With
+  both snapped, tangency stops being approximate: neighbours abut at an identical
+  coordinate rather than at two floats agreeing to within `OVERLAP_EPSILON`.
+* **The first word anchors the lattice by its TOP-LEFT CORNER** (`firstBox`), not its
+  centre. Centring an odd-cell-wide first box on the origin would put the whole map,
+  which grows tangent to it, on a half-offset lattice.
+
+`PIXELS_PER_WORLD_UNIT` (40) and `WORLD_GRID` (0.2) are a **pair**: 0.2 × 40 = 8. Change
+one alone and the map silently stops being on an 8px grid — nothing fails, it is just no
+longer true. There is no shared constant enforcing it because `memoryMapSpawn.ts` is
+server-side and may not import from `src/`.
+
+Sizes snap **up**, never down, so a box is never smaller than the text it must hold.
+The visible cost is that box heights collapse to about seven distinct values across the
+whole scale range; size *contrast* (what the range actually controls, below) survives,
+and nothing reads size as an identity.
+
+> **Existing placements do not migrate.** A map generated before the grid has
+> off-lattice coordinates and stays that way — the geometry still works (nothing asserts
+> the lattice at read time), it simply is not on the grid. Pre-grid maps are **wiped and
+> regenerated** rather than converted; see § 8.1.
 
 Size carries no meaning — it exists to make the archipelago look organic — and freezing
 it is what keeps the map stable. A size that tracked mastery would reflow every
@@ -136,9 +170,9 @@ neighbour's edge.
 > same geometry but drew it twice wherever two words met, and drew it on the coast where
 > there is nothing to divide.
 
-**The glyphs are measured and scaled to fit their parcel.** `wordBoxSize` allocates ~36px
+**The glyphs are measured and scaled to fit their parcel.** `wordBoxSize` allocates ~40px
 per Chinese glyph at scale 1 while `ForeignText`'s `md` preset renders a 50px column —
-about 40% wider. While the box was invisible that overflow went unnoticed; the moment
+about 25% wider. While the box was invisible that overflow went unnoticed; the moment
 each word became a white parcel with fences, text visibly spilled across its neighbours.
 The fit is **measured** (`offsetWidth`/`offsetHeight`, which are layout values and ignore
 CSS transforms, so neither the camera zoom nor the applied scale feeds back into it)
@@ -302,8 +336,9 @@ prompt would appear frozen with no explanation.
 
 ### 3.3 Tries and colours
 
-Three tries. Tapping **another uncoloured word** flashes it red and burns a try.
-Tapping empty space is a no-op (it is also the pan gesture).
+Three tries. Tapping **another uncoloured word** flashes it red and burns a try — but
+only once that tap has been *confirmed*; see § 3.3a. Tapping empty space never answers
+(it is the pan gesture, and it also clears a selection).
 
 | Outcome | Colour | Meaning |
 |---|---|---|
@@ -319,6 +354,53 @@ find-the-failed-word affordance: the red prompt tells you to stop recalling and 
 looking for a pulsing word. No camera ease, no edge arrow, no directional hint —
 searching is the game, and the red prompt is what stops the player thinking they are
 still being tested.
+
+### 3.3a Answering takes two taps: select, then confirm
+
+**The first tap on an uncoloured word ARMS it; a second tap on the SAME word answers.**
+The armed word wears a blue ring (`SELECT_RING_PX`, `COLORS.blueMain` — deliberately
+none of the three outcome hues, because a selected word has no result yet). Tapping a
+different word moves the ring; **tapping open water drops it**.
+
+Why: the parcels are small, the board is dense, and the finger that answers is the same
+finger that pans it. With a single-tap answer a fumble burned a try, or resolved the
+prompt orange, with no way to take it back. Arming makes every answer deliberate.
+
+Two taps stay **single**, both because there is nothing to take back:
+
+| Tap | Taps needed | Why |
+|---|---|---|
+| Uncoloured word (the answer) | **2** — select, confirm | A wrong one costs a try or a colour |
+| Coloured word (§ 3.4) | 1 | Opens a definition; burns nothing |
+| Failed prompt's pulsing target | 1 | The red is already decided; confirming is ceremony |
+
+Selection is **page state, not run state** (`MemoryMapPage`, `selectedId`) — nothing
+about it is saved, marked or scored, and `useMemoryMapRun.tapWord` is unchanged: it
+still means "this tap is an answer", the page just decides which tap gets to say it. A
+selection belongs to one prompt and is cleared whenever the target changes.
+
+The tap-vs-pan test itself (`TAP_SLOP_PX`, § 14.6) is shared by the words and the water
+via `useTapGesture` — one rule, one file, so the two ends cannot drift apart.
+
+### 3.3b The confirming tap speaks the word
+
+**The tap that commits an answer narrates the word it committed to** (`MemoryMapPage`
+→ `speakWord`, `useTTS.speakSentence`). It is the only narration on the page: there is
+no speaker button, the prompt bar still carries no audio (§ 3.1), and the arming tap is
+silent — sound is the reward for deciding, not for pointing.
+
+* **The tapped word, not the target.** They are the same word on a correct answer. On a
+  wrong one, the prompt bar is showing the *target's* pronunciation, so hearing something
+  else is the answer to "why was that wrong?" — while speaking the target would hand over
+  an answer the player still has tries to find.
+* **Every committed tap speaks**, including the failed prompt's single lock-in tap
+  (§ 3.3a), which is where hearing the word you could not find is worth the most.
+* It plays *after* the correct/wrong sfx (`playCorrectSound` / `playWrongSound`), and is
+  fire-and-forget: narration failing must never break an answer. `useTTS` handles the
+  cloud → browser fallback itself, and no-ops when the learner has TTS off.
+* `word.pronunciation` is passed straight through as the pinyin hint. The server already
+  sense-resolved it when it built the placement, so it is the reading on screen — the
+  games-wide rule that what is *heard* must match what is *read*.
 
 ### 3.4 Coloured words are tappable, and free
 
@@ -525,6 +607,31 @@ Design notes:
 time (CLAUDE.md: confirm all new tables and columns). The shape above is signed off; the
 naming is not yet.
 
+### 8.1 Regenerating pre-grid maps
+
+Placements written before the 8px grid (§ 2.3) hold **off-lattice** `x`/`y`. Nothing
+breaks — no read path asserts the lattice, and the geometry functions are tolerance-based
+— but such a map is simply not on the grid, and it never will be: `scale` is frozen at
+spawn and positions are only ever written for NEW words, so an old map cannot heal.
+Worse, a mixed map is the bad case: new words snap onto a lattice the old ones are not
+on, so a newcomer that used to sit flush against its anchor can now land up to one cell
+off it and open a visible seam.
+
+**Pre-grid maps are therefore wiped and regenerated, not converted.** The learner loses
+the *arrangement* of their map, which is cosmetic and unnamed; they lose no progress —
+membership is derived from the reading track (§ 2.1) and marks live on the vet, so every
+word simply re-spawns on the next load.
+
+```sql
+-- Wipe every placement. The next GET /api/memoryMap re-spawns each learner's map from
+-- scratch, on the grid. Safe to run repeatedly; there is no dependent state.
+DELETE FROM memory_map_placements_zh;
+DELETE FROM memory_map_placements_es;
+```
+
+There is no migration for this — it is a data reset, not a schema change, and it should
+be run once on each database that carries pre-grid maps.
+
 ---
 
 ## 9. Layering
@@ -538,7 +645,7 @@ naming is not yet.
 | **Routes** | `server/routes/memoryMapRoutes.ts` — `GET /api/memoryMap` (load + spawn), `POST /api/memoryMap/graduate` (fade-off + refill, returning the replacement). camelCase paths per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md). |
 | **Contract** | `server/contracts/wire.ts` — `MemoryMapPlacement`, `MemoryMapResponse`, `MEMORY_MAP_CAPACITY` |
 | **Client API** | `src/api/memoryMap.ts` via `apiGet`/`apiPost` (`src/api/http.ts`) — **no function takes a token** ([FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md)) |
-| **Game** | `src/games/memory-map/` — `MemoryMapPage.tsx`, `MemoryMapWorld.tsx` (pan/zoom layer), `MemoryMapWord.tsx`, `MemoryMapPrompt.tsx`, `MemoryMapRestartDialog.tsx`, `constants.ts` (`MARK_TYPE = 'reading'`), `types.ts`, `runStorage.ts`, `useMemoryMapRun.ts`, `promptQueue.ts` |
+| **Game** | `src/games/memory-map/` — `MemoryMapPage.tsx`, `MemoryMapWorld.tsx` (pan/zoom layer), `MemoryMapWord.tsx`, `MemoryMapPrompt.tsx`, `MemoryMapRestartDialog.tsx`, `constants.ts` (`MARK_TYPE = 'reading'`), `types.ts`, `runStorage.ts`, `useMemoryMapRun.ts`, `useTapGesture.ts`, `promptQueue.ts` |
 
 The load effect must key on `user?.id` / `isAuthenticated`, **never on `token`** — the
 map plus an in-progress run is exactly the state a silent-refresh reload would destroy
@@ -580,13 +687,13 @@ map plus an in-progress run is exactly the state a silent-refresh reload would d
 | # | Question | Decision |
 |---|---|---|
 | Q1 | Where placements live | **New tables**, not `gameprogress`, not a vet column (§ 8) |
-| Q2 | Map geometry | **Continuous coordinates + bounding boxes**, not a tile grid (§ 2.3) |
+| Q2 | Map geometry | **Free-form coordinates + bounding boxes**, not a tile grid (§ 2.3). Coordinates were continuous at build time and were quantized to an **8px lattice** afterwards (§ 14.5b) — a grid the geometry lands on, still not a grid it is placed by: a word goes wherever it fits, and only then rounds to the nearest lattice line. |
 | Q3 | Mark policy | **One reading mark per word per run, by outcome**: green +, orange −, red − (§ 3.5) |
 | Q4 | Run length | **The whole map**, made playable by a save; Restart is the escape hatch (§ 4) |
 | Q5 | Size driver | **Random, frozen at spawn** — not length, not mastery (§ 2.3) |
 | Q6 | Already-mastered words holding a placement | **Prompted like any other word**, then faded off when answered (§ 3.6) |
 | Q7 | Languages | **All.** One map per (user, language); render via `ForeignText` |
-| Q8 | What burns a try | **Only tapping another UNCOLOURED word.** Empty space is the pan gesture; coloured words are free (§ 3.3–3.4) |
+| Q8 | What burns a try | **Only a CONFIRMED tap on another UNCOLOURED word** (§ 3.3a — the first tap only selects). Empty space is the pan gesture *and* the deselect; coloured words are free (§ 3.3–3.4) |
 | Q9 | Fade-off storage | **Delete the row.** The space is freed; a regressed word respawns somewhere new (§ 3.6) |
 | Q10 | Colours across exits | **Backtracked from "lost on exit" — the save keeps them.** Restart clears (§ 4) |
 | Q11 | Help finding the target | **None** during the three tries (§ 3.3) — *superseded 2026-08-18: the prompt now shows the target's PINYIN outright (§ 3.1), free of any scoring penalty. It helps you READ the word, not LOCATE it, so Q17's "no locating aid" still stands.* |
@@ -738,29 +845,47 @@ would undo the accumulation and reintroduce the same drop.
 > **Rule:** any gesture that reads-modifies-writes React state at input frequency must
 > keep its own synchronously-advanced ref. Reading the committed prop is a lossy channel.
 
-### 14.5b The 4px grid, and the two things exempt from it
+### 14.5b The 8px grid — one grid, both layers
 
-Every padding, gap, inset and control dimension in the game's **chrome** is a whole
-multiple of `GRID = 4` (`src/games/memory-map/constants.ts`), written through the
-`grid(n)` helper rather than as a bare pixel literal. Retrofitting it removed a drift of
-hand-tuned values that had accumulated during play-testing — `7px 14px`, `3px`,
-`2px 6px 2px 4px`, a 19px icon — and moved `PIXELS_PER_WORLD_UNIT` from 34 to **36**
-(9 × GRID), which also bought a little legibility at the same zoom.
+**Memory Map is drawn on an 8px grid, and that grid governs the map itself, not just its
+chrome.** This is the only surface in the app where the spacing quantum reaches the
+geometry.
 
-MUI's `sx` shorthands are left alone: the theme's spacing unit is 8px, so `gap: 1` and
-`mb: 2` are already on the grid. Only quarter/three-quarter steps would fall off it, and
-none are used.
+*Code: `src/games/memory-map/constants.ts` (the grid docblock, `PIXELS_PER_WORLD_UNIT`);
+`server/services/memoryMapSpawn.ts` (`WORLD_GRID` and the snapping helpers).*
 
-Two exemptions, both deliberate:
+| Layer | What is on the grid | Enforced by |
+|---|---|---|
+| **Chrome** | every padding, gap, inset and control dimension in the prompt bar, the compass markers and the page furniture | plain `8`-multiple pixel literals |
+| **World** | every word-box **edge**, on both axes | `WORLD_GRID` = 0.2 world units × `PIXELS_PER_WORLD_UNIT` 40 = 8px |
 
-1. **Hairlines.** `BORDER_PX` (1.5) and stroke widths generally are not spacing, and a
-   4px fence between two words would be a wall. `box-sizing: border-box` keeps them from
-   pushing anything else off the grid.
-2. **The world layer.** Word boxes are sized by `wordBoxSize` at continuous scales
-   (0.95–1.8) and drawn through a continuous camera zoom, so their pixel dimensions are
-   fractional by construction. Snapping them would open gaps along the shared edges that
-   make an island read as one landmass — not worth breaking the game's central piece of
-   geometry for.
+**There is no `grid(n)` helper, and that is deliberate.** An earlier pass put the chrome
+on a 4px grid through a `GRID` constant and a `grid(n)` helper. Both are gone: 8 is also
+MUI's spacing unit, so `gap: 1` / `mb: 2` are already on the grid, and a second spelling
+of the same number only invites the two to disagree. Chrome values are written as literal
+`"8px"` / `"16px"`.
+
+What the move to 8 changed, beyond doubling the odd 4px steps: `PIXELS_PER_WORLD_UNIT`
+34 → 36 → **40** (each step also buying legibility at the same zoom), the skip icon
+20 → 24, `COMPASS_INSET_PX` 20 → 24, and `CORNER_RADIUS_PX` is now the literal 8 rather
+than `GRID * 2`.
+
+**The world layer is no longer exempt, and the reasoning that exempted it was wrong in an
+instructive way.** It was left continuous because snapping was expected to open gaps along
+the shared edges that fuse an island into one landmass. That is true only if you snap
+sizes *or* positions. Snap **both** and tangency does not merely survive — it becomes
+exact, since two neighbours now abut at an identical coordinate instead of at two floats
+that agree to within `OVERLAP_EPSILON`. The invariant, the edges-not-centres rule, the
+top-left origin anchor and the cost in size texture are all in § 2.3.
+
+**One exemption remains: hairlines.** `BORDER_PX` (1.5) and stroke widths generally are
+not spacing, and an 8px fence between two words would be a wall. `box-sizing: border-box`
+keeps them from pushing anything else off the grid.
+
+The grid is covered by the `the 8px grid` suite in
+`server/__tests__/memoryMapSpawn.test.ts`, which asserts the lattice on every edge of a
+full 100-word map. It is worth keeping green: an off-lattice map looks completely normal,
+so nothing else would ever report the regression.
 
 ### 14.5c Rounded corners — all four, and what that costs
 
@@ -799,12 +924,17 @@ Words carry their own `onPointerUp` for the answer tap. On a dense map most drag
 on a word, so that handler fired on every pan — **panning across the board answered the
 prompt with whatever word happened to be under the finger.**
 
-`MemoryMapWord` now records the press position on `pointerdown` and only counts a
+`useTapGesture` now records the press position on `pointerdown` and only counts a
 release as a tap if the pointer moved less than `TAP_SLOP_PX` (8 screen px), clearing
 the press on `pointercancel` so a stale one cannot match a later release. It is measured
-locally rather than read off the gesture layer because the world's drag listens to
-*touch* events while this is a *pointer* handler — the two never see the same event
+by hand rather than read off the gesture layer because the world's drag listens to
+*touch* events while these are *pointer* handlers — the two never see the same event
 object and cannot be correlated.
+
+Both `MemoryMapWord` and `MemoryMapWorld` use that one hook: the word needs it so a pan
+which merely crosses it is not an answer, the world needs it so a pan that ENDS over
+open water is not a deselect (§ 3.3a). A word's tap calls `stopPropagation` before the
+world sees it, so a tap is consumed exactly once.
 
 ### 14.7 Island placement was unbounded, and compounding
 
@@ -939,6 +1069,6 @@ the game.
 | Controller | `server/controllers/MemoryMapController.ts` |
 | Routes | `server/routes/memoryMapRoutes.ts` — `GET /api/memoryMap`, `POST /api/memoryMap/graduate` |
 | Client API | `src/api/memoryMap.ts` — `fetchMemoryMap`, `graduateMemoryMapWord` |
-| Game | `src/games/memory-map/` — `MemoryMapPage.tsx`, `MemoryMapWorld.tsx`, `MemoryMapWord.tsx`, `MemoryMapPrompt.tsx`, `MemoryMapIslandCompass.tsx`, `MemoryMapRestartDialog.tsx`, `useMemoryMapRun.ts`, `promptQueue.ts`, `runStorage.ts`, `constants.ts`, `types.ts` |
+| Game | `src/games/memory-map/` — `MemoryMapPage.tsx`, `MemoryMapWorld.tsx`, `MemoryMapWord.tsx`, `MemoryMapPrompt.tsx`, `MemoryMapIslandCompass.tsx`, `MemoryMapRestartDialog.tsx`, `useMemoryMapRun.ts`, `useTapGesture.ts`, `promptQueue.ts`, `runStorage.ts`, `constants.ts`, `types.ts` |
 | Registry | `src/games/registry.ts` (the `memory-map` entry), `src/games/GamesPage.tsx` (the All-Cards-only gate), `src/constants.ts` (`MINUTE_POINTS_ELIGIBLE_PAGES`) |
 | Tests | `server/__tests__/memoryMapSpawn.test.ts` (45), `server/__tests__/cardQueueRanking.test.ts` (17), `src/__tests__/memoryMapPromptQueue.test.ts` (8) |

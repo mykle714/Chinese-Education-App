@@ -7,7 +7,7 @@ import { StarterPacksService } from './StarterPacksService.js';
 import { ValidationError } from '../types/dal.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, vetPlayableClause, vetProvisionalClause, vetDeckOrProvisionalClause } from '../dal/shared/vetTable.js';
+import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, vetPlayableClause, vetProvisionalClause, vetDeckOrProvisionalClause } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
 import { rankCardQueue, isTypeOnCooldown } from './cardQueueRanking.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
@@ -681,11 +681,13 @@ export class OnDeckVocabService {
    * you chose to keep" (docs/PROVISIONAL_CARDS.md).
    *
    * Notes on the individual sets:
-   * - **learn-now** reads the CORE bar only. Learn Now is "what is left to learn",
-   *   and a card whose recognition/production is unfinished belongs there no matter
-   *   how its reading or writing bar is doing. Requiring all three bars would strand
-   *   a core-mastered card in the active pile forever because the learner once
-   *   enabled the writing goal.
+   * - **learn-now** is ONE ID PER BAR, and each reads only its own bar. The
+   *   unqualified `learn-now` is the core set — "what is left to know" — and a card
+   *   whose recognition/production is unfinished belongs there no matter how its
+   *   reading or writing bar is doing. A single set requiring ALL bars would strand a
+   *   core-mastered card in the active pile forever because the learner once enabled
+   *   the writing goal; three independent sets say the true thing three times, and
+   *   each is the exact complement of that bar's Mastered collection.
    * - The three **mastered** collections are not disjoint and are not meant to be: a
    *   card the learner both recognizes and can write appears in two. Each answers
    *   "what have I finished in THIS skill".
@@ -1125,18 +1127,25 @@ export class OnDeckVocabService {
   async getCategoryCounts(
     userId: string,
     language: string,
-    categories: string[] = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered']
+    categories: string[] = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered'],
+    bar: MasteryBarId = 'core'
   ): Promise<Record<string, number>> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
+    // Which bar the four bands are read off. `core` for every historical caller —
+    // deck sizes, the level estimate, the account page. The Reading/Writing Centers
+    // pass their own bar, so their tile figures count the skill the page is about
+    // (docs/DECKS_FEATURE.md § "Mastery Centers"). `bar` is a validated union value,
+    // so `barCategoryExpr` can only produce one of three fixed SQL fragments.
+    const categoryExpr = barCategoryExpr(bar);
     const client = await db.getClient();
     try {
       // category is computed per row from typedMarkHistory (migration 143), so we
       // group by the derived expression. `ve` alias is required by
-      // CORE_CATEGORY_EXPR. No users join: the core bar is goal-independent.
+      // barCategoryExpr's default. No users join: no bar depends on the goal flags.
       const result = await client.query<{ category: string; n: number }>(`
-        SELECT ${CORE_CATEGORY_EXPR} AS category, COUNT(*)::int AS n
+        SELECT ${categoryExpr} AS category, COUNT(*)::int AS n
         FROM ${vetTableForLanguage(language)} ve
         WHERE ve."userId" = $1
         AND ve."language" = $3
@@ -1144,8 +1153,8 @@ export class OnDeckVocabService {
         -- NOT count provisional cards, or the page would claim cards the user has not
         -- sorted. Games no longer use these counts to gate entry.
         AND ${vetSortedClause()}
-        AND ${CORE_CATEGORY_EXPR} = ANY($2::text[])
-        GROUP BY ${CORE_CATEGORY_EXPR}
+        AND ${categoryExpr} = ANY($2::text[])
+        GROUP BY ${categoryExpr}
       `, [userId, categories, language]);
 
       const counts: Record<string, number> = {};
@@ -1319,34 +1328,6 @@ export class OnDeckVocabService {
         if (cards.length >= target) break;
         drain(eligible[category] ?? [], Math.min(count, target - cards.length));
       }
-      // 2. LEND BEFORE BORROWING (2026-08-17) → a requested bucket that came up short
-      //    is covered with freshly lent cards before we touch another bucket. Lent
-      //    rows are always Unfamiliar, so a short board skews Unfamiliar rather than
-      //    skewing toward whichever bucket had surplus — the accepted trade.
-      //
-      //    Two sessions never reach here:
-      //      * a COLLECTION-restricted pool (a deck / builtin) — a deck round made of
-      //        non-deck words is not that deck (same rule as canLendProvisional);
-      //      * a PARTIAL REFILL (`opts.need`) — Bubble Match's Play Again is mid-session
-      //        with a board in hand, and lending there would grow the player's deck on
-      //        every tap. That exemption predates this change (see
-      //        OnDeckVocabController.getGamePool) and is deliberately preserved —
-      //        EXCEPT for a rolling-supply surface (`opts.lendOnRefill`), whose every
-      //        spawn is a refill and which would otherwise never lend at all. See
-      //        ROLLING_SUPPLY_SURFACES in contracts/wire.ts.
-      //
-      //    The collection exemption has NO opt-out: a restricted round plays the set
-      //    the learner chose, rolling supply or not (docs/HYDRA_BUBBLES.md § 6.3).
-      const mayLend = opts.need === undefined || opts.lendOnRefill === true;
-      if (cards.length < target && !opts.collection && mayLend) {
-        const lent = await this.lendGameCandidates(
-          client, userId, language, target - cards.length, gameMarkType, now,
-          OnDeckVocabService.GAME_CANDIDATE_CAP, undefined,
-          [...excludeIds, ...selectedIds], opts.collection, opts.lendLevelOffset
-        );
-        // The re-query is unaware of the soft-avoid tier, so filter those back out.
-        drain(lent.filter((card) => !avoidIds.has(card.id)), target - cards.length);
-      }
       // SINGLE-BUCKET REQUESTS NEVER SUBSTITUTE A BUCKET (2026-08-18).
       //
       // A caller that asks for ONE category is not describing a difficulty MIX it
@@ -1368,6 +1349,62 @@ export class OnDeckVocabService {
         ? [...requested, ...OnDeckVocabService.GAME_FALLBACK_ORDER]
         : requested;
 
+      // 2. LEND ONLY WHAT BORROWING CANNOT COVER (2026-08-19, narrowing the
+      //    2026-08-17 "lend before borrowing" rule — docs/PROVISIONAL_CARDS.md § 4b).
+      //
+      //    A requested bucket that came up short is still covered by lending BEFORE we
+      //    substitute another bucket's cards — but only for the part of the shortfall
+      //    the learner's own FRESH (off-cooldown) cards cannot cover. Everything tier 3
+      //    is about to borrow is subtracted from the lend request first.
+      //
+      //    WHY THIS NARROWING EXISTS. The original rule assumed a quota underfills only
+      //    when supply is spent. That is false for a game whose mark track is sparsely
+      //    populated: Speed Reading buckets by READING, where a typical learner is
+      //    ~100% Unfamiliar, so its Target/Comfortable/Mastered quotas (18 of 20) are
+      //    unfillable no matter how large the library is. Worse, a minted row is always
+      //    Unfamiliar, so lending can NEVER close those quotas — every load lent
+      //    another ~18 cards, forever (a dev account with 151 fresh reading-Unfamiliar
+      //    library cards had accumulated 170 provisional rows). Borrowing is free and
+      //    the borrowed card is a card the learner actually chose, so a fresh card in
+      //    hand always beats minting one.
+      //
+      //    Single-bucket callers (Hydra Bubbles) are unaffected: their `fallbackOrder`
+      //    is the requested bucket alone, which tier 1 has already drained, so
+      //    `freshRemaining` is 0 and this is the old unconditional lend.
+      //
+      //    Two sessions never reach here at all:
+      //      * a COLLECTION-restricted pool (a deck / builtin) — a deck round made of
+      //        non-deck words is not that deck (same rule as canLendProvisional);
+      //      * a PARTIAL REFILL (`opts.need`) — Bubble Match's Play Again is mid-session
+      //        with a board in hand, and lending there would grow the player's deck on
+      //        every tap. That exemption predates this change (see
+      //        OnDeckVocabController.getGamePool) and is deliberately preserved —
+      //        EXCEPT for a rolling-supply surface (`opts.lendOnRefill`), whose every
+      //        spawn is a refill and which would otherwise never lend at all. See
+      //        ROLLING_SUPPLY_SURFACES in contracts/wire.ts.
+      //
+      //    The collection exemption has NO opt-out: a restricted round plays the set
+      //    the learner chose, rolling supply or not (docs/HYDRA_BUBBLES.md § 6.3).
+      const mayLend = opts.need === undefined || opts.lendOnRefill === true;
+      // Fresh cards tier 3 still has in hand. The buckets are disjoint (a card has
+      // exactly one category for this markType) and the soft-avoid tier has already
+      // been lifted out of `eligible`, so a plain sum counts no card twice. Capped by
+      // GAME_CANDIDATE_CAP per category, which can only make us lend MORE than
+      // strictly necessary, never less.
+      const freshRemaining = fallbackOrder.reduce(
+        (sum, category) => sum + (eligible[category]?.length ?? 0),
+        0
+      );
+      const lendNeed = target - cards.length - freshRemaining;
+      if (lendNeed > 0 && !opts.collection && mayLend) {
+        const lent = await this.lendGameCandidates(
+          client, userId, language, lendNeed, gameMarkType, now,
+          OnDeckVocabService.GAME_CANDIDATE_CAP, undefined,
+          [...excludeIds, ...selectedIds], opts.collection, opts.lendLevelOffset
+        );
+        // The re-query is unaware of the soft-avoid tier, so filter those back out.
+        drain(lent.filter((card) => !avoidIds.has(card.id)), target - cards.length);
+      }
       // 3. Still short → top up to `target` with FRESH cards from the fallback
       //    buckets (Target → Comfortable → Unfamiliar → Mastered).
       for (const category of fallbackOrder) {
@@ -1556,14 +1593,29 @@ export class OnDeckVocabService {
       //    (requested buckets → fallback).
       for (const [category, count] of Object.entries(distribution)) drain(eligible[category] ?? [], count);
 
-      // LEND BEFORE BORROWING (2026-08-17), same rule as the bubble-match pool. The
-      // lent rows are pushed onto the Unfamiliar FRESH queue rather than drained
+      // LEND ONLY WHAT BORROWING CANNOT COVER (2026-08-19), same rule as the game
+      // pool above: the shortfall is reduced by every FRESH card the fallback pass
+      // still holds, so a learner with playable cards is never minted new ones. This
+      // matters here for exactly the same reason — No-Pinyin mode buckets by READING,
+      // a track on which most learners are ~100% Unfamiliar, so the Target/Comfortable/
+      // Mastered quotas underfill on a library that is not short at all.
+      //
+      // The lent rows are pushed onto the Unfamiliar FRESH queue rather than drained
       // straight into `selected`, so the substring-dedup replacement loop below can
       // draw on them too — otherwise a lent word dropped as a substring could not be
       // replaced by another lent word. A collection-restricted grid never lends.
-      if (selected.length < total && !collection) {
+      //
+      // NOTE the grid's extra constraint: `total` distinct-charactered words. Under-
+      // lending here is safe because the controller's PROVISION_RETRY_FACTOR loop
+      // re-enters with an escalated baseline when the de-dup pass still comes up short.
+      const wsFreshRemaining = OnDeckVocabService.GAME_FALLBACK_ORDER.reduce(
+        (sum, category) => sum + (eligible[category]?.length ?? 0),
+        0
+      );
+      const wsLendNeed = total - selected.length - wsFreshRemaining;
+      if (wsLendNeed > 0 && !collection) {
         const lent = await this.lendGameCandidates(
-          client, userId, language, total - selected.length, gameMarkType, now,
+          client, userId, language, wsLendNeed, gameMarkType, now,
           OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4, [...selectedIds], collection
         );
         // Unshift: freshly lent words go to the FRONT of the Unfamiliar queue, ahead

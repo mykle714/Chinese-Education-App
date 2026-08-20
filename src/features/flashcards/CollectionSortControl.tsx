@@ -3,7 +3,7 @@ import { Box, Button, Menu, Typography, ToggleButtonGroup, ToggleButton } from "
 import type { SxProps, Theme } from "@mui/material/styles";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { sortBundles, sortLabel, type VocabSortKey } from "../../utils/vocabSort";
-import type { MasteryGoals } from "../../utils/masteryCompute";
+import type { MasteryGoals, MasteryBarId } from "../../utils/masteryCompute";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
@@ -14,7 +14,8 @@ import { SIZE, WEIGHT } from "../../theme/scale";
  *
  * ── Why it is a component ─────────────────────────────────────────────────────
  * Two surfaces order the same `VocabEntry[]` with the same keys: the collection page
- * (CollectionViewPage) and the /decks sheet's inline Cards section (DecksSheetBody).
+ * (CollectionViewPage) and the decks panel's inline Cards section (DecksPanelBody,
+ * rendered by the fdp and both Mastery Centers).
  * The menu is ~100 lines of non-obvious markup — rows that are deliberately NOT
  * MenuItems, a toggle group whose value is nulled unless the applied key belongs to
  * that row — and a second copy would have drifted the first time a mastery bar or a
@@ -24,8 +25,9 @@ import { SIZE, WEIGHT } from "../../theme/scale";
  * ── What it does NOT own ──────────────────────────────────────────────────────
  * The sort key itself. The caller holds it in state and applies it with
  * `sortVocabEntries`, because the caller is also the one holding the entries — and
- * the two surfaces default to different keys (a deck opens on `deckAdded`, everything
- * else on `recent`) and keep it for different lifetimes.
+ * the surfaces default to different keys (a deck opens on `deckAdded`, everything else
+ * on `recent`, and anything under a skill lens on that bar's mastery) and keep it for
+ * different lifetimes.
  *
  * Layer: feature component (src/features/flashcards). Presentation only.
  *
@@ -38,6 +40,14 @@ export interface CollectionSortControlProps {
     language: string | null | undefined;
     /** Decides which mastery rows exist — the same gate as the bars themselves. */
     goals: MasteryGoals;
+    /**
+     * The host surface's mastery LENS (docs/DECKS_FEATURE.md § "Mastery Centers").
+     * `core` (default) offers one row set per active bar; a skill lens offers that
+     * ONE bar's rows and drops the others, because a Mastery Center is already about
+     * that skill. Under a skill lens `allowPerSkillBars` is moot — the lens bar is
+     * never filtered out by it.
+     */
+    lens?: MasteryBarId;
     /**
      * Show the deck-only rows (currently "Date added", which reads `deckAddedAt` —
      * a field only the deck read selects). False on any collection where that field
@@ -66,6 +76,7 @@ const CollectionSortControl: React.FC<CollectionSortControlProps> = ({
     onSortKeyChange,
     language,
     goals,
+    lens = "core",
     allowDeckOnly = false,
     allowPerSkillBars = true,
     classPrefix,
@@ -80,12 +91,14 @@ const CollectionSortControl: React.FC<CollectionSortControlProps> = ({
     // `bundle.bar` is the tag rather than an `id` match, so adding a bar cannot
     // silently slip a row past this filter.
     const bundles = useMemo(
-        () => sortBundles(language, goals).filter((bundle) => {
+        () => sortBundles(language, goals, lens).filter((bundle) => {
             if (bundle.deckOnly && !allowDeckOnly) return false;
-            if (bundle.bar && bundle.bar !== "core" && !allowPerSkillBars) return false;
+            // Only meaningful under the CORE lens: a skill lens already offers exactly
+            // one bar, and hiding it would leave the Center with no mastery row at all.
+            if (lens === "core" && bundle.bar && bundle.bar !== "core" && !allowPerSkillBars) return false;
             return true;
         }),
-        [language, goals, allowDeckOnly, allowPerSkillBars]
+        [language, goals, lens, allowDeckOnly, allowPerSkillBars]
     );
 
     return (
@@ -111,7 +124,7 @@ const CollectionSortControl: React.FC<CollectionSortControlProps> = ({
                         minWidth: 0,
                     }}
                 >
-                    {sortLabel(sortKey, language, goals)}
+                    {sortLabel(sortKey, language, goals, lens)}
                 </Button>
             </Box>
 

@@ -61,10 +61,15 @@ Child docs:
 - **Server call sites** (payloads that flatten dd to a string and drop the clusters):
   `OnDeckVocabService.getWordSearchGrid` (word list),
   `VocabEntryDAL.findRelatedBySharedCharacters` (related words),
-  `VocabEntryDAL.findUsedInForCharacter` (used-in pass 1 — the user's own words; pass 2
-  rows are not in their library and keep plain `definitions[0]`).
-- **det-only surfaces** (dictionary search rows, discover sort cards, QuickMark, AI
-  fallback results) carry no `selectedSense` and stay on `definitions[0]`.
+  `VocabEntryDAL.findUsedInForCharacter` (used-in, **both** passes — pass 2 rows carry no
+  `selectedSense`, but the resolver's default-sense branch still applies),
+  `StarterPacksService._rowsToDiscoverCards` (discover / sort cards),
+  `StudyChallengeDAL` (challenge word cards),
+  `CommunityLayoutDAL.normalize` (community feed — the design OWNER's pick).
+- **det-only surfaces** carry no `selectedSense`, which selects the **default** (highest-
+  frequency) sense — not a fallback to `definitions[0]`. "No pick to honor" and "no sense to
+  resolve" are different things; conflating them is what left the sort flow showing a
+  different gloss and reading than the flashcard the same word produces (fixed 2026-08-19).
 
 ### 4. `shortDefinition` — deterministic short gloss
 - **Shape:** `string | null`, resolved at read time, **no AI**.
@@ -387,8 +392,26 @@ server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-frequency-
 | Surface | Form used |
 |---|---|
 | Flashcard face, bubble-match, eip header, cdp, mini cards, /decks previews, related + used-in rows, word-search word list | dd = `resolveDisplayDefinition` (#3) — chosen sense (#6) with `definitions[0]` fallback |
-| Discover sort cards | `definition` = `definitions[0]` (#2) |
+| Discover sort cards (scp, QuickMark, Skipped) | dd (#3), resolved server-side to the default sense |
 | Dictionary row / vocab card | `definitions` array (#1), `shortDefinition` (#4) |
 | eip / card detail expanded view | header dd (#3); the CURRENT sense's `longDefinition`/`longDefinitionParts` (#5, resolved by `resolveLongDefinitionForSense`), `synonyms`/`breakdown` (#7-segment) |
 | Example sentence popups (est) | `segmentMetadata[*].definition` (#7), resolved per segment from `senseDict` → `ddt(cluster)` (#6) with string-match fallback |
 | flp sense-picker dropdown | `ddt(cluster)` per `definitionClusters` entry (#6) |
+
+### The pinyin forms (the same split, one field over)
+
+Chinese pinyin has the identical two-source problem and resolves the same way, so it is
+indexed here rather than in a doc of its own:
+
+| Form | Shape | Notes |
+|---|---|---|
+| `numberedPinyin` | `"zhong4 dian3"` | det column. Numbered form, CEDICT-derived. The **seed** the clusterer is given. |
+| `pronunciation` | `"zhòng diǎn"` | det column, tone-marked. Derived from `numberedPinyin`; **unreviewed, and partly corrupt** — 2,414 zh rows carry a misplaced tone mark (`hoù` for `hòu`) from a bug in `numberedToTonedSyllable` fixed 2026-08-19. |
+| `cluster.reading` | `"zhong4 dian3"` | Numbered, **per sense** — the reviewed value. A heteronym's reading belongs to its sense, not the word. |
+| **display pinyin** | `"zhòng diǎn"` | `resolveDisplayPronunciation` — the ONLY form a surface may render. Resolves `cluster.reading` through `numberedToTonedPinyin`, falling back to the `pronunciation` column only when no cluster reading exists. |
+
+**The rule mirrors dd's:** never render `entry.pronunciation` directly. The resolver's call
+sites are exactly the dd call sites above — the two must resolve the same sense or a card
+prints one sense's English over another's tones. Full rationale, including why pinyin does
+**not** share dd's `< 2` displayable-cluster gate, is in
+[DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md).

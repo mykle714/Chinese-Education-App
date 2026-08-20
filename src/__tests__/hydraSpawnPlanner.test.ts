@@ -195,11 +195,12 @@ describe("pickBalancedColor", () => {
         }));
 
     it("picks whichever color is furthest below the target mix", () => {
-        // Steady state is blue 48 / green 20 / yellow 24 / red 8. On an all-blue board
-        // of 4, the post-spawn targets are blue 2.40 / green 1.00 / yellow 1.20 /
-        // red 0.40, so yellow carries the largest gap and comes next.
+        // Steady state is blue 25 / green 10 / yellow 30 / red 35 (reweighted
+        // 2026-08-19). On an all-blue board of 4, the post-spawn targets are
+        // blue 1.25 / green 0.50 / yellow 1.50 / red 1.75, so RED carries the largest
+        // gap and comes next — it used to be yellow, under the old 48/20/24/8 mix.
         const allBlue = colored(["Mastered", "Mastered", "Mastered", "Mastered"]);
-        expect(pickBalancedColor(allBlue, 0.3, () => 0)).toBe("Target");
+        expect(pickBalancedColor(allBlue, 0.3, () => 0)).toBe("Unfamiliar");
     });
 
     it("falls back to a plain roll on an empty board", () => {

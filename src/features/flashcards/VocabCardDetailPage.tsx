@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveDisplayDefinition } from "../../utils/definitionUtils";
-import { useParams, useNavigate } from "react-router-dom";
+import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveDisplayDefinition, resolveDisplayPronunciation } from "../../utils/definitionUtils";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { lensFromSearch } from "./collectionRef";
 import {
     Box, IconButton, Alert, useTheme,
     Slide, Snackbar, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
@@ -17,7 +18,7 @@ import IconPickerDialog from "../../components/IconPickerDialog";
 import { clearWritingDraft } from "../../components/handwriting/writingDraftStore";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
-import { useTTS, useAutoSpeakEntry, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
+import { useTTS, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
 import { COLORS } from "../../theme/colors";
 import AddToDeckMenu from "./AddToDeckMenu";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "./FlashcardsLearnPage/FlashCardSection";
@@ -50,7 +51,14 @@ const ContentArea = styled(Box)(() => ({
 const VocabCardDetailPage: React.FC = () => {
     usePageTitle("Card");
     const { id } = useParams<{ id: string }>();
+    const [searchParams] = useSearchParams();
     const navigate = useNavigate();
+    // The mastery LENS this card was opened under (docs/DECKS_FEATURE.md § "Mastery
+    // Centers"). `?bar=reading` means the learner came from the Reading Center, so the
+    // Mastery section below shows the reading bar alone; absent it reads `core` and the
+    // section shows recognition + production alone. Exactly one bar either way — this
+    // page answers the question the surface that opened it was asking.
+    const lens = lensFromSearch(searchParams);
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     const { settings } = useFlashcardLearnSettings();
@@ -62,9 +70,11 @@ const VocabCardDetailPage: React.FC = () => {
     // ChineseBlock. Hidden when narration is disabled in settings (onSpeak undefined).
     const tts = useTTS();
     const [entry, setEntry] = useState<VocabEntry | null>(null);
-    // Entering the cdp narrates the word once (see useAutoSpeakEntry); the speaker
-    // button on the hero card remains available for replays.
-    useAutoSpeakEntry(tts, entry);
+    // The cdp does NOT narrate on landing. It is a reference page a learner opens to
+    // read — often mid-thought, often several in a row via the breakdown/"Used In"
+    // drill-ins — and speaking unbidden on every arrival is noise (and, on a drill-in
+    // chain, a queue of overlapping words). Narration here is entirely manual: the
+    // speaker button on the hero card and on each example sentence.
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState(false);
@@ -369,7 +379,14 @@ const VocabCardDetailPage: React.FC = () => {
                                     layout="block"
                                     language={entry.language}
                                     text={entry.entryKey}
-                                    pronunciation={entry.pronunciation}
+                                    pronunciation={
+                                        // Sense-resolved, with the SAME `selectedSenseIndex` the
+                                        // hero card's dd below uses — the header and the card sit
+                                        // on one entry and must not print different pinyin for it
+                                        // (they did: the raw column is the unreviewed CEDICT seed,
+                                        // so 重点 read `chóng diǎn` here over `zhòng diǎn` there).
+                                        resolveDisplayPronunciation(entry, selectedSenseIndex)
+                                    }
                                     showPinyin={showPinyin}
                                     useToneColor={showPinyinColor}
                                 />
@@ -472,7 +489,11 @@ const VocabCardDetailPage: React.FC = () => {
                                     and the default 14px reads tight under two stacked rows. */}
                             <SectionCard className="vocab-card-detail__mastery" sx={{ paddingBottom: "18px", gap: "12px" }}>
                                 <SectionLabel className="vocab-card-detail__section-label">Mastery</SectionLabel>
-                                <MasteryProgressBar entry={entry} />
+                                {/* The LENS, when the card was opened from a Mastery
+                                    Center (`?bar=`): the section then shows that one
+                                    skill's bar and its cooldown instead of every bar the
+                                    account pursues. Undefined everywhere else. */}
+                                <MasteryProgressBar entry={entry} lens={lens} />
                             </SectionCard>
 
                             {/* Info boxes (definition / breakdown / examples / synonyms) —

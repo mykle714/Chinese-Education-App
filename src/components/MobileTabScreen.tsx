@@ -37,7 +37,7 @@ type ActivePage = FooterTab;
 //   • bottom — sized to roughly the floating-footer zone so the last rows fade
 //     out right where they pass behind the pill.
 const EDGE_FADE_TOP = 28;
-// Exported: the /decks pull-up sheet (DecksSheetBody) is a second scroller that
+// Exported: the decks panel (DecksPanelBody) is a second scroller that
 // ends behind the same floating pill, so it fades its last rows out over the same
 // band. One constant, or the two surfaces drift apart.
 export const EDGE_FADE_BOTTOM = FLOATING_FOOTER_CLEARANCE - FLOATING_FOOTER_INSET;

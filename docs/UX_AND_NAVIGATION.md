@@ -101,22 +101,29 @@ implementation: `src/games/bubble-match/BubbleMatchPage.tsx`.
 
 ### Collection pages (Flashcards tab drill-ins)
 
-Three **node** routes share one component, `CollectionViewPage`
+Several **node** routes share one component, `CollectionViewPage`
 ([DECKS_FEATURE.md](./DECKS_FEATURE.md)):
 
 | Path | Shows |
 | --- | --- |
-| `/flashcards/collection/learn-now` | The sorted Learn Now cards (moved off `/decks`) |
-| `/flashcards/collection/mastered` | The Mastered cards (replaces the old `/flashcards/mastered` page) |
+| `/flashcards/collection/learn-now` | The sorted Learn Now cards (moved off `/decks`) — `-reading` / `-writing` variants show the same idea for those bars |
+| `/flashcards/collection/mastered` | The Mastered cards (replaces the old `/flashcards/mastered` page) — likewise `-reading` / `-writing` |
+| `/flashcards/collection/all` | Every sorted card |
 | `/flashcards/deck/:id` | One user-authored deck |
 
 `/flashcards/mastered` still exists as a **redirect** to the second of these, so
 older links keep working.
 
+Two more Flashcards-tab node pages sit beside them — the **Mastery Centers**,
+`/flashcards/reading` and `/flashcards/writing` (`MasteryCenterPage`). Each is the
+`/decks` panel rendered as a page and read through one skill bar; they are reached from
+two buttons under the Study Mix slab, present only when that account goal is set. See
+[DECKS_FEATURE.md § Mastery Centers](./DECKS_FEATURE.md).
+
 Two route shapes rather than one `:collectionId` on purpose: a deck is addressed by
 its numeric id under its own segment, so a deck a user names "mastered" can never
 shadow the built-in route.
 
-All three keep the Flashcards footer tab lit and are reached from `/decks`, which is
+All of them keep the Flashcards footer tab lit and are reached from `/decks`, which is
 now a **deck list** (two built-in collection rows + the user's decks) rather than an
 inline card grid.

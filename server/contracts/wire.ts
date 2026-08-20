@@ -462,6 +462,37 @@ export function masteredCollectionBar(raw: string | null | undefined): MasteryBa
   return null;
 }
 
+/**
+ * The `?collection=` wire value for each bar's Learn Now collection — the mirror
+ * image of MASTERED_COLLECTION_IDS above.
+ *
+ * "Learn Now" means "sorted, and not yet finished IN THIS BAR", so it is per-bar for
+ * exactly the reason Mastered is: a card whose recognition is done but whose reading
+ * has never been touched is finished for one bar and outstanding for another. The
+ * Reading/Writing Centers (docs/DECKS_FEATURE.md § "Mastery Centers") list the
+ * per-bar sets; the fdp lists the core one.
+ *
+ * `core` keeps the bare `learn-now` value it has always had, so existing links and
+ * bookmarks keep resolving to the same set.
+ */
+export const LEARN_NOW_COLLECTION_IDS: Record<MasteryBarId, string> = {
+  core: 'learn-now',
+  reading: 'learn-now-reading',
+  writing: 'learn-now-writing',
+};
+
+/**
+ * Which bar's Learn Now collection a `?collection=` value names, or null if it names
+ * none. Same null-means-unrestricted rule as `masteredCollectionBar`.
+ */
+export function learnNowCollectionBar(raw: string | null | undefined): MasteryBarId | null {
+  if (!raw) return null;
+  for (const bar of MASTERY_BARS) {
+    if (LEARN_NOW_COLLECTION_IDS[bar] === raw) return bar;
+  }
+  return null;
+}
+
 /** Every sorted card the learner holds, mastered or not. */
 export const ALL_COLLECTION_ID = 'all';
 

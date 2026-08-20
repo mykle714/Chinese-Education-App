@@ -6,8 +6,10 @@
  * can render and a game/flp can be launched against. There are four kinds:
  *
  *   all        — every sorted card, mastered or not.
- *   learn-now  — every card the user sorted, minus the ones mastered in the CORE
- *                bar. The built-in default deck.
+ *   learn-now  — every card the user sorted, minus the ones mastered in ONE bar.
+ *                Three of these, exactly as `mastered` is: the core set is the fdp's
+ *                default deck, and the reading/writing sets are what the matching
+ *                Mastery Center lists.
  *   mastered   — the cards mastered in ONE bar. Three of these since migration 143
  *                (core / reading / writing), because a card has three independent
  *                bars and can be mastered in each; the reading and writing ones are
@@ -43,8 +45,11 @@
  */
 import {
     ALL_COLLECTION_ID,
+    LEARN_NOW_COLLECTION_IDS,
     MASTERED_COLLECTION_IDS,
+    learnNowCollectionBar,
     masteredCollectionBar,
+    parseMasteryBar,
     type MasteryBarId,
 } from '../../../server/contracts/wire';
 import {
@@ -56,7 +61,7 @@ import {
 /** Which set of cards a page is showing / a round is drawn from. */
 export type CollectionRef =
     | { kind: 'all' }
-    | { kind: 'learn-now' }
+    | { kind: 'learn-now'; bar: MasteryBarId }
     | { kind: 'mastered'; bar: MasteryBarId }
     | { kind: 'deck'; deckId: number; name?: string };
 
@@ -82,10 +87,12 @@ export function parseBuiltinCollection(raw: string | undefined): BuiltinCollecti
 
 /** The CollectionRef a built-in id names. */
 export function builtinCollectionRef(id: BuiltinCollection): CollectionRef {
-    const bar = masteredCollectionBar(id);
-    if (bar) return { kind: 'mastered', bar };
+    const masteredBar = masteredCollectionBar(id);
+    if (masteredBar) return { kind: 'mastered', bar: masteredBar };
     if (id === ALL_COLLECTION_ID) return { kind: 'all' };
-    return { kind: 'learn-now' };
+    // Anything else is a Learn Now id; an unrecognized one falls back to the core set,
+    // which is the same "widest sensible answer" rule the server's parser follows.
+    return { kind: 'learn-now', bar: learnNowCollectionBar(id) ?? 'core' };
 }
 
 /**
@@ -112,6 +119,11 @@ export function collectionTitle(ref: CollectionRef): string {
         case 'learn-now':
             // "Learn Now" is the user-facing name of the `library` bucket (CLAUDE.md
             // § Terminology) — the internal identifier stays `library` everywhere.
+            //
+            // All three bars share the ONE title: a Learn Now set is only ever shown
+            // on the surface that is already about its bar (the fdp for core, a
+            // Mastery Center for reading/writing), so the page's own name supplies
+            // the qualifier and the tile would only repeat it.
             return 'Learn Now';
         case 'mastered':
             return MASTERED_TITLES[ref.bar];
@@ -126,7 +138,7 @@ export function builtinCollectionId(ref: CollectionRef): BuiltinCollection | nul
         case 'all':
             return ALL_COLLECTION_ID;
         case 'learn-now':
-            return 'learn-now';
+            return LEARN_NOW_COLLECTION_IDS[ref.bar];
         case 'mastered':
             return MASTERED_COLLECTION_IDS[ref.bar];
         case 'deck':
@@ -138,6 +150,51 @@ export function builtinCollectionId(ref: CollectionRef): BuiltinCollection | nul
 export function collectionPath(ref: CollectionRef): string {
     if (ref.kind === 'deck') return `/flashcards/deck/${ref.deckId}`;
     return `/flashcards/collection/${builtinCollectionId(ref)}`;
+}
+
+/**
+ * The `?bar=` LENS param (docs/DECKS_FEATURE.md § "Mastery Centers").
+ *
+ * A lens is not a collection: it does not change WHICH cards a page shows, only which
+ * mastery bar that page reads them through. So it rides as its own param rather than
+ * being folded into the collection id — the two are orthogonal, and a deck has a lens
+ * without having a built-in id at all.
+ *
+ * Built-in collections that are themselves per-bar (`learn-now-reading`,
+ * `mastered-writing`, …) carry their lens in the id and need no param; the collection
+ * page infers it (`lensFromCollection`). The param exists for the sets that are
+ * bar-agnostic — a user deck, All Cards, and the card-detail page — when they are
+ * opened from inside a Center.
+ *
+ * `core` is the default everywhere, so it is never written into a URL: a link with no
+ * `?bar=` means the ordinary account-wide view, exactly as it did before Centers.
+ */
+export const LENS_PARAM = 'bar';
+
+/** Append the lens param to a path, unless it is the default (`core`). */
+export function withLens(path: string, lens: MasteryBarId): string {
+    if (lens === 'core') return path;
+    const [base, existing] = path.split('?');
+    const search = new URLSearchParams(existing ?? '');
+    search.set(LENS_PARAM, lens);
+    return `${base}?${search.toString()}`;
+}
+
+/** Read a lens off a URL's search params. Anything unrecognized means `core`. */
+export function lensFromSearch(search: URLSearchParams): MasteryBarId {
+    return parseMasteryBar(search.get(LENS_PARAM)) ?? 'core';
+}
+
+/**
+ * The lens a COLLECTION implies on its own — a per-bar built-in set is always read
+ * through its own bar, so `/flashcards/collection/mastered-reading` needs no `?bar=`.
+ * Returns null when the set implies nothing (All Cards, a deck), leaving the URL's
+ * `?bar=` (or `core`) to decide.
+ */
+export function lensFromCollection(ref: CollectionRef | null): MasteryBarId | null {
+    if (!ref) return null;
+    if (ref.kind === 'learn-now' || ref.kind === 'mastered') return ref.bar;
+    return null;
 }
 
 /**

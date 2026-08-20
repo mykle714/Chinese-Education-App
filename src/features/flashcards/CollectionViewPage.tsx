@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
     Box, TextField, InputAdornment, IconButton, Typography, Button, Menu, MenuItem,
     Dialog, DialogTitle, DialogContent, DialogActions, ListItemIcon,
@@ -23,7 +23,7 @@ import { fetchDeckCards, fetchDecks, renameDeck, deleteDeck } from "../../api/de
 import { fetchCollectionCards } from "../../api/collections";
 import {
     type CollectionRef, collectionTitle, withCollectionParams, parseBuiltinCollection,
-    builtinCollectionRef,
+    builtinCollectionRef, lensFromCollection, lensFromSearch, withLens,
 } from "./collectionRef";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -62,6 +62,7 @@ const CollectionViewPage: React.FC = () => {
     // Card Detail (leaf) slides over this page; keep the collection held beneath.
     const slideNavigate = useSlideNavigate();
     const params = useParams();
+    const [searchParams] = useSearchParams();
     const { user, isAuthenticated } = useAuth();
 
     // Which collection is this? Derived from the route, so the two routes share
@@ -84,7 +85,13 @@ const CollectionViewPage: React.FC = () => {
     // Client-side ordering over the loaded collection (src/utils/vocabSort.ts). Held
     // per-visit rather than persisted: it is a way of LOOKING at the set, not a
     // property of it, and a collection always opens in its natural order.
-    const [sortKey, setSortKey] = useState<VocabSortKey>(() => defaultSortKey(isDeck));
+    // Defaulted from the lens too, so a deck opened inside the Reading Center opens on
+    // "least read" rather than on when its cards were added. `lens` is derived below
+    // (it needs `collection`), so the initializer re-reads the URL rather than closing
+    // over it — a one-time cost on mount, and the load effect re-applies it anyway.
+    const [sortKey, setSortKey] = useState<VocabSortKey>(
+        () => defaultSortKey(isDeck, lensFromSearch(new URLSearchParams(window.location.search)))
+    );
     // Whether this deck was generated for the user rather than authored by them.
     const [deckIsPreset, setDeckIsPreset] = useState(false);
     // Anchor for the deck-only overflow menu (rename / delete).
@@ -105,6 +112,21 @@ const CollectionViewPage: React.FC = () => {
     const title = collection ? collectionTitle(collection) : "Cards";
     usePageTitle(title);
 
+    // ── The mastery LENS ──────────────────────────────────────────────────────
+    //
+    // Which bar this page reads its cards through (docs/DECKS_FEATURE.md § "Mastery
+    // Centers"). Two sources, in order:
+    //
+    //   1. the COLLECTION itself — `learn-now-reading` / `mastered-writing` and friends
+    //      are per-bar sets, so they carry their lens in their own id and can never be
+    //      shown through a bar they do not belong to;
+    //   2. failing that, the URL's `?bar=` — how a bar-agnostic set (a deck, All Cards)
+    //      remembers that it was opened from inside a Center.
+    //
+    // Absent both, `core`: the ordinary view, exactly as this page behaved before the
+    // Centers existed.
+    const lens = lensFromCollection(collection) ?? lensFromSearch(searchParams);
+
     // ── Load the collection ───────────────────────────────────────────────────
     //
     // The three sources are three different endpoints, but all return the SAME
@@ -120,7 +142,7 @@ const CollectionViewPage: React.FC = () => {
                 // A different collection opens in ITS natural order — the routes for
                 // a deck and a built-in collection render this same component, so
                 // React can reuse the instance and carry a stale key across.
-                setSortKey(defaultSortKey(isDeck));
+                setSortKey(defaultSortKey(isDeck, lens));
 
                 let cards: VocabEntry[] = [];
                 if (isDeck) {
@@ -164,12 +186,18 @@ const CollectionViewPage: React.FC = () => {
     // string — so a silent refresh doesn't re-fetch mid-scroll. See CLAUDE.md
     // "Never reload on token refresh". The api layer resolves the header itself,
     // so no token is captured here at all.
-    }, [isAuthenticated, isDeck, deckId, builtin]);
+    // `lens` is a dep because the effect re-applies the default ordering, and the
+    // default is lens-dependent — a deck reopened through a different lens must open on
+    // that lens's question. It only changes when the URL does, so this costs one refetch
+    // per genuine navigation and never fires on its own.
+    }, [isAuthenticated, isDeck, deckId, builtin, lens]);
 
     // Stable tap handler so the memoized cards don't all re-render on parent renders.
     const handleCardClick = useCallback(
-        (entry: VocabEntry) => slideNavigate(`/flashcards/card/${entry.id}`),
-        [slideNavigate]
+        // The lens rides along, so a card opened from a Center's collection still shows
+        // that skill's bar on its detail page.
+        (entry: VocabEntry) => slideNavigate(withLens(`/flashcards/card/${entry.id}`, lens)),
+        [slideNavigate, lens]
     );
 
     // The account's goal flags: they decide which mastery sort options are offered
@@ -324,6 +352,7 @@ const CollectionViewPage: React.FC = () => {
                 onSortKeyChange={setSortKey}
                 language={user?.selectedLanguage}
                 goals={goals}
+                lens={lens}
                 // "Date added" reads `deckAddedAt`, which only the deck read selects.
                 allowDeckOnly={isDeck}
                 // Right-aligned under the search field, on the same 364px column as
@@ -348,6 +377,10 @@ const CollectionViewPage: React.FC = () => {
                 entries={visibleEntries}
                 emptyMessage={emptyMessage}
                 onCardClick={handleCardClick}
+                // Every card carries exactly this collection's bar — one strip, badged
+                // by that bar's band. Under `core` (the usual case) that is recognition
+                // and production only; reading and writing live in their Centers.
+                lens={lens}
             />
             <FooterSpacer />
 

@@ -325,21 +325,69 @@ export function resolveDisplayDefinition(entry: {
 }
 
 /**
+ * Server twin of `readingCluster` in `src/utils/definitionUtils.ts` — the cluster whose
+ * `reading` supplies an entry's DISPLAY pinyin. Split out of `resolveDisplayPronunciation`
+ * because pinyin and dd resolve through DIFFERENT gates; see the asymmetry note there.
+ *
+ * Two paths, in order:
+ *   1. **A real sense choice exists** (`resolveSelectedCluster`, ≥2 displayable clusters) —
+ *      use that pick, so the reading belongs to the same sense whose English the payload
+ *      carries. Honors the learner's `selectedSense` label exactly as dd does.
+ *   2. **No choice to make** (unclustered, or fewer than two displayable clusters). The dd
+ *      side is showing the flat `definitions[0]`, so there is no chosen sense to agree with;
+ *      return the entry's PRIMARY reading — the highest-frequency cluster, preferring one
+ *      that carries displayable English so a gloss-less grammatical-particle cluster cannot
+ *      donate its reading to a real gloss's card.
+ *
+ * The client twin takes a `senseIndexOverride` for a pick made in-session; the server only
+ * ever sees the persisted `selectedSense`, so there is no override parameter here.
+ */
+function readingCluster(entry: {
+  definitionClusters?: SenseCluster[] | null;
+  selectedSense?: string | null;
+}): SenseCluster | null {
+  const clusters = entry.definitionClusters;
+  if (!Array.isArray(clusters) || clusters.length === 0) return null;
+
+  const chosen = resolveSelectedCluster(entry);
+  if (chosen) return chosen;
+
+  const displayable = clusters.filter(
+    (c) => c && Array.isArray(c.glosses) && ddt({ glosses: c.glosses as string[] }) !== ''
+  );
+  const pool = displayable.length > 0 ? displayable : clusters.filter(Boolean);
+  return [...pool].sort((a, b) => (b?.frequencyScore ?? -1) - (a?.frequencyScore ?? -1))[0] ?? null;
+}
+
+/**
  * Server twin of `resolveDisplayPronunciation` in `src/utils/definitionUtils.ts` — the
  * DISPLAY pinyin for a vet-backed entry, honoring the learner's per-card sense pick.
  *
  * A heteronym's reading belongs to its sense, not to the word (过去 = `guò qù` "the past"
  * vs `guò qu` the directional suffix), so every payload that materializes a sense-resolved
  * definition must materialize the matching reading beside it — otherwise the surface prints
- * one sense's English over another sense's tones. Used only where the clusters do NOT travel
- * to the client (the Word Search word list, the related-words / used-in lists); client-side
- * surfaces resolve locally with the client twin.
+ * one sense's English over another sense's tones. Used wherever the clusters do NOT travel
+ * to the client (the sort/discover flow, the Study Challenge word cards, the community feed,
+ * the Word Search word list, the related-words / used-in lists); client-side surfaces resolve
+ * locally with the client twin.
  *
- * Returns the entry-level `pronunciation` column whenever there is no per-sense reading to
- * use — unclustered, single-cluster, Spanish (whose clusters carry no reading), or a reading
- * whose syllable count disagrees with the column (cpcd zips syllables to characters
- * positionally, so a mis-shaped reading would shift every character's pinyin one column).
- * See docs/DEFINITION_CLUSTERS.md.
+ * **Why this does NOT share `resolveDisplayDefinition`'s `< 2` displayable-cluster gate.**
+ * The two fields have different fallbacks. dd falls back to `definitions[0]`, a CURATED
+ * artifact — a hand-ordered lead gloss that is often the better string, so bailing to it when
+ * there is no sense to choose is a real editorial choice. Pinyin has no second artifact:
+ * `pronunciation`/`numberedPinyin` is the same fact stored twice, and the column is the
+ * UNREVIEWED copy. backfill-cluster-definitions.js seeds the model with the column as
+ * "primary reading", instructs it to override for genuine heteronyms, and writes back ONLY
+ * `definitionClusters` — so the column is upstream-of-review by construction and drifts in
+ * one direction forever (重点 kept `chong2 dian3` in the column long after its clusters were
+ * corrected to `zhong4 dian3`). Gating pinyin on `< 2` would pin the ~74% of discoverable
+ * entries that are single-cluster to that unreviewed copy.
+ *
+ * Returns the entry-level `pronunciation` column whenever there is no cluster reading to use
+ * — unclustered (the ~110k non-discoverable det rows), Spanish (whose clusters carry no
+ * reading), or a reading whose syllable count disagrees with the column (cpcd zips syllables
+ * to characters positionally, so a mis-shaped reading would shift every character's pinyin
+ * one column). See docs/DEFINITION_CLUSTERS.md.
  */
 export function resolveDisplayPronunciation(entry: {
   pronunciation?: string | null;
@@ -347,7 +395,7 @@ export function resolveDisplayPronunciation(entry: {
   selectedSense?: string | null;
 }): string | null {
   const columnPinyin = entry.pronunciation ?? null;
-  const reading = resolveSelectedCluster(entry)?.reading;
+  const reading = readingCluster(entry)?.reading;
   if (!reading) return columnPinyin;
   const toned = numberedToTonedPinyin(reading);
   if (!toned) return columnPinyin;

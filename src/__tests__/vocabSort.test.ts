@@ -290,13 +290,17 @@ describe("sort menu", () => {
     expect(multi).toContain("Mastery (Read)");
   });
 
-  it("offers Cooldown to every account, tagged to no bar", () => {
-    // The key is the card's soonest-ready TRACK, not a bar's, so no goal gates it and
-    // the per-skill filter (CollectionSortControl `allowPerSkillBars`) must not catch it.
-    const cooldown = sortBundles("zh", GOALS).find((b) => b.id === "cooldown");
-    expect(cooldown?.bar).toBeUndefined();
+  it("offers a Cooldown row PER BAR, each tagged to its bar", () => {
+    // Cooldown used to be one bar-less row spanning all four mark types. It is per-bar
+    // since the Mastery Centers shipped: a Center must be able to ask "what reading have
+    // I been neglecting" without a long-rested recognition track answering for it.
+    const cooldown = sortBundles("zh", GOALS).find((b) => b.id === "cooldown:core");
+    expect(cooldown?.bar).toBe("core");
     expect(cooldown?.directions.map((d) => d.key)).toEqual(["cooldownReady", "cooldownLongest"]);
-    expect(keysOf({ reading: true, writing: true })).toContain("cooldownReady");
+    expect(keysOf({ reading: true, writing: true })).toContain("cooldownReadyReading");
+    // …and a goal-less account still gets exactly one, the core one.
+    expect(keysOf(GOALS)).toContain("cooldownReady");
+    expect(keysOf(GOALS)).not.toContain("cooldownReadyWriting");
   });
 
   it("tags every per-bar row with the bar it reads", () => {
@@ -305,7 +309,29 @@ describe("sort menu", () => {
     expect(bundles.find((b) => b.id === "mastery:core")?.bar).toBe("core");
     expect(bundles.find((b) => b.id === "mastery:reading")?.bar).toBe("reading");
     expect(bundles.find((b) => b.id === "masteredAt:writing")?.bar).toBe("writing");
-    expect(bundles.filter((b) => b.bar && b.bar !== "core")).toHaveLength(4);
+    // Three dimensions (mastery / cooldown / date-mastered) x two skill bars.
+    expect(bundles.filter((b) => b.bar && b.bar !== "core")).toHaveLength(6);
+  });
+
+  it("shows ONE bar's rows under a skill lens, whatever the goals say", () => {
+    // A Mastery Center is already about one skill, so its menu drops the other bars —
+    // including core. The goals argument is inert under a lens: the page is reached only
+    // with that goal set, and the bar is computed for every account regardless.
+    const bundles = sortBundles("zh", GOALS, "reading");
+    const bars = bundles.filter((b) => b.bar).map((b) => b.bar);
+    expect(new Set(bars)).toEqual(new Set(["reading"]));
+    // Single bar ⇒ unqualified labels; the page title carries the skill.
+    expect(bundles.map((b) => b.label)).toContain("Mastery");
+    expect(bundles.map((b) => b.label)).not.toContain("Mastery (Read)");
+  });
+
+  it("opens a Center on that bar's mastery, lowest first", () => {
+    // The core lens keeps its old defaults; a skill lens overrides even the deck rule,
+    // because a deck inside the Reading Center is being read through the same question.
+    expect(defaultSortKey(false)).toBe("recent");
+    expect(defaultSortKey(true)).toBe("deckAdded");
+    expect(defaultSortKey(false, "reading")).toBe("masteryReadingAsc");
+    expect(defaultSortKey(true, "writing")).toBe("masteryWritingAsc");
   });
 
   it("captions the toolbar button as dimension + direction", () => {

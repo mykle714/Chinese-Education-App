@@ -2,10 +2,9 @@ import { useEffect, useState } from "react";
 import { Box, Typography, Tooltip } from "@mui/material";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import type { MarkType, VocabEntry } from "../../types";
-import { useAuth } from "../../AuthContext";
 import { formatCooldownRemaining } from "../../utils/formatDuration";
 import {
-    masteryBars,
+    masteryBar,
     computeTypeCategory,
     cooldownRemainingMs,
     MARK_TYPE_COLORS,
@@ -13,8 +12,8 @@ import {
     BAR_LABELS,
     PBH_THRESHOLDS,
     PBH_FULL,
-    type MasteryGoals,
     type MasteryBar,
+    type MasteryBarId,
 } from "../../utils/masteryCompute";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { COLORS } from "../../theme/colors";
@@ -23,19 +22,26 @@ import { FC_FONT } from "./constants";
 /**
  * cdp mastery progress bars (docs/MASTERY_REWORK.md § "Three bars").
  *
- * ONE VERTICAL BAR PER ACTIVE MASTERY BAR — core always, plus reading and/or writing
- * when the account has that goal. Each bar's FILLED height is its own pbh on the
- * shared 0..PBH_FULL scale, so all three share the Target/Comfortable benchmark lines
- * and a card can be full in one bar while empty in another.
+ * ONE VERTICAL BAR — the bar of the SURFACE'S LENS (the `lens` prop): `core` on the
+ * fdp/deck/search path, `reading` or `writing` on a card opened from that Mastery
+ * Center. Its FILLED height is that bar's pbh on the 0..PBH_FULL scale, against the
+ * shared Target/Comfortable benchmark lines.
+ *
+ * It renders one COLUMN, not three. A card is a different thing under each bar and can
+ * be full in one while empty in another, so showing all of an account's bars at once
+ * made the page answer a question the learner had not asked; each skill now has a
+ * Center of its own that asks it (docs/DECKS_FEATURE.md § "Mastery Centers"). The
+ * layout below is still written as a map over a list — nothing in it needs to know the
+ * list is now always length 1.
  *
  * The core bar's fill is composed of its two mark types in the ratio of their
- * positive marks (blue = Recognition, green = Production); the single-track bars are
- * one solid color. Before migration 143 there was ONE bar composed of all four types
+ * positive marks (blue = Recognition, green = Production); a skill bar is one solid
+ * color. Before migration 143 there was ONE bar composed of all four types
  * whose height was goal-weighted — which meant enabling a goal visibly shrank a card
  * the learner had already finished.
  *
- * Under each bar sits its PER-TYPE COOLDOWN — one row per mark type in the bar (the
- * core bar therefore shows two), as a live `4m 1w 3d 5h 37m 26s` countdown to the
+ * Under the bar sits its PER-TYPE COOLDOWN — one row per mark type in the bar (the
+ * core bar therefore shows two, a skill bar one), as a live `4m 1w 3d 5h 37m 26s` countdown to the
  * moment that track can next be marked. A ready track keeps that shape — it reads
  * `0s` — and gains a small green check beside it, so "can I drill this now?" is
  * answerable at a glance without parsing digits. See § "Per-type cooldown"; the table
@@ -273,13 +279,23 @@ const BarColumn: React.FC<{ bar: MasteryBar; entry: VocabEntry; now: number }> =
     </Box>
 );
 
-export const MasteryProgressBar: React.FC<{ entry: VocabEntry; className?: string }> = ({ entry, className }) => {
-    const { user } = useAuth();
-    const goals: MasteryGoals = {
-        reading: user?.readingGoal === true,
-        writing: user?.writingGoal === true,
-    };
-
+export const MasteryProgressBar: React.FC<{
+    entry: VocabEntry;
+    className?: string;
+    /**
+     * The surface's mastery LENS (docs/DECKS_FEATURE.md § "Mastery Centers").
+     *
+     * ALWAYS exactly one column — this section shows the lens's bar and its cooldown
+     * rows, nothing else. Defaults to `core`, so a card opened from the fdp, a deck or
+     * a search result reports recognition and production; a card opened from inside a
+     * Mastery Center carries `?bar=` and reports that skill instead.
+     *
+     * It used to render one column per goal the account pursued. A learner arriving
+     * from a recognition/production surface was then shown three bars for a page that
+     * had asked one question — and the two skills now have pages of their own.
+     */
+    lens?: MasteryBarId;
+}> = ({ entry, className, lens = "core" }) => {
     // The countdown ticks on its own so a card left open runs down to 0s without
     // a reload. One interval for the whole section (not one per row), and it re-renders
     // only this component — the hero card and info boxes above are untouched.
@@ -289,7 +305,11 @@ export const MasteryProgressBar: React.FC<{ entry: VocabEntry; className?: strin
         return () => window.clearInterval(id);
     }, []);
 
-    const bars = masteryBars(entry.typedMarkHistory, goals);
+    // The account's goals are deliberately NOT consulted: the surface decides which
+    // question is being asked, and every bar is computed for every learner whatever
+    // their goals say (migration 143). A single-element list rather than a bare bar so
+    // the column/legend rendering below stays a plain map.
+    const bars = [masteryBar(entry.typedMarkHistory, lens)];
     // Legend rows cover only the types actually on screen, so a learner with no
     // writing goal is not shown a color they will never see in a bar.
     const shownTypes = bars.flatMap((b) => b.segments.map((s) => s.type));
@@ -305,8 +325,9 @@ export const MasteryProgressBar: React.FC<{ entry: VocabEntry; className?: strin
                     display: "flex",
                     alignItems: "flex-start",
                     justifyContent: "center",
-                    // Generous spacing: each column now carries a label, a band chip and
-                    // up to two cooldown rows, so the columns must not crowd each other.
+                    // Spacing kept from when this row held up to three columns; it is a
+                    // single centered column now, so the gap only matters if a second
+                    // bar is ever shown here again.
                     gap: "20px",
                     width: "100%",
                 }}

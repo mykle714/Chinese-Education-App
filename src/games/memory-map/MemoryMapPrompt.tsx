@@ -5,7 +5,7 @@ import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { getToneColor } from "../../utils/toneColors";
-import { MAX_TRIES, grid } from "./constants";
+import { MAX_TRIES } from "./constants";
 import type { PromptPhase } from "./types";
 
 /**
@@ -64,7 +64,7 @@ interface MemoryMapPromptProps {
 const TonedPronunciation: React.FC<{ pronunciation: string }> = ({ pronunciation }) => (
     <Box
         className="memory-map-prompt__pronunciation"
-        sx={{ display: "flex", gap: grid(1), flexShrink: 0 }}
+        sx={{ display: "flex", gap: "8px", flexShrink: 0 }}
     >
         {pronunciation.split(/\s+/).filter(Boolean).map((syllable, i) => (
             <Typography
@@ -102,12 +102,12 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
                 flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
-                gap: grid(2),
+                gap: "8px",
                 // ONE ROW. This used to be four stacked ones — gloss, a standing hint
                 // line, the spoiler and the try pips — which cost close to a fifth of a
                 // phone screen before the map got any. The padding is deliberately tight
                 // for the same reason: every row of chrome is a row the board loses.
-                padding: `${grid(2)} ${grid(4)}`,
+                padding: "8px 16px",
                 backgroundColor: COLORS.header,
                 borderBottom: `1px solid ${COLORS.rowBorder}`,
             }}
@@ -168,24 +168,24 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
                 onClick={onSkip}
                 disabled={!canSkip}
                 aria-label={failed ? "Give up on this word" : "Skip this word for now"}
-                sx={{ padding: grid(1), color: COLORS.textSecondary, flexShrink: 0 }}
+                sx={{ padding: "8px", color: COLORS.textSecondary, flexShrink: 0 }}
             >
-                <SkipNextRoundedIcon sx={{ fontSize: 20 }} />
+                <SkipNextRoundedIcon sx={{ fontSize: 24 }} />
             </IconButton>
 
             {/* Tries remaining. Kept beside the gloss rather than in the right-hand
                 control cluster: it belongs to the QUESTION, not to the page. */}
             <Box
                 className="memory-map-prompt__tries"
-                sx={{ display: "flex", gap: grid(1), flexShrink: 0 }}
+                sx={{ display: "flex", gap: "8px", flexShrink: 0 }}
             >
                 {Array.from({ length: MAX_TRIES }, (_, i) => (
                     <Box
                         key={i}
                         className={`memory-map-prompt__try memory-map-prompt__try--${i < triesUsed ? "spent" : "left"}`}
                         sx={{
-                            width: grid(2),
-                            height: grid(2),
+                            width: "8px",
+                            height: "8px",
                             borderRadius: "50%",
                             backgroundColor: i < triesUsed ? COLORS.redMain : COLORS.card,
                             transition: "background-color 0.2s ease",

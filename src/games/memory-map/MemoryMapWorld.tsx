@@ -4,19 +4,25 @@ import { useGesture } from "@use-gesture/react";
 import { connectedIslands, mapBounds, touchedSidesForAll, wordBoxSize, type MapBox } from "../../../server/services/memoryMapSpawn";
 import MemoryMapWord from "./MemoryMapWord";
 import MemoryMapIslandCompass, { type OffscreenIsland } from "./MemoryMapIslandCompass";
+import { useTapGesture } from "./useTapGesture";
 import type { MemoryMapWord as MemoryMapWordData } from "../../api/memoryMap";
 import type { Camera, WordOutcome } from "./types";
 import {
     FIT_PADDING,
     MAX_ZOOM,
     MIN_ZOOM,
-    GRID,
     PIXELS_PER_WORLD_UNIT,
 } from "./constants";
 import { COLORS } from "../../theme/colors";
 
-/** How far inside the viewport edge an off-screen-island marker sits, in px. */
-const COMPASS_INSET_PX = GRID * 5;
+/**
+ * How far inside the viewport edge an off-screen-island marker sits, in px.
+ *
+ * Three grid cells, up from 20px when the game moved to the 8px grid. The marker sits
+ * 4px further inside the viewport than it used to, which is if anything the safer way
+ * to round: the inset exists to keep it clear of the edge.
+ */
+const COMPASS_INSET_PX = 24;
 
 /**
  * The pan/zoom world layer (docs/MEMORY_MAP_GAME.md § 6, § 7).
@@ -45,11 +51,15 @@ interface MemoryMapWorldProps {
     outcomes: Record<number, WordOutcome>;
     /** The failed target, which pulses until tapped. */
     pulsingId: number | null;
+    /** The word armed by a first tap and awaiting its confirming tap (§ 3.3a). */
+    selectedId: number | null;
     flashing: number[];
     fading: number[];
     camera: Camera | null;
     onCameraChange: (camera: Camera) => void;
     onTapWord: (word: MemoryMapWordData) => void;
+    /** A tap that landed on open water — the map's "never mind" (§ 3.3a). */
+    onTapWater: () => void;
 }
 
 /** The boxes as placed, for fitting the camera to the map. */
@@ -65,11 +75,13 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
     words,
     outcomes,
     pulsingId,
+    selectedId,
     flashing,
     fading,
     camera,
     onCameraChange,
     onTapWord,
+    onTapWater,
 }) => {
     const viewportRef = useRef<HTMLDivElement | null>(null);
     const [viewport, setViewport] = useState({ width: 0, height: 0 });
@@ -240,6 +252,8 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
         }
     );
 
+    const waterTap = useTapGesture(onTapWater);
+
     const zoom = camera?.zoom ?? 1;
     const centreX = camera?.x ?? 0;
     const centreY = camera?.y ?? 0;
@@ -320,6 +334,17 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
         <Box
             className="memory-map-world"
             ref={viewportRef}
+            // ── TAPPING WATER CANCELS A SELECTION ───────────────────────────
+            // The armed word is the only state a player can get stuck in, so open water
+            // is its escape hatch: a tap that hits no parcel disarms (§ 3.3a). A word's
+            // own tap stops propagating before it gets here, and a drag that merely ENDS
+            // over water fails the same slop test the words apply, so panning never
+            // disarms anything.
+            //
+            // React handlers, not the @use-gesture binding on this same node: that
+            // binding listens to TOUCH events for the pan and cannot see the words'
+            // POINTER events, so it has no way to know a tap was already consumed.
+            {...waterTap}
             sx={{
                 position: "relative",
                 flex: 1,
@@ -361,6 +386,7 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
                         borders={borders[index]}
                         outcome={outcomes[word.vocabEntryId]}
                         pulsing={pulsingId === word.vocabEntryId}
+                        selected={selectedId === word.vocabEntryId}
                         flashing={flashing.includes(word.vocabEntryId)}
                         fading={fading.includes(word.vocabEntryId)}
                         onTap={onTapWord}

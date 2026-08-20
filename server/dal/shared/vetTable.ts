@@ -1,6 +1,8 @@
 import {
   ALL_COLLECTION_ID,
+  LEARN_NOW_COLLECTION_IDS,
   MASTERED_COLLECTION_IDS,
+  learnNowCollectionBar,
   masteredCollectionBar,
   type MasteryBarId,
 } from '../../contracts/wire.js';
@@ -211,17 +213,32 @@ export function masteredBarClause(bar: MasteryBarId, alias = 've'): string {
 }
 
 /**
+ * WHERE fragment for "this card is NOT yet Mastered in the given bar" — the
+ * membership test behind each of the three built-in Learn Now collections.
+ *
+ * The exact complement of `masteredBarClause` in the same bar, so the two sets a
+ * Center shows ("still to do" / "finished") always partition that bar's library and
+ * cannot both miss a card.
+ */
+export function unmasteredBarClause(bar: MasteryBarId, alias = 've'): string {
+  return `${barCategoryExpr(bar, alias)} <> 'Mastered'`;
+}
+
+/**
  * Every built-in (non-deck) collection id, in fdp display order.
  *
  * Three ideas wide, and deliberately no wider: the whole library (`all`), the part of
- * it still being learned (`learn-now`), and the part finished in a given bar
- * (`mastered*`, one per bar since migration 143). The per-band collections
+ * it still being learned in a given bar (`learn-now*`) and the part finished in that
+ * bar (`mastered*`). The last two are one id PER BAR — `learn-now`/`mastered` name
+ * the core bar and keep their original unqualified spelling. The per-band collections
  * (`unfamiliar` / `target` / `comfortable`) were removed — see the note in
  * contracts/wire.ts for why a utcm band is a card property rather than a card SET.
  */
 export const BUILTIN_COLLECTION_IDS = [
   ALL_COLLECTION_ID,
-  'learn-now',
+  LEARN_NOW_COLLECTION_IDS.core,
+  LEARN_NOW_COLLECTION_IDS.reading,
+  LEARN_NOW_COLLECTION_IDS.writing,
   MASTERED_COLLECTION_IDS.core,
   MASTERED_COLLECTION_IDS.reading,
   MASTERED_COLLECTION_IDS.writing,
@@ -250,11 +267,15 @@ export function parseBuiltinCollectionId(
  * an `AND …` position without a conditional.
  */
 export function builtinCollectionClause(collection: BuiltinCollectionId, alias = 've'): string {
-  const bar = masteredCollectionBar(collection);
-  if (bar) return masteredBarClause(bar, alias);
+  const masteredBar = masteredCollectionBar(collection);
+  if (masteredBar) return masteredBarClause(masteredBar, alias);
 
-  // 'learn-now' — every sorted card whose CORE bar is unfinished.
-  if (collection === 'learn-now') return `${coreCategoryExpr(alias)} <> 'Mastered'`;
+  // 'learn-now*' — every sorted card whose named bar is unfinished. One id per bar
+  // since the Mastery Centers shipped: the core set is "what is left to know", the
+  // reading set "what is left to read", and a card is routinely in one and not the
+  // other. `learn-now` (unqualified) is still the core bar.
+  const learnNowBar = learnNowCollectionBar(collection);
+  if (learnNowBar) return unmasteredBarClause(learnNowBar, alias);
 
   // 'all' — no further narrowing beyond the caller's own SORTED/user/language clauses.
   return 'TRUE';

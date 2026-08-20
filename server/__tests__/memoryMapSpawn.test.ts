@@ -11,6 +11,7 @@ import {
   wordBoxSize,
   drawScale,
   NEW_ISLAND_CHANCE,
+  WORLD_GRID,
   type MapBox,
 } from '../services/memoryMapSpawn.js';
 import { MEMORY_MAP_SCALE_RANGE } from '../contracts/wire.js';
@@ -115,9 +116,13 @@ describe('mapBounds', () => {
 });
 
 describe('spawnPosition', () => {
-  it('puts the first word of an empty map at the origin', () => {
-    const result = spawnPosition([], wordBoxSize('好', 1, 'zh'), alwaysGrow);
-    expect(result).toEqual({ x: 0, y: 0, mode: 'island' });
+  it("anchors the first word of an empty map by its TOP-LEFT CORNER, not its centre", () => {
+    // Deliberate, and the grid depends on it: centring an odd-cell-wide first box on
+    // the origin would put its edges on a half-step and every box tangent to it would
+    // inherit that offset lattice. See `firstBox`.
+    const size = wordBoxSize('好', 1, 'zh');
+    const result = spawnPosition([], size, alwaysGrow);
+    expect(result).toEqual({ x: size.width / 2, y: size.height / 2, mode: 'island' });
   });
 
   it('places a grown word tangent to an existing one, never overlapping', () => {
@@ -475,5 +480,90 @@ describe('touchedSidesForAll', () => {
       const hasNeighbour = boxes.some((other, j) => j !== i && boxesTouch(boxes[i], other));
       expect(hasFence).toBe(hasNeighbour);
     }
+  });
+});
+
+/**
+ * THE 8px GRID (docs/MEMORY_MAP_GAME.md § 2.3).
+ *
+ * The invariant is on EDGES: every box edge is a whole multiple of `WORLD_GRID`, which
+ * the client draws as 8 screen pixels. Centres are NOT tested, and must not be — a box
+ * an odd number of cells wide legitimately has its centre at a half-step.
+ *
+ * These are the tests that would catch a future edit reintroducing a continuous
+ * position (a probe that forgets to snap, a new slide rule), which is otherwise
+ * invisible: an off-lattice map looks completely normal and simply is not on the grid.
+ */
+describe('the 8px grid', () => {
+  /** Distance from `value` to the nearest lattice line, in world units. */
+  const offGrid = (value: number): number => {
+    const cells = value / WORLD_GRID;
+    return Math.abs(cells - Math.round(cells)) * WORLD_GRID;
+  };
+
+  /** Generous next to WORLD_GRID (0.2) and far above the float dust `quantize` leaves. */
+  const TOL = 1e-6;
+
+  const edgesOf = (b: MapBox) => [
+    b.x - b.width / 2,
+    b.x + b.width / 2,
+    b.y - b.height / 2,
+    b.y + b.height / 2,
+  ];
+
+  it('sizes every box in whole cells, across the whole scale range and both languages', () => {
+    const { min, max } = MEMORY_MAP_SCALE_RANGE;
+    for (let i = 0; i <= 50; i++) {
+      const scale = min + ((max - min) * i) / 50;
+      for (const [key, language] of [['学习', 'zh'], ['aprender', 'es'], ['好', 'zh']] as const) {
+        const size = wordBoxSize(key, scale, language);
+        expect(offGrid(size.width)).toBeLessThan(TOL);
+        expect(offGrid(size.height)).toBeLessThan(TOL);
+      }
+    }
+  });
+
+  it('never snaps a box smaller than the text it has to hold', () => {
+    // Sizes snap UP. Rounding toward zero would crop a glyph, so the snapped box must
+    // always be at least the natural one, and never more than a cell bigger.
+    const natural = (glyphs: number, scale: number) => ({
+      width: (glyphs * 1.0 + 0.45) * scale,
+      height: (1 + 0.45) * scale,
+    });
+    for (const scale of [0.95, 1.0, 1.37, 1.8]) {
+      const size = wordBoxSize('学习', scale, 'zh');
+      const want = natural(2, scale);
+      expect(size.width).toBeGreaterThanOrEqual(want.width - TOL);
+      expect(size.width).toBeLessThan(want.width + WORLD_GRID);
+      expect(size.height).toBeGreaterThanOrEqual(want.height - TOL);
+      expect(size.height).toBeLessThan(want.height + WORLD_GRID);
+    }
+  });
+
+  it('puts every edge of a whole 100-word map on the lattice', () => {
+    // The real thing, at capacity, on a live RNG — every placement path (grow, island,
+    // the beyond-map fallback) gets exercised somewhere in a map this size.
+    const KEYS = ['好', '学习', '图书馆', '一', 'aprender', 'sí'];
+    const incoming = Array.from({ length: 100 }, (_, i) => ({
+      entryKey: KEYS[i % KEYS.length],
+      language: i % KEYS.length >= 4 ? 'es' : 'zh',
+    }));
+    const placed = spawnBatch([], incoming, Math.random);
+    placed.forEach((p, i) => {
+      const box = { x: p.x, y: p.y, ...wordBoxSize(incoming[i].entryKey, p.scale, incoming[i].language) };
+      for (const edge of edgesOf(box)) expect(offGrid(edge)).toBeLessThan(TOL);
+    });
+  });
+
+  it('still grows connected islands once positions are quantized', () => {
+    // The reason the world layer was exempt from the grid for so long was a fear that
+    // snapping would open gaps along shared edges and shatter the islands. Snapping
+    // BOTH sizes and positions is what makes that not happen, so this asserts the
+    // outcome that fear was about: a map still fuses into a handful of islands rather
+    // than 100 loose parcels.
+    const incoming = Array.from({ length: 60 }, () => ({ entryKey: '学习', language: 'zh' }));
+    const placed = spawnBatch([], incoming, Math.random);
+    const boxes = placed.map((p) => ({ x: p.x, y: p.y, ...wordBoxSize('学习', p.scale, 'zh') }));
+    expect(connectedIslands(boxes).length).toBeLessThan(20);
   });
 });

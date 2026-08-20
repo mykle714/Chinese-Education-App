@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Box, Button, IconButton, Typography } from "@mui/material";
 import RestartAltRoundedIcon from "@mui/icons-material/RestartAltRounded";
@@ -15,6 +15,7 @@ import { useMemoryMapRun } from "./useMemoryMapRun";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
+import { useTTS } from "../../hooks/useTTS";
 import { playCorrectSound, playWrongSound } from "../runtime/gameSounds";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -55,6 +56,9 @@ const MemoryMapPage: React.FC = () => {
 
     const language = user?.selectedLanguage ?? "zh";
     const run = useMemoryMapRun(user?.id, language);
+    // Narration for the committed word (§ 3.3b). No speaker button anywhere on the
+    // page — the lock-in tap is the only thing that ever speaks.
+    const tts = useTTS();
 
     const [restartOpen, setRestartOpen] = useState(false);
     // The word whose definition popup is open. Tapping a COLOURED word opens this at
@@ -69,7 +73,41 @@ const MemoryMapPage: React.FC = () => {
     }, [run.newlyPlaced, run.dismissGrowthToast]);
 
     /**
+     * The word ARMED by a first tap and awaiting its confirming tap (§ 3.3a).
+     *
+     * ── WHY SELECTION LIVES HERE AND NOT IN THE RUN HOOK ─────────────────────
+     * It is an input affordance, not a game rule: nothing about it is saved, restored,
+     * marked or scored, and the hook's contract ("a tap on this word is an answer") is
+     * unchanged — the page simply decides WHICH tap gets to make that call. Putting it
+     * in `useMemoryMapRun` would drag a pointer-interaction concept into the state
+     * machine that owns prompts and marks, and would land it in the saved run.
+     */
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+
+    // A selection belongs to ONE prompt. When the target changes — answered, skipped,
+    // restarted — anything still armed is stale, and leaving it armed would mean the
+    // player's next single tap answered the NEW question, which is the accident this
+    // whole mechanism exists to prevent.
+    useEffect(() => {
+        setSelectedId(null);
+    }, [run.target?.vocabEntryId]);
+
+    /**
      * A tap on a word.
+     *
+     * ── THE FIRST TAP SELECTS; THE SECOND ANSWERS (§ 3.3a) ───────────────────
+     * The map is dense, the parcels are small and the board is panned with the same
+     * finger that answers it, so a single-tap answer meant a fumbled touch could burn a
+     * try — or resolve the prompt orange — with no chance to take it back. Arming the
+     * word first makes every answer a deliberate act: tap once to point, tap the SAME
+     * word again to commit. Tapping a different word moves the arming; tapping open
+     * water drops it (`handleTapWater`).
+     *
+     * Two taps stay single, and both for the same reason — there is nothing to take
+     * back:
+     *   • a COLOURED word only opens its definition (§ 3.4), which burns no try;
+     *   • the FAILED prompt's pulsing target only locks in a red that is already
+     *     decided, so confirming it would be ceremony over a foregone conclusion.
      *
      * The coloured/uncoloured split happens HERE rather than in the hook, because what
      * a coloured word does is a UI affordance (open a popup) rather than a game rule.
@@ -78,12 +116,60 @@ const MemoryMapPage: React.FC = () => {
     const handleTapWord = (word: MemoryMapWordData) => {
         if (run.outcomes[word.vocabEntryId]) {
             setInspecting(word);
+            setSelectedId(null);
             return;
         }
+
+        // Arm it, unless this tap is the confirmation of a word already armed or the
+        // lock-in tap on a failed prompt's target (neither of which can cost anything).
+        const isLockIn =
+            run.promptPhase === "failed" && word.vocabEntryId === run.target?.vocabEntryId;
+        if (!isLockIn && selectedId !== word.vocabEntryId) {
+            setSelectedId(word.vocabEntryId);
+            return;
+        }
+
+        setSelectedId(null);
         const result = run.tapWord(word);
+        if (result === "ignored") return;
         if (result === "correct") playCorrectSound();
-        else if (result === "wrong") playWrongSound();
+        else playWrongSound();
+        speakWord(word);
     };
+
+    /**
+     * Say the word the player just committed to (§ 3.3b).
+     *
+     * ── WHY THE COMMITTED WORD AND NOT THE TARGET ────────────────────────────
+     * On a correct tap the two are the same word. On a WRONG one, speaking the tapped
+     * word is what makes the mistake legible: the prompt bar is showing the target's
+     * pronunciation, so hearing something else is the answer to "why was that wrong?".
+     * Speaking the target there would instead hand over the answer the player still has
+     * tries to find.
+     *
+     * ── WHY `speakSentence` AND NOT `speak` ──────────────────────────────────
+     * `useTTS.speak` takes a `VocabEntry` so it can run `resolveDisplayPronunciation`.
+     * A `MemoryMapWord` is not one — the server already resolved the sense when it built
+     * the placement, so `word.pronunciation` IS the reading on screen, and the
+     * arbitrary-text entry point is the one that accepts it (SortCardsPage does the
+     * same for the same reason).
+     *
+     * Fire-and-forget with a `.catch`: narration failing must never break an answer, and
+     * `useTTS` already falls back cloud → browser internally.
+     */
+    function speakWord(word: MemoryMapWordData) {
+        if (!tts.enabled) return;
+        // Synchronous, from inside the real pointer gesture: primes the shared
+        // AudioContext so mobile autoplay policy does not swallow the first play of the
+        // session, which resolves only after an await.
+        tts.unlockAudio();
+        void tts
+            .speakSentence(word.entryKey, word.pronunciation ?? undefined)
+            .catch(() => {});
+    }
+
+    /** A tap on open water disarms — the map's "never mind" (§ 3.3a). */
+    const handleTapWater = useCallback(() => setSelectedId(null), []);
 
     // The hook owns the try counter; the bar only draws it. Clamped because a failed
     // prompt stops incrementing (a wrong tap after the third costs nothing) and the
@@ -102,7 +188,7 @@ const MemoryMapPage: React.FC = () => {
      * that is what got compacted instead: MemoryMapPrompt is now a single in-game row.
      */
     const header = (
-        <Box className="memory-map-header-actions" sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
+        <Box className="memory-map-header-actions" sx={{ display: "flex", alignItems: "center", gap: "8px" }}>
             {playing && (
                 <Typography
                     className="memory-map-header-actions__progress"
@@ -214,11 +300,13 @@ const MemoryMapPage: React.FC = () => {
                         words={run.words}
                         outcomes={run.outcomes}
                         pulsingId={run.promptPhase === "failed" ? run.target?.vocabEntryId ?? null : null}
+                        selectedId={selectedId}
                         flashing={run.flashing}
                         fading={run.fading}
                         camera={run.camera}
                         onCameraChange={run.setCamera}
                         onTapWord={handleTapWord}
+                        onTapWater={handleTapWater}
                     />
                 </>
             )}

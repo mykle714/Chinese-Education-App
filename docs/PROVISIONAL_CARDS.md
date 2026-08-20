@@ -278,10 +278,46 @@ tier 2 everywhere:
 | Tier | flp working loop | Game pool / Word Search grid |
 |---|---|---|
 | 1 | each quota, from its own category (longest-waiting first) | each requested bucket, FRESH cards only |
-| **2** | **lend the shortfall** (re-lend, then mint — § 3b) | **lend the shortfall** (re-lend, then mint — § 3b) |
+| **2** | **lend the shortfall** (re-lend, then mint — § 3b) | **lend only the part of the shortfall tier 3 cannot cover** (re-lend, then mint — § 3b) |
 | 3 | borrow across categories in the mode's `fillOrder` | borrow FRESH cards in `GAME_FALLBACK_ORDER` |
 | 4 | — (a cooling card is never re-served on the flp) | COOLED cards (requested buckets → fallback) |
 | 5 | — | soft-`avoid`ed cards (just cleared) |
+
+#### The games' tier 2 is capped by what tier 3 holds (2026-08-19)
+
+On the two GAME surfaces, tier 2 no longer lends the whole shortfall. It lends
+
+```
+lendNeed = target − (cards filled at tier 1) − (FRESH cards still queued for tier 3)
+```
+
+and skips lending entirely when that is ≤ 0. **A learner with playable cards is never
+minted new ones.**
+
+*Why the original rule had to be narrowed.* It rested on the claim quoted below — a
+quota underfills only when its own category is spent — and that claim is **false for a
+game whose mark track is sparsely populated**. A game buckets by the track it emits
+(§ *Games select by their own mark type*, [MASTERY_REWORK.md](./MASTERY_REWORK.md)).
+Speed Reading emits READING marks, and a typical learner has almost no reading history,
+so *every* card bands `Unfamiliar` on that track. Its inherited 2/10/6/2 distribution
+therefore leaves **18 of 20 quota slots unfillable on a library of any size** — and
+because a minted row is itself always `Unfamiliar`, lending could never close them.
+Every single load lent another ~18 cards, permanently. A dev account with a 20-card
+library had accumulated **450** provisional rows; another, holding 151 fresh
+reading-`Unfamiliar` cards, had been lent 170 more.
+
+Word Search No-Pinyin has the identical shape (it also emits reading marks) and gets the
+same cap. Its de-dup pass can still come up short after under-lending; the controller's
+`PROVISION_RETRY_FACTOR` loop already re-enters with an escalated baseline for that.
+
+**Unaffected:** a single-bucket caller (Hydra Bubbles). Its `fallbackOrder` collapses to
+the one requested bucket, which tier 1 has already drained, so the subtrahend is 0 and
+tier 2 behaves exactly as before.
+
+**Also unaffected: the flp working loop**, which keeps the unconditional 2026-08-17 rule.
+There the original claim does hold — the flp buckets by the CORE bar (dense for anyone
+who studies) and never re-serves a cooling card, so a short quota really does mean
+"spent", and lending is the only alternative to a short loop.
 
 **A newly minted card is always `Unfamiliar`** — it has no mark history — so this
 deliberately skews a short round toward `Unfamiliar` instead of skewing it toward
@@ -293,9 +329,11 @@ history it earned the last time it was out. Any code that assumed "lent ⇒ Unfa
 (the `canLendProvisional` rationale in `OnDeckVocabService`, and the tier-2 skew
 argument above) holds only for the minting half.
 
-Note the ordering only bites when a quota **underfills**, and a quota underfills exactly
-when its own category is spent — so tier 3 could never have served that same category
-anyway. The real choice being made is *"lend"* vs *"deepen a different bucket"*.
+Note the ordering only bites when a quota **underfills**. The 2026-08-17 rationale was
+that a quota underfills exactly when its own category is spent — so tier 3 could never
+have served that same category anyway, and the real choice being made is *"lend"* vs
+*"deepen a different bucket"*. That still describes the **flp**; on the game surfaces it
+was wrong, and the cap above is the correction.
 
 A **single-bucket** request (Hydra Bubbles asking for one color) does not reach tier 3
 at all — for that caller tiers 3–5 collapse to the requested bucket, because a
@@ -311,8 +349,8 @@ Two sessions skip tier 2 entirely and fall straight to tier 3:
   Bubble Match's *Play Again*. A game with a rolling supply (Hydra Bubbles) opts out
   and lends on refills like any other fetch.
 
-There is still **no cap** on how much a single round may lend; the shortfall is lent in
-full. On a small library that grows the provisional holding quickly, which is the accepted
+There is still **no absolute cap** on how much a single round may lend; whatever tier 2
+asks for after the subtraction above is lent in full. On a small library that grows the provisional holding quickly, which is the accepted
 cost of never re-serving a resting card (see the "no cap" note above) — though § 3b's
 re-lend step now absorbs much of that growth on repeat sessions.
 
@@ -397,7 +435,7 @@ generator — and the notice turns those words into cards by fetching them
 The same table comes back as a **popup** asking *"Keep these N cards?"*, with
 **Sort these cards** / **Not now**. This is the best possible moment to ask: the learner
 just spent a whole round with those words. Accepting opens the sort flow in set mode
-(§ 7) on exactly those words.
+(§ 7) on exactly those words, which ends on its own completion popup (§ 7).
 
 **On a game** the offer stacks over the run's own result and opens **immediately** when
 the round ends — there is no delay (there used to be a 1.4 s `SORT_OFFER_DELAY_MS` beat;
@@ -539,15 +577,37 @@ promoted into the real deck.
 set** instead of the open-ended level-based supply. Each card becomes its own pack-of-1,
 so all the existing pack machinery (drag, undo, resolved markers) works unchanged.
 
-Two differences: the queue is **never replenished**, and the page **closes itself** as
-soon as the queue empties. The exit is an effect on `queue.length` (SortCardsPage's
-set-mode auto-exit effect), not a call inside the sorting handler, so *every* way of
-emptying the set exits: the last card sorted, the last card skipped, a failed sort POST,
-or a set that came back already empty because the cards were sorted in another tab. It
-goes `navigate(-1)` back to whatever opened the offer, falling back to `/discover` when
-this page is the first history entry (deep-link or reload). Without this the empty queue
-renders as a permanent spinner — the empty-state branch only shows a message when
-`exhausted`, and a fixed set never is.
+Two differences: the queue is **never replenished**, and the page **ends itself** as
+soon as the queue empties. The ending is an effect on `queue.length` (SortCardsPage's
+set-mode exit effect), not a call inside the sorting handler, so *every* way of
+emptying the set is covered: the last card sorted, the last card skipped, a failed sort
+POST, or a set that came back already empty because the cards were sorted in another tab.
+Without this the empty queue renders as a permanent spinner — the empty-state branch only
+shows a message when `exhausted`, and a fixed set never is.
+
+### Ending the set — the completion popup
+
+How it ends depends on whether the learner resolved anything (`resolvedCount`, summed off
+`done`):
+
+| Case | Behaviour |
+|---|---|
+| At least one card sorted/skipped | The page holds still on **`ProvisionalSortDonePopup`** (`src/components/ProvisionalSortDonePopup.tsx`) — a non-minimizable popup over an otherwise empty board offering two exits: **Back to \<origin\>** and **Go to Home** (`/`). |
+| Nothing resolved (the set was already empty) | Silent exit, exactly as before — there is nothing to confirm. |
+
+The popup exists because the old unconditional `navigate(-1)` fired on the same beat as
+the last card leaving the board: the learner's final sort read as the card vanishing under
+an instant route change, with no acknowledgement that anything landed.
+
+**Back** runs `exitToOrigin`: `navigate(-1)` normally, falling back to the recorded origin
+and then `/discover` when this page is the first history entry (deep-link or reload). The
+same callback backs the NodePage back arrow in this state, so there is one exit path.
+
+**Naming the origin.** `ProvisionalSortOffer` appends `&from=<pathname>` when it opens the
+flow, and `originLabelFor` (`src/utils/originLabel.ts`) turns that into a label — game
+titles read out of `GAME_REGISTRY` (so a renamed game renames the button), plus a small map
+for the non-game origins (flp, decks, discover, games hub). An unrecognised or missing
+origin degrades to a plain **Go back**.
 
 `words` narrows the set to one round's cards; omitting it offers every outstanding
 provisional card. The server **intersects** whatever is asked for with what the learner
@@ -634,7 +694,8 @@ outlives the session, it should reach for SORTED for the same reason.
 | Client (shared) | `src/hooks/useProvisionalSortOffer.ts` | a game's offer timing + open/minimized/dismissed state |
 | Client (shared) | `src/components/MinimizablePopup.tsx` | the scrim / card / corner-puck collapse shell (also backs `GameEndPopup`) |
 | Client (shared) | `src/components/ProvisionalCardGrid.tsx` | the lent cards as `MiniVocabCard` thumbnails, 2 per row |
-| Client (shared) | `src/components/ProvisionalCardsNotice.tsx`, `src/components/ProvisionalSortOffer.tsx` | the pre-round notice; the end-of-round offer popup |
+| Client (shared) | `src/components/ProvisionalCardsNotice.tsx`, `src/components/ProvisionalSortOffer.tsx` | the pre-round notice; the end-of-round offer popup (which records `?from=` for the exit) |
+| Client (shared) | `src/components/ProvisionalSortDonePopup.tsx`, `src/utils/originLabel.ts` | the set-mode completion popup (Back to \<origin\> / Go to Home) and its origin label |
 
 ---
 

@@ -4,6 +4,7 @@ import { ValidationError } from '../../types/dal.js';
 import { CommunityDesign, VotedDesignKey, VoteResult } from '../../types/community.js';
 import { vetReadFrom, vetTableForLanguage, vetSortedClause, coreCategoryExpr } from '../shared/vetTable.js';
 import { DICT_JOIN } from '../shared/dictJoin.js';
+import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../../utils/definitions.js';
 import { WEEK_BOUNDARY } from '../shared/weekBoundary.js';
 import { IS_ADVANCED_LAYOUT } from '../shared/advancedLayout.js';
 
@@ -61,6 +62,11 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
       de.tone,
       de.script,
       de.definition,
+      -- Fed to the display resolvers in normalize() and stripped there; never part of the
+      -- API shape. The selectedSense read is the DESIGN OWNER's sense pick, which is the
+      -- right one here: the feed shows their card as they built it, not as the viewer would.
+      de."definitionClusters",
+      ve."selectedSense",
       (
         SELECT COUNT(*) FROM community_layout_votes v
         WHERE v."ownerUserId" = ve."userId"
@@ -401,9 +407,18 @@ export class CommunityLayoutDAL implements ICommunityLayoutDAL {
   // the API contract (numeric voteCountThisWeek, boolean inLibrary) holds regardless of driver.
   private normalize(row: any): CommunityDesign {
     // dupRank is an internal window value from the dedupe subquery — never part of the API shape.
-    const { dupRank, ...rest } = row;
+    // definitionClusters / selectedSense are likewise internal: they exist only to feed the
+    // display resolvers below, and dropping them here keeps `CommunityDesign` unchanged.
+    const { dupRank, definitionClusters, selectedSense, ...rest } = row;
     return {
       ...rest,
+      // Sense-resolved rather than read straight off det. The `pronunciation` column is the
+      // unreviewed CEDICT seed handed to the clusterer, so a corrected heteronym keeps the
+      // wrong reading there forever (重点 = `chóng diǎn` in the column, `zhòng diǎn` in its
+      // clusters) — a community card would print different pinyin than the same word's
+      // flashcard. See docs/DEFINITION_CLUSTERS.md.
+      pronunciation: resolveDisplayPronunciation({ ...row, definitionClusters, selectedSense }),
+      definition: resolveDisplayDefinition({ ...row, definitionClusters, selectedSense }),
       voteCountThisWeek: Number(row.voteCountThisWeek) || 0,
       inLibrary: row.inLibrary === true,
     };

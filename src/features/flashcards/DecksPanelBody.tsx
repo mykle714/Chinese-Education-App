@@ -7,49 +7,67 @@ import { styled } from "@mui/material/styles";
 import DeckTile from "../../components/DeckTile";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import CollectionSortControl from "./CollectionSortControl";
-import type { VocabSortKey } from "../../utils/vocabSort";
-import type { MasteryGoals } from "../../utils/masteryCompute";
 import type { VocabEntry } from "../../types";
+import type { DecksPanelState } from "./useDecksPanel";
 import { FLOATING_FOOTER_CLEARANCE } from "../../components/MobileFooter";
 import { EDGE_FADE_MASK_NO_TOP } from "../../components/MobileTabScreen";
 import type { SheetPanelBodyHandle } from "./FlashcardsLearnPage/SheetPanel";
-import type { BuiltinCollectionEntry } from "./builtinCollections";
 import { collectionPath, deckTileColors } from "./collectionRef";
 import { collectionIcon } from "./collectionIcon";
-import type { DeckSummary } from "../../api/decks";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 
 // ── What this file is ─────────────────────────────────────────────────────────
 //
-// The BODY of the /decks pull-up sheet: every "set of cards" the page offers —
-// Collections, Mastered, Challenges and the user's own Decks — in the three-per-row
-// tile grid the page used to render inline, followed by the learner's CARDS
-// themselves.
+// The BODY of the decks PANEL: every "set of cards" a learner owns — Collections,
+// Challenges and their own Decks — in a three-per-row tile grid, followed by their
+// CARDS themselves.
 //
-// ── Why the cards are back on this sheet ──────────────────────────────────────
+// ── Three hosts, one body (docs/DECKS_FEATURE.md § "Mastery Centers") ─────────
+//   fdp (/flashcards/decks)  — variant "sheet", lens core. The persistent pull-up
+//       sheet behind the study buttons.
+//   Reading Center           — variant "page", lens reading.
+//   Writing Center           — variant "page", lens writing.
+//
+// The three differ in exactly two things: how the body is FRAMED (a resizable sheet
+// vs. a page's own scroll area) and which mastery bar it is read through. Everything
+// else — which collections exist, what their figures say, how the card grid is
+// ordered — follows from the lens and is computed once in `useDecksPanel`, whose
+// whole state object is passed in here as `panel`.
+//
+// ── What the LENS changes on this surface ────────────────────────────────────
+//   • the tile row is that bar's three collections, with that bar's counts;
+//   • the sort menu offers that bar's mastery / cooldown / date-mastered rows;
+//   • every card in the grid draws that ONE bar and badges its band.
+// A Center therefore answers "how is my reading going, set by set" with the same
+// furniture the fdp uses to answer it about recognition and production.
+//
+// ── Why the cards are on this panel at all ────────────────────────────────────
 // The tile sections answer "which set?"; the Cards section at the bottom answers
 // "where is that one word?", which is the far more frequent errand and used to cost
-// two navigations (All Cards tile → collection page). So the "All Cards" TILE is
-// gone from the Collections row (the fdp filters it out — the collection and its
-// route still exist for the Games hub and for direct links) and its grid lives here
-// instead, under the same search box /decks used to carry.
+// two navigations (All Cards tile → collection page). So the "All Cards" TILE keeps
+// its place in the row (the Games hub needs the collection) while its grid also lives
+// here, under the same search box /decks used to carry.
 //
 // The Decks section above it collapses (chevron on its caption, remembered in
 // localStorage) so a learner with many decks can fold them away and put the card
 // grid straight under the built-in collections.
 //
-// It is a SheetPanel body, so it obeys that contract (see SheetPanel):
+// ── The sheet contract (variant "sheet" only) ────────────────────────────────
+// As a SheetPanel body it obeys that contract (see SheetPanel):
 //   • the forwarded {root, scroll} handle — `root` is the gesture target that
 //     covers the whole body, `scroll` is the single overflow container whose
 //     scrollTop decides between resizing the sheet and scrolling the content;
 //   • `touchAction: "none"` on the scroller, because SheetPanel routes every
 //     touchmove itself rather than letting the browser scroll natively.
+// As a PAGE body neither applies: the ref is harmless (nothing reads it) and the
+// scroller must keep `touchAction: "pan-y"`, or the page would refuse to scroll at
+// all — nothing is intercepting its touchmoves to scroll it for us.
 //
 // Structurally it mirrors SettingsPanelBody (the other non-eip sheet body) —
-// same skeleton, different content. Data (counts, deck list, loading/error) is
-// owned by FlashcardsDecksPage and passed in; this file is presentation only.
+// same skeleton, different content. Data is owned by `useDecksPanel`; this file is
+// presentation only.
 //
 // Docs: docs/DECKS_FEATURE.md, docs/MOBILE_TAB_SCREEN_LAYOUT.md.
 
@@ -127,72 +145,50 @@ const readDecksOpen = (): boolean => {
     }
 };
 
-export interface DecksSheetBodyProps {
-    // Built-in collections, already grouped and filtered by the page.
-    collectionsSection: BuiltinCollectionEntry[];
-    masteredSection: BuiltinCollectionEntry[];
-    // Mastered gets its own captioned section only when more than one bar is
-    // active; otherwise its single tile rides along in Collections (hasMasteredSection).
-    showMasteredSection: boolean;
-    // Figure shown on a built-in tile. Derived by the page from the count hooks;
-    // undefined while a count is still loading (DeckTile renders no figure then).
-    tileCount: (entry: BuiltinCollectionEntry) => number | undefined;
-    // Generated (editMode === "preset") challenge decks and the user's own decks.
-    challengeDecks: DeckSummary[];
-    authoredDecks: DeckSummary[];
-    decksLoading: boolean;
-    decksError: string | null;
+export interface DecksPanelBodyProps {
+    /**
+     * Everything the panel shows, for one lens — the whole return of `useDecksPanel`.
+     *
+     * Passed as ONE object rather than twenty props: the fields are not independent
+     * (the collections, their counts, the card grid and its default ordering are all
+     * derived from the same lens), and splitting them let a host pass a lens-scoped
+     * card list beside core-scoped counts without the type system noticing.
+     */
+    panel: DecksPanelState;
+    /**
+     * How this body is framed. "sheet" is the fdp's pull-up panel (SheetPanel owns the
+     * touch handling); "page" is a Mastery Center, where the body scrolls itself.
+     */
+    variant?: "sheet" | "page";
+    /** Navigate to a set (a collection page or a deck page). */
     onOpenPath: (path: string) => void;
-    onNewDeck: () => void;
-    // ── The inline Cards section ──────────────────────────────────────────────
-    // Every sorted card in the "all" collection, ALREADY filtered by the page's
-    // search box (the page owns both the fetch and the filter, per this file's
-    // presentation-only contract). Must be referentially stable while unchanged,
-    // or MiniVocabCardGrid restarts its reveal cascade on every render.
-    cards: VocabEntry[];
-    cardsLoading: boolean;
-    cardsError: string | null;
-    /** Total card count before the search filter — the figure on the section caption. */
-    cardsTotal: number;
-    cardsSearch: string;
-    onCardsSearchChange: (value: string) => void;
+    /** Navigate to one card's detail page. */
     onOpenCard: (entry: VocabEntry) => void;
-    // Ordering of the card grid. The KEY lives on the page (it holds the entries and
-    // applies it); this file only renders the picker. `all` is not a deck, so the
-    // deck-only "Date added" row is never offered here.
-    cardsSortKey: VocabSortKey;
-    onCardsSortKeyChange: (key: VocabSortKey) => void;
-    cardsSortLanguage: string | null | undefined;
-    cardsSortGoals: MasteryGoals;
-    // The sheet's grabber-drag binder, spread onto the section headings so a
-    // vertical drag started on a caption resizes the sheet like the grabber does.
+    /** Open the host's New-deck dialog. */
+    onNewDeck: () => void;
+    /**
+     * The sheet's grabber-drag binder, spread onto the section headings so a vertical
+     * drag started on a caption resizes the sheet like the grabber does. Absent in
+     * "page" variant — there is nothing to resize.
+     */
     headerDragBind?: () => Record<string, unknown>;
 }
 
-const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(function DecksSheetBody({
-    collectionsSection,
-    masteredSection,
-    showMasteredSection,
-    tileCount,
-    challengeDecks,
-    authoredDecks,
-    decksLoading,
-    decksError,
+const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(function DecksPanelBody({
+    panel,
+    variant = "sheet",
     onOpenPath,
-    onNewDeck,
-    cards,
-    cardsLoading,
-    cardsError,
-    cardsTotal,
-    cardsSearch,
-    onCardsSearchChange,
     onOpenCard,
-    cardsSortKey,
-    onCardsSortKeyChange,
-    cardsSortLanguage,
-    cardsSortGoals,
+    onNewDeck,
     headerDragBind,
 }, ref) {
+    const {
+        lens, goals, language, collections, tileCount,
+        challengeDecks, authoredDecks, decksLoading, decksError,
+        visibleCards, cardsTotal, cardsLoading, cardsError,
+        cardsSearch, setCardsSearch, cardsSortKey, setCardsSortKey,
+    } = panel;
+    const isSheet = variant === "sheet";
     const rootRef = useRef<HTMLDivElement | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     // Purely presentational, so it lives here rather than in the page: nothing above
@@ -219,20 +215,24 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
     return (
         <Box
             ref={rootRef}
-            className="decks-sheet-body"
+            className="decks-panel-body"
             sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
         >
             <Box
                 ref={scrollRef}
-                className="decks-sheet-body__scroll"
+                className="decks-panel-body__scroll"
                 sx={{
                     flex: 1,
                     minHeight: 0,
                     overflowY: "auto",
-                    // SheetPanel owns every touchmove on this body (it decides
-                    // between growing the sheet and scrolling this box), so the
-                    // browser must not also pan it.
-                    touchAction: "none",
+                    // SHEET: SheetPanel owns every touchmove on this body (it decides
+                    // between growing the sheet and scrolling this box), so the browser
+                    // must not also pan it.
+                    // PAGE: nothing is intercepting those touchmoves, so the browser
+                    // must pan it — `none` here would make a Mastery Center unscrollable
+                    // on touch (see CLAUDE.md § Touch & Scroll: scrolling is opt-in, and
+                    // this container is where a Center opts in).
+                    touchAction: isSheet ? "none" : "pan-y",
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
@@ -262,23 +262,24 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                     WebkitMaskImage: EDGE_FADE_MASK_NO_TOP,
                 }}
             >
-                {/* ── Collections ── the whole library and the part still being learned,
-                    plus the single Mastered tile when it has no section of its own.
-                    Every tile is the same object as a user's deck below; only what
-                    defines the set differs. */}
+                {/* ── Collections ── this LENS's two built-in sets: what is still to be
+                    learned in this bar, and what is finished in it. (All Cards has no
+                    tile — its grid is the Cards section at the bottom.) Every tile is
+                    the same object as a user's deck below; only what defines the set
+                    differs. */}
                 <Box
-                    className="decks-sheet-body__collections-header"
+                    className="decks-panel-body__collections-header"
                     {...(headerDragBind?.() ?? {})}
                     sx={{ width: "100%", px: 3.5, pt: 0.5, pb: 0.5 }}
                 >
-                    <SectionLabel className="decks-sheet-body__collections-label">Collections</SectionLabel>
+                    <SectionLabel className="decks-panel-body__collections-label">Collections</SectionLabel>
                 </Box>
 
-                <TileGrid className="decks-sheet-body__collections-row">
-                    {collectionsSection.map((entry, index) => (
+                <TileGrid className="decks-panel-body__collections-row">
+                    {collections.map((entry, index) => (
                         <DeckTile
                             key={entry.key}
-                            className={`decks-sheet-body__collection-tile decks-sheet-body__collection-tile--${entry.key}`}
+                            className={`decks-panel-body__collection-tile decks-panel-body__collection-tile--${entry.key}`}
                             label={entry.label}
                             count={tileCount(entry)}
                             icon={collectionIcon(entry.ref)}
@@ -292,64 +293,29 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
 
                 <LineSeparator className="decks-line-separator" />
 
-                {/* ── Mastered ── one tile per ACTIVE mastery bar, and ONLY when
-                    there is more than one of them: with core alone the tile sits in
-                    Collections above, because a captioned section holding a single tile is
-                    a heading for nothing. */}
-                {showMasteredSection && (
-                    <>
-                        <Box
-                            className="decks-sheet-body__mastered-header"
-                            {...(headerDragBind?.() ?? {})}
-                            sx={{ width: "100%", px: 3.5, pt: 2, pb: 0.5 }}
-                        >
-                            <SectionLabel className="decks-sheet-body__mastered-label">Mastered</SectionLabel>
-                        </Box>
-
-                        <TileGrid className="decks-sheet-body__mastered-row">
-                            {masteredSection.map((entry, index) => (
-                                <DeckTile
-                                    key={entry.key}
-                                    className={`decks-sheet-body__mastered-tile decks-sheet-body__mastered-tile--${entry.key}`}
-                                    label={entry.label}
-                                    count={tileCount(entry)}
-                                    icon={collectionIcon(entry.ref)}
-                                    mainColor={entry.colors.main}
-                                    accentColor={entry.colors.accent}
-                                    animationDelay={index * 70}
-                                    onClick={() => onOpenPath(collectionPath(entry.ref))}
-                                />
-                            ))}
-                        </TileGrid>
-
-                        <LineSeparator className="decks-line-separator" />
-                    </>
-                )}
-
                 {/* ── Challenges ── (docs/STUDY_CHALLENGE.md § 4). Placed immediately
                     BEFORE the user's own Decks so generated sets sit above authored
                     ones and the user's decks keep a stable position at the bottom.
 
-                    OMITTED ENTIRELY when there is no active challenge deck, exactly as
-                    Mastered is when no reading/writing goal is set — an empty captioned
-                    section is noise in a sheet whose job is to be scannable.
+                    OMITTED ENTIRELY when there is no active challenge deck — an empty
+                    captioned section is noise in a panel whose job is to be scannable.
 
                     There is NO lock badge; the deck's immutability shows up as the
                     absence of controls on its own page. */}
                 {challengeDecks.length > 0 && (
                     <>
                         <Box
-                            className="decks-sheet-body__challenges-header"
+                            className="decks-panel-body__challenges-header"
                             {...(headerDragBind?.() ?? {})}
                             sx={{ width: "100%", px: 3.5, pt: 2, pb: 1 }}
                         >
-                            <SectionLabel className="decks-sheet-body__challenges-label">Challenges</SectionLabel>
+                            <SectionLabel className="decks-panel-body__challenges-label">Challenges</SectionLabel>
                         </Box>
-                        <TileGrid className="decks-sheet-body__challenges-list" alignLeft>
+                        <TileGrid className="decks-panel-body__challenges-list" alignLeft>
                             {challengeDecks.map((deck, index) => (
                                 <DeckTile
                                     key={deck.id}
-                                    className="decks-sheet-body__challenge-tile"
+                                    className="decks-panel-body__challenge-tile"
                                     label={deck.name}
                                     count={deck.cardCount}
                                     icon={collectionIcon({ kind: "deck", deckId: deck.id })}
@@ -373,7 +339,7 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                     started on it resizes the sheet; useDrag's filterTaps is what keeps
                     the tap-to-toggle working through the same binding. */}
                 <Box
-                    className="decks-sheet-body__decks-header"
+                    className="decks-panel-body__decks-header"
                     {...(headerDragBind?.() ?? {})}
                     role="button"
                     aria-expanded={decksOpen}
@@ -388,7 +354,7 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                         {/* Rotated rather than swapped for a second icon, so the arrow
                             turns with the section instead of cutting to a new glyph. */}
                         <ExpandMoreIcon
-                            className="decks-sheet-body__decks-chevron"
+                            className="decks-panel-body__decks-chevron"
                             sx={{
                                 fontSize: 20,
                                 color: COLORS.onSurface,
@@ -396,12 +362,12 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                                 transform: decksOpen ? "rotate(0deg)" : "rotate(-90deg)",
                             }}
                         />
-                        <SectionLabel className="decks-sheet-body__decks-label">
+                        <SectionLabel className="decks-panel-body__decks-label">
                             Decks{authoredDecks.length > 0 ? ` (${authoredDecks.length})` : ""}
                         </SectionLabel>
                     </Box>
                     <IconButton
-                        className="decks-sheet-body__new-deck-button"
+                        className="decks-panel-body__new-deck-button"
                         aria-label="New deck"
                         size="small"
                         onClick={(e) => { e.stopPropagation(); onNewDeck(); }}
@@ -414,9 +380,9 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                 <Collapse in={decksOpen} timeout={180} sx={{ width: "100%" }} unmountOnExit>
                     <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
                         {(decksError || (!decksLoading && authoredDecks.length === 0)) && (
-                            <Box className="decks-sheet-body__decks-message" sx={{ width: "100%", px: 3.5, pb: 1 }}>
+                            <Box className="decks-panel-body__decks-message" sx={{ width: "100%", px: 3.5, pb: 1 }}>
                                 <Typography
-                                    className={decksError ? "decks-sheet-body__decks-error" : "decks-sheet-body__decks-empty"}
+                                    className={decksError ? "decks-panel-body__decks-error" : "decks-panel-body__decks-empty"}
                                     sx={{ fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.textSecondary }}
                                 >
                                     {decksError ??
@@ -428,11 +394,11 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                         {/* The user's decks, wrapping at three per row — the same tile as
                             every built-in set above, carrying the deck's derived pastel
                             (deckTileColors: computed from the id, never stored). */}
-                        <TileGrid className="decks-sheet-body__decks-list" alignLeft>
+                        <TileGrid className="decks-panel-body__decks-list" alignLeft>
                             {authoredDecks.map((deck, index) => (
                                 <DeckTile
                                     key={deck.id}
-                                    className="decks-sheet-body__deck-tile"
+                                    className="decks-panel-body__deck-tile"
                                     label={deck.name}
                                     count={deck.cardCount}
                                     icon={collectionIcon({ kind: "deck", deckId: deck.id })}
@@ -460,25 +426,25 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                     and a number that shrank as you typed would be reporting the search
                     rather than the library. */}
                 <Box
-                    className="decks-sheet-body__cards-header"
+                    className="decks-panel-body__cards-header"
                     {...(headerDragBind?.() ?? {})}
                     sx={{ width: "100%", px: 3.5, pt: 2, pb: 1 }}
                 >
-                    <SectionLabel className="decks-sheet-body__cards-label">
+                    <SectionLabel className="decks-panel-body__cards-label">
                         Cards{cardsTotal > 0 ? ` (${cardsTotal})` : ""}
                     </SectionLabel>
                 </Box>
 
                 {/* Sized to the 364px card grid below so the input lines up over the
                     cards, exactly as it does on the collection page. */}
-                <Box className="decks-sheet-body__cards-search" sx={{ width: 364, maxWidth: "100%", px: 3.5 }}>
+                <Box className="decks-panel-body__cards-search" sx={{ width: 364, maxWidth: "100%", px: 3.5 }}>
                     <TextField
-                        className="decks-sheet-body__cards-search-input"
+                        className="decks-panel-body__cards-search-input"
                         fullWidth
                         size="small"
                         placeholder="Search your cards..."
                         value={cardsSearch}
-                        onChange={(e) => onCardsSearchChange(e.target.value)}
+                        onChange={(e) => setCardsSearch(e.target.value)}
                         InputProps={{
                             startAdornment: (
                                 <InputAdornment position="start">
@@ -488,10 +454,10 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                             endAdornment: cardsSearch ? (
                                 <InputAdornment position="end">
                                     <IconButton
-                                        className="decks-sheet-body__cards-search-clear"
+                                        className="decks-panel-body__cards-search-clear"
                                         aria-label="Clear search"
                                         size="small"
-                                        onClick={() => onCardsSearchChange("")}
+                                        onClick={() => setCardsSearch("")}
                                     >
                                         <Clear fontSize="small" />
                                     </IconButton>
@@ -505,11 +471,12 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                 {/* Same picker as the collection page (CollectionSortControl), on the
                     same 364px column as the search box and the grid. */}
                 <CollectionSortControl
-                    classPrefix="decks-sheet-body__cards"
+                    classPrefix="decks-panel-body__cards"
                     sortKey={cardsSortKey}
-                    onSortKeyChange={onCardsSortKeyChange}
-                    language={cardsSortLanguage}
-                    goals={cardsSortGoals}
+                    onSortKeyChange={setCardsSortKey}
+                    language={language}
+                    goals={goals}
+                    lens={lens}
                     // Common orderings only: this is the whole library, opened to FIND
                     // a card, so the per-skill (reading / writing) mastery rows are
                     // left to the collection pages that are about those bars.
@@ -518,7 +485,9 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                 />
 
                 <MiniVocabCardGrid
-                    entries={cards}
+                    entries={visibleCards}
+                    // One strip per card, on the panel's own bar (core in the fdp).
+                    lens={lens}
                     loading={cardsLoading}
                     error={cardsError}
                     emptyMessage={
@@ -527,12 +496,12 @@ const DecksSheetBody = forwardRef<SheetPanelBodyHandle, DecksSheetBodyProps>(fun
                             : "Please go to the Discover tab to select cards you would like to learn"
                     }
                     onCardClick={onOpenCard}
-                    containerClassName="decks-sheet-body__cards-grid"
-                    classPrefix="decks-sheet-body__cards"
+                    containerClassName="decks-panel-body__cards-grid"
+                    classPrefix="decks-panel-body__cards"
                 />
             </Box>
         </Box>
     );
 });
 
-export default DecksSheetBody;
+export default DecksPanelBody;

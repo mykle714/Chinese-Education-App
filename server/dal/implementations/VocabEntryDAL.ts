@@ -860,10 +860,14 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
           d.word1 AS "entryKey",
           d.pronunciation,
           d.definitions->>0 AS definition,
-          -- Pass-2 words are NOT in the user's library, so there is no sense pick to honor:
-          -- these rows deliberately keep the plain definitions[0] dd (typed NULLs keep the
-          -- UNION ALL column lists aligned).
-          NULL::jsonb AS "definitionClusters",
+          -- Pass-2 words are NOT in the user's library, so there is no selectedSense to
+          -- honor -- but that is not the same as having no sense to resolve. The resolvers'
+          -- DEFAULT branch (highest-frequency cluster) is exactly what every other
+          -- det-fallback surface uses, so the clusters travel and only selectedSense is
+          -- typed NULL. Without them a pass-2 row falls back to the raw pronunciation
+          -- column, which is the unreviewed CEDICT seed: zhong4dian3 would list with the
+          -- chong2dian3 reading here while the same word's flashcard says zhong4dian3.
+          d."definitionClusters",
           NULL::text AS "selectedSense",
           d."frequencyScore",
           0 AS is_user
@@ -901,11 +905,10 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     return result.recordset.map((row) => ({
       vocabEntryId: row.vocabEntryId ?? null,
       entryKey: row.entryKey,
-      // Pass-1 (saved) rows read out their chosen sense's pinyin; pass-2 rows carry NULL
-      // clusters, so this is their plain `pronunciation` column unchanged.
+      // Pass-1 (saved) rows read out their CHOSEN sense's pinyin; pass-2 rows have no pick,
+      // so the resolver falls to the entry's default (highest-frequency) sense.
       pronunciation: resolveDisplayPronunciation(row),
-      // Pass-1 (saved) rows resolve to the learner's chosen sense; pass-2 rows carry NULL
-      // clusters, so the resolver returns their plain definitions[0] dd unchanged.
+      // Same pick on both sides, so a row's English and its tones always describe one sense.
       definition: resolveDisplayDefinition(row) || null,
       frequencyScore: row.frequencyScore ?? null,
     }));

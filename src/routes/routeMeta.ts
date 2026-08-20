@@ -145,6 +145,11 @@ const PAGE_ROUTES: RouteMeta[] = [
   // never shadow the built-in collection route.
   { path: "/flashcards/collection/:builtin", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
   { path: "/flashcards/deck/:id", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
+  // Mastery Centers (docs/DECKS_FEATURE.md § "Mastery Centers") — the fdp's decks
+  // panel read through the reading / writing bar. Node drill-ins from /decks, so the
+  // Flashcards tab stays lit and the back arrow returns there.
+  { path: "/flashcards/reading", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
+  { path: "/flashcards/writing", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
   {
     path: "/flashcards/mastered",
     access: "any",

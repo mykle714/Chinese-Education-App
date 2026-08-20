@@ -23,12 +23,28 @@ import type { HydraColor } from "./types";
  * Referenced by: spawnPlanner.ts, src/__tests__/hydraSpawnTable.test.ts.
  */
 
-/** Bubbles spawned when a bubble of this color is cleared (§ 2). */
+/**
+ * Bubbles spawned when a bubble of this color is cleared (§ 2).
+ *
+ * EVERY COLOR PAYS ONE MORE THAN IT USED TO (2026-08-19). The ladder was 0/1/2/3;
+ * it is now 1/2/3/4, keeping the same one-bubble step between colors. Two things
+ * follow, and both are deliberate:
+ *
+ *   * RED NO LONGER PAYS NOTHING. A red clear returns one bubble against the two it
+ *     removed, so it is still the only lever that shrinks the board — just a gentler
+ *     one (net −1 per match instead of −2). Digging out of the squeeze now takes
+ *     twice as many correct hard clears.
+ *   * THE MIX HAD TO MOVE WITH IT. Expected payout is `2 + (2·blue + green − red)/100`,
+ *     so the +1 shifted break-even from `2b+g−r = 100` down to `2b+g−r = 0` — a full
+ *     100 points of slack. Left alone, the old 48/20/24/8 row would have grown the
+ *     board at +1.08 bubbles per match instead of +0.08. Spending that slack on
+ *     yellow and red is what pays for the raise; see HYDRA_SPAWN_ANCHORS.
+ */
 export const PAYOUT_BY_COLOR: Record<HydraColor, number> = {
-    Unfamiliar: 0, // red
-    Target: 1, // yellow
-    Comfortable: 2, // green
-    Mastered: 3, // blue
+    Unfamiliar: 1, // red
+    Target: 2, // yellow
+    Comfortable: 3, // green
+    Mastered: 4, // blue
 };
 
 /** Bubbles removed by one match — both halves of the cleared pair. */
@@ -57,16 +73,16 @@ export interface SpawnAnchor {
  *
  * Difficulty in Hydra comes from the BOARD FILLING UP and from the 0.75 step, not
  * from a slow drift in the mix. Flattening the middle also removed the thin-margin
- * problem the drift had introduced: growth is now a uniform +0.08 bubbles per match
- * everywhere in the steady state, instead of decaying to +0.02 near the squeeze where
- * a skilled player could have hovered indefinitely.
+ * problem the drift had introduced: growth is uniform everywhere in the steady state,
+ * instead of decaying near the squeeze where a skilled player could have hovered
+ * indefinitely.
  *
- * ⚠️ THESE NUMBERS ARE A FIRST TUNING, NOT A MEASUREMENT (§ 11 O1). E[payout] is 3.00
- * on an empty board and a flat 2.08 through the steady state. Whether that FEELS like a slow squeeze
- * or an unwinnable flood is not knowable on paper. The 0.75 red-only floor and the
- * four anchor positions are the first things to move.
+ * ⚠️ THESE NUMBERS ARE A TUNING, NOT A MEASUREMENT (§ 11 O1). E[payout] is 4.00 on an
+ * empty board and a flat 2.25 through the steady state (+0.25 bubbles per match).
+ * Whether that FEELS like a slow squeeze or an unwinnable flood is not knowable on
+ * paper. The 0.75 red-only floor and the steady-state row are the first things to move.
  *
- * Yellow's 25–30% share is deliberately above what an economy-only tuning would
+ * Yellow's 30% share is deliberately above what an economy-only tuning would
  * pick, and it is raised in ALL modes — challenge words ride the yellow slot
  * (§ 7.5), and free-play Hydra must roll the same table as challenge Hydra or
  * players would practice a different game from the one they compete in.
@@ -79,36 +95,51 @@ export const HYDRA_SPAWN_ANCHORS: readonly SpawnAnchor[] = [
     // makes the opening board's composition a consequence of the table rather than a
     // hard-coded exception beside it (HydraStage seeds with `rollColor(0)`).
     //
-    // E[payout] here is 3.00 — the steepest growth in the game sits at the emptiest
+    // E[payout] here is 4.00 — the steepest growth in the game sits at the emptiest
     // board, which is precisely where the player has the most room to absorb it.
     // 1. THE OPENING — blue only. An empty board rolls nothing but the safest,
     //    highest-paying color, so a run starts on words the player certainly knows.
     { fill: 0.0, weights: { Mastered: 100, Comfortable: 0, Target: 0, Unfamiliar: 0 } },
     // 2. THE STEADY STATE — one mix, held from the first tenth all the way to the
-    //    squeeze. Red is a flat 8% throughout: it used to be 0% below fill 0.45 and
-    //    2–3% above, which meant the player's ONLY way to shrink the board was
-    //    withheld until the board was already half full — the risky clear that § 3
-    //    calls "the game" was not on offer during the half of a run where they most
-    //    want to practise it.
-    { fill: 0.1, weights: { Mastered: 48, Comfortable: 20, Target: 24, Unfamiliar: 8 } },
+    //    squeeze. Red is a flat 35% throughout: it used to be 0% below fill 0.45,
+    //    which meant the player's ONLY way to shrink the board was withheld until the
+    //    board was already half full — the risky clear that § 3 calls "the game" was
+    //    not on offer during the half of a run where they most want to practise it.
+    //
+    //    REWEIGHTED 2026-08-19, TOGETHER WITH THE +1 PAYOUT LADDER. Was
+    //    48/20/24/8 (blue/green/yellow/red). Blue and green come down, yellow and red
+    //    go up, which is only affordable because the +1 ladder moved break-even (see
+    //    PAYOUT_BY_COLOR). E[payout] = 2 + (2·48 + 20 − 8)/100 = 3.08 under the new
+    //    ladder — far too fast — against 2 + (2·25 + 10 − 35)/100 = 2.25 here, which
+    //    holds roughly the run length the old +0.08 economy produced while putting
+    //    two thirds of every roll on words the player knows least well.
+    { fill: 0.1, weights: { Mastered: 25, Comfortable: 10, Target: 30, Unfamiliar: 35 } },
 ];
 
 /**
- * THE SQUEEZE. At and above this fill nothing but red spawns, each paying 0, so the
- * board can only shrink — and the player has to clear their hardest words to climb
- * back out, every one of which is a chance to lose. It sits well below the 0.94 loss
- * line so the zone is a real, playable band rather than a death sentence.
+ * THE SQUEEZE. At and above this fill nothing but red spawns, each paying 1 against
+ * the 2 a match removes, so the board can only shrink — and the player has to clear
+ * their hardest words to climb back out, every one of which is a chance to lose. It
+ * sits well below the 0.94 loss line so the zone is a real, playable band rather than
+ * a death sentence.
+ *
+ * THE SQUEEZE IS HALF AS STEEP AS IT WAS (2026-08-19). Red used to pay 0, so a match
+ * inside the zone was worth −2 bubbles; under the +1 ladder it is worth −1. Escaping
+ * takes twice as many consecutive correct clears of the player's hardest words, which
+ * is the intended cost of making red a payable color everywhere else.
  *
  * ⚠️ A HARD STEP, NOT AN ANCHOR — and this is load-bearing. § 3.1 lists red-only as a
  * fifth anchor row at 0.75, but an INTERPOLATED fifth row silently breaks the two
- * things the section promises. Interpolating from the 0.60 row (E[payout] 2.04) down
- * to 0.00 drags expected payout below the break-even 2 from about **fill 0.61**, so:
+ * things the section promises. Interpolating from the steady-state row (E[payout]
+ * 2.25) down to 1.00 drags expected payout below the break-even 2 from about
+ * **fill 0.23** — the reweighted table made this WORSE, not better, because the
+ * steady state now sits closer to break-even. So:
  *
- *   * "below 0.75 every point on the curve is net-positive" becomes false over a
- *     fifth of the range, and the board starts quietly shrinking on its own — which
- *     is exactly the self-stabilizing economy § 3 was written to reject; and
- *   * the board is already rolling ~80% red at 0.73 while the HUD's "red only"
- *     warning is still off, so the interface misdescribes the game.
+ *   * "below 0.75 every point on the curve is net-positive" becomes false over most
+ *     of the range, and the board starts quietly shrinking on its own — which is
+ *     exactly the self-stabilizing economy § 3 was written to reject; and
+ *   * the board is already rolling mostly red well before the HUD's "red only"
+ *     warning comes on, so the interface misdescribes the game.
  *
  * § 3.1's own wording is "at 0.75 and above the table SWITCHES to red-only", which is
  * a step. Implemented as one here, and the doc's table was corrected to match.

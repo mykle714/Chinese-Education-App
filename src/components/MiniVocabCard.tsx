@@ -10,8 +10,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import type { VocabEntry } from "../types";
 import { getCategoryColor } from "../utils/categoryColors";
-import { useAuth } from "../AuthContext";
-import { masteryBars, BAR_LABELS, MARK_TYPE_COLORS } from "../utils/masteryCompute";
+import { masteryBar, BAR_LABELS, MARK_TYPE_COLORS, type MasteryBarId } from "../utils/masteryCompute";
 import { COLORS } from "../theme/colors";
 import { SIZE, WEIGHT } from "../theme/scale";
 
@@ -32,6 +31,20 @@ interface MiniVocabCardProps {
      * the strip's reserved height, so the definition sits lower and the card breathes.
      */
     showMasteryStrip?: boolean;
+    /**
+     * The surface's mastery LENS (docs/DECKS_FEATURE.md § "Mastery Centers").
+     *
+     * ALWAYS exactly one bar — the card carries a single hairline track and a band
+     * badge for the lens it is shown under, and nothing else. Defaults to `core`, so a
+     * card on any recognition/production surface (the fdp, search, the sort offer)
+     * reports recognition and production only; a Reading Center card passes `reading`
+     * and reports that instead.
+     *
+     * The strip used to draw one track per goal the account pursued, which put reading
+     * and writing progress onto pages that were not asking about them — the whole
+     * reason the Centers exist. One surface, one question, one bar.
+     */
+    lens?: MasteryBarId;
     // When set, the card plays the shared `cardPopIn` animation on mount, delayed
     // by this many ms. Callers (e.g. the /decks card previews) pass `index * step`
     // to stagger a freshly-loaded row into a left-to-right cascade. Omit elsewhere
@@ -43,10 +56,15 @@ interface MiniVocabCardProps {
 // card detail page and the flashcard-learn back-of-card chip).
 
 // ── Mastery bar strip (docs/MASTERY_REWORK.md § "Three bars") ────────────────────
-// Up to three hairline bars in the card's bottom-left corner, one per active mastery
-// bar. Deliberately tiny and unlabelled: at 92x132 there is no room for a legend, and
-// the strip is meant to be read as a glanceable shape across a grid of cards rather
-// than as three separate readings. The cdp is where a learner goes for the detail.
+// ONE hairline bar in the card's bottom-left corner: the surface's lens bar (core on
+// every recognition/production surface, the skill's inside a Mastery Center — see the
+// `lens` prop). Deliberately tiny and unlabelled: at 92x132 there is no room for a
+// legend, and the strip is meant to be read as a glanceable shape across a grid of
+// cards. The cdp is where a learner goes for the detail.
+//
+// The geometry below is still written for `n` bars. Kept general on purpose: the strip
+// stacked up to three before the lens rule, and nothing here needs to know it is now
+// always one.
 const BAR_STRIP = {
     height: 3,        // hairline — three of these still read as one small block
     width: 30,        // ~1/3 of the card width, so the strip stays a corner mark
@@ -59,22 +77,20 @@ const BAR_STRIP = {
 const barStripHeight = (n: number): number =>
     n === 0 ? 0 : n * BAR_STRIP.height + (n - 1) * BAR_STRIP.gap;
 
-const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs, showMasteryStrip = true }) => {
-    // The account's goals decide how many bars this strip has (core always, plus each
-    // opted-in goal). Read here rather than passed down: every host of this card would
-    // otherwise have to thread the same two flags through, and they are already in
-    // context. The bar COUNT is per-account, so it is uniform across a grid and the
-    // definition below sits at the same height on every card.
-    const { user } = useAuth();
+const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs, showMasteryStrip = true, lens = "core" }) => {
     // An empty list when the strip is suppressed, so the ONE array drives both the
     // rendering below and the definition's bottom offset — there is no second way for
-    // the two to disagree about how much room the strip takes.
-    const bars = showMasteryStrip
-        ? masteryBars(entry.typedMarkHistory, {
-            reading: user?.readingGoal === true,
-            writing: user?.writingGoal === true,
-        })
-        : [];
+    // the two to disagree about how much room the strip takes. Otherwise exactly one
+    // bar: the lens's. The strip's height is therefore the same on every card of every
+    // surface, and the definition sits at one fixed offset.
+    const bars = !showMasteryStrip ? [] : [masteryBar(entry.typedMarkHistory, lens)];
+    // Which band the corner badge reports: the lens's band, computed here from
+    // `typedMarkHistory` rather than fetched. `entry.category` is the CORE band by
+    // definition (CORE_CATEGORY_SELECT) and every bar is derivable from the history
+    // already on the row, so under core the two agree and under a skill lens only this
+    // one is right. See docs/MASTERY_REWORK.md § "Which bar does a whole-card question
+    // mean".
+    const badgeCategory = bars[0]?.category ?? entry.category;
     // Render a custom icon arrangement behind the text only for ADVANCED layouts:
     // multiple icons, OR a single icon that has been moved/resized/rotated off its
     // default placement. Plain default-icon cards keep the icon-free thumbnail. Uses
@@ -216,11 +232,12 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 Comfortable/Mastered) so the freed-up top space can hold the basic-layout
                 icon instead.
 
-                Colored by the CORE bar — `entry.category` is the core band since
-                migration 143, which is the same thing every other whole-card readout
-                (deck counts, the Review gate) reports. The reading/writing bands are
-                in the strip at the bottom. */}
-            {entry.category && (
+                Colored by the surface's bar: the CORE band by default (`entry.category`
+                since migration 143, the same thing every other whole-card readout —
+                deck counts, the Review gate — reports), or the LENS bar's band inside a
+                Mastery Center. The bands the badge is not showing are in the strip at
+                the bottom. */}
+            {badgeCategory && (
                 <Box
                     className="mini-vocab-card__category-badge"
                     sx={{
@@ -231,7 +248,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                         width: 18,
                         height: 18,
                         borderRadius: '50%',
-                        backgroundColor: getCategoryColor(entry.category),
+                        backgroundColor: getCategoryColor(badgeCategory),
                         color: 'white',
                         fontSize: SIZE.micro,
                         fontWeight: WEIGHT.bold,
@@ -241,7 +258,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                         boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
                     }}
                 >
-                    {entry.category.charAt(0)}
+                    {badgeCategory.charAt(0)}
                 </Box>
             )}
 
@@ -345,7 +362,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 {resolveDisplayDefinition(entry)}
             </Typography>
 
-            {/* Mastery strip: one hairline track per active bar, filled to that bar's
+            {/* Mastery strip: one hairline track for the lens bar, filled to that bar's
                 pbh. Left-justified against BAR_STRIP.left rather than centered, so the
                 strip reads as a margin annotation and does not compete with the
                 centered word and definition above it. */}

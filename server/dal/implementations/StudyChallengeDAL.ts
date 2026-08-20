@@ -10,7 +10,9 @@ import type {
   ChallengeStatus,
   ChallengeVariant,
   ChallengeWord,
+  DefinitionCluster,
 } from '../../contracts/wire.js';
+import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../../utils/definitions.js';
 import type {
   StudyChallengeRow,
   ChallengeCandidate,
@@ -485,17 +487,21 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
       ? `(${knowsClause('$2')} OR ${knowsClause('$3')})`
       : knowsClause('$2');
 
-    const { rows } = await this.run<ChallengeCandidate>(client, (c) =>
+    const { rows } = await this.run<ChallengeCandidate & { definitionClusters: DefinitionCluster[] | null }>(client, (c) =>
       c.query(
         // `definitions->>0` is the entry's lead gloss — the same value
         // `dictJoin`'s `de.definition` exposes (docs/DEFINITION_MAPPING.md). There
         // is no `shortDefinition` column on either det table; the confirmation
         // flow only needs enough to draw a reviewable tile.
+        //
+        // `definitionClusters` rides along only to feed the display resolvers below; it is
+        // stripped before the row leaves this method, so `ChallengeCandidate` is unchanged.
         `SELECT de.id               AS "dictionaryEntryId",
                 de.word1            AS "word1",
                 de.language         AS "language",
                 de.pronunciation    AS "pronunciation",
                 de.definitions->>0  AS "definition",
+                de."definitionClusters" AS "definitionClusters",
                 de."difficulty"     AS "difficulty",
                 de."frequencyScore" AS "frequencyScore",
                 de."iconId"         AS "iconId"
@@ -512,7 +518,17 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
         params
       )
     );
-    return rows;
+    // Sense-resolve the two display fields, then drop the clusters. A candidate is a bare det
+    // row with no vet row behind it, so there is no `selectedSense` and both resolvers land on
+    // the entry's default sense — which is the point: the `pronunciation` column is the
+    // unreviewed CEDICT seed and disagrees with the corrected cluster reading on ~54 zh
+    // heteronyms (重点 = `chóng diǎn` in the column, `zhòng diǎn` in its clusters). Without
+    // this, the challenge tile and the flashcard for the same word print different pinyin.
+    return rows.map(({ definitionClusters, ...row }) => ({
+      ...row,
+      pronunciation: resolveDisplayPronunciation({ ...row, definitionClusters }),
+      definition: resolveDisplayDefinition({ ...row, definitionClusters }),
+    }));
   }
 
   async findEntryIdByWord(
@@ -554,12 +570,15 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
     // `definitions->>0` is the entry's lead gloss, the same value `findCandidates`
     // exposes as `definition` (docs/DEFINITION_MAPPING.md), so a stored word and a
     // candidate carry the SAME English on the review screen.
-    const { rows } = await this.run<ChallengeWordDisplayFields & { word1: string }>(client, (c) =>
+    const { rows } = await this.run<
+      ChallengeWordDisplayFields & { word1: string; definitionClusters: DefinitionCluster[] | null }
+    >(client, (c) =>
       c.query(
         `SELECT word1,
                 id                 AS "dictionaryEntryId",
                 pronunciation,
                 definitions->>0    AS "definition",
+                "definitionClusters",
                 "frequencyScore",
                 "iconId"
            FROM ${dictTableForLanguage(language)}
@@ -572,8 +591,11 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
     for (const row of rows) {
       map[row.word1] = {
         dictionaryEntryId: row.dictionaryEntryId,
-        pronunciation: row.pronunciation,
-        definition: row.definition,
+        // Sense-resolved for the same reason as `findCandidates` above, and via the same
+        // resolvers — a stored challenge word and a candidate must print identical pinyin and
+        // English for the same det entry. The clusters do not leave this method.
+        pronunciation: resolveDisplayPronunciation(row),
+        definition: resolveDisplayDefinition(row),
         frequencyScore: row.frequencyScore,
         iconId: row.iconId,
       };

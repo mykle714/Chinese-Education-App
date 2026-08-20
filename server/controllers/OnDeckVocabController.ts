@@ -9,6 +9,7 @@ import {
   PROVISION_RETRY_FACTOR,
   isRollingSupplySurface,
   masteredCollectionBar,
+  parseMasteryBar,
 } from '../contracts/wire.js';
 import { parseBuiltinCollectionId } from '../dal/shared/vetTable.js';
 import { DeckService } from '../services/DeckService.js';
@@ -152,17 +153,25 @@ export class OnDeckVocabController {
   };
 
   /**
-   * Per-category library card counts of the CORE bar
+   * Per-category library card counts of ONE mastery bar
    * (Unfamiliar / Target / Comfortable / Mastered).
-   * GET /api/onDeck/categoryCounts
+   * GET /api/onDeck/categoryCounts[?bar=core|reading|writing]
+   *
+   * `bar` defaults to `core`, which is what every caller before the Reading/Writing
+   * Centers meant. An unrecognized value falls back to core rather than 400ing: the
+   * parameter only chooses which lens the same four bands are counted through, so a
+   * bad one can mislead but never leak another user's data.
    */
   getCategoryCounts = async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
+      const bar = parseMasteryBar(req.query.bar as string | undefined) ?? 'core';
       const language = await getUserLanguage(userId);
-      const counts = await this.onDeckVocabService.getCategoryCounts(userId, language);
+      const counts = await this.onDeckVocabService.getCategoryCounts(
+        userId, language, undefined, bar
+      );
       res.json(counts);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getCategoryCounts');

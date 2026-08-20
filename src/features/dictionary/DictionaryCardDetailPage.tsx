@@ -12,7 +12,7 @@ import { useAuth } from "../../AuthContext";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
-import { useTTS, useAutoSpeakEntry, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
+import { useTTS, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
 import { COLORS } from "../../theme/colors";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "../../features/flashcards/FlashcardsLearnPage/FlashCardSection";
 import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT } from "../../features/flashcards/constants";
@@ -50,9 +50,9 @@ const DictionaryCardDetailPage: React.FC = () => {
     const tts = useTTS();
 
     const [entry, setEntry] = useState<VocabEntry | null>(null);
-    // Entering the cdp narrates the word once (see useAutoSpeakEntry); the speaker
-    // button on the hero card remains available for replays.
-    useAutoSpeakEntry(tts, entry);
+    // No narration on landing — same rule as the saved-card cdp (VocabCardDetailPage):
+    // a detail page is read, not played at. The hero card's speaker button is the only
+    // way a word is spoken here.
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     // Which definitionClusters sense EnglishBlock shows on the hero card.

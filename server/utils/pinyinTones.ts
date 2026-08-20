@@ -32,7 +32,9 @@ const TONE_MARK_BY_VOWEL: Record<string, string[]> = {
 /**
  * Convert one numbered pinyin syllable to tone-marked form ("hui4" → "huì",
  * "de5"/"de" → "de", "lu:3"/"lv3" → "lǚ"). The tone diacritic is placed on the
- * syllable's main vowel by the standard rule (a/e win; else the last of i/o/u/ü).
+ * syllable's main vowel by the standard rule: a, e, or o takes the mark (they never
+ * co-occur in one syllable); otherwise the LAST of i/u/ü, which is what puts the mark on
+ * the u of "iu" (liù) and the i of "ui" (huì).
  * Non-pinyin syllables pass through untouched.
  */
 export function numberedToTonedSyllable(syllable: string): string {
@@ -46,10 +48,12 @@ export function numberedToTonedSyllable(syllable: string): string {
   if (tone === 5) return letters; // neutral tone: no diacritic
 
   const lower = letters.toLowerCase();
-  // Placement rule: a or e always takes the mark; otherwise the last o/i/u/ü.
-  let vowelIndex = lower.search(/[ae]/);
+  // Placement rule: a, e, or o always takes the mark; otherwise the last i/u/ü.
+  // `o` belongs in the FIRST group, not the fallback: leaving it out sent "tou2" to the
+  // fallback's last-vowel rule and produced "toú" instead of "tóu" (likewise shoǔ/koǔ).
+  let vowelIndex = lower.search(/[aeo]/);
   if (vowelIndex === -1) {
-    const vowels = Array.from(lower.matchAll(/[iouü]/g));
+    const vowels = Array.from(lower.matchAll(/[iuü]/g));
     if (vowels.length > 0) vowelIndex = vowels[vowels.length - 1].index!;
   }
   if (vowelIndex === -1) return letters;

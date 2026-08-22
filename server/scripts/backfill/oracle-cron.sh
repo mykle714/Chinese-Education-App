@@ -42,6 +42,15 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 LOG_DIR="$REPO_ROOT/server/logs"
 mkdir -p "$LOG_DIR"
 
+# ── PATH hardening ───────────────────────────────────────────────────────────
+# cron does NOT source a login shell, so an interactive PATH is not available here.
+# `claude` installs to ~/.local/bin and `npx`/`node` come from the nvm bin dir; neither
+# is on cron's default PATH. Prepending them here (rather than in the crontab PATH= line)
+# keeps the script self-sufficient for any caller — cron, systemd, or a bare shell.
+NVM_BIN="$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | sort -V | tail -1 || true)"
+PATH="$HOME/.local/bin${NVM_BIN:+:$NVM_BIN}:$PATH"
+export PATH
+
 # ── shard identity ───────────────────────────────────────────────────────────
 # SLUG namespaces every per-worker file. Unsharded runs keep the historical
 # paths so a manual `/oracle-backfill` and a cron round share their scratch state.
@@ -75,6 +84,16 @@ if ! flock -n 9; then
   echo "[$(date -uIs)] $SLUG: previous round still running (lock held) — skipping tick." >> "$RUN_LOG"
   exit 0
 fi
+
+# ── preflight the toolchain ──────────────────────────────────────────────────
+# Fail loudly and early. Without this a missing binary surfaces as an opaque
+# "command not found" buried in a round that already took a prod backup.
+for bin in claude flock docker npx; do
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    echo "[$(date -uIs)] $SLUG: ABORT — '$bin' not found on PATH ($PATH)" >> "$RUN_LOG"
+    exit 1
+  fi
+done
 
 # ── preflight the manifest ───────────────────────────────────────────────────
 # Script-ahead-of-manifest drift makes the planner under-report stale rows, so an

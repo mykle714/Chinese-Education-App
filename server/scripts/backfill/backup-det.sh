@@ -47,4 +47,27 @@ if [[ "$SIZE" -lt 100000 ]]; then
 fi
 
 echo "✅ Backup written: $OUT ($(numfmt --to=iec "$SIZE"))"
+
+# ── retention ────────────────────────────────────────────────────────────────
+# Unattended rounds (oracle-cron.sh) take a dump every run, so without pruning the
+# directory grows ~17 MB/round forever. Keep only the newest DET_BACKUP_KEEP (default 1).
+#
+# Rotation covers EVERY det-*.sql.gz, labeled ones included: the skill passes a label on
+# every routine round ("-oracle-run", "-prepass-round3", ...), so exempting labeled dumps
+# would exempt essentially all of them and prune nothing. If you need a dump to survive,
+# move it out of this directory.
+#
+# ⚠️ KEEP=1 means the surviving dump is the state before the MOST RECENT round only. A bad
+# round not caught before the next one starts has its pre-image deleted, and the corruption
+# is baked into the only remaining copy. With parallel workers this is sharper still: two
+# workers backing up in the same hour leave only the second one's dump.
+KEEP="${DET_BACKUP_KEEP:-1}"
+mapfile -t ROTATING < <(ls -1t "$OUT_DIR"/det-*.sql.gz 2>/dev/null || true)
+if (( ${#ROTATING[@]} > KEEP )); then
+  for old in "${ROTATING[@]:$KEEP}"; do
+    rm -f -- "$old"
+    echo "🧹 Pruned old backup: $(basename "$old")"
+  done
+fi
+
 echo "$OUT"

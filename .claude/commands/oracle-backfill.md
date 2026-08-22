@@ -66,7 +66,9 @@ will be interrupted mid-manifest.
 `resets_at` is `null` when utilization is 0 (no window is open yet); the window opens
 on the next request and runs five hours from there.
 
-3. **Check for a parked run**: if `server/logs/oracle-resume.md` exists, a previous
+3. **Check for a parked run**: if the resume note exists (`$ORACLE_RESUME_FILE` when
+   set — a parallel/cron worker owns its own; otherwise `server/logs/oracle-resume.md`),
+   a previous
    window parked mid-run (§6a). Read it and continue *that* run — its batch, its
    script in flight, its accumulated report notes — instead of planning a fresh
    round. Delete the file once its batch is promoted and its notes are folded into
@@ -438,7 +440,8 @@ safe, because an incomplete row simply stays `discoverable = FALSE` and a later
 memory across the gap, so leave it intact (append-only, last-line-wins) and never
 `rm` it at a boundary. Only `oracle-prompts.jsonl` is per-script disposable.
 
-**2. Write the resume note** to `server/logs/oracle-resume.md` (gitignored scratch,
+**2. Write the resume note** to `$ORACLE_RESUME_FILE` if that variable is set, else
+`server/logs/oracle-resume.md` (gitignored scratch,
 overwritten each boundary). This is the *only* prose allowed before §7, and it is for
 you, not the user — keep it terse:
 
@@ -476,15 +479,55 @@ print('sleeping', int(d)+60); time.sleep(max(0,d)+60)"
 On resume: **re-check §1** (utilization should read ~0 and `resets_at` may be `null`
 until the first request opens the new window), **take a fresh §2 backup** — every
 window is a new run for backup purposes, no exceptions — read
-`server/logs/oracle-resume.md`, and pick the parked batch back up at the script it
+the resume note (`$ORACLE_RESUME_FILE` if set), and pick the parked batch back up at the script it
 names. Then keep looping §3 → §5 as before.
 
 If the wait cannot be bridged (the conversation ends first, the context runs out),
 that *is* stop condition 4 — write the §7 report from the resume note before the
 session dies if you have the budget for it, and otherwise leave the resume note as
 the handoff. A later invocation of this skill should read
-`server/logs/oracle-resume.md` first and continue that run rather than starting a
+the resume note (`$ORACLE_RESUME_FILE` if set) first and continue that run rather than starting a
 fresh one.
+
+## 6b. Unattended and parallel rounds
+
+`server/scripts/backfill/oracle-cron.sh` runs one round with no human present. The
+answerer is a Claude session, so this is a `claude -p '/oracle-backfill'` invocation,
+not a headless node process — and it must run **on the prod box**, because
+`run-prod.sh` reaches the DB at `127.0.0.1:5432` (published on loopback only). A
+cloud scheduled agent cannot do this.
+
+Every invocation takes a non-blocking `flock`. A round that overruns its tick makes
+the next tick exit 0 rather than starting a second session, so over-scheduling is
+harmless — the lock, not the cron expression, guarantees one worker per shard. It
+also preflights `check-manifest-sync.js` and **aborts on drift**, because a manifest
+behind its script makes the planner under-report stale rows and an unattended round
+would silently enrich the wrong set.
+
+### Running workers in parallel
+
+Concurrent rounds collide in two places, and both must be handled:
+
+1. **Batch selection.** Every planner scope is a deterministic `ORDER BY … LIMIT N`
+   with no claim or lease, so two workers get **byte-identical batches** and race the
+   same rows. Fix: `oracle-plan.js --shard=k/N`, which partitions candidates by
+   `id % N`. Sharding is used rather than a lease because a round spans many separate
+   `npx tsx` processes over ~20 minutes — Postgres advisory locks release between
+   scripts and would protect nothing, and a lease column would need a migration. Each
+   shard still applies the full commonness `ORDER BY` inside its own slice, so every
+   worker stays at the frequency frontier.
+2. **Shared scratch files.** `oracle-prompts.jsonl` / `oracle-answers.jsonl` are
+   overridable via `BACKFILL_ORACLE_PROMPTS` / `BACKFILL_ORACLE_ANSWERS` (honored in
+   `run-log.js`); the parked-run note (§6a) and the run notes are single fixed paths
+   by default. `oracle-cron.sh` namespaces all four per shard automatically.
+
+`SHARD=k/N oracle-cron.sh` wires both together. Per-row DB writes are then disjoint,
+since every script is `--words=` scoped to its own batch.
+
+⚠️ **Parallelism does not create capacity.** All workers draw on the same account
+budget, so N workers spend the same weekly pool N times faster. Check `seven_day`
+utilization in §1.2 before adding workers — if it is near 100%, more workers buy
+nothing.
 
 ## 7. Write the run report — required, and ONLY at the end
 

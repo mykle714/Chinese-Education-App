@@ -31,6 +31,22 @@
  *                   is CURATED and RANKED — see the --new branch in main().
  *   --words=a,b     restrict to these word1 values (ignores the above)
  *   --limit=N       cap the candidate rows examined (default 50)
+ *   --shard=k/N     PARALLEL RUNS: plan only the rows where `id % N = k` (0 <= k < N).
+ *                   Two concurrent oracle workers would otherwise get byte-identical
+ *                   batches — every scope here is a deterministic `ORDER BY … LIMIT N`
+ *                   with no claim or lease, so worker A and worker B both take the
+ *                   same top-25 words and race the same rows. Sharding on the
+ *                   surrogate id partitions the candidate set into N disjoint slices
+ *                   with no schema change and no lock lifetime to manage (a round
+ *                   spans many separate `npx tsx` processes over ~20 min, so Postgres
+ *                   advisory locks would release between scripts and protect nothing).
+ *                   Each shard still applies the full commonness ORDER BY within its
+ *                   own slice, so every worker stays at the frequency frontier rather
+ *                   than one worker getting all the common words.
+ *                   Ignored by --words= (an explicit list is an instruction).
+ *                   The worker must ALSO get its own oracle scratch files, or the two
+ *                   will interleave prompts: set BACKFILL_ORACLE_PROMPTS and
+ *                   BACKFILL_ORACLE_ANSWERS per worker (run-log.js honors both).
  *   --with-icons    also plan the OPT-IN `backfill-icons` step. It is excluded by
  *                   default because it is the one manifest step that must reach an
  *                   external paid API (icons8) — an oracle round cannot answer it
@@ -76,6 +92,27 @@ const FULL_LISTS = has('--full');
 const WITH_ICONS = has('--with-icons');
 const LIMIT = Number(val('limit') || 50);
 const WORDS = (val('words') || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+// --shard=k/N — disjoint candidate slices for parallel oracle workers. Parsed and
+// validated here so a malformed value fails before any DB work rather than silently
+// planning the whole table (which would hand two workers the same batch — the exact
+// collision this flag exists to prevent).
+const SHARD_RAW = val('shard');
+let SHARD_K = null;
+let SHARD_N = null;
+if (SHARD_RAW !== null) {
+  const m = /^(\d+)\/(\d+)$/.exec(SHARD_RAW.trim());
+  if (!m) {
+    console.error(`❌ --shard must look like k/N (e.g. --shard=0/3), got "${SHARD_RAW}".`);
+    process.exit(1);
+  }
+  SHARD_K = Number(m[1]);
+  SHARD_N = Number(m[2]);
+  if (SHARD_N < 1 || SHARD_K >= SHARD_N) {
+    console.error(`❌ --shard=k/N needs N >= 1 and 0 <= k < N, got k=${SHARD_K} N=${SHARD_N}.`);
+    process.exit(1);
+  }
+}
 
 // Fail fast on an unknown language rather than planning zh under an es-shaped intent.
 // Caught so a typo'd --lang prints one usable line instead of a module-load stack trace.
@@ -146,6 +183,16 @@ async function main() {
                AND COALESCE(d.definitions->>0, '') NOT ILIKE 'surname %'`;
         order = 'score DESC, d.id';
       }
+    }
+
+    // Apply the shard AFTER the scope branches so it composes with all of them
+    // (--discoverable, --new, and the default "both"). It is deliberately NOT applied
+    // to --words=: an explicit word list is a direct instruction, and silently
+    // dropping half of it because those ids fall in another shard would look like the
+    // planner losing words.
+    if (SHARD_N !== null && !WORDS.length) {
+      scope += `
+               AND (d.id % ${SHARD_N}) = ${SHARD_K}`;
     }
 
     // Every scope plans the FULL manifest: a row is either fully enriched and shipped
@@ -228,6 +275,13 @@ async function main() {
     const shipped = rows.filter((r) => r.discoverable).length;
     console.log(`\n📋 Oracle plan [${LANG}] — ${rows.length} candidate rows `
       + `(${shipped} already discoverable, ${rows.length - shipped} new)\n`);
+    // Print the shard prominently: a worker silently planning the wrong slice is the
+    // failure mode that produces two workers racing the same rows, and the batch
+    // itself looks perfectly normal when it happens.
+    if (SHARD_N !== null) {
+      console.log(`  🔀 shard ${SHARD_K}/${SHARD_N} — only rows where id % ${SHARD_N} = ${SHARD_K}. `
+        + 'Give each parallel worker its own BACKFILL_ORACLE_PROMPTS/_ANSWERS too.\n');
+    }
     // Say so out loud: a silently-omitted step would read as "nothing to do" rather
     // than "deliberately skipped", which is exactly the confusion `optional` invites.
     console.log(WITH_ICONS

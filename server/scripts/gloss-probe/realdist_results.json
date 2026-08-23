@@ -1,0 +1,5349 @@
+[
+ {
+  "a": "God",
+  "b": "god",
+  "cos": 1.0,
+  "entail": 0.995,
+  "contra": 0.001,
+  "wa": [
+   "老天",
+   "主"
+  ],
+  "wb": [
+   "神",
+   "天神"
+  ]
+ },
+ {
+  "a": "Southwest Asia",
+  "b": "southwest Asia",
+  "cos": 1.0,
+  "entail": 0.995,
+  "contra": 0.001,
+  "wa": [
+   "西亚"
+  ],
+  "wb": [
+   "西南亚"
+  ]
+ },
+ {
+  "a": "East China Sea",
+  "b": "East China sea",
+  "cos": 1.0,
+  "entail": 0.995,
+  "contra": 0.001,
+  "wa": [
+   "东海"
+  ],
+  "wb": [
+   "东中国海"
+  ]
+ },
+ {
+  "a": "Mark",
+  "b": "mark",
+  "cos": 1.0,
+  "entail": 0.995,
+  "contra": 0.001,
+  "wa": [
+   "马克"
+  ],
+  "wb": [
+   "马克"
+  ]
+ },
+ {
+  "a": "Pingluo County",
+  "b": "Pingluo county",
+  "cos": 1.0,
+  "entail": 0.994,
+  "contra": 0.001,
+  "wa": [
+   "平罗县"
+  ],
+  "wb": [
+   "平罗"
+  ]
+ },
+ {
+  "a": "Santai County",
+  "b": "Santai county",
+  "cos": 1.0,
+  "entail": 0.994,
+  "contra": 0.001,
+  "wa": [
+   "三台县"
+  ],
+  "wb": [
+   "三台"
+  ]
+ },
+ {
+  "a": "Foreign Minister",
+  "b": "foreign minister",
+  "cos": 1.0,
+  "entail": 0.996,
+  "contra": 0.0,
+  "wa": [
+   "外相"
+  ],
+  "wb": [
+   "外长"
+  ]
+ },
+ {
+  "a": "Luoping County",
+  "b": "Luoping county",
+  "cos": 1.0,
+  "entail": 0.995,
+  "contra": 0.001,
+  "wa": [
+   "罗平县"
+  ],
+  "wb": [
+   "罗平"
+  ]
+ },
+ {
+  "a": "Western language",
+  "b": "western language",
+  "cos": 1.0,
+  "entail": 0.996,
+  "contra": 0.001,
+  "wa": [
+   "西文"
+  ],
+  "wb": [
+   "西语"
+  ]
+ },
+ {
+  "a": "China-Japan",
+  "b": "Japan-China",
+  "cos": 0.995,
+  "entail": 0.126,
+  "contra": 0.846,
+  "wa": [
+   "中日"
+  ],
+  "wb": [
+   "日中"
+  ]
+ },
+ {
+  "a": "Jinmen county in Quanzhou 泉州[Quan2 zhou1], Fujian",
+  "b": "Jinmen county in Quanzhou 泉州[Quan2 zhou1], Fujian, PRC",
+  "cos": 0.993,
+  "entail": 0.036,
+  "contra": 0.013,
+  "wa": [
+   "金门县"
+  ],
+  "wb": [
+   "金门"
+  ]
+ },
+ {
+  "a": "person in charge",
+  "b": "the person in charge",
+  "cos": 0.988,
+  "entail": 0.991,
+  "contra": 0.001,
+  "wa": [
+   "主管",
+   "主理人"
+  ],
+  "wb": [
+   "经手人"
+  ]
+ },
+ {
+  "a": "Japan-US",
+  "b": "US-Japan",
+  "cos": 0.985,
+  "entail": 0.241,
+  "contra": 0.679,
+  "wa": [
+   "日美"
+  ],
+  "wb": [
+   "美日"
+  ]
+ },
+ {
+  "a": "Chengdong district of Xining city 西寧市|西宁市[Xi1 ning2 shi4], Qinghai",
+  "b": "Chengxi district of Xining city 西寧市|西宁市[Xi1 ning2 shi4], Qinghai",
+  "cos": 0.979,
+  "entail": 0.002,
+  "contra": 0.996,
+  "wa": [
+   "城东区"
+  ],
+  "wb": [
+   "城西区"
+  ]
+ },
+ {
+  "a": "Dongming County",
+  "b": "Dongping County",
+  "cos": 0.973,
+  "entail": 0.006,
+  "contra": 0.989,
+  "wa": [
+   "东明",
+   "东明县"
+  ],
+  "wb": [
+   "东平县",
+   "东平"
+  ]
+ },
+ {
+  "a": "China-USA",
+  "b": "US-China",
+  "cos": 0.972,
+  "entail": 0.347,
+  "contra": 0.557,
+  "wa": [
+   "中美"
+  ],
+  "wb": [
+   "美中"
+  ]
+ },
+ {
+  "a": "day after tomorrow",
+  "b": "the day after tomorrow",
+  "cos": 0.97,
+  "entail": 0.985,
+  "contra": 0.001,
+  "wa": [
+   "后儿",
+   "后日"
+  ],
+  "wb": [
+   "后天"
+  ]
+ },
+ {
+  "a": "to give birth",
+  "b": "to give birth to",
+  "cos": 0.968,
+  "entail": 0.824,
+  "contra": 0.01,
+  "wa": [
+   "生出",
+   "生子"
+  ],
+  "wb": [
+   "生下"
+  ]
+ },
+ {
+  "a": "to get a haircut",
+  "b": "to have a haircut",
+  "cos": 0.967,
+  "entail": 0.996,
+  "contra": 0.001,
+  "wa": [
+   "理发"
+  ],
+  "wb": [
+   "理头"
+  ]
+ },
+ {
+  "a": "a characteristic",
+  "b": "characteristic",
+  "cos": 0.966,
+  "entail": 0.975,
+  "contra": 0.002,
+  "wa": [
+   "特色"
+  ],
+  "wb": [
+   "特点",
+   "特性"
+  ]
+ },
+ {
+  "a": "to be distracted",
+  "b": "to get distracted",
+  "cos": 0.964,
+  "entail": 0.973,
+  "contra": 0.009,
+  "wa": [
+   "分神"
+  ],
+  "wb": [
+   "分心"
+  ]
+ },
+ {
+  "a": "head of a family",
+  "b": "head of the family",
+  "cos": 0.964,
+  "entail": 0.991,
+  "contra": 0.001,
+  "wa": [
+   "家公"
+  ],
+  "wb": [
+   "一家之主"
+  ]
+ },
+ {
+  "a": "to distinguish clearly right from wrong",
+  "b": "to distinguish right from wrong",
+  "cos": 0.962,
+  "entail": 0.096,
+  "contra": 0.001,
+  "wa": [
+   "黑白分明"
+  ],
+  "wb": [
+   "是非分明"
+  ]
+ },
+ {
+  "a": "newborn",
+  "b": "newborn baby",
+  "cos": 0.962,
+  "entail": 0.756,
+  "contra": 0.002,
+  "wa": [
+   "新生"
+  ],
+  "wb": [
+   "新生儿"
+  ]
+ },
+ {
+  "a": "Shuili Township",
+  "b": "Shuilin township",
+  "cos": 0.961,
+  "entail": 0.994,
+  "contra": 0.002,
+  "wa": [
+   "水里"
+  ],
+  "wb": [
+   "水林"
+  ]
+ },
+ {
+  "a": "Cheng County",
+  "b": "Cheng'an County",
+  "cos": 0.961,
+  "entail": 0.091,
+  "contra": 0.712,
+  "wa": [
+   "成县"
+  ],
+  "wb": [
+   "成安县"
+  ]
+ },
+ {
+  "a": "to hand over",
+  "b": "to hand over to",
+  "cos": 0.958,
+  "entail": 0.511,
+  "contra": 0.015,
+  "wa": [
+   "交出",
+   "点交"
+  ],
+  "wb": [
+   "上交"
+  ]
+ },
+ {
+  "a": "main part",
+  "b": "the main part",
+  "cos": 0.956,
+  "entail": 0.984,
+  "contra": 0.001,
+  "wa": [
+   "重心",
+   "本体"
+  ],
+  "wb": [
+   "大头"
+  ]
+ },
+ {
+  "a": "a year's harvest",
+  "b": "the year's harvest",
+  "cos": 0.955,
+  "entail": 0.966,
+  "contra": 0.009,
+  "wa": [
+   "年头"
+  ],
+  "wb": [
+   "年成"
+  ]
+ },
+ {
+  "a": "left-hand side",
+  "b": "right-hand side",
+  "cos": 0.955,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "里手",
+   "左"
+  ],
+  "wb": [
+   "右",
+   "外手"
+  ]
+ },
+ {
+  "a": "to intend",
+  "b": "to intend to",
+  "cos": 0.954,
+  "entail": 0.872,
+  "contra": 0.018,
+  "wa": [
+   "准备",
+   "有意"
+  ],
+  "wb": [
+   "有心"
+  ]
+ },
+ {
+  "a": "Xin County",
+  "b": "Xin'an County",
+  "cos": 0.953,
+  "entail": 0.033,
+  "contra": 0.92,
+  "wa": [
+   "新县"
+  ],
+  "wb": [
+   "新安县"
+  ]
+ },
+ {
+  "a": "city district",
+  "b": "urban district",
+  "cos": 0.953,
+  "entail": 0.921,
+  "contra": 0.011,
+  "wa": [
+   "城区"
+  ],
+  "wb": [
+   "市区"
+  ]
+ },
+ {
+  "a": "to worry",
+  "b": "to worry about",
+  "cos": 0.952,
+  "entail": 0.94,
+  "contra": 0.002,
+  "wa": [
+   "担心"
+  ],
+  "wb": [
+   "挂念"
+  ]
+ },
+ {
+  "a": "to meet",
+  "b": "to meet with",
+  "cos": 0.952,
+  "entail": 0.752,
+  "contra": 0.008,
+  "wa": [
+   "交会",
+   "会合"
+  ],
+  "wb": [
+   "会面"
+  ]
+ },
+ {
+  "a": "magic power",
+  "b": "magical power",
+  "cos": 0.951,
+  "entail": 0.992,
+  "contra": 0.001,
+  "wa": [
+   "法力"
+  ],
+  "wb": [
+   "神通"
+  ]
+ },
+ {
+  "a": "to be in charge",
+  "b": "to be in charge of",
+  "cos": 0.95,
+  "entail": 0.929,
+  "contra": 0.003,
+  "wa": [
+   "负责"
+  ],
+  "wb": [
+   "分管",
+   "经管"
+  ]
+ },
+ {
+  "a": "to watch out",
+  "b": "to watch out for",
+  "cos": 0.95,
+  "entail": 0.875,
+  "contra": 0.004,
+  "wa": [
+   "长点心眼"
+  ],
+  "wb": [
+   "看"
+  ]
+ },
+ {
+  "a": "to be busy",
+  "b": "to be busy with",
+  "cos": 0.949,
+  "entail": 0.502,
+  "contra": 0.005,
+  "wa": [
+   "有事"
+  ],
+  "wb": [
+   "忙着"
+  ]
+ },
+ {
+  "a": "noun suffix",
+  "b": "suffix for nouns",
+  "cos": 0.948,
+  "entail": 0.987,
+  "contra": 0.001,
+  "wa": [
+   "子"
+  ],
+  "wb": [
+   "头"
+  ]
+ },
+ {
+  "a": "a taxi",
+  "b": "taxi",
+  "cos": 0.947,
+  "entail": 0.982,
+  "contra": 0.001,
+  "wa": [
+   "的"
+  ],
+  "wb": [
+   "出租车"
+  ]
+ },
+ {
+  "a": "to flare out",
+  "b": "to flare up",
+  "cos": 0.946,
+  "entail": 0.004,
+  "contra": 0.992,
+  "wa": [
+   "拉平"
+  ],
+  "wb": [
+   "发作"
+  ]
+ },
+ {
+  "a": "central city district",
+  "b": "central district",
+  "cos": 0.946,
+  "entail": 0.028,
+  "contra": 0.019,
+  "wa": [
+   "市中区"
+  ],
+  "wb": [
+   "中区",
+   "中心区"
+  ]
+ },
+ {
+  "a": "Congress",
+  "b": "US Congress",
+  "cos": 0.946,
+  "entail": 0.005,
+  "contra": 0.001,
+  "wa": [
+   "国会"
+  ],
+  "wb": [
+   "美国国会"
+  ]
+ },
+ {
+  "a": "to remain silent",
+  "b": "to stay silent",
+  "cos": 0.945,
+  "entail": 0.996,
+  "contra": 0.001,
+  "wa": [
+   "无语"
+  ],
+  "wb": [
+   "不语"
+  ]
+ },
+ {
+  "a": "influential family",
+  "b": "large and influential family",
+  "cos": 0.945,
+  "entail": 0.002,
+  "contra": 0.001,
+  "wa": [
+   "大家"
+  ],
+  "wb": [
+   "大族",
+   "大门"
+  ]
+ },
+ {
+  "a": "color",
+  "b": "colored",
+  "cos": 0.944,
+  "entail": 0.968,
+  "contra": 0.004,
+  "wa": [
+   "色",
+   "颜色"
+  ],
+  "wb": [
+   "有色"
+  ]
+ },
+ {
+  "a": "Dong'an County",
+  "b": "Dong'e County",
+  "cos": 0.944,
+  "entail": 0.002,
+  "contra": 0.995,
+  "wa": [
+   "东安县"
+  ],
+  "wb": [
+   "东阿",
+   "东阿县"
+  ]
+ },
+ {
+  "a": "the weather",
+  "b": "weather",
+  "cos": 0.941,
+  "entail": 0.981,
+  "contra": 0.001,
+  "wa": [
+   "天儿"
+  ],
+  "wb": [
+   "天气",
+   "气"
+  ]
+ },
+ {
+  "a": "the whole family",
+  "b": "whole family",
+  "cos": 0.94,
+  "entail": 0.992,
+  "contra": 0.001,
+  "wa": [
+   "一家",
+   "一家子"
+  ],
+  "wb": [
+   "全家",
+   "合家"
+  ]
+ },
+ {
+  "a": "Mie Prefecture",
+  "b": "Mie Prefecture in central Japan",
+  "cos": 0.94,
+  "entail": 0.006,
+  "contra": 0.001,
+  "wa": [
+   "三重县"
+  ],
+  "wb": [
+   "三重"
+  ]
+ },
+ {
+  "a": "hydroelectric power",
+  "b": "hydroelectricity",
+  "cos": 0.938,
+  "entail": 0.99,
+  "contra": 0.002,
+  "wa": [
+   "水电"
+  ],
+  "wb": [
+   "水力发电"
+  ]
+ },
+ {
+  "a": "foreign language",
+  "b": "foreign languages",
+  "cos": 0.937,
+  "entail": 0.901,
+  "contra": 0.007,
+  "wa": [
+   "外文",
+   "外语"
+  ],
+  "wb": [
+   "西文"
+  ]
+ },
+ {
+  "a": "having running water",
+  "b": "running water",
+  "cos": 0.937,
+  "entail": 0.971,
+  "contra": 0.001,
+  "wa": [
+   "有水"
+  ],
+  "wb": [
+   "流水"
+  ]
+ },
+ {
+  "a": "Cheng County",
+  "b": "Chengkou County",
+  "cos": 0.936,
+  "entail": 0.066,
+  "contra": 0.802,
+  "wa": [
+   "成县"
+  ],
+  "wb": [
+   "城口县"
+  ]
+ },
+ {
+  "a": "a big mouthful",
+  "b": "a mouthful",
+  "cos": 0.934,
+  "entail": 0.477,
+  "contra": 0.004,
+  "wa": [
+   "大口"
+  ],
+  "wb": [
+   "一口"
+  ]
+ },
+ {
+  "a": "East Germany",
+  "b": "East and West Germany",
+  "cos": 0.934,
+  "entail": 0.004,
+  "contra": 0.065,
+  "wa": [
+   "东德"
+  ],
+  "wb": [
+   "东西德"
+  ]
+ },
+ {
+  "a": "to arrive",
+  "b": "to arrive at",
+  "cos": 0.931,
+  "entail": 0.959,
+  "contra": 0.003,
+  "wa": [
+   "来到"
+  ],
+  "wb": [
+   "得出",
+   "下"
+  ]
+ },
+ {
+  "a": "pleased with oneself",
+  "b": "to be pleased with oneself",
+  "cos": 0.929,
+  "entail": 0.988,
+  "contra": 0.001,
+  "wa": [
+   "得色"
+  ],
+  "wb": [
+   "美"
+  ]
+ },
+ {
+  "a": "rationalism",
+  "b": "rationality",
+  "cos": 0.927,
+  "entail": 0.979,
+  "contra": 0.004,
+  "wa": [
+   "理性主义"
+  ],
+  "wb": [
+   "理性",
+   "合理性"
+  ]
+ },
+ {
+  "a": "occasionally",
+  "b": "often",
+  "cos": 0.927,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "偶尔"
+  ],
+  "wb": [
+   "经常",
+   "时时"
+  ]
+ },
+ {
+  "a": "an opportunity",
+  "b": "opportunity",
+  "cos": 0.927,
+  "entail": 0.95,
+  "contra": 0.003,
+  "wa": [
+   "机"
+  ],
+  "wb": [
+   "机会",
+   "时机"
+  ]
+ },
+ {
+  "a": "to meet together",
+  "b": "to meet with",
+  "cos": 0.927,
+  "entail": 0.964,
+  "contra": 0.002,
+  "wa": [
+   "相会"
+  ],
+  "wb": [
+   "会面"
+  ]
+ },
+ {
+  "a": "older sister",
+  "b": "younger sister",
+  "cos": 0.926,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "姐姐"
+  ],
+  "wb": [
+   "妹妹"
+  ]
+ },
+ {
+  "a": "to meet",
+  "b": "to meet together",
+  "cos": 0.926,
+  "entail": 0.15,
+  "contra": 0.005,
+  "wa": [
+   "交会",
+   "会合"
+  ],
+  "wb": [
+   "相会"
+  ]
+ },
+ {
+  "a": "to come out",
+  "b": "to come out as",
+  "cos": 0.925,
+  "entail": 0.186,
+  "contra": 0.005,
+  "wa": [
+   "出来"
+  ],
+  "wb": [
+   "来得"
+  ]
+ },
+ {
+  "a": "electric car",
+  "b": "electric vehicle",
+  "cos": 0.925,
+  "entail": 0.978,
+  "contra": 0.002,
+  "wa": [
+   "电车"
+  ],
+  "wb": [
+   "电动车"
+  ]
+ },
+ {
+  "a": "sign language",
+  "b": "to use sign language",
+  "cos": 0.925,
+  "entail": 0.904,
+  "contra": 0.002,
+  "wa": [
+   "手语"
+  ],
+  "wb": [
+   "打手语"
+  ]
+ },
+ {
+  "a": "to go off the stage",
+  "b": "to go on stage",
+  "cos": 0.924,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "下台"
+  ],
+  "wb": [
+   "上台"
+  ]
+ },
+ {
+  "a": "east",
+  "b": "the East",
+  "cos": 0.923,
+  "entail": 0.941,
+  "contra": 0.002,
+  "wa": [
+   "东方",
+   "左"
+  ],
+  "wb": [
+   "东方"
+  ]
+ },
+ {
+  "a": "public",
+  "b": "the public",
+  "cos": 0.923,
+  "entail": 0.952,
+  "contra": 0.002,
+  "wa": [
+   "公",
+   "公开"
+  ],
+  "wb": [
+   "公家"
+  ]
+ },
+ {
+  "a": "affection",
+  "b": "affectionate",
+  "cos": 0.923,
+  "entail": 0.992,
+  "contra": 0.001,
+  "wa": [
+   "情意",
+   "情义"
+  ],
+  "wb": [
+   "多情"
+  ]
+ },
+ {
+  "a": "the Will of Heaven",
+  "b": "will of heaven",
+  "cos": 0.923,
+  "entail": 0.971,
+  "contra": 0.002,
+  "wa": [
+   "天意"
+  ],
+  "wb": [
+   "天心"
+  ]
+ },
+ {
+  "a": "to be moved",
+  "b": "to move",
+  "cos": 0.923,
+  "entail": 0.986,
+  "contra": 0.002,
+  "wa": [
+   "动心"
+  ],
+  "wb": [
+   "动",
+   "打动"
+  ]
+ },
+ {
+  "a": "to stick",
+  "b": "to stick to",
+  "cos": 0.921,
+  "entail": 0.96,
+  "contra": 0.004,
+  "wa": [
+   "贴"
+  ],
+  "wb": [
+   "巴"
+  ]
+ },
+ {
+  "a": "older brother",
+  "b": "younger brother",
+  "cos": 0.92,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "哥哥"
+  ],
+  "wb": [
+   "弟弟"
+  ]
+ },
+ {
+  "a": "left of center",
+  "b": "right of center",
+  "cos": 0.92,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "左"
+  ],
+  "wb": [
+   "右"
+  ]
+ },
+ {
+  "a": "Haidong",
+  "b": "Haidong City",
+  "cos": 0.919,
+  "entail": 0.037,
+  "contra": 0.004,
+  "wa": [
+   "海东"
+  ],
+  "wb": [
+   "海东市"
+  ]
+ },
+ {
+  "a": "middle",
+  "b": "the middle",
+  "cos": 0.918,
+  "entail": 0.958,
+  "contra": 0.002,
+  "wa": [
+   "中"
+  ],
+  "wb": [
+   "中间"
+  ]
+ },
+ {
+  "a": "city district",
+  "b": "district",
+  "cos": 0.918,
+  "entail": 0.004,
+  "contra": 0.003,
+  "wa": [
+   "城区"
+  ],
+  "wb": [
+   "分区"
+  ]
+ },
+ {
+  "a": "mountainous",
+  "b": "mountainous region",
+  "cos": 0.916,
+  "entail": 0.832,
+  "contra": 0.002,
+  "wa": [
+   "多山"
+  ],
+  "wb": [
+   "山地"
+  ]
+ },
+ {
+  "a": "rhotacization",
+  "b": "to rhotacize",
+  "cos": 0.916,
+  "entail": 0.981,
+  "contra": 0.002,
+  "wa": [
+   "儿化"
+  ],
+  "wb": [
+   "日化"
+  ]
+ },
+ {
+  "a": "surface water",
+  "b": "water surface",
+  "cos": 0.915,
+  "entail": 0.994,
+  "contra": 0.001,
+  "wa": [
+   "地面水"
+  ],
+  "wb": [
+   "水面"
+  ]
+ },
+ {
+  "a": "sky",
+  "b": "the sky",
+  "cos": 0.915,
+  "entail": 0.975,
+  "contra": 0.002,
+  "wa": [
+   "天",
+   "天空"
+  ],
+  "wb": [
+   "天上"
+  ]
+ },
+ {
+  "a": "a single cent",
+  "b": "one cent",
+  "cos": 0.915,
+  "entail": 0.996,
+  "contra": 0.001,
+  "wa": [
+   "分文"
+  ],
+  "wb": [
+   "美分"
+  ]
+ },
+ {
+  "a": "radio station",
+  "b": "this radio station",
+  "cos": 0.914,
+  "entail": 0.268,
+  "contra": 0.014,
+  "wa": [
+   "电台"
+  ],
+  "wb": [
+   "本台"
+  ]
+ },
+ {
+  "a": "to sit",
+  "b": "to sit down",
+  "cos": 0.914,
+  "entail": 0.991,
+  "contra": 0.001,
+  "wa": [
+   "坐"
+  ],
+  "wb": [
+   "坐下"
+  ]
+ },
+ {
+  "a": "Dong'an County",
+  "b": "Dongming County",
+  "cos": 0.914,
+  "entail": 0.003,
+  "contra": 0.994,
+  "wa": [
+   "东安县"
+  ],
+  "wb": [
+   "东明",
+   "东明县"
+  ]
+ },
+ {
+  "a": "rational",
+  "b": "rationality",
+  "cos": 0.913,
+  "entail": 0.99,
+  "contra": 0.001,
+  "wa": [
+   "有理"
+  ],
+  "wb": [
+   "理性",
+   "合理性"
+  ]
+ },
+ {
+  "a": "benefit",
+  "b": "to benefit",
+  "cos": 0.913,
+  "entail": 0.889,
+  "contra": 0.008,
+  "wa": [
+   "好处"
+  ],
+  "wb": [
+   "得利",
+   "利"
+  ]
+ },
+ {
+  "a": "abroad",
+  "b": "overseas",
+  "cos": 0.911,
+  "entail": 0.983,
+  "contra": 0.001,
+  "wa": [
+   "国外"
+  ],
+  "wb": [
+   "海外"
+  ]
+ },
+ {
+  "a": "to take a walk",
+  "b": "to walk",
+  "cos": 0.911,
+  "entail": 0.974,
+  "contra": 0.001,
+  "wa": [
+   "散步"
+  ],
+  "wb": [
+   "走路"
+  ]
+ },
+ {
+  "a": "to begin",
+  "b": "to start",
+  "cos": 0.91,
+  "entail": 0.992,
+  "contra": 0.001,
+  "wa": [
+   "开始"
+  ],
+  "wb": [
+   "下手",
+   "发动"
+  ]
+ },
+ {
+  "a": "people",
+  "b": "the people",
+  "cos": 0.91,
+  "entail": 0.923,
+  "contra": 0.004,
+  "wa": [
+   "子民",
+   "人们"
+  ],
+  "wb": [
+   "人民",
+   "民"
+  ]
+ },
+ {
+  "a": "to go up",
+  "b": "to go up and down",
+  "cos": 0.91,
+  "entail": 0.01,
+  "contra": 0.006,
+  "wa": [
+   "上"
+  ],
+  "wb": [
+   "上下"
+  ]
+ },
+ {
+  "a": "to get angry",
+  "b": "to get mad",
+  "cos": 0.91,
+  "entail": 0.994,
+  "contra": 0.001,
+  "wa": [
+   "上火",
+   "发火"
+  ],
+  "wb": [
+   "火大"
+  ]
+ },
+ {
+  "a": "Dong'an County",
+  "b": "Dongping County",
+  "cos": 0.909,
+  "entail": 0.001,
+  "contra": 0.997,
+  "wa": [
+   "东安县"
+  ],
+  "wb": [
+   "东平县",
+   "东平"
+  ]
+ },
+ {
+  "a": "inorganic",
+  "b": "inorganic compound",
+  "cos": 0.908,
+  "entail": 0.009,
+  "contra": 0.008,
+  "wa": [
+   "无机"
+  ],
+  "wb": [
+   "无机物"
+  ]
+ },
+ {
+  "a": "Dong'e County",
+  "b": "Dongming County",
+  "cos": 0.908,
+  "entail": 0.02,
+  "contra": 0.973,
+  "wa": [
+   "东阿",
+   "东阿县"
+  ],
+  "wb": [
+   "东明",
+   "东明县"
+  ]
+ },
+ {
+  "a": "adult person",
+  "b": "an adult",
+  "cos": 0.908,
+  "entail": 0.985,
+  "contra": 0.001,
+  "wa": [
+   "成年人"
+  ],
+  "wb": [
+   "成人"
+  ]
+ },
+ {
+  "a": "bronze inscription",
+  "b": "inscription on metal or bronze",
+  "cos": 0.907,
+  "entail": 0.342,
+  "contra": 0.028,
+  "wa": [
+   "金文"
+  ],
+  "wb": [
+   "金石"
+  ]
+ },
+ {
+  "a": "plumbing and electrical work",
+  "b": "plumbing and electricity",
+  "cos": 0.906,
+  "entail": 0.979,
+  "contra": 0.001,
+  "wa": [
+   "水电工"
+  ],
+  "wb": [
+   "水电"
+  ]
+ },
+ {
+  "a": "east",
+  "b": "east side",
+  "cos": 0.906,
+  "entail": 0.184,
+  "contra": 0.007,
+  "wa": [
+   "东方",
+   "左"
+  ],
+  "wb": [
+   "东面"
+  ]
+ },
+ {
+  "a": "Huanglong County",
+  "b": "Huangping County",
+  "cos": 0.905,
+  "entail": 0.003,
+  "contra": 0.995,
+  "wa": [
+   "黄龙县"
+  ],
+  "wb": [
+   "黄平县"
+  ]
+ },
+ {
+  "a": "Alibaba, PRC e-commerce company",
+  "b": "Alibaba, e-commerce company",
+  "cos": 0.905,
+  "entail": 0.025,
+  "contra": 0.001,
+  "wa": [
+   "阿里巴巴"
+  ],
+  "wb": [
+   "阿里"
+  ]
+ },
+ {
+  "a": "Dong'e County",
+  "b": "Dongping County",
+  "cos": 0.904,
+  "entail": 0.002,
+  "contra": 0.995,
+  "wa": [
+   "东阿",
+   "东阿县"
+  ],
+  "wb": [
+   "东平县",
+   "东平"
+  ]
+ },
+ {
+  "a": "vegetable",
+  "b": "vegetables",
+  "cos": 0.903,
+  "entail": 0.984,
+  "contra": 0.001,
+  "wa": [
+   "菜"
+  ],
+  "wb": [
+   "蔬菜"
+  ]
+ },
+ {
+  "a": "to climb a hill",
+  "b": "to go down a hill",
+  "cos": 0.902,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "上山"
+  ],
+  "wb": [
+   "下山"
+  ]
+ },
+ {
+  "a": "Haicheng City",
+  "b": "Haicheng District",
+  "cos": 0.901,
+  "entail": 0.002,
+  "contra": 0.994,
+  "wa": [
+   "海城市"
+  ],
+  "wb": [
+   "海城区"
+  ]
+ },
+ {
+  "a": "boiled water",
+  "b": "plain boiled water",
+  "cos": 0.901,
+  "entail": 0.01,
+  "contra": 0.001,
+  "wa": [
+   "开水"
+  ],
+  "wb": [
+   "白开水"
+  ]
+ },
+ {
+  "a": "to award a bonus",
+  "b": "to award bonus points",
+  "cos": 0.901,
+  "entail": 0.546,
+  "contra": 0.004,
+  "wa": [
+   "分红"
+  ],
+  "wb": [
+   "加分"
+  ]
+ },
+ {
+  "a": "middle and elementary school",
+  "b": "middle school",
+  "cos": 0.901,
+  "entail": 0.004,
+  "contra": 0.002,
+  "wa": [
+   "中小学"
+  ],
+  "wb": [
+   "中学"
+  ]
+ },
+ {
+  "a": "to count",
+  "b": "to count as",
+  "cos": 0.901,
+  "entail": 0.258,
+  "contra": 0.027,
+  "wa": [
+   "数点",
+   "数"
+  ],
+  "wb": [
+   "数"
+  ]
+ },
+ {
+  "a": "to level out",
+  "b": "to level up",
+  "cos": 0.901,
+  "entail": 0.001,
+  "contra": 0.997,
+  "wa": [
+   "拉平"
+  ],
+  "wb": [
+   "上分"
+  ]
+ },
+ {
+  "a": "to travel",
+  "b": "to travel by",
+  "cos": 0.9,
+  "entail": 0.088,
+  "contra": 0.003,
+  "wa": [
+   "行路",
+   "出行"
+  ],
+  "wb": [
+   "坐"
+  ]
+ },
+ {
+  "a": "Huangshan City",
+  "b": "Huangshan District",
+  "cos": 0.9,
+  "entail": 0.002,
+  "contra": 0.993,
+  "wa": [
+   "黄山市"
+  ],
+  "wb": [
+   "黄山区"
+  ]
+ },
+ {
+  "a": "district",
+  "b": "urban district",
+  "cos": 0.9,
+  "entail": 0.001,
+  "contra": 0.004,
+  "wa": [
+   "分区"
+  ],
+  "wb": [
+   "市区"
+  ]
+ },
+ {
+  "a": "maternal grandmother",
+  "b": "paternal grandmother",
+  "cos": 0.899,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "老老"
+  ],
+  "wb": [
+   "奶奶"
+  ]
+ },
+ {
+  "a": "not often",
+  "b": "often",
+  "cos": 0.899,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "不大"
+  ],
+  "wb": [
+   "经常",
+   "时时"
+  ]
+ },
+ {
+  "a": "Tong County",
+  "b": "Tonghai County",
+  "cos": 0.899,
+  "entail": 0.061,
+  "contra": 0.751,
+  "wa": [
+   "通县"
+  ],
+  "wb": [
+   "通海",
+   "通海县"
+  ]
+ },
+ {
+  "a": "Zhongshan City",
+  "b": "Zhongshan District",
+  "cos": 0.898,
+  "entail": 0.002,
+  "contra": 0.993,
+  "wa": [
+   "中山市"
+  ],
+  "wb": [
+   "中山区"
+  ]
+ },
+ {
+  "a": "to be born",
+  "b": "to be born with",
+  "cos": 0.898,
+  "entail": 0.01,
+  "contra": 0.016,
+  "wa": [
+   "出生",
+   "下地"
+  ],
+  "wb": [
+   "生成"
+  ]
+ },
+ {
+  "a": "epidemic",
+  "b": "epidemic disease",
+  "cos": 0.898,
+  "entail": 0.129,
+  "contra": 0.002,
+  "wa": [
+   "流行性"
+  ],
+  "wb": [
+   "流行病"
+  ]
+ },
+ {
+  "a": "Cheng'an County",
+  "b": "Chengkou County",
+  "cos": 0.897,
+  "entail": 0.002,
+  "contra": 0.996,
+  "wa": [
+   "成安县"
+  ],
+  "wb": [
+   "城口县"
+  ]
+ },
+ {
+  "a": "way of doing something",
+  "b": "way to do something",
+  "cos": 0.896,
+  "entail": 0.985,
+  "contra": 0.003,
+  "wa": [
+   "门路"
+  ],
+  "wb": [
+   "门"
+  ]
+ },
+ {
+  "a": "dad",
+  "b": "father",
+  "cos": 0.896,
+  "entail": 0.992,
+  "contra": 0.001,
+  "wa": [
+   "大大",
+   "爸爸"
+  ],
+  "wb": [
+   "老儿",
+   "老头"
+  ]
+ },
+ {
+  "a": "middle and old age",
+  "b": "middle-aged and old",
+  "cos": 0.896,
+  "entail": 0.991,
+  "contra": 0.001,
+  "wa": [
+   "中老年"
+  ],
+  "wb": [
+   "中老年人"
+  ]
+ },
+ {
+  "a": "Haicheng District",
+  "b": "Shancheng District",
+  "cos": 0.896,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "海城区"
+  ],
+  "wb": [
+   "山城区"
+  ]
+ },
+ {
+  "a": "aircraft",
+  "b": "airplane",
+  "cos": 0.896,
+  "entail": 0.989,
+  "contra": 0.002,
+  "wa": [
+   "机"
+  ],
+  "wb": [
+   "飞机"
+  ]
+ },
+ {
+  "a": "Nan'an, Fujian",
+  "b": "Nanping, Fujian",
+  "cos": 0.895,
+  "entail": 0.006,
+  "contra": 0.988,
+  "wa": [
+   "南安市"
+  ],
+  "wb": [
+   "南平市"
+  ]
+ },
+ {
+  "a": "the equinox",
+  "b": "the two equinoxes",
+  "cos": 0.895,
+  "entail": 0.001,
+  "contra": 0.96,
+  "wa": [
+   "二分"
+  ],
+  "wb": [
+   "二分点"
+  ]
+ },
+ {
+  "a": "multi-",
+  "b": "multiple",
+  "cos": 0.895,
+  "entail": 0.93,
+  "contra": 0.008,
+  "wa": [
+   "多"
+  ],
+  "wb": [
+   "多重",
+   "多工"
+  ]
+ },
+ {
+  "a": "a lot of",
+  "b": "a whole lot of",
+  "cos": 0.895,
+  "entail": 0.989,
+  "contra": 0.001,
+  "wa": [
+   "很多"
+  ],
+  "wb": [
+   "一大通"
+  ]
+ },
+ {
+  "a": "the West",
+  "b": "west",
+  "cos": 0.895,
+  "entail": 0.935,
+  "contra": 0.003,
+  "wa": [
+   "西方"
+  ],
+  "wb": [
+   "右",
+   "西"
+  ]
+ },
+ {
+  "a": "to get out of bed",
+  "b": "to get up from bed",
+  "cos": 0.895,
+  "entail": 0.998,
+  "contra": 0.0,
+  "wa": [
+   "起床"
+  ],
+  "wb": [
+   "下地"
+  ]
+ },
+ {
+  "a": "having running water",
+  "b": "to have running water",
+  "cos": 0.895,
+  "entail": 0.991,
+  "contra": 0.001,
+  "wa": [
+   "有水"
+  ],
+  "wb": [
+   "通水"
+  ]
+ },
+ {
+  "a": "countless",
+  "b": "numerous",
+  "cos": 0.895,
+  "entail": 0.476,
+  "contra": 0.068,
+  "wa": [
+   "成千上万"
+  ],
+  "wb": [
+   "百"
+  ]
+ },
+ {
+  "a": "east",
+  "b": "east and west",
+  "cos": 0.895,
+  "entail": 0.005,
+  "contra": 0.009,
+  "wa": [
+   "东方",
+   "左"
+  ],
+  "wb": [
+   "东西方",
+   "东西"
+  ]
+ },
+ {
+  "a": "careless",
+  "b": "carelessly",
+  "cos": 0.894,
+  "entail": 0.992,
+  "contra": 0.001,
+  "wa": [
+   "大意"
+  ],
+  "wb": [
+   "不经意"
+  ]
+ },
+ {
+  "a": "many years",
+  "b": "several years",
+  "cos": 0.894,
+  "entail": 0.957,
+  "contra": 0.004,
+  "wa": [
+   "多年"
+  ],
+  "wb": [
+   "数年"
+  ]
+ },
+ {
+  "a": "Jin'an District",
+  "b": "Jinping District",
+  "cos": 0.894,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "金安区"
+  ],
+  "wb": [
+   "金平区"
+  ]
+ },
+ {
+  "a": "maybe",
+  "b": "probably",
+  "cos": 0.894,
+  "entail": 0.209,
+  "contra": 0.118,
+  "wa": [
+   "可能"
+  ],
+  "wb": [
+   "大概"
+  ]
+ },
+ {
+  "a": "not to have",
+  "b": "to not have",
+  "cos": 0.894,
+  "entail": 0.995,
+  "contra": 0.001,
+  "wa": [
+   "无"
+  ],
+  "wb": [
+   "没有"
+  ]
+ },
+ {
+  "a": "USA",
+  "b": "United States",
+  "cos": 0.894,
+  "entail": 0.99,
+  "contra": 0.001,
+  "wa": [
+   "美"
+  ],
+  "wb": [
+   "美国"
+  ]
+ },
+ {
+  "a": "affection",
+  "b": "mutual affection",
+  "cos": 0.893,
+  "entail": 0.004,
+  "contra": 0.001,
+  "wa": [
+   "情意",
+   "情义"
+  ],
+  "wb": [
+   "情分"
+  ]
+ },
+ {
+  "a": "Hwanghae Province",
+  "b": "South Hwanghae",
+  "cos": 0.893,
+  "entail": 0.021,
+  "contra": 0.331,
+  "wa": [
+   "黄海道"
+  ],
+  "wb": [
+   "黄海南道"
+  ]
+ },
+ {
+  "a": "intersection",
+  "b": "to intersect",
+  "cos": 0.893,
+  "entail": 0.979,
+  "contra": 0.002,
+  "wa": [
+   "马路口",
+   "十字路口"
+  ],
+  "wb": [
+   "相交",
+   "交"
+  ]
+ },
+ {
+  "a": "Southeast Asia",
+  "b": "southern Asia",
+  "cos": 0.893,
+  "entail": 0.02,
+  "contra": 0.853,
+  "wa": [
+   "东南亚"
+  ],
+  "wb": [
+   "南亚"
+  ]
+ },
+ {
+  "a": "ordinary people",
+  "b": "ordinary person",
+  "cos": 0.893,
+  "entail": 0.988,
+  "contra": 0.001,
+  "wa": [
+   "平民",
+   "小民"
+  ],
+  "wb": [
+   "平人"
+  ]
+ },
+ {
+  "a": "East China Sea",
+  "b": "South China Sea",
+  "cos": 0.893,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "东海"
+  ],
+  "wb": [
+   "南海"
+  ]
+ },
+ {
+  "a": "East China sea",
+  "b": "South China Sea",
+  "cos": 0.893,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "东中国海"
+  ],
+  "wb": [
+   "南海"
+  ]
+ },
+ {
+  "a": "to write",
+  "b": "writing",
+  "cos": 0.893,
+  "entail": 0.991,
+  "contra": 0.001,
+  "wa": [
+   "写",
+   "作"
+  ],
+  "wb": [
+   "文字",
+   "文"
+  ]
+ },
+ {
+  "a": "inorganic",
+  "b": "inorganic chemistry",
+  "cos": 0.893,
+  "entail": 0.02,
+  "contra": 0.004,
+  "wa": [
+   "无机"
+  ],
+  "wb": [
+   "无机化学"
+  ]
+ },
+ {
+  "a": "grandfather",
+  "b": "grandpa",
+  "cos": 0.892,
+  "entail": 0.996,
+  "contra": 0.001,
+  "wa": [
+   "阿公"
+  ],
+  "wb": [
+   "公公",
+   "爷爷"
+  ]
+ },
+ {
+  "a": "Xinlin district",
+  "b": "Xinluo district",
+  "cos": 0.892,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "新林区"
+  ],
+  "wb": [
+   "新罗区"
+  ]
+ },
+ {
+  "a": "electric locomotive",
+  "b": "electric train",
+  "cos": 0.892,
+  "entail": 0.904,
+  "contra": 0.004,
+  "wa": [
+   "电力机车"
+  ],
+  "wb": [
+   "电车"
+  ]
+ },
+ {
+  "a": "clan",
+  "b": "clan members",
+  "cos": 0.891,
+  "entail": 0.654,
+  "contra": 0.004,
+  "wa": [
+   "一族",
+   "族"
+  ],
+  "wb": [
+   "族人"
+  ]
+ },
+ {
+  "a": "Japan-China",
+  "b": "Japan-US",
+  "cos": 0.891,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "日中"
+  ],
+  "wb": [
+   "日美"
+  ]
+ },
+ {
+  "a": "Kangxi radical 67",
+  "b": "Kangxi radical 86",
+  "cos": 0.89,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "文"
+  ],
+  "wb": [
+   "火"
+  ]
+ },
+ {
+  "a": "many",
+  "b": "several",
+  "cos": 0.89,
+  "entail": 0.917,
+  "contra": 0.013,
+  "wa": [
+   "不少",
+   "多"
+  ],
+  "wb": [
+   "数"
+  ]
+ },
+ {
+  "a": "to give some attention to",
+  "b": "to pay attention to",
+  "cos": 0.89,
+  "entail": 0.532,
+  "contra": 0.007,
+  "wa": [
+   "分神"
+  ],
+  "wb": [
+   "鸟",
+   "理"
+  ]
+ },
+ {
+  "a": "to arrange to meet",
+  "b": "to meet",
+  "cos": 0.89,
+  "entail": 0.038,
+  "contra": 0.005,
+  "wa": [
+   "约会"
+  ],
+  "wb": [
+   "交会",
+   "会合"
+  ]
+ },
+ {
+  "a": "to stand",
+  "b": "to stand up",
+  "cos": 0.89,
+  "entail": 0.972,
+  "contra": 0.002,
+  "wa": [
+   "站"
+  ],
+  "wb": [
+   "站起来"
+  ]
+ },
+ {
+  "a": "rule",
+  "b": "rules",
+  "cos": 0.889,
+  "entail": 0.947,
+  "contra": 0.006,
+  "wa": [
+   "规则"
+  ],
+  "wb": [
+   "科"
+  ]
+ },
+ {
+  "a": "to light a fire",
+  "b": "to light the flame",
+  "cos": 0.889,
+  "entail": 0.86,
+  "contra": 0.008,
+  "wa": [
+   "点火"
+  ],
+  "wb": [
+   "开火"
+  ]
+ },
+ {
+  "a": "student",
+  "b": "university student",
+  "cos": 0.889,
+  "entail": 0.002,
+  "contra": 0.001,
+  "wa": [
+   "学子",
+   "学生"
+  ],
+  "wb": [
+   "大生",
+   "大学生"
+  ]
+ },
+ {
+  "a": "physical strength",
+  "b": "strength",
+  "cos": 0.888,
+  "entail": 0.034,
+  "contra": 0.001,
+  "wa": [
+   "力气",
+   "体力"
+  ],
+  "wb": [
+   "气力",
+   "力"
+  ]
+ },
+ {
+  "a": "flow",
+  "b": "to flow",
+  "cos": 0.888,
+  "entail": 0.954,
+  "contra": 0.003,
+  "wa": [
+   "心流"
+  ],
+  "wb": [
+   "流",
+   "流动"
+  ]
+ },
+ {
+  "a": "Duke, highest of five orders of nobility 五等爵位[wu3 deng3 jue2 wei4]",
+  "b": "viscount, fourth of five orders of nobility 五等爵位[wu3 deng3 jue2 wei4]",
+  "cos": 0.888,
+  "entail": 0.0,
+  "contra": 0.998,
+  "wa": [
+   "公"
+  ],
+  "wb": [
+   "子"
+  ]
+ },
+ {
+  "a": "for many years",
+  "b": "for years",
+  "cos": 0.887,
+  "entail": 0.516,
+  "contra": 0.004,
+  "wa": [
+   "多年来"
+  ],
+  "wb": [
+   "有年",
+   "经年"
+  ]
+ },
+ {
+  "a": "adult",
+  "b": "adult person",
+  "cos": 0.887,
+  "entail": 0.958,
+  "contra": 0.001,
+  "wa": [
+   "大人",
+   "成年"
+  ],
+  "wb": [
+   "成年人"
+  ]
+ },
+ {
+  "a": "study",
+  "b": "to study",
+  "cos": 0.886,
+  "entail": 0.977,
+  "contra": 0.002,
+  "wa": [
+   "书房"
+  ],
+  "wb": [
+   "学习"
+  ]
+ },
+ {
+  "a": "China-Japan",
+  "b": "Japan-US",
+  "cos": 0.886,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "中日"
+  ],
+  "wb": [
+   "日美"
+  ]
+ },
+ {
+  "a": "a handle",
+  "b": "handle",
+  "cos": 0.885,
+  "entail": 0.967,
+  "contra": 0.002,
+  "wa": [
+   "拉手"
+  ],
+  "wb": [
+   "耳朵"
+  ]
+ },
+ {
+  "a": "junior high school",
+  "b": "senior high school",
+  "cos": 0.885,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "国民中学",
+   "国中"
+  ],
+  "wb": [
+   "高中"
+  ]
+ },
+ {
+  "a": "elderly person",
+  "b": "the elderly",
+  "cos": 0.885,
+  "entail": 0.989,
+  "contra": 0.001,
+  "wa": [
+   "老人家"
+  ],
+  "wb": [
+   "老年人"
+  ]
+ },
+ {
+  "a": "East and West Germany",
+  "b": "West Germany",
+  "cos": 0.885,
+  "entail": 0.014,
+  "contra": 0.348,
+  "wa": [
+   "东西德"
+  ],
+  "wb": [
+   "西德"
+  ]
+ },
+ {
+  "a": "discerning eye",
+  "b": "somebody with a discerning eye",
+  "cos": 0.885,
+  "entail": 0.854,
+  "contra": 0.002,
+  "wa": [
+   "法眼"
+  ],
+  "wb": [
+   "明眼人"
+  ]
+ },
+ {
+  "a": "Asia",
+  "b": "East Asia",
+  "cos": 0.884,
+  "entail": 0.001,
+  "contra": 0.007,
+  "wa": [
+   "亚"
+  ],
+  "wb": [
+   "东亚"
+  ]
+ },
+ {
+  "a": "semantic",
+  "b": "semantics",
+  "cos": 0.884,
+  "entail": 0.992,
+  "contra": 0.001,
+  "wa": [
+   "语意性",
+   "语意"
+  ],
+  "wb": [
+   "语义学"
+  ]
+ },
+ {
+  "a": "an elder",
+  "b": "elder",
+  "cos": 0.883,
+  "entail": 0.963,
+  "contra": 0.002,
+  "wa": [
+   "长者"
+  ],
+  "wb": [
+   "长老"
+  ]
+ },
+ {
+  "a": "to achieve success",
+  "b": "to succeed",
+  "cos": 0.883,
+  "entail": 0.982,
+  "contra": 0.001,
+  "wa": [
+   "有成"
+  ],
+  "wb": [
+   "得手",
+   "成事"
+  ]
+ },
+ {
+  "a": "to go down",
+  "b": "to go up and down",
+  "cos": 0.883,
+  "entail": 0.022,
+  "contra": 0.709,
+  "wa": [
+   "下",
+   "下去"
+  ],
+  "wb": [
+   "上下"
+  ]
+ },
+ {
+  "a": "Japan",
+  "b": "Japan-China",
+  "cos": 0.883,
+  "entail": 0.002,
+  "contra": 0.124,
+  "wa": [
+   "日本"
+  ],
+  "wb": [
+   "日中"
+  ]
+ },
+ {
+  "a": "a bit",
+  "b": "a little bit",
+  "cos": 0.883,
+  "entail": 0.99,
+  "contra": 0.001,
+  "wa": [
+   "一点",
+   "点"
+  ],
+  "wb": [
+   "一点点"
+  ]
+ },
+ {
+  "a": "husband's father",
+  "b": "husband's mother",
+  "cos": 0.883,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "老公公"
+  ],
+  "wb": [
+   "阿家"
+  ]
+ },
+ {
+  "a": "Shilin County",
+  "b": "Shimen County",
+  "cos": 0.883,
+  "entail": 0.028,
+  "contra": 0.964,
+  "wa": [
+   "石林县"
+  ],
+  "wb": [
+   "石门县"
+  ]
+ },
+ {
+  "a": "East Germany",
+  "b": "West Germany",
+  "cos": 0.882,
+  "entail": 0.0,
+  "contra": 1.0,
+  "wa": [
+   "东德"
+  ],
+  "wb": [
+   "西德"
+  ]
+ },
+ {
+  "a": "inorganic chemistry",
+  "b": "inorganic compound",
+  "cos": 0.882,
+  "entail": 0.058,
+  "contra": 0.771,
+  "wa": [
+   "无机化学"
+  ],
+  "wb": [
+   "无机物"
+  ]
+ },
+ {
+  "a": "maternal grandfather",
+  "b": "maternal grandmother",
+  "cos": 0.882,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "外公"
+  ],
+  "wb": [
+   "老老"
+  ]
+ },
+ {
+  "a": "rational",
+  "b": "rationalism",
+  "cos": 0.882,
+  "entail": 0.959,
+  "contra": 0.003,
+  "wa": [
+   "有理"
+  ],
+  "wb": [
+   "理性主义"
+  ]
+ },
+ {
+  "a": "to pass",
+  "b": "to pass by",
+  "cos": 0.881,
+  "entail": 0.796,
+  "contra": 0.006,
+  "wa": [
+   "打发"
+  ],
+  "wb": [
+   "行经",
+   "过去"
+  ]
+ },
+ {
+  "a": "motor vehicle",
+  "b": "vehicle",
+  "cos": 0.881,
+  "entail": 0.269,
+  "contra": 0.005,
+  "wa": [
+   "机动车"
+  ],
+  "wb": [
+   "车子"
+  ]
+ },
+ {
+  "a": "Japan-China",
+  "b": "US-Japan",
+  "cos": 0.881,
+  "entail": 0.0,
+  "contra": 0.998,
+  "wa": [
+   "日中"
+  ],
+  "wb": [
+   "美日"
+  ]
+ },
+ {
+  "a": "Zhongshan",
+  "b": "Zhongshan City",
+  "cos": 0.88,
+  "entail": 0.549,
+  "contra": 0.004,
+  "wa": [
+   "中山"
+  ],
+  "wb": [
+   "中山市"
+  ]
+ },
+ {
+  "a": "electrical",
+  "b": "electricity",
+  "cos": 0.88,
+  "entail": 0.989,
+  "contra": 0.001,
+  "wa": [
+   "电气"
+  ],
+  "wb": [
+   "电力",
+   "电学"
+  ]
+ },
+ {
+  "a": "chemical",
+  "b": "chemicals",
+  "cos": 0.88,
+  "entail": 0.983,
+  "contra": 0.002,
+  "wa": [
+   "化学性"
+  ],
+  "wb": [
+   "化学物"
+  ]
+ },
+ {
+  "a": "fluid",
+  "b": "liquid",
+  "cos": 0.879,
+  "entail": 0.963,
+  "contra": 0.003,
+  "wa": [
+   "流体"
+  ],
+  "wb": [
+   "流动"
+  ]
+ },
+ {
+  "a": "China-Japan",
+  "b": "US-Japan",
+  "cos": 0.879,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "中日"
+  ],
+  "wb": [
+   "美日"
+  ]
+ },
+ {
+  "a": "to stand out",
+  "b": "to stand up",
+  "cos": 0.879,
+  "entail": 0.009,
+  "contra": 0.957,
+  "wa": [
+   "出人头地"
+  ],
+  "wb": [
+   "站起来"
+  ]
+ },
+ {
+  "a": "to come down",
+  "b": "to go down",
+  "cos": 0.879,
+  "entail": 0.041,
+  "contra": 0.938,
+  "wa": [
+   "下来"
+  ],
+  "wb": [
+   "下",
+   "下去"
+  ]
+ },
+ {
+  "a": "Shanggao County",
+  "b": "Shanglin County",
+  "cos": 0.879,
+  "entail": 0.001,
+  "contra": 0.997,
+  "wa": [
+   "上高县"
+  ],
+  "wb": [
+   "上林县"
+  ]
+ },
+ {
+  "a": "to get to work",
+  "b": "to go to work",
+  "cos": 0.879,
+  "entail": 0.996,
+  "contra": 0.0,
+  "wa": [
+   "动手"
+  ],
+  "wb": [
+   "上班",
+   "上工"
+  ]
+ },
+ {
+  "a": "festival",
+  "b": "seasonal festival",
+  "cos": 0.878,
+  "entail": 0.001,
+  "contra": 0.002,
+  "wa": [
+   "节日"
+  ],
+  "wb": [
+   "节"
+  ]
+ },
+ {
+  "a": "maritime",
+  "b": "maritime affairs",
+  "cos": 0.878,
+  "entail": 0.075,
+  "contra": 0.003,
+  "wa": [
+   "海上"
+  ],
+  "wb": [
+   "海事"
+  ]
+ },
+ {
+  "a": "wind",
+  "b": "windy",
+  "cos": 0.878,
+  "entail": 0.988,
+  "contra": 0.002,
+  "wa": [
+   "风"
+  ],
+  "wb": [
+   "有风"
+  ]
+ },
+ {
+  "a": "Italian",
+  "b": "Italian person",
+  "cos": 0.878,
+  "entail": 0.235,
+  "contra": 0.002,
+  "wa": [
+   "意大利语",
+   "义大利语"
+  ],
+  "wb": [
+   "意大利人"
+  ]
+ },
+ {
+  "a": "hourly job",
+  "b": "hourly worker",
+  "cos": 0.878,
+  "entail": 0.975,
+  "contra": 0.003,
+  "wa": [
+   "小时工"
+  ],
+  "wb": [
+   "小时工"
+  ]
+ },
+ {
+  "a": "Tong County",
+  "b": "Tonghua County",
+  "cos": 0.878,
+  "entail": 0.088,
+  "contra": 0.399,
+  "wa": [
+   "通县"
+  ],
+  "wb": [
+   "通化县"
+  ]
+ },
+ {
+  "a": "science",
+  "b": "scientific",
+  "cos": 0.877,
+  "entail": 0.98,
+  "contra": 0.002,
+  "wa": [
+   "科学",
+   "理学"
+  ],
+  "wb": [
+   "科学"
+  ]
+ },
+ {
+  "a": "downstream",
+  "b": "to go downstream",
+  "cos": 0.877,
+  "entail": 0.513,
+  "contra": 0.004,
+  "wa": [
+   "下水"
+  ],
+  "wb": [
+   "下行"
+  ]
+ },
+ {
+  "a": "court eunuch",
+  "b": "eunuch",
+  "cos": 0.877,
+  "entail": 0.002,
+  "contra": 0.002,
+  "wa": [
+   "老公公"
+  ],
+  "wb": [
+   "老公"
+  ]
+ },
+ {
+  "a": "China-Japan",
+  "b": "Japan",
+  "cos": 0.877,
+  "entail": 0.003,
+  "contra": 0.387,
+  "wa": [
+   "中日"
+  ],
+  "wb": [
+   "日本"
+  ]
+ },
+ {
+  "a": "electric locomotive",
+  "b": "locomotive",
+  "cos": 0.877,
+  "entail": 0.001,
+  "contra": 0.003,
+  "wa": [
+   "电力机车"
+  ],
+  "wb": [
+   "机车"
+  ]
+ },
+ {
+  "a": "to spend",
+  "b": "to spend it all",
+  "cos": 0.877,
+  "entail": 0.048,
+  "contra": 0.001,
+  "wa": [
+   "花用",
+   "出手"
+  ],
+  "wb": [
+   "花光"
+  ]
+ },
+ {
+  "a": "o'clock",
+  "b": "one o'clock",
+  "cos": 0.877,
+  "entail": 0.021,
+  "contra": 0.101,
+  "wa": [
+   "点"
+  ],
+  "wb": [
+   "一点"
+  ]
+ },
+ {
+  "a": "stable",
+  "b": "unstable",
+  "cos": 0.877,
+  "entail": 0.0,
+  "contra": 1.0,
+  "wa": [
+   "安定"
+  ],
+  "wb": [
+   "不安"
+  ]
+ },
+ {
+  "a": "achieving nothing",
+  "b": "to achieve nothing",
+  "cos": 0.877,
+  "entail": 0.981,
+  "contra": 0.002,
+  "wa": [
+   "无成"
+  ],
+  "wb": [
+   "一事无成"
+  ]
+ },
+ {
+  "a": "to pass by",
+  "b": "to pass through",
+  "cos": 0.876,
+  "entail": 0.968,
+  "contra": 0.013,
+  "wa": [
+   "行经",
+   "过去"
+  ],
+  "wb": [
+   "经",
+   "通行"
+  ]
+ },
+ {
+  "a": "Huangshan City",
+  "b": "Taishan city",
+  "cos": 0.876,
+  "entail": 0.001,
+  "contra": 0.997,
+  "wa": [
+   "黄山市"
+  ],
+  "wb": [
+   "台山市"
+  ]
+ },
+ {
+  "a": "Japan",
+  "b": "Japan-US",
+  "cos": 0.876,
+  "entail": 0.003,
+  "contra": 0.083,
+  "wa": [
+   "日本"
+  ],
+  "wb": [
+   "日美"
+  ]
+ },
+ {
+  "a": "citizen",
+  "b": "citizens",
+  "cos": 0.876,
+  "entail": 0.978,
+  "contra": 0.002,
+  "wa": [
+   "公民"
+  ],
+  "wb": [
+   "国民"
+  ]
+ },
+ {
+  "a": "to arrange to meet",
+  "b": "to meet with",
+  "cos": 0.876,
+  "entail": 0.12,
+  "contra": 0.016,
+  "wa": [
+   "约会"
+  ],
+  "wb": [
+   "会面"
+  ]
+ },
+ {
+  "a": "South China Sea",
+  "b": "the China Seas",
+  "cos": 0.875,
+  "entail": 0.04,
+  "contra": 0.175,
+  "wa": [
+   "南海"
+  ],
+  "wb": [
+   "中国海"
+  ]
+ },
+ {
+  "a": "air duct",
+  "b": "ventilation duct",
+  "cos": 0.875,
+  "entail": 0.302,
+  "contra": 0.239,
+  "wa": [
+   "气管",
+   "气道"
+  ],
+  "wb": [
+   "通风管"
+  ]
+ },
+ {
+  "a": "Tainan",
+  "b": "Tainan city",
+  "cos": 0.875,
+  "entail": 0.225,
+  "contra": 0.002,
+  "wa": [
+   "台南"
+  ],
+  "wb": [
+   "台南市"
+  ]
+ },
+ {
+  "a": "ear",
+  "b": "earring",
+  "cos": 0.874,
+  "entail": 0.037,
+  "contra": 0.719,
+  "wa": [
+   "耳朵"
+  ],
+  "wb": [
+   "耳环"
+  ]
+ },
+ {
+  "a": "Monday",
+  "b": "Tuesday",
+  "cos": 0.874,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "星期一"
+  ],
+  "wb": [
+   "星期二"
+  ]
+ },
+ {
+  "a": "to add",
+  "b": "to add up",
+  "cos": 0.874,
+  "entail": 0.883,
+  "contra": 0.004,
+  "wa": [
+   "加上",
+   "加"
+  ],
+  "wb": [
+   "相加"
+  ]
+ },
+ {
+  "a": "east longitude",
+  "b": "west longitude",
+  "cos": 0.874,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "东经"
+  ],
+  "wb": [
+   "西经"
+  ]
+ },
+ {
+  "a": "to get off work",
+  "b": "to get to work",
+  "cos": 0.873,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "下班"
+  ],
+  "wb": [
+   "动手"
+  ]
+ },
+ {
+  "a": "to go downstream",
+  "b": "to go upstream",
+  "cos": 0.873,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "下行"
+  ],
+  "wb": [
+   "上水"
+  ]
+ },
+ {
+  "a": "Tianshan District",
+  "b": "Xiangshan District",
+  "cos": 0.873,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "天山区"
+  ],
+  "wb": [
+   "相山区"
+  ]
+ },
+ {
+  "a": "simultaneously",
+  "b": "simultaneously...",
+  "cos": 0.873,
+  "entail": 0.893,
+  "contra": 0.006,
+  "wa": [
+   "一头"
+  ],
+  "wb": [
+   "一面"
+  ]
+ },
+ {
+  "a": "Xiangcheng District",
+  "b": "Xicheng District",
+  "cos": 0.873,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "相城区"
+  ],
+  "wb": [
+   "西城区"
+  ]
+ },
+ {
+  "a": "to get together",
+  "b": "to meet together",
+  "cos": 0.873,
+  "entail": 0.975,
+  "contra": 0.002,
+  "wa": [
+   "聚会"
+  ],
+  "wb": [
+   "相会"
+  ]
+ },
+ {
+  "a": "male prostitute",
+  "b": "prostitute",
+  "cos": 0.873,
+  "entail": 0.001,
+  "contra": 0.002,
+  "wa": [
+   "相公"
+  ],
+  "wb": [
+   "鸡"
+  ]
+ },
+ {
+  "a": "Shancheng District",
+  "b": "Xicheng District",
+  "cos": 0.872,
+  "entail": 0.001,
+  "contra": 0.999,
+  "wa": [
+   "山城区"
+  ],
+  "wb": [
+   "西城区"
+  ]
+ },
+ {
+  "a": "noodles",
+  "b": "plain noodles",
+  "cos": 0.872,
+  "entail": 0.002,
+  "contra": 0.001,
+  "wa": [
+   "面",
+   "面条"
+  ],
+  "wb": [
+   "光面"
+  ]
+ },
+ {
+  "a": "French",
+  "b": "French language",
+  "cos": 0.872,
+  "entail": 0.204,
+  "contra": 0.003,
+  "wa": [
+   "法语"
+  ],
+  "wb": [
+   "法文"
+  ]
+ },
+ {
+  "a": "east side",
+  "b": "west side",
+  "cos": 0.872,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "东面"
+  ],
+  "wb": [
+   "西面"
+  ]
+ },
+ {
+  "a": "National Pension",
+  "b": "pension",
+  "cos": 0.872,
+  "entail": 0.002,
+  "contra": 0.001,
+  "wa": [
+   "国民年金"
+  ],
+  "wb": [
+   "年金"
+  ]
+ },
+ {
+  "a": "to achieve success",
+  "b": "to succeed in life",
+  "cos": 0.872,
+  "entail": 0.42,
+  "contra": 0.001,
+  "wa": [
+   "有成"
+  ],
+  "wb": [
+   "成龙",
+   "成器"
+  ]
+ },
+ {
+  "a": "stream",
+  "b": "to stream",
+  "cos": 0.871,
+  "entail": 0.869,
+  "contra": 0.009,
+  "wa": [
+   "水流"
+  ],
+  "wb": [
+   "分流"
+  ]
+ },
+ {
+  "a": "middle age",
+  "b": "middle and old age",
+  "cos": 0.871,
+  "entail": 0.003,
+  "contra": 0.007,
+  "wa": [
+   "中年"
+  ],
+  "wb": [
+   "中老年"
+  ]
+ },
+ {
+  "a": "not without",
+  "b": "without",
+  "cos": 0.871,
+  "entail": 0.001,
+  "contra": 0.996,
+  "wa": [
+   "不无"
+  ],
+  "wb": [
+   "不加"
+  ]
+ },
+ {
+  "a": "car",
+  "b": "vehicle",
+  "cos": 0.87,
+  "entail": 0.37,
+  "contra": 0.008,
+  "wa": [
+   "汽车",
+   "车"
+  ],
+  "wb": [
+   "车子"
+  ]
+ },
+ {
+  "a": "of the same kind",
+  "b": "of the same type",
+  "cos": 0.87,
+  "entail": 0.945,
+  "contra": 0.004,
+  "wa": [
+   "一路"
+  ],
+  "wb": [
+   "一水儿"
+  ]
+ },
+ {
+  "a": "scripture",
+  "b": "scriptures",
+  "cos": 0.87,
+  "entail": 0.989,
+  "contra": 0.001,
+  "wa": [
+   "经",
+   "经文"
+  ],
+  "wb": [
+   "经书"
+  ]
+ },
+ {
+  "a": "nationalization",
+  "b": "to nationalize",
+  "cos": 0.87,
+  "entail": 0.981,
+  "contra": 0.002,
+  "wa": [
+   "国有化"
+  ],
+  "wb": [
+   "公有化"
+  ]
+ },
+ {
+  "a": "aged",
+  "b": "older",
+  "cos": 0.87,
+  "entail": 0.979,
+  "contra": 0.004,
+  "wa": [
+   "年老"
+  ],
+  "wb": [
+   "大"
+  ]
+ },
+ {
+  "a": "Delhi",
+  "b": "New Delhi",
+  "cos": 0.869,
+  "entail": 0.006,
+  "contra": 0.509,
+  "wa": [
+   "德里"
+  ],
+  "wb": [
+   "新德里"
+  ]
+ },
+ {
+  "a": "the weather",
+  "b": "the weather obliges",
+  "cos": 0.869,
+  "entail": 0.003,
+  "contra": 0.002,
+  "wa": [
+   "天儿"
+  ],
+  "wb": [
+   "天公作美"
+  ]
+ },
+ {
+  "a": "host",
+  "b": "to host",
+  "cos": 0.869,
+  "entail": 0.959,
+  "contra": 0.002,
+  "wa": [
+   "东道",
+   "东道主"
+  ],
+  "wb": [
+   "作东"
+  ]
+ },
+ {
+  "a": "husband",
+  "b": "wife",
+  "cos": 0.869,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "老公",
+   "相公"
+  ],
+  "wb": [
+   "妻子"
+  ]
+ },
+ {
+  "a": "... River",
+  "b": "river",
+  "cos": 0.868,
+  "entail": 0.966,
+  "contra": 0.002,
+  "wa": [
+   "水"
+  ],
+  "wb": [
+   "河"
+  ]
+ },
+ {
+  "a": "to arrange to meet",
+  "b": "to meet together",
+  "cos": 0.868,
+  "entail": 0.345,
+  "contra": 0.024,
+  "wa": [
+   "约会"
+  ],
+  "wb": [
+   "相会"
+  ]
+ },
+ {
+  "a": "East Asia",
+  "b": "Southeast Asia",
+  "cos": 0.868,
+  "entail": 0.499,
+  "contra": 0.104,
+  "wa": [
+   "东亚"
+  ],
+  "wb": [
+   "东南亚"
+  ]
+ },
+ {
+  "a": "bad habit",
+  "b": "habit",
+  "cos": 0.868,
+  "entail": 0.005,
+  "contra": 0.007,
+  "wa": [
+   "小动作"
+  ],
+  "wb": [
+   "习惯"
+  ]
+ },
+ {
+  "a": "Asia",
+  "b": "southern Asia",
+  "cos": 0.867,
+  "entail": 0.001,
+  "contra": 0.002,
+  "wa": [
+   "亚"
+  ],
+  "wb": [
+   "南亚"
+  ]
+ },
+ {
+  "a": "literature",
+  "b": "literature and language",
+  "cos": 0.867,
+  "entail": 0.004,
+  "contra": 0.003,
+  "wa": [
+   "文学"
+  ],
+  "wb": [
+   "语文"
+  ]
+ },
+ {
+  "a": "Labrador",
+  "b": "Labrador retriever",
+  "cos": 0.867,
+  "entail": 0.023,
+  "contra": 0.005,
+  "wa": [
+   "拉布拉多"
+  ],
+  "wb": [
+   "拉拉"
+  ]
+ },
+ {
+  "a": "Gao County",
+  "b": "Gaotai county",
+  "cos": 0.867,
+  "entail": 0.016,
+  "contra": 0.956,
+  "wa": [
+   "高县"
+  ],
+  "wb": [
+   "高台县"
+  ]
+ },
+ {
+  "a": "to make no sense",
+  "b": "to make sense",
+  "cos": 0.867,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "不通"
+  ],
+  "wb": [
+   "有道理"
+  ]
+ },
+ {
+  "a": "my husband",
+  "b": "my husband or wife",
+  "cos": 0.866,
+  "entail": 0.08,
+  "contra": 0.004,
+  "wa": [
+   "外子"
+  ],
+  "wb": [
+   "口子"
+  ]
+ },
+ {
+  "a": "running water",
+  "b": "to have running water",
+  "cos": 0.866,
+  "entail": 0.932,
+  "contra": 0.002,
+  "wa": [
+   "流水"
+  ],
+  "wb": [
+   "通水"
+  ]
+ },
+ {
+  "a": "Dongguang County",
+  "b": "Dongming County",
+  "cos": 0.866,
+  "entail": 0.025,
+  "contra": 0.964,
+  "wa": [
+   "东光县"
+  ],
+  "wb": [
+   "东明",
+   "东明县"
+  ]
+ },
+ {
+  "a": "to be able to swim",
+  "b": "to swim",
+  "cos": 0.866,
+  "entail": 0.818,
+  "contra": 0.003,
+  "wa": [
+   "会水"
+  ],
+  "wb": [
+   "游泳",
+   "水"
+  ]
+ },
+ {
+  "a": "Dacheng County",
+  "b": "Nancheng County",
+  "cos": 0.866,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "大城",
+   "大城县"
+  ],
+  "wb": [
+   "南城县"
+  ]
+ },
+ {
+  "a": "Xin County",
+  "b": "Xiping County",
+  "cos": 0.865,
+  "entail": 0.005,
+  "contra": 0.99,
+  "wa": [
+   "新县"
+  ],
+  "wb": [
+   "西平县"
+  ]
+ },
+ {
+  "a": "customs",
+  "b": "local customs",
+  "cos": 0.865,
+  "entail": 0.004,
+  "contra": 0.001,
+  "wa": [
+   "海关"
+  ],
+  "wb": [
+   "风情"
+  ]
+ },
+ {
+  "a": "maternal grandfather",
+  "b": "paternal grandmother",
+  "cos": 0.865,
+  "entail": 0.0,
+  "contra": 1.0,
+  "wa": [
+   "外公"
+  ],
+  "wb": [
+   "奶奶"
+  ]
+ },
+ {
+  "a": "Shangcheng District",
+  "b": "Xiangcheng District",
+  "cos": 0.865,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "上城区"
+  ],
+  "wb": [
+   "相城区"
+  ]
+ },
+ {
+  "a": "to benefit",
+  "b": "to benefit people",
+  "cos": 0.865,
+  "entail": 0.336,
+  "contra": 0.001,
+  "wa": [
+   "得利",
+   "利"
+  ],
+  "wb": [
+   "利民"
+  ]
+ },
+ {
+  "a": "Asia",
+  "b": "Southeast Asia",
+  "cos": 0.865,
+  "entail": 0.002,
+  "contra": 0.006,
+  "wa": [
+   "亚"
+  ],
+  "wb": [
+   "东南亚"
+  ]
+ },
+ {
+  "a": "classifier for rinses of clothes",
+  "b": "classifier for washings of a garment",
+  "cos": 0.865,
+  "entail": 0.97,
+  "contra": 0.002,
+  "wa": [
+   "和"
+  ],
+  "wb": [
+   "水"
+  ]
+ },
+ {
+  "a": "hence",
+  "b": "thus",
+  "cos": 0.865,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "用"
+  ],
+  "wb": [
+   "尔"
+  ]
+ },
+ {
+  "a": "Andorra",
+  "b": "Andorra la Vella",
+  "cos": 0.865,
+  "entail": 0.008,
+  "contra": 0.042,
+  "wa": [
+   "安道尔"
+  ],
+  "wb": [
+   "安道尔城"
+  ]
+ },
+ {
+  "a": "to place an order",
+  "b": "to put in order",
+  "cos": 0.865,
+  "entail": 0.992,
+  "contra": 0.001,
+  "wa": [
+   "下单"
+  ],
+  "wb": [
+   "打点"
+  ]
+ },
+ {
+  "a": "document",
+  "b": "documents",
+  "cos": 0.865,
+  "entail": 0.979,
+  "contra": 0.002,
+  "wa": [
+   "文书"
+  ],
+  "wb": [
+   "公事"
+  ]
+ },
+ {
+  "a": "automobile",
+  "b": "car",
+  "cos": 0.865,
+  "entail": 0.977,
+  "contra": 0.002,
+  "wa": [
+   "自动车"
+  ],
+  "wb": [
+   "汽车",
+   "车"
+  ]
+ },
+ {
+  "a": "a skill",
+  "b": "skill",
+  "cos": 0.864,
+  "entail": 0.974,
+  "contra": 0.002,
+  "wa": [
+   "一手",
+   "道"
+  ],
+  "wb": [
+   "工"
+  ]
+ },
+ {
+  "a": "alias",
+  "b": "to go by an alias",
+  "cos": 0.863,
+  "entail": 0.603,
+  "contra": 0.004,
+  "wa": [
+   "化名"
+  ],
+  "wb": [
+   "化名"
+  ]
+ },
+ {
+  "a": "Shancheng District",
+  "b": "Shangcheng District",
+  "cos": 0.863,
+  "entail": 0.995,
+  "contra": 0.001,
+  "wa": [
+   "山城区"
+  ],
+  "wb": [
+   "上城区"
+  ]
+ },
+ {
+  "a": "biological",
+  "b": "biology",
+  "cos": 0.863,
+  "entail": 0.992,
+  "contra": 0.001,
+  "wa": [
+   "生物性"
+  ],
+  "wb": [
+   "生物学"
+  ]
+ },
+ {
+  "a": "Japanese",
+  "b": "Japanese language",
+  "cos": 0.862,
+  "entail": 0.142,
+  "contra": 0.003,
+  "wa": [
+   "日文",
+   "和"
+  ],
+  "wb": [
+   "日语"
+  ]
+ },
+ {
+  "a": "eldest child in a family",
+  "b": "eldest son",
+  "cos": 0.862,
+  "entail": 0.023,
+  "contra": 0.017,
+  "wa": [
+   "老大"
+  ],
+  "wb": [
+   "长子"
+  ]
+ },
+ {
+  "a": "the skies above a certain place",
+  "b": "the sky above",
+  "cos": 0.862,
+  "entail": 0.094,
+  "contra": 0.002,
+  "wa": [
+   "上空"
+  ],
+  "wb": [
+   "上天"
+  ]
+ },
+ {
+  "a": "Nancheng County",
+  "b": "Shicheng County",
+  "cos": 0.862,
+  "entail": 0.001,
+  "contra": 0.999,
+  "wa": [
+   "南城县"
+  ],
+  "wb": [
+   "石城县"
+  ]
+ },
+ {
+  "a": "to feel happy",
+  "b": "to feel sad",
+  "cos": 0.862,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "开心"
+  ],
+  "wb": [
+   "难过"
+  ]
+ },
+ {
+  "a": "circuit",
+  "b": "electric circuit",
+  "cos": 0.862,
+  "entail": 0.013,
+  "contra": 0.001,
+  "wa": [
+   "道"
+  ],
+  "wb": [
+   "电路"
+  ]
+ },
+ {
+  "a": "to emphasize",
+  "b": "to give emphasis",
+  "cos": 0.861,
+  "entail": 0.98,
+  "contra": 0.002,
+  "wa": [
+   "加重"
+  ],
+  "wb": [
+   "加重语气"
+  ]
+ },
+ {
+  "a": "Central Asia",
+  "b": "southern Asia",
+  "cos": 0.861,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "中亚"
+  ],
+  "wb": [
+   "南亚"
+  ]
+ },
+ {
+  "a": "all one's life",
+  "b": "one's whole life",
+  "cos": 0.861,
+  "entail": 0.995,
+  "contra": 0.001,
+  "wa": [
+   "一生",
+   "平生"
+  ],
+  "wb": [
+   "生平"
+  ]
+ },
+ {
+  "a": "people",
+  "b": "some people",
+  "cos": 0.861,
+  "entail": 0.011,
+  "contra": 0.007,
+  "wa": [
+   "子民",
+   "人们"
+  ],
+  "wb": [
+   "有些人"
+  ]
+ },
+ {
+  "a": "Brasilia",
+  "b": "Brazil",
+  "cos": 0.86,
+  "entail": 0.174,
+  "contra": 0.208,
+  "wa": [
+   "巴西利亚"
+  ],
+  "wb": [
+   "巴西"
+  ]
+ },
+ {
+  "a": "city district",
+  "b": "old city district",
+  "cos": 0.86,
+  "entail": 0.003,
+  "contra": 0.002,
+  "wa": [
+   "城区"
+  ],
+  "wb": [
+   "老城区"
+  ]
+ },
+ {
+  "a": "Tonghai County",
+  "b": "Tongshan County",
+  "cos": 0.86,
+  "entail": 0.001,
+  "contra": 0.997,
+  "wa": [
+   "通海",
+   "通海县"
+  ],
+  "wb": [
+   "通山县"
+  ]
+ },
+ {
+  "a": "definition",
+  "b": "to define",
+  "cos": 0.86,
+  "entail": 0.973,
+  "contra": 0.001,
+  "wa": [
+   "定义"
+  ],
+  "wb": [
+   "下定义"
+  ]
+ },
+ {
+  "a": "dharma",
+  "b": "dharma name",
+  "cos": 0.86,
+  "entail": 0.039,
+  "contra": 0.016,
+  "wa": [
+   "法"
+  ],
+  "wb": [
+   "法名"
+  ]
+ },
+ {
+  "a": "for many years",
+  "b": "many years",
+  "cos": 0.859,
+  "entail": 0.974,
+  "contra": 0.001,
+  "wa": [
+   "多年来"
+  ],
+  "wb": [
+   "多年"
+  ]
+ },
+ {
+  "a": "west",
+  "b": "west side",
+  "cos": 0.859,
+  "entail": 0.234,
+  "contra": 0.014,
+  "wa": [
+   "右",
+   "西"
+  ],
+  "wb": [
+   "西面"
+  ]
+ },
+ {
+  "a": "Taitung",
+  "b": "Taitung city",
+  "cos": 0.859,
+  "entail": 0.048,
+  "contra": 0.002,
+  "wa": [
+   "台东"
+  ],
+  "wb": [
+   "台东市"
+  ]
+ },
+ {
+  "a": "Baishui County",
+  "b": "Mingshui county",
+  "cos": 0.859,
+  "entail": 0.001,
+  "contra": 0.997,
+  "wa": [
+   "白水县"
+  ],
+  "wb": [
+   "明水县"
+  ]
+ },
+ {
+  "a": "opening",
+  "b": "to open",
+  "cos": 0.859,
+  "entail": 0.988,
+  "contra": 0.001,
+  "wa": [
+   "口子"
+  ],
+  "wb": [
+   "打开",
+   "开通"
+  ]
+ },
+ {
+  "a": "Longshan County",
+  "b": "Longshan District",
+  "cos": 0.859,
+  "entail": 0.002,
+  "contra": 0.99,
+  "wa": [
+   "龙山县"
+  ],
+  "wb": [
+   "龙山区"
+  ]
+ },
+ {
+  "a": "younger brother",
+  "b": "younger sister",
+  "cos": 0.858,
+  "entail": 0.0,
+  "contra": 1.0,
+  "wa": [
+   "弟弟"
+  ],
+  "wb": [
+   "妹妹"
+  ]
+ },
+ {
+  "a": "numerous",
+  "b": "several",
+  "cos": 0.858,
+  "entail": 0.953,
+  "contra": 0.006,
+  "wa": [
+   "百"
+  ],
+  "wb": [
+   "数"
+  ]
+ },
+ {
+  "a": "to separate",
+  "b": "to split apart",
+  "cos": 0.858,
+  "entail": 0.978,
+  "contra": 0.001,
+  "wa": [
+   "分开"
+  ],
+  "wb": [
+   "分化"
+  ]
+ },
+ {
+  "a": "engineering",
+  "b": "science/engineering",
+  "cos": 0.857,
+  "entail": 0.022,
+  "contra": 0.002,
+  "wa": [
+   "工科",
+   "工学"
+  ],
+  "wb": [
+   "理工科"
+  ]
+ },
+ {
+  "a": "approximately",
+  "b": "roughly",
+  "cos": 0.857,
+  "entail": 0.948,
+  "contra": 0.002,
+  "wa": [
+   "来",
+   "上下"
+  ],
+  "wb": [
+   "大概"
+  ]
+ },
+ {
+  "a": "Tianmen city",
+  "b": "Tianshui City",
+  "cos": 0.857,
+  "entail": 0.001,
+  "contra": 0.997,
+  "wa": [
+   "天门市",
+   "天门"
+  ],
+  "wb": [
+   "天水市"
+  ]
+ },
+ {
+  "a": "powder",
+  "b": "powdered",
+  "cos": 0.857,
+  "entail": 0.908,
+  "contra": 0.011,
+  "wa": [
+   "面子"
+  ],
+  "wb": [
+   "粉色"
+  ]
+ },
+ {
+  "a": "today",
+  "b": "yesterday",
+  "cos": 0.857,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "本日",
+   "今天"
+  ],
+  "wb": [
+   "昨天"
+  ]
+ },
+ {
+  "a": "Dongshan County",
+  "b": "Dongshan District",
+  "cos": 0.857,
+  "entail": 0.002,
+  "contra": 0.992,
+  "wa": [
+   "东山县"
+  ],
+  "wb": [
+   "东山区"
+  ]
+ },
+ {
+  "a": "not often",
+  "b": "occasionally",
+  "cos": 0.857,
+  "entail": 0.971,
+  "contra": 0.002,
+  "wa": [
+   "不大"
+  ],
+  "wb": [
+   "偶尔"
+  ]
+ },
+ {
+  "a": "Dongguang County",
+  "b": "Dongping County",
+  "cos": 0.857,
+  "entail": 0.032,
+  "contra": 0.955,
+  "wa": [
+   "东光县"
+  ],
+  "wb": [
+   "东平县",
+   "东平"
+  ]
+ },
+ {
+  "a": "celestial being",
+  "b": "celestial body",
+  "cos": 0.857,
+  "entail": 0.99,
+  "contra": 0.001,
+  "wa": [
+   "天人"
+  ],
+  "wb": [
+   "天体"
+  ]
+ },
+ {
+  "a": "to send a telegram",
+  "b": "to send via telephone or telegram etc",
+  "cos": 0.856,
+  "entail": 0.012,
+  "contra": 0.003,
+  "wa": [
+   "发电"
+  ],
+  "wb": [
+   "电"
+  ]
+ },
+ {
+  "a": "to succeed",
+  "b": "to succeed in life",
+  "cos": 0.856,
+  "entail": 0.105,
+  "contra": 0.001,
+  "wa": [
+   "得手",
+   "成事"
+  ],
+  "wb": [
+   "成龙",
+   "成器"
+  ]
+ },
+ {
+  "a": "ten thousand",
+  "b": "thousand",
+  "cos": 0.856,
+  "entail": 0.003,
+  "contra": 0.11,
+  "wa": [
+   "万"
+  ],
+  "wb": [
+   "千"
+  ]
+ },
+ {
+  "a": "gossip",
+  "b": "to gossip",
+  "cos": 0.856,
+  "entail": 0.966,
+  "contra": 0.002,
+  "wa": [
+   "口语"
+  ],
+  "wb": [
+   "说话"
+  ]
+ },
+ {
+  "a": "to book tickets",
+  "b": "to buy tickets",
+  "cos": 0.856,
+  "entail": 0.984,
+  "contra": 0.003,
+  "wa": [
+   "订票"
+  ],
+  "wb": [
+   "买票"
+  ]
+ },
+ {
+  "a": "Nancheng County",
+  "b": "Tongcheng County",
+  "cos": 0.855,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "南城县"
+  ],
+  "wb": [
+   "通城县"
+  ]
+ },
+ {
+  "a": "Tuesday",
+  "b": "Wednesday",
+  "cos": 0.855,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "星期二"
+  ],
+  "wb": [
+   "星期三"
+  ]
+ },
+ {
+  "a": "Huashan District",
+  "b": "Tianshan District",
+  "cos": 0.855,
+  "entail": 0.001,
+  "contra": 0.999,
+  "wa": [
+   "花山区"
+  ],
+  "wb": [
+   "天山区"
+  ]
+ },
+ {
+  "a": "to pass",
+  "b": "to pass through",
+  "cos": 0.855,
+  "entail": 0.938,
+  "contra": 0.003,
+  "wa": [
+   "打发"
+  ],
+  "wb": [
+   "经",
+   "通行"
+  ]
+ },
+ {
+  "a": "early morning",
+  "b": "morning",
+  "cos": 0.855,
+  "entail": 0.083,
+  "contra": 0.001,
+  "wa": [
+   "早上"
+  ],
+  "wb": [
+   "上午",
+   "早"
+  ]
+ },
+ {
+  "a": "of one mind",
+  "b": "to be of one mind",
+  "cos": 0.855,
+  "entail": 0.973,
+  "contra": 0.002,
+  "wa": [
+   "一心一德"
+  ],
+  "wb": [
+   "齐心"
+  ]
+ },
+ {
+  "a": "old",
+  "b": "older",
+  "cos": 0.855,
+  "entail": 0.977,
+  "contra": 0.003,
+  "wa": [
+   "高年",
+   "旧"
+  ],
+  "wb": [
+   "大"
+  ]
+ },
+ {
+  "a": "Pingli County",
+  "b": "Pingluo county",
+  "cos": 0.854,
+  "entail": 0.006,
+  "contra": 0.99,
+  "wa": [
+   "平利县",
+   "平利"
+  ],
+  "wb": [
+   "平罗"
+  ]
+ },
+ {
+  "a": "Pingli County",
+  "b": "Pingluo County",
+  "cos": 0.854,
+  "entail": 0.007,
+  "contra": 0.988,
+  "wa": [
+   "平利县",
+   "平利"
+  ],
+  "wb": [
+   "平罗县"
+  ]
+ },
+ {
+  "a": "city",
+  "b": "this city",
+  "cos": 0.854,
+  "entail": 0.091,
+  "contra": 0.006,
+  "wa": [
+   "城",
+   "城市"
+  ],
+  "wb": [
+   "本市"
+  ]
+ },
+ {
+  "a": "radio",
+  "b": "radio station",
+  "cos": 0.854,
+  "entail": 0.704,
+  "contra": 0.008,
+  "wa": [
+   "无线电",
+   "收音机"
+  ],
+  "wb": [
+   "电台"
+  ]
+ },
+ {
+  "a": "chicken",
+  "b": "chicken meat",
+  "cos": 0.854,
+  "entail": 0.173,
+  "contra": 0.003,
+  "wa": [
+   "鸡"
+  ],
+  "wb": [
+   "鸡肉"
+  ]
+ },
+ {
+  "a": "highway",
+  "b": "public highway",
+  "cos": 0.853,
+  "entail": 0.003,
+  "contra": 0.002,
+  "wa": [
+   "公路"
+  ],
+  "wb": [
+   "公道"
+  ]
+ },
+ {
+  "a": "Chinese as a primary or secondary school subject",
+  "b": "secondary school that uses Chinese as the medium of instruction",
+  "cos": 0.853,
+  "entail": 0.3,
+  "contra": 0.03,
+  "wa": [
+   "国语"
+  ],
+  "wb": [
+   "中中"
+  ]
+ },
+ {
+  "a": "US-China",
+  "b": "US-China-Taiwan",
+  "cos": 0.853,
+  "entail": 0.002,
+  "contra": 0.009,
+  "wa": [
+   "美中"
+  ],
+  "wb": [
+   "美中台"
+  ]
+ },
+ {
+  "a": "Huangshan District",
+  "b": "Tianshan District",
+  "cos": 0.852,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "黄山区"
+  ],
+  "wb": [
+   "天山区"
+  ]
+ },
+ {
+  "a": "the top",
+  "b": "top",
+  "cos": 0.852,
+  "entail": 0.957,
+  "contra": 0.003,
+  "wa": [
+   "上头",
+   "头"
+  ],
+  "wb": [
+   "前"
+  ]
+ },
+ {
+  "a": "Dacheng County",
+  "b": "Shicheng County",
+  "cos": 0.852,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "大城",
+   "大城县"
+  ],
+  "wb": [
+   "石城县"
+  ]
+ },
+ {
+  "a": "airplane",
+  "b": "plane",
+  "cos": 0.852,
+  "entail": 0.993,
+  "contra": 0.001,
+  "wa": [
+   "飞机"
+  ],
+  "wb": [
+   "平面"
+  ]
+ },
+ {
+  "a": "weather",
+  "b": "weather conditions",
+  "cos": 0.852,
+  "entail": 0.912,
+  "contra": 0.002,
+  "wa": [
+   "天气",
+   "气"
+  ],
+  "wb": [
+   "天时"
+  ]
+ },
+ {
+  "a": "pleated skirt",
+  "b": "skirt",
+  "cos": 0.852,
+  "entail": 0.001,
+  "contra": 0.001,
+  "wa": [
+   "折裙"
+  ],
+  "wb": [
+   "裙子"
+  ]
+ },
+ {
+  "a": "hydrate",
+  "b": "to hydrate",
+  "cos": 0.852,
+  "entail": 0.949,
+  "contra": 0.003,
+  "wa": [
+   "水合物"
+  ],
+  "wb": [
+   "水化"
+  ]
+ },
+ {
+  "a": "humanitarian",
+  "b": "humanitarianism",
+  "cos": 0.852,
+  "entail": 0.973,
+  "contra": 0.002,
+  "wa": [
+   "人道主义"
+  ],
+  "wb": [
+   "人道"
+  ]
+ },
+ {
+  "a": "Tong County",
+  "b": "Tongshan County",
+  "cos": 0.852,
+  "entail": 0.027,
+  "contra": 0.877,
+  "wa": [
+   "通县"
+  ],
+  "wb": [
+   "通山县"
+  ]
+ },
+ {
+  "a": "handle",
+  "b": "to handle",
+  "cos": 0.852,
+  "entail": 0.935,
+  "contra": 0.005,
+  "wa": [
+   "耳朵"
+  ],
+  "wb": [
+   "经手",
+   "行事"
+  ]
+ },
+ {
+  "a": "duchy",
+  "b": "grand duchy",
+  "cos": 0.852,
+  "entail": 0.004,
+  "contra": 0.002,
+  "wa": [
+   "公国"
+  ],
+  "wb": [
+   "大公国"
+  ]
+ },
+ {
+  "a": "neutron",
+  "b": "neutron number",
+  "cos": 0.852,
+  "entail": 0.049,
+  "contra": 0.037,
+  "wa": [
+   "中子"
+  ],
+  "wb": [
+   "中子数"
+  ]
+ },
+ {
+  "a": "Dongcheng District",
+  "b": "Shancheng District",
+  "cos": 0.852,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "东城区"
+  ],
+  "wb": [
+   "山城区"
+  ]
+ },
+ {
+  "a": "county",
+  "b": "name of county",
+  "cos": 0.852,
+  "entail": 0.018,
+  "contra": 0.003,
+  "wa": [
+   "县"
+  ],
+  "wb": [
+   "县名"
+  ]
+ },
+ {
+  "a": "Xiangcheng District",
+  "b": "Xiangshan District",
+  "cos": 0.851,
+  "entail": 0.002,
+  "contra": 0.995,
+  "wa": [
+   "相城区"
+  ],
+  "wb": [
+   "相山区"
+  ]
+ },
+ {
+  "a": "a way to make a living",
+  "b": "to make a living",
+  "cos": 0.851,
+  "entail": 0.933,
+  "contra": 0.001,
+  "wa": [
+   "生路"
+  ],
+  "wb": [
+   "吃饭"
+  ]
+ },
+ {
+  "a": "flexibility",
+  "b": "flexible",
+  "cos": 0.851,
+  "entail": 0.994,
+  "contra": 0.001,
+  "wa": [
+   "机动性"
+  ],
+  "wb": [
+   "机动"
+  ]
+ },
+ {
+  "a": "east and west",
+  "b": "the East",
+  "cos": 0.851,
+  "entail": 0.007,
+  "contra": 0.422,
+  "wa": [
+   "东西方",
+   "东西"
+  ],
+  "wb": [
+   "东方"
+  ]
+ },
+ {
+  "a": "Japan",
+  "b": "US-Japan",
+  "cos": 0.851,
+  "entail": 0.003,
+  "contra": 0.667,
+  "wa": [
+   "日本"
+  ],
+  "wb": [
+   "美日"
+  ]
+ },
+ {
+  "a": "to depart",
+  "b": "to leave",
+  "cos": 0.851,
+  "entail": 0.995,
+  "contra": 0.001,
+  "wa": [
+   "发车"
+  ],
+  "wb": [
+   "走路"
+  ]
+ },
+ {
+  "a": "Central Asia",
+  "b": "Southeast Asia",
+  "cos": 0.851,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "中亚"
+  ],
+  "wb": [
+   "东南亚"
+  ]
+ },
+ {
+  "a": "central city district",
+  "b": "city district",
+  "cos": 0.85,
+  "entail": 0.006,
+  "contra": 0.002,
+  "wa": [
+   "市中区"
+  ],
+  "wb": [
+   "城区"
+  ]
+ },
+ {
+  "a": "to get rich",
+  "b": "to make money",
+  "cos": 0.85,
+  "entail": 0.037,
+  "contra": 0.004,
+  "wa": [
+   "发家"
+  ],
+  "wb": [
+   "找钱"
+  ]
+ },
+ {
+  "a": "a local",
+  "b": "local",
+  "cos": 0.85,
+  "entail": 0.936,
+  "contra": 0.003,
+  "wa": [
+   "本地人"
+  ],
+  "wb": [
+   "地方性",
+   "本地"
+  ]
+ },
+ {
+  "a": "Hongshan District",
+  "b": "Tianshan District",
+  "cos": 0.85,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "红山区"
+  ],
+  "wb": [
+   "天山区"
+  ]
+ },
+ {
+  "a": "Kaiping City",
+  "b": "Kaiping District",
+  "cos": 0.85,
+  "entail": 0.006,
+  "contra": 0.979,
+  "wa": [
+   "开平市"
+  ],
+  "wb": [
+   "开平区"
+  ]
+ },
+ {
+  "a": "university",
+  "b": "university city",
+  "cos": 0.85,
+  "entail": 0.019,
+  "contra": 0.014,
+  "wa": [
+   "大学"
+  ],
+  "wb": [
+   "大学城"
+  ]
+ },
+ {
+  "a": "to get up",
+  "b": "to get up from bed",
+  "cos": 0.85,
+  "entail": 0.159,
+  "contra": 0.001,
+  "wa": [
+   "起来"
+  ],
+  "wb": [
+   "下地"
+  ]
+ },
+ {
+  "a": "east and west",
+  "b": "west",
+  "cos": 0.85,
+  "entail": 0.014,
+  "contra": 0.683,
+  "wa": [
+   "东西方",
+   "东西"
+  ],
+  "wb": [
+   "右",
+   "西"
+  ]
+ },
+ {
+  "a": "East China sea",
+  "b": "the China Seas",
+  "cos": 0.85,
+  "entail": 0.013,
+  "contra": 0.24,
+  "wa": [
+   "东中国海"
+  ],
+  "wb": [
+   "中国海"
+  ]
+ },
+ {
+  "a": "East China Sea",
+  "b": "the China Seas",
+  "cos": 0.85,
+  "entail": 0.007,
+  "contra": 0.425,
+  "wa": [
+   "东海"
+  ],
+  "wb": [
+   "中国海"
+  ]
+ },
+ {
+  "a": "not able",
+  "b": "unable to",
+  "cos": 0.85,
+  "entail": 0.984,
+  "contra": 0.003,
+  "wa": [
+   "不会"
+  ],
+  "wb": [
+   "无法"
+  ]
+ },
+ {
+  "a": "cannot",
+  "b": "not able",
+  "cos": 0.85,
+  "entail": 0.98,
+  "contra": 0.003,
+  "wa": [
+   "不可",
+   "不克"
+  ],
+  "wb": [
+   "不会"
+  ]
+ },
+ {
+  "a": "appliance",
+  "b": "home appliance",
+  "cos": 0.849,
+  "entail": 0.006,
+  "contra": 0.001,
+  "wa": [
+   "电器"
+  ],
+  "wb": [
+   "家用电器"
+  ]
+ },
+ {
+  "a": "foreign language",
+  "b": "language",
+  "cos": 0.849,
+  "entail": 0.001,
+  "contra": 0.01,
+  "wa": [
+   "外文",
+   "外语"
+  ],
+  "wb": [
+   "语"
+  ]
+ },
+ {
+  "a": "to go to school",
+  "b": "to start school",
+  "cos": 0.849,
+  "entail": 0.96,
+  "contra": 0.002,
+  "wa": [
+   "上学"
+  ],
+  "wb": [
+   "开学"
+  ]
+ },
+ {
+  "a": "a few",
+  "b": "only a few",
+  "cos": 0.849,
+  "entail": 0.944,
+  "contra": 0.002,
+  "wa": [
+   "一二",
+   "几个"
+  ],
+  "wb": [
+   "有数"
+  ]
+ },
+ {
+  "a": "Donghai County",
+  "b": "Dongshan County",
+  "cos": 0.849,
+  "entail": 0.002,
+  "contra": 0.996,
+  "wa": [
+   "东海县"
+  ],
+  "wb": [
+   "东山县"
+  ]
+ },
+ {
+  "a": "intersection",
+  "b": "intersection number",
+  "cos": 0.848,
+  "entail": 0.017,
+  "contra": 0.015,
+  "wa": [
+   "马路口",
+   "十字路口"
+  ],
+  "wb": [
+   "相交数"
+  ]
+ },
+ {
+  "a": "Haicheng District",
+  "b": "Shangcheng District",
+  "cos": 0.848,
+  "entail": 0.0,
+  "contra": 0.999,
+  "wa": [
+   "海城区"
+  ],
+  "wb": [
+   "上城区"
+  ]
+ },
+ {
+  "a": "moral",
+  "b": "morality",
+  "cos": 0.848,
+  "entail": 0.993,
+  "contra": 0.001,
+  "wa": [
+   "寓意"
+  ],
+  "wb": [
+   "道德",
+   "道义"
+  ]
+ },
+ {
+  "a": "Zhongshan",
+  "b": "Zhongshan District",
+  "cos": 0.848,
+  "entail": 0.114,
+  "contra": 0.008,
+  "wa": [
+   "中山"
+  ],
+  "wb": [
+   "中山区"
+  ]
+ },
+ {
+  "a": "door",
+  "b": "house door",
+  "cos": 0.848,
+  "entail": 0.003,
+  "contra": 0.002,
+  "wa": [
+   "门",
+   "门子"
+  ],
+  "wb": [
+   "家门"
+  ]
+ },
+ {
+  "a": "to look",
+  "b": "to look at",
+  "cos": 0.848,
+  "entail": 0.803,
+  "contra": 0.007,
+  "wa": [
+   "长得"
+  ],
+  "wb": [
+   "看"
+  ]
+ },
+ {
+  "a": "to go through",
+  "b": "to pass through",
+  "cos": 0.848,
+  "entail": 0.98,
+  "contra": 0.001,
+  "wa": [
+   "通"
+  ],
+  "wb": [
+   "经",
+   "通行"
+  ]
+ },
+ {
+  "a": "central district",
+  "b": "district",
+  "cos": 0.848,
+  "entail": 0.002,
+  "contra": 0.003,
+  "wa": [
+   "中区",
+   "中心区"
+  ],
+  "wb": [
+   "分区"
+  ]
+ },
+ {
+  "a": "to open",
+  "b": "to open and close",
+  "cos": 0.847,
+  "entail": 0.008,
+  "contra": 0.003,
+  "wa": [
+   "打开",
+   "开通"
+  ],
+  "wb": [
+   "开合"
+  ]
+ },
+ {
+  "a": "Chinese",
+  "b": "Mandarin Chinese",
+  "cos": 0.847,
+  "entail": 0.005,
+  "contra": 0.002,
+  "wa": [
+   "语文"
+  ],
+  "wb": [
+   "普通话",
+   "国语"
+  ]
+ },
+ {
+  "a": "to eat",
+  "b": "to have a meal",
+  "cos": 0.847,
+  "entail": 0.988,
+  "contra": 0.001,
+  "wa": [
+   "用",
+   "吃"
+  ],
+  "wb": [
+   "吃饭"
+  ]
+ },
+ {
+  "a": "adult",
+  "b": "an adult",
+  "cos": 0.847,
+  "entail": 0.984,
+  "contra": 0.001,
+  "wa": [
+   "大人",
+   "成年"
+  ],
+  "wb": [
+   "成人"
+  ]
+ },
+ {
+  "a": "Taichung",
+  "b": "Taichung city",
+  "cos": 0.847,
+  "entail": 0.542,
+  "contra": 0.003,
+  "wa": [
+   "台中"
+  ],
+  "wb": [
+   "台中市"
+  ]
+ },
+ {
+  "a": "Jinshan District",
+  "b": "Tianshan District",
+  "cos": 0.847,
+  "entail": 0.001,
+  "contra": 0.998,
+  "wa": [
+   "金山区"
+  ],
+  "wb": [
+   "天山区"
+  ]
+ },
+ {
+  "a": "automobile",
+  "b": "vehicle",
+  "cos": 0.847,
+  "entail": 0.61,
+  "contra": 0.006,
+  "wa": [
+   "自动车"
+  ],
+  "wb": [
+   "车子"
+  ]
+ },
+ {
+  "a": "morality",
+  "b": "social morality",
+  "cos": 0.847,
+  "entail": 0.001,
+  "contra": 0.003,
+  "wa": [
+   "道德",
+   "道义"
+  ],
+  "wb": [
+   "公德"
+  ]
+ },
+ {
+  "a": "beginning",
+  "b": "to begin",
+  "cos": 0.847,
+  "entail": 0.983,
+  "contra": 0.001,
+  "wa": [
+   "开头"
+  ],
+  "wb": [
+   "开始"
+  ]
+ },
+ {
+  "a": "mountain",
+  "b": "mountain top",
+  "cos": 0.847,
+  "entail": 0.211,
+  "contra": 0.008,
+  "wa": [
+   "山"
+  ],
+  "wb": [
+   "山头"
+  ]
+ },
+ {
+  "a": "high interest",
+  "b": "interest",
+  "cos": 0.847,
+  "entail": 0.001,
+  "contra": 0.003,
+  "wa": [
+   "重利"
+  ],
+  "wb": [
+   "来头",
+   "兴趣"
+  ]
+ },
+ {
+  "a": "calligraphy",
+  "b": "calligraphy society",
+  "cos": 0.847,
+  "entail": 0.006,
+  "contra": 0.01,
+  "wa": [
+   "书法"
+  ],
+  "wb": [
+   "书会"
+  ]
+ },
+ {
+  "a": "Jinmen county in Quanzhou 泉州[Quan2 zhou1], Fujian, PRC",
+  "b": "Tiantai county in Taizhou 台州[Tai1 zhou1], Zhejiang",
+  "cos": 0.847,
+  "entail": 0.0,
+  "contra": 0.998,
+  "wa": [
+   "金门"
+  ],
+  "wb": [
+   "天台"
+  ]
+ },
+ {
+  "a": "person",
+  "b": "someone",
+  "cos": 0.847,
+  "entail": 0.994,
+  "contra": 0.001,
+  "wa": [
+   "人",
+   "东西"
+  ],
+  "wb": [
+   "有人"
+  ]
+ },
+ {
+  "a": "to pull",
+  "b": "to pull up",
+  "cos": 0.847,
+  "entail": 0.021,
+  "contra": 0.003,
+  "wa": [
+   "拉",
+   "拉动"
+  ],
+  "wb": [
+   "拉高"
+  ]
+ },
+ {
+  "a": "simultaneous",
+  "b": "simultaneously",
+  "cos": 0.846,
+  "entail": 0.994,
+  "contra": 0.001,
+  "wa": [
+   "平行"
+  ],
+  "wb": [
+   "一头"
+  ]
+ }
+]

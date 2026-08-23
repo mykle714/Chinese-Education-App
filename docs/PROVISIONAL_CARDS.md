@@ -60,21 +60,26 @@ vetPlayableClause(alias?)    // "starterPackBucket" IN ('library','provisional')
 vetProvisionalClause(alias?) // "starterPackBucket" = 'provisional'
 ```
 
-**The rule of thumb:**
+**The rule of thumb (revised 2026-08-20):**
 
-* Does the query answer *"what is in MY deck?"* → **SORTED**.
-  Deck lists, search, counts shown as deck size, reader-token ownership, related-words,
-  the community feed, the discover level estimate.
-* Does it answer *"what can I put in front of the player right now?"* → **PLAYABLE**.
-  Game pools and the flp working loop, and nothing else.
+* Does the query **select cards**, for any purpose at all? → **SORTED**. That now
+  includes the game pools and the flp working loop, which used to be the whole of
+  PLAYABLE. A lent card reaches a round by being **named** (`lentIds` / `fetchRowsByIds`),
+  never by satisfying a bucket predicate — see § 4b.
+* Is it supply that is **not** card selection? → PLAYABLE. Exactly one read qualifies:
+  Speed Reading's distractor *characters*, which decorate a round rather than being
+  studied in it, and which a near-empty deck must still be able to produce.
 
 Current classification (all call sites):
 
 | Read | Clause | Where |
 |---|---|---|
-| `fetchGameCandidates` (all game pools) | PLAYABLE | `OnDeckVocabService.ts` |
-| `fetchFlpCandidates` (flp loop **and** refill — one shared source) | PLAYABLE | `OnDeckVocabService.ts` |
-| `getLibraryDistractors` (Speed Reading filler) | PLAYABLE | `SpeedReadingDAL.ts` |
+| `fetchGameCandidates` (all game pools) | SORTED **+ `lentIds`** | `OnDeckVocabService.ts` |
+| `fetchFlpCandidates` (flp loop **and** refill — one shared source) | SORTED **+ `lentIds`** | `OnDeckVocabService.ts` |
+| `fetchRowsByIds` (the lend tier's own read) | BY ID | `OnDeckVocabService.ts` |
+| `countSorted` (what the baseline is compared against) | SORTED | `ProvisionalCardDAL.ts` |
+| `findHeldProvisional` (the re-lend source) | PROVISIONAL | `ProvisionalCardDAL.ts` |
+| `getLibraryDistractors` (Speed Reading filler characters) | PLAYABLE | `SpeedReadingDAL.ts` |
 | `getLibraryCards` / `getMastered…` / `getNonMastered…` | SORTED | `OnDeckVocabService.ts` |
 | `getCategoryCounts` (decks page deck sizes) | SORTED | `OnDeckVocabService.ts` |
 | `findByUserIdAndLanguage`, `countByUserIdAndLanguage`, `searchEntries`, `findByDifficultyLevel`, `bulkFindByKeys`, `findByTokens`, `findEntriesCreatedAfter`, `findRelatedBySharedCharacters`, `findUsedInForCharacter` | SORTED | `VocabEntryDAL.ts` |
@@ -119,60 +124,57 @@ discoverable word gets `shortfall > 0` and a smaller round. Never a block screen
 
 ---
 
-### 3b. Re-lend before minting (app-wide, 2026-08-18)
+### 3b. Re-lend before minting (unconditional since 2026-08-20)
 
-*Code: `ProvisionalCardService.lendCards`, `ProvisionalCardDAL.findCandidates`.*
+*Code: `ProvisionalCardService.acquireLentCards` (policy),
+`ProvisionalCardDAL.findHeldProvisional` (the re-lend query),
+`ProvisionalCardDAL.findCandidates` (the mint query),
+`OnDeckVocabService.fetchRowsByIds` (turning ids back into rows).*
 
 `findCandidates` refuses any word the learner already holds **in either bucket** —
 `'library'` means it is in their deck, `'provisional'` means it is already lent. That
 is correct for *minting* a new row, but it made minting the **only** thing lending
 ever did, so every unfilled slot grew the provisional holding by one row forever.
 
-Lending is now two steps, in order:
+Every lend is now two steps, in order:
 
-1. **Re-lend** — draw from the provisional rows the learner **already holds** and that
-   are **off cooldown**.
-2. **Mint** — only when step 1 cannot cover the shortfall, create new rows via
-   `findCandidates` exactly as before.
+1. **Re-lend** — hand back provisional rows the learner **already holds**, nearest the
+   target difficulty first. Costs nothing, mints nothing, and the row carries whatever
+   marks it collected the last time it was out.
+2. **Mint** — only what step 1 could not cover, via `findCandidates` as before.
 
-The cooldown is **never broken** to re-lend: a held provisional card that is still
-resting is skipped and step 2 runs instead. Re-lending is a cheaper way to fill a
-slot, not a licence to re-serve a resting card.
+`acquireLentCards` returns `lentIds` (both steps) plus `granted`/`grantedWords` for the
+**minted** half alone — the "we lent you these cards" notice is about words the learner
+is seeing for the first time; a re-lent row was announced when it was first minted.
 
-The rule is **app-wide**, but it attaches to the *tier-targeted draw*, not to
-`lendCards`. This distinction was found while implementing it (2026-08-18) and is a
-correctness constraint, not a preference:
+**Why it became unconditional.** Until 2026-08-20 re-lending ran only for a
+*tier-targeted* draw (Hydra asking for a colour), on the reasoning that every other
+caller could already reach its held provisional rows through the ordinary pool query,
+which was `vetPlayableClause`. That reasoning died with § 4b: selection is sorted-only
+now, so a held row is invisible to every ordinary query, and mint-only lending would
+have grown the bucket by a fresh batch on **every** round. Re-lending is what caps the
+bucket at the learner's true deficit.
 
-* **`lendCards` mints, and must keep minting.** Its contract is "make `N` more
-  playable rows exist", and `ensureBaseline` is built on that — it compares
-  `countPlayable` before and after. A re-lent card is **already** playable, so it adds
-  nothing to that count. Folding re-lend into `lendCards` would let it report `granted
-  = 5` while the learner gained zero playable cards, and `ensureBaseline` would stop
-  short of the baseline believing it had succeeded.
-* **A tier-targeted draw names a card, and should re-lend first.** "Give me a card at
-  tier 2 to put on the board" is answered perfectly well by a card the learner already
-  holds. Here re-lending is the whole point, and minting is the fallback.
+It is also what makes `countSorted` safe as the baseline's measure (§ 4b): a learner
+who is 16 cards short is topped up from the 16 they already hold, not with 16 new ones,
+however many times they enter.
 
-> The two also read different sources, which is why the ordinary path loses nothing by
-> being mint-only. A held provisional card that is off cooldown is *already* reachable
-> by the normal pool query (`fetchGameCandidates` is PLAYABLE), so in an ordinary round
-> it is drawn at fill tier 1 or 3 and never reaches the lend step. Re-lending only
-> changes an outcome where the pool query could not use the card — which is exactly the
-> tier-targeted case, because no ordinary query selects by difficulty.
+**Cooldown.** Re-lending is a cheaper way to fill a slot, not a licence to re-serve a
+resting card. `findHeldProvisional` does not filter on cooldown — that is per-surface,
+since each cools on the mark type it emits — so the filtering happens where the rows
+are turned back into cards: `fetchRowsByIds` drops any that are still resting (unless the
+caller says the ids are an obligation — see its `ignoreCooldown`, which only a Study
+Challenge board passes), exactly
+as `fetchGameCandidates` splits fresh from cooled.
 
-Net effect on the "no cap on outstanding lent cards" trade above: unchanged for every
-surface that exists today, and bounded for Hydra Bubbles, whose long runs would
-otherwise mint a row per unfilled color slot forever.
-
-**Status: BUILT 2026-08-18, with Hydra Bubbles.** `OnDeckVocabService.fetchRelendable`
-is the re-lend query; `lendGameCandidates` runs it before minting whenever the caller
-supplied a tier. Cooldown is filtered in app code (`isTypeOnCooldown`) rather than SQL,
-because that is where the cooldown lives.
+**Status: BUILT.** Tier-targeted since 2026-08-18 (with Hydra Bubbles), unconditional
+since 2026-08-20. `OnDeckVocabService.fetchRelendable` is gone — its SQL moved to the
+DAL as `findHeldProvisional`, which is where a query belongs.
 
 ### 3c. A lent card keeps its lend tier while it is lent
 
 A provisional card's **difficulty tier** is what a caller means when it asks to lend
-"a green card". The tier is *not stored* — there is no new column — it is derived at
+"an easier card" (Hydra's `bloom` tier asks for `L-1`, its `drain` tier for `L`). The tier is *not stored* — there is no new column — it is derived at
 read time from the det row's existing `difficulty` (1..6, already joined by
 `dictJoin.ts` and already present on `VocabEntry`) relative to the learner's estimated
 level `L` (`StarterPacksService.estimateLevel`).
@@ -203,8 +205,17 @@ There are **two triggers**, and they answer different questions:
 
 | Entry point | Question | Caller |
 |---|---|---|
-| `ensureBaseline(userId, language, N)` | "does this learner hold at least N playable cards?" | `OnDeckVocabController`, before assembling any set |
-| `lendCards(userId, language, n, mode, { level? })` | "mint exactly n, whatever they hold" — and, when `level` is given, mint them **around that difficulty** rather than around the learner's own estimated level | `OnDeckVocabService`, mid-algorithm, when the flp loop can't be filled; Hydra, when a rolled color has no uncooled card |
+| `ensureBaseline(userId, language, N)` | "has this learner SORTED at least N cards?" | `OnDeckVocabController`, before assembling any set |
+| `acquireLentCards(userId, language, n, mode, { level?, excludeIds? })` | "put n lent cards at this round's disposal" — re-lend first, mint the rest, return their ids | `OnDeckVocabService`, at the BOTTOM of every fill ladder (§ 4b); `getFillerPool`'s last rung |
+| `lendCards(userId, language, n, mode, { level? })` | "mint exactly n, whatever they hold" — the minting half, called only by `acquireLentCards` | `ProvisionalCardService`, internal |
+| `getFillerPool(userId, language, n, excludeWords)` | "n cards to PAD a board with, easiest first" — the `mastered-first` ladder: Mastered (most recently mastered first) → Comfortable → Target → Unfamiliar → lend. Returns vet ids in ladder order | `OnDeckVocabService.getChallengeGamePool` and `getWordSearchGrid`'s challenge branch, i.e. every Study Challenge board (docs/STUDY_CHALLENGE.md § 5.2) |
+
+⚠️ **`getFillerPool` is the odd one out: it lends LAST but it is not really about
+lending.** The other two answer "does this learner have enough cards"; this one answers
+"which of their own cards should pad a board that is measuring something ELSE" — a
+challenge round measures its twelve contested words, so its filler must not be a source
+of difficulty. Lending is merely its final rung, reached by a brand-new player and by
+nobody else.
 
 `level` is a **centre, not a filter**. `findCandidates` orders by
 `ABS(difficulty - level)`, so an exhausted level widens outward instead of returning
@@ -218,20 +229,20 @@ not exposed to the client and there is no reason to expose it), while the per-co
 offsets are the calling game's own design. Hydra sends `?lendLevelOffset=` and the
 server resolves it — the alternative was an endpoint whose only job was to ship `L`
 out so the client could send a level back that the server already had. The clamp into
-1..6 inside `resolveLendLevel` is also what implements Hydra's "floored at L <= 4"
-rule, with no special case for a beginner.
+1..6 inside `resolveLendLevel` is also what implements Hydra's floor — at `L = 1` both
+of its colours land on level 1 — with no special case for a beginner.
 
-`lendCards` exists because the baseline **cannot express the flp's case**. A learner with
-400 sorted cards is far past the 20-card flp baseline, so `ensureBaseline` no-ops — yet
-if every one of those cards is resting on its per-type cooldown, the working loop has
-nothing to serve. The loop honors the cooldown and asks for the difference instead of
-re-serving a resting card. See § 6 and docs/MASTERY_REWORK.md § 6.
+**The cooldown-exhaustion case no longer lends** (2026-08-20). A learner with 400 sorted
+cards is far past the 20-card flp baseline, so `ensureBaseline` no-ops — and if every one
+of those cards is resting, the loop now **re-serves the cooling ones** rather than asking
+for the difference in lent cards. See § 4b; this was the single largest source of
+unexpected lending.
 
-Consequence worth knowing: **lending is now a routine event, not just a cold-start one**,
-and there is deliberately **no cap** on outstanding lent cards. A learner who studies hard
-and never sorts can accumulate a large provisional holding. That is the accepted trade —
-the same "never block" principle that created provisional cards in the first place — and
-the end-of-session "sort these cards" CTA is the pressure valve.
+Consequence worth knowing: **lending is a cold-start event again**, not a routine one.
+There is still no hard cap on outstanding lent cards, but the two mechanisms in § 3b and
+§ 4b bound it in practice — re-lending covers a repeat deficit from rows the learner
+already holds, and a learner with cards of their own never reaches the lend tier at all.
+The end-of-session "sort these cards" CTA remains the pressure valve.
 
 `OnDeckVocabController` calls `ensureBaseline` **before** assembling any set:
 
@@ -265,94 +276,130 @@ the set the learner chose, rolling supply or not.
 An unrecognized or missing `surface` param (an older client) falls back to the requested
 distribution's own total, so it still never blocks.
 
-### 4b. Lend before you borrow — where lending sits in the selection order
+### 4b. Lend LAST — where lending sits in the selection order
 
 *Code: `OnDeckVocabService` → `getDistributedWorkingLoop`, `getNextLibraryCardWithFallback`,
-`getGameVocabPool`, `getWordSearchGrid`, `lendGameCandidates`, `lendIntoLoop`.*
+`getGameVocabPool`, `getWordSearchGrid`, `lendGameCandidates`, `lendIntoLoop`,
+`fetchRowsByIds`; `ProvisionalCardService` → `ensureBaseline`, `acquireLentCards`.*
 
-Every card-serving surface asks its **requested bucket** first (the flp's per-category
-quotas, a game's `distribution`). When that bucket cannot fill its share, the surface
-**lends before it borrows from another bucket** — decided 2026-08-17. Lending sits at
-tier 2 everywhere:
+**The rule (2026-08-20).** Lending exists for a learner who **has not sorted enough
+cards**, and for nothing else. A learner with a real deck whose cards are merely
+*resting* is not short of cards: the surfaces **re-serve their cooling cards** instead.
+
+So lending is the **bottom** of every fill ladder:
 
 | Tier | flp working loop | Game pool / Word Search grid |
 |---|---|---|
 | 1 | each quota, from its own category (longest-waiting first) | each requested bucket, FRESH cards only |
-| **2** | **lend the shortfall** (re-lend, then mint — § 3b) | **lend only the part of the shortfall tier 3 cannot cover** (re-lend, then mint — § 3b) |
-| 3 | borrow across categories in the mode's `fillOrder` | borrow FRESH cards in `GAME_FALLBACK_ORDER` |
-| 4 | — (a cooling card is never re-served on the flp) | COOLED cards (requested buckets → fallback) |
-| 5 | — | soft-`avoid`ed cards (just cleared) |
+| 2 | borrow across categories in the mode's `fillOrder` | borrow FRESH cards in `GAME_FALLBACK_ORDER` |
+| 3 | **COOLED cards**, nearest-to-ready first (`rankCardQueueCooled`) | COOLED cards (requested buckets → fallback) |
+| 4 | — | soft-`avoid`ed cards (just cleared) |
+| **5** | **lend** (re-lend, then mint — § 3b) | **lend** (re-lend, then mint — § 3b) |
 
-#### The games' tier 2 is capped by what tier 3 holds (2026-08-19)
+Two things moved on 2026-08-20:
 
-On the two GAME surfaces, tier 2 no longer lends the whole shortfall. It lends
+* **lending fell from tier 2 to tier 5**, replacing the 2026-08-17 "lend before you
+  borrow" rule and its 2026-08-19 narrowing (which capped the games' tier-2 lend by
+  what the borrow pass still held — a patch on the ordering rather than a fix to it);
+* **the flp gained a cooled tier**, which it never had. A loop that could not be filled
+  from rested cards previously either minted new words or came back short.
+
+#### Why lend-first was wrong
+
+A quota underfills far more often than "its category is spent". It underfills whenever
+the learner's deck is **shaped** differently from the quota:
+
+* the flp Mix loop asks for 1 `Mastered` + 2 `Comfortable`, which a young deck simply
+  does not have — so every load minted cards, and every correct mark minted another
+  (`getNextLibraryCardWithFallback` lent one card per refill: 14 lends in a single dev
+  session);
+* a game buckets by the track it **emits** (§ *Games select by their own mark type*,
+  [MASTERY_REWORK.md](./MASTERY_REWORK.md)). Speed Reading emits READING marks, and a
+  typical learner has almost no reading history, so *every* card bands `Unfamiliar` on
+  that track and 18 of its 20 quota slots are unfillable **on a library of any size**.
+  A minted row is itself `Unfamiliar`, so lending could never close them: every load lent
+  ~18 more, permanently. A dev account with a 20-card library accumulated **450**
+  provisional rows; another, holding 185 real cards, had been lent **184**.
+
+The replacement is not a cap or a subtraction — it is the ordering. A cooling card of
+the learner's own is a better answer to "I have nothing fresh to show" than a word they
+have never chosen, and it is always available to a learner who has cards at all.
+
+#### What the cooled tier costs
+
+A mark fired at a still-cooling track is **dropped** at `POST /api/flashcards/mark`
+(the hard "next markable at" guard — [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 8). So
+tier-3 cards **play but earn nothing**, and on the flp a suppressed mark returns
+`newCard: null`, which winds the loop down rather than refilling it.
+
+That is the intended shape: the cooldown exists precisely so that re-answering a card
+inside its window earns nothing, and a learner who has reviewed their whole deck today
+should reach the end of the session rather than be handed an endless supply of borrowed
+words. It is tracked, not silent — the `[MarkSuppressed]` log carries the serving
+surface so tier-3 suppression can be told apart from the deck/collection suppression
+that is intended.
+
+#### Provisional rows are not ordinary candidates
+
+The ordering alone would not have been enough. Lent rows are **never on cooldown** and
+**always band `Unfamiliar`**, so once a few had accumulated they out-competed the
+learner's own cards in every round, forever — which is why the dev accounts above were
+playing almost entirely on borrowed words even on loads that lent nothing new.
+
+So every selection query is now **sorted-only** (`vetSortedClause`), and a lent card
+enters a round only by being **named**:
 
 ```
-lendNeed = target − (cards filled at tier 1) − (FRESH cards still queued for tier 3)
+ensureBaseline / acquireLentCards  →  lentIds: number[]
+                                   ↓
+  candidate queries admit them:  (vetSortedClause() OR ve.id = ANY($n))
+  or address them directly:      fetchRowsByIds(ids)
 ```
 
-and skips lending entirely when that is ≤ 0. **A learner with playable cards is never
-minted new ones.**
+`lentIds` threads from the controller's baseline top-up into `getGameVocabPool`,
+`getWordSearchGrid` and `getDistributedWorkingLoop`; the tier-5 lend inside those
+methods gets its own ids back from `acquireLentCards`. **A surface that forgets to pass
+them will not see the cards it was just lent.**
 
-*Why the original rule had to be narrowed.* It rested on the claim quoted below — a
-quota underfills only when its own category is spent — and that claim is **false for a
-game whose mark track is sparsely populated**. A game buckets by the track it emits
-(§ *Games select by their own mark type*, [MASTERY_REWORK.md](./MASTERY_REWORK.md)).
-Speed Reading emits READING marks, and a typical learner has almost no reading history,
-so *every* card bands `Unfamiliar` on that track. Its inherited 2/10/6/2 distribution
-therefore leaves **18 of 20 quota slots unfillable on a library of any size** — and
-because a minted row is itself always `Unfamiliar`, lending could never close them.
-Every single load lent another ~18 cards, permanently. A dev account with a 20-card
-library had accumulated **450** provisional rows; another, holding 151 fresh
-reading-`Unfamiliar` cards, had been lent 170 more.
+#### The baseline counts SORTED cards
 
-Word Search No-Pinyin has the identical shape (it also emits reading marks) and gets the
-same cap. Its de-dup pass can still come up short after under-lending; the controller's
-`PROVISION_RETRY_FACTOR` loop already re-enters with an escalated baseline for that.
+`ProvisionalCardService.ensureBaseline` compares the baseline against
+`countSorted` — the learner's `'library'` rows alone. It used to count outstanding
+provisional rows too, which made the baseline unfalsifiable: the account with 4 sorted
+and 184 lent rows read as "well past baseline", so it was never topped up and every
+round was played on borrowed words.
 
-**Unaffected:** a single-bucket caller (Hydra Bubbles). Its `fallbackOrder` collapses to
-the one requested bucket, which tier 1 has already drained, so the subtrahend is 0 and
-tier 2 behaves exactly as before.
+Counting sorted cards only is safe **because of § 3b**: the lend path re-lends rows the
+learner already holds before it mints anything, so the deficit is covered from the
+existing bucket rather than by a fresh batch each time. Measured on a 4-sorted-card
+account, four consecutive Speed Reading entries minted **16 rows once** and re-lent the
+same 16 on every subsequent entry.
 
-**Also unaffected: the flp working loop**, which keeps the unconditional 2026-08-17 rule.
-There the original claim does hold — the flp buckets by the CORE bar (dense for anyone
-who studies) and never re-serves a cooling card, so a short quota really does mean
-"spent", and lending is the only alternative to a short loop.
+#### Who still reaches tier 5
 
-**A newly minted card is always `Unfamiliar`** — it has no mark history — so this
-deliberately skews a short round toward `Unfamiliar` instead of skewing it toward
-whichever bucket happened to have surplus. That is the point: a brand-new word is closer
-to what the missing quota was asking for than another bucket's leftovers.
+* a genuinely **under-supplied** learner whose baseline top-up could not cover the board
+  (dictionary supply exhausted);
+* **Hydra Bubbles**, whose every spawn is a refill and whose colour ladder is built on
+  lending ([HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 6.2). It now pulls cooling cards
+  before it lends, like everything else — but a colour whose buckets the learner has
+  *no* cards in at all (a beginner's `bloom` tier = `Mastered` + `Comfortable`) still lends,
+  which is the ladder working as designed;
+* **Word Search**, via the controller's `PROVISION_RETRY_FACTOR` escalation — the one
+  surface where meeting the baseline does not guarantee a playable round (§ 6).
 
-Since § 3b, a lent card is **not** always Unfamiliar: a re-lent card carries whatever
-history it earned the last time it was out. Any code that assumed "lent ⇒ Unfamiliar"
-(the `canLendProvisional` rationale in `OnDeckVocabService`, and the tier-2 skew
-argument above) holds only for the minting half.
+Two sessions never reach it:
 
-Note the ordering only bites when a quota **underfills**. The 2026-08-17 rationale was
-that a quota underfills exactly when its own category is spent — so tier 3 could never
-have served that same category anyway, and the real choice being made is *"lend"* vs
-*"deepen a different bucket"*. That still describes the **flp**; on the game surfaces it
-was wrong, and the cap above is the correction.
+* **collection-restricted rounds** (`?deck=`, `?collection=`) — a deck round made of
+  non-deck words is not that deck. They *do* reach tier 3 now, so a deck whose cards are
+  all resting replays them instead of showing an empty round;
+* **partial game refills** (`need` is set) for games that keep the exemption — Bubble
+  Match's *Play Again*. A rolling-supply surface (Hydra Bubbles) opts out and may lend
+  on a refill.
 
-A **single-bucket** request (Hydra Bubbles asking for one color) does not reach tier 3
-at all — for that caller tiers 3–5 collapse to the requested bucket, because a
-substituted bucket is a card whose category the caller misreports. See
-[GAMES_FEATURE.md](./GAMES_FEATURE.md) and [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md)
-§ 6.2d. Its tier 4 therefore carries real weight: cooling cards of the requested
-category are preferred over any other category's fresh ones.
-
-Two sessions skip tier 2 entirely and fall straight to tier 3:
-
-* **collection-restricted rounds** (`?deck=`, `?collection=`) — see the table in § 6;
-* **partial game refills** (`need` is set) for games that keep the exemption —
-  Bubble Match's *Play Again*. A game with a rolling supply (Hydra Bubbles) opts out
-  and lends on refills like any other fetch.
-
-There is still **no absolute cap** on how much a single round may lend; whatever tier 2
-asks for after the subtraction above is lent in full. On a small library that grows the provisional holding quickly, which is the accepted
-cost of never re-serving a resting card (see the "no cap" note above) — though § 3b's
-re-lend step now absorbs much of that growth on repeat sessions.
+Since § 3b a lent card is **not** always `Unfamiliar`: a re-lent card carries whatever
+history it earned the last time it was out. Any code that assumes "lent ⇒ Unfamiliar"
+(the `canLendProvisional` rationale in `OnDeckVocabService`) holds only for the minting
+half.
 
 ---
 
@@ -483,8 +530,16 @@ express that, so meeting the baseline does *not* guarantee a buildable grid.
 
 `OnDeckVocabController.getWordSearchGrid` therefore escalates: build the grid, and while
 it comes back insufficient, provision at `1×`, `2×`, `3×` the baseline
-(`PROVISION_RETRY_FACTOR`) and retry. It stops early when the reason is `'language'`
-(zh-only, unfixable) or when a top-up grants nothing (dictionary exhausted).
+(`PROVISION_RETRY_FACTOR`) and retry, accumulating the `lentIds` across attempts (§ 4b —
+an id dropped from that list is a card the grid can no longer see). It stops early when
+the reason is `'language'` (zh-only, unfixable).
+
+An escalation that yields no new ids **continues to the next multiplier** rather than
+breaking out. This matters since the baseline started counting SORTED cards: a learner
+already past the flat baseline gets nothing at `1×`, and it is the escalation that
+unblocks them — breaking early left them with an empty grid. The loop still ends after
+`PROVISION_RETRY_FACTOR` attempts, and a top-up that yields nothing at the highest
+multiplier means the dictionary is exhausted.
 
 Reaching the end of that ladder is a genuine dead end, so the copy says so plainly
 ("there aren't enough words with distinct characters left — try another game") rather
@@ -671,21 +726,23 @@ Two reasons, and the second is the important one:
   selection writes a DURABLE placement row — the word takes a permanent spot on a map
   meant to portray the learner's own library. A borrowed word does not belong there.
 
-That second point makes Memory Map **the app's only game that selects on
-`vetSortedClause()`** rather than `vetPlayableClause()`. The rule of thumb in
-`vetTable.ts` still holds — "if it answers *what can I put in front of the player right
-now?* it is PLAYABLE" — because Memory Map is asking a different question: *what belongs
-on this learner's map forever?* When a future surface's selection creates something that
-outlives the session, it should reach for SORTED for the same reason.
+That second point made Memory Map the **first** game to select on `vetSortedClause()`.
+Since 2026-08-20 every game does (§ 4b), so Memory Map is no longer the exception — but
+it remains the strictest case: the others admit lent rows by id when a round genuinely
+has to borrow, and Memory Map admits none at all, because its selection creates
+something that outlives the session. A future surface whose selection writes a durable
+artifact should do the same.
 
 ## 8. Layering map
 
 | Layer | File | Responsibility |
 |---|---|---|
 | Contract | `server/contracts/wire.ts` | `CARD_BASELINES`, `CARD_BASELINE_ITEMIZED`, `PROVISION_RETRY_FACTOR`, `StarterPackBucket` |
-| DAL (shared SQL) | `server/dal/shared/vetTable.ts` | `vetSortedClause` / `vetPlayableClause` / `vetProvisionalClause` |
-| DAL | `server/dal/implementations/ProvisionalCardDAL.ts` (+ `interfaces/IProvisionalCardDAL.ts`) | candidate query, bulk insert, playable count, key list |
-| Service | `server/services/ProvisionalCardService.ts` | how many to lend, when, the two-pass skip recycle, the sort set |
+| DAL (shared SQL) | `server/dal/shared/vetTable.ts` | `vetSortedClause` / `vetProvisionalClause` (`vetPlayableClause` survives for Speed Reading's distractor characters only — § 2) |
+| DAL | `server/dal/implementations/ProvisionalCardDAL.ts` (+ `interfaces/IProvisionalCardDAL.ts`) | mint candidate query, bulk insert, `countSorted`, `findHeldProvisional` (re-lend source), key list |
+| Service | `server/services/ProvisionalCardService.ts` | how many to lend, when, re-lend-then-mint (`acquireLentCards`), the two-pass skip recycle, the sort set |
+| Service | `server/services/OnDeckVocabService.ts` | the fill ladders (§ 4b), `fetchRowsByIds` — the only read that surfaces a lent row into a round — and `getChallengeGamePool` (docs/STUDY_CHALLENGE.md § 5.2a) |
+| Service (pure) | `server/services/cardQueueRanking.ts` | `rankCardQueue` (rested, longest-waiting first) and `rankCardQueueCooled` (resting, nearest-to-ready first — the flp's tier 3) |
 | Service | `server/services/StarterPacksService.ts` | `getCardsForWords`, in-place promotion, undo demotion |
 | Controller | `server/controllers/OnDeckVocabController.ts` | `ensureBaseline` before every set; Word Search retry ladder |
 | Controller | `server/controllers/StarterPacksController.ts` | `GET /api/starterPacks/:language/provisionalSet` |

@@ -206,9 +206,9 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   would compete with it. (The flp still offers it for drilled-in words.)
 - **Sheet geometry.** The sheet is hosted by `EipHost`, absolutely positioned against
   `ContentArea` (which is `position: relative` for exactly this reason) and stretched
-  `bottom: -FLOATING_FOOTER_CLEARANCE`. Without that negative bottom the sheet would
-  float 108px above the screen edge, because `MobileTabScreen`'s ScrollArea reserves
-  that band for the floating footer pill; `OnDeckSection` uses the same trick to paint
+  `bottom: -FOOTER_CLEARANCE`. Without that negative bottom the sheet would
+  float 90px above the screen edge, because `MobileTabScreen`'s ScrollArea reserves
+  that band for the footer bar; `OnDeckSection` uses the same trick to paint
   its platform under the pill. `SheetPanel` sizes itself from
   `parentElement.clientHeight`, so `EipHost` is what caps the sheet's height (measured:
   host 800px tall → sheet opens at 480px = the 0.6 default ratio, flush to the bottom

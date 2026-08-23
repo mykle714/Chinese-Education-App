@@ -20,6 +20,7 @@ import PracticeWritingButton from "../../../components/handwriting/PracticeWriti
 import { getCategoryColor } from "../../../utils/categoryColors";
 import { resolveTextColor, DD_TONES } from "../../../utils/cardTextColor";
 import { resolveCardColor } from "../../../utils/cardColor";
+import { COLORS } from "../../../theme/colors";
 
 /**
  * The reusable flashcard FACE — the visual card itself, independent of the drill.
@@ -294,9 +295,13 @@ export const CategoryChip: React.FC<{ category?: string }> = ({ category }) => {
                 py: 0.25,
                 borderRadius: '999px',
                 backgroundColor: color,
+                // The category colors are PASTELS post-redesign (docs/SHELF_REDESIGN.md,
+                // D2). The chip sits on the card's beige face, so it needs the ramp's
+                // inset ring to hold an edge, and ink rather than white for its label.
+                boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}`,
             }}
         >
-            <Typography sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: '#FFFFFF', fontFamily: FC_FONT, lineHeight: LEADING.normal, letterSpacing: TRACKING.wide }}>
+            <Typography sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: COLORS.onSurface, fontFamily: FC_FONT, lineHeight: LEADING.normal, letterSpacing: TRACKING.wide }}>
                 {category}
             </Typography>
         </Box>

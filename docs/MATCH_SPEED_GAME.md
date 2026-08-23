@@ -32,6 +32,7 @@ taps, a clock, and a board that keeps refilling.
 - [Difficulty modes (Study Mix / Review / Challenge)](#difficulty-modes-study-mix--review--challenge)
 - [Card selection: distribution + buffer](#card-selection-distribution--buffer)
 - [Backend change: per-card `gameCategory`](#backend-change-per-card-gamecategory)
+- [Study Challenge rounds: the alternation rule](#study-challenge-rounds-the-alternation-rule)
 - [Marks](#marks)
 - [Scoring and medals](#scoring-and-medals)
 - [End popup and cleanup phase](#end-popup-and-cleanup-phase)
@@ -442,7 +443,7 @@ asked to recognize, which is exactly what Review/Challenge mean on `/decks`.
 - **The bucket split is the `/decks` rule verbatim** — Review draws
   Comfortable+Mastered, Challenge draws Unfamiliar+Target
   (`src/features/flashcards/FlashcardsDecksPage.tsx`). Same rule, same
-  card colors on the hub (see [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md)).
+  card colors on the hub (see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)).
 - **Within a restricted mode the two buckets keep roughly their Study Mix ratio**
   (20:8 → 70:30, 12:60 → 20:80), so Challenge still leans on Target and Review still
   leans on Comfortable rather than flattening to 50/50.
@@ -649,6 +650,42 @@ the gate sees.
 
 ---
 
+## Study Challenge rounds: the alternation rule
+
+**Built 2026-08-22.** Match Speed is challenge-eligible (recognition), so it can be
+drawn as one of a test's three rounds — see
+[STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.3 for the rule's rationale and § 5.2a for
+the shared plumbing. What is specific to THIS game:
+
+**Why it needs a rule at all.** Every other eligible game has a fixed board, so "all
+twelve contested words appear in the round" is a fact about board composition. Match
+Speed deals from a rolling buffer into ten slots against a 30-second clock, so the same
+guarantee has to become a rule about the DEAL:
+
+> **Every other pair filled is a contested one, while any contested word is left
+> undealt.**
+
+**How the pieces fit the existing ones.**
+
+| Piece | What happens |
+|---|---|
+| The opening fetch | carries `?challengeId=` and comes back as one SHUFFLED set of contested + filler. `beginRun` splits it against the challenge's own word list — contested into the deal state's queue, the rest into the ordinary `CardBuffer` via `fillBuffer` |
+| `drawPairs` | in a challenge round, delegates to `dealChallengePairs` (`challengeDeal.ts`, pure + tested) with the buffered draw as its filler source; otherwise unchanged |
+| Buffer top-ups | send `&contested=exclude`, so a refill is pure filler. The twelve are dealt ONCE and never recycled — a re-served contested word would be a second bite at a word the round has already scored |
+| Mode | a challenge round always launches as **Study Mix**. Review and Challenge are hard bucket restrictions, and `fillBuffer` drops off-mode cards — under either of them half a challenge board would be thrown away on arrival |
+
+**Parity is counted over the RUN, not per call.** The board refills a few holes at a
+time; an alternation that reset per call would put a contested pair in every refill's
+first slot and burn the set in the first seconds. That case, and three other awkward ones
+(both sources dry, one source dry, a drained set never returning), are pinned by
+`src/games/__tests__/challengeDeal.test.ts`.
+
+**The board still looks completely normal.** Nothing marks a contested pair — no accent,
+no ordering, no pre-round list (STUDY_CHALLENGE.md § 5.7, Q74). The scoring split is
+invisible until the between-games scoreboard.
+
+---
+
 ## Backend change: per-card `gameCategory`
 
 **Implemented.** `server/services/OnDeckVocabService.ts` — `fetchGameCandidates`
@@ -827,6 +864,18 @@ plus a clock consumed roughly half the bar:
 | **pinyin / color / autoplay toggles** | `MatchSpeedSettingsDialog` (behind the cog) | They are set-once-and-forget, not per-tap controls. Same "quick controls in the header, everything else behind the cog" split flp and Word Search use. |
 | **Countdown timer** | `MatchSpeedTimerBar`, pinned to the top of the **play area** | The clock is game state, not page chrome. A countdown the player has to look away from the board to read is a countdown they stop reading. |
 
+### The HUD strip and the hint line
+
+Inside the play panel, under the clock (shelf redesign entry 14):
+
+| Element | Content | Notes |
+|---|---|---|
+| `GameHud` (`divider={false}`) | `Study Mix · All cards` — `9 matched` | Both facts are otherwise invisible once a run starts: the mode is chosen on the Games hub, the collection on `/decks`. Without the strip, a player who launched the wrong mode only found out from the cards. The divider is suppressed because `GameTimer` directly above already draws one. |
+| `GameHint` | "tap a word, then its meaning" | Mono/uppercase/faint at the foot of the panel. |
+
+The collection name comes from `collectionTitle` (`src/features/flashcards/collectionRef.ts`),
+falling back to "All cards" for a launch with no collection.
+
 ### `MatchSpeedSettingsDialog`
 
 A `Dialog` sheet mirroring `WordSearchSettingsDialog` (same switch-row shape).
@@ -911,14 +960,39 @@ Card size stays **fixed at 2.4:1 and equal across all ten cards** throughout —
 [Card sizing](#card-sizing-locked-to-241) for why this is a correctness
 constraint.
 
+### The two columns are told apart by TYPE, not colour
+
+*(Shelf redesign entry 14, class `.msc` — `docs/SHELF_REDESIGN.md`.)*
+
+The columns used to be colour-coded: pale blue for the foreign word, cream for its
+meaning. That spent the board's strongest signal on a distinction the player can already
+see — one column is Chinese, the other is English. The design separates them
+typographically instead:
+
+| Column | Face | Ground |
+|---|---|---|
+| foreign (`.msc.zh`) | cjk, 19px, 700 | `COLORS.background` (paper) |
+| english (`.msc`) | sans, length-scaled, 500, `iconColor` | `COLORS.white` |
+
+Which frees every fill to mean **state and only state**. That is what makes the feedback
+colours unambiguous — a filled card is always saying something about what just happened.
+
 ### Card visual states
 
 | State | Treatment |
 |---|---|
-| idle | resting card surface |
-| selected | raised / outlined accent |
-| wrong | red flash, ~400ms, **board stays live** |
-| partner-hint (cleanup only) | light green — Bubble Match's `CORRECT_BUBBLE_BG` |
+| idle | paper (foreign) or white (english), hairline border |
+| selected | `COLORS.blu` fill, border blended into it (`.msc.pick`) |
+| wrong | `COLORS.red` fill + `dangerInk` text, ~400ms, **board stays live** |
+| partner-hint (cleanup only) | `COLORS.grn` — the same green a correct match pops |
+
+Every fill is a **pastel carrying ink text**, per the redesign's fill rule
+(`docs/SHELF_REDESIGN.md` § A1) — never saturated ink behind white letters. The wrong
+flash in particular used to be white on `#F44336`, which read as an error dialog dropped
+onto the board rather than as part of the game.
+
+Selection **fills** rather than outlines, and the blue glow shadow that used to
+accompany the outline is gone with it: a filled card does not need help being noticed.
 
 The first four are the `CardVisualState` union the board resolves and passes in.
 The remaining two are **not** union members, because they aren't mutually exclusive
@@ -929,8 +1003,9 @@ with a selection — they ride on the card itself:
 | correct | `BoardCard.exiting` | green pop (`POP_DURATION_MS`), then the board removes it |
 | entering | `BoardCard.fadeDelayMs` | CSS fade-in on a **wrapper** element, keyed by card id, `fadeDelayMs` stagger up to 500ms |
 
-Border width is deliberately constant across every state: a 2px→3px swap on
-selection would re-wrap a 3-line gloss mid-tap.
+Border width is deliberately constant across every state (1px): a width swap on selection
+would re-wrap a 3-line gloss mid-tap. This is why a state that FILLS the card blends its
+border into the fill rather than removing it.
 
 **The entry fade-in must live on a wrapper element, never on the card itself.** A
 CSS animation with `both` fill keeps overriding the properties it animates for as
@@ -1058,6 +1133,7 @@ it reads from.
 | This doc's section | Depends on |
 |---|---|
 | Board cleared celebration | `src/games/match-speed/MatchSpeedClearBanner.tsx`; `MatchSpeedBoard.tsx` (`clearId`, `removePair`); `constants.ts` (`CLEAR_BANNER_MS`) |
+| Study Challenge rounds | `src/games/match-speed/challengeDeal.ts`; `MatchSpeedPage.tsx` (`dealStateRef`, `drawPairs`, the `beginRun` split, `&contested=exclude`); `src/games/runtime/useChallengeRound.ts`; `src/games/__tests__/challengeDeal.test.ts`; server side → `OnDeckVocabService.getChallengeGamePool` |
 | Duplicate gate | `src/games/match-speed/cardBuffer.ts` (`takePairs`'s `isBlocked` + batch id set, `fillBuffer`'s dedupe); `src/games/match-speed/MatchSpeedPage.tsx` (`drawPairs`, `onBoardIdsRef`); `src/__tests__/matchSpeedCardBuffer.test.ts` |
 | Card selection, buffer, `exclude` | `server/services/OnDeckVocabService.ts` — `getGameVocabPool` (856-976), `fetchGameCandidates` (252-293), `GAME_FALLBACK_ORDER` (803) |
 | Difficulty modes | `src/games/match-speed/constants.ts` (`MODE_CONFIGS`, `defineMode`, `modeConfigFor`), `types.ts` (`ModeConfig`), `cardBuffer.ts` (all functions), `MatchSpeedPage.tsx`, `src/games/GamesPage.tsx`; bucket rule mirrored from `src/features/flashcards/FlashcardsDecksPage.tsx` |
@@ -1081,7 +1157,7 @@ Docs updated when this shipped:
 - [MASTERY_REWORK.md](./MASTERY_REWORK.md) — ✅ Match Speed added to the
   which-type-each-surface table, plus a note that the bucket is now on the wire as
   `gameCategory`.
-- [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md) — ✅ Match Speed's mode strip was
+- [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) — ✅ Match Speed's mode strip was
   later **removed**: it is a single `HubMenuRow` again, carrying the game-wide
   `×N` as its own corner badge. That doc's § Array items records why it is not a
   fan-out game.

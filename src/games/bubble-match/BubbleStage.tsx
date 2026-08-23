@@ -4,11 +4,12 @@ import { Box, Typography } from "@mui/material";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import type { VocabEntry } from "../../types";
 import Bubble from "../bubbles/Bubble";
-import { stepPhysics, planSpawn, fillRatio, type Bounds } from "../bubbles/physics";
+import { stepPhysics, planSpawn, fillRatio, clampHeldCenter, type Bounds } from "../bubbles/physics";
 import { makePair, launchBody } from "../bubbles/bodyFactory";
 import { selectNextBubble } from "./spawnSelection";
 import type { BubbleBody, BubbleFill } from "../bubbles/types";
 import type { LevelConfig } from "./types";
+import { GameHud, GameHudBar, GameHudLabel } from "../shared/GameFrame";
 import {
     MAX_DT,
     SCALE_IDLE,
@@ -54,6 +55,17 @@ interface BubbleStageProps {
         Undefined when autoplay is off. */
     onSpeak?: (entry: VocabEntry) => void;
     onLevelWin: () => void;
+    /**
+     * The descending ceiling has STARTED (the whole pool is out and the lid is now
+     * closing in). Fires at most once per run.
+     *
+     * Exists for the Study Challenge survival bonus, which is awarded the moment the
+     * ceiling starts dropping and decays from there (docs/STUDY_CHALLENGE.md § 5.4).
+     * The page cannot derive this instant — it depends on the launcher draining,
+     * which only the stage knows about — and the bonus is a third of the round's
+     * value, so it cannot be approximated by a timer.
+     */
+    onCeilingDrop?: () => void;
     /** Called when the descending ceiling packs the field past the point of
         recovery (the only loss path — there is no clock). */
     onLevelLose: () => void;
@@ -91,6 +103,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     showPinyinColor,
     onSpeak,
     onLevelWin,
+    onCeilingDrop,
     onLevelLose,
     onMark,
     cleanupMode,
@@ -132,6 +145,10 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     // interval, both of which are stable callbacks that must not re-create on it.
     // Written during render rather than in an effect so the very first frame after
     // a popup opens already sees it.
+    // Latest handler, read from inside the launch interval (a stale closure there
+    // would silently drop the challenge round's survival bonus).
+    const onCeilingDropRef = useRef(onCeilingDrop);
+    onCeilingDropRef.current = onCeilingDrop;
     const pausedRef = useRef(paused);
     pausedRef.current = paused;
     const revealedPartnerIdRef = useRef<string | null>(null);
@@ -257,6 +274,15 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             if (shrinkingRef.current && phaseRef.current === "playing") {
                 const maxTop = bounds.height - MIN_PLAY_HEIGHT;
                 bounds.top = Math.min(bounds.top + configRef.current.shrinkSpeedPxPerSec * dt, maxTop);
+            } else if (phaseRef.current === "done" && cleanupModeRef.current && bounds.top > 0) {
+                // Cleanup (post-loss review, popup minimized): RETRACT the ceiling
+                // at the same speed it came down, back to the top of the stage. A
+                // loss-by-ceiling leaves the play area crushed and over-packed, so
+                // the separation solver can never satisfy every overlap and the
+                // whole field jitters while the player is trying to read/drag it.
+                // Giving the room back lets the field spread out and settle, so
+                // the review board is calm to read and drag on.
+                bounds.top = Math.max(bounds.top - configRef.current.shrinkSpeedPxPerSec * dt, 0);
             }
 
             const residual = stepPhysics(bodies, dt, bounds);
@@ -410,6 +436,11 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             if (pausedRef.current) return;
             if (queueRef.current.length === 0) {
                 shrinkingRef.current = true;
+                // Read from the ref so the interval closure cannot go stale, and
+                // guarded on the flag it just set so a re-entrant tick cannot fire it
+                // twice — the challenge scorer takes the FIRST signal as the start of
+                // the decay and ignores repeats, but sending one is still wrong.
+                onCeilingDropRef.current?.();
                 clearInterval(launchTimer);
                 return;
             }
@@ -571,15 +602,21 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             const px = e.clientX - rect.left;
             const py = e.clientY - rect.top;
 
-            // Move the held bubble's center to the pointer (minus grab offset). X and
-            // the top stay on the play bounds, but the bottom is unclamped past the
-            // stage edge: the player can drag a bubble fully off the bottom so even a
-            // large bubble fits entirely within the (shorter) cancel strip. Settled
-            // bodies still can't go there — only the held bubble is exempt.
+            // Move the held bubble's center to the pointer (minus grab offset), inside
+            // the looser bounds a HELD body gets: off the bottom into the cancel strip,
+            // and a radius past either side wall. Settled bodies stay walled in — only
+            // the held bubble is exempt, and the physics wall clamp glides it back on
+            // release. See clampHeldCenter.
             const bounds = boundsRef.current;
-            const maxY = fullHeightRef.current + held.radius;
-            held.x = Math.max(held.radius, Math.min(bounds.width - held.radius, px - grabOffsetRef.current.x));
-            held.y = Math.max(held.radius, Math.min(maxY, py - grabOffsetRef.current.y));
+            const at = clampHeldCenter(
+                held,
+                bounds,
+                fullHeightRef.current,
+                px - grabOffsetRef.current.x,
+                py - grabOffsetRef.current.y
+            );
+            held.x = at.x;
+            held.y = at.y;
 
             // Tint the cancel strip while the held bubble overlaps it (feedback only).
             const inZone = held.y + held.radius > bounds.height;
@@ -727,6 +764,28 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     }, [findHoverTarget, forceRender, onSpeak, setStatus, finishLevel, writeTransform, onMark, clearRevealedPartner]);
 
     return (
+        <>
+        {/* HUD — a REAL row above the field, not an overlay on it
+            (docs/SHELF_REDESIGN.md § 12). It used to float at `top: 8` inside the
+            playfield, which meant bubbles drifted under the level name and the two
+            layers fought for the same pixels; it also made the field's measured
+            bounds larger than the space a bubble could actually be read in.
+            Left: which level this is. Right: pairs still on the table — a count of
+            work REMAINING reads better mid-run than a fraction of work done.
+            The bar restates the same number for peripheral vision. */}
+        <GameHud className="bubble-stage__hud">
+            <GameHudLabel className="bubble-stage__level">
+                Level {levelNumber} · {levelLabel}
+            </GameHudLabel>
+            <GameHudLabel className="bubble-stage__progress">
+                {Math.max(0, totalPairs - matched)} left
+            </GameHudLabel>
+            <GameHudBar
+                className="bubble-stage__progress-bar"
+                fraction={totalPairs > 0 ? matched / totalPairs : 0}
+                color={COLORS.redA}
+            />
+        </GameHud>
         <Box
             ref={stageRef}
             className="bubble-stage"
@@ -736,7 +795,9 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                 minHeight: 0,
                 width: "100%",
                 overflow: "hidden",
-                backgroundColor: COLORS.background,
+                // The `.play` panel is the field's ground now (docs/SHELF_REDESIGN.md
+                // § A6) — a second paper fill inside a white panel read as a box in a box.
+                backgroundColor: "transparent",
                 // Swallow touch gestures so dragging on the playfield never
                 // scrolls/pans the page on mobile — the stage owns all touch input.
                 touchAction: "none",
@@ -804,37 +865,12 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                 }}
             />
 
-            {/* HUD: level · pairs cleared */}
-            <Box
-                className="bubble-stage__hud"
-                sx={{
-                    position: "absolute",
-                    top: 8,
-                    left: 0,
-                    right: 0,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    px: 1.5,
-                    pointerEvents: "none",
-                    zIndex: 50,
-                }}
-            >
-                <Typography className="bubble-stage__level" sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: "#6b6b6b" }}>
-                    Lv {levelNumber} · {levelLabel}
-                </Typography>
-                <Typography className="bubble-stage__progress" sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: "#6b6b6b" }}>
-                    {matched}/{totalPairs}
-                </Typography>
-            </Box>
-
             {bodiesRef.current.map((body) => (
                 <Bubble
                     key={body.id}
                     body={body}
                     status={body.status}
                     fill={fillForKind(body)}
-                    // Bubble Match's long-standing pickup cue: a grey wash.
-                    heldCue="dim"
                     showPinyin={showPinyin}
                     showPinyinColor={showPinyinColor}
                     registerNode={registerNode}
@@ -881,6 +917,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                 </Typography>
             </Box>
         </Box>
+        </>
     );
 };
 

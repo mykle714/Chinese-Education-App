@@ -385,10 +385,25 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
       throw new ValidationError('roundIndex must be a positive integer');
     }
 
+    // ⚠️ NOT `jsonb_set(rounds, ARRAY[$2,$3], …, true)`, WHICH SILENTLY DOES NOTHING
+    // HERE. `create_missing` creates only the LAST key of the path: if the player has
+    // no entry yet — and they never do before their first round, since `rounds` is
+    // `{}` from the accept transaction — the intermediate `{userId}` is missing,
+    // `jsonb_set` returns its input UNCHANGED, and the UPDATE still matches, so
+    // `rowCount` is 1 and this reported success while storing nothing. Every player's
+    // FIRST ROUND was lost that way, invisibly: the client got a 200 and a summary
+    // with no round in it (found 2026-08-22, the first time a round was actually
+    // submitted end to end).
+    //
+    // The `||` form builds the player's object when it is absent and merges into it
+    // when it is not, so the first round and the third take the same path.
     const { rowCount } = await this.run(client, (c) =>
       c.query(
         `UPDATE study_challenges
-            SET rounds = jsonb_set(rounds, ARRAY[$2, $3], $4::jsonb, true)
+            SET rounds = rounds || jsonb_build_object(
+                  $2::text,
+                  COALESCE(rounds -> $2, '{}'::jsonb) || jsonb_build_object($3::text, $4::jsonb)
+                )
           WHERE id = $1
             AND rounds #> ARRAY[$2, $3] IS NULL
           RETURNING id`,

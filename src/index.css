@@ -22,14 +22,22 @@
 }
 
 :root {
-  /* Mirrors FONTS.sans in src/theme/fonts.ts (CSS can't import the TS token). */
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Mirrors FONTS.sans in src/theme/fonts.ts (CSS can't import the TS token).
+     Keep the two in lock-step — see docs/SHELF_REDESIGN.md § A1. */
+  font-family: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  /* LIGHT ONLY. The app ships one palette during the shelf redesign (decision D4
+     in docs/SHELF_REDESIGN.md); there is no derived dark theme yet. This said
+     `light dark` — Vite's scaffold — which let a dark-mode OS render native form
+     controls, scrollbars and autofill dark inside an entirely light UI.
+     Re-enable `dark` only when the palette actually has a dark half.
+     Values mirror COLORS.onSurface / COLORS.background (--ink on --paper); CSS
+     cannot import the TS token, so keep the two in lock-step. */
+  color-scheme: light;
+  color: #17161a;
+  background-color: #fbfaf8;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -37,13 +45,15 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Links inherit the ink ramp rather than a browser/scaffold blue — the design
+   styles `a` as --ink with a --muted hover, and the app has no blue links. */
 a {
   font-weight: 500;
-  color: #646cff;
+  color: #17161a;
   text-decoration: inherit;
 }
 a:hover {
-  color: #535bf2;
+  color: #6b6873;
 }
 
 /* APP SHELL IS NON-SCROLLABLE BY DEFAULT.
@@ -199,42 +209,16 @@ textarea,
   animation: floatDownFade 1s ease-out forwards;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
+/* Vite's scaffold once defined a bare `h1` (3.2em), a dark-grounded bare
+   `button`, and a `@media (prefers-color-scheme: light)` block that fought the
+   `:root` above. All three are gone (A2c):
+     • every heading in the app is an MUI Typography with its own fontSize, and
+       the design's header sizes live in PageHeader's SIZE_SPEC;
+     • MUI Buttons are `<button>` elements, but `.MuiButtonBase-root` outranks a
+       bare element selector, so the rule only ever reached the single hand-rolled
+       <button> (ProvisionalCardsNotice), which styles itself inline;
+     • the media block existed only to undo a dark default that no longer exists.
+   Add a bare-element rule back only if something outside MUI needs it. */
 
 /* ===========================================================================
    Page slide transitions (View Transitions API)
@@ -283,4 +267,33 @@ button:focus-visible {
 :root[data-vt-dir="right"]::view-transition-new(root) {
   animation: vt-slide-in-right 340ms cubic-bezier(0.22, 1, 0.36, 1);
   z-index: 1;
+}
+
+/* Material Symbols Rounded — the app's icon face (docs/SHELF_REDESIGN.md, D3).
+ *
+ * Mirrors `.ms` in the design's shelf-system.css. Do NOT write this class by hand in a
+ * component: go through <Icon name="..." /> (src/components/Icon.tsx), which sets the
+ * size and variation axes. This rule exists so the ligature machinery is declared once.
+ *
+ * `font-feature-settings: 'liga'` is what turns the text "nights_stay" into a glyph.
+ * Without it the raw word renders. `white-space: nowrap` stops a multi-word ligature
+ * name from wrapping mid-name and breaking the substitution.
+ *
+ * The face is loaded in index.html with `display=block` rather than `swap`, precisely
+ * because a swap period would flash the literal ligature name.
+ */
+.ms {
+  font-family: "Material Symbols Rounded";
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1;
+  display: inline-block;
+  white-space: nowrap;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  /* Icons are glyphs, not text: never let a long-press select one, and never let a
+     drag starting on an icon pan the page (the app-wide rule in
+     docs/UX_AND_NAVIGATION.md). */
+  user-select: none;
+  -webkit-user-select: none;
 }

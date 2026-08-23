@@ -67,7 +67,6 @@ function IncomingRequestsPage() {
     return (
         <NodePage
             title="Friend Requests"
-            activePage="home"
             onBack={() => slideNavigate("/friends")}
             contentClassName="incoming-requests-page__content"
         >
@@ -101,7 +100,7 @@ function IncomingRequestsPage() {
                                         disabled={busyId === request.requestId}
                                         onClick={() => respond(request, true)}
                                         startIcon={<CheckIcon sx={{ fontSize: 16 }} />}
-                                        sx={{ ...smallButtonSx, color: COLORS.greenMain }}
+                                        sx={{ ...smallButtonSx, color: COLORS.successInk }}
                                     >
                                         Accept
                                     </Button>
@@ -110,7 +109,7 @@ function IncomingRequestsPage() {
                                         disabled={busyId === request.requestId}
                                         onClick={() => respond(request, false)}
                                         startIcon={<CloseIcon sx={{ fontSize: 16 }} />}
-                                        sx={{ ...smallButtonSx, color: COLORS.redMain }}
+                                        sx={{ ...smallButtonSx, color: COLORS.dangerInk }}
                                     >
                                         Decline
                                     </Button>

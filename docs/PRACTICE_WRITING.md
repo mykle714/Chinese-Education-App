@@ -160,7 +160,10 @@ around the floating islands, not an island) — **steps back one level** via
 single-char view **closes** the popup. Taps on an island are locked here too but skip
 the step-back. There are **no explicit close/back controls** — the greyed background is
 the only step-back/exit affordance (plus, on desktop, the Dialog's own backdrop outside
-the 393px phone card, which closes via `onClose`).
+the 402px phone card, which closes via `onClose`). The Dialog's Paper is sized by
+`PHONE_OVERLAY_SX` (`src/components/phoneGeometry.ts`) so it stays pinned to the
+real frame — it used to hard-copy the frame's dimensions and drifted when they
+changed (SHELF_REDESIGN A2c).
 
 ---
 

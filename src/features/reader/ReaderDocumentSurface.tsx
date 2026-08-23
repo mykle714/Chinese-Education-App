@@ -11,7 +11,7 @@ import { COLORS } from "../../theme/colors";
 // node-style document surface").
 //
 // Why this is NOT the shared `NodePage`: NodePage is built on MobileTabScreen,
-// which reserves FLOATING_FOOTER_CLEARANCE for the footer pill and provides a
+// which reserves FOOTER_CLEARANCE for the footer pill and provides a
 // scroll-away header — neither fits here. `/reader` shows no nav footer (it is
 // not registered in FooterPresenter's route maps), and the reader is a fixed,
 // non-scrolling layout. So this composes the same primitives directly, per the

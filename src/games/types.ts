@@ -1,4 +1,5 @@
 import type { ChallengeScoringSpec, Language, MarkType } from "../types";
+import type { RampHue } from "../theme/colors";
 import type { LazyExoticComponent, ComponentType } from "react";
 
 /**
@@ -10,15 +11,38 @@ export interface GameDef {
     gameId: string;
     /** Hub menu row label. */
     title: string;
-    /** Short blurb shown under the title in the hub row. */
+    /**
+     * Short blurb shown under the title on the hub's bento tile.
+     *
+     * KEEP IT SHORT — three or four words. It renders at 11.5px inside a 112px-tall
+     * tile that is half the phone's width, so anything longer than about six words
+     * wraps to a third line and overflows the tile. These used to be full sentences
+     * because the old hub row was full-width; the bento is not.
+     */
     subtitle?: string;
-    /** Vite-imported icon URL for the hub row's leading slot. */
-    iconAsset?: string;
+    /**
+     * Material Symbols ligature name for the hub tile's ghost glyph (see
+     * components/Icon). Drawn oversized, clipped, and at 15% of the tile's own ink —
+     * decoration that gives the hub a family of shapes, NOT a way to tell two games
+     * apart. The title does that.
+     *
+     * This replaced `iconAsset`, an optional Vite-imported image URL that no game
+     * ever set: every game fell through to a generic controller glyph, so the hub had
+     * six identical icons and one dead code path.
+     */
+    glyph: string;
     /** Frontend route, e.g. "/games/memory-match". */
     route: string;
-    /** Persistent hub card background color, e.g. `COLORS.blueAccent`. Assigned
-        once per game here — not randomized at render time. */
-    bgColor: string;
+    /**
+     * Persistent ramp hue for this game's hub tile — a KEY into `RAMP`, not a colour,
+     * so the tile's pastel body and the matching ink of its ghost glyph can never
+     * drift apart (see `RAMP` in theme/colors). Assigned once per game here; never
+     * randomized at render time.
+     *
+     * Bubble Match is the exception: its three levels each take their own hue from a
+     * difficulty ramp on the hub, so its value here is only a fallback.
+     */
+    hue: RampHue;
     /** Lazy-loaded page component for the game. Page components take no props,
         so the default `ComponentType` ({}-props) is what `React.lazy` of a plain
         `React.FC` resolves to. */

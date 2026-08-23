@@ -1,3 +1,4 @@
+import { COLORS } from "../../theme/colors";
 import type { CPCDSize } from "../../components/ForeignText";
 import type { MarkType } from "../../types";
 import type { Medal } from "./types";
@@ -43,23 +44,63 @@ export interface WordSearchModeConfig {
     /** Hub sub-card subtitle. */
     label: string;
     /**
-     * The mastery track a find in this mode marks (docs/MASTERY_REWORK.md). Word
-     * Search is the one game whose mark type varies BY MODE, which is why this
-     * lives per-config instead of as a whole-game `MARK_TYPE` like the other three
-     * games have: with the pinyin row shown the player is recalling the word from
-     * its meaning with a phonetic crutch (PRODUCTION); without it they must read
-     * the bare characters (READING).
+     * The mode's PRIMARY mastery track (docs/MASTERY_REWORK.md). Word Search is the
+     * one game whose mark type varies BY MODE, which is why this lives per-config
+     * instead of as a whole-game `MARK_TYPE` like the other three games have: with
+     * the pinyin row shown the player is recalling the word from its meaning with a
+     * phonetic crutch (PRODUCTION); without it they must read the bare characters
+     * (READING).
+     *
+     * PRIMARY means three specific things, all of which stay single-valued even
+     * though a find can now write more than one mark (see `extraMarkTypes`):
+     *   1. the server pools and cooldown-gates the BOARD on this track alone
+     *      (`getWordSearchGrid` maps `?mode=` to one `gameMarkType`) — a pool query
+     *      can only bucket by one mark history;
+     *   2. challenge eligibility reads this field only, so a secondary production
+     *      track can never pull a reading board into the Study Challenge pool
+     *      (src/games/__tests__/challengePool.test.ts);
+     *   3. it leads the hub sub-tile's subtitle.
      *
      * Single source of truth for the /api/flashcards/mark call (WordSearchPage)
-     * and the mode sub-card's mark-type chip (WordSearchHubItem).
+     * and the mode sub-tile's track label (WordSearchHubItem).
      */
     markType: MarkType;
+    /**
+     * ADDITIONAL tracks a find in this mode also marks, beyond `markType`.
+     *
+     * No-Pinyin earns BOTH: the prompt list is English glosses, so hunting the word
+     * down is recall-from-meaning (PRODUCTION), and the grid carries no pinyin, so
+     * confirming a run of cells is reading bare characters (READING). One action,
+     * two genuinely different skills — the only surface in the app that clears both
+     * at once. Pinyin mode does NOT get `reading` in return: its pinyin row is
+     * exactly the crutch the reading track is defined by the absence of.
+     *
+     * ⚠️ A secondary mark is BEST-EFFORT. The board was pooled on `markType`, so a
+     * card can be off cooldown for reading while still cooling for production; the
+     * `/api/flashcards/mark` chokepoint then drops the production mark (logged
+     * `[MarkSuppressed]`, docs/HYDRA_BUBBLES.md § 8). That is the correct outcome —
+     * the cooldown rule is exactly what stops one board from inflating a track — but
+     * it means "emits both" is a statement about the ATTEMPT, not a guarantee.
+     */
+    extraMarkTypes?: MarkType[];
 }
 
 export const MODE_CONFIGS: WordSearchModeConfig[] = [
     { mode: "pinyin", showPinyin: true, label: "Pinyin", markType: "production" },
-    { mode: "no-pinyin", showPinyin: false, label: "No Pinyin", markType: "reading" },
+    {
+        mode: "no-pinyin",
+        showPinyin: false,
+        label: "No Pinyin",
+        markType: "reading",
+        extraMarkTypes: ["production"],
+    },
 ];
+
+/** Every track a find in this mode attempts to mark, primary first. The ONE list
+ *  both the mark call and the hub label are built from, so they cannot disagree. */
+export function modeMarkTypes(cfg: WordSearchModeConfig): MarkType[] {
+    return [cfg.markType, ...(cfg.extraMarkTypes ?? [])];
+}
 
 /** Resolve a mode slug (from nav state) to its config, or null if missing/invalid
  *  — the page redirects to /games rather than defaulting, so a mode must be
@@ -83,13 +124,17 @@ export const HINT_BAR_UNITS = 8;
 export const HINT_COST = 1;
 
 /**
- * Shared amber "hint" accent color — the Bopomofo mask text (`WordSearchHintRow`)
- * and the matching gloss in the top word list (`WordSearchWordList`) both use
- * this so the two visually pair up as "this is the word that mask is for."
- * Matches the armed-state amber already used by the header hint button /
- * hint meter (`WordSearchHeader.tsx`, `WordSearchHintBar.tsx`).
+ * The hint accent — the ink every part of the hint mechanic is drawn in: the
+ * lightbulb on the `.hintbar` button, the banked charge dots, and the revealed
+ * mask text (`WordSearchHintRow`).
+ *
+ * It used to be a free-floating `#FB8C00` amber that also tinted the hinted word's
+ * gloss in the word list, so the two would pair up. The word list no longer has a
+ * hinted state (the reveal names the word outright — see docs/WORD_SEARCH_GAME.md
+ * §3), and the redesign has a palette member for exactly this job, so the constant
+ * is now an alias for `COLORS.warnInk` (--orgA) rather than its own hue.
  */
-export const HINT_ACCENT_COLOR = "#FB8C00";
+export const HINT_ACCENT_COLOR = COLORS.warnInk;
 
 /**
  * Trailing mark on a **No Pinyin** (component) hint island that still has
@@ -118,19 +163,23 @@ export const HINT_LETTER_BLANK = "_";
 
 /**
  * cpcd size for each grid cell. `sm` (32px column) for now; 10 rows with pinyin
- * may crowd the height on a ~393px frame — accepted for v1, revisit a compact
+ * may crowd the height on a ~402px frame — accepted for v1, revisit a compact
  * variant later (see docs/WORD_SEARCH_GAME.md §3).
  */
 export const CELL_SIZE: CPCDSize = "sm";
 
 /**
- * Gap (px) between adjacent cpcd cells. Applied directly as the CSS grid
- * column gap; `WordSearchGrid` derives the row gap from this same value (a
- * fixed row track of `columnWidth + CELL_GAP`) so row and column spacing —
- * measured character-center to character-center — stay equal on both axes.
+ * Gap (px) between adjacent cells, on BOTH axes. Every cell is square
+ * (`aspect-ratio: 1`), so one value spaces the board evenly without the row
+ * pitch having to be measured and forced — which is what the old 16px value
+ * needed, back when a cell's height was whatever its pinyin made it.
+ *
+ * 4px is the design's `.wsg` gap (docs/SHELF_REDESIGN.md, artboard 13). It is
+ * deliberately tight: a selection is painted ON the cells now, so the gutter's
+ * only job is to keep two adjacent tiles from fusing into one rectangle.
  * Tunable. See docs/WORD_SEARCH_GAME.md §3.
  */
-export const CELL_GAP = 16;
+export const CELL_GAP = 4;
 
 /**
  * Breathing room (px) reserved on every side of the fitted grid inside its
@@ -139,26 +188,6 @@ export const CELL_GAP = 16;
  * See docs/WORD_SEARCH_GAME.md §3.
  */
 export const GRID_MARGIN = 12;
-
-/**
- * Extra downward nudge for the selection/found stadium shape, as a fraction of
- * its own thickness (not px) — since that thickness is measured live and
- * varies with cell size/scale, a fraction keeps the nudge proportional across
- * screen sizes instead of over- or under-shooting on smaller/larger cells.
- * Applied on top of the glyph-centering offset computed in `WordSearchGrid`.
- * Tunable. Used when `showPinyin` is true; see
- * `SELECTION_EXTRA_OFFSET_Y_FRAC_NO_PINYIN` for the pinyin-less variant.
- */
-export const SELECTION_EXTRA_OFFSET_Y_FRAC = 0.15;
-
-/**
- * Same nudge as `SELECTION_EXTRA_OFFSET_Y_FRAC`, but for pinyin-less mode.
- * Without the pinyin row pulling the character upward within its cell, the
- * glyph sits lower and closer to true cell-center already, so the downward
- * nudge tuned for pinyin mode overshoots and reads as off-center. Tunable
- * independently of the pinyin-mode value.
- */
-export const SELECTION_EXTRA_OFFSET_Y_FRAC_NO_PINYIN = 0.05;
 
 /**
  * How long a true miss's flash (red highlight + shake) stays visible before

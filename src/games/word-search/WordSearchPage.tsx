@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Button, Typography, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
@@ -20,15 +20,19 @@ import WordSearchWordList from "./WordSearchWordList";
 import WordSearchHintRow from "./WordSearchHintRow";
 import WordSearchGrid, { type WordSearchGridHandle } from "./WordSearchGrid";
 import WordSearchHintBar from "./WordSearchHintBar";
+import { GameFrame, GameHud, GameHudLabel } from "../shared/GameFrame";
+import { Label } from "../../components/primitives";
 import GameEndPopup from "../runtime/GameEndPopup";
 import { useWordSearchSettings } from "./useWordSearchSettings";
 import { saveGameState, loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
-import { GAME_KEY, WIN_LEVEL, GRID_QUERY, TOTAL_WORDS, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor } from "./constants";
+import { GAME_KEY, WIN_LEVEL, GRID_QUERY, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor, modeMarkTypes } from "./constants";
 import type { Language } from "../../types";
 import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { formatTimeMs } from "../../utils/timeUtils";
+import { useChallengeRound } from "../runtime/useChallengeRound";
+import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 import { countPinyinRevealSteps } from "./pinyinUnits";
 import { countComponentUnits } from "./componentUnits";
 import type { BonusWord, PlacedWord, WordSearchResponse } from "./types";
@@ -78,9 +82,11 @@ const WordSearchPage: React.FC = () => {
     const [modeConfig] = useState(() => modeConfigFor((location.state as { mode?: string } | null)?.mode));
     const mode = modeConfig?.mode;
     const showPinyin = modeConfig?.showPinyin ?? false;
-    // Which mastery track a find marks — a property of the chosen mode, not of this
-    // page. Undefined only in the no-valid-mode case, which redirects to /games.
-    const markType = modeConfig?.markType;
+    // Which mastery track(s) a find marks — a property of the chosen mode, not of
+    // this page. Empty only in the no-valid-mode case, which redirects to /games.
+    // No-Pinyin marks TWO (reading + production); Pinyin marks one. `markTypes[0]` is
+    // the mode's primary track — the one the board itself was pooled on.
+    const markTypes = useMemo(() => (modeConfig ? modeMarkTypes(modeConfig) : []), [modeConfig]);
     const showPinyinColor = true;
 
     // Whether this mount was launched from the hub's RESUME card (restore the
@@ -101,6 +107,17 @@ const WordSearchPage: React.FC = () => {
 
     const [phase, setPhase] = useState<Phase>("loading");
     const [blockMessage, setBlockMessage] = useState("");
+    /**
+     * Backgrounded right now — a MIRROR of the visibility listener below, kept as
+     * state purely so the challenge round's active-time clock can see it.
+     *
+     * Word Search predates the shared `useBackgroundPause` hook and owns its
+     * pause/resume directly (it is the reference implementation the other three were
+     * generalised from), so there is no `paused` boolean to reuse. Deriving one here
+     * keeps the challenge time penalty on ACCUMULATED ACTIVE TIME (§ 5.8) — the −10/s
+     * must not run while the app is in the background.
+     */
+    const [backgrounded, setBackgrounded] = useState(false);
     const [data, setData] = useState<WordSearchResponse | null>(null);
     // Pre-round notice for lent cards (docs/PROVISIONAL_CARDS.md).
     const [noticeOpen, setNoticeOpen] = useState(false);
@@ -231,12 +248,39 @@ const WordSearchPage: React.FC = () => {
         latestStateRef.current = { phase, data, found, hintUnits, hintEntryKey, hintRevealCount, hintLocationRevealed };
     });
 
+    // ── STUDY CHALLENGE ROUND (docs/STUDY_CHALLENGE.md § 5) ──
+    // Word Search is eligible as PINYIN ONLY (No Pinyin is a reading drill, and a
+    // challenge round is recognition or production) — the server enforces that by
+    // matching the caller's (gameId, mode) against the drawn sequence, so a
+    // No-Pinyin launch simply never resolves to a round.
+    //
+    // `clockPaused` is declared further down, next to the run clock it protects, so
+    // the two pause SOURCES are restated here rather than reused: the modal sheets
+    // and backgrounding. Both must freeze the −10/s time penalty (§ 5.8).
+    const challengeRound = useChallengeRound({
+        gameId: "word-search",
+        mode: mode ?? null,
+        paused: noticeOpen || settingsOpen || backgrounded,
+        running: phase === "playing",
+    });
+    const challengeParamsRef = useRef("");
+    challengeParamsRef.current = challengeRound.poolParams;
+    // Read inside `persistSnapshot`, whose deps are deliberately minimal.
+    const challengeRoundActiveRef = useRef(false);
+    challengeRoundActiveRef.current = challengeRound.active;
+
     // Snapshot the current board to localStorage — no-op unless a board is
     // actually in progress and unfinished. Reads elapsed time directly off
     // startRef/pausedElapsedRef (not the `elapsedMs` state) so it's accurate
     // even mid-tick, not lagged by up to one 500ms interval step.
     const persistSnapshot = useCallback(() => {
         if (!userId || !mode) return;
+        // A CHALLENGE ROUND IS NEVER SAVED. The saved slot is offered back as the
+        // hub's "Resume" card, which would restore a scored board OUTSIDE its
+        // challenge — same grid, no round behind it — and would also overwrite the
+        // player's own casual save. The round is instead re-entered from the
+        // challenge, which rebuilds the board server-side.
+        if (challengeRoundActiveRef.current) return;
         const s = latestStateRef.current;
         if (s.phase !== "playing" || !s.data || !s.data.grid) return;
         if (s.found.size >= s.data.words.length) return;
@@ -264,7 +308,7 @@ const WordSearchPage: React.FC = () => {
             // on the reading track, Pinyin on production (docs/MASTERY_REWORK.md
             // § Per-type cooldown). `mode` is set once on mount, so capturing it in
             // this empty-deps callback is stable.
-            const res = await fetch(`${API_BASE_URL}/api/onDeck/wordSearchGrid?${GRID_QUERY}&mode=${mode ?? ""}&surface=word-search${collectionSuffix}`, {
+            const res = await fetch(`${API_BASE_URL}/api/onDeck/wordSearchGrid?${GRID_QUERY}&mode=${mode ?? ""}&surface=word-search${collectionSuffix}${challengeParamsRef.current}`, {
                 credentials: "include",
                 headers: authHeader(),
             });
@@ -385,13 +429,19 @@ const WordSearchPage: React.FC = () => {
             setPhase("blocked");
             return;
         }
+        // WAIT FOR THE CHALLENGE CONTEXT. The round's contested set arrives with the
+        // challenge payload, and a board dealt before it lands would be classified
+        // entirely as filler — a round scored at 20 points a card with no way to tell
+        // afterwards that it went wrong. `ready` flips once, so this costs an
+        // ordinary launch nothing (`active` is false and the guard never fires).
+        if (challengeRound.active && !challengeRound.ready) return;
         let cancelled = false;
         (async () => {
             // Resume card → restore the single saved board (in its saved mode).
             // Mode button → always a fresh board; any existing save is discarded
             // by the hub's confirm flow before we get here, and starting fresh
             // (then re-saving on exit) overwrites the slot anyway.
-            if (resumeIntent) {
+            if (resumeIntent && !challengeRoundActiveRef.current) {
                 const saved = loadGameState(userId);
                 if (saved) {
                     if (!cancelled) restoreBoard(saved);
@@ -407,7 +457,16 @@ const WordSearchPage: React.FC = () => {
             cancelled = true;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id]);
+    }, [user?.id, challengeRound.active, challengeRound.ready]);
+
+    // A challenge round that cannot be played says so rather than dealing a casual
+    // board that scores nothing.
+    useEffect(() => {
+        if (challengeRound.error) {
+            setBlockMessage(challengeRound.error);
+            setPhase("blocked");
+        }
+    }, [challengeRound.error]);
 
     // ── Popup pause gate ─────────────────────────────────────────────────────
     // No game clock may run while a MODAL popup covers the board. Word Search's
@@ -436,6 +495,7 @@ const WordSearchPage: React.FC = () => {
     useEffect(() => {
         if (phase !== "playing") return;
         const handleVisibility = () => {
+            setBackgrounded(document.hidden);
             if (document.hidden) {
                 persistSnapshot();
                 pauseTimer();
@@ -496,24 +556,39 @@ const WordSearchPage: React.FC = () => {
         // negative one): the reveal handed the player part of the answer, so the
         // find says nothing about recall in either direction. See §5a.
         if (hintedWordsRef.current.has(word.entryKey)) return;
-        // Board mode decides the mark type (docs/MASTERY_REWORK.md): the "Pinyin"
-        // board is a production drill; the "No Pinyin" board is a reading drill
-        // (recognizing the characters without the pinyin crutch). That mapping lives
-        // on the mode's config (WordSearchModeConfig.markType) so the hub's
-        // mark-type chip and this call can never disagree. Word Search only ever
-        // emits POSITIVE marks — a found word is a correct answer.
+        // Board mode decides the mark type(s) (docs/MASTERY_REWORK.md): the "Pinyin"
+        // board is a production drill (the pinyin row is a phonetic crutch), while the
+        // "No Pinyin" board is BOTH a reading drill (bare characters) and a production
+        // one (the prompt is an English gloss, so finding the word is recall). That
+        // mapping lives on the mode's config (`modeMarkTypes`) so the hub's track
+        // label and this call can never disagree. Word Search only ever emits POSITIVE
+        // marks — a found word is a correct answer.
+        //
+        // ONE POST PER TRACK, not one post carrying a list: /api/flashcards/mark types
+        // exactly one mark per call (it computes a before/after band for the single bar
+        // that mark moves), and widening its contract to serve the one surface that
+        // wants two would push the multi-track case into every other caller's response
+        // shape. Two fire-and-forget posts cost nothing here — this game reads neither
+        // the replacement card nor the undo key.
+        //
+        // Each post is judged on ITS OWN track's cooldown, so the secondary mark may be
+        // dropped server-side while the primary lands (see WordSearchModeConfig
+        // `extraMarkTypes`). That is intended, and invisible: a suppressed mark is a
+        // 200, not an error.
+        //
         // excludeIds defaults to []: the game doesn't use the replacement card the
         // endpoint returns, so there's nothing to dedupe against.
-        if (!markType) return;
-        markFlashcard({
-            cardId: word.id,
-            isCorrect: true,
-            type: markType,
-            surface: "word-search",
-        }).catch((err) => console.error(`[WordSearch] mark failed → card ${word.id}:`, err));
+        for (const type of markTypes) {
+            markFlashcard({
+                cardId: word.id,
+                isCorrect: true,
+                type,
+                surface: "word-search",
+            }).catch((err) => console.error(`[WordSearch] ${type} mark failed → card ${word.id}:`, err));
+        }
         // No `token` dep — markFlashcard reads the header at call time, so this
         // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
-    }, [markType]);
+    }, [markTypes]);
 
     // Play a word's narration (guarded by the TTS enabled flag). Shared by the
     // find-time play below and the grid's tap-to-replay / blue-match plays; the
@@ -526,6 +601,16 @@ const WordSearchPage: React.FC = () => {
     const onFound = useCallback((word: PlacedWord) => {
         speakWord(word.entryKey, word.pinyin);
         markWordFound(word);
+        // A challenge round scores finds only — there is no "miss" event in Word
+        // Search (a drag either spells a word or it does not), which is why its spec
+        // charges TIME instead (§ 5.4). Filler reaches a challenge grid whenever a
+        // contested word had to be substituted out for sharing characters, and is
+        // paid 20 rather than 100 for exactly that reason.
+        challengeRound.emit({
+            kind: "hit",
+            word: word.entryKey,
+            contested: challengeRound.isContested(word.entryKey),
+        });
         setFound((prev) => {
             const next = new Set(prev);
             next.add(word.entryKey);
@@ -540,6 +625,8 @@ const WordSearchPage: React.FC = () => {
             setHintRevealCount(0);
             setHintLocationRevealed(false);
         }
+        // challengeRound's emit/isContested are stable by construction.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [speakWord, markWordFound, hintEntryKey]);
 
     // The first multi-character bonus word ("blue match") found on a board
@@ -606,6 +693,10 @@ const WordSearchPage: React.FC = () => {
                 setHintShakeNonce((n) => n + 1);
             }
             setHintUnits((u) => u - HINT_COST);
+            // −20 in a challenge round, per SPEND (§ 5.4). Charged where the units
+            // are, so the free re-shake above — which costs no units — costs no
+            // points either.
+            challengeRound.emit({ kind: "use", ruleId: "hintUsed" });
             return;
         }
         if (hintUnits < HINT_COST) return;
@@ -617,6 +708,8 @@ const WordSearchPage: React.FC = () => {
         setHintRevealCount(1);
         setHintLocationRevealed(false);
         setHintUnits((u) => u - HINT_COST);
+        challengeRound.emit({ kind: "use", ruleId: "hintUsed" });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data, hintUnits, hintEntryKey, hintRevealCount, hintLocationRevealed, found, totalRevealUnits]);
 
     // Win when every target is found. Freeze the timer, capture the final time.
@@ -632,7 +725,11 @@ const WordSearchPage: React.FC = () => {
             recordWin(WIN_LEVEL);
             if (userId) clearGameState(userId);
             setPhase("won");
+            // Word Search's board is always completable, so `won` is always true —
+            // it exists for the all-or-nothing survival bonus other games have.
+            challengeRound.finish(true);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [found, phase, data, elapsedMs, stopTimer, recordWin, userId]);
 
     // Discard the current board and load a fresh one. Only reachable from the
@@ -702,47 +799,71 @@ const WordSearchPage: React.FC = () => {
                     WebkitUserSelect: "none",
                 }}
             >
-                {/* HUD row above the glosses: count-up timer flush-left, found
-                    count flush-right. The timer's text is hidden when the header's
-                    timer toggle is off, but the clock keeps ticking. */}
-                <Box
-                    className="word-search__hud"
-                    sx={{ position: "relative", display: "flex", justifyContent: "space-between", alignItems: "baseline", px: 1.5, pt: 0.75 }}
-                >
-                    <Typography
-                        className="word-search__hud-timer"
-                        sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: "#6b6b6b", lineHeight: 1.25 }}
-                    >
-                        {showTimer ? `⏱ ${formatTimeMs(phase === "won" ? finalMs : elapsedMs)}` : ""}
-                    </Typography>
-                    {/* Hint meter: fills on finds, arms at HINT_COST. Positioned
-                        absolutely (not a flex sibling) so toggling the timer's
-                        visibility off — which shrinks the timer Typography — can't
-                        shift it via space-between. */}
-                    <Box
-                        sx={{
-                            position: "absolute",
-                            left: "50%",
-                            top: "50%",
-                            transform: "translate(-50%, -50%)",
-                        }}
-                    >
-                        <WordSearchHintBar units={hintUnits} />
-                    </Box>
-                    <Typography
-                        className="word-search__hud-count"
-                        sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: "#6b6b6b", lineHeight: 1.25 }}
-                    >
-                        {found.size}/{data.words.length}
-                    </Typography>
-                </Box>
-                <WordSearchWordList words={data.words} found={found} hintedEntryKey={hintEntryKey} />
+                {/* `.play` — the inset panel holding the whole board stack
+                    (docs/SHELF_REDESIGN.md § A6). The win popup and the sort offer stay
+                    OUTSIDE it: both cover the full content area and must not be clipped
+                    by the panel's radius. */}
+                <GameFrame className="word-search__frame">
+                {/* HUD: what this board IS on the left, how it is going on the right,
+                    the clock in the middle.
 
-                <WordSearchHintRow
-                    word={data.words.find((w) => w.entryKey === hintEntryKey) ?? null}
-                    revealCount={hintRevealCount}
-                    currency={showPinyin ? "pinyin" : "components"}
-                />
+                    The MODE is stated, not offered — it is fixed by which hub entry the
+                    run was launched from, so there is nothing to toggle (artboard 13
+                    draws a `pinyin` chip in the header; that would be a second statement
+                    of the same fact, and a chip that looks like a switch but is not).
+
+                    The clock is the MIDDLE child, and that placement is load-bearing.
+                    It is the one element that can vanish (the settings sheet hides it),
+                    and under `space-between` only a middle child can be removed without
+                    moving anything else — the old layout had the clock first and had to
+                    position the hint meter absolutely to stop it drifting. */}
+                <GameHud className="word-search__hud">
+                    <GameHudLabel className="word-search__hud-mode">
+                        {modeConfig?.label ?? "Word Search"} · {markTypes.join(" & ") || "recognition"}
+                    </GameHudLabel>
+                    {showTimer && (
+                        <GameHudLabel className="word-search__hud-timer">
+                            {formatTimeMs(phase === "won" ? finalMs : elapsedMs)}
+                        </GameHudLabel>
+                    )}
+                    <GameHudLabel className="word-search__hud-count">
+                        {found.size} of {data.words.length} found
+                    </GameHudLabel>
+                </GameHud>
+
+                {/* The hint mechanic, whole, on one row: press · charges · reveal. */}
+                <WordSearchHintBar
+                    units={hintUnits}
+                    ready={phase === "playing" && canUseHint()}
+                    onHint={useHint}
+                >
+                    <WordSearchHintRow
+                        word={data.words.find((w) => w.entryKey === hintEntryKey) ?? null}
+                        revealCount={hintRevealCount}
+                        currency={showPinyin ? "pinyin" : "components"}
+                    />
+                </WordSearchHintBar>
+
+                {/* `.shelfhd` — names the list under it and states the gesture. The
+                    gesture line is the only place the app ever says "trace"; a
+                    first-time player otherwise has to discover that tapping does
+                    nothing. */}
+                <Box
+                    className="word-search__list-header"
+                    sx={{
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "12px",
+                        padding: "11px 15px 0",
+                    }}
+                >
+                    <Label>Find these words</Label>
+                    <Label>trace to select</Label>
+                </Box>
+
+                <WordSearchWordList words={data.words} found={found} />
 
                 <WordSearchGrid
                     ref={gridRef}
@@ -759,8 +880,15 @@ const WordSearchPage: React.FC = () => {
                     onFirstInteraction={handleFirstInteraction}
                     speak={speakWord}
                 />
+                </GameFrame>
 
-                {phase === "won" && (
+                {/* A challenge round ends on the scoreboard (§ 5.5) — points, not a
+                    time medal, and no Play Again: the round is final (§ 5.1a). */}
+                {phase === "won" && challengeRound.active && (
+                    <ChallengeRoundScoreboard round={challengeRound} classPrefix="word-search" />
+                )}
+
+                {phase === "won" && !challengeRound.active && (
                     <GameEndPopup
                         classPrefix="word-search"
                         minimized={popupMinimized}
@@ -768,7 +896,7 @@ const WordSearchPage: React.FC = () => {
                         onRestore={() => setPopupMinimized(false)}
                     >
                         <Typography className="word-search__win-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}>
-                            {medal.emoji} All {TOTAL_WORDS} found!
+                            {medal.emoji} All {data.words.length} found!
                         </Typography>
                         <Typography className="word-search__win-time" sx={{ fontSize: SIZE.bodyLg, color: fc.textSecondary }}>
                             Time {formatTimeMs(finalMs)} — {medal.medal} medal
@@ -810,13 +938,13 @@ const WordSearchPage: React.FC = () => {
             />
             <LeafPage
                 title="Word Search"
-                onBack={() => navigate("/games")}
+                // Back lands where the player came FROM — the challenge mid-test, or
+                // the Games hub for an ordinary run.
+                onBack={() => navigate(challengeRound.challengeId
+                    ? `/friends/challenges/${challengeRound.challengeId}`
+                    : "/games")}
                 rightContent={
-                    <WordSearchHeaderControls
-                        hintReady={phase === "playing" && canUseHint()}
-                        onHint={useHint}
-                        onSettingsClick={() => setSettingsOpen(true)}
-                    />
+                    <WordSearchHeaderControls onSettingsClick={() => setSettingsOpen(true)} />
                 }
             >
                 {content}

@@ -32,6 +32,29 @@ function asDate(iso: string | null | undefined): Date | null {
 }
 
 /**
+ * Has this challenge's accept window closed while it was still `pending`?
+ *
+ * The server already derives this (`StudyChallengeService.toSummary`) and ships
+ * `status: "expired"`, so this is the SECOND line of defence, not the rule: a page
+ * left open across 04:00 Wednesday holds a payload that was true when it was
+ * fetched and is not any more. Both sides read the same `acceptDeadline` instant,
+ * so they cannot disagree.
+ *
+ * An unparseable deadline degrades to "not lapsed" — offering an accept the server
+ * refuses is a worse failure than the reverse only when we are SURE, and here we
+ * are not.
+ */
+function acceptLapsed(challenge: ChallengeSummary, anytime = false): boolean {
+    // The tester hatch lifts every calendar gate, deadline included
+    // (docs/STUDY_CHALLENGE.md § 2a). The server has already stopped deriving
+    // `expired` for this caller; this keeps the row's own reading in step.
+    if (anytime) return false;
+    if (challenge.status !== "pending") return false;
+    const deadline = asDate(challenge.deadlines.acceptDeadline);
+    return !!deadline && Date.now() >= deadline.getTime();
+}
+
+/**
  * A deadline as the user experiences it: "4 AM Wednesday", "4 AM Fri 21 Aug" once it
  * is more than a week out.
  *
@@ -66,8 +89,14 @@ export function acceptByLabel(challenge: ChallengeSummary): string {
  * Never mentions the opponent's SCORE — only their progress (§ 6). Whoever plays
  * second must play against the game, not against a number.
  */
-export function challengeStatusLine(challenge: ChallengeSummary | null): string | null {
+export function challengeStatusLine(
+    challenge: ChallengeSummary | null,
+    /** Tester hatch on for this device (docs/STUDY_CHALLENGE.md § 2a). */
+    anytime = false
+): string | null {
     if (!challenge) return null;
+
+    if (acceptLapsed(challenge, anytime)) return "Expired";
 
     switch (challenge.status) {
         case "pending":
@@ -78,12 +107,12 @@ export function challengeStatusLine(challenge: ChallengeSummary | null): string 
             const opens = asDate(challenge.deadlines.testOpensAt);
             const closes = asDate(challenge.deadlines.testClosesAt);
             const now = Date.now();
-            if (opens && now < opens.getTime()) {
+            if (!anytime && opens && now < opens.getTime()) {
                 // The study days. The deck is the point of this stretch, so the copy
                 // names it rather than just counting down.
                 return `Study your deck · test opens ${deadlineLabel(challenge.deadlines.testOpensAt)}`;
             }
-            if (closes && now >= closes.getTime()) return "Window closed";
+            if (!anytime && closes && now >= closes.getTime()) return "Window closed";
 
             const played = Object.keys(challenge.rounds).length;
             if (played >= challenge.roundCount) {
@@ -91,7 +120,9 @@ export function challengeStatusLine(challenge: ChallengeSummary | null): string 
                     ? "Both finished"
                     : `Waiting on ${challenge.opponent.name || "them"} to play`;
             }
-            return `Round ${played + 1} of ${challenge.roundCount} · closes ${deadlineLabel(challenge.deadlines.testClosesAt)}`;
+            return anytime
+                ? `Round ${played + 1} of ${challenge.roundCount} · anytime`
+                : `Round ${played + 1} of ${challenge.roundCount} · closes ${deadlineLabel(challenge.deadlines.testClosesAt)}`;
         }
         case "complete":
             if (!challenge.winnerUserId) return "Draw";
@@ -121,8 +152,15 @@ export type ChallengeAction =
  * Map a row to its single action. ONE place, so the row never grows a ternary chain
  * and two screens can never disagree about what state a challenge is in.
  */
-export function challengeAction(challenge: ChallengeSummary | null): ChallengeAction {
+export function challengeAction(
+    challenge: ChallengeSummary | null,
+    /** Tester hatch on for this device (docs/STUDY_CHALLENGE.md § 2a). */
+    anytime = false
+): ChallengeAction {
     if (!challenge) return "issue";
+    // A lapsed invitation is inert on BOTH sides: the challengee can no longer
+    // accept it and the challenger has nothing left to withdraw from.
+    if (acceptLapsed(challenge, anytime)) return "none";
 
     switch (challenge.status) {
         case "pending":
@@ -131,8 +169,11 @@ export function challengeAction(challenge: ChallengeSummary | null): ChallengeAc
             const opens = asDate(challenge.deadlines.testOpensAt);
             const closes = asDate(challenge.deadlines.testClosesAt);
             const now = Date.now();
-            if (opens && now < opens.getTime()) return "study";
-            if (closes && now >= closes.getTime()) return "none";
+            // With the hatch on the test is playable the moment it is accepted, and
+            // never closes — so both window branches are skipped and the row goes
+            // straight to "Play test".
+            if (!anytime && opens && now < opens.getTime()) return "study";
+            if (!anytime && closes && now >= closes.getTime()) return "none";
             const played = Object.keys(challenge.rounds).length;
             // `roundCount` comes from the server's drawn sequence, which may be fewer
             // than three for a cross-language pair — never hard-code 3 here.

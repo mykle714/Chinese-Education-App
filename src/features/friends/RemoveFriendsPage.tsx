@@ -70,7 +70,6 @@ function RemoveFriendsPage() {
     return (
         <NodePage
             title="Remove Friends"
-            activePage="home"
             onBack={() => slideNavigate("/friends")}
             contentClassName="remove-friends-page__content"
         >
@@ -103,7 +102,7 @@ function RemoveFriendsPage() {
                                     disabled={busyId === friend.userId}
                                     onClick={() => handleRemove(friend)}
                                     startIcon={<PersonRemoveIcon sx={{ fontSize: 16 }} />}
-                                    sx={{ ...smallButtonSx, color: COLORS.redMain }}
+                                    sx={{ ...smallButtonSx, color: COLORS.dangerInk }}
                                 >
                                     Remove
                                 </Button>

@@ -1,6 +1,6 @@
 import React from "react";
 import { Box } from "@mui/material";
-import { SIZE, WEIGHT } from "../../theme/scale";
+import { WEIGHT } from "../../theme/scale";
 import { FONTS } from "../../theme/fonts";
 import { HINT_ACCENT_COLOR, HINT_LETTER_BLANK } from "./constants";
 import { wordToPinyinUnits } from "./pinyinUnits";
@@ -100,7 +100,11 @@ function buildMask(syllableUnits: string[][], revealCount: number): string {
 }
 
 /**
- * The letter-hint row, sitting between the English gloss list and the grid.
+ * The REVEAL — what a spent hint bought. It fills the right-hand `.rv` slot of the
+ * `.hintbar` row (docs/SHELF_REDESIGN.md § 13); it used to be a row of its own between
+ * the gloss list and the grid, which cost a whole line of board height to show nothing
+ * most of the time.
+ *
  * BLANK by default — nothing is shown until the player spends a hint. Pressing
  * the hint button (`WordSearchPage.tsx`'s `useHint`) picks a random still-unfound
  * word and then walks the two-stage ladder in `buildMask` above: first one
@@ -122,8 +126,8 @@ function buildMask(syllableUnits: string[][], revealCount: number): string {
  * hints keep revealing units of the SAME word until it's found (the row goes
  * blank again, ready for the next hint to pick a new word) or fully spelled
  * out (further hints then move on to a different unfound word). The
- * mask is rendered in `HINT_ACCENT_COLOR`, the same color `WordSearchWordList`
- * tints the matching English gloss, so the two visually pair up. See
+ * mask is rendered in `HINT_ACCENT_COLOR`, the same ink the `.hintbar` lightbulb
+ * and charge dots use, so the whole hint mechanic reads as one thing. See
  * docs/WORD_SEARCH_GAME.md §5a.
  */
 const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount, currency }) => {
@@ -143,11 +147,13 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
             className="word-search__hint-row"
             sx={{
                 display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                minHeight: "1.5em",
-                px: 1.5,
-                pb: 0.5,
+                justifyContent: "flex-end",
+                alignItems: "baseline",
+                gap: "7px",
+                minWidth: 0,
+                // Holds its line open even when empty, so spending the first hint of a
+                // run doesn't shove the grid down by a row.
+                minHeight: "1.4em",
             }}
         >
             {word && currency === "pinyin" && (
@@ -155,13 +161,21 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
                     component="span"
                     className="word-search__hint-row-mask"
                     sx={{
-                        fontSize: SIZE.bodyLg,
+                        // `.rv em` is mono 10.5 muted in the design — but there the
+                        // reveal is a caption beside a headword, and here the mask IS
+                        // the information the player paid for. It keeps the mono face
+                        // (the blanks must sit on a fixed pitch or the word appears to
+                        // shuffle as it fills) at a readable size, in the accent the
+                        // gloss chip is tinted with so the two visibly pair up.
+                        fontFamily: FONTS.mono,
+                        fontSize: 13,
                         fontWeight: WEIGHT.bold,
-                        fontFamily: "monospace",
                         letterSpacing: "2px",
                         color: HINT_ACCENT_COLOR,
                         lineHeight: 1.25,
                         whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
                     }}
                 >
                     {pinyinMask}
@@ -177,6 +191,8 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
                         // One gap between characters' islands; the glyphs WITHIN an island
                         // run together so they read as parts of one character.
                         gap: 1.5,
+                        minWidth: 0,
+                        overflow: "hidden",
                         whiteSpace: "nowrap",
                     }}
                 >
@@ -196,8 +212,10 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
                                 // rare component glyphs (⺮ ⺼ 㐬 …) render in the same face as
                                 // the grid instead of tofu. See src/index.css.
                                 fontFamily: FONTS.hanziComponents,
-                                fontSize: SIZE.bodyLg,
+                                // `.rv b` — cjk 16/700 with the design's letter spacing.
+                                fontSize: 16,
                                 fontWeight: WEIGHT.bold,
+                                letterSpacing: "0.03em",
                                 color: HINT_ACCENT_COLOR,
                                 lineHeight: 1.25,
                             }}

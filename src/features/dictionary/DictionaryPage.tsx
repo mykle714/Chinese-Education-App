@@ -122,7 +122,7 @@ function DictionaryPage() {
         // NodePage/MobileTabScreen scroll area owns scrolling + floating-footer
         // clearance, so the page no longer wraps its content in its own scroll box.
         // Opened from the Home menu, so the Home tab stays active.
-        <NodePage title="Dictionary" activePage="home" onBack={() => navigate("/")}>
+        <NodePage title="Dictionary" onBack={() => navigate("/")}>
         <Container
             className="dictionary-page"
             ref={containerRef}
@@ -223,9 +223,9 @@ function DictionaryPage() {
                             disabled={askingAi}
                             onClick={askingAi ? undefined : askAi}
                             sx={{
-                                color: COLORS.yellowMain,
-                                borderColor: COLORS.yellowMain,
-                                '& .MuiChip-icon': { color: COLORS.yellowMain },
+                                color: COLORS.aiGenerated,
+                                borderColor: COLORS.aiGenerated,
+                                '& .MuiChip-icon': { color: COLORS.aiGenerated },
                             }}
                           />
                     )}
@@ -242,9 +242,9 @@ function DictionaryPage() {
                 </Box>
             )}
             {askingAi && (
-                <Box className="dictionary-page__ai-loading" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, color: COLORS.yellowMain }}>
-                    <CircularProgress size={20} sx={{ color: COLORS.yellowMain }} />
-                    <Typography variant="body2" sx={{ color: COLORS.yellowMain }}>Asking AI…</Typography>
+                <Box className="dictionary-page__ai-loading" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, color: COLORS.aiGenerated }}>
+                    <CircularProgress size={20} sx={{ color: COLORS.aiGenerated }} />
+                    <Typography variant="body2" sx={{ color: COLORS.aiGenerated }}>Asking AI…</Typography>
                 </Box>
             )}
             {!askingAi && aiNoMatch && (

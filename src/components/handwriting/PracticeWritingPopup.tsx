@@ -25,6 +25,7 @@ import { recognizeHandwriting } from "./recognize";
 import { recordCompletion } from "./completions";
 import { getWritingDraft, setWritingDraft } from "./writingDraftStore";
 import type { Ink, WritingCanvasHandle } from "./types";
+import { PHONE_OVERLAY_SX } from "../phoneGeometry";
 
 type AssistMode = "trace" | "walkthrough" | "memorize" | "test";
 
@@ -752,23 +753,12 @@ export default function PracticeWritingPopup({
       className="practice-writing-dialog"
       open={open}
       onClose={handleBackgroundTap}
-      // Match the phone-card geometry (full-bleed on mobile, centered 393px card on
-      // desktop — same as MobileDemoFrame) so the chrome anchors to the phone's own
-      // corners/bottom. Paper is transparent + shadowless: each element reads as its
-      // own floating island over the dark backdrop scrim.
-      PaperProps={{
-        elevation: 0,
-        sx: {
-          backgroundColor: "transparent",
-          boxShadow: "none",
-          overflow: "visible",
-          m: 0,
-          width: { xs: "100vw", md: 393 },
-          maxWidth: "100vw",
-          height: { xs: "100dvh", md: "calc(100dvh - 48px)" },
-          maxHeight: { xs: "100dvh", md: 932 },
-        },
-      }}
+      // Match the phone-card geometry (full-bleed on mobile, centered card on
+      // desktop) so the chrome anchors to the phone's own corners/bottom. The box
+      // comes from MobileDemoFrame so it cannot drift from the real frame. Paper is
+      // transparent + shadowless: each element reads as its own floating island
+      // over the dark backdrop scrim.
+      PaperProps={{ elevation: 0, sx: PHONE_OVERLAY_SX }}
     >
       <Box
         className="practice-writing"

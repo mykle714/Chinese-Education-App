@@ -41,6 +41,7 @@ import { LANGUAGE_FLAGS, LANGUAGE_NAMES } from '../types';
 import type { Language } from '../types';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useTTSSettings } from '../hooks/useTTSSettings';
+import { COLORS } from "../theme/colors";
 
 function SettingsPage() {
     usePageTitle("Settings");
@@ -560,8 +561,8 @@ function SettingsPage() {
             <Paper elevation={2} sx={{ mb: 4 }} className="settings-page__delete-section">
                 <CardContent sx={{ p: 4 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <Warning sx={{ mr: 2, color: '#EF476F' }} />
-                        <Typography variant="h5" component="h2" fontWeight="bold" sx={{ color: '#EF476F' }}>
+                        <Warning sx={{ mr: 2, color: COLORS.dangerInk }} />
+                        <Typography variant="h5" component="h2" fontWeight="bold" sx={{ color: COLORS.dangerInk }}>
                             Delete Account
                         </Typography>
                     </Box>

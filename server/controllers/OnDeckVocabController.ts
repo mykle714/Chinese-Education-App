@@ -10,9 +10,12 @@ import {
   isRollingSupplySurface,
   masteredCollectionBar,
   parseMasteryBar,
+  parseFlpForeignTrack,
 } from '../contracts/wire.js';
 import { parseBuiltinCollectionId } from '../dal/shared/vetTable.js';
 import { DeckService } from '../services/DeckService.js';
+import type { StudyChallengeService } from '../services/StudyChallengeService.js';
+import type { ChallengeRoundContext } from '../types/studyChallenge.js';
 
 /**
  * OnDeck Vocabulary Controller
@@ -26,8 +29,44 @@ export class OnDeckVocabController {
     private provisionalCardService: ProvisionalCardService,
     // Resolves + authorizes the optional `deck` query param that restricts a
     // game/flp round to one user-authored deck (docs/DECKS_FEATURE.md).
-    private deckService: DeckService
+    private deckService: DeckService,
+    /**
+     * Resolves + authorizes the optional `challengeId` query param
+     * (docs/STUDY_CHALLENGE.md § 5.2). A challenge board is still a GAME POOL, so it
+     * is served from this controller's endpoints rather than a second pool loader —
+     * but only the challenge service can say whether this player may have it, which
+     * round they are on, and which twelve words it is made of.
+     */
+    private studyChallengeService: StudyChallengeService
   ) {}
+
+  /**
+   * Resolve the optional `?challengeId=&gameId=&mode=` params into one round's
+   * board context, or null for an ordinary launch.
+   *
+   * THROWS (401/400/404 via handleControllerError) rather than degrading to a
+   * normal pool when the challenge is named but unplayable — a player who is out of
+   * their test window must be told, not handed a casual board that scores nothing.
+   */
+  private async resolveChallengeRound(req: Request, userId: string): Promise<ChallengeRoundContext | null> {
+    const rawId = req.query.challengeId;
+    if (rawId == null || String(rawId).trim() === '') return null;
+    const gameId = typeof req.query.gameId === 'string' ? req.query.gameId : '';
+    const rawMode = typeof req.query.mode === 'string' ? req.query.mode : '';
+    return this.studyChallengeService.getRoundContext(
+      userId,
+      String(rawId),
+      // The game is stated by the caller and CHECKED against the drawn sequence, so
+      // a client cannot pick which of the three games it plays. `mode` collapses to
+      // null for a game that has only one, matching how the sequence stores it.
+      gameId ? { gameId, mode: rawMode || null } : null,
+      // The tester escape hatch rides through to the WINDOW check only, and the
+      // service still verifies the caller is a validator
+      // (docs/STUDY_CHALLENGE.md § 2a). Without it a tester could open a round from
+      // the challenge page and then be refused its board.
+      String(req.query.anytime ?? '') === '1'
+    );
+  }
 
   /**
    * Resolve the optional collection-launch query params (docs/DECKS_FEATURE.md).
@@ -120,7 +159,7 @@ export class OnDeckVocabController {
 
   /**
    * Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target by default).
-   * GET /api/onDeck/distributedWorkingLoop?category=<optional>&mode=<review|challenge|optional>&deck=<optional>
+   * GET /api/onDeck/distributedWorkingLoop?category=<optional>&mode=<review|challenge|optional>&deck=<optional>&foreignTrack=<recognition|reading|optional>
    * The optional `mode` swaps in a difficulty-targeted distribution (see MODE_CONFIGS).
    * The optional `deck` / `collection` params restrict the loop to one collection
    * (docs/DECKS_FEATURE.md); the client must send the same restriction to the mark
@@ -137,15 +176,25 @@ export class OnDeckVocabController {
         rawMode === 'review' || rawMode === 'challenge' ? rawMode : undefined;
       const language = await getUserLanguage(userId);
       const collection = await this.resolveCollection(req, userId);
+      // Which track this session's FOREIGN-FIRST face exercises (docs/MASTERY_REWORK.md).
+      // The client sends 'reading' when it is showing zh cards with "Show pinyin" off;
+      // anything else (absent, unknown, or an es session) means the historical
+      // 'recognition'. Coerced rather than 400'd: a bad value must only mis-steer a
+      // face, never break a study session.
+      const foreignTrack = parseFlpForeignTrack(req.query.foreignTrack);
 
       // flp never blocks on deck size any more: top the user up to the flp baseline
       // first, so a learner with an empty deck still gets a full working loop. The
       // response shape is unchanged — the client spots the temporary cards by their
       // `starterPackBucket` and shows the generic notice (flp is not itemized,
       // because the loop refills as you go and the played set isn't known up front).
-      await this.provisionalCardService.ensureBaselineForSurface(userId, language, 'flp');
+      //
+      // The top-up fires only for a learner short on SORTED cards, and the loop's own
+      // lend tier sits below its cooled tier, so an established learner with a resting
+      // deck is never lent anything (docs/PROVISIONAL_CARDS.md § 4b).
+      const { lentIds } = await this.provisionalCardService.ensureBaselineForSurface(userId, language, 'flp');
 
-      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter, mode, collection);
+      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter, mode, collection, lentIds, foreignTrack);
       res.json(workingLoop);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getDistributedWorkingLoop');
@@ -276,6 +325,35 @@ export class OnDeckVocabController {
         : 'recognition';
 
       const language = await getUserLanguage(userId);
+
+      // ── STUDY CHALLENGE BOARD (docs/STUDY_CHALLENGE.md § 5.2) ──
+      // A named, authorized challenge round short-circuits everything below: the
+      // band distribution, the baseline top-up and the fallback ladder are all
+      // answers to "what MIX should this board have", and a challenge board's
+      // composition is already decided — the twelve contested words plus
+      // `mastered-first` filler. Resolved first so an out-of-window request fails
+      // before any lending happens.
+      const challengeRound = await this.resolveChallengeRound(req, userId);
+      if (challengeRound) {
+        // THE BOARD SIZE IS THE GAME'S OWN, and every caller already states it: a
+        // full board is the sum of its requested distribution (Bubble Match's 20),
+        // and a partial refill states `need` (a Match Speed buffer top-up). Reusing
+        // those two rather than inventing a challenge-specific parameter is what
+        // keeps a challenge round the same size as a casual one — the twelve
+        // contested words are ADDED to the board's composition, never a cap on it.
+        const boardSize = need ?? Object.values(distribution).reduce((sum, n) => sum + n, 0);
+        res.json(await this.onDeckVocabService.getChallengeGamePool(
+          userId, challengeRound.language, markType, {
+            contestedIds: challengeRound.vocabEntryIds,
+            contestedWords: challengeRound.words,
+            need: boardSize,
+            includeContested: String(req.query.contested ?? '') !== 'exclude',
+            excludeIds,
+          }
+        ));
+        return;
+      }
+
       // Optional collection restriction. Resolved BEFORE the top-up so a bad deck
       // id 404s without first lending the user cards for a round that won't happen.
       const collection = await this.resolveCollection(req, userId);
@@ -285,12 +363,17 @@ export class OnDeckVocabController {
       // refill (`need` set — Bubble Match's Play Again) skips this: the player is
       // mid-session with a board already in hand, and lending more cards there would
       // quietly grow their deck every time they tapped the button.
+      //
+      // The ids it lent are threaded into the pool below: selection queries are
+      // sorted-only, so a lent card that is not named cannot appear in the round
+      // (docs/PROVISIONAL_CARDS.md § 4b).
+      let lentIds: number[] = [];
       if (need === undefined) {
         const surface = OnDeckVocabController.parseSurface(req.query.surface);
         const baseline = surface
           ? CARD_BASELINES[surface]
           : Object.values(distribution).reduce((sum, n) => sum + n, 0);
-        await this.provisionalCardService.ensureBaseline(userId, language, baseline);
+        ({ lentIds } = await this.provisionalCardService.ensureBaseline(userId, language, baseline));
       }
 
       // ROLLING SUPPLY (ROLLING_SUPPLY_SURFACES, contracts/wire.ts). A surface whose
@@ -304,17 +387,22 @@ export class OnDeckVocabController {
         typeof req.query.surface === 'string' ? req.query.surface : null
       );
       // Optional TIER OFFSET — how many levels away from the learner's own estimated
-      // level to lend. Hydra maps a rolled color to one (red 0, yellow -1, green -2,
-      // blue -3; docs/HYDRA_BUBBLES.md § 6.2); the server resolves it against `L`,
-      // which the client never sees. Bounded to the width of the 1..6 level range in
-      // both directions, so a malformed value cannot be used to probe the clamp.
+      // level to lend. Hydra maps a rolled payout tier to one (drain 0, bloom -1;
+      // docs/HYDRA_BUBBLES.md § 6.2); the server resolves it against `L`, which the
+      // client never sees. Bounded to the width of the 1..6 level range in both
+      // directions, so a malformed value cannot be used to probe the clamp.
       const rawOffset = parseInt(String(req.query.lendLevelOffset ?? ''), 10);
       const lendLevelOffset =
         Number.isInteger(rawOffset) && rawOffset >= -5 && rawOffset <= 5 ? rawOffset : undefined;
+      // STRICT BUCKETS — "these bands or nothing". Set by a caller for whom the band a
+      // card came from IS the answer rather than a preference, so the pool must never
+      // be topped up from outside the requested set (docs/HYDRA_BUBBLES.md § 6.2d).
+      // Hydra sends it because it pays the player by the color the card was drawn as.
+      const strictBuckets = String(req.query.strictBuckets ?? '') === '1';
 
       const pool = await this.onDeckVocabService.getGameVocabPool(
         userId, language, distribution, markType,
-        { need, excludeIds, avoidIds, collection, lendOnRefill, lendLevelOffset }
+        { need, excludeIds, avoidIds, collection, lendOnRefill, lendLevelOffset, lentIds, strictBuckets }
       );
       res.json(pool);
     } catch (error: any) {
@@ -350,13 +438,37 @@ export class OnDeckVocabController {
       }
 
       const language = await getUserLanguage(userId);
-      // Board mode decides the mark type this game emits (docs/MASTERY_REWORK.md
+      // Board mode decides the PRIMARY mark type of this board (docs/MASTERY_REWORK.md
       // § "Games select by their own mark type"): No-Pinyin is a reading review,
       // Pinyin is a production review. That type buckets the pool by its own mark
       // history and gates its per-type cooldown. Default to production (Pinyin) if
       // the mode param is absent/unrecognized.
+      //
+      // PRIMARY, because a No-Pinyin find also writes a `production` mark
+      // (docs/WORD_SEARCH_GAME.md § "What a find marks"). The pool is deliberately NOT
+      // widened to both: a candidate has one Unfamiliar/Target/Comfortable/Mastered
+      // bucket per track, and banding a board by two of them has no defined meaning.
+      // The consequence is intended — the secondary production mark is judged on a
+      // cooldown the board was not selected against, and may be dropped at the mark
+      // endpoint.
       const mode = String(req.query.mode ?? '');
       const gameMarkType: MarkType = mode === 'no-pinyin' ? 'reading' : 'production';
+
+      // ── STUDY CHALLENGE ROUND (docs/STUDY_CHALLENGE.md § 5.2) ──
+      // Word Search is challenge-eligible as PINYIN only, and `getRoundContext`
+      // enforces that by comparing the caller's (gameId, mode) against the drawn
+      // sequence — a No-Pinyin board can never be a challenge round because the
+      // sequence can never hold one. Nothing else about the grid changes: the same
+      // generator, the same client, a bigger board and a fixed word list.
+      const challengeRound = await this.resolveChallengeRound(req, userId);
+      if (challengeRound) {
+        res.json(await this.onDeckVocabService.getWordSearchGrid(
+          userId, challengeRound.language, distribution, gameMarkType, null, [],
+          { contestedIds: challengeRound.vocabEntryIds, contestedWords: challengeRound.words }
+        ));
+        return;
+      }
+
       const collection = await this.resolveCollection(req, userId);
 
       // Word Search is the one surface where meeting the baseline does NOT guarantee a
@@ -364,8 +476,12 @@ export class OnDeckVocabController {
       // row count cannot express, so a topped-up deck can still fail the de-dup pass.
       // Escalate the baseline and retry until the grid builds or we hit the cap.
       // `shortfall > 0` means the dictionary itself ran dry, so retrying is pointless.
+      // Lent ids ACCUMULATE across retries: each escalation adds to the pool the grid
+      // may draw from rather than replacing it, and selection is sorted-only so an id
+      // dropped from this list is a card the grid can no longer see.
+      const lentIds: number[] = [];
       let result = await this.onDeckVocabService.getWordSearchGrid(
-        userId, language, distribution, gameMarkType, collection
+        userId, language, distribution, gameMarkType, collection, lentIds
       );
       for (let multiplier = 1; multiplier <= PROVISION_RETRY_FACTOR && !result.sufficient; multiplier++) {
         // 'language' means the game is zh-only and this user isn't studying zh —
@@ -374,9 +490,21 @@ export class OnDeckVocabController {
         const top = await this.provisionalCardService.ensureBaselineForSurface(
           userId, language, 'word-search', multiplier
         );
-        if (top.granted === 0) break; // nothing left to lend
+        // Nothing new to draw on — neither re-lent nor minted — so re-running the
+        // grid would run the identical query. CONTINUE rather than break: the next
+        // iteration escalates the multiplier, and it is the ESCALATION that unblocks
+        // a learner whose sorted deck is already past the flat baseline but cannot
+        // yield ten distinct-charactered words (`ensureBaseline` is a no-op until the
+        // escalated target exceeds their sorted count). Breaking here left that
+        // learner with an empty grid.
+        //
+        // `granted` alone is the wrong test either way: a re-lent row is not granted
+        // but IS new to this grid.
+        const fresh = top.lentIds.filter((id) => !lentIds.includes(id));
+        if (fresh.length === 0) continue;
+        lentIds.push(...fresh);
         result = await this.onDeckVocabService.getWordSearchGrid(
-          userId, language, distribution, gameMarkType, collection
+          userId, language, distribution, gameMarkType, collection, lentIds
         );
       }
       res.json(result);

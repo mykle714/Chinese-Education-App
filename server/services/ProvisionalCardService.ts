@@ -14,9 +14,17 @@ import { DiscoverCard } from '../types/index.js';
  * ---------------------------------------
  * No game and no flashcards learn page may ever refuse to start because the user
  * does not have enough cards. Every surface's old "you need N cards" minimum is now
- * a BASELINE (`CARD_BASELINES` in contracts/wire.ts): the number of playable cards
- * the surface wants. When the user is short, the server LENDS them the difference as
- * provisional vet rows instead of blocking.
+ * a BASELINE (`CARD_BASELINES` in contracts/wire.ts): the number of cards the surface
+ * wants to draw from. When the user has SORTED fewer than that, the server LENDS them
+ * the difference as provisional vet rows instead of blocking.
+ *
+ * AND FOR NOTHING ELSE (2026-08-20). Lending is not a general-purpose way to fill a
+ * round. A learner with a real deck whose cards are all resting on their cooldown is
+ * NOT short of cards: the surfaces re-serve those cooling cards, and lending sits at
+ * the bottom of every fill ladder beneath them. Until this rule landed, lending sat
+ * near the TOP of those ladders and fired on almost every load — dev accounts reached
+ * 450 and 184 lent rows against 20 and 185 real ones. See docs/PROVISIONAL_CARDS.md
+ * § 4b before moving a lend call earlier in any ladder.
  *
  * WHICH WORDS GET LENT
  *   - never a word the user already holds (deck or already-lent);
@@ -37,15 +45,20 @@ import { DiscoverCard } from '../types/index.js';
  * garbage-collected, because deleting it would throw that progress away — the same
  * reason undoSort demotes rather than deletes.
  *
- * TWO ENTRY POINTS
- *   - `ensureBaseline` — "top the user up to N playable cards". The cold-start guard
- *     every surface calls before assembling a round.
- *   - `lendCards` — "lend exactly N, whatever they hold". Used by the flp working
- *     loop, where the user can be far past the baseline and still have nothing to
- *     play because every card is resting on its cooldown.
+ * THE ENTRY POINTS
+ *   - `ensureBaseline` — "has this learner sorted N cards? if not, cover the gap".
+ *     The cold-start guard every surface calls before assembling a round. Returns
+ *     `lentIds`, WITHOUT WHICH THE LENT CARDS ARE INVISIBLE: every selection query is
+ *     sorted-only, so a lent row enters a round only by being named.
+ *   - `acquireLentCards` — "put N lent cards at this round's disposal": re-lend rows
+ *     the learner already holds, mint only the remainder, return the ids. The
+ *     primitive `ensureBaseline` is built on, and what the fill ladders' last tier
+ *     calls directly.
+ *   - `lendCards` — the minting half alone. Internal to this service; callers outside
+ *     it want `acquireLentCards`, or they will mint a fresh batch every round.
  *
  * Referenced by: OnDeckVocabController (game pools, word search, the flp working
- * loop), OnDeckVocabService (the flp cooldown-exhaustion top-up).
+ * loop), OnDeckVocabService (the last fill tier of every ladder).
  * Depends on: ProvisionalCardDAL, StarterPacksService.estimateLevel.
  */
 /**
@@ -57,6 +70,19 @@ import { DiscoverCard } from '../types/index.js';
 const PROVISIONAL_MIN_LEVEL = 1;
 const PROVISIONAL_MAX_LEVEL = 6;
 
+/**
+ * What a baseline top-up tells its caller. See `ensureBaseline` for the field-by-field
+ * meaning; the one that is easy to miss is `lentIds` — selection queries are
+ * sorted-only, so these ids are the ONLY way the lent cards reach the round.
+ */
+export interface BaselineTopUp {
+  granted: number;
+  grantedWords: string[];
+  lentIds: number[];
+  sorted: number;
+  shortfall: number;
+}
+
 export class ProvisionalCardService {
   constructor(
     private provisionalCardDAL: ProvisionalCardDAL,
@@ -64,16 +90,27 @@ export class ProvisionalCardService {
   ) {}
 
   /**
-   * Ensure the user has at least `baseline` playable cards for `language`, lending
-   * provisional cards to cover any shortfall.
+   * Ensure the round has at least `baseline` cards to draw from, lending to cover
+   * whatever the learner's SORTED deck cannot.
    *
-   * Returns what the caller needs to describe the situation to the player:
-   *   - `granted`     — how many cards were lent by THIS call (0 = nothing to do);
-   *   - `grantedWords`— the words lent by this call, in the order they were chosen;
-   *   - `playable`    — the playable card count after topping up;
-   *   - `shortfall`   — how many cards the user is STILL short after the top-up,
-   *                     i.e. the dictionary genuinely ran out of lendable words.
-   *                     Non-zero is not an error: the surface plays with what it has.
+   * This is the whole of proactive lending (docs/PROVISIONAL_CARDS.md § 4b): it fires
+   * for a learner who has not sorted enough cards, and for nobody else. A learner
+   * whose deck is big enough but whose cards are all resting is NOT topped up — the
+   * surfaces re-serve their cooled cards instead, which is a card the learner chose
+   * rather than a word they have never seen.
+   *
+   * Returns what the caller needs to assemble and describe the round:
+   *   - `lentIds`     — the vet ids this call put at the round's disposal (re-lent +
+   *                     newly minted). SELECTION READS ARE SORTED-ONLY, so a surface
+   *                     that does not pass these ids into its candidate queries will
+   *                     not see the cards at all;
+   *   - `granted`     — how many cards were newly MINTED by this call (0 = the deficit
+   *                     was covered by rows the learner already held, or by nothing);
+   *   - `grantedWords`— the words newly minted, in the order they were chosen;
+   *   - `sorted`      — how many cards the learner has actually sorted;
+   *   - `shortfall`   — how many cards the round is STILL short, i.e. the dictionary
+   *                     genuinely ran out of lendable words. Non-zero is not an error:
+   *                     the surface plays with what it has.
    *
    * NEVER THROWS ON SUPPLY EXHAUSTION. A user who has already sorted or been lent
    * every discoverable word in the language gets `shortfall > 0` and a smaller round,
@@ -84,25 +121,81 @@ export class ProvisionalCardService {
     language: string,
     baseline: number,
     mode: ProvisionMode = 'default'
-  ): Promise<{ granted: number; grantedWords: string[]; playable: number; shortfall: number }> {
+  ): Promise<BaselineTopUp> {
     if (!userId) throw new ValidationError('User ID is required');
     if (!language) throw new ValidationError('Language is required');
 
     const target = Math.max(0, Math.floor(baseline));
-    let playable = await this.provisionalCardDAL.countPlayable(userId, language);
-    if (playable >= target) {
-      return { granted: 0, grantedWords: [], playable, shortfall: 0 };
+    const sorted = await this.provisionalCardDAL.countSorted(userId, language);
+    if (sorted >= target) {
+      return { granted: 0, grantedWords: [], lentIds: [], sorted, shortfall: 0 };
     }
 
-    const { granted, grantedWords } = await this.lendCards(userId, language, target - playable, mode);
-    // Re-read the true playable count rather than trusting the batch size: ON CONFLICT
-    // DO NOTHING means a concurrent entry may have claimed some of the same words.
-    if (granted > 0) {
-      playable = await this.provisionalCardDAL.countPlayable(userId, language);
+    const { lentIds, granted, grantedWords } = await this.acquireLentCards(
+      userId, language, target - sorted, mode
+    );
+
+    // What the round will actually have to play with: the learner's own sorted cards
+    // plus the rows this call put at its disposal. Not re-counted from the table —
+    // outstanding provisional rows that were NOT lent to this round are deliberately
+    // not part of it (they are invisible to selection), so a COUNT would overstate.
+    const shortfall = Math.max(0, target - (sorted + lentIds.length));
+    return { granted, grantedWords, lentIds, sorted, shortfall };
+  }
+
+  /**
+   * Put `count` lent cards at a round's disposal and return THEIR VET IDS — re-lending
+   * rows the learner already holds before minting anything new.
+   *
+   * ── WHY IDS, AND WHY RE-LEND FIRST (2026-08-20) ─────────────────────────────
+   * A provisional row is no longer an ordinary candidate: every selection query is
+   * `vetSortedClause()`, so a lent card can only enter a round by being named. That
+   * fixed the old failure where accumulated lent rows out-competed the learner's own
+   * deck forever — but on its own it would have replaced that failure with a worse
+   * one, minting a brand-new batch on every entry because the previous batch was
+   * invisible.
+   *
+   * So lending has two steps, cheapest first:
+   *   1. RE-LEND — hand back rows this learner already holds, nearest the target
+   *      difficulty (`findHeldProvisional`). Costs nothing, mints nothing, and the
+   *      row carries whatever marks it has already collected.
+   *   2. MINT — cover only what step 1 could not.
+   *
+   * The bucket therefore stops at the learner's true deficit instead of growing by a
+   * batch per round.
+   *
+   * `granted`/`grantedWords` describe step 2 ALONE — the words newly minted — because
+   * that is what the "we lent you these cards" notice is about; a re-lent row was
+   * announced when it was first minted. `lentIds` covers both steps.
+   */
+  async acquireLentCards(
+    userId: string,
+    language: string,
+    count: number,
+    mode: ProvisionMode = 'default',
+    opts: { level?: number; excludeIds?: number[] } = {}
+  ): Promise<{ lentIds: number[]; granted: number; grantedWords: string[] }> {
+    if (!userId) throw new ValidationError('User ID is required');
+    if (!language) throw new ValidationError('Language is required');
+
+    const want = Math.max(0, Math.floor(count));
+    if (want === 0) return { lentIds: [], granted: 0, grantedWords: [] };
+
+    const level = opts.level ?? (await this.starterPacksService.estimateLevel(userId, language));
+
+    // 1. Re-lend what they already hold.
+    const held = await this.provisionalCardDAL.findHeldProvisional(
+      userId, language, level, want, opts.excludeIds ?? []
+    );
+    if (held.length >= want) {
+      return { lentIds: held.slice(0, want), granted: 0, grantedWords: [] };
     }
 
-    const shortfall = Math.max(0, target - playable);
-    return { granted, grantedWords, playable, shortfall };
+    // 2. Mint the remainder.
+    const { granted, grantedWords, grantedIds } = await this.lendCards(
+      userId, language, want - held.length, mode, { level }
+    );
+    return { lentIds: [...held, ...grantedIds], granted, grantedWords };
   }
 
   /**
@@ -161,12 +254,12 @@ export class ProvisionalCardService {
     count: number,
     mode: ProvisionMode = 'default',
     opts: { level?: number } = {}
-  ): Promise<{ granted: number; grantedWords: string[] }> {
+  ): Promise<{ granted: number; grantedWords: string[]; grantedIds: number[] }> {
     if (!userId) throw new ValidationError('User ID is required');
     if (!language) throw new ValidationError('Language is required');
 
     const want = Math.max(0, Math.floor(count));
-    if (want === 0) return { granted: 0, grantedWords: [] };
+    if (want === 0) return { granted: 0, grantedWords: [], grantedIds: [] };
 
     // Which difficulty to lend AROUND — the learner's own estimated level unless the
     // caller pinned one. Either way it is a CENTRE, not a filter: findCandidates
@@ -176,6 +269,7 @@ export class ProvisionalCardService {
     // starve a round.
     const level = opts.level ?? (await this.starterPacksService.estimateLevel(userId, language));
     const grantedWords: string[] = [];
+    const grantedIds: number[] = [];
     let granted = 0;
 
     for (const includeSkipped of [false, true]) {
@@ -194,6 +288,7 @@ export class ProvisionalCardService {
       const words = candidates.map((c) => c.word1);
       const inserted = await this.provisionalCardDAL.insertProvisional(userId, words, language);
       grantedWords.push(...words);
+      grantedIds.push(...inserted);
       granted += inserted.length;
     }
 
@@ -205,7 +300,7 @@ export class ProvisionalCardService {
       );
     }
 
-    return { granted, grantedWords };
+    return { granted, grantedWords, grantedIds };
   }
 
   /**
@@ -222,7 +317,7 @@ export class ProvisionalCardService {
     surface: CardBaselineSurface,
     multiplier = 1,
     mode: ProvisionMode = 'default'
-  ): Promise<{ granted: number; grantedWords: string[]; playable: number; shortfall: number }> {
+  ): Promise<BaselineTopUp> {
     const baseline = Math.ceil(CARD_BASELINES[surface] * Math.max(1, multiplier));
     return this.ensureBaseline(userId, language, baseline, mode);
   }
@@ -253,7 +348,17 @@ export class ProvisionalCardService {
     userId: string,
     language: string,
     count: number,
-    excludeWords: string[] = []
+    excludeWords: string[] = [],
+    /**
+     * Rows the caller already has in play — cards on the board, cards in a buffer.
+     *
+     * ⚠️ A MID-RUN TOP-UP CANNOT WORK WITHOUT THIS. The ladder is deterministic (a
+     * band descent, then commonality), so it returns the same top-N rows every call:
+     * a refill that filtered the result AFTERWARDS would get back exactly what the
+     * opening deal already took and come back empty, and a rolling-buffer game would
+     * silently run dry mid-round.
+     */
+    excludeIds: number[] = []
   ): Promise<number[]> {
     if (!userId) throw new ValidationError('User ID is required');
     if (!language) throw new ValidationError('Language is required');
@@ -265,6 +370,7 @@ export class ProvisionalCardService {
     // descent is an ORDER BY, not four round trips.
     const own = await this.provisionalCardDAL.findOwnCardsByBand(userId, language, want, {
       excludeWords,
+      excludeIds,
     });
     const ids = own.map((card) => card.id);
     if (ids.length >= want) return ids.slice(0, want);
@@ -272,24 +378,23 @@ export class ProvisionalCardService {
     // Rung 5: lend the remainder. Reached immediately by a brand-new player, which is
     // exactly the never-block behaviour PROVISIONAL_CARDS.md already guarantees, and
     // never reached by a learner with a real library.
-    const { grantedWords } = await this.lendCards(
+    //
+    // The lent ids are APPENDED, not re-read (2026-08-20). This used to re-run
+    // `findOwnCardsByBand` "so the lent rows come back in one consistent ordering",
+    // but that query is `vetSortedClause()` — the player's own cards only — so it
+    // could never return a lent row and the rung was silently a no-op: a brand-new
+    // player got a short board instead of a full one. Appending is also the right
+    // ORDER on its own terms: the ladder descends hardest-known first, and a
+    // never-seen word belongs at the bottom of it.
+    const { lentIds } = await this.acquireLentCards(
       userId,
       language,
       want - ids.length,
-      'mastered-first'
+      'mastered-first',
+      { excludeIds }
     );
-    if (grantedWords.length === 0) {
-      // Supply exhausted. A SHORT board is the correct answer, never a refusal.
-      return ids;
-    }
-
-    // Re-read through the same ladder so the lent rows come back as vet ids in one
-    // consistent ordering, rather than being appended from a different query's shape.
-    const topped = await this.provisionalCardDAL.findOwnCardsByBand(userId, language, want, {
-      excludeWords,
-    });
-    if (topped.length >= ids.length) return topped.slice(0, want).map((card) => card.id);
-    return ids;
+    // Supply exhausted → a SHORT board is the correct answer, never a refusal.
+    return [...ids, ...lentIds].slice(0, want);
   }
 
   /** The entryKeys of every card currently lent to this user for a language. */

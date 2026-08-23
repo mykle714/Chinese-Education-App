@@ -14,6 +14,7 @@
 import type { BubbleBody } from "./types";
 import {
     GROW_LERP,
+    HELD_OVERDRAG_RADII,
     IDLE_SPEED,
     IDLE_SPEED_LERP,
     MAX_PUSH_SPEED,
@@ -150,19 +151,29 @@ export function stepPhysics(
             clampSpeed(b);
         }
 
-        // Wall clamp — pin the center inside bounds, reflecting the drift velocity
-        // off whichever wall was hit so the bubble bounces instead of sticking.
-        // Left/right/top snap the position (they only ever correct a drift step or
-        // sub-pixel separation overshoot). The bottom is the cancel-strip boundary:
-        // a bubble released in the strip can sit well below it, so push it back up
-        // at MAX_PUSH_SPEED*dt rather than snapping — it glides into play, honoring
-        // the same shove speed cap as the separation solver.
+        // Wall clamp — bring the center back inside bounds, reflecting the drift
+        // velocity off whichever wall was hit so the bubble bounces instead of
+        // sticking.
+        //
+        // LEFT / RIGHT / BOTTOM all GLIDE the body back at MAX_PUSH_SPEED*dt rather
+        // than snapping it, honoring the same shove speed cap as the separation
+        // solver. Snapping was fine while those side walls only ever corrected a
+        // drift step or a sub-pixel separation overshoot — but a bubble RELEASED past
+        // a wall (see clampHeldCenter) can sit a full radius outside it, and
+        // teleporting it back reads as a glitch where the same distance travelled
+        // reads as a spring.
+        //
+        // Only the reversal is asymmetric: flipping a velocity that ALREADY points
+        // back into the field would fight the glide, so each wall reverses only the
+        // component still heading further out.
         if (b.x - b.radius < 0) {
-            b.x = b.radius;
-            b.vx = Math.abs(b.vx) * RESTITUTION;
+            const overshoot = b.radius - b.x;
+            b.x += Math.min(overshoot, MAX_PUSH_SPEED * dt);
+            if (b.vx < 0) b.vx = -b.vx * RESTITUTION;
         } else if (b.x + b.radius > bounds.width) {
-            b.x = bounds.width - b.radius;
-            b.vx = -Math.abs(b.vx) * RESTITUTION;
+            const overshoot = b.x + b.radius - bounds.width;
+            b.x -= Math.min(overshoot, MAX_PUSH_SPEED * dt);
+            if (b.vx > 0) b.vx = -b.vx * RESTITUTION;
         }
         // Top is the descending ceiling: snap a body that pokes above it back down.
         // (It only rises a few px/frame, so this is a sub-pixel-ish correction that
@@ -241,6 +252,44 @@ export function stepPhysics(
     }
 
     return residual;
+}
+
+/**
+ * Where a HELD bubble's center is allowed to be.
+ *
+ * A held bubble is positioned by the pointer and skipped by `stepPhysics`, so this is
+ * the only thing bounding it — and it is deliberately LOOSER than the walls that bound
+ * a settled body. Left, right and bottom all give by the same `HELD_OVERDRAG_RADII`,
+ * measured from the STAGE edge rather than the play floor, so the bubble can be pulled
+ * clean off any of the three and springs back identically. The top is walled at the
+ * stage edge; see that constant for why.
+ *
+ * Note the asymmetry that survives here: the bottom's give is measured from
+ * `fullHeight` (the stage, strip included) and NOT from `bounds.height` (the play
+ * floor), which is what lets a bubble sit fully inside the cancel strip *and* keep
+ * going. The sides have no strip, so their play wall and their stage edge are the same
+ * line.
+ *
+ * Extracted here because BubbleStage and HydraStage had this expression written out
+ * twice, identically — which is exactly how the two fields would have drifted apart the
+ * first time either was tuned.
+ *
+ * @param fullHeight measured stage height INCLUDING the cancel strip.
+ */
+export function clampHeldCenter(
+    body: BubbleBody,
+    bounds: Bounds,
+    fullHeight: number,
+    x: number,
+    y: number
+): { x: number; y: number } {
+    const slack = body.radius * HELD_OVERDRAG_RADII;
+    return {
+        x: Math.max(-slack, Math.min(bounds.width + slack, x)),
+        // Top: no give (the ceiling is a mechanic). Bottom: the same give as the sides,
+        // taken from the stage edge, so the strip is passed through rather than stopped at.
+        y: Math.max(body.radius, Math.min(fullHeight + slack, y)),
+    };
 }
 
 /**

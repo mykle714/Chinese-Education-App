@@ -7,12 +7,28 @@ const TONE_MARK_MAP: Record<string, number> = {
   'ǖ': 1, 'ǘ': 2, 'ǚ': 3, 'ǜ': 4,
 };
 
+/**
+ * Tone -> color. The four tones are their own semantic axis: a tone color does NOT mean
+ * "this syllable is comfortable" just because it shares a hue with a band. The hues are
+ * shared for palette economy only.
+ *
+ * ⚠️ These five hexes are LITERAL ON PURPOSE — do not re-point them at the OKLCH ramp
+ * in `theme/colors.ts`. The design owns this set exactly as written: the tone
+ * exploration board lists it as the `current` set in tone order
+ * (`['#EF476F','#05C793','#779BE7','#FF8E47']`) and every artboard that renders pinyin
+ * spells these values inline (dictionary rows, card faces, the cpcd, the flp sense
+ * rail). The redesign moved SURFACES to the pastel ramp; it did not move the tones.
+ * A previous pass aliased these to `COLORS.redA/grnA/bluA/orgA` and that was wrong —
+ * those inks are a different, darker hue set and pinyin stopped matching the design.
+ *
+ * Cited by docs/SHELF_REDESIGN.md (D2) and docs/CPCD_PINYIN_SHIFT.md.
+ */
 export const TONE_COLORS: Record<number, string> = {
-  1: '#EF476F', // red   — tone 1
-  2: '#05C793', // green — tone 2
-  3: '#779BE7', // blue  — tone 3
+  1: '#EF476F', // red    — tone 1
+  2: '#05C793', // green  — tone 2
+  3: '#779BE7', // blue   — tone 3
   4: '#FF8E47', // orange — tone 4
-  0: '#9E9E9E', // grey  — neutral tone
+  0: '#9E9E9E', // grey   — neutral tone
 };
 
 export function getToneColor(pinyin: string): string {

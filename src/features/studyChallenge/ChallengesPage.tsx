@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Box, Button, Typography } from "@mui/material";
+import { Box, Button, Switch, Typography } from "@mui/material";
 import HistoryIcon from "@mui/icons-material/History";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
@@ -20,6 +20,8 @@ import {
     challengeErrorMessage,
     challengeStatusLine,
 } from "./challengeLabels";
+import { useChallengeAnytime } from "./challengeAnytime";
+import ChallengeAnytimeNotice from "./ChallengeAnytimeNotice";
 import {
     challengeActionPillMutedSx,
     challengeActionPillSx,
@@ -68,9 +70,16 @@ function ChallengesPage() {
     const [page, setPage] = useState<ChallengesPageResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // The tester escape hatch, per device (docs/STUDY_CHALLENGE.md § 2a). Only a
+    // validator account can spend it — the server ignores it from anybody else — so
+    // the switch below is rendered only for one.
+    const [anytime, setAnytime] = useChallengeAnytime();
 
     // Keyed on isAuthenticated, never on `token`: a silent 15-minute refresh must not
     // re-fetch and flash the list (CLAUDE.md "Never reload on token refresh").
+    // `anytime` IS a dependency: it changes what the server sends (which rows are
+    // expired, whether a friend can be challenged again this week), so flipping the
+    // switch has to re-ask rather than just relabel what is on screen.
     useEffect(() => {
         let cancelled = false;
         setLoading(true);
@@ -81,7 +90,7 @@ function ChallengesPage() {
             })
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
-    }, [isAuthenticated]);
+    }, [isAuthenticated, anytime]);
 
     /**
      * What tapping a row does — it is bound to the ROW, not to the pill (`onRowPress`).
@@ -93,7 +102,7 @@ function ChallengesPage() {
      * final confirm rather than on this tap.
      */
     const handleAction = useCallback((row: ChallengeFriendRow) => {
-        const action = challengeAction(row.challenge);
+        const action = challengeAction(row.challenge, anytime);
         switch (action) {
             case "issue":
                 slideNavigate(`/friends/challenges/new/${row.friend.userId}`);
@@ -110,14 +119,13 @@ function ChallengesPage() {
             default:
                 break;
         }
-    }, [slideNavigate]);
+    }, [slideNavigate, anytime]);
 
     const maxActive = page?.maxActive ?? 0;
 
     return (
         <NodePage
             title="Challenges"
-            activePage="home"
             onBack={() => slideNavigate("/friends")}
             contentClassName="challenges-page__content"
         >
@@ -145,7 +153,67 @@ function ChallengesPage() {
                     History
                 </Button>
 
-                {page && page.activeCount > 0 && (
+                {/* ── TESTER: allow anytime (docs/STUDY_CHALLENGE.md § 2a) ──
+                    Validator accounts only. The row is rendered rather than hidden
+                    behind a menu because a tester needs to SEE whether the week is
+                    being bypassed — a hidden flag that silently rewrites every
+                    deadline is exactly the kind of state that gets left on and then
+                    misread as a bug. */}
+                {user?.isValidator && (
+                    <Box
+                        className="challenges-page__anytime"
+                        sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1,
+                            backgroundColor: COLORS.sectionCard,
+                            borderRadius: 3,
+                            px: 2,
+                            py: 1,
+                        }}
+                    >
+                        <Box sx={{ flex: 1 }}>
+                            <Typography sx={{
+                                fontFamily: FONTS.sans,
+                                fontSize: SIZE.body,
+                                fontWeight: WEIGHT.semibold,
+                                color: COLORS.onSurface,
+                            }}>
+                                Allow anytime
+                            </Typography>
+                            <Typography sx={{ ...challengeMutedSx, fontSize: SIZE.micro }}>
+                                {/* Says what it lifts AND what it does not, because both
+                                    surprise a tester: a challenge issued this way is
+                                    parked in a future week for the pair, and the switch
+                                    is per device, so a two-account test needs it set in
+                                    both browsers. */}
+                                {/* WHAT IT LIFTS — the half you need before turning it on.
+                                    What it COSTS is the notice below, which appears only
+                                    once it is on. */}
+                                Tester only · lifts the accept deadline, the test window,
+                                one-per-friend-per-week and the 6-challenge cap.
+                            </Typography>
+                        </Box>
+                        <Switch
+                            className="challenges-page__anytime-switch"
+                            checked={anytime}
+                            onChange={(event) => setAnytime(event.target.checked)}
+                            inputProps={{ "aria-label": "Allow challenges and tests anytime" }}
+                        />
+                    </Box>
+                )}
+
+                {/* The consequences, spelled out WHILE the hatch is on. Every one of
+                    them is correct behaviour that reads as a bug if you meet it
+                    unprepared (see the component). Only for a validator, and only
+                    while the switch is on — the second condition is what keeps it from
+                    becoming wallpaper. */}
+                {user?.isValidator && anytime && <ChallengeAnytimeNotice />}
+
+                {/* Hidden while the hatch is on: the cap is not being enforced, so a
+                    count of slots "used this week" would be stating a rule that is not
+                    currently in force. */}
+                {page && page.activeCount > 0 && !anytime && (
                     <Typography className="challenges-page__active-count" sx={challengeMutedSx}>
                         {page.activeCount} of {maxActive} challenge slots used this week
                     </Typography>
@@ -168,7 +236,7 @@ function ChallengesPage() {
                 ) : (
                     <Box className="challenges-page__list" sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                         {page!.rows.map((row) => {
-                            const action = challengeAction(row.challenge);
+                            const action = challengeAction(row.challenge, anytime);
                             const isChampion = !!row.championUserId
                                 && row.championUserId === row.friend.userId;
                             const viewerIsChampion = !!row.championUserId
@@ -191,7 +259,7 @@ function ChallengesPage() {
                                     name={row.friend.name}
                                     email={row.friend.email}
                                     avatarIconId={row.friend.avatarIconId}
-                                    secondary={challengeStatusLine(row.challenge) ?? undefined}
+                                    secondary={challengeStatusLine(row.challenge, anytime) ?? undefined}
                                     // ⚠️ THE WHOLE ROW IS THE BUTTON, and it never
                                     // opens a profile. One row = one action (issue,
                                     // accept, or open the challenge), so the entire

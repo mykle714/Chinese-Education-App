@@ -1,6 +1,5 @@
 import { lazy } from "react";
 import type { GameDef } from "./types";
-import { COLORS } from "../theme/colors";
 // Each game's own mark-type constant, re-stated here as `GameDef.markType` so the
 // hub can label its cards with the mastery track it feeds. Importing the games'
 // `constants` modules (not their pages) keeps this cycle-free — a constants file
@@ -50,25 +49,27 @@ export function challengeScoringFor(gameId: string, mode: string | null = null):
 export const GAME_REGISTRY: GameDef[] = [
     {
         gameId: "bubble-match",
+        glyph: "bubble_chart",
         title: "Bubble Match",
-        subtitle: "Pop word & meaning pairs before the screen fills up",
+        subtitle: "Pop matching pairs",
         route: "/games/bubble-match",
         // Always shown in the hub. The game page itself handles the
         // unauthenticated case ("Sign in to play") and the not-enough-cards case
         // (shortfall message), so we don't gate it out of the menu with
         // requiresAuth — that just made the row invisible while debugging.
         Component: lazy(() => import("./bubble-match/BubbleMatchPage")),
-        bgColor: COLORS.redAccent,
+        hue: "red",
         markType: BUBBLE_MATCH_MARK_TYPE,
         challengeScoring: challengeScoringFor("bubble-match"),
     },
     {
         gameId: "word-search",
+        glyph: "grid_on",
         title: "Word Search",
-        subtitle: "Hunt your vocab words hidden in a grid of characters",
+        subtitle: "Hunt words in a grid",
         route: "/games/word-search",
         Component: lazy(() => import("./word-search/WordSearchPage")),
-        bgColor: COLORS.purpleAccent,
+        hue: "pur",
         // No `markType`: Pinyin marks production, No Pinyin marks reading, so the
         // label belongs on each mode sub-card (see WordSearchModeConfig.markType).
         //
@@ -80,21 +81,23 @@ export const GAME_REGISTRY: GameDef[] = [
     },
     {
         gameId: "match-speed",
+        glyph: "timer",
         title: "Match Speed",
-        subtitle: "Match words to meanings against a 30-second clock",
+        subtitle: "30-second clock",
         route: "/games/match-speed",
         Component: lazy(() => import("./match-speed/MatchSpeedPage")),
-        bgColor: COLORS.greenAccent,
+        hue: "grn",
         markType: MATCH_SPEED_MARK_TYPE,
         challengeScoring: challengeScoringFor("match-speed"),
     },
     {
         gameId: "speed-reading",
+        glyph: "bolt",
         title: "Speed Reading",
-        subtitle: "Read the clue and tap the matching word — 20 rounds against the clock",
+        subtitle: "20 rounds",
         route: "/games/speed-reading",
         Component: lazy(() => import("./speed-reading/SpeedReadingPage")),
-        bgColor: COLORS.blueAccent,
+        hue: "blu",
         markType: SPEED_READING_MARK_TYPE,
         // zh-only: a round is built by substituting ONE character of the
         // headword, which presupposes a character-based script. See
@@ -103,11 +106,12 @@ export const GAME_REGISTRY: GameDef[] = [
     },
     {
         gameId: "hydra-bubbles",
+        glyph: "water_drop",
         title: "Hydra Bubbles",
-        subtitle: "Cut one head off and more grow back — clear pairs before the board buries you",
+        subtitle: "Heads grow back",
         route: "/games/hydra-bubbles",
         Component: lazy(() => import("./hydra-bubbles/HydraBubblesPage")),
-        bgColor: COLORS.tealAccent,
+        hue: "tea",
         markType: HYDRA_MARK_TYPE,
         challengeScoring: challengeScoringFor("hydra-bubbles"),
         // No `languages` gate: levels 1..6 exist for every language and nothing in
@@ -121,11 +125,12 @@ export const GAME_REGISTRY: GameDef[] = [
     },
     {
         gameId: "memory-map",
+        glyph: "map",
         title: "Memory Map",
-        subtitle: "Find each word on your ever-growing map of what you can read",
+        subtitle: "All Cards only",
         route: "/games/memory-map",
         Component: lazy(() => import("./memory-map/MemoryMapPage")),
-        bgColor: COLORS.yellowAccent,
+        hue: "org",
         markType: MEMORY_MAP_MARK_TYPE,
         // No `languages` gate: the map renders through ForeignText, so Spanish works
         // unchanged. No `challengeScoring` either — a challenge round is recognition

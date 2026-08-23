@@ -1,0 +1,2034 @@
+# Shelf Redesign — app-wide visual system
+
+> **STATUS: IN PROGRESS.** Part A1 (tokens) has landed app-wide; see its **What
+> landed** list. Everything else is still plan.
+> Nine of the eleven open questions were **answered 2026-08-20** — see the
+> **Decisions** section near the bottom, which is binding. Q6 and Q8 remain open.
+> Part A is shared groundwork; Part B is one entry per artboard, each independently
+> pickup-able once Part A lands. Update each entry's **Status** line as work lands.
+> Delete this file once every entry reads DONE and the behaviour has been folded
+> into the owning feature docs.
+
+## Source of truth
+
+The design lives in the user's Claude Design project **"Cow"**
+(`b8b44c24-1f0e-4579-8d9a-e802136416ee`), read via the `DesignSync` MCP tool:
+
+| File | What it is |
+|---|---|
+| `App Redesign - Shelf System.html` | 18 phone artboards, one per screen. The spec. |
+| `shelf-system.css` | The stylesheet those artboards share — token + primitive definitions. |
+
+Sibling explorations in the same project (`Home Menu - 12 Directions.html`,
+`Decks Page - 12 Directions.html`, `Tone Color Explorations.html`,
+`Definition Tab Explorations.html`) are **earlier alternatives, not the spec**.
+Read them for context on a decision, never as a source of values.
+
+Artboards are numbered 1–18 with **no 17** — the design skips it. Nothing is
+missing; the numbering has a hole.
+
+## The idea in one paragraph
+
+Two layout primitives carry the whole app, and which one a screen uses is decided
+by what the screen holds:
+
+- **Shelf** — for a **collection** the user owns or has accumulated. Items render
+  as book *spines* on a wooden *board*, and a spine's **height encodes its count**.
+- **Bento** — for a **menu** of destinations. Weighted rounded tiles in a 2-column
+  grid; the most important destination spans both columns, the least important get
+  a short (`.bt.lo`) tile.
+
+Everything else (rows, cards, chips, fields) is supporting cast. Today the app uses
+one vertical `HubMenu` for all three hubs and MUI `Paper` stacks elsewhere.
+
+**Size key** used below: **S** ≈ restyle in place · **M** ≈ restructure one page ·
+**L** ≈ new components or new routes/data.
+
+---
+
+# Part A · Foundations
+
+Everything here is **shared** — used by two or more pages in Part B, and in the
+case of A2 by pages that have no artboard at all. All of it lands before any single
+page is converted; otherwise each page invents its own copy of the same primitive
+and the "system" is a coincidence rather than a system.
+
+Do them in order: **A1 → A2 → A3/A4/A5 (parallelizable) → A6/A7.**
+
+A1 now lands app-wide on day one (D1), so nothing is gated on a page being converted
+first — but the whole app changes colour and type before any layout does. That is
+expected, not a regression.
+
+| | Entry | Shared by | Size |
+|---|---|---|---|
+| A1 | Tokens and fonts | everything | M |
+| A2 | App chrome — footer, headers, shell | **every page, designed or not** | M |
+| A3 | Shelf — the collection primitive | 2, 3, 6, 18 | L |
+| A4 | Bento — the menu primitive | 1, 3, 4, 5 | L |
+| A5 | Generic atoms (rows, cards, buttons, chips, labels) | all 17 | M — **DONE** |
+| A6 | Game surface chrome | 12–16 + Memory Map | M — **DONE** |
+| A7 | Data-display widgets (leaderboard, mastery, cpcd) | 2, 8, 9, 10, 18 | L — **`.bd` done** |
+
+## A1 · Tokens and fonts
+
+**Status: DONE (2026-08-20), corrected the same day.** Typecheck and `npm run build`
+both clean.
+
+> **Correction pass (2026-08-20).** The first cut applied one rule — "everything moves
+> to the ramp" — to two sets the design never moved, and pinyin plus the mastery cells
+> came out off-design. Tone colours, mark colours, the ready-check green, the swipe
+> overlays and Hydra's ladder rings are back on their original saturated hexes and are
+> now commented **literal on purpose** with their design citation. Surfaces stay
+> pastel. The governing rule is **D2b**; read it before touching a colour.
+>
+> **Second correction (2026-08-20): AI provenance got its own token.** The first cut
+> folded the AI-generated highlight into `COLORS.warnInk` (`--orgA` `#A46400`) on the
+> reasoning that both were "the orange one". Two things were wrong with that.
+> `warnInk` means *caution* — it says something is wrong with the content, where the
+> AI mark only says a machine wrote it and no human has approved it yet. And `--orgA`
+> is a dark gold, so the treatment went muddy. The colour is now
+> **`COLORS.aiGenerated` `#FF9E5A`** — the app's original AI orange, restored
+> unchanged — sitting deliberately **outside the ramp** beside `fireActive`. Its hue
+> (oklch 78.6% 0.143 **54**) falls in the gap between `--red` (20) and `--org` (70),
+> which is exactly what keeps an AI-flagged surface from reading as an Unfamiliar or
+> Target band when the two appear together; snapping it onto the hue-70 axis (which
+> would give `#F3A744`) would lose that. Call sites: `theme/aiGeneratedStyling.ts`
+> (border + 8% tint), `components/AiGeneratedBadge.tsx`, and the Dictionary page's AI
+> chip + "Asking AI…" loader. `warnInk` keeps the genuinely cautionary users — the
+> Validate/Flag button and Memory Map's green/orange/red outcome triad.
+>
+> ⚠️ One known consequence, unchanged from before the redesign: `#FF9E5A` as **text**
+> on paper is about 2:1, which is below AA. It is fine as a border and as an 8% tint,
+> which is most of its use. If the sparkle badge's label ever needs to be legible at
+> arm's length rather than merely noticeable, give the text its own darker member of
+> the same hue rather than moving the whole token.
+
+**What landed**
+- `src/theme/colors.ts` — `COLORS` rewritten to the OKLCH ramp. Every existing key
+  kept; new keys added for the raw ramp (`grey/greyA`, `pur/purA`, `blu/bluA`,
+  `red/redA`, `org/orgA`, `grn/grnA`, `tea/teaA`), the ink tones (`textFaint`,
+  `white`) and the shelf/overlay tones (`wood`, `scrim`, `modalScrim`, `zoneUpRow`,
+  `zoneDownRow`).
+- `src/utils/categoryColors.ts` — `CATEGORY_COLORS`, `BAND_COLORS`,
+  `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS` re-pointed at the ramp. Names and shapes
+  unchanged.
+- `src/utils/masteryCompute.ts` — `MARK_TYPE_COLORS` **left on its original four
+  saturated hexes** (see D2b) and `MASTERY_READY_COLOR` added for the design's
+  `#05C793` ready-check icon.
+- `src/theme/fonts.ts` — Instrument Sans / Instrument Serif / JetBrains Mono, plus a
+  new `FONTS.icons`. `hanziComponents` untouched.
+- `index.html` — webfont links swapped; Material Symbols Rounded added on its own
+  `<link>`.
+- `src/index.css` — root family updated; the `.ms` rule added.
+- `src/components/Icon.tsx` — **new**, the ligature wrapper.
+- **Stragglers converted** (files that held literal copies of the old palette and
+  would have been stranded off-ramp): `src/features/flashcards/collectionRef.ts`
+  (the two deck-palette arrays); `src/features/flashcards/constants.ts` →
+  `TAB_COLORS` (aliased to `MARK_TYPE_COLORS`); `src/pages/SettingsPage.tsx`
+  (danger color); `src/games/hydra-bubbles/HydraStage.tsx` → `FILL_BY_COLOR`.
+- **Stragglers deliberately NOT converted** — the design spells these values out
+  literally, so aliasing them to the ramp moves them off the design rather than onto
+  it (see D2b): `src/utils/toneColors.ts` → `TONE_COLORS`;
+  `src/utils/masteryCompute.ts` → `MARK_TYPE_COLORS`, `MASTERY_READY_COLOR`;
+  `src/features/flashcards/constants.ts` → `CORRECT_COLOR`, `INCORRECT_COLOR`.
+
+**Notes for whoever picks up A2**
+- **Hex, not `oklch()`.** MUI's `alpha()` cannot parse an `oklch()` string and throws;
+  it is called on `COLORS.successInk` / `COLORS.warnInk` in `ValidateFlagButtonsView`
+  and on tone colors in the flp. Values are authored in oklch (noted per line in
+  `colors.ts`) and shipped as the exact sRGB hex. The conversion script is below.
+- **`FONTS.serif` carries TWO faces on purpose** — `"Instrument Serif", "Noto Serif SC"`.
+  Instrument Serif has no CJK coverage, so a Chinese headword falls through per glyph
+  and stays a serif. Dropping the second face silently un-serifs every CJK hero.
+- **Material Symbols loads with `display=block`, not `swap`** — it renders ligatures,
+  so a swap period would flash the literal string `nights_stay`.
+- **Hydra's Target-yellow deviation survives, and is now better justified.** Its file
+  carried an escape hatch reading "if the app-wide Target band is ever retuned to a
+  true yellow, go back to `CATEGORY_COLORS.Target`". Target was retuned — to `--org`
+  `#FFE6C8`, a pale peach that is a fill tier and cannot carry a ring. The hatch is
+  dead; the comment now says so.
+- **Two open colour questions the correction pass surfaced**, both deliberately left
+  alone because they sit outside tokens: (1) `COLORS.dangerInk` / `successInk` are
+  `--redA` / `--grnA`, but the design's delete and success text are `#EF476F` /
+  `#05C793` — the same deviation, across ~51 text call sites; (2) artboards 17 and
+  19–22 use off-palette pinyin hexes (`#0B8AD9`, `#F4A700`) and artboard 17 swaps
+  tone 1 and 2. Both read as drafting slips against the `current` set; confirm with
+  the user before acting on either.
+- **Not converted, deliberately:** the Dark / Ocean / Nature branches in
+  `ThemeContext.tsx` still hold old literals. D4 parks them.
+- **`TONE_COLORS` are ink, not fills.** Tone-colored pinyin is TEXT, so the four tones
+  take the `*A` members even though the categories take pastels. Tones are their own
+  semantic axis — a tone color does not mean "this syllable is comfortable"; the hue
+  sharing is palette economy only.
+- **Hydra's bubbles needed the full pair.** `bg: pastel / border: CATEGORY_COLORS` no
+  longer works now that `CATEGORY_COLORS` is itself pastel — that is a pastel ring on
+  a pastel fill. Bubbles are `bg: COLORS.red / border: COLORS.redA`, because the
+  player reads the payout tier off a moving bubble and needs the separation.
+- **Arena's `DIVISION_COLORS` is only partially repaired.** Three rungs became pastels
+  and inverted the ladder's pale→dark climb; they are re-pointed at the saturated
+  members so it still ends dark. The full 12-step walk wants re-deriving in entry 9.
+- **Sort Cards' drop buckets render at `opacity: 0.23` when inactive.** A pastel at
+  23% may now be too faint even with the ring. Flagged in the file; needs a device.
+- **Unverified, and wanting eyes on a real screen rather than a typecheck:** the
+  mark cells at 8px, the flp's tone-colored pinyin, and the three category chips
+  that flipped from white-on-saturated to ink-on-pastel (MiniVocabCard's corner
+  badge, VocabCardDetailBody's chip, CardFace's `CategoryChip`).
+
+<details><summary>oklch → sRGB hex, for re-deriving a value</summary>
+
+```python
+import math
+def oklch_to_hex(L, C, H):           # L as 0..1, C as authored, H in degrees
+    h = math.radians(H); a = C*math.cos(h); b = C*math.sin(h)
+    l_ = L + 0.3963377774*a + 0.2158037573*b
+    m_ = L - 0.1055613458*a - 0.0638541728*b
+    s_ = L - 0.0894841775*a - 1.2914855480*b
+    l, m, s = l_**3, m_**3, s_**3
+    r  =  4.0767416621*l - 3.3077115913*m + 0.2309699292*s
+    g  = -1.2684380046*l + 2.6097574011*m - 0.3413193965*s
+    bb = -0.0041960863*l - 0.7034186147*m + 1.7076147010*s
+    def f(x):
+        x = max(0.0, min(1.0, x))
+        return 12.92*x if x <= 0.0031308 else 1.055*(x**(1/2.4)) - 0.055
+    return "#{:02X}{:02X}{:02X}".format(*[round(f(v)*255) for v in (r, g, bb)])
+```
+</details>
+
+**Type.** Design wants Instrument Sans (UI), Instrument Serif (display), JetBrains
+Mono (labels/metadata/numerics), Noto Sans SC (CJK). The app ships Inter + Noto
+Sans SC + Noto Serif SC, declared in `index.html` and stacked in
+`src/theme/fonts.ts` → `FONTS`.
+
+> `FONTS.hanziComponents` is a **self-hosted** subset face (declared in
+> `src/index.css`, generated by
+> `server/scripts/backfill/chinese/generate-component-font.js`). It must survive
+> any font change untouched — Word Search's No-Pinyin hint row depends on it.
+
+**Color.** *(Decided — see D1/D2.)* Design defines pastel-surface / saturated-accent pairs in **OKLCH**
+(`--pur`/`--purA`, `--blu`/`--bluA`, `--red`/`--redA`, `--org`/`--orgA`,
+`--grn`/`--grnA`, `--tea`/`--teaA`, `--grey`/`--greyA`), a paper ground
+(`--paper` `#FBFAF8`) and an ink ramp (`--ink`/`--ink2`/`--muted`/`--faint`). The
+app has hex equivalents in `src/theme/colors.ts` → `COLORS`, whose `*Main` values
+re-export `CATEGORY_COLORS` from `src/utils/categoryColors.ts`.
+
+**Decided (D1, D2, D3, D4): rewrite in place, one light palette, Material Symbols.**
+
+**Work**
+1. Rewrite `COLORS` in `src/theme/colors.ts` to the OKLCH ramp. Keep every exported
+   key name so the ~everything that imports it keeps compiling.
+2. Rewrite `CATEGORY_COLORS` values per the D2 table — **name and shape unchanged**.
+   Check contrast at the 8px mark-cell size before committing.
+3. Rewrite `FONTS` to Instrument Sans / Instrument Serif / JetBrains Mono / Noto Sans
+   SC. Leave `FONTS.hanziComponents` alone.
+4. Add the webfont `<link>`s to `index.html`, including Material Symbols Rounded,
+   with `font-display` set so the ligature FOUT is contained.
+5. Add `src/components/Icon.tsx` — a thin `<Icon name="nights_stay" />` wrapper over
+   the `.ms` span, so no page writes a bare ligature. Then run the mechanical
+   `@mui/icons-material` → ligature-name rename across the app.
+6. Leave `ThemeContext`'s other three themes in place but underived (D4).
+
+**Code:** `src/theme/colors.ts` → `COLORS`; `src/theme/fonts.ts` → `FONTS`;
+`src/theme/scale.ts` → `SIZE`, `WEIGHT`, `LEADING`, `TRACKING`;
+`src/theme/index.ts`; `src/utils/categoryColors.ts` → `CATEGORY_COLORS`;
+`index.html`; `src/index.css`. **Size: M.**
+
+## A2 · App chrome — footer, headers, shell
+
+**Status: not started.** Depends on A1. **Touches every page in the app**, including
+the ~dozen that have no artboard, so it lands before any single page is converted.
+
+This is the highest-leverage entry in the plan and the one with the largest blast
+radius: `MobileTabScreen` has **20** importers, `NodePage` **25**, `LeafPage` **21**,
+`PageHeader` **13**. Change these once and every page moves together; convert pages
+first and they drift.
+
+### A2a · Footer nav bar — **a shape change, not a restyle**
+
+**Status: DONE (2026-08-20).** Typecheck and `npm run build` both clean. What landed
+and the decisions taken are recorded at the end of this sub-entry.
+
+| | Today (`MobileFooter.tsx`) | Design (`.fbar`) |
+|---|---|---|
+| Form | detached **rounded pill**, `position:absolute`, inset 16 on all sides | **full-width flat bar** flush to the bottom edge |
+| Height | `FOOTER_HEIGHT` 64 | 74 |
+| Separation | drop shadow `0 6px 24px` | `border-top: 1px solid var(--line)` |
+| Content | icon **+** label per tab (`HomeIcon`, `StyleIcon`, `LanguageIcon`, `AccountCircleIcon`) | **label only** — no icons |
+| Active state | `opacity: 1` vs `0.6` | ink color + weight 600 + a 14×2 underline bar (`.fbar div.on::after`) |
+| Dividers | `FooterDivider`, 1×32 | none |
+| Ground | `COLORS.header` | `var(--paper)` |
+
+**Consequences to plan for — these are why this is its own entry:**
+
+- **Every clearance number changes.** `FOOTER_HEIGHT`, `_INSET`,
+  `_EXTRA_GAP` and the derived `FOOTER_CLEARANCE` are consumed by
+  `FooterSpacer` (rendered as the last child of *every* footer-bearing scroll
+  surface), by `MobileTabScreen`'s `ScrollArea` padding, and by
+  `FooterPresenter`'s `HIDDEN_OFFSET` slide-out distance. A flat bar has no inset,
+  so `_INSET` becomes 0 and the constant arithmetic must be re-derived, not
+  find-and-replaced.
+- **The edge fade becomes a real element.** The app fades content at the scroll
+  edges with a CSS **mask** anchored to the viewport (`EDGE_FADE_TOP` and a bottom
+  band sized to the pill). The design uses a separate painted gradient element
+  (`.fade`, 34px tall, sitting exactly on `bottom: 74px`) plus a `.clear` 90px
+  spacer. Pick one mechanism; do not ship both.
+- **Icons come out (D5).** Four text labels with a 2px underline, per `.fbar`.
+  `HomeIcon` / `StyleIcon` / `LanguageIcon` / `AccountCircleIcon` are deleted from
+  `MobileFooter`. This is a quieter target on the most-tapped control in the app —
+  worth a look on a real device once it lands.
+- **`FooterPresenter` keeps its job unchanged.** The pill is rendered once, outside
+  the page-slide transitions, and animates on its own axis. That architecture
+  survives — only the geometry it animates changes.
+
+**Work**
+1. Rewrite `MobileFooter.tsx`'s styled parts (`Footer`, `FooterContent`,
+   `FooterItem`, `FooterDivider` — the last is deleted).
+2. Re-derive the clearance constants; leave the *names* alone so the 20+ call sites
+   keep compiling, then rename `FLOATING_FOOTER_*` → `FOOTER_*` once the bar stops
+   floating (offer, don't assume).
+3. Decide mask-vs-gradient for the fade and apply it in `MobileTabScreen` only.
+4. Leave `FooterPresenter`, `FooterVisibilityContext`, `useHideFooter` and
+   `routeFooterTab` untouched.
+
+**Code:** `src/components/MobileFooter.tsx` → `MobileFooter`, `FooterSpacer`,
+`FooterTab`, `FOOTER_HEIGHT`, `FOOTER_EXTRA_GAP`, `FOOTER_CLEARANCE`;
+`src/components/FooterPresenter.tsx` → `HIDDEN_OFFSET`;
+`src/components/FooterVisibilityContext.tsx`; `src/hooks/useHideFooter.ts`;
+`src/routes/routeMeta.ts` → `routeFooterTab`.
+**Docs:** `docs/UX_AND_NAVIGATION.md`, `docs/MOBILE_TAB_SCREEN_LAYOUT.md`,
+`docs/LEAF_NODE_PAGES.md`. **Size: M.**
+
+**What landed**
+- `src/components/MobileFooter.tsx` — flat full-width bar: `left/right/bottom: 0`,
+  height **74**, `border-top` `--line`, `--paper` ground, no radius, no shadow.
+  `FooterDivider` and the four `@mui/icons-material` imports are deleted. The four
+  copy-pasted tab blocks collapsed into a `TABS` array.
+- **Clearance re-derived, names kept:** `HEIGHT` 64 → **74**, `INSET` 16 → **0**,
+  `EXTRA_GAP` 12 → **16**, so `CLEARANCE` 108 → **90** — which is exactly the
+  design's `.clear` spacer. The ~8 downstream call sites
+  (`FlashcardsDecksPage`'s `SHEET_CLOSED_HEIGHT` / `STUDY_AREA_BOTTOM_PAD`,
+  `SortCardsPage`, `DecksPanelBody`, `ComparePage`, `CompareWorkspace`) all compose
+  the named constants, so they re-derived themselves with no edit.
+- `src/components/FooterPresenter.tsx` — `HIDDEN_OFFSET` is now just
+  `FOOTER_HEIGHT`. The old `INSET + HEIGHT + 16` added a pill inset and a
+  shadow allowance that no longer exist.
+- `src/components/MobileTabScreen.tsx` — **fade mechanism decided: keep the mask.**
+  The design paints `.fade` as its own 34px gradient element at `bottom: 74px`; the
+  app's mask is anchored to the scroll viewport and therefore already covers every
+  page, whereas an element would have to be added per surface. So the mask stays and
+  only its stops moved: `EDGE_FADE_BOTTOM` (one band running to the frame bottom) is
+  replaced by `EDGE_FADE_BOTTOM_BAND` (34) + `EDGE_FADE_BOTTOM_START`
+  (`HEIGHT + 34`), reaching transparent exactly at the bar's top edge. Both
+  mechanisms are **not** shipped.
+- Docs swept for "floating pill" wording: `MOBILE_TAB_SCREEN_LAYOUT.md` (footer
+  section + geometry table rewritten), `NAVIGATION.md` (icon column dropped, tab
+  order corrected), `UX_AND_NAVIGATION.md`, `LEAF_NODE_PAGES.md`,
+  `BENTO_SYSTEM.md`, `DECKS_FEATURE.md`, `QUICK_MARK.md`,
+  `SORT_CARDS_REQUIREMENTS.md`, `WORD_COMPARE_FEATURE.md`, `ARCHITECTURE_REVIEW.md`.
+
+**Decisions taken, and what is left**
+- **`FLOATING_FOOTER_*` renamed to `FOOTER_*`**, and `FLOATING_FOOTER_INSET` was
+  **deleted** rather than renamed — a permanently-zero constant named "gap from the
+  edges" is a trap for the next reader, not a tuning knob. `SHEET_CLOSED_HEIGHT` in
+  `FlashcardsDecksPage` was the only expression that composed it. The family is now
+  `FOOTER_HEIGHT` (74) / `FOOTER_EXTRA_GAP` (16) / `FOOTER_CLEARANCE` (90).
+- **Page tints retired, because the bar is always paper.** The bar is rendered at
+  FRAME level and painted `--paper`; the design gives `.fbar` no other ground. So a
+  page with a distinctly different `surfaceColor` gets a colour step across the bottom
+  74px. `/decks` and the Mastery Centers passed the grey `COLORS.header` and did
+  exactly that — both now use the default paper ground, which is also what artboard 2
+  shows. The **inversion survives**: `InfoSheetContainer` moved from
+  `theme.palette.flashcard.background` (the same value as the page behind it, so the
+  sheet read as a sheet only because of its shadow) to `COLORS.white`, matching the
+  design's `.sheet` / `.eic` / `.pnl`. The two card-detail pages keep
+  `COLORS.yellowAccent`; it is within ~1% of paper, so there is no step. The rule is
+  written into `docs/MOBILE_TAB_SCREEN_LAYOUT.md` so it does not come back.
+- **Inactive tabs carry a transparent underline placeholder.** The design only
+  specifies `.fbar div.on::after`; without a placeholder the active tab's 8px
+  underline would push its label 8px above the other three.
+- **Label size is a flat `12`, not a `SIZE` token** — the design pins `.fbar` labels
+  independently of the body ramp.
+- **Not yet checked on a real device.** The bar is the most-tapped control in the app
+  and it just lost its icons; A2's own note flags this as worth a look on hardware.
+
+### A2b · Headers — the design also has exactly two
+
+**Status: DONE (2026-08-20).**
+
+The app's `PageHeader` → `LeafPageHeader` / `NodePageHeader` split maps **1:1** onto
+the design's two header classes. Keep the composition hierarchy; change the skin.
+
+| | App | Design | Notes |
+|---|---|---|---|
+| Hub / node header | `PageHeader` — fixed 60px bar, `COLORS.header` background, `ExpandMoreIcon` rotated per `arrowDirection` | `.hd` — **no bar**, sits on the paper ground, `padding: 23px 22px 0`, title 24px/600/-0.025em, `.back` is an inline chevron + title | The background bar disappears entirely |
+| Leaf / game header | same `PageHeader`, `arrowDirection="down"` | `.lhd` — `padding: 21px 18px 0`, title **17px**, down chevron, plus a `.tg` toggle-chip slot and a `.fire` streak slot | Two title sizes, one component |
+
+Right-hand slots the design uses in `.hd`, all of which land in `PageHeader`'s
+existing `rightContent` prop: `.meta` (mono uppercase metadata), `.btn` (32×32
+rounded-11 outlined icon button), `.fire` (streak flame + count, `#E65100`).
+`.lhd` adds `.tg` / `.tg.on` — a mono toggle chip, which is what Word Search and
+Hydra want for their in-header toggles (see entries 13 and 16).
+
+**What landed**
+- **The header bar is gone.** No `COLORS.header` ground, no border, no fixed 60px
+  height, no `Toolbar` inner element — the title sits on the paper ground with the
+  design's padding. Nothing in the app measured the old 60px, so nothing had to move.
+- **`size` prop, with THREE values, not two.** The plan said `"hub" | "leaf"`; the
+  artboards need a third. `.hd` appears at 24px on a hub with no back button and at
+  **21px** once a chevron shares the line (`style="font-size:21px"` on Games, Reader,
+  Dictionary, Friends, Arena, Community), which is a real distinction rather than
+  drafting noise — the chevron eats horizontal room. So: `hub` 24 / `node` 21 /
+  `leaf` 17, with tracking tightening as the title grows.
+  `size` **defaults** from the props already being passed (no back → `hub`, `"left"`
+  → `node`, `"down"` → `leaf`), so not one existing call site had to change.
+- **Two glyphs, not one rotated one.** `arrowDirection` now selects between the
+  design's `arrow_back` (node) and `keyboard_arrow_down` (leaf) via `<Icon>`, instead
+  of rendering one `ExpandMoreIcon` rotated 90°. A rotated chevron is not the same
+  shape as an arrow, and the artboards draw both.
+- **The back chevron and the title are one tappable group** (`.hd .back`, gap 9),
+  replacing the `IconButton` whose 40px ripple target was what made the two look
+  detached.
+- **Three slot primitives** exported beside `PageHeader`: `HeaderMetaLabel` (`.meta`),
+  `HeaderIconButton` (`.hd .btn`, in `outlined` and `bare` variants) and
+  `HeaderToggleChip` (`.lhd .tg`).
+- **`LeafPageHeader` / `NodePageHeader` unchanged** — still thin specializations, and
+  they pick up the new sizes through the `size` default.
+- `touchAction: "none"` on the header stays; it sits over drag-to-sort and game
+  surfaces.
+
+**Call sites converted** (this is where the duplication was)
+- `FlashcardsLearnHeader`, `BubbleMatchHeader` and `WordSearchHeader` each carried a
+  **byte-identical 14-line `toggleSx` helper**. All three are gone; the chip skin
+  lives once in `HeaderToggleChip`. Those three plus `MatchSpeedHeader` also dropped
+  their `@mui/icons-material` imports for `<Icon>` names (D3).
+- `AccountPage`'s settings gear is the app's one `outlined` `HeaderIconButton` — it
+  is the only header carrying a single lone action on bare paper, which is exactly
+  the case the artboard boxes.
+
+**Decisions taken**
+- **No `HeaderStreak`.** The plan listed it as a fourth export, but the app already
+  ships the design's `.fire` as `src/minutePoints/MinutePointsFireBadge.tsx` — flame
+  plus count in `COLORS.fireActive`, which **is** the design's `#E65100`. Adding
+  `HeaderStreak` would have been a second component drawing the same badge.
+- **The badge itself was converted to `.hd .fire` on 2026-08-21** — Material Symbols
+  Rounded `local_fire_department` at **15px**, mono count at **11px**, 4px gap, both in
+  `fireActive`. What came off it: the MUI `Badge` count bubble with its border, the
+  animated `drop-shadow` glow, the `IconButton` ground, and the `@mui/icons-material`
+  import (D5). The old badge was the loudest thing in every header while reporting
+  something ambient — that time is accruing, which is true nearly always. It is now quiet
+  when unread and legible when read, and the one moment worth noticing (a point landing)
+  is still a scale pulse, which now has no glow competing with it.
+  Two affordances the design has no opinion on were KEPT because they are functional:
+  the live-seconds figure (now a 9px faint suffix on the same line instead of a second
+  line under the badge) and the paused state (now a **strikethrough on the count** —
+  the old treatment overlaid a large red no-entry glyph, which at 15px would be a smudge).
+- **The same glyph now appears wherever a flame does.** `MinutePointsBadge` — the legacy
+  circular badge on the old desktop flashcards page — swapped its `@mui/icons-material`
+  flame for the `Icon` primitive, so the two never disagree about what a flame looks like;
+  its pre-redesign chrome (gradient ground, glow, progress ring) is untouched and belongs
+  to whenever that page is redone. Arena's score column draws it at 13px (§ A7).
+- **The hub header's left tab badge was removed.** Hub headers drew the active footer
+  tab's icon left of the title; no artboard has one. It was doubly redundant — the
+  footer already marks the active tab and the title already names the page — and it
+  took four more `@mui/icons-material` imports with it (D5).
+- **`MobileTabScreen`'s `activePage` was removed outright**, along with `NodePage`'s.
+  The tab badge was its last reader — `FooterPresenter` resolves the active tab from
+  the route via `routeMeta`, and always did. 26 page files dropped the prop and the
+  two shell components dropped it from their prop shapes and their `FooterTab`
+  imports. Nothing replaced it: a required prop that nothing reads is worse than no
+  prop, because the next reader assumes it does something.
+- **Word Search's `hint` button was NOT converted to a toggle chip.** It borrows the
+  chip's geometry so it lines up with them, but keeps its amber "armed" ground: the
+  chip's on-state is solid ink, which says "this setting is on", not "you have earned
+  a hint". The design has no hint control to copy. Left for entry 13 to settle.
+- **The design's 18px `.hd` titles are modelled as a fourth size, `dense`.** Card
+  Detail and Learn set `font-size:18px` inline. It does not track title length ("Card
+  Detail" is short) — it tracks how full the line is: every 18px header carries a back
+  chevron AND four right-slot actions, while the 21px ones carry one or two. So it is
+  a system size after all, just one keyed on something the navigation props cannot
+  see. `dense` is therefore the only size that must be **asked for**; the other three
+  keep falling out of `showBack` / `arrowDirection`.
+  Reached via `size` (`PageHeader`, `MobileDemoHeader`) or `headerSize`
+  (`MobileTabScreen`, `NodePage`). Applied to `VocabCardDetailPage`,
+  `DictionaryCardDetailPage` and `FlashcardsLearnHeader`.
+  Deriving it by counting `rightContent`'s children was the obvious alternative and is
+  a trap — most callers pass a single wrapping `Box` or fragment, so the count is 1
+  regardless of how many buttons are inside.
+- **Node/leaf assignment was not re-litigated.** The design draws flp as `.hd` with
+  `arrow_back`; the app renders it with the down chevron. That is a navigation-model
+  question, not a skin question, so it stays as-is for entry 12.
+
+**Not yet converted** (their own entries own them): the hand-rolled `IconButton`s in
+`VocabCardDetailPage`, `DictionaryCardDetailPage`, `CollectionViewPage`,
+`UserProfilePage`, `QuickMarkPage` and `SortCardsPage` header slots. They should
+become `HeaderIconButton`s when entries 2 / 18 convert those pages.
+
+**Code:** `src/components/PageHeader.tsx` → `PageHeader`, `Header`, `BackGroup`,
+`SIZE_SPEC`, `HeaderMetaLabel`, `HeaderIconButton`, `HeaderToggleChip`;
+`src/components/MobileDemoHeader.tsx`; `src/components/MobileTabScreen.tsx`;
+`src/components/LeafPageHeader.tsx`; `src/components/NodePageHeader.tsx`;
+`src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnHeader.tsx`;
+`src/games/bubble-match/BubbleMatchHeader.tsx`;
+`src/games/word-search/WordSearchHeader.tsx`;
+`src/games/match-speed/MatchSpeedHeader.tsx`; `src/pages/AccountPage.tsx`.
+**Docs:** `docs/LEAF_NODE_PAGES.md`, `docs/MOBILE_TAB_SCREEN_LAYOUT.md`,
+`docs/GAMES_FEATURE.md`. **Size: M.**
+
+### A2c · The shell itself
+
+**Status: DONE (2026-08-20).**
+
+`MobileTabScreen` keeps both of its rules (scroll-away header inside the scroll
+area; footer clearance reserved), and its ground was already `--paper` — A2a and
+A2b had between them left nothing for A2c to do inside that file. The real work
+was one layer out: the phone frame, and the Vite scaffold still sitting under
+everything in `index.css`.
+
+**What landed**
+
+- **`MobileDemoFrame` now IS the design's `.phone`.** Desktop was a 393px card
+  with a 20px radius and no shadow; it is now **402 × 874, radius 44**, with the
+  design's two-layer drop shadow. The numbers are exported as `PHONE_WIDTH` /
+  `PHONE_HEIGHT` / `PHONE_RADIUS`.
+
+  This is not a desktop-cosmetics change. **Every artboard is drawn inside a
+  402-wide box**, so a page's `22px` gutters, spine widths and bento columns only
+  land where the design puts them at that width. Judging a converted page against
+  an artboard at 393 compares two different layouts.
+- **The two phone-shaped OVERLAYS stopped hand-copying the geometry.** Practice
+  Writing's popup and the community design zoom each carried a byte-identical
+  `PaperProps.sx` with `md: 393` / `maxHeight: 932`. Both now spread
+  `PHONE_OVERLAY_SX`, exported from `MobileDemoFrame` beside `desktopSx` because
+  it is the same box. Left alone they would have sat 9px narrower than the frame
+  they exist to be pinned to — the exact drift the duplication invited.
+- **`index.css`'s `:root` is no longer Vite's scaffold.** It declared
+  `color-scheme: light dark` with white text on `#242424`, plus a
+  `@media (prefers-color-scheme: light)` block fighting it, indigo `#646cff`
+  links, a bare `h1 { font-size: 3.2em }` and a dark-grounded bare `button`.
+  It is now `color-scheme: light` (decision D4 — one palette; a dark-mode OS was
+  rendering native form controls, scrollbars and autofill dark inside an entirely
+  light UI) with `--ink` on `--paper`, and the design's ink/muted link colors.
+  The `h1` / `button` / media-query blocks are deleted — every heading is an MUI
+  `Typography` with its own size, and `.MuiButtonBase-root` outranks a bare
+  element selector, so the `button` rule only ever reached the one hand-rolled
+  `<button>` (`ProvisionalCardsNotice`), which styles itself inline.
+- **Stale `393` prose** swept from six code comments and four docs.
+
+**Known consequence, deliberately not fixed here**
+
+`DeckTile`'s `cardWidth: 100` was derived from a **337px** content column (393
+frame − 28px gutter) so three tiles fill the fdp row. At 402 the column is 374 and
+the row under-fills by ~38px on desktop. It was not retuned, because the number was
+about to be deleted — **A3 has since deleted it**, along with `DeckTile` itself, and
+the shelf row has no width arithmetic to get wrong.
+
+**Still open**
+
+The desktop BACKDROP behind the phone card is MUI's
+`palette.background.default` = `#ffffff` (`ThemeContext`), one percentage point
+off `--paper`. Fixing it would also re-ground every **non-frame** page (Reader,
+Night Market, Settings, auth), none of which is converted yet, so it is left for
+the entry that converts them rather than changed blind here.
+
+**Code:** `src/components/phoneGeometry.ts` (new) → `PHONE_WIDTH`, `PHONE_HEIGHT`,
+`PHONE_RADIUS`, `PHONE_SHADOW`, `PHONE_OVERLAY_SX`;
+`src/components/MobileDemoFrame.tsx` → `FrameRoot`, `desktopSx`; `src/index.css` → `:root`;
+`src/components/handwriting/PracticeWritingPopup.tsx`;
+`src/features/community/CommunityDesignZoom.tsx`. Unchanged after review: `src/components/MobileTabScreen.tsx`,
+`src/components/MobileDemoHeader.tsx`, `src/components/Layout.tsx`. **Size: S.**
+
+## A3 · Shelf — the collection primitive
+
+**Status: DONE (2026-08-20).**
+
+Used by: **2** (Decks), **6** (Reader), **3** (Discover), **18** (Card Detail's
+related shelves). Built once; no page invents a copy.
+
+### What landed
+
+`src/components/shelf/` — import from the barrel (`./shelf`), not the files:
+
+| Export | Design class | Notes |
+|---|---|---|
+| `Shelf` | `.shelf` | The padded container; owns the 22px page gutter. |
+| `ShelfHeader` | `.shelfhd` | A row's caption + an optional right-hand affordance icon. Carries its own gutter, so it is a SIBLING of `Shelf`, not a child. |
+| `ShelfRow` | `.shrow` + `.spines` + `.board` | One row. |
+| `ShelfNote` | `.shnote` | A sentence under a row. |
+| `Spine` | `.sp` and all its modifiers | The set-of-cards atom. |
+| `AddSpine` | `.sp.add` | The "make a new one" affordance. |
+| `spineHeight(count)` | — | The count→height band function. |
+
+All six spine variants exist from day one — `base` 74×116, `tall` 140, `short` 96,
+`uni` 126, `vol` 86×134, plus `AddSpine` — as are the three slots (`pin`, `caption`,
+`glyph`) and `vol`'s own (`meta`, `ownerGlyph`). The sheet's 74px squat is the
+`height` prop rather than a seventh variant.
+
+### Decisions taken while building
+
+- **`AddSpine` is its own component, not a `Spine` variant.** It shares only the
+  BOX: no body colour, no strap, no shadow, no title, no count, none of the slots.
+  Folding it in would make every one of those a conditional inside `Spine` for a
+  shape that carries no data.
+- **The reference width is PER VARIANT, and the scaling is JS, not `cqw`.** The plan
+  said to author every interior size at one `REFERENCE_WIDTH` and render in `cqw`.
+  Both halves needed correcting, and the second one only showed up in a browser:
+  - Per variant, because the design authors `.sp.vol`'s interior at its own 86px
+    width (`.ti` is 11.5px there, the same numeral as `.nm` at 74px), so a single 74
+    reference would render vol's text ~16% larger than the artboard.
+  - **JS, because an element cannot query itself.** `container-type: inline-size`
+    makes a box a container for its DESCENDANTS, so the spine's own padding in `cqw`
+    resolved against the next container out — the 402px phone frame — giving
+    `padding: 54px 49px` on a 74px spine. With `box-sizing: border-box` the box could
+    not shrink below its own padding (it rendered 98px wide) and its content box
+    collapsed to ZERO, which took every descendant's `cqw` to `0px`. The name, the
+    count and the glyph were all in the DOM at `font-size: 0` — the spines looked
+    like empty coloured blocks. `spineScale()` is plain arithmetic now, which is
+    exact because a spine is `flex-shrink: 0` and always given an explicit width.
+    (`DeckTile` was `flex: 1 1 auto` and genuinely did not know its width; that is
+    what container units are for, and it is not this case.)
+- **A spine takes ONE colour, not the `main`/`accent` pair.** The pair was a
+  `DeckTile`-ism — its lighter inner fill. A spine's body is a single pastel and the
+  inset white highlight down its right edge does that job, so `accentColor` had
+  nowhere to go. `BAND_COLORS`/`deckTileColors` still return pairs for other
+  surfaces; the shelf reads only `.main`.
+- **Rows scroll sideways rather than wrapping, where the list grows.** Spines are
+  `flex-shrink: 0`, so a wrapped second line stands on no board at all. The fixed
+  Collections row wraps (it is known to fit); the challenges and decks lists scroll.
+- **Every row is left-aligned.** `DecksPanelBody` used to centre its short rows and
+  left-align its growing ones. Centring is wrong on a shelf: the board runs the full
+  row width, and spines floating in the middle of it read as a mistake.
+
+### Consequences worth a second look
+
+- **The fdp's "+ new deck" moved** out of the Decks section header and onto an
+  `AddSpine` at the end of the row (the design's own affordance). It is therefore
+  hidden while that section is collapsed.
+- **The `spineHeight` cutoffs are a first cut** — `< 20` short, `< 100` base, `100+`
+  tall. The design specifies the three heights but not where a set moves between
+  them. Chosen against the app's actual spreads; wants real accounts on screen.
+- **Two counts on Account, one on the fdp.** A3 warns against encoding the count as
+  both height and numeral by reflex. Account keeps both (it is a stats block — the
+  height compares the four bands, the numeral is the figure you went there for).
+  The fdp sheet has no banding at all, because `.sheet .sp` flattens every spine to
+  74.
+
+### The glyph slot, and what a browser pass changed
+
+The first cut of `Spine` had **no** home for the collection glyphs and dropped them:
+the design's own corner glyph `.mine` is a top-LEFT mark, which is exactly where
+`label` starts, so the two overlap on any spine with a name. That was wrong — it
+threw away the thing that tells two spines of the same colour apart, and it broke a
+designed Study Challenge feature (duplicate `vs Bob` deck names, disambiguated by the
+opponent's icon).
+
+The fix is the design's OTHER glyph slot: `.sp.vol .own` — a glyph pinned to the right
+edge, clear of the foot content — generalised to every variant. On a base spine it
+renders as the right-hand end of a **foot row**, opposite the count. A real flex row
+rather than two absolutely-positioned corners, so the two cannot overlap however long
+the numeral gets. `collectionIcon.tsx` became `collectionGlyph.ts` in the process: it
+returns a Material Symbols NAME rather than a `@mui/icons-material` element (D3),
+because the spine scales the glyph against its own width and cannot do that to an
+opaque element. `DeckBuckets`' `BUCKET_GLYPHS` did the same.
+
+Three more things only a browser showed:
+
+- **Rows were centred, and the board was a short bar.** `ShelfRow` had no `width:
+  100%`, so inside a centred flex column it shrank to its spines. The board sizes to
+  the row, so it shrank too — a stub under the spines rather than a shelf they stand
+  on.
+- **The panel needed its own gutter.** `Shelf` carries the design's 22px PAGE gutter,
+  but every section heading in the decks panel is inset by the panel's own 28px. A
+  shelf 6px narrower than its own caption reads as a misalignment, so `PanelShelf`
+  overrides it to 28.
+- **The three `LineSeparator`s are gone.** The board already sits at the foot of every
+  row; a 280px hairline 12px under it is a seam, not a separation.
+
+### Labels that do not fit a 74px spine
+
+`Unfamiliar` measures **56.02px** into the spine's **56px** of content — it misses by
+two hundredths of a pixel and wrapped to "Unfamilia / r". The `.nm` tracking is
+therefore `-0.01em` rather than the design's `-0.005em`: 0.5% of tracking is
+invisible, a ten-letter word broken after its ninth letter is not.
+
+`Comfortable` (70px) can never fit, so it has to break, and:
+
+- `overflow-wrap: anywhere` — the design's value — creates a soft-wrap opportunity at
+  EVERY character, so the line-breaker always fills to the last one that fits and
+  hyphenation never gets a look in. `.nm` uses `break-word`, which only breaks a word
+  that cannot fit a line of its own.
+- `hyphens: auto` is set but is **not** relied on: it needs the browser to ship
+  hyphenation data for the document's language, and headless Chrome does not, so it
+  could not be verified here.
+- So the CALLER supplies a soft hyphen: `BUCKET_LABELS.Comfortable` is
+  `"Comfort\u00ADable"`, which renders "Comfort- / able". Knowing where an English
+  word divides is caller knowledge — `Spine` renders whatever string it is given and
+  has no business carrying a hyphenation dictionary.
+
+**Code:** `src/components/shelf/{Shelf,Spine,AddSpine,spineGeometry,index}.tsx|ts`
+(new); `src/features/flashcards/collectionGlyph.ts` (new, from `collectionIcon.tsx`);
+`src/components/DeckBuckets.tsx`; `src/features/flashcards/DecksPanelBody.tsx`;
+`src/features/flashcards/FlashcardsDecksPage.tsx`; `src/utils/categoryColors.ts`.
+**Deleted:** `src/components/DeckTile.tsx` (422 lines),
+`src/features/flashcards/collectionIcon.tsx`.
+**Docs:** `docs/DECKS_FEATURE.md`, `docs/STUDY_CHALLENGE.md`.
+**Verified in a browser** (Account + the fdp sheet), not only by typecheck. **Size: L.**
+
+## A4 · Bento — the menu primitive
+
+**Status: DONE (2026-08-21).** Components shipped, **all three hub callers
+converted**, and **D8 is complete**: `HubMenu.tsx` (439 lines) and
+`hubMenuCardBase.ts` (31) are deleted, and `docs/HUB_MENU_SYSTEM.md` was rewritten
+as [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) with its 9 inbound doc links and the
+CLAUDE.md entry retargeted.
+
+**`src/components/MarkTypeChip.tsx` had NO caller and was DELETED on 2026-08-22.**
+The open "does the chip come back?" question is answered *no*: every hub card now
+names its track in its SUBTITLE (`tileSubtitle()`), and the last card that could not —
+Bubble Match, whose sub-tile subtitles are level labels — names both of its tracks on
+its strip header instead, on the control that picks between them
+(`BubbleMatchTrackToggle`; see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) § `BentoStrip`).
+Typecheck and `npm run build` clean. Shipped `src/components/bento/` —
+`Bento`/`BentoTile`/`BentoStrip`/`BentoSubTile` (`Bento.tsx`), `CollectionChip`
+(`CollectionChip.tsx`), and a barrel `index.ts`. Work items 1 and 2 are done; item 3
+(deleting `HubMenu` + rewriting its 10 importers) was always budgeted into entry 4,
+and item 4 (picking the ghost glyphs) is a per-hub choice made when entries 1/4/5
+place the tiles.
+
+**Corrections made once the artboards were read against the components:**
+
+- **The ghost glyph is the tile's OWN ink, not neutral ink.** The artboards set
+  `color:var(--purA)` on `.bt` and let `.bg` inherit it, so the ghost is a deeper wash
+  of the tile's own hue. Drawing it in neutral ink — which the first cut did — makes a
+  tile read as two colours instead of one.
+- **This forced `RAMP` (`src/theme/colors.ts`),** the seven hues as `{fill, ink, tint}`
+  triples with a `RampHue` key type. A tile needs two tiers of ONE hue at once, and a
+  fill from one hue beside an ink from another is the palette mistake that typechecks,
+  looks deliberate, and is invisible in review. `BentoTile`/`BentoSubTile` and
+  `GameDef` now take a hue KEY, so the pairing cannot be broken at a call site.
+- **Tiles are real anchors.** `to`/`state` render the tile as a `RouterLink`, giving
+  middle-click, new-tab and keyboard focus for free; `onClick` receives the event so a
+  tile can intercept its own activation (Word Search confirming before clobbering a
+  save) while leaving modified clicks to the anchor.
+- **`BentoStrip` gained a `meta` slot** (`.lab`, mono uppercase) — the artboards end a
+  strip header with a FACT about the set ("×14 wins", "2 modes"), not the chevron a
+  `ShelfHeader` ends with. That is the difference between the two headers.
+- **`CollectionChip` gained the trailing `expand_more`** the artboard draws, plus a
+  `trailing` slot for non-figure content.
+
+**Decisions taken while building:**
+
+- **`BentoTile` is the app's one exception to "every pastel fill carries
+  `markOutline`" (D2).** The design draws the distinction itself: `.msb .cells i` —
+  15px tall, no content — gets the 12% inset ring, while `.bt` — 112px tall, carrying
+  a title and subtitle — gets a soft `0 1px 2px` drop shadow instead. At tile size the
+  content and shadow do the separating work and an inset hairline on a 19px radius
+  reads as a stray border. **The rule is therefore: a pastel needs an outline UNLESS it
+  is large and occupied.** Recorded in the component's header comment.
+- **Variant geometry is a table, not branches.** `TILE_VARIANTS` keys `base`/`hero`/
+  `low` to min-height, span, title size, letter-spacing, subtitle size, and the ghost
+  glyph's size + top offset. The ghost's size is PAIRED with the tile's — `hero` is
+  140px at `top:-26`, the others 92px at `top:-14` — and that pairing is what breaks
+  first when the variants are spread across conditionals.
+- **The ghost glyph is documented as decoration, not information.** Clipped, behind
+  the text, 15% on a pastel. The prop comment says explicitly not to rely on it to
+  tell two tiles apart, because the title is doing that.
+- **`position: relative` on the title/subtitle is load-bearing** and commented as
+  such: the ghost is an absolutely-positioned earlier sibling, so without it the glyph
+  paints over the text.
+- **Two gutters on purpose.** The grid is 16px (a tile's own 14px padding already
+  insets its text); `CollectionChip` is 18px, because it is a bordered box whose 1px
+  edge would otherwise sit proud of the tiles below it. Both are the design's numbers.
+- **`BentoSubTile` carries `minWidth: 0`** — not in the design's CSS, but without it a
+  long title widens the sub-tile instead of wrapping and the strip's even split (the
+  thing that makes it read as a set) is lost.
+- **`CollectionChip` is white and outlined among a grid of pastels on purpose**, and
+  says so in its header: it is not a destination, it changes what the destinations
+  use, so it must not read as one more tile.
+
+Used by: **1** (Home), **3** (Discover), **4** (Games), **5** (Account).
+This is the component that **replaces `HubMenu`** — deleted outright (D8).
+
+**Classes** — `.bento` (2-col grid, gap 10), `.bt` (tile: radius 19, min-height
+112, content bottom-aligned), `.bt.w2` (hero — spans both columns, min-height 150,
+title jumps 15.5 → 23px), `.bt.lo` (short, 90), `.bg` (the oversized ghost icon
+bleeding off the top-right at `opacity:.15`), `.t` / `.s` (title/subtitle),
+`.pin` (a pill badge, top-right).
+
+**`.strip`** is the nested variant: a full-width cell containing `.sh` (a small
+header with a label and a right-hand affordance) over `.row` of `.st` sub-tiles
+(radius 15, min-height 80, smaller ghost icon, optional `.star`). Games uses it for
+level rows; Home uses it for grouped destinations.
+
+**`.chipsel`** — the collection-selector chip (white, outlined, radius 14: icon +
+bold label + mono trailing count). Today this is `GamesCollectionSelector` rendered
+into `HubMenu`'s `header` slot.
+
+**The rule that makes the system work** — repeat it in the component's header
+comment: *Bento is for **menus of destinations**; Shelf is for **collections the
+user owns**. If a tile navigates, it is a Bento tile. If it represents a thing with
+a count, it is a spine.*
+
+**Work**
+1. `src/components/bento/Bento.tsx` — `Bento`, `BentoTile` (`hero` / `low`
+   variants), `BentoStrip`, `BentoSubTile`.
+2. `src/components/bento/CollectionChip.tsx` — `.chipsel`.
+3. Then delete `HubMenu.tsx` + `hubMenuCardBase.ts`, which means rewriting its
+   **10** importers — including `WordSearchHubItem.tsx` (~390 lines, imports six
+   named exports) and `GamesCollectionSelector`. That rewrite is budgeted in
+   **entry 4**, not here.
+4. **Pick the tiles' ghost glyphs (D5).** Each `.bt` carries an oversized `.bg`
+   icon at `opacity:.15`. These are a fresh selection from Material Symbols matched
+   to the design's vocabulary, not a port of the current MUI icons — do the whole
+   set in one pass so the hubs read as one family.
+
+**Code:** new `src/components/bento/*`; `src/components/HubMenu.tsx` → `HubMenu`,
+`HubMenuRow`, `HubMenuArrayItem`, `HubMenuGroup`, `HubMenuGroupHeader`,
+`HubMenuCardTitle`, `HubMenuCardEdgeSlot`, `HubMenuRowIconTile`,
+`HubMenuStatBadge`; `src/components/hubMenuCardBase.ts` → `cardBaseSx`,
+`CARD_PADDING_PX`; `src/games/word-search/WordSearchHubItem.tsx`.
+**Docs:** `docs/BENTO_SYSTEM.md` (this entry effectively rewrites it).
+**Size: L.**
+
+## A5 · Generic atoms
+
+**Status: DONE (2026-08-21).** Depends on A1. Small individually, but **every** Part B
+entry uses several, so they were done as one pass rather than 17 partial ones.
+
+The pass split the fifteen classes three ways, on one question: *does MUI already ship
+this control?*
+
+| Where it landed | Classes | Why |
+|---|---|---|
+| **New primitives** — `src/components/primitives/` | `.lab`, `.sec2`, `.shelfhd`, `.rw` + `.rows`, `.card` | No MUI analogue worth bending. `ListItem` is a full-bleed strip with a divider; `.rw` is a discrete outlined card. |
+| **MUI theme overrides** — `src/contexts/ThemeContext.tsx` | `.btn2`, `.btn3`, `.chip`/`.chip.on`, `.field`, `.mode` | ~157 `<Button>`s, 35 `<TextField>`s, 14 `<Chip>`s already exist. A theme override re-skins all of them with no call-site edits. |
+| **Already existed** | `.tip`, `.dots` | `TipBox.tsx` was restyled during A4. `FrequencyScoreDots.tsx` already matched `.dots` exactly (8px, 1.5px border, 4px gap) — verified, not touched. |
+
+Not built, deliberately: `.modal`, `.sheet`, `.scrim`. Each has a live bespoke
+implementation (`HydraLendNotice`, the decks panel from entry 2, MUI `Backdrop`) and
+none of the three is repeated often enough to have drifted yet. They are A5's leftovers,
+tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+
+### The primitives
+
+**`src/components/primitives/Label.tsx`** → `Label`, `SectionRule`, `SectionHeader`.
+
+All three exist for one reason: in this design a section is announced by a **mono
+uppercase overline**, not by a bold sentence-case heading, and the four values that make
+that work (10px / `.14em` / `FONTS.mono` / `COLORS.textFaint`) were being re-typed per
+page and drifting. `Label` is those four values. `SectionRule` (`.sec2`) adds a hairline
+running to the right edge — grown as a flex child, so it starts *after* the text rather
+than underlining it. `SectionHeader` (`.shelfhd`) adds a right-hand affordance icon, and
+should be used **only** when that affordance exists; without an `action` it is a
+`SectionRule` that forgot its rule.
+
+`.shelfhd` and `BentoStrip`'s own `.strip .sh` look alike and mean different things — one
+ends in a tappable icon, the other in an inert mono fact. Kept as separate components on
+purpose; see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) § "`BentoStrip` vs `ShelfHeader`".
+
+**`src/components/primitives/Row.tsx`** → `Row` (`.rw`), `RowList` (`.rows`).
+
+One entity in a list, where the list is neither a collection the user owns (Shelf) nor a
+menu of destinations (Bento). Slots: `icon`/`initials`/`avatar` + `hue`, `title`,
+`subtitle`, `value`, `chevron`, `trailing`. A row that needs a sixth slot is not a `Row`.
+Like `BentoTile`, it becomes a real `<a>` with `to`, a real `<button>` with only
+`onClick`, and a plain div otherwise.
+
+The 36px avatar is a **pastel fill and carries `markOutline`** — the "large and occupied"
+exception (D2a) does not reach something this small, and without the inset ring it sits at
+~1.15:1 on white and disappears.
+
+**`src/components/primitives/StatCard.tsx`** → `StatCard` (`.card`).
+
+The *one* number a screen is about. Deliberately singular: three stacked is a data table
+in costume, and several equally-important figures belong in a `RowList` with mono
+`value`s. The 38px numeral is copied verbatim rather than snapped to `SIZE.display`
+(40px), because the design pairs it with `-0.035em` tracking and the tracking is what
+makes a long figure read as one shape. Its `action` slot takes a plain MUI
+`<Button variant="contained">` — the theme already skins that as `.btn2`.
+
+The design's `.card .k` tracks at `.13em` where `.lab` tracks at `.14em`; `StatCard`
+normalizes onto `Label`. Two overline recipes guarantee drift and nobody can see 0.01em.
+
+### The theme overrides, and their one scoping rule
+
+**SHAPE is overridden for every colour; GROUND AND INK only on the `*Primary` slots.**
+
+A pill is a pill whether it is destructive or not, so radius/padding/type apply to
+`contained` and `outlined` across the board. But repainting a `color="error"` button
+ink-black would erase the only thing it is saying, so the ink lands on
+`containedPrimary` / `outlinedPrimary` / `Mui-selected`. Anything with no explicit
+`color` prop defaults to primary and picks up the design automatically.
+
+**Chip needs that rule spelled out by hand.** MUI's button slots are colour-scoped
+(`containedPrimary`), but its chip variant slots are not — `outlined` and `filled` apply
+to every colour. Writing the ink there directly flattened the reader's `color="error"`
+"Vocab processing failed" chip and the dictionary's info chips. The overrides are nested
+under `&.MuiChip-colorDefault, &.MuiChip-filledPrimary` (resp. `-outlinedPrimary`), which
+is the exact set meaning "no semantic colour was asked for".
+
+Two inversions worth knowing before writing a call site:
+
+- **A selected chip is `variant="filled"`, a resting one is `variant="outlined"`** —
+  which reverses MUI's usual reading of those two variants. That inversion is the
+  design's (`.chip` vs `.chip.on`); do not reach for a class.
+- **`.btn3` is radius 14, not a pill**, unlike `.btn2`. The design uses it as a
+  full-width block action, and a 999px block reads as a stretched pill.
+
+`.field`'s leading icon is **not** in the theme — it is per-call-site
+(`InputProps.startAdornment`), because forcing one would put a search glyph on every
+text field in the app.
+
+⚠️ **The overrides live on the SHARED base theme**, so Dark / Ocean / Nature inherit an
+ink-black button on their own grounds. Knowingly wrong, knowingly deferred: D4 runs the
+app on one light palette for the duration of the redesign and the other three are not
+re-derived yet.
+
+### Consumers converted
+
+`src/features/friends/FriendPersonRow.tsx` wears the `.rw` **skin** (white ground, radius
+16, 36px rounded avatar with its ring, 14.5/11.5 type) but keeps its own structure and is
+**not** a `Row`. A `Row` has one tap target; this has two nesting models
+(`onPersonPress` leaves the actions outside the tappable half, `onRowPress` swallows the
+whole row). Folding that in would push a friends-only concern into every list in the app.
+
+`DictionaryEntryRow` is deliberately untouched: the design gives dictionary hits their
+**own** class (`.dr` — headword, pinyin row, gloss, no avatar), so it is an A7 widget, not
+a `.rw`.
+
+**Code:** `src/components/primitives/*`; `src/contexts/ThemeContext.tsx`;
+`src/features/friends/FriendPersonRow.tsx`. Verified unchanged: `src/components/TipBox.tsx`,
+`src/components/FrequencyScoreDots.tsx`.
+**Size: M.**
+
+## A6 · Game surface chrome
+
+**Status: DONE (2026-08-21).** Depends on A1, A2b. Shared by entries **12–16** and the
+undesigned Memory Map.
+
+Every game artboard is the same frame: the `.lhd` leaf header (A2b, already shipped) over
+`.play` — an inset rounded panel containing `.hud` (a bordered strip of mono `.lab`s) and
+optionally `.timer` (28px tabular numerals over a `.trk` track).
+
+### The scope line, and where it falls
+
+A6 is **the frame, and the frame only.** `GameFrame` / `GameHud` / `GameTimer` are built
+and every game now plays inside the panel. What goes *in* the HUD is per-game and belongs
+to entries 12–16 — "Board 4 · endless, cleared count, fill bar" (16) and "Pinyin ·
+production" (13) are content decisions about specific games, not shared chrome. Drawing
+that line is what kept this pass from becoming five game redesigns.
+
+### `src/games/shared/GameFrame.tsx`
+
+| Export | Class | Notes |
+|---|---|---|
+| `GameFrame` | `.play` | The inset panel. Also `position: relative`, so a game's own overlays (a countdown, a pause veil) anchor to the PANEL and stop at its rounded edge instead of covering its margin. |
+| `GameHud` | `.hud` | `space-between`, so the number of children is load-bearing: two pin to the edges, three put one in the middle. A HUD wanting four facts is a HUD showing too much. |
+| `GameHudLabel` | `.hud .lab` | A `Label` that refuses to wrap. The strip is one line. |
+| `GameHudBar` | `.hud` bar | The HUD's third slot, `flex: 1`. Always restates a number a label beside it already gives — the count is what you read when you look, the bar is what you see when you don't. Added by entries 12/16. |
+| `GameHint` | `.lab` at the panel foot | The one-line instruction three artboards (12, 14, 15) draw in the same place. Mono/uppercase/faint on purpose: a rule you need once and never again should be legible on request and invisible otherwise. Added by entry 14. |
+| `GameTimer` | `.timer` + `.trk` | Takes an already-formatted `value` — the frame does no clock math. |
+
+`GameHud` also takes `divider={false}`, for a HUD sitting directly under a `GameTimer`
+(Match Speed) — the timer already draws the hairline, and two of them a row apart read as
+an empty table row. Artboard 14 sets `border-bottom:none` on that exact HUD.
+
+**Why the panel is not decoration.** Before this, every game drew its board edge to edge,
+so the board's boundary and the phone's were the same line and a bubble drifting to the
+edge looked like it had left the app. The panel gives the play area its own visible
+boundary — inside is the game, outside is the app — and gives a physics surface ONE
+element to measure instead of reasoning about page padding.
+
+**The artboard's absolute positioning was not copied.** `.play` is
+`left/right:14, top:64, bottom:14` because an artboard is a fixed 402×874 rectangle. Here
+it is a flex child of `LeafPage`'s body, so the header can be whatever height its title and
+slots make it. The 64 in the CSS is the artboard's header height plus its gap, not a number
+the app should hardcode.
+
+**One deliberate departure: `GameTimer` keeps a `pulse` prop.** The design draws no pulse.
+But a colour change plus a nearly-drained track is easy to miss in peripheral vision, which
+is exactly where a clock gets read mid-game, so Match Speed's ten-second pulse survived the
+port as an opt-in rather than being dropped silently.
+
+**What the frame deliberately does NOT do:** `useBlockEdgeSwipe(true)` and
+`touchAction: "none"` stay the page's job. The edge-swipe block is a document-level touch
+handler with a lifecycle, and burying it in a layout wrapper would make "why can I still
+swipe out of this game" invisible to whoever reads the page.
+
+### Adoption
+
+| Game | State |
+|---|---|
+| Match Speed | Framed. `MatchSpeedTimerBar` now **delegates to `GameTimer`** and keeps only what is Match-Speed-specific: `RUN_DURATION_MS`, the 10s urgency threshold, its colours. ~60 lines of duplicated clock styling gone. |
+| Bubble Match | Framed. `BubbleStage` measures its own container, so this just re-bounds the field — no constant changed. |
+| Hydra Bubbles | Framed, same as Bubble Match. |
+| Word Search | Framed, and its HUD **is** `GameHud` as of entry 13. The reconciliation was a re-ordering, not a new primitive: the clock is now the MIDDLE child, so the one element that can vanish is the one whose absence moves nothing under `space-between`. It used to be first, which is why the hint meter beside it had to be absolutely positioned. |
+| Memory Map | Framed. No artboard, but the design anticipated it — `.mapw` is in the stylesheet. |
+| Speed Reading | Framed, and the one to **eyeball first**: it is the only game whose panel sits inside a ROTATED stage that draws its own header. The frame took the place of the play box that was already there, so the change is small, but the geometry is bespoke. |
+
+In every case the popups (`GameEndPopup`, `ProvisionalSortOffer`, `GamePausedOverlay`, the
+lend notice) stay **outside** the panel: each covers the whole content area and must not be
+clipped by the panel's radius.
+
+**Code:** new `src/games/shared/GameFrame.tsx`; all six game pages;
+`src/games/match-speed/MatchSpeedTimerBar.tsx`.
+**Docs:** `docs/GAMES_FEATURE.md`. **Size: M.**
+
+## A7 · Data-display widgets
+
+**Status: PARTIALLY DONE (2026-08-21) — `.bd` shipped, the rest not started.**
+Depends on A1. Each widget is used by 2+ pages, so each is shared.
+
+### ✅ `.bd` — the board (DONE)
+
+`src/components/leaderboard/Board.tsx` → `Board` (`.bd`), `BoardRow` (`.bd .r`),
+`BoardZone` (`.bd .zone`). Row slots: `rank`, `name`, `sublabel`, `meter`, `score`,
+plus `highlighted` (this row is you) and `zone` (promotion band).
+
+**A board is ONE card, not a stack of cards.** That is the whole shape decision.
+Separate rounded rows with gaps say "these are N things"; a single outlined card with
+hairlines between its rows says "this is one table and the rows are ranked against each
+other", which is the only thing a leaderboard is for. It is also what makes a `BoardZone`
+legible — a divider can only cut across something continuous.
+
+**A zone divider carries real up/down arrows flanking its caption.** The caption says
+WHAT the line is; the arrows say WHICH WAY IT MOVES YOU, which is the fact a competitor is
+actually reading the board for — a green rule with arrows pointing up and a red rule with
+arrows pointing down are legible before anyone has read a character. Both sides are
+flanked so the pair reads as a direction the whole row carries rather than a bullet stuck
+to the word, and they are Material Symbols glyphs rather than literal `^` / `v`, which
+would read as text beside the caption instead of as an indicator. The neutral `hold` rule
+gets no arrow: it is the absence of a direction.
+
+Arena names each line for **what crossing it does to you**, not for the band underneath
+it — `Promotion` at the top of the table, `Demotion` at the bottom (`renderZoneDivider`,
+`ArenaPage.tsx`). ⚠️ The user-facing word is *Demotion* while the wire value stays
+`zone: 'relegate'`; do not "fix" either to match the other.
+
+**The sub-line has two settings, `sublabelVariant`.** `"meta"` (mono 9.5, faint) is a
+machine fact next to a name — a language code, a division, a timestamp. `"prose"` (sans
+11.5, secondary) is a sentence a PERSON wrote. Arena's message row uses `"prose"`: mono at
+9.5 is a caption face, and running someone's own words through it makes them read as a
+data field — at that size, barely read at all. Either way the line is `nowrap` +
+ellipsis, because the board's legibility rests on every row being the same height and this
+slot now carries text the user types.
+
+**`scoreIcon` is a unit, not a sixth slot.** A Material Symbols glyph immediately before
+the figure, saying what the number IS rather than anything about the competitor. It earns
+its 13px only when the board's currency is something the app already draws elsewhere:
+Arena's minutes take `local_fire_department` in `COLORS.fireActive` — the same flame
+`MinutePointsFireBadge` burns in every header — so the column reads as "the points I watch
+tick up" with no caption and no legend.
+
+**Arena dropped its meter, and that is the general lesson.** The row used to draw the
+score against the leader's as a 74px bar. The ranks are already sorted by that number and
+the number is on the row, so the bar restated twice-known information in a third form —
+and on a runaway board every bar below the top was the same stub. `meter` survives on the
+primitive (the tester dashboard still uses it) but it is opt-in for a reason: a meter earns
+its width only where rows are genuinely compared at a glance, not wherever a score exists.
+
+**The five row slots are the whole vocabulary, deliberately.** Arena in particular puts a
+learner in front of 24 strangers they did not choose and cannot leave, so adding a field
+to this component means reopening [ARENA_FEATURE.md](./ARENA_FEATURE.md) Q20, not
+adjusting a layout. Note there is no avatar slot at all — that is the privacy decision
+made structural rather than left to a comment.
+
+**⚠️ This section previously named the wrong consumers.** It claimed Arena (9), Community
+(10) and Friends (8). In the code:
+- **Arena** ✅ — migrated. `ArenaEntryRow` is now a thin binding of `BoardRow`; zone
+  dividers are derived from the server's per-row `zone` at each band CHANGE, so the line
+  can never disagree with the tints either side of it. `arenaStyles.ts` lost `zoneRowSx`
+  and `rankChipSx` (41 dead lines).
+- **The tester dashboard** ✅ — migrated, and it was the third bespoke ranked list all
+  along; `LeaderboardPlaceholder` shed ~150 lines of row markup inside a pink-gradient
+  card that predated the palette entirely. Not Community.
+- **Community (10)** ❌ is not a leaderboard in code at all — it is a design FEED
+  (`CommunityFeedRow`), ranked by upvotes but rendered as cards. Nothing to migrate.
+- **Friends (8)** ❌ correctly stays off `.bd`: entry 8's own artboard draws that
+  leaderboard as **`.rw` rows with podium tints**, not as a board. It already gets the
+  right skin via `FriendPersonRow` (A5).
+
+Two departures from the artboard, both recorded in the component:
+1. **Zone captions use `RAMP.grn.ink` / `RAMP.red.ink`, not the artboard's `#0B5C46` /
+   `#7A1024`.** Those two hexes belong to no ramp entry and appear nowhere else in the
+   stylesheet; minting off-ramp colours for two words of caption is how a palette starts
+   leaking. The result is a step lighter and still clears 4.5:1.
+2. **`.sc` is `minWidth: 34`, not `width: 34`.** Fixed is right for a figure that stays
+   small (arena minutes reset weekly) and clips one that does not (a lifetime points
+   total is five or six digits).
+
+One trap worth keeping: the row separator is drawn **by the parent** as
+`& .board__row + .board__row::before`, not as `& + &` inside the row's own `sx`. The
+latter silently half-works — `&` compiles to that row's generated class, so it only ever
+matches two adjacent rows whose `sx` is byte-identical, and the viewer's row and any
+zone-tinted row get different classes. Exactly the separators around the most important
+rows would go missing.
+
+### Not started
+
+- **`.msb` mastery cells** — the segmented-cell bar with a `.tick` goal marker and a
+  `.cd3` legend, the design's rendering of the pbh model. **This is the app's only
+  mastery visualization (D7)**; scale it down for inline/list contexts rather than
+  substituting a different shape. `.trk2` and `.mst` are deliberately **not built**.
+  It still renders **one** bar — the surface's lens (D6); `MasteryProgressBar`'s
+  one-bar-per-lens rule is unchanged.
+- **`.cpcd`** — character-over-pinyin, with a `.sm` size. The app already owns this
+  as `CPCDRow` / `CPCDBlock`, reached **only** through `ForeignText`. Restyle
+  inside those files; do not introduce a new component.
+- **`.ladder`** — the division ladder bars with a `.now` outline (Arena).
+- **`.banner`** — the notched division banner (Arena).
+- **`.hero`** — the flashcard face itself, 295/426 aspect (Card Detail, flp).
+
+`.ladder` and `.banner` are Arena-only and `.hero` is Card-Detail-only, so all three are
+arguably better done inside entries 9 and 18 than as standalone shared work — they are in
+A7 because they are drawn more than once in the artboards, not because two features share
+them.
+
+**Work remaining**
+1. `src/components/mastery/MasteryTrack.tsx` (`.trk2`) and
+   `src/components/mastery/MasteryCells.tsx` (`.msb`), both driven by the existing
+   `masteryBar()` / `PBH_THRESHOLDS` / `PBH_FULL` / `MARK_TYPE_COLORS` model — no
+   new data.
+2. Restyle `CPCDRow` / `CPCDBlock` in place.
+
+**Code:** `src/components/leaderboard/Board.tsx` (done); new `src/components/mastery/*`;
+`src/features/flashcards/MasteryProgressBar.tsx`; `src/components/CPCDRow.tsx`;
+`src/components/CPCDBlock.tsx`; `src/components/ForeignText.tsx`.
+**Docs:** `docs/MASTERY_REWORK.md`, `docs/ARENA_FEATURE.md`,
+`docs/CPCD_PINYIN_SHIFT.md`. **Size: L (was L; `.bd` is out of it).**
+
+---
+
+# Part B · Page by page
+
+## 1 · Home — `/` — **Size: M**
+
+**Status: DONE (2026-08-21).** `HomePage` is now a `Bento` mosaic: Night Market as
+the `hero`, Games / Arena / Reader / Dictionary as base tiles, Community / Friends /
+Compare Words as `low` tiles, `TipBox` + `FooterSpacer` below the grid. Hues and
+glyphs are the artboard's verbatim. The role-gated rows append as further `low`
+tiles, and the file says why an odd tile count is left half-empty rather than
+stretched. `MobileTabScreen` is unchanged.
+
+**Today.** `HomePage` renders a vertical `HubMenu` of 8 rows plus up to 3
+role-gated ones, inside `MobileTabScreen`, with a `TipBox` header and
+`FooterSpacer` footer. Every row is the same size.
+
+**Design.** A bento mosaic. Night Market is the full-width hero (`.bt.w2`) with an
+"open now" pin; Games / Arena / Reader / Dictionary are normal tiles; Community /
+Friends / Compare Words are `.lo` tiles. Friends carries a badge count. Tip box
+stays below the grid.
+
+**Watch out.** The role-gated rows (`user.isValidator` → Tester Dashboard,
+`user.isTemplateAuthor` → Template Editor + Sandbox) are **not drawn**. They append
+as further `.lo` tiles — the mosaic must not assume a fixed tile count.
+
+**Code:** `src/pages/HomePage.tsx`; `src/components/TipBox.tsx`;
+`src/AuthContext.tsx` → `useAuth`.
+**Docs:** `docs/BENTO_SYSTEM.md`, `docs/UX_AND_NAVIGATION.md`.
+
+## 2 · Decks & Cards — `/flashcards/decks` — **Size: L**
+
+**Status: not started.** The largest single page.
+
+**Today.** Two surfaces. The **page behind** holds the study-entry buttons —
+Review / Challenge, the Study Mix slab, and (when the account pursues them) the
+Reading and Writing Center buttons. The **persistent pull-up sheet** in front holds
+Collections, Challenges, the user's Decks, and below them the whole card library as
+a searchable grid. Data comes from `useDecksPanel(lens)`; the body is
+`DecksPanelBody`, shared with the two Mastery Center pages.
+
+**Design.** Sheet kept. Its sections become shelves with `.shelfhd` headers:
+Collections → Mastered (the per-skill Centers) → Challenges → Your decks → the card
+library with its search. Above the sheet, a three-across action row: Review /
+Study Mix / Challenge.
+
+**Watch out — two conflicts.**
+> **(a)** The artboard's action row is **Review · Study Mix · Challenge**. The real
+> page also carries the **Reading and Writing Center buttons**, which are the only
+> entry points to those pages. The design has no slot for them. Do not silently
+> drop them.
+>
+> **(b)** `FlashcardsDecksPage`'s header comment states the page **is the core bar
+> and only the core bar**, and that per-skill tiles must not go back on it. The
+> artboard's "Mastered" shelf showing a *Mastered Reading* spine is arguably that
+> exact thing returning. Confirm before building.
+
+**Note.** "All Cards has no spine" in the artboard is **correct and deliberate** —
+its grid is rendered inline at the bottom of the sheet. The existing code already
+does this.
+
+**Code:** `src/features/flashcards/FlashcardsDecksPage.tsx`;
+`src/features/flashcards/DecksPanelBody.tsx`;
+`src/features/flashcards/useDecksPanel.ts` → `useDecksPanel`, `DecksPanelState`;
+`src/features/flashcards/FlashcardsLearnPage/SheetPanel.tsx`;
+`src/features/flashcards/builtinCollections.ts`;
+`src/features/flashcards/masteryCenters.ts` → `activeMasteryCenters`,
+`MASTERY_CENTER_PATHS`; `src/features/flashcards/collectionGlyph.ts`;
+`src/components/DeckTile.tsx`; `src/components/DeckBuckets.tsx`;
+`src/components/MiniVocabCardGrid.tsx`.
+**Docs:** `docs/DECKS_FEATURE.md`, `docs/MASTERY_REWORK.md`.
+
+## 3 · Discover — `/discover` — **Size: TBD**
+
+**Status: DONE (2026-08-21) — the MENU only.** Converted at the user's explicit
+instruction, overriding the D11 block. Sort Cards is the `hero`, Quick Mark and
+Skipped Cards are base tiles; hues and glyphs are artboard 3's.
+
+**⚠️ Two pieces of artboard 3 are NOT built, because the data does not exist
+client-side:**
+
+1. **The tile pins** — `184 waiting` on Sort Cards, `31` on Skipped Cards.
+2. **The "Waiting to be sorted" shelf** beneath the grid — four spines whose heights
+   encode the unsorted queue by band.
+
+Nothing exposes a count of unsorted or skipped cards; `useCategoryCounts` counts the
+user's LIBRARY by band, which is a different number. Both want one endpoint returning
+the unsorted queue counted by band. **This is the outstanding item for entry 3** —
+the bento itself is complete. The sort flow (scp) remains separate and out of scope,
+though the design project now has a `Sort Flow - Shelf System.html` not yet read.
+
+**Superseded note:** this entry previously read "BLOCKED — awaiting a new artboard".
+The user is redoing the Discover
+design (D11). Artboard 3 as it stands is **superseded**; do not build from it.
+The sort flow (`/discover/sort/:language`, scp) is explicitly left as an
+**outstanding item** and is not in scope for this pass.
+
+**Today.** `DiscoverPage` is 62 lines: a `HubMenu` of exactly three equal rows —
+Sort Cards, Quick Mark, Skipped Cards — with a `TipBox` header. Paths come from
+`useDiscoverNavigation`.
+
+**Design.** Sort Cards becomes the hero tile with a "184 waiting" pin; Quick Mark
+and Skipped Cards are normal tiles (Skipped carries its own count). **Below the
+bento, a new shelf** breaks the unsorted queue down by progress bucket —
+Unfamiliar / Target / Comfortable / Mastered — with spine heights encoding counts.
+
+**Watch out.** The description above records what the *superseded* artboard asked
+for; keep it only as context for the new design. The queue breakdown is **new data
+on this screen** — if the discover endpoints don't already return per-bucket counts
+for the unsorted queue, any version of this page carrying that shelf is gated on a
+server change. Worth confirming before the new design is finalized, so the design
+isn't drawn around data that doesn't exist.
+
+**Code:** `src/features/discover/DiscoverPage.tsx`;
+`src/hooks/useDiscoverNavigation.ts`; `src/hooks/useCategoryCounts.ts`.
+**Docs:** `docs/DISCOVER_FLOW.md`, `docs/QUICK_MARK.md`, `docs/SORT_CARDS_REQUIREMENTS.md`.
+
+## 4 · Games — `/games` — **Size: L**
+
+**Status: DONE (2026-08-21).** Bubble Match and Word Search are `BentoStrip`s, the
+other four are tiles, and `GamesCollectionSelector` renders a `CollectionChip`.
+`WordSearchHubItem` was rewritten on the bento primitive (390 → ~300 lines) with its
+confirm-before-clobber, resume tile, in-place erase confirmation and leave animation
+all preserved.
+
+**Decisions taken while converting — three are behaviour changes, not restyles:**
+
+- **⚠️ `MarkTypeChip` is gone from this page.** Every hub card used to name the
+  mastery track its game feeds. A bento tile has no edge slot, and its subtitle is
+  where the design puts the game's blurb, so the label had nowhere to go. **A player
+  can no longer see which track a game trains without opening it.** `GameDef.markType`
+  is untouched and still drives the mark call — only the label is gone. Word Search is
+  the exception: its two modes feed different tracks, so its sub-tiles spend their
+  subtitle on the track name instead of a blurb. If the chip should return, the honest
+  slot is the tile `pin`. **Open question — see "Still open".**
+- **Registry subtitles were rewritten short.** "Pop word & meaning pairs before the
+  screen fills up" → "Pop matching pairs". A tile subtitle renders at 11.5px in a
+  half-width 112px tile; the old sentences were written for a full-width row and wrap
+  to three lines in a tile. `GameDef.subtitle` now documents the length budget.
+- **`GameDef.bgColor` → `GameDef.hue`,** a `RampHue` key rather than a hex, so a
+  tile's pastel body and its ghost glyph's ink cannot drift apart.
+- **`GameDef.iconAsset` deleted, `GameDef.glyph` added.** `iconAsset` was an optional
+  image URL that **no game ever set** — every game fell through to one generic
+  controller icon, so the hub had six identical glyphs and a dead code path. `glyph`
+  carries the artboard's per-game Material Symbol.
+- **The collection chip keeps its colour dot** (in a new `trailing` slot), which the
+  artboard does not draw. The dot is the only thing tying the chip to the same set's
+  tile on the decks page; without it the hub is the one surface where a collection has
+  no colour. The chip does NOT show a card count — the artboard's "1,284" has no
+  source in the current data flow, and inventing one would be worse than omitting it.
+- **The TipBox was KEPT**, though the artboard omits it. An artboard leaving out a
+  feature is a layout omission, not a decision to delete a feature; that call is the
+  user's, and it is cheap to reverse either way.
+- **Word Search's strip no longer scrolls.** Two or three sub-tiles share the row
+  instead of overflowing it, so `useDragScroll` came out. Its resume tile cancels the
+  row's 9px flex gap with `marginRight: -9` on leave — a gap survives its item
+  shrinking to zero width, which would otherwise leave a stump.
+
+**Today.** `GamesPage` renders `GamesCollectionSelector` in `HubMenu`'s `header`
+slot, then: Bubble Match as a `HubMenuArrayItem` (one sub-card per level),
+`WordSearchHubItem` as a **bespoke ~390-line component** that assembles its own
+strip out of six `HubMenu` exports, and Match Speed / Speed Reading / Hydra
+Bubbles / Memory Map as single rows. Every card carries a `MarkTypeChip` naming
+the mastery track that game feeds.
+
+**Design.** Collection selector chip stays at the top (`.chipsel`). Bubble Match
+(3 levels) and Word Search (2 modes) become `.strip`s; the other four become plain
+tiles.
+
+**Watch out.** Converting this page means **rewriting `WordSearchHubItem`** as a
+Bento strip — it is the single largest piece of hub work, and it is why D8
+(deleting `HubMenu`) is not free. Also: the artboard does not draw the
+`MarkTypeChip`; decide whether it survives the conversion.
+
+**Code:** `src/games/GamesPage.tsx`; `src/games/GamesCollectionSelector.tsx`;
+`src/games/word-search/WordSearchHubItem.tsx`; `src/games/registry.ts` →
+`GAME_REGISTRY`; `src/games/bubble-match/constants.ts` → `LEVEL_CONFIGS`;
+`src/components/MarkTypeChip.tsx`; `src/hooks/useGameWins.ts`;
+`src/features/flashcards/selectedCollection.ts`.
+**Docs:** `docs/GAMES_FEATURE.md`, `docs/BENTO_SYSTEM.md`.
+
+## 5 · Account — `/account` — **Size: M**
+
+**Status: not started.**
+
+**Today.** `AccountPage` shows the profile block (avatar, email, copyable user ID),
+`DeckBuckets` for the four progress buckets, the Velocity figure with an `InfoTip`,
+the reading/writing goal checkboxes, and Log Out.
+
+**Design.** Same content, re-cut: the four buckets become a **shelf** whose spine
+heights encode their counts; Velocity keeps its one big number in a `.card`; goals
+become switch rows; Log Out is a `.btn3` at the bottom.
+
+**Watch out.** Goals are currently MUI `Checkbox`/`FormControlLabel`; the design
+draws toggle switches. Changing the control changes nothing functionally but does
+change the a11y surface — keep them real form controls, not icon glyphs.
+
+**Code:** `src/pages/AccountPage.tsx`; `src/components/DeckBuckets.tsx`;
+`src/hooks/useCategoryCounts.ts`; `src/hooks/useVelocity.ts`;
+`src/components/InfoTip.tsx`; `src/utils/categoryColors.ts`.
+**Docs:** `docs/VELOCITY.md`, `docs/UX_AND_NAVIGATION.md`.
+
+## 6 · Reader — `/reader` — **Size: M**
+
+**Status: not started.**
+
+**Today.** `ReaderPage` is a `NodePage` with a fixed non-scrolling shell;
+`TextSidebar` owns the list and renders **one flat MUI `List`** of every `Text`,
+with edit/delete icon buttons per row and a `drawerWidth` prop left over from the
+retired drawer layout.
+
+**Design.** Three shelves of `.sp.vol` volumes — your documents (ending in an
+add-spine), the shared library, and validation downloads (dashed border) — over a
+`.shnote` explaining tap-to-read / long-press-to-edit.
+
+**Good news: the grouping needs no server change.** `TextBase`
+(`server/contracts/wire.ts`) already carries `isUserCreated` (yours vs library),
+`validationEntryId` (to-validate), `characterCount` and `createdAt` — exactly the
+three groups and the caption the design wants.
+
+**Watch out.** Reader is the one place the shelf's **height rule is switched off**:
+every volume is the same height and character count is a caption. That is
+deliberate — a document's length is not its importance. Keep it.
+
+Also: per-row edit/delete buttons become a long-press, which is a real interaction
+change on a page whose shell doesn't scroll. Check the touch rules before wiring it.
+
+**Code:** `src/features/reader/ReaderPage.tsx`;
+`src/features/reader/TextSidebar.tsx`; `src/features/reader/validationApi.ts` →
+`downloadValidationDoc`; `server/contracts/wire.ts` → `TextBase`;
+`src/types.ts` → `Text`.
+**Docs:** `docs/USER_DOCUMENT_FEATURE_SUMMARY.md`, `docs/DATA_VALIDATION_SYSTEM.md`,
+`docs/LEAF_NODE_PAGES.md`.
+
+## 7 · Dictionary — `/dictionary` — **Size: S**
+
+**Status: PARTIAL — the keypad is DONE (2026-08-22), the rows are not started.**
+Smaller than the artboard suggests.
+
+**Today.** `DictionaryPage` is a `NodePage` with `PinyinKeypad`, a search
+`TextField`, result count + AI chip, `DictionaryEntryRow` results, and MUI
+`Pagination`.
+
+**The keypad landed as `.kp` KEYCAPS.** The vowel grouping was already right — the
+restyle was the key itself. It was a MUI contained `Button`, so it rendered as an
+elevated pill with a ripple: three separate "this submits something" signals on a
+control that only types a letter. It is now a flat 30×30 square at radius 8 with a
+ramp pastel ground and an ink glyph, `:active` darkening in place of the ripple —
+`.kp b` exactly. Groups are the spacing unit (5px within a group, 14px between), which
+is the only thing telling a learner that ā á ǎ à are one vowel and not four letters.
+The old Material 50-level hexes (`ZH_VOWEL_COLORS`) are gone; the six fills are ramp
+members, except the i-row, which is the artboard's own inline `oklch(95% 0.055 100)`
+(`#F7F0C6`) — the ramp has no yellow between `--org` at hue 70 and `--grn` at hue 145,
+and six vowels need six distinguishable hues. `es` keeps the same keycap but unfilled:
+it has no tone system, so a hue would imply a distinction that does not exist.
+
+**Design.** Rows go typographic — no icon, no invented first-character tile. The
+headword is the visual anchor, tone-coloured pinyin above the gloss, chevron at the
+end. Keypad grouped by vowel, four tones each, each group tinted.
+
+**Watch out.**
+> **The page prints its own title twice.** `NodePage`'s back-arrow header says
+> "Dictionary" and an `h1` immediately below says it again. The artboard has only the
+> header. Not touched here — it is a `NodePage` question, not a keypad one — but it is
+> the first thing wrong on the screen.
+
+Two constraints: tone colours must come from the app's existing tone palette, not
+the hexes inlined in the artboard; and the headword must render through
+`ForeignText`, never `CPCDRow` directly (`CPCDRow`/cpcd are private, `'es'` is
+plain text).
+
+**Code:** `src/features/dictionary/DictionaryPage.tsx`;
+`src/components/DictionaryEntryRow.tsx`; `src/components/PinyinKeypad.tsx` →
+`ZH_ROWS`, `ES_ROWS`, `KeyGroup`; `src/components/ForeignText.tsx`;
+`src/hooks/useDictionarySearch.ts`.
+**Docs:** `docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md`,
+`docs/DICTIONARY_AI_FALLBACK_SEARCH.md`.
+
+## 8 · Friends — `/friends` — **Size: M**
+
+**Status: not started.**
+
+**Today.** `FriendsPage` is a `NodePage` with nav buttons to the three mutating
+pages, a challenge-badge button, the copyable friend ID, and a velocity leaderboard
+of `FriendPersonRow`s with `RankBadge` podium tints.
+
+**Design.** A 3-up bento of the mutating actions (Send / Accept / Remove) carrying
+their badge counts, a full-width Challenges tile, the friend-ID `.card`, then the
+leaderboard as `.rw` rows with podium tints and a per-person language wallet.
+
+**Note.** The podium tints in the artboard match the code's existing choice
+(`RankBadge`: 1 = yellow, 2 = blue, 3 = red) — no change needed there.
+
+**Code:** `src/features/friends/FriendsPage.tsx` → `RankBadge`;
+`src/features/friends/FriendPersonRow.tsx`; `src/features/friends/friendStyles.ts`;
+`src/features/friends/friendLabels.ts` → `netMinutesLabel`;
+`src/api/friends.ts` → `fetchFriendsLeaderboard`, `fetchIncomingRequests`;
+`src/api/studyChallenges.ts` → `fetchChallengeBadge`.
+**Docs:** `docs/FRIENDS_FEATURE.md`, `docs/VELOCITY.md`, `docs/STUDY_CHALLENGE.md`.
+
+## 9 · Arena — `/arena` — **Size: M** *(L if all four states are drawn)*
+
+**Status: not started.**
+
+**Today.** `ArenaPage` is **a switch over four states** — `live`, `results`,
+`opt-in`, `closed` — plus the location opt-in flow (`shareArenaLocation`). The page
+**never re-sorts**: the server assigns every rank including the zone on each row.
+
+**Design.** A stylized division banner (name + "10 of 12" + a twelve-tick climb), a
+countdown card naming the close time in the user's timezone, then the board with
+green promotion / red relegation zones closed by shelf boards.
+
+**Watch out — the biggest gap in the redesign.**
+> The artboard draws **only the `live` state**. There is no design for `results`,
+> `opt-in`, or `closed`, and none for the location-sharing prompt. Either extend
+> the shelf language to the other three yourself, or get them designed. Do not ship
+> a redesigned `live` beside three untouched MUI states.
+
+Also: Arena is **built on dev, not on prod** — check `docs/ARENA_FEATURE.md` before
+assuming a field exists on prod.
+
+**Code:** `src/features/arena/ArenaPage.tsx`;
+`src/features/arena/ArenaEntryRow.tsx`; `src/features/arena/arenaStyles.ts` →
+`divisionColor`, `divisionName`, `divisionTextColor`, `formatRemaining`;
+`src/api/arena.ts` → `fetchArenaBoard`, `optInToArena`, `withdrawFromArena`,
+`shareArenaLocation`.
+**Docs:** `docs/ARENA_FEATURE.md`.
+
+## 10 · Community — `/community` — **Size: S**
+
+**Status: not started.** The closest match between design and code.
+
+**Today.** `CommunityPage` already is a `NodePage` with `CommunitySearchBar` over
+two horizontally-scrolling, infinitely-paginated `CommunityFeedRow`s — "For words
+you're learning" and "Top this week" — with a search-active mode that replaces both.
+
+**Design.** Same structure. Only the card chrome changes.
+
+**Watch out.** The design notes these tiles are "the one place real artwork
+belongs" — each slot is an actual user-made card icon layout. The pastel blocks in
+the artboard are **placeholders for real designs**. Do not implement them as
+pastels.
+
+**Code:** `src/features/community/CommunityPage.tsx`;
+`src/features/community/CommunityFeedRow.tsx`;
+`src/features/community/CommunitySearchBar.tsx`;
+`src/features/community/communityApi.ts`; `server/contracts/wire.ts` →
+`CommunityDesign`.
+**Docs:** `docs/COMMUNITY_PAGE.md`, `docs/CARD_ICON_LAYOUT.md`.
+
+## 11 + 11b · Settings — `/settings` **and a new route** — **Size: L**
+
+**Status: not started.** The only entry that adds a route.
+
+**Today.** One 674-line `SettingsPage` inside `LeafPage`, built from stacked MUI
+`Paper`/`Card` blocks: theme (four full `Radio` option cards), learning language,
+narration, display, the password-change form, and the delete-account danger zone
+with its confirm `Dialog`.
+
+**Design.** Split in two.
+- **11 · preferences** — theme collapses to a **four-swatch row** (the artboard's
+  argument: four full option cards cost a third of the screen for a choice made
+  once), then language, narration, display, and a chevron row to the new page.
+- **11b · account & security** — the three-field password form, then the danger
+  zone red-boxed, with the password-confirm dialog.
+
+**Watch out.** Adding a page needs **one row in `src/routes/routeMeta.ts` and one
+binding in `src/routes/registry.ts`** (which throws at boot if the binding is
+missing) — nothing else. `routeMeta` is also what tells `pageTransition` and
+`FooterPresenter` how the route behaves, so the new page must be declared a **Leaf**
+(down-arrow, no footer) there, not in the page.
+
+**Code:** `src/pages/SettingsPage.tsx`; `src/routes/routeMeta.ts` → `ROUTE_META`;
+`src/routes/registry.ts` → `PAGE_COMPONENTS`; `src/components/LeafPage.tsx`;
+`src/components/LeafPageHeader.tsx`; `src/contexts/ThemeContext.tsx` → `useTheme`,
+`ThemeMode`; `src/hooks/useTTSSettings.ts`; `src/types.ts` → `LANGUAGE_FLAGS`,
+`LANGUAGE_NAMES`.
+**Docs:** `docs/UX_AND_NAVIGATION.md`, `docs/LEAF_NODE_PAGES.md`.
+
+> ## ▶️ Entries 12–16 were UNPARKED (2026-08-21)
+>
+> They were held while the user finished the artboards. **12, 13, 14 and 16 shipped that
+> same day** against the final designs, pulled fresh from the Cow design project. **15
+> (Speed Reading) has an artboard and is still not started** — it was not part of the
+> request, and its panel geometry is bespoke (it is the only game whose `.play` sits
+> inside a ROTATED stage that draws its own header), so it wants its own pass.
+>
+> The four that shipped added three things to A6 that the frame did not have: `GameHudBar`,
+> `GameHint`, and `GameHud`'s `divider` prop. If entry 15 needs a fourth, that is a signal
+> the line between "frame" and "per-game surface" is in the wrong place.
+
+## 12 · Bubble Match — `/games/bubble-match` — **Size: M**
+
+**Status: DONE (2026-08-21).**
+
+**What landed.**
+- **Two colours, one bit.** `WORD_BUBBLE_BG` is the ramp's `red`, `DEFINITION_BUBBLE_BG`
+  is inert `grey`. Colour now encodes *which side of a pair a bubble is* and nothing
+  else — which is what makes the status fills (correct / wrong / nomatch, in
+  `src/games/bubbles/constants.ts`) unambiguous: they are the only other colours a
+  bubble can ever take.
+- **The HUD left the playfield.** It used to float at `top: 8` *inside* the stage, so
+  bubbles drifted under the level name and the field's measured bounds were bigger than
+  the area a bubble could be read in. `BubbleStage` now returns a fragment: a real
+  `GameHud` row, then the measured field. The strip reads
+  `Level 2 · Brisk` — `7 left` — a `GameHudBar`.
+- **`7 left`, not `4/11`.** Work REMAINING is the number a player acts on mid-run.
+- **`.bub` gloss.** The shared `Bubble` swapped its flat drop shadow for the design's
+  three: a white inset along the top and a dark inset along the bottom make the disc
+  read as convex, and a tight offset drop shadow lifts it without the soft halo that
+  used to blur the boundary between two touching bubbles. That convexity is what lets
+  Bubble Match drop the ring entirely.
+- The stage's paper ground went transparent; `.play` is the field's ground now.
+
+- **The bubble is a KEYCAP, not a disc (2026-08-22).** `.bub` is `border-radius: 40%`,
+  and `Bubble`'s inner now matches it, along with the held-cue overlay (`.bubble__dim`)
+  — a circular veil inside a soft square leaves four unlit corners.
+  This reverses an earlier deviation which argued that a 40% corner reaches past the
+  circular collision body, so neighbours would overlap at rest. They do, by ~8% of a
+  radius — but the field already tolerates far more than that on purpose: `planSpawn`'s
+  `SPAWN_OVERLAP_FRACTION` lets a NEW bubble penetrate an existing one by 20% of its
+  *diameter*. The shape was never load-bearing for the simulation, and the squircle both
+  matches the design and packs the field with less dead space between neighbours.
+
+**Deviations, and why.**
+> **No `GameHint` line.** The artboard's "tap a pair · they float upward" describes a
+> mechanic this game does not have — you DRAG a word onto its meaning. The bottom of the
+> field already carries an accurate instruction (the cancel strip's
+> "drop here to cancel match"), so a second line would be redundant as well as wrong.
+
+**Watch out (unchanged).** The level is chosen on the hub and arrives via nav `state`;
+there is no in-game picker to fall back to.
+
+- **This entry is the reference for BOTH bubble games (2026-08-22).** Hydra Bubbles was
+  unified onto it: same squircle, same 2px ring, same gloss, same grey held wash, and
+  colour is the only thing either game varies (`BubbleFill` is now just `bg` + `border`).
+  See entry 16 for the two Hydra treatments that were retired and what they cost.
+
+**Code:** `src/games/bubble-match/BubbleStage.tsx`;
+`src/games/bubble-match/constants.ts` → the base bubble palette;
+`src/games/bubbles/Bubble.tsx`. **Docs:** `docs/GAMES_FEATURE.md`.
+
+## 13 · Word Search — `/games/word-search` — **Size: M**
+
+**Status: DONE (2026-08-21).**
+
+**What landed.**
+- **The hint mechanic is one row.** `.hintbar` at the top of the panel: the button, its
+  charges, and the current reveal, left to right. Those three used to live in three
+  places — the button in the page header, the meter absolutely centred in the HUD, the
+  reveal on a line of its own under the gloss list — so the player had to assemble one
+  mechanic out of three unrelated-looking widgets. `WordSearchHintBar` is now the whole
+  row and takes `WordSearchHintRow` as its `children`.
+- **Charges, not a meter.** With `HINT_COST` at 1 the eight-segment gauge with its
+  threshold line was already just "how many hints you have", drawn as a gauge. `.chg`
+  dots say it directly.
+- **The gloss list is `.chips`.** The old middot-separated paragraph made a two-word
+  gloss ("job interview") hard to tell from two adjacent one-word ones. **Two** states:
+  pending is `.chip.on`, the solid ink pill — the loud state, because a pending chip is
+  the game's actual instruction — and found is struck through and faded to the resting
+  outline, still present, because the list is also the record of what the run has
+  covered. The hinted word gets no chip state: the `.hintbar` reveal one row above
+  already names it, and a third treatment would have to out-shout black-pill-pending.
+- **`GameHud`, with the clock in the MIDDLE.** `Pinyin · production` — clock —
+  `4 of 7 found`. See the A6 adoption table for why the ordering is load-bearing.
+- **`.shelfhd`** above the chips: "Find these words" / "trace to select". The gesture line
+  is the only place the app says *trace*.
+- **Paper tiles on a GREY BOARD (revised 2026-08-22).** The grid's 2px black edge is
+  gone — `.play` is the boundary now, and a second heavy border a few px inside it read
+  as two frames. The ground moved to the CELLS (`.wsg span`). The design then puts those
+  paper cells straight onto the white panel, which measures ~1.03:1 on a real screen: the
+  tiles dissolve into the panel and the board stops reading as a board. So the grid box
+  itself carries `COLORS.card` (`--grey`) at radius 16 — one full step darker than a
+  paper cell, so every resting tile has an edge without anything drawing one. Grey and
+  not a hue on purpose: all four LIT states are ramp pastels at the same lightness, so a
+  hued ground would sit in the same band as whichever state shared its hue.
+- **Square cells, and the selection is painted ON them.** Every cell is
+  `aspect-ratio: 1`, spaced 4px on both axes. Every highlight is a cell fill: `.now`
+  orange while tracing (and for a hint reveal — same meaning), `.hit` green once found,
+  `COLORS.red` for a miss, `COLORS.blu` for a bonus word, plus a `grnA` inset ring on the
+  word being reviewed. A lit cell darkens its glyph to full ink — reached through a
+  descendant selector, because cpcd sets its own color and an inherited value would be
+  silently overridden. It does **not** bold, though `.wsg span.hit` does: at this cell
+  size a weight change reflows the glyph inside its tile, so a traced word twitches as
+  the path grows, and the fill has already said what the weight would.
+
+  This replaced a "stadium" overlay that drew each highlight as one continuous tube on a
+  layer BENEATH the cells, with the cells going transparent to let it through. The tube
+  was the better shape, but it cost a measured row pitch, a measured glyph-center offset
+  and two hand-tuned nudge constants, all so a shape drawn between character CENTERS
+  would line up with cells whose height depended on whether pinyin was showing. The
+  square is what carries the reading now: on a board of squares a run of lit cells weighs
+  the same going down as going across, so a word that turns a corner still looks like one
+  word.
+
+**The two flagged decisions, settled.**
+> **The hint button is real and it stayed** — the artboard omits it, but the artboard
+> also draws `.hintbar` with a lightbulb and charge dots, so it was describing the
+> mechanic, not proposing its removal.
+>
+> **The header's `pinyin` chip was NOT restored.** Pinyin display is fixed by which hub
+> entry (Pinyin / No Pinyin) launched the run; there is nothing to toggle. The HUD states
+> the mode instead. A chip that looks like a switch and is not is worse than no chip, and
+> the HUD line would make it a second statement of the same fact.
+
+**Code:** `src/games/word-search/WordSearchPage.tsx`, `WordSearchHintBar.tsx`,
+`WordSearchHintRow.tsx`, `WordSearchWordList.tsx`, `WordSearchHeader.tsx`,
+`WordSearchGrid.tsx`. **Docs:** `docs/WORD_SEARCH_GAME.md`.
+
+## 14 · Match Speed — `/games/match-speed` — **Size: S**
+
+**Status: DONE (2026-08-21).** The clock had already moved into the panel with A6; this
+entry was the board and the strip around it.
+
+**What landed.**
+- **The columns lost their colours.** They used to be blue for the foreign word and cream
+  for its meaning — which spent the board's strongest signal on a distinction the player
+  can already see (one column is Chinese, the other is English). The design separates them
+  TYPOGRAPHICALLY instead (`.msc.zh` is cjk 19/700 on the paper ground, `.msc` is sans
+  13/500 on white), which frees every fill to mean state and only state: `blu` = selected,
+  `grn` = matched or partner hint, `red` = wrong.
+- **Selection fills rather than outlines** (`.msc.pick`). The border width is still
+  constant across every state — that was never a style choice, it is what stops selecting
+  a card from re-wrapping a three-line gloss under the finger — so a filled state blends
+  its border into the fill instead of removing it. The blue glow shadow went with the
+  outline; a fill does not need help being noticed.
+- **The wrong-attempt flash is ink on pastel** like everything else, instead of white on
+  saturated `#F44336`. It now reads as part of the same system rather than as an error
+  dialog dropped onto the board.
+- **A `GameHud` under the timer**, `divider={false}`: `Study Mix · All cards` and
+  `9 matched`. Both facts are otherwise invisible once a run starts — the mode is chosen
+  on the hub, the collection on `/decks` — so a player who launched the wrong one only
+  found out from the cards.
+- **`GameHint`** at the foot: "tap a word, then its meaning".
+- `COL_GAP_PX` 10 → 8, matching `ROW_GAP_PX`. `.msg2` uses one gap on both axes; an
+  uneven pair reads as a measurement mistake at this size.
+
+**Code:** `src/games/match-speed/MatchSpeedCard.tsx`, `constants.ts` (the palette block),
+`MatchSpeedPage.tsx`. **Docs:** `docs/MATCH_SPEED_GAME.md`.
+
+## 15 · Speed Reading — `/games/speed-reading` — **Size: S**
+
+**Status: not started.**
+
+**Design.** `.play` panel with the timer at the top, per-round result ticks in the
+HUD, the clue as large centred text, and four options that differ by a single
+glyph. Chinese only, by design.
+
+**Code:** `src/games/speed-reading/SpeedReadingPage.tsx`;
+`src/games/speed-reading/SpeedReadingPrompt.tsx`;
+`src/games/speed-reading/SpeedReadingOptionText.tsx`;
+`src/games/speed-reading/SpeedReadingTapZone.tsx`.
+**Docs:** `docs/SPEED_READING_GAME.md`.
+
+## 16 · Hydra Bubbles — `/games/hydra-bubbles` — **Size: S**
+
+**Status: DONE (2026-08-21).** Restyle only, as scoped.
+
+**What landed.**
+- **HUD out of the playfield**, same fragment shape as Bubble Match (entry 12).
+- **The mode slot doubles as the squeeze warning.** There is one mode, so a constant
+  "endless" would be dead pixels — but the moment the table goes drain-only that slot has
+  something urgent to say, and saying it where the mode was keeps the strip at three
+  facts instead of four.
+- **The bar is the FILL RATIO, not progress.** An endless run has no denominator, and
+  fill is both the number that ends the run (`LOSE_FILL_RATIO`) and the one the spawn
+  table is keyed on. It goes `dangerInk` on the danger band, so the bar and the vignette
+  raise the alarm together. It is **quantized to 5% steps** (`fillBucket`): the raw ratio
+  changes every frame because bubbles are always settling, and storing it as-is would
+  re-render the stage 60×/s for a 4px bar.
+- **`.modal` for the lend notice** — scrim to the ink token at 45% (black over a warm
+  paper ground reads as a hole rather than a veil), `.go` to ink rather than the theme
+  primary (a dismissal that takes the accent colour reads as the recommended one of
+  several choices; there is only one).
+- Stage ground transparent, `.bub` gloss via the shared `Bubble` (entry 12).
+
+**The artboard's bubble colours are STALE and were not adopted.** Artboard 16 draws six
+hues. The shipped ladder is **two shades of one blue** (2026-08-22): `#79B3EE`
+— oklch(75% 0.105 250) — for drain (harder) and `COLORS.blu` `#D2EBFF` for bloom
+(easier), with the inert English bubble on `COLORS.grey`. Hue encodes nothing — value is
+the whole message, and it is monotonic, which the charcoal/gold pair it replaced could
+not be.
+
+**Both rungs take black text, and that is the rule that sets the palette.** A first cut
+put drain on `COLORS.bluA` `#1F6CB0` and separated 2.5× better (4.46:1 vs 1.80:1), but it
+needs white glyphs — and two rungs of one hue only read as *one scale* if the ink is the
+same on both, so it was given up. Two costs are recorded rather than hidden: the ladder
+sits on the hue the app trains as "mastered" (`COLORS.blu` IS `CATEGORY_COLORS.Mastered`),
+and a mid-value blue is the worst possible ground for tone-3 pinyin (`#779BE7`, 1.25:1).
+The exit from both is the same one-token move — a ladder on **purple**, which no tone
+colour or mastery band claims. `docs/HYDRA_BUBBLES.md` § 2.2 carries the full palette log
+and every measurement.
+
+**ONE BUBBLE, TWO PALETTES (2026-08-22).** Hydra and Bubble Match now render the *same*
+bubble and differ only in colour, with **Bubble Match as the source of truth**. Two
+Hydra-local treatments were retired to get there, and both had a real reason at the time:
+- **The saturated 3px ring.** Ring weight was a third separation channel (`BubbleFill.ringWidth`)
+  on top of value and temperature — a payout bubble wore a heavy ochre/near-ink ring, the
+  inert English bubble a hairline. It is also what made a Hydra bubble a visibly different
+  object from a Bubble Match one, which has none. Border colour is now the body colour, the
+  knob is deleted from `BubbleFill`, and the tier read rests on value + temperature.
+  ⚠️ This was weaker at a glance, and weakest for a colour-blind player — which is what
+  the blue ladder above then fixed, by widening the value gap rather than restoring the ring.
+- **The outline held cue.** Hydra drew a contrast ring where Bubble Match washes the bubble
+  grey, because grey was Hydra's English-bubble colour. That premise expired on 2026-08-21
+  when the English bubble went pure white; the ring outlived its reason by a day. Both games
+  now use the wash (`.bubble__dim`), and `Bubble`'s `heldCue` prop is gone.
+- **The white English bubble.** Hydra's definition bubble now takes the SAME inert
+  `COLORS.grey` Bubble Match uses, so the only colours that differ between the two games are
+  the ones that mean something — Bubble Match's red word bubble, Hydra's drain/bloom tiers.
+  Scenery is scenery in both.
+  ⚠️ It re-opens the Q5 tension, since grey again means both "English" and "held"
+  (accepted — the wash lands ~1.5:1 off the resting body and the bubble also scales up).
+  It also cost value gap against the tiers, which the blue ladder above then more than
+  repaid. See `docs/HYDRA_BUBBLES.md` § 2.2.
+
+- **Text ink is DERIVED, not declared (`inkOnFill`, `src/games/bubbles/Bubble.tsx`).** A
+  dark body flips its glyph and gloss to white automatically. This is what makes a
+  properly dark tier possible at all, and it is a rule rather than a per-game knob so a
+  future palette change cannot strand dark text on a dark bubble.
+
+**The lend notice was already right.** `HydraLendNotice` is full-screen, input-blocking,
+and has a single "Got it" with deliberately no table of words. The artboard was
+describing what ships.
+
+**The header keeps its `pinyin` chip**, matching the artboard — unlike Word Search (13),
+Hydra's pinyin display genuinely is a live toggle.
+
+**Code:** `src/games/hydra-bubbles/HydraStage.tsx`, `HydraLendNotice.tsx`.
+**Docs:** `docs/HYDRA_BUBBLES.md`, `docs/PROVISIONAL_CARDS.md`.
+
+## 18 · Card Detail — `/flashcards/card/:id` — **Size: L**
+
+**Status: not started.** The strongest idea in the redesign, and the one real
+conflict.
+
+**Today.** `VocabCardDetailPage` is a `NodePage` carrying the card face
+(`CardFaceSide`/`ChineseBlock`/`EnglishBlock`), a full in-place **card-icon
+editor** overlay (`useCardIconEditor`, `CardIconCanvas`, `CardEditToolbar`),
+`VocabCardBadges`/`VocabCardSections`, and `MasteryProgressBar`.
+
+**Design.** The card becomes the masthead — one presentation of the word over its
+icon arrangement, with speak/draw actions, gloss, and sense dots. Below it: the
+band + commonality dots, then Mastery redrawn as **what the number actually is** —
+an eight-cell window, one cell per mark, coloured by mark type, with the Target and
+Comfortable cut points ticked and each track's cooldown named beside its colour.
+
+That reframing maps cleanly onto what already exists: `masteryBar`,
+`PBH_THRESHOLDS`, `PBH_FULL`, `cooldownRemainingMs`, `MARK_TYPE_COLORS`,
+`MARK_TYPE_LABELS`.
+
+**Watch out — conflict.**
+> The artboard shows **two** bars, labelled *Know* and *Read*. The shipped model
+> has **three** bar ids (`core`, `reading`, `writing`) and deliberately renders
+> **only the bar of the surface's lens** — `MasteryProgressBar` maps over a list
+> that is always length 1, and its header comment says showing all bars at once
+> "made the page answer a question the learner had not asked". The design reverts
+> that without saying so. **Resolved: the code wins — one bar (D6).**
+
+Also: the artboard's hero shows the card face only. The **icon editor overlay must
+survive** the restyle — it is a large piece of behaviour the artboard doesn't draw.
+
+**Code:** `src/features/flashcards/VocabCardDetailPage.tsx`;
+`src/features/flashcards/VocabCardDetailBody.tsx` → `VocabCardBadges`,
+`VocabCardSections`, `SectionCard`, `SectionLabel`;
+`src/features/flashcards/MasteryProgressBar.tsx`;
+`src/utils/masteryCompute.ts` → `masteryBar`, `computeTypeCategory`,
+`cooldownRemainingMs`, `MARK_TYPE_COLORS`, `MARK_TYPE_LABELS`, `BAR_LABELS`,
+`PBH_THRESHOLDS`, `PBH_FULL`; `src/utils/formatDuration.ts` →
+`formatCooldownRemaining`; `src/components/FrequencyScoreDots.tsx`;
+`src/cardIcons/editor/useCardIconEditor.ts`;
+`src/cardIcons/editor/CardIconCanvas.tsx`;
+`src/cardIcons/editor/CardEditToolbar.tsx`.
+**Docs:** `docs/MASTERY_REWORK.md`, `docs/CARD_ICON_LAYOUT.md`.
+
+## Not designed
+
+**These are still converted — see D10.** They have no artboard, so their layouts are
+extrapolated from the primitives rather than drawn. The mapping table lives in D10;
+this list is the inventory.
+
+- **Memory Map** (`/games/memory-map`) appears as a tile on the Games hub (4) but
+  has **no play-surface artboard**. The CSS anticipates it (`.mapw`, `.isl`, `.wd`)
+  without an artboard using it. **A2/A6 chrome only** — leave the play surface alone.
+- **Night Market** is the Home hero but has no artboard — a Pixi engine surface that
+  sits outside this system. **A2 chrome only**; flag before touching anything inside.
+- **flp** (`/flashcards/learn`), the Mastery Centers, Collection View, Sort Cards,
+  Quick Mark, Skipped Cards, the Reader document page, Login/Register and the Study
+  Challenge pages: extrapolated per D10.
+- **The sort flow** (scp, `/discover/sort/:language`) is an explicit **outstanding
+  item** (D11) — out of scope for this pass even though D10 would otherwise cover it.
+
+---
+
+# Rules the redesign must not break
+
+These hold regardless of which entry is being worked:
+
+- **Touch & scroll** — components default to `touchAction: "none"`; the app shell
+  never scrolls; scrolling is opt-in per page via an inner container; text is
+  app-wide `user-select: none` (cpcd is the desktop-only exception); every game
+  page calls `useBlockEdgeSwipe(true)`. → `docs/UX_AND_NAVIGATION.md`.
+- **Foreign text** renders only through `ForeignText`. `CPCDRow`/cpcd are private
+  and `'es'` is plain text.
+- **No API function takes a `token`**; all server calls go through
+  `src/api/http.ts`. → `docs/FRONTEND_LAYERING.md`.
+- **Never key a load/reset effect on `token`** — key on `user?.id` or
+  `isAuthenticated`. A silent refresh must not reset a screen.
+  → `docs/TOKEN_EXPIRATION_IMPLEMENTATION.md`.
+- **Leaf vs Node** archetypes and every route's footer/transition behaviour come
+  from the single row in `src/routes/routeMeta.ts` — not from the page.
+- `features/` is exclusive; a component shared by two features belongs in
+  `src/components/`. Check importers before placing a file.
+  → `docs/FRONTEND_LAYERING.md`.
+
+# Decisions
+
+Answered 2026-08-20. **Do not re-open these inside an entry's implementation.**
+Two remain open at the bottom.
+
+### D1 · Tokens land in place — no parallel palette
+`src/theme/colors.ts` → `COLORS` and `src/theme/fonts.ts` → `FONTS` are **rewritten**
+to the OKLCH ramp and Instrument Sans/Serif + JetBrains Mono. There is no
+`src/theme/shelf.ts` and no opt-in period. Every page — including the ~dozen with no
+artboard — changes colour and type on day one, under its existing layout. Expect a
+visually mixed app during Part B and do not treat that as a regression.
+
+### D2 · The pastel ramp replaces `CATEGORY_COLORS` — as PASTELS
+**Revised 2026-08-20 after a first pass got this wrong.** The first implementation
+mapped the four categories onto the ramp's *saturated* `*A` members. That read too
+dark, and the design's own CSS contradicts it — see "Evidence" below. The categories
+are the **93% pastels**, and the ramp turned out to have **three** roles, not two:
+
+| Role | Value | Where |
+|---|---|---|
+| **Fill** — something sits on top of it | pastel `--grn` `#D9F4D9` | spine, bento tile, band tile, category chip |
+| **Inner fill** — the second tone of a two-tone tile | tint `--grnTint` `#F0FAF0` | `BAND_COLORS.accent`, bucket inner |
+| **Ink** — text, icon, border, solid button ground | `--grnA` `#387D3D` | anything read against paper |
+
+**Evidence the pastels are the fills.** `.msb .cells i` fills at 6% ink and *still*
+draws `inset 0 0 0 1px rgba(23,22,26,.12)` — an outline is what you add so a pale
+fill reads as a shape. And `--redA`/`--grnA` barely appear in the shared CSS; the one
+visible use is `.tip .ms { color: var(--orgA) }`, an icon **on** a pastel ground.
+
+**A pastel fill is not self-sufficient.** All four sit at ~1.15:1 against the paper
+ground. Every pastel-filled mark must carry `COLORS.markOutline`, and text over one
+must be `COLORS.onSurface` — never white (~1.1:1).
+
+**This forced a new token family: semantic ink.** `COLORS.redMain` had been doing two
+unrelated jobs — "the Unfamiliar band's fill" *and* "the app's semantic red for danger
+text and buttons". One hex served both because the palette had only one red, so
+nothing forced them apart. The pastel ramp forces them apart. **51 call sites across
+40 files** were relying on the overload and would have shipped invisible text or
+white-on-pastel. Added `COLORS.dangerInk` / `successInk` / `infoInk` / `warnInk` (the
+`*A` members) and re-pointed every text/icon/border/solid-button use at them, leaving
+`*Main` as the pastel fill.
+
+**The rule, for every future call site:**
+> Is it a **fill** that something else sits on top of? → `*Main` (pastel) + `markOutline`.
+> Is it **text, an icon, a border, or a button's ground**? → the ink token.
+
+### D2a · Where the pastels apply — and where they do not
+The pastel ramp owns **fills**: band spines, bento tiles, deck tiles, band chips,
+category badges. `CATEGORY_COLORS` / `BAND_COLORS` / `LEARN_NOW_COLORS` /
+`MASTERY_BAR_COLORS` are all pastel pairs, keeping their names and shapes so every
+consumer compiles:
+
+| Category | Was | Now (fill) | Ink on it |
+|---|---|---|---|
+| Unfamiliar | `#EF476F` | `--red` `#FFDDDB` | `--redA` `#B54249` |
+| Target | `#FF9E5A` | `--org` `#FFE6C8` | `--orgA` `#A46400` |
+| Comfortable | `#05C793` | `--grn` `#D9F4D9` | `--grnA` `#387D3D` |
+| Mastered | `#779BE7` | `--blu` `#D2EBFF` | `--bluA` `#1F6CB0` |
+
+`MASTERY_BAR_COLORS.reading` / `.writing` read their pair from `BAND_COLORS`, **not**
+from `MARK_TYPE_COLORS` — artboard 2's "Mastered Reading" spine is
+`background: var(--red)`, a pastel spine sitting on the same shelf as the pastel band
+spines. `core` keeps Mastered blue; it blends recognition and production and has no
+single mark hue to borrow.
+
+### D2b · Tone colors and mark colors did NOT move
+**Added 2026-08-20, correcting a pass that moved them.** The redesign changed
+*surfaces*. It did not change the two saturated sets the design draws directly on the
+paper ground, and both are now marked LITERAL ON PURPOSE in code:
+
+| Set | Values | Design evidence |
+|---|---|---|
+| `TONE_COLORS` (`src/utils/toneColors.ts`) | 1 `#EF476F` · 2 `#05C793` · 3 `#779BE7` · 4 `#FF8E47` · neutral `#9E9E9E` | `Tone Color Explorations.html` lists exactly this array as the `current` set, and no exploration was adopted; the dictionary rows, card faces, cpcd and flp sense rail in the spec all spell these inline. |
+| `MARK_TYPE_COLORS` (`src/utils/masteryCompute.ts`) | recognition `#779BE7` · production `#05C793` · reading `#EF476F` · writing `#FF8E47` | Artboard 18's `.msb` mark cells and cooldown legend, and artboard 17's mini-card two-mark strip, spell blue/green/red inline. |
+| `MASTERY_READY_COLOR`, `CORRECT_COLOR` / `INCORRECT_COLOR` | `#05C793` · `#05C793` / `#EF476F` | `shelf-system.css` → `.msb .cd3 .ms`, `.mst .cdr .ms`, `.shint.r`, `.shint.l`. |
+
+**The distinction that decides it:** a band chip or a spine is a FILL with a name and
+a count printed on top of it, so it must be pale — pastel plus `COLORS.markOutline`.
+A mark cell, a tone-coloured pinyin syllable, a swipe label and a ready check are read
+*directly* against paper with nothing on top, so they must be saturated. Aliasing the
+second group to the ramp's pastels made them vanish; aliasing them to the ramp's `*A`
+inks changed their hue. Both were wrong. Leave the literals alone.
+
+*Note:* a handful of artboards use off-palette one-offs for pinyin (`#0B8AD9`,
+`#F4A700`) and one mini-card swaps tone 1 and tone 2. Those are inconsistencies inside
+the spec, not a fifth palette — the `current` set above is what the design means.
+
+### D3 · Adopt the Material Symbols Rounded font
+`@mui/icons-material` per-icon imports are replaced by the `.ms` ligature span the
+artboards use. Consequences: a new webfont in `index.html`, a possible flash of
+unstyled ligature text on cold load (mitigate with `font-display`), and a mechanical
+rename pass across every icon call site. The design's names are mostly 1:1 with MUI's
+(`nights_stay` ← `NightsStayIcon`), so the mapping is grep-able rather than a
+redesign. Add an `<Icon name="..."/>` wrapper so no page writes a bare ligature span.
+
+### D4 · Light theme only, for now
+`ThemeContext` stays in place, but the shelf system ships **one** palette and the
+app effectively runs light during the migration. Dark / Ocean / Nature are not
+derived yet — revisit once the system is proven on real pages. Do not spend effort
+keeping the other three working mid-Part-B.
+
+### D5 · Footer: text labels only, no icons
+`.fbar` is followed exactly — four text labels, active one in ink at weight 600 with
+a 14×2 underline. `HomeIcon` / `StyleIcon` / `LanguageIcon` / `AccountCircleIcon`
+come out of `MobileFooter`. See A2a for the clearance-constant rework this forces.
+
+*Separately:* the **Bento menu items** get a fresh set of Material Symbols glyphs
+chosen to match the design's icon vocabulary (D3) — the ghost `.bg` icon on each
+tile. That is a new icon selection pass, tracked in A4, not a port of the old ones.
+
+### D6 · Card Detail keeps ONE mastery bar
+The code wins over artboard 18. `MasteryProgressBar` continues to render the single
+bar for the surface's lens; the artboard is read as showing two *examples* of a
+one-bar component, not a two-bar screen. The rule in `docs/MASTERY_REWORK.md`
+stands unamended — showing every track at once makes the page answer a question the
+learner did not ask.
+
+### D7 · One mastery rendering: `.msb`
+Of the design's three (`.trk2` bar, `.msb` segmented cells, `.mst` thermometer),
+**only `.msb` is built.** Use it everywhere a mastery value appears, scaled down for
+inline/list contexts rather than swapped for a different shape. `.trk2` and `.mst`
+are not implemented. Three renderings of one number is what stops a design system
+from being one.
+
+### D8 · `HubMenu` is deleted
+`HubMenu.tsx` (439 lines) and `hubMenuCardBase.ts` are removed, all **10** importers
+are converted to Bento, and `docs/BENTO_SYSTEM.md` is retired. The heavy part is
+`src/games/word-search/WordSearchHubItem.tsx` (~390 lines, imports six named
+exports) plus `GamesCollectionSelector`, which renders into `HubMenu`'s `header`
+slot — both budgeted into **entry 4**.
+
+### D9 · `DeckTile` is deleted
+The app switches to the new design entirely: the **spine replaces the stacked-card
+tile** as the single visual for a set of cards. `DeckTile.tsx` (413 lines) and its
+callers `DecksPanelBody` (3 uses) and `DeckBuckets` → Account are converted to
+`Spine`. No coexistence period.
+
+> **Correction to an earlier draft of this file:** `DeckTile` has **no** selection or
+> long-press behaviour. Its header states it is *"purely presentational"* — the prop
+> surface is `label` / `count` / `icon` / `mainColor` / `accentColor` / `onClick` /
+> `animationDelay`. The app's only long-press lives in
+> `src/features/reader/ReaderTapOverlay.tsx` and is unrelated. So this is a
+> presentation-for-presentation swap, not a behaviour port.
+
+**Carry forward into `Spine` (A3) — the one genuinely good idea in `DeckTile`:**
+every interior dimension is authored at a `REFERENCE_WIDTH` and rendered in **`cqw`,
+not px**, so the tile scales as a single unit. That is what lets the fdp render it at
+100px and Account at ~71.5px and have both be the same object rather than two
+designs. `Spine` must do the same, or the Reader's `.sp.vol` (86×134) and the decks
+sheet's 74px override become two components.
+
+**Also carry forward:** the count is currently a corner numeral. On a spine it is
+encoded **twice** — as `.k` mono text *and* as the spine's height. Decide per shelf
+whether the numeral is redundant; do not render both by reflex.
+
+### D10 · Undesigned pages are extrapolated from the primitives
+The ~dozen surfaces with no artboard are **not** left on their old layouts. Apply
+the system's own rules to them — **Shelf for collections the user owns, Bento for
+menus of destinations** — plus A2 chrome, A5 atoms and the `.msb` bar (D7). Starting
+reads, to be confirmed as each is built:
+
+| Surface | Primitive |
+|---|---|
+| flp (`/flashcards/learn`) | `.hero` card face (295/426), `.msb` for the lens bar |
+| Mastery Centers | `.msb` over a Bento of entry points |
+| Collection View | Shelf |
+| Skipped Cards | Shelf, or `.rw` rows if there is no count to encode |
+| Quick Mark | leaf `.lhd` + `.hero` |
+| Reader document page | leaf `.lhd` + body type from A1 |
+| Login / Register | `.field` + `.btn2` |
+| Study Challenge pages | Bento + `.bd` board |
+| Night Market · Memory Map | canvas surfaces — **A2 chrome only**, interiors untouched |
+
+Where a surface has real design weight and the primitives don't obviously answer it
+(Night Market especially), stop and flag rather than inventing. Record whatever is
+chosen back into this entry so the next agent inherits the decision instead of
+re-deriving it.
+
+### D11 · Discover is being redesigned — artboard 3 is superseded
+The user is producing a new Discover design. Entry 3 is **blocked** on it; do not
+build from the existing artboard. The **sort flow** (scp, `/discover/sort/:language`)
+is deliberately left as an **outstanding item** and is out of scope for this pass —
+which also parks the open question about per-bucket queue counts, since the new
+design decides whether that shelf exists at all.
+
+---
+
+## Still open
+
+Nothing blocking. Two things to confirm *while building*, not before:
+
+- **Per-bucket queue counts** — whether the discover endpoints return the unsorted
+  queue split by progress bucket. Parked under D11 until the new Discover design
+  lands; worth answering before that design is finalized so it isn't drawn around
+  data that doesn't exist.
+- **The D10 primitive assignments** — each is a starting read, not a ruling.
+
+# Suggested order
+
+**A1 → A2 → A4 → A5 → 1 → 4**, then **stop for review.** — **this slice is complete
+as of 2026-08-21**, and entry 3 (Discover) came along with it after all: D11 blocked it
+on a new design, and the user overrode that, so its hub is converted while its two
+data-bearing pieces stay unbuilt (see entry 3). Both hubs converting end to end was the
+smallest slice that shows the shelf system working on real data, and entry 4 carried the
+`HubMenu` deletion (D8) early rather than leaving it to rot.
+
+**Next**: the review this order stops for. After it, the entries are independent.
+
+After that the entries are independent. Highest value: **2** (Decks) and **18**
+(Card Detail). Cheapest wins: **7** (Dictionary), **10** (Community), **14**,
+**15**, **16**. Most likely to need design work before it can start: **9** (Arena,
+three undrawn states) and **11/11b** (Settings, new route).
+
+# Docs that depend on this one
+
+`docs/BENTO_SYSTEM.md`, `docs/UX_AND_NAVIGATION.md`,
+`docs/MOBILE_TAB_SCREEN_LAYOUT.md`, `docs/LEAF_NODE_PAGES.md`,
+`docs/DECKS_FEATURE.md`, `docs/DISCOVER_FLOW.md`, `docs/GAMES_FEATURE.md`,
+`docs/MASTERY_REWORK.md`, `docs/COMMUNITY_PAGE.md`, `docs/FRIENDS_FEATURE.md`,
+`docs/ARENA_FEATURE.md`, `docs/VELOCITY.md`, `docs/WORD_SEARCH_GAME.md`,
+`docs/MATCH_SPEED_GAME.md`, `docs/SPEED_READING_GAME.md`, `docs/HYDRA_BUBBLES.md`,
+`docs/USER_DOCUMENT_FEATURE_SUMMARY.md`, `docs/designGuidelines.md`.

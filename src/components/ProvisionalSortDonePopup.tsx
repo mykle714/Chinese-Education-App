@@ -43,7 +43,7 @@ const ProvisionalSortDonePopup: React.FC<ProvisionalSortDonePopupProps> = ({
         classPrefix="provisional-sort-done"
         // No stage to sit inside: scp is a normal page, so the scrim covers the viewport.
         positioning="fixed"
-        puckColor={COLORS.blueMain}
+        puckColor={COLORS.infoInk}
         accentContrast="#FFFFFF"
         zIndex={210}
     >
@@ -76,8 +76,8 @@ const ProvisionalSortDonePopup: React.FC<ProvisionalSortDonePopupProps> = ({
                     textTransform: "none",
                     fontSize: SIZE.bodyLg,
                     fontWeight: WEIGHT.bold,
-                    backgroundColor: COLORS.blueMain,
-                    "&:hover": { backgroundColor: COLORS.blueMain },
+                    backgroundColor: COLORS.infoInk,
+                    "&:hover": { backgroundColor: COLORS.infoInk },
                 }}
             >
                 {originLabel ? `Back to ${originLabel}` : "Go back"}

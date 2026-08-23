@@ -43,6 +43,7 @@
  * `masteredCollectionBar` live in server/contracts/wire.ts, so the two sides cannot
  * drift on the spelling of `mastered-reading`. See docs/DECKS_FEATURE.md.
  */
+import { COLORS } from "../../theme/colors";
 import {
     ALL_COLLECTION_ID,
     LEARN_NOW_COLLECTION_IDS,
@@ -276,11 +277,11 @@ export function collectionMarkFields(
  * actually wants in a list; it is not trying to be unique per deck.
  */
 export const DECK_ACCENTS = [
-    '#BAD7F2', // blueAccent
-    '#BAF2D8', // greenAccent
-    '#F2E2BA', // yellowAccent
-    '#D8BAF2', // purpleAccent
-    '#F2BAC9', // redAccent
+    COLORS.blueAccent,
+    COLORS.greenAccent,
+    COLORS.yellowAccent,
+    COLORS.purpleAccent,
+    COLORS.redAccent
 ] as const;
 
 export function deckAccentColor(deckId: number): string {
@@ -293,11 +294,11 @@ export function deckAccentColor(deckId: number): string {
  * DECK_ACCENTS, so `deckTileColors` can read both from one modulo.
  */
 const DECK_MAINS = [
-    '#779BE7', // blueMain
-    '#05C793', // greenMain
-    '#FF9E5A', // yellowMain
-    '#9B8BD4', // purpleMain
-    '#EF476F', // redMain
+    COLORS.blueMain,
+    COLORS.greenMain,
+    COLORS.yellowMain,
+    COLORS.purA,     // no `purpleMain` token — the ramp's purple accent is the pair partner
+    COLORS.redMain
 ] as const;
 
 /** A deck's two-tone tile palette, derived from its id exactly as its accent is. */

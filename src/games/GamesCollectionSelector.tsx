@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, Typography, Menu, MenuItem, ListSubheader } from "@mui/material";
+import { Box, Menu, MenuItem, ListSubheader } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import StyleOutlinedIcon from "@mui/icons-material/StyleOutlined";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import { CollectionChip } from "../components/bento";
 import { useAuth } from "../AuthContext";
 import type { MasteryGoals } from "../utils/masteryCompute";
 import { fetchDecks, type DeckSummary } from "../api/decks";
@@ -15,15 +14,15 @@ import {
 } from "../features/flashcards/selectedCollection";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
-import { SIZE, WEIGHT, LEADING } from "../theme/scale";
+import { SIZE, WEIGHT } from "../theme/scale";
 
 /**
  * The Games hub's "Playing with …" collection selector.
  *
  * ── What it is ────────────────────────────────────────────────────────────────
- * One full-width pill in the hub header (above the TipBox) naming the collection
- * every game on this page will be launched against, and a menu of every set the
- * decks page offers. It replaces the per-collection "Study these cards → pick a
+ * One full-width `CollectionChip` (`.chipsel`) at the top of the hub, naming the
+ * collection every game on this page will be launched against, and a menu of every
+ * set the decks page offers. It replaces the per-collection "Study these cards → pick a
  * game" sheet that used to live on CollectionViewPage: choosing the CARDS and
  * choosing the GAME were two steps in the wrong order — a learner picks the
  * activity from the Games hub, so the card set belongs there too.
@@ -36,7 +35,7 @@ import { SIZE, WEIGHT, LEADING } from "../theme/scale";
  * The selection is not persisted — it is gone on reload (see the store's header).
  *
  * ── Layer ─────────────────────────────────────────────────────────────────────
- * Feature component (src/games), rendered into HubMenu's `header` slot. It owns the
+ * Feature component (src/games), rendered above the hub's Bento grid. It owns the
  * deck fetch for its own menu; the built-in options come from
  * `features/flashcards/builtinCollections.ts` and the decks from `fetchDecks` — the
  * SAME two sources the fdp renders, which is what makes the fdp the source of truth
@@ -60,23 +59,6 @@ interface CollectionOption {
     group: CollectionGroup | "Decks";
 }
 
-const SelectorPill = styled(Box)(() => ({
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    width: "80%",          // same width/rhythm as the TipBox it sits above
-    margin: "0 auto",
-    padding: "12px 18px",
-    borderRadius: "20px",
-    backgroundColor: COLORS.header,
-    border: `1px solid ${COLORS.rowBorder}`,
-    cursor: "pointer",
-    userSelect: "none",
-    transition: "filter 120ms ease, transform 120ms ease",
-    "&:hover": { filter: "brightness(0.97)" },
-    "&:active": { transform: "scale(0.98)" },
-}));
-
 /** Small filled circle carrying a collection's identifying color. */
 const ColorDot = styled(Box)<{ dotcolor: string }>(({ dotcolor }) => ({
     width: 12,
@@ -90,6 +72,7 @@ const GamesCollectionSelector: React.FC<{ className?: string }> = ({ className }
     const { isAuthenticated, user } = useAuth();
     const selected = useSelectedCollection();
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+    const [anchorNode, setAnchorNode] = useState<HTMLElement | null>(null);
     const [decks, setDecks] = useState<DeckSummary[]>([]);
 
     const loadDecks = useCallback(async () => {
@@ -157,34 +140,26 @@ const GamesCollectionSelector: React.FC<{ className?: string }> = ({ className }
 
     return (
         <>
-            <SelectorPill
-                className={className ?? "games-collection-selector"}
-                onClick={(e) => setAnchor(e.currentTarget)}
+            {/* The chip's own anchor. CollectionChip is a presentational primitive, so
+                the menu's anchorEl comes from this wrapper rather than the chip. */}
+            <Box
+                ref={setAnchorNode}
+                onClick={() => setAnchor(anchorNode)}
                 role="button"
                 aria-haspopup="listbox"
                 aria-label={`Playing with ${currentLabel}. Change collection`}
             >
-                <StyleOutlinedIcon sx={{ color: COLORS.textSecondary, fontSize: 22, flexShrink: 0 }} />
-                <Box className="games-collection-selector__labels" sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography
-                        className="games-collection-selector__caption"
-                        sx={{ fontSize: SIZE.caption, color: COLORS.textSecondary, fontFamily: FONTS.sans, lineHeight: LEADING.normal }}
-                    >
-                        Playing with
-                    </Typography>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
-                        <ColorDot className="games-collection-selector__dot" dotcolor={currentColor} />
-                        <Typography
-                            className="games-collection-selector__value"
-                            noWrap
-                            sx={{ fontSize: SIZE.bodyLg, fontWeight: WEIGHT.medium, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal }}
-                        >
-                            {currentLabel}
-                        </Typography>
-                    </Box>
-                </Box>
-                <ExpandMoreIcon sx={{ color: COLORS.textSecondary, flexShrink: 0 }} />
-            </SelectorPill>
+                <CollectionChip
+                    className={className ?? "games-collection-selector"}
+                    icon="style"
+                    label={currentLabel}
+                    /* The collection's identifying colour. The artboard draws only the
+                       leading glyph here, but the dot is the one thing tying this chip to
+                       the same set's tile on the decks page — dropping it would make the
+                       hub the only surface where a collection has no colour. */
+                    trailing={<ColorDot className="games-collection-selector__dot" dotcolor={currentColor} />}
+                />
+            </Box>
 
             <Menu
                 className="games-collection-selector__menu"

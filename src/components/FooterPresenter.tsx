@@ -1,14 +1,13 @@
 import { useRef } from "react";
 import { useLocation } from "react-router-dom";
 import MobileFooter, {
-    FLOATING_FOOTER_HEIGHT,
-    FLOATING_FOOTER_INSET,
+    FOOTER_HEIGHT,
     type FooterTab,
 } from "./MobileFooter";
 import { routeFooterTab } from "../routes/routeMeta";
 import { useFooterSuppressed } from "../hooks/useHideFooter";
 
-// Persistent footer layer. The floating footer pill is rendered ONCE here (inside
+// Persistent footer layer. The footer bar is rendered ONCE here (inside
 // MobileDemoFrame) rather than inside each page, so it is **omitted from the
 // per-page slide transitions** (leaf = vertical, node = horizontal). Instead it
 // animates on its own axis: it slides up from / down past the bottom of the phone
@@ -30,9 +29,11 @@ import { useFooterSuppressed } from "../hooks/useHideFooter";
 const DURATION_MS = 340;
 const EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
-// Distance to push the pill fully below the frame's bottom edge (its own inset +
-// height + a little for the drop shadow).
-const HIDDEN_OFFSET = FLOATING_FOOTER_INSET + FLOATING_FOOTER_HEIGHT + 16;
+// Distance to push the bar fully below the frame's bottom edge. The bar is flush to
+// that edge and casts no shadow (shelf redesign A2a), so its own height is exactly the
+// travel needed — the old formula added the pill's 16px inset plus 16px of shadow
+// allowance, neither of which exists any more.
+const HIDDEN_OFFSET = FOOTER_HEIGHT;
 
 const FooterPresenter: React.FC = () => {
     const { pathname } = useLocation();
@@ -44,7 +45,7 @@ const FooterPresenter: React.FC = () => {
     const suppressed = useFooterSuppressed();
     const visible = activePage !== undefined && !suppressed;
 
-    // Keep showing the last active tab while sliding OUT, so the pill doesn't
+    // Keep showing the last active tab while sliding OUT, so the bar doesn't
     // blank or flip its highlight as it leaves.
     const lastActive = useRef<FooterTab>("home");
     if (activePage) lastActive.current = activePage;
@@ -56,7 +57,7 @@ const FooterPresenter: React.FC = () => {
                 transform: visible ? "translateY(0)" : `translateY(${HIDDEN_OFFSET}px)`,
                 transition: `transform ${DURATION_MS}ms ${EASING}`,
                 // Above the page surfaces and the exit clone (z-index 50) so the
-                // pill is always visible while it (and the pages) animate.
+                // bar is always visible while it (and the pages) animate.
                 zIndex: 100,
                 // Don't intercept taps while hidden / sliding away.
                 pointerEvents: visible ? "auto" : "none",

@@ -349,7 +349,7 @@ function IconPickerDialog({
                                     p: 1,
                                     cursor: savingId === null ? "pointer" : "default",
                                     border: isSelected
-                                        ? `2px solid ${COLORS.blueMain}`
+                                        ? `2px solid ${COLORS.infoInk}`
                                         : `1px solid ${COLORS.border}`,
                                     backgroundColor: isSelected ? "rgba(119,155,231,0.12)" : "transparent",
                                     transition: "background-color 0.15s ease, border-color 0.15s ease",

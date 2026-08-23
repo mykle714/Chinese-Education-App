@@ -88,7 +88,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     }
 
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "isPublic", "isValidator", "isTemplateAuthor", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "showSegmentSpaces", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "isPublic", "isValidator", "isTemplateAuthor", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "showSegmentSpaces", "arenaMessage", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     return result.recordset[0] || null;

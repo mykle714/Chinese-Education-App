@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { GAME_REGISTRY, challengeScoringFor } from "../registry";
-import { MODE_CONFIGS } from "../word-search/constants";
+import { MODE_CONFIGS, modeMarkTypes } from "../word-search/constants";
 import { CHALLENGE_GAMES, challengeGamesForLanguages, CHALLENGE_ROUND_COUNT } from "../../types";
 
 /**
@@ -38,6 +38,12 @@ describe("challenge-eligible game pool", () => {
             // A MODED game omits `markType` and declares one per mode, so eligibility is
             // per mode. Word Search is the only such game today; this loop is written
             // generally so the next one is covered without a change here.
+            //
+            // ⚠️ PRIMARY TRACK ONLY (`mode.markType`), never `modeMarkTypes()`. A mode
+            // may also emit SECONDARY marks — No-Pinyin writes production alongside its
+            // primary reading mark — and those must NOT make it challenge-eligible: the
+            // board is pooled, banded and cooldown-gated on the primary track, so a
+            // challenge drawing it would be scoring a reading drill as a core-bar round.
             if (!game.markType && game.gameId === "word-search") {
                 for (const mode of MODE_CONFIGS) {
                     if (!ELIGIBLE_TRACKS.includes(mode.markType)) continue;
@@ -78,6 +84,14 @@ describe("challenge-eligible game pool", () => {
         // Word Search's No-Pinyin mode is the other one — same game, ineligible mode.
         expect(challengeScoringFor("word-search", "no-pinyin")).toBeUndefined();
         expect(challengeScoringFor("word-search", "pinyin")).toBeDefined();
+
+        // ...and it stays ineligible even though it DOES emit a production mark. This is
+        // the pin for the secondary-track rule above: No-Pinyin's find writes reading +
+        // production, and only the primary decides eligibility. Delete this and a
+        // reading board silently joins the challenge rotation.
+        const noPinyin = MODE_CONFIGS.find((mode) => mode.mode === "no-pinyin")!;
+        expect(modeMarkTypes(noPinyin)).toContain("production");
+        expect(noPinyin.markType).toBe("reading");
     });
 
     it("draws a same-language pool of at least the round count, and a smaller cross-language one", () => {

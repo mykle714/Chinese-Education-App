@@ -70,7 +70,7 @@ export const mutedTextSx = {
 export const messageSx = {
     fontFamily: FONTS.sans,
     fontSize: SIZE.caption,
-    color: COLORS.redMain,
+    color: COLORS.dangerInk,
 } as const;
 
 /** A boxed section — the my-ID card and the compose card. */

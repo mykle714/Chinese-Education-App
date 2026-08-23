@@ -1,117 +1,83 @@
-import { Box, Typography } from "@mui/material";
-import { styled } from "@mui/material/styles";
-import NightsStayIcon from "@mui/icons-material/NightsStay";
-import GridViewIcon from "@mui/icons-material/GridView";
-import DashboardCustomizeIcon from "@mui/icons-material/DashboardCustomize";
-import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
-import ArticleIcon from "@mui/icons-material/Article";
-import BookIcon from "@mui/icons-material/Book";
-import DashboardIcon from "@mui/icons-material/Dashboard";
-import GroupsIcon from "@mui/icons-material/Groups";
-import PeopleIcon from "@mui/icons-material/People";
-import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import MobileTabScreen from "../components/MobileTabScreen";
 import { useAuth } from "../AuthContext";
-import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
-import { HubMenu, HubMenuRow } from "../components/HubMenu";
-import { FooterSpacer } from "../components/MobileFooter";
+import { Bento, BentoTile, type BentoTileProps } from "../components/bento";
+import { FooterSpacer, ScrollPastSpacer } from "../components/MobileFooter";
 import TipBox from "../components/TipBox";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { COLORS } from "../theme/colors";
-import { FONTS } from "../theme/fonts";
-import { SIZE, WEIGHT } from "../theme/scale";
 
-// Home hub (`/`) — the landing surface for the footer's Home tab. A vertical
-// HubMenu (same component the Discover / Games hubs use) of the app's secondary
-// destinations, with a static welcome header and a tip-box footer (see
-// docs/HUB_MENU_SYSTEM.md). Phone-frame sizing comes from MobileDemoFrame; the
-// scroll-away header + floating footer come from MobileTabScreen.
+// Home hub (`/`) — the landing surface for the footer's Home tab. A BENTO MOSAIC of
+// the app's destinations (docs/SHELF_REDESIGN.md § A4 and entry 1), replacing the
+// vertical HubMenu of equal-weight rows this page used to be.
+//
+// WHY A MOSAIC AND NOT A LIST: every row of the old menu was the same size, so the
+// page said all eight destinations mattered equally — which is false. Night Market is
+// the app's set-piece and Compare Words is a utility. The bento's three weights
+// (hero / base / low) let the page say that without adding a word.
+//
+// Phone-frame sizing comes from MobileDemoFrame; the scroll-away header + floating
+// footer come from MobileTabScreen.
 
-interface HomeMenuItem {
+/** One destination. `hue` + `icon` are the design's, taken from artboard 1. */
+interface HomeTile extends Pick<BentoTileProps, "hue" | "icon" | "variant" | "pin"> {
+    key: string;
     to: string;
     title: string;
-    subtitle: string;
-    icon: React.ReactNode;
-    key: string;
-    /** Persistent card background — assigned once below, not randomized per render. */
-    bgColor: string;
+    subtitle?: string;
 }
-
-const iconSx = { color: COLORS.textSecondary } as const;
-
-const WelcomeHeader = styled(Box)(() => ({
-    padding: "4px 20px 0",
-}));
 
 function HomePage() {
     usePageTitle();
     const { user } = useAuth();
 
-    const items: HomeMenuItem[] = [
-        { key: "night-market", to: "/night-market", title: "Night Market", subtitle: "Explore the vocabulary night market", icon: <NightsStayIcon sx={iconSx} />, bgColor: COLORS.purpleAccent },
-        { key: "games", to: "/games", title: "Games", subtitle: "Play vocabulary mini-games", icon: <SportsEsportsIcon sx={iconSx} />, bgColor: COLORS.blueAccent },
-        { key: "community", to: "/community", title: "Community", subtitle: "Discover and upvote card designs from other learners", icon: <GroupsIcon sx={iconSx} />, bgColor: COLORS.greenAccent },
-        { key: "friends", to: "/friends", title: "Friends", subtitle: "See your friends and answer friend requests", icon: <PeopleIcon sx={iconSx} />, bgColor: COLORS.redAccent },
-        { key: "arena", to: "/arena", title: "Arena", subtitle: "Race 24 other learners for a week", icon: <EmojiEventsIcon sx={iconSx} />, bgColor: COLORS.purpleAccent },
-        { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", icon: <ArticleIcon sx={iconSx} />, bgColor: COLORS.yellowAccent },
-        { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them to your decks", icon: <BookIcon sx={iconSx} />, bgColor: COLORS.redAccent },
-        // Standalone home for the eip's Compare surface (docs/WORD_COMPARE_FEATURE.md) — same
-        // CompareWorkspace component, reached without going through a flashcard.
-        { key: "compare", to: "/compare", title: "Compare Words", subtitle: "See how two similar words differ", icon: <CompareArrowsIcon sx={iconSx} />, bgColor: COLORS.greenAccent },
-        // Validator-only: the tester dashboard (study time, streak, activity). Hidden from
-        // ordinary learners; the page itself also bounces non-validators back here.
+    // Order is the artboard's and is load-bearing: the mosaic reads left-to-right,
+    // top-to-bottom, so moving an entry re-weights the page even though every tile
+    // keeps its own variant.
+    const tiles: HomeTile[] = [
+        { key: "night-market", to: "/night-market", title: "Night Market", subtitle: "Explore the vocabulary night market", hue: "pur", icon: "nights_stay", variant: "hero" },
+        { key: "games", to: "/games", title: "Games", subtitle: "Play vocabulary mini-games", hue: "blu", icon: "sports_esports" },
+        { key: "arena", to: "/arena", title: "Arena", subtitle: "Race 24 other learners", hue: "pur", icon: "emoji_events" },
+        { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", hue: "org", icon: "article" },
+        { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them", hue: "red", icon: "book" },
+        // The three `low` tiles are the utilities. The artboard drops their subtitles:
+        // at 90px tall a subtitle crowds the title, and these three are self-evident
+        // from their names in a way "Night Market" is not.
+        { key: "community", to: "/community", title: "Community", hue: "grn", icon: "groups", variant: "low" },
+        { key: "friends", to: "/friends", title: "Friends", hue: "red", icon: "people", variant: "low" },
+        // Standalone home for the eip's Compare surface (docs/WORD_COMPARE_FEATURE.md) —
+        // same CompareWorkspace component, reached without going through a flashcard.
+        { key: "compare", to: "/compare", title: "Compare Words", hue: "grn", icon: "compare_arrows", variant: "low" },
+
+        // ── Role-gated tiles ──────────────────────────────────────────────────────
+        // Not drawn in the artboard. They APPEND as further `low` tiles, which is why
+        // the mosaic must never assume a fixed tile count: with one of them present the
+        // grid ends on an odd tile and the last row is half empty. That is correct and
+        // deliberate — the alternative (stretching the orphan to full width) would give
+        // a developer tool the same weight as Night Market.
         ...(user?.isValidator
-            ? [{ key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", subtitle: "Study time, streak, and activity", icon: <DashboardIcon sx={iconSx} />, bgColor: COLORS.blueAccent } as HomeMenuItem]
+            ? [{ key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", hue: "blu", icon: "dashboard", variant: "low" } as HomeTile]
             : []),
-        // Template-author-only: the Night Market template authoring editor (desktop-only).
         ...(user?.isTemplateAuthor
-            ? [{ key: "template-editor", to: "/night-market/template-editor", title: "Template Editor", subtitle: "Author Night Market templates", icon: <GridViewIcon sx={iconSx} />, bgColor: COLORS.purpleAccent } as HomeMenuItem]
-            : []),
-        // Template-author-only: the Night Market template sandbox — freely tile templates (desktop-only).
-        ...(user?.isTemplateAuthor
-            ? [{ key: "template-sandbox", to: "/night-market/template-sandbox", title: "Template Sandbox", subtitle: "Tile Night Market templates together", icon: <DashboardCustomizeIcon sx={iconSx} />, bgColor: COLORS.purpleAccent } as HomeMenuItem]
+            ? [
+                  { key: "template-editor", to: "/night-market/template-editor", title: "Template Editor", hue: "pur", icon: "grid_view", variant: "low" } as HomeTile,
+                  { key: "template-sandbox", to: "/night-market/template-sandbox", title: "Template Sandbox", hue: "pur", icon: "dashboard_customize", variant: "low" } as HomeTile,
+              ]
             : []),
     ];
 
     return (
-        <MobileTabScreen title="Home" activePage="home" contentClassName="home-page__content">
-            <HubMenu
-                className="home-page__menu"
-                header={
-                    <WelcomeHeader className="home-page__welcome">
-                        <Typography
-                            className="home-page__welcome-title"
-                            sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface, fontFamily: FONTS.sans }}
-                        >
-                            Welcome back
-                        </Typography>
-                        <Typography
-                            className="home-page__welcome-subtitle"
-                            sx={{ fontSize: SIZE.body, color: COLORS.textSecondary, fontFamily: FONTS.sans, mt: 0.5 }}
-                        >
-                            Here's where you can go next.
-                        </Typography>
-                    </WelcomeHeader>
-                }
-                footer={
-                    <>
-                        <TipBox className="home-page__tip-box" />
-                        <FooterSpacer />
-                    </>
-                }
-            >
-                {items.map((item) => (
-                    <HubMenuRow
-                        key={item.key}
-                        to={item.to}
-                        className={`home-page__menu-item home-page__menu-item--${item.key}`}
-                        title={item.title}
-                        subtitle={item.subtitle}
-                        icon={item.icon}
-                        bgColor={item.bgColor}
+        <MobileTabScreen title="Home" contentClassName="home-page__content">
+            <Bento className="home-page__bento">
+                {tiles.map(({ key, ...tile }) => (
+                    <BentoTile
+                        key={key}
+                        className={`home-page__tile home-page__tile--${key}`}
+                        {...tile}
                     />
                 ))}
-            </HubMenu>
+            </Bento>
+            <TipBox className="home-page__tip-box" />
+            <FooterSpacer />
+            <ScrollPastSpacer />
         </MobileTabScreen>
     );
 }

@@ -6,16 +6,24 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
 `MobileNavDrawer` is deleted and `Layout` carries no chrome). Navigation is:
 
 1. **Footer tabs** (`MobileFooter`) — the four top-level destinations, always the
-   floating pill:
+   flat full-width bar. Tabs are **text-only**; the icons were removed by the shelf
+   redesign's A2a/D5 ([SHELF_REDESIGN.md](./SHELF_REDESIGN.md)), and the bar is laid
+   out left-to-right in the order below, matching the design's `.fbar`:
 
-   | Tab        | `activePage`  | Route               | Icon              |
-   | ---------- | ------------- | ------------------- | ----------------- |
-   | Flashcards | `flashcards`  | `/flashcards/decks` | `StyleIcon`       |
-   | Discover   | `discover`    | `/discover`         | `LanguageIcon`    |
-   | Home       | `home`        | `/`                 | `HomeIcon`        |
-   | Account    | `account`     | `/account`          | `AccountCircleIcon` |
+   | Tab        | `FooterTab`   | Route               |
+   | ---------- | ------------- | ------------------- |
+   | Home       | `home`        | `/`                 |
+   | Flashcards | `flashcards`  | `/flashcards/decks` |
+   | Discover   | `discover`    | `/discover`         |
+   | Account    | `account`     | `/account`          |
 
-   The union type is `FooterTab` (exported from `MobileFooter.tsx`).
+   The **active** tab is resolved from the current route by `FooterPresenter`.
+   Pages do not declare it: the `activePage` prop that used to run through
+   `MobileTabScreen` / `NodePage` fed the header's tab badge, and both were removed
+   by the shelf redesign's A2b.
+
+   The union type is `FooterTab` (exported from `MobileFooter.tsx`). The tab list
+   itself is the `TABS` array in that file.
 
 2. **Home menu** (`/`, `HomePage`) — a `HubMenu` (the shared row component, also
    used by Discover + Games hubs) of secondary destinations:

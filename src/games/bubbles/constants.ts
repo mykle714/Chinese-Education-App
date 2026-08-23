@@ -131,6 +131,32 @@ export const OVERFILL_SUSTAIN_MS = 1600; // residual must persist this long befo
     height (MobileFooter). */
 export const CANCEL_ZONE_HEIGHT = 96;
 
+// ---- Held-bubble over-drag ------------------------------------------------
+/**
+ * How far past a STAGE edge a held bubble's center may be dragged, in units of its
+ * own radius. **1 = the bubble may be pulled entirely off the edge**, its trailing
+ * rim flush with the stage boundary.
+ *
+ * The same number governs the left, right and bottom edges, so an over-drag feels
+ * identical whichever way the player pulls. What DIFFERS between them is not how far
+ * but what it means on release:
+ *
+ *   * **Bottom** — the last 96 px before the edge is the cancel strip
+ *     (CANCEL_ZONE_HEIGHT), real on-screen space that is carved out of the play area.
+ *     Releasing there ABANDONS the match.
+ *   * **Sides** — there is no strip; the play area runs to the stage edge, so an
+ *     over-dragged bubble is simply clipped and releasing there means NOTHING. The
+ *     boundary has give; it is not a second escape hatch.
+ *
+ * Whichever edge it was pulled past, `stepPhysics` glides the body back in at
+ * MAX_PUSH_SPEED once it is released.
+ *
+ * The TOP is deliberately excluded. In Bubble Match it is the descending ceiling — a
+ * mechanic rather than a boundary — and letting the player shove bubbles up through
+ * it would let them hide from it.
+ */
+export const HELD_OVERDRAG_RADII = 1;
+
 // ---- Match feedback timing (ms) ------------------------------------------
 export const POP_DURATION_MS = 280; // green pop before a correct pair is removed
 export const WRONG_FEEDBACK_MS = 420; // red shake before a wrong pair is released

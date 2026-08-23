@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import type { SxProps, Theme } from "@mui/material/styles";
 import MobileTabScreen from "./MobileTabScreen";
-import type { FooterTab } from "./MobileFooter";
+import { type PageHeaderSize } from "./PageHeader";
 import { usePageSlide } from "../hooks/usePageSlide";
 
 // NODE PAGE — a hub that is still part of lateral navigation. See
@@ -30,10 +30,12 @@ const Surface = styled(Box)(() => ({
 
 interface NodePageProps {
     title: string;
-    activePage: FooterTab;
     // Where the back arrow goes. Invoked AFTER the slide-right completes.
     onBack: () => void;
     headerExtraActions?: ReactNode;
+    // Forwarded to MobileTabScreen -> PageHeader. Pass "dense" on a node page whose
+    // header carries three or more right-slot actions (e.g. Card Detail).
+    headerSize?: PageHeaderSize;
     surfaceColor?: string;
     contentSx?: SxProps<Theme>;
     contentClassName?: string;
@@ -47,9 +49,9 @@ interface NodePageProps {
 
 const NodePage: React.FC<NodePageProps> = ({
     title,
-    activePage,
     onBack,
     headerExtraActions,
+    headerSize,
     surfaceColor,
     contentSx,
     contentClassName,
@@ -68,11 +70,11 @@ const NodePage: React.FC<NodePageProps> = ({
         <Surface ref={surfaceRef} className="node-page" style={style}>
             <MobileTabScreen
                 title={title}
-                activePage={activePage}
                 showBack
                 arrowDirection="left"
                 onBack={handleBack}
                 headerExtraActions={headerExtraActions}
+                headerSize={headerSize}
                 surfaceColor={surfaceColor}
                 contentSx={contentSx}
                 contentClassName={contentClassName}

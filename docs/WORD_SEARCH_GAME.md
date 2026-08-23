@@ -43,8 +43,10 @@ Reuses Bubble Match's pool machinery so the two games feel like siblings.
   [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md).
   The mapping itself lives on `WordSearchModeConfig.markType`
   (`src/games/word-search/constants.ts`) — Pinyin → `production`, No-Pinyin →
-  `reading` — and is the single source for both `WordSearchPage`'s `markFlashcard`
-  call and the hub sub-card's `MarkTypeChip`, so the label and the mark cannot drift.
+  `reading`. This is the mode's **primary** track: the one and only track the pool
+  buckets and cooldown-gates on (a pool query can bucket by one mark history, not two),
+  and the one challenge eligibility reads. It is **not** the whole list of marks a find
+  writes — see § "What a find marks" below.
 - **≤4-character cap**: each per-category candidate query filters
   `LENGTH(ve."entryKey") <= 4` — words longer than that are never selectable
   for this game. This keeps every word compatible with the template fallback's
@@ -75,7 +77,70 @@ Algorithm (server-side):
 > Note: substring, not just equality — `国` is a substring of `中国`, so they
 > can't coexist. Single-character words are the most collision-prone.
 
+### 1b. English de-duplication (dd collision)
+
+A second, independent constraint on the same 10 words, enforced app-wide across every
+game: **no two targets may share a dd**. The word list prints ten English glosses in a
+column, and two identical ones leave the player no way to know which grid word a gloss
+is asking for.
+
+Enforced in `OnDeckVocabService.getWordSearchGrid` by a `takenDds` set inside `drain`,
+keyed on `ddCollisionKey` (`server/utils/definitions.ts`). Unlike the substring rule
+above it needs no re-scan pass — a colliding candidate is simply never admitted — but
+it does have to **release** a key when the substring loop evicts a word, or the
+replacement pull would be reserving a gloss that nothing is showing.
+
+A grid that cannot reach 10 dd-distinct words falls out the same door as a grid that
+cannot reach 10 character-distinct ones: `reason: 'insufficient-distinct'`, which the
+controller answers by escalating the provisional baseline and retrying.
+
+Full rule and the other two chokepoints:
+[GAMES_FEATURE.md](./GAMES_FEATURE.md) § "No two cards may share a dd in one round".
+Extending it to NEAR-identical glosses is designed (unbuilt) in
+[GLOSS_CONFUSABILITY.md](./GLOSS_CONFUSABILITY.md).
+
 ---
+
+### 1c. Study Challenge rounds — 12 words on an 8×8 grid (built 2026-08-22)
+
+Word Search is challenge-eligible **as Pinyin only** (Pinyin is production; No Pinyin is
+reading, and a challenge round is recognition or production —
+[STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.1). A challenge round replaces section 1's
+selection entirely: the target list is the challenge's **twelve contested words**, and the
+filler that pads it comes from the `mastered-first` ladder rather than from the band
+buckets.
+
+Two things about the grid itself change, and both are load-bearing:
+
+| | Ordinary board | Challenge board |
+|---|---|---|
+| Targets | `TOTAL_WORDS` = 10 | `CHALLENGE_WORD_COUNT` = 12 |
+| Size | 7×7 (49 cells) | **8×8 (64 cells)** — `WORD_SEARCH_CHALLENGE_ROWS/COLS` |
+| Placement | template mode when it applies, else random | **always random** |
+
+**Why bigger.** Twelve words at the 4-character cap is up to 48 characters, which random
+placement would almost never fit into 49 cells. 8×8 restores roughly the density the
+placer was tuned at.
+
+**Why always random.** `templateModeApplicable` is defined as 7×7 with exactly 10 words
+(docs/NIGHT_MARKET_TEMPLATES.md's sibling, `WORD_SEARCH_TEMPLATES`), so a challenge grid
+falls out of template mode by construction and uses its full `MAX_GRID_ATTEMPTS` budget of
+random attempts. Acceptable: templates exist to make a pathological 10-word draw cheap,
+not to make placement possible at all.
+
+**The substring de-dup pass is why Word Search scores contested and filler differently.**
+An arbitrary set of twelve words will not reliably have mutually distinct characters
+(§ 1a), so some contested word will sometimes have to be dropped and replaced — and the
+replacement is filler. At a flat 100 a player whose set forced four substitutions would be
+paid full price for four easy words; at 100/20 the split is invisible when the whole set
+places cleanly and correct when it does not. To make sure there is something to substitute
+WITH, the challenge branch queues **twice** the board in filler; without that, a set that
+shares characters fails as `insufficient-distinct`, which for a challenge round means a
+round the player cannot play at all.
+
+**Challenge boards are never saved** to the pause/resume slot (§ 5b): the slot is offered
+back as the hub's Resume card, which would restore a scored board outside its challenge
+and would also overwrite the player's own casual save.
 
 ## 2. Grid generation (new, server-side per user request)
 
@@ -279,19 +344,48 @@ need custom click handling and it prepends a resume card. `GamesPage.tsx`
 renders it in the `game.gameId === "word-search"` branch. It reuses the shared
 hub card look via the exported `cardBaseSx`
 (`src/components/hubMenuCardBase.ts`) + `HubMenuCardTitle` / `HubMenuRowIconTile`
-(`src/components/HubMenu.tsx`). See [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md).
+(`src/components/HubMenu.tsx`). See [BENTO_SYSTEM.md](./BENTO_SYSTEM.md).
 
-| Sub-card | `mode` | Pinyin | Mark type chip |
+| Sub-card | `mode` | Pinyin | Mark type (sub-tile subtitle) |
 |---|---|---|---|
 | **Pinyin** | `"pinyin"` | grid pinyin on, **always tone-colored**, rendered at **big-pinyin** scale (see "Cell size") | PRODUCTION |
-| **No Pinyin** | `"no-pinyin"` | grid pinyin off | READING |
+| **No Pinyin** | `"no-pinyin"` | grid pinyin off | READING **+ PRODUCTION** |
 
-- Each mode button carries a **`MarkTypeChip`** bottom-left
-  (`src/components/MarkTypeChip.tsx`, passed as `HubMenuCardTitle`'s `chip`), read
-  from that mode's `WordSearchModeConfig.markType`. Word Search is the only game
-  whose chip differs *between* its sub-cards, which is why the chip slot is
-  per-sub-card rather than on the group header. The resume square carries no chip —
-  at 1:1 it already holds four lines, and it names its saved mode anyway.
+- Each mode sub-tile's **subtitle** is the track(s) it feeds, built from
+  `modeMarkTypes(cfg)` through the shared `MARK_TYPE_LABELS` — so No Pinyin reads
+  "Reading & Production". (This used to be a `MarkTypeChip` on a hub card; the bento
+  sub-tile that replaced it has no chip slot, and that component has since been
+  deleted for want of any caller. See
+  [MASTERY_REWORK.md § "The hub names the track"](./MASTERY_REWORK.md).) Word Search is
+  still the only game whose label differs *between* its sub-tiles, which is why it is
+  per-sub-tile rather than on the group header. The resume square carries no track
+  label — at 1:1 it already holds four lines, and it names its saved mode anyway.
+
+### What a find marks
+
+A found word posts **one `/api/flashcards/mark` per track**, all positive
+(`markWordFound` in `WordSearchPage.tsx`, list from `modeMarkTypes`):
+
+| Mode | Marks written | Why |
+|---|---|---|
+| Pinyin | `production` | The prompt is an English gloss, so the find is recall — but the grid's pinyin row is a phonetic crutch, which is precisely what the reading track is defined by the *absence* of. So no reading mark. |
+| No Pinyin | `reading` **and** `production` | Both skills are genuinely exercised in one action: the prompt is an English gloss (recall from meaning → production) and the grid is bare characters (→ reading). This is the only surface in the app that clears two tracks per action. |
+
+Three consequences worth knowing:
+
+- **Two bars move.** `production` feeds the **core** bar, `reading` feeds the
+  **reading** bar. The rule "a mark belongs to exactly one bar" is unchanged — these
+  are two separate marks — but a No-Pinyin find is the first review ACTION that moves
+  two bars. `barForMarkType` and the mark handler are untouched by this.
+- **The secondary mark is best-effort.** The board was pooled on the primary track, so
+  a card can be off cooldown for `reading` while still cooling for `production`; the
+  mark endpoint then drops the production mark and logs `[MarkSuppressed]`
+  ([HYDRA_BUBBLES.md § 8](./HYDRA_BUBBLES.md)). The hub label describes the *attempt*.
+- **It does NOT make No Pinyin challenge-eligible.** Eligibility reads the primary
+  track only, so a reading board can never be drawn into a Study Challenge round —
+  pinned by `src/games/__tests__/challengePool.test.ts`.
+
+A hinted word marks **nothing at all**, on either track (§ hints).
 
 - **Both mode buttons ALWAYS start a fresh game.** Tapping one navigates with
   nav `state = { mode, resume: false }`. Because both modes now share ONE saved
@@ -325,7 +419,7 @@ Win logging goes through the same hook. `WordSearchPage` calls
 live in `constants.ts` so the page and the hub item share them. Word Search has no
 levels — **every completion in either mode lands in the one `level: 1` bucket**,
 so its hub count is inherently whole-game. See
-[HUB_MENU_SYSTEM.md § Group header](./HUB_MENU_SYSTEM.md).
+[BENTO_SYSTEM.md § BentoStrip vs ShelfHeader](./BENTO_SYSTEM.md).
 
 #### Resume card (leading 1:1 square)
 
@@ -370,12 +464,18 @@ Vertical stack inside the standard leaf-page content area:
 ```
 
 - **Word list (top):** the 10 targets shown as their **English glosses** (a
-  recall drill — you read the meaning and hunt the Chinese in the grid),
-  rendered so they fill **~2 compact lines**. Typography matches the Bubble
-  Match HUD "Lv 1 · Chill" label: `fontSize: SIZE.body` (14px),
-  `fontWeight: WEIGHT.bold`, `color: "#6b6b6b"`
-  (`src/games/bubble-match/BubbleStage.tsx`). Found glosses get struck
-  through / dimmed. (Glosses are the dd resolved SERVER-side in
+  recall drill — you read the meaning and hunt the Chinese in the grid), drawn as the
+  design's `.chip`s. They used to run together as one centre-justified paragraph
+  separated by middots, which made a two-word gloss ("job interview") hard to tell from
+  two adjacent one-word ones; an outlined chip gives every target its own boundary, so
+  the HUD's count and the things on screen agree. **Two** states and only two:
+  **pending** — `.chip.on`, the solid ink pill, deliberately the LOUD state because a
+  pending chip is the game's actual instruction; and **found** — struck through and faded
+  to the resting outline, still present, because the list is also the record of what the
+  run has covered and the fade is what makes the remaining work countable at a glance.
+  The **hinted** word has no chip state of its own: the `.hintbar` reveal one row above
+  already names it character by character, and a third treatment would have to be
+  distinguishable from black-pill-pending, which is the strongest ink the row has. (Glosses are the dd resolved SERVER-side in
   `OnDeckVocabService.getWordSearchGrid` via `resolveDisplayDefinition`, so they honor the
   learner's per-card `selectedSense`; kept short so they tile, and a very long definition is
   truncated. See [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3.)
@@ -387,9 +487,34 @@ Vertical stack inside the standard leaf-page content area:
   the top list to toggle). Whether pinyin shows is fixed by the launched mode
   (see "Two hub entries" above), not a per-session toggle.
 
+### The play panel, top to bottom
+
+Shelf redesign entry 13 (`docs/SHELF_REDESIGN.md`). Everything below lives inside
+`GameFrame`'s `.play` panel, above the grid:
+
+| Row | Component | Content |
+|---|---|---|
+| HUD | `GameHud` | `Pinyin · production` (No Pinyin: `reading & production`) — *clock* — `4 of 7 found` |
+| hint | `WordSearchHintBar` | button · charges · reveal (§5a) |
+| list header | a `.shelfhd` pair of `Label`s | "Find these words" / "trace to select" |
+| chips | `WordSearchWordList` | the target glosses (§ below) |
+
+**The clock is the MIDDLE child of the HUD, and that is load-bearing.** It is the one
+element that can vanish (the settings sheet hides its text), and under `space-between`
+only a middle child can be removed without moving anything else. It used to be first,
+which forced the hint meter beside it to be absolutely positioned so `space-between`
+would not drift it as the timer's text changed width.
+
+**The mode is stated, not offered.** Artboard 13 draws a `pinyin` chip in the header;
+that was not adopted. Pinyin display is fixed by which hub entry launched the run, so
+there is nothing to toggle — a chip that looks like a switch and is not is worse than no
+chip, and it would be a second statement of what the HUD already says.
+
 ### Header controls
 
-`WordSearchHeader.tsx` fills the leaf-page `rightContent` slot with, left→right:
+`WordSearchHeader.tsx` fills the leaf-page `rightContent` slot with **the settings cog
+and the fire badge, and nothing else**. Three things have left this slot, and the reason
+is always the same: the header holds settings-shaped controls, not game ones.
 
 - ~~**Restart button** (`word-search__restart-btn`)~~ — **REMOVED.** A restart
   icon used to sit leftmost and discard the in-progress board via `resetBoard`.
@@ -397,8 +522,9 @@ Vertical stack inside the standard leaf-page content area:
   the win-screen "Play Again" button: a board in progress can no longer be
   thrown away from the header, only finished or left (it stays parked in the
   saved slot, §5b, resumable from the hub).
-- **Hint button** (`word-search__hint-btn`) — spends a hint; greyed out
-  (disabled) until the hint meter reaches `HINT_COST`. See §5a.
+- ~~**Hint button** (`word-search__hint-btn`)~~ — **MOVED** into the play panel's
+  `.hintbar`, next to its own charges and reveal. Spending a hint is a game action.
+  See §5a.
 - **Settings cog** (`word-search__settings-btn`) — opens `WordSearchSettingsDialog`,
   a small MUI `Dialog` (not the flp `SheetPanel`/drag-resize sheet — that
   machinery lives inside `features/flashcards` and games don't reach into it;
@@ -408,7 +534,8 @@ Vertical stack inside the standard leaf-page content area:
     `showPinyinColor`), so the setting stays in sync with flp. Toggling
     redraws both the top word list and the grid. Because the prompts are
     English, pinyin only ever affects the grid (there is no Chinese in the
-    top list to toggle).
+    top list to toggle). **⚠️ Stale:** the shipped dialog holds only the timer
+    row — pinyin display became a property of the hub entry (see "Two hub entries").
   - **Show timer** — Word-Search-only, persisted via `useWordSearchSettings`
     (`wordSearch.settings` in localStorage). Flips only the timer TEXT's
     visibility; the clock keeps ticking regardless (so the finish time / medal
@@ -430,15 +557,9 @@ keeps the reserved pinyin band even when the syllable is hidden (so toggling
 pinyin never shifts layout) — enlarging it in **No Pinyin** mode would push
 every glyph upward for nothing.
 
-Two knock-on effects, both self-correcting:
-- **Grid height is unaffected.** The row track is locked to
-  `columnWidth + CELL_GAP` regardless of a cell's own content height (below), so
-  the taller cells just overlap their neighbours slightly more.
-- **Selection geometry re-centers itself.** The stadium offset is derived from a
-  live measurement of the glyph's center within its cell, so it follows the band
-  growth automatically. Only the extra tunable nudge
-  `SELECTION_EXTRA_OFFSET_Y_FRAC` is a fixed constant — retune it there if the
-  highlight reads off-center.
+One knock-on effect, self-correcting: **grid height is unaffected**, because every
+cell is `aspect-ratio: 1` and the taller content simply centres inside the square it
+was already given.
 
 More pinyin overflows its 32px column at this scale, so expect more
 shifting/separator apostrophes — see
@@ -449,23 +570,51 @@ A `useFitScale` wrapper in
 (transforms don't affect `elementFromPoint`, so drag hit-testing still works),
 so it renders at real `sm` size and shrinks only as needed on short screens.
 
-Columns are spaced apart by `CELL_GAP` px (`constants.ts`), applied as the CSS
-grid `columnGap`. `WordSearchGrid` measures the rendered column width and locks
-`gridTemplateRows` to a fixed `columnWidth + CELL_GAP` px track (`rowGap: 0`) so
-the character-center-to-character-center pitch is equal on both axes even
-though pinyin makes a cell's own content taller than it is wide — rows are
-deliberately packed tighter than that content height, so adjacent rows'
-char/pinyin content overlaps slightly rather than spacing characters unevenly.
-Selected/found highlights render as **stadium shapes** — rounded rectangles
-whose corner radius is half their cross-axis thickness, so the ends read as
-full semicircles — one per consecutive pair of cells in a drag or found word,
-sized off the cell's smaller dimension (not the cell's own box, which isn't
-square once pinyin is on) and centered on the character glyph itself (see the
-offset computation in `WordSearchGrid.tsx`'s selection-geometry effect). A
-one-cell highlight (no pair to connect) draws a standalone circular node
-instead. Consecutive stadiums' rounded ends coincide exactly at their shared
-cell, so a snaking, multi-turn highlight reads as one unbroken shape with no
-separate cap/connector elements (`selectionRects` in `WordSearchGrid.tsx`).
+**Every cell is a square** (`aspect-ratio: 1`, the design's `.wsg span`) spaced by
+`CELL_GAP` px on both axes (`constants.ts`, 4px). Squareness is what lets a traced
+path read as a path: on a board of squares a run of lit cells weighs the same going
+down as going across, so a word that turns a corner still looks like one word.
+
+### The selection system
+
+Every highlight — resting, tracing, found, hinted, missed — is **a fill on the cell**,
+from the design's `.wsg span` / `.hit` / `.now` (artboard 13):
+
+| State | Fill | Meaning |
+|---|---|---|
+| resting | `COLORS.background` (paper) | an unclaimed tile |
+| tracing | `COLORS.org` (`.now`) | the in-progress drag |
+| found | `COLORS.grn` (`.hit`) | locked in |
+| reviewing | `COLORS.grn` + an inset `COLORS.grnA` ring | the found word whose gloss popup is open |
+| hint reveal | `COLORS.org` | "trace THESE" — the same meaning as `.now` |
+| miss | `COLORS.red` | wrong trace; transient, and outranks whatever is under it |
+| bonus | `COLORS.blu` | a real word that wasn't a target |
+
+The cells sit on a **grey board** — the grid box carries `COLORS.card` (`--grey`) at
+radius 16, with the 13px padding as its margin. The design puts paper cells straight
+onto the white `.play` panel, which is ~1.03:1 and lets the tiles dissolve into it;
+grey is one full lightness step below paper, so every resting tile gets an edge without
+anything drawing one. It has to be ACHROMATIC: all four lit fills above are ramp pastels
+at the same lightness, so a hued board would sit in the same band as whichever state
+shares its hue.
+
+A lit cell also darkens its glyph to `COLORS.onSurface`. That has to be reached through
+a **descendant selector** on `.char-pinyin-display__character`: the glyph is a cpcd
+element that sets its own color, so an inherited value on the cell is silently
+overridden and the state half-applies. It deliberately does **not** bold, though
+`.wsg span.hit` does — at this cell size a weight change reflows the glyph inside its
+tile, so a traced word twitches as the path grows, and the fill has already carried the
+state.
+
+**What this replaced, and why.** Highlights used to be drawn as one continuous
+"stadium" tube on a layer *beneath* the cells — a rounded rectangle per consecutive
+pair of cells, ends coinciding at the shared cell so a snaking path read as one
+unbroken shape, with the cells themselves going transparent to let it through. It was
+the prettier shape, but it cost a measured row pitch, a measured glyph-center offset
+and two hand-tuned nudge constants (`SELECTION_EXTRA_OFFSET_Y_FRAC*`, both deleted),
+all so a shape drawn between *character centers* would line up with cells whose height
+depended on whether pinyin was showing. A cell fill needs none of that machinery and
+tells the player the same three things.
 
 `useFitScale` also reserves `GRID_MARGIN` px on every side (passed as its `inset`
 arg): the available width/height are shrunk before computing the scale, so the
@@ -617,27 +766,38 @@ helps the player *learn* the word by seeing each character's contextual sense
   board (just at the lowest medal tier). This mirrors the completion-stars idea
   in [PRACTICE_WRITING.md](./PRACTICE_WRITING.md).
 
-### 5a. Hint meter
+### 5a. Hints
 
 A lightweight, client-only assist layer (no server/DB involvement). State lives in
 `WordSearchPage.tsx` (`hintUnits`, `hintEntryKey`, `hintRevealCount`,
-`hintLocationRevealed`, `hintShakeNonce`); the meter gauge is
-`WordSearchHintBar.tsx`, the letter-hint display row is `WordSearchHintRow.tsx`,
+`hintLocationRevealed`, `hintShakeNonce`).
+
+**One mechanic, one row.** `WordSearchHintBar.tsx` is now the whole `.hintbar`: the
+button, the charge dots, and the reveal, left to right — press this, you have this many,
+here is what you bought. It takes `WordSearchHintRow` as its `children`. Before the shelf
+redesign these were three widgets in three places (button in the page header, meter
+absolutely centred in the HUD, reveal on its own line under the gloss list), and the
+player had to work out that they were one thing.
+
+**Charges, not a gauge.** With `HINT_COST` at 1, the eight-segment meter with its
+threshold line after the first segment was already just "how many hints you have" drawn
+as a gauge. It is `HINT_BAR_UNITS` dots now; `.chg` filled = banked.
+
+The letter-hint display is `WordSearchHintRow.tsx`,
 the pinyin→units split lives in `pinyinUnits.ts`, the matching gloss tint lives
 in `WordSearchWordList.tsx`, and the grid-side yellow location reveal + shake
 live in `WordSearchGrid.tsx`; tunables are in `constants.ts`
 (`HINT_BAR_UNITS = 8`, `HINT_COST = 1`, `HINT_LETTER_BLANK = "_"`,
-`HINT_REMAINDER_MARK = "—"`, `HINT_ACCENT_COLOR`).
+`HINT_REMAINDER_MARK = "—"`, `HINT_ACCENT_COLOR` — now an alias for `COLORS.warnInk`).
 
 Revealing a word's grid **location** was too easy a hint (v1's cell-pulse
 mechanic); v2 replaces it with a cheap, hangman-style **pinyin reveal** so a
 hint nudges recall without handing over the answer.
 
-- **Earning:** each successful find adds **one** unit to the meter, capped at
-  `HINT_BAR_UNITS` (8). The HUD gauge is a row of 8 hollow segments that fill
-  left-to-right, with a **threshold line drawn after the `HINT_COST`-th
-  segment** marking where a hint becomes usable. Once `hintUnits >= HINT_COST`
-  the filled segments and threshold brighten so the meter reads as "armed."
+- **Earning:** each successful find adds **one** charge, capped at `HINT_BAR_UNITS` (8).
+  A charge is one dot. The button itself carries the armed/disarmed state (full opacity
+  and an inert handler when `hintUnits < HINT_COST` or nothing is left unfound) — its
+  shape never changes as it arms, so the control does not move under the finger.
 - **Reveal granularity (`pinyinUnits.ts`):** a hint reveals one **phonetic
   unit** at a time, not one raw Latin letter — `syllableToPinyinUnits` splits
   each syllable into its initial consonant / medial glide / final (e.g.
@@ -647,8 +807,11 @@ hint nudges recall without handing over the answer.
   than Zhuyin glyphs. This avoids letter-at-a-time reveals giving away more or
   less than one meaningful chunk depending on spelling (e.g. "zh" is one
   initial sound spelled with two letters).
-- **Display row (`WordSearchHintRow.tsx`):** sits between the English gloss
-  list and the grid. **Blank by default** — nothing renders here until the
+- **The reveal (`WordSearchHintRow.tsx`):** fills the `.rv` slot at the right end of the
+  hint row. It used to be a row of its own between the gloss list and the grid, which
+  cost a line of board height to show nothing most of the time; it now holds its line
+  open (`minHeight`) inside the hint row so spending the first hint of a run does not
+  shove the grid down. **Blank by default** — nothing renders here until the
   player's first hint spend. Once a hint has picked a word, the row shows a
   mask built by `buildMask`: **one "island" per Chinese
   character** in the word (space-separated, one per `pinyin` syllable), but
@@ -688,11 +851,10 @@ hint nudges recall without handing over the answer.
   `HINT_REMAINDER_MARK` is no longer used on the pinyin board at all; it
   lives on as the No-Pinyin board's `COMPONENT_BLANK`, §5a-ii, where there
   is no letter count to show.)
-- **Matching gloss tint:** while a word is actively hinted (mask showing or
-  location revealed), `WordSearchWordList` tints that word's English gloss in
-  `HINT_ACCENT_COLOR` — the same color as the mask text — so the player can
-  tell which English word the mask/highlight belongs to without it being
-  spelled out in the row itself.
+- **No matching gloss treatment.** The hinted word's chip used to be tinted (and
+  later filled) to pair it with the mask. It no longer is — the `.hintbar` reveal
+  names the word directly, and every unfound chip is already the solid ink pill
+  (§3), so there is no quieter state left for "hinted" to occupy.
 - **Spending (`useHint` / `canUseHint` in `WordSearchPage.tsx`):**
   1. If a word is already being hinted (`hintEntryKey`) and it's still unfound
      with reveal steps left, drain `HINT_COST` (1) and buy **one more step of
@@ -702,9 +864,9 @@ hint nudges recall without handing over the answer.
   2. If that word is still unfound but its pinyin is **already fully spelled
      out** (no units left to reveal) and its location **isn't yet
      revealed**, drain `HINT_COST` and lock onto it: `hintLocationRevealed =
-     true` lights up its actual grid cells in **yellow** (`WordSearchGrid`'s
-     `hintedWord`, painted via the same stadium overlay used for
-     selection/found highlights) and bumps `hintShakeNonce` to shake them
+     true` lights up its actual grid cells in **`.now` orange** (`WordSearchGrid`'s
+     `hintedWord`, painted as a per-cell fill like every other highlight — see the
+     selection-system table in §3) and bumps `hintShakeNonce` to shake them
      (same nonce-keyed `wsInvalidShake`-style keyframe trick as a miss).
   3. If that word's location is **already revealed** (i.e. this isn't the
      first time hitting case 2), pressing hint again is **FREE** — no unit is
@@ -909,16 +1071,15 @@ Frontend (`src/games/word-search/`):
   so the 7×7 `sm` grid fits short screens, the **English-gloss popup** shared
   by found-word review and bonus-word misses (tap a locked word, or trace a
   bonus word, → `Popper` popup; `foundWordByCell` / `toggleWordPopup` /
-  `anchorRectForCells` / `activePopup`; see §4), and the hint's **yellow
+  `anchorRectForCells` / `activePopup`; see §4), and the hint's **orange
   location reveal + shake** once a word's
   pinyin is fully spelled out (`hintedWord` / `hintShakeNonce` props,
   `hintedCells`; see §5a).
-- `WordSearchWordList.tsx` — the ~2-line top English-gloss prompt list; tints
-  the actively-hinted word's gloss `HINT_ACCENT_COLOR` (§5a).
-- `WordSearchHintBar.tsx` — the 8-segment HUD hint gauge with the `HINT_COST`
-  threshold line (§5a).
-- `WordSearchHintRow.tsx` — the hint display row between the gloss list and the
-  grid. Renders whichever currency the board spends (`currency` prop): the
+- `WordSearchWordList.tsx` — the English-gloss prompt chips: solid ink `.chip.on` while
+  pending, struck through and faded once found (§3).
+- `WordSearchHintBar.tsx` — the whole `.hintbar` row: the hint button, `HINT_BAR_UNITS`
+  charge dots, and the reveal slot it renders its `children` into (§5a).
+- `WordSearchHintRow.tsx` — the reveal, filling the hint row's right-hand slot. Renders whichever currency the board spends (`currency` prop): the
   Pinyin board's per-syllable islands — nothing at all until that character's
   length is bought, then one `HINT_LETTER_BLANK`
   underscore per still-hidden letter (`buildMask` / `letterCount`;
@@ -991,6 +1152,11 @@ Server:
 
 ## 7. Dependencies / cross-references
 
+- **Study Challenge rounds (§ 1c):** `OnDeckVocabService.getWordSearchGrid`'s `challenge`
+  parameter + `WORD_SEARCH_CHALLENGE_ROWS/COLS`, `OnDeckVocabController.resolveChallengeRound`,
+  `StudyChallengeService.getRoundContext`, `ProvisionalCardService.getFillerPool`, and on the
+  client `src/games/runtime/useChallengeRound.ts` + `WordSearchPage.tsx` (`challengeParamsRef`,
+  the hint/find events, the scoreboard). Spec: [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 5.2–5.5.
 - **Reuses:** `OnDeckVocabService.getGameVocabPool` machinery + `GAME_FALLBACK_ORDER`
   (pool + fallback), `CPCDRow` (`src/components/CPCDRow.tsx`) at `sm`, leaf-page
   shell, `BubbleMatchHeaderControls` pattern, and `GAME_DISTRIBUTION`.

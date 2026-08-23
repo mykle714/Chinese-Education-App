@@ -14,6 +14,10 @@ not the CJK-specific enrichment.
 Child docs:
 - [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) — the `definitionClusters`
   form: splitting `definitions` into orthogonal sense clusters.
+- [WORD_TAXONOMY.md](./WORD_TAXONOMY.md) — **DESIGN/DRAFT**: a hierarchical
+  semantic classification (kingdom › class › order › genus) attached to each
+  *sense cluster* rather than to the headword. Clusters say how many meanings a
+  word has; the taxonomy says what kind of thing each meaning is about.
 
 ---
 
@@ -70,6 +74,14 @@ Child docs:
   frequency) sense — not a fallback to `definitions[0]`. "No pick to honor" and "no sense to
   resolve" are different things; conflating them is what left the sort flow showing a
   different gloss and reading than the flashcard the same word produces (fixed 2026-08-19).
+- **Derived key — `ddCollisionKey`** (`server/utils/definitions.ts`): the dd, lowercased
+  with whitespace collapsed and a trailing period dropped. Not a display form and never
+  rendered — it exists only so a game can ask "do these two cards read the same?" and
+  refuse to put both in one round (see
+  [GAMES_FEATURE.md](./GAMES_FEATURE.md) § "No two cards may share a dd in one round").
+  Used by `OnDeckVocabService.getGameVocabPool` / `.getWordSearchGrid` / `.fetchDdKeys`
+  and `MemoryMapService.spawnInto`. A designed (unbuilt) successor keyed on semantic
+  nearness rather than string equality is [GLOSS_CONFUSABILITY.md](./GLOSS_CONFUSABILITY.md).
 
 ### 4. `shortDefinition` — deterministic short gloss
 - **Shape:** `string | null`, resolved at read time, **no AI**.

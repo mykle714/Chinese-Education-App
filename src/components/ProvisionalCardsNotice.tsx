@@ -165,7 +165,7 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
                         border: "none",
                         borderRadius: 14,
                         padding: "13px 18px",
-                        background: COLORS.greenMain,
+                        background: COLORS.successInk,
                         color: "#FFFFFF",
                         fontFamily: FONTS.sans,
                         fontSize: SIZE.bodyLg,

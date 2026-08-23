@@ -48,6 +48,11 @@ Shared pieces:
 * `FriendPersonRow.tsx` — the avatar + name + secondary-line + actions row used by
   all four screens (they differ only in the `actions` slot; the leaderboard also
   uses the `leading` rank-chip slot and the `highlighted` self-row flag).
+  It wears the shelf system's `.rw` **skin** — white ground, radius 16, a 36px
+  rounded-square avatar carrying `COLORS.markOutline`, 14.5/11.5 type
+  ([SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A5) — but is deliberately **not** the
+  shared `Row` primitive (`src/components/primitives/Row.tsx`): a `Row` has one tap
+  target and this has two nesting models. If the two ever converge, delete this one.
 * `friendStyles.ts` — shared `sx` fragments. They live outside the page components
   because this repo lints `react-refresh/only-export-components`.
 * `friendLabels.ts` — "Sent …" copy, the leaderboard's `netMinutesLabel` /
@@ -63,14 +68,21 @@ The **Requests** button carries a red count badge when incoming requests exist �
 `FriendsPage` fetches the incoming list alongside the friend list purely for that
 count.
 
-### 1b. Challenges (`/friends/challenges`) — built on dev (2026-08-17)
+### 1b. Challenges (`/friends/challenges`) — BUILT (page 2026-08-17, playable rounds 2026-08-22)
 
-⚠️ **Not built.** Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 1; it ships
-with that feature.
+Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 1, and shipped with that
+feature. (This section said "not built" until 2026-08-22; the page had in fact been
+live since 2026-08-17 and only the scored rounds were missing.)
 
 A fifth NodePage, reached by a fourth top-row button on `/friends`, listing the viewer's
 Study Challenges: awaiting your response, accepted and waiting for Friday, open now, and
 recently finished.
+
+⚠️ **One control on this page is not part of the friend model at all:** the
+validator-only **"Allow anytime"** switch, which lifts Study Challenge's calendar gates
+for testing ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 2a). It is rendered here
+because this is where the weekly rules are felt, but it is gated on `users.isValidator`
+and is invisible to everybody else.
 
 **Why it hangs off `/friends` rather than sitting on the Home menu:** a challenge is a
 thing you have *with a person*. Every entry point to it is a friend, unfriending ends it,
@@ -338,7 +350,7 @@ Related docs: [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) (the Challenges page, t
 and the block columns — all planned),
 [VELOCITY.md](./VELOCITY.md) (the ranked metric),
 [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md) (the net wallet),
-[HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md) (the hp row),
+[BENTO_SYSTEM.md](./BENTO_SYSTEM.md) (the hp row),
 [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) (the NodePage archetype),
 [BACKEND_LAYERING.md](./BACKEND_LAYERING.md), [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md).
 

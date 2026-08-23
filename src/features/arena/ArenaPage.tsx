@@ -2,14 +2,19 @@ import { useCallback, useEffect, useState } from "react";
 import { Box, Button, Typography } from "@mui/material";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
+import { Fragment } from "react";
 import ArenaEntryRow from "./ArenaEntryRow";
+import ArenaMessageDialog from "./ArenaMessageDialog";
+import { HeaderIconButton } from "../../components/PageHeader";
+import { Board, BoardZone } from "../../components/leaderboard/Board";
+import { SectionRule } from "../../components/primitives";
 import {
     fetchArenaBoard,
     optInToArena,
     withdrawFromArena,
     shareArenaLocation,
 } from "../../api/arena";
-import type { ArenaBoardResponse } from "../../api/arena";
+import type { ArenaBoardResponse, ArenaEntry } from "../../api/arena";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
@@ -27,6 +32,33 @@ import {
     secondaryButtonSx,
     sectionCardSx,
 } from "./arenaStyles";
+
+/**
+ * The divider between two adjacent rows, or null when nothing changes there.
+ *
+ * Drawn where the BAND CHANGES, which is the only place it means anything — a competitor
+ * reads this board as "which side of the line am I on". Derived from the server's
+ * per-row `zone` rather than from any rank arithmetic of our own, so the line can never
+ * disagree with the tints on either side of it.
+ *
+ * There are exactly TWO lines on a board, and each is named for what CROSSING it does to
+ * you rather than for the band underneath it: the top of the table ends at PROMOTION and
+ * the bottom begins at DEMOTION. An earlier cut labelled the first one "Holding" — the
+ * band below it — which is a correct fact about the wrong thing. Nobody watches that line
+ * to find out where the middle of the table starts.
+ *
+ * ⚠️ The user-facing word is **Demotion**; the wire value stays `zone: 'relegate'`
+ * (`ArenaEntry`, a server contract). Do not "fix" either one to match the other.
+ */
+function renderZoneDivider(prev: ArenaEntry, cur: ArenaEntry) {
+    if (prev.zone === "promote" && cur.zone !== "promote") {
+        return <BoardZone label="Promotion" tone="promote" />;
+    }
+    if (cur.zone === "relegate" && prev.zone !== "relegate") {
+        return <BoardZone label="Demotion" tone="relegate" />;
+    }
+    return null;
+}
 
 /**
  * Arena (docs/ARENA_FEATURE.md) — a Home-hub drill-in (NodePage) showing the
@@ -62,12 +94,18 @@ function ArenaPage() {
     // permission must never be re-prompted (§ 5.2) — a repeated sheet is the
     // fastest route to a permanent browser-level block.
     const [locationAsked, setLocationAsked] = useState(false);
+    // The viewer's own board message (§ 2.1a). Held on the page rather than read off
+    // their board row, because the editor opens in every state — including opt-in,
+    // where there are no rows at all.
+    const [message, setMessage] = useState<string | null>(null);
+    const [messageOpen, setMessageOpen] = useState(false);
 
     const load = useCallback(() => {
         setLoading(true);
         fetchArenaBoard(language)
             .then((data) => {
                 setBoard(data);
+                setMessage(data.viewerMessage);
                 setError(null);
             })
             .catch((err) => setError(err?.message ?? "Could not load the arena."))
@@ -160,14 +198,17 @@ function ArenaPage() {
                 {error && <Typography sx={{ ...errorTextSx, mt: 1 }}>{error}</Typography>}
 
                 {board.entries.length > 0 && (
-                    <Box
-                        className="arena-page__board"
-                        sx={{ display: "flex", flexDirection: "column", gap: 0.75, mt: 1.5 }}
-                    >
-                        {board.entries.map((entry) => (
-                            <ArenaEntryRow key={`${entry.userId ?? "bot"}-${entry.rank}`} entry={entry} />
-                        ))}
-                    </Box>
+                    <>
+                        <SectionRule label="Minutes earned" />
+                        <Board className="arena-page__board">
+                            {board.entries.map((entry, i) => (
+                                <Fragment key={`${entry.userId ?? "bot"}-${entry.rank}`}>
+                                    {i > 0 && renderZoneDivider(board.entries[i - 1], entry)}
+                                    <ArenaEntryRow entry={entry} />
+                                </Fragment>
+                            ))}
+                        </Board>
+                    </>
                 )}
             </>
         );
@@ -176,14 +217,38 @@ function ArenaPage() {
     return (
         <NodePage
             title="Arena"
-            activePage="home"
             onBack={() => slideNavigate("/")}
             contentClassName="arena-page"
+            // The message editor lives in the HEADER, not on the viewer's own row: the
+            // row is a competitor among 24 others and must render identically to them
+            // (a pencil only you can see is still a mark only your row carries), and
+            // the editor has to be reachable in the states where that row does not
+            // exist at all.
+            headerExtraActions={
+                <HeaderIconButton
+                    className="arena-page__edit-message"
+                    icon="edit_note"
+                    label="Edit your arena message"
+                    onClick={() => setMessageOpen(true)}
+                />
+            }
         >
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25, px: 1.5, pt: 1 }}>
                 {body()}
             </Box>
             <FooterSpacer />
+            <ArenaMessageDialog
+                open={messageOpen}
+                initialMessage={message}
+                onClose={() => setMessageOpen(false)}
+                onSaved={(stored) => {
+                    setMessage(stored);
+                    // Reload so the viewer's own ROW shows the new line too — the board
+                    // is rendered from server entries, and patching one of them here
+                    // would be a second source of truth for the same string.
+                    load();
+                }}
+            />
         </NodePage>
     );
 }

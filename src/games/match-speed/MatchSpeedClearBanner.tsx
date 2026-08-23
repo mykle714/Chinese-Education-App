@@ -44,7 +44,7 @@ const MatchSpeedClearBanner: React.FC = () => (
             fontSize: SIZE.heading,
             fontWeight: WEIGHT.bold,
             lineHeight: 1,
-            color: COLORS.greenMain,
+            color: COLORS.successInk,
             // A soft halo keeps the text legible over the cards fading in beneath
             // it on the next refill tick.
             textShadow: "0 2px 10px rgba(255,255,255,0.9), 0 2px 6px rgba(0,0,0,0.18)",

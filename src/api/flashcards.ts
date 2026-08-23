@@ -63,6 +63,15 @@ export interface MarkFlashcardRequest {
      * Without it the log is one undifferentiated count and answers nothing.
      */
     surface?: string;
+    /**
+     * flp working-loop only: which track this session's FOREIGN-FIRST face exercises
+     * ('reading' for a zh session with "Show pinyin" off, else 'recognition' —
+     * docs/MASTERY_REWORK.md). Steers only the REPLACEMENT card: without it the refill
+     * would be picked and stamped on a track pair the client is no longer marking, and
+     * the very next mark could land on a cooling track and be silently dropped.
+     * `type` above still decides which track THIS mark is written to.
+     */
+    foreignTrack?: string;
 }
 
 export interface MarkFlashcardResponse {
@@ -112,6 +121,7 @@ export async function markFlashcard(
         deckId: request.deckId,
         collection: request.collection,
         surface: request.surface,
+        foreignTrack: request.foreignTrack,
     });
 
     // A SUPPRESSED mark is a legitimate success with no timestamp (see the field's

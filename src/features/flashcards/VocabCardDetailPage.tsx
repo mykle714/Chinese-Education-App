@@ -239,8 +239,10 @@ const VocabCardDetailPage: React.FC = () => {
         // Reached from Decks/Mastered, so the Flashcards tab stays active.
         <NodePage
             title="Card Detail"
-            activePage="flashcards"
             onBack={() => navigate(-1)}
+            // Four things share this header line (add-to-deck, edit, delete, and the
+            // title): 21px collides, so the Card Detail artboard drops to 18px.
+            headerSize="dense"
             surfaceColor={COLORS.yellowAccent}
             // No top edge-fade: the badges/hero card shouldn't dissolve at the top.
             topFade={false}

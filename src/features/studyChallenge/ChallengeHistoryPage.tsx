@@ -114,7 +114,6 @@ function ChallengeHistoryPage() {
     return (
         <NodePage
             title="Challenge History"
-            activePage="home"
             onBack={() => slideNavigate("/friends/challenges")}
             contentClassName="challenge-history-page__content"
         >
@@ -180,8 +179,8 @@ function ChallengeHistoryPage() {
                                                 fontFamily: FONTS.sans,
                                                 fontSize: SIZE.caption,
                                                 fontWeight: WEIGHT.bold,
-                                                color: outcome === "Won" ? COLORS.greenMain
-                                                    : outcome === "Lost" ? COLORS.redMain
+                                                color: outcome === "Won" ? COLORS.successInk
+                                                    : outcome === "Lost" ? COLORS.dangerInk
                                                         : COLORS.textSecondary,
                                             }}
                                         >

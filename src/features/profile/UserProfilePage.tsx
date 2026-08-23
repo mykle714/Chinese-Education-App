@@ -158,7 +158,7 @@ function UserProfilePage() {
                             () => sendFriendRequest(profile.identity.userId),
                             "Could not send that request",
                         )}
-                        sx={profileHeaderIconSx(COLORS.greenMain)}
+                        sx={profileHeaderIconSx(COLORS.successInk)}
                     >
                         <PersonAddIcon />
                     </IconButton>
@@ -174,7 +174,7 @@ function UserProfilePage() {
                             () => deleteFriendRequest(profile.requestId!),
                             "Could not revoke that request",
                         )}
-                        sx={profileHeaderIconSx(COLORS.blueMain)}
+                        sx={profileHeaderIconSx(COLORS.infoInk)}
                     >
                         <UndoIcon />
                     </IconButton>
@@ -190,7 +190,7 @@ function UserProfilePage() {
                             () => acceptFriendRequest(profile.requestId!),
                             "Could not accept that request",
                         )}
-                        sx={profileHeaderIconSx(COLORS.greenMain)}
+                        sx={profileHeaderIconSx(COLORS.successInk)}
                     >
                         <CheckIcon />
                     </IconButton>
@@ -206,7 +206,7 @@ function UserProfilePage() {
                             () => removeFriend(profile.identity.userId),
                             "Could not remove that friend",
                         )}
-                        sx={profileHeaderIconSx(COLORS.redMain)}
+                        sx={profileHeaderIconSx(COLORS.dangerInk)}
                     >
                         <PersonRemoveIcon />
                     </IconButton>
@@ -248,7 +248,7 @@ function UserProfilePage() {
                 }
                 disabled={busy}
                 onClick={() => toggleBlock(!blocked)}
-                sx={profileHeaderIconSx(blocked ? COLORS.redMain : COLORS.textSecondary)}
+                sx={profileHeaderIconSx(blocked ? COLORS.dangerInk : COLORS.textSecondary)}
             >
                 {blocked ? <DoNotDisturbOnIcon /> : <BlockIcon />}
             </IconButton>
@@ -258,7 +258,6 @@ function UserProfilePage() {
     return (
         <NodePage
             title="Profile"
-            activePage="home"
             onBack={() => navigate(-1)}
             contentClassName="user-profile-page__content"
             headerExtraActions={

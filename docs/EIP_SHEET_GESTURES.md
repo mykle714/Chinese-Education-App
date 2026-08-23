@@ -19,7 +19,7 @@ page applies to both. The one thing a host must supply is a **positioned parent*
 against it, and the height model below reads `parentElement.clientHeight` — so that
 parent, not the viewport, is what caps the sheet. Two things that parent must also do on
 a footer-bearing page (both learned the hard way on scp — see its `EipHost`): stretch
-down through `FLOATING_FOOTER_CLEARANCE`, or the sheet floats above the screen edge; and
+down through `FOOTER_CLEARANCE`, or the sheet floats above the screen edge; and
 carry a z-index above anything the host page lifts, because the scrim/sheet z-indexes
 below (10/11) are *internal* to `SheetPanel` and lose to any page element with a bigger
 one (scp's draggable cards sit at 1000).
@@ -52,12 +52,12 @@ the open animation, and every `applyResize` floor becomes `minHeightRef.current`
 instead of `0`. There is no second implementation of the gesture model.
 
 **Choosing the resting height.** /decks derives it from the floating footer's own
-geometry — `FLOATING_FOOTER_INSET + FLOATING_FOOTER_HEIGHT + FLOATING_FOOTER_EXTRA_GAP
+geometry — `FOOTER_HEIGHT + FOOTER_EXTRA_GAP
 + SHEET_LIP` — so the lip that shows above the pill (grabber + first caption) survives
 any change to the footer. The footer is rendered at frame level with `zIndex: 100`
 (`FooterPresenter`), well above the sheet's internal `11`, so the pill floats **over**
 the sheet at every height; a persistent sheet's body must therefore reserve
-`FLOATING_FOOTER_CLEARANCE` of bottom padding exactly as a page's scroll area does,
+`FOOTER_CLEARANCE` of bottom padding exactly as a page's scroll area does,
 and wear its bottom edge-fade (`EDGE_FADE_MASK_NO_TOP` from `MobileTabScreen`) so the
 content dissolves under the pill rather than being cut by it.
 

@@ -51,12 +51,34 @@ export {
  * App light colors per mark type (docs/MASTERY_REWORK.md). NOTE: these currently
  * collide with the utcm category colors; to be rectified later.
  */
+// ⚠️ THESE FOUR HEXES ARE LITERAL ON PURPOSE — do not re-point them at the pastel ramp
+// in `theme/colors.ts`. The shelf design (docs/SHELF_REDESIGN.md) spells them inline
+// wherever a mark is drawn: the Card Detail `.msb` mark cells and cooldown legend use
+// `#779BE7` Recognition / `#05C793` Production / `#EF476F` Reading, and the deck-preview
+// mini-card two-mark strip repeats the same blue and green. A mark cell is a small solid
+// mark read directly against the paper ground with nothing sitting on top of it, so it
+// takes the SATURATED hue — unlike a band chip or a spine, which is a FILL and therefore
+// pastel (see CATEGORY_COLORS). A previous pass moved these to the pastels and the cells
+// vanished; that is why the distinction is spelled out here.
+//
+// Writing has no artboard of its own; it keeps the orange it has always had, which is
+// also the design's tone-4 orange.
 export const MARK_TYPE_COLORS: Record<MarkType, string> = {
   recognition: "#779BE7", // blue
   production: "#05C793",  // green
   reading: "#EF476F",     // red
-  writing: "#FF8E47",     // yellow
+  writing: "#FF8E47",     // orange
 };
+
+/**
+ * The green of the "cooldown elapsed, this track is markable now" check icon.
+ *
+ * The design fixes this at `#05C793` (`.msb .cd3 .ms` and `.mst .cdr .ms` in
+ * `shelf-system.css`) — the same green as a Production mark, but a separate constant
+ * because the icon means "ready", not "production". Kept here beside the mark colors
+ * rather than in `theme/colors.ts` because only the mastery surfaces draw it.
+ */
+export const MASTERY_READY_COLOR = "#05C793";
 
 export const MARK_TYPE_LABELS: Record<MarkType, string> = {
   recognition: "Recognition",

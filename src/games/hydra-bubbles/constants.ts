@@ -1,4 +1,4 @@
-import type { MarkType } from "../../types";
+import type { FlashcardCategory, MarkType } from "../../types";
 import type { HydraColor } from "./types";
 
 /**
@@ -34,10 +34,37 @@ export const OPENING_DEFINITION_BUBBLES = 2;
 export const SCORE_PER_MATCH = 2;
 
 /**
+ * The utcm bands each payout color is drawn from (§ 5).
+ *
+ * A Hydra color is a UNION of two mastery bands, which is exactly why HydraColor is
+ * no longer spelled with band names (types.ts). This is the mapping, and it is also
+ * the wire request: the pool endpoint takes a per-BAND distribution
+ * (`GAME_POOL_CATEGORIES`, OnDeckVocabController), so a buffer asks for its color by
+ * asking for both of that color's bands and splitting `need` between them.
+ *
+ * Ordered STRONGEST BAND FIRST within each color, which is the order the split
+ * favours on an odd `need` — a bloom buffer that can only get one card should get the
+ * safest one it can, and a drain buffer the hardest. That is the direction each color's
+ * payout is a promise about.
+ */
+export const BUCKETS_BY_COLOR: Record<HydraColor, readonly FlashcardCategory[]> = {
+    bloom: ["Mastered", "Comfortable"],
+    drain: ["Unfamiliar", "Target"],
+};
+
+/**
  * The difficulty tier each color lends at, as an OFFSET from the learner's estimated
  * level `L` (§ 6.2):
  *
- *     red = L,  yellow = L-1,  green = L-2,  blue = L-3
+ *     drain = L,  bloom = L - 1
+ *
+ * ONE LEVEL APART, NOT THREE (2026-08-21). The four-color ladder spread its tiers
+ * across `L` … `L-3`, which under two colors would have to collapse to something —
+ * and the collapse that keeps each color's promise is the tightest one. Drain is the
+ * word the learner is currently working at, bloom is one level below it: comfortably
+ * within reach without being trivial. Widening the gap (say bloom = L-2) would make
+ * every safe bubble a word the learner outgrew two levels ago, which is a worse drill
+ * and no easier to read.
  *
  * Sent to the server as `?lendLevelOffset=`, which resolves it against `L` and
  * clamps into 1..6 (`ProvisionalCardService.resolveLendLevel`). The client owns
@@ -46,14 +73,13 @@ export const SCORE_PER_MATCH = 2;
  * splitting them this way is what avoids an endpoint whose only purpose would be to
  * ship `L` out so the client could send a level back.
  *
- * The server-side clamp is also the "floored at L <= 4" rule: at L = 4 these offsets
- * already land on 4/3/2/1, and below that the clamp holds them there.
+ * The server-side clamp is also the floor: at `L = 1` both offsets land on level 1
+ * and the two colors lend from the same tier, which is correct — a level-1 learner
+ * has nothing below them to draw an easier word from.
  */
 export const TIER_OFFSET_BY_COLOR: Record<HydraColor, number> = {
-    Unfamiliar: 0, // red
-    Target: -1, // yellow
-    Comfortable: -2, // green
-    Mastered: -3, // blue
+    drain: 0,
+    bloom: -1,
 };
 
 /**
@@ -64,6 +90,10 @@ export const TIER_OFFSET_BY_COLOR: Record<HydraColor, number> = {
  * provisional card that means a row that has already been minted. Four is roughly
  * two matches' worth of one color, which covers the round trip without pre-lending a
  * stack of words the run may never reach.
+ *
+ * There are now only TWO buffers rather than four, so the same target holds half as
+ * many cards in flight — a strictly smaller commitment, and each buffer is drained
+ * roughly twice as fast, which is what the low-water mark below is for.
  */
 export const BUFFER_TARGET = 4;
 

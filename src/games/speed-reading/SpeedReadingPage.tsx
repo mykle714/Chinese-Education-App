@@ -8,6 +8,7 @@ import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import LeafPageHeader from "../../components/LeafPageHeader";
+import { GameFrame } from "../shared/GameFrame";
 import GameEndPopup from "../runtime/GameEndPopup";
 import { useAuth } from "../../AuthContext";
 import { markFlashcard } from "../../api/flashcards";
@@ -632,7 +633,7 @@ const SpeedReadingPage: React.FC = () => {
                     fontFamily: FONTS.sans,
                     fontSize: SIZE.bodyLg,
                     fontWeight: WEIGHT.bold,
-                    color: totalMs > MEDAL_THRESHOLDS.bronze ? COLORS.redMain : COLORS.onSurface,
+                    color: totalMs > MEDAL_THRESHOLDS.bronze ? COLORS.dangerInk : COLORS.onSurface,
                     minWidth: 44,
                     textAlign: "right",
                 }}
@@ -707,13 +708,15 @@ const SpeedReadingPage: React.FC = () => {
                 )}
 
                 {(phase === "ready" || phase === "feedback" || phase === "ended") && round && prompt && (
-                    <Box
+                    /* `.play` — the inset panel (docs/SHELF_REDESIGN.md § A6). This is
+                       the one game whose panel lives inside a ROTATED stage: the sideways
+                       layout draws its own header and its own transform, and the frame
+                       simply takes the place of the play box that was already here. Its
+                       flex column, `position: relative` and `minHeight: 0` all come from
+                       GameFrame; only the centring is Speed Reading's. */
+                    <GameFrame
                         className="speed-reading__play"
-                        sx={{
-                            position: "relative",
-                            flex: 1, minHeight: 0, display: "flex", flexDirection: "column",
-                            alignItems: "center", justifyContent: "center",
-                        }}
+                        sx={{ alignItems: "center", justifyContent: "center" }}
                     >
                         {/* ── The controls: the two HALVES of the play area ─────
                             An answer is "tap your side of the screen", not "hit the
@@ -812,7 +815,7 @@ const SpeedReadingPage: React.FC = () => {
                                 ))}
                             </Box>
                         </Box>
-                    </Box>
+                    </GameFrame>
                 )}
 
                 {/* Non-minimizable on purpose: no minimize handlers are passed, so the ×

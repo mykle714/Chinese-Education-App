@@ -203,7 +203,9 @@ const userProfileController = new UserProfileController(userProfileService);
 const vocabEntryController = new VocabEntryController(vocabEntryService, dictionaryService);
 // Takes deckService as well: its game/flp endpoints accept an optional `?deck=`
 // restriction and must authorize that id before assembling a round.
-const onDeckVocabController = new OnDeckVocabController(onDeckVocabService, provisionalCardService, deckService);
+const onDeckVocabController = new OnDeckVocabController(
+  onDeckVocabService, provisionalCardService, deckService, studyChallengeService
+);
 const userMinutePointsController = new UserMinutePointsController(userMinutePointsService);
 const dictionaryController = new DictionaryController(dictionaryService, userDAL, vocabEntryDAL, lazyEnrichmentService);
 const textController = new TextController(textService);

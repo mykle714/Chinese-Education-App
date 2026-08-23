@@ -111,7 +111,7 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
             classPrefix="provisional-sort-offer"
             corner="top-left"
             // Distinct from the neutral end-of-run puck sitting in the other corner.
-            puckColor={COLORS.blueMain}
+            puckColor={COLORS.infoInk}
             accentContrast="#FFFFFF"
             minimized={minimized}
             onMinimize={onMinimize}
@@ -153,8 +153,8 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
                         textTransform: "none",
                         fontSize: SIZE.bodyLg,
                         fontWeight: WEIGHT.bold,
-                        backgroundColor: COLORS.blueMain,
-                        "&:hover": { backgroundColor: COLORS.blueMain },
+                        backgroundColor: COLORS.infoInk,
+                        "&:hover": { backgroundColor: COLORS.infoInk },
                     }}
                 >
                     Sort {offerWords.length === 1 ? "this card" : "these cards"}

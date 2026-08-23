@@ -184,3 +184,43 @@ export function pickSyntheticName(seed: number, taken: Set<string>): string {
   // detail that gives the whole thing away.
   return `${SYNTHETIC_NAMES[start]} ${taken.size}`;
 }
+
+/**
+ * Messages for synthetic members (docs/ARENA_FEATURE.md § 2.1a).
+ *
+ * The same rule the names follow: unremarkable, first-person, and about STUDYING —
+ * a bot must read as one of the 24 strangers a real arena is full of. Nothing here
+ * may be a joke, a brand, or something a reader could see twice on one board and
+ * recognise as canned.
+ *
+ * These are drawn by a pure function of the bot's existing `syntheticSeed`, exactly
+ * as its score is (§ 6.2): computed on read, never stored, so there is no column and
+ * no drift.
+ */
+const SYNTHETIC_MESSAGES = [
+  'Trying to keep the streak alive.',
+  'Ten minutes before work, every day.',
+  'Back after a long break.',
+  'Reading practice this week.',
+  'Just here for the flashcards.',
+  'Going for the promotion spot.',
+  'Slow week, but still showing up.',
+  'Studying on the train.',
+  'Third division in a row — one more.',
+  'Mostly evenings.',
+  'Trying to finish my deck this month.',
+  'Good luck everyone.',
+];
+
+/**
+ * A bot's message, or null.
+ *
+ * Roughly six in ten bots get one, which is the whole reason this is not "every
+ * bot gets a message". If padding always carried a line while most humans left
+ * theirs empty, HAVING a message would identify the fakes just as reliably as a
+ * "bot" tag would — the exact failure the padding design exists to avoid.
+ */
+export function pickSyntheticMessage(seed: number): string | null {
+  if (unitNoise(seed, 9) > 0.6) return null;
+  return SYNTHETIC_MESSAGES[Math.floor(unitNoise(seed, 11) * SYNTHETIC_MESSAGES.length)];
+}

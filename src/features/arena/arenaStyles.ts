@@ -31,10 +31,19 @@ export const DIVISION_NAMES = [
  * dark through the heavy-metal rungs (Iridium, Obsidian) → saturated at the top,
  * so the ladder reads as a climb using only existing tokens (no new palette).
  */
+// ⚠️ PARTIALLY RE-DERIVED for the shelf redesign (docs/SHELF_REDESIGN.md, D2).
+// Rungs 10-12 used to be `greenMain / blueMain / purpleAccent`. Those tokens are
+// PASTELS now, which inverted the whole point of the walk — the ladder ended paler
+// than it started. They are re-pointed at the ramp's saturated members so the climb
+// still terminates dark. The lower rungs are untouched.
+//
+// This is a minimal repair, not a considered pass: the sequence still dips pale at
+// rungs 5-6 after a warm rung 4, which reads oddly. Re-derive the whole 12-step walk
+// against the new ramp when Arena is converted (entry 9).
 export const DIVISION_COLORS = [
     COLORS.card, COLORS.cardBeige, COLORS.header, COLORS.yellowMain,
     COLORS.rowHoverBg, COLORS.iconBg, COLORS.textSecondary, COLORS.iconColor,
-    COLORS.blueAccent, COLORS.greenMain, COLORS.blueMain, COLORS.purpleAccent,
+    COLORS.blueAccent, COLORS.successInk, COLORS.infoInk, COLORS.purA,
 ] as const;
 
 /** 1-based division → its display name, clamped so a bad value cannot crash the page. */
@@ -61,46 +70,6 @@ export function divisionTextColor(division: number): string {
     const i = Math.min(Math.max(Math.round(division), 1), DIVISION_COLORS.length);
     return DARK_DIVISIONS.has(i) ? COLORS.background : COLORS.onSurface;
 }
-
-/**
- * The tint behind a board row, by promotion zone.
- *
- * Only the two EDGES are tinted. Tinting every row would make the tint carry no
- * information, and the middle of the table is exactly the place where a learner
- * needs to read "nothing happens to me this week".
- */
-export const zoneRowSx = (zone: "promote" | "hold" | "relegate", isViewer: boolean) => ({
-    display: "flex",
-    alignItems: "center",
-    gap: 1.25,
-    px: 1.25,
-    py: 1,
-    borderRadius: 2,
-    // The viewer's own row is outlined rather than filled, so it stays legible on
-    // top of whichever zone tint it happens to sit in.
-    border: isViewer ? `2px solid ${COLORS.onSurface}` : `1px solid ${COLORS.rowBorder}`,
-    backgroundColor:
-        zone === "promote" ? COLORS.greenAccent
-            : zone === "relegate" ? COLORS.redAccent
-                : COLORS.background,
-}) as const;
-
-/** The rank chip at the left of every row. */
-export const rankChipSx = {
-    flexShrink: 0,
-    minWidth: 28,
-    height: 28,
-    px: 0.5,
-    borderRadius: "14px",
-    backgroundColor: COLORS.iconBg,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontFamily: FONTS.sans,
-    fontSize: SIZE.caption,
-    fontWeight: WEIGHT.bold,
-    color: COLORS.onSurface,
-} as const;
 
 /** The primary call to action — Join. */
 export const joinButtonSx = {
@@ -148,7 +117,7 @@ export const sectionCardSx = {
 export const errorTextSx = {
     fontFamily: FONTS.sans,
     fontSize: SIZE.caption,
-    color: COLORS.redMain,
+    color: COLORS.dangerInk,
 } as const;
 
 /**

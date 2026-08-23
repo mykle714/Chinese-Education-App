@@ -21,7 +21,7 @@ import {
   barCategory,
   barForMarkType,
 } from '../utils/masteryCompute.js';
-import { type MasteredAtByBar } from '../contracts/wire.js';
+import { type MasteredAtByBar, parseFlpForeignTrack } from '../contracts/wire.js';
 import { handle } from './asyncHandler.js';
 
 /**
@@ -42,6 +42,13 @@ import { handle } from './asyncHandler.js';
  * only ever has one bar's before/after band to reason about — which is what keeps
  * the mastery-crossing stamp and the velocity row to a single write each.
  *
+ * ONE MARK PER CALL, deliberately. A surface that exercises two tracks at once posts
+ * twice rather than sending a list of types — Word Search's No-Pinyin board is the
+ * first, writing reading + production for one find (docs/WORD_SEARCH_GAME.md). Each
+ * post is then cooldown-gated, banded and refilled on its own track, which is exactly
+ * the behaviour that surface wants; widening the request to carry N types would push a
+ * multi-bar response shape onto every caller to serve one.
+ *
  * The `category` returned to the client is the CORE bar's: it feeds the flp progress
  * chip and the replacement-card picker, both of which are recognition/production
  * surfaces.
@@ -50,7 +57,8 @@ const router = Router();
 
 // Coerce an incoming mark `type` to a valid MarkType. Defensive default:
 // an absent/unknown type falls back to 'recognition' (the historical default
-// flp foreign-first face). See docs/MASTERY_REWORK.md.
+// flp foreign-first face — a pinyin-off zh session now sends 'reading' explicitly).
+// See docs/MASTERY_REWORK.md.
 function resolveMarkType(raw: unknown): MarkType {
   return MARK_TYPES.includes(raw as MarkType) ? (raw as MarkType) : 'recognition';
 }
@@ -68,7 +76,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
 
   try {
     const userId = (req as any).user?.userId;
-    const { cardId, isCorrect, type: rawType, excludeIds: rawExcludeIds, mode: rawMode, deckId: rawDeckId, collection: rawCollection } = req.body;
+    const { cardId, isCorrect, type: rawType, excludeIds: rawExcludeIds, mode: rawMode, deckId: rawDeckId, collection: rawCollection, foreignTrack: rawForeignTrack } = req.body;
 
     // Optional difficulty mode (Review/Challenge). When set, the replacement card must
     // stay within the mode's allowed categories so a banned category never leaks
@@ -108,6 +116,13 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     }
 
     const markType: MarkType = resolveMarkType(rawType);
+
+    // The flp session's foreign-first track (docs/MASTERY_REWORK.md). Only the
+    // REPLACEMENT-card picker below reads it — the mark itself is typed by `type`
+    // above. The client echoes back whatever it launched the loop with so the refill
+    // is steered on the same two tracks the loop was; other surfaces omit it and get
+    // the historical recognition/production pair.
+    const foreignTrack = parseFlpForeignTrack(rawForeignTrack);
 
     // excludeIds is the list of card ids currently in the client's working loop,
     // so the replacement picker avoids handing back a duplicate.
@@ -293,7 +308,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     // In a mode session the replacement pool is capped to the mode's allowed categories.
     if (isCorrect) {
       const allowedCategories = mode ? MODE_CONFIGS[mode].allowed : undefined;
-      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, cardLanguage, excludeIds, allowedCategories, collection);
+      const newCard = await onDeckVocabService.getNextLibraryCardWithFallback(userId, categoryBeforeMark, cardLanguage, excludeIds, allowedCategories, collection, foreignTrack);
 
       if (!newCard) {
         // "No eligible replacement" is an expected end-of-pool state for EVERY kind of

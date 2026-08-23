@@ -26,13 +26,20 @@ import { bucketCandidates, clusterBucket, commonGeoPrefix } from './arenaCluster
 import {
   pickSyntheticTarget,
   pickSyntheticName,
+  pickSyntheticMessage,
   syntheticScoreAt,
   elapsedFraction,
 } from './arenaSynthetic.js';
 
 /** Minimal user lookup this service needs; satisfied by UserDAL. */
 export interface ArenaUserLookup {
-  findById(id: string): Promise<{ id: string; name?: string; timezone?: string; avatarIconId?: string | null } | null>;
+  findById(id: string): Promise<{
+    id: string;
+    name?: string;
+    timezone?: string;
+    avatarIconId?: string | null;
+    arenaMessage?: string | null;
+  } | null>;
 }
 
 /**
@@ -83,6 +90,9 @@ export class ArenaService {
     if (!language) throw new ValidationError('language is required');
 
     const tz = resolveTimezone(viewerTz);
+    // Read here rather than off the viewer's board row: the editor is reachable in
+    // every state, and in `opt-in`/`closed` there is no row to read it off.
+    const viewerMessage = (await this.userLookup.findById(userId).catch(() => null))?.arenaMessage ?? null;
     const division = await this.arenaDAL.getDivision(userId, language);
     const optInWeek = await this.arenaDAL.getOptInWeek(userId, language);
     const nextWeek = nextArenaWeekKey(now, tz);
@@ -100,6 +110,7 @@ export class ArenaService {
         boundaries: this.boundariesOf(live, tz),
         divisionChange: null,
         optedInNextWeek,
+        viewerMessage,
       };
     }
 
@@ -116,6 +127,7 @@ export class ArenaService {
         boundaries: this.boundariesOf(last, tz),
         divisionChange: mine?.divisionChange ?? null,
         optedInNextWeek,
+        viewerMessage,
       };
     }
 
@@ -129,6 +141,7 @@ export class ArenaService {
       boundaries: null,
       divisionChange: null,
       optedInNextWeek,
+      viewerMessage,
     };
   }
 
@@ -170,6 +183,8 @@ export class ArenaService {
             member: m,
             name: m.syntheticName ?? 'Player',
             avatarIconId: m.syntheticAvatarIconId ?? null,
+            // Pure function of the stored seed, like the score — never persisted.
+            message: pickSyntheticMessage(m.syntheticSeed ?? 0),
             score: syntheticScoreAt(m.syntheticSeed ?? 0, m.syntheticTarget ?? 0, fraction),
           };
         }
@@ -180,6 +195,7 @@ export class ArenaService {
           // NULL); the board keeps its shape rather than losing a rank.
           name: user?.name ?? 'Former member',
           avatarIconId: user?.avatarIconId ?? null,
+          message: user?.arenaMessage ?? null,
           score: m.minutesEarned,
         };
       }),
@@ -202,6 +218,7 @@ export class ArenaService {
         userId: row.member.userId,
         name: row.name,
         avatarIconId: row.avatarIconId,
+        message: row.message,
         language: row.member.language,
         score: row.score,
         isViewer: row.member.userId === viewerId,
@@ -284,6 +301,52 @@ export class ArenaService {
       throw new ValidationError('geoCell must be a 5-character geohash cell');
     }
     await this.arenaDAL.setGeoCell(userId, geoCell);
+  }
+
+  /**
+   * The longest an arena message may be. Sized to ONE LINE in the board row's
+   * sub-slot at 9.5px — past this the text either wraps (breaking the 40px row
+   * rhythm the whole board is built on) or ellipsises, and a message the reader
+   * only sees half of is worse than none. The column caps at the same 80.
+   */
+  private static readonly MESSAGE_MAX = 80;
+
+  /**
+   * Set (or clear) the caller's arena message.
+   *
+   * ⚠️ THIS IS THE ONLY WRITE PATH FOR `users."arenaMessage"`, and everything it
+   * does is a MINIMUM, not moderation:
+   *   • control characters and newlines are stripped — a board row is one line, and
+   *     a newline smuggled through would let one member push every row below them
+   *     down the board;
+   *   • runs of whitespace collapse, so a message cannot pad itself wider than its
+   *     neighbours;
+   *   • the result is trimmed and length-capped;
+   *   • an empty result CLEARS the message rather than storing '' (the column's
+   *     CHECK refuses '' anyway, and a blank sub-line reads as a rendering bug).
+   *
+   * None of that says anything about what the text MEANS. This is user-authored
+   * content shown to 24 strangers the author did not choose, with no report button,
+   * no review queue and no block list. The moderation system that has to exist
+   * before this is safe at scale is tracked in docs/DEFERRED_WORK.md.
+   */
+  async setMessage(userId: string, message: unknown): Promise<string | null> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (message === null || message === undefined) {
+      await this.arenaDAL.setArenaMessage(userId, null);
+      return null;
+    }
+    if (typeof message !== 'string') {
+      throw new ValidationError('message must be a string');
+    }
+    // eslint-disable-next-line no-control-regex
+    const cleaned = message.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (cleaned.length > ArenaService.MESSAGE_MAX) {
+      throw new ValidationError(`message must be ${ArenaService.MESSAGE_MAX} characters or fewer`);
+    }
+    const stored = cleaned.length > 0 ? cleaned : null;
+    await this.arenaDAL.setArenaMessage(userId, stored);
+    return stored;
   }
 
   // ── Scoring ────────────────────────────────────────────────────────────────

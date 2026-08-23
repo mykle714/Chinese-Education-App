@@ -142,7 +142,6 @@ function ReaderPage() {
     return (
         <NodePage
             title="Reader"
-            activePage="home"
             onBack={() => navigate("/")}
             headerExtraActions={headerRightContent}
             scrollable={false}

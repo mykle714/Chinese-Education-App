@@ -32,6 +32,12 @@ export interface MemoryMapCandidateRow {
   typedMarkHistory?: TypedMarkHistory;
   /** The card's per-type utcm category on the READING track (never 'Mastered' here). */
   readingCategory: string;
+  /** Unresolved dd inputs — the service resolves them (`resolveDisplayDefinition` needs
+      the clusters AND the learner's sense pick together, which SQL cannot express) to
+      keep two same-reading words off one map. See MemoryMapService.spawnInto. */
+  selectedSense?: string | null;
+  definition?: string | null;
+  definitionClusters?: unknown;
 }
 
 /**

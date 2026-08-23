@@ -88,7 +88,6 @@ const SkippedCardsPage: React.FC = () => {
     return (
         <NodePage
             title="Skipped Cards"
-            activePage="discover"
             onBack={() => navigate("/discover")}
             contentClassName="skipped-cards-page-content"
             contentSx={{ alignItems: "center" }}
@@ -100,7 +99,7 @@ const SkippedCardsPage: React.FC = () => {
                         variant="text"
                         size="small"
                         onClick={handleRecycleAll}
-                        sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: COLORS.hskChip, textTransform: "none" }}
+                        sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: COLORS.infoInk, textTransform: "none" }}
                     >
                         Recycle all
                     </Button>

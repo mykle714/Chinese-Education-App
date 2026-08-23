@@ -11,13 +11,13 @@ import {
     FormGroup,
 } from "@mui/material";
 import { ContentCopy } from "@mui/icons-material";
-import SettingsIcon from "@mui/icons-material/Settings";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { useNavigate } from "react-router-dom";
 import { useSlideNavigate } from "../hooks/useSlideNavigate";
 import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import MobileTabScreen from "../components/MobileTabScreen";
+import { HeaderIconButton } from "../components/PageHeader";
 import { FooterSpacer } from "../components/MobileFooter";
 import DeckBuckets from "../components/DeckBuckets";
 import IconPickerDialog from "../components/IconPickerDialog";
@@ -119,16 +119,18 @@ function AccountPage() {
     };
 
     // Gear button rendered in the header's right slot → opens the Settings page.
+    // The OUTLINED variant, per the Account artboard: this is the one header in the
+    // app carrying a single lone action on the bare paper ground, and an unboxed
+    // glyph there has nothing separating it from the page. Drill-in headers, which
+    // carry 2–4 actions in a row, use the bare variant instead.
     const settingsAction = (
-        <IconButton
+        <HeaderIconButton
             className="account-page__settings-button"
-            aria-label="Open settings"
-            size="small"
+            icon="settings"
+            label="Open settings"
+            variant="outlined"
             onClick={() => slideNavigate("/settings")}
-            sx={{ color: COLORS.onSurface }}
-        >
-            <SettingsIcon />
-        </IconButton>
+        />
     );
     // Per-category library card counts, shown as a display-only stat block.
     const { counts: categoryCounts, loaded: countsLoaded } = useCategoryCounts();
@@ -153,7 +155,7 @@ function AccountPage() {
 
     if (isLoading) {
         return (
-            <MobileTabScreen title="Account" activePage="account" contentClassName="account-page__content" contentSx={CONTENT_SX}>
+            <MobileTabScreen title="Account" contentClassName="account-page__content" contentSx={CONTENT_SX}>
                 <DelayedCircularProgress className="account-page__spinner" />
             </MobileTabScreen>
         );
@@ -161,7 +163,7 @@ function AccountPage() {
 
     if (!user) {
         return (
-            <MobileTabScreen title="Account" activePage="account" contentClassName="account-page__content" contentSx={CONTENT_SX}>
+            <MobileTabScreen title="Account" contentClassName="account-page__content" contentSx={CONTENT_SX}>
                 <Typography className="account-page__no-user-text" sx={{ textAlign: "center", color: COLORS.onSurface }}>
                     Please log in to view your account
                 </Typography>
@@ -175,7 +177,7 @@ function AccountPage() {
 
     return (
         <>
-            <MobileTabScreen title="Account" activePage="account" contentClassName="account-page__content" contentSx={CONTENT_SX} headerExtraActions={settingsAction}>
+            <MobileTabScreen title="Account" contentClassName="account-page__content" contentSx={CONTENT_SX} headerExtraActions={settingsAction}>
                     <AccountSection className="account-page__account-section">
                         {/* User Info Section */}
                         <UserInfoSection className="account-page__user-info-section">
@@ -197,7 +199,7 @@ function AccountPage() {
                                     sx={{
                                         width: 56,
                                         height: 56,
-                                        bgcolor: COLORS.hskChip,
+                                        bgcolor: COLORS.infoInk,
                                         fontSize: SIZE.title,
                                         fontWeight: WEIGHT.medium,
                                         cursor: "pointer",

@@ -1,87 +1,42 @@
 import React from "react";
-import { Button, IconButton, useTheme } from "@mui/material";
-import SettingsIcon from "@mui/icons-material/Settings";
+import { HeaderIconButton } from "../../components/PageHeader";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
-import { SIZE } from "../../theme/scale";
 
 interface WordSearchHeaderControlsProps {
-    /** Whether the hint button is armed (enough meter units collected, and at
-     *  least one word is still unfound). */
-    hintReady: boolean;
-    /** Spend a hint (reveal the next pinyin unit of the least-hinted unfound word). */
-    onHint: () => void;
-    /** Open the settings sheet (pinyin display + timer visibility). */
+    /** Open the settings sheet (timer visibility). */
     onSettingsClick: () => void;
 }
 
 /**
- * Right-side header controls for Word Search: a hint button and the settings
- * cog. (A restart/RestartAlt button used to sit to the left of the hint button;
- * it was removed — a mid-game board is now only discarded by finishing it, or by
- * starting a fresh game from the Games hub.) Pinyin display and timer visibility used to
- * live here as toggle buttons — they now live in the settings sheet (see
- * WordSearchSettingsDialog), mirroring flp's "quick controls in the header,
- * everything else behind the cog" split. Ends with the minute-points fire
- * badge.
+ * Right-side header controls for Word Search: the settings cog and the minute-points
+ * fire badge, and nothing else.
  *
- * Word Search is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md), so the header bar +
- * down-arrow back button come from LeafPage/LeafPageHeader; this component just
- * fills LeafPage's `rightContent` slot. See docs/WORD_SEARCH_GAME.md §3.
+ * Three things have left this slot over time, and the reason is the same each time —
+ * the header holds SETTINGS-shaped controls, not game ones (docs/SHELF_REDESIGN.md
+ * § A2b):
+ *   - restart, removed outright: a board in progress is now only discarded by finishing
+ *     it or by starting a fresh game from the hub.
+ *   - pinyin display and timer visibility, into `WordSearchSettingsDialog` — and pinyin
+ *     display then out of there too, because it is fixed by which hub entry (Pinyin /
+ *     No Pinyin) the run was launched from. The HUD states the mode instead of offering
+ *     a switch, which is what artboard 13 draws.
+ *   - the hint button, into the play panel's `.hintbar` alongside its own charges and
+ *     reveal (see WordSearchHintBar). Spending a hint is a game ACTION.
+ *
+ * Word Search is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md), so the header + down chevron
+ * come from LeafPage/LeafPageHeader; this component just fills LeafPage's `rightContent`
+ * slot. See docs/WORD_SEARCH_GAME.md §3.
  */
-const WordSearchHeaderControls: React.FC<WordSearchHeaderControlsProps> = ({
-    hintReady,
-    onHint,
-    onSettingsClick,
-}) => {
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
-
-    const toggleSx = (active: boolean) => ({
-        minWidth: "unset",
-        px: 1,
-        py: 0.25,
-        height: "30px",
-        fontSize: SIZE.micro,
-        textTransform: "lowercase" as const,
-        lineHeight: 1.4,
-        borderRadius: "6px",
-        backgroundColor: active ? fc.toggleActiveBg : fc.toggleInactiveBg,
-        color: fc.onSurface,
-        "&:hover": { backgroundColor: active ? fc.toggleActiveBg : fc.toggleInactiveBg },
-    });
-
-    return (
-        <>
-            {/* Hint: greyed out (disabled) until the meter reaches HINT_COST and
-                at least one word is still unfound. Reveals one pinyin unit at
-                a time — see WordSearchHintRow / pinyinUnits.ts. */}
-            <Button
-                className="word-search__hint-btn"
-                variant="contained"
-                size="small"
-                disabled={!hintReady}
-                onClick={onHint}
-                sx={{
-                    ...toggleSx(hintReady),
-                    backgroundColor: hintReady ? "#FFB74D" : fc.toggleInactiveBg,
-                    "&:hover": { backgroundColor: hintReady ? "#FFA726" : fc.toggleInactiveBg },
-                    "&.Mui-disabled": { color: fc.onSurface, opacity: 0.4 },
-                }}
-            >
-                hint
-            </Button>
-            <IconButton
-                className="word-search__settings-btn"
-                size="small"
-                sx={{ color: fc.onSurface }}
-                onClick={onSettingsClick}
-                aria-label="Open settings"
-            >
-                <SettingsIcon />
-            </IconButton>
-            <MinutePointsFireBadge />
-        </>
-    );
-};
+const WordSearchHeaderControls: React.FC<WordSearchHeaderControlsProps> = ({ onSettingsClick }) => (
+    <>
+        <HeaderIconButton
+            className="word-search__settings-btn"
+            icon="settings"
+            label="Open settings"
+            onClick={onSettingsClick}
+        />
+        <MinutePointsFireBadge />
+    </>
+);
 
 export default WordSearchHeaderControls;

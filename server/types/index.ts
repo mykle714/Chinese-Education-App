@@ -131,6 +131,14 @@ export interface RequestParams {
 export interface User extends UserProfile {
   /** bcrypt hash. Never returned to the client. */
   password?: string;
+  /**
+   * The one line this account shows next to its name on an arena board
+   * (migration 152, docs/ARENA_FEATURE.md § 2.1a). Null = no message.
+   *
+   * Lives on the PERSON, not on user_languages: one blurb, one editor, shown on
+   * whichever board the account is racing in.
+   */
+  arenaMessage?: string | null;
   /** Last successful minute-point increment (for rate limiting). */
   lastMinutePointIncrement?: Date;
   createdAt?: Date;
@@ -163,6 +171,12 @@ export interface UserUpdateData {
   writingGoal?: boolean;
   /** Toggled in account settings (migration 129). */
   showSegmentSpaces?: boolean;
+  /**
+   * The arena message (migration 152). Written through
+   * ArenaService.setMessage, which trims, caps and sanitises it — do not set it
+   * from anywhere that skips those checks.
+   */
+  arenaMessage?: string | null;
 }
 
 /** Auth response type. */

@@ -85,6 +85,152 @@ const createAppTheme = (mode: ThemeMode): Theme => {
         shape: {
             borderRadius: 8,
         },
+        // ── The shelf system's INTERACTIVE atoms (docs/SHELF_REDESIGN.md § A5) ──
+        //
+        // The design's `.btn2` / `.btn3` / `.chip` / `.field` / `.mode` are skins on
+        // controls MUI already ships, so they land HERE rather than as five new wrapper
+        // components. That is a deliberate call: the app has ~157 `<Button>`s, 35
+        // `<TextField>`s and 14 `<Chip>`s, and a wrapper would have meant touching every
+        // one of those call sites to change how they look. A theme override reaches all
+        // of them and leaves the code alone.
+        //
+        // SCOPING RULE, and it matters: SHAPE is overridden for every color (a pill is a
+        // pill whether it is destructive or not), but GROUND AND INK are overridden only
+        // on the `*Primary` slots. `color="error"` / `"success"` buttons keep their
+        // semantic hue — repainting those ink-black would erase the one thing they are
+        // saying. Anything with no explicit `color` defaults to primary and so picks up
+        // the design's ink automatically.
+        //
+        // ⚠️ These live on the SHARED base theme, so the Dark / Ocean / Nature themes
+        // inherit an ink-black button on their own grounds. That is knowingly wrong and
+        // knowingly deferred: decision D4 runs the app on one light palette during the
+        // redesign and the other three are not re-derived yet.
+        components: {
+            MuiButton: {
+                defaultProps: {
+                    // The design draws no elevation on either button; MUI's default
+                    // contained shadow fights the flat paper ground.
+                    disableElevation: true,
+                },
+                styleOverrides: {
+                    root: {
+                        fontFamily: FONTS.sans,
+                        textTransform: 'none' as const,
+                        fontWeight: WEIGHT.semibold,
+                        gap: '7px',
+                    },
+                    // `.btn2` — the dark pill CTA.
+                    contained: {
+                        borderRadius: '999px',
+                        padding: '11px 16px',
+                        fontSize: 13,
+                    },
+                    containedPrimary: {
+                        backgroundColor: COLORS.onSurface,
+                        color: '#fff',
+                        '&:hover': { backgroundColor: COLORS.iconColor },
+                    },
+                    // `.btn3` — the outlined secondary. Radius 14, not a pill: the design
+                    // uses it as a full-width block action, and a 999px block reads as a
+                    // stretched pill rather than a button.
+                    outlined: {
+                        borderRadius: '14px',
+                        padding: '13px',
+                        fontSize: 13.5,
+                    },
+                    outlinedPrimary: {
+                        borderColor: COLORS.border,
+                        color: COLORS.iconColor,
+                        '&:hover': { borderColor: COLORS.onSurface, backgroundColor: COLORS.rowHoverBg },
+                    },
+                },
+            },
+            // `.chip` / `.chip.on` — the filter pill. OUTLINED is the resting state and
+            // FILLED is the selected one, which inverts MUI's usual reading of those two
+            // variants; that inversion is the design's, and it is why a selected chip is
+            // built as `variant="filled"` rather than by adding a class.
+            MuiChip: {
+                styleOverrides: {
+                    root: {
+                        fontFamily: FONTS.sans,
+                        fontSize: 12,
+                        fontWeight: WEIGHT.medium,
+                        borderRadius: '999px',
+                        height: 'auto',
+                    },
+                    label: { padding: '7px 12px' },
+                    // Scoped the same way the buttons are — but Chip needs it spelled out,
+                    // because MUI's chip variant slots (`outlined` / `filled`) apply to
+                    // EVERY colour, not just primary. Repainting them flat would have
+                    // erased the reader's `color="error"` "Vocab processing failed" chip
+                    // and the dictionary's info chips. `colorDefault` + `*Primary` is the
+                    // exact set that means "no semantic colour was asked for".
+                    outlined: {
+                        '&.MuiChip-colorDefault, &.MuiChip-outlinedPrimary': {
+                            borderColor: COLORS.border,
+                            color: COLORS.iconColor,
+                        },
+                    },
+                    filled: {
+                        '&.MuiChip-colorDefault, &.MuiChip-filledPrimary': {
+                            backgroundColor: COLORS.onSurface,
+                            color: '#fff',
+                        },
+                    },
+                },
+            },
+            // `.field` — the outlined input shell. The design's leading icon is not
+            // reproduced here; it is per-call-site (`InputProps.startAdornment`), and
+            // forcing one in the theme would put a search glyph on every text field.
+            MuiOutlinedInput: {
+                styleOverrides: {
+                    root: {
+                        borderRadius: '15px',
+                        backgroundColor: COLORS.white,
+                        fontFamily: FONTS.sans,
+                        fontSize: 14.5,
+                    },
+                    notchedOutline: { borderColor: COLORS.border },
+                    input: { padding: '13px 15px' },
+                },
+            },
+            // `.mode` — the segmented control: one outlined box, hairline-divided, with
+            // the selected segment inverted to ink. MUI's default gives each button its
+            // own border and rounds the group's ends; both are undone here.
+            MuiToggleButtonGroup: {
+                styleOverrides: {
+                    root: {
+                        border: `1px solid ${COLORS.border}`,
+                        borderRadius: '14px',
+                        overflow: 'hidden',
+                        backgroundColor: COLORS.white,
+                    },
+                    grouped: {
+                        flex: 1,
+                        border: 'none',
+                        borderRadius: 0,
+                        '&:not(:last-of-type)': { borderRight: `1px solid ${COLORS.rowBorder}` },
+                    },
+                },
+            },
+            MuiToggleButton: {
+                styleOverrides: {
+                    root: {
+                        fontFamily: FONTS.sans,
+                        textTransform: 'none' as const,
+                        fontSize: 13.5,
+                        fontWeight: WEIGHT.semibold,
+                        padding: '14px 4px',
+                        color: COLORS.iconColor,
+                        '&.Mui-selected': {
+                            backgroundColor: COLORS.onSurface,
+                            color: '#fff',
+                            '&:hover': { backgroundColor: COLORS.iconColor },
+                        },
+                    },
+                },
+            },
+        },
     };
 
     switch (mode) {

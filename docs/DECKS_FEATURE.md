@@ -96,7 +96,7 @@ The index exists because two decks called "Food" are indistinguishable in the
 add-to-deck checkbox menu. **Generated decks never appear in that menu**, so exempting
 them costs nothing — and they need the exemption, because two challenges against the same
 friend would both want to be called `vs Bob`. The rows are told apart in the deck list by
-the friend's icon on the tile.
+the friend's glyph in the spine's foot slot.
 
 ### `color` is derived, not stored
 
@@ -251,24 +251,33 @@ A deck smaller than a surface's baseline is topped up by the ordinary provisiona
 mechanism (docs/PROVISIONAL_CARDS.md). Two decisions worth knowing:
 
 * Lent cards **are** servable in a deck-restricted round — that is what
-  `vetDeckOrProvisionalClause` is for. The game is full rather than degraded.
+  `vetDeckOrProvisionalClause` is for, together with the `lentIds` the baseline top-up
+  threads into the round (selection is otherwise sorted-only —
+  docs/PROVISIONAL_CARDS.md § 4b). The game is full rather than degraded.
 * Lent cards are **not** written into the deck. Playing an under-sized deck never
   silently grows it, and the existing provisional notice still tells the learner
   which words were borrowed.
 
-**But a deck-restricted flp round is never topped up mid-loop.** The two lending
-triggers are scoped differently on purpose (docs/PROVISIONAL_CARDS.md § "Which flp
-sessions may be topped up"):
+**But a deck-restricted round is never topped up mid-loop.** The two lending triggers
+are scoped differently on purpose (docs/PROVISIONAL_CARDS.md § 4b):
 
 | Trigger | Deck round? |
 |---|---|
-| `ensureBaseline('flp')` — the learner holds fewer than 20 playable cards at all | **lends**, as above |
-| `lendCards` — the loop can't be filled because every card is on cooldown | **does not lend**; `canLendProvisional` returns false for any `collection` |
+| `ensureBaseline('flp')` — the learner has SORTED fewer than 20 cards at all | **lends**, as above |
+| the fill ladder's last tier — the round could not be filled from the deck | **does not lend**; `canLendProvisional` (flp) and the `!opts.collection` guard (games) both refuse any `collection` |
 
 The distinction is between *bootstrapping a learner who has almost nothing* and
-*papering over a deck that is simply resting*. A deck whose cards are all cooling comes
-back empty with "Every card in this deck is resting" rather than serving ten words that
-aren't in the deck. Do not unify these two by making `canLendProvisional` accept decks.
+*papering over a deck that is simply resting*. Do not unify these two by making
+`canLendProvisional` accept decks.
+
+**What a resting deck does now (2026-08-20).** It replays itself. The fill ladder gained
+a COOLED tier above lending, and that tier is **not** restricted — a deck round whose
+cards are all cooling re-serves them rather than coming back empty. The marks do not
+count (`POST /api/flashcards/mark` drops a mark on a cooling track), so the learner is
+reviewing, not progressing; nothing in the UI says so yet
+([DEFERRED_WORK.md](./DEFERRED_WORK.md) § 2). This replaces the old "Every card in this
+deck is resting" empty state as the common case — that state is now reached only by a
+deck whose cards are all excluded for some other reason.
 
 Distractors are *not* restricted: Speed Reading's foils
 (`/api/games/speedReading/distractors`) stay global, because drawing them from the
@@ -292,7 +301,7 @@ deck would make the deck itself the answer key.
 | `src/features/flashcards/FlashcardsDecksPage.tsx` | `/decks` — the study buttons (Review / Challenge / Study Mix / the two Center buttons) and the persistent sheet's mounting. **Lens `core`.** |
 | `src/features/flashcards/MasteryCenterPage.tsx` | `/flashcards/reading` + `/flashcards/writing` — the same panel as a **page**, lens `reading` / `writing` |
 | `src/features/flashcards/useDecksPanel.ts` | **All of the panel's data, for one lens** — the count hooks, the deck fetch, the card-library fetch, the search/sort state and the tile figures. Shared verbatim by the fdp and both Centers. |
-| `src/features/flashcards/DecksPanelBody.tsx` | Body of the panel (`variant: "sheet" \| "page"`): the Collections / Challenges / Decks tile sections and the inline Cards grid (`TileGrid`, `SectionLabel`, `LineSeparator`) |
+| `src/features/flashcards/DecksPanelBody.tsx` | Body of the panel (`variant: "sheet" \| "page"`): the Collections / Challenges / Decks shelf rows and the inline Cards grid (`ShelfRow`, `SectionLabel`, `LineSeparator`) |
 | `src/features/flashcards/NewDeckDialog.tsx` | The "name your deck" prompt behind every panel's `+`; shows the **server's** message verbatim on failure |
 | `src/features/flashcards/AddToDeckMenu.tsx` | The checkbox menu, mounted on the cdp and the eip |
 
@@ -471,13 +480,13 @@ Its two stops are:
 
 | Stop | Value | What shows |
 |---|---|---|
-| **resting** ("closed") | `FLOATING_FOOTER_INSET + FLOATING_FOOTER_HEIGHT + FLOATING_FOOTER_EXTRA_GAP + SHEET_LIP` (44) | the grabber and the first caption, sitting just above the floating footer pill |
+| **resting** ("closed") | `FOOTER_HEIGHT + FOOTER_EXTRA_GAP + SHEET_LIP` (44) | the grabber and the first caption, sitting just above the footer bar |
 | **max** | `parentHeight × 0.92` | the full list |
 
 It **cannot be dismissed** and has **no open animation** — it is painted at its
 resting height on the first frame. The floating footer (frame-level, `zIndex: 100`)
 hovers *over* the sheet at every height, so the sheet's scroller both reserves
-`FLOATING_FOOTER_CLEARANCE` at its bottom **and wears the same bottom edge-fade mask**
+`FOOTER_CLEARANCE` at its bottom **and wears the same bottom edge-fade mask**
 (`EDGE_FADE_MASK_NO_TOP`, exported from `MobileTabScreen` rather than re-derived) —
 tiles dissolve as they pass behind the pill instead of being sliced by it. The top
 band of that mask is dropped: the sheet's top edge is its own grabber, which stays
@@ -535,7 +544,7 @@ per page, and this container is where a Center opts in).
    around the slab.
 
    The slab's bottom padding is **derived**, not typed:
-   `SHEET_CLOSED_HEIGHT - FLOATING_FOOTER_CLEARANCE + STUDY_AREA_GAP` — the scroll
+   `SHEET_CLOSED_HEIGHT - FOOTER_CLEARANCE + STUDY_AREA_GAP` — the scroll
    area already reserves the footer's clearance, so only the amount by which the
    resting sheet out-stands it is missing. Change `SHEET_LIP` and the button still
    stops just above the sheet instead of sliding under it.
@@ -583,9 +592,12 @@ per page, and this container is where a Center opts in).
    read is try/caught so a storage-hostile context loses the memory and not the
    section. A learner with many decks folds them away to put the card grid directly
    under the built-in collections.
-5. **Challenges** *(built on dev)* — generated challenge decks (`editMode = 'preset'`), same
-   `DeckTile`, same wrapping, but with the **opponent's friend icon** in the tile's icon
-   slot instead of the `+`. See [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 4.
+5. **Challenges** *(built on dev)* — generated challenge decks (`editMode = 'preset'`),
+   the same `Spine` on the same kind of row as a user's own decks.
+   The **opponent's friend icon** goes in the spine's foot glyph slot (see "Slots, and
+   the glyph on the foot" below); the challenge spines carry the generic deck glyph
+   until that is wired. See
+   [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 4.
 
 6. **Cards** — the learner's **whole sorted library** as a `MiniVocabCardGrid`, with a
    search box above it. This is the `all` collection, fetched once per visit
@@ -622,160 +634,168 @@ list carries is enforced from the other side: `MAX_ACTIVE_CHALLENGES = 6` bounds
 (§ 1), so the read path inverts `study_challenges.presetDeckIds` in memory to map deck →
 opponent. That keeps the pointer in one direction only.
 
-Every section shares one row component (`TileGrid`, now in `DecksPanelBody.tsx`): a **centered wrapping flex**
-capped at exactly three tiles' worth of width (`3 × TILE_WIDTH + 2 × TILE_GAP`,
-derived rather than typed twice — a wider gap with a stale cap would push the third
-tile onto its own line, a narrower one would let a fourth up). It is not a
-3-column grid, because a grid pins each tile to a column and its last row is then
-stuck with visibly empty columns. The width cap is what keeps the three-per-row
-rhythm, and `DeckTile` never grows past its natural 72px, so a short row is normal
-tiles rather than stretched ones.
+Every section is a **`ShelfRow`** (`src/components/shelf/Shelf.tsx`) — a flex row of
+spines, bottom-aligned, standing on a 3px wooden `board` that overhangs the row by 6px
+on each side. There is no width arithmetic: spines are a fixed 74px, the row is as wide
+as the column, and however many fit, fit.
 
-It takes **two alignments**, deliberately:
+Rows either **wrap** or **scroll sideways**, and the choice is load-bearing rather than
+cosmetic: spines are `flex-shrink: 0`, so a wrapped second line stands on **no board at
+all**. *Collections* wraps (a fixed set of two or three, known to fit); *Challenges* and
+*Decks* scroll, because they grow.
 
-* **Centered** — *Collections* and *Mastered*. Fixed sets of two or three tiles that never
-  wrap, so there is no column structure to preserve, and left-aligning them would
-  leave an obvious hole where the third tile isn't.
-* **Left** (`alignLeft`) — *Decks*. A growing, wrapping list: centered, adding a
-  fourth deck would shunt the first three sideways to re-center the row above, so a
-  deck would move every time the user makes another one. Left-aligned, each deck keeps
-  its place and every row starts on the same column.
+Every row is **left-aligned**. The old `TileGrid` centred its short rows and left-aligned
+its growing ones; centring is wrong on a shelf, because the board runs the full width of
+the row and spines floating in the middle of it read as a mistake.
 
 ### Every set on the page is the same object
 
-Sections 2–5 all render **`DeckTile`** (`src/components/DeckTile.tsx`) — the
-stacked-card icon — and all navigate to that set's CollectionViewPage. They differ
-only in what fills them, which is the point: a built-in collection, a mastery bar and
-a user-authored deck are all just "a set of your cards", and the page should not
-argue otherwise.
+Sections 2–5 all render **`Spine`** (`src/components/shelf/Spine.tsx`) and all navigate
+to that set's CollectionViewPage. They differ only in what fills them, which is the
+point: a built-in collection, a mastery bar and a user-authored deck are all just "a set
+of your cards", and the page should not argue otherwise.
 
-`DeckTile` was extracted from `DeckBuckets` (the Account page's display-only count
-block), which now consumes it. The stacked-card look existed once, privately, inside
-that component; the fdp needed it for every set it lists, and a second copy would have
-drifted on the stack offsets the moment either page was touched. The tile is purely
-presentational — a label, an optional count, an optional `icon` **element**, two
-colors, an optional `onClick` — and knows nothing about bands, bars or routes.
+A spine is a book seen edge-on — a pastel body, an inset white highlight down its right
+side, a **dark strap down its left** (`.sp::after`; without it the shape reads as a
+rounded rectangle, and that strap is the whole illusion), the set's name at the top and
+its count as a mono numeral at the foot. It is purely presentational: a label, a colour,
+an optional count and some optional slots. It knows nothing about bands, bars or routes.
 
-The stack itself is **two cards**, not three: the face (`.deck-tile__layer-1`) plus one
-back card offset 8px down-right (`.deck-tile__layer-2`). 8px is exactly the layers'
-width slack (`calc(100% - 8px)`), so the two-card stack still fills the tile's box.
+> It replaced `DeckTile` — the stacked-card icon, 422 lines — in the shelf redesign's
+> A3 (decision D9, [SHELF_REDESIGN.md](./SHELF_REDESIGN.md)). With it went the rotated
+> edge label, the centred glyph, the two-card stack and `estimateLabelLines()`. The one
+> idea carried forward is the `cqw` scaling below.
+
+**A spine takes ONE colour.** `BAND_COLORS` / `deckTileColors` still return a
+`main`/`accent` pair, but the accent was `DeckTile`'s lighter inner fill and a spine has
+no such surface — the inset highlight does that job. The shelf reads only `.main`.
+
+**Height is information.** `spineHeight(count)` (`spineGeometry.ts`) bands a set into
+`short` 96 / `base` 116 / `tall` 140. Banded, not continuous: a smooth height curve gives
+a row of near-identical spines that looks like sloppy alignment rather than data, and
+makes a 40-card and a 43-card deck visibly different for no reason a learner can act on.
+The cutoffs (`< 20`, `< 100`, `100+`) are a first cut — the design specifies the heights
+but not the boundaries.
+
+**Except in the sheet.** The fdp's pull-up sheet squats every spine to **74px**
+(`SHEET_SPINE_HEIGHT`, the design's `.sheet .sp`) because a 140px spine would eat the
+panel — so inside the sheet the height stops encoding anything and only the numeral
+carries the count. The Mastery Center **pages** have room and do band.
 
 Colors come from `builtinCollectionEntries` for the built-ins (which reads
 `BAND_COLORS.All`, `LEARN_NOW_COLORS` and `MASTERY_BAR_COLORS` out of
 `src/utils/categoryColors.ts`) and from `deckTileColors(id)` for a user deck — the
-same id-derived palette as `deckAccentColor`, paired with a saturated body tone so a
-deck tile has the same two-tone structure as a built-in one. **All** is the one grey
-tile: every other color on the page names a set, and All is their union rather than
-another member, so it takes a neutral pair instead of another hue. **Learn Now** takes
-purple — a hue no band owns, so it cannot be misread as Comfortable green, which
-still means the band on mini-card chips and the Account bucket row.
+same id-derived palette as `deckAccentColor`. **All** is the one grey spine: every other
+color on the page names a set, and All is their union rather than another member, so it
+takes a neutral instead of another hue. **Learn Now** takes purple — a hue no band owns,
+so it cannot be misread as Comfortable green, which still means the band on mini-card
+chips and the Account bucket row.
 
-The three **Mastered** tiles come from `MASTERY_BAR_COLORS` (same file), one hue per bar
-rather than three blues. `reading` and `writing` are single-mark-type bars, so each tile
+The three **Mastered** spines come from `MASTERY_BAR_COLORS` (same file), one hue per bar
+rather than three blues. `reading` and `writing` are single-mark-type bars, so each
 takes ITS MARK's color out of `MARK_TYPE_COLORS` — red and orange, the same colors those
 marks paint on the cdp track and the mini-card strip — and reads them rather than
-restating the hex, so a mark and its Mastered tile cannot drift. `core` blends
+restating the hex, so a mark and its Mastered spine cannot drift. `core` blends
 recognition and production, has no single mark color to borrow, and keeps Mastered blue.
-Those two hues are also the Unfamiliar and Target band hues, which used to collide with
-the band row one section above; with the band tiles gone they mean only "reading" and
-"writing" on this page.
 
-**The name runs up the tile's right edge.** The face carries three things: the card
-**count** as a small stat pinned to its top-left corner (`.deck-tile__count`, 11px/800
-at a 7px inset), the set's **icon** centered in the middle (`.deck-tile__icon` — see
-below), and the set's name as a rotated run against its right edge — faded grey
-uppercase (`COLORS.textSecondary` at `opacity: 0.5`, `TRACKING.caps`) turned 90°
-counter-clockwise so it reads bottom-to-top, centered on the tile's height
-(`.deck-tile__label`, via `writing-mode: vertical-rl` + `transform: rotate(180deg)`).
-This is deliberately the **same treatment the Games hub gives a card's mark-type
-label** — see [HUB_MENU_SYSTEM.md § Edge label slot](./HUB_MENU_SYSTEM.md) — so a
-name attached to a set reads the same way on both surfaces. Two consequences:
+The three Mastered collections stay named **"Mastered Cards" / "Mastered Reading" /
+"Mastered Writing"** (`MASTERED_TITLES`, `collectionRef.ts`) — one word order for all
+three, so every Mastered spine breaks to the same shape: MASTERED, then what was
+mastered. (The reason is weaker than it was: a spine's name wraps normally rather than
+sideways. The consistency is still worth keeping.)
 
-- **A long name wraps sideways, up to three lines.** In vertical writing mode the
-  inline axis is the height and the block axis is the width, so a name that outruns
-  the face (~13 characters at `labelFontSize`) starts a second **column** beside the
-  first rather than a second row below it — the label grows *inward across* the tile,
-  never off its top. `MAX_LABEL_LINES` (3) caps that via `max-width`; past it the
-  remainder is clipped, which only 64-char user deck names reach. Callers pass the
-  plain name and never pre-break it.
-- **The label is pinned top AND bottom, never `top: 50%` + a translate.** The line
-  length *is* the box's height here, and an absolutely-positioned box given only
-  `top` gets just the space below that offset as its inline size — at 50% every
-  label wrapped at half the face ("ALL CARDS" took two columns) and the translate
-  that re-centered it gave none of the space back. With both offsets set,
-  `text-align: center` does the centering, since it aligns along the inline axis.
-- **The count and the icon yield the label's column.** `estimateLabelLines()` guesses
-  the wrapped line count from the text (a word-aware character estimate, `CHAR_ADVANCE_EM`)
-  and both elements reserve `lines × SIZING.labelLineColumn` (12px per line) on the
-  right. It is an estimate on purpose — measuring the rendered label would cost a
-  layout pass per tile to move a few pixels of padding, and being one line out only
-  shifts the count slightly off-center, never under the letters.
+### Slots, and the glyph on the foot
 
-Because the tile wraps after the first word that doesn't fit, the three Mastered
-collections are named **"Mastered Cards" / "Mastered Reading" / "Mastered Writing"**
-(`MASTERED_TITLES`, `collectionRef.ts`) — one word order for all three, so every
-Mastered tile breaks to the same shape: MASTERED, then what was mastered. The
-reading/writing names previously read the other way round.
+A spine has three optional slots — `pin` (a mono badge on a translucent white chip,
+top-right), `caption` (a mono line along the foot) and `glyph` — plus two more on the
+`vol` variant used by the Reader (`meta`, `ownerGlyph`).
 
-### The icon in the middle of the face
+**`glyph` is the set's identifying icon**, and it sits on the **foot row**,
+right-aligned, opposite the count. That position is the design's `.sp.vol .own` (a
+glyph pinned to the right edge, clear of the foot content) generalised to every
+variant. It is deliberately NOT the design's other glyph slot `.mine`, which is a
+top-LEFT corner mark — exactly where `label` starts, so the two overlap on any spine
+that has a name. And it cannot be centred the way `DeckTile`'s was, because a spine
+has no middle.
 
-The count used to be big and centered; it is now a corner stat, and the middle of the
-face belongs to a **glyph naming the set** — which is what tells two tiles of the same
-color apart at a glance, and what makes an unfamiliar deck readable before its sideways
-name is. It is a 30px `@mui/icons-material` outlined element rendered at
-`opacity: 0.38` (`SIZING.iconSize` / `iconOpacity`), inset on the right by the label's
-column so a wide glyph centers in the space actually left to it.
+The foot is a real flex row rather than two absolutely-positioned corners, so the
+count and the glyph cannot overlap however long the numeral gets.
 
-**The tile does not choose it.** `icon` is a prop, because picking a glyph needs to
-know what collections, mastery bars and decks are — exactly the knowledge `DeckTile` is
-built not to have. There are two maps, one per surface:
+**The glyph is a Material Symbols NAME, not an element** (decision D3). The spine
+scales every interior size against its own width, which it cannot do to an opaque
+`@mui/icons-material` element. Two maps, one per surface:
 
-| Surface | Map | Icons |
+| Surface | Map | Glyphs |
 |---|---|---|
-| panel collections + decks | `collectionIcon(ref)`, `src/features/flashcards/collectionIcon.tsx` | all → `StyleOutlined` (a card stack), learn-now (**any bar**) → `SchoolOutlined`, mastered/core → `EmojiEventsOutlined`, mastered/reading → `MenuBookOutlined`, mastered/writing → `EditOutlined`, deck → `FolderOutlined` |
-| Account utcm bands | `BUCKET_ICONS`, `src/components/DeckBuckets.tsx` | Unfamiliar → `HelpOutline`, Target → `Adjust`, Comfortable → `CheckCircleOutline`, Mastered → `EmojiEventsOutlined` |
+| panel collections + decks | `collectionGlyph(ref)`, `src/features/flashcards/collectionGlyph.ts` | all → `style` (a card stack), learn-now (**any bar**) → `school`, mastered/core → `trophy`, mastered/reading → `menu_book`, mastered/writing → `edit`, deck → `folder` |
+| Account utcm bands | `BUCKET_GLYPHS`, `src/components/DeckBuckets.tsx` | Unfamiliar → `help`, Target → `adjust`, Comfortable → `check_circle`, Mastered → `trophy` |
 
-`collectionIcon` lives beside the fdp rather than in `builtinCollections.ts` because
+`collectionGlyph` lives beside the fdp rather than in `builtinCollections.ts` because
 that module is the shared list of *which* collections exist — the Games hub selector
-reads it too and draws a color dot, not an icon — and it deliberately owns no
+reads it too and draws a color dot, not a glyph — and it deliberately owns no
 presentation. It switches exhaustively over `CollectionRef`, so a fifth kind of
-collection is a type error rather than a silently icon-less tile. The Account map is
+collection is a type error rather than a silently glyph-less spine. The Account map is
 separate because `components/` may not import from `features/`
 ([FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md)) and because a utcm band is a card
 property, not a collection; the two maps share exactly one glyph on purpose — the
 trophy, so "mastered" looks like one idea on both pages.
 
-The three Mastered tiles take the icon of the **skill** mastered (trophy / open book /
-pencil) rather than three identical trophies, which would defeat the point of having a
-glyph at all.
+The three Mastered spines take the glyph of the **skill** mastered (trophy / open book
+/ pencil) rather than three identical trophies, which would defeat the point.
 
-### One tile, two sizes, one design
+> It was named `collectionIcon` and returned a `ReactNode` until A3. Renamed with the
+> return type, so a silent swap under the same name could not compile at some call
+> site and break at another.
 
-The tile's natural size is **100 × 146** (`SIZING` in `DeckTile.tsx`), chosen so three
-of them **fill the fdp's row**: the page's content column is 337px (a 393px frame less
-the 28px gutter its section headings use), and 3 × 100 + 2 × 18px of gap is 336, so the
-row's outer edges land on the headings above it. `TILE_WIDTH` in
-`DecksPanelBody.tsx` must stay equal to `SIZING.cardWidth` — `ROW_MAX_WIDTH` is
-derived from it, and a mismatch either pushes the third tile onto its own line or lets
-a fourth up.
+### Names that do not fit a 74px spine
 
-The Account row still renders the tile at **≈71.5px** (four across in a 350px-capped
-section, where it flex-shrinks). Two sizes on two pages used to be drift worth fixing;
-it isn't any more, because **every interior size scales with the rendered width**:
+A spine has **56px** of content across. Three of the labels this page uses are wider
+than that as single words, so the `.nm` block needs three things working together:
 
-- The tile declares `container-type: inline-size`, and the count, icon, label, stack
-  offsets and corner radii are all authored in `SIZING` against `REFERENCE_WIDTH` (72)
-  and emitted as `cqw` by the `scaled()` helper. A 100px tile is the 72px one enlarged,
-  not a second design with the same furniture at a different scale.
-- `REFERENCE_WIDTH` is 72 **because that is what the Account row renders**, so that row
-  is pixel-for-pixel unchanged by the fdp's resize. Change the reference only if you
-  want to move both pages at once.
+- **Tracking is `-0.01em`, not the design's `-0.005em`.** "Unfamiliar" measures
+  **56.02px** at the design's value — it misses by two hundredths of a pixel and wraps
+  to "Unfamilia / r". Half a percent of tracking is invisible; that break is not.
+- **`overflow-wrap: break-word`, not the design's `anywhere`.** `anywhere` creates a
+  soft-wrap opportunity at *every* character, so the line-breaker always fills to the
+  last one that fits and hyphenation never applies. `break-word` only breaks a word
+  that cannot fit a line of its own — which is exactly when hyphenation should run.
+- **The caller supplies soft hyphens for words that must break.** `hyphens: auto` is
+  set on `.nm` but cannot be relied on: it needs the browser to ship hyphenation data
+  for the document's language. So `BUCKET_LABELS.Comfortable` is `"Comfort\u00ADable"`
+  — a `U+00AD` SOFT HYPHEN, invisible unless the break lands there, at which point it
+  renders "Comfort- / able". Knowing where an English word divides is caller
+  knowledge; `Spine` renders whatever string it is handed and carries no dictionary.
+
+### The "+ new deck" affordance
+
+The Decks section header no longer carries a `+` IconButton. The design's own affordance
+is **`AddSpine`** (`.sp.add`) — a spine-shaped hole with a dashed outline and a centred
+`+` — which rides at the end of the decks row, so "make another one" sits where the
+existing ones are rather than in the caption above them. Consequence: it is hidden while
+that section is collapsed.
+
+`AddSpine` is its own component, not a `Spine` variant: it shares only the box — no body
+colour, no strap, no shadow, no title, no count, none of the slots — and folding it in
+would make every one of those a conditional inside `Spine` for a shape that carries no
+data.
+
+### One spine, many widths, one design
+
+Every interior size is authored in px against its variant's natural width and emitted as
+`cqw` by `scaled()`, with `container-type: inline-size` on the spine. A spine rendered at
+a non-natural `width` is therefore the same object enlarged, not a second design with the
+same furniture at a different scale. This is the one idea carried forward from
+`DeckTile`, which needed it to be 100px on the fdp and ~71.5px on Account at once.
+
+- The reference is **per variant**, not a single global 74. The design authors
+  `.sp.vol`'s interior at its own 86px width (`.ti` is 11.5px there, the same numeral as
+  `.nm` at 74px), so a single 74 reference would render vol's text ~16% larger than the
+  artboard.
 - It is `inline-size`, never `size`. `size` containment additionally makes the height
-  self-contained, which is what broke the hub cards
-  ([HUB_MENU_SYSTEM.md § Edge label slot](./HUB_MENU_SYSTEM.md)). Nothing here fits
-  text to its own length — the whole tile scales as one piece.
-- `estimateLabelLines()` works in reference units for the same reason, and its answer
-  is scale-invariant.
+  self-contained — and the height is the information. (`size` is also what broke the hub
+  cards, [BENTO_SYSTEM.md § Known gaps](./BENTO_SYSTEM.md).)
+- The sheet's 74px squat overrides `height` only, so the interior does not shrink with
+  it — which is correct: the design keeps `.nm` at 11.5px in the sheet.
 
 ### Counts
 
@@ -969,7 +989,7 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §3 Games-hub selector | `src/features/flashcards/selectedCollection.ts`; `src/games/GamesCollectionSelector.tsx`; `src/games/GamesPage.tsx` (`launchPath`); `src/games/word-search/WordSearchHubItem.tsx` (`newGamePath`); `src/api/decks.ts` (`fetchDecks`) |
 | §4 Client | `src/api/decks.ts`, `collectionRef.ts`, `useLaunchCollection.ts`, `CollectionViewPage.tsx`, `FlashcardsDecksPage.tsx`, `useDecksPanel.ts`, `DecksPanelBody.tsx`, `NewDeckDialog.tsx`, `AddToDeckMenu.tsx`, `routes/routeMeta.ts`, `routes/registry.ts` |
 | §4 Mastery Centers | `src/features/flashcards/masteryCenters.ts` (bars, routes, titles, `activeMasteryCenters`); `MasteryCenterPage.tsx`; `useDecksPanel.ts` (the lens); `collectionRef.ts` (`withLens`, `lensFromSearch`, `lensFromCollection`, `LEARN_NOW_COLLECTION_IDS`); `builtinCollections.ts` (`lensCollectionEntries`); `src/hooks/useCategoryCounts.ts` (`?bar=`); `src/components/MiniVocabCard.tsx` + `MiniVocabCardGrid.tsx` (the `lens` prop); `MasteryProgressBar.tsx` (`lens`); `VocabCardDetailPage.tsx` (`?bar=`); `server/contracts/wire.ts` (`LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`, `parseMasteryBar`); `server/dal/shared/vetTable.ts` (`unmasteredBarClause`, `builtinCollectionClause`); `OnDeckVocabService.getCategoryCounts` (the `bar` param); `OnDeckVocabController.getCategoryCounts`; `routes/routeMeta.ts` + `registry.ts`. See [MASTERY_REWORK.md](./MASTERY_REWORK.md). |
-| §4 Tiles & built-in collections | `src/components/DeckTile.tsx` (+ `DeckBuckets.tsx`, its other host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`lensCollectionEntries`, `builtinCollectionEntries`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`, `LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
+| §4 Spines & built-in collections | `src/components/shelf/*` (`Shelf`, `Spine`, `AddSpine`, `spineGeometry`) (+ `DeckBuckets.tsx`, the Account host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`lensCollectionEntries`, `builtinCollectionEntries`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`, `LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
 | §1 `editMode` + §4 Challenges section | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; `database/migrations/148-create-study-challenges.sql`; `DeckService` → `assertMutable` (the preset mutation guard) and `createPresetDeck`; `DeckDAL` → `createPresetDeck` / `countCustomDecks` / `findDeckEditMode`; `study_challenges.presetDeckIds` |
 | §4 Cards section (inline library) | `src/api/collections.ts` (`fetchCollectionCards`) — also the collection page's built-in read; `src/components/MiniVocabCardGrid.tsx`; `src/utils/vocabSearch.ts` (`filterVocabEntries`); `useDecksPanel.ts` (the fetch, the search + sort state); `DecksPanelBody.tsx` (the section + the `decksSheet.decksOpen` collapse) |
 | §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `server/contracts/cooldown.ts` (`cooldownRemainingMs`) + `server/contracts/mastery.ts` (`computeTypeCategory`) for the Cooldown key; `src/features/flashcards/CollectionSortControl.tsx` (the shared button + menu, both visibility gates); `CollectionViewPage.tsx` and `useDecksPanel.ts` (each holds its own key + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |

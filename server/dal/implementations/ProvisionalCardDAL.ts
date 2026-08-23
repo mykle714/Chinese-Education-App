@@ -2,7 +2,7 @@ import { IProvisionalCardDAL, ProvisionalCandidate, OwnCardCandidate } from '../
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { ValidationError } from '../../types/dal.js';
 import { dictTableForLanguage } from '../shared/dictTable.js';
-import { vetTableForLanguage, vetPlayableClause, vetProvisionalClause, vetSortedClause, CORE_CATEGORY_EXPR } from '../shared/vetTable.js';
+import { vetTableForLanguage, vetProvisionalClause, vetSortedClause, CORE_CATEGORY_EXPR } from '../shared/vetTable.js';
 
 /**
  * Data access for provisional cards — see IProvisionalCardDAL and
@@ -29,7 +29,7 @@ export class ProvisionalCardDAL implements IProvisionalCardDAL {
     return `${alias}discoverable = TRUE`;
   }
 
-  async countPlayable(userId: string, language: string): Promise<number> {
+  async countSorted(userId: string, language: string): Promise<number> {
     if (!userId) throw new ValidationError('userId is required');
     if (!language) throw new ValidationError('language is required');
 
@@ -38,13 +38,53 @@ export class ProvisionalCardDAL implements IProvisionalCardDAL {
         `
         SELECT COUNT(*) AS count
         FROM ${vetTableForLanguage(language)} ve
-        WHERE ve."userId" = $1 AND ve.language = $2 AND ${vetPlayableClause()}
+        WHERE ve."userId" = $1 AND ve.language = $2 AND ${vetSortedClause()}
         `,
         [userId, language]
       );
     });
 
     return parseInt(result.recordset[0].count, 10);
+  }
+
+  async findHeldProvisional(
+    userId: string,
+    language: string,
+    level: number,
+    limit: number,
+    excludeIds: number[] = []
+  ): Promise<number[]> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (!language) throw new ValidationError('language is required');
+    if (limit <= 0) return [];
+
+    const det = dictTableForLanguage(language);
+    const vet = vetTableForLanguage(language);
+
+    // Ordered exactly like the minting query below it (nearest level, then most
+    // common), so re-lending and minting agree about which word is the better one to
+    // hand a learner — the only difference is that these rows already exist.
+    const result = await this.dbManager.executeQuery<{ id: number }>(async (client) => {
+      return await client.query(
+        `
+        SELECT ve.id
+        FROM ${vet} ve
+        LEFT JOIN ${det} de
+          ON de.word1 = ve."entryKey" AND de.language = ve.language
+        WHERE ve."userId" = $1
+          AND ve.language = $2
+          AND ${vetProvisionalClause()}
+          AND NOT (ve.id = ANY($4::int[]))
+        ORDER BY ABS(COALESCE(de."difficulty", 99) - $3) ASC,
+                 de."frequencyScore" DESC NULLS LAST,
+                 ve.id ASC
+        LIMIT $5
+        `,
+        [userId, language, level, excludeIds, limit]
+      );
+    });
+
+    return result.recordset.map((row) => row.id);
   }
 
   async findCandidates(
@@ -136,7 +176,7 @@ export class ProvisionalCardDAL implements IProvisionalCardDAL {
     userId: string,
     language: string,
     limit: number,
-    opts: { excludeWords?: string[] } = {}
+    opts: { excludeWords?: string[]; excludeIds?: number[] } = {}
   ): Promise<OwnCardCandidate[]> {
     if (!userId) throw new ValidationError('userId is required');
     if (!language) throw new ValidationError('language is required');
@@ -145,6 +185,12 @@ export class ProvisionalCardDAL implements IProvisionalCardDAL {
     const det = dictTableForLanguage(language);
     const vet = vetTableForLanguage(language);
     const excludeWords = opts.excludeWords ?? [];
+    // Rows the CALLER already holds — on a board, or in a buffer. Distinct from
+    // `excludeWords`, which is about identity (a contested word must never also be
+    // filler); this is about a specific row already being in play. A mid-run top-up
+    // needs it: this ladder is DETERMINISTIC, so without it every refill re-offers
+    // the same top-N rows the opening deal already took and comes back EMPTY.
+    const excludeIds = opts.excludeIds ?? [];
 
     const result = await this.dbManager.executeQuery<OwnCardCandidate>(async (client) => {
       return await client.query(
@@ -165,6 +211,7 @@ export class ProvisionalCardDAL implements IProvisionalCardDAL {
           -- one before it.
           AND ${vetSortedClause()}
           AND ve."entryKey" <> ALL($3::text[])
+          AND ve.id <> ALL($5::int[])
         ORDER BY
           -- HARDEST-KNOWN FIRST: descend the core bands. The CASE is what makes this
           -- the "mastered-first" ladder rather than a flat commonality sort.
@@ -183,7 +230,7 @@ export class ProvisionalCardDAL implements IProvisionalCardDAL {
           ve.id ASC
         LIMIT $4
         `,
-        [userId, language, excludeWords, Math.floor(limit)]
+        [userId, language, excludeWords, Math.floor(limit), excludeIds]
       );
     });
 

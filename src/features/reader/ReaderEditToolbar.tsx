@@ -93,9 +93,9 @@ const ReaderEditToolbar: React.FC<{
                 sx={{
                     ...smallBtnSx,
                     fontWeight: WEIGHT.semibold,
-                    backgroundColor: COLORS.blueMain,
+                    backgroundColor: COLORS.infoInk,
                     color: "#fff",
-                    "&:hover": { backgroundColor: COLORS.blueMain },
+                    "&:hover": { backgroundColor: COLORS.infoInk },
                     "&.Mui-disabled": { color: "#fff", opacity: 0.5 },
                 }}
             >

@@ -26,7 +26,7 @@ import type { CSSProperties } from "react";
  * this app is not installed as a PWA), and no "please rotate your phone" nag.
  * A rotation mid-run is just a resize.
  *
- * It also means the desktop phone-card (`MobileDemoFrame`'s 393px surface) gets
+ * It also means the desktop phone-card (`MobileDemoFrame`'s 402px surface) gets
  * a correctly rotated game for free — it is a tall container like any other,
  * and no orientation API would ever have reported anything useful about it.
  *

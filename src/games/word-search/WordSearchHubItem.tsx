@@ -1,133 +1,96 @@
-import React, { useRef, useState } from "react";
-import { Link as RouterLink } from "react-router-dom";
+import React, { useState } from "react";
 import { Box, Typography, IconButton, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button } from "@mui/material";
-import { styled } from "@mui/material/styles";
-import CloseIcon from "@mui/icons-material/Close";
 import { useTransition, animated } from "@react-spring/web";
 import { useAuth } from "../../AuthContext";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
-import { useDragScroll } from "../../hooks/useDragScroll";
-import { cardBaseSx } from "../../components/hubMenuCardBase";
-import { HubMenuCardTitle, HubMenuCardEdgeSlot, HubMenuRowIconTile, HubMenuGroup, HubMenuGroupHeader, HubMenuStatBadge } from "../../components/HubMenu";
+import Icon from "../../components/Icon";
+import { BentoStrip, BentoSubTile } from "../../components/bento";
 import { useGameWins } from "../../hooks/useGameWins";
 import { withCollectionParams } from "../../features/flashcards/collectionRef";
 import { useSelectedCollection } from "../../features/flashcards/selectedCollection";
-import MarkTypeChip from "../../components/MarkTypeChip";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import type { GameDef } from "../types";
 import { loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
-import { GAME_KEY, MODE_CONFIGS, TOTAL_WORDS, modeLabel, type WordSearchMode } from "./constants";
+import { GAME_KEY, MODE_CONFIGS, TOTAL_WORDS, modeLabel, modeMarkTypes, type WordSearchMode } from "./constants";
 import { formatTimeMs } from "../../utils/timeUtils";
+import { MARK_TYPE_LABELS } from "../../utils/masteryCompute";
 
 /**
- * Word Search's Games-hub fan-out — a horizontally-scrolling strip of the two
- * mode buttons (Pinyin / No Pinyin), with a leading 1:1 RESUME card prepended
- * whenever a saved board exists.
+ * Word Search's Games-hub fan-out — a `BentoStrip` of the two mode sub-tiles
+ * (Pinyin / No Pinyin), with a leading RESUME sub-tile whenever a saved board exists.
  *
  * Behavior (see docs/WORD_SEARCH_GAME.md §3 / §5b):
- *  - Tapping a mode button ALWAYS starts a fresh game. Because both modes now
- *    share one saved slot, doing so would clobber any parked board, so if a
- *    save exists we confirm first ("your saved game will be lost").
- *  - Each mode button carries a MarkTypeChip: unlike every other game, Word
- *    Search's two modes feed DIFFERENT mastery tracks (Pinyin → production,
- *    No Pinyin → reading), so the label is read per mode from
- *    WordSearchModeConfig.markType — the same field WordSearchPage marks with.
- *    The resume square deliberately has none: at 1:1 it is already carrying four
- *    lines, and its mode name is right there on the card.
- *  - The resume card (leading, 1:1) restores the single saved board in its
- *    saved mode — no warning, nothing is lost. Its ✕ erases the save; the strip
- *    then animates the mode buttons left to fill the gap (react-spring leave).
+ *  - Tapping a mode ALWAYS starts a fresh game. Because both modes share one saved
+ *    slot, doing so would clobber any parked board, so if a save exists we confirm
+ *    first ("your saved game will be lost").
+ *  - Each mode sub-tile's SUBTITLE is the mastery track(s) it feeds. Unlike every
+ *    other game, Word Search's two modes feed DIFFERENT tracks — Pinyin → production,
+ *    No Pinyin → reading AND production (its prompt is an English gloss, so the find
+ *    is recall; its grid is bare characters, so confirming it is reading). Read per
+ *    mode through `modeMarkTypes()` — the same list WordSearchPage marks with, so the
+ *    label stays unfalsifiable. This replaces the `MarkTypeChip` the old hub card
+ *    carried: the artboard puts the track in the subtitle slot ("No Pinyin" over
+ *    "Reading & Production"), and a sub-tile has no edge slot to hang a chip in.
+ *  - The resume tile restores the single saved board in its saved mode — no warning,
+ *    nothing is lost. Its ✕ arms an in-place "delete this?" face; confirming erases
+ *    the save and the strip animates the mode tiles left to fill the gap.
  *
  * This lives in the word-search feature (not GamesPage) because it owns
- * word-search-specific state (the saved board, the confirm dialog); GamesPage
- * just renders it in place of a generic HubMenuArrayItem. It reuses the shared
- * hub card look via the exported cardBaseSx / HubMenuCardTitle / HubMenuRowIconTile.
+ * word-search-specific state (the saved board, the confirm dialog); GamesPage just
+ * renders it in place of a generic strip.
+ *
+ * Layer: feature component (src/games) built on the shared bento primitive
+ * (docs/SHELF_REDESIGN.md § A4).
  */
 
-/** Persistent per-mode background colors for the mode sub-cards (moved here from
-    GamesPage now that the whole strip is word-search-owned). */
-const WORD_SEARCH_MODE_COLORS: Record<WordSearchMode, string> = {
-    "pinyin": COLORS.purpleAccent,
-    "no-pinyin": COLORS.blueAccent,
+/** Per-mode ramp hues. The artboard gives BOTH modes `--pur`, because they are two
+    faces of one game rather than two difficulties — the colour says "Word Search",
+    and the titles say which mode. Kept as a table so that stays a decision. */
+const WORD_SEARCH_MODE_HUES: Record<WordSearchMode, "pur"> = {
+    "pinyin": "pur",
+    "no-pinyin": "pur",
 };
 
-/** Warm neutral fill for the resume card, distinct from both mode accents so it
-    reads as a parked/saved board rather than a third mode. */
-const RESUME_CARD_COLOR = COLORS.cardBeige;
-
-// Horizontal strip. Mirrors HubMenu's ArrayScroll (padding 0 10% to line the
-// first card up with a full-width row; native touch pan; hidden scrollbar), but
-// spaces cards with per-child marginRight instead of a flex `gap` so the leaving
-// resume card can collapse its width AND its trailing margin to zero together —
-// a flex `gap` would leave a 16px stump until the item unmounted.
-const Strip = styled(Box)(() => ({
-    display: "flex",
-    width: "100%",
-    overflowX: "auto",
-    // Explicit, for the same reason as ArrayScroll's: a lone `overflowX: auto`
-    // makes the strip vertically scrollable too, and the cards' aspect-ratio
-    // rounding gives that phantom axis a few px to wobble in.
-    overflowY: "hidden",
-    padding: "0 10%",
-    touchAction: "pan-x",
-    scrollbarWidth: "none",
-    "&::-webkit-scrollbar": { display: "none" },
-}));
-
-const ModeCard = styled(RouterLink, {
-    shouldForwardProp: (prop) => prop !== "bgcolor",
-})<{ bgcolor: string }>(({ bgcolor }) => ({
-    ...cardBaseSx,
-    flex: "0 0 70%",
-    width: "70%",
-    marginRight: 16,
-    backgroundColor: bgcolor,
-}));
-
-const AnimatedResumeShell = animated(Box);
+/** The resume tile is a real third member of the strip's flex row, so the two mode
+    tiles narrow to make room for it and widen again when it is erased. */
+const AnimatedTile = animated(Box);
 
 interface WordSearchHubItemProps {
     game: GameDef;
-    /** Resolved game icon (image asset or fallback glyph) — same node reused on
-        both mode cards. Built by GamesPage's resolveGameIcon. */
-    icon: React.ReactNode;
     className?: string;
 }
 
-const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, icon, className }) => {
+const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, className }) => {
     const { user } = useAuth();
     const userId = user?.id;
     const slideNavigate = useSlideNavigate();
-    const scrollRef = useRef<HTMLDivElement | null>(null);
-    useDragScroll(scrollRef);
 
-    // Game-wide lifetime win count for the group header. Word Search logs every
-    // completion under one level bucket, so this is already mode-agnostic; the
-    // mode sub-cards carry no count of their own (see docs/HUB_MENU_SYSTEM.md).
+    // Game-wide lifetime win count for the strip header. Word Search logs every
+    // completion under one level bucket, so this is already mode-agnostic; the mode
+    // sub-tiles carry no count of their own.
     const { totalWins } = useGameWins(GAME_KEY);
 
-    // The collection chosen in the hub header. This strip builds its own links (it
-    // navigates imperatively, to confirm before clobbering a save), so unlike a
-    // generic HubMenuArrayItem it has to apply the params itself.
+    // The collection chosen in the hub's chip. This strip builds its own links (it
+    // navigates imperatively, to confirm before clobbering a save), so unlike a plain
+    // tile it has to apply the params itself.
     const selectedCollection = useSelectedCollection();
     const newGamePath = withCollectionParams(game.route, selectedCollection);
 
     // Saved board (read once on mount). Both modes share this one slot; null when
-    // there's nothing to resume. Erasing it (✕) sets this back to null, which
-    // drives the leave animation.
+    // there's nothing to resume. Erasing it (✕) sets this back to null, which drives
+    // the leave animation.
     const [savedGame, setSavedGame] = useState<SavedWordSearchState | null>(() =>
         userId ? loadGameState(userId) : null
     );
 
-    // Pending confirm: the mode a player tapped while a save existed, held until
-    // they confirm losing it (or cancel).
+    // Pending confirm: the mode a player tapped while a save existed, held until they
+    // confirm losing it (or cancel).
     const [pendingMode, setPendingMode] = useState<WordSearchMode | null>(null);
 
-    // Whether the resume square has flipped to its in-place "delete this saved
-    // game?" confirmation face (armed by the ✕). The actual erase + collapse
-    // only happens once the player confirms on that face.
+    // Whether the resume tile has flipped to its in-place "delete this saved game?"
+    // face (armed by the ✕). The erase + collapse only happens on confirm.
     const [confirmingErase, setConfirmingErase] = useState(false);
 
     // Navigate into a fresh game for `mode`. resume:false → WordSearchPage always
@@ -163,14 +126,14 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, icon, class
         if (confirmingErase) return; // the delete-confirm face owns taps while armed
         // NO collection params on a resume: the saved board was already built from
         // whatever set was selected when it started, and nothing refetches mid-game —
-        // appending today's selection would only make the URL claim a set the grid
-        // on screen doesn't come from.
+        // appending today's selection would only make the URL claim a set the grid on
+        // screen doesn't come from.
         slideNavigate(game.route, { state: { mode: savedGame.mode, resume: true } });
     };
 
     // ✕ arms the in-place confirmation (it does NOT erase yet).
     const armErase = (e: React.MouseEvent) => {
-        e.stopPropagation(); // don't also trigger the card's resume tap
+        e.stopPropagation(); // don't also trigger the tile's resume tap
         e.preventDefault();
         setConfirmingErase(true);
     };
@@ -181,8 +144,8 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, icon, class
         setConfirmingErase(false);
     };
 
-    // Confirming actually clears the save and collapses the square (via the
-    // leave transition driven by savedGame → null).
+    // Confirming actually clears the save and collapses the tile (via the leave
+    // transition driven by savedGame → null).
     const confirmErase = (e: React.MouseEvent) => {
         e.stopPropagation();
         e.preventDefault();
@@ -190,177 +153,139 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, icon, class
         setSavedGame(null);
     };
 
-    // Leave-only animation for the resume card: it's already open on first paint
+    // Leave-only animation for the resume tile: it is already open on first paint
     // (`initial` == the enter state), and only the collapse-to-zero on erase is
-    // animated. The square's WIDTH (flexBasis) AND its trailing margin shrink
-    // together so the mode buttons slide fully left with no leftover gap.
+    // animated.
+    //
+    // `marginRight` goes to -9 on the way out, not 0: the strip's row spaces its
+    // sub-tiles with a 9px flex GAP, and a gap survives its item shrinking to zero
+    // width — so without cancelling it the erase would leave a 9px stump until the
+    // element unmounted. (The pre-bento version dodged this by spacing with per-child
+    // margins instead of a gap; the shared primitive uses a gap, so the tile cancels
+    // it here rather than the primitive giving up gaps for one caller.)
     const resumeTransitions = useTransition(savedGame ? [savedGame] : [], {
         keys: () => "word-search-resume",
-        initial: { flexBasis: "44%", opacity: 1, marginRight: 16 },
-        from: { flexBasis: "0%", opacity: 0, marginRight: 0 },
-        enter: { flexBasis: "44%", opacity: 1, marginRight: 16 },
-        leave: { flexBasis: "0%", opacity: 0, marginRight: 0 },
+        initial: { flexGrow: 1, opacity: 1, marginRight: 0 },
+        from: { flexGrow: 0.001, opacity: 0, marginRight: -9 },
+        enter: { flexGrow: 1, opacity: 1, marginRight: 0 },
+        leave: { flexGrow: 0.001, opacity: 0, marginRight: -9 },
         config: { tension: 260, friction: 30 },
     });
 
     return (
         <>
-            <HubMenuGroup className={className ?? "word-search-hub"}>
-                <HubMenuGroupHeader
-                    className="word-search-hub__header"
-                    title={game.title}
-                    stat={<HubMenuStatBadge variant="header" count={totalWins} />}
-                />
-                <Strip ref={scrollRef} className="word-search-hub__strip">
+            <BentoStrip
+                className={className ?? "word-search-hub"}
+                label={game.title}
+                meta={`×${totalWins} wins`}
+            >
                     {resumeTransitions((style, saved) => (
-                        <AnimatedResumeShell
+                        <AnimatedTile
                             className="word-search-hub__resume"
                             onClick={handleResume}
                             style={style}
                             sx={{
-                                ...cardBaseSx,
-                                // A true 1:1 square: flexBasis (animated above) is the
-                                // width, aspectRatio makes height follow it, and
-                                // alignSelf:center stops the flex row from stretching it
-                                // to the (taller) mode cards' height — which would make
-                                // it a rectangle and clip the stats. Tighter padding
-                                // than a mode card so the four stat lines fit the square.
-                                flexGrow: 0,
-                                flexShrink: 0,
+                                position: "relative",
+                                flexBasis: 0,
                                 // min-width:auto (the flex default) would floor the
                                 // collapse at the content's min-content width; 0 lets
-                                // the width animate cleanly to nothing. border-box folds
-                                // the padding INTO the animated flexBasis so a 0% basis
-                                // is a truly 0-width card (content-box would leave the
-                                // horizontal padding behind as a ~20px stump).
+                                // the tile animate cleanly to nothing.
                                 minWidth: 0,
-                                // minHeight:0 too: with aspectRatio, min-height:auto
-                                // (the default) floors the height at the stats' content
-                                // height, and the 1:1 ratio then floors the WIDTH to
-                                // match — leaving a stump. 0 frees both.
-                                minHeight: 0,
-                                boxSizing: "border-box",
-                                alignSelf: "center",
-                                aspectRatio: "1 / 1",
-                                padding: 0,
+                                borderRadius: "15px",
+                                padding: "11px",
+                                minHeight: 80,
                                 overflow: "hidden",
                                 cursor: "pointer",
-                                backgroundColor: RESUME_CARD_COLOR,
+                                // Warm neutral, distinct from both mode hues so it reads
+                                // as a parked board rather than a third mode.
+                                backgroundColor: COLORS.cardBeige,
                             }}
                         >
-                            {/* All content lives in an absolutely-inset layer so it
-                                contributes NO in-flow width to the flex item — that lets
-                                the card's animated width collapse cleanly to 0 on erase
-                                (in-flow text would otherwise floor it at its min-content
-                                width). The layer fills the square when open and is
-                                clipped by the card's overflow:hidden as it shrinks. */}
-                            <Box
-                                className="word-search-hub__resume-inner"
-                                sx={{
-                                    position: "absolute",
-                                    inset: 0,
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    // Left-aligned + vertically centered, like a real hub
-                                    // card (title top-left, details below) rather than a
-                                    // centered stat block.
-                                    justifyContent: "center",
-                                    alignItems: "flex-start",
-                                    gap: 0.5,
-                                    padding: "14px 16px",
-                                    overflow: "hidden",
-                                }}
-                            >
-                                {confirmingErase ? (
-                                    // Delete-confirmation FACE — the ✕ flips the square to
-                                    // this in-place prompt instead of erasing immediately.
-                                    <>
-                                        <Typography
-                                            className="word-search-hub__delete-title"
-                                            sx={{ fontSize: SIZE.bodyLg, fontWeight: WEIGHT.medium, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal }}
-                                        >
-                                            Delete saved game?
-                                        </Typography>
-                                        <Box sx={{ display: "flex", gap: 0.75, mt: 0.25, width: "100%" }}>
-                                            <Button
-                                                className="word-search-hub__delete-cancel"
-                                                onClick={cancelErase}
-                                                size="small"
-                                                sx={{ minWidth: 0, flex: 1, px: 1, py: 0.25, textTransform: "none", fontSize: SIZE.body, color: COLORS.textSecondary }}
-                                            >
-                                                Cancel
-                                            </Button>
-                                            <Button
-                                                className="word-search-hub__delete-confirm"
-                                                onClick={confirmErase}
-                                                variant="contained"
-                                                color="error"
-                                                size="small"
-                                                sx={{ minWidth: 0, flex: 1, px: 1, py: 0.25, textTransform: "none", fontSize: SIZE.body }}
-                                            >
-                                                Delete
-                                            </Button>
-                                        </Box>
-                                    </>
-                                ) : (
-                                    // Normal resume FACE.
-                                    <>
-                                        <IconButton
-                                            className="word-search-hub__resume-erase"
+                            {confirmingErase ? (
+                                // Delete-confirmation FACE — the ✕ flips the tile to
+                                // this in-place prompt instead of erasing immediately.
+                                <>
+                                    <Typography
+                                        className="word-search-hub__delete-title"
+                                        sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal }}
+                                    >
+                                        Delete saved game?
+                                    </Typography>
+                                    <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
+                                        <Button
+                                            className="word-search-hub__delete-cancel"
+                                            onClick={cancelErase}
                                             size="small"
-                                            aria-label="Delete saved game"
-                                            onClick={armErase}
-                                            sx={{ position: "absolute", top: 8, right: 8, p: 0.25, color: COLORS.textSecondary }}
+                                            sx={{ minWidth: 0, flex: 1, px: 0.5, py: 0.25, textTransform: "none", fontSize: SIZE.caption, color: COLORS.textSecondary }}
                                         >
-                                            <CloseIcon sx={{ fontSize: 18 }} />
-                                        </IconButton>
-                                        {/* "Resume" styled exactly like a hub-card title
-                                            (matches HubMenuCardTitle: bodyLg / medium / onSurface). */}
-                                        <Typography
-                                            className="word-search-hub__resume-title"
-                                            sx={{ fontSize: SIZE.bodyLg, fontWeight: WEIGHT.medium, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal, whiteSpace: "nowrap" }}
+                                            Cancel
+                                        </Button>
+                                        <Button
+                                            className="word-search-hub__delete-confirm"
+                                            onClick={confirmErase}
+                                            variant="contained"
+                                            color="error"
+                                            size="small"
+                                            sx={{ minWidth: 0, flex: 1, px: 0.5, py: 0.25, textTransform: "none", fontSize: SIZE.caption }}
                                         >
-                                            Resume
-                                        </Typography>
-                                        {/* Timer + found count inlined on one row to save
-                                            vertical space; mode on its own line below. */}
-                                        <Typography
-                                            className="word-search-hub__resume-stats"
-                                            sx={{ fontSize: SIZE.body, color: COLORS.textSecondary, fontFamily: FONTS.sans, lineHeight: LEADING.normal, whiteSpace: "nowrap" }}
-                                        >
-                                            ⏱ {formatTimeMs(saved.elapsedMs)} · {saved.found.length}/{TOTAL_WORDS}
-                                        </Typography>
-                                        <Typography
-                                            className="word-search-hub__resume-mode"
-                                            sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.medium, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal, whiteSpace: "nowrap" }}
-                                        >
-                                            {modeLabel(saved.mode)}
-                                        </Typography>
-                                    </>
-                                )}
-                            </Box>
-                        </AnimatedResumeShell>
+                                            Delete
+                                        </Button>
+                                    </Box>
+                                </>
+                            ) : (
+                                // Normal resume FACE. Laid out like a sub-tile: content
+                                // at the foot, so it sits on the same baseline as the
+                                // mode tiles beside it.
+                                <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%" }}>
+                                    <IconButton
+                                        className="word-search-hub__resume-erase"
+                                        size="small"
+                                        aria-label="Delete saved game"
+                                        onClick={armErase}
+                                        sx={{ position: "absolute", top: 4, right: 4, p: 0.25, color: COLORS.textSecondary }}
+                                    >
+                                        <Icon name="close" size={16} />
+                                    </IconButton>
+                                    <Typography
+                                        className="word-search-hub__resume-title"
+                                        sx={{ fontSize: 12.5, fontWeight: WEIGHT.semibold, color: COLORS.onSurface, fontFamily: FONTS.sans, whiteSpace: "nowrap" }}
+                                    >
+                                        Resume
+                                    </Typography>
+                                    <Typography
+                                        className="word-search-hub__resume-stats"
+                                        sx={{ fontSize: 10.5, color: COLORS.textSecondary, fontFamily: FONTS.mono, whiteSpace: "nowrap" }}
+                                    >
+                                        {formatTimeMs(saved.elapsedMs)} · {saved.found.length}/{TOTAL_WORDS}
+                                    </Typography>
+                                    <Typography
+                                        className="word-search-hub__resume-mode"
+                                        sx={{ fontSize: 10.5, color: COLORS.textSecondary, fontFamily: FONTS.sans, whiteSpace: "nowrap" }}
+                                    >
+                                        {modeLabel(saved.mode)}
+                                    </Typography>
+                                </Box>
+                            )}
+                        </AnimatedTile>
                     ))}
 
                     {MODE_CONFIGS.map((cfg) => (
-                        <ModeCard
+                        <BentoSubTile
                             key={`${game.gameId}-${cfg.mode}`}
+                            className={`word-search-hub__mode-tile word-search-hub__mode-tile--${cfg.mode}`}
                             to={newGamePath}
+                            hue={WORD_SEARCH_MODE_HUES[cfg.mode] ?? game.hue}
+                            icon="grid_on"
+                            title={modeLabel(cfg.mode)}
+                            // The mastery track(s) this mode feeds, straight from the
+                            // mode config — see the header note on why it lives here.
+                            // No Pinyin reads "Reading & Production": it is the one
+                            // board that clears two tracks per find.
+                            subtitle={modeMarkTypes(cfg).map((t) => MARK_TYPE_LABELS[t]).join(" & ")}
                             onClick={(e) => handleModeClick(e, cfg.mode)}
-                            bgcolor={WORD_SEARCH_MODE_COLORS[cfg.mode] ?? game.bgColor}
-                            className={`word-search-hub__mode-card word-search-hub__mode-card--${cfg.mode}`}
-                        >
-                            <HubMenuCardTitle title={game.title} subtitle={cfg.label} />
-                            <HubMenuRowIconTile className="word-search-hub__mode-icon">{icon}</HubMenuRowIconTile>
-                            {/* Same right-edge slot a generic HubMenuRow uses, so this
-                                hand-built card labels its track identically. */}
-                            <HubMenuCardEdgeSlot className="word-search-hub__mode-chip">
-                                <MarkTypeChip markType={cfg.markType} variant="edge" />
-                            </HubMenuCardEdgeSlot>
-                        </ModeCard>
+                        />
                     ))}
-                </Strip>
-            </HubMenuGroup>
+            </BentoStrip>
 
             <Dialog
                 className="word-search-hub__confirm-dialog"

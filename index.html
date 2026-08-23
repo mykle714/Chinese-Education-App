@@ -10,9 +10,21 @@
     <title>Cow</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Inter: primary Latin UI font. Noto Sans/Serif SC: CJK glyphs + hero character.
-         These back the FONTS.* stacks in src/theme/fonts.ts. -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Shelf redesign (docs/SHELF_REDESIGN.md, D1/D3). These back the FONTS.* stacks
+         in src/theme/fonts.ts:
+           Instrument Sans  - primary Latin UI
+           Instrument Serif - Latin display / hero (CJK falls through to Noto Serif SC)
+           JetBrains Mono   - overlines, counts, metadata (load-bearing in this design)
+           Noto Sans/Serif SC - CJK glyphs + hero character
+         `display=swap` on all of them: text must stay readable while faces load. -->
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Material Symbols Rounded — the icon face (D3), replacing per-icon
+         @mui/icons-material imports. Separate <link> because it is a variable font on
+         four axes (optical size, weight, fill, grade) that the other families do not
+         share. `display=block` NOT `swap`: this face renders LIGATURES, so a swap
+         period would show the literal word "nights_stay" before the glyph arrives.
+         block hides the text for ~3s instead. See the `.ms` rule in src/index.css. -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" rel="stylesheet">
   </head>
   <body>
     <div id="root"></div>

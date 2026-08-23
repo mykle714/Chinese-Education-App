@@ -123,7 +123,7 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
                     fontSize: SIZE.bodyLg,
                     fontWeight: WEIGHT.bold,
                     // The one piece of feedback the failed state gives (see docblock).
-                    color: failed ? COLORS.redMain : COLORS.onSurface,
+                    color: failed ? COLORS.dangerInk : COLORS.onSurface,
                     transition: "color 0.25s ease",
                     // Long glosses truncate rather than wrapping the bar to two lines and
                     // undoing the space this layout exists to reclaim.
@@ -187,7 +187,7 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
                             width: "8px",
                             height: "8px",
                             borderRadius: "50%",
-                            backgroundColor: i < triesUsed ? COLORS.redMain : COLORS.card,
+                            backgroundColor: i < triesUsed ? COLORS.dangerInk : COLORS.card,
                             transition: "background-color 0.2s ease",
                         }}
                     />

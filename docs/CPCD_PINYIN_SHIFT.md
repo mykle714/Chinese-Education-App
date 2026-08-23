@@ -7,7 +7,7 @@ inside `src/components/CPCDRow.tsx`; no data or API involvement.
 ## Goal
 
 Each character in a cpcd row gets a fixed-width **column box** (`COLUMN_WIDTH`
-per size) with its pinyin centered above its glyph. Most syllables render
+per size) with its pinyin centered beneath its glyph. Most syllables render
 narrower than their column and fit. Some render wider than the column —
 e.g. `shén` (神), `chuáng` (床), `zhuàng` (状), `shuāng` (双) — and would otherwise
 either be clipped/left-anchored or visually collide with the neighbor's pinyin.

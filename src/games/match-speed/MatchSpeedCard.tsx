@@ -4,22 +4,23 @@ import ForeignText from "../../components/ForeignText";
 import { resolveDisplayDefinition, resolveDisplayPronunciation, stripParentheses } from "../../utils/definitionUtils";
 import type { Language } from "../../types";
 import type { BoardCard, CardVisualState } from "./types";
+import { COLORS } from "../../theme/colors";
+import { FONTS } from "../../theme/fonts";
 import {
+    CARD_BORDER,
     CORRECT_CARD_BG,
-    CORRECT_CARD_BORDER,
     DEF_FONT_MAX_PX,
     DEF_FONT_MIN_PX,
     DEF_LEN_MAX,
     DEF_LEN_MIN,
     DEF_MAX_LINES,
     ENGLISH_CARD_BG,
-    ENGLISH_CARD_BORDER,
     FADE_IN_DURATION_MS,
     FOREIGN_CARD_BG,
-    FOREIGN_CARD_BORDER,
     POP_DURATION_MS,
-    SELECTED_BORDER,
+    SELECTED_CARD_BG,
     WRONG_CARD_BG,
+    WRONG_CARD_INK,
     WRONG_FEEDBACK_MS,
 } from "./constants";
 
@@ -107,29 +108,40 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
         [isForeign, card.entry]
     );
 
-    // Resting surface per column, overridden by the transient states below.
-    let background = isForeign ? FOREIGN_CARD_BG : ENGLISH_CARD_BG;
-    let borderColor = isForeign ? FOREIGN_CARD_BORDER : ENGLISH_CARD_BORDER;
-    let textColor = fc.onSurface;
+    // Resting surface per column. The two columns are told apart by TYPE, not colour
+    // (see the palette note in constants.ts): the foreign column is cjk 19/700 on the
+    // paper ground, the english column sans 13/500 on white. Every fill below is
+    // therefore free to mean state and nothing else.
+    // Annotated `string` on purpose: COLORS is `as const`, so inference would pin
+    // each of these to the literal hex it was initialised with.
+    let background: string = isForeign ? FOREIGN_CARD_BG : ENGLISH_CARD_BG;
+    // The border colour is the ONLY thing that varies; its width never does, so
+    // selecting a card can never re-wrap a three-line gloss under the finger. A
+    // state that fills the card blends its border into the fill instead of removing it.
+    let borderColor: string = CARD_BORDER;
+    let textColor: string = isForeign ? fc.onSurface : COLORS.iconColor;
 
     if (state === "wrong") {
         background = WRONG_CARD_BG;
         borderColor = WRONG_CARD_BG;
-        textColor = "#FFFFFF";
+        textColor = WRONG_CARD_INK;
     } else if (state === "partner-hint") {
-        // Cleanup-mode "here's your partner" hint — deliberately the same light
-        // green as a correct match, so the two games teach one visual vocabulary.
+        // Cleanup-mode "here's your partner" hint — deliberately the same green as a
+        // correct match, so the two games teach one visual vocabulary.
         background = CORRECT_CARD_BG;
-        borderColor = CORRECT_CARD_BORDER;
+        borderColor = CORRECT_CARD_BG;
     } else if (state === "selected") {
-        borderColor = SELECTED_BORDER;
+        // `.msc.pick` — the design fills the selected card rather than outlining it.
+        background = SELECTED_CARD_BG;
+        borderColor = SELECTED_CARD_BG;
+        textColor = fc.onSurface;
     }
 
     // A matched pair pops green on its way out; the board removes it once the pop
     // finishes. Overrides the selection styling it necessarily had a frame ago.
     if (card.exiting) {
         background = CORRECT_CARD_BG;
-        borderColor = CORRECT_CARD_BORDER;
+        borderColor = CORRECT_CARD_BG;
     }
 
     return (
@@ -206,10 +218,7 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                 boxSizing: "border-box",
                 borderRadius: "14px",
                 backgroundColor: background,
-                // Border width is constant across states so selecting a card can
-                // never reflow its own text (a 2px→3px swap would re-wrap a
-                // 3-line gloss mid-tap).
-                border: `3px solid ${borderColor}`,
+                border: `1px solid ${borderColor}`,
                 color: textColor,
                 cursor: "pointer",
                 overflow: "hidden",
@@ -221,10 +230,9 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                       ? "scale(1.04)"
                       : "scale(1)",
                 opacity: card.exiting ? 0 : 1,
-                boxShadow: state === "selected" ? "0 4px 12px rgba(61,107,214,0.35)" : "none",
                 transition: card.exiting
                     ? `transform ${POP_DURATION_MS}ms ease-out, opacity ${POP_DURATION_MS}ms ease-out, background-color 120ms linear`
-                    : `transform 140ms ease-out, box-shadow 140ms ease-out, background-color ${
+                    : `transform 140ms ease-out, background-color ${
                           state === "wrong" ? WRONG_FEEDBACK_MS / 3 : 160
                       }ms linear, border-color 160ms linear`,
                 // Game surface: taps only, never scroll or text selection.
@@ -258,8 +266,11 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                         // Step 2 of the fit: scale by length. Step 3: clamp at
                         // DEF_MAX_LINES with an ellipsis, so even a gloss past the
                         // band's floor size cannot push the fixed row height.
+                        fontFamily: FONTS.sans,
                         fontSize: `${fontSizeForGloss(gloss)}px`,
-                        lineHeight: 1.25,
+                        fontWeight: 500,
+                        letterSpacing: "0.005em",
+                        lineHeight: 1.3,
                         textAlign: "center",
                         display: "-webkit-box",
                         WebkitLineClamp: DEF_MAX_LINES,

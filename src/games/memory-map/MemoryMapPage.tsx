@@ -9,6 +9,7 @@ import ForeignText from "../../components/ForeignText";
 import MinimizablePopup from "../../components/MinimizablePopup";
 import MemoryMapWorld from "./MemoryMapWorld";
 import MemoryMapPrompt from "./MemoryMapPrompt";
+import { GameFrame } from "../shared/GameFrame";
 import MemoryMapRestartDialog from "./MemoryMapRestartDialog";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { useMemoryMapRun } from "./useMemoryMapRun";
@@ -287,7 +288,11 @@ const MemoryMapPage: React.FC = () => {
             )}
 
             {(run.phase === "playing" || run.phase === "complete") && (
-                <>
+                /* `.play` — the inset panel (docs/SHELF_REDESIGN.md § A6). Memory Map has
+                   no artboard, but the design anticipates it: `.mapw` exists in the
+                   stylesheet. The growth toast and the inspect popup below stay OUTSIDE
+                   the panel — both are page-level overlays. */
+                <GameFrame className="memory-map-page__frame">
                     <MemoryMapPrompt
                         definition={run.target?.definition ?? null}
                         phase={run.promptPhase}
@@ -308,7 +313,7 @@ const MemoryMapPage: React.FC = () => {
                         onTapWord={handleTapWord}
                         onTapWater={handleTapWater}
                     />
-                </>
+                </GameFrame>
             )}
 
             {/* Growth toast (§ 2.5): without it the map's growth is invisible, which is
@@ -377,7 +382,7 @@ const MemoryMapPage: React.FC = () => {
                         <Typography sx={{ fontSize: SIZE.title, fontWeight: WEIGHT.bold, mb: 1 }}>
                             Map complete
                         </Typography>
-                        <Typography sx={{ fontSize: SIZE.display, fontWeight: WEIGHT.bold, color: COLORS.greenMain }}>
+                        <Typography sx={{ fontSize: SIZE.display, fontWeight: WEIGHT.bold, color: COLORS.successInk }}>
                             {accuracy}%
                         </Typography>
                         <Typography sx={{ fontSize: SIZE.caption, color: COLORS.textSecondary, mb: 2 }}>
@@ -390,9 +395,9 @@ const MemoryMapPage: React.FC = () => {
                         >
                             {(
                                 [
-                                    ["green", run.tally.green, COLORS.greenMain, "knew it"],
-                                    ["orange", run.tally.orange, COLORS.yellowMain, "recovered"],
-                                    ["red", run.tally.red, COLORS.redMain, "missed"],
+                                    ["green", run.tally.green, COLORS.successInk, "knew it"],
+                                    ["orange", run.tally.orange, COLORS.warnInk, "recovered"],
+                                    ["red", run.tally.red, COLORS.dangerInk, "missed"],
                                 ] as const
                             ).map(([key, count, color, label]) => (
                                 <Box key={key} className={`memory-map-end__tally-item memory-map-end__tally-item--${key}`}>

@@ -256,7 +256,6 @@ function ChallengeReviewPage() {
     return (
         <NodePage
             title={title}
-            activePage="home"
             onBack={() => slideNavigate("/friends/challenges")}
             contentClassName="challenge-review-page__content"
         >
@@ -336,7 +335,7 @@ function ChallengeReviewPage() {
                                 fontFamily: FONTS.sans,
                                 fontSize: SIZE.body,
                                 fontWeight: WEIGHT.semibold,
-                                color: COLORS.redMain,
+                                color: COLORS.dangerInk,
                                 backgroundColor: COLORS.sectionCard,
                                 borderRadius: 3,
                                 px: 2,

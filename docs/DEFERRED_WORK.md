@@ -32,103 +32,39 @@ Delete an item when it is done; this file is a queue, not a history.
 
 ## Open items
 
-### 1. Build Study Challenge (phase 1, async) — 🚧 **ONE PIECE LEFT as of 2026-08-17**
+### 1. Tell the learner when a card is resting and earning nothing
 
-| | |
-|---|---|
-| **What** | Implement the async Study Challenge. The design is complete: [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) (Q1–Q68) and [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) (Q69–Q73) have **no open design questions**, and every doc the build depends on was updated on 2026-08-16 |
-| **Why deferred** | It *was* queued behind Arena, which owned the two things it would have collided with: `database/migrations/146-create-arenas.sql` and then-uncommitted edits to `server/contracts/wire.ts`. **That collision is gone as of 2026-08-16** — Arena is committed (`480c80d`, `12159ef`) and shipped to prod, so `wire.ts` is a normal read rather than a merge |
-| **Cost of leaving it** | None. Nothing depends on it and nothing degrades while it waits |
-| **Trigger** | **Met; the build is DONE except one piece.** Migration **148** applied on dev **and shipped to prod 2026-08-17** (its runbook is retired); the contract, the whole async server stack, the client surfaces, `mastered-first` provisioning, the shared scoring runner, pause-on-background for all four games, the maintenance job and the deploy runbook are all built and tested (see the status table at the top of [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)). **The one thing left is the scored round runner** — see the next row. **Next free migration number is 150** — 149 is the lifetime-counter drop |
-| **What is left** | The per-game board integration only: a challenge-board pool read (ten contested cards + `mastered-first` filler, extending `/api/onDeck/gamePool` rather than adding a second loader), contested/filler classification inside Bubble Match / Match Speed / Word Search-Pinyin with `ChallengeEvent`s fed to `src/games/runtime/challengeScoring.ts`, Match Speed's alternation rule (§ 5.3), and the between-games scoreboard + round POST. Everything it depends on exists and is tested; this is wiring inside the three most complex pages in the app, which is why it was not rushed alongside the rest |
-| **References** | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 9–12, [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md), [GAMES_FEATURE.md](./GAMES_FEATURE.md), [DECKS_FEATURE.md](./DECKS_FEATURE.md), [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md), [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) |
+*Added 2026-08-18 with Hydra Bubbles; narrowed 2026-08-20 when lending moved to the
+bottom of the fill ladder. Code: `server/routes/flashcardRoutes.ts` (the
+`[MarkSuppressed]` branch), `OnDeckVocabService.getGameVocabPool` /
+`getDistributedWorkingLoop` (the fill tiers). Docs:
+[HYDRA_BUBBLES.md § 8.1](./HYDRA_BUBBLES.md),
+[PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md).*
 
-#### Deploy-order constraints to resolve before writing the migration
-
-**Resolved 2026-08-16 — no longer a constraint.** Both migrations this one sits on top of
-are now on prod: **140** (provisional cards, shipped 2026-08-08) and **145**
-(`user_language_points` → `user_languages`, shipped 2026-08-16). Prod is current through
-146, so the challenge migration is free to be numbered and shipped on its own.
-
-#### The build, in dependency order
-
-Steps 1–2 are the contract; everything after depends on them, and 4–7 are largely
-independent of each other.
-
-1. **Migration 148** — `study_challenges` (the single table, [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 9),
-   `decks."editMode"`, the two `friendships` block booleans, and
-   `decks_user_language_name_uniq` rebuilt as a **partial** index
-   (`WHERE "editMode" = 'custom'`). All signed off 2026-08-16.
-2. **`server/contracts/wire.ts`** — `CHALLENGE_WORD_COUNT`, `CHALLENGE_ROUND_COUNT`,
-   `MAX_ACTIVE_CHALLENGES` (6), `ProvisionMode`, and the challenge-eligible-game
-   derivation. Arena's additions to this file are already committed — read the current
-   file and add alongside them; there is nothing to merge.
-3. **Games** ([GAMES_FEATURE.md](./GAMES_FEATURE.md)) — the `challengeScoring` spec on
-   `GameDef` and one spec per eligible game; wire the backgrounding signal into the
-   existing `clockPaused` gate in **Bubble Match, Match Speed and Speed Reading** (Word
-   Search already does it and is the reference). ⚠️ A challenge's stored game sequence
-   needs a `(gameId, mode)` pair, not a bare id — Word Search is eligible only as *Pinyin*.
-4. **Server** — `StudyChallengeDAL` (including the insert-only `jsonb_set` round write),
-   `StudyChallengeService` (windows, candidate selection, accept transaction, winner
-   resolution), controller, routes (⚠️ static segments above `/:id`), DI in
-   `server/dal/setup.ts`. Plus `ProvisionalCardService`'s `mastered-first` mode and
-   `DeckService`'s preset mutation guard.
-5. **Client** — `src/api/studyChallenges.ts` (**no `token` param**),
-   `src/features/studyChallenge/*`, the `/friends/challenges` NodePage and its
-   language-blind badge, the fifth `/decks` section.
-6. **Maintenance job** — `database/cron/expire-study-challenges.sql`, a third `ExecStart`
-   in `cow-maintenance.service.template`, and its `Description=` update. ⚠️ A unit-template
-   change is **not** rolled out by a git pull; the installer must re-render it.
-7. **Deploy runbook** — written with the migration, used on 2026-08-17, and deleted once
-   prod was verified, per CLAUDE.md. Its one gap is recorded in the CLAUDE.md deploy
-   notes: it assumed a single `migrate.sh` pass, but 148 (expand) had to precede the
-   rebuild and 149 (contract) had to follow it.
-
-**Live mode is phase 2 and is not part of this.** It needs a WebSocket at `/api/ws` and
-adds no tables and no columns; it is buildable at any point after phase 1 exists. Its one
-demand on this build is that nothing in phase 1 forecloses it — see
-[STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 11.
-
----
-
-### 2. Read the `[MarkSuppressed]` log and decide whether fill tier 4 should go
-
-*Added 2026-08-18 with Hydra Bubbles. Code: `server/routes/flashcardRoutes.ts` (the
-`[MarkSuppressed]` branch), `OnDeckVocabService.getGameVocabPool` (the fill tiers).
-Docs: [HYDRA_BUBBLES.md § 8.1](./HYDRA_BUBBLES.md),
-[GAMES_FEATURE.md](./GAMES_FEATURE.md) § the five fill tiers.*
-
-**What changed.** A card's per-type cooldown is now a hard **"next markable at"**: a
-mark landing inside the window is not recorded. Enforced once, server-side, at
+**What changed.** A card's per-type cooldown is a hard **"next markable at"**: a mark
+landing inside the window is not recorded. Enforced once, server-side, at
 `POST /api/flashcards/mark`, so no surface opts in or out.
 
-**The collision this creates.** `getGameVocabPool`'s fill **tier 4 serves cooled
-cards on purpose** — it is what lets a small library still assemble a full board on a
-second round back to back. Those marks were recorded before this change and are
-silently dropped now. The learner sees a normal round with normal scoring and **no
-movement in their history**, with nothing in the UI to explain it.
+**The collision.** Every surface now serves **cooled cards** when its fresh tiers come
+up short — and since 2026-08-20 it does so *in preference to lending*, so this is more
+common than when the item was written, and deliberately so. The learner sees a normal
+round with normal scoring and **no movement in their history**, with nothing in the UI
+to explain it. On the flp the session simply ends: a suppressed mark returns
+`newCard: null`, so the loop winds down after the cards it was given.
 
-**Why it shipped anyway.** The frequency of the collision is unknown, and both
-alternatives trade a known cost for an unmeasured one: deleting tier 4 and lending
-instead grows every small learner's provisional holding, and scoping the guard by
-serving context needs a per-request trust flag, which is exactly the thing the
-single-chokepoint design rules out.
+**Resolved, and no longer part of this item:** *should the cooled tier be deleted in
+favour of lending?* No. Lending was demoted below it instead — minting words the learner
+never chose was the worse failure, and it was growing provisional holdings without bound
+(PROVISIONAL_CARDS.md § 4b). The `[MarkSuppressed]` log keeps its remaining job: telling
+ordinary cooled-tier suppression apart from the deck/collection suppression that is
+intended (HYDRA_BUBBLES.md § 6.3).
 
-**The task.** Read the log, then choose. It carries user, card, language, mark type,
-the cooldown window in force, the serving `surface`, and whether the mark was
-positive — the `surface` is there to separate the two cases, because
-deck/collection rounds also suppress marks and **that** suppression is intended
-(HYDRA_BUBBLES.md § 6.3). Specifically:
+**The task that remains is UI.** Give the learner feedback rather than silence —
+"resting until tomorrow" on the card, a muted state on a bubble, or an end-of-session
+line saying how much of the round counted. The server already knows: the response
+carries `suppressed: true`, and **no client reads it today**.
 
-1. What share of suppressed marks come from tier 4 on an unrestricted round?
-2. Is it concentrated in a few small-library accounts, or spread across everyone?
-3. If it is material: delete tier 4 in favour of lending, or give the learner
-   feedback ("resting until tomorrow") rather than silence?
-
-**Until then:** a small-library learner can play a full round and earn nothing, with
-no error and nothing visibly different.
-
-### 3. Teach learners about bound-form words (the huìzi class)
+### 2. Teach learners about bound-form words (the huìzi class)
 
 | | |
 |---|---|
@@ -141,7 +77,63 @@ no error and nothing visibly different.
 
 ---
 
+### 3. A5's three unbuilt atoms — `.modal`, `.sheet`, `.scrim`
+
+| | |
+|---|---|
+| **What** | Three of the fifteen shelf-system generic atoms have no shared implementation: `.modal` (scrim + centred grey card + one dark CTA), `.sheet` (pull-up panel, `top:176px`, radius 26, grab handle) and `.scrim` (a flat 28% ink overlay). Spec: [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A5 |
+| **Why deferred** | Each already has ONE live bespoke implementation — `HydraLendNotice` for the modal, the decks preview panel (entry 2) for the sheet, MUI `Backdrop` for the scrim — and none is repeated often enough to have drifted. Extracting a primitive from a single caller invents an API from one data point; the second caller is what tells you which parts are actually shared |
+| **Cost of leaving it** | Low for now, rising. The moment a second sheet or a second blocking modal is written, the two will disagree on radius, top offset, grab-handle size and scrim opacity, and the fix becomes a reconciliation rather than an extraction |
+| **Trigger** | The second caller. Whichever entry next needs a pull-up panel or a blocking modal extracts the primitive as part of its own work rather than inlining a third copy |
+| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A5, `src/components/primitives/` |
+
+### 4. Moderation for user-authored text shown to strangers — starting with the arena message
+
+| | |
+|---|---|
+| **What** | A system for handling text one user writes and 24 strangers read. The first (and today only) such surface is the **arena message** (`users."arenaMessage"`, migration 152, [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 2.1a) — one line under each competitor's name on the `/arena` board. At minimum it needs: a **report** affordance on a row, somewhere for reports to land, a **takedown** path (clear the message and keep it cleared), and a decision about whether a cleared account may write another. Probably also a cheap pre-filter on write, and a per-account rate limit so a takedown is not undone in one tap |
+| **Why deferred** | The message shipped 2026-08-21 with SHAPE checks only — `ArenaService.setMessage` strips control characters, collapses whitespace, trims and caps at 80 — and none of that is judgement. Moderation was not built alongside it because the correct design depends on facts we do not have yet: how many people write one at all, and whether abuse arrives as a trickle (a human queue is fine) or not at all (a report button and nothing else is fine). Building a review queue for a feature nobody uses is the more expensive mistake |
+| **Cost of leaving it** | **Currently low, and it stops being low the day the app has strangers in it.** Prod has no customers ([memory: prod is effectively a PPE](../CLAUDE.md)), and arena boards are mostly synthetic padding — bots draw their lines from a fixed pool and cannot type anything. So today the realistic blast radius is one tester reading another tester's line. The moment real users share a board, this is an unmoderated broadcast channel to 24 people who did not consent to each other, and the arena is the one surface a user **cannot leave mid-week** |
+| **Trigger** | ⚠️ **Before the arena carries real strangers** — whichever comes first: the first non-tester cohort, or a second surface adopting user-authored public text (a profile blurb, a deck description shown to others, a challenge taunt). Do not ship a second such field before this exists; the second one is what makes an ad-hoc fix permanent |
+| **Interim mitigation** | The write path is a single chokepoint by design (`ArenaService.setMessage` → `ArenaDAL.setArenaMessage`, the ONLY writer of the column), and `{ message: null }` clears it. So an urgent takedown today is one `UPDATE users SET "arenaMessage" = NULL WHERE id = …` and nothing else in the app needs to change |
+| **References** | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 2.1a, `server/services/ArenaService.ts` → `setMessage`, `database/migrations/152-add-arena-message.sql`, `src/features/arena/ArenaMessageDialog.tsx` |
+
+### 5. A lapsed challenge invitation still spends one of the issuer's six slots
+
+| | |
+|---|---|
+| **What** | `StudyChallengeDAL.countActiveForUser` counts `pending` rows the user issued, and a `pending` row is only rewritten to `expired` by pass 1 of `database/cron/expire-study-challenges.sql`. Between the challengee's Wednesday 04:00 and the next run of that job, the challenger is carrying a slot against a challenge nobody can accept any more. Every OTHER read derives the lapse live ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § "The read path never waits for the job") — this count is the one that cannot |
+| **Why deferred** | The count is a SQL aggregate and the deadline is per-challengee-timezone, so deriving it in SQL means joining `users.timezone` and re-deriving `DATE '2026-01-05' + 7 * "weekIndex" + 2` at 04:00 per row — a fourth copy of the boundary arithmetic (`server/shared/challengeWeek.ts`, the cron SQL, migration 150 already hold three), in the hot path of the challenges page, to reclaim a slot the hourly job reclaims anyway |
+| **Cost of leaving it** | On prod, at most one hour of a slot, and only for a user who is at 6 of 6 with a lapsed invitation among them — they would see "You're in 6 challenges this week" briefly. On **dev**, where the timer is not installed, the slot stays spent until the SQL is run by hand |
+| **Trigger** | If the cap ever drops, if the job's cadence ever slows, or if the boundary arithmetic gets a shared SQL helper for another reason — at which point this becomes a one-line change rather than a fourth copy |
+| **References** | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 1 "How many at once", § "The maintenance job (Q60)", `server/dal/implementations/StudyChallengeDAL.ts` → `countActiveForUser` |
+
+---
+
 ## Recently closed
+
+### Build Study Challenge, phase 1 async (closed 2026-08-22 — DONE)
+
+The whole feature shipped in stages: migration 148 + the server stack + the client
+surfaces (2026-08-17, on prod), and **the scored round runner on 2026-08-22** — the last
+piece, and the one this entry stayed open for. It needed no migration.
+
+What the runner turned out to be, for anyone reading the old plan: `?challengeId=` on the
+EXISTING pool endpoints rather than a second loader (as the entry required), one gate
+(`StudyChallengeService.getRoundContext`) deciding round/game/window, one assembler
+(`OnDeckVocabService.getChallengeGamePool`) producing contested + `mastered-first` filler
+SHUFFLED, and one client hook (`useChallengeRound`) owning the accumulator and the
+active-time clock so four games could not drift into four readings of the same spec. The
+full path is [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.2a.
+
+Two things the plan did not anticipate, both recorded in that section: Word Search needed
+an **8×8** grid (twelve 4-character words do not fit 49 cells), and **Hydra Bubbles is a
+deliberate exception to the `mastered-first` filler rule** — its filler is its colour
+economy, and mastered-first filler would make every bubble bloom.
+
+**Live mode is phase 2**, needs a WebSocket at `/api/ws`, adds no tables and no columns,
+and is buildable at any point now that phase 1 exists —
+[STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 11.
 
 ### Two runbooks with false "NOT YET DEPLOYED" banners (closed 2026-08-17)
 

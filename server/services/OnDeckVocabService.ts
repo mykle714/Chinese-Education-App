@@ -1,15 +1,16 @@
 import { PoolClient } from 'pg';
 import { VocabEntry, TypedMarkHistory, MarkType } from '../types/index.js';
-import type { MasteryBarId } from '../contracts/wire.js';
+import type { MasteryBarId, FlpForeignTrack } from '../contracts/wire.js';
+import { flpMarkTypes } from '../contracts/wire.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { StarterPacksService } from './StarterPacksService.js';
 import { ValidationError } from '../types/dal.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, vetPlayableClause, vetProvisionalClause, vetDeckOrProvisionalClause } from '../dal/shared/vetTable.js';
+import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, vetDeckOrProvisionalClause } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
-import { rankCardQueue, isTypeOnCooldown } from './cardQueueRanking.js';
+import { rankCardQueue, rankCardQueueCooled, isTypeOnCooldown } from './cardQueueRanking.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import type { TTSService } from './TTSService.js';
 import type { ProvisionalCardService } from './ProvisionalCardService.js';
@@ -19,7 +20,7 @@ import {
   type WordSearchInput,
   type WordSearchGrid,
 } from './wordSearchGrid.js';
-import { resolveSenseGloss, resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/definitions.js';
+import { resolveSenseGloss, resolveDisplayDefinition, resolveDisplayPronunciation, ddCollisionKey } from '../utils/definitions.js';
 
 // Difficulty-targeted study modes launched from the decks page (Review/Challenge
 // buttons). Each mode shapes BOTH the initial working-loop distribution and the
@@ -128,13 +129,19 @@ export class OnDeckVocabService {
     private provisionalCardService: ProvisionalCardService
   ) {}
 
-  // The mark types the flp can actually present (docs/MASTERY_REWORK.md § 1): a
-  // foreign-first prompt is a RECOGNITION review, an English-first prompt is a
-  // PRODUCTION review. Reading/Writing marks come from other games (Word Search /
-  // Practice Writing / Memory Map) and are never shown in the working loop, so flp
-  // cooldown eligibility consults only these two tracks — a correct mark earned in
-  // another game no longer suppresses a card from the flp.
-  private static readonly FLP_MARK_TYPES: readonly MarkType[] = ['recognition', 'production'];
+  // The mark types the flp can actually present (docs/MASTERY_REWORK.md § 1): an
+  // English-first prompt is a PRODUCTION review, and a foreign-first prompt is either
+  // a RECOGNITION review (pinyin shown) or a READING one (zh, "Show pinyin" off) —
+  // `foreignTrack`, sent by the client per session and threaded through every
+  // selection path below. Writing marks come from other surfaces (Practice Writing)
+  // and are never shown in the working loop, so flp cooldown eligibility consults only
+  // the session's two tracks — a correct mark earned in another game no longer
+  // suppresses a card from the flp.
+  //
+  // The pair itself is built by `flpMarkTypes` (server/contracts/wire.ts), the one
+  // definition the client's face-steering also maps through, so the face a learner is
+  // shown can never disagree with the mark the client then writes.
+  private static readonly DEFAULT_FOREIGN_TRACK: FlpForeignTrack = 'recognition';
 
   // The flp's cooldown WINDOW is keyed on the card's OVERALL (core) category: the loop
   // presents two mark types on one card, so a single whole-card window is the coherent
@@ -170,12 +177,16 @@ export class OnDeckVocabService {
    * Ties (notably the whole never-marked tail) keep the caller's incoming order, which
    * is `createdAt DESC` — newest first. Array.sort is stable.
    */
-  private rankFlpEligible(cards: VocabEntry[], now: number): VocabEntry[] {
+  private rankFlpEligible(
+    cards: VocabEntry[],
+    now: number,
+    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
+  ): VocabEntry[] {
     // The ordering rule itself is shared (rankCardQueue); what the flp adds is stamping
     // the ready tracks onto the returned card as `readyMarkTypes`, which the client uses
     // to steer which face it shows.
     return rankCardQueue(cards, now, {
-      markTypes: OnDeckVocabService.FLP_MARK_TYPES,
+      markTypes: flpMarkTypes(foreignTrack),
       windowCategoryOf: (card) => this.flpWindowCategory(card),
     }).map(({ card, readyTypes }) => ({ ...card, readyMarkTypes: readyTypes }));
   }
@@ -254,13 +265,18 @@ export class OnDeckVocabService {
     cap: number,
     maxEntryKeyLen?: number,
     excludeIds: number[] = [],
-    collection?: CollectionFilter | null
+    collection?: CollectionFilter | null,
+    /** Vet ids of cards LENT to this round (docs/PROVISIONAL_CARDS.md § 4b). The only
+        way a provisional row enters a pool — the bucket clause below is otherwise
+        sorted-only. Empty (`= ANY('{}')` ⇒ false) for a learner with cards of their
+        own, which is the overwhelmingly common case. */
+    lentIds: number[] = []
   ): Promise<{ eligible: Record<string, VocabEntry[]>; cooled: Record<string, VocabEntry[]> }> {
     const eligible: Record<string, VocabEntry[]> = {};
     const cooled: Record<string, VocabEntry[]> = {};
-    // Optional collection restriction (docs/DECKS_FEATURE.md). $7 is the next free
-    // placeholder after the six bound below.
-    const deck = this.deckPlayFilter(collection, 7);
+    // Optional collection restriction (docs/DECKS_FEATURE.md). $8 is the next free
+    // placeholder after the seven bound below.
+    const deck = this.deckPlayFilter(collection, 8);
     // maxEntryKeyLen is a caller-supplied constant (never user input); coerce to a
     // safe integer before inlining, since it isn't a bind param.
     const lenClause = maxEntryKeyLen != null
@@ -272,16 +288,25 @@ export class OnDeckVocabService {
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $4
-        -- PLAYABLE: a game round may draw provisional cards, which is the whole
-        -- point of the baseline top-up (docs/PROVISIONAL_CARDS.md).
-        AND ${vetPlayableClause()}
+        -- SORTED ONLY: a lent card is not an ordinary candidate. It is never on
+        -- cooldown and always bands Unfamiliar, so leaving it in this query let the
+        -- lent rows out-compete the learner's own deck in every round. Lending is now
+        -- the LAST fill tier and hands its rows back by id (docs/PROVISIONAL_CARDS.md
+        -- § 4b, fetchRowsByIds).
+        AND (${vetSortedClause()} OR ve.id = ANY($7::int[]))
         AND ${typeCategoryExpr('$5')} = $2
         AND NOT (ve.id = ANY($6::int[]))
         ${lenClause}
         ${deck.clause}
-        ORDER BY RANDOM()
+        -- THE LEARNER'S OWN CARDS FIRST, then lent ones, then random within each.
+        -- Without this the two are shuffled together, so a round that had to borrow
+        -- could leave the learner's own cards on the bench in favour of words they
+        -- never chose — the exact outcome the sorted-only selection rule exists to
+        -- prevent (docs/PROVISIONAL_CARDS.md § 4b). Only matters when lentIds is
+        -- non-empty; otherwise every row is sorted and the first key is constant.
+        ORDER BY (ve."starterPackBucket" = 'provisional') ASC, RANDOM()
         LIMIT $3
-      `, [userId, category, cap, language, markType, excludeIds, ...deck.params]);
+      `, [userId, category, cap, language, markType, excludeIds, lentIds, ...deck.params]);
 
       const fresh: VocabEntry[] = [];
       const stale: VocabEntry[] = [];
@@ -306,80 +331,131 @@ export class OnDeckVocabService {
   }
 
   /**
-   * Held PROVISIONAL cards near a difficulty, off cooldown — the RE-LEND source
-   * (docs/PROVISIONAL_CARDS.md § 3b).
+   * The rows behind a set of NAMED vet ids, ready to drop into a game pool.
    *
-   * Only meaningful for a TIER-TARGETED caller. Every other caller has already had
-   * its chance at these rows: they are `vetPlayableClause()`, so an ordinary pool
-   * query picks them up in its own bucket at fill tier 1 or 3. What no ordinary query
-   * can do is ask for them BY DIFFICULTY, which is exactly what a rolled Hydra color
-   * needs — and without this, a long run mints a brand-new row for every color slot
-   * the library cannot cover, forever.
+   * (Was `fetchLentRows`, and lending is still its main caller — but a Study
+   * Challenge board also addresses specific ids, and both want the same
+   * dict-joined, category-stamped, caller-ordered rows.)
    *
-   * Ordered nearest-difficulty-first (the same `ABS(difficulty - level)` widening the
-   * minting query uses, so re-lend and mint agree about what "tier 3" means), then
-   * randomly within a distance so a run does not replay one fixed sequence.
+   * The counterpart of the sorted-only candidate queries: lending hands back IDS
+   * (`ProvisionalCardService.acquireLentCards`), and this is what turns them into
+   * DICT-joined, category-stamped `VocabEntry` rows. Nothing else in the service may
+   * surface a provisional row.
    *
-   * Cooldown is filtered in APP CODE, not SQL, because that is where it lives
-   * (`cardQueueRanking.isTypeOnCooldown` reads `typedMarkHistory`). A still-resting
-   * card is dropped rather than served: the cooldown is never broken to re-lend.
+   * Preserves the CALLER'S order, which is the lend order — re-lent rows nearest the
+   * target difficulty first, then freshly minted ones — rather than the arbitrary
+   * order the `id = ANY(...)` scan returns them in.
+   *
+   * Filters on the game's own cooldown, exactly like `fetchGameCandidates`: a freshly
+   * minted row has no history and always passes, while a RE-LENT row may well be
+   * resting, and re-lending is not a reason to break a cooldown.
+   *
+   * `maxEntryKeyLen` (Word Search) drops words too long for the grid. Applied in app
+   * code rather than SQL because this query is addressing specific ids, not searching.
    */
-  private async fetchRelendable(
+  private async fetchRowsByIds(
     client: PoolClient,
     userId: string,
     language: string,
-    targetLevel: number,
+    ids: number[],
     markType: MarkType,
     now: number,
-    limit: number,
-    excludeIds: number[],
-    collection?: CollectionFilter | null
+    maxEntryKeyLen?: number,
+    /**
+     * Skip the per-type cooldown filter — for a caller whose ids are NOT a
+     * preference but an obligation. The only such caller today is a Study Challenge
+     * board: all twelve contested words must appear in every round
+     * (docs/STUDY_CHALLENGE.md § 5.2), and the filler ladder is deliberately the
+     * player's most MASTERED cards, which are exactly the ones most likely to be
+     * resting. Dropping either for a cooldown would silently shrink the board that
+     * the round's score is measured against.
+     *
+     * The accepted consequence is the app-wide one: a mark on a still-cooling card
+     * is dropped at POST /api/flashcards/mark (docs/HYDRA_BUBBLES.md § 8), so those
+     * cards play and score but do not advance mastery.
+     */
+    ignoreCooldown = false
   ): Promise<VocabEntry[]> {
-    if (limit <= 0) return [];
-    // $6 is the next free placeholder after the five bound below.
-    const deck = this.deckPlayFilter(collection, 6);
+    if (ids.length === 0) return [];
+
     const result = await client.query<VocabEntry>(`
       SELECT ve.*, ${DICT_COLS}, ${CORE_CATEGORY_SELECT}
       FROM ${vetReadFrom(language)} ${DICT_JOIN}
       WHERE ve."userId" = $1
       AND ve."language" = $2
-      AND ${vetProvisionalClause()}
-      AND NOT (ve.id = ANY($4::int[]))
-      ${deck.clause}
-      ORDER BY ABS(COALESCE(de."difficulty", 99) - $3) ASC, RANDOM()
-      LIMIT $5
-    `, [userId, language, targetLevel, excludeIds, limit, ...deck.params]);
+      AND ve.id = ANY($3::int[])
+    `, [userId, language, ids]);
 
-    return result.rows.filter((row) => this.isCardGameEligible(row, markType, now));
+    const byId = new Map(result.rows.map((row) => [row.id, row]));
+    const ordered: VocabEntry[] = [];
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (!row) continue;
+      if (maxEntryKeyLen != null && row.entryKey.length > maxEntryKeyLen) continue;
+      if (!ignoreCooldown && !this.isCardGameEligible(row, markType, now)) continue;
+      // Same stamp fetchGameCandidates applies: the bucket the card is being served
+      // AS, on the track this game exercises.
+      row.gameCategory = computeTypeCategory(
+        row.typedMarkHistory, markType
+      ) as VocabEntry['gameCategory'];
+      ordered.push(row);
+    }
+    return ordered;
   }
 
   /**
-   * Lend `need` cards for a GAME pool and hand them back as FRESH candidates.
+   * The dd COLLISION KEYS of a set of vet ids (`ddCollisionKey`, utils/definitions.ts).
    *
-   * The game equivalent of lendIntoLoop. Two steps, in order
-   * (docs/PROVISIONAL_CARDS.md § 3b):
+   * Exists for the partial-refill case. A refilling caller sends `exclude` = every card
+   * currently on the board or in its buffer, and the pool must not hand back a card that
+   * READS the same as one of them — the on-screen set is what the player is comparing,
+   * and the server is the only party that can resolve a dd, so it has to look up what
+   * those excluded cards say before choosing replacements.
    *
-   *   1. RE-LEND — when the caller pinned a `targetLevel`, first draw from
-   *      provisional rows the learner already holds near that difficulty and that
-   *      are off cooldown. Costs nothing and mints nothing.
-   *   2. MINT — cover whatever step 1 could not, exactly as before.
+   * Cheap by construction: `ids` is bounded by a game board (tens of cards), and the
+   * common case — a full board with nothing excluded — short-circuits to an empty set.
    *
-   * Step 1 is skipped without a `levelOffset`, and that is not an oversight: an
-   * untargeted caller's held provisional rows are already reachable through its own
-   * bucket query, so re-lending them here would return rows the fill loop has either
-   * taken already or deliberately passed over.
+   * Skips empty keys: a card with no usable dd has nothing to collide WITH (see
+   * `ddCollisionKey`).
+   */
+  private async fetchDdKeys(
+    client: PoolClient,
+    userId: string,
+    language: string,
+    ids: number[]
+  ): Promise<Set<string>> {
+    const keys = new Set<string>();
+    if (ids.length === 0) return keys;
+
+    const result = await client.query<VocabEntry>(`
+      SELECT ve.id, ve."selectedSense", ${DICT_COLS}
+      FROM ${vetReadFrom(language)} ${DICT_JOIN}
+      WHERE ve."userId" = $1
+      AND ve."language" = $2
+      AND ve.id = ANY($3::int[])
+    `, [userId, language, ids]);
+
+    for (const row of result.rows) {
+      const key = ddCollisionKey(row);
+      if (key) keys.add(key);
+    }
+    return keys;
+  }
+
+  /**
+   * Lend `need` cards for a GAME pool and hand them back as playable candidates.
    *
-   * A minted row has no mark history, so it bands Unfamiliar on every track and can
-   * never be on cooldown — re-querying the Unfamiliar bucket with the caller's
-   * exclusions therefore returns essentially just the new rows.
+   * The game half of the last fill tier. All policy lives in
+   * `ProvisionalCardService.acquireLentCards` — re-lend rows the learner already
+   * holds, then mint only the remainder — so this method is just the translation
+   * between "how many cards does the board still need" and "rows to drain".
    *
-   * Returns [] when both steps come up empty, so the caller falls through to its
-   * borrow/cooled tiers exactly as it did before lending existed here.
+   * `levelOffset` pins the DIFFICULTY to lend around: Hydra maps a rolled colour to a
+   * tier relative to the learner (docs/HYDRA_BUBBLES.md § 6.2), and only the server
+   * knows their level. Absent, lending centres on the learner's own estimated level.
    *
-   * NOTE the length cap: Word Search passes `maxEntryKeyLen`, but nothing constrains
-   * lending itself to short words, so a lend can legitimately yield zero usable rows
-   * for that game. That is the same over-lend the controller's PROVISION_RETRY_FACTOR
-   * loop already accepts (docs/PROVISIONAL_CARDS.md).
+   * Returns [] when supply is exhausted, so the caller simply comes back short — a
+   * short board is always the correct answer, never a refusal.
    */
   private async lendGameCandidates(
     client: PoolClient,
@@ -388,39 +464,22 @@ export class OnDeckVocabService {
     need: number,
     markType: MarkType,
     now: number,
-    cap: number,
     maxEntryKeyLen: number | undefined,
     excludeIds: number[],
-    collection?: CollectionFilter | null,
     levelOffset?: number
   ): Promise<VocabEntry[]> {
     if (need <= 0) return [];
 
-    // Resolve the tier ONCE, so the re-lend query and the mint agree about what this
-    // color means and the learner's level is estimated a single time.
+    // Resolve the tier ONCE, so re-lend and mint agree about what this colour means
+    // and the learner's level is estimated a single time.
     const level = levelOffset !== undefined
       ? await this.provisionalCardService.resolveLendLevel(userId, language, levelOffset)
       : undefined;
 
-    // 1. Re-lend what the learner already holds at this tier.
-    const relent = level !== undefined
-      ? await this.fetchRelendable(
-          client, userId, language, level, markType, now, need, excludeIds, collection
-        )
-      : [];
-    if (relent.length >= need) return relent.slice(0, need);
-
-    // 2. Mint the shortfall. The re-lent rows are added to the exclusion list so the
-    //    post-mint re-query cannot hand the same card back twice.
-    const { granted } = await this.provisionalCardService.lendCards(
-      userId, language, need - relent.length, 'default', { level }
+    const { lentIds } = await this.provisionalCardService.acquireLentCards(
+      userId, language, need, 'default', { level, excludeIds }
     );
-    if (granted === 0) return relent;
-    const { eligible } = await this.fetchGameCandidates(
-      client, userId, language, ['Unfamiliar'], markType, now, cap, maxEntryKeyLen,
-      [...excludeIds, ...relent.map((card) => card.id)], collection
-    );
-    return [...relent, ...(eligible['Unfamiliar'] ?? [])];
+    return this.fetchRowsByIds(client, userId, language, lentIds, markType, now, maxEntryKeyLen);
   }
 
   /**
@@ -744,23 +803,29 @@ export class OnDeckVocabService {
     category: string,
     language: string,
     excludeIds: number[],
-    collection?: CollectionFilter | null
+    collection?: CollectionFilter | null,
+    /** Vet ids lent to this loop — see fetchGameCandidates. */
+    lentIds: number[] = []
   ): Promise<VocabEntry[]> {
-    // Optional collection restriction; $5 is the next free placeholder after the four below.
-    const deck = this.deckPlayFilter(collection, 5);
+    // Optional collection restriction; $6 is the next free placeholder after the five below.
+    const deck = this.deckPlayFilter(collection, 6);
     const result = await client.query<VocabEntry>(`
       SELECT ve.*, ${DICT_COLS}, ${CORE_CATEGORY_SELECT}
       FROM ${vetReadFrom(language)} ${DICT_JOIN}
       WHERE ve."userId" = $1
       AND ve."language" = $4
-      -- PLAYABLE: feeds the flp working loop and its refill.
-      AND ${vetPlayableClause()}
+      -- SORTED ONLY: same rule as the game pools — a lent card enters a round only
+      -- through the last-resort lend tier, by id (docs/PROVISIONAL_CARDS.md § 4b).
+      AND (${vetSortedClause()} OR ve.id = ANY($5::int[]))
       AND ${CORE_CATEGORY_EXPR} = $2
       AND ve.id != ALL($3::int[])
       ${deck.clause}
-      -- Stable tiebreak only; the real ordering is rankFlpEligible in app code.
-      ORDER BY ve."createdAt" DESC
-    `, [userId, category, excludeIds, language, ...deck.params]);
+      -- Stable tiebreak only; the real ordering is rankFlpEligible in app code — but
+      -- the tie is REAL for never-marked cards, which all score equally and keep this
+      -- order. Own cards first, or a lent row (always created today, so newest by
+      -- createdAt) would beat the learner's own unmarked cards into the loop.
+      ORDER BY (ve."starterPackBucket" = 'provisional') ASC, ve."createdAt" DESC
+    `, [userId, category, excludeIds, language, lentIds, ...deck.params]);
     return result.rows;
   }
 
@@ -768,23 +833,24 @@ export class OnDeckVocabService {
    * Get the next library card for a correct-mark refill, honoring PER-TYPE
    * cooldowns (docs/MASTERY_REWORK.md § Per-type cooldown).
    *
-   * Priority: the preferred category, then a LENT card, then Target -> Unfamiliar ->
-   * Comfortable -> Mastered. At each step we take the head of that category's queue —
+   * Priority: the preferred category, then Target -> Unfamiliar -> Comfortable ->
+   * Mastered, then a COOLING card, and only then a LENT one. At each step we take the
+   * head of that category's queue —
    * the card waiting longest since it came off cooldown (rankFlpEligible) — stamping
    * `readyMarkTypes` so the client shows a face for a ready type. `excludeIds` keeps cards already in the loop out.
    *
-   * LEND BEFORE BORROWING (2026-08-17), mirroring the initial loop: once the preferred
-   * category is spent we lend a fresh card rather than reaching into another category.
-   * The lent card is Unfamiliar whatever was asked for, which is the accepted cost.
-   * Skipped when the preferred category was not servable at all (a mode session whose
-   * `preferredCategory` is outside `allowedCategories`) — there was no requested bucket
-   * to come up short, so borrowing is the honest first move there and lending stays a
-   * last resort.
+   * BORROW, THEN COOL, THEN LEND (2026-08-20, replacing the 2026-08-17 lend-first
+   * rule). Lending is the bottom of the ladder because it exists for a learner who has
+   * not sorted enough cards, not for one whose answered card happened to empty its own
+   * category — which is every learner, on every correct mark, once a category runs dry.
    *
-   * WHEN EVERY CANDIDATE IS COOLING the cooldown is HONORED rather than broken: an
-   * unrestricted Mix/Challenge session lends one provisional card and serves that
-   * (canLendProvisional), and every other session returns null so the client winds
-   * the loop down. A cooling card is never re-served.
+   * WHEN EVERY CANDIDATE IS COOLING a resting card is re-served rather than a new word
+   * minted. It is deliberately shown knowing its mark will be dropped at
+   * POST /api/flashcards/mark: the cooldown exists precisely so re-answering a card
+   * inside its window earns nothing, and the learner keeps studying their own deck.
+   * Only when there is no resting card either does an unrestricted session lend
+   * (canLendProvisional); a restricted one returns null and the client winds the loop
+   * down.
    *
    * `allowedCategories` (Review/Challenge modes) restricts the pool to the given
    * categories only — a banned category is never served, even as a last resort.
@@ -803,7 +869,12 @@ export class OnDeckVocabService {
     language: string,
     excludeIds: number[] = [],
     allowedCategories?: string[],
-    collection?: CollectionFilter | null
+    collection?: CollectionFilter | null,
+    /** The session's foreign-first track — see DEFAULT_FOREIGN_TRACK. The client must
+        echo the same value it launched the loop with, because THIS call is what refills
+        the loop: a refill steered by the wrong track would hand back a card whose face
+        is ready on a track the client is not going to mark. */
+    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
   ): Promise<VocabEntry | null> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -832,42 +903,62 @@ export class OnDeckVocabService {
         for (const category of categories) {
           const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection);
           if (cards.length === 0) continue;
-          const ranked = this.rankFlpEligible(cards, now);
+          const ranked = this.rankFlpEligible(cards, now, foreignTrack);
           if (ranked.length > 0) return ranked[0];
         }
         return null;
       };
 
-      // Lend one card and serve it. The lent row has no mark history, so it is
-      // Unfamiliar and immediately eligible; re-querying Unfamiliar returns it (any
-      // Unfamiliar card that WAS eligible has already been considered by the caller's
-      // passes). Returns null when dictionary supply is exhausted.
-      let lendAttempted = false;
+      // Take the nearest-to-ready COOLING card from the first category that has one.
+      // These are the learner's own cards, re-shown early; the mark they earn is
+      // dropped at POST /api/flashcards/mark, which is what the cooldown means.
+      const serveCooled = async (categories: string[]): Promise<VocabEntry | null> => {
+        for (const category of categories) {
+          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection);
+          const resting = rankCardQueueCooled(cards, now, {
+            markTypes: flpMarkTypes(foreignTrack),
+            windowCategoryOf: (card) => this.flpWindowCategory(card),
+          });
+          if (resting.length > 0) return resting[0];
+        }
+        return null;
+      };
+
+      // Lend one card and serve it. Policy (re-lend before minting) lives in
+      // ProvisionalCardService; the row comes back by id, so it is re-queried with
+      // `lentIds` — the ordinary candidate path is sorted-only. Returns null when
+      // dictionary supply is exhausted.
       const serveLent = async (): Promise<VocabEntry | null> => {
-        lendAttempted = true;
-        const { granted } = await this.provisionalCardService.lendCards(userId, language, 1);
-        if (granted === 0) return null;
-        const lent = await this.fetchFlpCandidates(client, userId, 'Unfamiliar', language, excludeIds, collection);
-        return this.rankFlpEligible(lent, now)[0] ?? null;
+        const { lentIds } = await this.provisionalCardService.acquireLentCards(
+          userId, language, 1, 'default', { excludeIds }
+        );
+        if (lentIds.length === 0) return null;
+        for (const category of fallbackBase) {
+          const lent = await this.fetchFlpCandidates(
+            client, userId, category, language, excludeIds, collection, lentIds
+          );
+          const ranked = this.rankFlpEligible(lent.filter((card) => lentIds.includes(card.id)), now, foreignTrack);
+          if (ranked.length > 0) return ranked[0];
+        }
+        return null;
       };
 
       // 1. The category the caller actually asked for.
       winner = await serveFrom(preferredFirst);
 
-      // 2. LEND rather than borrow — but only when there really was a requested
-      //    bucket (see the docblock) and the session may show a lent card.
-      if (!winner && preferredFirst.length > 0 && this.canLendProvisional(fallbackBase, collection)) {
-        winner = await serveLent();
-      }
-
-      // 3. Borrow across the remaining allowed categories.
+      // 2. Borrow a FRESH card from the remaining allowed categories.
       if (!winner) winner = await serveFrom(borrowOrder);
 
-      // 4. Nothing anywhere is off cooldown. Rather than re-serve a resting card, lend
-      //    — the last-resort case, and the only lend a no-preferred-bucket session gets.
-      //    `lendAttempted` skips a second round trip when step 2 already found supply
-      //    exhausted.
-      if (!winner && !lendAttempted && this.canLendProvisional(fallbackBase, collection)) {
+      // 3. Nothing is off cooldown anywhere — re-serve the card closest to ready,
+      //    preferred category first (2026-08-20). This tier used to be a LEND, sitting
+      //    both here and above the borrow pass, which minted a card on every correct
+      //    mark once the answered card's own category ran dry: 14 lends in a single
+      //    dev session, and a bucket that grew without bound.
+      if (!winner) winner = await serveCooled([...preferredFirst, ...borrowOrder]);
+
+      // 4. Genuinely nothing to serve — the learner has too few cards. Lend one, if
+      //    this session is allowed to show a lent card at all.
+      if (!winner && this.canLendProvisional(fallbackBase, collection)) {
         winner = await serveLent();
       }
 
@@ -900,28 +991,66 @@ export class OnDeckVocabService {
     limit: number,
     excludeIds: number[],
     now: number,
-    collection?: CollectionFilter | null
+    collection?: CollectionFilter | null,
+    lentIds: number[] = [],
+    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
   ): Promise<VocabEntry[]> {
     if (limit <= 0) return [];
-    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection);
-    return this.rankFlpEligible(candidates, now).slice(0, limit);
+    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds);
+    return this.rankFlpEligible(candidates, now, foreignTrack).slice(0, limit);
   }
 
   /**
-   * Top a short working loop up with freshly LENT cards, and return them.
+   * The COOLING cards of one category, nearest-to-ready first — the flp's
+   * next-to-last fill tier (2026-08-20).
    *
-   * Reached when the learner's own cards cannot fill the loop — most often because
-   * they are all resting on their cooldown, which `ensureBaseline` cannot detect
-   * (the user is well past the 20-card baseline; the cards just aren't ready). We
-   * honor the cooldown and lend instead of re-serving a cooling card.
+   * The flp had no cooled tier at all: a loop that could not be filled from rested
+   * cards either lent new ones or came back short. Both were worse than re-showing a
+   * card the learner chose, so the ladder now reads fresh → borrowed → COOLED → lent
+   * (docs/PROVISIONAL_CARDS.md § 4b).
    *
-   * The lent rows have no mark history, so they compute as Unfamiliar and are
-   * immediately eligible. Re-querying Unfamiliar with the loop's `excludeIds` returns
-   * essentially just them: any Unfamiliar card that WAS eligible has already been
-   * taken by the quota/top-up passes and is in `excludeIds`.
+   * These cards are shown but earn nothing: a mark fired at a still-cooling track is
+   * dropped at `POST /api/flashcards/mark`. That is the point of the cooldown — a card
+   * answered correctly minutes ago has nothing left to teach today — and it is a
+   * better answer than growing the learner's deck with words they never chose.
+   */
+  private async fetchCooledCategoryCards(
+    client: PoolClient,
+    userId: string,
+    language: string,
+    category: string,
+    limit: number,
+    excludeIds: number[],
+    now: number,
+    collection?: CollectionFilter | null,
+    lentIds: number[] = [],
+    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
+  ): Promise<VocabEntry[]> {
+    if (limit <= 0) return [];
+    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds);
+    return rankCardQueueCooled(candidates, now, {
+      markTypes: flpMarkTypes(foreignTrack),
+      windowCategoryOf: (card) => this.flpWindowCategory(card),
+    }).slice(0, limit);
+  }
+
+  /**
+   * Top a short working loop up with LENT cards, and return them.
    *
-   * Returns [] when dictionary supply is exhausted — the round then plays short, or
-   * empty, rather than breaking the cooldown.
+   * THE LAST TIER, reached only once the loop's own categories AND their cooling
+   * cards are spent — i.e. the learner genuinely has too few cards, not merely too
+   * few rested ones (docs/PROVISIONAL_CARDS.md § 4b). Until 2026-08-20 this ran
+   * BEFORE borrowing and before cooling, which minted a fresh batch on every load for
+   * any learner whose quota categories were thin.
+   *
+   * Policy lives in `ProvisionalCardService.acquireLentCards`: rows the learner
+   * already holds are re-lent before anything new is minted. The ids come back here
+   * and are re-queried through the ordinary flp candidate path — passing them as
+   * `lentIds`, since selection is otherwise sorted-only.
+   *
+   * A lent row has no mark history, so it bands Unfamiliar and is immediately
+   * eligible. Returns [] when dictionary supply is exhausted — the loop then plays
+   * short, or empty, rather than breaking the cooldown.
    */
   private async lendIntoLoop(
     client: PoolClient,
@@ -930,14 +1059,37 @@ export class OnDeckVocabService {
     need: number,
     excludeIds: number[],
     now: number,
-    collection?: CollectionFilter | null
+    collection?: CollectionFilter | null,
+    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
   ): Promise<VocabEntry[]> {
     if (need <= 0) return [];
-    const { granted } = await this.provisionalCardService.lendCards(userId, language, need);
-    if (granted === 0) return [];
-    return this.fetchEligibleCategoryCards(
-      client, userId, language, 'Unfamiliar', need, excludeIds, now, collection
+    const { lentIds } = await this.provisionalCardService.acquireLentCards(
+      userId, language, need, 'default', { excludeIds }
     );
+    if (lentIds.length === 0) return [];
+    // Re-lent rows keep their marks, so they can land in ANY band — query every
+    // category rather than assuming Unfamiliar.
+    //
+    // FILTERED TO `lentIds` (not just excluded): passing `lentIds` widens the
+    // candidate query to "sorted OR lent", so without this filter the pass could hand
+    // back an ordinary sorted card — and for a MODE session (Challenge allows only
+    // Unfamiliar/Target) that card could be from a category the mode forbids.
+    // Goes through `fetchFlpCandidates` rather than `fetchEligibleCategoryCards`
+    // because the latter applies its LIMIT before we could filter: a category holding
+    // plenty of ordinary sorted cards would fill the slice with those and drop the
+    // lent rows this call exists to return. The candidate query is deliberately
+    // unlimited (see its docblock), so filtering first costs nothing.
+    const lent = new Set(lentIds);
+    const rows: VocabEntry[] = [];
+    for (const category of ['Unfamiliar', 'Target', 'Comfortable', 'Mastered']) {
+      if (rows.length >= need) break;
+      const candidates = await this.fetchFlpCandidates(
+        client, userId, category, language, excludeIds, collection, lentIds
+      );
+      const ranked = this.rankFlpEligible(candidates.filter((card) => lent.has(card.id)), now, foreignTrack);
+      rows.push(...ranked.slice(0, need - rows.length));
+    }
+    return rows;
   }
 
   /**
@@ -950,24 +1102,27 @@ export class OnDeckVocabService {
    *   deck-tap path), ignoring distribution.
    *
    * PER-TYPE COOLDOWN (docs/MASTERY_REWORK.md § Per-type cooldown): every fetch is
-   * eligibility-filtered — a card is only offered if ≥1 flp mark type
-   * (recognition/production) is off cooldown, and it's stamped with
+   * eligibility-filtered — a card is only offered if ≥1 of the session's two flp mark
+   * types (`flpMarkTypes(foreignTrack)`) is off cooldown, and it's stamped with
    * `readyMarkTypes` so the client steers the shown face. Within each quota the
    * eligible cards are ranked AS A QUEUE, longest-waiting first (rankFlpEligible), so
    * a quota is filled by the cards most overdue for review; cards with no correct mark
    * yet sort last. Enriches cards with related words that share
    * characters.
    *
-   * WHEN A QUOTA IS SHORT the loop LENDS BEFORE IT BORROWS: the shortfall is covered
-   * with freshly lent provisional cards first, and only what lending cannot cover is
-   * taken from other categories via the mode's fill order. Lent cards are always
-   * Unfamiliar, so this deliberately skews a short loop Unfamiliar rather than
-   * deepening whichever bucket had surplus.
+   * WHEN A QUOTA IS SHORT the loop BORROWS, then COOLS, then LENDS (2026-08-20): the
+   * shortfall is covered from the mode's other categories first, then by re-showing
+   * the learner's own cooling cards, and only then with lent cards. Lending exists to
+   * get a learner started who has not sorted enough cards — not to paper over a quota
+   * that a healthy deck simply cannot fill (the Mix loop asks for 1 Mastered + 2
+   * Comfortable that a young deck does not have).
    *
-   * The cooldown is never broken either way. A restricted session (Review, a builtin
-   * collection, a deck) cannot lend, so it returns short (possibly empty) and the
-   * client shows its "nothing ready" state. See canLendProvisional and
-   * docs/PROVISIONAL_CARDS.md.
+   * The cooled tier deliberately re-serves resting cards: they are shown but earn
+   * nothing, because a mark on a cooling track is dropped at POST /api/flashcards/mark.
+   * A restricted session (Review, a builtin collection, a deck) still cannot lend, but
+   * it does reach the cooled tier, so a deck whose cards are all resting replays them
+   * instead of showing the "nothing ready" state. See canLendProvisional and
+   * docs/PROVISIONAL_CARDS.md § 4b.
    *
    * `deckId` (docs/DECKS_FEATURE.md) restricts the whole loop — quotas, top-up and
    * the cooled last-resort fill alike — to one user-authored deck. It composes with
@@ -980,7 +1135,14 @@ export class OnDeckVocabService {
     language: string,
     categoryFilter?: string | null,
     mode?: StudyMode,
-    collection?: CollectionFilter | null
+    collection?: CollectionFilter | null,
+    /** Vet ids the caller's baseline top-up lent this session. Selection is
+        sorted-only, so without these the lent cards are invisible and the loop would
+        lend a second time to find them (docs/PROVISIONAL_CARDS.md § 4b). */
+    lentIds: number[] = [],
+    /** The session's foreign-first track — see DEFAULT_FOREIGN_TRACK. Decides which two
+        tracks eligibility, queue order and the `readyMarkTypes` stamp are computed on. */
+    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
   ): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -992,10 +1154,10 @@ export class OnDeckVocabService {
       let workingLoop: VocabEntry[];
 
       // The categories this loop may draw from, in fallback priority — also the
-      // pool for the cooled last-resort fill below.
+      // pool for the cooled fill below.
       let loopCategories: string[];
-      // Cross-category borrow order, applied only AFTER lending (see the LEND-FIRST
-      // pass below). Empty for the legacy single-category path, which never borrows.
+      // Cross-category borrow order, applied once the quotas are in. Empty for the
+      // legacy single-category path, which never borrows.
       let fillOrder: string[] = [];
 
       if (categoryFilter) {
@@ -1003,7 +1165,7 @@ export class OnDeckVocabService {
         // single tapped category.
         loopCategories = [categoryFilter];
         workingLoop = await this.fetchEligibleCategoryCards(
-          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now, collection
+          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now, collection, lentIds, foreignTrack
         );
       } else {
         // Data-driven distribution: pick the per-mode config (or the Mix default),
@@ -1017,51 +1179,64 @@ export class OnDeckVocabService {
         // Initial quota fetches (eligibility-filtered).
         for (const { category, count } of config.quotas) {
           const rows = await this.fetchEligibleCategoryCards(
-            client, userId, language, category, count, workingLoop.map(c => c.id), now, collection
+            client, userId, language, category, count, workingLoop.map(c => c.id), now, collection, lentIds, foreignTrack
           );
           workingLoop.push(...rows);
         }
 
-        // The cross-category top-up is deliberately NOT run here; it happens after
-        // the lend pass below.
+        // The cross-category top-up runs below, as tier 1 of the shared fill ladder.
         fillOrder = config.fillOrder;
       }
 
-      // LEND FIRST, BORROW SECOND (2026-08-17).
+      // FILL ORDER: BORROW → COOL → LEND (2026-08-20, replacing "lend first, borrow
+      // second" of 2026-08-17).
       //
-      // A quota that its own category could not fill is topped up with FRESHLY LENT
-      // cards BEFORE we borrow from any other category. A lent row has no mark
-      // history, so it always arrives as Unfamiliar — the loop's mix therefore skews
-      // Unfamiliar rather than skewing toward whichever category happened to have
-      // surplus, and that is the intended trade: a brand-new word is closer to what
-      // the missing quota was asking for than someone else's leftovers.
+      // A quota its own category could not fill is covered, in this order:
+      //   1. FRESH cards borrowed from the mode's other categories;
+      //   2. COOLING cards — the learner's own words, shown again early. They earn
+      //      nothing (the mark is dropped at POST /api/flashcards/mark), which is
+      //      exactly what a cooldown means;
+      //   3. LENT cards, and only here.
       //
-      // Note this ordering only bites when a quota underfills, and a quota underfills
-      // exactly when that category's eligible pool is spent — so the borrow pass below
-      // can never have served the *same* category anyway. What we are choosing between
-      // is "lend" and "deepen a different bucket".
+      // The old ordering minted a card whenever a quota underfilled, and a quota
+      // underfills constantly for an ordinary learner — the Mix loop asks for 1
+      // Mastered + 2 Comfortable that a young deck simply does not have. Lending is
+      // for a learner who has not sorted enough cards, not for one whose cards are
+      // merely resting or unevenly distributed.
       //
       // Restricted sessions (Review, a builtin collection, a deck) still never lend:
       // a Review round padded with never-seen words is not a review, and a deck round
-      // made of non-deck words is not that deck. They come back short on purpose.
+      // made of non-deck words is not that deck. They come back short on purpose —
+      // but they DO now reach tier 2, so a deck whose cards are all resting replays
+      // them instead of showing an empty loop.
       // See canLendProvisional and docs/PROVISIONAL_CARDS.md.
-      if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(loopCategories, collection)) {
-        const lent = await this.lendIntoLoop(
-          client, userId, language, WORKING_LOOP_SIZE - workingLoop.length,
-          workingLoop.map(c => c.id), now, collection
-        );
-        workingLoop.push(...lent);
-      }
-
-      // Only once lending is spent (or banned) do we borrow across categories, in the
-      // mode's fill-order priority.
       for (const category of fillOrder) {
         if (workingLoop.length >= WORKING_LOOP_SIZE) break;
         const rows = await this.fetchEligibleCategoryCards(
           client, userId, language, category,
-          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection
+          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, foreignTrack
         );
         workingLoop.push(...rows);
+      }
+
+      // 2. COOLING cards, nearest-to-ready first, across every category this loop may
+      //    draw from (the legacy single-category path stays inside its own category).
+      for (const category of loopCategories) {
+        if (workingLoop.length >= WORKING_LOOP_SIZE) break;
+        const rows = await this.fetchCooledCategoryCards(
+          client, userId, language, category,
+          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, foreignTrack
+        );
+        workingLoop.push(...rows);
+      }
+
+      // 3. LEND — the learner really is short of cards.
+      if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(loopCategories, collection)) {
+        const lent = await this.lendIntoLoop(
+          client, userId, language, WORKING_LOOP_SIZE - workingLoop.length,
+          workingLoop.map(c => c.id), now, collection, foreignTrack
+        );
+        workingLoop.push(...lent);
       }
 
       // Randomize play order. The ranking above chose WHICH cards are in the loop;
@@ -1179,6 +1354,137 @@ export class OnDeckVocabService {
   private static readonly GAME_CANDIDATE_CAP = 200;
 
   /**
+   * Build ONE STUDY CHALLENGE ROUND'S BOARD (docs/STUDY_CHALLENGE.md § 5.2).
+   *
+   * A challenge board answers a different question from every other game pool, so
+   * it is a different assembly rather than a `mode` on the one above. The normal
+   * pool asks "give me a difficulty MIX"; this one asks "give me THESE twelve
+   * words, plus whatever is easiest to pad the board out with". Two hard rules
+   * follow, and neither can be expressed as a bucket distribution:
+   *
+   *  1. **All twelve contested words appear in every round.** Filler pads the board
+   *     out to the game's natural size; it never displaces a contested word. So the
+   *     contested rows are addressed BY ID and hydrated with the cooldown ignored —
+   *     a contested word that happens to be resting is still contested.
+   *  2. **Filler is the player's easiest available material**, via the
+   *     `mastered-first` ladder (`ProvisionalCardService.getFillerPool`): Mastered →
+   *     Comfortable → Target → Unfamiliar → lent. Filler must not be a source of
+   *     difficulty — a challenge measures the twelve, and padding with words the
+   *     player has never seen would add noise and reward whoever got luckier filler.
+   *     That is also why filler scores 20 rather than 100 (§ 5.4).
+   *
+   * ⚠️ THE RESULT IS SHUFFLED, and that is a correctness requirement, not a
+   * nicety (Q74). The board must not reveal which words are contested; handing the
+   * twelve back first would let any client — and any player watching the deal
+   * order — read the split straight off the payload. The games classify by WORD
+   * against the set they already hold, never by position.
+   *
+   * `includeContested: false` is the rolling top-up form — Match Speed's buffer and
+   * Hydra's colour buffers refill mid-run, and those refills are pure filler
+   * because the contested set was dealt once, up front, and is never recycled
+   * (§ 5.3).
+   *
+   * The band `available` counts are still returned, so the response is shape-
+   * compatible with the ordinary pool and the games need only one parser.
+   */
+  async getChallengeGamePool(
+    userId: string,
+    language: string,
+    gameMarkType: MarkType,
+    opts: {
+      /** Vet ids of the contested words, from `StudyChallengeService.getRoundContext`. */
+      contestedIds: number[];
+      /** The contested WORDS — what keeps a contested word out of the filler pool. */
+      contestedWords: string[];
+      /** Board size: how many cards this call must return in total. */
+      need: number;
+      /** False for a mid-run top-up, which is filler only. */
+      includeContested: boolean;
+      /** Cards already on the board / in a buffer — never hand one back twice. */
+      excludeIds?: number[];
+      /** Word Search drops words too long for its grid. */
+      maxEntryKeyLen?: number;
+    }
+  ): Promise<{
+    cards: VocabEntry[];
+    requested: Record<string, number>;
+    available: Record<string, number>;
+    total: number;
+    needed: number;
+    sufficient: boolean;
+  }> {
+    if (!userId) throw new ValidationError('User ID is required');
+
+    const now = Date.now();
+    const need = Math.max(0, Math.floor(opts.need));
+    const excluded = new Set(opts.excludeIds ?? []);
+    const available = await this.getCategoryCounts(
+      userId, language, OnDeckVocabService.GAME_FALLBACK_ORDER
+    );
+
+    const client = await db.getClient();
+    try {
+      const contestedIds = opts.includeContested
+        ? opts.contestedIds.filter((id) => !excluded.has(id))
+        : [];
+      const contested = await this.fetchRowsByIds(
+        client, userId, language, contestedIds, gameMarkType, now, opts.maxEntryKeyLen,
+        true // obligation, not preference — see fetchRowsByIds
+      );
+
+      // Filler tops the board up to `need`. The contested WORDS are excluded by word
+      // rather than by id so a second vet row for the same word (a language switch,
+      // a re-materialised card) cannot slip in as its own filler.
+      // ⚠️ THE EXCLUSION GOES INTO THE LADDER, NOT AFTER IT. The ladder is
+      // deterministic (band descent, then commonality), so filtering its RESULT would
+      // hand a mid-run top-up exactly the rows the opening deal already took — the
+      // refill would come back empty and a rolling-buffer game would run dry
+      // mid-round. Measured, and fixed, on 2026-08-22.
+      const fillerIds = await this.provisionalCardService.getFillerPool(
+        userId, language, Math.max(0, need - contested.length), opts.contestedWords,
+        [...excluded, ...opts.contestedIds]
+      );
+      const filler = await this.fetchRowsByIds(
+        client, userId, language,
+        fillerIds.filter((id) => !excluded.has(id) && !contestedIds.includes(id)),
+        gameMarkType, now, opts.maxEntryKeyLen,
+        // The ladder's top rungs are the player's MASTERED cards, which are the most
+        // likely of all to be resting. Filtering them would empty the filler pool for
+        // exactly the learners the ladder was written for.
+        true
+      );
+
+      const cards = this.shuffleCards([...contested, ...filler]).slice(0, need);
+      const enriched = await this.enrichEntriesPipeline(cards, language);
+      const withAudio = await this.prewarmAudio(enriched);
+
+      return {
+        cards: withAudio,
+        // A challenge board asks for no bands at all: the set IS the request.
+        requested: {},
+        available,
+        total: need,
+        needed: need,
+        // Short only when the player's whole library AND the dictionary are
+        // exhausted. A short board still plays — it is never a refusal (§ 5.2).
+        sufficient: withAudio.length >= need,
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Fisher-Yates over a copy — see the Q74 note on `getChallengeGamePool`. */
+  private shuffleCards(cards: VocabEntry[]): VocabEntry[] {
+    const out = [...cards];
+    for (let i = out.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
+
+  /**
    * Build the bubble-match game pool. The game needs `total` (= sum of the
    * requested distribution) cards to function, so this is a best-effort fill
    * rather than a hard per-category gate:
@@ -1245,6 +1551,15 @@ export class OnDeckVocabService {
           `ProvisionalCardService.resolveLendLevel`, and ignored unless lending
           actually fires. */
       lendLevelOffset?: number;
+      /** Never fill from outside the requested buckets. Set by callers for whom the
+          bucket IS the answer rather than a preference — Hydra pays the player by the
+          band a card came from (docs/HYDRA_BUBBLES.md § 6.2d). Such a request comes
+          back short rather than wrong. */
+      strictBuckets?: boolean;
+      /** Vet ids the caller's baseline top-up lent this round
+          (`ProvisionalCardService.ensureBaseline`). Selection is sorted-only, so
+          without these the lent cards are invisible to the pool. */
+      lentIds?: number[];
     } = {}
   ): Promise<{
     cards: VocabEntry[];
@@ -1285,7 +1600,8 @@ export class OnDeckVocabService {
       // Per-category candidates split fresh (game type off cooldown) vs cooled.
       const { eligible, cooled } = await this.fetchGameCandidates(
         client, userId, language, countCategories, gameMarkType, now,
-        OnDeckVocabService.GAME_CANDIDATE_CAP, undefined, excludeIds, opts.collection
+        OnDeckVocabService.GAME_CANDIDATE_CAP, undefined, excludeIds, opts.collection,
+        opts.lentIds ?? []
       );
 
       // Soft-avoid: pull just-cleared cards out of BOTH tiers into a third,
@@ -1311,11 +1627,32 @@ export class OnDeckVocabService {
 
       const selectedIds = new Set<number>();
       const cards: VocabEntry[] = [];
+      // NO TWO CARDS IN ONE ROUND MAY READ THE SAME (2026-08-22).
+      //
+      // Distinct entries routinely resolve to the SAME dd — 高兴 / 开心 both "happy",
+      // any two measure words both "measure word". Every game shows its cards at once,
+      // so two same-dd cards on one board give a prompt two correct-looking answers of
+      // which only one scores. The pool is the single place all four gamePool games
+      // (Bubble Match, Match Speed, Speed Reading, Hydra) get their cards, so the guard
+      // lives here rather than four times over on the client.
+      // See docs/GAMES_FEATURE.md § "No two cards may share a dd in one round".
+      //
+      // SEEDED with the dds of the cards the caller is KEEPING (`excludeIds` = on the
+      // board or in the buffer, for a partial refill), so a replacement can't collide
+      // with a bubble already on screen — the exact same reason `excludeIds` itself
+      // exists, one level up from identity.
+      const takenDds = await this.fetchDdKeys(client, userId, language, excludeIds);
       // Pop up to `limit` not-yet-selected cards off one category queue.
       const drain = (queue: VocabEntry[], limit: number): void => {
         while (limit > 0 && queue.length > 0) {
           const card = queue.shift()!;
           if (selectedIds.has(card.id)) continue;
+          // A colliding card is DISCARDED, not deferred: the key it clashes with is
+          // held for the whole round, so this card could never become admissible later.
+          // An empty key means "no dd to confuse anyone with" and never collides.
+          const ddKey = ddCollisionKey(card);
+          if (ddKey && takenDds.has(ddKey)) continue;
+          if (ddKey) takenDds.add(ddKey);
           selectedIds.add(card.id);
           cards.push(card);
           limit--;
@@ -1328,96 +1665,53 @@ export class OnDeckVocabService {
         if (cards.length >= target) break;
         drain(eligible[category] ?? [], Math.min(count, target - cards.length));
       }
-      // SINGLE-BUCKET REQUESTS NEVER SUBSTITUTE A BUCKET (2026-08-18).
+      // STRICT-BUCKET REQUESTS NEVER SUBSTITUTE A BUCKET (2026-08-18; made explicit
+      // 2026-08-21).
       //
-      // A caller that asks for ONE category is not describing a difficulty MIX it
-      // would like — it is asking a question whose answer is the category itself.
-      // Hydra Bubbles rolls a color, requests that color, and pays the player
-      // according to it (docs/HYDRA_BUBBLES.md § 2, § 5); topping its request up from
-      // another bucket hands back a card whose real category the caller then
-      // misreports to the player, and misprices. So for a single-bucket request the
-      // fallback ORDER collapses to the requested bucket alone: it would rather come
-      // back short — the caller can wait or skip the slot — than come back wrong.
+      // A caller can ask for a set of categories in one of two spirits. Usually it is
+      // describing a difficulty MIX it would like, and topping one quota up from a
+      // neighbouring bucket is exactly the best-effort fill it wants. But Hydra
+      // Bubbles rolls a COLOR, requests the bands that color is made of, and pays the
+      // player according to that color (docs/HYDRA_BUBBLES.md § 2, § 5) — for it the
+      // request is a question whose answer is the bucket itself, and a card from
+      // outside the set is one the caller then misreports to the player and misprices.
+      // `strictBuckets` collapses the fallback ORDER to the requested buckets alone:
+      // such a caller would rather come back SHORT — it can wait or skip the slot —
+      // than come back WRONG.
       //
-      // A multi-bucket caller (every other game) is unaffected: it asked for a
-      // distribution, and topping one quota up from another is exactly the
-      // best-effort fill it wants.
+      // ⚠️ IT IS A FLAG NOW, NOT AN INFERENCE, and that is the point. This used to be
+      // inferred as `requested.length === 1`, which worked only while Hydra asked for
+      // exactly one band per color. Hydra's two-color rework asks for TWO bands per
+      // color (BUCKETS_BY_COLOR, src/games/hydra-bubbles/constants.ts), which the old
+      // inference would have read as "a mix, please substitute freely" — silently
+      // reintroducing the mispricing it was written to stop. An intent this load-
+      // bearing has to be stated by the caller, not guessed from the shape of what it
+      // asked for.
+      //
+      // The length-1 inference is kept underneath as a backstop for any future caller
+      // that asks for a single bucket without knowing about the flag; a single-bucket
+      // request is unambiguous in a way a subset request is not.
       const requested = Object.keys(distribution);
-      const substituting = requested.length > 1;
+      const substituting = !opts.strictBuckets && requested.length > 1;
       const fallbackOrder = substituting ? OnDeckVocabService.GAME_FALLBACK_ORDER : requested;
       const lastResortOrder = substituting
         ? [...requested, ...OnDeckVocabService.GAME_FALLBACK_ORDER]
         : requested;
 
-      // 2. LEND ONLY WHAT BORROWING CANNOT COVER (2026-08-19, narrowing the
-      //    2026-08-17 "lend before borrowing" rule — docs/PROVISIONAL_CARDS.md § 4b).
-      //
-      //    A requested bucket that came up short is still covered by lending BEFORE we
-      //    substitute another bucket's cards — but only for the part of the shortfall
-      //    the learner's own FRESH (off-cooldown) cards cannot cover. Everything tier 3
-      //    is about to borrow is subtracted from the lend request first.
-      //
-      //    WHY THIS NARROWING EXISTS. The original rule assumed a quota underfills only
-      //    when supply is spent. That is false for a game whose mark track is sparsely
-      //    populated: Speed Reading buckets by READING, where a typical learner is
-      //    ~100% Unfamiliar, so its Target/Comfortable/Mastered quotas (18 of 20) are
-      //    unfillable no matter how large the library is. Worse, a minted row is always
-      //    Unfamiliar, so lending can NEVER close those quotas — every load lent
-      //    another ~18 cards, forever (a dev account with 151 fresh reading-Unfamiliar
-      //    library cards had accumulated 170 provisional rows). Borrowing is free and
-      //    the borrowed card is a card the learner actually chose, so a fresh card in
-      //    hand always beats minting one.
-      //
-      //    Single-bucket callers (Hydra Bubbles) are unaffected: their `fallbackOrder`
-      //    is the requested bucket alone, which tier 1 has already drained, so
-      //    `freshRemaining` is 0 and this is the old unconditional lend.
-      //
-      //    Two sessions never reach here at all:
-      //      * a COLLECTION-restricted pool (a deck / builtin) — a deck round made of
-      //        non-deck words is not that deck (same rule as canLendProvisional);
-      //      * a PARTIAL REFILL (`opts.need`) — Bubble Match's Play Again is mid-session
-      //        with a board in hand, and lending there would grow the player's deck on
-      //        every tap. That exemption predates this change (see
-      //        OnDeckVocabController.getGamePool) and is deliberately preserved —
-      //        EXCEPT for a rolling-supply surface (`opts.lendOnRefill`), whose every
-      //        spawn is a refill and which would otherwise never lend at all. See
-      //        ROLLING_SUPPLY_SURFACES in contracts/wire.ts.
-      //
-      //    The collection exemption has NO opt-out: a restricted round plays the set
-      //    the learner chose, rolling supply or not (docs/HYDRA_BUBBLES.md § 6.3).
-      const mayLend = opts.need === undefined || opts.lendOnRefill === true;
-      // Fresh cards tier 3 still has in hand. The buckets are disjoint (a card has
-      // exactly one category for this markType) and the soft-avoid tier has already
-      // been lifted out of `eligible`, so a plain sum counts no card twice. Capped by
-      // GAME_CANDIDATE_CAP per category, which can only make us lend MORE than
-      // strictly necessary, never less.
-      const freshRemaining = fallbackOrder.reduce(
-        (sum, category) => sum + (eligible[category]?.length ?? 0),
-        0
-      );
-      const lendNeed = target - cards.length - freshRemaining;
-      if (lendNeed > 0 && !opts.collection && mayLend) {
-        const lent = await this.lendGameCandidates(
-          client, userId, language, lendNeed, gameMarkType, now,
-          OnDeckVocabService.GAME_CANDIDATE_CAP, undefined,
-          [...excludeIds, ...selectedIds], opts.collection, opts.lendLevelOffset
-        );
-        // The re-query is unaware of the soft-avoid tier, so filter those back out.
-        drain(lent.filter((card) => !avoidIds.has(card.id)), target - cards.length);
-      }
-      // 3. Still short → top up to `target` with FRESH cards from the fallback
+      // 2. Still short → top up to `target` with FRESH cards from the fallback
       //    buckets (Target → Comfortable → Unfamiliar → Mastered).
       for (const category of fallbackOrder) {
         if (cards.length >= target) break;
         drain(eligible[category] ?? [], target - cards.length);
       }
-      // 4. Last resort → COOLING cards (requested buckets first, then fallback), so a
+      // 3. Still short → COOLING cards (requested buckets first, then fallback), so a
       //    just-played library still assembles a full board.
       //
       //    For a single-bucket caller this is the tier that MATTERS, and it is
       //    deliberately allowed to break the per-type cooldown: a genuinely Mastered
-      //    card that is merely resting is a truthful blue bubble, whereas a minted
-      //    HSK-1 word colored blue by its lend tier is not. Note the consequence —
+      //    card that is merely resting is a truthful `bloom` bubble (Hydra's +1 tier),
+      //    whereas a minted HSK-1 word placed in that tier by its lend level is not.
+      //    Note the consequence —
       //    a mark on a still-cooling card is dropped by the guard at
       //    POST /api/flashcards/mark (docs/HYDRA_BUBBLES.md § 8), so these cards are
       //    playable but do not advance mastery. That is the accepted trade: the
@@ -1427,12 +1721,57 @@ export class OnDeckVocabService {
         if (cards.length >= target) break;
         drain(cooled[category] ?? [], target - cards.length);
       }
-      // 5. Absolute last resort → AVOIDED cards (just cleared by the caller). Only
-      //    reached when the library is too small to fill the board without reusing
-      //    them; a roomy library never gets here.
+      // 4. Then → AVOIDED cards (just cleared by the caller). Only reached when the
+      //    library is too small to fill the board without reusing them; a roomy
+      //    library never gets here.
       for (const category of lastResortOrder) {
         if (cards.length >= target) break;
         drain(avoided[category] ?? [], target - cards.length);
+      }
+
+      // 5. ABSOLUTE last resort → LEND (2026-08-20, replacing the 2026-08-17
+      //    "lend before borrowing" rule and its 2026-08-19 narrowing).
+      //
+      //    LENDING IS NOW THE BOTTOM OF THE LADDER, BELOW COOLING CARDS. The rule it
+      //    implements: lending exists to get a learner started who has not sorted
+      //    enough cards, and for nothing else (docs/PROVISIONAL_CARDS.md § 4b). A
+      //    learner with a real library whose cards are merely RESTING is not short of
+      //    cards, so tier 3 re-serves those instead. The cost is that a mark on a
+      //    still-cooling card is dropped at POST /api/flashcards/mark, so those cards
+      //    play but do not advance mastery — the accepted trade, and a far better one
+      //    than growing the learner's deck with words they never chose.
+      //
+      //    Why the old ordering was wrong, concretely: Speed Reading buckets by
+      //    READING, where a typical learner is ~100% Unfamiliar, so its
+      //    Target/Comfortable/Mastered quotas (18 of 20) are unfillable no matter how
+      //    large the library is — and a minted row is itself Unfamiliar, so lending
+      //    could never close them. Every load lent another ~18 cards, forever.
+      //
+      //    In practice this tier is reached by exactly two callers: a genuinely
+      //    under-supplied learner whose baseline top-up could not cover the board
+      //    (dictionary exhausted), and Hydra Bubbles, whose every spawn is a refill and
+      //    whose colour ladder is built on lending (docs/HYDRA_BUBBLES.md § 6.2).
+      //    Hydra now pulls cooling cards before it lends, like everything else.
+      //
+      //    Two sessions never reach it at all:
+      //      * a COLLECTION-restricted pool (a deck / builtin) — a deck round made of
+      //        non-deck words is not that deck (same rule as canLendProvisional);
+      //      * a PARTIAL REFILL (`opts.need`) — Bubble Match's Play Again is mid-session
+      //        with a board in hand, and lending there would grow the player's deck on
+      //        every tap. EXCEPT for a rolling-supply surface (`opts.lendOnRefill`),
+      //        whose every spawn is a refill and which would otherwise never lend at
+      //        all. See ROLLING_SUPPLY_SURFACES in contracts/wire.ts.
+      //
+      //    The collection exemption has NO opt-out: a restricted round plays the set
+      //    the learner chose, rolling supply or not (docs/HYDRA_BUBBLES.md § 6.3).
+      const mayLend = opts.need === undefined || opts.lendOnRefill === true;
+      if (cards.length < target && !opts.collection && mayLend) {
+        const lent = await this.lendGameCandidates(
+          client, userId, language, target - cards.length, gameMarkType, now,
+          undefined, [...excludeIds, ...selectedIds], opts.lendLevelOffset
+        );
+        // The re-query is unaware of the soft-avoid tier, so filter those back out.
+        drain(lent.filter((card) => !avoidIds.has(card.id)), target - cards.length);
       }
 
       const sufficient = cards.length >= target;
@@ -1455,6 +1794,9 @@ export class OnDeckVocabService {
 
   // Grid dimensions: 7 columns wide × 7 rows tall (portrait play area).
   // See docs/WORD_SEARCH_GAME.md §2.
+  /** A Study Challenge round's grid — see the note in getWordSearchGrid. */
+  static readonly WORD_SEARCH_CHALLENGE_ROWS = 8;
+  static readonly WORD_SEARCH_CHALLENGE_COLS = 8;
   static readonly WORD_SEARCH_ROWS = 7;
   static readonly WORD_SEARCH_COLS = 7;
   // Cap on how many library candidates we pull per category up front. Word Search
@@ -1510,7 +1852,18 @@ export class OnDeckVocabService {
     // `collection` (docs/DECKS_FEATURE.md) restricts the grid's words to one collection.
     // The de-dup / replacement loop below is unaffected: it only ever draws from
     // the candidate queues this filter has already narrowed.
-    collection?: CollectionFilter | null
+    collection?: CollectionFilter | null,
+    /** Vet ids the caller's baseline top-up lent this grid. Selection is sorted-only,
+        so without these the lent cards are invisible (docs/PROVISIONAL_CARDS.md § 4b).
+        The controller's PROVISION_RETRY_FACTOR loop accumulates them across retries. */
+    lentIds: number[] = [],
+    /**
+     * STUDY CHALLENGE ROUND (docs/STUDY_CHALLENGE.md § 5.2). When present the board
+     * is not a band mix at all: the contested words ARE the target list, filler comes
+     * from the `mastered-first` ladder, and the grid grows (see CHALLENGE_ROWS) to
+     * hold twelve words instead of ten.
+     */
+    challenge?: { contestedIds: number[]; contestedWords: string[] } | null
   ): Promise<{
     grid: GridCell[][] | null;
     words: WordSearchGrid['words'];
@@ -1529,9 +1882,24 @@ export class OnDeckVocabService {
       throw new ValidationError('User ID is required');
     }
 
-    const rows = OnDeckVocabService.WORD_SEARCH_ROWS;
-    const cols = OnDeckVocabService.WORD_SEARCH_COLS;
-    const total = Object.values(distribution).reduce((sum, n) => sum + n, 0);
+    // A CHALLENGE GRID IS BIGGER, and it has to be. The board is built for ten
+    // words summing to ~20 characters in 49 cells; a challenge round must place
+    // TWELVE (CHALLENGE_WORD_COUNT), which at the 4-character cap is up to 48
+    // characters — a 7x7 that random placement would almost never satisfy. 8x8 (64
+    // cells) restores roughly the density the placer was tuned at.
+    //
+    // Note this also takes the grid out of TEMPLATE MODE (`templateModeApplicable`
+    // is 7x7 + exactly 10 words), so a challenge grid always uses random placement
+    // with its full MAX_GRID_ATTEMPTS budget. Acceptable: templates exist to make a
+    // pathological 10-word draw cheap, not to make placement possible at all.
+    const rows = challenge ? OnDeckVocabService.WORD_SEARCH_CHALLENGE_ROWS : OnDeckVocabService.WORD_SEARCH_ROWS;
+    const cols = challenge ? OnDeckVocabService.WORD_SEARCH_CHALLENGE_COLS : OnDeckVocabService.WORD_SEARCH_COLS;
+    // The challenge's own set is the target list — never the requested distribution,
+    // whose sum (TOTAL_WORDS = 10) is smaller than CHALLENGE_WORD_COUNT and would
+    // silently drop two contested words off the board (§ 5.2).
+    const total = challenge
+      ? challenge.contestedIds.length
+      : Object.values(distribution).reduce((sum, n) => sum + n, 0);
 
     const countCategories = Array.from(
       new Set([...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER])
@@ -1554,17 +1922,30 @@ export class OnDeckVocabService {
       // card is never reused across passes.
       const { eligible, cooled } = await this.fetchGameCandidates(
         client, userId, language, countCategories, gameMarkType, now,
-        OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4, [], collection
+        OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4, [], collection, lentIds
       );
 
       const selectedIds = new Set<number>();
       const selected: VocabEntry[] = [];
-
+      // NO TWO WORDS ON ONE GRID MAY READ THE SAME — the same rule the game pool
+      // enforces (see `takenDds` in getGameVocabPool), and the word list makes it even
+      // more visible here: ten glosses printed in a column, two of them identical, with
+      // no way for the player to know which grid word they are being asked to find.
+      // See docs/GAMES_FEATURE.md § "No two cards may share a dd in one round".
+      //
+      // Unseeded (a grid is always built from scratch — there is no refill path) and
+      // released on eviction, unlike the pool's: the substring de-dup loop below drops
+      // words back out of `selected`, and a dropped word's dd must become available
+      // again or the replacement pass would be excluding a gloss nothing is showing.
+      const takenDds = new Set<string>();
       // Pop up to `limit` unused cards from one queue into `selected`.
       const drain = (queue: VocabEntry[], limit: number): void => {
         while (limit > 0 && queue.length > 0) {
           const card = queue.shift()!;
           if (selectedIds.has(card.id)) continue;
+          const ddKey = ddCollisionKey(card);
+          if (ddKey && takenDds.has(ddKey)) continue;
+          if (ddKey) takenDds.add(ddKey);
           selectedIds.add(card.id);
           selected.push(card);
           limit--;
@@ -1587,41 +1968,41 @@ export class OnDeckVocabService {
         return null;
       };
 
-      // 1. Fill each requested bucket up to its quota from FRESH cards, then
-      //    2. LEND to cover any shortfall, then 3. top up to `total` with FRESH
-      //    fallback cards, then 4. backfill the remainder with COOLED cards
-      //    (requested buckets → fallback).
-      for (const [category, count] of Object.entries(distribution)) drain(eligible[category] ?? [], count);
-
-      // LEND ONLY WHAT BORROWING CANNOT COVER (2026-08-19), same rule as the game
-      // pool above: the shortfall is reduced by every FRESH card the fallback pass
-      // still holds, so a learner with playable cards is never minted new ones. This
-      // matters here for exactly the same reason — No-Pinyin mode buckets by READING,
-      // a track on which most learners are ~100% Unfamiliar, so the Target/Comfortable/
-      // Mastered quotas underfill on a library that is not short at all.
-      //
-      // The lent rows are pushed onto the Unfamiliar FRESH queue rather than drained
-      // straight into `selected`, so the substring-dedup replacement loop below can
-      // draw on them too — otherwise a lent word dropped as a substring could not be
-      // replaced by another lent word. A collection-restricted grid never lends.
-      //
-      // NOTE the grid's extra constraint: `total` distinct-charactered words. Under-
-      // lending here is safe because the controller's PROVISION_RETRY_FACTOR loop
-      // re-enters with an escalated baseline when the de-dup pass still comes up short.
-      const wsFreshRemaining = OnDeckVocabService.GAME_FALLBACK_ORDER.reduce(
-        (sum, category) => sum + (eligible[category]?.length ?? 0),
-        0
-      );
-      const wsLendNeed = total - selected.length - wsFreshRemaining;
-      if (wsLendNeed > 0 && !collection) {
-        const lent = await this.lendGameCandidates(
-          client, userId, language, wsLendNeed, gameMarkType, now,
-          OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4, [...selectedIds], collection
+      // ── CHALLENGE SELECTION (§ 5.2) ──
+      // The contested words go in first, whole, cooldown ignored — they are an
+      // obligation, not a preference. The `mastered-first` filler is then pushed
+      // onto a FRESH queue rather than into `selected`, so the substring-de-dup loop
+      // below can draw replacements from it: an arbitrary set of twelve words will
+      // not reliably have mutually distinct characters, and when one has to be
+      // dropped a filler word takes its place. That substitution is exactly why Word
+      // Search scores contested and filler differently (§ 5.4) rather than a flat 100.
+      if (challenge) {
+        const contestedRows = await this.fetchRowsByIds(
+          client, userId, language, challenge.contestedIds, gameMarkType, now, 4, true
         );
-        // Unshift: freshly lent words go to the FRONT of the Unfamiliar queue, ahead
-        // of any Unfamiliar card the quota pass left behind.
-        (eligible['Unfamiliar'] ??= []).unshift(...lent);
-        drain(eligible['Unfamiliar'], total - selected.length);
+        drain(contestedRows, contestedRows.length);
+        // Twice the board, because this queue serves TWO jobs: topping the target
+        // list up to `total`, and feeding the de-dup loop's replacements. A queue
+        // sized exactly to the board leaves nothing to substitute WITH, and the grid
+        // then fails as `insufficient-distinct` — which for a challenge round is a
+        // round the player cannot play at all.
+        const fillerIds = await this.provisionalCardService.getFillerPool(
+          userId, language, total * 2, challenge.contestedWords, challenge.contestedIds
+        );
+        const fillerRows = await this.fetchRowsByIds(
+          client, userId, language, fillerIds, gameMarkType, now, 4, true
+        );
+        (eligible['Target'] ??= []).push(...fillerRows.filter((row) => !selectedIds.has(row.id)));
+        // Top up to `total` from that same filler queue when contested words were
+        // dropped for length (> 4 characters cannot be placed) or have no vet row.
+        drain(eligible['Target'], Math.max(0, total - selected.length));
+      }
+
+      // 1. Fill each requested bucket up to its quota from FRESH cards, then
+      //    2. top up to `total` with FRESH fallback cards, then 3. backfill with
+      //    COOLED cards (requested buckets → fallback), and only then 4. LEND.
+      if (!challenge) {
+        for (const [category, count] of Object.entries(distribution)) drain(eligible[category] ?? [], count);
       }
 
       for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
@@ -1631,6 +2012,30 @@ export class OnDeckVocabService {
       for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
         if (selected.length >= total) break;
         drain(cooled[category] ?? [], total - selected.length);
+      }
+
+      // 4. LAST → LEND (2026-08-20). Same ladder as the game pool: fresh cards of the
+      //    requested buckets, then fresh borrowed ones, then COOLING cards, and only
+      //    then words the learner has never chosen. A learner whose grid words are
+      //    merely resting is not short of cards (docs/PROVISIONAL_CARDS.md § 4b).
+      //
+      // The lent rows are pushed onto the Unfamiliar FRESH queue rather than drained
+      // straight into `selected`, so the substring-dedup replacement loop below can
+      // draw on them too — otherwise a lent word dropped as a substring could not be
+      // replaced by another lent word. A collection-restricted grid never lends.
+      //
+      // NOTE the grid's extra constraint: `total` distinct-charactered words. Under-
+      // lending here is safe because the controller's PROVISION_RETRY_FACTOR loop
+      // re-enters with an escalated baseline when the de-dup pass still comes up short.
+      if (selected.length < total && !collection && !challenge) {
+        const lent = await this.lendGameCandidates(
+          client, userId, language, total - selected.length, gameMarkType, now,
+          4, [...selectedIds], undefined
+        );
+        // Unshift: freshly lent words go to the FRONT of the Unfamiliar queue, ahead
+        // of any Unfamiliar card the quota pass left behind.
+        (eligible['Unfamiliar'] ??= []).unshift(...lent);
+        drain(eligible['Unfamiliar'], total - selected.length);
       }
 
       // 3. Substring de-dup. Find any pair where one entryKey is contained in the
@@ -1657,6 +2062,9 @@ export class OnDeckVocabService {
         const victim = selected[victimIdx];
         selected.splice(victimIdx, 1);
         selectedIds.delete(victim.id);
+        // Release the evicted word's dd so a replacement may legitimately reuse it.
+        const victimDd = ddCollisionKey(victim);
+        if (victimDd) takenDds.delete(victimDd);
 
         const replacement = pullReplacement(victim.category);
         if (!replacement) break; // library exhausted — can't reach a clean `total`

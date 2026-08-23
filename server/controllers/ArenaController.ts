@@ -91,6 +91,26 @@ export class ArenaController {
   }
 
   /**
+   * POST /api/arena/message — set or clear the caller's arena message.
+   *
+   * `{ message: null }` clears it, which is the in-app off switch any piece of
+   * user-authored text has to have. The stored value is echoed back so the client
+   * renders exactly what the server kept rather than what the user typed — the
+   * service trims, collapses whitespace and strips control characters, so the two
+   * are not always the same string.
+   */
+  async setMessage(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const stored = await this.arenaService.setMessage(userId, req.body?.message ?? null);
+      res.json({ message: stored });
+    } catch (error) {
+      handleControllerError(error, res, 'ArenaController.setMessage');
+    }
+  }
+
+  /**
    * POST /api/arena/admin/tick — run formation and resolution by hand.
    *
    * The real driver is an hourly cron that exists only on prod (§ 10), so

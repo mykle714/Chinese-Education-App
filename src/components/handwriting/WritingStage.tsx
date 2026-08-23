@@ -87,7 +87,7 @@ const WritingStage = forwardRef<WritingCanvasHandle, WritingStageProps>(function
         // visual cue that the canvas is locked during Memorize's study-first phase.
         <Block
           className="writing-stage__blocked-badge"
-          sx={{ position: "absolute", top: 8, left: 8, color: COLORS.redMain, fontSize: 22, pointerEvents: "none", zIndex: 2 }}
+          sx={{ position: "absolute", top: 8, left: 8, color: COLORS.dangerInk, fontSize: 22, pointerEvents: "none", zIndex: 2 }}
         />
       )}
       {showGuide && (
@@ -117,7 +117,7 @@ const WritingStage = forwardRef<WritingCanvasHandle, WritingStageProps>(function
             position: "absolute",
             top: 6,
             right: 6,
-            color: result === "correct" ? COLORS.greenMain : COLORS.redMain,
+            color: result === "correct" ? COLORS.successInk : COLORS.dangerInk,
             pointerEvents: "none",
           }}
         >

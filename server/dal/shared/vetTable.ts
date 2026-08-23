@@ -73,9 +73,19 @@ export function vetSortedClause(alias = 've'): string {
 }
 
 /**
- * Cards a game or flp may serve: the user's sorted deck PLUS any provisional cards
- * granted to top them up to the surface's baseline. Only selection paths that feed
- * an actual round should use this.
+ * The user's sorted deck PLUS any provisional cards outstanding.
+ *
+ * ⚠️ NOT A CARD-SELECTION CLAUSE (2026-08-20). It used to be the one every game and
+ * flp pool used, on the theory that a lent card is fine for one round. It is not: a
+ * lent row is never on cooldown and always bands Unfamiliar, so once a few had
+ * accumulated they out-competed the learner's own cards in every round, forever (a
+ * dev account reached 184 lent rows against 185 real ones and was playing mostly
+ * borrowed words). Selection now reads `vetSortedClause()`, and a lent row reaches a
+ * round only through the last-resort lend tier, which addresses it BY ID.
+ *
+ * What remains is supply that is not card selection: Speed Reading's distractor
+ * CHARACTERS, which decorate a round rather than being studied in it, and which a
+ * near-empty deck must still be able to produce. See docs/PROVISIONAL_CARDS.md § 4b.
  */
 export function vetPlayableClause(alias = 've'): string {
   return `${alias}."starterPackBucket" IN ('library', 'provisional')`;

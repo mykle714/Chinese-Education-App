@@ -249,13 +249,19 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                         height: 18,
                         borderRadius: '50%',
                         backgroundColor: getCategoryColor(badgeCategory),
-                        color: 'white',
+                        // Ink, not white: the category colors are PASTELS post-redesign
+                        // (docs/SHELF_REDESIGN.md, D2) and white on one is ~1.1:1.
+                        color: COLORS.onSurface,
                         fontSize: SIZE.micro,
                         fontWeight: WEIGHT.bold,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                        // The drop shadow separated a SATURATED disc from the card. A
+                        // pastel one needs the ramp's inset ring instead, or it dissolves
+                        // into the card behind it. Both, here: the ring defines the edge,
+                        // the shadow keeps it reading as a raised badge.
+                        boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}, 0 1px 2px rgba(0, 0, 0, 0.3)`,
                     }}
                 >
                     {badgeCategory.charAt(0)}

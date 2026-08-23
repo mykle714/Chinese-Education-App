@@ -24,8 +24,8 @@ export type BubbleKind = "word" | "definition";
  *                 while it grows so it holds its chosen spot).
  * - `idle`      — settled at full size and drifting: a gentle random wander plus
  *                 wall/neighbor bounces keep it slowly floating (see DRIFT_SCALE).
- * - `held`      — picked up by the pointer (enlarged; the *cue* is per-game —
- *                 see `heldCue` on Bubble, since Hydra reserves grey for English).
+ * - `held`      — picked up by the pointer (enlarged, plus a grey wash — one cue
+ *                 for every bubble game; see Bubble's `.bubble__dim` overlay).
  * - `hovered`   — the current drop target under a held bubble (same treatment).
  * - `correct`   — a valid match just landed (light-green + pop, then removed).
  * - `wrong`     — an invalid match just landed (red flash + shake, then released).
@@ -76,10 +76,20 @@ export interface BubbleBody {
 /**
  * The base (non-feedback) colors of one bubble. Supplied per body BY THE GAME,
  * because the two games key it on different things: Bubble Match colors by
- * `kind` (blue word / cream definition), Hydra Bubbles colors by the card's
- * lend/mastery tier (red/yellow/green/blue). The status-driven feedback colors
+ * `kind` (red word / grey definition), Hydra Bubbles colors by the card's
+ * PAYOUT TIER — `drain` / `bloom`, which is its lend tier or its mastery band
+ * depending on where the card came from (docs/HYDRA_BUBBLES.md § 5). The status-driven feedback colors
  * — correct/wrong/revealed/nomatch — are shared and live in constants.ts, so
  * they are NOT part of this.
+ *
+ * COLOR IS THE ONLY THING A GAME MAY VARY. Every other property of a bubble —
+ * the 40% squircle, the 2px ring, the three-shadow gloss, the grey held wash —
+ * is fixed in `Bubble` with Bubble Match as the reference, so the two games
+ * render one object in two palettes rather than two objects. There used to be a
+ * `ringWidth` knob here (Hydra wore a 3px ring so ring WEIGHT could separate its
+ * payout bubbles from inert English ones); it was removed 2026-08-22 when the
+ * styles were unified, and that separation now rests on body value and hue
+ * alone (docs/HYDRA_BUBBLES.md § 5).
  */
 export interface BubbleFill {
     bg: string;

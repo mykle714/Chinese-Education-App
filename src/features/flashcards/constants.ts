@@ -1,6 +1,18 @@
 import { FONTS } from "../../theme/fonts";
+import { MARK_TYPE_COLORS } from "../../utils/masteryCompute";
 
-// Semantic indicator colors — theme-invariant (functional, not surface)
+// Semantic indicator colors — theme-invariant (functional, not surface).
+//
+// These are the drag-overlay tints: swipe right = correct, swipe left = incorrect.
+//
+// ⚠️ LITERAL ON PURPOSE. The shelf design's swipe-coaching artboard spells these two
+// values inline — `.shint.l { color:#EF476F }` (left / incorrect) and
+// `.shint.r { color:#05C793 }` (right / correct) in `shelf-system.css`. They are the
+// same saturated green and red as the Production and Reading marks, and for the same
+// reason: each is used as a LABEL color and as a wash capped at 0.3 opacity, and a
+// pastel at 30% over a beige card face is indistinguishable from no overlay at all.
+// A previous pass aliased them to COLORS.successInk / dangerInk and the overlay went
+// muddy; do not re-point them at the ramp.
 export const CORRECT_COLOR   = "#05C793";
 export const INCORRECT_COLOR = "#EF476F";
 // (The streak-flame "fire active" color moved to theme/colors.ts → COLORS.fireActive,
@@ -34,17 +46,20 @@ export const CARD_FLIP_MS = 250;
 // at CARD_FLIP_MS / 2, so the hide fires precisely at edge-on — no flash.
 export const CARD_FLIP_TRANSITION = `transform ${CARD_FLIP_MS}ms linear`;
 
-// Tab accent colors — decorative, consistent across all themes
-const TAB_BLUE   = "#779BE7";
-const TAB_ORANGE = "#FF8E47";
-const TAB_PINK   = "#EF476F";
+// Tab accent colors — decorative, consistent across all themes.
+//
+// Same story as CORRECT/INCORRECT above: these three were literal copies of the
+// recognition / writing / reading mark hues. Aliased to MARK_TYPE_COLORS so the eip
+// tab strip moves with the ramp instead of drifting off it (D2). They stay
+// DECORATIVE — a tab's color does not mean "this tab is about reading"; the sharing
+// is a palette economy, not a semantic claim.
 
 // Controls vertical alignment of content within both card faces (front + back)
 export const CARD_FACE_JUSTIFY = 'flex-start';
 
 // Fraction of viewport width the card must be dragged before the color overlay appears
 // and the mark is triggered. Single source of truth for both thresholds.
-// ~15% of vw → ≈59px on a 393px iPhone frame.
+// ~15% of vw → ≈60px on the 402px phone frame.
 export const CARD_DISMISS_THRESHOLD_VW = 0.15;
 
 // Drag amplification factor. The card's translation is scaled by this multiplier
@@ -62,7 +77,11 @@ export const CARD_BASE_HEIGHT = 426;
 // "definition" shows the long definition + HSK level + parts of speech (default tab).
 // "examples" shows example sentences.
 // "breakdown" shows per-character rows + the per-character rationale block.
-export const TAB_COLORS = [TAB_BLUE, TAB_ORANGE, TAB_PINK];
+export const TAB_COLORS = [
+    MARK_TYPE_COLORS.recognition, // blue
+    MARK_TYPE_COLORS.writing,     // orange
+    MARK_TYPE_COLORS.reading,     // red
+];
 export const TAB_LABELS = ["definition", "examples", "breakdown"];
 
 // Horizontal swipe-to-change-tab gesture (InfoCardPanelBody's underline tab

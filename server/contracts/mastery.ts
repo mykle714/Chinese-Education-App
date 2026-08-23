@@ -123,6 +123,12 @@ export const BAR_MARK_TYPES: Record<MasteryBarId, readonly MarkType[]> = {
  * The bar a mark lands in. Because the mapping is total and disjoint, a single mark
  * can only ever move ONE bar — which is why the mark handler computes a before/after
  * band for just this bar rather than all three.
+ *
+ * ⚠️ ONE MARK, one bar — but not one ACTION, one bar. Word Search's No-Pinyin board
+ * writes reading AND production for a single find (docs/WORD_SEARCH_GAME.md), which
+ * reaches this handler as two independent marks and so moves two bars. Nothing here
+ * changes: each call still resolves one bar and bands it on its own. Do not "optimize"
+ * that into a multi-bar write.
  */
 export function barForMarkType(type: MarkType): MasteryBarId {
   if (type === 'reading') return 'reading';

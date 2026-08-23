@@ -12,9 +12,9 @@ import { NEW_CARD_SHARES, SHARES_PER_UNMATCHED_ROUND } from "./constants";
  * invariants in § 4.3 unit-testable without a DOM, a network, or a rAF loop.
  *
  * A SLOT IS ONE BUBBLE. A payout of `k` buys `k` bubbles, so a whole new card
- * (word + definition) costs two slots — which is why a payout of 1 (red, under the
- * 2026-08-19 ladder) can never open with a fresh matched pair, while blue's 4 buys
- * two of them.
+ * (word + definition) costs two slots — which is why a drain clear (payout 1) can never
+ * open with a fresh matched pair, while a bloom one (payout 3) buys a pair and has a
+ * slot left over.
  *
  * Referenced by: HydraStage.tsx, src/__tests__/hydraSpawnPlanner.test.ts.
  */
@@ -153,10 +153,15 @@ function commit(sim: Sim, action: HydraSpawnAction): void {
  *
  * Completing an existing stray is preferred: it costs one slot, draws no card, and
  * respects the board's own composition. Only a board with no strays at all (in
- * practice, an empty one) falls through to a fresh pair — and that fallback is the
- * anti-zero override, which is explicitly allowed to spawn a green or blue pair
- * inside the red-only zone, because a board with no possible match is a dead end and
- * a dead end is worse than an easy match.
+ * practice, an empty one) falls through to a fresh pair.
+ *
+ * WHAT THE ANTI-ZERO OVERRIDE ACTUALLY OVERRIDES, since § 4.3 has described this
+ * loosely: it is not the drain-only WEIGHTS — the color below is still rolled from the
+ * table, so inside the squeeze this spawns a RED pair. It is the BUDGET. Called from
+ * step 3 of `planSpawnBatch` it spends slots the payout did not buy, so a drain clear
+ * that would otherwise strand the board pays out 2 bubbles against the 2 it removed
+ * instead of 1. That is the economy being suspended, and it is worth it: a board with
+ * no possible match is a dead end, and a dead end is worse than a free bubble.
  */
 function forceLiveMatch(sim: Sim, rng: Rng, plannedId: string): HydraSpawnAction {
     const strays = straysOf(sim.pairs);
@@ -169,8 +174,8 @@ function forceLiveMatch(sim: Sim, rng: Rng, plannedId: string): HydraSpawnAction
         };
     }
     // No stray to complete. Roll a color anyway so the fresh pair still follows the
-    // table where the table has an opinion; at red-only fill this deliberately
-    // yields a red pair, which is a legal match and still honors anti-zero.
+    // table where the table has an opinion; at drain-only fill this deliberately
+    // yields a drain pair, which is a legal match and still honors anti-zero.
     return { type: "newPair", color: rollColor(sim.fill, rng), plannedId };
 }
 
@@ -181,17 +186,23 @@ function forceLiveMatch(sim: Sim, rng: Rng, plannedId: string): HydraSpawnAction
  * WHY NOT JUST ROLL. An independent roll per spawn is correct on average but noisy in
  * the short run, and the player does not experience the average — they experience the
  * board in front of them right now. Five independent rolls at the steady-state mix
- * land all-blue often enough to matter, and a board with no red on it offers the
+ * land all-bloom often enough to matter, and a board with no drain on it offers the
  * player no way to shrink it, which is the one move § 3 says the game is about. This
  * makes color availability *predictable*: whatever is scarcest relative to target is
  * what comes next.
  *
+ * IT MATTERS MORE UNDER TWO TIERS, not less. A four-color board that came up short on
+ * its cheapest color still had the next one up — a below-average clear the player could
+ * reach for. With two tiers an all-bloom board offers NO way to shrink at all, so the
+ * balancer is the only thing standing between a run of lucky rolls and a board the
+ * player cannot act on.
+ *
  * WHY IT DOES NOT CHANGE THE ECONOMY. The target IS the § 3.1 table — this only
  * reduces variance around it, it does not move it. Long-run color frequencies still
- * converge on the table's weights, so `E[payout]` is untouched at 2.25. That is the
- * whole reason the target is the table rather than a flat 25% each: uniform colors
- * would average (1+2+3+4)/4 = 2.5 payout against 2 removed per match, which ignores
- * the § 3.1 mix entirely and grows the board 10× faster than the tuned +0.25.
+ * converge on the table's weights, so `E[payout]` is untouched at 2.10. That is the
+ * whole reason the target is the table rather than a flat 50/50: an even split would
+ * average (1+3)/2 = 2 payout against 2 removed per match — exactly break-even, i.e.
+ * the self-stabilizing economy § 3 exists to reject.
  *
  * Deficits are measured in ABSOLUTE cards, not proportionally, which is what makes the
  * long-run frequencies match the weights exactly. Measured against the POST-spawn
@@ -199,7 +210,7 @@ function forceLiveMatch(sim: Sim, rng: Rng, plannedId: string): HydraSpawnAction
  * does not produce a fixed cycle.
  *
  * An EMPTY board has no mix to balance, so it falls back to a plain roll — which is
- * also what keeps the blue-only opening (§ 3.1) intact.
+ * also what keeps the bloom-only opening (§ 3.1) intact.
  */
 export function pickBalancedColor(
     pairs: readonly HydraBoardPair[],
@@ -209,12 +220,7 @@ export function pickBalancedColor(
     if (pairs.length === 0) return rollColor(fill, rng);
 
     const weights = spawnWeightsAt(fill);
-    const actual: Record<HydraColor, number> = {
-        Unfamiliar: 0,
-        Target: 0,
-        Comfortable: 0,
-        Mastered: 0,
-    };
+    const actual: Record<HydraColor, number> = { drain: 0, bloom: 0 };
     for (const pair of pairs) actual[pair.color] += 1;
 
     const postTotal = pairs.length + 1;
@@ -279,7 +285,7 @@ function rollStrayOrComplete(sim: Sim, rng: Rng, plannedId: string): HydraSpawnA
  * Plan the spawns owed for one cleared pair.
  *
  * @param board   the board AFTER the matched pair has been removed
- * @param payout  1–4, from PAYOUT_BY_COLOR for the color that was cleared
+ * @param payout  1 (drain) or 3 (bloom), from PAYOUT_BY_COLOR for the color cleared
  *
  * Order of operations (§ 4.1):
  *   1. `payout - 1` slots by the ratio rule, preferring a fresh matched PAIR while
@@ -287,12 +293,11 @@ function rollStrayOrComplete(sim: Sim, rng: Rng, plannedId: string): HydraSpawnA
  *   2. the last slot goes to the ratio rule if a live match already exists, and is
  *      forced to create one if it does not.
  *   3. ANTI-ZERO (§ 4.3, highest priority): if the board would still be left with no
- *      live match, force one anyway. This used to be the whole of a red clear (payout
- *      0 spent nothing in steps 1 and 2); since the 2026-08-19 ladder red pays 1, so
- *      step 2 runs and this is a pure backstop for boards a single stray cannot pair. Purely REACTIVE: there is no floor
- *      count below which the board is topped up regardless, because a floor would
- *      quietly re-stabilize the economy at the low end and player control of board
- *      size is the entire point of § 3.
+ *      live match, force one anyway. Drain pays 1, so step 2 always runs and this is a
+ *      pure backstop for boards a single stray cannot pair. Purely REACTIVE: there is
+ *      no floor count below which the board is topped up regardless, because a floor
+ *      would quietly re-stabilize the economy at the low end and player control of
+ *      board size is the entire point of § 3.
  */
 export function planSpawnBatch(
     board: HydraBoardView,

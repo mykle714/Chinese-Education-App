@@ -1,0 +1,275 @@
+[
+ {
+  "category": "8a exact-dd (real)",
+  "a": "to get angry",
+  "b": "to get angry",
+  "expected": "BLOCK",
+  "note": "8 words: 上火 发火 动气 来火儿 来火"
+ },
+ {
+  "category": "8a exact-dd (real)",
+  "a": "thing",
+  "b": "thing",
+  "expected": "BLOCK",
+  "note": "8 words: 阿物儿 东东 事情 事 物"
+ },
+ {
+  "category": "8a exact-dd (real)",
+  "a": "intention",
+  "b": "intention",
+  "expected": "BLOCK",
+  "note": "7 words: 用心 心路 心意 意 用意"
+ },
+ {
+  "category": "8a exact-dd (real)",
+  "a": "reason",
+  "b": "reason",
+  "expected": "BLOCK",
+  "note": "7 words: 原因 理儿 情理 事理 理"
+ },
+ {
+  "category": "8a exact-dd (real)",
+  "a": "time",
+  "b": "time",
+  "expected": "BLOCK",
+  "note": "7 words: 时候 时间 白日 时分 时"
+ },
+ {
+  "category": "8a exact-dd (real)",
+  "a": "place",
+  "b": "place",
+  "expected": "BLOCK",
+  "note": "6 words: 方 地点 名 地方 地头"
+ },
+ {
+  "category": "8a near-miss",
+  "a": "a little",
+  "b": "a bit",
+  "expected": "BLOCK",
+  "note": "一下 / 一点"
+ },
+ {
+  "category": "8a near-miss",
+  "a": "a little",
+  "b": "slightly",
+  "expected": "BLOCK",
+  "note": ""
+ },
+ {
+  "category": "8a near-miss",
+  "a": "to get angry",
+  "b": "to be furious",
+  "expected": "BLOCK",
+  "note": ""
+ },
+ {
+  "category": "8a near-miss",
+  "a": "to go",
+  "b": "go",
+  "expected": "BLOCK",
+  "note": "bare vs to-infinitive"
+ },
+ {
+  "category": "8a near-miss",
+  "a": "a few",
+  "b": "few",
+  "expected": "BLOCK",
+  "note": "determiner noise"
+ },
+ {
+  "category": "8a near-miss",
+  "a": "thing",
+  "b": "object",
+  "expected": "BLOCK",
+  "note": ""
+ },
+ {
+  "category": "8b contrast",
+  "a": "big",
+  "b": "small",
+  "expected": "ALLOW",
+  "note": "antonym"
+ },
+ {
+  "category": "8b contrast",
+  "a": "buy",
+  "b": "sell",
+  "expected": "ALLOW",
+  "note": "antonym"
+ },
+ {
+  "category": "8b contrast",
+  "a": "open",
+  "b": "close",
+  "expected": "ALLOW",
+  "note": "antonym"
+ },
+ {
+  "category": "8b contrast",
+  "a": "hot",
+  "b": "cold",
+  "expected": "ALLOW",
+  "note": "antonym"
+ },
+ {
+  "category": "8b contrast",
+  "a": "left",
+  "b": "right",
+  "expected": "ALLOW",
+  "note": "directional"
+ },
+ {
+  "category": "8b contrast",
+  "a": "up",
+  "b": "down",
+  "expected": "ALLOW",
+  "note": "directional"
+ },
+ {
+  "category": "8b contrast",
+  "a": "to come",
+  "b": "to go",
+  "expected": "ALLOW",
+  "note": "来/去 core teaching pair"
+ },
+ {
+  "category": "8b contrast",
+  "a": "Monday",
+  "b": "Tuesday",
+  "expected": "ALLOW",
+  "note": "co-hyponym"
+ },
+ {
+  "category": "8b contrast",
+  "a": "red",
+  "b": "blue",
+  "expected": "ALLOW",
+  "note": "co-hyponym"
+ },
+ {
+  "category": "8b contrast",
+  "a": "mother",
+  "b": "father",
+  "expected": "ALLOW",
+  "note": "co-hyponym"
+ },
+ {
+  "category": "8b contrast",
+  "a": "cat",
+  "b": "dog",
+  "expected": "ALLOW",
+  "note": "co-hyponym"
+ },
+ {
+  "category": "8b contrast",
+  "a": "one",
+  "b": "two",
+  "expected": "ALLOW",
+  "note": "一/二 must share a board"
+ },
+ {
+  "category": "8c surname",
+  "a": "surname Jia",
+  "b": "surname Ming",
+  "expected": "ALLOW",
+  "note": "加 vs 明 - different surnames"
+ },
+ {
+  "category": "8c surname",
+  "a": "surname Ming",
+  "b": "surname Zhou",
+  "expected": "ALLOW",
+  "note": "明 vs 周 - different surnames"
+ },
+ {
+  "category": "8c surname",
+  "a": "surname Zhou",
+  "b": "surname Jin",
+  "expected": "ALLOW",
+  "note": "周 vs 金 - different surnames"
+ },
+ {
+  "category": "8c classifier",
+  "a": "classifier for square things",
+  "b": "classifier: layer",
+  "expected": "ALLOW",
+  "note": "方 vs 重 - ambiguous - eyeball"
+ },
+ {
+  "category": "8c classifier",
+  "a": "classifier: layer",
+  "b": "classifier for objects with flat surfaces such as drums, mirrors, flags etc",
+  "expected": "ALLOW",
+  "note": "重 vs 面 - ambiguous - eyeball"
+ },
+ {
+  "category": "8c classifier",
+  "a": "classifier for objects with flat surfaces such as drums, mirrors, flags etc",
+  "b": "classifier for dramas, plays, operas etc",
+  "expected": "ALLOW",
+  "note": "面 vs 出 - ambiguous - eyeball"
+ },
+ {
+  "category": "8c place/district",
+  "a": "Cheng District or Chengqu, a district of Shanwei City 汕尾市[Shan4 wei3 Shi4], Guangdong",
+  "b": "Chengxi district of Xining city 西寧市|西宁市[Xi1 ning2 shi4], Qinghai",
+  "expected": "ALLOW",
+  "note": "城区 vs 城西区 - different places"
+ },
+ {
+  "category": "8c place/district",
+  "a": "Chengxi district of Xining city 西寧市|西宁市[Xi1 ning2 shi4], Qinghai",
+  "b": "Sanchong, a district of New Taipei City 新北市[Xin1 bei3 Shi4], Taiwan",
+  "expected": "ALLOW",
+  "note": "城西区 vs 三重 - different places"
+ },
+ {
+  "category": "8c place/district",
+  "a": "Sanchong, a district of New Taipei City 新北市[Xin1 bei3 Shi4], Taiwan",
+  "b": "Dinghai district of Zhoushan city 舟山市[Zhou1 shan1 shi4], Zhejiang",
+  "expected": "ALLOW",
+  "note": "三重 vs 定海 - different places"
+ },
+ {
+  "category": "8d hypernym",
+  "a": "dog",
+  "b": "animal",
+  "expected": "OBSERVE",
+  "note": "one-way entailment expected"
+ },
+ {
+  "category": "8d hypernym",
+  "a": "rose",
+  "b": "flower",
+  "expected": "OBSERVE",
+  "note": "one-way entailment expected"
+ },
+ {
+  "category": "8d hypernym",
+  "a": "car",
+  "b": "vehicle",
+  "expected": "OBSERVE",
+  "note": "one-way entailment expected"
+ },
+ {
+  "category": "8e robustness",
+  "a": "Silla, Korean kingdom that existed between 57 BC – 935 AD, one of the Three Kingdoms of Korea, later allied with Tang China to defeat its rivals Baekje 百濟|百济[Bai3 ji4] and Goguryeo 高句麗|高句丽[Gao1 gou1 l",
+  "b": "school of thought",
+  "expected": "OBSERVE",
+  "note": "longest gloss (225 chars)"
+ },
+ {
+  "category": "8e robustness",
+  "a": "Cheng District or Chengqu, a district of Shanwei City 汕尾市[Shan4 wei3 Shi4], Guangdong",
+  "b": "a district",
+  "expected": "OBSERVE",
+  "note": "gloss contains Han + numbered pinyin"
+ },
+ {
+  "category": "8e robustness",
+  "a": "measure word",
+  "b": "measure word",
+  "expected": "BLOCK",
+  "note": "identical strings"
+ }
+]

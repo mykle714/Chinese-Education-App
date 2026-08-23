@@ -37,7 +37,7 @@ Footer "Discover" tab
 | `/discover/quick-mark/:language`| `QuickMarkPage`    | `NodePage` (← back arrow) → `/discover` | Floating pill |
 | `/discover/skipped/:language`   | `SkippedCardsPage` | `NodePage` (← back arrow) → `/discover` | Floating pill |
 
-- **`/discover` (hub):** built on `MobileTabScreen` (`activePage="discover"`) +
+- **`/discover` (hub):** built on `MobileTabScreen` +
   the shared `HubMenu` / `HubMenuRow` (same components the Games hub uses). It has three
   rows, in order: **Sort Cards** (the drag-to-sort page), **Quick Mark** (the bulk-triage
   grid), and **Skipped Cards** (the skipped-words list), all language-keyed.

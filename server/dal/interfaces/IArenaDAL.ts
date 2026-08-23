@@ -211,6 +211,18 @@ export interface IArenaDAL {
    */
   setGeoCell(userId: string, geoCell: string | null, client?: PoolClient): Promise<void>;
 
+  /**
+   * Store (or clear) a user's arena message (migration 152).
+   *
+   * On `users` for the same reason `geoCell` is: it belongs to the person, not to
+   * a language track or a week. `null` clears it — a message a user cannot take
+   * back is worse than no message feature at all.
+   *
+   * The text arrives already trimmed, capped and sanitised by
+   * ArenaService.setMessage. Nothing else in the codebase may write this column.
+   */
+  setArenaMessage(userId: string, message: string | null, client?: PoolClient): Promise<void>;
+
   /** The week a (user, language) has opted into, or null. */
   getOptInWeek(
     userId: string,

@@ -8,6 +8,7 @@ import {
     computeTypeCategory,
     cooldownRemainingMs,
     MARK_TYPE_COLORS,
+    MASTERY_READY_COLOR,
     MARK_TYPE_LABELS,
     BAR_LABELS,
     PBH_THRESHOLDS,
@@ -16,7 +17,6 @@ import {
     type MasteryBarId,
 } from "../../utils/masteryCompute";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import { COLORS } from "../../theme/colors";
 import { FC_FONT } from "./constants";
 
 /**
@@ -269,7 +269,8 @@ const BarColumn: React.FC<{ bar: MasteryBar; entry: VocabEntry; now: number }> =
                         {remainingMs <= 0 && (
                             <CheckCircleRoundedIcon
                                 className="mastery-progress-bar__ready-icon"
-                                sx={{ fontSize: 12, color: COLORS.greenMain, flexShrink: 0, marginTop: "1px" }}
+                                // The design fixes the ready-check green at #05C793 (`.msb .cd3 .ms`).
+                                sx={{ fontSize: 12, color: MASTERY_READY_COLOR, flexShrink: 0, marginTop: "1px" }}
                             />
                         )}
                     </Box>

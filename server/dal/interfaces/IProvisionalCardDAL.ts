@@ -29,14 +29,42 @@ export interface ProvisionalCandidate {
 
 export interface IProvisionalCardDAL {
   /**
-   * Count the vet rows this user could be served in a round for `language` —
-   * sorted cards PLUS any provisional cards still outstanding.
+   * Count the cards this user has SORTED for `language` (`vetSortedClause`) — the
+   * number the baseline is compared against.
    *
-   * This is what the baseline is compared against, so it must match the
-   * `vetPlayableClause()` the game/flp selection queries use. Counting only sorted
-   * cards would re-provision a fresh batch on every entry.
+   * SORTED, NOT PLAYABLE (2026-08-20). This used to count outstanding provisional
+   * rows too, on the reasoning that counting only sorted cards would re-provision a
+   * fresh batch on every entry. The re-provisioning is prevented properly now — the
+   * lend path re-lends held rows before it mints any (`findHeldProvisional`) — and
+   * counting lent rows had made the baseline unfalsifiable: a learner who had been
+   * lent 184 cards and sorted 4 read as "well past baseline", so nothing ever
+   * topped them up and every round was played on borrowed words. The baseline asks
+   * "did they sort enough cards?", and only sorted cards can answer that.
    */
-  countPlayable(userId: string, language: string): Promise<number>;
+  countSorted(userId: string, language: string): Promise<number>;
+
+  /**
+   * The ids of provisional rows this user ALREADY HOLDS for `language`, nearest to
+   * `level` first — the RE-LEND source that the lend path draws from before minting
+   * anything new.
+   *
+   * Why this exists: provisional rows are no longer ordinary candidates (the
+   * selection queries are sorted-only), so without re-lending, every round that
+   * needed lent cards would mint a brand-new batch and the bucket would grow without
+   * bound. Re-lending caps it at the learner's true deficit and, because the rows
+   * keep their accumulated marks, means the progress they earn on a borrowed word
+   * survives to whenever they sort it.
+   *
+   * Not cooldown-filtered: that is the caller's business (each surface cools on the
+   * mark type it emits), and the pools split fresh from cooled themselves.
+   */
+  findHeldProvisional(
+    userId: string,
+    language: string,
+    level: number,
+    limit: number,
+    excludeIds?: number[]
+  ): Promise<number[]>;
 
   /**
    * Pick up to `limit` words to lend the user, ordered by
@@ -88,7 +116,7 @@ export interface IProvisionalCardDAL {
    * ⚠️ THIS IS NOT LENDING. Every row it returns is a card the user already holds;
    * it exists so a Study Challenge round can pad its board with the player's OWN
    * easiest material before borrowing anything. Filler must not be a source of
-   * difficulty: a challenge measures its ten contested words, and padding the board
+   * difficulty: a challenge measures its twelve contested words, and padding the board
    * with words the player has never seen would add noise and reward whoever got
    * luckier filler. `default` lending is the LAST rung of the ladder, reached only
    * when the player's whole library is exhausted — which is exactly a brand-new
@@ -102,7 +130,16 @@ export interface IProvisionalCardDAL {
     userId: string,
     language: string,
     limit: number,
-    opts?: { excludeWords?: string[] }
+    opts?: {
+      /** Words that must never be filler — a challenge's contested set. */
+      excludeWords?: string[];
+      /**
+       * Rows already in play (on a board, in a buffer). Load-bearing for a MID-RUN
+       * top-up: the ladder is deterministic, so a caller that filtered afterwards
+       * would be handed the same top-N it already holds and come back empty.
+       */
+      excludeIds?: number[];
+    }
   ): Promise<OwnCardCandidate[]>;
 }
 

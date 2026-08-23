@@ -462,6 +462,15 @@ export class ArenaDAL implements IArenaDAL {
     );
   }
 
+  async setArenaMessage(userId: string, message: string | null, client?: PoolClient): Promise<void> {
+    this.requireId(userId, 'userId');
+    // Length and content are the service's job (ArenaService.setMessage); the
+    // column's CHECK is the last line of defence rather than the first.
+    await this.run(client, (c) =>
+      c.query(`UPDATE users SET "arenaMessage" = $2 WHERE id = $1`, [userId, message]),
+    );
+  }
+
   async getOptInWeek(
     userId: string,
     language: string,

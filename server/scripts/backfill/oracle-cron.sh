@@ -29,6 +29,12 @@
 #   SHARD=0/3 oracle-cron.sh       # worker 0 of 3
 #   DRY_RUN=1 SHARD=0/3 oracle-cron.sh   # verify wiring; no session, no prod writes
 #
+# BUDGET
+#   A round is skipped (exit 0) when plan utilization is at or above
+#   ORACLE_MAX_UTILIZATION (default 95%), because spend past the plan cap silently
+#   bills extra-usage credits rather than erroring. See the budget gate below.
+#   ORACLE_MAX_UTILIZATION=0 parks the cron without editing the crontab.
+#
 # CRONTAB (hourly; the lock makes over-scheduling harmless)
 #   PATH=/home/michael/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin
 #   0 * * * * SHARD=0/3 /home/michael/vocabulary-app/server/scripts/backfill/oracle-cron.sh
@@ -95,6 +101,85 @@ for bin in claude flock docker npx; do
   fi
 done
 
+# ── budget gate: never spend extra-usage credits ─────────────────────────────
+# The plan's weekly cap is NOT a hard stop. Once `seven_day` hits 100%, requests
+# keep succeeding and bill against pay-as-you-go extra-usage credits (real dollars)
+# — round 530 promoted 12/12 at 100% weekly utilization without any error. So the
+# only thing standing between an hourly cron and an unbounded credit bill is this
+# check.
+#
+# Fail CLOSED: an unreachable/expired-token usage endpoint skips the round. A
+# missed round costs an hour of throughput; a wrong guess costs money.
+#
+# ORACLE_MAX_UTILIZATION (default 95) is deliberately below 100. A round takes
+# ~30 min, so starting at 99% would cross the cap mid-manifest and finish on
+# credits — the gate can only refuse to *start*, it cannot stop a round in flight.
+# The last ~5% of plan budget is the price of that coarseness. Set it to 100 to
+# spend the plan out fully and accept some credit spillover, or to 0 to park the
+# cron entirely without touching the crontab.
+MAX_UTIL="${ORACLE_MAX_UTILIZATION:-95}"
+BUDGET=$(python3 - "$MAX_UTIL" <<'PY' 2>&1 || true
+import json, os, sys, urllib.request
+
+max_util = float(sys.argv[1])
+try:
+    creds = json.load(open(os.path.expanduser("~/.claude/.credentials.json")))
+    token = creds["claudeAiOauth"]["accessToken"]
+    req = urllib.request.Request(
+        "https://api.anthropic.com/api/oauth/usage",
+        headers={"Authorization": f"Bearer {token}",
+                 "anthropic-beta": "oauth-2025-04-20"},
+    )
+    data = json.load(urllib.request.urlopen(req, timeout=20))
+except Exception as exc:                      # network, 401, malformed creds
+    print(f"BLOCK usage endpoint unreadable ({type(exc).__name__}: {exc})")
+    raise SystemExit(0)
+
+# `limits[]` is the authoritative list — it names every active cap (session,
+# weekly_all, per-model weekly_scoped) with a normalized percent. The legacy
+# five_hour/seven_day objects are kept as a fallback for older payload shapes.
+worst, pcts = None, []
+for lim in data.get("limits") or []:
+    if not lim.get("is_active"):
+        continue
+    pct = lim.get("percent")
+    if pct is None:
+        continue
+    pcts.append(f"{lim.get('kind', '?')}={pct:g}%")
+    if worst is None or pct > worst[1]:
+        worst = (lim.get("kind", "?"), float(pct))
+
+if worst is None:                              # no limits[] — fall back
+    for key in ("five_hour", "seven_day"):
+        obj = data.get(key) or {}
+        pct = obj.get("utilization")
+        if pct is None:
+            continue
+        pcts.append(f"{key}={pct:g}%")
+        if worst is None or pct > worst[1]:
+            worst = (key, float(pct))
+
+if worst is None:
+    print("BLOCK usage payload carried no readable limit")
+    raise SystemExit(0)
+
+kind, pct = worst
+summary = " ".join(pcts)
+if pct >= max_util:
+    resets = ""
+    for lim in data.get("limits") or []:
+        if lim.get("kind") == kind and lim.get("resets_at"):
+            resets = f", resets {lim['resets_at']}"
+    print(f"BLOCK {kind} at {pct:g}% >= {max_util:g}% [{summary}]{resets}")
+else:
+    print(f"OK [{summary}] under {max_util:g}%")
+PY
+)
+if [[ "$BUDGET" != OK* ]]; then
+  echo "[$(date -uIs)] $SLUG: SKIP — ${BUDGET#BLOCK }" >> "$RUN_LOG"
+  exit 0
+fi
+
 # ── preflight the manifest ───────────────────────────────────────────────────
 # Script-ahead-of-manifest drift makes the planner under-report stale rows, so an
 # unattended round would quietly enrich the wrong set. Read-only; exits non-zero on drift.
@@ -115,6 +200,7 @@ if [[ -n "${DRY_RUN:-}" ]]; then
   echo "  notes      : $ORACLE_NOTES_FILE"
   echo "  lock       : $LOCK"
   echo "  log        : $RUN_LOG"
+  echo "  budget     : $BUDGET (gate ${ORACLE_MAX_UTILIZATION:-95}%)"
   exit 0
 fi
 

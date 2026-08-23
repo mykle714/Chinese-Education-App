@@ -66,6 +66,22 @@ will be interrupted mid-manifest.
 `resets_at` is `null` when utilization is 0 (no window is open yet); the window opens
 on the next request and runs five hours from there.
 
+> 🛑 **The weekly cap is a spend boundary, not a rate limit — and it does not error.**
+> Read `limits[]`, not just `five_hour`: it lists every active cap (`session`,
+> `weekly_all`, per-model `weekly_scoped`) with a normalized `percent`. **`weekly_all`
+> at 100% does not refuse requests.** If `extra_usage.is_enabled` is true, work past the
+> cap silently bills pay-as-you-go credits — real dollars — and every request keeps
+> succeeding exactly as before. Between 2026-08-22 and 2026-08-23, 26 unattended rounds
+> ran at `seven_day` = 100%, each one correctly *reporting* the reading and then
+> concluding the endpoint must be wrong because nothing was failing. It was not wrong.
+>
+> So: **a 100% weekly reading is a hard stop, and the only signal you will get.** Park
+> (§6a) and wait for `resets_at`. Do not treat "requests still succeed" as permission to
+> continue — that is the failure mode, not the all-clear. `oracle-cron.sh` enforces the
+> same rule at launch (its budget gate refuses to start a round at or above
+> `ORACLE_MAX_UTILIZATION`, default 95%), but it can only refuse to *start*; a round that
+> crosses the cap mid-manifest can only be stopped by you.
+
 3. **Check for a parked run**: if the resume note exists (`$ORACLE_RESUME_FILE` when
    set — a parallel/cron worker owns its own; otherwise `server/logs/oracle-resume.md`),
    a previous
@@ -418,8 +434,9 @@ Re-check §1 and compare `five_hour.utilization` against the previous round.
 > Either way, **record the flat reading and your reasoning in the run report** — whether
 > you halted or kept going.
 
-If utilization < ~95%, return to §3 with a fresh batch **immediately** — do not write
-the report, do not summarize, do not hand back. At ~95%, go to §6a. The run ends only
+If the **highest active limit** in `limits[]` (session *and* weekly — §1.2) is < ~95%,
+return to §3 with a fresh batch **immediately** — do not write the report, do not
+summarize, do not hand back. At ~95% on any of them, go to §6a. The run ends only
 when a guardrail above trips.
 
 > Note the asymmetry: the flat-usage check is the one stop condition that asks for
@@ -429,8 +446,11 @@ when a guardrail above trips.
 
 ### 6a. Crossing the window boundary — park, wait, resume
 
-At ~95% utilization the plan's rate limit will start refusing requests; you cannot
-author through it. The run does not end there — it **pauses**. Three steps:
+At ~95% utilization the window is effectively spent. Note the asymmetry between the two
+caps: near the **five-hour** boundary requests do eventually start being refused, but at
+the **weekly** boundary they do not — with extra usage enabled you can author straight
+through it onto credits (§1.2), so nothing external will stop you. Park on either. The
+run does not end there — it **pauses**. Three steps:
 
 **1. Park the current batch cleanly.** Do not abandon mid-script. Either finish the
 script in flight and stop before starting the next, or stop where you are — both are

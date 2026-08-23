@@ -62,16 +62,50 @@ both from `server/dal/shared/vetTable.ts`.
   > **Corrected at build time (2026-08-18).** This section originally named
   > `vetPlayableClause()` while describing what `vetSortedClause()` does — but
   > `vetPlayableClause()` is `starterPackBucket IN ('library','provisional')`, i.e. it
-  > *includes* the lent cards it was said to exclude. Memory Map is the **first game
-  > that wants the SORTED clause**, because it is the only one whose selection creates
-  > a durable artifact rather than a single round; every other game pool is rightly
-  > PLAYABLE. Q12's "lent words must not homestead a permanent map" settles which half
-  > of the contradiction was the intent.
+  > *includes* the lent cards it was said to exclude. Memory Map was the **first game
+  > that wanted the SORTED clause**, because it is the only one whose selection creates
+  > a durable artifact rather than a single round. Q12's "lent words must not homestead
+  > a permanent map" settles which half of the contradiction was the intent.
+  >
+  > **Since 2026-08-20 every game pool is SORTED** (PROVISIONAL_CARDS.md § 4b), so this
+  > is no longer the exception — but Memory Map remains the strictest case: the others
+  > admit lent rows by id when a round has to borrow, and this one admits none at all.
 * `masteredBarClause('reading')` is **goal-independent since migration 143**. The
   reading track is computed for every learner whether or not `users.readingGoal` is set;
   a learner without the goal simply never sees a reading progress bar in the UI. Memory
   Map works identically for both — it just quietly drives a track one of them can't see.
   See [MASTERY_REWORK.md](./MASTERY_REWORK.md).
+
+#### Two words never read the same
+
+On top of the eligibility clauses, a candidate is rejected if its **dd** matches one
+already on the map. The prompt bar names a definition and asks you to tap the word that
+means it, so 高兴 and 开心 both sitting there as "happy" gives the prompt two
+right-looking answers and scores only one.
+
+Enforced in `MemoryMapService.spawnInto` with a `takenDds` set keyed on
+`ddCollisionKey` (`server/utils/definitions.ts`), seeded from the words already placed
+and extended as newcomers are accepted — so it holds on the mid-run graduation refill
+(§ 3.6) as well as on a fresh map. The filter runs **before** the `slots` cut, so a
+collision costs the map nothing: the next candidate down the priority list takes the
+spot instead of the slot going unfilled.
+
+Memory Map is the strictest instance of this app-wide games rule, because a placement is
+**durable** — a collision admitted once sits on the map for as long as the word does,
+not for one round. The dd inputs (`selectedSense`, `definition`, `definitionClusters`)
+ride out of `MemoryMapDAL.getUnplacedCandidates` unresolved, for the same reason
+`PLACED_COLUMNS` does it: SQL cannot express `resolveDisplayDefinition`.
+
+Full rule and the other two chokepoints:
+[GAMES_FEATURE.md](./GAMES_FEATURE.md) § "No two cards may share a dd in one round".
+**Memory Map deliberately stops here.** The designed phase-2 extension to NEAR-identical
+glosses ([GLOSS_CONFUSABILITY.md](./GLOSS_CONFUSABILITY.md)) **does not apply to this game**
+(decided 2026-08-22, § 10 Q3 there). A placement is durable, so a later re-cluster of the
+meaning groups would act RETROACTIVELY on words already on the map — and both remedies are
+bad: evicting deletes a learner's reading progress, grandfathering leaves the map permanently
+wrong. Exact-dd equality has no such problem, being a property of the strings rather than of
+a model that gets rebuilt. If you are adding the meaning-group key to the other chokepoints,
+**skip `spawnInto`.**
 
 ### 2.2 The map is capped at 100 words
 
@@ -756,10 +790,13 @@ The spec said `vetPlayableClause()` while describing what `vetSortedClause()` do
 the lent cards the paragraph said it excluded. Q12 settles which half was intended, and
 the code uses `vetSortedClause()`.
 
-This makes Memory Map **the first game to select on the SORTED clause**. Every other
-game pool is rightly PLAYABLE, because a lent card is fine for the length of one round.
-Here selection creates a durable artifact, so a borrowed word would homestead a
-permanent spot on a map meant to portray the learner's own library.
+This made Memory Map **the first game to select on the SORTED clause**. As of
+2026-08-20 every game pool does (PROVISIONAL_CARDS.md § 4b) — a lent card turned out
+*not* to be fine even for the length of one round, because lent rows are never on
+cooldown and always band `Unfamiliar`, so they out-competed real cards in every round.
+Memory Map keeps the stricter form: the other pools admit lent rows by id when a round
+genuinely has to borrow, while here a borrowed word would homestead a permanent spot on
+a map meant to portray the learner's own library.
 
 ### 14.2 The placement columns are UUID and VARCHAR, not INTEGER and TEXT
 

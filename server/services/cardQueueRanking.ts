@@ -1,6 +1,7 @@
 import type { MarkType, TypedMarkHistory } from '../contracts/wire.js';
 import {
   COOLDOWN_MS_BY_CATEGORY,
+  cooldownRemainingMs,
   lastCorrectMarkTimestamp,
   readyMarkTypes,
 } from '../contracts/cooldown.js';
@@ -142,4 +143,64 @@ export function rankCardQueue<T extends RankableCard>(
   });
 
   return scored;
+}
+
+/**
+ * The COOLED complement of `rankCardQueue`: the cards with NO ready track, ordered
+ * nearest-to-ready first.
+ *
+ * ── WHY A SURFACE EVER WANTS THIS ────────────────────────────────────────────
+ * Lending is a last resort, not a substitute for the learner's own deck
+ * (docs/PROVISIONAL_CARDS.md § 4b). When a round cannot be filled from rested cards
+ * it re-serves RESTING ones before it mints anything: a card the learner chose,
+ * shown again early, beats a word they have never seen. The cost is that a mark
+ * fired at a still-cooling card is dropped by the guard at `POST /api/flashcards/mark`
+ * — the round plays, but those cards earn nothing. That is the accepted trade, and it
+ * is the same one the game pools' `cooled` tier has always made; this function exists
+ * so the flp can make it too (it previously had no cooled tier at all and simply
+ * returned short).
+ *
+ * ORDERING. Least remaining cooldown first — the card closest to genuinely being due.
+ * A card whose window expires in a minute is a far more honest thing to show than one
+ * marked correctly thirty seconds ago. Remaining time is the MIN across `markTypes`,
+ * mirroring `queueArrivalAt`'s MIN: the card is due as soon as its EARLIEST track is.
+ *
+ * Never-marked cards cannot appear here — with no correct mark, `cooldownRemainingMs`
+ * is 0 for every track, so the card is rested and belongs to `rankCardQueue` instead.
+ *
+ * `readyTypes` is deliberately EMPTY on every returned card (that is what "cooled"
+ * means), so callers must not use it to steer which face to show; the flp falls back
+ * to its default face for these.
+ */
+export function rankCardQueueCooled<T extends RankableCard>(
+  cards: T[],
+  now: number,
+  options: {
+    markTypes: readonly MarkType[];
+    windowCategoryOf: (card: T) => string | null | undefined;
+  }
+): T[] {
+  const scored: Array<{ card: T; remainingMs: number }> = [];
+
+  for (const card of cards) {
+    const windowCategory = options.windowCategoryOf(card);
+    const ready = readyMarkTypes(card.typedMarkHistory, now, options.markTypes, windowCategory);
+    if (ready.length > 0) continue; // rested — rankCardQueue's business, not ours
+
+    let remainingMs = Infinity;
+    for (const type of options.markTypes) {
+      remainingMs = Math.min(
+        remainingMs,
+        cooldownRemainingMs(card.typedMarkHistory, type, now, windowCategory)
+      );
+    }
+    // Unreachable in practice (a card with no ready track has a positive remainder on
+    // at least one), but a finite score keeps the sort total if `markTypes` is empty.
+    if (!Number.isFinite(remainingMs)) remainingMs = 0;
+    scored.push({ card, remainingMs });
+  }
+
+  // Stable sort, so cards with equal remaining time keep the caller's SQL ordering.
+  scored.sort((a, b) => a.remainingMs - b.remainingMs);
+  return scored.map(({ card }) => card);
 }

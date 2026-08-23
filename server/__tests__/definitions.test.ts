@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ddCollisionKey,
   ddt,
   generateShortDefinition,
   resolveSelectedCluster,
@@ -160,5 +161,42 @@ describe('resolveSelectedCluster — the ONE sense-pick rule', () => {
     const clusters = [low, high];
     resolveSelectedCluster({ definitionClusters: clusters });
     expect(clusters[0].sense).toBe('low');
+  });
+});
+
+/**
+ * The games-wide "no two cards may read the same in one round" guard
+ * (docs/GAMES_FEATURE.md). What matters is that the key is loose enough to catch what a
+ * player would SEE as a duplicate, and strict enough not to merge two glosses they could
+ * genuinely tell apart.
+ */
+describe('ddCollisionKey', () => {
+  it('collides two entries whose dd differs only in case or spacing', () => {
+    expect(ddCollisionKey({ definition: 'Happy' })).toBe(ddCollisionKey({ definition: 'happy' }));
+    expect(ddCollisionKey({ definition: '  measure   word ' })).toBe(
+      ddCollisionKey({ definition: 'measure word' })
+    );
+    expect(ddCollisionKey({ definition: 'happy.' })).toBe(ddCollisionKey({ definition: 'happy' }));
+  });
+
+  it('does NOT collide near-synonyms — they are answers a player can tell apart', () => {
+    expect(ddCollisionKey({ definition: 'happy' })).not.toBe(ddCollisionKey({ definition: 'glad' }));
+  });
+
+  it('resolves through the sense pick, so the key tracks what the card actually shows', () => {
+    const entry = {
+      definition: 'to pass by',
+      definitionClusters: [
+        { sense: 'past', glosses: ['the past'], frequencyScore: 5 },
+        { sense: 'suffix', glosses: ['to pass by'], frequencyScore: 3 },
+      ],
+    };
+    expect(ddCollisionKey({ ...entry, selectedSense: 'past' })).toBe('the past');
+    expect(ddCollisionKey({ ...entry, selectedSense: 'suffix' })).toBe('to pass by');
+  });
+
+  it('returns an empty key for a gloss-less entry (callers must treat it as no collision)', () => {
+    expect(ddCollisionKey({ definition: null })).toBe('');
+    expect(ddCollisionKey({ definition: '   ' })).toBe('');
   });
 });

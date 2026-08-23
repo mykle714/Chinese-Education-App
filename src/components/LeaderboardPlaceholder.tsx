@@ -1,242 +1,118 @@
-import { Box, Card, CardContent, Typography, Alert, Chip, Avatar } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import DelayedCircularProgress from "./DelayedCircularProgress";
+import { Board, BoardRow } from "./leaderboard/Board";
+import { Label } from "./primitives";
 import { useLeaderboard } from "../hooks/useLeaderboard";
-import { API_BASE_URL } from "../constants";
-import { SIZE , WEIGHT} from "../theme/scale";
+import { COLORS } from "../theme/colors";
+import { FONTS } from "../theme/fonts";
+import { SIZE } from "../theme/scale";
+
+/**
+ * The all-users leaderboard on the tester dashboard, ranked by lifetime minute points.
+ *
+ * ⚠️ THE NAME IS A FOSSIL. There is nothing placeholder about it — it has been the real,
+ * server-backed leaderboard since `useLeaderboard` landed. Renaming it is a one-line
+ * change at its single call site (`src/pages/TesterDashboardPage.tsx`) and worth doing
+ * the next time this file is touched for a real reason.
+ *
+ * Since the shelf redesign (docs/SHELF_REDESIGN.md § A7) this renders the shared `Board`
+ * rather than its own markup. It previously carried ~150 lines of bespoke row layout
+ * inside a pink-gradient card that predated the palette entirely — one of the three
+ * independently-written ranked lists the `Board` primitive exists to collapse.
+ *
+ * The tester dashboard is not a designed entry, so this is an EXTRAPOLATION from the
+ * primitives under decision D10 rather than a port of an artboard.
+ */
+
+/** The four per-user stats, as one mono sub-line. */
+function statLine(entry: {
+    currentStreak: number | null;
+    weeklyAchievements: number;
+    todaysMinutes: number;
+    yesterdaysMinutes: number;
+}): string {
+    // `currentStreak` is null when the user is not public — their streak is hidden from
+    // other viewers, so the fact is OMITTED rather than rendered as a zero, which would
+    // be a claim about their behaviour rather than an absence of one.
+    const parts = [
+        entry.currentStreak !== null ? `${entry.currentStreak} streak` : null,
+        `${entry.weeklyAchievements} weekly`,
+        `${entry.todaysMinutes} today`,
+        `${entry.yesterdaysMinutes} yest`,
+    ].filter(Boolean);
+    return parts.join(" · ");
+}
+
+/** Shared shell so the four states (loading / error / empty / list) line up identically. */
+function LeaderboardShell({ children }: { children: React.ReactNode }) {
+    return (
+        <Box className="leaderboard">
+            <Label className="leaderboard__heading" sx={{ display: "block", padding: "0 18px" }}>
+                Leaderboard
+            </Label>
+            {children}
+        </Box>
+    );
+}
 
 function LeaderboardPlaceholder() {
     const { entries, loading, error, isEmpty } = useLeaderboard();
 
     if (loading) {
         return (
-            <Card sx={{
-                background: 'linear-gradient(135deg, #f093fb, #f5576c)',
-                color: 'white',
-                height: 'fit-content'
-            }}>
-                <CardContent sx={{ py: 4, textAlign: 'center' }}>
-                    <DelayedCircularProgress sx={{ color: 'white', mb: 2 }} />
-                    <Typography variant="body1">Loading leaderboard...</Typography>
-                </CardContent>
-            </Card>
+            <LeaderboardShell>
+                <Box className="leaderboard__loading" sx={{ display: "flex", justifyContent: "center", padding: "24px 0" }}>
+                    <DelayedCircularProgress />
+                </Box>
+            </LeaderboardShell>
         );
     }
 
-    if (error) {
+    if (error || isEmpty) {
         return (
-            <Card sx={{
-                background: 'linear-gradient(135deg, #f093fb, #f5576c)',
-                color: 'white',
-                height: 'fit-content'
-            }}>
-                <CardContent sx={{ py: 4 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-                        <Typography variant="h4" component="span" sx={{ fontSize: '2rem' }}>
-                            🏆
-                        </Typography>
-                        <Typography variant="h6" component="div" sx={{ fontWeight: WEIGHT.bold }}>
-                            Leaderboard
-                        </Typography>
-                    </Box>
-                    <Alert severity="error" sx={{ mb: 2, bgcolor: 'rgba(255,255,255,0.1)', color: 'white' }}>
-                        {error}
-                    </Alert>
-                </CardContent>
-            </Card>
+            <LeaderboardShell>
+                <Typography
+                    className={error ? "leaderboard__error" : "leaderboard__empty"}
+                    sx={{
+                        fontFamily: FONTS.sans,
+                        fontSize: SIZE.body,
+                        // An error is the app's fault and an empty board is nobody's, so
+                        // the first gets semantic red and the second stays muted.
+                        color: error ? COLORS.dangerInk : COLORS.textSecondary,
+                        padding: "12px 18px 0",
+                    }}
+                >
+                    {error ?? "No one has earned any minute points yet."}
+                </Typography>
+            </LeaderboardShell>
         );
     }
 
-    if (isEmpty) {
-        return (
-            <Card sx={{
-                background: 'linear-gradient(135deg, #f093fb, #f5576c)',
-                color: 'white',
-                height: 'fit-content'
-            }}>
-                <CardContent sx={{ py: 4 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-                        <Typography variant="h4" component="span" sx={{ fontSize: '2rem' }}>
-                            🏆
-                        </Typography>
-                        <Typography variant="h6" component="div" sx={{ fontWeight: WEIGHT.bold }}>
-                            Leaderboard
-                        </Typography>
-                    </Box>
-                    <Box sx={{ textAlign: 'center', py: 2 }}>
-                        <Typography variant="body1" sx={{ opacity: 0.9 }}>
-                            No data available yet. Start learning to see rankings!
-                        </Typography>
-                    </Box>
-                </CardContent>
-            </Card>
-        );
-    }
+    // Every meter is drawn against the leader. MAX rather than entries[0] so an unsorted
+    // response can never produce a bar that overflows its track.
+    const topScore = entries.reduce((max, e) => Math.max(max, e.accumulativeMinutePoints), 0);
 
     return (
-        <Card sx={{
-            background: 'linear-gradient(135deg, #f093fb, #f5576c)',
-            color: 'white',
-            height: 'fit-content'
-        }}>
-            <CardContent sx={{ py: 4 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-                    <Typography variant="h4" component="span" sx={{ fontSize: '2rem' }}>
-                        🏆
-                    </Typography>
-                    <Box>
-                        <Typography variant="h6" component="div" sx={{ fontWeight: WEIGHT.bold, mb: 0.5 }}>
-                            Leaderboard
-                        </Typography>
-                        <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                            Top learners by total minute points
-                        </Typography>
-                    </Box>
-                </Box>
-
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {entries.map((entry) => {
-                        const isCurrentUser = entry.isCurrentUser;
-                        const getRankEmoji = (rank: number) => {
-                            switch (rank) {
-                                case 1: return '🥇';
-                                case 2: return '🥈';
-                                case 3: return '🥉';
-                                default: return `#${rank}`;
-                            }
-                        };
-
-                        return (
-                            <Box
-                                key={entry.userId}
-                                sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    // No uniform gap — per-element margins below let us
-                                    // tighten the rank→avatar spacing while keeping the
-                                    // avatar→info and info→points spacing roomy.
-                                    p: 2,
-                                    borderRadius: 2,
-                                    backgroundColor: isCurrentUser
-                                        ? 'rgba(255, 255, 255, 0.3)'
-                                        : 'rgba(255, 255, 255, 0.1)',
-                                    border: isCurrentUser ? '2px solid rgba(255, 255, 255, 0.5)' : 'none',
-                                    transition: 'all 0.2s ease-in-out',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                                    }
-                                }}
-                            >
-                                {/* Rank — narrower box + tight right margin pulls the
-                                    avatar in close, freeing horizontal room for the name. */}
-                                <Box sx={{ minWidth: '2rem', textAlign: 'center', mr: 0.5 }}>
-                                    <Typography variant="h6" sx={{ fontWeight: WEIGHT.bold, fontSize: SIZE.title }}>
-                                        {getRankEmoji(entry.rank)}
-                                    </Typography>
-                                </Box>
-
-                                {/* User Avatar — shows the user's chosen icons8 icon when
-                                    set (src), else falls back to the name/email initial. */}
-                                <Avatar
-                                    src={
-                                        entry.avatarIconId
-                                            ? `${API_BASE_URL}/api/icons8/${encodeURIComponent(entry.avatarIconId)}/image`
-                                            : undefined
-                                    }
-                                    imgProps={{ sx: { objectFit: 'contain', p: 0.5 } }}
-                                    sx={{
-                                        bgcolor: 'rgba(255, 255, 255, 0.2)',
-                                        color: 'white',
-                                        width: 40,
-                                        height: 40
-                                    }}
-                                >
-                                    {(entry.name || entry.email).charAt(0).toUpperCase()}
-                                </Avatar>
-
-                                {/* User Info */}
-                                <Box sx={{ flex: 1, minWidth: 0, ml: 1.5 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                        <Typography
-                                            variant="body1"
-                                            title={entry.email}
-                                            sx={{
-                                                // flex:1 makes the name span the full width of
-                                                // the info cell, pushing the "You" chip to the edge.
-                                                flex: 1,
-                                                minWidth: 0,
-                                                fontWeight: WEIGHT.bold,
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap'
-                                            }}
-                                        >
-                                            {entry.name || entry.email}
-                                        </Typography>
-                                        {isCurrentUser && (
-                                            <Chip
-                                                label="You"
-                                                size="small"
-                                                sx={{
-                                                    bgcolor: 'rgba(255, 255, 255, 0.2)',
-                                                    color: 'white',
-                                                    height: '20px',
-                                                    fontSize: SIZE.micro,
-                                                    flexShrink: 0
-                                                }}
-                                            />
-                                        )}
-                                    </Box>
-
-                                    <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-                                        {entry.currentStreak !== null && (
-                                            <Typography variant="body2" sx={{ opacity: 0.9, fontSize: SIZE.body }}>
-                                                🔥 {entry.currentStreak} streak
-                                            </Typography>
-                                        )}
-                                        <Typography variant="body2" sx={{ opacity: 0.9, fontSize: SIZE.body }}>
-                                            🏆 {entry.weeklyAchievements} weekly
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ opacity: 0.9, fontSize: SIZE.body }}>
-                                            📅 Today: {entry.todaysMinutes}
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ opacity: 0.9, fontSize: SIZE.body }}>
-                                            📊 Yesterday: {entry.yesterdaysMinutes}
-                                        </Typography>
-                                    </Box>
-                                </Box>
-
-                                {/* Total Points */}
-                                <Box sx={{ textAlign: 'right', ml: 1.5 }}>
-                                    <Typography variant="h6" sx={{ fontWeight: WEIGHT.bold }}>
-                                        {entry.accumulativeMinutePoints.toLocaleString()}
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ opacity: 0.8, fontSize: SIZE.caption }}>
-                                        points
-                                    </Typography>
-                                </Box>
-                            </Box>
-                        );
-                    })}
-                </Box>
-
-                {entries.length > 5 && (
-                    <Box sx={{
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        borderRadius: 2,
-                        p: 2,
-                        textAlign: 'center',
-                        mt: 2
-                    }}>
-                        <Typography variant="body2" sx={{
-                            opacity: 0.7,
-                            fontSize: SIZE.body
-                        }}>
-                            Showing top {Math.min(entries.length, 10)} learners
-                        </Typography>
-                    </Box>
-                )}
-            </CardContent>
-        </Card>
+        <LeaderboardShell>
+            <Board className="leaderboard__board">
+                {entries.map((entry) => (
+                    <BoardRow
+                        key={entry.userId}
+                        className={`leaderboard__row${entry.isCurrentUser ? " leaderboard__row--you" : ""}`}
+                        rank={entry.rank}
+                        // Name is optional on the account, so the email is the fallback
+                        // label — never render a blank row.
+                        name={entry.name || entry.email}
+                        sublabel={statLine(entry)}
+                        meter={topScore > 0 ? entry.accumulativeMinutePoints / topScore : 0}
+                        score={entry.accumulativeMinutePoints.toLocaleString()}
+                        // Replaces the old "You" chip: the row itself says it, which is one
+                        // fewer thing competing for the width a long display name needs.
+                        highlighted={entry.isCurrentUser}
+                    />
+                ))}
+            </Board>
+        </LeaderboardShell>
     );
 }
 

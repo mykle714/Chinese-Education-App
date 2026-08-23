@@ -41,6 +41,21 @@ import type {
 export class StudyChallengeController {
   constructor(private studyChallengeService: StudyChallengeService) {}
 
+  /**
+   * `?anytime=1` — the TESTER escape hatch (docs/STUDY_CHALLENGE.md § 2a).
+   *
+   * Read the same way on every endpoint, including the POSTs, where it rides the
+   * QUERY STRING rather than the body on purpose: it is a property of the caller's
+   * session, not of the thing being created, and one parser beats five.
+   *
+   * ⚠️ THIS IS NOT AUTHORIZATION. Anybody may send it; the SERVICE decides whether
+   * the caller is a validator and ignores it silently otherwise. The controller's job
+   * is only to carry the request through — see `StudyChallengeService.resolveAnytime`.
+   */
+  private static anytime(req: Request): boolean {
+    return String(req.query.anytime ?? '') === '1';
+  }
+
   /** GET /api/studyChallenges — the challenges page, in the caller's current language. */
   getChallengesPage = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -48,7 +63,9 @@ export class StudyChallengeController {
       if (!userId) return;
 
       const language = await getUserLanguage(userId);
-      res.json(await this.studyChallengeService.getChallengesPage(userId, language));
+      res.json(await this.studyChallengeService.getChallengesPage(
+        userId, language, StudyChallengeController.anytime(req)
+      ));
     } catch (error) {
       handleControllerError(error, res, 'StudyChallengeController.getChallengesPage');
     }
@@ -59,7 +76,9 @@ export class StudyChallengeController {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      res.json({ count: await this.studyChallengeService.countBadge(userId) });
+      res.json({ count: await this.studyChallengeService.countBadge(
+        userId, StudyChallengeController.anytime(req)
+      ) });
     } catch (error) {
       handleControllerError(error, res, 'StudyChallengeController.getBadge');
     }
@@ -76,7 +95,8 @@ export class StudyChallengeController {
       res.json(await this.studyChallengeService.getHistory(
         userId,
         Number.isFinite(limit) ? limit : 20,
-        before
+        before,
+        StudyChallengeController.anytime(req)
       ));
     } catch (error) {
       handleControllerError(error, res, 'StudyChallengeController.getHistory');
@@ -125,7 +145,8 @@ export class StudyChallengeController {
         : [];
 
       res.status(201).json(await this.studyChallengeService.issueChallenge(
-        userId, body.friendUserId, body.variant, language, struckWords
+        userId, body.friendUserId, body.variant, language, struckWords,
+        StudyChallengeController.anytime(req)
       ));
     } catch (error) {
       handleControllerError(error, res, 'StudyChallengeController.issueChallenge');
@@ -204,7 +225,9 @@ export class StudyChallengeController {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      res.json(await this.studyChallengeService.getChallenge(userId, String(req.params.id)));
+      res.json(await this.studyChallengeService.getChallenge(
+        userId, String(req.params.id), StudyChallengeController.anytime(req)
+      ));
     } catch (error) {
       handleControllerError(error, res, 'StudyChallengeController.getChallenge');
     }
@@ -231,7 +254,8 @@ export class StudyChallengeController {
         : [];
 
       res.json(await this.studyChallengeService.acceptChallenge(
-        userId, String(req.params.id), struckWords, replacementWords
+        userId, String(req.params.id), struckWords, replacementWords,
+        StudyChallengeController.anytime(req)
       ));
     } catch (error) {
       handleControllerError(error, res, 'StudyChallengeController.acceptChallenge');
@@ -280,7 +304,8 @@ export class StudyChallengeController {
         // Stored verbatim (§ 5.6). The server does not recompute the score, so it
         // does not validate the breakdown's internals either — it is an open shape a
         // game may enrich without a migration.
-        body.breakdown as any
+        body.breakdown as any,
+        StudyChallengeController.anytime(req)
       ));
     } catch (error) {
       handleControllerError(error, res, 'StudyChallengeController.submitRound');

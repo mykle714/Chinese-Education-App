@@ -13,11 +13,13 @@ import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
-import type { Language, VocabEntry } from "../../types";
+import type { Language, MarkType, VocabEntry } from "../../types";
+import { foreignPromptTrack } from "../../../server/contracts/wire";
 import LeafPage from "../../components/LeafPage";
 import BubbleMatchHeaderControls from "./BubbleMatchHeader";
 import BubbleMatchEndPopup from "./BubbleMatchEndPopup";
 import BubbleStage from "./BubbleStage";
+import { GameFrame } from "../shared/GameFrame";
 import { GAME_DISTRIBUTION, GAME_KEY, LEVEL_CONFIGS, MARK_TYPE, MAX_AVOID_IDS, MIN_REPLAY_PAIRS, TOTAL_PAIRS } from "./constants";
 import type { LevelConfig } from "./types";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
@@ -27,6 +29,8 @@ import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { provisionalEntries, provisionalWords } from "../../utils/provisionalCards";
 import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
+import { useChallengeRound } from "../runtime/useChallengeRound";
+import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
 interface GamePoolResponse {
@@ -56,18 +60,20 @@ function shuffle<T>(arr: T[]): T[] {
     return a;
 }
 
-/** Build the `?markType=recognition&Unfamiliar=2&Target=10&...` query from the
-    launch distribution. Bubble Match is a recognition drill (foreign → meaning),
-    so its pool must be bucketed and cooled by the RECOGNITION track. The endpoint
-    used to hardcode that; it is now parameterized (Speed Reading pools on `reading`),
-    and every caller states its own type rather than relying on the default.
+/** Build the `?markType=…&Unfamiliar=2&Target=10&...` query from the launch
+    distribution. Bubble Match is a foreign → meaning drill, so its pool must be
+    bucketed and cooled by the very track it will mark — `recognition` with pinyin on,
+    `reading` on a pinyin-off zh board (docs/MASTERY_REWORK.md § 1a). The endpoint used
+    to hardcode recognition; it is now parameterized (Speed Reading pools on
+    `reading`), and every caller states its own type rather than relying on the default.
     See docs/MASTERY_REWORK.md § "Games select by their own mark type". */
 // `surface` names which baseline the server tops the player up to before it builds
 // the pool, so a small deck is filled with temporary cards instead of blocking
 // (docs/PROVISIONAL_CARDS.md). Bubble Match's baseline is CARD_BASELINES['bubble-match'].
-const poolQuery = [`markType=${MARK_TYPE}`, "surface=bubble-match"]
-    .concat(Object.entries(GAME_DISTRIBUTION).map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`))
-    .join("&");
+const buildPoolQuery = (markType: MarkType) =>
+    [`markType=${markType}`, "surface=bubble-match"]
+        .concat(Object.entries(GAME_DISTRIBUTION).map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`))
+        .join("&");
 
 /**
  * Bubble Match — page shell + game-flow state machine.
@@ -101,6 +107,35 @@ const BubbleMatchPage: React.FC = () => {
     const tts = useTTS();
     const { settings, update } = useFlashcardLearnSettings();
     const { showPinyin, showPinyinColor, autoplayChinese } = settings;
+
+    // THE RUN'S MASTERY TRACK, LOCKED WHEN THE BOARD IS DEALT (docs/MASTERY_REWORK.md
+    // § 1a). Pinyin shown ⇒ this is a recognition drill; pinyin hidden on a zh board ⇒
+    // the player reaches the meaning from the characters alone, which is a READING one.
+    //
+    // Locked rather than live because the POOL is bucketed and cooled on this track at
+    // request time: a board dealt on one track and then marked on another would write
+    // marks the server can silently drop (a still-cooling track — see
+    // docs/HYDRA_BUBBLES.md § 8.1). That is also why the pinyin toggle moved OUT of
+    // this page's header and onto the Games hub, where it is set before the deal.
+    //
+    // Latched on first use (the pool fetch) rather than at mount: `user` — and so the
+    // language — arrives asynchronously, and the fetch effect already waits for it.
+    const trackInputRef = useRef({ language: user?.selectedLanguage, showPinyin });
+    trackInputRef.current = { language: user?.selectedLanguage, showPinyin };
+    const runTrackRef = useRef<MarkType | null>(null);
+    const [runTrack, setRunTrack] = useState<MarkType>(MARK_TYPE);
+    const lockRunTrack = useCallback((): MarkType => {
+        if (!runTrackRef.current) {
+            const { language, showPinyin: pinyin } = trackInputRef.current;
+            runTrackRef.current = foreignPromptTrack(language ?? "zh", pinyin);
+            setRunTrack(runTrackRef.current);
+        }
+        return runTrackRef.current;
+    }, []);
+    // What the board actually draws, derived from the locked track so display and mark
+    // can never disagree mid-run. (For Latin-script languages the track is always
+    // recognition and ForeignText ignores the flag, so this is a no-op there.)
+    const boardShowPinyin = runTrack === "recognition";
     const { recordWin } = useGameWins(GAME_KEY);
 
     // Block the mobile browser's edge-swipe-back gesture while this page is
@@ -144,6 +179,41 @@ const BubbleMatchPage: React.FC = () => {
     const runIdRef = useRef(0);
     const [runId, setRunId] = useState(0);
 
+    // ── Popup pause gate ─────────────────────────────────────────────────────
+    // No game clock may run while a MODAL popup covers the board. Bubble Match has
+    // no clock, but it has the same problem in another currency: the launcher keeps
+    // firing and the ceiling keeps descending, so a player reading the
+    // provisional-cards notice can come back to a field that filled up (or lost)
+    // without them. The notice is a full-screen input-blocking overlay, so freezing
+    // the field buys no free study time. Shared rule across all four games — see
+    // docs/GAMES_FEATURE.md § Popups pause the clock.
+    // BACKGROUNDING IS THE SECOND SOURCE for this same boolean — the app-wide rule
+    // (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). It latches, so the
+    // ceiling does not resume descending the instant the player returns; they tap
+    // Resume on the overlay below. Only while genuinely playing, so returning to a
+    // finished board shows no prompt.
+    const { paused: backgroundPaused, resume: resumeFromBackground } =
+        useBackgroundPause(phase === "playing");
+    const clockPaused = noticeOpen || backgroundPaused;
+
+    // ── STUDY CHALLENGE ROUND (docs/STUDY_CHALLENGE.md § 5) ──
+    // Inert for an ordinary launch — every method is a no-op and `isContested`
+    // always answers false — so nothing below needs an `if (challenge)` branch
+    // around it. It sits HERE, above the callbacks, because `markBubbleMatch` and
+    // the win/loss handlers all feed it; the pause gate moved up with it, since the
+    // round's active-time clock is driven by the very same `clockPaused` boolean
+    // that freezes the field (§ 5.8).
+    const challengeRound = useChallengeRound({
+        gameId: "bubble-match",
+        paused: clockPaused,
+        running: phase === "playing",
+    });
+    // Read through a ref inside `fetchGamePool`, whose identity is deliberately
+    // stable across a silent token refresh (CLAUDE.md ⛔) and therefore cannot list
+    // the params as a dependency.
+    const challengeParamsRef = useRef("");
+    challengeParamsRef.current = challengeRound.poolParams;
+
     // Fetch a randomized game pool from the server (the endpoint orders candidates
     // by RANDOM(), so each call yields a different vocab set).
     //
@@ -162,10 +232,14 @@ const BubbleMatchPage: React.FC = () => {
             // The collection suffix (docs/DECKS_FEATURE.md) goes on BOTH the full
             // board and the Play-Again refill: a deck-launched game that dropped it
             // on refill would start pulling replacements from the whole library.
+            // Latches the run's track on the FIRST fetch and reuses it for every
+            // Play-Again refill, so a refilled board stays on the track its kept
+            // cards were selected for.
+            const poolQuery = buildPoolQuery(lockRunTrack());
             const query = (refill
                 ? `${poolQuery}&need=${refill.need}&exclude=${refill.keepIds.join(",")}`
                   + `&avoid=${refill.avoidIds.join(",")}`
-                : poolQuery) + collectionSuffix;
+                : poolQuery) + collectionSuffix + challengeParamsRef.current;
             const res = await fetch(`${API_BASE_URL}/api/onDeck/gamePool?${query}`, {
                 credentials: "include",
                 headers: authHeader(),
@@ -180,8 +254,9 @@ const BubbleMatchPage: React.FC = () => {
             // "you need 20 Learn Now cards" block is gone for good; see
             // docs/PROVISIONAL_CARDS.md § Nothing blocks on card count.
 
-            // Warm the TTS cache so in-game autoplay is instant (mirrors flp).
-            data.cards.forEach((c) => tts.prefetch(c));
+            // Warm the TTS cache so in-game autoplay is instant (mirrors flp). Skipped
+            // entirely on a READING run, which never plays audio (see `onSpeak` below).
+            if (runTrackRef.current === "recognition") data.cards.forEach((c) => tts.prefetch(c));
             return data.cards;
         } catch {
             setBlockMessage("Couldn't load the game. Please try again.");
@@ -211,6 +286,16 @@ const BubbleMatchPage: React.FC = () => {
         setPhase("playing");
     }, []);
 
+    // A challenge round that cannot be played says so instead of dealing a board
+    // that would score nothing — the window has closed, the round is already
+    // submitted, or this is not the game the sequence drew (§ 5.1a).
+    useEffect(() => {
+        if (challengeRound.error) {
+            setBlockMessage(challengeRound.error);
+            setPhase("blocked");
+        }
+    }, [challengeRound.error]);
+
     // Fetch the game pool once on mount, then start straight into the level
     // requested from the hub (no in-game picker to land on anymore).
     // No level chosen (direct URL / stray nav) — bounce back to the Games hub,
@@ -226,6 +311,12 @@ const BubbleMatchPage: React.FC = () => {
             setPhase("blocked");
             return;
         }
+        // WAIT FOR THE CHALLENGE CONTEXT. The round's contested set arrives with the
+        // challenge payload, and a board dealt before it lands would be classified
+        // entirely as filler — a round scored at 20 points a card with no way to tell
+        // afterwards that it went wrong. `ready` flips once, so this costs an
+        // ordinary launch nothing (`active` is false and the guard never fires).
+        if (challengeRound.active && !challengeRound.ready) return;
         let cancelled = false;
         (async () => {
             const cards = await fetchGamePool();
@@ -240,7 +331,7 @@ const BubbleMatchPage: React.FC = () => {
         // is derived from location.state on mount, so it's intentionally excluded
         // too. See CLAUDE.md "Never reload on token refresh".
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id]);
+    }, [user?.id, challengeRound.active, challengeRound.ready]);
 
     // Restart the current level on the already-loaded card set (reshuffled launch
     // order) — the header's mid-run restart. Primes the audio element inside this
@@ -311,14 +402,31 @@ const BubbleMatchPage: React.FC = () => {
             matchedIdsRef.current.add(entry.id);
             clearedThisSessionRef.current.add(entry.id);
         }
-        // Bubble Match is a recognition drill (foreign → meaning); see
-        // docs/MASTERY_REWORK.md.
-        // excludeIds defaults to []: the game doesn't use the replacement card the
+        // The run's locked track — recognition, or reading on a pinyin-off zh board
+        // (docs/MASTERY_REWORK.md § 1a). Read from the ref, not state, so a mark fired
+        // in the same tick as the first deal still names the track the pool was built
+        // on. excludeIds defaults to []: the game doesn't use the replacement card the
         // endpoint returns, so there's nothing to dedupe against.
-        markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE, surface: "bubble-match" })
+        markFlashcard({
+            cardId: entry.id,
+            isCorrect,
+            type: runTrackRef.current ?? MARK_TYPE,
+            surface: "bubble-match",
+        })
             .catch((err) => console.error(`[BubbleMatch] mark failed → card ${entry.id}:`, err));
+        // A challenge round is normal play (§ 5.7) — the same mark, plus a scored
+        // event. Contested-ness is tested against the challenge's OWN word set, never
+        // against mastery: this very mark can band the word up mid-round.
+        challengeRound.emit({
+            kind: isCorrect ? "hit" : "miss",
+            word: entry.entryKey,
+            contested: challengeRound.isContested(entry.entryKey),
+        });
         // No `token` dep — markFlashcard reads the header at call time, so this
         // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
+        // `challengeRound.emit` / `.isContested` are stable across renders by
+        // construction (see useChallengeRound), so they are likewise omitted.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Clearing the chosen level wins the run and logs the win (via useGameWins'
@@ -328,28 +436,21 @@ const BubbleMatchPage: React.FC = () => {
         setPopupMinimized(false);
         recordWin(level.level);
         setPhase("won");
-    }, [recordWin, level.level]);
+        // `won: true` KEEPS the survival bonus; a loss forfeits it entirely (Q68).
+        // Bubble Match is a survival game, so a challenge score that ignored whether
+        // the player survived would be scoring a different game than the one played.
+        challengeRound.finish(true);
+    }, [recordWin, level.level, challengeRound]);
+    /** The ceiling has started closing in — the survival bonus is now live. */
+    const onCeilingDrop = useCallback(() => {
+        challengeRound.emit({ kind: "survivalStart", ruleId: "survival" });
+    }, [challengeRound]);
     const onLevelLose = useCallback(() => {
         setPopupMinimized(false);
         setPhase("lost");
-    }, []);
+        challengeRound.finish(false);
+    }, [challengeRound]);
 
-    // ── Popup pause gate ─────────────────────────────────────────────────────
-    // No game clock may run while a MODAL popup covers the board. Bubble Match has
-    // no clock, but it has the same problem in another currency: the launcher keeps
-    // firing and the ceiling keeps descending, so a player reading the
-    // provisional-cards notice can come back to a field that filled up (or lost)
-    // without them. The notice is a full-screen input-blocking overlay, so freezing
-    // the field buys no free study time. Shared rule across all four games — see
-    // docs/GAMES_FEATURE.md § Popups pause the clock.
-    // BACKGROUNDING IS THE SECOND SOURCE for this same boolean — the app-wide rule
-    // (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). It latches, so the
-    // ceiling does not resume descending the instant the player returns; they tap
-    // Resume on the overlay below. Only while genuinely playing, so returning to a
-    // finished board shows no prompt.
-    const { paused: backgroundPaused, resume: resumeFromBackground } =
-        useBackgroundPause(phase === "playing");
-    const clockPaused = noticeOpen || backgroundPaused;
 
     // End-of-run offer to keep the lent cards. It opens a beat AFTER the win/loss
     // popup so the result lands first, then stacks over it in the opposite corner.
@@ -435,6 +536,11 @@ const BubbleMatchPage: React.FC = () => {
                 </Button>
             </>
         );
+    } else if (challengeRound.active && (phase === "won" || phase === "lost")) {
+        // A CHALLENGE ROUND ENDS ON THE SCOREBOARD, not on the game's own card
+        // (§ 5.5). There is no Play Again to offer: a submitted round is final and
+        // the only ways out are the next round or the challenge itself (§ 5.1a).
+        popup = <ChallengeRoundScoreboard round={challengeRound} classPrefix="bubble-match" />;
     } else if (phase === "won") {
         popup = (
             <BubbleMatchEndPopup
@@ -486,19 +592,31 @@ const BubbleMatchPage: React.FC = () => {
         />
         <LeafPage
             title="Bubble Match"
-            onBack={() => navigate("/games")}
+            // Back lands where the player came FROM: the challenge, mid-test, or the
+            // Games hub for an ordinary run.
+            onBack={() => navigate(challengeRound.challengeId
+                ? `/friends/challenges/${challengeRound.challengeId}`
+                : "/games")}
             rightContent={
                 <BubbleMatchHeaderControls
-                    // Gates the pinyin toggle out for Latin-script languages, where
-                    // ForeignText ignores it entirely.
                     language={(user?.selectedLanguage ?? "zh") as Language}
-                    showPinyin={showPinyin}
-                    onTogglePinyin={() => update({ showPinyin: !showPinyin })}
-                    autoplayChinese={autoplayChinese}
-                    onToggleAutoplayChinese={() => update({ autoplayChinese: !autoplayChinese })}
+                    // NO PINYIN TOGGLE HERE. It decides the run's mastery track, so it
+                    // is chosen on the Games hub before the board is dealt (see
+                    // `runTrack`). Autoplay is offered only on a recognition run —
+                    // narrating the word on a READING run would hand the player the
+                    // pronunciation the run is asking them to read.
+                    autoplayChinese={runTrack === "recognition" ? autoplayChinese : undefined}
+                    onToggleAutoplayChinese={
+                        runTrack === "recognition"
+                            ? () => update({ autoplayChinese: !autoplayChinese })
+                            : undefined
+                    }
                     // Restart is only meaningful mid-run; the won/lost popup owns
                     // replay otherwise. Restarts the live level on the same words.
-                    onRestart={phase === "playing" ? () => startLevel(level) : undefined}
+                    //
+                    // NEVER during a challenge round: rounds are one attempt each
+                    // (§ 5.1a), and a restart is a re-roll of a scored round.
+                    onRestart={phase === "playing" && !challengeRound.active ? () => startLevel(level) : undefined}
                 />
             }
         >
@@ -523,29 +641,46 @@ const BubbleMatchPage: React.FC = () => {
             >
                 {showStage ? (
                     <>
-                        <BubbleStage
-                            key={runId}
-                            levelPairs={pool}
-                            config={level}
-                            levelNumber={level.level}
-                            levelLabel={level.label}
-                            showPinyin={showPinyin}
-                            showPinyinColor={showPinyinColor}
-                            onSpeak={autoplayChinese && tts.enabled ? tts.speak : undefined}
-                            onLevelWin={onLevelWin}
-                            onLevelLose={onLevelLose}
-                            onMark={markBubbleMatch}
-                            // Game-over popup minimized → the packed field becomes a
-                            // no-stakes cleanup playground (draggable/matchable, no
-                            // marks). A win clears the field, so only the lost phase
-                            // has anything left to clean up.
-                            cleanupMode={phase === "lost" && popupMinimized}
-                            // Freeze the launcher, the descending ceiling and the
-                            // overfill check while a modal popup covers the stage
-                            // (see the `paused` prop, and docs/GAMES_FEATURE.md
-                            // § Popups pause the clock).
-                            paused={clockPaused}
-                        />
+                        {/* `.play` — the inset panel the board lives in
+                            (docs/SHELF_REDESIGN.md § A6). BubbleStage measures its own
+                            container, so framing it just re-bounds the field. The two
+                            overlays stay OUTSIDE the panel: both cover the whole content
+                            area and must not be clipped by its radius. */}
+                        <GameFrame className="bubble-match__frame">
+                            <BubbleStage
+                                key={runId}
+                                levelPairs={pool}
+                                config={level}
+                                levelNumber={level.level}
+                                levelLabel={level.label}
+                                showPinyin={boardShowPinyin}
+                                showPinyinColor={showPinyinColor}
+                                // Silent on a READING run: the whole point is to reach
+                                // the meaning from the characters, and narration would
+                                // supply the reading being tested.
+                                onSpeak={
+                                    boardShowPinyin && autoplayChinese && tts.enabled
+                                        ? tts.speak
+                                        : undefined
+                                }
+                                onLevelWin={onLevelWin}
+                                // Starts the challenge survival bonus decaying
+                                // (§ 5.4). A no-op outside a challenge round.
+                                onCeilingDrop={onCeilingDrop}
+                                onLevelLose={onLevelLose}
+                                onMark={markBubbleMatch}
+                                // Game-over popup minimized → the packed field becomes a
+                                // no-stakes cleanup playground (draggable/matchable, no
+                                // marks). A win clears the field, so only the lost phase
+                                // has anything left to clean up.
+                                cleanupMode={phase === "lost" && popupMinimized}
+                                // Freeze the launcher, the descending ceiling and the
+                                // overfill check while a modal popup covers the stage
+                                // (see the `paused` prop, and docs/GAMES_FEATURE.md
+                                // § Popups pause the clock).
+                                paused={clockPaused}
+                            />
+                        </GameFrame>
                         {popup}
                         {/* Stacks over the win/loss popup; collapses to the OTHER
                             corner so the two pucks stay tellable apart. */}

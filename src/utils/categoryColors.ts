@@ -2,38 +2,69 @@
 // These match the deck colors used across the app (decks page, discover page).
 // Extracted here so MiniVocabCard, VocabCardDetailPage, and the flashcard
 // learn-page chip all draw from one source instead of duplicating the map.
-import { MARK_TYPE_COLORS } from "./masteryCompute";
 import type { MasteryBarId } from "../../server/contracts/wire";
+// ⚠️ VALUES REWRITTEN for the shelf redesign (docs/SHELF_REDESIGN.md, decision D2).
+// The four categories are now the design's OKLCH PASTELS at the hue each already
+// owned. The names, the shape and every consumer are unchanged — only the values moved:
+//   Unfamiliar  #EF476F -> #FFDDDB  (--red, oklch(93% 0.045  20))
+//   Target      #FF9E5A -> #FFE6C8  (--org, oklch(94% 0.05   70))
+//   Comfortable #05C793 -> #D9F4D9  (--grn, oklch(94% 0.045 145))
+//   Mastered    #779BE7 -> #D2EBFF  (--blu, oklch(93% 0.045 250))
+//
+// ⚠️ A PASTEL IS NOT SELF-SUFFICIENT. Each of these is ~1.15:1 against the paper
+// ground — invisible as a bare dot, chip or bar. They read only when the shape carries
+// `COLORS.markOutline` (a 1px inset ink ring), which is the design's own device:
+// `.msb .cells i` fills at 6% ink and STILL draws a 12% ring. A pastel fill without
+// that ring is a bug.
+//
+// ⚠️ And text on one of these must be INK (`COLORS.onSurface`), never white — white on
+// a pastel is ~1.1:1. Three call sites were flipped when this landed: MiniVocabCard's
+// corner badge, VocabCardDetailBody's category chip, CardFace's CategoryChip.
+//
+// The near-white partner of each hue (--redTint etc.) is the `accent` in BAND_COLORS
+// below and the `*Accent` token in theme/colors.ts. For INK sitting on a pastel, use
+// the ramp's `*A` member (COLORS.redA / orgA / grnA / bluA) instead.
 export const CATEGORY_COLORS = {
-    Unfamiliar: "#EF476F",
-    Target: "#FF9E5A",
-    Comfortable: "#05C793",
-    Mastered: "#779BE7",
-    // Fallback for unknown/undefined category.
-    default: "#5C5C66",
+    Unfamiliar: "#FFDDDB",
+    Target: "#FFE6C8",
+    Comfortable: "#D9F4D9",
+    Mastered: "#D2EBFF",
+    // Fallback for unknown/undefined category. --grey, the ramp's neutral surface —
+    // a pastel like the four above, so an unknown category is a colorless chip rather
+    // than a dark one.
+    default: "#E7E7EA",
 } as const;
 
 /**
  * The two-tone pair each band paints a DECK TILE with: a saturated body color and a
- * lighter inner fill (`DeckTile`, the stacked-card icon).
+ * lighter inner fill (`DeckTile`, the deleted stacked-card icon). A `Spine` takes
+ * only the `main` pastel — the highlight down its right edge does what the accent
+ * used to, so the `accent` half of each pair is now read by other surfaces only.
  *
  * Separate from CATEGORY_COLORS above, which is the single flat color a chip or a
  * mini-card badge uses. A tile needs both tones, and the `main` values here are the
  * same hues, so the two maps agree by construction rather than by coincidence.
  */
+// Post-redesign `main` is the 93% PASTEL body and `accent` the 97.5% near-white inner
+// fill — two tiers of one hue rather than saturated-over-pastel. The tile needs its own
+// outline to separate from the paper; see COLORS.markOutline.
 export const BAND_COLORS = {
-    Unfamiliar: { main: "#EF476F", accent: "#F2BAC9" },
-    Target: { main: "#FF9E5A", accent: "#F2E2BA" },
-    Comfortable: { main: "#05C793", accent: "#BAF2D8" },
-    Mastered: { main: "#779BE7", accent: "#BAD7F2" },
+    Unfamiliar: { main: "#FFDDDB", accent: "#FFF2F2" },
+    Target: { main: "#FFE6C8", accent: "#FFF5EA" },
+    Comfortable: { main: "#D9F4D9", accent: "#F0FAF0" },
+    Mastered: { main: "#D2EBFF", accent: "#EEF8FF" },
     /**
      * "All" — the whole library. Deliberately GREY: every other tile color on the page
      * carries meaning (a band, a mastery bar, a deck's derived accent), and All is not
      * one of those sets — it is their union. A neutral pair keeps it from reading as a
      * fifth band. The accent is the existing `COLORS.card` grey, so it stays inside the
      * app's surface family rather than introducing a new hue.
+     *
+     * Post-redesign these are the ramp's own neutrals, so "All" is desaturated by
+     * construction rather than by a hand-picked grey — and it sits at the same two
+     * tiers as the four hues above (--grey body, paper-white inner fill).
      */
-    All: { main: "#8A8A94", accent: "#D8D8DC" },
+    All: { main: "#E7E7EA", accent: "#FBFAF8" },
 } as const;
 
 /**
@@ -46,7 +77,7 @@ export const BAND_COLORS = {
  * Shared by the fdp tile and the Games hub selector dot via `builtinCollections.ts`.
  * Same two-tone shape as BAND_COLORS / MASTERY_BAR_COLORS: saturated body + light fill.
  */
-export const LEARN_NOW_COLORS = { main: "#9B8BD4", accent: "#D8BAF2" } as const;
+export const LEARN_NOW_COLORS = { main: "#ECE2FF", accent: "#F8F4FF" } as const;
 
 /**
  * The two-tone tile palette for each mastery bar's Mastered collection (the fdp's
@@ -54,14 +85,22 @@ export const LEARN_NOW_COLORS = { main: "#9B8BD4", accent: "#D8BAF2" } as const;
  *
  * The row used to be three blue tiles, on the reasoning that they are one achievement
  * in three skills. In practice that made three DIFFERENT sets look interchangeable, so
- * each bar now carries its own hue — and the hue is not arbitrary: `reading` and
- * `writing` are single-mark-type bars, so each takes ITS MARK's color from
- * `MARK_TYPE_COLORS`, the same color that mark paints on the cdp track and the
- * mini-card strip. A learner who has learned "red = reading" from the progress bars
- * reads the tile the same way.
+ * each bar carries its own hue — and the hue is not arbitrary: `reading` and `writing`
+ * are single-mark-type bars, so each takes the BAND HUE its mark already owns
+ * (reading = the red hue, writing = the orange hue), the same hue that mark paints on
+ * the cdp track and the mini-card strip. A learner who has learned "red = reading" from
+ * the progress bars reads the tile the same way.
  *
  * `core` is the exception, and has to be: it blends recognition (blue) and production
- * (green), so it has no single mark color to borrow and keeps the app's Mastered blue.
+ * (green), so it has no single mark hue to borrow and keeps the app's Mastered blue.
+ *
+ * ⚠️ These are the PASTEL pairs, not `MARK_TYPE_COLORS`. A Mastered tile is a shelf
+ * SPINE with a name and a count printed on it, and the design draws exactly that —
+ * artboard 2's "Mastered Reading" spine is `background: var(--red)`, the 93% pastel,
+ * with ink lettering. `MARK_TYPE_COLORS` stays saturated because a mark CELL carries
+ * nothing on top of it. These two maps share a hue, deliberately, at two tiers of it;
+ * a previous pass aliased `main` straight to `MARK_TYPE_COLORS` and put unreadable
+ * saturated spines next to the pastel band spines on the same shelf.
  *
  * Reading's red and writing's orange are also the Unfamiliar and Target band hues.
  * That used to be a live collision on the fdp, which stacked a band row above the
@@ -70,12 +109,12 @@ export const LEARN_NOW_COLORS = { main: "#9B8BD4", accent: "#D8BAF2" } as const;
  * page's bucket row and on mini-card chips, where no Mastered tile appears.
  */
 export const MASTERY_BAR_COLORS: Record<MasteryBarId, { main: string; accent: string }> = {
-    // No mark color to borrow — recognition + production — so it keeps Mastered blue.
+    // No mark hue to borrow — recognition + production — so it keeps Mastered blue.
     core: { main: BAND_COLORS.Mastered.main, accent: BAND_COLORS.Mastered.accent },
-    // Read from MARK_TYPE_COLORS rather than restated, so a mark's color and its
-    // Mastered tile cannot drift apart.
-    reading: { main: MARK_TYPE_COLORS.reading, accent: "#F2BAC9" },
-    writing: { main: MARK_TYPE_COLORS.writing, accent: "#F2E2BA" },
+    // Read from BAND_COLORS rather than restated, so the Mastered spines and the band
+    // spines above them on the same shelf cannot drift onto different reds/oranges.
+    reading: { main: BAND_COLORS.Unfamiliar.main, accent: BAND_COLORS.Unfamiliar.accent },
+    writing: { main: BAND_COLORS.Target.main, accent: BAND_COLORS.Target.accent },
 };
 
 /** Maps a card's progress category to its display color, falling back to a

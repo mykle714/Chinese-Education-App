@@ -2,9 +2,9 @@ import { useCallback, useState } from "react";
 import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { TIPS } from "../data/tips";
-import { COLORS } from "../theme/colors";
+import Icon from "./Icon";
+import { COLORS, RAMP } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
-import { SIZE, LEADING } from "../theme/scale";
 
 /** Picks a random tip index, excluding `exclude` when there's more than one
     tip to pick from (so a re-roll never repeats what's already shown). */
@@ -15,15 +15,29 @@ function randomTipIndex(exclude?: number): number {
     return idx;
 }
 
+/**
+ * `.tip` (docs/SHELF_REDESIGN.md § A5) — the advisory box.
+ *
+ * The 16px TOP margin is load-bearing and was the bug that prompted this restyle:
+ * the box used to be a hub-menu HEADER, where the menu below supplied the gap, so it
+ * shipped with `margin: 0 auto`. The bento grid ends with `padding-bottom: 0` (a grid
+ * owns the space between its own rows, not below itself), so once the tip moved BELOW
+ * the grid it sat flush against the last tile. Neither side was wrong on its own —
+ * the gap simply had no owner once the order flipped. It belongs to the tip.
+ *
+ * `alignItems: flex-start` because the text wraps to 2–3 lines and a centred icon
+ * drifts to the middle of the paragraph instead of marking its first line.
+ */
 const TipCard = styled(Box)(() => ({
     display: "flex",
-    alignItems: "center",
-    gap: 12,
-    width: "80%",
-    margin: "0 auto",
-    padding: "16px 20px",
-    borderRadius: "20px",
-    backgroundColor: COLORS.infoCard,
+    alignItems: "flex-start",
+    gap: 11,
+    margin: "16px 18px 0",
+    padding: "13px 15px",
+    borderRadius: "16px",
+    // A pastel fill with its OWN ink on it — the ramp's canonical "icon on a coloured
+    // ground" pair. Large and occupied, so no `markOutline` (see BentoTile).
+    backgroundColor: RAMP.org.fill,
     cursor: "pointer",
     userSelect: "none",
     transition: "filter 120ms ease",
@@ -56,12 +70,12 @@ const TipBox: React.FC<{ className?: string }> = ({ className }) => {
             role="button"
             aria-label="Show another tip"
         >
-            <Typography component="span" aria-hidden sx={{ fontSize: 20, flexShrink: 0 }}>
-                💡
-            </Typography>
+            {/* Was a 💡 emoji, which renders in the platform's own colours and clashes
+                with a flat pastel ground. The ramp's orange ink keeps it in-palette. */}
+            <Icon name="lightbulb" size={18} color={RAMP.org.ink} sx={{ flexShrink: 0, marginTop: "1px" }} />
             <Typography
                 className="tip-box__text"
-                sx={{ fontSize: SIZE.body, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal }}
+                sx={{ fontSize: 12.5, color: COLORS.iconColor, fontFamily: FONTS.sans, lineHeight: 1.45 }}
             >
                 {TIPS[index]}
             </Typography>

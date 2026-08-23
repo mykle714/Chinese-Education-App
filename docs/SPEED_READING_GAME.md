@@ -113,7 +113,7 @@ A rotation mid-run is therefore just a resize, handled by one `ResizeObserver`.
 > rotation** — only to render correctly under either. Do not add an orientation
 > API here expecting it to work on iOS.
 
-It also means the desktop phone-card (`MobileDemoFrame`'s 393px surface) gets a
+It also means the desktop phone-card (`MobileDemoFrame`'s 402px surface) gets a
 correctly rotated game for free: it is a tall container like any other, and no
 orientation API would have reported anything useful about it.
 
@@ -152,7 +152,7 @@ control**, or there is no way off the page.
 
 ### Known rough edge
 
-`MobileDemoFrame` switches to the centered 393px desktop card above the `md`
+`MobileDemoFrame` switches to the centered 402px desktop card above the `md`
 breakpoint (900px). A large phone in landscape (e.g. 926px wide) crosses that
 line, so the game renders in a small centered card rather than full-bleed. It is
 laid out correctly — the card is wider than tall, so the stage does not rotate —
@@ -788,17 +788,24 @@ See [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md).
 Note the mid-run top-up (`opts` set) deliberately omits `surface`: a refill must not
 keep lending cards.
 
-⚠️ **Why this game over-lent, and the fix (2026-08-19).** Speed Reading kept lending ~18
-cards on *every* load even to learners with hundreds of playable cards. Two facts
-combined: it buckets by the READING track, on which a typical learner has almost no
-history and therefore bands ~100% `Unfamiliar`; and it inherited Bubble Match's
-`GAME_DISTRIBUTION` of 2/10/6/2, whose `Target`/`Comfortable`/`Mastered` quotas are then
-unfillable at any library size. The pool's fill tier 2 lent that 18-card shortfall before
-tier 3 could borrow from the learner's own (large) fresh `Unfamiliar` pile — and since a
-minted row is *itself* `Unfamiliar`, the shortfall could never close, so it recurred
-forever. Tier 2 now lends only what tier 3 cannot cover
-([PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md)); the distribution was deliberately
-left alone, so the quotas simply degrade to a best-effort fill from tier 3.
+⚠️ **Why this game over-lent, and the fix.** Speed Reading kept lending ~18 cards on
+*every* load even to learners with hundreds of playable cards. Two facts combined: it
+buckets by the READING track, on which a typical learner has almost no history and
+therefore bands ~100% `Unfamiliar`; and it inherited Bubble Match's `GAME_DISTRIBUTION`
+of 2/10/6/2, whose `Target`/`Comfortable`/`Mastered` quotas are then unfillable at any
+library size. The pool's fill tier 2 lent that 18-card shortfall before the fresh
+fallback tier could borrow from the learner's own (large) `Unfamiliar` pile — and since
+a minted row is *itself* `Unfamiliar`, the shortfall could never close, so it recurred
+forever.
+
+Fixed in two passes. **2026-08-19:** tier 2 lent only what the fresh fallback tier could
+not cover — which stopped the minting but left the accumulated rows competing for every
+slot, because selection admitted provisional cards as ordinary candidates.
+**2026-08-20:** lending moved to the **bottom** of the ladder (below cooling cards) and
+selection became sorted-only, so a lent card enters a round only when it was lent *for
+that round*. A learner with a real deck now plays 20/20 of their own cards, resting ones
+included; the distribution was deliberately left alone, so the quotas simply degrade to
+a best-effort fill. See [PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md).
 
 ---
 

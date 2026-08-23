@@ -65,7 +65,7 @@ interface CPCDRowProps {
 // "xs" is sized to sit inline within 14px body prose (e.g. Chinese embedded in a long
 // definition): glyph just above body size, with a compact pinyin row beneath.
 const COLUMN_WIDTH: Record<CPCDSize, number> = { xs: 22, sm: 32, md: 50, lg: 54, xl: 72 };
-// Vertical space reserved above each char cell's glyph for the pinyin row.
+// Vertical space reserved below each char cell's glyph for the pinyin row.
 // Sized to fit the pinyin font's line-box at each size (font-size × 1.21).
 const PINYIN_RESERVED_HEIGHT: Record<CPCDSize, number> = { xs: 13, sm: 18, md: 22, lg: 24, xl: 30 };
 const CHAR_FONT_SIZE: Record<CPCDSize, string> = { xs: "18px", sm: "26px", md: "2.25rem", lg: "2.4rem", xl: "3.2rem" };

@@ -85,7 +85,7 @@ interface FlashCardSectionProps {
 }
 
 
-// How far off-screen to throw the card (px). 900px safely clears the 393px frame on all viewports.
+// How far off-screen to throw the card (px). 900px safely clears the 402px frame on all viewports.
 const FLY_OUT_X = 900;
 // Rotation (deg) applied when the card flies off — more dramatic than the gentle drag tilt.
 const FLY_OUT_ROTATION = 30;

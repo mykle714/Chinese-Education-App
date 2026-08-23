@@ -3,7 +3,8 @@ import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import type { SxProps, Theme } from "@mui/material/styles";
 import MobileDemoHeader from "./MobileDemoHeader";
-import { FLOATING_FOOTER_CLEARANCE, FLOATING_FOOTER_INSET, type FooterTab } from "./MobileFooter";
+import { type PageHeaderSize } from "./PageHeader";
+import { FOOTER_CLEARANCE, FOOTER_HEIGHT } from "./MobileFooter";
 import { COLORS } from "../theme/colors";
 
 // Shared layout shell for every SCROLLABLE footer-tab hub page (Flashcards/Decks,
@@ -14,10 +15,10 @@ import { COLORS } from "../theme/colors";
 //      first child), so it scrolls up and out of view with the content instead
 //      of staying pinned. Every scrollable content page should use this shell so
 //      the behavior stays consistent.
-//   2. Floating footer — the bottom nav (MobileFooter) is always a detached
-//      rounded pill hovering over the content (the app's only footer style). The
-//      scroll area reserves matching bottom padding (FLOATING_FOOTER_CLEARANCE)
-//      so the last row never hides behind the pill.
+//   2. Footer bar — the bottom nav (MobileFooter) is always a flat, full-width bar
+//      flush to the bottom edge, overlaying the content (the app's only footer
+//      style). The scroll area reserves matching bottom padding
+//      (FOOTER_CLEARANCE) so the last row never hides behind the bar.
 //
 // Footer-bearing back-button screens (node pages: card detail, mastered cards,
 // dictionary + the dictionary cdp) reuse this shell THROUGH `NodePage`, so they
@@ -26,30 +27,36 @@ import { COLORS } from "../theme/colors";
 // page, in-game canvases) just render a back-button PageHeader. See
 // docs/MOBILE_TAB_SCREEN_LAYOUT.md and docs/DISCOVER_FLOW.md.
 
-type ActivePage = FooterTab;
-
 // Edge-fade geometry. Content fades to transparent at the top/bottom of the
 // VISIBLE scroll viewport (revealing the surfaceColor painted on ScreenRoot
 // behind it), so rows lighten out as they scroll past the edges — matching the
 // NYT-Games style soft fade. The mask is anchored to the viewport box, not the
 // scrolled content, so the fade bands stay fixed at the screen edges.
 //   • top  — a small band so the header / first rows dissolve as they scroll up.
-//   • bottom — sized to roughly the floating-footer zone so the last rows fade
-//     out right where they pass behind the pill.
+//   • bottom — a short band sitting on the footer bar, so the last rows fade
+//     out right where they meet the top edge of the footer bar.
 const EDGE_FADE_TOP = 28;
-// Exported: the decks panel (DecksPanelBody) is a second scroller that
-// ends behind the same floating pill, so it fades its last rows out over the same
-// band. One constant, or the two surfaces drift apart.
-export const EDGE_FADE_BOTTOM = FLOATING_FOOTER_CLEARANCE - FLOATING_FOOTER_INSET;
+// Bottom band, from the design's `.fade`: a 34px gradient sitting exactly ON the
+// footer bar's top edge (`bottom: 74px` in `shelf-system.css`), not a fade that runs
+// all the way to the frame's bottom. So content is fully opaque until 34px above the
+// bar, dissolves across that band, and is gone by the time it reaches the bar.
+//
+// The design paints this as its own gradient ELEMENT; we keep the app's existing MASK
+// mechanism and just move its stops, because the mask is anchored to the scroll
+// viewport and therefore works on every page for free — a painted element would have
+// to be added per surface. Do not ship both (docs/SHELF_REDESIGN.md A2a).
+const EDGE_FADE_BOTTOM_BAND = 34;
+// Where the fade STARTS, measured up from the bottom of the viewport.
+const EDGE_FADE_BOTTOM_START = FOOTER_HEIGHT + EDGE_FADE_BOTTOM_BAND;
 // Full mask fades both edges; when a page opts out of the top fade (topFade=false)
 // the top band is dropped so the first rows stay fully opaque (only the bottom
 // fades out behind the floating footer).
-const EDGE_FADE_MASK = `linear-gradient(to bottom, transparent 0, #000 ${EDGE_FADE_TOP}px, #000 calc(100% - ${EDGE_FADE_BOTTOM}px), transparent 100%)`;
+const EDGE_FADE_MASK = `linear-gradient(to bottom, transparent 0, #000 ${EDGE_FADE_TOP}px, #000 calc(100% - ${EDGE_FADE_BOTTOM_START}px), transparent calc(100% - ${FOOTER_HEIGHT}px))`;
 // Bottom band only — no top fade. Also used by the /decks sheet, whose top edge is
 // its own grabber (nothing there should dissolve).
-export const EDGE_FADE_MASK_NO_TOP = `linear-gradient(to bottom, #000 0, #000 calc(100% - ${EDGE_FADE_BOTTOM}px), transparent 100%)`;
+export const EDGE_FADE_MASK_NO_TOP = `linear-gradient(to bottom, #000 0, #000 calc(100% - ${EDGE_FADE_BOTTOM_START}px), transparent calc(100% - ${FOOTER_HEIGHT}px))`;
 
-// Positioning context for the floating footer pill + full-height flex column.
+// Positioning context for the footer bar + full-height flex column.
 const ScreenRoot = styled(Box)(() => ({
     position: "relative",
     flex: 1,
@@ -79,7 +86,7 @@ const ScrollArea = styled(Box, {
     touchAction: scrollable ? "pan-y" : "none",
     overscrollBehavior: "contain",
     WebkitOverflowScrolling: "touch",
-    paddingBottom: FLOATING_FOOTER_CLEARANCE,
+    paddingBottom: FOOTER_CLEARANCE,
     // Soft fade at the top/bottom edges (see EDGE_FADE_MASK above), scrollable pages only.
     // Pages that opt out of the top fade (topFade=false) drop the top band.
     ...(scrollable
@@ -104,9 +111,8 @@ const ContentInner = styled(Box)(() => ({
 
 interface MobileTabScreenProps {
     title: string;
-    activePage: ActivePage;
-    // When set, the header shows a back arrow instead of the activePage badge.
-    // Used by hub pages that are also drill-ins from the Home menu (e.g. Games).
+    // When set, the header shows a back arrow (and drops to the smaller "node"/"leaf"
+    // title size). Used by hub pages that are also drill-ins from the Home menu (e.g. Games).
     showBack?: boolean;
     onBack?: () => void;
     // Back-chevron direction when showBack is set. "down" (default) for leaf-style
@@ -115,6 +121,10 @@ interface MobileTabScreenProps {
     arrowDirection?: "down" | "left";
     // Extra header actions rendered flush-right in the header.
     headerExtraActions?: ReactNode;
+    // Title scale override, forwarded to PageHeader. Pass "dense" when
+    // `headerExtraActions` carries three or more controls — the title drops to 18px
+    // so it stops colliding with them. See PageHeader's SIZE_SPEC.
+    headerSize?: PageHeaderSize;
     // Painted behind the whole scroll surface (header + content + the padding
     // that clears the floating footer), so short pages have no color seams.
     surfaceColor?: string;
@@ -134,11 +144,11 @@ interface MobileTabScreenProps {
 
 const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     title,
-    activePage,
     showBack = false,
     onBack,
     arrowDirection = "down",
     headerExtraActions,
+    headerSize,
     surfaceColor = COLORS.background,
     contentSx,
     contentClassName,
@@ -151,20 +161,22 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
         <ScrollArea className="mobile-tab-screen__scroll" scrollable={scrollable} topFade={topFade}>
             <MobileDemoHeader
                 title={title}
-                activePage={activePage}
                 showBack={showBack}
                 onBack={onBack}
                 arrowDirection={arrowDirection}
+                size={headerSize}
                 extraActions={headerExtraActions}
             />
             <ContentInner className={contentClassName} sx={contentSx}>
                 {children}
             </ContentInner>
         </ScrollArea>
-        {/* The floating footer is rendered once at the frame level by
-            FooterPresenter (so it animates independently of the page slides), not
-            here. `activePage` still drives the header badge + the footer route map.
-            The ScrollArea keeps reserving FLOATING_FOOTER_CLEARANCE for the pill. */}
+        {/* The footer bar is rendered once at the frame level by FooterPresenter (so
+            it animates independently of the page slides), not here, and it resolves
+            the ACTIVE TAB from the route via routeMeta — which is why this component
+            no longer takes an `activePage`. That prop existed to feed the header's
+            tab-identity badge; A2b removed the badge, leaving ~35 pages declaring a
+            value nothing read. The ScrollArea keeps reserving FOOTER_CLEARANCE. */}
     </ScreenRoot>
 );
 

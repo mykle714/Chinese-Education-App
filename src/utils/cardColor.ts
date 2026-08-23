@@ -9,9 +9,13 @@
 // `grey` fill, which pins the light-theme grey regardless of theme.
 //
 // This is the single source of truth for the offered palette — the toolbar swatch row,
-// the server's allow-list, and the render fallback all trace back here (the server keeps
-// its own copy of the hex set, kept in sync by hand). Built from design tokens (COLORS)
-// rather than inline hex so the swatches stay re-themeable.
+// the server's allow-list, and the render fallback all trace back here. The server keeps
+// its own copy of the hex set (CARD_COLOR_VALUES, server/contracts/wire.ts) because a
+// wire contract cannot import a theme token; the two are no longer trusted to stay in
+// sync by hand — src/__tests__/cardColor.test.ts asserts they are identical, so a
+// repaint of the tokens below is a red build until the server copy follows (and until
+// a migration remaps already-stored fills; see migration 153). Built from design tokens
+// (COLORS) rather than inline hex so the swatches stay re-themeable.
 
 import { COLORS } from "../theme/colors";
 

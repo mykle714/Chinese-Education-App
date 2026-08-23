@@ -11,7 +11,7 @@ import {
 } from '../contracts/wire.js';
 import { rankCardQueue } from './cardQueueRanking.js';
 import { spawnBatch, wordBoxSize, type MapBox, type Rng } from './memoryMapSpawn.js';
-import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/definitions.js';
+import { resolveDisplayDefinition, resolveDisplayPronunciation, ddCollisionKey } from '../utils/definitions.js';
 import { ValidationError } from '../types/dal.js';
 import type { MarkType } from '../contracts/wire.js';
 
@@ -149,7 +149,41 @@ export class MemoryMapService {
     const candidates = await this.memoryMapDAL.getUnplacedCandidates(userId, language);
     if (candidates.length === 0) return [];
 
-    const chosen = this.prioritize(candidates, Date.now()).slice(0, slots);
+    // TWO WORDS ON ONE MAP NEVER READ THE SAME (2026-08-22). The prompt bar names a
+    // definition and asks the player to tap the word that means it; if 高兴 and 开心 are
+    // both on the map as "happy", the prompt has two right-looking answers and only one
+    // of them scores. The map-wide rule the games share
+    // (docs/GAMES_FEATURE.md § "No two cards may share a dd in one round"), with the
+    // sharpest form of it here: a placement is DURABLE, so a collision admitted once
+    // sits on the map for as long as the word does, not for one round.
+    //
+    // Seeded from the words ALREADY PLACED, then extended as newcomers are accepted —
+    // this runs on the graduation refill path too, where `existing` is the whole map and
+    // `slots` is 1. Filtering happens BEFORE the `slots` cut so a collision costs the
+    // map nothing: the next non-colliding candidate takes the spot rather than the slot
+    // going unfilled. An empty key ("no dd to confuse anyone with") never collides.
+    const takenDds = new Set<string>();
+    for (const row of existing) {
+      const key = ddCollisionKey({
+        definition: row.definition,
+        definitionClusters: row.definitionClusters as never,
+        selectedSense: row.selectedSense,
+      });
+      if (key) takenDds.add(key);
+    }
+
+    const chosen: MemoryMapCandidateRow[] = [];
+    for (const card of this.prioritize(candidates, Date.now())) {
+      if (chosen.length >= slots) break;
+      const key = ddCollisionKey({
+        definition: card.definition,
+        definitionClusters: card.definitionClusters as never,
+        selectedSense: card.selectedSense,
+      });
+      if (key && takenDds.has(key)) continue;
+      if (key) takenDds.add(key);
+      chosen.push(card);
+    }
     if (chosen.length === 0) return [];
 
     // The boxes already on the map, so newcomers tangent against them rather than each

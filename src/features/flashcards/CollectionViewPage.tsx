@@ -272,7 +272,6 @@ const CollectionViewPage: React.FC = () => {
         // Back arrow slides right and returns to /decks (the previous history entry).
         <NodePage
             title={title}
-            activePage="flashcards"
             onBack={() => navigate(-1)}
             contentClassName="collection-view-page-content"
             contentSx={{ alignItems: "center" }}

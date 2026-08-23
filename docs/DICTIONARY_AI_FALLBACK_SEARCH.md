@@ -199,7 +199,8 @@ The synthetic entry is adapted to the `DictionaryEntry` client type but flagged 
 with **no id / no metadata** — it is **display-only**:
 - not clickable (no cdp navigation),
 - not add-to-library-able,
-- rendered in the app's **orange** (`COLORS.yellowMain` = `#FF8E47`, the "Target" hue) so it's
+- rendered in the app's **AI-provenance orange** (`COLORS.aiGenerated` = `#FF9E5A`, deliberately
+  off-ramp so it is not confused with a mastery band — see SHELF_REDESIGN.md A1) so it's
   visually distinct from real dictionary rows. The border/tint + sparkle-badge treatment lives in
   the shared `src/theme/aiGeneratedStyling.ts` (`aiGeneratedSurfaceSx`) +
   `src/components/AiGeneratedBadge.tsx` (`AiGeneratedBadge`),
@@ -309,7 +310,7 @@ All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both con
 | Client hook | `src/hooks/useDictionarySearch.ts` | `aiEntry`, `canAskAi`, `askAi()` (sends `tz`); `aiLimitReached` + `aiLimitMessage` (429) |
 | Client UI | `src/features/dictionary/DictionaryPage.tsx` | orange unclickable card + inline orange "AI" pill; daily-limit note; results-count pill → blue, segment-count prefix removed |
 | Client UI | `src/components/AiDictionaryEntryCard.tsx` | orange synthetic card; headword font chosen from its script (CJK vs Latin) so es words render in the Latin UI font |
-| Theme | `src/theme/colors.ts` (`COLORS.yellowMain` `#FF8E47`) | orange for AI cards (existing token) |
+| Theme | `src/theme/colors.ts` (`COLORS.aiGenerated` `#FF9E5A`) | orange for AI cards; its own token, outside the ramp |
 
 ## Resolved decisions
 

@@ -1,19 +1,18 @@
 import { forwardRef, useImperativeHandle, useRef, useState, useCallback } from "react";
 import { Box, Typography, IconButton, TextField, InputAdornment, Collapse } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { Search, Clear } from "@mui/icons-material";
 import { styled } from "@mui/material/styles";
-import DeckTile from "../../components/DeckTile";
+import { Shelf, ShelfRow, Spine, AddSpine, spineHeight } from "../../components/shelf";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import CollectionSortControl from "./CollectionSortControl";
 import type { VocabEntry } from "../../types";
 import type { DecksPanelState } from "./useDecksPanel";
-import { FLOATING_FOOTER_CLEARANCE } from "../../components/MobileFooter";
+import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
 import { EDGE_FADE_MASK_NO_TOP } from "../../components/MobileTabScreen";
 import type { SheetPanelBodyHandle } from "./FlashcardsLearnPage/SheetPanel";
 import { collectionPath, deckTileColors } from "./collectionRef";
-import { collectionIcon } from "./collectionIcon";
+import { collectionGlyph } from "./collectionGlyph";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
@@ -71,53 +70,44 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 //
 // Docs: docs/DECKS_FEATURE.md, docs/MOBILE_TAB_SCREEN_LAYOUT.md.
 
-// A row of DeckTiles. THREE PER ROW is the grid unit — every section uses it
-// (Collections holds two or three, Mastered up to three, and the user's decks wrap).
+// ── Rows of spines ───────────────────────────────────────────────────────────
 //
-// A WRAPPING FLEX capped at exactly three tiles' worth of width, rather than a
-// 3-column grid: a grid pins every tile to a column, so its last row is stuck with
-// visibly empty columns and neither alignment below is expressible.
+// Every set on this panel — a collection, a challenge deck, a user's own deck — is
+// a `Spine` standing on a `ShelfRow`'s board (docs/SHELF_REDESIGN.md § A3). This
+// replaced a three-per-row wrapping tile grid when `DeckTile` was deleted (D9).
 //
-// The gaps are derived, not typed in twice: ROW_MAX_WIDTH must stay exactly
-// 3 tiles + 2 column gaps, or a wider gap would push the third tile onto its own
-// line (and a narrower one would let a fourth tile up). Change TILE_GAP alone.
-// TILE_WIDTH must equal DeckTile's natural width (SIZING.cardWidth).
-const TILE_WIDTH = 100;     // DeckTile's natural width (SIZING.cardWidth)
-const TILE_GAP = 18;        // between tiles in a row
-const TILE_ROW_GAP = 18;    // between wrapped rows — a touch looser, so rows read as rows
-const ROW_MAX_WIDTH = 3 * TILE_WIDTH + 2 * TILE_GAP;
+// WHAT WENT AWAY, and why none of it is missed:
+//   • `TILE_WIDTH` / `TILE_GAP` / `ROW_MAX_WIDTH` — the grid had to cap its own
+//     width at exactly three tiles plus two gaps, or a fourth tile crept up onto
+//     the row. A shelf has no such arithmetic: spines are a fixed width, the row is
+//     as wide as the column, and however many fit, fit.
+//   • The CENTERED vs LEFT alignment split. Centering a short row made sense under a
+//     centered caption; it does not on a shelf, because the board runs the full
+//     width of the row and spines floating in the middle of it look like a mistake.
+//     Every row is left-aligned now, so each shelf's spines start on the same
+//     column as the one above.
+//
+// The SHEET squats its spines (the design's `.sheet .sp`): inside a pull-up sheet a
+// 140px spine would eat the panel, so every spine there is 74 tall and the height
+// stops encoding the count. On the Mastery Center PAGES there is room, so the
+// spines band by count via `spineHeight`.
+const SHEET_SPINE_HEIGHT = 74;
 
-// The two alignments, and why the sheet uses both:
-//
-//   CENTERED (default) — the BUILT-IN sections. Collections and Mastered are fixed sets of
-//     two or three tiles that never wrap, so there is no column structure to
-//     preserve; left-aligning them would leave an obvious hole where the third tile
-//     isn't, and the caption above them is centered on nothing.
-//   LEFT (`alignLeft`) — the DECKS section. It is a growing, wrapping LIST: with
-//     centering, adding a fourth deck would shunt the first three sideways to
-//     re-center the row above it, so a deck's position changes every time the user
-//     makes another one. Left-aligned, every deck keeps its place and each row
-//     starts on the same column as the one above.
-const TileGrid = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "alignLeft",
-})<{ alignLeft?: boolean }>(({ alignLeft }) => ({
+// The shelf container for this panel. `Shelf` carries the design's 22px PAGE gutter,
+// but this panel is not a page — every section heading in it is inset by the panel's
+// own 28px (`px: 3.5`), and a shelf 6px narrower than its own caption reads as a
+// misalignment rather than a design. So the gutter is overridden to match the
+// headings, which is what makes a row's first spine start on the caption's column.
+const PanelShelf = styled(Shelf)({
     width: "100%",
-    maxWidth: ROW_MAX_WIDTH,
-    margin: "0 auto",
-    display: "flex",
-    flexWrap: "wrap",
-    justifyContent: alignLeft ? "flex-start" : "center",
-    alignItems: "flex-start",
-    gap: `${TILE_ROW_GAP}px ${TILE_GAP}px`,
-    padding: "4px 0 12px",
-}));
+    padding: "0 28px",
+});
 
-const LineSeparator = styled(Box)(() => ({
-    width: 280,
-    height: 1,
-    backgroundColor: COLORS.border,
-    margin: "0 auto",
-}));
+// The sections used to be divided by a 280px centred hairline. The shelf's own BOARD
+// now sits at the foot of every row and does that job — a hairline 12px under a board
+// reads as a seam, not a separation — so the three `LineSeparator`s were removed with
+// the tile grid. Kept out rather than restyled: if a divider is ever wanted again it
+// belongs between a row and the NEXT heading, not immediately under a board.
 
 // Section caption above each tile section.
 const SectionLabel = styled(Typography)(() => ({
@@ -246,11 +236,11 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                     // child to its natural height makes the column's height the honest
                     // sum of its sections, which is what the scroller wants anyway.
                     "& > *": { flexShrink: 0 },
-                    // The floating footer pill hovers OVER the sheet (it is
+                    // The footer bar sits OVER the sheet (it is
                     // rendered at frame level, above the sheet's z-index), so the
                     // last tile row has to clear it exactly as a page's scroll
                     // area does.
-                    paddingBottom: `${FLOATING_FOOTER_CLEARANCE}px`,
+                    paddingBottom: `${FOOTER_CLEARANCE}px`,
                     // …and fade out over that same band, so tiles dissolve as they
                     // pass behind the pill instead of being sliced by it. The SAME
                     // mask MobileTabScreen's ScrollArea uses (imported, not
@@ -275,23 +265,23 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                     <SectionLabel className="decks-panel-body__collections-label">Collections</SectionLabel>
                 </Box>
 
-                <TileGrid className="decks-panel-body__collections-row">
+                <PanelShelf><ShelfRow className="decks-panel-body__collections-row">
                     {collections.map((entry, index) => (
-                        <DeckTile
+                        <Spine
                             key={entry.key}
-                            className={`decks-panel-body__collection-tile decks-panel-body__collection-tile--${entry.key}`}
+                            className={`decks-panel-body__collection-spine decks-panel-body__collection-spine--${entry.key}`}
                             label={entry.label}
                             count={tileCount(entry)}
-                            icon={collectionIcon(entry.ref)}
-                            mainColor={entry.colors.main}
-                            accentColor={entry.colors.accent}
+                            glyph={collectionGlyph(entry.ref)}
+                            variant={isSheet ? "base" : spineHeight(tileCount(entry))}
+                            height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
+                            color={entry.colors.main}
                             animationDelay={index * 70}
                             onClick={() => onOpenPath(collectionPath(entry.ref))}
                         />
                     ))}
-                </TileGrid>
+                </ShelfRow></PanelShelf>
 
-                <LineSeparator className="decks-line-separator" />
 
                 {/* ── Challenges ── (docs/STUDY_CHALLENGE.md § 4). Placed immediately
                     BEFORE the user's own Decks so generated sets sit above authored
@@ -311,22 +301,22 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                         >
                             <SectionLabel className="decks-panel-body__challenges-label">Challenges</SectionLabel>
                         </Box>
-                        <TileGrid className="decks-panel-body__challenges-list" alignLeft>
+                        <PanelShelf><ShelfRow className="decks-panel-body__challenges-list" scrollable>
                             {challengeDecks.map((deck, index) => (
-                                <DeckTile
+                                <Spine
                                     key={deck.id}
-                                    className="decks-panel-body__challenge-tile"
+                                    className="decks-panel-body__challenge-spine"
                                     label={deck.name}
                                     count={deck.cardCount}
-                                    icon={collectionIcon({ kind: "deck", deckId: deck.id })}
-                                    mainColor={deckTileColors(deck.id).main}
-                                    accentColor={deckTileColors(deck.id).accent}
+                                    glyph={collectionGlyph({ kind: "deck", deckId: deck.id })}
+                                    variant={isSheet ? "base" : spineHeight(deck.cardCount)}
+                                    height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
+                                    color={deckTileColors(deck.id).main}
                                     animationDelay={Math.min(index, 5) * 70}
                                     onClick={() => onOpenPath(`/flashcards/deck/${deck.id}`)}
                                 />
                             ))}
-                        </TileGrid>
-                        <LineSeparator className="challenges-line-separator" />
+                        </ShelfRow></PanelShelf>
                     </>
                 )}
 
@@ -366,15 +356,6 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                             Decks{authoredDecks.length > 0 ? ` (${authoredDecks.length})` : ""}
                         </SectionLabel>
                     </Box>
-                    <IconButton
-                        className="decks-panel-body__new-deck-button"
-                        aria-label="New deck"
-                        size="small"
-                        onClick={(e) => { e.stopPropagation(); onNewDeck(); }}
-                        sx={{ color: COLORS.onSurface }}
-                    >
-                        <AddIcon />
-                    </IconButton>
                 </Box>
 
                 <Collapse in={decksOpen} timeout={180} sx={{ width: "100%" }} unmountOnExit>
@@ -394,27 +375,39 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                         {/* The user's decks, wrapping at three per row — the same tile as
                             every built-in set above, carrying the deck's derived pastel
                             (deckTileColors: computed from the id, never stored). */}
-                        <TileGrid className="decks-panel-body__decks-list" alignLeft>
+                        {/* Scrolls sideways rather than wrapping: this is the one
+                            GROWING list on the panel, and a wrapped second line would
+                            put its spines below the board, standing on nothing. The
+                            AddSpine rides at the end of the row — it is the design's
+                            own "new deck" affordance (`.sp.add`), which is why the
+                            section header no longer carries a + button. */}
+                        <PanelShelf><ShelfRow className="decks-panel-body__decks-list" scrollable>
                             {authoredDecks.map((deck, index) => (
-                                <DeckTile
+                                <Spine
                                     key={deck.id}
-                                    className="decks-panel-body__deck-tile"
+                                    className="decks-panel-body__deck-spine"
                                     label={deck.name}
                                     count={deck.cardCount}
-                                    icon={collectionIcon({ kind: "deck", deckId: deck.id })}
-                                    mainColor={deckTileColors(deck.id).main}
-                                    accentColor={deckTileColors(deck.id).accent}
+                                    glyph={collectionGlyph({ kind: "deck", deckId: deck.id })}
+                                    variant={isSheet ? "base" : spineHeight(deck.cardCount)}
+                                    height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
+                                    color={deckTileColors(deck.id).main}
                                     // Stagger only within the first couple of rows; past
                                     // that the cascade would run longer than the scroll.
                                     animationDelay={Math.min(index, 5) * 70}
                                     onClick={() => onOpenPath(`/flashcards/deck/${deck.id}`)}
                                 />
                             ))}
-                        </TileGrid>
+                            <AddSpine
+                                className="decks-panel-body__new-deck-spine"
+                                label="New deck"
+                                height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
+                                onClick={onNewDeck}
+                            />
+                        </ShelfRow></PanelShelf>
                     </Box>
                 </Collapse>
 
-                <LineSeparator className="cards-line-separator" />
 
                 {/* ── Cards ── the learner's whole sorted library, inline, replacing the
                     All Cards TILE that used to send them to a page to see the same grid.

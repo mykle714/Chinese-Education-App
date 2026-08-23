@@ -10,8 +10,6 @@ import {
     CELL_SIZE,
     CELL_GAP,
     GRID_MARGIN,
-    SELECTION_EXTRA_OFFSET_Y_FRAC,
-    SELECTION_EXTRA_OFFSET_Y_FRAC_NO_PINYIN,
     MISS_FLASH_MS,
 } from "./constants";
 import type { BonusWord, Coord, GridCell, PlacedWord } from "./types";
@@ -302,56 +300,19 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         []
     );
 
-    // Row track height (px), forced equal to `columnWidth + CELL_GAP` so the
-    // vertical distance between adjacent rows' character centers matches the
-    // horizontal distance between adjacent columns'. Pinyin makes a cell's own
-    // content taller than that pitch, so rows are deliberately packed tighter
-    // than their natural content height — adjacent rows' char/pinyin content
-    // overlaps slightly rather than spacing characters unevenly. `null` until
-    // measured (renders with normal auto row sizing for that first pass).
-    const [rowPitchPx, setRowPitchPx] = useState<number | null>(null);
-
-    // Selection shapes: one continuous stadium (a rounded rectangle whose corner
-    // radius is half its cross-axis thickness, so the ends read as full
-    // semicircles) per consecutive pair of cells in a highlight (the in-progress
-    // yellow drag, and each found/reviewing green word), plus a single circular
-    // node (radius = half the diameter) for a one-cell highlight, which has no
-    // pair to connect. Consecutive stadiums overlap fully at their shared cell so
-    // a multi-cell highlight — including a snaking, multi-turn one — reads as one
-    // unbroken shape with no separate cap/connector elements. Measured in the
-    // inner grid's own (unscaled) coordinate space via offsetLeft/Top/Width/Height,
-    // which — unlike getBoundingClientRect — ignore the CSS `scale()` transform,
-    // so no rescaling is needed here.
-    const [selectionRects, setSelectionRects] = useState<
-        { key: string; left: number; top: number; width: number; height: number; radius: number; color: string }[]
-    >([]);
 
     // Invisible per-cell hit targets that extend half of `CELL_GAP` into the
-    // gutter on each side (rows are already flush — see `rowPitchPx` — so no
-    // vertical extension is needed). Adjacent cells' extensions meet exactly at
-    // the gutter's midpoint, so together they physically claim the whole gap
-    // with no seam left un-owned by any element — the gap only ever *looks*
-    // empty. Same measured-DOM approach as `selectionRects` below, kept as a
-    // separate overlay so the visible per-cell box (and everything measured off
-    // its offsetWidth/Left — row pitch, selection geometry) is untouched.
+    // gutter on each side, and the same again above and below. Adjacent cells'
+    // extensions meet exactly at the gutter's midpoint, so together they
+    // physically claim the whole gap with no seam left un-owned by any element —
+    // the gap only ever *looks* empty. Kept as a separate overlay so the visible
+    // per-cell box is untouched by hit-testing concerns.
     const [hitboxRects, setHitboxRects] = useState<
         { key: string; row: number; col: number; left: number; top: number; width: number; height: number }[]
     >([]);
 
     useLayoutEffect(() => {
-        const sample = cellElRef.current.get(key(0, 0));
-        if (!sample) return;
-
-        // Pass 1: measure the natural column width (an axis the row-pitch change
-        // never touches) and lock the row track to match + CELL_GAP. Bail out and
-        // let the re-render with the new fixed row height land before measuring
-        // anything that depends on it (diameter, center offset, selection geometry).
-        const columnWidth = sample.offsetWidth;
-        const targetPitch = columnWidth + CELL_GAP;
-        if (rowPitchPx === null || Math.abs(rowPitchPx - targetPitch) > 0.5) {
-            setRowPitchPx(targetPitch);
-            return;
-        }
+        if (!cellElRef.current.get(key(0, 0))) return;
 
         const cellBox = (r: number, c: number) => {
             const el = cellElRef.current.get(key(r, c));
@@ -359,99 +320,9 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
             return { left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight };
         };
 
-        const rowHeight = sample.offsetHeight;
-        const diameter = Math.min(columnWidth, rowHeight) * 1.72;
-        const thickness = diameter;
-
-        let offsetY = 0;
-        const cellRect = sample.getBoundingClientRect();
-        const charEl = sample.querySelector<HTMLElement>(".char-pinyin-display__character");
-        if (charEl && cellRect.height > 0) {
-            const charRect = charEl.getBoundingClientRect();
-            const charCenterFrac = (charRect.top + charRect.height / 2 - cellRect.top) / cellRect.height;
-            offsetY = (charCenterFrac - 0.5) * rowHeight;
-        }
-        // Every selection shape is centered on cell centers, so they share the
-        // same total offset (glyph-centering + the extra tunable nudge).
-        offsetY += diameter * (showPinyin ? SELECTION_EXTRA_OFFSET_Y_FRAC : SELECTION_EXTRA_OFFSET_Y_FRAC_NO_PINYIN);
-
-        const rects: { key: string; left: number; top: number; width: number; height: number; radius: number; color: string }[] = [];
-        const addSelectionShapes = (coords: Coord[], color: string, groupKey: string) => {
-            if (coords.length === 1) {
-                // No pair to connect — draw a standalone circular node (a stadium
-                // degenerates to a circle when its length is zero).
-                const box = cellBox(coords[0][0], coords[0][1]);
-                if (!box) return;
-                const cx = box.left + box.width / 2;
-                const cy = box.top + box.height / 2 + offsetY;
-                rects.push({
-                    key: `${groupKey}-0`,
-                    left: cx - diameter / 2,
-                    top: cy - diameter / 2,
-                    width: diameter,
-                    height: diameter,
-                    radius: diameter / 2,
-                    color,
-                });
-                return;
-            }
-            for (let i = 0; i < coords.length - 1; i++) {
-                const a = cellBox(coords[i][0], coords[i][1]);
-                const b = cellBox(coords[i + 1][0], coords[i + 1][1]);
-                if (!a || !b) continue;
-                const acx = a.left + a.width / 2;
-                const acy = a.top + a.height / 2 + offsetY;
-                const bcx = b.left + b.width / 2;
-                const bcy = b.top + b.height / 2 + offsetY;
-                // The box extends `thickness / 2` past each cell center on the
-                // long axis (not just center-to-center) — a stadium's semicircle
-                // caps stick out beyond its straight flat sides, so rounding a box
-                // that stops exactly at the centers would pinch the corners inward
-                // instead of bulging them outward into full semicircles there.
-                const rect =
-                    acy === bcy
-                        ? {
-                              left: Math.min(acx, bcx) - thickness / 2,
-                              top: acy - thickness / 2,
-                              width: Math.abs(bcx - acx) + thickness,
-                              height: thickness,
-                          }
-                        : {
-                              left: acx - thickness / 2,
-                              top: Math.min(acy, bcy) - thickness / 2,
-                              width: thickness,
-                              height: Math.abs(bcy - acy) + thickness,
-                          };
-                // Fully rounded (radius = half the cross-axis thickness) — a
-                // stadium whose semicircular ends sit exactly at the two cell
-                // centers. Consecutive segments' end-caps coincide at their shared
-                // cell, so a snaking multi-cell path reads as one unbroken tube
-                // with no separate cap elements needed.
-                rects.push({ key: `${groupKey}-${i}`, ...rect, radius: thickness / 2, color });
-            }
-        };
-        // A single-character bonus match shows no highlight at all — not even
-        // the normal yellow in-progress color — just its definition popup.
-        const selectionColor = invalid
-            ? invalid.bonus
-                ? (isMultiCharBonus(invalid.bonus) ? COLORS.blueAccent : null)
-                : COLORS.redAccent
-            : COLORS.yellowAccent;
-        if (selectionColor) addSelectionShapes(path, selectionColor, "sel");
-        for (const w of words) {
-            if (!found.has(w.entryKey)) continue;
-            const reviewing = popupWord?.entryKey === w.entryKey;
-            addSelectionShapes(w.cells, reviewing ? "#A5D6A7" : "#C8E6C9", `found-${w.entryKey}`);
-        }
-        // A hint that's already fully spelled out its word's pinyin and got
-        // pressed again reveals the word's actual path — persistently, until
-        // found — instead of moving on to a different word (see WordSearchPage's
-        // `useHint`). Drawn under the same yellow as an in-progress selection.
-        if (hintedWord && !found.has(hintedWord.entryKey)) {
-            addSelectionShapes(hintedWord.cells, COLORS.yellowAccent, `hint-${hintedWord.entryKey}`);
-        }
-        setSelectionRects(rects);
-
+        // Half the gutter on all four sides. Cells are square now, so the two
+        // axes are symmetric and one value covers both — the old code only
+        // widened horizontally because rows were packed flush against each other.
         const halfGap = CELL_GAP / 2;
         const hitboxes: { key: string; row: number; col: number; left: number; top: number; width: number; height: number }[] = [];
         for (let r = 0; r < grid.length; r++) {
@@ -463,15 +334,17 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                     row: r,
                     col: c,
                     left: box.left - halfGap,
-                    top: box.top,
+                    top: box.top - halfGap,
                     width: box.width + halfGap * 2,
-                    height: box.height,
+                    height: box.height + halfGap * 2,
                 });
             }
         }
         setHitboxRects(hitboxes);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [path, words, found, popupWord, scale, grid, showPinyin, rowPitchPx, invalid, hintedWord]);
+        // `showPinyin` is a real dependency even though nothing here reads it: it
+        // changes a cell's content height, and until aspect-ratio settles that is a
+        // re-layout the boxes must be re-measured after.
+    }, [scale, grid, showPinyin]);
 
     const markInteracted = useCallback(() => {
         if (interactedRef.current) return;
@@ -781,47 +654,36 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                     transformOrigin: "center center",
                     display: "grid",
                     gridTemplateColumns: `repeat(${grid[0]?.length ?? 0}, 1fr)`,
-                    gridTemplateRows: rowPitchPx != null ? `repeat(${grid.length}, ${rowPitchPx}px)` : undefined,
-                    columnGap: `${CELL_GAP}px`,
-                    rowGap: 0,
-                    p: 1.5,
-                    borderRadius: "24px",
-                    backgroundColor: COLORS.background,
-                    border: "2px solid #000000",
-                    boxShadow: "inset 0 2px 8px rgba(0,0,0,0.04)",
+                    // Rows size themselves off each cell's `aspect-ratio: 1` (below).
+                    // The board used to force a measured row track so that a stadium
+                    // drawn between two character CENTERS had equal pitch on both axes;
+                    // with the highlight painted on the cells themselves, the cell IS
+                    // the unit and a square cell is all the evenness the board needs.
+                    gap: `${CELL_GAP}px`,
+                    p: "13px",
+                    borderRadius: "16px",
+                    // THE BOARD GROUND. The design puts paper cells straight onto the
+                    // white `.play` panel, which on a real screen is ~1.03:1 — the tiles
+                    // dissolve into the panel and the board stops reading as a board.
+                    // The grid gets the app's inert filled surface (`--grey`) instead, a
+                    // full step darker than the paper cells, so every resting tile has an
+                    // edge without anything having to draw one.
+                    //
+                    // Grey and not a hue: the four LIT states are all ramp pastels at the
+                    // same lightness, so a hued ground would sit in the same band as
+                    // whichever state shares its hue. Achromatic is the only ground all
+                    // four can be read against.
+                    //
+                    // It replaces a heavy border the board used to draw around itself,
+                    // which read as a second frame a few px inside `GameFrame`'s panel
+                    // (docs/SHELF_REDESIGN.md § A6).
+                    backgroundColor: COLORS.card,
                     // The grid owns all touch gestures (no native scroll/zoom).
                     touchAction: "none",
                     userSelect: "none",
                     WebkitUserSelect: "none",
                 }}
             >
-                {/* Selection stadiums/nodes (see `selectionRects` above) — the single
-                    shape type covering both in-progress drags and found/reviewing
-                    words. Absolutely positioned within the grid's padding box, so its
-                    coordinate space matches each cell's offsetLeft/Top exactly. Grid
-                    items with a z-index (all our cells set one below) always paint
-                    above absolutely-positioned siblings per the CSS Grid painting
-                    order, so no extra stacking-context work is needed here. */}
-                <Box
-                    aria-hidden
-                    sx={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}
-                >
-                    {selectionRects.map((r) => (
-                        <Box
-                            key={r.key}
-                            sx={{
-                                position: "absolute",
-                                left: r.left,
-                                top: r.top,
-                                width: r.width,
-                                height: r.height,
-                                borderRadius: `${r.radius}px`,
-                                backgroundColor: r.color,
-                            }}
-                        />
-                    ))}
-                </Box>
-
                 {/* Invisible hit-target overlay: one `[data-cell="1"]` box per grid
                     cell, positioned to extend into the gutters on either side (see
                     `hitboxRects` above) so `cellFromPoint`'s elementFromPoint lookup
@@ -856,12 +718,9 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                         // Cells of the found word whose gloss popup is open — ringed
                         // so it reads as the actively-reviewed word.
                         const isPopup = !!popupWord && popupWord.entryKey === foundWordByCell.get(key(r, c))?.entryKey;
-                        // Selected/found/reviewing highlights are painted entirely by
-                        // the `selectionRects` stadium/node overlay below the cells
-                        // (see above) — this cell only needs to know whether it's
-                        // mid-flash for the shake animation. A single-character bonus
-                        // match is deliberately excluded (see `invalid` above): no
-                        // shake, just its definition popup.
+                        // A single-character bonus match is deliberately excluded
+                        // (see `invalid` above): no shake and no color change, just
+                        // its definition popup.
                         const isInvalidCell = selected && !!invalid && (!invalid.bonus || isMultiCharBonus(invalid.bonus));
                         // Nonce-keyed keyframe name so back-to-back wrong guesses restart
                         // the shake cleanly (same trick as fie/flp's shake — see
@@ -872,9 +731,8 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                         // The hint's revealed-location cells (see `hintedCells` above).
                         // Same nonce trick as the miss shake, but re-fires every time
                         // hint is pressed again on an already-fully-spelled-out word
-                        // (`hintShakeNonce` in WordSearchPage's `useHint`) — the yellow
-                        // fill itself (painted by the stadium overlay) stays put the
-                        // whole time; only the shake replays.
+                        // (`hintShakeNonce` in WordSearchPage's `useHint`) — the
+                        // reveal fill stays put the whole time; only the shake replays.
                         const isHintCell = hintedCells.has(key(r, c));
                         const hintShakeName = isHintCell && hintShakeNonce > 0 ? `wsHintShake-${hintShakeNonce}` : "";
                         return (
@@ -891,8 +749,65 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
+                                    // `.wsg span` — a square tile. Squareness is what
+                                    // lets a traced path read as a path: on a board of
+                                    // squares the run of lit cells has the same visual
+                                    // weight going down as going across, so a word that
+                                    // turns a corner still looks like one word.
+                                    aspectRatio: "1",
                                     borderRadius: "8px",
-                                    backgroundColor: "transparent",
+                                    // THE SELECTION SYSTEM. Every highlight — resting,
+                                    // tracing, found, hinted, missed — is a fill on the
+                                    // CELL, from the design's `.wsg span` / `.hit` /
+                                    // `.now` (docs/SHELF_REDESIGN.md, artboard 13).
+                                    //
+                                    // It replaces an overlay that drew each highlight as
+                                    // one continuous "stadium" tube on a layer beneath
+                                    // the cells. The tube was a prettier shape, but it
+                                    // cost a measured row pitch, a measured glyph-center
+                                    // offset and two hand-tuned nudge constants, all so a
+                                    // shape drawn between character centers would line up
+                                    // with cells whose height depended on whether pinyin
+                                    // was showing. A cell fill needs none of that, and the
+                                    // board tells the player the same three things.
+                                    //
+                                    // Order matters: a miss is transient and outranks the
+                                    // found/hint fills underneath it.
+                                    backgroundColor: isInvalidCell
+                                        ? COLORS.red                  // wrong trace — flashes, then clears
+                                        : selected && invalid?.bonus
+                                        ? COLORS.blu                  // traced a real word that wasn't a target
+                                        : selected
+                                        ? COLORS.org                  // `.now` — tracing right now
+                                        : isFound
+                                        ? COLORS.grn                  // `.hit` — locked in
+                                        : isHintCell
+                                        ? COLORS.org                  // hint reveal: "trace THESE" — same meaning as `.now`
+                                        : COLORS.background,          // resting paper tile
+                                    // The reviewed word (its gloss popup is open) keeps the
+                                    // found green and adds the hue's own ink as a ring —
+                                    // the palette's rule for making a pastel a distinct
+                                    // state without inventing a second green.
+                                    boxShadow: isPopup ? `inset 0 0 0 1.5px ${COLORS.grnA}` : "none",
+                                    // A lit cell darkens its glyph to full ink so the
+                                    // character stays the loudest thing in its own tile.
+                                    // It does NOT bold: the design's `.wsg span.hit`
+                                    // does, but at this size a weight change reflows the
+                                    // glyph inside its tile, so a traced word visibly
+                                    // twitches as the path grows — and the fill has
+                                    // already said everything the weight would.
+                                    //
+                                    // The color has to be reached through a descendant
+                                    // selector: the glyph is a cpcd element that sets its
+                                    // OWN color, so an inherited value on the cell would
+                                    // be silently overridden and the state would
+                                    // half-apply.
+                                    ...((selected || isFound || isHintCell) && {
+                                        "& .char-pinyin-display__character": {
+                                            color: COLORS.onSurface,
+                                        },
+                                    }),
+                                    transition: "background-color 120ms linear, box-shadow 120ms linear",
                                     ...(isInvalidCell && {
                                         [`@keyframes ${invalidShakeName}`]: {
                                             "0%, 100%": { transform: "translate(0, 0) rotate(0deg)" },

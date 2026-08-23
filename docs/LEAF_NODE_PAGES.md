@@ -12,7 +12,7 @@ pattern and add an iOS-style enter/exit slide transition.
 |---|---|---|
 | Wrapper | `src/components/LeafPage.tsx` | `src/components/NodePage.tsx` |
 | Header | `LeafPageHeader` (DOWN chevron) | `NodePageHeader` / `MobileTabScreen` (LEFT chevron) |
-| Footer | **none** | **kept** (floating footer pill) |
+| Footer | **none** | **kept** (the flat footer bar) |
 | Exit options | **back arrow only** | back arrow + footer tabs |
 | Enter motion | slides **up** (translateY 100% → 0) | slides **in from the right** (translateX 100% → 0) |
 | Exit motion | slides **down** on back | slides **right** on back — **only via the arrow** |
@@ -56,15 +56,61 @@ header, floating footer, and edge fade.
 ## Header component hierarchy (compose, don't fork)
 
 ```
-PageHeader (base bar; arrowDirection: "down" | "left")
+PageHeader (no bar — title on the paper ground; arrowDirection: "down" | "left")
  ├─ LeafPageHeader   = PageHeader, arrowDirection="down", showBack   (used by LeafPage)
  ├─ NodePageHeader   = PageHeader, arrowDirection="left", showBack   (direct use: ReaderDocumentSurface)
- └─ MobileDemoHeader = PageHeader (+ activePage badge, arrowDirection pass-through)
+ └─ MobileDemoHeader = PageHeader (arrowDirection pass-through)
         └─ MobileTabScreen threads arrowDirection → used by NodePage with "left"
 ```
 
-`PageHeader` renders the **same** MUI `ExpandMoreIcon` for both directions;
-`"left"` simply rotates it 90°, so the two back buttons share one glyph.
+**`arrowDirection` picks the GLYPH, and the glyph picks the size.** Since the shelf
+redesign's A2b the two directions are two different Material Symbols, not one rotated
+one: `"left"` draws `arrow_back` at 21px (the design's `.hd .back`) and `"down"` draws
+`keyboard_arrow_down` at 22px (`.lhd`). They used to be a single `ExpandMoreIcon`
+rotated 90°, which is not the same shape as an arrow.
+
+The chevron and the title are **one tappable group**, tight at 9px — not a chevron
+button with a title beside it. That is what makes the chevron read as belonging to the
+title now that there is no header bar holding them together.
+
+### Header sizes
+
+`PageHeader` takes a `size` of `"hub" | "node" | "leaf"`, but **you almost never pass
+it**: it defaults from the props you are already passing.
+
+| `size` | Title | Padding | Defaulted when | Design class |
+| --- | --- | --- | --- | --- |
+| `hub` | 24px / 600 / -0.025em | `23px 22px 0` | `showBack` is false | `.hd` |
+| `node` | 21px / 600 / -0.02em | `23px 22px 0` | `arrowDirection="left"` | `.hd` + back |
+| `dense` | 18px / 600 / -0.018em | `23px 22px 0` | **never — ask for it** | `.hd` (Card Detail, Learn) |
+| `leaf` | 17px / 600 / -0.015em | `21px 18px 0` | `arrowDirection="down"` | `.lhd` |
+
+**`dense` is the one you have to ask for.** The other three follow from the navigation
+shape, which the props already describe. `dense` follows from what the *page* put in
+the right slot — three or more controls, where 21px starts colliding — and no other
+prop knows that. Counting `rightContent`'s children instead is a trap: most callers
+pass a single wrapping `Box` or fragment, so the count is 1 however many buttons are
+inside it.
+
+Reach it through `size` on `PageHeader` / `MobileDemoHeader`, or `headerSize` on
+`MobileTabScreen` / `NodePage`. Current users: both Card Detail pages and
+`FlashcardsLearnHeader`.
+
+### The `rightContent` slot
+
+Compose it from the primitives exported beside `PageHeader` — do **not** hand-roll a
+styled MUI `Button`/`IconButton`. Three headers each carried a byte-identical
+`toggleSx` helper before these existed.
+
+| Export | Design class | Shape |
+| --- | --- | --- |
+| `HeaderMetaLabel` | `.hd .meta` | mono uppercase metadata (a count, a status word) |
+| `HeaderIconButton` | `.hd .btn` | an icon action. `variant="bare"` (default) for drill-in/game headers carrying 2–4 actions; `variant="outlined"` for a hub header's single lone action, which needs the 32×32 box to separate it from bare paper |
+| `HeaderToggleChip` | `.lhd .tg` | a mono toggle chip. On = solid ink ground + white text — an inversion, not a tint change |
+
+The design's fourth slot shape, `.fire`, is **not** re-exported here: the app already
+ships it as `src/minutePoints/MinutePointsFireBadge.tsx`, whose `COLORS.fireActive`
+is the design's `#E65100` exactly. Put that component in the slot.
 
 ## Forward navigation — new page slides OVER the old (View Transitions)
 
@@ -88,7 +134,7 @@ so nothing breaks.
 - **CSS (`src/index.css`):** `::view-transition-new(root)` runs `vt-slide-in-up` /
   `vt-slide-in-right` per `data-vt-dir`; `::view-transition-old(root)` has
   `animation: none` so the old page is **held static** beneath (z-index below the
-  new). The footer pill carries its own `view-transition-name: app-footer`, so it
+  new). The footer bar carries its own `view-transition-name: app-footer`, so it
   is captured as a separate group and morphs independently instead of riding the
   page slide.
 - **Fallback:** browsers without view transitions (or navigations not routed
@@ -130,7 +176,7 @@ The animated surface is `position: absolute; inset: 0` inside `MobileDemoFrame`
 
 ## Footer (animated independently)
 
-The floating footer pill is **not** part of any page-slide surface. It is rendered
+The footer bar is **not** part of any page-slide surface. It is rendered
 **once** by `FooterPresenter` (mounted in `MobileDemoFrame`, above the page
 surfaces + exit clone at `z-index: 100`) and is **omitted from the page slides**.
 Instead it animates on its own vertical axis: it slides up from / down past the
@@ -152,8 +198,9 @@ footer (and which tab is active). Two match modes:
   `utils/pageTransition.ts`.
 
 Every other route (all leaf pages, login, etc.) is absent → the footer slides out.
-`MobileTabScreen` no longer renders `MobileFooter` itself (it still reserves
-`FLOATING_FOOTER_CLEARANCE` and uses `activePage` for the header badge).
+`MobileTabScreen` no longer renders `MobileFooter` itself; it only reserves
+`FOOTER_CLEARANCE`. It takes no `activePage` either — `FooterPresenter` derives the
+active tab from the route.
 
 ### Transient suppression (a modal is open)
 
@@ -162,14 +209,14 @@ It cannot express **"not right now"** — a node page that opens a modal surface
 the whole screen. A page asks for that with `useHideFooter(hidden)`
 (`src/hooks/useHideFooter.ts`); `FooterPresenter` ANDs it with the route answer, so both
 reasons share the one slide-down animation. Releasing is automatic on unmount, so a page
-navigated away from with its modal open can't strand the pill off-screen.
+navigated away from with its modal open can't strand the bar off-screen.
 
 The state is a **hold count**, not a boolean, so two suppressors (or a new one mounting
 before the outgoing one's cleanup runs) can't have the first release un-hide the footer
 under the second. Provider: `FooterVisibilityProvider`, mounted in `MobileDemoFrame`
 wrapping both the pages and `FooterPresenter`.
 
-This exists because the pill **cannot be layered under** a page's modal: it is rendered
+This exists because the bar **cannot be layered under** a page's modal: it is rendered
 at frame level, outside every page's DOM, so no z-index inside a page reaches it. Sliding
 it away is the only correct answer. Current caller: scp, while the eip sheet is open
 ([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)).
@@ -293,13 +340,13 @@ The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
 `VocabCardDetailPage` (`/flashcards/card/:id`):
 
 - **Document list** (`/reader`, `ReaderPage.tsx`) — a NODE page reached from the
-  Home menu (`NodePage`, `activePage="home"`, LEFT arrow → Home, footer kept —
+  Home menu (`NodePage`, LEFT arrow → Home, footer kept —
   same shape as `GamesPage`/`DictionaryPage`). Registered in `NODE_ROUTES`
   (`src/utils/pageTransition.ts`) and `FOOTER_ROUTES` (`FooterPresenter.tsx`).
   Fixed non-scrolling shell (`scrollable={false}`) — `TextSidebar` owns its own
   internal scroll region for the document list, matching the fixed-layout
   `NodePage` pattern used by `SortCardsPage`; `MobileTabScreen`'s scroll area
-  reserves `FLOATING_FOOTER_CLEARANCE` regardless of `scrollable`, so no manual
+  reserves `FOOTER_CLEARANCE` regardless of `scrollable`, so no manual
   footer spacer is needed. `TextSidebar`'s `onTextSelect` calls
   `useSlideNavigate()` to `/reader/${text.id}`.
 - **Open document** (`/reader/:id`, `ReaderDocumentPage.tsx`) — fetches its own
@@ -311,8 +358,8 @@ The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
   the validator-download button + streak badge, so `TextHeader.tsx` itself only
   renders title/description/meta + validation actions — no back/edit/delete
   buttons of its own. `ReaderDocumentSurface` is deliberately NOT the shared
-  `NodePage`: `MobileTabScreen` would reserve `FLOATING_FOOTER_CLEARANCE` for a
-  footer pill `/reader/:id` never shows (it isn't in `FooterPresenter`'s route
+  `NodePage`: `MobileTabScreen` would reserve `FOOTER_CLEARANCE` for a
+  footer bar `/reader/:id` never shows (it isn't in `FooterPresenter`'s route
   maps) and add a scroll-away header to a fixed layout. Instead it composes
   `NodePageHeader` + `usePageSlide({ axis: "x" })` directly, per the header
   hierarchy above. The back arrow calls `navigate("/reader")` — an ordinary route

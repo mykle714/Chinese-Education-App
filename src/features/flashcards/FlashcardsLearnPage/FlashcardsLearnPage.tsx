@@ -43,6 +43,8 @@ import { clearWritingDraft } from "../../../components/handwriting/writingDraftS
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useTTS, SLOW_SENTENCE_RATE } from "../../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
+import type { FlpForeignTrack } from "../../../../server/contracts/wire";
+import { foreignPromptTrack } from "../../../../server/contracts/wire";
 import type { VocabEntry } from "../types";
 
 const FlashcardsLearnPage: React.FC = () => {
@@ -116,6 +118,14 @@ const FlashcardsLearnPage: React.FC = () => {
         resetDragPosition: () => {},
     });
 
+    // Which mastery track this session's Chinese-side-one face exercises
+    // (docs/MASTERY_REWORK.md § "The flp's foreign-first face is per-session"). With
+    // "Show pinyin" off there is no phonetic aid on the card, so answering it is
+    // READING the characters — the same call Word Search's No-Pinyin mode makes.
+    // Chinese only: 'es' renders as plain text with nothing for the toggle to hide,
+    // so its foreign-first face stays a recognition review however the toggle is set.
+    const foreignTrack: FlpForeignTrack = foreignPromptTrack(user?.selectedLanguage ?? "zh", showPinyin);
+
     // Working-loop domain: fetch, card-stack state machine, mark/undo, side-one
     // language. See useWorkingLoop for the full state machine + retry logic.
     const {
@@ -135,7 +145,7 @@ const FlashcardsLearnPage: React.FC = () => {
         handleCardDismiss,
         handleUndoLastMark,
         provisionalSeen,
-    } = useWorkingLoop({ token, selectedCategory, mode: selectedMode, prefetch: tts.prefetch, cardDragRef });
+    } = useWorkingLoop({ token, selectedCategory, mode: selectedMode, foreignTrack, prefetch: tts.prefetch, cardDragRef });
 
     const noticeOpen = !noticeDismissed && provisionalSeen.length > 0;
 

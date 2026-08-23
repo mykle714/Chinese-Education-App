@@ -118,8 +118,10 @@ const DictionaryCardDetailPage: React.FC = () => {
     return (
         <NodePage
             title="Card Detail"
-            activePage="home"
             onBack={() => navigate(-1)}
+            // Matches the vet Card Detail page, which the design draws at 18px — the
+            // two are the same surface and must not disagree on their title size.
+            headerSize="dense"
             surfaceColor={COLORS.yellowAccent}
             // No top edge-fade: the hero card shouldn't dissolve at the top.
             topFade={false}

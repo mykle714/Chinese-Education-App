@@ -1,6 +1,5 @@
 import React from "react";
-import { IconButton, useTheme } from "@mui/material";
-import SettingsIcon from "@mui/icons-material/Settings";
+import { HeaderIconButton } from "../../components/PageHeader";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 
 interface MatchSpeedHeaderProps {
@@ -18,30 +17,22 @@ interface MatchSpeedHeaderProps {
  * board — it belongs to the play area, where the player is already looking, not to
  * the page chrome. See MatchSpeedTimerBar.
  *
- * Match Speed is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md), so the header bar +
- * down-arrow back button come from LeafPage/LeafPageHeader; this component just
- * fills LeafPage's `rightContent` slot.
+ * Match Speed is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md), so the header + down
+ * chevron come from LeafPage/LeafPageHeader; this component just fills LeafPage's
+ * `rightContent` slot.
  *
  * See docs/MATCH_SPEED_GAME.md § Page shell, header, and chrome.
  */
-const MatchSpeedHeaderControls: React.FC<MatchSpeedHeaderProps> = ({ onSettingsClick }) => {
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
-
-    return (
-        <>
-            <IconButton
-                className="match-speed__settings-btn"
-                size="small"
-                sx={{ color: fc.onSurface }}
-                onClick={onSettingsClick}
-                aria-label="Open settings"
-            >
-                <SettingsIcon />
-            </IconButton>
-            <MinutePointsFireBadge />
-        </>
-    );
-};
+const MatchSpeedHeaderControls: React.FC<MatchSpeedHeaderProps> = ({ onSettingsClick }) => (
+    <>
+        <HeaderIconButton
+            className="match-speed__settings-btn"
+            icon="settings"
+            label="Open settings"
+            onClick={onSettingsClick}
+        />
+        <MinutePointsFireBadge />
+    </>
+);
 
 export default MatchSpeedHeaderControls;

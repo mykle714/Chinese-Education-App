@@ -20,7 +20,7 @@ export function AiGeneratedBadge({ label, className, sx }: AiGeneratedBadgeProps
     return (
         <Box
             className={className ?? 'ai-generated-badge'}
-            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: COLORS.yellowMain, ...sx }}
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: COLORS.aiGenerated, ...sx }}
         >
             <AutoAwesome sx={{ fontSize: SIZE.body }} />
             <Typography sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.bold, letterSpacing: 0.5 }}>

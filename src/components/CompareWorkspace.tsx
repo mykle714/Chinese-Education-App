@@ -57,7 +57,7 @@ export interface CompareWorkspaceProps {
     //  • "page" (ComparePage): the workspace is a natural-height block and the HOST scroll area
     //    scrolls (MobileTabScreen's ScrollArea). It must NOT scroll itself there — a nested
     //    scroller ends at its own box, so content would stop ABOVE the floating footer pill
-    //    instead of running behind it, and the ScrollArea's own FLOATING_FOOTER_CLEARANCE
+    //    instead of running behind it, and the ScrollArea's own FOOTER_CLEARANCE
     //    bottom padding (which is what lets the last line clear the pill) would be bypassed.
     layout?: "sheet" | "page";
 }

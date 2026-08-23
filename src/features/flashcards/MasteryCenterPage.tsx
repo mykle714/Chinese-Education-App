@@ -11,7 +11,6 @@ import {
     MASTERY_CENTER_PATHS, MASTERY_CENTER_TITLES, type MasteryCenterBar,
 } from "./masteryCenters";
 import type { VocabEntry } from "../../types";
-import { COLORS } from "../../theme/colors";
 
 /**
  * ONE page for both Mastery Centers — the Reading Center (`/flashcards/reading`) and
@@ -84,9 +83,7 @@ const MasteryCenterPage: React.FC = () => {
         <>
             <NodePage
                 title={title}
-                activePage="flashcards"
                 onBack={() => navigate("/flashcards/decks")}
-                surfaceColor={COLORS.header}
                 contentClassName="mastery-center-page__content"
                 // The PANEL BODY owns the scrolling here, exactly as it does inside the
                 // fdp's sheet: it is one overflow container with its own bottom fade and

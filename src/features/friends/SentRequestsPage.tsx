@@ -96,7 +96,6 @@ function SentRequestsPage() {
     return (
         <NodePage
             title="Sent Requests"
-            activePage="home"
             onBack={() => slideNavigate("/friends")}
             contentClassName="sent-requests-page__content"
         >
@@ -138,7 +137,7 @@ function SentRequestsPage() {
                         </Button>
                     </Box>
                     {notice && (
-                        <Typography className="sent-requests-page__notice" sx={{ ...messageSx, mt: 1, color: COLORS.greenMain }}>
+                        <Typography className="sent-requests-page__notice" sx={{ ...messageSx, mt: 1, color: COLORS.successInk }}>
                             {notice}
                         </Typography>
                     )}
@@ -172,7 +171,7 @@ function SentRequestsPage() {
                                         disabled={busyId === request.requestId}
                                         onClick={() => handleRevoke(request)}
                                         startIcon={<UndoIcon sx={{ fontSize: 16 }} />}
-                                        sx={{ ...smallButtonSx, color: COLORS.redMain }}
+                                        sx={{ ...smallButtonSx, color: COLORS.dangerInk }}
                                     >
                                         Revoke
                                     </Button>

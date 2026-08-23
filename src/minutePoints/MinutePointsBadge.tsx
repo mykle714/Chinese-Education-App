@@ -8,7 +8,7 @@ import {
     useMediaQuery,
     keyframes
 } from '@mui/material';
-import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
+import Icon from '../components/Icon';
 
 interface MinutePointsBadgeProps {
     points: number;
@@ -184,11 +184,19 @@ export const MinutePointsBadge: React.FC<MinutePointsBadgeProps> = ({
                             transition: 'all 0.3s ease-in-out',
                         }}
                     >
-                        <LocalFireDepartmentIcon
-                            sx={{
-                                fontSize: isMobile ? '1.5rem' : '1.8rem',
-                                color: isActive ? 'white' : theme.palette.grey[600]
-                            }}
+                        {/* Material Symbols Rounded, the app's one icon face
+                            (docs/SHELF_REDESIGN.md D3) — the same `local_fire_department`
+                            glyph MinutePointsFireBadge draws, so the two never disagree
+                            about what a flame looks like. The CHROME around it here is
+                            pre-redesign (circular gradient ground, glow, progress ring)
+                            and belongs to the legacy desktop flashcards page; converting
+                            that is entry-level work for whenever that page is redone. */}
+                        <Icon
+                            className="minute-points-badge__icon"
+                            name="local_fire_department"
+                            size={isMobile ? 24 : 29}
+                            fill={1}
+                            color={isActive ? 'white' : theme.palette.grey[600]}
                         />
                     </Box>
                 </Badge>

@@ -8,7 +8,7 @@ import {
     type HydraBoardPair,
     type HydraBoardView,
 } from "../games/hydra-bubbles/spawnPlanner";
-import { RED_ONLY_FILL, spawnWeightsAt } from "../games/hydra-bubbles/spawnTable";
+import { DRAIN_ONLY_FILL, spawnWeightsAt } from "../games/hydra-bubbles/spawnTable";
 import { HYDRA_COLORS, type HydraColor } from "../games/hydra-bubbles/types";
 
 /**
@@ -21,7 +21,7 @@ import { HYDRA_COLORS, type HydraColor } from "../games/hydra-bubbles/types";
 
 const pair = (id: string, hasWord: boolean, hasDefinition: boolean): HydraBoardPair => ({
     pairId: id,
-    color: "Target",
+    color: "drain",
     hasWord,
     hasDefinition,
     unmatchedRounds: 0,
@@ -96,11 +96,19 @@ describe("planSpawnBatch — slot budget", () => {
         }
     });
 
-    it("spends nothing on a red clear when a live match survives", () => {
-        // Payout 0 with the invariant already satisfied is the one case that spawns
-        // nothing at all — which is what makes red the only way to shrink the board.
-        const actions = planSpawnBatch(board([pair("a", true, true)]), 0, seq([0.5]));
-        expect(actions).toEqual([]);
+    it("spends exactly one bubble on a drain clear, against the two it removed", () => {
+        // Drain is the ONLY move that shrinks the board (§ 2), and this is where that
+        // property actually lives: one slot spent against two bubbles cleared, net −1.
+        const actions = planSpawnBatch(board([pair("a", true, true)]), 1, seq([0.5]));
+        const bubbles = actions.reduce((n, a) => n + (a.type === "newPair" ? 2 : 1), 0);
+        expect(bubbles).toBe(1);
+    });
+
+    it("spawns nothing at a payout of 0, which no color pays any more", () => {
+        // A defensive edge, not a game state: the ladder's floor is drain = 1 since the
+        // 2026-08-19 raise, so nothing calls this. Pinned so the branch cannot start
+        // spawning free bubbles if a future tuning drops a color back to zero.
+        expect(planSpawnBatch(board([pair("a", true, true)]), 0, seq([0.5]))).toEqual([]);
     });
 
     it("opens a payout of 3 with a fresh matched pair", () => {
@@ -132,7 +140,7 @@ describe("planSpawnBatch — the invariants (§ 4.3)", () => {
         }
     });
 
-    it("anti-zero fires on a red clear that would strand the board", () => {
+    it("anti-zero fires on a drain clear that would strand the board", () => {
         // Payout 0 AND no live match: the guarantee has to spawn even though the
         // ladder paid nothing, or the board dead-ends with nothing matchable.
         const view = board([pair("a", true, false)]);
@@ -141,10 +149,10 @@ describe("planSpawnBatch — the invariants (§ 4.3)", () => {
         expect(hasLiveMatch(applyPlan(view, actions))).toBe(true);
     });
 
-    it("anti-zero overrides the red-only squeeze", () => {
-        // Inside the squeeze the table rolls red exclusively, but a board with no
+    it("anti-zero overrides the drain-only squeeze", () => {
+        // Inside the squeeze the table rolls drain exclusively, but a board with no
         // live match must still be given one — a dead end is worse than an easy match.
-        const view = board([pair("a", false, true)], RED_ONLY_FILL + 0.1);
+        const view = board([pair("a", false, true)], DRAIN_ONLY_FILL + 0.1);
         const actions = planSpawnBatch(view, 0, seq([0.5]));
         expect(hasLiveMatch(applyPlan(view, actions))).toBe(true);
     });
@@ -195,26 +203,25 @@ describe("pickBalancedColor", () => {
         }));
 
     it("picks whichever color is furthest below the target mix", () => {
-        // Steady state is blue 25 / green 10 / yellow 30 / red 35 (reweighted
-        // 2026-08-19). On an all-blue board of 4, the post-spawn targets are
-        // blue 1.25 / green 0.50 / yellow 1.50 / red 1.75, so RED carries the largest
-        // gap and comes next — it used to be yellow, under the old 48/20/24/8 mix.
-        const allBlue = colored(["Mastered", "Mastered", "Mastered", "Mastered"]);
-        expect(pickBalancedColor(allBlue, 0.3, () => 0)).toBe("Unfamiliar");
+        // Steady state is bloom 55 / drain 45. On an all-bloom board of 4 the post-spawn
+        // targets are bloom 2.75 / drain 2.25, so drain carries the whole deficit (+2.25
+        // against bloom's −1.25) and comes next.
+        const allBlue = colored(["bloom", "bloom", "bloom", "bloom"]);
+        expect(pickBalancedColor(allBlue, 0.3, () => 0)).toBe("drain");
     });
 
     it("falls back to a plain roll on an empty board", () => {
-        // Nothing to balance against — and this is what preserves the blue-only
+        // Nothing to balance against — and this is what preserves the bloom-only
         // opening (§ 3.1), which would otherwise be overridden by the balancer.
-        expect(pickBalancedColor([], 0, () => 0)).toBe("Mastered");
-        expect(pickBalancedColor([], 0, () => 0.99)).toBe("Mastered");
+        expect(pickBalancedColor([], 0, () => 0)).toBe("bloom");
+        expect(pickBalancedColor([], 0, () => 0.99)).toBe("bloom");
     });
 
-    it("only ever yields red inside the squeeze", () => {
-        // The target there is red 100%, so every other color is permanently at or
-        // over quota no matter what the board looks like.
-        const mixed = colored(["Mastered", "Comfortable", "Target", "Unfamiliar"]);
-        expect(pickBalancedColor(mixed, RED_ONLY_FILL + 0.05, () => 0)).toBe("Unfamiliar");
+    it("only ever yields drain inside the squeeze", () => {
+        // The target there is drain 100%, so bloom is permanently at or over quota no
+        // matter what the board looks like.
+        const mixed = colored(["bloom", "bloom", "drain", "bloom"]);
+        expect(pickBalancedColor(mixed, DRAIN_ONLY_FILL + 0.05, () => 0)).toBe("drain");
     });
 
     it("drives the BOARD's mix to the §3.1 weights", () => {
@@ -237,12 +244,7 @@ describe("pickBalancedColor", () => {
             // clearing whatever they please. FIFO would be a gentler test.
             if (boardPairs.length > 25) boardPairs.splice(i % boardPairs.length, 1);
         }
-        const actual: Record<HydraColor, number> = {
-            Unfamiliar: 0,
-            Target: 0,
-            Comfortable: 0,
-            Mastered: 0,
-        };
+        const actual: Record<HydraColor, number> = { drain: 0, bloom: 0 };
         for (const p of boardPairs) actual[p.color] += 1;
         for (const color of HYDRA_COLORS) {
             const pct = (actual[color] / boardPairs.length) * 100;
@@ -252,23 +254,24 @@ describe("pickBalancedColor", () => {
         }
     });
 
-    it("guarantees red appears regularly rather than in clumps", () => {
-        // Red is 8% of the mix and the player's ONLY way to shrink the board, so what
+    it("guarantees drain appears regularly rather than in clumps", () => {
+        // Drain is 45% of the mix and the player's ONLY way to shrink the board, so what
         // matters is not its average but that it never goes missing for long. An
-        // independent roll can withhold it for 40+ spawns; balancing cannot.
+        // independent roll can withhold it for a long stretch; balancing cannot — and
+        // at 45% the bound should be TIGHT, which is what the assertion checks.
         const fill = 0.3;
         const boardPairs: HydraBoardPair[] = [];
         let sinceRed = 0;
         let worstGap = 0;
         for (let i = 0; i < 600; i++) {
             const color = pickBalancedColor(boardPairs, fill, () => 0);
-            sinceRed = color === "Unfamiliar" ? 0 : sinceRed + 1;
+            sinceRed = color === "drain" ? 0 : sinceRed + 1;
             worstGap = Math.max(worstGap, sinceRed);
             boardPairs.push({ pairId: `s${i}`, color, hasWord: true, hasDefinition: true, unmatchedRounds: 0 });
             if (boardPairs.length > 12) boardPairs.shift();
         }
-        // 8% => one red every ~12.5 spawns on average; a bounded gap is the point.
-        expect(worstGap).toBeLessThan(30);
+        // 45% => roughly every other spawn; a bounded gap is the point.
+        expect(worstGap).toBeLessThan(5);
     });
 });
 
@@ -276,14 +279,14 @@ describe("pickBalancedColor", () => {
 describe("stray aging (§ 4.2c)", () => {
     const stray = (id: string, unmatchedRounds: number): HydraBoardPair => ({
         pairId: id,
-        color: "Target",
+        color: "drain",
         hasWord: true,
         hasDefinition: false,
         unmatchedRounds,
     });
     const live = (id: string): HydraBoardPair => ({
         pairId: id,
-        color: "Mastered",
+        color: "bloom",
         hasWord: true,
         hasDefinition: true,
         unmatchedRounds: 0,
@@ -311,7 +314,7 @@ describe("stray aging (§ 4.2c)", () => {
     it("completes the half that is actually missing", () => {
         const missingWord: HydraBoardPair = {
             pairId: "w",
-            color: "Target",
+            color: "drain",
             hasWord: false,
             hasDefinition: true,
             unmatchedRounds: 40,

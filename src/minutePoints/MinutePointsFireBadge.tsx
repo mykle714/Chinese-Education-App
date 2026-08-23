@@ -1,104 +1,108 @@
 import React from "react";
-import { Badge, Box, IconButton, Typography, useTheme } from "@mui/material";
-import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
-import BlockIcon from "@mui/icons-material/Block";
+import { Box, Typography } from "@mui/material";
+import Icon from "../components/Icon";
 import { useMinutePoints } from "./useMinutePoints";
 import { useMinutePointsPaused } from "./minutePointsPause";
-import { SIZE , WEIGHT} from "../theme/scale";
 import { COLORS } from "../theme/colors";
+import { FONTS } from "../theme/fonts";
 
-// Calls useMinutePoints internally rather than accepting it as a prop, so the
-// per-second TICK only re-renders this leaf component instead of whatever page
-// hosts the badge — critical for not interrupting in-progress drag gestures.
+/**
+ * The minute-points flame — the app's single earning indicator, in every header.
+ *
+ * This is the design's `.hd .fire` / `.lhd .fire` treatment (docs/SHELF_REDESIGN.md):
+ * a Material Symbols Rounded `local_fire_department` glyph at 15px beside a mono count
+ * at 11px, both in `COLORS.fireActive` (#E65100 — the design writes the same hex), with a
+ * 4px gap. Nothing else: no MUI `Badge` bubble, no bordered counter chip, no drop-shadow
+ * glow, no circular ground.
+ *
+ * ── WHY IT GOT SMALLER RATHER THAN RESTYLED ──────────────────────────────────────────
+ * The old badge was a 24px filled MUI icon carrying an overlaid count bubble and an
+ * animated orange glow. It read as the loudest thing in the header on every page — and it
+ * is ambient: it reports that time is accruing, which is true almost all of the time. The
+ * design demotes it to a quiet mono readout beside a small glyph, so it is legible when
+ * looked at and silent when not. The one moment it should be noticed — a point actually
+ * landing — is still animated, and now that it is the only motion in the component, a
+ * short scale pulse is enough.
+ *
+ * ── THE THREE STATES ─────────────────────────────────────────────────────────────────
+ *   active  the flame and the count in fireActive orange; time is accruing.
+ *   idle    both in the muted ink; the user is on an eligible page but not earning.
+ *   paused  same muted ink plus a struck-through count — accumulation is deliberately on
+ *           hold (flp icon-layout editor). The old treatment overlaid a large red
+ *           no-entry glyph on the flame, which at 15px would be a red smudge; a line
+ *           through the number says "this is not counting" at any size.
+ *
+ * Calls `useMinutePoints` internally rather than taking it as a prop, so the per-second
+ * tick re-renders this leaf only — never the page hosting it, which would interrupt an
+ * in-progress drag gesture.
+ *
+ * Rendered by: PageHeader's right slot (see `headerExtraActions` callers) — the reader,
+ * flp, quick mark, sort cards, and every game header.
+ */
 const MinutePointsFireBadge: React.FC = () => {
     const minutePoints = useMinutePoints();
-    // Paused (e.g. flp icon-layout editor): accumulation is on hold, so the flame goes
-    // grey and a red no-entry symbol overlays it to signal "not counting".
     const paused = useMinutePointsPaused();
-    const theme = useTheme();
-    const inactiveColor = theme.palette.text.secondary;
-    const borderColor = theme.palette.divider;
-    const activeColor = paused ? inactiveColor : (minutePoints.isActive ? COLORS.fireActive : inactiveColor);
+    const earning = !paused && minutePoints.isActive;
+    const tone = earning ? COLORS.fireActive : COLORS.textSecondary;
 
     return (
         <Box
             className="minute-points-fire-badge"
-            sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}
+            sx={{
+                display: "flex",
+                alignItems: "center",
+                // The design's 4px: tight enough that the glyph reads as the count's UNIT
+                // rather than as a separate icon that happens to sit nearby.
+                gap: "4px",
+                fontFamily: FONTS.mono,
+                color: tone,
+                // Fade rather than snap between earning and idle. Chromium leaves a ghost
+                // repaint when a filter is removed outright, which is why the old glow was
+                // animated to transparent instead of `none` — with the glow gone this is
+                // just a colour transition, but the same reasoning applies.
+                transition: "color 0.3s ease-out",
+                animation: (earning && minutePoints.isAnimating)
+                    ? "minutePointsFirePulse 0.6s ease-out"
+                    : "none",
+                "@keyframes minutePointsFirePulse": {
+                    "0%, 100%": { transform: "scale(1)" },
+                    "50%": { transform: "scale(1.16)" },
+                },
+            }}
         >
-            <Badge
-                className="minute-points-fire-badge__count"
-                badgeContent={minutePoints.currentPoints}
-                color="primary"
-                max={99}
-                sx={{
-                    "& .MuiBadge-badge": {
-                        fontSize: SIZE.micro,
-                        fontWeight: WEIGHT.bold,
-                        minWidth: "16px",
-                        height: "16px",
-                        padding: "0 4px",
-                        backgroundColor: activeColor,
-                        color: "white",
-                        border: `1px solid ${borderColor}`,
-                    },
-                }}
-            >
-                <IconButton
-                    className="minute-points-fire-badge__icon-button"
-                    size="small"
-                    sx={{ padding: "4px", position: "relative" }}
-                    disableRipple
-                >
-                    <LocalFireDepartmentIcon
-                        className="minute-points-fire-badge__icon"
-                        sx={{
-                            color: activeColor,
-                            fontSize: SIZE.title,
-                            // Fade the glow out (rather than snapping to `none`) so removing the
-                            // drop-shadow triggers a real repaint each frame. A bare
-                            // `filter: none` swap leaves a ghost drop-shadow painted in Chromium
-                            // — the glow "sticks around" after the flame greys out. Animating to a
-                            // zero-size transparent shadow via a transition avoids that.
-                            filter: (!paused && minutePoints.isActive)
-                                ? "drop-shadow(0 0 4px rgba(230, 81, 0, 0.6))"
-                                : "drop-shadow(0 0 0 rgba(230, 81, 0, 0))",
-                            transition: "filter 0.3s ease-out, color 0.3s ease-out",
-                            animation: (!paused && minutePoints.isAnimating) ? "minutePointsFirePulse 0.6s ease-out" : "none",
-                            "@keyframes minutePointsFirePulse": {
-                                "0%, 100%": { transform: "scale(1)" },
-                                "50%": { transform: "scale(1.2)", filter: "drop-shadow(0 0 8px rgba(230, 81, 0, 0.8))" },
-                            },
-                        }}
-                    />
-                    {/* Paused: a giant red no-entry symbol over the (greyed) flame. */}
-                    {paused && (
-                        <BlockIcon
-                            className="minute-points-fire-badge__paused-overlay"
-                            sx={{
-                                position: "absolute",
-                                top: "50%",
-                                left: "50%",
-                                transform: "translate(-50%, -50%)",
-                                // Larger than the flame so the "no" reads clearly.
-                                fontSize: `calc(${SIZE.title} * 1.6)`,
-                                color: "#e53935",
-                                pointerEvents: "none",
-                            }}
-                        />
-                    )}
-                </IconButton>
-            </Badge>
+            <Icon
+                className="minute-points-fire-badge__icon"
+                name="local_fire_department"
+                size={15}
+                color={tone}
+                // Filled: a hollow flame at 15px loses its silhouette, and this glyph's
+                // whole job is to be recognised at a glance rather than read.
+                fill={1}
+            />
             <Typography
-                className="minute-points-fire-badge__seconds"
+                className="minute-points-fire-badge__count"
+                component="span"
                 sx={{
-                    fontSize: SIZE.micro,
-                    fontWeight: WEIGHT.bold,
-                    color: activeColor,
+                    fontFamily: FONTS.mono,
+                    fontSize: 11,
+                    // Tabular so the row does not shift width as the count ticks over.
+                    fontVariantNumeric: "tabular-nums",
+                    color: tone,
                     lineHeight: 1,
-                    marginTop: "-2px",
+                    textDecoration: paused ? "line-through" : "none",
                 }}
             >
-                {minutePoints.liveSeconds}s
+                {minutePoints.currentPoints}
+                {/* The live seconds toward the next point, kept as a faint suffix rather
+                    than the old second line: it is the reason the flame is worth glancing
+                    at mid-session, but it is not the figure. */}
+                <Box
+                    component="span"
+                    className="minute-points-fire-badge__seconds"
+                    sx={{ fontSize: 9, opacity: 0.65, marginLeft: "3px" }}
+                >
+                    {minutePoints.liveSeconds}s
+                </Box>
             </Typography>
         </Box>
     );

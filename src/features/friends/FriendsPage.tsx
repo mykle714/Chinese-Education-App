@@ -175,7 +175,7 @@ function FriendsPage() {
     }, [user?.id]);
 
     return (
-        <NodePage title="Friends" activePage="home" onBack={() => navigate("/")} contentClassName="friends-page__content">
+        <NodePage title="Friends" onBack={() => navigate("/")} contentClassName="friends-page__content">
             <Box className="friends-page" sx={{ display: "flex", flexDirection: "column", gap: 2, px: 2, pt: 1 }}>
 
                 {/* The three action screens. This board is READ-ONLY — every mutation
@@ -209,7 +209,7 @@ function FriendsPage() {
                                     height: 20,
                                     px: 0.5,
                                     borderRadius: "10px",
-                                    backgroundColor: COLORS.redMain,
+                                    backgroundColor: COLORS.dangerInk,
                                     color: "#fff",
                                     fontSize: SIZE.micro,
                                     fontWeight: WEIGHT.bold,
@@ -259,7 +259,7 @@ function FriendsPage() {
                                 height: 20,
                                 px: 0.5,
                                 borderRadius: "10px",
-                                backgroundColor: COLORS.redMain,
+                                backgroundColor: COLORS.dangerInk,
                                 color: "#fff",
                                 fontSize: SIZE.micro,
                                 fontWeight: WEIGHT.bold,

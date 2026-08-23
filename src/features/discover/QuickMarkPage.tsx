@@ -236,7 +236,6 @@ const QuickMarkPage: React.FC = () => {
     return (
         <NodePage
             title="Quick Mark"
-            activePage="discover"
             onBack={() => navigate("/discover")}
             contentClassName="quick-mark-page__content"
             contentSx={{ alignItems: "center" }}
@@ -263,8 +262,8 @@ const QuickMarkPage: React.FC = () => {
                         sx={{
                             minWidth: "unset", px: 1.25, py: 0.25, height: "30px", fontSize: SIZE.micro,
                             textTransform: "lowercase", lineHeight: LEADING.normal, borderRadius: "6px",
-                            backgroundColor: COLORS.greenMain,
-                            "&:hover": { backgroundColor: COLORS.greenMain },
+                            backgroundColor: COLORS.successInk,
+                            "&:hover": { backgroundColor: COLORS.successInk },
                             "&.Mui-disabled": { backgroundColor: COLORS.card, color: COLORS.textSecondary },
                         }}
                     >
@@ -286,7 +285,7 @@ const QuickMarkPage: React.FC = () => {
                     }
                     size="small"
                     onClick={(e) => setLevelMenuAnchor(e.currentTarget)}
-                    sx={{ backgroundColor: COLORS.hskChip, color: "white", fontSize: SIZE.micro, fontWeight: WEIGHT.bold, letterSpacing: TRACKING.caps, cursor: "pointer" }}
+                    sx={{ backgroundColor: COLORS.infoInk, color: "white", fontSize: SIZE.micro, fontWeight: WEIGHT.bold, letterSpacing: TRACKING.caps, cursor: "pointer" }}
                 />
                 <Menu className="quick-mark-page__level-menu" anchorEl={levelMenuAnchor} open={Boolean(levelMenuAnchor)} onClose={() => setLevelMenuAnchor(null)}>
                     {DIFFICULTY_LEVELS.map((lvl) => (
@@ -312,12 +311,12 @@ const QuickMarkPage: React.FC = () => {
                 <LegendItem
                     className="quick-mark-page__legend-library"
                     label="Add to Learn Now"
-                    swatch={<Box sx={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: COLORS.greenMain, display: "flex", alignItems: "center", justifyContent: "center" }}><CheckIcon sx={{ fontSize: 11, color: "white" }} /></Box>}
+                    swatch={<Box sx={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: COLORS.successInk, display: "flex", alignItems: "center", justifyContent: "center" }}><CheckIcon sx={{ fontSize: 11, color: "white" }} /></Box>}
                 />
                 <LegendItem
                     className="quick-mark-page__legend-mastered"
                     label="Mastered"
-                    swatch={<Box sx={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: COLORS.blueMain, color: "white", fontSize: 10, fontWeight: WEIGHT.bold, display: "flex", alignItems: "center", justifyContent: "center" }}>M</Box>}
+                    swatch={<Box sx={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: COLORS.infoInk, color: "white", fontSize: 10, fontWeight: WEIGHT.bold, display: "flex", alignItems: "center", justifyContent: "center" }}>M</Box>}
                 />
             </Box>
 

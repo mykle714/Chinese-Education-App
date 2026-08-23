@@ -4,7 +4,8 @@ import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import type { Language, VocabEntry } from "../../types";
 import Bubble from "../bubbles/Bubble";
-import { stepPhysics, planSpawn, fillRatio, type Bounds } from "../bubbles/physics";
+import { stepPhysics, planSpawn, fillRatio, clampHeldCenter, type Bounds } from "../bubbles/physics";
+import { GameHud, GameHudBar, GameHudLabel } from "../shared/GameFrame";
 import { makePair, launchBody } from "../bubbles/bodyFactory";
 import type { BubbleBody, BubbleFill } from "../bubbles/types";
 import {
@@ -20,8 +21,7 @@ import {
     WRONG_FEEDBACK_MS,
     POST_DONE_SETTLE_MS,
 } from "../bubbles/constants";
-import { CATEGORY_COLORS } from "../../utils/categoryColors";
-import { PAYOUT_BY_COLOR, RED_ONLY_FILL, rollColor } from "./spawnTable";
+import { PAYOUT_BY_COLOR, DRAIN_ONLY_FILL, rollColor } from "./spawnTable";
 import { planSpawnBatch, type HydraBoardPair } from "./spawnPlanner";
 import { OPENING_DEFINITION_BUBBLES, SCORE_PER_MATCH } from "./constants";
 import type { HydraCard, HydraColor, HydraOutcome } from "./types";
@@ -45,43 +45,170 @@ import type { ColorBuffers } from "./useColorBuffers";
  */
 
 /**
- * Bubble color by payout tier (§ 2) — the palette the decks page already teaches.
+ * THE PAYOUT PALETTE (§ 2) — Hydra's own hues, deliberately NOT the mastery ramp.
  *
- * TARGET IS THE ONE DEVIATION. App-wide, `CATEGORY_COLORS.Target` is #FF9E5A, which
- * is an ORANGE despite the app calling that band yellow everywhere else. On a decks
- * chip it passes; blown up to a bubble filling a chunk of the screen, next to a red
- * band that is genuinely red, it reads as a second orange rather than as the third
- * step of a red → yellow → green → blue ladder — and in Hydra that ladder is not
- * decoration, it is the payout the player is reading off the bubble (§ 2).
+ * ⚠️ THIS IS A THREE-WAY PROBLEM, NOT A TWO-WAY ONE, and that is what the first two
+ * attempts got wrong. Hydra puts THREE kinds of bubble on one field: the two payout
+ * tiers and the grey English bubbles, which carry no payout meaning at all. A palette
+ * that separates drain from bloom beautifully is still broken if either of them reads
+ * as English.
  *
- * #FFD166 is the canonical sibling of the hues already in the set (#EF476F /
- * #FFD166 / #06D6A0 is a standard palette, and Unfamiliar is exactly #EF476F while
- * Comfortable is #05C793), so this moves Target ONTO the family rather than off it.
+ * The history, because each step was rejected for a different reason:
  *
- * The divergence is deliberate and scoped to this file. If the app-wide Target band
- * is ever retuned to a true yellow, delete the literal below and go back to
- * CATEGORY_COLORS.Target — nothing else here needs to change.
+ *   1. THE BAND COLORS (`MARK_TYPE_COLORS`, #EF476F / #FFD166 / #05C793 / #779BE7,
+ *      and the `CATEGORY_COLORS` pastels). A tier is a UNION of two bands, so wearing
+ *      one band's hue lies about the other half of its contents.
+ *   2. EMBER / OCEAN (#D64545 / #1B6CA8). Off the tokens, but not off the READ: the
+ *      app trains a learner that red = Unfamiliar and blue = Mastered, so a red bubble
+ *      still decodes as "hard card".
+ *   3. CHARCOAL / GOLD (2026-08-21 → 2026-08-22). Two hues chosen precisely so neither
+ *      could be mistaken for the ramp, separated on value, temperature and ring weight.
+ *      It worked, and it was replaced anyway — see below.
+ *
+ * ═══ THE LADDER IS NOW TWO SHADES OF ONE BLUE (2026-08-22) ═══
+ *
+ *              body                        char ink   read
+ *   English    #E7E7EA  COLORS.grey        dark       inert — carries no payout info
+ *   bloom      #D2EBFF  COLORS.blu         dark       net +1, the known words
+ *   drain      #79B3EE  oklch(75% .105)    dark       net −1, the hard words
+ *
+ * ALL THREE TAKE BLACK TEXT. That is a constraint on the ladder, not an accident: the
+ * two tiers are the same object at two values, and a rung whose glyphs invert to white
+ * stops reading as "the same thing, darker" and starts reading as "a different thing".
+ *
+ * ONE CHANNEL, AND IT IS VALUE. Hue no longer encodes anything: both tiers are hue
+ * 250, so the rule a player learns is "blue means Hydra bubble, DARK means this one
+ * costs you". That is one rule instead of two arbitrary hues to memorize, and it is
+ * monotonic — darker is harder — which the charcoal/gold pair could never be, being
+ * two unrelated hues at nearly the same lightness.
+ *
+ * The separation is also far better than anything the two-hue ladders managed:
+ *
+ *                      drain vs bloom   drain vs scenery   bloom vs scenery
+ *   charcoal/gold      1.22:1           1.33:1             1.09:1
+ *   blue ladder        1.80:1           1.79:1             1.00:1
+ *
+ * (A first cut put drain on `bluA` #1F6CB0 and scored 4.46:1 — two and a half times
+ * better. It was given up to keep black text on both rungs; see BLUE_DARK.)
+ *
+ * ⚠️ BLOOM AND THE SCENERY GREY ARE THE SAME VALUE (1.00:1) — `blu` and `grey` are both
+ * the ramp's 93% tier, so bloom-vs-English is carried by chroma alone (a blue tint vs a
+ * neutral). That is the one weak read left, and it is the same weakness gold had (1.09:1).
+ * ⚠️ If the tiers need more separation, the room is in BLOOM, not drain: bloom can go up
+ * to `bluTint` #EEF8FF (tiers 2.05:1, and it also lifts bloom off the grey to 1.15:1),
+ * at the cost of a near-white bubble on the white `.play` panel.
+ * It is tolerable because bloom is the bubble you WANT to clear: mistaking scenery for
+ * bloom costs a wasted look, not a wrong match. Do not fix it by lightening bloom — that
+ * closes the drain gap. Fix it by tinting the English bubble further off-hue if it matters.
+ *
+ * ⚠️ AND THIS RE-OPENS THE MASTERY COLLISION ON PURPOSE. `COLORS.blu` is EXACTLY
+ * `CATEGORY_COLORS.Mastered`, and bloom is Mastered + Comfortable — so the pastel is
+ * half-true rather than false, which is the best any single token can do for a union.
+ * Drain is the harder claim: it wears the SATURATED end of the hue the app trains as
+ * "mastered" while containing Unfamiliar + Target. The defence is that the two tiers are
+ * one hue, so nothing here asks to be decoded as a band — value is the whole message.
+ * If a learner is observed reading a dark blue bubble as "mastered", the fix is to move
+ * the WHOLE ladder to a hue with no band (teal, hue 195, `COLORS.tea` / `COLORS.teaA`
+ * — same structure, one token swap), NOT to split the tiers across two hues again.
+ *
+ * ⚠️ THE COST IS TONE-3 PINYIN, AND IT IS THE REAL CONSTRAINT ON THIS WHOLE FILE.
+ * A word bubble renders tone-colored pinyin (`TONE_COLORS`), tone 3 is #779BE7 — a light
+ * blue at roughly oklch 68% — and its contrast against a hue-250 body is worst exactly in
+ * the MIDDLE of the lightness range:
+ *
+ *   drain body                          tone 3
+ *   #5E9DDC  oklch 68%                  1.04:1   invisible
+ *   #79B3EE  oklch 75%  (shipped)       1.25:1   very weak
+ *   #CBC9D2  the charcoal that shipped  1.68:1
+ *   #1F6CB0  bluA, oklch 52%            1.99:1
+ *
+ * Both ENDS beat the middle, and "light enough for black text" lands in the middle. So
+ * the ladder trades tone-3 pinyin legibility for uniform black glyphs — an explicit
+ * choice, since the glyph is what the player is drilling and the pinyin is a crutch on a
+ * toggle (the header's `pinyin` chip).
+ *
+ * ⚠️ The overlay cannot be recolored to escape this: `ForeignText.characterColor` is
+ * documented to leave the tone overlay alone, and `TONE_COLORS` are design-owned
+ * literals. THE ONLY REAL FIX IS TO LEAVE HUE 250 — a ladder on purple (hue 300,
+ * `COLORS.pur`/`purA`) has no tone color anywhere near it and would free the whole
+ * lightness range. Teal (195) does not help: tone 2 #05C793 sits next to it.
  */
-const HYDRA_TARGET_YELLOW = "#FFD166";
+/**
+ * The two rungs. Both are hue 250 — the ramp's blue — at two lightnesses.
+ *
+ * `BLUE_DARK` is NOT a ramp token, and that is deliberate. The obvious choice was
+ * `COLORS.bluA` (#1F6CB0, oklch 52%), which it was for one revision, and it separates
+ * beautifully — but it is dark enough to need WHITE glyphs, and a bubble whose text
+ * inverts reads as a different KIND of object rather than a darker one. A ladder whose
+ * rungs are the same thing at two values has to keep the same ink on both.
+ *
+ * So the dark rung is authored on the ramp's own axis at the lightness where black text
+ * is comfortable — oklch(75% 0.105 250) — sitting between `blu` (93%) and `bluA` (52%).
+ * Authored in oklch, shipped as hex, per docs/SHELF_REDESIGN.md § A1.
+ *
+ *   black text (#333, the cpcd glyph)   5.71:1   — comfortably AA at body-text size
+ *   luminance 0.425                              — well clear of inkOnFill's 0.26 pivot,
+ *                                                  so it takes dark ink with margin
+ *   vs bloom                            1.80:1
+ *   vs the English grey                 1.79:1
+ */
+const BLUE_DARK = "#79B3EE";     // oklch(75% 0.105 250) — drain: harder words, higher cost
+const BLUE_LIGHT = COLORS.blu;   // #D2EBFF — bloom: known words, pays out
 
+/**
+ * Bubble fills — a FLAT body, border color == body color.
+ *
+ * The bubble is the one place in the app where color is not decoration: the player
+ * reads the payout tier straight off it while bubbles are moving (§ 2). The border is
+ * the body color because the shared `Bubble` draws a fixed 2px border on every bubble
+ * in both games — a same-color border is how a bubble reads as ringless without
+ * changing its border box. (Hydra used to pair a pastel body with a saturated 3px ring,
+ * so ring WEIGHT was a third separation channel; that went on 2026-08-22 when the two
+ * bubble games were unified on one style, Bubble Match being the reference —
+ * docs/SHELF_REDESIGN.md § 12/16. The blue ladder above buys back far more separation
+ * than the ring ever carried.)
+ */
 const FILL_BY_COLOR: Record<HydraColor, BubbleFill> = {
-    Unfamiliar: { bg: "#FBD5DE", border: CATEGORY_COLORS.Unfamiliar },
-    // Lighter bg than the other three: #FFD166 is a pale border, so it needs a paler
-    // fill behind it or the ring stops reading as a distinct edge.
-    Target: { bg: "#FFF4D6", border: HYDRA_TARGET_YELLOW },
-    Comfortable: { bg: "#C6F2E4", border: CATEGORY_COLORS.Comfortable },
-    Mastered: { bg: "#D5E1FA", border: CATEGORY_COLORS.Mastered },
+    drain: { bg: BLUE_DARK, border: BLUE_DARK },
+    bloom: { bg: BLUE_LIGHT, border: BLUE_LIGHT },
 };
 
 /**
- * English bubbles are ALWAYS grey and carry no color information — the color
- * channel is reserved for payout (§ 2). This is also why Hydra's held cue is a ring
- * rather than Bubble Match's grey wash (§ 5.1).
+ * English bubbles carry NO payout information — the color channel is reserved for the
+ * two tiers (§ 2).
+ *
+ * IT IS BUBBLE MATCH'S INERT GREY (2026-08-22). Both bubble games now draw their
+ * definition bubble in the same `COLORS.grey` token, which is the last piece of the
+ * one-bubble-two-palettes unification: the only colors that differ between the two
+ * games are the ones that MEAN something (Bubble Match's red word bubble, Hydra's
+ * drain/bloom tiers). Scenery is scenery in both.
+ *
+ * The border is the body color because the shared `Bubble` draws a fixed 2px border —
+ * that is how a bubble reads as ringless (see FILL_BY_COLOR).
+ *
+ * ⚠️ THIS UNDOES THE 2026-08-21 "MOVE THE INERT BUBBLE TO THE LIGHT END" FIX, and it
+ * costs real separation. That fix had the English bubble go from grey #ECECEF to pure
+ * white precisely because grey sat one value step from the drain body; going back to a
+ * grey re-opens that adjacency, and the 3px ring that was the other half of the fix is
+ * now gone too. Measured against the two tier bodies:
+ *
+ *              vs grey #E7E7EA      vs the white it replaced
+ *   drain      1.33:1               1.64:1
+ *   bloom      1.09:1               1.34:1
+ *
+ * Bloom is the one to watch: gold #F4DD98 and grey #E7E7EA are within 1.1:1, i.e.
+ * effectively the SAME VALUE, so "is this a payout bubble or scenery" is carried by
+ * hue and chroma alone — warm saturated vs achromatic. That reads fine for most
+ * players and not at all for a color-blind one.
+ *
+ * IF IT NEEDS FIXING, the move is to darken the TIERS (drain as far as tone 3 tolerates,
+ * bloom toward a deeper ochre), not to lighten this bubble back to white — the whole
+ * point of the token is that both games' scenery is the same grey.
  */
-const DEFINITION_FILL: BubbleFill = { bg: "#ECECEF", border: "#C4C4CC" };
+const DEFINITION_FILL: BubbleFill = { bg: COLORS.grey, border: COLORS.grey };
 
 const fillForBody = (body: BubbleBody, color: HydraColor | undefined): BubbleFill =>
-    body.kind === "definition" ? DEFINITION_FILL : FILL_BY_COLOR[color ?? "Unfamiliar"];
+    body.kind === "definition" ? DEFINITION_FILL : FILL_BY_COLOR[color ?? "drain"];
 
 /** Both bubbles of one drawn card, whether or not they are currently on the field. */
 interface HydraPair {
@@ -115,6 +242,18 @@ interface HydraStageProps {
     paused: boolean;
     /** Fires the first time a lent card reaches the board, at most once per run. */
     onFirstLend?: () => void;
+    /**
+     * Asked after every CORRECT match: does this clear end the run?
+     *
+     * Exists for Study Challenge mode, where the run ends the moment the last
+     * contested word is cleared and the score is time-to-clear rather than bubbles
+     * (docs/HYDRA_BUBBLES.md § 7.5). The stage cannot answer that itself — it does
+     * not know which words are contested, and deliberately never learns (Q74) — so
+     * the page owns the predicate and the stage owns the ending.
+     *
+     * Absent for an ordinary run, which is endless.
+     */
+    shouldEndRun?: (entry: VocabEntry) => boolean;
 }
 
 let pairSeq = 0;
@@ -130,6 +269,7 @@ const HydraStage: React.FC<HydraStageProps> = ({
     onMark,
     paused,
     onFirstLend,
+    shouldEndRun,
 }) => {
     const stageRef = useRef<HTMLDivElement>(null);
     const bodiesRef = useRef<BubbleBody[]>([]);
@@ -171,6 +311,16 @@ const HydraStage: React.FC<HydraStageProps> = ({
     const forceRender = useCallback(() => setTick((t) => t + 1), []);
     const [danger, setDanger] = useState(false);
     const [squeeze, setSqueeze] = useState(false);
+    /**
+     * The field's fill ratio, QUANTIZED TO 5% STEPS for the HUD bar (§ 3).
+     *
+     * The raw ratio changes every frame — bubbles are always settling — so storing it
+     * as-is would re-render the stage 60 times a second for a 4px bar. Bucketing means
+     * at most ~20 state writes across a whole run, and React bails out on the rest.
+     * The physics and the spawn table keep reading the exact ratio; only the display
+     * is coarse.
+     */
+    const [fillBucket, setFillBucket] = useState(0);
     const [score, setScore] = useState(0);
 
     const registerNode = useCallback((id: string, el: HTMLDivElement | null) => {
@@ -364,10 +514,13 @@ const HydraStage: React.FC<HydraStageProps> = ({
             finishRun("overflow");
         }
 
+        const bucket = Math.round(ratio * 20) / 20;
+        setFillBucket((prev) => (prev === bucket ? prev : bucket));
+
         const isDanger = ratio >= DANGER_FILL_RATIO;
         setDanger((prev) => (prev === isDanger ? prev : isDanger));
-        // The squeeze band (§ 3.1): from here the table rolls red only.
-        const inSqueeze = ratio >= RED_ONLY_FILL;
+        // The squeeze band (§ 3.1): from here the table rolls drain only.
+        const inSqueeze = ratio >= DRAIN_ONLY_FILL;
         setSqueeze((prev) => (prev === inSqueeze ? prev : inSqueeze));
 
         // Post-run shutdown: stop writing transforms to every node once the field
@@ -400,6 +553,7 @@ const HydraStage: React.FC<HydraStageProps> = ({
         scoreRef.current = 0;
         setScore(0);
         setDanger(false);
+        setFillBucket(0);
         setSqueeze(false);
         bodiesRef.current = [];
         pairsRef.current.clear();
@@ -432,10 +586,11 @@ const HydraStage: React.FC<HydraStageProps> = ({
         //
         // COLORS COME FROM THE TABLE, NOT FROM HERE (2026-08-18). Both slots roll
         // `rollColor(0)` — an empty board, which is the fill the opening board has by
-        // definition. They used to be hard-coded blue + green, which made the opening
-        // a second, silent source of truth for an economy the table already owns: a
-        // retune of the fill-0 row would have left the opening untouched. The fill-0
-        // row is now blue-only, so this still opens on a blue pair — but because the
+        // definition. They used to be hard-coded to two of the old four colors
+        // outright, which made the opening a second, silent source of truth for an
+        // economy the table already owns: a retune of the fill-0 row would have left
+        // the opening untouched. The fill-0
+        // row is now bloom-only, so this still opens on a bloom pair — but because the
         // table says so.
         //
         // CANCELLED ON CLEANUP, and this is load-bearing. Seeding became ASYNC when
@@ -550,13 +705,13 @@ const HydraStage: React.FC<HydraStageProps> = ({
             const bounds = boundsRef.current;
             const px = e.clientX - rect.left - grabOffsetRef.current.x;
             const py = e.clientY - rect.top - grabOffsetRef.current.y;
-            // X and the top stay on the play bounds, but the BOTTOM is unclamped past
-            // the stage edge so even a large bubble fits entirely inside the (shorter)
-            // cancel strip. Only the held bubble is exempt; settled bodies are still
-            // walled out at `bounds.height` by the physics step.
-            const maxY = fullHeightRef.current + held.radius;
-            held.x = Math.max(held.radius, Math.min(bounds.width - held.radius, px));
-            held.y = Math.max(held.radius, Math.min(maxY, py));
+            // The looser bounds a HELD body gets: off the bottom into the cancel strip,
+            // and a radius past either side wall. Only the held bubble is exempt —
+            // settled bodies are still walled in by the physics step, which glides this
+            // one back too once it is released. See clampHeldCenter.
+            const at = clampHeldCenter(held, bounds, fullHeightRef.current, px, py);
+            held.x = at.x;
+            held.y = at.y;
 
             // Tint the strip while the held bubble overlaps it (feedback only — the
             // decision is re-derived on release from the same predicate).
@@ -658,7 +813,14 @@ const HydraStage: React.FC<HydraStageProps> = ({
             setStatus(target, "correct", SCALE_IDLE);
             forceRender();
 
-            const clearedColor = colorOf(held.pairId) ?? "Unfamiliar";
+            // The challenge round's last contested word: the run is over, but only
+            // after the pop plays — a board that freezes mid-animation reads as a
+            // crash rather than as a finish. The payout batch below is skipped for the
+            // same reason it is skipped after any ending: `phaseRef` is not "playing"
+            // by then.
+            const endsRun = shouldEndRun?.(held.entry) ?? false;
+
+            const clearedColor = colorOf(held.pairId) ?? "drain";
             const to = setTimeout(() => {
                 bodiesRef.current = bodiesRef.current.filter(
                     (b) => b.id !== held.id && b.id !== target.id
@@ -672,6 +834,11 @@ const HydraStage: React.FC<HydraStageProps> = ({
                 // THE PAYOUT (§ 2). Planned against the board as it stands AFTER the
                 // pair is removed, which is what makes the fill-keyed table read the
                 // number the player is actually looking at.
+                if (endsRun) {
+                    forceRender();
+                    finishRun("challengeComplete");
+                    return;
+                }
                 if (phaseRef.current === "playing") {
                     // Fire-and-forget: the batch awaits buffer refills, and the
                     // match animation must not block on the network.
@@ -690,9 +857,49 @@ const HydraStage: React.FC<HydraStageProps> = ({
             window.removeEventListener("pointerup", onUp);
             window.removeEventListener("pointercancel", onUp);
         };
-    }, [findHoverTarget, forceRender, onSpeak, setStatus, writeTransform, onMark, onScore, finishRun, runSpawnBatch, colorOf, buffers]);
+    }, [findHoverTarget, forceRender, onSpeak, setStatus, writeTransform, onMark, onScore, finishRun, runSpawnBatch, colorOf, buffers, shouldEndRun]);
 
     return (
+        <>
+        {/* HUD — a real row above the field (docs/SHELF_REDESIGN.md § 16), not the
+            overlay it used to be at `top: 8`, where bubbles drifted under the score.
+
+            The MODE slot doubles as the squeeze warning. There is only one mode, so
+            "endless" is a constant and would be dead pixels — but the moment the table
+            goes drain-only that slot has something urgent to say, and saying it where
+            the mode was keeps the strip to three facts instead of four.
+
+            The bar is the FILL RATIO, not progress: an endless run has no denominator,
+            and fill is the number that actually ends it (LOSE_FILL_RATIO) as well as the
+            one the spawn table is keyed on. It goes red on the danger band, so the bar
+            and the vignette raise the alarm together. */}
+        <GameHud className="hydra-stage__hud">
+            {squeeze ? (
+                <GameHudLabel
+                    className="hydra-stage__squeeze"
+                    // The label names the DRAIN tier, so it takes exactly the color
+                    // the drain bubbles on screen are wearing (`BLUE_DARK`) rather than
+                    // any mastery token — the warning and the bubbles it is about must
+                    // be the same blue, or the player has two things to connect.
+                    //
+                    // The copy says what the board can now DO, not which tier is
+                    // spawning. "drain only" is the internal name (types.ts) and means
+                    // nothing to a player; "shrink only" is the same fact stated as the
+                    // consequence they are about to live with.
+                    color={BLUE_DARK}
+                >
+                    shrink only
+                </GameHudLabel>
+            ) : (
+                <GameHudLabel className="hydra-stage__mode">endless</GameHudLabel>
+            )}
+            <GameHudLabel className="hydra-stage__score">{score} cleared</GameHudLabel>
+            <GameHudBar
+                className="hydra-stage__fill-bar"
+                fraction={fillBucket}
+                color={danger ? COLORS.dangerInk : COLORS.teaA}
+            />
+        </GameHud>
         <Box
             ref={stageRef}
             className="hydra-stage"
@@ -702,7 +909,9 @@ const HydraStage: React.FC<HydraStageProps> = ({
                 minHeight: 0,
                 width: "100%",
                 overflow: "hidden",
-                backgroundColor: COLORS.background,
+                // The `.play` panel is the field's ground now (docs/SHELF_REDESIGN.md
+                // § A6) — a second paper fill inside a white panel read as a box in a box.
+                backgroundColor: "transparent",
                 // The stage owns all touch input; dragging must never scroll the page.
                 touchAction: "none",
                 overscrollBehavior: "contain",
@@ -728,46 +937,12 @@ const HydraStage: React.FC<HydraStageProps> = ({
                 }}
             />
 
-            {/* HUD: score, and the squeeze warning once the table goes red-only. */}
-            <Box
-                className="hydra-stage__hud"
-                sx={{
-                    position: "absolute",
-                    top: 8,
-                    left: 0,
-                    right: 0,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    px: 1.5,
-                    pointerEvents: "none",
-                    zIndex: 50,
-                }}
-            >
-                <Typography
-                    className="hydra-stage__score"
-                    sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: "#6b6b6b" }}
-                >
-                    {score} cleared
-                </Typography>
-                {squeeze && (
-                    <Typography
-                        className="hydra-stage__squeeze"
-                        sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: CATEGORY_COLORS.Unfamiliar }}
-                    >
-                        red only
-                    </Typography>
-                )}
-            </Box>
-
             {bodiesRef.current.map((body) => (
                 <Bubble
                     key={body.id}
                     body={body}
                     status={body.status}
                     fill={fillForBody(body, colorOf(body.pairId))}
-                    // Grey means "English" here, so the pickup cue is a ring (§ 5.1).
-                    heldCue="ring"
                     showPinyin={showPinyin && language === "zh"}
                     showPinyinColor={showPinyinColor}
                     registerNode={registerNode}
@@ -818,6 +993,7 @@ const HydraStage: React.FC<HydraStageProps> = ({
                 </Typography>
             </Box>
         </Box>
+        </>
     );
 };
 

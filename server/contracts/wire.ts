@@ -392,9 +392,10 @@ export interface ReviewMark {
 /**
  * The four mastery mark types. A mark's type is decided by the surface that
  * produced it (docs/MASTERY_REWORK.md §1):
- *   recognition — flp foreign-first review + Bubble Match
+ *   recognition — flp foreign-first review (pinyin shown) + Bubble Match
  *   production  — flp English-first review + Word Search "Pinyin" mode
- *   reading     — Word Search "No Pinyin" mode
+ *   reading     — flp foreign-first review with pinyin OFF + Word Search "No Pinyin"
+ *                 mode + Speed Reading
  *   writing     — Practice Writing drill
  */
 export type MarkType = 'recognition' | 'production' | 'reading' | 'writing';
@@ -405,6 +406,60 @@ export const MARK_TYPES: readonly MarkType[] = [
   'reading',
   'writing',
 ] as const;
+
+/**
+ * Which track the flp's FOREIGN-FIRST face exercises for one session
+ * (docs/MASTERY_REWORK.md § "The flp's foreign-first face is per-session").
+ *
+ * A zh card shown foreign-first WITH pinyin can be answered off the phonetic aid, so
+ * it tests recognition of the meaning. With "Show pinyin" off, the learner must get
+ * there from the characters alone — which is exactly what the reading track means, and
+ * why Word Search's No-Pinyin mode already emits `reading`.
+ *
+ * Chinese only: 'es' has no phonetic layer to hide, so the toggle changes nothing on
+ * an es card and its foreign-first face stays `recognition`.
+ */
+export type FlpForeignTrack = Extract<MarkType, 'recognition' | 'reading'>;
+
+export const FLP_FOREIGN_TRACKS: readonly FlpForeignTrack[] = ['recognition', 'reading'] as const;
+
+/**
+ * The two tracks an flp session can present, given its foreign-first track. THE one
+ * definition — the server cools/steers on it, the client maps its faces through it, so
+ * the face a learner sees can never disagree with the mark that gets written.
+ *
+ * English-first is always `production`; only the foreign-first half varies.
+ */
+export const flpMarkTypes = (foreignTrack: FlpForeignTrack): readonly MarkType[] =>
+  [foreignTrack, 'production'];
+
+/**
+ * THE rule that decides a foreign→meaning drill's track, shared by every surface that
+ * shows one: the flp's Chinese-side-one face and Bubble Match (§ 1a).
+ *
+ * `showPinyin` is the learner's own display setting. Latin-script languages pass
+ * through as `recognition` whatever it says — 'es' has no phonetic layer to hide, so
+ * the toggle changes nothing on the card and must not silently move their marks to
+ * another track.
+ */
+export function foreignPromptTrack(
+  language: string | null | undefined,
+  showPinyin: boolean
+): FlpForeignTrack {
+  return language === 'zh' && !showPinyin ? 'reading' : 'recognition';
+}
+
+/**
+ * Narrow a raw wire value (`?foreignTrack=` / the mark body's `foreignTrack`) to a
+ * track. Anything unrecognized — absent, misspelled, or a non-flp mark type — falls
+ * back to 'recognition', the historical foreign-first face. Deliberately permissive:
+ * a bad value may only mis-steer which face a card shows, never fail a review.
+ */
+export function parseFlpForeignTrack(raw: unknown): FlpForeignTrack {
+  return FLP_FOREIGN_TRACKS.includes(raw as FlpForeignTrack)
+    ? (raw as FlpForeignTrack)
+    : 'recognition';
+}
 
 /**
  * Per-card typed mark streams: each type keeps its own <=8 most-recent marks.
@@ -424,8 +479,10 @@ export type TypedMarkHistory = Partial<Record<MarkType, ReviewMark[]>>;
  *   writing — the writing track alone. Active only when `users.writingGoal`.
  *
  * Each bar bands independently, so one card can be Mastered up to three times.
- * A mark belongs to exactly ONE bar (see `barForMarkType`), so a single review
- * can never move two bars at once.
+ * A mark belongs to exactly ONE bar (see `barForMarkType`), so a single MARK can
+ * never move two bars at once. A single review ACTION can, where a surface emits more
+ * than one typed mark for it — Word Search's No-Pinyin find writes reading and
+ * production as two separate marks (docs/WORD_SEARCH_GAME.md).
  */
 export type MasteryBarId = 'core' | 'reading' | 'writing';
 
@@ -1061,19 +1118,22 @@ export interface TextLayout {
  * because the UI needs names and re-themeable tokens that a bare hex list cannot carry.
  * The two are no longer hand-synced on trust: `src/__tests__/cardColor.test.ts` asserts
  * that the palette's non-null values are exactly this set. See docs/CARD_ICON_LAYOUT.md.
- *   grey #D8D8DC · beige #F5EBE0 · white #FFFFFF · black #000000 · red #F2BAC9 ·
- *   green #BAF2D8 · blue #BAD7F2 · yellow #F2E2BA · purple #D8BAF2
+ * Repainted 2026-08-22 with the app-wide token repaint (the pastel BODY hues moved to
+ * near-white TINTS). Migration 153 remaps every already-stored old hex to its new
+ * counterpart, so no learner's saved fill is orphaned by the change.
+ *   grey #E7E7EA · beige #F5EBE0 · white #FFFFFF · black #000000 · red #FFF2F2 ·
+ *   green #F0FAF0 · blue #EEF8FF · yellow #FFF5EA · purple #F8F4FF
  */
 export const CARD_COLOR_VALUES: readonly string[] = [
-  '#D8D8DC',
+  '#E7E7EA',
   '#F5EBE0',
   '#FFFFFF',
   '#000000',
-  '#F2BAC9',
-  '#BAF2D8',
-  '#BAD7F2',
-  '#F2E2BA',
-  '#D8BAF2',
+  '#FFF2F2',
+  '#F0FAF0',
+  '#EEF8FF',
+  '#FFF5EA',
+  '#F8F4FF',
 ];
 
 /** A related library word surfaced on the card detail page. */

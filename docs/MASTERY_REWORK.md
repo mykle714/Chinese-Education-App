@@ -73,9 +73,9 @@ Confirmed mark sources:
 
 | Type | Produced by | Sign |
 |---|---|---|
-| **Recognition** | flp **foreign-first** review (zh chars-first / es spanish-first → meaning); **Bubble Match**; **Match Speed** | correct / incorrect |
+| **Recognition** | flp **foreign-first** review **with pinyin shown** (zh chars-first / es spanish-first → meaning); **Bubble Match**; **Match Speed** | correct / incorrect |
 | **Production** | flp **English-first** review (meaning → foreign); **Word Search "Pinyin" mode** matches | flp: correct/incorrect. Word Search: **positive-only** (a match = positive Production mark; no negatives), and **hinted words emit nothing at all** — see note below |
-| **Reading** | **Word Search "No Pinyin" mode** matches (`WordSearchMode = 'no-pinyin'`, `src/games/word-search/constants.ts`); **Speed Reading** (`docs/SPEED_READING_GAME.md`) | Word Search: **positive-only**. Speed Reading: **correct / incorrect** — see below |
+| **Reading** | flp **foreign-first** review on a **zh** deck with **"Show pinyin" off** (§ 1a); **Word Search "No Pinyin" mode** matches (`WordSearchMode = 'no-pinyin'`, `src/games/word-search/constants.ts`); **Speed Reading** (`docs/SPEED_READING_GAME.md`) | flp: correct / incorrect. Word Search: **positive-only**. Speed Reading: **correct / incorrect** — see below |
 | **Writing** | **Practice Writing drill** (`docs/PRACTICE_WRITING.md`), top-1 stroke grading | correct / incorrect |
 
 **Speed Reading emits NEGATIVE reading marks, and that is intended.** It is the
@@ -96,8 +96,75 @@ neither a positive nor a negative reading is warranted. See
 The two Word Search modes already exist and are chosen at launch from the hub
 (fixed per run) — the mode slug cleanly disambiguates Production vs Reading.
 
+### 1a. The flp's foreign-first face is per-session
+
+> STATUS: **IMPLEMENTED** (2026-08-22). Code: `foreignPromptTrack` (the rule) /
+> `flpMarkTypes` / `FlpForeignTrack` / `parseFlpForeignTrack` (`server/contracts/wire.ts`), `markTypeForSideOne` +
+> `sideOneForCard` (`src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`),
+> the `foreignTrack` computed in
+> `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx`,
+> `OnDeckVocabService.DEFAULT_FOREIGN_TRACK` + the threaded `foreignTrack` parameter,
+> `OnDeckVocabController.getDistributedWorkingLoop`, `POST /api/flashcards/mark`
+> (`server/routes/flashcardRoutes.ts`).
+
+A zh card shown foreign-first **with pinyin** can be answered off the phonetic aid, so
+it tests recognition of the meaning. With the flp's **"Show pinyin"** setting off
+(`useFlashcardLearnSettings`), the learner must get to the meaning **from the
+characters alone** — which is what the Reading track means, and exactly the call Word
+Search's No-Pinyin mode already makes. So:
+
+| Session | Side 1 = English | Side 1 = foreign |
+|---|---|---|
+| zh, pinyin **on** | `production` | `recognition` |
+| zh, pinyin **off** | `production` | **`reading`** |
+| es (any setting) | `production` | `recognition` |
+
+**Bubble Match follows the same rule**, through the same helper: a pinyin-off zh board
+marks `reading`, and its pool is requested on that track. Two differences, both forced
+by it being a game rather than a loop — see
+[GAMES_FEATURE.md § "Bubble Match: pinyin picks the track"](./GAMES_FEATURE.md):
+
+* the track is **latched when the board is dealt** and held for the run (including
+  Play-Again refills), because a game's whole pool is bucketed and cooled up front;
+* so the toggle moved OUT of the game and onto the **Games hub**
+  (`BubbleMatchTrackToggle`), which is also now the only place the hub names Bubble
+  Match's track. A reading run is silent — no autoplay, no narration — since hearing
+  the word would supply the reading being tested.
+
+> **Hydra Bubbles has NOT been converted.** It reads the same shared `showPinyin`
+> setting and still marks `recognition` whatever it says, so a learner who switches
+> Bubble Match to Reading also loses pinyin in Hydra without changing Hydra's track.
+> Converting it means the same latch-at-deal treatment — but Hydra's tier ladder is
+> keyed on mastery bands of the track it pools by, so it is a bigger change than
+> Bubble Match's and is deliberately left for its own pass.
+
+**Spanish is deliberately excluded**: es renders as plain text with no phonetic layer
+to hide, so the toggle changes nothing on the card and its foreign-first face would
+otherwise swap tracks for a UI change the learner never sees.
+
+**Recognition is not mixed in.** With pinyin off an flp session emits only
+`production` + `reading`; the recognition track then accrues from Bubble Match /
+Match Speed only. Presenting both would mean overriding the display toggle per card.
+
+**The track is a wire parameter, not a client-side relabel.** It is sent on
+`GET /api/onDeck/distributedWorkingLoop?foreignTrack=` and in the `POST
+/api/flashcards/mark` body, because the server filters, ranks and stamps
+`readyMarkTypes` **on the session's two tracks** (§ 6). A client-only mapping would
+show a foreign-first face steered by the recognition cooldown, emit a `reading` mark,
+and have it silently dropped by the mark endpoint's cooldown guard whenever the
+reading track was cooling. `flpMarkTypes(foreignTrack)` is the single definition both
+sides map through.
+
+> **Toggling mid-session is bounded, not free.** The loop fetch is deliberately not
+> keyed on `foreignTrack` (re-fetching would throw away the card stack for a display
+> toggle), so cards already in the loop keep `readyMarkTypes` stamped for the old
+> pair; until the stack turns over, a foreign-first face may be shown whose new track
+> is cooling and whose mark is dropped. Every refill after the toggle is steered
+> correctly.
+
 **These four are the _only_ emitters.** No other game or feature emits Reading or
-Writing marks — Reading comes solely from Word Search No-Pinyin, Writing solely
+Writing marks — Reading comes from the pinyin-off flp session above and Word Search
+No-Pinyin, Writing solely
 from the Practice Writing drill.
 
 **Scope: the mark/goal logic is language-agnostic** (nothing in the type/pbh math
@@ -416,10 +483,19 @@ rendered at 0 width.
   **no per-bar color**: every surface paints a bar by its segments, so a bar has no
   single color of its own to name. From the app light palette
   (`src/theme/colors.ts`):
-  - Recognition → **Blue** `#779BE7` (`COLORS.blueMain`)
-  - Production → **Green** `#05C793` (`COLORS.greenMain`)
-  - Reading → **Red** `#EF476F` (`COLORS.redMain`)
-  - Writing → **Yellow** `#FF8E47` (`COLORS.yellowMain`)
+  - Recognition → **Blue** `#779BE7` (`MARK_TYPE_COLORS.recognition`)
+  - Production → **Green** `#05C793` (`MARK_TYPE_COLORS.production`)
+  - Reading → **Red** `#EF476F` (`MARK_TYPE_COLORS.reading`)
+  - Writing → **Orange** `#FF8E47` (`MARK_TYPE_COLORS.writing`)
+
+  These are `MARK_TYPE_COLORS` (`src/utils/masteryCompute.ts`) and are **literal on
+  purpose** — do not swap them for `COLORS.blueMain` / `greenMain` / `redMain` /
+  `yellowMain`, which since the shelf redesign hold the *pastel fill* tier of the same
+  four hues (docs/SHELF_REDESIGN.md, D2b). A mark cell is read directly against the
+  paper ground with nothing on top of it, so it takes the saturated hue; a band chip or
+  spine is a fill with text printed on it, so it takes the pastel plus
+  `COLORS.markOutline`. The cooldown-elapsed check icon is `MASTERY_READY_COLOR`
+  (`#05C793`), beside them in the same file.
 
   Note: these currently double as the utcm category colors (Unfamiliar=red,
   Target=yellow, Comfortable=green, Mastered=blue in `utils/categoryColors.ts`).
@@ -454,25 +530,28 @@ all tracks. So Recognition and Production cool down **independently** — gettin
 card right foreign-first (Recognition) does not suppress it from coming back for an
 English-first (Production) drill.
 
-The flp can only ever present **two** of the four mark types (a foreign-first
-prompt → Recognition, an English-first prompt → Production;
-`markTypeForSideOne`). Reading/Writing marks come from other games (Word Search
-No-Pinyin / Practice Writing) and are **never** shown in the loop, so flp cooldown
-eligibility consults **only** the Recognition + Production tracks
-(`FLP_MARK_TYPES`). Consequence: a correct mark earned in **another game** no
-longer wrongly suppresses a card from the flp.
+The flp can only ever present **two** of the four mark types in one session: an
+English-first prompt → Production, and a foreign-first prompt → the session's
+**`foreignTrack`** (Recognition, or Reading when pinyin is off — § 1a;
+`markTypeForSideOne`). Writing marks come from another surface (Practice Writing) and
+are **never** shown in the loop, so flp cooldown eligibility consults **only** the
+session's pair, `flpMarkTypes(foreignTrack)` (`server/contracts/wire.ts`), threaded
+through every `OnDeckVocabService` selection path. Consequence: a correct mark earned
+in **another game** no longer wrongly suppresses a card from the flp — and a
+pinyin-off session is cooled on the reading track it actually writes to.
 
 ### Eligibility + face steering
 
 When a card is selected for the loop (both the **initial** `getDistributedWorkingLoop`
 build and the **correct-mark refill** `getNextLibraryCardWithFallback`), the
-service computes `flpReadyMarkTypes(card)` = the subset of {recognition,
-production} currently off cooldown:
+service computes the subset of the session's two tracks (`flpMarkTypes(foreignTrack)`
+= {recognition **or** reading, production}) currently off cooldown:
 
 - **≥1 ready** ⇒ the card is eligible; it's stamped with `readyMarkTypes` and the
   client's `sideOneForCard` **steers the shown face** to a ready type (only
-  production ready → English-first; only recognition ready → foreign-first; both
-  ready → the historical coin flip).
+  production ready → English-first; only the foreign track ready → foreign-first;
+  both ready → the historical coin flip). The client maps its faces through the same
+  `foreignTrack` it sent, so the stamp and the mark can never name different tracks.
 - **both cooling** ⇒ the card is **skipped**.
 
 ### Ordering: a queue, longest-waiting first
@@ -578,34 +657,68 @@ mark type it emits** (`OnDeckVocabService.isCardGameEligible` / `fetchGameCandid
 
 | Surface | Mark type | Selection path |
 | --- | --- | --- |
-| Bubble Match | `recognition` | `getGameVocabPool` (via `?markType=recognition`) |
+| Bubble Match | `recognition`, or `reading` with pinyin off (§ 1a) | `getGameVocabPool` (via `?markType=` — the track the run locked at deal time) |
 | Match Speed | `recognition` | `getGameVocabPool` (via `?markType=recognition`) |
 | Speed Reading | `reading` | `getGameVocabPool` (via `?markType=reading`) |
 | Word Search — Pinyin | `production` | `getWordSearchGrid` (mode via `?mode=` query) |
-| Word Search — No-Pinyin | `reading` | `getWordSearchGrid` (mode via `?mode=` query) |
+| Word Search — No-Pinyin | `reading` **(primary)** + `production` | `getWordSearchGrid` (mode via `?mode=` query) |
 | Practice Writing | `writing` | — launched per-card from a flashcard; **no pool to gate** |
+
+**A game may emit MORE than one track — but it is pooled on exactly one.**
+No-Pinyin Word Search is the first: one find writes a `reading` mark and a `production`
+mark, because the prompt is an English gloss (recall) while the grid is bare characters
+(reading). See [WORD_SEARCH_GAME.md § "What a find marks"](./WORD_SEARCH_GAME.md). The
+extra track is declared as `WordSearchModeConfig.extraMarkTypes` and read through
+`modeMarkTypes()`; the **primary** `markType` keeps its three jobs untouched — it is
+what `getWordSearchGrid` buckets and cooldown-gates the board on (a pool query has one
+mark history to band by, not two), what challenge eligibility reads, and what leads the
+hub label. Three rules follow:
+
+- The client posts **one mark per track** rather than a list of types.
+  `/api/flashcards/mark` types exactly one mark per call because it computes a
+  before/after band for the single bar that mark moves; a list would push a multi-bar
+  response shape onto every caller to serve one surface.
+- A **secondary mark is best-effort**: it is judged on its own track's cooldown, which
+  the board was not selected against, so it may be silently dropped (`[MarkSuppressed]`).
+- A secondary `recognition`/`production` track **must not** confer challenge
+  eligibility — `src/games/__tests__/challengePool.test.ts` pins this.
 
 **One constant per game, three consumers.** Each game's mark type is declared once
 in its own `constants.ts` (`MARK_TYPE` in `src/games/bubble-match/constants.ts`,
 `src/games/match-speed/constants.ts`, `src/games/speed-reading/constants.ts`) and
 read from there by all three places that need it: the `?markType=` pool query, the
-`markFlashcard({ type })` call, and the Games hub's mark-type chip (via
-`GameDef.markType` in `src/games/registry.ts`, rendered by
-`src/components/MarkTypeChip.tsx`). Word Search is the exception — its mark type is
-**per mode**, so it lives on `WordSearchModeConfig.markType`
-(`src/games/word-search/constants.ts`) and is read by `WordSearchPage`'s mark call
-and by `WordSearchHubItem`'s per-sub-card chip. Nothing repeats the string literal,
-so the label a player sees cannot drift from the mark that is actually written.
+`markFlashcard({ type })` call, and the Games hub's label (via `GameDef.markType` in
+`src/games/registry.ts`). Two exceptions, both because one constant cannot answer for
+them: **Word Search**'s type is per MODE, so it lives on
+`WordSearchModeConfig.markType` (`src/games/word-search/constants.ts`), read by
+`WordSearchPage`'s mark call and by `WordSearchHubItem`'s sub-tile subtitles; and
+**Bubble Match**'s is per RUN (§ 1a), latched from `foreignPromptTrack` when the board
+is dealt and read from there by its pool query and its mark call alike, while its
+`MARK_TYPE` constant stays the game's declared/default track for the registry.
+Nothing repeats the string literal, so the label a player sees cannot drift from the
+mark that is actually written.
 
-**The hub names the track.** Every Games-hub card carries a `MarkTypeChip
-variant="edge"` — the uppercase track name in faded grey, turned 90° and run up
-the card's right edge — so a player can see which of the four tracks a game feeds
-*before* opening it. The label is the shared `MARK_TYPE_LABELS`
-(`src/utils/masteryCompute.ts`). Note the edge variant deliberately drops the
-colored dot, so **the hub is the one surface where a track is not shown in its
-`MARK_TYPE_COLORS` hue**; everywhere else (cdp stacked progress bar, the pill
-variants of this chip) one track is one hue. See
-[HUB_MENU_SYSTEM.md § Edge label slot](./HUB_MENU_SYSTEM.md).
+**The hub names the track — in the SUBTITLE.** A player can see which of the four
+tracks a game feeds *before* opening it. This used to be a `MarkTypeChip
+variant="edge"` run up the card's right edge; the bento tile that replaced the hub
+card has no edge slot, so the track moved into the tile's subtitle instead:
+`tileSubtitle()` (`src/games/GamesPage.tsx`) composes
+`"<track> · <the game's blurb>"` — e.g. *Recognition · 30-second clock*, *Reading ·
+20 rounds* — from `GameDef.markType` and the shared `MARK_TYPE_LABELS`
+(`src/utils/masteryCompute.ts`). Word Search's mode sub-tiles use the track name as
+their whole subtitle (`WordSearchHubItem`), since their blurb IS the mode name on the
+title line. **Bubble Match names its tracks on its strip HEADER** instead — its
+sub-tile subtitles are the level labels, and its track is a per-run choice rather than
+a fact, so the header's `control` slot carries `BubbleMatchTrackToggle`, which draws
+both `RECOGNITION` and `READING` with the live one inked (§ 1a). The `MarkTypeChip`
+component was deleted once that closed the last gap.
+
+Because the label is read from the same constant the game marks with, a hub card
+cannot advertise a track its game does not write — never hand-write a track name into
+`GameDef.subtitle`. Note the hub shows the track as **plain secondary text**, so
+**the hub is the one surface where a track is not shown in its `MARK_TYPE_COLORS`
+hue**; everywhere else (cdp stacked progress bar, the pill variants of the chip) one
+track is one hue. See [BENTO_SYSTEM.md § Known gaps](./BENTO_SYSTEM.md).
 
 > **`getGamePool` is parameterized, not recognition-with-an-exception.** It used
 > to hardcode `'recognition'` when Bubble Match was its only caller. Speed Reading
@@ -619,27 +732,29 @@ variants of this chip) one track is one hue. See
 
 A card is **fresh** for a game when its game mark type is off cooldown, **cooled**
 otherwise. `fetchGameCandidates` overfetches a per-category shuffled pool and
-splits it fresh/cooled. Both games fill in four phases (the confirmed policy —
-*prefer fresh; lend before borrowing from another category, but never lend what
-borrowing could have covered; use cooled only as a last resort*):
+splits it fresh/cooled. Both games fill in five phases (the confirmed policy since
+2026-08-20 — *prefer fresh; borrow before you re-serve a resting card; re-serve a
+resting card before you lend*):
 
 1. Requested-category quotas from **fresh** cards.
-2. **Lend** the part of the shortfall phase 3 cannot cover (`lendGameCandidates` →
-   `ProvisionalCardService.lendCards`), 2026-08-17, capped 2026-08-19. A lent row has
-   no marks, so it is always `Unfamiliar` and always fresh — a short board therefore
-   skews `Unfamiliar` rather than skewing toward whichever bucket had surplus.
-   ⚠️ The cap matters MOST on this page's own subject: a game bucketed by a sparsely
-   marked TRACK (Speed Reading / Word Search No-Pinyin on `reading`) has nearly every
-   card banding `Unfamiliar`, so its `Target`/`Comfortable`/`Mastered` quotas underfill
-   on a library of any size — and minting, which yields `Unfamiliar`, can never close
-   them. Uncapped, those games lent on every load forever. Skipped for a
-   collection-restricted pool and for a partial refill (`need`); see
-   docs/PROVISIONAL_CARDS.md § 4b.
-3. Top up to `total` with **fresh** cards from the fallback categories
+2. Top up to `total` with **fresh** cards from the fallback categories
    (Target → Comfortable → Unfamiliar → Mastered).
-4. Backfill any remaining shortfall with **cooled** cards (requested categories
-   first, then fallback) — so a just-played library still assembles a full board
-   and entry is **never blocked more than an un-cooled library would**.
+3. Backfill with **cooled** cards (requested categories first, then fallback) — so a
+   just-played library still assembles a full board and entry is **never blocked more
+   than an un-cooled library would**. These cards earn nothing: the mark is dropped by
+   the hard "next markable at" guard, which is exactly what the cooldown means.
+4. Soft-`avoid`ed cards (just cleared by the caller).
+5. **Lend** (`lendGameCandidates` → `ProvisionalCardService.acquireLentCards`) — the
+   bottom of the ladder, reached only by a learner who has not sorted enough cards.
+   Skipped for a collection-restricted pool and for a partial refill (`need`); see
+   docs/PROVISIONAL_CARDS.md § 4b.
+
+⚠️ This page's own subject is why lending had to move to the bottom. A game bucketed by
+a sparsely marked TRACK (Speed Reading / Word Search No-Pinyin on `reading`) has nearly
+every card banding `Unfamiliar`, so its `Target`/`Comfortable`/`Mastered` quotas
+underfill **on a library of any size** — and minting, which yields `Unfamiliar`, can
+never close them. While lending sat at phase 2 (2026-08-17, capped 2026-08-19) those
+games lent on every load, effectively forever.
 
 Word Search's substring-dedup replacement (`pullReplacement`) uses the same
 fresh-then-cooled preference across `[preferredCategory, …fallback]`.
@@ -705,7 +820,7 @@ category expression joins `users` — bands are goal-independent across the boar
 
 | Surface | Buckets by | Cooldown window keyed on |
 | --- | --- | --- |
-| Bubble Match | `recognition` per-type category | `recognition` per-type category |
+| Bubble Match | the run's locked track (§ 1a) per-type category | same track's per-type category |
 | Match Speed | `recognition` per-type category | `recognition` per-type category |
 | Word Search — Pinyin | `production` per-type category | `production` per-type category |
 | Word Search — No-Pinyin | `reading` per-type category | `reading` per-type category |
@@ -819,7 +934,8 @@ Implications to work through:
 
 ## Decisions log
 
-- ✅ **Recognition** = foreign-first flp + Bubble Match; **Production** =
+- ✅ **Recognition** = foreign-first flp **with pinyin shown** (pinyin off → Reading,
+  § 1a) + Bubble Match; **Production** =
   English-first flp + Word Search **Pinyin** mode (positive-only); **Reading** =
   Word Search **No Pinyin** mode (positive-only) + **Speed Reading** (correct/incorrect);
   **Writing** = Practice Writing
@@ -913,7 +1029,18 @@ Settled since:
 - `server/contracts/mastery.ts` — **the definition of the bars**; mirrored by
   `server/__tests__/mastery.test.ts`, which pins the TS/SQL agreement.
 - `server/contracts/wire.ts` — `MasteryBarId`, `MASTERY_BARS`,
-  `MASTERED_COLLECTION_IDS`, `parseMasteryBar`, `MasteredAtByBar`.
+  `MASTERED_COLLECTION_IDS`, `parseMasteryBar`, `MasteredAtByBar`, and the flp
+  foreign-first track (§ 1a): `FlpForeignTrack`, `FLP_FOREIGN_TRACKS`,
+  `flpMarkTypes`, `parseFlpForeignTrack`.
+- `src/games/bubble-match/BubbleMatchTrackToggle.tsx` (the hub control),
+  `src/games/bubble-match/BubbleMatchPage.tsx` (`lockRunTrack` / `runTrack` /
+  `boardShowPinyin`), `src/games/bubble-match/BubbleMatchHeader.tsx` (its toggles are
+  now optional), `src/components/bento/Bento.tsx` (`BentoStripProps.control`).
+- `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx` (computes the
+  session `foreignTrack` from `useFlashcardLearnSettings().showPinyin` + the account
+  language) and `useWorkingLoop.ts` (`markTypeForSideOne`, `sideOneForCard`, the
+  `?foreignTrack=` fetch param and the mark body field);
+  `src/api/flashcards.ts` — `MarkFlashcardRequest.foreignTrack`.
 - `server/dal/shared/vetTable.ts` — `coreCategoryExpr`, `barCategoryExpr`,
   `masteredBarClause`, `typeCategoryExpr`.
 - `server/types/index.ts` — `ReviewMark`, `FlashcardCategory`, `VocabEntry`.

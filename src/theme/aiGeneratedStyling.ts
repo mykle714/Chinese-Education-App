@@ -1,7 +1,7 @@
 import { COLORS } from './colors';
 
-// Shared "this content is AI-generated" surface treatment: the app's orange
-// (COLORS.yellowMain) border + faint tint. Single source of truth for every
+// Shared "this content is AI-generated" surface treatment: the AI-provenance orange
+// (COLORS.aiGenerated) border + faint tint. Single source of truth for every
 // AI-content surface so they can never drift apart:
 //   - AiDictionaryEntryCard (the dictionary AI-fallback result), and
 //   - ExampleSentenceList (est sentences without a valid human approval —
@@ -16,12 +16,12 @@ import { COLORS } from './colors';
 // into the container's sx (callers keep their own radius/padding/layout).
 export const aiGeneratedSurfaceSx = {
     border: '1px solid',
-    borderColor: COLORS.yellowMain,
-    backgroundColor: `${COLORS.yellowMain}14`, // ~8% orange tint
+    borderColor: COLORS.aiGenerated,
+    backgroundColor: `${COLORS.aiGenerated}14`, // ~8% tint of the same orange
 } as const;
 
 // Text color to pair with aiGeneratedSurfaceSx when a surface needs to recolor its
 // own label/value text to match — e.g. overriding a solid-fill pill's white text.
 // Currently unused: the last caller (the cdp HSK pill) became a meta-strip chip
 // that keeps its normal onSurface text.
-export const aiGeneratedTextColor = COLORS.yellowMain;
+export const aiGeneratedTextColor = COLORS.aiGenerated;

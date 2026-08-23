@@ -14,8 +14,8 @@ import {
 } from "./masteryCenters";
 import { MARK_TYPE_COLORS } from "../../utils/masteryCompute";
 import {
-    FLOATING_FOOTER_HEIGHT, FLOATING_FOOTER_INSET, FLOATING_FOOTER_EXTRA_GAP,
-    FLOATING_FOOTER_CLEARANCE,
+    FOOTER_HEIGHT, FOOTER_EXTRA_GAP,
+    FOOTER_CLEARANCE,
 } from "../../components/MobileFooter";
 import type { VocabEntry } from "../../types";
 import { COLORS } from "../../theme/colors";
@@ -61,7 +61,7 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 // it opens AT its resting height with no open animation and can never be dismissed:
 // its two stops are {resting, max}.
 //
-// EVERY set in the sheet is the same object: a `DeckTile` (the stacked-card icon)
+// EVERY set in the sheet is the same object: a `Spine` (components/shelf)
 // that navigates to that set's CollectionViewPage. The sections differ only in what
 // fills them, which is the point — a built-in collection, a mastery bar and a
 // user-authored deck are all just "a set of your cards", and the UI should not
@@ -78,16 +78,19 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 // the only thing left behind the sheet is the button row and all scrolling happens
 // inside the sheet.
 //
-// Inverted grey/white scheme, scoped to /decks only: the page surface is painted
-// with the grey header tone (passed as MobileTabScreen `surfaceColor`).
+// Ground: PAPER, like every other page. The inversion survives — the sheet is white
+// and stands off the paper behind it — but it is no longer "grey page / near-white
+// sheet". The page used to pass `surfaceColor={COLORS.header}`, which after A2a put a
+// paper-coloured footer bar over a grey page and drew a visible step across the bottom
+// of the frame. The design has no tinted page grounds at all (artboard 2 is `--paper`
+// with a `--white` sheet), so the tint came out rather than the bar being repainted.
 
 // Resting ("closed") height of the sheet, measured from the bottom of the frame.
-// Derived from the floating footer's own geometry so the two can't drift: the pill
-// occupies INSET..INSET+HEIGHT, and SHEET_LIP is how much of the sheet shows ABOVE
-// the pill — enough for the grabber plus the first section caption.
+// Derived from the footer bar's own geometry so the two can't drift: the bar occupies
+// the bottom FOOTER_HEIGHT px, and SHEET_LIP is how much of the sheet shows ABOVE the
+// bar — enough for the grabber plus the first section caption.
 const SHEET_LIP = 44;
-const SHEET_CLOSED_HEIGHT =
-    FLOATING_FOOTER_INSET + FLOATING_FOOTER_HEIGHT + FLOATING_FOOTER_EXTRA_GAP + SHEET_LIP;
+const SHEET_CLOSED_HEIGHT = FOOTER_HEIGHT + FOOTER_EXTRA_GAP + SHEET_LIP;
 
 // How far down the sheet must be dragged before a release collapses it back to
 // SHEET_CLOSED_HEIGHT instead of springing open to the max, as a fraction of the
@@ -98,7 +101,7 @@ const SHEET_COLLAPSE_THRESHOLD_RATIO = 0.3;
 
 // Extra bottom padding the study area needs so Study Mix ends just ABOVE the resting
 // sheet rather than behind it. `MobileTabScreen`'s scroll area already reserves
-// FLOATING_FOOTER_CLEARANCE for the footer pill, and the sheet stands taller than
+// FOOTER_CLEARANCE for the footer pill, and the sheet stands taller than
 // that — so only the DIFFERENCE is missing, plus a breathing gap. Derived rather
 // than typed, or a change to SHEET_LIP would silently tuck the button under the sheet.
 // Breathing room around the Study Mix slab: the gap between it and the
@@ -112,7 +115,7 @@ const SHEET_COLLAPSE_THRESHOLD_RATIO = 0.3;
 // rather than aligned to its edges.
 const STUDY_AREA_GAP = 24;
 const STUDY_AREA_BOTTOM_PAD =
-    SHEET_CLOSED_HEIGHT - FLOATING_FOOTER_CLEARANCE + STUDY_AREA_GAP;
+    SHEET_CLOSED_HEIGHT - FOOTER_CLEARANCE + STUDY_AREA_GAP;
 
 const CONTENT_SX = {
     alignItems: "center",
@@ -297,8 +300,6 @@ const FlashcardsDecksPage: React.FC = () => {
             >
                 <MobileTabScreen
                     title="Decks & Cards"
-                    activePage="flashcards"
-                    surfaceColor={COLORS.header}
                     contentClassName="decks-page-content"
                     contentSx={CONTENT_SX}
                     // Nothing behind the sheet scrolls any more — the sheet owns all

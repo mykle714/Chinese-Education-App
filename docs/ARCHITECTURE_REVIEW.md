@@ -820,7 +820,7 @@ reasoning). This documentation is the reason a review of this size was tractable
 
 **The Leaf/Node page model.** `LeafPage` / `NodePage` / `FooterPresenter` /
 `usePageSlide` (`docs/UX_AND_NAVIGATION.md`) is a genuinely sophisticated design.
-Rendering the footer pill **once** in `MobileDemoFrame`, outside the page
+Rendering the footer bar **once** in `MobileDemoFrame`, outside the page
 surfaces, so it animates on its own axis rather than participating in each page's
 slide, is the correct solution to a problem most codebases get wrong. Do not
 refactor it — finding 4 only asks to stop hand-maintaining the route tables that

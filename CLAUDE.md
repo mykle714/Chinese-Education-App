@@ -180,22 +180,45 @@ An hourly Postgres cron on the prod server. For each **(user, language)** balanc
 ### UX & Navigation
 → See [docs/UX_AND_NAVIGATION.md](./docs/UX_AND_NAVIGATION.md) — umbrella for navigation + the mobile shell: app navigation structure (footer tabs + `/` Home menu + back-arrow drill-ins), the `MobileTabScreen` scroll-away-header layout, the **Leaf**/**Node** drill-in archetypes, the Discover two-level surface, and the global touch/scroll/selection rules.
 
-### Hub Menu System
-→ See [docs/HUB_MENU_SYSTEM.md](./docs/HUB_MENU_SYSTEM.md) — the shared `HubMenu`/`HubMenuRow` component behind the Home/Discover/Games hubs: rounded cards, per-item persistent pastel colors, header/footer slots (welcome text, tip box, floating-footer spacer), and horizontally-scrolling "array" menu items (used by Bubble Match's level picker).
+### Bento System
+→ See [docs/BENTO_SYSTEM.md](./docs/BENTO_SYSTEM.md) — the shared `Bento`/`BentoTile`/`BentoStrip` primitive behind the Home/Discover/Games hubs: the 2-column mosaic, the hero/base/low tile weights, ramp-hue tiles (`RAMP`, hue keys not hex), the ghost glyph, and the Bento-vs-Shelf choice rule. Replaced `HubMenu` (deleted 2026-08-21) — the old `docs/HUB_MENU_SYSTEM.md` was renamed into this file.
 
 ### Games
 → See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)
   → Hydra Bubbles: [docs/HYDRA_BUBBLES.md](./docs/HYDRA_BUBBLES.md) — **BUILT 2026-08-18,
-    no migration**: an endless, clockless recognition drill on Bubble Match's bubbles. The
-    color→payout ladder (red 0 / yellow 1 / green 2 / blue 3 spawns per match), a deliberately
-    non-self-stabilizing spawn table keyed on **fill ratio** (the same number the overflow loss
-    reads) that **steps** to red-only at 0.75, the spawn/ratio/anti-zero algorithm, HSK-tier
-    lending where a lent card's color comes from difficulty rather than mastery, four
-    client-side color buffers, and challenge mode (challenge words ride the yellow slot, scored
+    TWO-COLOR REWORK 2026-08-21, no migration**: an endless, clockless recognition drill on
+    Bubble Match's bubbles. The color→payout ladder — now just **`drain` = 1 spawn (net −1)
+    and `bloom` = 3 (net +1)**, each tier a union of two utcm bands, painted **charcoal /
+    gold** rather than any hue the mastery ramp could be mistaken for (and named for the
+    board effect, so a repaint renames nothing), separated from the inert grey English
+    bubbles on three channels — value, temperature and **ring weight** (`BubbleFill.ringWidth`) — a deliberately non-self-stabilizing spawn
+    table keyed on **fill ratio** (the same number the overflow loss reads) that **steps** to
+    drain-only at 0.75, the bloom-majority constraint the two-tier ladder imposes (growth is
+    `2·bloomShare − 1`, so the steady state inverted to bloom 55 / drain 45), the
+    spawn/ratio/anti-zero algorithm, HSK-tier lending where a lent card's tier comes from
+    difficulty rather than mastery (drain = L, bloom = L−1), two client-side color buffers,
+    the `?strictBuckets=1` pool contract that keeps a tier's request from being filled with
+    the other tier's cards, and challenge mode (challenge words ride the bloom slot, scored
     on time-to-clear). Shipped alongside `src/games/bubbles/` — the bubble field extracted out
     of Bubble Match — and the app-wide rule it introduces: **cooldown is now a hard "next
     markable at"** enforced at `POST /api/flashcards/mark`, which silently drops fill-tier-4
     marks that count today (§ 8.1 — ships logged, tracked in DEFERRED_WORK.md).
+  → Gloss confusability: [docs/GLOSS_CONFUSABILITY.md](./docs/GLOSS_CONFUSABILITY.md) —
+    **PHASE 1 BUILT 2026-08-22 (no migration), PHASE 2 DESIGN ONLY**: the rule that no game
+    may show two cards meaning the same thing at once. Phase 1 is the shipped exact-dd guard
+    (`ddCollisionKey`) at the three round-assembly chokepoints — 29% of the discoverable zh
+    corpus was in an exact collision. Phase 2 is the **unbuilt** offline pipeline for
+    NEAR-identical glosses ("a little" vs "a bit"): bi-encoder retrieve → **NLI cross-encoder
+    rerank** → constrained clustering → one `meaningGroupId` per gloss, so the runtime stays
+    the same O(1) set check. Covers why raw cosine cannot work (it scores *big*/*small* as
+    similar — the antonym trap), why an LLM judge does not scale (~$555/rebuild vs $0), the
+    incremental-maintenance contract (only the clustering step is non-incremental, and it
+    needs no model inference). **All design questions answered 2026-08-22**: the constraint is
+    HARD (lending is the fallback) except where lending cannot run; hypernyms are ignored;
+    tuning is balanced-F1; **Memory Map opts out of phase 2 entirely** and keeps the exact-dd
+    guard, because placements are durable and a re-cluster would act retroactively. Three
+    tables approved — and `gloss_meaning_groups` is the app's ONLY dev-authored table (see the
+    Data Sync note above).
 
 ### Provisional Cards (no game/flp ever blocks on card count)
 → See [docs/PROVISIONAL_CARDS.md](./docs/PROVISIONAL_CARDS.md) — every game's and flp's old
@@ -274,7 +297,11 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **none.** Prod is current through migration **151**.
+Current open runbooks: **[docs/ARENA_MESSAGE_DEPLOY_RUNBOOK.md](./docs/ARENA_MESSAGE_DEPLOY_RUNBOOK.md)** —
+migration **152** (`users."arenaMessage"`) must be applied BEFORE the container rebuild,
+because the shipped `UserDAL.findById` selects the column and old-schema + new-code 500s
+every authenticated request; **153** (card-fill repaint remap) goes after. Prod is current
+through migration **151**; dev is at **153**.
 
 Deployed and retired on 2026-08-17, second deploy of the day (runbook deleted): the
 Study Challenge week-counter migration (**150**), which renamed
@@ -334,6 +361,11 @@ Prod is the **source of truth** for the det/reference tables; there is no dev �
 push any more (the `/data-deploy` skill was deleted). Use the `/data-prod-to-dev` skill
 to pull `icons8`, `dictionaryentries_zh`, `dictionaryentries_es`,
 `particlesandclassifiers` and `validations` **down** to a dev box.
+**One planned exception, not yet built:** `gloss_meaning_groups`
+([docs/GLOSS_CONFUSABILITY.md](./docs/GLOSS_CONFUSABILITY.md) § 5a) would be the only table
+whose source of truth is **DEV** — it is GPU-computed derived data pushed **up**. It must be
+explicitly EXCLUDED from `/data-prod-to-dev`, or a routine dev refresh silently overwrites
+the freshly-computed groups with prod's copy of what dev just sent.
 → Retired push flow, kept for the `icons8` FK rule + the 2026-07-02 incident: [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)
 
 ### Docker Commands & Setup

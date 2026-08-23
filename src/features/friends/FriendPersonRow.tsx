@@ -3,7 +3,7 @@ import { Avatar, Box, Typography } from "@mui/material";
 import { API_BASE_URL } from "../../constants";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
-import { SIZE, WEIGHT } from "../../theme/scale";
+import { WEIGHT } from "../../theme/scale";
 
 /**
  * One person row, shared by the friend screens (list, incoming, sent), the
@@ -13,6 +13,14 @@ import { SIZE, WEIGHT } from "../../theme/scale";
  * right — and differ only in what goes in `actions`. Keeping one component means an
  * avatar-fallback or truncation fix lands everywhere at once.
  * See docs/FRIENDS_FEATURE.md.
+ *
+ * ── WHY THIS IS NOT `Row` (src/components/primitives/Row.tsx) ─────────────────
+ * It wears the design's `.rw` SKIN — white ground, radius 16, 36px rounded avatar,
+ * 14.5/11.5 type — but it keeps its own structure, because a `Row` has ONE tap target
+ * and this has two nesting models (`onPersonPress` puts the actions OUTSIDE the
+ * tappable half; `onRowPress` swallows the whole row). Folding that into the shared
+ * primitive would push a friends-only concern into every list in the app. If the two
+ * ever converge, this is the component to delete — not the other way round.
  *
  * ── TWO TAP MODELS, and a row uses exactly one ────────────────────────────────
  *   * `onPersonPress` — the avatar + name half is tappable (→ the profile) and the
@@ -107,8 +115,11 @@ function FriendPersonRow({ name, email, avatarIconId, secondary, actions, leadin
                 display: "flex",
                 alignItems: "center",
                 gap: 1.5,
-                borderRadius: 3,
-                backgroundColor: COLORS.infoCard,
+                // `.rw` — the shelf system's list-row skin (docs/SHELF_REDESIGN.md § A5).
+                // White on the paper ground, not the beige card fill: beige is the
+                // FLASHCARD's material, and a person is not a card.
+                borderRadius: "16px",
+                backgroundColor: COLORS.white,
                 ...(onRowPress && {
                     cursor: "pointer",
                     // Press feedback on the WHOLE row, which is the point: the thing
@@ -119,11 +130,13 @@ function FriendPersonRow({ name, email, avatarIconId, secondary, actions, leadin
                 // "You" is marked with a border, not a fill: a different fill would
                 // read as a different KIND of row rather than as the same row, yours.
                 border: highlighted
-                    ? `2px solid ${COLORS.blueMain}`
+                    ? `2px solid ${COLORS.infoInk}`
                     : `1px solid ${COLORS.rowBorder}`,
                 // Compensate for the thicker border so highlighted and plain rows
                 // keep the same outer height and the list stays evenly spaced.
-                p: highlighted ? "11px" : 1.5,
+                // `.rw` padding, minus the extra border pixel on a highlighted row so
+                // both keep the same outer height and the list stays evenly spaced.
+                p: highlighted ? "10px 12px" : "11px 13px",
             }}
         >
             {leading}
@@ -142,11 +155,25 @@ function FriendPersonRow({ name, email, avatarIconId, secondary, actions, leadin
                     cursor: personPress ? "pointer" : "default",
                 }}
             >
+            {/* `.rw .av` — 36px, radius 12, NOT a circle. The design reserves circles
+                for the night market's pedestrians; a list avatar is a rounded square.
+                The inset ring is mandatory: `iconBg` is a pastel at ~1.15:1 on white
+                and vanishes without it (docs/SHELF_REDESIGN.md § D2). */}
             <Avatar
                 className="friend-person-row__avatar"
+                variant="rounded"
                 src={avatarIconId ? `${API_BASE_URL}/api/icons8/${encodeURIComponent(avatarIconId)}/image` : undefined}
                 imgProps={{ sx: { objectFit: "contain", p: 0.5 } }}
-                sx={{ width: 44, height: 44, bgcolor: COLORS.iconBg, color: COLORS.onSurface }}
+                sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: "12px",
+                    bgcolor: COLORS.iconBg,
+                    color: COLORS.onSurface,
+                    fontSize: 13.5,
+                    fontWeight: WEIGHT.semibold,
+                    boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}`,
+                }}
             >
                 {label.charAt(0).toUpperCase()}
             </Avatar>
@@ -157,8 +184,9 @@ function FriendPersonRow({ name, email, avatarIconId, secondary, actions, leadin
                     title={email}
                     sx={{
                         fontFamily: FONTS.sans,
-                        fontSize: SIZE.body,
+                        fontSize: 14.5,
                         fontWeight: WEIGHT.semibold,
+                        letterSpacing: "-0.01em",
                         color: COLORS.onSurface,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -172,7 +200,7 @@ function FriendPersonRow({ name, email, avatarIconId, secondary, actions, leadin
                         className="friend-person-row__secondary"
                         sx={{
                             fontFamily: FONTS.sans,
-                            fontSize: SIZE.caption,
+                            fontSize: 11.5,
                             color: COLORS.textSecondary,
                             overflow: "hidden",
                             textOverflow: "ellipsis",

@@ -76,7 +76,7 @@ export const challengeMutedSx = {
 export const challengeMessageSx = {
     fontFamily: FONTS.sans,
     fontSize: SIZE.caption,
-    color: COLORS.redMain,
+    color: COLORS.dangerInk,
 } as const;
 
 // ── Challenge word card geometry (ChallengeWordCard) ─────────────────────────────

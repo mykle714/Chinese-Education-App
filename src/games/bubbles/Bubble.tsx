@@ -25,13 +25,6 @@ interface BubbleProps {
         them on `kind`, Hydra Bubbles on the card's lend/mastery tier. Feedback
         statuses (correct/wrong/revealed/nomatch) override it; see below. */
     fill: BubbleFill;
-    /** How "I am picked up / I am the drop target" is drawn.
-        - `"dim"`  — Bubble Match: a grey wash over the bubble.
-        - `"ring"` — Hydra Bubbles: a contrast outline ring, NO grey, because
-                     Hydra reserves grey for English-side bubbles and a grey
-                     wash there would read as a card color (HYDRA_BUBBLES.md § 5.1).
-        Both also enlarge, which is driven by targetScale in the stage. */
-    heldCue: "dim" | "ring";
     showPinyin: boolean;
     showPinyinColor: boolean;
     /** Registers the outer node so the rAF loop can write its transform. */
@@ -46,6 +39,46 @@ const definitionFontSize = (text: string, radius: number): number => {
     if (text.length > 42) return base - 3;
     if (text.length > 26) return base - 1.5;
     return base;
+};
+
+/**
+ * Text ink for a given bubble body — white on a dark body, near-ink on a light one.
+ *
+ * A RULE, NOT A KNOB, and deliberately so. Every game supplies only `fill` colors, and
+ * whether those colors need light text is a fact ABOUT them, not a separate decision a
+ * game should be able to get wrong. Deriving it here means a palette change can never
+ * leave dark text stranded on a dark bubble — which is exactly what would have happened
+ * when Hydra's drain tier went to the saturated `bluA` (docs/HYDRA_BUBBLES.md § 2.2).
+ *
+ * The threshold is WCAG relative luminance at **0.26**, which is the DERIVED crossover
+ * rather than a guess: white and `#3a3a3a` score equally against a body of luminance L
+ * when (L + 0.05)² = 1.05 × (0.0423 + 0.05), i.e. L ≈ 0.261. Below it white wins, above
+ * it dark does.
+ *
+ * ⚠️ It was 0.42 for one revision, on the hand-waved reasoning that "#3a3a3a keeps
+ * winning past the midpoint". It does — but only to 0.26, not 0.42, so the band between
+ * the two forced WHITE text onto bodies where black was measurably more legible (a
+ * luminance-0.32 blue: white 2.86:1, dark 3.97:1). If this constant is ever retuned,
+ * re-derive it from the formula above rather than eyeballing it.
+ *
+ * It also subsumes the old hardcoded special case: the strong red `wrong` flash sits at
+ * luminance 0.21 and has always wanted white text.
+ *
+ * ⚠️ IT DOES NOT REACH THE PINYIN. `ForeignText.characterColor` is documented to leave
+ * the tone overlay alone, and `TONE_COLORS` are design-owned literals, so tone-colored
+ * pinyin on a dark bubble keeps whatever contrast the hue happens to give it. That is a
+ * real constraint on how dark any WORD bubble's fill may go — see the palette note in
+ * HydraStage.
+ */
+const LIGHT_INK = "#FFFFFF";
+const DARK_INK = "#3a3a3a";
+const inkOnFill = (hex: string): string => {
+    const h = hex.replace("#", "");
+    if (h.length !== 6) return DARK_INK; // non-hex fill (rgba etc.) — assume light body
+    const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    const [r, g, b] = [0, 2, 4].map((i) => lin(parseInt(h.slice(i, i + 2), 16) / 255));
+    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return luminance < 0.26 ? LIGHT_INK : DARK_INK;
 };
 
 // Word bubbles shrink their cpcd row to fit longer words inside the circle.
@@ -69,7 +102,6 @@ const Bubble: React.FC<BubbleProps> = ({
     body,
     status,
     fill,
-    heldCue,
     showPinyin,
     showPinyinColor,
     registerNode,
@@ -78,7 +110,7 @@ const Bubble: React.FC<BubbleProps> = ({
     const { id, kind, entry, radius, targetRadius } = body;
     const isWord = kind === "word";
     // "I am under the pointer" — either the held bubble or the bubble it is
-    // hovering over. Drawn per `heldCue`.
+    // hovering over. Drawn as a grey wash (see the overlay at the bottom).
     const cued = status === "held" || status === "hovered";
     // Only promote a bubble to its own compositor layer while it's actually
     // moving (being dragged, the drop-target growing, or inflating in). A
@@ -106,6 +138,10 @@ const Bubble: React.FC<BubbleProps> = ({
         bg = fill.bg;
         border = fill.border;
     }
+
+    // Text ink follows the resolved body — feedback fills included, since `wrong` is a
+    // strong red and `nomatch` a light one.
+    const ink = inkOnFill(bg);
 
     // Lay text out for the bubble's FINAL size; the grow-in is a CSS scale on the
     // outer node, so the content scales with it rather than re-flowing each frame.
@@ -146,10 +182,32 @@ const Bubble: React.FC<BubbleProps> = ({
                 sx={{
                     width: "100%",
                     height: "100%",
-                    borderRadius: "50%",
+                    // `.bub` is a SOFT SQUARE, not a disc (border-radius 40% — see
+                    // docs/SHELF_REDESIGN.md § 12). The physics body is still a circle,
+                    // so the four corners reach ~8% of a radius past the collision
+                    // boundary; that is inside the overlap the field already tolerates
+                    // (planSpawn's SPAWN_OVERLAP_FRACTION lets a new bubble penetrate a
+                    // neighbour by 20% of its DIAMETER), so nothing about the shape is
+                    // load-bearing for the simulation. The keycap read is: a bubble is a
+                    // thing you press, and a squircle packs into the field with far less
+                    // dead space between neighbours than a disc.
+                    borderRadius: "40%",
                     backgroundColor: bg,
+                    // ONE ring weight for every bubble in every game, feedback status
+                    // included. The design's `.bub` has no ring at all — its edge comes
+                    // from the inset gloss below — so 2px is a geometry constant, not a
+                    // channel: it keeps a bubble's border box the same size whether its
+                    // border color matches its body (which it now always does) or not.
                     border: `2px solid ${border}`,
-                    boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+                    // `.bub` (docs/SHELF_REDESIGN.md § 12). Three shadows, and each does
+                    // a different job: a white inset along the top edge and a dark inset
+                    // along the bottom give the disc its convex, physical read — which is
+                    // what lets the ring be dropped entirely on a game that has nothing to
+                    // encode in it — and a tight, offset drop shadow lifts it off the
+                    // field without the wide soft halo that used to blur the boundary
+                    // between two touching bubbles.
+                    boxShadow:
+                        "inset 0 1px 0 rgba(255,255,255,0.88), inset 0 -3px 0 rgba(23,22,26,0.13), 0 3px 6px -3px rgba(20,18,26,0.28)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -196,6 +254,15 @@ const Bubble: React.FC<BubbleProps> = ({
                             pronunciation={resolveDisplayPronunciation(entry)}
                             showPinyin={showPinyin}
                             useToneColor={showPinyinColor}
+                            // Override the glyph color ONLY on a dark body. Passing
+                            // the light-body ink here instead would silently lighten
+                            // every word bubble in both games from the theme's primary
+                            // ink (#17161A) to #3a3a3a — the definition text's color,
+                            // which is a different job. undefined = theme default.
+                            //
+                            // The pinyin overlay is unaffected either way: ForeignText
+                            // leaves tone colors alone by design.
+                            characterColor={ink === LIGHT_INK ? LIGHT_INK : undefined}
                             // Match flp example sentences: nudge long pinyin syllables apart.
                             pinyinShift
                         />
@@ -232,9 +299,10 @@ const Bubble: React.FC<BubbleProps> = ({
                                 lineHeight: 1.3,
                                 fontWeight: 500,
                                 fontFamily: FONTS.cjk,
-                                // Only the strong-red wrong flash gets white text; the
-                                // light green/red states read better with dark text.
-                                color: status === "wrong" ? "#fff" : "#3a3a3a",
+                                // Follows the body, so a dark fill (Hydra's drain tier,
+                                // the strong-red wrong flash) gets white text and every
+                                // light one keeps near-ink. See inkOnFill.
+                                color: ink,
                                 textAlign: "center",
                                 // Clamp very long definitions so they never overflow the
                                 // circle. One line fewer when the icon is taking up room.
@@ -249,37 +317,26 @@ const Bubble: React.FC<BubbleProps> = ({
                     </Box>
                 )}
 
-                {/* Pickup / drop-target cue. Two treatments (see heldCue): a grey
-                    wash, or an inset contrast ring for games where grey carries
-                    its own meaning. Both are pure overlays — neither changes the
-                    bubble's own colors, so a tier-colored bubble stays readable
-                    as its tier while it is being dragged. */}
-                {cued && heldCue === "dim" && (
+                {/* Pickup / drop-target cue: a grey wash, shared by every bubble
+                    game. It is a pure overlay — it does not change the bubble's own
+                    colors, so a tier-colored bubble still reads as its tier while it
+                    is being dragged.
+
+                    Hydra Bubbles used to draw a contrast RING here instead, on the
+                    grounds that grey was its English-bubble color and a grey wash
+                    would read as a card color. That stopped being true when the
+                    English bubble moved to pure white (HYDRA_BUBBLES.md § 5.1), and
+                    the two games are now deliberately one bubble with two palettes. */}
+                {cued && (
                     <Box
                         className="bubble__dim"
                         sx={{
                             position: "absolute",
                             inset: 0,
-                            borderRadius: "50%",
+                            // Matches the bubble's own squircle — a circular veil inside
+                            // a soft square leaves four unlit corners.
+                            borderRadius: "40%",
                             backgroundColor: "rgba(90,90,90,0.32)",
-                            pointerEvents: "none",
-                        }}
-                    />
-                )}
-                {cued && heldCue === "ring" && (
-                    <Box
-                        className="bubble__ring"
-                        sx={{
-                            position: "absolute",
-                            // Inset so the ring sits just inside the bubble's own
-                            // 2px border rather than doubling it.
-                            inset: 3,
-                            borderRadius: "50%",
-                            border: "3px solid rgba(24,24,24,0.78)",
-                            // A thin light halo outside the dark ring keeps it
-                            // visible against every tier color, including the
-                            // dark blue one.
-                            boxShadow: "0 0 0 2px rgba(255,255,255,0.85)",
                             pointerEvents: "none",
                         }}
                     />
@@ -300,7 +357,6 @@ export default React.memo(Bubble, (prev, next) => {
         // so an identity check would defeat the memo entirely.
         prev.fill.bg === next.fill.bg &&
         prev.fill.border === next.fill.border &&
-        prev.heldCue === next.heldCue &&
         prev.showPinyin === next.showPinyin &&
         prev.showPinyinColor === next.showPinyinColor
     );

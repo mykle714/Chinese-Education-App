@@ -3,9 +3,11 @@
 A weekly head-to-head between two friends: agree on a set of words on Monday, study
 them all week, then play the same three games against that set and compare scores.
 
-**Status: PART BUILT ON DEV (2026-08-17), nothing on prod.** The schema and the whole
-async server stack exist; the games, the client and the maintenance job do not. Build
-order and remaining steps: [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+**Status: PHASE 1 (ASYNC) IS BUILT, 2026-08-22.** The schema, the server stack, the
+client surfaces, the maintenance job and — as of 2026-08-22 — **the scored round
+runner in all four eligible games** are done. Migrations 148 and 150 are on prod; the
+round runner is code-only and needs no migration. What remains is phase 2 (live mode,
+§ 7), a separate design: [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md).
 
 | Step | State |
 |---|---|
@@ -14,9 +16,12 @@ order and remaining steps: [DEFERRED_WORK.md](./DEFERRED_WORK.md).
 | **Contract** — `CHALLENGE_WORD_COUNT`/`ROUND_COUNT`, `MAX_ACTIVE_CHALLENGES`, `ProvisionMode`, `CHALLENGE_GAMES`, the scoring/breakdown types | ✅ `server/contracts/wire.ts` |
 | **Server** — DAL, service, controller, routes, DI, the preset-deck guard, the unfriend hook | ✅ smoke-tested end to end on dev |
 | **`mastered-first` provisioning** | ✅ `ProvisionalCardDAL.findOwnCardsByBand` + `ProvisionalCardService.getFillerPool` (the full ladder: Mastered → Comfortable → Target → Unfamiliar → lent), and the `ProvisionMode` parameter threaded through `ensureBaseline`/`lendCards`. Band ordering verified against dev data |
-| **Games** — the shared scoring runner, the registry↔pool sync test, pause-on-background | ⚠️ **partly built.** Done: `src/games/runtime/challengeScoring.ts` (the declarative spec runner, 15 unit tests against the real specs), `challengeScoringFor` on the registry, `src/games/__tests__/challengePool.test.ts` (5 tests — the thing that keeps eligibility registry-derived), and **pause-on-background wired into Bubble Match, Match Speed and Speed Reading** via `useBackgroundPause` + `GamePausedOverlay`. **Not done: the per-game board integration** — see the row below |
-| **The scored round runner** — the one remaining piece | ❌ not started. Needs (a) a challenge-board pool read that returns the contested cards plus `mastered-first` filler, extending the existing `/api/onDeck/gamePool` path rather than adding a second pool loader; (b) each of the three eligible games classifying its board cards as contested/filler at generation and emitting `ChallengeEvent`s into the runner; (c) Match Speed's alternation rule (§ 5.3); (d) the between-games scoreboard and the round POST. The server, the contract, the scoring maths and the provisioning ladder for all of this exist and are tested — what is missing is the wiring inside the three game pages |
-| **Client** — `src/api/studyChallenges.ts`, `src/features/studyChallenge/*`, the `/friends/challenges` NodePage + its badge, the fifth `/decks` section | ✅ built on dev. The one gap is the **scored round runner**, which belongs to the games step — the detail page lists the drawn rounds but cannot play them yet, and says so on screen |
+| **Games** — the shared scoring runner, the registry↔pool sync test, pause-on-background | ✅ `src/games/runtime/challengeScoring.ts` (the declarative spec runner, 15 unit tests against the real specs), `challengeScoringFor` on the registry, `src/games/__tests__/challengePool.test.ts` (the test that keeps eligibility registry-derived), and pause-on-background in every game that needs it — Hydra included as of 2026-08-22, since a challenge round is the one timed variant it has |
+| **The scored round runner** | ✅ **built 2026-08-22.** (a) the challenge-board pool read — `?challengeId=` on the EXISTING `/api/onDeck/gamePool` and `/api/onDeck/wordSearchGrid`, authorized by `StudyChallengeService.getRoundContext` and assembled by `OnDeckVocabService.getChallengeGamePool`; (b) all four eligible games classify contested/filler at board generation and emit `ChallengeEvent`s through one shared hook, `src/games/runtime/useChallengeRound.ts`; (c) Match Speed's alternation rule as a pure, tested module (`src/games/match-speed/challengeDeal.ts`); (d) the between-games scoreboard (`src/games/runtime/ChallengeRoundScoreboard.tsx`) and the round POST. The whole path is § 5.2a |
+| **Tester hatch — "allow anytime"** | ✅ **built 2026-08-22.** A validator-only switch on `/friends/challenges` that lifts the four calendar gates (accept deadline, test window, one-per-pair-per-week, the 6-challenge cap) and nothing else. Per-device `localStorage` + `?anytime=1`, honoured by the server only for `isValidator`. See § 2a |
+| **Client** — `src/api/studyChallenges.ts`, `src/features/studyChallenge/*` (incl. `challengeLabels.ts` → `acceptLapsed`,
+`challengeAnytime.ts` + `ChallengeAnytimeNotice.tsx` → the tester hatch and its
+on-screen consequences, and `ChallengeDetailPage`'s per-round Play buttons), the `/friends/challenges` NodePage + its badge, the fifth `/decks` section | ✅ built. The detail page's round list is the test's entry point: one **Play** button per unplayed round, strictly sequential (§ 5.1a), launched through `src/games/runtime/challengeLaunch.ts` |
 | **Maintenance job** — `database/cron/expire-study-challenges.sql` and its `ExecStart` step | ✅ written; all four passes exercised on dev with backdated fixtures, and idempotent on re-run. ⚠️ **Inert on prod until `install-timers.sh` re-renders the unit** — a git pull does not roll out a unit-template change, and until it does nothing expires |
 | **Runbook** | ✅ Retired 2026-08-17 — **shipped to prod**. Migration 148 was applied before the container rebuild (the deck read selects `decks."editMode"`), and the systemd unit was **re-rendered** by `database/cron/install-timers.sh`, without which the whole time-triggered half stays inert |
 | **Week-counter follow-up (150)** | ✅ On prod since 2026-08-17. `"weekStart"` → `"weekIndex"`; the rename was applied before the container rebuild (its temporary runbook has been deleted) |
@@ -428,6 +433,94 @@ Consequences accepted rather than engineered away:
 
 ---
 
+### 2a. "Allow anytime" — the tester escape hatch (built 2026-08-22)
+
+Everything above makes this feature almost impossible to exercise. A change to the
+round runner can only be played on a **Friday**, against a friend you have not already
+challenged **this week**, after an invitation accepted before **Wednesday 04:00**. So
+there is one switch that lifts the calendar, and only a tester may spend it.
+
+**Where it is.** A `Switch` at the top of `/friends/challenges`, rendered **only for a
+validator account** (`users.isValidator`, migration 104 — the same flag the data
+validation system uses). Not hidden behind a menu: a tester needs to SEE whether the
+week is being bypassed, because a silent flag that rewrites every deadline is exactly
+the kind of state that gets left on and then misread as a bug.
+
+**What it lifts — and only this:**
+
+| Lifted | Still enforced |
+|---|---|
+| the accept deadline (Wed 04:00 local) | you must be **friends** |
+| the test window (Fri 04:00 → Mon 04:00 local), including the rule that hides `gameSequence` until it opens (Q63) | the **per-pair block** — a person's decision about another person is not a clock |
+| **one challenge per pair per week** — the gate that actually blocks repeat testing | rounds are **strictly sequential, one attempt each**, insert-only (§ 5.1a) |
+| `MAX_ACTIVE_CHALLENGES` (6) | scoring, storage, deck creation and winner resolution are **identical** to a real week |
+
+The second column is the point: a hatch that also relaxed the block or the round rules
+would be testing a game nobody plays.
+
+**It is a REQUEST, not a state.** The switch lives in that browser's `localStorage`
+(`cow.challengeAnytime`); every call carries `?anytime=1`, and the **server** decides
+whether to honour it by checking `isValidator`
+(`StudyChallengeService.resolveAnytime` — the one place that check exists). Two
+consequences, both deliberate:
+
+* **There is no column, on purpose.** A stored account flag would eventually be left
+  switched on and would silently turn a real week into a free-for-all for that
+  account. A per-device request cannot outlive the browser it was set in.
+* **A non-validator sending the flag is ignored SILENTLY** — no error, no hint. A 403
+  would be a probe for who holds the flag, and they get the ordinary weekly rules
+  either way.
+* **It covers the holder's own calls only.** It is resolved per REQUEST and is not
+  attached to the challenge, so one player having it on does nothing for the other:
+  their accept, and their own three rounds, are judged against the real calendar unless
+  they are also a validator with the switch on in their own browser. A two-sided test
+  therefore needs two validator accounts and two switches. The UI says so.
+
+**An anytime challenge is parked in the pair's next free week.** The pair-week rule is
+not only an app check — it is the unique index `study_challenges_pair_week_uniq` — so
+skipping the check alone would just turn a clear refusal into a constraint violation.
+`issueChallenge` therefore walks forward from the current week counter to the first one
+this pair has no row in (`nextFreeWeekForPair`). Its deadlines then sit in the future,
+which is precisely the state `anytime` ignores.
+
+> ⚠️ **The accepted cost, stated so it is not a surprise:** a parked challenge
+> OCCUPIES that future week for that pair, so a *genuine* challenge in it is refused
+> until the parked row is deleted. On a box where testers challenge each other
+> repeatedly this walks a few weeks into the future. Deleting the rows is the repair.
+
+**The consequences are listed on screen while it is on**
+(`ChallengeAnytimeNotice`, under the switch). That component is this section's copy at
+the point of use, and every line in it is a statement about shipped behaviour that a
+tester would otherwise meet as a bug report against themselves:
+
+| What surprises a tester | Why it happens |
+|---|---|
+| a library that grew 12 cards they never sorted, and a deck they did not make | accepting materialises the contested set as `library` rows on BOTH accounts and creates the `vs <name>` deck (§ 3.3). The deck is dropped when that player finishes; an abandoned challenge leaves it on `/decks` |
+| mastery moving during a test run | a challenge round is normal play — real typed marks, real minute points, real streak (§ 5.7) |
+| a challenge dated weeks out | a repeat challenge is parked in the pair's next free week (above) |
+| a friend who cannot accept, or cannot play | the hatch is spent PER REQUEST and is not attached to the challenge, so it covers the holder's own calls only. The other player's accept and their own rounds are judged against the real calendar unless they too are a validator with the switch on in their own browser — a two-sided test needs two validator accounts and two switches |
+| Play buttons vanishing | switching it off puts a parked challenge's test window back in the future, so the server withholds `gameSequence` again. Submitted rounds are kept |
+| "you're in 6 challenges" in a normal session | parked challenges still count toward the cap when the hatch is off |
+| a challenge quietly becoming `no_contest` | on prod the hourly job resolves it once the parked week actually passes. Not installed on dev |
+
+The detail page carries a one-line version of the same warning, because it is the page
+that renders the parked deadlines.
+
+**Which calls carry it.** `src/api/studyChallenges.ts` appends it to every request in
+one place, so no page has to remember. The one exception is the game-pool read, which
+builds its own URL — `useChallengeRound` adds `anytimeQuerySuffix()` to `poolParams`,
+without which a tester could open a round from the challenge page and then be refused
+its board.
+
+**The client mirrors the same rule in its labels.** `challengeAction`,
+`challengeStatusLine` and `acceptLapsed` all take an `anytime` argument, so a row reads
+*Play test* rather than *Study your deck* on a Tuesday. Both the list and the detail
+page **re-fetch when the switch flips**, because it changes what the server sends —
+which rows are expired, whether `gameSequence` is present at all — and not merely how
+the client labels it.
+
+---
+
 ## 3. Same-word challenge — choosing the 12 words
 
 ### 3.1 Candidate pool (server)
@@ -712,9 +805,9 @@ placed immediately BEFORE the user's own `Decks` section** — generated sets ab
 authored ones, so the user's own decks keep a stable position at the bottom of the page
 and a new challenge never shuffles them.
 
-It renders the same `DeckTile` as every other set on the page (the page's governing
-principle is that a built-in collection, a mastery bar and a user deck are all just "a
-set of your cards"). Section header: **"Challenges"**. The section is **omitted
+It renders the same `Spine` (`src/components/shelf/`) as every other set on the page
+(the page's governing principle is that a built-in collection, a mastery bar and a user
+deck are all just "a set of your cards"). Section header: **"Challenges"**. The section is **omitted
 entirely** when the user has no active challenge deck, exactly as the `Mastered` section
 is when no reading/writing goal is set.
 
@@ -724,7 +817,13 @@ actually remembers about a set of twelve words.
 **Duplicate names are allowed for challenge decks (Q30).** Two live challenges against
 the same friend in the same language may both be called `vs Bob`; they are distinguished
 by the challenge that owns them (§ 9) and, for the user, by the **friend's icon on the
-deck tile**. The name is not the identifier.
+deck spine**. The name is not the identifier.
+
+> The glyph slot on a spine is its **foot row**, right-aligned opposite the count
+> (`glyph`, a Material Symbols name — see [DECKS_FEATURE.md](./DECKS_FEATURE.md)
+> § "Slots, and the glyph on the foot"). A challenge spine passes the deck's generic
+> glyph today; wiring the OPPONENT's glyph there is the remaining work, and the
+> `deckId → opponent` map below is what feeds it.
 
 Rendering that icon needs a `deckId → opponent` map. Because `decks` carries no
 back-pointer, the `/decks` payload builds it from the other side: it already loads the
@@ -753,7 +852,7 @@ its own explanatory copy; a control that isn't there needs neither.
 
 ### 5.1 Which games
 
-Three games, drawn from the **Recognition** and **Production** tracks only —
+Three games per test, drawn from the **Recognition** and **Production** tracks only —
 reading and writing games are excluded ([MASTERY_REWORK.md](./MASTERY_REWORK.md) § the
 mark-type table):
 
@@ -761,15 +860,19 @@ mark-type table):
 |---|---|---|
 | Bubble Match | recognition | ✅ |
 | Match Speed | recognition | ✅ |
+| **Hydra Bubbles** | recognition | ✅ (**since 2026-08-18**) |
 | Word Search — **Pinyin** | production | ✅ (zh only) |
 | Word Search — No Pinyin | reading | ❌ |
 | Speed Reading | reading | ❌ |
+| Memory Map | reading | ❌ |
 | Practice Writing | writing | ❌ |
 
-That is exactly three eligible entries today, so today's "random" draw has one possible
-answer — **the randomisation is built for the games that don't exist yet.** More
-recognition/production games are planned, and the draw must be genuinely random the day
-the fourth one lands, with no code change. It follows that:
+**The fourth game has landed, and the draw is now genuinely random.** When this section
+was written there were exactly three eligible entries, so the draw had one possible
+answer as a SET and the randomisation existed for games that did not yet exist. Hydra
+Bubbles shipped on 2026-08-18 and entered the rotation with **no change to this
+section's machinery** — which is the property the derivation was built for. A zh test
+now draws 3 of 4; an es test draws 3 of 3 (Word Search is zh-only). It follows that:
 
 * the eligible pool is **derived from the registry**, never listed by hand — a game
   qualifies iff its `markType` (or, for a moded game, the mode's `markType`) is
@@ -882,16 +985,16 @@ next, so no caller ever has to check whether a player has mastered cards.
 **All 12 contested words must appear in every round.** Filler pads the board out to the
 game's natural size; it never displaces a contested word.
 
-> ⚠️ **WORD SEARCH'S BOARD IS BUILT FOR 10 AND MUST GROW TO 12 IN CHALLENGE MODE.**
-> `TOTAL_WORDS` (`src/games/word-search/constants.ts`) is derived as half the Bubble
-> Match distribution and sums to 10, so at `CHALLENGE_WORD_COUNT = 12` (raised from 10
-> on 2026-08-17) a normal grid physically cannot hold the set. The round runner is not
-> built yet, so this is an obligation ON that build, not a live defect: a challenge-mode
-> Word Search grid takes its target-word count from `CHALLENGE_WORD_COUNT`, not from
-> `TOTAL_WORDS`, and the distribution is scaled to it. Bubble Match (20) and Match
+> ✅ **WORD SEARCH'S BOARD GREW TO 12 (built 2026-08-22).** `TOTAL_WORDS`
+> (`src/games/word-search/constants.ts`) is derived as half the Bubble Match
+> distribution and sums to 10, so at `CHALLENGE_WORD_COUNT = 12` a normal grid cannot
+> hold the set. A challenge grid therefore takes its target count from
+> `CHALLENGE_WORD_COUNT` and its size from `WORD_SEARCH_CHALLENGE_ROWS/COLS` — **8×8,
+> not 7×7** — because twelve words at the 4-character cap is up to 48 characters, which
+> random placement would almost never fit into 49 cells. Bubble Match (20) and Match
 > Speed (rolling buffer) are unaffected. This is what makes the
-contested ceiling of 1000 points real in all three games and what makes the rounds
-comparable to each other — a game whose natural board is smaller than 10 must run
+contested ceiling of 1200 points real in all four games and what makes the rounds
+comparable to each other — a game whose natural board is smaller than 12 must run
 longer in challenge mode rather than drop words. The one deliberate exception is Match
 Speed, whose rolling buffer expresses this as an alternation rule instead (§ 5.3), and
 whose alternation lapses to filler only once **all 12 have been dealt**.
@@ -908,6 +1011,90 @@ the lending sense — they are usually the player's own mastered cards. So:
 Filler is often provisional and often not; the scoring tables below key on
 **contested vs filler**, never on the bucket.
 
+### 5.2a How a round is actually served (BUILT 2026-08-22)
+
+The whole test — four games, three rounds, one score — runs through **one gate and one
+assembler**, with no challenge-specific endpoint anywhere.
+
+```
+ ChallengeDetailPage  ── Play ──▶  /games/<game>?challengeId=&round=&gameId=&mode=
+        │                                        │
+        │                              useChallengeRound (client)
+        │                                        │  poolParams
+        ▼                                        ▼
+  challengeLaunch.ts                GET /api/onDeck/gamePool?challengeId=…
+  (route + nav state)                            │
+                                    StudyChallengeService.getRoundContext   ← THE GATE
+                                                 │  (round, game, words, vet ids)
+                                                 ▼
+                                    OnDeckVocabService.getChallengeGamePool ← THE BOARD
+                                                 │  contested + mastered-first filler,
+                                                 ▼  SHUFFLED
+                                            the game's normal board
+```
+
+**The gate — `StudyChallengeService.getRoundContext`.** Three facts a client cannot be
+trusted with, all resolved server-side:
+
+| Fact | Rule |
+|---|---|
+| WHICH round | **Derived**, never taken from the caller: the first unplayed one. `?round=` in the URL is display only. A tampered client therefore cannot replay a good round or skip to the last one |
+| WHICH game | The caller STATES its `(gameId, mode)` and it must equal the drawn sequence entry. Without this a player could play whichever game they are best at, three times |
+| WHEN | The player's own test window must be open. This is what stops the board read leaking the sequence the payload withholds until Friday (Q63) — a board IS the sequence, one round at a time |
+
+It also **re-materialises** the contested words on every board read (`ensureLibraryEntry`,
+idempotent), because `vocabEntryId` is a convenience pointer that may dangle: a player
+who deleted a contested card during the study week still plays it (Q54).
+
+**The board — `OnDeckVocabService.getChallengeGamePool`.** The contested rows are
+addressed by id **with the cooldown ignored** (all twelve appear in every round — an
+obligation, not a preference), then `ProvisionalCardService.getFillerPool` tops the board
+up to *the game's own size* down the `mastered-first` ladder. The board size is the sum
+of the game's requested distribution, or its `need` on a refill — the twelve are **added
+to** the board's normal composition, never a cap on it.
+
+⚠️ **The result is SHUFFLED, and that is a correctness requirement (Q74).** Returning the
+twelve first would let anyone read the split straight off the payload or off the deal
+order. Games classify by WORD, against the set they already hold, never by position.
+
+**The client — `src/games/runtime/useChallengeRound.ts`.** Every eligible game mounts it
+unconditionally and is otherwise unchanged; for an ordinary launch every method is a
+no-op and `isContested` always answers false, so no game grew an `if (challenge)` branch
+around its own logic. A game does exactly four things:
+
+1. appends `poolParams` to its existing pool request;
+2. calls `emit()` where it already calls its mark function, tagging the event with
+   `isContested(entryKey)`;
+3. calls `finish(won)` where its run ends;
+4. renders `<ChallengeRoundScoreboard>` in place of its own end-of-run popup.
+
+The hook owns the accumulator and the active-time clock. That is what makes § 5.6's
+one-accumulator rule structurally true rather than a convention, and it is why four
+games cannot drift into four readings of the same spec.
+
+**Per-game notes.**
+
+| Game | What its board integration needed |
+|---|---|
+| **Bubble Match** | Nothing but the pool params and the events — plus one new stage signal, `onCeilingDrop`, because the survival bonus starts the instant the ceiling begins descending and only the stage knows when the launcher drained |
+| **Match Speed** | The alternation rule (§ 5.3), extracted as the pure `challengeDeal.ts`. Mid-run buffer top-ups send `&contested=exclude` — the twelve are dealt once and never recycled |
+| **Word Search** | A **bigger grid**: 12 words at the 4-character cap do not fit a 7×7 built for 10, so a challenge grid is **8×8** and its target list is `CHALLENGE_WORD_COUNT`, not `TOTAL_WORDS`. That also takes it out of template mode (7×7 + exactly 10 words), so it always uses random placement. Filler is queued at **twice** the board so the substring de-dup pass has something to substitute WITH — otherwise a set that shares characters fails as `insufficient-distinct`, i.e. a round the player cannot play at all. Challenge boards are never saved to the resume slot |
+| **Hydra Bubbles** | Contested words ride the **bloom** slot, drawn ahead of that buffer's stock; the run ends on the last contested clear (`shouldEndRun` → outcome `challengeComplete`). **Its filler is deliberately NOT `mastered-first`** — see below |
+
+⚠️ **Hydra is the one exception to § 5.2's filler rule, on purpose.** Its filler comes
+from its own colour buffers, whose bands ARE the payout ladder
+([HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 5): a board padded entirely from the player's
+mastered cards would be a board of nothing but bloom, which is not the game. So a Hydra
+round draws only the contested set from the challenge and leaves the economy untouched.
+Its difficulty comes from the challenge SHAPE (clear all twelve, a wrong match ends the
+run) rather than from filler selection.
+
+**Background pause came back with it.** Hydra deliberately had none — nothing in a
+free-play run advances on its own — but a challenge round is scored on time to clear, so
+that variant is genuinely timed and falls under the app-wide rule
+([GAMES_FEATURE.md](./GAMES_FEATURE.md) § Backgrounding pauses the clock). It is armed
+for challenge rounds only.
+
 ### 5.3 Match Speed's alternation rule
 
 Match Speed deals from a rolling buffer rather than a fixed board, so it needs an
@@ -918,6 +1105,14 @@ exhaust the set in the first few seconds).
 
 **When the contested words run out mid-run, the alternation lapses and the rest of the
 run is filler.** Contested words are **not** recycled back into the buffer.
+
+**Built as `src/games/match-speed/challengeDeal.ts`** — a pure module beside
+`cardBuffer.ts`, with the rule's four awkward cases pinned by
+`src/games/__tests__/challengeDeal.test.ts`: parity is counted over pairs dealt in the
+RUN (not per refill call, or every refill's first slot would be contested and the set
+would be gone in seconds); either source may run dry and each slot falls through to the
+other rather than leaving a hole; a drained set never comes back; and a run whose
+buffer is starved deals contested pairs rather than nothing.
 
 The consequence is deliberate and worth stating: Match Speed's contested scoring has a
 hard ceiling of **1200 points** (12 × 100), and a player who clears the set early spends
@@ -1036,6 +1231,15 @@ the opponent's breakdown side by side and both players must confirm to advance (
 In **async** mode this card shows only the player's own numbers. The opponent's score —
 per round or total — is not revealed until **both** players have finished all three
 rounds (§ 6).
+
+**Built as `src/games/runtime/ChallengeRoundScoreboard.tsx`** (2026-08-22), rendered by
+each game in place of its own end-of-run popup. It is deliberately **not minimizable**,
+unlike a game's own card: the board behind it belongs to a round that is now final, so
+there is nothing to uncover and the only exits are forward — *Next round · <game>*, or
+back to the challenge. The Next button stays disabled until the POST lands, because the
+server refuses round n+1's board until n is stored (§ 5.1a), and a submit failure is
+stated on the card rather than retried silently — a round cannot be replayed, so the
+player needs to know.
 
 ### 5.6 Score authority: the client reports, the server stores
 
@@ -1506,11 +1710,28 @@ userId, roundIndex, payload)` — and it is a single statement:
 
 ```sql
 UPDATE study_challenges
-   SET rounds = jsonb_set(rounds, ARRAY[$2, $3], $4::jsonb, true)
+   SET rounds = rounds || jsonb_build_object(
+         $2::text,
+         COALESCE(rounds -> $2, '{}'::jsonb) || jsonb_build_object($3::text, $4::jsonb)
+       )
  WHERE id = $1
    AND rounds #> ARRAY[$2, $3] IS NULL   -- insert-only: no replays (Q40)
 RETURNING id;
 ```
+
+> ⚠️ **IT WAS `jsonb_set(rounds, ARRAY[$2,$3], …, true)` AND THAT SILENTLY ATE EVERY
+> FIRST ROUND** (found and fixed 2026-08-22, the first time a round was submitted end
+> to end). `create_missing` creates only the **last** key of a path. Before a player's
+> first round they have no entry at all — `rounds` is `{}` from the accept transaction
+> — so the intermediate `{userId}` was missing, `jsonb_set` returned its input
+> **unchanged**, and the UPDATE still matched: `rowCount` was 1, `recordRound`
+> reported success, the client got a 200, and the score was gone. The `||` form above
+> builds the player's object when it is absent and merges into it when it is not, so
+> the first round and the third take the same path.
+>
+> The general lesson, worth carrying to any other jsonb write: **a no-op `jsonb_set`
+> is indistinguishable from a successful one by row count.** If a path's parent may
+> not exist, do not use `jsonb_set` to create it.
 
 One statement takes the row lock, reads, modifies and writes inside that lock, so
 concurrent submissions serialise and neither can be lost. The `IS NULL` guard makes it
@@ -1575,6 +1796,37 @@ sits on.
 * `decks_user_language_name_uniq` becomes **partial** — `WHERE "editMode" = 'custom'` —
   so generated decks may share a name (Q30, § 4).
 * `vocabentries_*` — **no change**; challenge words are ordinary vet rows.
+
+### The read path never waits for the job (2026-08-22)
+
+**The maintenance job writes a lapse down; it does not create one.** Every read
+derives the effective status live, so the feature behaves identically on a machine
+where the timer has never been installed (dev, and prod until `install-timers.sh`
+re-renders the unit).
+
+The one rule, in the one place a row becomes a payload
+(`StudyChallengeService.toSummary`):
+
+> a `pending` row whose **challengee's** Wednesday 04:00 has passed is serialized as
+> `status: 'expired'`, whoever is asking.
+
+This was a live defect before 2026-08-22: the stored status was shipped verbatim, so
+after the deadline the challengee's friend row still offered a green **Review words**
+control whose only possible outcome was `acceptChallenge` throwing "The time to accept
+this challenge has passed", and the challenger's row still read *Waiting on them*.
+`countBadge` had always applied `isAcceptWindowOpen`, so the badge and the row it
+pointed at disagreed — the badge was right.
+
+`challengeLabels.acceptLapsed` (client) mirrors the same check against the same
+serialized `deadlines.acceptDeadline` instant, purely so a page left open across the
+boundary does not go stale; it cannot disagree with the server, because it is reading
+the server's own number.
+
+Not derived this way, deliberately: **`countActiveForUser`**. A lapsed-but-unwritten
+`pending` row still consumes one of the issuer's six slots until pass 1 flips it,
+because that count is a SQL aggregate and the deadline needs each challengee's
+timezone. On prod the hourly job closes the gap within the hour; on dev the slot stays
+spent until the SQL is run by hand. Tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
 
 ### The maintenance job (Q60)
 
@@ -1652,7 +1904,7 @@ client-side requirement is that challenge-eligible game pages can emit an idle s
 | Layer | File | Responsibility |
 |---|---|---|
 | Contract | `server/contracts/wire.ts` | `CHALLENGE_WORD_COUNT`, `CHALLENGE_ROUND_COUNT`, eligible-game list, `ProvisionMode` |
-| DAL | `server/dal/implementations/StudyChallengeDAL.ts` (+ interface) | the single `study_challenges` table, including the atomic `jsonb_set` round writes (§ 9); **no policy** |
+| DAL | `server/dal/implementations/StudyChallengeDAL.ts` (+ interface) | the single `study_challenges` table, including the atomic single-statement round write (§ 9 — and read its `jsonb_set` warning before touching it); **no policy** |
 | DAL | `ProvisionalCardDAL` | new `mastered-first` candidate query |
 | Service | `server/services/StudyChallengeService.ts` | windows/time zones, candidate selection, replacement, accept transaction, scoring persistence, winner resolution |
 | Service | `server/services/ProvisionalCardService.ts` | `mode` parameter |
@@ -1665,7 +1917,7 @@ client-side requirement is that challenge-eligible game pages can emit an idle s
 | Client | each game page | emit scoring events; honour challenge mode |
 
 Entry point: a **Study Challenge** row on the hp, beside Friends
-([HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md)), with a badge for "awaiting your
+([BENTO_SYSTEM.md](./BENTO_SYSTEM.md)), with a badge for "awaiting your
 response" and "your test is open" — the same badge pattern `/friends` uses for
 incoming requests.
 
@@ -1715,7 +1967,7 @@ incoming requests.
 | Q45 | Challenge round length / filler ladder | **all 12 contested words appear in every round**; filler descends **Mastered → Comfortable → Target → Unfamiliar → lent** (§ 5.2) |
 | Q46 | Withdraw, decline, and challenge spam | **withdraw** (row deleted) + **decline** (blocks the pair until next Monday) + a per-pair **"no challenges" block**: two booleans on `friendships`, either one suppresses challenges both ways (§ 1) |
 | Q52 | Shape of the data model | **one table** — words, rounds and deck ids are jsonb on `study_challenges`; nothing about a challenge is stored on `vet` or `decks` (§ 9) |
-| Q53 | Race on the shared `rounds` jsonb | **one DAL function, one statement** — `jsonb_set` with an `IS NULL` path guard; no ETag/version column, which would solve a round-trip problem this shape does not have (§ 9) |
+| Q53 | Race on the shared `rounds` jsonb | **one DAL function, one statement** — a `\|\|` merge with an `IS NULL` path guard; no ETag/version column, which would solve a round-trip problem this shape does not have (§ 9). It was `jsonb_set` until 2026-08-22, which silently discarded every player's first round — see the warning in § 9 |
 | Q54 | Challenge words vs vet as source of truth | **they never overlap** — the challenge owns "which words"; vet owns "is it in the library". Deleting a card mid-challenge loses the *study* deck entry, never the challenge word (§ 9) |
 | Q55 | How a contested word is rendered | list from `study_challenges.words`; **values hydrated from vet, falling back to det**. The two players may see different senses — accepted, each plays their own card. Marks with no vet row are always skipped (§ 9) |
 | Q56 | Schema sign-off | **approved 2026-08-16** — `study_challenges`, `decks."editMode"`, the two `friendships` booleans, and the partial unique index (§ 9) |
@@ -1766,8 +2018,13 @@ prerequisite doc work listed in § 12, not a decision.
 
 ## 12. Code ↔ doc dependencies
 
-This document will describe (nothing exists yet):
-`database/migrations/147+`,
+This document describes (phase 1 is fully built — see the status table at the top;
+§ 7 live mode is not):
+`database/migrations/148` + `150`, `database/cron/expire-study-challenges.sql`,
+`server/shared/challengeWeek.ts`,
+`server/__tests__/challengeWeek.test.ts`,
+`server/__tests__/studyChallengeStatus.test.ts` (the lapsed-accept derivation),
+`server/__tests__/studyChallengeRound.test.ts` (the round gate — § 5.2a),
 `server/contracts/wire.ts`,
 `server/dal/{interfaces,implementations}/StudyChallengeDAL`,
 `server/services/StudyChallengeService.ts`,
@@ -1778,11 +2035,20 @@ This document will describe (nothing exists yet):
 `src/api/studyChallenges.ts`,
 `src/features/studyChallenge/*`,
 `src/games/types.ts` + `src/games/registry.ts` (`challengeScoring`),
-`src/games/{match-speed,bubble-match,word-search}/*` (scoring emission, challenge mode),
+`src/games/runtime/{challengeScoring,useChallengeRound,challengeLaunch}.ts` +
+`ChallengeRoundScoreboard.tsx` (the round runner — § 5.2a),
+`src/games/match-speed/challengeDeal.ts` (the alternation rule — § 5.3),
+`src/games/{match-speed,bubble-match,word-search,hydra-bubbles}/*` (scoring emission, challenge mode),
+`src/games/__tests__/{challengePool,challengeScoring,challengeDeal}.test.ts`,
+`server/services/OnDeckVocabService.ts` → `getChallengeGamePool` + `getWordSearchGrid(challenge)`,
+`server/controllers/OnDeckVocabController.ts` → `resolveChallengeRound`,
+`server/services/StudyChallengeService.ts` → `getRoundContext`, `resolveAnytime`,
+`nextFreeWeekForPair`,
 `src/features/friends/*` (the Challenges NodePage and its badge).
 
-**The build queue lives in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 1** — ordered steps,
-the two unshipped migrations this one stacks on, and the trigger (Arena landing).
+**The build queue is CLOSED** (2026-08-22) — its DEFERRED_WORK.md § 1 entry has moved
+to that file's "Recently closed" section. Phase 2 (live mode) is a separate design and
+is not queued.
 
 **Owed to other docs before this is built** — ✅ **all done 2026-08-16**, while Arena was
 being built. Each entry names what landed, so a reader can tell whether the target doc has

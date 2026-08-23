@@ -182,7 +182,7 @@ The page keeps the nav footer (it's registered in all three route gates —
 gives the node-page horizontal slide). The grid renders an explicit `FooterSpacer`
 below its cards (in the grid `footer` slot): the ScrollArea's bottom padding is not
 honored at scroll-end in this flex + overflow-scroll layout, so without the in-flow
-spacer the last card row overlaps the floating footer pill by ~50px.
+spacer the last card row overlaps the footer bar by ~50px.
 
 ## 7. Layer summary
 

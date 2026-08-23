@@ -13,8 +13,17 @@
  *     The server omits it; do not try to derive or cache it early.
  *   * `opponentRounds` is undefined until BOTH players have finished (§ 6). Only
  *     `opponentFinished` (progress, not score) is available before then.
+ *
+ * ⚠️ EVERY CALL HERE CARRIES `?anytime=` WHEN THE TESTER HATCH IS ON, and this file is
+ * the ONE place that happens — a page must never remember to add it. The server
+ * honours it only for a validator account (docs/STUDY_CHALLENGE.md § 2a), so sending
+ * it unconditionally from a normal session would be harmless; it is sent
+ * conditionally only to keep an ordinary request log clean. The one call that does
+ * NOT go through here is the game-pool read, which builds its own URL — see
+ * `anytimeQuerySuffix` and `useChallengeRound`.
  */
 import { apiGet, apiPost, apiPut, apiDelete, withFallback } from './http';
+import { anytimeParams } from '../features/studyChallenge/challengeAnytime';
 import type {
   ChallengeGameRef,
   ChallengeRound,
@@ -126,7 +135,7 @@ export interface ChallengeCandidate {
  */
 export function fetchChallengesPage(): Promise<ChallengesPageResponse> {
   return withFallback(
-    apiGet<ChallengesPageResponse>('/api/studyChallenges'),
+    apiGet<ChallengesPageResponse>('/api/studyChallenges', { params: anytimeParams() }),
     'Could not load your challenges'
   );
 }
@@ -140,7 +149,7 @@ export function fetchChallengesPage(): Promise<ChallengesPageResponse> {
  */
 export function fetchChallengeBadge(): Promise<{ count: number }> {
   return withFallback(
-    apiGet<{ count: number }>('/api/studyChallenges/badge'),
+    apiGet<{ count: number }>('/api/studyChallenges/badge', { params: anytimeParams() }),
     'Could not load your challenge count'
   );
 }
@@ -155,7 +164,7 @@ export function fetchChallengeHistory(
 ): Promise<ChallengeSummary[]> {
   return withFallback(
     apiGet<ChallengeSummary[]>('/api/studyChallenges/history', {
-      params: { limit, before: before ?? undefined },
+      params: { limit, before: before ?? undefined, ...anytimeParams() },
     }),
     'Could not load your challenge history'
   );
@@ -164,7 +173,9 @@ export function fetchChallengeHistory(
 /** One challenge. */
 export function fetchChallenge(challengeId: string): Promise<ChallengeSummary> {
   return withFallback(
-    apiGet<ChallengeSummary>(`/api/studyChallenges/${encodeURIComponent(challengeId)}`),
+    apiGet<ChallengeSummary>(`/api/studyChallenges/${encodeURIComponent(challengeId)}`, {
+      params: anytimeParams(),
+    }),
     'Could not load that challenge'
   );
 }
@@ -202,7 +213,11 @@ export function issueChallenge(
   struckWords: string[] = []
 ): Promise<ChallengeSummary> {
   return withFallback(
-    apiPost<ChallengeSummary>('/api/studyChallenges', { friendUserId, variant, struckWords }),
+    apiPost<ChallengeSummary>(
+      '/api/studyChallenges',
+      { friendUserId, variant, struckWords },
+      { params: anytimeParams() }
+    ),
     'Could not send the challenge'
   );
 }
@@ -267,7 +282,8 @@ export function acceptChallenge(
   return withFallback(
     apiPost<ChallengeSummary>(
       `/api/studyChallenges/${encodeURIComponent(challengeId)}/accept`,
-      { struckWords, replacementWords }
+      { struckWords, replacementWords },
+      { params: anytimeParams() }
     ),
     'Could not accept the challenge'
   );
@@ -313,7 +329,8 @@ export function submitChallengeRound(
   return withFallback(
     apiPost<ChallengeSummary>(
       `/api/studyChallenges/${encodeURIComponent(challengeId)}/rounds`,
-      { roundIndex, score, breakdown }
+      { roundIndex, score, breakdown },
+      { params: anytimeParams() }
     ),
     'Could not save your round'
   );

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Button, Typography, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
@@ -11,10 +11,12 @@ import { markFlashcard } from "../../api/flashcards";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import type { Language, VocabEntry } from "../../types";
+import { CHALLENGE_WORD_COUNT } from "../../types";
 import LeafPage from "../../components/LeafPage";
 import BubbleMatchHeaderControls from "../bubble-match/BubbleMatchHeader";
 import BubbleMatchEndPopup from "../bubble-match/BubbleMatchEndPopup";
 import HydraStage from "./HydraStage";
+import { GameFrame } from "../shared/GameFrame";
 import { MARK_TYPE, SURFACE } from "./constants";
 import type { HydraOutcome, HydraPhase } from "./types";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
@@ -22,6 +24,12 @@ import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { useColorBuffers } from "./useColorBuffers";
 import HydraLendNotice from "./HydraLendNotice";
+import { API_BASE_URL } from "../../constants";
+import { authHeader } from "../../utils/authHeader";
+import { useChallengeRound } from "../runtime/useChallengeRound";
+import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
+import GamePausedOverlay from "../runtime/GamePausedOverlay";
+import { useBackgroundPause } from "../runtime/useBackgroundPause";
 
 /**
  * Hydra Bubbles — page shell + run state machine (docs/HYDRA_BUBBLES.md).
@@ -41,6 +49,7 @@ const HydraBubblesPage: React.FC = () => {
     const collectionSuffix = collectionQuerySuffix(launchCollection);
     usePageTitle("Hydra Bubbles");
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     const { user } = useAuth();
@@ -66,7 +75,78 @@ const HydraBubblesPage: React.FC = () => {
     // A deck/collection run plays exactly the set the learner chose: no lending, and
     // the cooldown is not honored either (§ 6.3).
     const restricted = launchCollection !== null;
-    const buffers = useColorBuffers(collectionSuffix, restricted);
+
+    // ── STUDY CHALLENGE ROUND (§ 7.5, docs/STUDY_CHALLENGE.md § 5) ──
+    // BACKGROUND PAUSE IS BACK, exactly as the note below the pause gate promised: a
+    // challenge round is scored on TIME TO CLEAR, which makes this variant genuinely
+    // timed and puts it under the app-wide rule. A free-play run stays unpaused —
+    // nothing in it advances on its own.
+    // Read straight off the URL rather than from the hook below, which needs the
+    // pause flag this line produces. One fact, two readers, no cycle.
+    const isChallengeLaunch = !!searchParams.get("challengeId");
+    const { paused: backgroundPaused, resume: resumeFromBackground } =
+        useBackgroundPause(phase === "playing" && isChallengeLaunch);
+    const challengeRound = useChallengeRound({
+        gameId: "hydra-bubbles",
+        paused: lendNoticeOpen || backgroundPaused,
+        running: phase === "playing",
+    });
+    /**
+     * The contested words as CARDS, fetched once before the run starts.
+     *
+     * Hydra is the one challenge game whose FILLER is not `mastered-first`, and that
+     * is deliberate: its filler comes from the colour buffers, whose bands ARE the
+     * payout ladder (§ 5) — a board padded entirely from the player's mastered cards
+     * would be a board of nothing but bloom, which is not the game. So only the
+     * contested set is drawn from the challenge, and the economy is untouched.
+     */
+    const [challengeCards, setChallengeCards] = useState<VocabEntry[] | null>(null);
+    const buffers = useColorBuffers(collectionSuffix, restricted, challengeCards);
+    /** Contested words still unmatched — the run ends when this empties (§ 7.5). */
+    const remainingContestedRef = useRef<Set<string>>(new Set());
+
+    /**
+     * The round's twelve contested words, as playable cards.
+     *
+     * `need = CHALLENGE_WORD_COUNT` asks the server for the contested set and no
+     * filler — Hydra's filler is its own colour supply (see `challengeCards`).
+     */
+    const fetchChallengeCards = useCallback(async (): Promise<VocabEntry[] | null> => {
+        try {
+            const params = [
+                `markType=${MARK_TYPE}`,
+                `surface=${SURFACE}`,
+                `need=${CHALLENGE_WORD_COUNT}`,
+                `challengeId=${encodeURIComponent(searchParams.get("challengeId") ?? "")}`,
+                `gameId=hydra-bubbles`,
+            ];
+            const res = await fetch(`${API_BASE_URL}/api/onDeck/gamePool?${params.join("&")}`, {
+                credentials: "include",
+                headers: authHeader(),
+            });
+            if (!res.ok) return null;
+            const data = await res.json() as { cards?: VocabEntry[] };
+            return data.cards?.length ? data.cards : null;
+        } catch {
+            return null;
+        }
+        // authHeader() reads the token at call time (CLAUDE.md ⛔ rule).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    /**
+     * Does clearing this word end the run? Yes on the LAST contested word (§ 7.5).
+     *
+     * Filler clears never end a run, and neither does clearing a contested word
+     * while others are outstanding — so a challenge round is "clear all twelve,
+     * fastest", with a wrong match ending it early and the unmatched words scoring
+     * nothing.
+     */
+    const shouldEndRun = useCallback((entry: VocabEntry): boolean => {
+        if (!remainingContestedRef.current.size) return false;
+        remainingContestedRef.current.delete(entry.entryKey);
+        return remainingContestedRef.current.size === 0;
+    }, []);
 
     // ---- Run lifecycle ------------------------------------------------------
     const beginRun = useCallback(() => {
@@ -85,8 +165,29 @@ const HydraBubblesPage: React.FC = () => {
             setPhase("blocked");
             return;
         }
+        // WAIT FOR THE CHALLENGE CONTEXT. The round's contested set arrives with the
+        // challenge payload, and a board dealt before it lands would be classified
+        // entirely as filler — a round scored at 20 points a card with no way to tell
+        // afterwards that it went wrong. `ready` flips once, so this costs an
+        // ordinary launch nothing (`active` is false and the guard never fires).
+        if (challengeRound.active && !challengeRound.ready) return;
         let cancelled = false;
         (async () => {
+            // A challenge round's contested words come first, and the buffers are
+            // primed AFTER them so their ids are already excluded from every refill.
+            // A failure here is fatal to the round rather than degraded: a Hydra
+            // challenge with no contested words has nothing to score and no ending.
+            if (isChallengeLaunch) {
+                const cards = await fetchChallengeCards();
+                if (cancelled) return;
+                if (!cards) {
+                    setBlockMessage("Couldn't load your challenge words. Please try again.");
+                    setPhase("blocked");
+                    return;
+                }
+                remainingContestedRef.current = new Set(cards.map((card) => card.entryKey));
+                setChallengeCards(cards);
+            }
             // Prime all four color buffers before the first bubble is placed. This is
             // the ONLY blocking fetch in a run — every later top-up is async and the
             // board never waits on one (§ 6.2b).
@@ -109,7 +210,16 @@ const HydraBubblesPage: React.FC = () => {
         // refresh (~every 15 min) must not restart a live run.
         // See CLAUDE.md "Never reload on token refresh".
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id]);
+    }, [user?.id, challengeRound.active, challengeRound.ready]);
+
+    // A challenge round that cannot be played says so rather than starting an
+    // endless free-play run that scores nothing.
+    useEffect(() => {
+        if (challengeRound.error) {
+            setBlockMessage(challengeRound.error);
+            setPhase("blocked");
+        }
+    }, [challengeRound.error]);
 
     const playAgain = useCallback(() => {
         // Prime the audio element inside the real click gesture: in-game autoplay
@@ -124,7 +234,10 @@ const HydraBubblesPage: React.FC = () => {
         setScore(finalScore);
         setPopupMinimized(false);
         setPhase("over");
-    }, []);
+        // `won` is "cleared the set" — Hydra's spec carries no all-or-nothing bonus,
+        // so this only ever records what happened rather than changing the score.
+        challengeRound.finish(why === "challengeComplete");
+    }, [challengeRound]);
 
     /**
      * Record a recognition mark. Fire-and-forget — the run never blocks on it.
@@ -136,8 +249,17 @@ const HydraBubblesPage: React.FC = () => {
     const markCard = useCallback((entry: VocabEntry, isCorrect: boolean) => {
         markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE, surface: SURFACE })
             .catch((err) => console.error(`[Hydra] mark failed → card ${entry.id}:`, err));
+        // A challenge round is normal play plus a scored event (§ 5.7). A wrong match
+        // ends the run, so at most one miss is ever emitted.
+        challengeRound.emit({
+            kind: isCorrect ? "hit" : "miss",
+            word: entry.entryKey,
+            contested: challengeRound.isContested(entry.entryKey),
+        });
         // No `token` dep — markFlashcard reads the header at call time, so this
         // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
+        // challengeRound's emit/isContested are stable by construction.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // ---- Pause gates --------------------------------------------------------
@@ -154,13 +276,14 @@ const HydraBubblesPage: React.FC = () => {
     // player nothing, and a tap-to-resume overlay on return is pure friction over a
     // board that is exactly as they left it.
     //
-    // ⚠️ THIS MUST COME BACK WITH CHALLENGE MODE. A challenge round is scored on
-    // TIME TO CLEAR (§ 7.5), which makes that variant genuinely timed and puts it
-    // squarely back under the rule. Re-add `useBackgroundPause(challenge && phase ===
-    // "playing")` plus the overlay when the challenge flow is wired to this page —
-    // and note the hook's own warning that the pause is only real if elapsed time is
-    // accumulated ACTIVE time, not `now − startedAt`.
-    const framePaused = lendNoticeOpen;
+    // ⚠️ IT IS BACK FOR CHALLENGE MODE ONLY (2026-08-22), exactly as this note
+    // predicted. A challenge round is scored on TIME TO CLEAR (§ 7.5), so that
+    // variant IS timed and falls squarely under the rule — `useBackgroundPause` is
+    // armed for it above, its overlay renders below, and the round's elapsed time is
+    // ACCUMULATED ACTIVE time (the shared hook ticks only while unpaused), never
+    // `now − startedAt`. A free-play run is unchanged: nothing in it advances on its
+    // own, so pausing it would be friction over a board that has not moved.
+    const framePaused = lendNoticeOpen || backgroundPaused;
 
     // End-of-run offer to keep the lent cards, a beat after the score card.
     const lentWords = buffers.lentDrawn().map((card) => card.entryKey);
@@ -205,6 +328,10 @@ const HydraBubblesPage: React.FC = () => {
                 </Button>
             </>
         );
+    } else if (phase === "over" && challengeRound.active) {
+        // A challenge round ends on the scoreboard (§ 5.5): contested/filler points,
+        // not bubbles cleared, and no Play Again — the round is final (§ 5.1a).
+        popup = <ChallengeRoundScoreboard round={challengeRound} classPrefix="hydra" />;
     } else if (phase === "over") {
         popup = (
             <BubbleMatchEndPopup
@@ -220,8 +347,10 @@ const HydraBubblesPage: React.FC = () => {
                 </Typography>
                 <Typography className="hydra__popup-msg" sx={{ fontSize: SIZE.bodyLg, color: fc.textSecondary }}>
                     {outcome === "overflow"
-                        ? "The board filled up. Clear more yellows and reds to hold it back."
-                        : "Wrong match — the run ends there."}
+                        ? "The board filled up. Clear more charcoal bubbles to hold it back."
+                        : outcome === "challengeComplete"
+                            ? "You cleared the whole challenge set."
+                            : "Wrong match — the run ends there."}
                 </Typography>
                 <Box
                     className="hydra__replay-actions"
@@ -267,7 +396,11 @@ const HydraBubblesPage: React.FC = () => {
             <HydraLendNotice open={lendNoticeOpen} onDismiss={() => setLendNoticeOpen(false)} />
             <LeafPage
                 title="Hydra Bubbles"
-                onBack={() => navigate("/games")}
+                // Back lands where the player came FROM — the challenge mid-test, or
+                // the Games hub for an ordinary run.
+                onBack={() => navigate(challengeRound.challengeId
+                    ? `/friends/challenges/${challengeRound.challengeId}`
+                    : "/games")}
                 rightContent={
                     <BubbleMatchHeaderControls
                         language={language}
@@ -277,7 +410,9 @@ const HydraBubblesPage: React.FC = () => {
                         onToggleAutoplayChinese={() => update({ autoplayChinese: !autoplayChinese })}
                         // Restarting mid-run is just a new run — Hydra has no board
                         // worth preserving, so it shares the Play Again path.
-                        onRestart={phase === "playing" ? playAgain : undefined}
+                        // NEVER during a challenge round: one attempt each (§ 5.1a),
+                        // and a restart would be a re-roll of a scored round.
+                        onRestart={phase === "playing" && !challengeRound.active ? playAgain : undefined}
                     />
                 }
             >
@@ -297,19 +432,32 @@ const HydraBubblesPage: React.FC = () => {
                 >
                     {showStage ? (
                         <>
-                            <HydraStage
-                                key={runId}
-                                buffers={buffers}
-                                language={language}
-                                showPinyin={showPinyin}
-                                showPinyinColor={showPinyinColor}
-                                onSpeak={autoplayChinese && tts.enabled ? tts.speak : undefined}
-                                onScore={setScore}
-                                onGameOver={onGameOver}
-                                onMark={markCard}
-                                paused={framePaused}
-                                onFirstLend={() => setLendNoticeOpen(true)}
-                            />
+                            {/* `.play` — the inset panel the board lives in
+                                (docs/SHELF_REDESIGN.md § A6). The stage measures its own
+                                container for physics bounds, so moving it inside the
+                                panel just re-bounds the field; no constant changed.
+                                The two overlays below stay OUTSIDE it, because both cover
+                                the whole content area and must not be clipped by the
+                                panel's radius. */}
+                            <GameFrame className="hydra__frame">
+                                <HydraStage
+                                    key={runId}
+                                    buffers={buffers}
+                                    language={language}
+                                    showPinyin={showPinyin}
+                                    showPinyinColor={showPinyinColor}
+                                    onSpeak={autoplayChinese && tts.enabled ? tts.speak : undefined}
+                                    onScore={setScore}
+                                    onGameOver={onGameOver}
+                                    onMark={markCard}
+                                    paused={framePaused}
+                                    onFirstLend={() => setLendNoticeOpen(true)}
+                                    // Ends a challenge round on its last contested
+                                    // clear; undefined-safe for a free-play run,
+                                    // which is endless.
+                                    shouldEndRun={challengeRound.active ? shouldEndRun : undefined}
+                                />
+                            </GameFrame>
                             {popup}
                             <ProvisionalSortOffer
                                 open={sortOffer.open}
@@ -326,6 +474,14 @@ const HydraBubblesPage: React.FC = () => {
                     )}
                 </Box>
 
+                {/* Backgrounding paused a CHALLENGE round (the only timed Hydra
+                    variant). Covers the board so the pause cannot be used as a free
+                    look at it; the clock restarts only on Resume. */}
+                <GamePausedOverlay
+                    open={backgroundPaused}
+                    onResume={resumeFromBackground}
+                    classPrefix="hydra"
+                />
             </LeafPage>
         </>
     );

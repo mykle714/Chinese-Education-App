@@ -1,3 +1,4 @@
+import { COLORS } from "../../theme/colors";
 import type { MarkType } from "../../types";
 import type { GameCategory, MatchSpeedMode, Medal, ModeConfig } from "./types";
 
@@ -55,8 +56,10 @@ export const ROWS = 5;
 export const CARD_ASPECT = 2.4;
 /** Vertical gap between rows, in px (measured layout, so this is a number). */
 export const ROW_GAP_PX = 8;
-/** Horizontal gap between the two columns, in px. */
-export const COL_GAP_PX = 10;
+/** Horizontal gap between the two columns, in px. Equal to ROW_GAP_PX because the
+ *  design's `.msg2` grid uses one gap on both axes — an uneven pair reads as a
+ *  measurement mistake at this size. */
+export const COL_GAP_PX = 8;
 
 // ---- Run timing (ms) ------------------------------------------------------
 /** Thirty seconds per run. Short on purpose: the drill is a throughput sprint,
@@ -264,18 +267,29 @@ export const DEF_FONT_MIN_PX = 13;
 export const DEF_MAX_LINES = 3;
 
 // ---- Palette --------------------------------------------------------------
-// Kept local and deliberately harmonized with Bubble Match's bubble palette so
-// the two games teach the same visual vocabulary: blue = the foreign word,
-// warm = its english meaning, green = correct, red = wrong.
-export const FOREIGN_CARD_BG = "#EAF1FF";
-export const FOREIGN_CARD_BORDER = "#B9CDF5";
-export const ENGLISH_CARD_BG = "#FFF3E6";
-export const ENGLISH_CARD_BORDER = "#F2D2A8";
-/** Selected card outline (both columns). */
-export const SELECTED_BORDER = "#3D6BD6";
-/** Correct-match pop AND the cleanup-mode partner hint — the same light green
- *  Bubble Match uses for both (CORRECT_BUBBLE_BG). */
-export const CORRECT_CARD_BG = "#A5D6A7";
-export const CORRECT_CARD_BORDER = "#7BB97F";
-/** Wrong-attempt flash. */
-export const WRONG_CARD_BG = "#F44336";
+// Shelf redesign, artboard 14 (docs/SHELF_REDESIGN.md § 14, class `.msc`). The two
+// columns USED to be colour-coded — blue for the foreign word, warm for its meaning —
+// which spent the board's only strong signal on a distinction the player can already
+// see: one column is Chinese, the other is English. The design takes that colour back
+// and separates the columns TYPOGRAPHICALLY (cjk 19/700 on the paper ground vs sans
+// 13/500 on white), which frees the fills to mean state and only state:
+//
+//   blu  = the card you have selected      (`.msc.pick`)
+//   grn  = matched, or the cleanup partner hint
+//   red  = a wrong attempt
+//
+// Every fill below is a PASTEL carrying ink text, per the redesign's fill rule
+// (docs/SHELF_REDESIGN.md § A1) — never saturated ink behind white letters.
+export const FOREIGN_CARD_BG = COLORS.background;
+export const ENGLISH_CARD_BG = COLORS.white;
+/** Both columns rest on the same hairline, so selecting a card cannot change its
+ *  border WIDTH and re-wrap a three-line gloss mid-tap. State swaps the colour only. */
+export const CARD_BORDER = COLORS.rowBorder;
+/** Selected card (`.msc.pick`) — pastel fill, border blended into it. */
+export const SELECTED_CARD_BG = COLORS.blu;
+/** Correct-match pop AND the cleanup-mode partner hint. */
+export const CORRECT_CARD_BG = COLORS.grn;
+/** Wrong-attempt flash. Ink-on-pastel like the rest, so the flash reads as the same
+ *  system as the other two rather than as an error dialog dropped onto the board. */
+export const WRONG_CARD_BG = COLORS.red;
+export const WRONG_CARD_INK = COLORS.dangerInk;

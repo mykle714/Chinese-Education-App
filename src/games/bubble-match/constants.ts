@@ -1,3 +1,4 @@
+import { COLORS } from "../../theme/colors";
 import type { MarkType } from "../../types";
 import type { LevelConfig } from "./types";
 
@@ -16,13 +17,19 @@ import type { LevelConfig } from "./types";
  */
 
 /**
- * The mastery track this game feeds (docs/MASTERY_REWORK.md). Bubble Match is a
- * recognition drill (foreign → meaning), so every mark it writes is a RECOGNITION
- * mark and its card pool must be bucketed/cooled by that same track.
+ * The mastery track this game feeds WITH PINYIN ON (docs/MASTERY_REWORK.md § 1a) —
+ * and the track it declares to the registry.
  *
- * Single source of truth for all three places that need it: the `?markType=`
- * pool query and the /api/flashcards/mark call (BubbleMatchPage), and the Games
- * hub's mark-type chip (via GAME_REGISTRY's `markType`).
+ * Bubble Match is a foreign → meaning drill, so its track follows the same rule the
+ * flp's Chinese-side-one face does: pinyin shown ⇒ RECOGNITION, pinyin hidden on a zh
+ * board ⇒ READING (the learner reaches the meaning from the characters alone). The
+ * per-run answer comes from `foreignPromptTrack` (server/contracts/wire.ts), read ONCE
+ * when the board is dealt and held for the whole run — BubbleMatchPage's `runTrack` —
+ * because the pool is bucketed and cooled on that same track when it is requested.
+ *
+ * This constant is what the run defaults to and what `GAME_REGISTRY` declares as the
+ * game's track for STUDY CHALLENGE eligibility (`challengeEligibleGames()`), which is
+ * a property of the game rather than of one run's display setting.
  */
 export const MARK_TYPE: MarkType = "recognition";
 
@@ -94,13 +101,23 @@ export const LEVEL_CONFIGS: LevelConfig[] = [
 export const MIN_PLAY_HEIGHT = 0; // px — the ceiling closes the play area completely
 
 // ---- Base bubble palette (kind-keyed) ------------------------------------
-// Bubble Match colors a bubble by its KIND — pale blue for the foreign word,
-// cream for the English definition — so the two sides of a match are legible at
-// a glance. (Hydra Bubbles instead colors by the card's lend/mastery tier, which
-// is why this palette is per-game and the shared Bubble takes a `fill` prop.)
-// The status feedback colors (correct/wrong/revealed/nomatch) are shared and
-// live in src/games/bubbles/constants.ts.
-export const WORD_BUBBLE_BG = "#EAF1FF";
-export const WORD_BUBBLE_BORDER = "#B9CDF5";
-export const DEFINITION_BUBBLE_BG = "#FFF3E6";
-export const DEFINITION_BUBBLE_BORDER = "#F2D2A8";
+// TWO COLOURS, AND THE RULE IS EXACTLY ONE BIT WIDE (docs/SHELF_REDESIGN.md § 12):
+// the game's red accent means "this bubble is a foreign word", inert grey means "this
+// bubble is a meaning". Nothing else is encoded — not difficulty, not mastery, not
+// how long a bubble has been on the field.
+//
+// That restraint is what makes the STATUS colours (correct / wrong / nomatch, in
+// src/games/bubbles/constants.ts) readable: they are the only other fills a Bubble
+// Match bubble can ever take, so a green or a red bubble is unambiguously feedback.
+// Hydra Bubbles spends its colour budget differently — on the drain/bloom payout
+// ladder — which is why this palette is per-game and the shared `Bubble` takes a
+// `fill` prop rather than knowing either scheme.
+//
+// The borders match their fills: the design's `.bub` has no ring at all, its edge
+// comes from the inset gloss (see Bubble.tsx). A same-colour border keeps the
+// element's geometry identical to a bubble that DOES want a ring (Hydra's tier
+// weights) instead of making the two games' bubbles different sizes.
+export const WORD_BUBBLE_BG = COLORS.red;
+export const WORD_BUBBLE_BORDER = COLORS.red;
+export const DEFINITION_BUBBLE_BG = COLORS.grey;
+export const DEFINITION_BUBBLE_BORDER = COLORS.grey;

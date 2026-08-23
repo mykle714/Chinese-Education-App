@@ -62,7 +62,7 @@ Relationship to the two boards that already exist:
 ## 2. Surfaces
 
 One new hub row and one new page, both following the existing Node drill-in archetype
-([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md), [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md)).
+([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md), [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)).
 
 | Route | Component | What it is |
 |---|---|---|
@@ -73,30 +73,92 @@ persistent pastel colour and a `MilitaryTechIcon`/`EmojiEventsIcon`. It sits dir
 under Friends because the two are the same kind of thing — a ranking of people — and
 Arena is the one that changes weekly, so it earns the higher slot of the pair.
 
-### 2.1 The board looks like the friends leaderboard
+### 2.1 The board is the shared `Board` primitive
 
-Deliberately the same visual grammar, because it is the same primitive: ranked rows of
-people with one big number each. `FriendPersonRow` and `friendStyles.ts` are **promoted
-out of `src/features/friends/` into a shared location** rather than copied — a second
-divergent copy of the podium chip and the self-row border is exactly the duplication the
-code-quality rules call out. Proposed home: `src/components/leaderboard/`
-(`LeaderboardPersonRow.tsx`, `leaderboardStyles.ts`), with `friends/` importing from
-there. See § 9 for the layering note.
+**RESOLVED 2026-08-21, and NOT the way this section originally proposed.** The plan here
+was to promote `FriendPersonRow` + `friendStyles.ts` out of `src/features/friends/` and
+have Arena import them. That is not what shipped, because the shelf redesign showed the
+two are not the same primitive after all:
+
+* **Friends** is a list of PEOPLE you chose — avatar, name, a relationship, and controls
+  that act on that relationship. It is a `.rw` row (`FriendPersonRow`).
+* **Arena** is a list of RANKS. No avatars, no controls, no relationship — 25 strangers
+  and one number each.
+
+So Arena renders `src/components/leaderboard/Board.tsx` (`Board` / `BoardRow` /
+`BoardZone`, docs/SHELF_REDESIGN.md § A7) and `ArenaEntryRow` is now a thin binding of
+`BoardRow`. Friends stays on `FriendPersonRow` — its own artboard (entry 8) draws that
+leaderboard as `.rw` rows with podium tints, not as a board. The shared home exists; the
+thing that moved into it was a table, not a person row.
+
+**The board is ONE card, not a stack of rows.** Separate rounded rows with gaps say
+"these are 25 things"; one outlined card with hairlines says "this is a table and you are
+ranked inside it" — and a zone divider can only cut across something continuous.
+
+**The zone dividers are derived from the server's per-row `zone`,** at each point where
+the band changes, rather than from any rank arithmetic of our own. That is what makes it
+impossible for the line to disagree with the tints on either side of it.
+
+There are exactly two of them, and each is named for **what crossing it does to you**
+rather than for the band underneath: `↑ PROMOTION ↑` on green where the top five end, and
+`↓ DEMOTION ↓` on red where the bottom five begin. The arrows flank the caption on both
+sides — the word says what the line is, the arrows say which way it moves you, and the
+second is what a competitor is actually scanning for.
+
+⚠️ **The user-facing word is "Demotion"; the wire value is `zone: 'relegate'`.** That
+mismatch is deliberate — the API is a contract and the label is copy. Do not align them.
+
+`arenaStyles.ts` lost `zoneRowSx` and `rankChipSx` to this; its division ladder helpers
+(`DIVISION_NAMES`, `DIVISION_COLORS`, `divisionName`/`divisionColor`) are untouched.
 
 ```
  ┌──────────────────────────────────────────────┐
- │  🇨🇳 CHINESE · IRIDIUM      ends Sun 4:00 PM  │   ← header: language + division (§ 7.0) + countdown
+ │  CHINESE · IRIDIUM          ends Sun 4:00 PM │   ← header: language + division (§ 7.0) + countdown
  ├──────────────────────────────────────────────┤
- │ [1] (av)  Priya          🇪🇸 ES        6h 52m │   ← ▲ promotion zone (top 5)
- │ [2] (av)  Wen            🇨🇳 ZH        6h 28m │
- │ ─────────────────────────────────── ▲ ────── │
+ │ [1]  🇪🇸 Priya                         🔥 412 │   ← promotion zone (top 5)
+ │      Ten minutes before work, every day.     │
+ │ [2]  🇨🇳 Wen                           🔥 388 │
+ │ ──── ↑ PROMOTION ↑ ───────────────────────── │
  │ ...                                          │
- │ [9] (av)  You (you)      🇨🇳 ZH        2h 21m │   ← highlighted self row
+ │ [9]  🇨🇳 You                           🔥 141 │   ← highlighted self row
+ │      Back after a long break.                │
  │ ...                                          │
- │ ─────────────────────────────────── ▼ ────── │
- │ [21](av)  Marco          🇪🇸 ES           12m │   ← ▼ relegation zone (bottom 5)
+ │ ──── ↓ DEMOTION ↓ ────────────────────────── │
+ │ [21] 🇪🇸 Marco                          🔥 12 │   ← relegation zone (bottom 5)
  └──────────────────────────────────────────────┘
 ```
+
+**The row is rank · name+message · flame+score.** Three things it deliberately does NOT
+carry, each for its own reason:
+
+* **No progress meter.** Rows used to draw a 74px bar of the score against the leader's.
+  It was decoration — the ranks are already sorted by that number and the number is on
+  the row, so the bar restated twice-known information in a third form, and on a board
+  where the leader runs away with it every bar below the top read as the same stub. The
+  space went to the message (§ 2.1a), which is the only thing on the board not derived
+  from a score.
+* **No avatar.** `BoardRow` has no avatar slot at all — the Q20 privacy decision made
+  structural rather than left to each caller's discretion.
+* **The language is a flag emoji leading the NAME line**, not the mono badge that used
+  to sit in the sub-line — the message took that space. Arenas are not language-scoped
+  (§ 5.0), so the 25 members genuinely may be studying different tracks, and the flag
+  answers the question the board otherwise leaves open: is the person above me racing at
+  Chinese or at Spanish? It comes from `LANGUAGE_FLAGS` (`server/contracts/wire.ts`, the
+  app's one source), at 11.5px against the name's 13.5px/600 so the emoji does not
+  out-weigh the letters. On Windows, which draws no flag glyph, the pair of Regional
+  Indicator characters falls back to the letters "CN"/"ES" — still identifying, never a
+  tofu box; an unknown language contributes nothing at all.
+  ⚠️ It is a flag for a **language**, a rough stand-in (Spanish is not Spain for most of
+  its speakers), and it says nothing about where the member is — location is displayed
+  nowhere in this feature (§ 5.2). *(The bullet below describing a flag + region-code
+  badge in the sub-line is the older plan.)*
+
+**The score column is the minute-points flame.** The same Material Symbols Rounded
+`local_fire_department` glyph `MinutePointsFireBadge` burns in every header, in the same
+`COLORS.fireActive` orange (#E65100, the hex the design itself writes), at 13px against
+the 11.5px mono figure. It is not decoration and not a sixth slot: it names
+the UNIT, so the column reads as "the points I watch tick up while I study" with no
+caption and no legend. `BoardRow.scoreIcon` / `scoreIconColor` carry it.
 
 Differences from `/friends`, all of them additive:
 
@@ -116,13 +178,76 @@ Differences from `/friends`, all of them additive:
 * **The header carries the division and a countdown** to the next boundary: to Sunday
   16:00 while active, to Tuesday 04:00 while on break.
 * **Ranking is the server's.** The client never re-sorts. Same rule as `/friends`.
-* **A row shows name, avatar, language badge and score — and nothing else.** Settled as
-  **Q20**, and it is a privacy rule rather than a layout preference: `/friends` can show a
+* **A row shows name, language flag, message and score — and nothing else.** (It showed
+  name, avatar, a flag+region-code badge and score until 2026-08-21; the avatar is gone,
+  the badge became a flag on the name line, and the authored message is in — see § 2.1a.) Settled as **Q20**, and it is a privacy rule rather than a layout preference: `/friends` can show a
   streak because both parties opted into seeing each other, whereas an arena puts you in
   front of 24 strangers you did not choose and cannot leave. A streak in particular would
   expose each player's daily routine — including the day they broke it — to people with no
   relationship to them. Anything added to this row in future is a disclosure decision, not
-  a design one, and belongs back in the question log.
+  a design one, and belongs back in the question log. The message is the one addition ever
+  made under that rule, and it passed because it is AUTHORED — nothing appears in it the
+  competitor did not choose to type (§ 2.1a).
+
+### 2.1a The arena message
+
+**BUILT 2026-08-21 (migration 152).** One line each competitor writes about themselves,
+shown under their name on every row of the board — where the progress meter used to be.
+
+Why it earns the space: 25 rows of ranked minutes are 25 rows of *the same fact*. The
+message is the only thing on this board that is not derived from a score, and it is what
+makes the other 24 read as people rather than as a distribution.
+
+| Piece | Where |
+|---|---|
+| Storage | `users."arenaMessage"` — varchar(80), plus a CHECK refusing `''` |
+| Write path | `ArenaService.setMessage` → `ArenaDAL.setArenaMessage`. **The only one.** |
+| Endpoint | `POST /api/arena/message` → `{ message }` (the STORED value, not the typed one) |
+| Read path | `ArenaService.renderEntries` → `ArenaEntry.message`; the viewer's own copy also rides on `ArenaBoardResponse.viewerMessage` |
+| Editor | `src/features/arena/ArenaMessageDialog.tsx`, opened from the `/arena` header |
+| Row rendering | `ArenaEntryRow` → `BoardRow` `sublabel` with `sublabelVariant="prose"` |
+
+**It lives on `users`, not on `user_languages` or `arena_members`.** The message is a
+property of the PERSON. On `user_languages` it would mean an editor that silently only
+edits whichever language happens to be selected; on `arena_members` it would freeze per
+week and make editing an UPDATE against a live membership. One blurb, one editor — the
+same reasoning that keeps `timezone` and `avatarIconId` on `users` while minute points
+and streaks live per-language (§ 7.1).
+
+**The editor is in the HEADER, not on your own row.** Two reasons, and the first is the
+real one: your row must render identically to the other 24, and a pencil only you can see
+is still a mark only your row carries. The second is that the editor has to be reachable
+in the `opt-in` and `closed` states, where `entries` is empty and your row does not exist
+— which is also why `viewerMessage` is sent separately from the board rows.
+
+**Clearing is a first-class action**, not "save an empty box". A line 24 strangers can
+read has to be retractable in one tap; `{ message: null }` does it.
+
+**What the write path enforces is SHAPE, not judgement.** `setMessage` strips control
+characters (a smuggled newline would let one member push every row below them down the
+board), collapses runs of whitespace (so a message cannot pad itself wider than its
+neighbours), trims, caps at 80, and stores `null` rather than `''`. The client renders the
+server's answer rather than its own draft, because those rules mean the two are not always
+the same string.
+
+⚠️ **There is no moderation.** This is user-authored text shown to 24 strangers the author
+did not choose, with no report button, no review queue and no block list. The system that
+has to exist before this is safe at any real scale is tracked in
+[docs/DEFERRED_WORK.md](./DEFERRED_WORK.md). Until it lands, the cap and the sanitiser are
+the only things standing between a board and whatever someone decides to type.
+
+**Synthetic members have messages too, and no column.** A bot's line is a pure function of
+its existing `syntheticSeed` (`pickSyntheticMessage`, `server/services/arenaSynthetic.ts`)
+drawn from a fixed pool of ordinary study remarks — computed on read exactly as its score
+is (§ 6.2), so there is nothing to store, backfill or drift. Only about six in ten bots get
+one: if padding always carried a message while most humans left theirs empty, *having* a
+message would identify the fakes as reliably as a "bot" tag would, which is the exact
+failure § 6.1 exists to avoid.
+
+**Open question — the length cap.** 80 characters is sized to one line of the row's
+sub-slot at 11.5px. Longer messages would either wrap (breaking the row rhythm the board's
+legibility rests on) or ellipsise, and half a message is worse than none. If it turns out
+to be too tight, the fix is a wider slot, not a longer cap.
 
 ### 2.2 The page shows your ACTIVE language's arena
 
@@ -1010,8 +1135,8 @@ No change to `userminutepoints` or any vet table.
 | Routes | `server/routes/arenaRoutes.ts` | ⚠️ static segments above any `/:id`, as in `friendRoutes` |
 | Cron | `server/scripts/arena-cron.ts` + `database/cron/cow-arena.{service,timer}.template` | the `cow-arena` systemd user timer, hourly at **HH:06**: resolve any arena past Sun 16:00, then form for any timezone crossing Tue 04:00 |
 | Client API | `src/api/arena.ts` | typed calls, **no `token` param** (FRONTEND_LAYERING § 3.2) |
-| Client | `src/features/arena/*` | `ArenaPage` + the four states |
-| Client (shared) | `src/components/leaderboard/*` | `LeaderboardPersonRow` extracted from `features/friends` (§ 2.1) |
+| Client | `src/features/arena/*` | `ArenaPage` + the four states; `ArenaEntryRow` (a `BoardRow` binding); `ArenaMessageDialog` (the § 2.1a editor) |
+| Client (shared) | `src/components/leaderboard/Board.tsx` | `Board` / `BoardRow` / `BoardZone` — the ranked-table primitive. **Not** the friends person row; see § 2.1 for why that plan was dropped |
 | Client | `src/pages/HomePage.tsx`, `src/routes/routeMeta.ts`, `src/routes/registry.ts` | the hub row and the route |
 
 ### Endpoints
@@ -1021,6 +1146,8 @@ No change to `userminutepoints` or any vet table.
 | GET | `/api/arena` | `ArenaBoardResponse` — `{state, division, arena, entries, boundaries}`; entries ranked, viewer flagged |
 | POST | `/api/arena/optIn` | 200 `{weekKey}` — 400 only if the caller already holds a live seat (§ 8) |
 | DELETE | `/api/arena/optIn` | 204 — withdraw before formation; 400 once seated |
+| POST | `/api/arena/message` | 200 `{message}` — the STORED line (trimmed, collapsed, sanitised), or `null`. `{message: null}` clears it (§ 2.1a) |
+| POST | `/api/arena/location` | 204 — store or clear the caller's 5-char geohash cell (§ 5.2) |
 
 All require `authenticateToken`. Wire types in `server/types/arena.ts`, mirrored in
 `src/api/arena.ts`.
@@ -1151,7 +1278,7 @@ notice.
 | **Q22** | Timezone: hard partition or optimised across | **Hard requirement** — every member of an arena shares a timezone at formation. Geography is optimised only *within* a bucket. A post-formation timezone change is the user's to account for, but the app labels the countdown with the arena's timezone whenever it differs from theirs (§ 3, § 5) |
 | **Q23** | When does clustering run, and who is a straggler | **Before the boundary** — arenas must exist at 04:00 because that is when minutes start counting. Snapshot ~1 h early; anyone opting in during that hour still gets a live arena, placed **naively** (fill the partial arena first, then chunk the rest), never a re-run of the algorithm (§ 5.3) |
 | **Q17** | A combined "all my arenas" view for multi-language learners | **No** — `/arena` follows the selected language, like decks, minute points, night markets and the whole vet layer. Switching language switches the board. The header leads with the language so a Spanish division is never misread as a Chinese one (§ 2.2) |
-| **Q20** | Does the board show anything about the other 24 beyond name/avatar/language/score | **No.** Every extra field is a disclosure to 24 strangers who never consented to each other, unlike `/friends` where both parties opted in. A streak in particular exposes a daily routine to people who cannot be unfriended. The board is a race, not a profile directory (§ 2.1) |
+| **Q20** | Does the board show anything about the other 24 beyond name/avatar/language/score | **No — and the row has since gone NARROWER, not wider** (§ 2.1): the avatar and language badge are gone, and the one addition is the competitor's own authored message (§ 2.1a), which discloses nothing they did not type. Every extra field is a disclosure to 24 strangers who never consented to each other, unlike `/friends` where both parties opted in. A streak in particular exposes a daily routine to people who cannot be unfriended. The board is a race, not a profile directory (§ 2.1) |
 | **Q24** | Are stable week-to-week arenas wanted, or should the sort be salted | **Stable — rivalry is the point.** A recurring cast is what turns a leaderboard into a rivalry, and the geohash sort yields it for free. Chunk boundaries still move as the opt-in set changes, so the cast rotates at the edges rather than freezing (§ 5.1) |
 
 ### Open
@@ -1184,8 +1311,8 @@ This document describes (all of the following now exist except where marked):
 `src/api/arena.ts`,
 `src/utils/geohash.ts` (client-side truncation — the privacy contract),
 `src/features/arena/*`,
-`src/components/leaderboard/*` (**not done** — extraction from `src/features/friends/`
-is still owed; Arena ships `ArenaEntryRow` of its own),
+`src/components/leaderboard/Board.tsx` (`Board` / `BoardRow` / `BoardZone` — shipped
+2026-08-21; `ArenaEntryRow` is a thin binding of it, see § 2.1),
 `src/pages/HomePage.tsx` (the Arena hub row),
 `src/routes/routeMeta.ts` + `src/routes/registry.ts`.
 
@@ -1203,7 +1330,7 @@ Tests: `server/__tests__/arenaWeek.test.ts` (boundary maths incl. DST),
   `division` and `"arenaOptInWeek"`; that doc's column table is the canonical one (§ 7.1).
 * [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) — a second prod-only cron now
   shares the host; its idempotency pattern is the model for arena formation (§ 10).
-* [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md) — the new hp row.
+* [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) — the new hp row.
 
 Related docs:
 [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) (the board this one looks like),
@@ -1212,7 +1339,7 @@ also holds the division and the opt-in),
 [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md) (the scored quantity),
 [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) (local-boundary cron precedent),
 [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (the never-block philosophy padding follows),
-[UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md), [HUB_MENU_SYSTEM.md](./HUB_MENU_SYSTEM.md),
+[UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md), [BENTO_SYSTEM.md](./BENTO_SYSTEM.md),
 [BACKEND_LAYERING.md](./BACKEND_LAYERING.md), [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md).
 
 ---

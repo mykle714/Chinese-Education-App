@@ -72,7 +72,7 @@ function CommunityPage() {
   }, []);
 
   return (
-    <NodePage title="Community" activePage="home" onBack={() => navigate("/")} contentClassName="community-page__content">
+    <NodePage title="Community" onBack={() => navigate("/")} contentClassName="community-page__content">
       <CommunitySearchBar
         language={language}
         votedKeys={votedKeys}

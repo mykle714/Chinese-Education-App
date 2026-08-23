@@ -70,7 +70,7 @@ function ChallengeScoreTable({ rounds }: { rounds: Record<string, ChallengeRound
                                     // A negative line is drawn in the warning colour: mistakes
                                     // and time penalties are the lines a player actually
                                     // scans for, and totals may legitimately go negative.
-                                    color: line.points < 0 ? COLORS.redMain : COLORS.textSecondary,
+                                    color: line.points < 0 ? COLORS.dangerInk : COLORS.textSecondary,
                                 }}
                             >
                                 {signedPoints(line.points)}

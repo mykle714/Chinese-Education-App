@@ -199,7 +199,7 @@ Every sentence arrives with a server-computed `humanApproved` flag (attached in
 `validations` row with the approval stamp (`action = 'approve'`) matches the
 sentence's **current** raw det object (docs/DATA_VALIDATION_SYSTEM.md).
 Sentences without a valid approval render in the shared AI-generated treatment —
-orange `COLORS.yellowMain` border, ~8% tint, and an `AutoAwesome` "AI GENERATED"
+orange `COLORS.aiGenerated` border, ~8% tint, and an `AutoAwesome` "AI GENERATED"
 badge (`src/theme/aiGeneratedStyling.ts` + `src/components/AiGeneratedBadge.tsx`,
 same treatment as the dictionary
 AI-fallback card). Approved sentences keep the quiet `flashcard.subtleBg`

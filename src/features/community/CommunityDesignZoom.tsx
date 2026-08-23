@@ -6,6 +6,7 @@ import VoteButton from "./VoteButton";
 import type { CommunityDesign, Language } from "../../types";
 import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT } from "../../theme/scale";
+import { PHONE_OVERLAY_SX } from "../../components/phoneGeometry";
 
 /**
  * The floating zoom for a tapped community design (docs/COMMUNITY_PAGE.md). Mirrors the
@@ -30,16 +31,10 @@ const CommunityDesignZoom: React.FC<{
       onClose={onClose}
       PaperProps={{
         elevation: 0,
-        sx: {
-          backgroundColor: "transparent",
-          boxShadow: "none",
-          overflow: "visible",
-          m: 0,
-          width: { xs: "100vw", md: 393 },
-          maxWidth: "100vw",
-          height: { xs: "100dvh", md: "calc(100dvh - 48px)" },
-          maxHeight: { xs: "100dvh", md: 932 },
-        },
+        // Pinned to the phone card's own box (MobileDemoFrame is the source of
+        // truth for those numbers), so the zoom's chrome lands on the phone's
+        // corners rather than the browser viewport's.
+        sx: PHONE_OVERLAY_SX,
       }}
     >
       <Box

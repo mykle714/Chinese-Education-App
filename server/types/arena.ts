@@ -45,8 +45,9 @@ export interface ArenaMember {
 /**
  * One rendered row of the board.
  *
- * Deliberately carries NOTHING beyond name, avatar, language and score
- * (settled as Q20). An arena puts a learner in front of 24 strangers they did
+ * Deliberately carries NOTHING beyond name, avatar, language, score and the
+ * competitor's own authored message (settled as Q20; the message is the one
+ * addition, and only because nothing appears in it the competitor did not type). An arena puts a learner in front of 24 strangers they did
  * not choose and cannot leave, so anything more is a disclosure they never
  * agreed to. Adding a field here is a privacy decision, not a layout tweak —
  * take it back to the question log.
@@ -59,6 +60,15 @@ export interface ArenaEntry {
   avatarIconId: string | null;
   language: string;
   score: number;
+  /**
+   * The competitor's own one-line message, or null when they have not written one
+   * (docs/ARENA_FEATURE.md § 2.1a). For a human this is `users."arenaMessage"`; for a
+   * synthetic member it is drawn from the pool by seed, never stored.
+   *
+   * ⚠️ USER-AUTHORED TEXT ON A BOARD OF STRANGERS. It passes a length cap and a
+   * sanitiser on write, neither of which is moderation — see docs/DEFERRED_WORK.md.
+   */
+  message: string | null;
   /** True for the requesting user's own row, so the client can highlight it. */
   isViewer: boolean;
   /**
@@ -104,4 +114,10 @@ export interface ArenaBoardResponse {
   divisionChange: number | null;
   /** Whether the viewer has already opted into the coming week. */
   optedInNextWeek: boolean;
+  /**
+   * The VIEWER's own arena message. Sent separately from their board row because
+   * the message editor is reachable in every state — including `opt-in`, where
+   * `entries` is empty and there is no row to read it off.
+   */
+  viewerMessage: string | null;
 }

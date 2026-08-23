@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
     HYDRA_SPAWN_ANCHORS,
     PAYOUT_BY_COLOR,
-    RED_ONLY_FILL,
-    RED_ONLY_WEIGHTS,
+    DRAIN_ONLY_FILL,
+    DRAIN_ONLY_WEIGHTS,
     expectedPayoutAt,
     rollColor,
     spawnWeightsAt,
@@ -44,73 +44,80 @@ describe("hydra spawn table", () => {
     it("clamps below the first anchor, and plateaus between the last one and the squeeze", () => {
         expect(spawnWeightsAt(-1)).toEqual(HYDRA_SPAWN_ANCHORS[0].weights);
         const last = HYDRA_SPAWN_ANCHORS[HYDRA_SPAWN_ANCHORS.length - 1];
-        // The gap between the last growth anchor and RED_ONLY_FILL HOLDS its
-        // distribution. If it interpolated toward red-only instead, expected payout
-        // would fall below break-even well before the squeeze — see RED_ONLY_WEIGHTS.
+        // The gap between the last growth anchor and DRAIN_ONLY_FILL HOLDS its
+        // distribution. If it interpolated toward drain-only instead, expected payout
+        // would fall below break-even almost immediately — see DRAIN_ONLY_WEIGHTS.
         expect(spawnWeightsAt(last.fill + 0.01)).toEqual(last.weights);
-        expect(spawnWeightsAt(RED_ONLY_FILL - 0.001)).toEqual(last.weights);
+        expect(spawnWeightsAt(DRAIN_ONLY_FILL - 0.001)).toEqual(last.weights);
     });
 
-    it("steps to red-only at the squeeze and stays there", () => {
-        expect(spawnWeightsAt(RED_ONLY_FILL)).toEqual(RED_ONLY_WEIGHTS);
-        expect(spawnWeightsAt(0.99)).toEqual(RED_ONLY_WEIGHTS);
-        expect(spawnWeightsAt(1.5)).toEqual(RED_ONLY_WEIGHTS);
+    it("steps to drain-only at the squeeze and stays there", () => {
+        expect(spawnWeightsAt(DRAIN_ONLY_FILL)).toEqual(DRAIN_ONLY_WEIGHTS);
+        expect(spawnWeightsAt(0.99)).toEqual(DRAIN_ONLY_WEIGHTS);
+        expect(spawnWeightsAt(1.5)).toEqual(DRAIN_ONLY_WEIGHTS);
     });
 
     // ── The economy ──────────────────────────────────────────────────────────
     it("is NOT self-stabilizing: expected payout exceeds 2 everywhere below the squeeze", () => {
         // 2 is break-even — a match clears two bubbles. Anything above it means the
         // board grows on its own, which is the whole premise of § 3.
-        for (let fill = 0; fill < RED_ONLY_FILL; fill += 0.01) {
+        for (let fill = 0; fill < DRAIN_ONLY_FILL; fill += 0.01) {
             expect(expectedPayoutAt(fill), `fill ${fill.toFixed(2)}`).toBeGreaterThan(2);
         }
     });
 
-    it("pays below break-even inside the squeeze, so the board can only shrink there", () => {
-        // Red used to pay 0 (−2 bubbles per match inside the zone). Under the
-        // 2026-08-19 +1 ladder it pays 1, so the zone is −1 per match: still strictly
-        // shrinking, but half as fast to escape. The assertion is on the SIGN, not on
-        // the value, so the next payout tuning cannot silently make the squeeze
-        // survivable-by-standing-still.
-        expect(expectedPayoutAt(RED_ONLY_FILL)).toBeLessThan(2);
-        expect(expectedPayoutAt(0.9)).toBeLessThan(2);
-        expect(expectedPayoutAt(RED_ONLY_FILL)).toBe(PAYOUT_BY_COLOR.Unfamiliar);
-    });
-
-    it("keeps the squeeze reachable — the red-only floor sits below the loss line", () => {
-        // If these crossed, the player would lose before ever entering the zone the
-        // game is built around.
-        expect(RED_ONLY_FILL).toBeLessThan(0.94);
-    });
-
-    it("yellow holds at least a fifth of every growth-zone roll after the opening", () => {
-        // Challenge words ride the yellow slot (§ 7.5) and free play must roll the
-        // same table, so yellow's share is a floor rather than a tuning artifact.
+    it("requires bloom to be the MAJORITY of every growth-zone roll", () => {
+        // THE TWO-COLOR IDENTITY (2026-08-21), and the reason the old mix could not be
+        // carried over. With a symmetric ±1 ladder, net growth per match is exactly
+        // `2·bloomShare − 1`, so "the board grows on its own" is equivalent to "bloom is
+        // over half". The four-color table put 65% of rolls on its two hard colors;
+        // merged verbatim that is a board that DRAINS on its own.
         //
-        // THE FLOOR IS BACK UP TO 30 (2026-08-19). It was 25, then 22 while red was
-        // being raised at yellow's expense; the +1 payout ladder freed enough economy
-        // slack to take the points out of blue and green instead, so yellow now sits
-        // at 30% and a challenge word surfaces MORE often per spawn than it ever has.
-        //
-        // THE FILL-0 ROW IS EXEMPT, and it is the one exception the floor tolerates:
-        // an empty board rolls blue-only, so a challenge word cannot spawn onto it.
-        // That costs a challenge nothing — the board is empty for one spawn batch at
-        // the very start of a run, and yellow is back to 28% by the 0.25 anchor. The
-        // exemption is narrow ON PURPOSE: a second zero-yellow anchor would start
-        // starving challenge scoring, so this asserts exactly one.
-        const zeroYellow = HYDRA_SPAWN_ANCHORS.filter((a) => a.weights.Target === 0);
-        expect(zeroYellow.map((a) => a.fill)).toEqual([0]);
-
-        for (const anchor of HYDRA_SPAWN_ANCHORS) {
-            if (anchor.fill >= RED_ONLY_FILL || anchor.fill === 0) continue;
-            expect(anchor.weights.Target, `anchor at fill ${anchor.fill}`).toBeGreaterThanOrEqual(30);
+        // This is the same claim as the test above, asserted on the weights rather
+        // than through E[payout] — so a future tuning pass that breaks it reads a
+        // failure naming the actual constraint rather than an arithmetic one.
+        for (let fill = 0; fill < DRAIN_ONLY_FILL; fill += 0.01) {
+            const w = spawnWeightsAt(fill);
+            const bloomShare = w.bloom / (w.bloom + w.drain);
+            expect(bloomShare, `fill ${fill.toFixed(2)}`).toBeGreaterThan(0.5);
+            expect(expectedPayoutAt(fill) - 2).toBeCloseTo(2 * bloomShare - 1, 10);
         }
     });
 
+    it("pays below break-even inside the squeeze, so the board can only shrink there", () => {
+        // Drain pays 1 against the 2 a match removes, so the zone is −1 per match. The
+        // assertion is on the SIGN, not on the value, so the next payout tuning cannot
+        // silently make the squeeze survivable-by-standing-still.
+        expect(expectedPayoutAt(DRAIN_ONLY_FILL)).toBeLessThan(2);
+        expect(expectedPayoutAt(0.9)).toBeLessThan(2);
+        expect(expectedPayoutAt(DRAIN_ONLY_FILL)).toBe(PAYOUT_BY_COLOR.drain);
+    });
+
+    it("keeps the squeeze reachable — the drain-only floor sits below the loss line", () => {
+        // If these crossed, the player would lose before ever entering the zone the
+        // game is built around.
+        expect(DRAIN_ONLY_FILL).toBeLessThan(0.94);
+    });
+
+    it("makes bloom available everywhere except the squeeze", () => {
+        // Challenge words ride the BLUE slot since 2026-08-21 (§ 7.5) — they moved off
+        // yellow when yellow was removed — and free play must roll the same table, so
+        // bloom's availability is a contract rather than a tuning artifact.
+        //
+        // The squeeze is the one place a challenge word cannot spawn, and that is
+        // accepted: it is a bounded emergency zone the player is actively digging out
+        // of, not a state a run sits in. The old table had the mirror-image exemption
+        // (yellow was absent from the bloom-only opening); this one is the only gap.
+        for (let fill = 0; fill < DRAIN_ONLY_FILL; fill += 0.01) {
+            expect(spawnWeightsAt(fill).bloom, `fill ${fill.toFixed(2)}`).toBeGreaterThan(0);
+        }
+        expect(spawnWeightsAt(DRAIN_ONLY_FILL).bloom).toBe(0);
+    });
+
     // ── Rolling ──────────────────────────────────────────────────────────────
-    it("rolls only red inside the squeeze", () => {
+    it("rolls only drain inside the squeeze", () => {
         for (let i = 0; i < 50; i++) {
-            expect(rollColor(0.8, () => i / 50)).toBe("Unfamiliar");
+            expect(rollColor(0.8, () => i / 50)).toBe("drain");
         }
     });
 
@@ -130,67 +137,67 @@ describe("hydra spawn table", () => {
         const steady = spawnWeightsAt(0.1);
         for (const fill of [0.1, 0.2, 0.35, 0.5, 0.65, 0.74]) {
             expect(spawnWeightsAt(fill), `fill ${fill}`).toEqual(steady);
-            expect(expectedPayoutAt(fill), `fill ${fill}`).toBeCloseTo(2.25, 10);
+            expect(expectedPayoutAt(fill), `fill ${fill}`).toBeCloseTo(2.1, 10);
         }
         // Exactly two growth anchors: the opening and the steady state.
         expect(HYDRA_SPAWN_ANCHORS).toHaveLength(2);
     });
 
-    it("offers red early enough to be a real option", () => {
-        // Red is the ONLY way to shrink the board, so a table that withholds it until
+    it("offers drain early enough to be a real option", () => {
+        // Drain is the ONLY way to shrink the board, so a table that withholds it until
         // the board is already half full denies the player the very trade § 3 calls
-        // the game. It used to be 0% below fill 0.45, then a flat 8%; since the
-        // 2026-08-19 reweight it is the LARGEST share of the steady state at 35%.
-        expect(spawnWeightsAt(0.1).Unfamiliar).toBe(35);
-        expect(spawnWeightsAt(0.3).Unfamiliar).toBe(35);
-        expect(spawnWeightsAt(0.7).Unfamiliar).toBe(35);
-        // Still absent from the blue-only opening.
-        expect(spawnWeightsAt(0).Unfamiliar).toBe(0);
+        // the game. It is a flat 45% from the first tenth onward — the most it can be
+        // while the board still grows on its own.
+        expect(spawnWeightsAt(0.1).drain).toBe(45);
+        expect(spawnWeightsAt(0.3).drain).toBe(45);
+        expect(spawnWeightsAt(0.7).drain).toBe(45);
+        // Still absent from the bloom-only opening.
+        expect(spawnWeightsAt(0).drain).toBe(0);
     });
 
     it("never rolls a zero-weight color", () => {
-        // Red is 0% at fill 0, so 200 evenly-spaced rolls must never produce it.
+        // Drain is 0% at fill 0, so 200 evenly-spaced rolls must never produce it.
         for (let i = 0; i < 200; i++) {
-            expect(rollColor(0, () => i / 200)).not.toBe("Unfamiliar");
+            expect(rollColor(0, () => i / 200)).not.toBe("drain");
         }
     });
 
-    it("opens on blue and nothing else", () => {
-        // An empty board rolls 100% blue (§ 3.1). This is what makes the opening
+    it("opens on bloom and nothing else", () => {
+        // An empty board rolls 100% bloom (§ 3.1). This is what makes the opening
         // board's composition a consequence of the table rather than a hard-coded
         // exception in HydraStage — which is exactly how the old opening drifted from
         // the economy it was supposed to express.
         for (let i = 0; i < 200; i++) {
-            expect(rollColor(0, () => i / 200)).toBe("Mastered");
+            expect(rollColor(0, () => i / 200)).toBe("bloom");
         }
-        expect(expectedPayoutAt(0)).toBe(PAYOUT_BY_COLOR.Mastered); // 4.00 — the fastest growth in the game
+        expect(expectedPayoutAt(0)).toBe(PAYOUT_BY_COLOR.bloom); // 3.00 — the fastest growth in the game
     });
 
-    it("ramps the other colors in as the board fills", () => {
-        // Blue-only is a POINT, not a zone: by the 0.10 anchor the full mix is already
+    it("ramps drain in as the board fills", () => {
+        // Bloom-only is a POINT, not a zone: by the 0.10 anchor the full mix is already
         // in play. A step here instead of a ramp would give the player a cliff a few
         // bubbles into every run.
-        expect(spawnWeightsAt(0).Target).toBe(0);
-        expect(spawnWeightsAt(0.05).Target).toBeGreaterThan(0);
-        expect(spawnWeightsAt(0.05).Mastered).toBeLessThan(100);
-        expect(spawnWeightsAt(0.25).Target).toBe(30);
+        expect(spawnWeightsAt(0).drain).toBe(0);
+        expect(spawnWeightsAt(0.05).drain).toBeGreaterThan(0);
+        expect(spawnWeightsAt(0.05).bloom).toBeLessThan(100);
+        expect(spawnWeightsAt(0.25).drain).toBe(45);
     });
 
-    it("pays out the documented ladder", () => {
-        // 1/2/3/4 since 2026-08-19 (was 0/1/2/3). Every color now spawns at least one
-        // bubble; the one-step gap between colors is what the payout ordering means,
-        // and the ABSOLUTE values only matter against the 2-per-match removal.
-        expect(PAYOUT_BY_COLOR.Unfamiliar).toBe(1);
-        expect(PAYOUT_BY_COLOR.Target).toBe(2);
-        expect(PAYOUT_BY_COLOR.Comfortable).toBe(3);
-        expect(PAYOUT_BY_COLOR.Mastered).toBe(4);
+    it("pays out the two-color ladder, one step either side of break-even", () => {
+        // A match always removes 2, so these ARE the net board deltas: −1 and +1.
+        // Symmetry is the design (§ 2) — the player reads one bit off the bubble, not
+        // a four-rung table — so both the values and their distance from 2 matter.
+        expect(PAYOUT_BY_COLOR.drain).toBe(1);
+        expect(PAYOUT_BY_COLOR.bloom).toBe(3);
+        expect(2 - PAYOUT_BY_COLOR.drain).toBe(PAYOUT_BY_COLOR.bloom - 2);
     });
 
-    it("keeps the ladder strictly increasing from red to blue", () => {
+    it("keeps drain strictly cheaper than bloom", () => {
         // The economy is expressed as a RANKING — riskier color, smaller payout — and
-        // every § 3 argument rests on that ordering rather than on the four values.
-        expect(PAYOUT_BY_COLOR.Unfamiliar).toBeLessThan(PAYOUT_BY_COLOR.Target);
-        expect(PAYOUT_BY_COLOR.Target).toBeLessThan(PAYOUT_BY_COLOR.Comfortable);
-        expect(PAYOUT_BY_COLOR.Comfortable).toBeLessThan(PAYOUT_BY_COLOR.Mastered);
+        // every § 3 argument rests on that ordering rather than on the two values.
+        expect(PAYOUT_BY_COLOR.drain).toBeLessThan(PAYOUT_BY_COLOR.bloom);
+        // And there are exactly two of them: a third would reintroduce a rung the
+        // player has to memorize rather than read.
+        expect(HYDRA_COLORS).toHaveLength(2);
     });
 });

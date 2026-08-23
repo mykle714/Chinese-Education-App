@@ -59,8 +59,8 @@ const ApplyDesignButton: React.FC<{
           fontWeight: WEIGHT.semibold,
           borderRadius: "999px",
           color: "#fff",
-          backgroundColor: COLORS.greenMain,
-          "&:hover": { backgroundColor: COLORS.greenMain, filter: "brightness(0.95)" },
+          backgroundColor: COLORS.successInk,
+          "&:hover": { backgroundColor: COLORS.successInk, filter: "brightness(0.95)" },
         }}
       >
         {status === "done" ? "Added" : label}

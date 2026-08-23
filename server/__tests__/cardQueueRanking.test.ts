@@ -5,6 +5,7 @@ import {
   lastCorrectMarkTimestamp,
   queueArrivalAt,
   rankCardQueue,
+  rankCardQueueCooled,
   readyMarkTypes,
 } from '../services/cardQueueRanking.js';
 import type { TypedMarkHistory } from '../contracts/wire.js';
@@ -183,5 +184,96 @@ describe('rankCardQueue', () => {
     const card = { id: 'read-just-now', readingCategory: 'Target', typedMarkHistory: correctAgo('reading', 1 * MINUTE) };
     expect(rank([card], READING)).toEqual([]);
     expect(rank([card], FLP_TRACKS)).toEqual(['read-just-now']);
+  });
+});
+
+/**
+ * The COOLED complement (docs/PROVISIONAL_CARDS.md § 4b). Lending is the bottom of
+ * every fill ladder, so a round short on rested cards re-serves RESTING ones instead
+ * of minting words the learner never chose — and this is what orders them.
+ */
+describe('rankCardQueueCooled', () => {
+  const flp = {
+    markTypes: FLP_TRACKS,
+    windowCategoryOf: () => 'Target' as const, // 24-hour window
+  };
+
+  /**
+   * A card resting on BOTH flp tracks. Marking one is not enough: a track with no
+   * correct mark has nothing to cool, so `readyMarkTypes` counts it as ready and the
+   * card is rested overall. This is why the flp's cooled tier is reached far less
+   * often than "the learner just played" would suggest.
+   */
+  function restingBoth(agoMs: number): TypedMarkHistory {
+    return {
+      ...correctAgo('recognition', agoMs),
+      ...correctAgo('production', agoMs),
+    } as TypedMarkHistory;
+  }
+
+  it('returns only cards with no ready track — the exact complement of rankCardQueue', () => {
+    const rested = { id: 1, typedMarkHistory: restingBoth(2 * DAY) };
+    const resting = { id: 2, typedMarkHistory: restingBoth(HOUR) };
+    const cards = [rested, resting];
+
+    expect(rankCardQueueCooled(cards, NOW, flp).map((c) => c.id)).toEqual([2]);
+    expect(rankCardQueue(cards, NOW, flp).map((r) => r.card.id)).toEqual([1]);
+  });
+
+  it('orders nearest-to-ready first', () => {
+    const almostReady = { id: 1, typedMarkHistory: restingBoth(23 * HOUR) };
+    const justMarked = { id: 2, typedMarkHistory: restingBoth(MINUTE) };
+    const midway = { id: 3, typedMarkHistory: restingBoth(12 * HOUR) };
+
+    expect(
+      rankCardQueueCooled([justMarked, almostReady, midway], NOW, flp).map((c) => c.id)
+    ).toEqual([1, 3, 2]);
+  });
+
+  it('excludes a never-marked card (it is rested, not resting)', () => {
+    const fresh = { id: 1, typedMarkHistory: {} as TypedMarkHistory };
+    expect(rankCardQueueCooled([fresh], NOW, flp)).toEqual([]);
+  });
+
+  it('excludes a card with ONE ready track — an unmarked track is ready, not resting', () => {
+    // Recognition is deep in its window; production has never been marked, so it has
+    // nothing to cool. One ready track is enough to make the card rested.
+    const oneTrackReady = { id: 1, typedMarkHistory: correctAgo('recognition', MINUTE) };
+    expect(rankCardQueueCooled([oneTrackReady], NOW, flp)).toEqual([]);
+    expect(rankCardQueue([oneTrackReady], NOW, flp).map((r) => r.card.id)).toEqual([1]);
+  });
+
+  it('takes the MIN remaining across tracks — due as soon as the EARLIEST track is', () => {
+    const card = {
+      id: 1,
+      typedMarkHistory: {
+        ...correctAgo('recognition', MINUTE),      // ~24h left
+        ...correctAgo('production', 23 * HOUR),    // ~1h left
+      } as TypedMarkHistory,
+    };
+    const later = { id: 2, typedMarkHistory: restingBoth(12 * HOUR) }; // 12h left
+    expect(rankCardQueueCooled([later, card], NOW, flp).map((c) => c.id)).toEqual([1, 2]);
+  });
+
+  it("is stable, so the caller's own ordering survives a tie", () => {
+    const a = { id: 1, typedMarkHistory: restingBoth(HOUR) };
+    const b = { id: 2, typedMarkHistory: restingBoth(HOUR) };
+    expect(rankCardQueueCooled([b, a], NOW, flp).map((c) => c.id)).toEqual([2, 1]);
+  });
+
+  it("ranks on the caller's own track — Memory Map reads reading, not the flp pair", () => {
+    // Cooling on reading, rested on recognition. The flp would not see this card as
+    // resting at all; a reading surface must.
+    const card = {
+      id: 1,
+      typedMarkHistory: {
+        ...correctAgo('reading', MINUTE),
+        ...correctAgo('recognition', 2 * DAY),
+      } as TypedMarkHistory,
+    };
+    const reading = { markTypes: READING, windowCategoryOf: () => 'Target' as const };
+
+    expect(rankCardQueueCooled([card], NOW, reading).map((c) => c.id)).toEqual([1]);
+    expect(rankCardQueueCooled([card], NOW, flp)).toEqual([]);
   });
 });

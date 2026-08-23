@@ -135,7 +135,7 @@ export function useCardDrag(
     }, [resetKey]);
 
     // Read the card's rendered pixel width at evaluation time.
-    // On desktop the frame is capped at 393px inside a wider viewport, so using
+    // On desktop the frame is capped at 402px inside a wider viewport, so using
     // window.innerWidth would produce a threshold that is far too large.
     // Falls back to window.innerWidth only before the element has mounted.
     const getCardWidth = () => cardRef.current?.offsetWidth ?? window.innerWidth;

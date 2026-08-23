@@ -76,7 +76,7 @@ function ValidateFlagButtonsView({
         sx={{
           ...denseSx,
           ...(myVote === "approve"
-            ? { color: COLORS.greenMain, bgcolor: alpha(COLORS.greenMain, 0.14), "&:hover": { bgcolor: alpha(COLORS.greenMain, 0.22) } }
+            ? { color: COLORS.successInk, bgcolor: alpha(COLORS.successInk, 0.14), "&:hover": { bgcolor: alpha(COLORS.successInk, 0.22) } }
             : {}),
         }}
       >
@@ -97,7 +97,7 @@ function ValidateFlagButtonsView({
         sx={{
           ...denseSx,
           ...(myVote === "flag"
-            ? { color: COLORS.yellowMain, bgcolor: alpha(COLORS.yellowMain, 0.14), "&:hover": { bgcolor: alpha(COLORS.yellowMain, 0.22) } }
+            ? { color: COLORS.warnInk, bgcolor: alpha(COLORS.warnInk, 0.14), "&:hover": { bgcolor: alpha(COLORS.warnInk, 0.22) } }
             : {}),
         }}
       >

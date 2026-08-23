@@ -1,15 +1,8 @@
 import React from "react";
-import { Button, IconButton, useTheme } from "@mui/material";
-import UndoIcon from "@mui/icons-material/Undo";
-import SettingsIcon from "@mui/icons-material/Settings";
-// Edit (icon-layout) uses the brush; the writing-practice button uses the pencil
-// (the two were swapped per design).
-import BrushIcon from "@mui/icons-material/Brush";
-import PageHeader from "../../../components/PageHeader";
+import PageHeader, { HeaderIconButton, HeaderToggleChip } from "../../../components/PageHeader";
 import MinutePointsFireBadge from "../../../minutePoints/MinutePointsFireBadge";
 import type { LastMarkUndoSnapshot } from "../types";
 import type { Language } from "../../../types";
-import { SIZE } from "../../../theme/scale";
 
 interface FlashcardsLearnHeaderProps {
     selectedCategory: string | null;
@@ -47,77 +40,51 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
     onToggleEdit,
     onSettingsClick,
 }) => {
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
-
-    const toggleSx = (active: boolean) => ({
-        minWidth: "unset",
-        px: 1,
-        py: 0.25,
-        height: "30px",
-        fontSize: SIZE.micro,
-        textTransform: "lowercase" as const,
-        lineHeight: 1.4,
-        borderRadius: "6px",
-        backgroundColor: active ? fc.toggleActiveBg : fc.toggleInactiveBg,
-        color: fc.onSurface,
-        "&:hover": {
-            backgroundColor: active ? fc.toggleActiveBg : fc.toggleInactiveBg,
-        },
-    });
-
     // Control-placement principle (see also SettingsPanelBody): the header surfaces
     // only the "quick" pinyin toggle flipped often mid-study. All other learn prefs
     // (tone color, word spacing, autoplay) live in the Settings sheet as "setup"
     // prefs — the single complete control panel. The "edit" button opens the custom
     // card icon-layout editor (docs/CARD_ICON_LAYOUT.md); it acts on the back face, so
     // it is enabled only when the card is flipped to the back.
+    //
+    // Every control here is a PageHeader slot primitive. This file used to carry its
+    // own 14-line `toggleSx` helper, byte-identical to copies in BubbleMatchHeader and
+    // WordSearchHeader; the chip skin now lives once, in HeaderToggleChip.
     const rightItems = (
         <>
-            <IconButton
+            <HeaderIconButton
                 className="mobile-demo-tool-button"
-                size="small"
-                sx={{ color: fc.onSurface }}
+                icon="undo"
+                label="Undo last mark"
                 onClick={onUndo}
                 // Mark-undo is meaningless while the icon-layout editor is open (the
                 // editor has its own draft state), so grey it out and disable it there.
                 disabled={!lastMarkUndoSnapshot || isAnimating || isUndoing || editMode}
-            >
-                <UndoIcon />
-            </IconButton>
+            />
             {/* Pinyin visibility toggle — Chinese only. */}
             {language === "zh" && (
-                <Button
-                    className="pinyin-toggle-btn"
-                    variant={showPinyin ? "contained" : "text"}
-                    size="small"
-                    onClick={onTogglePinyin}
-                    sx={toggleSx(showPinyin)}
-                >
+                <HeaderToggleChip className="pinyin-toggle-btn" active={showPinyin} onClick={onTogglePinyin}>
                     pinyin
-                </Button>
+                </HeaderToggleChip>
             )}
-            {/* Custom icon-layout editor toggle — back face only. */}
-            <Button
+            {/* Custom icon-layout editor toggle — back face only. Edit (icon-layout)
+                uses the brush; the writing-practice button uses the pencil (the two
+                were swapped per design). */}
+            <HeaderToggleChip
                 className="card-edit-toggle-btn"
-                variant={editMode ? "contained" : "text"}
-                size="small"
-                startIcon={<BrushIcon sx={{ fontSize: "14px !important" }} />}
+                active={editMode}
                 onClick={onToggleEdit}
                 disabled={!isFlipped}
-                sx={toggleSx(editMode)}
+                startIcon="brush"
             >
                 edit
-            </Button>
-            <IconButton
+            </HeaderToggleChip>
+            <HeaderIconButton
                 className="mobile-demo-tool-button mobile-demo-settings-button"
-                size="small"
-                sx={{ color: fc.onSurface }}
+                icon="settings"
+                label="Open settings"
                 onClick={onSettingsClick}
-                aria-label="Open settings"
-            >
-                <SettingsIcon />
-            </IconButton>
+            />
             <MinutePointsFireBadge />
         </>
     );
@@ -126,6 +93,9 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
         <PageHeader
             title={selectedCategory ? `Learn: ${selectedCategory}` : "Learn"}
             onBack={onBack}
+            // The busiest header in the app — up to five controls beside a title that
+            // interpolates a deck name. The Learn artboard sets 18px for exactly this.
+            size="dense"
             rightContent={rightItems}
         />
     );

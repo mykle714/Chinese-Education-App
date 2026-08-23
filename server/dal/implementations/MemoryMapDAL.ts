@@ -98,8 +98,16 @@ export class MemoryMapDAL implements IMemoryMapDAL {
                ve."entryKey",
                ve.language,
                ve."typedMarkHistory",
+               -- Carried so the SERVICE can resolve each candidate's dd and refuse to
+               -- place two words that read the same on one map (docs/MEMORY_MAP_GAME.md
+               -- § "Two words never read the same"). Same unresolved pair as
+               -- PLACED_COLUMNS: SQL cannot express resolveDisplayDefinition.
+               ve."selectedSense",
+               de.definition,
+               de."definitionClusters",
                ${typeCategoryExpr(`'reading'`)}        AS "readingCategory"
         FROM ${vetTableForLanguage(language)} ve
+        ${DICT_JOIN}
         WHERE ve."userId" = $1
           AND ve.language = $2
           -- SORTED, not PLAYABLE — and Memory Map is the FIRST game to want this.

@@ -16,6 +16,7 @@ import UsedInPaginatedList from "./UsedInPaginatedList";
 import { MetadataChipRow } from "./FlashcardsLearnPage/styled";
 import { FC_FONT } from "./constants";
 import ExampleSentenceList from "./ExampleSentenceList";
+import { COLORS } from "../../theme/colors";
 
 // Presentational sections shared by both card-detail surfaces (see
 // docs/LEAF_NODE_PAGES.md classification): the editable saved-card page
@@ -67,7 +68,11 @@ export const VocabCardBadges: React.FC<{ entry: VocabEntry }> = ({ entry }) => {
                 size="small"
                 sx={{
                     backgroundColor: getCategoryColor(entry.category),
-                    color: "white",
+                    // Ink + the ramp's inset ring: the category colors are PASTELS
+                    // post-redesign (docs/SHELF_REDESIGN.md, D2), so white text is
+                    // unreadable and an unringed fill is invisible on the card.
+                    color: COLORS.onSurface,
+                    boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}`,
                     fontSize: SIZE.micro,
                     fontWeight: WEIGHT.bold,
                     fontFamily: FC_FONT,

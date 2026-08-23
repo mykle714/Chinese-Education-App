@@ -48,7 +48,7 @@ the page half-works rather than erroring:
 | `src/App.tsx` | the `<Route>` | 404 |
 | `src/components/Layout.tsx` | `MOBILE_DEMO_PATHS` | renders OUTSIDE the phone frame: no footer at all, and `NodePage`'s `position:absolute` slide surface has nothing to be clipped by |
 | `src/utils/pageTransition.ts` | `NODE_ROUTES` | no slide-in-from-right; falls back to a plain route swap |
-| `src/components/FooterPresenter.tsx` | `FOOTER_ROUTES` | footer pill slides away on arrival (route reads as footerless) |
+| `src/components/FooterPresenter.tsx` | `FOOTER_ROUTES` | footer bar slides away on arrival (route reads as footerless) |
 
 `ProtectedRoute` uses **`allowPublic`**, like every other Home-hub page. Without it, public/demo
 accounts are bounced to `/` by the `user?.isPublic && !allowPublic` branch, so the hub button

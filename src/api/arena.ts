@@ -14,8 +14,8 @@ export type ArenaState = 'live' | 'results' | 'opt-in' | 'closed';
 /**
  * One rendered row of the board.
  *
- * Carries nothing beyond name, avatar, language and score — settled as Q20 and
- * enforced on the server. An arena puts a learner in front of 24 strangers they
+ * Carries nothing beyond name, avatar, language, score and the competitor's own
+ * authored message — settled as Q20 and enforced on the server. An arena puts a learner in front of 24 strangers they
  * did not choose and cannot leave, so a streak or a join date here would be a
  * disclosure they never agreed to. Do not add fields without revisiting that.
  */
@@ -27,6 +27,12 @@ export interface ArenaEntry {
     avatarIconId: string | null;
     language: string;
     score: number;
+    /**
+     * The competitor's own one-line message, or null when they have not written
+     * one (docs/ARENA_FEATURE.md § 2.1a). Rendered in the row's sub-line, where the
+     * progress meter used to be.
+     */
+    message: string | null;
     isViewer: boolean;
     zone: 'promote' | 'hold' | 'relegate';
 }
@@ -48,6 +54,12 @@ export interface ArenaBoardResponse {
     boundaries: ArenaBoundaries | null;
     divisionChange: number | null;
     optedInNextWeek: boolean;
+    /**
+     * The VIEWER's own message. Sent separately from their board row because the
+     * editor is reachable in every state — including opt-in, where `entries` is empty
+     * and there is no row to read it off.
+     */
+    viewerMessage: string | null;
 }
 
 /** The viewer's current IANA zone, as the browser reports it. */
@@ -118,4 +130,16 @@ export async function shareArenaLocation(): Promise<string | null> {
 /** Clear a previously shared location. */
 export async function clearArenaLocation(): Promise<void> {
     await apiPost('/api/arena/location', { geoCell: null });
+}
+
+/**
+ * POST /api/arena/message — set (or clear with `null`) the viewer's board message.
+ *
+ * Returns what the SERVER stored, not what was typed: it trims, collapses runs of
+ * whitespace and strips control characters, so the caller must render the response
+ * rather than its own input. Throws on anything longer than 80 characters.
+ */
+export async function setArenaMessage(message: string | null): Promise<string | null> {
+    const res = await apiPost<{ message: string | null }>('/api/arena/message', { message });
+    return res.message;
 }

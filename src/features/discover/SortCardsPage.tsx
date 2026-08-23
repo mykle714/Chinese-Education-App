@@ -10,7 +10,7 @@ import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import NodePage from "../../components/NodePage";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
-import { FLOATING_FOOTER_CLEARANCE } from "../../components/MobileFooter";
+import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
 import { useHideFooter } from "../../hooks/useHideFooter";
 import ForeignText from "../../components/ForeignText";
 import FrequencyScoreDots from "../../components/FrequencyScoreDots";
@@ -125,9 +125,9 @@ const ContentArea = styled(Box)({
 // sheet's maximum height.
 //
 // The negative bottom is load-bearing: ContentArea stops at MobileTabScreen's
-// ScrollArea *content* box, which sits FLOATING_FOOTER_CLEARANCE (108px) above the
+// ScrollArea *content* box, which sits FOOTER_CLEARANCE (90px) above the
 // screen bottom so page content clears the floating footer pill. A sheet pinned to
-// ContentArea's bottom would therefore hover with a 108px band of page background
+// ContentArea's bottom would therefore hover with a 90px band of page background
 // beneath it. Stretching the host down through that reserved band pins the sheet flush
 // to the real bottom edge; the ScrollArea's own `overflow: hidden` clips anything past
 // it. This is the same trick OnDeckSection uses to paint the platform under the pill.
@@ -148,7 +148,7 @@ const EipHost = styled(Box)({
     left: 0,
     right: 0,
     top: 0,
-    bottom: -FLOATING_FOOTER_CLEARANCE,
+    bottom: -FOOTER_CLEARANCE,
     zIndex: EIP_HOST_Z_INDEX,
 });
 
@@ -198,7 +198,11 @@ const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?:
         padding: 8,
         backgroundColor: mainColor,
         borderRadius: 12,
-        boxShadow: "1px 4px 4px rgba(0, 0, 0, 0.25)",
+        // The ramp's ring in addition to the drop shadow: post-redesign `mainColor` is a
+        // pastel (~1.15:1 on paper) AND this tile renders at 0.23 opacity when it is not
+        // the active drop target, so without an edge it disappears entirely.
+        // ⚠️ Even with the ring, 0.23 may now be too faint — check on a device.
+        boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}, 1px 4px 4px rgba(0, 0, 0, 0.25)`,
         opacity: highlight ? 0.9 : 0.23,
         transition: "opacity 0.2s ease-in-out, transform 0.2s ease-in-out",
         transform: highlight ? "scale(1.05)" : "scale(1)",
@@ -238,12 +242,12 @@ const OnDeckSection = styled(Box)({
     flex: "0 0 auto",
     paddingTop: "12px",
     // Extend the white platform down through the footer-clearance zone the
-    // MobileTabScreen ScrollArea reserves (paddingBottom: FLOATING_FOOTER_CLEARANCE),
+    // MobileTabScreen ScrollArea reserves (paddingBottom: FOOTER_CLEARANCE),
     // so the floating footer hovers over the on-deck white rather than a seam of
     // page background. The negative margin cancels the padding in layout, keeping
     // the platform's vertical footprint unchanged — it only paints the spacer.
-    paddingBottom: FLOATING_FOOTER_CLEARANCE,
-    marginBottom: -FLOATING_FOOTER_CLEARANCE,
+    paddingBottom: FOOTER_CLEARANCE,
+    marginBottom: -FOOTER_CLEARANCE,
     // Rounded top corners on a plain white slab.
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -368,10 +372,11 @@ const SortTallyCorner = styled(Box)<{ side: "left" | "right" }>(({ side }) => ({
     pointerEvents: "none", // purely informational — never intercepts a drag
 }));
 
-// The number, tinted with its bucket's color. Those colors are the utcm category
-// colors (COLORS.redMain === CATEGORY_COLORS.Unfamiliar, COLORS.blueMain ===
-// CATEGORY_COLORS.Mastered), so the tally, the drop buckets and the decks page all
-// speak the same color language for the same two states.
+// The number, tinted with its bucket's SEMANTIC INK. The bucket TILES fill with the
+// matching utcm pastels (COLORS.redMain === CATEGORY_COLORS.Unfamiliar,
+// COLORS.blueMain === CATEGORY_COLORS.Mastered), so the tally, the drop buckets and
+// the decks page still speak one color language for the same two states — the tally
+// just uses the readable member of the pair, since it is text on paper.
 const SortTallyValue = styled(Typography)({
     fontSize: SIZE.caption,
     fontWeight: WEIGHT.bold,
@@ -464,8 +469,8 @@ const SortedWatermark = styled(Box)({
         fontWeight: WEIGHT.bold,
         letterSpacing: TRACKING.caps,
         textTransform: "uppercase",
-        color: COLORS.redMain,
-        border: `2px solid ${COLORS.redMain}`,
+        color: COLORS.dangerInk,
+        border: `2px solid ${COLORS.dangerInk}`,
         borderRadius: 6,
         padding: "2px 8px",
         opacity: 0.85,
@@ -1176,7 +1181,7 @@ const SortCardsPage: React.FC = () => {
 
     if (loading) {
         return (
-            <NodePage title="Sort Cards" activePage="discover" onBack={() => navigate("/discover")} scrollable={false} headerExtraActions={<MinutePointsFireBadge />}>
+            <NodePage title="Sort Cards" onBack={() => navigate("/discover")} scrollable={false} headerExtraActions={<MinutePointsFireBadge />}>
                 <Box className="sort-cards__loading-wrapper" sx={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
                     <DelayedCircularProgress className="sort-cards__spinner" />
                 </Box>
@@ -1188,7 +1193,7 @@ const SortCardsPage: React.FC = () => {
     // the completion popup rather than falling through to the spinner branch below.
     if (setModeDone) {
         return (
-            <NodePage title="Sort Cards" activePage="discover" onBack={exitToOrigin} scrollable={false} headerExtraActions={<MinutePointsFireBadge />}>
+            <NodePage title="Sort Cards" onBack={exitToOrigin} scrollable={false} headerExtraActions={<MinutePointsFireBadge />}>
                 <ContentArea className="sort-cards__content sort-cards__content--set-complete">
                     <ProvisionalSortDonePopup
                         sortedCount={resolvedCount}
@@ -1203,7 +1208,7 @@ const SortCardsPage: React.FC = () => {
 
     if (!currentPack) {
         return (
-            <NodePage title="Sort Cards" activePage="discover" onBack={() => navigate("/discover")} scrollable={false} headerExtraActions={<MinutePointsFireBadge />}>
+            <NodePage title="Sort Cards" onBack={() => navigate("/discover")} scrollable={false} headerExtraActions={<MinutePointsFireBadge />}>
                 <ContentArea className="sort-cards__content">
                     <Box className="sort-cards__no-cards-error" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
                         {exhausted
@@ -1218,7 +1223,6 @@ const SortCardsPage: React.FC = () => {
     return (
         <NodePage
             title="Sort Cards"
-            activePage="discover"
             onBack={() => navigate("/discover")}
             scrollable={false}
             headerExtraActions={
@@ -1283,7 +1287,7 @@ const SortCardsPage: React.FC = () => {
                         size="small"
                         onClick={(e) => setLevelMenuAnchor(e.currentTarget)}
                         sx={{
-                            backgroundColor: COLORS.hskChip, color: "white", fontSize: SIZE.micro, fontWeight: WEIGHT.bold,
+                            backgroundColor: COLORS.infoInk, color: "white", fontSize: SIZE.micro, fontWeight: WEIGHT.bold,
                             letterSpacing: TRACKING.caps, cursor: "pointer",
                         }}
                     />
@@ -1323,7 +1327,7 @@ const SortCardsPage: React.FC = () => {
                             className="sort-cards__tally sort-cards__tally--learn-now"
                             side="left"
                         >
-                            <SortTallyValue className="sort-cards__tally-value" sx={{ color: COLORS.redMain }}>
+                            <SortTallyValue className="sort-cards__tally-value" sx={{ color: COLORS.dangerInk }}>
                                 {learnNowCount}
                             </SortTallyValue>
                             <SortTallyLabel className="sort-cards__tally-label">Learn Now</SortTallyLabel>
@@ -1332,7 +1336,7 @@ const SortCardsPage: React.FC = () => {
                             className="sort-cards__tally sort-cards__tally--mastered"
                             side="right"
                         >
-                            <SortTallyValue className="sort-cards__tally-value" sx={{ color: COLORS.blueMain }}>
+                            <SortTallyValue className="sort-cards__tally-value" sx={{ color: COLORS.infoInk }}>
                                 {masteredCount}
                             </SortTallyValue>
                             <SortTallyLabel className="sort-cards__tally-label">Mastered</SortTallyLabel>

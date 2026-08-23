@@ -1,8 +1,8 @@
 import React from "react";
-import { Box, useTheme } from "@mui/material";
+import { GameTimer } from "../shared/GameFrame";
 import { formatTimeMs } from "../../utils/timeUtils";
 import { RUN_DURATION_MS } from "./constants";
-import { SIZE, WEIGHT } from "../../theme/scale";
+import { COLORS } from "../../theme/colors";
 
 /** Below this the clock turns red and pulses. */
 const URGENT_MS = 10_000;
@@ -16,81 +16,40 @@ interface MatchSpeedTimerBarProps {
 }
 
 /**
- * The run clock, pinned to the top of the PLAY AREA rather than the page header.
+ * The run clock — Match Speed's binding of the shared `GameTimer`
+ * (docs/SHELF_REDESIGN.md § A6, class `.timer`).
  *
- * It sits here, not in the header chrome, because it is game state: the player's
- * eyes are on the board, and a countdown they have to look away to read is a
- * countdown they stop reading. The drain bar underneath makes the last ten seconds
- * legible peripherally — you can feel the run ending without parsing digits.
+ * The GENERIC half (the 28px tabular numerals, the 4px track, where the block sits in the
+ * play panel, the fade-when-dimmed) moved to `src/games/shared/GameFrame.tsx` so all five
+ * games read the same. What stays here is the part that is only true of Match Speed: the
+ * run length it divides by, and the ten-second urgency threshold with its pulse.
+ *
+ * The clock lives at the top of the PLAY AREA rather than in the page header because it is
+ * game state — the player's eyes are on the board, and a countdown they have to look away
+ * to read is a countdown they stop reading.
  *
  * Layer: presentational; the page owns the deadline and passes the remainder down.
  *
  * See docs/MATCH_SPEED_GAME.md § Page shell, header, and chrome.
  */
 const MatchSpeedTimerBar: React.FC<MatchSpeedTimerBarProps> = ({ remainingMs, dimmed = false }) => {
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
     const urgent = remainingMs <= URGENT_MS;
-    // Clamped both ends: the deadline clock can overshoot a tick past zero.
-    const fraction = Math.min(1, Math.max(0, remainingMs / RUN_DURATION_MS));
+    // Clamped at the low end here as well as in GameTimer: this fraction also has to be
+    // a sane number if anything else ever reads it.
+    const fraction = Math.max(0, remainingMs / RUN_DURATION_MS);
 
     return (
-        <Box
+        <GameTimer
             className={`match-speed__timer-bar${urgent ? " match-speed__timer-bar--urgent" : ""}`}
-            sx={{
-                flexShrink: 0,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 0.5,
-                px: 1.5,
-                pt: 1,
-                opacity: dimmed ? 0.35 : 1,
-                transition: "opacity 200ms linear",
-            }}
-        >
-            <Box
-                className="match-speed__timer"
-                sx={{
-                    fontSize: SIZE.heading,
-                    fontWeight: WEIGHT.bold,
-                    // Tabular figures: without them the digits jitter horizontally
-                    // once a second, which reads as the layout twitching.
-                    fontVariantNumeric: "tabular-nums",
-                    lineHeight: 1.1,
-                    color: urgent ? "#F44336" : fc.onSurface,
-                    animation: urgent ? "match-speed-timer-pulse 1s ease-in-out infinite" : "none",
-                    "@keyframes match-speed-timer-pulse": {
-                        "0%, 100%": { opacity: 1 },
-                        "50%": { opacity: 0.45 },
-                    },
-                }}
-            >
-                {formatTimeMs(remainingMs)}
-            </Box>
-            <Box
-                className="match-speed__timer-track"
-                sx={{
-                    width: "100%",
-                    height: "4px",
-                    borderRadius: "2px",
-                    backgroundColor: fc.toggleInactiveBg,
-                    overflow: "hidden",
-                }}
-            >
-                <Box
-                    className="match-speed__timer-fill"
-                    sx={{
-                        height: "100%",
-                        // Width is driven by the clock's own 200ms tick, so the
-                        // transition just smooths between samples.
-                        width: `${fraction * 100}%`,
-                        backgroundColor: urgent ? "#F44336" : "#3D6BD6",
-                        transition: "width 200ms linear, background-color 300ms linear",
-                    }}
-                />
-            </Box>
-        </Box>
+            value={formatTimeMs(remainingMs)}
+            fraction={fraction}
+            // The urgency colour is the palette's semantic red — this is ink on white,
+            // not a fill under text, so it takes `dangerInk` and not the pastel.
+            valueColor={urgent ? COLORS.dangerInk : COLORS.onSurface}
+            fillColor={urgent ? COLORS.dangerInk : COLORS.infoInk}
+            dimmed={dimmed}
+            pulse={urgent}
+        />
     );
 };
 

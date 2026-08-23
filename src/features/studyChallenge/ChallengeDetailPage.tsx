@@ -9,6 +9,7 @@ import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import ChallengeScoreTable from "./ChallengeScoreTable";
 import ChallengeWordCard from "./ChallengeWordCard";
 import { storedWordToReviewWord } from "./reviewWord";
+import { challengeLaunchFor } from "../../games/runtime/challengeLaunch";
 import { fetchChallenge, withdrawChallenge } from "../../api/studyChallenges";
 import type { ChallengeSummary } from "../../api/studyChallenges";
 import type { VocabEntry } from "../../types";
@@ -19,6 +20,7 @@ import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { challengeErrorMessage, challengeStatusLine, deadlineLabel, roundsTotal } from "./challengeLabels";
+import { useChallengeAnytime } from "./challengeAnytime";
 import { challengeCardSx, challengeMessageSx, challengeMutedSx, challengeWordCardHeight } from "./challengeStyles";
 
 /**
@@ -46,6 +48,11 @@ function ChallengeDetailPage() {
     const slideNavigate = useSlideNavigate();
     const { user, isAuthenticated } = useAuth();
 
+    // Tester escape hatch (docs/STUDY_CHALLENGE.md § 2a) — read, never set, here: the
+    // switch lives on the challenges list. Only the copy depends on it; whether the
+    // rounds are actually playable is the server's answer, arriving as the presence of
+    // `gameSequence`.
+    const [anytime] = useChallengeAnytime();
     const [challenge, setChallenge] = useState<ChallengeSummary | null>(null);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
@@ -62,7 +69,10 @@ function ChallengeDetailPage() {
             })
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
-    }, [isAuthenticated, challengeId]);
+        // `anytime` is a dependency because it changes what the SERVER sends: with the
+        // hatch on, `gameSequence` is present outside the test window, which is what
+        // turns the round list into playable Play buttons.
+    }, [isAuthenticated, challengeId, anytime]);
 
     /**
      * Withdraw — challenger only, and only while `pending`. The row is deleted, which
@@ -133,7 +143,6 @@ function ChallengeDetailPage() {
     return (
         <NodePage
             title="Challenge"
-            activePage="home"
             onBack={() => slideNavigate("/friends/challenges")}
             contentClassName="challenge-detail-page__content"
         >
@@ -157,8 +166,30 @@ function ChallengeDetailPage() {
                                 vs {challenge.opponent.name || challenge.opponent.email}
                             </Typography>
                             <Typography sx={{ ...challengeMutedSx, mt: 0.25 }}>
-                                {challengeStatusLine(challenge)}
+                                {challengeStatusLine(challenge, anytime)}
                             </Typography>
+                            {/* THE ONE LINE THIS PAGE OWES A TESTER. Every deadline below
+                                is computed from the challenge's stored week, and an
+                                anytime challenge is parked in a FUTURE one — so this page
+                                will confidently name dates weeks away for a test that is
+                                playable right now. The full list of consequences lives
+                                next to the switch, on /friends/challenges
+                                (docs/STUDY_CHALLENGE.md § 2a). */}
+                            {anytime && (
+                                <Typography
+                                    className="challenge-detail-page__anytime"
+                                    sx={{
+                                        fontFamily: FONTS.sans,
+                                        fontSize: SIZE.micro,
+                                        fontWeight: WEIGHT.semibold,
+                                        color: COLORS.warnInk,
+                                        mt: 0.5,
+                                    }}
+                                >
+                                    Anytime is on — every date on this page is ignored, and may
+                                    name a week this challenge was parked in.
+                                </Typography>
+                            )}
                             {verdict && (
                                 <Typography
                                     className="challenge-detail-page__verdict"
@@ -167,7 +198,7 @@ function ChallengeDetailPage() {
                                         fontFamily: FONTS.sans,
                                         fontSize: SIZE.title,
                                         fontWeight: WEIGHT.bold,
-                                        color: challenge.winnerUserId === user?.id ? COLORS.greenMain : COLORS.onSurface,
+                                        color: challenge.winnerUserId === user?.id ? COLORS.successInk : COLORS.onSurface,
                                     }}
                                 >
                                     {verdict}
@@ -278,6 +309,16 @@ function ChallengeDetailPage() {
                                             const roundIndex = index + 1;
                                             const played = challenge.rounds[String(roundIndex)];
                                             const previousPlayed = roundIndex === 1 || !!challenge.rounds[String(roundIndex - 1)];
+                                            // Null when this build has no page for the
+                                            // stored game — the first half of the
+                                            // two-phase game-retirement rule. The round
+                                            // reads as unplayable rather than crashing.
+                                            const launch = challengeLaunchFor(challenge.id, roundIndex, game);
+                                            // Rounds are strictly sequential with one attempt each:
+                                            // n+1 stays locked until n is submitted, and a
+                                            // submitted round is final. The server enforces both —
+                                            // this only reflects them.
+                                            const playable = !played && previousPlayed && !!launch;
                                             return (
                                                 <Box
                                                     key={`${game.gameId}-${game.mode ?? ""}`}
@@ -285,31 +326,41 @@ function ChallengeDetailPage() {
                                                     sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mt: 1 }}
                                                 >
                                                     <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, color: COLORS.onSurface }}>
-                                                        Round {roundIndex} · {game.gameId}{game.mode ? ` (${game.mode})` : ""}
+                                                        Round {roundIndex} · {launch?.title ?? game.gameId}
                                                     </Typography>
                                                     {played ? (
                                                         <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
                                                             {played.score.toLocaleString()}
                                                         </Typography>
+                                                    ) : playable ? (
+                                                        <Button
+                                                            className="challenge-detail-page__round-play"
+                                                            variant="contained"
+                                                            size="small"
+                                                            onClick={() => slideNavigate(launch!.to, { state: launch!.state })}
+                                                            sx={{
+                                                                borderRadius: "10px",
+                                                                textTransform: "none",
+                                                                fontWeight: WEIGHT.bold,
+                                                                backgroundColor: COLORS.greenAccent,
+                                                            }}
+                                                        >
+                                                            Play
+                                                        </Button>
                                                     ) : (
-                                                        // Rounds are strictly sequential with one
-                                                        // attempt each: n+1 stays locked until n is
-                                                        // submitted, and a submitted round is final.
-                                                        // The server enforces both — this only
-                                                        // reflects them.
                                                         <Typography sx={{ ...challengeMutedSx, fontSize: SIZE.micro }}>
-                                                            {previousPlayed ? "Next" : "Locked"}
+                                                            {launch ? "Locked" : "Unavailable"}
                                                         </Typography>
                                                     )}
                                                 </Box>
                                             );
                                         })}
                                         <Typography sx={{ ...challengeMutedSx, fontSize: SIZE.micro, mt: 1 }}>
-                                            {/* TEMPORARY, and deliberately explicit rather than a
-                                                dead button: the round runner is the games step of
-                                                the build (docs/STUDY_CHALLENGE.md § 5), which is
-                                                not written yet. Delete this line when it lands. */}
-                                            The scored test runner isn't built yet — see the build status in docs/STUDY_CHALLENGE.md.
+                                            {/* The board never says which words are contested
+                                                (Q74), so this is the only place the format is
+                                                stated at all. */}
+                                            One attempt each, in this order. Your twelve words are mixed
+                                            into an ordinary board — play the whole board.
                                         </Typography>
                                     </>
                                 ) : (
@@ -343,7 +394,7 @@ function ChallengeDetailPage() {
                                     fontFamily: FONTS.sans,
                                     fontSize: SIZE.caption,
                                     fontWeight: WEIGHT.semibold,
-                                    color: COLORS.redMain,
+                                    color: COLORS.dangerInk,
                                     backgroundColor: COLORS.sectionCard,
                                     borderRadius: 2,
                                     px: 1.5,

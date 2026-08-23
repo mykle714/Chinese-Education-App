@@ -1,53 +1,43 @@
 import React from "react";
-import { Box, Button } from "@mui/material";
+import { Box } from "@mui/material";
 import type { Language } from "../types";
+import { COLORS } from "../theme/colors";
+import { FONTS } from "../theme/fonts";
 
-// Special characters offered per language: zh's tone-marked pinyin vowels (for numbered-pinyin-free
-// typing), es's accented letters + inverted punctuation. Shared by DictionaryPage and the eip
-// Compare tab's slot-B search (docs/WORD_COMPARE_FEATURE.md).
-const SPECIAL_CHARACTERS: Record<Language, string[]> = {
-    zh: [
-        'ā', 'á', 'ǎ', 'à',
-        'ē', 'é', 'ě', 'è',
-        'ī', 'í', 'ǐ', 'ì',
-        'ō', 'ó', 'ǒ', 'ò',
-        'ū', 'ú', 'ǔ', 'ù',
-        'ǖ', 'ǘ', 'ǚ', 'ǜ',
-    ],
-    es: ['á', 'é', 'í', 'ó', 'ú', 'ñ', 'ü', '¿', '¡'],
-};
-
-// Pastel background per vowel group (zh only) so the four tones of a-e-i-o-u-ü read as a group.
-const ZH_VOWEL_COLORS: Record<string, string> = {
-    'ā': '#ffebee', 'á': '#ffebee', 'ǎ': '#ffebee', 'à': '#ffebee', // a - light red
-    'ē': '#fff3e0', 'é': '#fff3e0', 'ě': '#fff3e0', 'è': '#fff3e0', // e - light orange
-    'ī': '#fffde7', 'í': '#fffde7', 'ǐ': '#fffde7', 'ì': '#fffde7', // i - light yellow
-    'ō': '#e8f5e9', 'ó': '#e8f5e9', 'ǒ': '#e8f5e9', 'ò': '#e8f5e9', // o - light green
-    'ū': '#e3f2fd', 'ú': '#e3f2fd', 'ǔ': '#e3f2fd', 'ù': '#e3f2fd', // u - light blue
-    'ǖ': '#f3e5f5', 'ǘ': '#f3e5f5', 'ǚ': '#f3e5f5', 'ǜ': '#f3e5f5', // ü - light purple
-};
-
-function getVowelColor(char: string, language: Language): string {
-    if (language !== 'zh') return 'transparent';
-    return ZH_VOWEL_COLORS[char] || 'transparent';
+/**
+ * A keycap GROUP — the four tone marks of one vowel (zh), or a run of related
+ * accented letters (es). The group is the unit the design spaces apart: keys
+ * inside a group sit 5px apart, groups sit 14px apart, and that gap is the ONLY
+ * thing telling a learner that ā á ǎ à are one vowel rather than four letters.
+ */
+interface KeyGroup {
+    keys: string[];
+    /** Ramp pastel filling every key in the group. Undefined = no fill (es). */
+    fill?: string;
 }
 
-// Square footprint: height matches a MUI small contained button (~30px); width locked to the
-// same value with default horizontal padding removed so the single glyph stays centered.
-const charButtonSx = (char: string, language: Language) => ({
-    width: '30px',
-    minWidth: '30px',
-    height: '30px',
-    p: 0,
-    fontFamily: 'inherit',
-    textTransform: 'lowercase' as const,
-    backgroundColor: getVowelColor(char, language),
-    color: '#000000',
-    '&:hover': {
-        backgroundColor: getVowelColor(char, language),
-        filter: 'brightness(0.9)',
-    },
-});
+// zh: one group per vowel, two groups per row — the design's `.kp` (artboard 7).
+// The fills walk the ramp in the order the vowels are taught (a-e-i-o-u-ü) rather
+// than by any meaning, so the color is a GROUPING device and nothing more.
+//
+// The i-row's `#F7F0C6` is oklch(95% 0.055 100), the one keypad fill the design
+// specifies inline instead of via a ramp variable: the ramp has no yellow between
+// --org (hue 70) and --grn (hue 145), and six vowels need six distinguishable hues.
+const ZH_ROWS: KeyGroup[][] = [
+    [{ keys: ['ā', 'á', 'ǎ', 'à'], fill: COLORS.red }, { keys: ['ē', 'é', 'ě', 'è'], fill: COLORS.org }],
+    [{ keys: ['ī', 'í', 'ǐ', 'ì'], fill: '#F7F0C6' }, { keys: ['ō', 'ó', 'ǒ', 'ò'], fill: COLORS.grn }],
+    [{ keys: ['ū', 'ú', 'ǔ', 'ù'], fill: COLORS.blu }, { keys: ['ǖ', 'ǘ', 'ǚ', 'ǜ'], fill: COLORS.pur }],
+];
+
+// es: accented vowels then the letters/punctuation Spanish needs that a US keyboard
+// lacks. No fills — es has no tone system, so a hue here would imply a distinction
+// that does not exist.
+const ES_ROWS: KeyGroup[][] = [
+    [{ keys: ['á', 'é', 'í', 'ó', 'ú'] }, { keys: ['ñ', 'ü'] }],
+    [{ keys: ['¿', '¡'] }],
+];
+
+const ROWS_BY_LANGUAGE: Record<Language, KeyGroup[][]> = { zh: ZH_ROWS, es: ES_ROWS };
 
 export interface PinyinKeypadProps {
     language: Language;
@@ -64,12 +54,18 @@ export interface PinyinKeypadProps {
  * IME. Inserts the tapped character at the current cursor position (or appends if the input isn't
  * focused/measurable) and restores focus + cursor placement afterward.
  *
+ * Rendered as the design's `.kp` KEYCAPS (docs/SHELF_REDESIGN.md, artboard 7): a flat 30×30
+ * square at radius 8 with a ramp pastel ground and ink glyph. It is deliberately NOT a MUI
+ * `Button` — a contained Button is a pill with an elevation shadow and a ripple, which read as
+ * three separate "this submits something" signals on a control that only types a letter. A
+ * keycap has to look like a key, and every key on the pad is equally weighted.
+ *
  * Extracted from DictionaryPage (which used to inline this twice — a live mobile copy and a dead
  * desktop copy behind an always-false `!isMobile` branch) so the eip Compare tab's slot-B search
  * (docs/WORD_COMPARE_FEATURE.md) can reuse it.
  */
 function PinyinKeypad({ language, inputRef, value, onChange, className }: PinyinKeypadProps) {
-    const chars = SPECIAL_CHARACTERS[language] ?? [];
+    const rows = ROWS_BY_LANGUAGE[language] ?? [];
 
     const handleClick = (char: string) => {
         const input = inputRef.current;
@@ -90,31 +86,62 @@ function PinyinKeypad({ language, inputRef, value, onChange, className }: Pinyin
         }, 0);
     };
 
-    // Chunk into rows of 8 (mirrors the original zh 3-row layout; es's 9 chars spill one row + 1).
-    const rows: string[][] = [];
-    for (let i = 0; i < chars.length; i += 8) rows.push(chars.slice(i, i + 8));
-
     return (
-        <Box className={["pinyin-keypad", className].filter(Boolean).join(" ")}>
-            {rows.map((row, rowIndex) => (
+        <Box
+            className={["pinyin-keypad", className].filter(Boolean).join(" ")}
+            sx={{ display: "flex", flexDirection: "column", gap: "5px" }}
+        >
+            {rows.map((groups, rowIndex) => (
                 <Box
                     key={rowIndex}
                     className="pinyin-keypad__row"
-                    sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: rowIndex < rows.length - 1 ? 0.5 : 1, justifyContent: 'center' }}
+                    // 14px between groups is the design's `.kp .row` gap; it is what separates
+                    // one vowel's four tones from the next vowel's.
+                    sx={{ display: "flex", justifyContent: "center", gap: "14px" }}
                 >
-                    {row.map((char, idx) => (
-                        <Button
-                            key={char}
-                            className="pinyin-keypad__char-btn"
-                            variant="contained"
-                            size="small"
-                            onClick={() => handleClick(char)}
-                            // Extra left margin on the 5th button splits each row's two vowel
-                            // groups (4 + 4) with a gap down the middle.
-                            sx={{ ...charButtonSx(char, language), ...(idx === 4 ? { ml: 2 } : {}) }}
+                    {groups.map((group, groupIndex) => (
+                        <Box
+                            key={groupIndex}
+                            className="pinyin-keypad__group"
+                            sx={{ display: "flex", gap: "5px" }}
                         >
-                            {char}
-                        </Button>
+                            {group.keys.map((char) => (
+                                <Box
+                                    key={char}
+                                    component="button"
+                                    type="button"
+                                    className="pinyin-keypad__key"
+                                    onClick={() => handleClick(char)}
+                                    sx={{
+                                        width: "30px",
+                                        height: "30px",
+                                        flexShrink: 0,
+                                        p: 0,
+                                        border: "none",
+                                        borderRadius: "8px",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        // A group with no fill (es) still needs a key-shaped
+                                        // footprint, so it falls back to the inert grey surface.
+                                        backgroundColor: group.fill ?? COLORS.card,
+                                        fontFamily: FONTS.sans,
+                                        fontSize: "14px",
+                                        fontWeight: 500,
+                                        lineHeight: 1,
+                                        color: COLORS.onSurface,
+                                        cursor: "pointer",
+                                        // Press feedback replaces the removed ripple: the key
+                                        // darkens under the finger and returns, which is the
+                                        // whole of a keycap's interaction vocabulary.
+                                        transition: "filter 90ms linear",
+                                        "&:active": { filter: "brightness(0.92)" },
+                                    }}
+                                >
+                                    {char}
+                                </Box>
+                            ))}
+                        </Box>
                     ))}
                 </Box>
             ))}

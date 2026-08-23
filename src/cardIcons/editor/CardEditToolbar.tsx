@@ -948,7 +948,7 @@ const CardEditToolbar: React.FC<{
                                                     {opt.auto && (
                                                         <BlockIcon
                                                             className="card-edit-toolbar__card-color-auto-glyph"
-                                                            sx={{ fontSize: 24, color: COLORS.redMain }}
+                                                            sx={{ fontSize: 24, color: COLORS.dangerInk }}
                                                         />
                                                     )}
                                                 </Box>

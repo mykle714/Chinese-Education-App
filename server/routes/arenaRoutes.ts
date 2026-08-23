@@ -21,6 +21,9 @@ const router = Router();
 router.post('/api/arena/optIn', authenticateToken, handle(arenaController.optIn, arenaController));
 router.delete('/api/arena/optIn', authenticateToken, handle(arenaController.withdraw, arenaController));
 
+// ── The board message (user-authored, clearable) ──
+router.post('/api/arena/message', authenticateToken, handle(arenaController.setMessage, arenaController));
+
 // ── Coarse location (opt-in, clearable) ──
 router.post('/api/arena/location', authenticateToken, handle(arenaController.setLocation, arenaController));
 

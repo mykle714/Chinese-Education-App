@@ -261,3 +261,30 @@ export interface ActiveChallengeCount {
   language: string;
   count: number;
 }
+
+/**
+ * Everything a GAME needs to build one challenge round's board
+ * (docs/STUDY_CHALLENGE.md § 5.2).
+ *
+ * Resolved by `StudyChallengeService.getRoundContext` and consumed by the pool
+ * reads in `OnDeckVocabService` — the game itself never sees it. It is the answer
+ * to three questions the pool cannot ask the client for, because a client could
+ * lie about any of them: WHICH challenge, WHICH round, and WHICH twelve words.
+ *
+ * `vocabEntryIds` is positional against `words` and is re-materialised on the way
+ * out, so a player who deleted a contested card mid-week still gets a playable
+ * board (Q54).
+ */
+export interface ChallengeRoundContext {
+  challengeId: string;
+  /** The round this player is next allowed to play — 1-based. */
+  roundIndex: number;
+  /** The game this round is drawn as. The caller's game must match it. */
+  game: import('../contracts/wire.js').ChallengeGameRef;
+  /** THIS player's language — a cross-language challenge has two (§ 8). */
+  language: import('../contracts/wire.js').Language;
+  /** The contested words, in their stored order. */
+  words: string[];
+  /** The vet ids behind `words`, positionally. */
+  vocabEntryIds: number[];
+}

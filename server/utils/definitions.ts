@@ -416,3 +416,44 @@ export function resolveShortDefinition(definitions: string[], override?: ShortDe
   if (override?.definition != null) return override.definition;
   return generateShortDefinition(definitions);
 }
+
+/**
+ * The COLLISION KEY for an entry's dd — what "these two cards read the same" means.
+ *
+ * Two different vet entries can resolve to the identical display definition (个 and
+ * 位 both dd as "measure word"; 高兴 and 开心 both as "happy"). On a flashcard that is
+ * harmless — the learner sees one card at a time — but inside a GAME every surface is
+ * simultaneous: two bubbles, two Match Speed rows, two grid words, two map labels all
+ * showing "happy", with only one of them counting as the right answer for a given
+ * prompt. That is not a hard puzzle, it is an unanswerable one, so no game may ever
+ * show two entries with the same key at the same time.
+ *
+ * Normalization is deliberately loose (case, surrounding/collapsed whitespace, and a
+ * trailing period), because the confusion is VISUAL: "Happy" beside "happy" reads as a
+ * duplicate to a player even though the strings differ. It is deliberately NOT
+ * semantic — "happy" and "glad" are two distinct answers a player can tell apart, and
+ * collapsing near-synonyms would thin the candidate pool for no gain.
+ *
+ * Returns '' for an entry with no usable dd. An EMPTY KEY NEVER COLLIDES: callers must
+ * skip it rather than treat every gloss-less card as a duplicate of every other one.
+ *
+ * No client twin today: every game's round is assembled SERVER-side (the game pool,
+ * the Word Search grid, the Memory Map spawn), so the guard lives at those three
+ * chokepoints alone. A future surface that composes a round on the client — Study
+ * Challenge words riding a game's slots, say — needs a matching normalizer in
+ * `src/utils/definitionUtils.ts`, and it must normalize IDENTICALLY or the two guards
+ * will disagree about what a duplicate is.
+ *
+ * Referenced by docs/GAMES_FEATURE.md § "No two cards may share a dd in one round".
+ */
+export function ddCollisionKey(entry: {
+  definition?: string | null;
+  definitionClusters?: SenseCluster[] | null;
+  selectedSense?: string | null;
+}): string {
+  return resolveDisplayDefinition(entry)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\.$/, '');
+}

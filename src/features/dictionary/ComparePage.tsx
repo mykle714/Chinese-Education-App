@@ -60,7 +60,6 @@ const ComparePage: React.FC = () => {
     return (
         <NodePage
             title="Compare Words"
-            activePage="home"
             onBack={() => navigate("/")}
             contentClassName="compare-page__content"
         >
@@ -73,7 +72,7 @@ const ComparePage: React.FC = () => {
                 showPinyin={showPinyin}
                 showPinyinColor={showPinyinColor}
                 // The workspace renders at natural height and MobileTabScreen's ScrollArea does
-                // the scrolling — it already reserves FLOATING_FOOTER_CLEARANCE at the bottom and
+                // the scrolling — it already reserves FOOTER_CLEARANCE at the bottom and
                 // extends behind the floating footer pill, which a nested scroller would not.
                 layout="page"
             />
@@ -82,7 +81,7 @@ const ComparePage: React.FC = () => {
                 MobileTabScreen's ContentInner (flex:1 + minHeight:0, so it shrinks rather than
                 growing), and Chrome does not extend a scroller's scrollHeight by its own
                 paddingBottom for overflowing descendants — so ScrollArea's
-                FLOATING_FOOTER_CLEARANCE alone leaves the last lines stranded behind the pill.
+                FOOTER_CLEARANCE alone leaves the last lines stranded behind the pill.
                 A spacer is real content, so it scrolls. */}
             <FooterSpacer />
         </NodePage>

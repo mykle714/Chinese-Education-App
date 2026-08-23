@@ -3,6 +3,7 @@ import { styled, alpha } from "@mui/material/styles";
 import { CORRECT_COLOR, INCORRECT_COLOR, FC_FONT } from "../constants";
 import { FONTS } from "../../../theme/fonts";
 import { SIZE, WEIGHT } from "../../../theme/scale";
+import { COLORS } from "../../../theme/colors";
 
 // IPhoneFrame removed — phone-frame sizing comes from MobileDemoFrame via Layout.tsx.
 
@@ -43,7 +44,11 @@ export const InfoSheetContainer = styled(Box)(({ theme }) => ({
     left: 0,
     right: 0,
     bottom: 0,
-    background: theme.palette.flashcard.background,
+    // WHITE, not the page ground: a sheet is a surface that sits ON the page, and the
+    // design paints all three of them (`.sheet`, `.eic`, `.pnl`) `var(--white)` over
+    // `--paper`. It used to take `flashcard.background` — the same value as the page
+    // behind it — which only read as a sheet because of its shadow.
+    background: COLORS.white,
     borderRadius: "20px 20px 0 0",
     padding: "10px 0 18px",
     display: "flex",

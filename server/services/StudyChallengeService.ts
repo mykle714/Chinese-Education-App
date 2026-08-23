@@ -34,6 +34,7 @@ import {
 import type {
   ChallengeCandidate,
   ChallengeFriendRow,
+  ChallengeRoundContext,
   ChallengeOpponent,
   ChallengeSummary,
   ChallengesPageResponse,
@@ -75,8 +76,50 @@ export interface ChallengeUserLookup {
     timezone?: string;
     selectedLanguage?: string;
     avatarIconId?: string | null;
+    /**
+     * The TESTER flag (migration 104). Read here for one reason only: it is what
+     * authorizes the `anytime` escape hatch below. A validator asking for it gets
+     * it; anybody else asking for it is ignored, silently and without an error.
+     */
+    isValidator?: boolean;
   } | null>;
 }
+
+/**
+ * THE TESTER ESCAPE HATCH — "allow anytime" (docs/STUDY_CHALLENGE.md § 2a).
+ *
+ * Study Challenge is a WEEKLY feature: issue on Monday, accept by Wednesday, play
+ * Friday to Monday, one challenge per friend per week. That is the product, and it
+ * makes the feature almost untestable — a change to the round runner can only be
+ * exercised on a Friday, against a friend you have not already challenged this week.
+ *
+ * `anytime` lifts exactly the gates that are about the CALENDAR, plus the commitment
+ * cap that would otherwise strand a tester mid-session:
+ *
+ *   * the accept deadline (Wednesday 04:00 local)
+ *   * the test window (Friday 04:00 → Monday 04:00 local), including the rule that
+ *     hides `gameSequence` until it opens
+ *   * one challenge per pair per week
+ *   * MAX_ACTIVE_CHALLENGES
+ *
+ * And nothing else. These stay enforced, because they are not clocks and lifting
+ * them would test a game nobody plays:
+ *
+ *   * you must still be FRIENDS, and the per-pair block still suppresses challenges
+ *   * rounds are still strictly sequential, still one attempt each, still insert-only
+ *   * a round is still scored, stored and resolved exactly as it is in a real week
+ *
+ * ⚠️ IT IS A REQUEST, NOT A STATE. The client asks per call (`?anytime=1`, held in
+ * that browser's localStorage) and the server honours it only for a validator. There
+ * is deliberately no column: the flag is a testing convenience, not a property of the
+ * account, and a stored one would eventually be left on by somebody and silently turn
+ * a real week into a free-for-all. The consequence is accepted and stated in the UI —
+ * the toggle is per-device, so turning it on for one player does not turn it on for
+ * their opponent.
+ *
+ * Every method that enforces a window takes `anytime` as its last parameter and
+ * resolves it through `resolveAnytime` — the ONLY place the validator check lives.
+ */
 
 /**
  * Study Challenge policy (docs/STUDY_CHALLENGE.md).
@@ -144,7 +187,11 @@ export class StudyChallengeService {
    * whole vet layer already use. The BADGE is the one thing that is not scoped
    * (Q48) — see `countBadge`.
    */
-  async getChallengesPage(userId: string, language: Language): Promise<ChallengesPageResponse> {
+  async getChallengesPage(
+    userId: string,
+    language: Language,
+    anytime = false
+  ): Promise<ChallengesPageResponse> {
     if (!userId) throw new ValidationError('User ID is required');
 
     const [friends, live, activeCount] = await Promise.all([
@@ -155,6 +202,9 @@ export class StudyChallengeService {
 
     const now = new Date();
     const viewerTz = await this.timezoneOf(userId);
+    // Resolved ONCE for the whole page, not per row: it is one account-level question
+    // and asking it per friend would be one user lookup per row.
+    const anytimeOn = await this.resolveAnytime(userId, anytime);
     // The week is a GLOBAL counter, not this viewer's local Monday — see
     // shared/challengeWeek.ts. Their timezone still decides every deadline below.
     const weekIndex = challengeWeekIndex(now);
@@ -187,12 +237,12 @@ export class StudyChallengeService {
       const championUserId = lastResolved?.winnerUserId ?? null;
 
       const { canChallenge, blockedReason, viewerBlocked } = await this.challengeability(
-        userId, friend.userId, language, weekIndex, activeCount, row
+        userId, friend.userId, language, weekIndex, activeCount, row, anytimeOn
       );
 
       rows.push({
         friend: opponent,
-        challenge: row ? await this.toSummary(row, userId, now) : null,
+        challenge: row ? await this.toSummary(row, userId, now, anytimeOn) : null,
         championUserId,
         canChallenge,
         blockedReason,
@@ -214,23 +264,24 @@ export class StudyChallengeService {
    * cross-language challenge that is otherwise invisible, and the player would miss
    * their window in silence.
    */
-  async countBadge(userId: string): Promise<number> {
+  async countBadge(userId: string, anytime = false): Promise<number> {
     if (!userId) throw new ValidationError('User ID is required');
     const live = await this.studyChallengeDAL.listLiveForUser(userId);
     const now = new Date();
+    const anytimeOn = await this.resolveAnytime(userId, anytime);
     const tz = await this.timezoneOf(userId);
 
     let count = 0;
     for (const row of live) {
       // An invitation awaiting THIS user's answer.
       if (row.status === 'pending' && row.challengeeId === userId
-          && isAcceptWindowOpen(row.weekIndex, tz, now)) {
+          && (anytimeOn || isAcceptWindowOpen(row.weekIndex, tz, now))) {
         count += 1;
         continue;
       }
       // An accepted challenge whose test window is open and which this user has not
       // finished — "your test is open".
-      if (row.status === 'accepted' && isTestWindowOpen(row.weekIndex, tz, now)
+      if (row.status === 'accepted' && (anytimeOn || isTestWindowOpen(row.weekIndex, tz, now))
           && !this.hasFinished(row, userId)) {
         count += 1;
       }
@@ -239,9 +290,90 @@ export class StudyChallengeService {
   }
 
   /** One challenge, from the caller's point of view, or NotFound. */
-  async getChallenge(userId: string, challengeId: string): Promise<ChallengeSummary> {
+  async getChallenge(userId: string, challengeId: string, anytime = false): Promise<ChallengeSummary> {
     const row = await this.requireParty(userId, challengeId);
-    return this.toSummary(row, userId, new Date());
+    return this.toSummary(row, userId, new Date(), await this.resolveAnytime(userId, anytime));
+  }
+
+  /**
+   * Resolve the board context for the round this player is next allowed to play
+   * (docs/STUDY_CHALLENGE.md § 5.2).
+   *
+   * ⚠️ THIS IS THE GATE FOR THE WHOLE TEST, and it is the only one — the game pool
+   * reads call it before they will hand a challenge board out, and `submitRound`
+   * re-checks the same invariants at the other end. Three things a client cannot be
+   * trusted with, checked here rather than in the game page:
+   *
+   *  1. **Which round.** The round is DERIVED (the first unplayed one), never taken
+   *     from the caller, so a tampered client cannot pull round 3's board and post
+   *     it as round 1 — or replay a round it has already banked.
+   *  2. **Which game.** The caller states the game it is about to run and it must
+   *     equal the drawn sequence entry, mode included. Without this a player could
+   *     play whichever of the three games they are best at, three times.
+   *  3. **When.** `gameSequence` is hidden until the window opens (Q63) and a board
+   *     is the sequence, one round at a time — so refusing outside the window is
+   *     what stops the board read leaking what the payload withholds.
+   *
+   * The contested words are RE-MATERIALISED on the way out. They were materialised
+   * once on accept, but `vocabEntryId` is a convenience pointer that may dangle
+   * (Q54): a player who deleted a contested card during the study week must still
+   * play it, so the ladder is idempotent-ensure rather than trust-the-pointer.
+   */
+  async getRoundContext(
+    userId: string,
+    challengeId: string,
+    game?: ChallengeGameRef | null,
+    anytime = false
+  ): Promise<ChallengeRoundContext> {
+    const row = await this.requireParty(userId, challengeId);
+    if (row.status !== 'accepted') {
+      throw new ValidationError('This challenge is not in its test window');
+    }
+
+    const now = new Date();
+    const myTz = await this.timezoneOf(userId);
+    // The WHEN gate, and the only one `anytime` touches here. The other two — which
+    // round, which game — are about the shape of the test, not the calendar, so a
+    // tester plays the same three rounds in the same order as everybody else.
+    if (!await this.resolveAnytime(userId, anytime)
+        && !isTestWindowOpen(row.weekIndex, myTz, now)) {
+      throw new ValidationError('Your test window is not open');
+    }
+
+    const sequence = row.gameSequence ?? [];
+    const roundCount = Math.min(sequence.length, CHALLENGE_ROUND_COUNT);
+    const roundIndex = this.nextRoundIndex(row, userId);
+    if (roundIndex > roundCount) {
+      throw new ValidationError('You have already played every round of this test');
+    }
+
+    const drawn = sequence[roundIndex - 1];
+    // `mode` is compared with `?? null` on both sides: a game with one mode stores
+    // null and a query string cannot express it, so the two spellings must meet.
+    if (game && (game.gameId !== drawn.gameId || (game.mode ?? null) !== (drawn.mode ?? null))) {
+      throw new ValidationError(`Round ${roundIndex} of this test is not that game`);
+    }
+
+    const language = row.challengerId === userId ? row.challengerLanguage : row.challengeeLanguage;
+    const words = (row.words?.[userId] ?? []) as ChallengeWord[];
+
+    // One transaction for the whole set: `ensureLibraryEntry` promotes a provisional
+    // row in place and touches nothing on a card the learner already owns, so this
+    // is idempotent and safe to run before every round.
+    const ids = await this.txRunner.executeInTransaction(async (tx) =>
+      this.materialiseWords(userId, language, words, tx.getClient())
+    );
+
+    return {
+      challengeId: row.id,
+      roundIndex,
+      game: drawn,
+      language,
+      // Positional pairing is the contract: a word whose det row has gone away
+      // resolves to no vet id, and BOTH lists drop it so they stay aligned.
+      words: words.filter((_, i) => ids[i] != null).map((w) => w.word1),
+      vocabEntryIds: ids.filter((id): id is number => id != null),
+    };
   }
 
   /**
@@ -254,12 +386,16 @@ export class StudyChallengeService {
   async getHistory(
     userId: string,
     limit = 20,
-    before?: string | null
+    before?: string | null,
+    anytime = false
   ): Promise<ChallengeSummary[]> {
     if (!userId) throw new ValidationError('User ID is required');
     const rows = await this.studyChallengeDAL.listHistoryForUser(userId, limit, before ?? null);
     const now = new Date();
-    return Promise.all(rows.map((row) => this.toSummary(row, userId, now)));
+    // Threaded so the log agrees with the page: without it a tester's live parked
+    // challenge would read `expired` here and `pending` two taps away.
+    const anytimeOn = await this.resolveAnytime(userId, anytime);
+    return Promise.all(rows.map((row) => this.toSummary(row, userId, now, anytimeOn)));
   }
 
   /**
@@ -300,7 +436,8 @@ export class StudyChallengeService {
     friendUserId: string,
     variant: ChallengeVariant,
     language: Language,
-    struckWords: string[] = []
+    struckWords: string[] = [],
+    anytime = false
   ): Promise<ChallengeSummary> {
     if (variant !== 'same_word' && variant !== 'different_word') {
       throw new ValidationError('Unknown challenge variant');
@@ -308,17 +445,31 @@ export class StudyChallengeService {
     await this.requireFriend(userId, friendUserId);
 
     const now = new Date();
+    const anytimeOn = await this.resolveAnytime(userId, anytime);
     const challengerTz = await this.timezoneOf(userId);
     // ⚠️ ONE COUNTER FOR BOTH PLAYERS. This used to be the challenger's local Monday
     // as an instant, which meant a pair in two timezones stored two different
     // `weekStart`s for the same week and the pair-week unique index never fired —
     // both crossing challenges were created. The index is global, so the second
     // insert now always collides and the loser gets a 409 (shared/challengeWeek.ts).
-    const weekIndex = challengeWeekIndex(now);
+    //
+    // ANYTIME PARKS THE CHALLENGE IN THE PAIR'S NEXT FREE WEEK, and it has to: the
+    // pair-week rule is not only an app check, it is a UNIQUE INDEX
+    // (`study_challenges_pair_week_uniq`). Skipping the check alone would just move
+    // the refusal from a clear message to a constraint violation, so a tester issuing
+    // a second challenge to the same friend gets the next unused counter value
+    // instead. Its deadlines then sit in the future, which is exactly the state
+    // `anytime` ignores. The accepted cost, stated so it is not a surprise: a parked
+    // challenge OCCUPIES that future week for that pair, so a genuine challenge in it
+    // is refused until the parked one is deleted.
+    const weekIndex = anytimeOn
+      ? await this.nextFreeWeekForPair(userId, friendUserId, challengeWeekIndex(now))
+      : challengeWeekIndex(now);
 
     // ── The three gates, in the order a user would hit them ──
     // 1. The pair's week. Any status counts, including declined/expired, which is
-    //    what makes the decline cooldown work without a rate limiter.
+    //    what makes the decline cooldown work without a rate limiter. Under `anytime`
+    //    the week chosen above is free by construction, so this cannot fire.
     const existing = await this.studyChallengeDAL.findForPairInWeek(userId, friendUserId, weekIndex);
     if (existing) {
       throw new DuplicateError('You already have a challenge with this friend this week');
@@ -332,9 +483,10 @@ export class StudyChallengeService {
       throw new ValidationError('Challenges are not available with this friend');
     }
 
-    // 3. The commitment cap, in THIS language.
+    // 3. The commitment cap, in THIS language. Lifted by `anytime` so a tester
+    //    working through the flow repeatedly is not stranded six challenges in.
     const active = await this.studyChallengeDAL.countActiveForUser(userId, language);
-    if (active >= MAX_ACTIVE_CHALLENGES) {
+    if (!anytimeOn && active >= MAX_ACTIVE_CHALLENGES) {
       throw new ValidationError(
         `You're already in ${MAX_ACTIVE_CHALLENGES} challenges this week`
       );
@@ -386,7 +538,7 @@ export class StudyChallengeService {
     });
 
     void challengeeTz; // resolved above so a bad tz fails here, not at deadline render
-    return this.toSummary(row, userId, now);
+    return this.toSummary(row, userId, now, anytimeOn);
   }
 
   /**
@@ -411,7 +563,8 @@ export class StudyChallengeService {
     userId: string,
     challengeId: string,
     struckWords: string[] = [],
-    replacementWords: string[] = []
+    replacementWords: string[] = [],
+    anytime = false
   ): Promise<ChallengeSummary> {
     const row = await this.requireParty(userId, challengeId);
     if (row.status !== 'pending') {
@@ -422,8 +575,9 @@ export class StudyChallengeService {
     }
 
     const now = new Date();
+    const anytimeOn = await this.resolveAnytime(userId, anytime);
     const myTz = await this.timezoneOf(userId);
-    if (!isAcceptWindowOpen(row.weekIndex, myTz, now)) {
+    if (!anytimeOn && !isAcceptWindowOpen(row.weekIndex, myTz, now)) {
       throw new ValidationError('The time to accept this challenge has passed');
     }
 
@@ -432,7 +586,7 @@ export class StudyChallengeService {
     // decision, and between issue and accept the user may have accepted five others.
     const myLanguage = row.challengeeLanguage;
     const active = await this.studyChallengeDAL.countActiveForUser(userId, myLanguage);
-    if (active >= MAX_ACTIVE_CHALLENGES) {
+    if (!anytimeOn && active >= MAX_ACTIVE_CHALLENGES) {
       throw new ValidationError(
         `You're already in ${MAX_ACTIVE_CHALLENGES} challenges this week`
       );
@@ -552,7 +706,7 @@ export class StudyChallengeService {
       return accepted;
     });
 
-    return this.toSummary(summary, userId, now);
+    return this.toSummary(summary, userId, now, anytimeOn);
   }
 
   /**
@@ -612,17 +766,26 @@ export class StudyChallengeService {
     challengeId: string,
     roundIndex: number,
     score: number,
-    breakdown: ChallengeScoreBreakdown
+    breakdown: ChallengeScoreBreakdown,
+    anytime = false
   ): Promise<ChallengeSummary> {
     const row = await this.requireParty(userId, challengeId);
     if (row.status !== 'accepted') {
-      throw new ValidationError('This challenge is not in its test window');
+      // Named rather than lumped under "not in its test window", which is what a
+      // finished challenge used to be told — technically true (its window is over)
+      // and useless to a player looking at a completed result.
+      throw new ValidationError(
+        row.status === 'complete' || row.status === 'no_contest'
+          ? 'This challenge is already finished'
+          : 'This challenge is not in its test window'
+      );
     }
     if (!Number.isFinite(score)) throw new ValidationError('score must be a number');
 
     const now = new Date();
+    const anytimeOn = await this.resolveAnytime(userId, anytime);
     const myTz = await this.timezoneOf(userId);
-    if (!isTestWindowOpen(row.weekIndex, myTz, now)) {
+    if (!anytimeOn && !isTestWindowOpen(row.weekIndex, myTz, now)) {
       throw new ValidationError('Your test window is not open');
     }
 
@@ -669,7 +832,7 @@ export class StudyChallengeService {
     }
 
     const final = await this.studyChallengeDAL.findById(challengeId);
-    return this.toSummary(final ?? fresh, userId, now);
+    return this.toSummary(final ?? fresh, userId, now, anytimeOn);
   }
 
   /**
@@ -848,11 +1011,15 @@ export class StudyChallengeService {
    *     Only their PROGRESS ("has played") is ever visible beforehand, because
    *     whoever plays second must play against the game and never against a number
    *     — otherwise the mode quietly rewards playing late.
+   *
+   * It is also where the LAPSED-ACCEPT state is derived. See `status` below.
    */
   private async toSummary(
     row: StudyChallengeRow,
     userId: string,
-    now: Date
+    now: Date,
+    /** Tester escape hatch, ALREADY RESOLVED (see `resolveAnytime`). */
+    anytime = false
   ): Promise<ChallengeSummary> {
     const isChallenger = row.challengerId === userId;
     const opponentId = isChallenger ? row.challengeeId : row.challengerId;
@@ -877,7 +1044,33 @@ export class StudyChallengeService {
         : Promise.resolve({} as Record<string, ChallengeWordDisplayFields>),
     ]);
 
-    const windowOpen = isTestWindowOpen(row.weekIndex, myTz, now);
+    const acceptDeadlineAt = acceptDeadline(row.weekIndex, challengeeTz);
+
+    /**
+     * THE STATUS IS DERIVED, NOT READ (§ 2, Q50). A `pending` row whose accept
+     * deadline has passed is ALREADY expired — the maintenance job
+     * (`database/cron/expire-study-challenges.sql`, pass 1) only writes that fact
+     * down durably, it does not create it. Trusting the stored value here made the
+     * challenge lapse *at the hourly cron's convenience*: the challengee's row kept
+     * offering "Review words" in green after their Wednesday 04:00, and tapping it
+     * ran into `acceptChallenge`'s own deadline check — a control that exists only
+     * to produce an error. On a machine where the timer is not installed at all
+     * (dev, and prod until `install-timers.sh` re-renders the unit) it never
+     * lapsed at all.
+     *
+     * Deriving it here fixes every surface at once, because this is the only place
+     * a row becomes a payload. The same rule already governed `countBadge`, which
+     * is why the badge and the row disagreed.
+     */
+    const status: ChallengeStatus = row.status === 'pending'
+      && !anytime
+      && now.getTime() >= acceptDeadlineAt.getTime()
+        ? 'expired'
+        : row.status;
+
+    // `anytime` opens the window rather than skipping the check, so everything
+    // downstream — `gameSequence` visibility included — follows from one boolean.
+    const windowOpen = anytime || isTestWindowOpen(row.weekIndex, myTz, now);
     const opponentFinished = this.hasFinished(row, opponentId);
     const bothFinished = opponentFinished && this.hasFinished(row, userId);
     const sequence = row.gameSequence ?? [];
@@ -885,7 +1078,7 @@ export class StudyChallengeService {
     return {
       id: row.id,
       variant: row.variant,
-      status: row.status,
+      status,
       isChallenger,
       opponent,
       language: myLanguage,
@@ -910,7 +1103,7 @@ export class StudyChallengeService {
       gameSequence: windowOpen || row.completedAt ? sequence : undefined,
       roundCount: Math.min(sequence.length, CHALLENGE_ROUND_COUNT),
       deadlines: {
-        acceptDeadline: acceptDeadline(row.weekIndex, challengeeTz).toISOString(),
+        acceptDeadline: acceptDeadlineAt.toISOString(),
         testOpensAt: testWindowOpen(row.weekIndex, myTz).toISOString(),
         testClosesAt: testWindowClose(row.weekIndex, myTz).toISOString(),
       },
@@ -1047,6 +1240,22 @@ export class StudyChallengeService {
     return ids;
   }
 
+  /**
+   * The 1-based round this player plays next — one past their last submitted round.
+   *
+   * Derived by walking UP from 1 rather than counting the keys, because rounds are
+   * strictly sequential (§ 5.1a) and a count would answer "3" for a rounds object
+   * holding {1,3} — a shape the server refuses to create but which a future replay
+   * or repair path could. Walking finds the first hole, which is the only safe
+   * answer.
+   */
+  private nextRoundIndex(row: StudyChallengeRow, userId: string): number {
+    const mine = row.rounds?.[userId] ?? {};
+    let index = 1;
+    while (mine[String(index)]) index += 1;
+    return index;
+  }
+
   /** Has this player submitted every round of the test? */
   private hasFinished(row: StudyChallengeRow, userId: string): boolean {
     const sequence = row.gameSequence ?? [];
@@ -1103,7 +1312,9 @@ export class StudyChallengeService {
     language: Language,
     weekIndex: number,
     activeCount: number,
-    liveRow: StudyChallengeRow | undefined
+    liveRow: StudyChallengeRow | undefined,
+    /** Tester escape hatch, ALREADY RESOLVED — lifts the cap and the pair-week rule. */
+    anytime = false
   ): Promise<Pick<ChallengeFriendRow, 'canChallenge' | 'blockedReason' | 'viewerBlocked'>> {
     const friendship = await this.friendshipDAL.findBetween(userId, friendUserId);
     const viewerBlocked = friendship
@@ -1119,15 +1330,21 @@ export class StudyChallengeService {
     // lifecycle control (Review words / Play test / Waiting on them), so there is
     // nothing to explain.
     if (liveRow) return { canChallenge: false, blockedReason: null, viewerBlocked };
+    // The block is NOT lifted by `anytime` — it is a person's decision about another
+    // person, not a clock, and a tester flag must never override it.
     if (eitherBlocked) return { canChallenge: false, blockedReason: 'unavailable', viewerBlocked };
-    if (activeCount >= MAX_ACTIVE_CHALLENGES) {
+    if (!anytime && activeCount >= MAX_ACTIVE_CHALLENGES) {
       return { canChallenge: false, blockedReason: 'at-cap', viewerBlocked };
     }
 
     // A resolved row still occupies the pair's week — the decline cooldown, and the
-    // "already played this week" rule, are the same fact.
-    const thisWeek = await this.studyChallengeDAL.findForPairInWeek(userId, friendUserId, weekIndex);
-    if (thisWeek) return { canChallenge: false, blockedReason: 'declined-this-week', viewerBlocked };
+    // "already played this week" rule, are the same fact. Lifted by `anytime`, and it
+    // is the gate that matters most to a tester: without it you get ONE challenge per
+    // friend per week and then cannot exercise the flow again until Monday.
+    if (!anytime) {
+      const thisWeek = await this.studyChallengeDAL.findForPairInWeek(userId, friendUserId, weekIndex);
+      if (thisWeek) return { canChallenge: false, blockedReason: 'declined-this-week', viewerBlocked };
+    }
 
     return { canChallenge: true, blockedReason: null, viewerBlocked };
   }
@@ -1172,6 +1389,43 @@ export class StudyChallengeService {
    * `resolveTimezone`, so a garbage client-set value degrades to a defined boundary
    * rather than failing a read the user cannot repair.
    */
+  /**
+   * May THIS caller have the tester escape hatch, and did they ask for it?
+   *
+   * Both halves matter. A non-validator asking is ignored **silently** — no error,
+   * no hint — because a 403 here would be a probe for who holds the flag; they simply
+   * get the ordinary weekly rules, which is what they would have got anyway.
+   *
+   * See the `anytime` block at the top of this file for exactly what it lifts.
+   */
+  private async resolveAnytime(userId: string, requested: boolean): Promise<boolean> {
+    if (!requested) return false;
+    const user = await this.userDAL.findById(userId);
+    return !!user?.isValidator;
+  }
+
+  /**
+   * The first week counter at or after `from` in which this pair holds no challenge.
+   *
+   * ONLY for the `anytime` tester path — see `issueChallenge`. Walks forward one week
+   * at a time because the pair-week unique index is the thing being satisfied, and a
+   * pair has at most a handful of rows; the bound is a runaway guard, not a limit
+   * anybody should reach. If it IS reached the caller gets the ordinary duplicate
+   * error, which is the honest answer at that point.
+   */
+  private async nextFreeWeekForPair(
+    userId: string,
+    friendUserId: string,
+    from: number
+  ): Promise<number> {
+    const MAX_LOOKAHEAD_WEEKS = 52;
+    for (let week = from; week < from + MAX_LOOKAHEAD_WEEKS; week += 1) {
+      const taken = await this.studyChallengeDAL.findForPairInWeek(userId, friendUserId, week);
+      if (!taken) return week;
+    }
+    return from;
+  }
+
   private async timezoneOf(userId: string): Promise<string> {
     const user = await this.userDAL.findById(userId);
     return resolveTimezone(user?.timezone);

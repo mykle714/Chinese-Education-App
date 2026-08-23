@@ -29,7 +29,7 @@ export const profileMutedSx = {
 export const profileErrorSx = {
     fontFamily: FONTS.sans,
     fontSize: SIZE.caption,
-    color: COLORS.redMain,
+    color: COLORS.dangerInk,
 } as const;
 
 /** A section heading ("Card designs", "Progress"). */

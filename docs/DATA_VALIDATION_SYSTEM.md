@@ -119,7 +119,16 @@ document is the right review surface for it.
 - `users."isValidator" BOOLEAN NOT NULL DEFAULT false` — gates the validator UI +
   endpoints (dictionary data approval ONLY). It used to ALSO gate the Night Market
   template editor; migration 115 split that onto its own `users."isTemplateAuthor"`
-  flag, so the two responsibilities are now independent grants. Surfaced to the client
+  flag, so the two responsibilities are now independent grants.
+
+  ⚠️ **A SECOND READER JOINED IT ON 2026-08-22**, and it is not about dictionary data:
+  Study Challenge's tester hatch ("allow anytime") is offered and honoured only for a
+  validator ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 2a). That is a deliberate
+  reuse — the flag already means "trusted tester account" on this deployment — but it
+  means **granting `isValidator` now also grants the ability to bypass the challenge
+  week**, which is worth knowing before handing it to someone who only needs to
+  validate definitions. If the two ever need to diverge, split it the way 115 split
+  the template author flag rather than adding a second check to this one. Surfaced to the client
   through the `user` object (login + `/api/auth/me`);
   **not** on the JWT. It must be listed in `UserDAL.findById`'s SELECT
   (`server/dal/implementations/UserDAL.ts`) or it vanishes after a token refresh.
@@ -298,7 +307,7 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   enclosing flip/drag/segment handler) — whichever matches this validator's own
   current vote (if any) is swapped to its **filled** variant, colored with the
   project design tokens (approve → `COLORS.greenMain` #05C793 green, flag →
-  `COLORS.yellowMain` #FF9E5A orange) and sat on a faint same-color disc so a
+  `COLORS.aiGenerated` #FF9E5A orange) and sat on a faint same-color disc so a
   "shaded in" button reads as selected at a glance; the other stays a plain
   outline button. The color only appears once the server has recorded the vote
   (it's driven by `myVote`, which is set on the request's success), so green =
@@ -467,7 +476,7 @@ uses to compose the doc, so they always agree byte-for-byte.
 
 **Client** — the shared **AI-generated treatment** lives in
 `src/theme/aiGeneratedStyling.ts` (`aiGeneratedSurfaceSx`: orange
-`COLORS.yellowMain` border + ~8% tint) and `src/components/AiGeneratedBadge.tsx`
+`COLORS.aiGenerated` border + ~8% tint) and `src/components/AiGeneratedBadge.tsx`
 (sparkle + label badge) — the same treatment as the dictionary AI-fallback card
 (`AiDictionaryEntryCard`, docs/DICTIONARY_AI_FALLBACK_SEARCH.md). Three consumers:
 - `ExampleSentenceList.tsx` (the single est UI component) renders any sentence with

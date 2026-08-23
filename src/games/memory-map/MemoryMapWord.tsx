@@ -108,9 +108,9 @@ interface MemoryMapWordProps {
 
 /** Hue per outcome. Hue ALONE carries the result — no icons, no patterns (Q23). */
 const OUTCOME_COLOR: Record<WordOutcome, string> = {
-    green: COLORS.greenMain,
-    orange: COLORS.yellowMain,
-    red: COLORS.redMain,
+    green: COLORS.successInk,
+    orange: COLORS.warnInk,
+    red: COLORS.dangerInk,
 };
 
 const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
@@ -162,7 +162,7 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
 
     // A flash overrides the resting colour so a wrong tap is legible even on a word
     // that already wears one — though in practice only uncoloured words can be hit.
-    const color = flashing ? COLORS.redMain : outcome ? OUTCOME_COLOR[outcome] : COLORS.onSurface;
+    const color = flashing ? COLORS.dangerInk : outcome ? OUTCOME_COLOR[outcome] : COLORS.onSurface;
 
     // Fences are drawn in a neutral line colour rather than the word's hue: a boundary
     // belongs to BOTH parcels, so colouring it by one of them would make an answered
@@ -249,7 +249,7 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
                 // Outside the box (`0 0 0 Npx`, no inset) so it never covers a shared
                 // fence, and lifted above the neighbours it abuts so half the ring is
                 // not painted over by whichever parcel renders after it.
-                boxShadow: selected ? `0 0 0 ${SELECT_RING_PX}px ${COLORS.blueMain}` : "none",
+                boxShadow: selected ? `0 0 0 ${SELECT_RING_PX}px ${COLORS.infoInk}` : "none",
                 zIndex: selected ? 2 : undefined,
                 "&.memory-map-word--pulsing": {
                     animation: "memory-map-pulse 1.1s ease-in-out infinite",
@@ -257,8 +257,8 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
                 "@keyframes memory-map-pulse": {
                     // Glow rather than scale: scaling would make a word overlap the
                     // neighbours it was carefully placed tangent to.
-                    "0%, 100%": { filter: `drop-shadow(0 0 2px ${COLORS.redMain})` },
-                    "50%": { filter: `drop-shadow(0 0 12px ${COLORS.redMain})` },
+                    "0%, 100%": { filter: `drop-shadow(0 0 2px ${COLORS.dangerInk})` },
+                    "50%": { filter: `drop-shadow(0 0 12px ${COLORS.dangerInk})` },
                 },
             }}
         >

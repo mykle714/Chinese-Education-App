@@ -4,6 +4,7 @@ import { authHeader } from "../../utils/authHeader";
 import type { VocabEntry } from "../../types";
 import { HYDRA_COLORS, type HydraCard, type HydraColor } from "./types";
 import {
+    BUCKETS_BY_COLOR,
     BUFFER_LOW_WATER,
     BUFFER_TARGET,
     MARK_TYPE,
@@ -13,23 +14,23 @@ import {
 } from "./constants";
 
 /**
- * Hydra Bubbles — the four color pools (docs/HYDRA_BUBBLES.md § 6.2b).
+ * Hydra Bubbles — the two color pools (docs/HYDRA_BUBBLES.md § 6.2b).
  *
  * WHAT PROBLEM THIS SOLVES. Hydra rolls a COLOR and then needs a card of that color,
  * synchronously, mid-animation. It cannot ask the server "what color is this card?"
  * at spawn time, and it cannot block a spawn on a network round trip. So it keeps
- * four buffers — one per color — and a spawn simply POPS from the buffer whose color
- * it rolled. The card was already the right color, because it came out of that
- * color's buffer.
+ * one buffer per color — two of them since 2026-08-21 — and a spawn simply POPS from
+ * the buffer whose color it rolled. The card was already the right color, because it
+ * came out of that color's buffer.
  *
- * WHY THE BUFFER IS THE COLOR AUTHORITY. A library card enters the buffer its real
- * recognition `gameCategory` names; a LENT card enters the buffer of the color that
- * was REQUESTED, which is its difficulty tier and not its (Unfamiliar) mastery.
- * That disjunction is deliberate — coloring lent cards red would make every one of
- * them pay 0 and collapse the board for exactly the learners most likely to be
- * playing on lent cards (§ 5). Because the tag is assigned on the way OUT of the
- * buffer, a card also keeps its color for the whole run even as it earns marks,
- * which is what § 3's economy assumes.
+ * WHY THE BUFFER IS THE COLOR AUTHORITY. A library card enters the buffer whose two
+ * bands cover its real recognition `gameCategory` (BUCKETS_BY_COLOR); a LENT card
+ * enters the buffer of the color that was REQUESTED, which is its difficulty tier and
+ * not its (Unfamiliar) mastery. That disjunction is deliberate — coloring every lent
+ * card drain would put the whole board on the shrinking side of the ladder for exactly
+ * the learners most likely to be playing on lent cards (§ 5). Because the tag is
+ * assigned on the way OUT of the buffer, a card also keeps its color for the whole run
+ * even as it earns marks, which is what § 3's economy assumes.
  *
  * CLIENT-SIDE ONLY. No table, no persisted server state, nothing to migrate. A run
  * that ends throws its buffers away.
@@ -42,9 +43,10 @@ import {
  *
  * This replaces a fall-through that iterated HYDRA_COLORS in ascending order, so a
  * dry BLUE buffer produced a RED bubble: the game's best slot silently became its
- * worst, and the board's economy inverted. The last-resort fall-through that remains
- * (below) runs only after the await has failed, and walks outward from the rolled
- * color rather than upward from red.
+ * worst, and the board's economy inverted. With only two colors that substitution is
+ * now the WORST case rather than a graded one — the single fallback left swaps a +1
+ * for a −1 — so it stays where it is: a last resort reached only after the await has
+ * already failed.
  *
  * The planner's anti-zero guarantee (§ 4.3) is the floor beneath all of it.
  *
@@ -67,11 +69,11 @@ export interface ColorBuffers {
      * caller treats as "skip this slot".
      */
     draw: (color: HydraColor) => Promise<HydraCard | null>;
-    /** Cards currently held across all four buffers, for the "still loading" check. */
+    /** Cards currently held across both buffers, for the "still loading" check. */
     size: () => number;
     /** Kick an async top-up of any buffer below its low-water mark. Fire-and-forget. */
     topUp: () => void;
-    /** Prime every buffer once, before the run starts. Resolves when all four settle. */
+    /** Prime every buffer once, before the run starts. Resolves when both settle. */
     prime: () => Promise<void>;
     /** Mark a card as in-play (hard exclude) or retired (soft avoid). */
     hold: (id: number) => void;
@@ -85,19 +87,21 @@ export interface ColorBuffers {
 /**
  * @param collectionSuffix `?deck=`/`?collection=` query fragment, or ""
  * @param restricted       a deck/collection run: never lend (§ 6.3)
+ * @param challengeCards   a Study Challenge round's contested words (§ 7.5), which
+ *                         ride the BLOOM slot ahead of that buffer's own stock.
+ *                         Null/empty for an ordinary run.
  */
 export function useColorBuffers(
     collectionSuffix: string,
-    restricted: boolean
+    restricted: boolean,
+    challengeCards: VocabEntry[] | null = null
 ): ColorBuffers {
     // All buffer state lives in refs. It is read and written from inside the rAF /
     // pointer path, where a re-render per card would be both pointless (nothing
     // renders a buffer) and harmful (it would churn the stage mid-drag).
     const buffersRef = useRef<Record<HydraColor, VocabEntry[]>>({
-        Unfamiliar: [],
-        Target: [],
-        Comfortable: [],
-        Mastered: [],
+        drain: [],
+        bloom: [],
     });
     // Cards currently ON THE BOARD or sitting in a buffer — a HARD exclude, because
     // a card may contribute at most one word and one definition bubble (§ 4.4) and a
@@ -117,13 +121,47 @@ export function useColorBuffers(
     const lentDrawnRef = useRef<Map<number, VocabEntry>>(new Map());
 
     /**
+     * THE CHALLENGE QUEUE (docs/HYDRA_BUBBLES.md § 7.5, docs/STUDY_CHALLENGE.md § 5).
+     *
+     * A challenge round's twelve contested words are served from HERE, ahead of the
+     * bloom buffer's own stock, and only ever into a BLOOM slot: their payout is
+     * bloom's (3) whatever the learner's real mastery of them, which is the same
+     * colour/mastery disjunction § 5 already allows for a lent card.
+     *
+     * Bloom rather than drain on purpose — the contested words are what the run is
+     * SCORED on, so making them the board-growing colour means chasing them never
+     * forces the player toward the squeeze. The one place they cannot spawn is the
+     * squeeze itself, which is drain-only.
+     *
+     * Seeded from the prop by identity, so the page can fetch them asynchronously and
+     * hand them over once. Drained and never refilled: a contested word is dealt once
+     * per run, and the run ends when the last one is cleared.
+     */
+    const challengeQueueRef = useRef<VocabEntry[]>([]);
+    const challengeSeedRef = useRef<VocabEntry[] | null>(null);
+    if (challengeCards && challengeSeedRef.current !== challengeCards) {
+        challengeSeedRef.current = challengeCards;
+        challengeQueueRef.current = [...challengeCards];
+        // Hard-exclude them from every refill: a contested word must not also arrive
+        // as ordinary buffer stock and land on the board twice.
+        challengeCards.forEach((card) => heldIdsRef.current.add(card.id));
+    }
+
+    /**
      * Fetch cards for one color.
      *
-     * The color maps to a REQUESTED BUCKET (`?Mastered=4`) so library cards come back
-     * genuinely of that color, and to a TIER OFFSET (`?lendLevelOffset=`) so anything
-     * the server has to lend is drawn at that color's difficulty rather than at the
-     * learner's own level. `surface=hydra-bubbles` is what allows a mid-run refill to
-     * lend at all (ROLLING_SUPPLY_SURFACES, server/contracts/wire.ts).
+     * The color maps to its TWO REQUESTED BANDS (`?Mastered=2&Comfortable=2`) so
+     * library cards come back genuinely of that color, and to a TIER OFFSET
+     * (`?lendLevelOffset=`) so anything the server has to lend is drawn at that
+     * color's difficulty rather than at the learner's own level.
+     * `surface=hydra-bubbles` is what allows a mid-run refill to lend at all
+     * (ROLLING_SUPPLY_SURFACES, server/contracts/wire.ts).
+     *
+     * THE SPLIT IS A PREFERENCE, NOT A QUOTA. `need` caps the whole response and the
+     * server tops a short band up from its own fallback order, so an odd `need`
+     * leaning toward the color's strong band (BUCKETS_BY_COLOR) only decides which
+     * band is asked for FIRST — a learner with no Mastered cards still fills a bloom
+     * buffer entirely from Comfortable.
      *
      * `need` is always set, so every fetch is a partial refill — that IS Hydra's
      * supply model (§ 6.1).
@@ -133,10 +171,24 @@ export function useColorBuffers(
         // Newest-first cap: a Set preserves insertion order, so the tail is the most
         // recently retired. See MAX_AVOID_IDS.
         const avoid = [...retiredIdsRef.current].slice(-MAX_AVOID_IDS);
+        // Split `need` across the color's bands, remainder to the first (strongest)
+        // one. Both bands are always sent, even at need=1 where one of them asks for
+        // zero, so the request still names the full set the color may be served from.
+        const bands = BUCKETS_BY_COLOR[color];
+        const per = Math.floor(need / bands.length);
+        const bandParams = bands.map((band, i) =>
+            `${band}=${per + (i === 0 ? need % bands.length : 0)}`
+        );
         const params = [
             `markType=${MARK_TYPE}`,
             `surface=${SURFACE}`,
-            `${encodeURIComponent(color)}=${need}`,
+            ...bandParams,
+            // "These two bands or nothing." Without it the server tops a short request
+            // up from ANY band, and Hydra would pay the player at the rolled color's
+            // rate for a card of the opposite tier (§ 6.2d). Load-bearing since the
+            // request became two bands wide: the server used to infer this from a
+            // one-band request, and cannot any more.
+            `strictBuckets=1`,
             `need=${need}`,
             `exclude=${exclude.join(",")}`,
             `avoid=${avoid.join(",")}`,
@@ -205,9 +257,9 @@ export function useColorBuffers(
     }, [refill]);
 
     const prime = useCallback(async () => {
-        // Sequential, not Promise.all: the four requests share one exclusion set, and
-        // firing them together would let two colors claim the same card and land a
-        // duplicate on the board. Four small requests at page load is a cost worth
+        // Sequential, not Promise.all: both requests share one exclusion set, and
+        // firing them together would let the two colors claim the same card and land a
+        // duplicate on the board. Two small requests at page load is a cost worth
         // paying for that guarantee.
         for (const color of HYDRA_COLORS) {
             await refill(color);
@@ -222,6 +274,11 @@ export function useColorBuffers(
      * color becomes final for the card, for the rest of the run.
      */
     const take = useCallback((color: HydraColor): HydraCard | null => {
+        // A bloom slot serves a contested word first, while any is left undealt.
+        // Drain never does — see the challenge queue's note.
+        if (color === "bloom" && challengeQueueRef.current.length > 0) {
+            return { entry: challengeQueueRef.current.shift()!, color };
+        }
         const entry = buffersRef.current[color].shift();
         if (!entry) return null;
         if (entry.starterPackBucket === "provisional") {
@@ -231,32 +288,27 @@ export function useColorBuffers(
     }, []);
 
     /**
-     * Colors to try after the rolled one, ordered by DISTANCE from it — blue falls to
-     * green, then yellow, then red, never straight to red.
+     * The other color — the last-resort substitute.
      *
      * Reached only after the await below has already failed, i.e. the refill errored
-     * or the server had nothing. Substituting a color misstates the payout, so this
-     * is a last resort before skipping the slot — but a board that stalls is worse
-     * than one that occasionally mis-pays, and walking outward keeps the error as
-     * small as it can be.
+     * or the server had nothing at all for this color. Substituting misstates the
+     * payout, and under the two-color ladder there is no "near miss" left to fall to:
+     * the only substitute is the opposite sign, a 2-bubble swing. It is still the
+     * right call, because a board that stalls with nothing to match is worse than one
+     * that occasionally mis-pays — but it is now strictly a stall-breaker rather than
+     * a graded degradation, which is why the await above exists to make it rare.
      */
-    const fallbackOrder = useCallback((color: HydraColor): HydraColor[] => {
-        const rolled = HYDRA_COLORS.indexOf(color);
-        return HYDRA_COLORS
-            .filter((c) => c !== color)
-            .sort(
-                (a, b) =>
-                    Math.abs(HYDRA_COLORS.indexOf(a) - rolled) -
-                    Math.abs(HYDRA_COLORS.indexOf(b) - rolled)
-            );
-    }, []);
+    const fallbackOrder = useCallback(
+        (color: HydraColor): HydraColor[] => HYDRA_COLORS.filter((c) => c !== color),
+        []
+    );
 
     const draw = useCallback(async (color: HydraColor): Promise<HydraCard | null> => {
         const immediate = take(color);
         if (immediate) return immediate;
 
-        // Dry. Wait for this color's supply rather than substituting another one:
-        // `refill` joins an already-running request, so a batch that rolls blue three
+        // Dry. Wait for this color's supply rather than substituting the other one:
+        // `refill` joins an already-running request, so a batch that rolls bloom three
         // times over waits on ONE round trip, not three.
         await refill(color);
         const afterWait = take(color);

@@ -1,54 +1,71 @@
-import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
-import AdjustIcon from "@mui/icons-material/Adjust";
-import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
-import EmojiEventsOutlinedIcon from "@mui/icons-material/EmojiEventsOutlined";
-import DeckTile from "./DeckTile";
+import { Shelf, ShelfRow, Spine, spineHeight } from "./shelf";
 import { BAND_COLORS } from "../utils/categoryColors";
 
-// The four deck "buckets" as a display-only row. The stacked-card look itself lives
-// in DeckTile — shared with the fdp, which renders the same object for every
-// collection and every user deck (docs/DECKS_FEATURE.md).
+// The four utcm bands as a shelf row on the Account page — one spine per band,
+// standing on a board. The spine itself lives in components/shelf (A3); this file
+// only decides WHICH sets are on the shelf and in what order.
+//
+// Converted from DeckTile (decision D9, docs/SHELF_REDESIGN.md): the stacked-card
+// tile is gone app-wide and the spine is the single visual for a set of cards.
 //
 // A "compact" preset plus an `onDeckClick` interactive mode used to live here for a
-// tappable row on the /decks page. That page went back to rendering tiles — but as
-// DeckTiles, so this file no longer carries a second variant for it.
+// tappable row on the /decks page. That page renders its own shelf now, so this file
+// no longer carries a second variant for it.
 
-const BucketsContainer = styled(Box)({
-    // Fill the parent so the row's width is bounded by its container; the cards
-    // inside flex-shrink to fit rather than overflowing on narrow containers (e.g.
-    // the Account tab's 350px-capped section).
+const BucketsContainer = styled(Shelf)({
     width: "100%",
-    margin: "0 auto",
-    height: 150,
-    position: "relative",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 16,
-    padding: "0 8px",
+    // The Account row is a stats block, not the page's own gutter — it sits inside a
+    // section that already pads itself, so the shelf's 22px gutter is dropped here.
+    padding: 0,
 });
 
 /** The four utcm bands, in ascending mastery order. */
 const BUCKETS = ["Unfamiliar", "Target", "Comfortable", "Mastered"] as const;
 
 /**
- * The glyph each band's tile carries, as one ascending progression: a question mark
+ * What each band is called ON THE SPINE.
+ *
+ * "Comfortable" is 70px wide at the spine's type size and the spine has 56px of
+ * content, so it MUST break — and left to itself the browser breaks it wherever the
+ * line runs out ("Comforta / ble"). The `\u00AD` is a SOFT HYPHEN: invisible unless
+ * the break happens there, at which point it renders "Comfort- / able".
+ *
+ * It lives here, not in `Spine`, because knowing where an English word may be divided
+ * is caller knowledge — the spine is a box that renders whatever string it is given,
+ * and it has no business carrying a hyphenation dictionary. (`hyphens: auto` would do
+ * this automatically, but only in a browser that ships hyphenation data for the
+ * document's language, so it cannot be the only mechanism.)
+ *
+ * The other three fit on one line and are passed through unchanged.
+ */
+const BUCKET_LABELS: Record<(typeof BUCKETS)[number], string> = {
+    Unfamiliar: "Unfamiliar",
+    Target: "Target",
+    Comfortable: "Comfort\u00ADable",
+    Mastered: "Mastered",
+};
+
+/**
+ * The glyph each band's spine carries, as one ascending progression: a question mark
  * (don't know it) → a target (working on it) → a check (comfortable) → a trophy
- * (done). The trophy is deliberately the SAME icon the fdp gives its Mastered
+ * (done). The trophy is deliberately the SAME glyph the fdp gives its Mastered
  * collection, so "mastered" looks like one idea across both pages.
  *
- * Kept local rather than shared with `features/flashcards/collectionIcon.tsx`:
+ * Material Symbols names rather than icon elements (decision D3) — the spine sizes
+ * the glyph in `cqw` against its own width, which it cannot do to an opaque
+ * `@mui/icons-material` element.
+ *
+ * Kept local rather than shared with `features/flashcards/collectionGlyph.ts`:
  * components/ must not import from features/ (docs/FRONTEND_LAYERING.md), and these
  * are utcm BANDS — a property of one card's progress — not the collections that
  * module maps. Only the trophy is deliberately common to both.
  */
-const BUCKET_ICONS: Record<(typeof BUCKETS)[number], React.ReactNode> = {
-    Unfamiliar: <HelpOutlineIcon />,
-    Target: <AdjustIcon />,
-    Comfortable: <CheckCircleOutlineIcon />,
-    Mastered: <EmojiEventsOutlinedIcon />,
+const BUCKET_GLYPHS: Record<(typeof BUCKETS)[number], string> = {
+    Unfamiliar: "help",
+    Target: "adjust",
+    Comfortable: "check_circle",
+    Mastered: "trophy",
 };
 
 interface DeckBucketsProps {
@@ -59,24 +76,32 @@ interface DeckBucketsProps {
 /**
  * The four flashcard deck buckets (Unfamiliar / Target / Comfortable / Mastered),
  * each showing its per-category card count. Display-only — the tappable equivalents
- * are the fdp's collection tiles. Rendered on the Account page
+ * are the fdp's collection spines. Rendered on the Account page
  * (`src/pages/AccountPage.tsx`), its only host.
+ *
+ * The row carries the count TWICE on purpose — as each spine's banded height and as
+ * its mono numeral — which A3 warns against by reflex but is right here: the height
+ * makes the four bands comparable at a glance (the shape of the user's library),
+ * while the numeral is the figure someone reads a stats block to get. On a shelf
+ * that is a navigation surface rather than a report, drop the numeral.
  */
 const DeckBuckets: React.FC<DeckBucketsProps> = ({ counts }) => (
     <BucketsContainer className="decks-buckets-container">
-        {BUCKETS.map((category, index) => (
-            <DeckTile
-                key={category}
-                className={`deck-bucket deck-bucket--${category.toLowerCase()}`}
-                label={category}
-                count={counts[category]}
-                icon={BUCKET_ICONS[category]}
-                mainColor={BAND_COLORS[category].main}
-                accentColor={BAND_COLORS[category].accent}
-                // Stagger so the four cascade left-to-right instead of firing at once.
-                animationDelay={index * 70}
-            />
-        ))}
+        <ShelfRow className="decks-buckets-row">
+            {BUCKETS.map((category, index) => (
+                <Spine
+                    key={category}
+                    className={`deck-bucket deck-bucket--${category.toLowerCase()}`}
+                    label={BUCKET_LABELS[category]}
+                    count={counts[category] ?? 0}
+                    glyph={BUCKET_GLYPHS[category]}
+                    variant={spineHeight(counts[category] ?? 0)}
+                    color={BAND_COLORS[category].main}
+                    // Stagger so the four cascade left-to-right instead of firing at once.
+                    animationDelay={index * 70}
+                />
+            ))}
+        </ShelfRow>
     </BucketsContainer>
 );
 

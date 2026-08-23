@@ -297,11 +297,14 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **[docs/ARENA_MESSAGE_DEPLOY_RUNBOOK.md](./docs/ARENA_MESSAGE_DEPLOY_RUNBOOK.md)** —
-migration **152** (`users."arenaMessage"`) must be applied BEFORE the container rebuild,
-because the shipped `UserDAL.findById` selects the column and old-schema + new-code 500s
-every authenticated request; **153** (card-fill repaint remap) goes after. Prod is current
-through migration **151**; dev is at **153**.
+Current open runbooks: **none.** Prod is current through migration **153**.
+
+Deployed and retired on 2026-08-23 (runbook deleted): the arena message column (**152**)
+and the card-fill repaint remap (**153**). Split around the rebuild exactly as its runbook
+required — 152 first, because the shipped `UserDAL.findById` selects `users."arenaMessage"`
+by name and old schema + new code 500s *every* authenticated request, not just the arena;
+then the rebuild; then 153, which only remaps stored `vet."cardColor"` hexes and is
+order-independent. 153's remap touched 2 rows, and the runbook's stale-fill check returned 0.
 
 Deployed and retired on 2026-08-17, second deploy of the day (runbook deleted): the
 Study Challenge week-counter migration (**150**), which renamed

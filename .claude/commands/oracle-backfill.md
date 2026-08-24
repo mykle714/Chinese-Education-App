@@ -98,6 +98,13 @@ on the next request and runs five hours from there.
    every batch (§3/§3b); invoking this skill is standing authorization to enrich
    whatever it selects, for the whole run. Take the first batch and go straight to
    §2 → §4 — no pre-write check-in, no per-round batch approval.
+5. **Never ask the user anything, ever, during a round.** This includes
+   `AskUserQuestion` and any other interactive check-in. This skill runs unattended;
+   there is nobody present to answer. Every situation that might tempt a question —
+   including a slur or explicit-sexual-content batch (§3c) — has a scripted
+   drop-and-log resolution instead. If you find yourself about to phrase a question,
+   that is a sign the situation belongs in §3c or the §6 stop-condition list, not in
+   a prompt to the user.
 
 ## 2. Back up prod det — every run, no exceptions
 
@@ -320,8 +327,48 @@ Answer every prompt, or `apply` errors on the missing one.
 
 Then read the apply output. `FAILED: unusable model output` means the answer did
 not satisfy the validator — re-author and re-run apply. Surface every
-`⚠ CLUSTER REVIEW <word> (id=…)` line to the user; those are self-flagged uncertain
-senses and they feed the downstream example sentences.
+`⚠ CLUSTER REVIEW <word> (id=…)` line in the run report (§7); those are self-flagged
+uncertain senses and they feed the downstream example sentences.
+
+### 3c. Content policy — slurs and sexual content
+
+Never author a sense, definition, or example sentence for:
+
+- **A slur or derogatory epithet** (ethnic, racial, national, or otherwise) as a
+  word's primary or only sense — e.g. an ethnic slur that has no other meaning.
+- **Explicit sexual content** — a sense whose gloss/example would need to describe
+  sex acts or genitalia explicitly rather than clinically.
+
+This is a **drop, not a pause**: remove the word from the batch, do not write
+anything for it, and continue authoring the rest of the batch normally (this is the
+same mechanic §6 already describes for "an explicit or invalid sense" — slurs and
+sexual content are the two concrete cases of it). Do not ask the user whether to
+proceed (§1.5).
+
+Two cases do **not** count as a drop, and should be authored normally with standard
+dictionary treatment (neutral, clinical definition; an explicit "derogatory/offensive"
+or "vulgar" register label where the source data supports one; never used approvingly
+in an example sentence):
+
+- A word whose primary sense is ordinary and only a secondary/rare sense is a slur or
+  vulgar — enrich the primary sense, drop only the offending sense from the cluster.
+- Standard clinical/journalistic vocabulary for sex, sexuality, or the sex industry
+  (e.g. terms that appear in law or media-rating contexts) — these are ordinary
+  dictionary headwords, not "explicit sexual content" in the sense above.
+
+**Log every drop** — append one line per dropped word to
+`server/logs/oracle-concerns.md` (gitignored, append-only, never `rm`'d — this file
+accumulates across every run) in the form:
+
+```markdown
+- [<UTC timestamp>] <word> (<script/promptId if applicable>): dropped — <slur|explicit-sexual>, <one-line reason>
+```
+
+This file is the mechanism for surfacing judgment calls without pausing the run — the
+user reviews it periodically instead of being asked in the moment. It is separate
+from and precedes the §7 run report (which is written once, at the very end of a
+run, and may be much later); logging here is what makes the finding visible in the
+meantime.
 
 ## 5. Verify
 
@@ -389,9 +436,11 @@ final report:
   *scope change*, not an ending: drop to §3b and start shipping new words (~113k zh
   rows have never been enriched). "Out of work" is only ever true if §3b's `--new`
   plan is *also* empty — which, at oracle pace, it will not be.
-- A batch is blocked on content you decline to author (an explicit or invalid sense).
-  Drop those specific words from the batch, note them for the report, and continue with
-  the rest — do not let a handful of unanswerable rows end the run.
+- A batch is blocked on content you decline to author (an explicit or invalid sense,
+  including a slur or explicit-sexual-content word — §3c). Drop those specific words
+  from the batch, log them to `server/logs/oracle-concerns.md` (§3c), and continue
+  with the rest — do not let a handful of unanswerable rows end the run, and do not
+  ask the user about them.
 
 **Only these stop the loop** (all are guardrails, and each ends the run — report why):
 
@@ -587,6 +636,9 @@ Write `docs/oracle-runs/oracle-run-<UTC-timestamp>.md` covering:
   take a row count on faith.
 - **Anything uncertain**: words whose meaning or reading was unclear, answers that
   needed a retry, and anything a human should double-check.
+- **Content-policy drops**: how many words this run dropped per §3c (slur /
+  explicit-sexual), pointing at `server/logs/oracle-concerns.md` for the detail
+  rather than repeating every line.
 
 Be honest about failures and low-confidence answers. A clean-looking report over a
 sloppy run is worse than no run at all.

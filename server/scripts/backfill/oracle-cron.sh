@@ -44,12 +44,41 @@
 #   0 * * * * SHARD=1/3 /home/michael/vocabulary-app/server/scripts/backfill/oracle-cron.sh
 #   0 * * * * SHARD=2/3 /home/michael/vocabulary-app/server/scripts/backfill/oracle-cron.sh
 #
+# DISCORD STATUS PINGS (optional)
+#   Set DISCORD_WEBHOOK_URL in the repo-root .env (same file that carries
+#   POSTGRES_PASSWORD; gitignored). Empty/unset = no-op, script behavior is
+#   otherwise identical. Notifies on: parked (budget cap/auth/error — only on the
+#   transition in and out, not every tick while parked), manifest-drift abort,
+#   missing-binary abort, gate-failure escalation, and every round finishing
+#   (with its exit code and any new server/logs/oracle-concerns.md lines).
+#
 # Referenced by: .claude/commands/oracle-backfill.md
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 LOG_DIR="$REPO_ROOT/server/logs"
 mkdir -p "$LOG_DIR"
+
+# ── Discord status updates ───────────────────────────────────────────────────
+# DISCORD_WEBHOOK_URL lives in the repo-root .env (same file run-prod.sh sources
+# for POSTGRES_PASSWORD) so it stays out of git and off the process's argv/ps
+# listing. Optional: an unset/empty URL makes discord_notify() a silent no-op,
+# so this script works identically before the webhook is configured.
+if [[ -f "$REPO_ROOT/.env" ]]; then
+  set -a; . "$REPO_ROOT/.env"; set +a
+fi
+
+# discord_notify <message>: best-effort POST to the webhook. A short timeout plus
+# a swallowed exit code mean a Discord outage or bad URL never fails or hangs a
+# backfill round — this is a side channel, not part of the pipeline's guarantees.
+discord_notify() {
+  [[ -n "${DISCORD_WEBHOOK_URL:-}" ]] || return 0
+  local msg="$1"
+  curl -sS -m 10 -X POST "$DISCORD_WEBHOOK_URL" \
+    -H "Content-Type: application/json" \
+    -d "$(python3 -c 'import json,sys; print(json.dumps({"content": sys.argv[1][:1900]}))' "$msg")" \
+    >/dev/null 2>&1 || true
+}
 
 # ── PATH hardening ───────────────────────────────────────────────────────────
 # cron does NOT source a login shell, so an interactive PATH is not available here.
@@ -100,9 +129,15 @@ fi
 for bin in claude flock docker npx; do
   if ! command -v "$bin" >/dev/null 2>&1; then
     echo "[$(date -uIs)] $SLUG: ABORT — '$bin' not found on PATH ($PATH)" >> "$RUN_LOG"
+    discord_notify "🔴 oracle-cron ($SLUG) ABORT: '$bin' not found on PATH"
     exit 1
   fi
 done
+
+# LAST_STATUS_FILE tracks the last *notified* skip/park reason so a multi-hour
+# CAP park doesn't ping Discord every single tick — only the transition into and
+# out of a parked state is a status change worth a message.
+LAST_STATUS_FILE="$LOG_DIR/oracle-last-status.$SLUG"
 
 # ── budget gate: never spend extra-usage credits ─────────────────────────────
 # The plan's weekly cap is NOT a hard stop. Once `seven_day` hits 100%, requests
@@ -248,6 +283,13 @@ if [[ "$BUDGET" != OK* ]]; then
   REASON="${BUDGET#CAP }"; REASON="${REASON#AUTH }"; REASON="${REASON#ERR }"
   echo "[$(date -uIs)] $SLUG: SKIP — $REASON" >> "$RUN_LOG"
 
+  # Only ping Discord on the transition INTO a parked state, not every tick
+  # while parked — a multi-hour CAP park would otherwise spam a message per hour.
+  if [[ "$(cat "$LAST_STATUS_FILE" 2>/dev/null || true)" != "$BUDGET" ]]; then
+    echo "$BUDGET" > "$LAST_STATUS_FILE"
+    discord_notify "⏸️ oracle-cron ($SLUG) parked: $REASON"
+  fi
+
   if [[ "$BUDGET" == CAP* ]]; then
     # Being at the cap is the gate succeeding, not failing — clear any failure streak.
     rm -f "$GATE_FAIL_STATE"
@@ -258,12 +300,18 @@ if [[ "$BUDGET" != OK* ]]; then
       # stderr so cron surfaces it (mail/journal) instead of burying it in RUN_LOG.
       echo "⚠️  oracle-cron ($SLUG): budget gate has failed $FAILS ticks in a row — the backfill is parked and is NOT budget-limited. Last: $REASON" >&2
       echo "[$(date -uIs)] $SLUG: ⚠️ ESCALATION — $FAILS consecutive gate failures" >> "$RUN_LOG"
+      discord_notify "🔴 oracle-cron ($SLUG): budget gate has failed $FAILS ticks in a row — parked, and NOT actually budget-limited. Last: $REASON"
     fi
   fi
   exit 0
 fi
-# A usable reading means any failure streak is over.
+# A usable reading means any failure streak is over. If we were parked, this
+# tick is the resume transition — worth its own ping.
 rm -f "$GATE_FAIL_STATE"
+if [[ -s "$LAST_STATUS_FILE" ]]; then
+  discord_notify "▶️ oracle-cron ($SLUG) resumed (was parked: $(cat "$LAST_STATUS_FILE"))"
+  rm -f "$LAST_STATUS_FILE"
+fi
 
 # ── preflight the manifest ───────────────────────────────────────────────────
 # Script-ahead-of-manifest drift makes the planner under-report stale rows, so an
@@ -271,6 +319,7 @@ rm -f "$GATE_FAIL_STATE"
 if ! "$REPO_ROOT/server/scripts/backfill/run-prod.sh" \
       scripts/backfill/check-manifest-sync.js >> "$RUN_LOG" 2>&1; then
   echo "[$(date -uIs)] $SLUG: ABORT — manifest/SCRIPT_VERSION drift. Fix before running." >> "$RUN_LOG"
+  discord_notify "🔴 oracle-cron ($SLUG) ABORT: manifest/SCRIPT_VERSION drift — a script is ahead of its manifest entry. Fix before the next tick."
   exit 1
 fi
 
@@ -289,7 +338,13 @@ if [[ -n "${DRY_RUN:-}" ]]; then
   exit 0
 fi
 
-echo "[$(date -uIs)] $SLUG: starting oracle round" >> "$RUN_LOG"
+ROUND_START="$(date -uIs)"
+echo "[$ROUND_START] $SLUG: starting oracle round" >> "$RUN_LOG"
+
+# Snapshot the concerns log's line count so the finish notification can report
+# only what THIS round dropped (§3c of the skill), not the file's whole history.
+CONCERNS_FILE="$LOG_DIR/oracle-concerns.md"
+CONCERNS_BEFORE=$(wc -l < "$CONCERNS_FILE" 2>/dev/null || echo 0)
 
 # ── run the round ────────────────────────────────────────────────────────────
 # --permission-mode bypassPermissions: cron has no TTY to approve tool calls, and the
@@ -313,4 +368,74 @@ RC=${RC:-0}
 # A failed round is safe to retry — incomplete rows simply stay discoverable=FALSE
 # and the flock releases on exit — but the log has to say it happened.
 echo "[$(date -uIs)] $SLUG: round finished (exit $RC)" >> "$RUN_LOG"
+
+# New oracle-concerns.md lines (§3c drops: slurs / explicit-sexual content) since
+# this round started, quoted in full so a status ping is enough to review them
+# without opening the file — capped so one pathological round can't flood Discord.
+CONCERNS_AFTER=$(wc -l < "$CONCERNS_FILE" 2>/dev/null || echo 0)
+CONCERNS_NEW=""
+if (( CONCERNS_AFTER > CONCERNS_BEFORE )); then
+  CONCERNS_NEW=$(tail -n "$((CONCERNS_AFTER - CONCERNS_BEFORE))" "$CONCERNS_FILE" | head -10)
+fi
+
+# Per-word clustering-backfill results written THIS round (both languages), read
+# straight from the DB rather than parsed out of the session's own prose — the
+# `enrichmentLog` timestamp is the authoritative "did cluster-definitions touch
+# this row" signal (see the skill's §5 validatedClause check for the same pattern).
+# 127.0.0.1: the host cannot resolve the docker-network hostname "postgres" that
+# $DB_HOST holds after sourcing .env — same override run-prod.sh applies.
+CLUSTER_RESULTS=""
+if [[ -n "${POSTGRES_PASSWORD:-}" ]] && command -v psql >/dev/null 2>&1; then
+  CLUSTER_RESULTS=$(PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -p 5432 \
+      -U "${DB_USER:-cow_user}" -d "${DB_NAME:-cow_db}" -qtA -F$'\t' -c "
+    SELECT word1, \"definitionClusters\"::text
+      FROM dictionaryentries_zh
+     WHERE language = 'zh'
+       AND (\"enrichmentLog\" #>> '{chinese/backfill-cluster-definitions,ranAt}')::timestamptz >= '${ROUND_START}'::timestamptz
+    UNION ALL
+    SELECT word1, \"definitionClusters\"::text
+      FROM dictionaryentries_es
+     WHERE language = 'es'
+       AND (\"enrichmentLog\" #>> '{spanish/backfill-cluster-definitions,ranAt}')::timestamptz >= '${ROUND_START}'::timestamptz
+    ORDER BY 1
+  " 2>>"$RUN_LOG" | python3 -c '
+import sys, json
+lines = []
+for row in sys.stdin:
+    row = row.rstrip("\n")
+    if not row:
+        continue
+    word, clusters_json = row.split("\t", 1)
+    try:
+        clusters = json.loads(clusters_json) if clusters_json else []
+    except (json.JSONDecodeError, TypeError):
+        continue
+    senses = "; ".join(
+        f"[{c.get("reading", "?")}] {c.get("sense", "?")} (v={c.get("frequencyScore", "?")})"
+        for c in clusters
+    )
+    lines.append(f"{word}: {senses}" if senses else f"{word}: (no clusters)")
+print("\n".join(lines[:8]))
+if len(lines) > 8:
+    print(f"...+{len(lines) - 8} more — see oracle-cron.{sys.argv[1]}.log")
+' "$SLUG") || CLUSTER_RESULTS=""
+fi
+
+if [[ "$RC" -eq 0 ]]; then
+  MSG="✅ oracle-cron ($SLUG) round finished (exit 0)"
+else
+  MSG="🔴 oracle-cron ($SLUG) round FAILED (exit $RC) — see $RUN_LOG"
+fi
+if [[ -n "$CLUSTER_RESULTS" ]]; then
+  MSG="$MSG
+Clustering results this round:
+$CLUSTER_RESULTS"
+fi
+if [[ -n "$CONCERNS_NEW" ]]; then
+  MSG="$MSG
+Content-policy drops this round:
+$CONCERNS_NEW"
+fi
+discord_notify "$MSG"
+
 exit "$RC"

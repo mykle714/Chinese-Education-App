@@ -2,10 +2,16 @@
 
 **Delete this file once prod is verified.**
 
-**Status: NOT YET DEPLOYED.** The guard code is committed (`b5e2198`) and is sitting in
-prod's checkout, but the running containers were built at 18:59Z on 2026-08-24 from
-`03a8ea4` — six minutes *before* the guard was committed. So the code is on prod's disk and
-not in its containers.
+**Status: DEPLOYED 2026-08-24.** Prod rebuilt from `cac71c1`; the § 2 state is now
+**2a = 4 / 2b = 7647 — "Phase 2 ON"** (2a was `0` before). Health 200, all three containers
+healthy, no errors in the backend log after restart. Nothing was pending in
+`schema_migrations` (max 154, highest file 154), so the guard was the only code change in
+the rebuild.
+
+**Remaining before deletion:** the § 4 behavioural check — open a real game board and
+confirm it fills rather than coming back short. That is the one over-blocking symptom the
+infrastructure checks cannot see. Once someone has done that, delete this file and record
+the retirement in CLAUDE.md.
 
 > Derive state from the checks in § 2, not from this banner. If they disagree, the banner is
 > the stale one — that is the standing rule in CLAUDE.md and it has caught five runbooks.

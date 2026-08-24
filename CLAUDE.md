@@ -297,14 +297,20 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **[docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md)** (gloss phase-2 half B, the runtime guard — **no migration**; it goes live on the container rebuild). Prod is current through migration **154**.
+Current open runbooks: **[docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md)**
+(gloss phase-2 half B, the runtime guard — **no migration**). **Deployed 2026-08-24** and
+verified on the infrastructure checks; it stays open only until someone opens a real game
+board and confirms it fills rather than coming back short, which is the one over-blocking
+symptom those checks cannot see. Prod is current through migration **154**.
 
-Gloss confusability **half A shipped 2026-08-24**: migration 154 applied and the dev→prod
-`gloss_meaning_groups` push run (7647 rows / 5076 groups, all § 4 checks passed) — its
-runbook is finished and can be deleted. **Half B is built but not deployed:** the runtime
-guard landed in the repo (`b5e2198`) *after* the running prod containers were built, so
-phase 2 is inert — the rows exist and nothing reads them. **The next prod container rebuild
-turns phase 2 on for live users**, and that rebuild needs its own runbook before it happens.
+Gloss confusability shipped in two halves on 2026-08-24, and the split is worth
+remembering as a pattern: **half A** (migration 154 + the dev→prod `gloss_meaning_groups`
+push, 7647 rows / 5076 groups) was inert by construction because no shipped code read the
+table, so it could land with zero user-visible risk; **half B** (the runtime guard in
+`OnDeckVocabService` → `getGameVocabPool` / `getWordSearchGrid`) then became a pure code
+deploy with no data step attached. Half B has **no feature flag** — it went live the moment
+the containers rebuilt. Rollback for both is still `TRUNCATE gloss_meaning_groups;` with no
+code change, but note it now turns a live feature OFF rather than reverting an inert table.
 
 Deployed and retired on 2026-08-23 (runbook deleted): the arena message column (**152**)
 and the card-fill repaint remap (**153**). Split around the rebuild exactly as its runbook

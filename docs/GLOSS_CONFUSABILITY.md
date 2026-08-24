@@ -1,14 +1,27 @@
 # Gloss Confusability — keeping same-meaning cards off one game board
 
-**Status:** Phase 1 **BUILT** (2026-08-22, no migration). Phase 2 **DESIGN ONLY — nothing
-built, no tables created, no models downloaded.** The phase-2 tables in § 5 were
-**CONFIRMED 2026-08-22** and may be created when phase 2 is built. Every open design
-question in § 10 was answered the same day; § 9 carries the residual risks.
+**Status:** Phase 1 **BUILT** (2026-08-22, no migration). Phase 2 **OFFLINE PIPELINE BUILT
+2026-08-24 (migration 154)** — the job runs end to end on the dev box and
+`gloss_meaning_groups` is populated there. **The runtime guard is NOT wired up yet**: § 6's
+`takenGroups` change to the three chokepoints is not written, so the app still behaves
+exactly as phase 1 today. Nothing has been pushed to prod. Every open design question in
+§ 10 was answered 2026-08-22; § 9 carries the residual risks.
 
-**Build status: DESIGN ONLY, deliberately parked (2026-08-22).** Phase 1 ships and covers
-1,235 real word pairs; phase 2 is decision-complete except **C13/Q11** and is not queued. The
-validation harness that produced § 8i lives at `server/scripts/gloss-probe/` — the model pins
-and `templateVersion` there are the only things that decay while this sits.
+**Build status (2026-08-24): the pipeline is BUILT, the runtime is NOT.**
+
+| Half | State |
+| --- | --- |
+| Offline pipeline (§ 4 steps 1–7) | **BUILT** — `server/scripts/gloss-pipeline/`, runs end to end on dev in ~5 min |
+| `gloss_meaning_groups` (migration 154) | **BUILT AND POPULATED ON DEV** — 7,658 glosses, 5,564 groups. Not on prod |
+| Dev-only build caches (§ 5) | **BUILT** — created by `dev-tables.sql`, deliberately not migrations |
+| Runtime guard (§ 6) | **NOT BUILT** — the three chokepoints still key on dd strings, i.e. phase-1 behaviour |
+| Push to prod (§ 5a) | **BUILT, NEVER RUN** — `push-groups.ts`, dry-run verified only |
+
+Because a gloss with no group id imposes no constraint (§ 6 rule 1) and nothing reads the
+table yet, **the built half is inert**: it can be rebuilt, retuned or dropped without
+affecting a single learner. The blocking rule itself lives at
+`server/scripts/gloss-probe/rule.py` → `decide()`; **step 6 calls that, and the runtime
+guard must mirror it — never re-implement it.**
 
 **Owner doc for:** the rule that no game may show two cards meaning the same thing at the
 same time, and the offline pipeline that would decide what "the same thing" means.
@@ -168,6 +181,23 @@ BI-ENCODER (cosine)                    CROSS-ENCODER (NLI)
 | 5 | WordNet antonym veto (single-word glosses) | cannot-link edges | ✅ deterministic |
 | 6 | Constrained clustering → `meaningGroupId` | one int per gloss | ⚠️ **no** — see § 7 |
 | 7 | Upsert the gloss table | runtime artifact | ✅ |
+
+**As built (2026-08-24)** — `server/scripts/gloss-pipeline/`, one file per boundary:
+
+| Step | File | Notes |
+| --- | --- | --- |
+| 1 | `export-glosses.ts` | **Node, not Python.** dd resolves through `definitionClusters`, `selectedSense` and the parenthetical strip; a Python twin of that would be a second source of truth that silently drifts. Node owns dd, Python owns the model, `glosses.tsv` is the only interface |
+| 2 | `pipeline.py embed` | int8-quantized into `gloss_vectors`; 7,658 keys in 2.4 s |
+| 3–5 | `pipeline.py judge` | hnswlib in-process (never Postgres), then the cross-encoder both directions + the WordNet veto |
+| 6–7 | `cluster.py` | constrained average-linkage; **no model inference**, so a re-cluster is seconds |
+| — | `validate.py` | § 7's every-rebuild gold-set check, run against the BUILT table rather than pair scores |
+| 7 | `push-groups.ts` | the dev → prod push, § 5a |
+
+**One thing § 4 step 1 understates: one det row yields SEVERAL keys.** dd is sense-resolved,
+so a clustered entry shows different English to different learners depending on their
+`selectedSense`. Every sense a learner could pick is a string that could appear on a board,
+so the key set is (default dd) ∪ (dd under each cluster label). On today's discoverable
+corpus that is 5,481 rows → **7,658 distinct keys**.
 
 **Step 3 is incremental** because pair discovery is symmetric: querying outward from each
 *new* gloss finds every (new, old) and (new, new) pair, and (old, old) pairs were found on a
@@ -363,6 +393,49 @@ makes a dev-authored table acceptable.
 > dev sent up — a silent circular sync. **This table must be explicitly excluded from
 > `/data-prod-to-dev`, and the exclusion commented with the reason.**
 
+### As built (2026-08-24)
+
+`push-groups.ts` implements all five requirements above and has been **dry-run verified
+only** — nothing has been pushed to prod, and prod does not yet have migration 154. The
+`/data-prod-to-dev` exclusion warned about below is **now written into that skill**, in its
+own ⛔ section, rather than living only here.
+
+Two guards worth knowing about, neither of which § 5a asked for but both of which fall out
+of building it:
+
+- **Prod credentials come from `PROD_*` env vars only**, never from `db-config.ts`. A
+  missing variable fails loudly instead of quietly pushing dev's table onto itself.
+- **A build must be internally consistent.** The script refuses to push if the dev rows
+  carry more than one `(modelRevision, templateVersion, corpusSnapshot)` stamp — that means
+  an interrupted `cluster.py` or two builds merged, and pushing it would make prod's
+  provenance stamps meaningless.
+
+### Deploying this — see the runbook
+
+**→ [GLOSS_CONFUSABILITY_DEPLOY_RUNBOOK.md](./GLOSS_CONFUSABILITY_DEPLOY_RUNBOOK.md)**
+(TEMPORARY; delete once prod is verified). Written 2026-08-24, not yet executed.
+
+There is no *ordering* hazard here — migration 154 creates the table **empty** and § 6
+rule 1 makes an empty table mean "no constraint", so every ordering works. The runbook
+exists for the opposite reason: the **push is invisible in the diff**. A deployer reading
+the commit sees a migration and some scripts, and would reasonably conclude that shipping
+the code ships the feature. It does not, and no `migrate.sh` run ever will. That is exactly
+the "cannot be inferred from the diff" case the CLAUDE.md rule is about.
+
+The ordering table stands unchanged:
+
+| Step | Constraint |
+| --- | --- |
+| Migration 154 | safe to auto-run via `migrate.sh`, before or after the container rebuild |
+| The runtime guard (§ 6, unbuilt) | safe in any order — with no rows it reads as phase 1 |
+| `push-groups.ts` | whenever. **This is the step that switches the feature ON**, and it is a manual, out-of-band action that no deploy performs |
+
+That last row is the thing a future deployer will not infer from a diff: shipping the code
+does **not** ship the behaviour. The feature stays inert until someone runs the push, and
+`TRUNCATE` turns it back off — no code change, no redeploy, nothing lost (the data is
+derived). If that ever stops being true — if the runtime starts *requiring* rows — the
+rollback stops being free and the runbook's § 6 must be rewritten before that ships.
+
 ### If the dev box is unavailable
 
 Increments are small enough to run on prod CPU in a pinch (a day's growth is ~1k–22k
@@ -434,6 +507,21 @@ garbage-collected on the periodic rebuild.
 | **Incremental** | on the tail of `/mark-discoverable`, or nightly | **seconds** | steps 1–5 for new keys, then union-find merge into existing groups |
 | **Re-cluster** | weekly, or when max group size crosses the cap | **seconds** (no inference) | step 6 in full, over cached verdicts |
 | **Full rebuild** | only on a deliberate model/template change | 10–104 min | everything |
+
+**Measured 2026-08-24 on the dev box (RTX 3050, fp16), full corpus from cold:**
+
+| Step | Work | Time |
+| --- | --- | --- |
+| 1 export | 5,481 discoverable rows → 7,658 dd keys | ~3 s |
+| 2 embed | 7,658 keys, bi-encoder | **2.4 s** |
+| 3 candidates | hnswlib top-20, cosine ≥ 0.35 | 0.3 s |
+| 4–5 judge | 107,895 pairs × 2 directions, DeBERTa-v3-base fp16 | **~18 min** (measured 594 s for 59,623 of them) |
+| 6–7 cluster | pure graph work over 107k cached verdicts, no inference | **~15 s** |
+
+So a **full cold rebuild at today's corpus is ~18 minutes**, and a re-cluster is seconds —
+the split § 7 depends on. Throughput is ~100 pairs/s (200 forward passes/s) at batch 64;
+the § 4 estimate of 10–104 min for FULL det assumed top-20 at a tighter cosine cut, so
+expect the full-det number to land above that range at `COSINE_CUT = 0.35`.
 
 Measured increment cost:
 
@@ -727,7 +815,8 @@ cannot_link(A,B) =  max_contradiction >= 0.5       # fires on 27% of real candid
 The asymmetry is deliberate and matches § 7's revised tuning target: **be generous about what
 counts as confusable, and rely on the brake to prevent over-blocking.** Measured on the 390
 real candidate pairs of § 8i, this blocks 259 (66%) versus 169 (43%) today. τ below 0.3 buys
-nothing (260 at τ=0.2).
+nothing (260 at τ=0.2). *(Re-derived 2026-08-24: the recount is **258**, and the rule as
+implemented blocks **257** — the numeral guard below vetoes one of them. § 8j.)*
 
 **`numeral_mismatch` — the one gap the brake had.** 万 "ten thousand" / 千 "thousand" scored
 contradiction **0.11**, so neither the NLI veto nor WordNet caught it, and containment *does*
@@ -747,6 +836,327 @@ a minor, acceptable miss if not.
 > — it is now the main early warning that the liberal rule has over-merged. Expect to need
 > tighter linkage than a first guess, and check § 8g's largest groups before trusting a run.
 
+### 8j. Liberal-rule results — C14 closed, 2026-08-24
+
+§ 8i's numbers were a *recount over cached scores* of a rule that had never been run as code,
+and were never applied to the § 8a/8b gold set at all (C14). Both gaps are now closed. The
+rule is implemented once, in `server/scripts/gloss-probe/rule.py` → `decide()`, and applied by
+`evaluate.py` → `rule_eval_results.json`. **No inference was needed** — mutual entailment and
+max contradiction were already cached, and containment / WordNet / numerals are deterministic.
+That is § 7 rule 1 paying for itself: the whole re-measurement is a seconds-long re-derivation.
+
+#### The gold set — the number C14 said was unknown
+
+| | Liberal (Q11) | Legacy (§ 4) |
+| --- | --- | --- |
+| must-block recall (§ 8a) | **100%** (12/12) | 100% |
+| must-NOT-block wrong-block rate (§ 8b) | **0%** (0/12) | 0% |
+| § 8c templated families | 9/9 correctly allowed | 9/9 |
+
+**The liberal rule costs nothing on the curated set.** Lowering τ to 0.3 and adding
+containment did not wrongly block a single contrast pair — *big/small*, *buy/sell*,
+*come/go*, *Monday/Tuesday*, *one/two* all still separate. C11's stated exposure (a liberal
+must-link eroding the must-not-block rate) **does not materialize here**; the residual risk
+is over-merging during clustering, which the § 8g alarm — not this table — is what watches.
+
+#### The real distribution — a fresh apply, and a correction to § 8i
+
+| | Blocked, of 390 genuine candidates |
+| --- | --- |
+| Legacy § 4 rule | 169 (43%) — matches § 8i exactly |
+| § 8i's stated recount | 259 (66%) |
+| **Recount reproduced** | **258** — § 8i was off by one |
+| **Liberal rule as implemented** | **257 (66%)** |
+
+The one further pair is the numeral guard doing exactly its job: 万 "ten thousand" / 千
+"thousand" is the **only** pair in 390 where a non-contradiction veto fires, and it is the
+pair the guard was written for. Every other brake activation is contradiction.
+
+Decision reasons across the 390: `mutual-entailment` 178 (46%), `contradiction` 106 (27%),
+`containment` **79 (20%)**, `unrelated` 26 (7%), `numeral-mismatch` 1. **Containment is
+carrying a fifth of the signal on its own, with no model inference** — the cheapest component
+in the design is also the second-largest contributor.
+
+**C13's grey band: 88 of 115 pairs now blocked (77%).** The band the § 4 rule let straight
+onto a board is substantially closed.
+
+#### Two findings the 2026-08-22 probe did not surface
+
+1. **Near-homograph proper nouns are the new false-positive class → C16.** `Shancheng
+   District` (山城区) / `Shangcheng District` (上城区) scores mutual entailment **0.995** and
+   contradiction 0.001 — confidently wrong. It is the *only* such pair in the sample, but § 8c
+   was validated on surnames and *dissimilar* district names; one-character-apart place names
+   were never in it. Nothing in the brake can catch this: the strings are not contradictory,
+   not antonyms, and carry no numeral.
+2. **τ=0.3 blocks taxonomic hypernyms too, not only specialization.** § 8i and Q11 claim the
+   liberal rule "leaves taxonomic hypernymy (dog/animal) alone" because containment does not
+   match it. Measured: *dog*/*animal* and *rose*/*flower* are indeed allowed, but
+   **`car`/`vehicle` blocks on mutual entailment 0.3+** — and 车/汽车 is listed in § 8d as a
+   hypernym case. The claim is therefore true of containment but **not** of the lowered τ.
+   This is arguably correct behaviour for a game board (a card reading "vehicle" and one
+   reading "car" *are* confusable) and it is consistent with the revised Q4 bias toward
+   blocking — but it is a **reversal of Q2 in a case Q2 explicitly named**, and it should be
+   recorded as such rather than discovered again later.
+
+The § 8d asymmetry health check passes: *dog*/*animal* and *rose*/*flower* show clear one-way
+entailment, so the `min(...)` in § 4's rule is doing what it claims.
+
+#### § 8g size-alarm precursor
+
+Degree within this 400-pair sample: 451 glosses carry at least one must-link, **max degree 4**
+(`city district`, `to meet together`, `to meet`, `east`, `district`). No explosion is visible
+— but this is a top-400-pairs sample, not top-k per gloss, so the degree here is a **lower
+bound** and this is a smell test, not the § 8g distribution. The real alarm still needs the
+pipeline.
+
+
+### 8k. First real build — measured on the whole discoverable corpus, 2026-08-24
+
+§ 8i and § 8j scored *pairs*. This is the first measurement of what the pipeline actually
+produces: **groups**, over every discoverable gloss in both languages, with the rule, the
+brake and the clustering all wired together.
+
+Numbers below are the **current** build, rebuilt 2026-08-24 after the `stripParentheses`
+nesting fix (§ 8l) changed 27 glosses. The pre-fix build was 7,658 keys / 5,086 groups; every
+structural property was identical, so the fix moved the corpus, not the pipeline's behaviour.
+
+| | |
+| --- | --- |
+| Corpus | 5,481 discoverable rows (4,224 zh + 1,257 es) → **7,647 distinct dd keys** |
+| Candidate pairs (top-20, cosine ≥ 0.35) | 107,895 |
+| Must-link edges | 15,168 (12,374 mutual entailment + 2,793 containment + 1 exact-dd) |
+| Cannot-link edges | 74,745 contradiction, 82 WordNet antonym, **32 numeral-mismatch** |
+| **Groups** | **5,076** over 7,647 glosses — 1,744 non-singleton, largest **11** |
+| Size distribution | 1:3332, 2:1289, 3:245, 4:119, 5:48, 6:27, 7:10, 8:2, 9:3, 11:1 |
+| **Cannot-link violations after clustering** | **0** |
+| Stale cached pairs skipped | 587 (§ 8l) |
+
+**The § 8g properties hold.** Verified against the built table, not against pair scores:
+*big/small*, *buy/sell*, *come/go*, *one/two*, *hot/cold* and *ten thousand/thousand* all
+land in different groups **after** clustering. The size alarm is clear.
+
+**Gold-set rates (§ 7 requires these on every rebuild):** must-block recall **8/9 (89%)**,
+must-NOT-block wrong-block **0/17 (0%)**. Eight gold pairs use glosses absent from the
+discoverable corpus and are correctly unconstrained (§ 6 rule 1).
+
+#### Two failures worth keeping
+
+**1. The retriever, not the rule, was the binding constraint.** At the initial
+`COSINE_CUT = 0.55`, *thing*/*object* — a real synonym pair the § 8i probe scored at mutual
+entailment 0.97 — **was never judged at all**, because its cosine is 0.48. § 3c's inversion
+(*Monday*/*Tuesday* at 0.87 ranks above a true synonym at 0.48) does not merely defeat a
+cosine *threshold* for deciding; it defeats cosine as a *recall filter* too. Lowering the cut
+to 0.35 fixed it (recall 7/9 → 8/9) at a cost of 3× the candidate pairs, which `TOP_K` bounds.
+**Recall failures at step 3 are invisible in every downstream metric** — the pair simply never
+appears — so the cut must be re-validated whenever it moves, and C17 records the trap that
+makes that easy to get wrong.
+
+**2. Average linkage can lose a strong direct edge.** *a few*/*few* scores mutual entailment
+**0.97** and is a must-link edge, yet the two ended in different groups: `a few` merged with
+*several*, `few` with *only a few*, and the cross-cluster **average** then fell below
+`LINKAGE_TAU`. This is average linkage working as specified — it is exactly what stops
+chaining — but it means **a pair the rule blocks can still share a board**. The runtime is
+group equality, so any such pair is silently unprotected. Options if this proves common:
+raise `LINKAGE_TAU` (fewer, tighter groups, more such losses), lower it (more chaining), or
+add a "strong-edge override" that force-merges above some entailment — which is single
+linkage on strong edges and reintroduces exactly the chaining risk § 4 warns about. **Not
+decided; left as measured.**
+
+#### The chain hunt — and a misdiagnosis, corrected 2026-08-24
+
+§ 8g asks whether *a little ~ a bit ~ somewhat ~ rather ~ slightly* collapses. At the tight
+cut it did not (`somewhat` sat alone). With the full candidate set the group is
+`a bit | a little | a little bit | not very | somewhat`. Four of those five are the intended
+block. **`not very` is not** — it is a hedge toward the negative, and a board that never
+contrasts it with *a little* loses a real distinction.
+
+⚠️ **This was first written up as chaining — as the § 8i liberal must-link arriving on
+schedule. That was wrong, and the correction changes where the fix belongs.** The pairwise
+scores were checked directly:
+
+| Pair | mutual entailment | verdict |
+| --- | --- | --- |
+| `not very` / `a little` | **0.982** | direct must-link |
+| `not very` / `a little bit` | **0.927** | direct must-link |
+| `not very` / `somewhat` | **0.789** | direct must-link |
+| `not very` / `a bit` | — | never judged (no edge) |
+
+`not very` did not arrive transitively. It has strong **direct** edges to three of the four
+members, and the clustering merged it correctly given those edges. **The failure is in the
+model, not in the linkage**: DeBERTa-NLI rates *not very* as mutually entailing *a little* at
+0.98 — a negation blind spot, and a well-documented weakness of NLI models rather than a
+quirk of this corpus. It is the same root as `statue`/`statute` (§ 8m): the cross-encoder is
+being asked for logical entailment and answering on surface plausibility.
+
+Consequences of the correction:
+
+- **`LINKAGE_TAU` is not the lever for it** — no threshold separates a 0.98 edge from the
+  0.99 edges around it. This is independent of, and additional to, § 8m's conclusion.
+- **The § 8g chain hunt does not currently demonstrate chaining.** No verified instance of
+  transitive over-merge exists in this build. The hunt should stay — it is cheap and the risk
+  is real — but it must not be cited as evidence that chaining has been observed.
+- **C15 (an STS model for the must-link half) gains weight**, since graded-similarity models
+  are not asked to reason about negation at all. C8 (co-hyponym neutrals producing no
+  cannot-link) is *not* implicated here.
+
+The over-merge is bounded — largest group 11, alarm clear — and under the revised Q4 (favour
+blocking) it is the acceptable direction of error. But note the size alarm would **not** have
+caught this: a 5-member group with one wrong member is indistinguishable by size from a
+correct one. Size is a proxy for chaining, not a detector of bad edges. The largest groups
+should be eyeballed on every rebuild rather than trusted. The largest, group 1, is
+`a lot | a lot of | a lot, loads | a lot, much | a whole lot of | many | many, a lot of |
+more | much, a lot of | numerous | plenty` — coherent, and a fair illustration of how much
+of the corpus is near-duplicate phrasing of one idea.
+
+
+### 8l. The dd bug the pipeline found — `stripParentheses` nesting, fixed 2026-08-24
+
+Building the corpus is the first thing that ever read **every** dd in the app side by side,
+and it surfaced a display bug that predates phase 2 entirely.
+
+`stripParentheses` (`src/utils/definitionUtils.ts`, twinned in `server/utils/definitions.ts`)
+removed asides with `/\s*\([^)]*\)/g`. `[^)]*` stops at the **first** `)`, so an aside
+containing an aside had its tail emitted as the definition. It now scans with a depth
+counter instead.
+
+What was actually on screen before the fix:
+
+| Word | dd shown on the card |
+| --- | --- |
+| 的 | `" or 新的[xin1 de5] "new one")` |
+| 加 | `")` |
+| es `perro` | `dog, domesticated for thousands of years and of highly variable appearance because of human breeding.)` |
+| es `planta` | `plant or of the Chlorophyta, a eukaryote that includes double-membraned chloroplasts…)` |
+
+**27 of 16,763 discoverable glosses changed, and 21 of them are Spanish** — the zh cases are
+the eye-catching ones but the es import (`raw` Wiktionary blocks) is where the pattern is
+systemic. All 27 changes are strict improvements; the diff was checked gloss-by-gloss before
+the fix landed. Two secondary behaviours were chosen deliberately and are covered by tests in
+`server/__tests__/definitions.test.ts`:
+
+- an **unmatched `(`** swallows to end of string (门's `definitions` splits one parenthetical
+  across two array elements, so each half is individually unbalanced);
+- an **unmatched `)`** is dropped rather than kept — a lone close paren is never displayable.
+
+The depth scanner also had to reproduce the old regex's leading `\s*` explicitly, by eating
+already-emitted trailing whitespace when an aside opens. Without that, `to go (informal); to
+leave` renders `to go ; to leave` and `[+de (particle)]` renders `[+de ]`. An earlier attempt
+repaired those seams with a punctuation regex instead and silently mangled ellipsis glosses
+(`firstly, ...` → `firstly,...`) — 103 glosses changed instead of 27. **Eat the whitespace at
+the open paren; do not normalise punctuation afterwards.**
+
+**Effect on phase 2:** 27 keys left the corpus and 16 entered, so 11 glosses collapsed onto
+keys that already existed — meaning phase 1's exact-dd guard now catches collisions it was
+previously blind to, with no phase-2 involvement at all.
+
+#### The stale-edge bridge (found by the rebuild, fixed in `cluster.py`)
+
+`gloss_pair_verdicts` is keyed by gloss **text** and is append-only, so it outlives the
+glosses themselves: the 27 removed keys kept 587 cached pairs. Clustering those does not
+merely write dead rows — **a stale key is a live bridge**, and average linkage will merge two
+current groups through a gloss that is no longer in the corpus. `cluster.py` now gates every
+edge on the key set in `glosses.tsv` (`live_keys()`) and reports the skipped count. This is a
+standing hazard of the § 7 rule-1 design (cache raw scores forever, re-derive cheaply), not a
+one-off: **any** det edit that changes a dd leaves bridges behind.
+
+### 8m. Should `LINKAGE_TAU` be lowered? — analysed 2026-08-24, **answer: no**
+
+C18 (`a few`/`few` scoring 0.97 yet landing in different groups) looked like a threshold
+problem, so the obvious remedy was to lower the average-linkage merge threshold from 0.5.
+`sweep.py` re-derives the whole clustering at a range of taus — no model inference, pure
+graph work over the cached verdicts, which is § 7 rule 1 paying off again.
+
+#### The sweep
+
+| τ | groups | largest | over alarm | must-link **honoured** | **overmerged** | gold R | gold W |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0.30 | 4,585 | **16** | **1** | 4,892/15,168 (32.3%) | 160/92,202 (0.2%) | 8/9 | 0/17 |
+| 0.35 | 4,699 | **16** | **1** | 4,649/15,168 (30.7%) | 118/92,202 (0.1%) | 8/9 | 0/17 |
+| 0.40 | 4,803 | 11 | 0 | 4,404/15,168 (29.0%) | 82/92,202 (0.1%) | 8/9 | 0/17 |
+| 0.45 | 4,931 | 11 | 0 | 4,148/15,168 (27.3%) | 53/92,202 (0.1%) | 8/9 | 0/17 |
+| **0.50 (shipped)** | 5,076 | 11 | 0 | **3,850/15,168 (25.4%)** | ~40/92,202 (0.04%) | 8/9 | 0/17 |
+
+- **honoured** — must-link pairs whose endpoints share a group. The rule says "block"; does
+  the runtime, which only ever compares group ids, actually block them? This is C18 measured
+  at scale rather than on one example.
+- **overmerged** — pairs the rule did *not* link that share a group anyway. Chaining; the
+  § 8b silent failure.
+
+The 0.50 honoured figure is counted against the **built table** rather than a sweep re-run,
+so it is the number the shipped artifact actually delivers; its overmerge is extrapolated
+from the monotone trend and is the one estimate in the table.
+
+Two things are immediately visible. **The gold set cannot see any of this** — 8/9 and 0/17
+at every tau, because 26 pairs cannot separate configurations that differ by hundreds of
+merges. And **the whole 0.30–0.50 range buys only 5 percentage points of honoured**, while
+0.35 and below breach the § 10 Q8 size alarm (a 16-member group) and triple the overmerge.
+
+#### Why lowering tau cannot fix C18
+
+The tempting reading of the table is "honoured is low, so the bar is too high." It is the
+wrong reading. The must-link edges are **not weak**:
+
+| Must-link edge strength | Share |
+| --- | --- |
+| mutual entailment ≥ 0.9 | 27.1% |
+| ≥ 0.5 | 64.9% |
+| 0.3–0.5 (the § 8i liberal band) | 8.8% |
+| containment (floored at τ) | 18.4% |
+
+83% of must-link edges already clear 0.5 on their own. So the ~70% that go unprotected are
+not sitting just under the bar — and the loss rate proves it, broken down by how strong the
+pair was:
+
+| Pair strength | Protected | **Unprotected** | Loss |
+| --- | --- | --- | --- |
+| ≥ 0.90 | 2,139 | **1,975** | **48.0%** |
+| 0.70–0.90 | 915 | 2,458 | 72.9% |
+| 0.50–0.70 | 687 | 4,461 | 86.7% |
+| 0.30–0.50 | 109 | 2,424 | 95.7% |
+
+**Half of the strongest pairs in the corpus — mutual entailment ≥ 0.90 — are unprotected.**
+No value of tau reaches them, because they are already far above every tau worth
+considering. The mechanism is **dilution, not thresholding**: average linkage divides by
+`|A|·|B|` and counts *missing* edges as zero (§ 4, and deliberately so — it is what stops
+chaining). A 0.99 edge between two clusters that share no other edge averages to 0.99/|A||B|
+and never merges. Lowering the bar shifts which merges happen; it does not stop the division.
+
+#### The finding that settles it
+
+The unprotected strong pairs are not all pairs we *want* protected:
+
+```
+0.997  to raise      / to rise         0.993  statue     / statute
+0.994  to depart     / to leave        0.994  bicycle    / cycling
+0.994  elder         / elderly         0.994  an exit    / to leave
+```
+
+`statue`/`statute` at 0.993 is an NLI failure on an orthographic near-twin — exactly C16's
+near-homograph family. `bicycle`/`cycling` and `an exit`/`to leave` are relatedness, not
+synonymy: § 3c's trap reappearing *inside the cross-encoder* rather than in cosine.
+
+So the low honour rate is **partly protective**. Raising it by any means would cement
+`statue`/`statute` as one meaning and start suppressing a legitimate board pairing — a
+wrong-block, the § 8b failure we care about most. The 27.3–32.3% honour rate is not a bug
+to be tuned away; it is average linkage refusing to act on single unsupported edges, and
+some of those edges deserve refusing.
+
+**Decision: `LINKAGE_TAU` stays at 0.5.** It is the only value in the swept range that
+holds the size alarm, keeps overmerge at 0.1%, and gives up nothing measurable in return.
+
+#### What would actually address C18 — and why it is not obviously wanted
+
+The honest fix is not a threshold but a **second runtime channel**: keep group ids for the
+transitive/chaining case, and additionally ship the direct strong must-link pairs
+(≥ some high threshold) as a pair-level blocklist the runtime also checks. That restores
+`a few`/`few` without merging their groups.
+
+It is **not** recommended today, for three reasons: it doubles the runtime lookup (§ 6 is
+currently one O(1) set check, which is the entire performance argument for phase 2); it
+needs a fourth table or a second column; and the table above says a high-threshold pair
+list would carry `statue`/`statute` and `bicycle`/`cycling` straight into production. It
+would need the C16 near-homograph guard built first. Filed as **C19**.
+
 ## 9. Outstanding concerns
 
 | # | Concern | Status |
@@ -757,7 +1167,7 @@ a minor, acceptable miss if not.
 | **C4** | ~~Soft vs hard unresolved.~~ **RESOLVED 2026-08-22** — **hard**, on the rationale that lending is the fallback; **soft only where lending cannot run** (§ 6 rule 4). | Resolved |
 | **C5** | ~~Hypernym policy.~~ **RESOLVED 2026-08-22** — ignored; only mutual entailment suppresses. | Resolved |
 | **C6** | ~~Memory Map retroactive merges.~~ **RESOLVED 2026-08-22** — Memory Map does not adopt phase 2 at all; it keeps the phase-1 exact-dd guard. The problem is avoided rather than managed. | Resolved |
-| **C7** | ~~Linkage + cap unchosen.~~ **PARTLY RESOLVED 2026-08-22** — average-linkage or HDBSCAN with **cannot-link constraints** (Q9); the size cap is **alarm-only** (Q8) until § 8g yields a distribution. The cap *number* and any splitting rule remain open by design. | Open by design |
+| **C7** | ~~Linkage + cap unchosen.~~ **PARTLY RESOLVED 2026-08-22**, **DISTRIBUTION MEASURED 2026-08-24 (§ 8k)** — average linkage with hard cannot-link edges, `LINKAGE_TAU = 0.5`. Real distribution: 5,076 groups, 3,332 singletons, largest 11, nothing over the alarm at 12. So the alarm has never fired and the cap number is still unchosen — but it is now an informed choice rather than a guess, and § 8k shows the tail is short. Splitting rule still deliberately unbuilt (Q8). | Open by design |
 | **C8** | Co-hyponyms (*Monday/Tuesday*, *red/blue*) may return `neutral` rather than `contradiction`. Neutral is correctly "not confusable" under § 4's rule (entailment is not high), so the pair is not suppressed — **but neutral produces no cannot-link edge**, so co-hyponyms remain merge-able by chaining in a way antonyms are not. Watch § 8g for co-hyponym families landing in one group. | Watch in § 8b, § 8g |
 | **C9** | WordNet is English-only. Harmless — glosses are English for both languages — but the veto has no Spanish-specific coverage. A zh gloss and an es gloss can share a group, which is inert because rounds are single-language. | Accepted |
 | **C10** | Study Challenge word sets compose rounds outside the three chokepoints. Not wired to games yet, but when it is, it needs the same key — and a client-side composer would need a `ddCollisionKey` twin. | Tracked in GAMES_FEATURE.md |
@@ -765,7 +1175,12 @@ a minor, acceptable miss if not.
 | **C12** | ~~Templated-family risk carried.~~ **LARGELY CLEARED 2026-08-22** — § 8i shows all nine real surname/classifier/district pairs correctly allowed (contra 0.98–1.00). Keep per-family reporting as routine monitoring. *Original:* no special-casing (Q6) means the § 8c risk is carried, not mitigated. Concentrated in `surname X` / `X district of Y city`, which grow as a share of the corpus. **Mitigation:** report per-family rates separately so they are not averaged away; the prefix-exemption fallback stays on the shelf. | Open — monitor |
 
 | **C13** | ~~The § 8i grey band.~~ **RESOLVED 2026-08-22** by the liberal-must-link + brake rule (§ 8i, Q11). Residual known false positives are accepted per the revised Q4 (e.g. `East and West Germany`/`West Germany`, `east`/`east and west`). | Resolved |
-| **C14** | **The liberal rule was never re-measured end to end.** § 8i's 259/390 is a recount over cached scores, not a fresh run — and it was never validated against the § 8a/8b gold set, so the must-not-block rate under the NEW rule is unknown. Cheap to close: re-run `server/scripts/gloss-probe/` with the rule applied. | **Open — do before building** |
+| **C14** | ~~The liberal rule was never re-measured end to end.~~ **RESOLVED 2026-08-24 (§ 8j).** The rule is now implemented as code (`server/scripts/gloss-probe/rule.py` → `decide()`) and applied to both sets by `evaluate.py`. Gold set: **100% must-block recall, 0% wrong-block** — the liberal rule costs nothing there. Real distribution: 257/390, reproducing § 8i's recount (which was 258, not 259) minus the one numeral-guard veto. Two new findings → C16 and the Q2 note in Q11. | Resolved |
+| **C16** | **Near-homograph proper nouns — the false-positive class § 8c missed.** `Shancheng District` (山城区) / `Shangcheng District` (上城区): mutual entailment **0.995**, contradiction 0.001. Distinct places, confidently blocked. **No component of the brake can catch it** — not contradictory, not antonyms, no numeral — so unlike every other over-block this one has no structural veto. One pair in 390, and § 8c's original sample contained only *dissimilar* district names, so the true rate is unmeasured. **Mitigation:** report it with the § 8c per-family rates; if it proves common, the fallback is the shelved prefix/tail comparison (compare only the discriminating tail of a templated gloss), or an edit-distance guard on the discriminating token — which is the same shape as `numeral_mismatch` and would live beside it in `rule.py`. | Open — monitor |
+| **C17** | **The incremental set-diff is over GLOSSES, not over retrieval parameters.** A key that appears in any cached verdict is treated as fully explored, so lowering `COSINE_CUT` or raising `TOP_K` does NOT re-discover its neighbours — the run silently under-retrieves and every downstream metric still looks healthy. Found the hard way 2026-08-24: dropping the cut 0.55 → 0.35 found 13k new pairs instead of 75k. **Mitigated, not eliminated:** `pipeline.py judge --full` queries outward from every key and the pair-level set-diff keeps it cheap, but nothing *forces* its use — the retrieval knobs are not part of any cache key, unlike `modelRevision` / `templateVersion`. If this bites again, promote `(cosineCut, topK)` to a stamped column on `gloss_pair_verdicts` so the diff can detect the change itself. | Open — monitor |
+| **C18** | **A blocked pair can still share a board.** The rule and the runtime disagree by construction: the rule decides PAIRS, the runtime compares GROUP IDS, and average linkage can put a strongly-linked pair in two groups (§ 8k: *a few*/*few*, mutual entailment 0.97, different groups). Every such pair is silently unprotected — invisible unless the gold set happens to name it. This is inherent to collapsing a graph into one integer per gloss (§ 4 step 6), which is the design's central efficiency; a pair table would not have it, at the cost of 1–3M rows and a per-round join. **MEASURED AT SCALE 2026-08-24 (§ 8m): 68–73% of must-link pairs are unprotected, including 48% of pairs scoring ≥ 0.90.** Not an edge case — the dominant behaviour. Cause is average-linkage DILUTION (missing edges count as zero), not thresholding, so **no value of `LINKAGE_TAU` addresses it** — a sweep of 0.30–0.50 moves the rate by 5pp and breaches the size alarm below 0.40. Partly protective: the unprotected strong pairs include `statue`/`statute` (0.993) and `bicycle`/`cycling`. **Watch via `validate.py`'s must-block recall.** Any real fix is C19. | Open — inherent tradeoff, quantified |
+| **C19** | **A direct-pair blocklist as a second runtime channel.** The only honest fix for C18: keep `meaningGroupId` for the chaining case, and additionally ship the direct must-link pairs above a high threshold as a pair-level check the runtime also consults — restoring `a few`/`few` without merging their groups. **Not recommended yet.** It doubles § 6's lookup (currently one O(1) set check, which is phase 2's whole performance argument), needs a fourth table or column, and § 8m shows a high-threshold pair list would carry `statue`/`statute` and `bicycle`/`cycling` into production. **Blocked on C16** (near-homograph guard) being built first. | Open — deliberately deferred |
+| **C20** | **NLI has a negation blind spot.** `not very` / `a little` scores **0.982** mutual entailment — a direct edge, not chaining (§ 8k correction, 2026-08-24). Same root as `statue`/`statute` (0.993, § 8m): the cross-encoder is asked for logical entailment and answers on surface plausibility. **No threshold separates these from correct 0.99 edges**, so neither `TAU_SYN` nor `LINKAGE_TAU` is a lever. The brake cannot catch it either (contradiction 0.001). Currently the only confirmed wrong grouping in the build. Makes **C15 the leading candidate** — a graded-similarity model is never asked to reason about negation. | Open — root cause of the known false positives |
 | **C15** | **An STS cross-encoder was never tried.** § 8i showed NLI is excellent at contradiction but mediocre at graded synonymy, since it asks logical entailment rather than display confusability. A paraphrase/STS model for the must-link half (keeping NLI for cannot-link) might beat containment outright. Not blocking — the liberal rule is adequate — but it is the obvious next experiment if grouping quality disappoints. | Open — future |
 
 ## 10. Question log
@@ -793,13 +1208,20 @@ a minor, acceptable miss if not.
   antonyms are hard cannot-link edges, because they are what prevents *transitive* merges.
 - **Q10 — which cross-encoder?** **DeBERTa-v3-base**, pinned by hub revision. Validated in § 8i.
 - **Q11 — the § 8i grey band (C13).** **ANSWERED 2026-08-22: liberal must-link (τ=0.3 OR
-  containment) behind a hard cannot-link brake, plus a numeral guard.** Full rule in § 8i.
+  containment) behind a hard cannot-link brake, plus a numeral guard.** Full rule in § 8i;
+  implemented in `server/scripts/gloss-probe/rule.py` → `decide()`, measured in § 8j.
   This partly reverses Q2 for the *specialization* case while leaving taxonomic hypernymy
-  (dog/animal) alone, as Q2 intended.
+  (dog/animal) alone, as Q2 intended. **Measured correction (2026-08-24, § 8j):** that last
+  clause holds for *containment* but not for the lowered τ — `car`/`vehicle` (车/汽车, a case
+  § 8d names) blocks on mutual entailment alone. Q2 is reversed slightly further than Q11
+  claimed. Judged acceptable: two cards reading "car" and "vehicle" are confusable, and the
+  revised Q4 favours blocking.
 
 ## 11. Dependencies
 
-**Code this doc describes:** `server/utils/definitions.ts` → `ddCollisionKey`,
+**Code this doc describes:** `server/scripts/gloss-probe/` → `rule.py` (`decide`,
+`contained`, `numeral_mismatch`, `wordnet_antonym`, `dd_key`), `evaluate.py`, `probe.py`,
+`realdist.py`, `goldset.py`, `direction.py`; `server/utils/definitions.ts` → `ddCollisionKey`,
 `resolveDisplayDefinition`; `server/services/OnDeckVocabService.ts` → `getGameVocabPool`,
 `getWordSearchGrid`, `fetchDdKeys`; `server/services/MemoryMapService.ts` → `spawnInto`;
 `server/dal/implementations/MemoryMapDAL.ts` → `getUnplacedCandidates`.

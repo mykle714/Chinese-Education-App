@@ -32,6 +32,28 @@ describe('stripParentheses', () => {
     expect(stripParentheses('plain gloss')).toBe('plain gloss');
   });
 
+  it('handles NESTED asides — the 的/加 display bug', () => {
+    // The old /\s*\([^)]*\)/g stopped at the FIRST ')', so an aside containing an
+    // aside leaked its tail onto the card: 的 rendered '" or 新的[xin1 de5] "new one")'.
+    expect(stripParentheses('a waiter (literally, one who runs (fast))')).toBe('a waiter');
+    expect(stripParentheses('to box (fight against (a person) in a boxing match)')).toBe('to box');
+    expect(stripParentheses('(an aside (nested) still an aside)')).toBe('');
+  });
+
+  it('drops an unmatched close paren and swallows an unmatched open paren', () => {
+    // Both appear in real det data: 门's `definitions` splits ONE parenthetical
+    // across two array elements ('(suffix) -gate (i.e. scandal' + 'derived from
+    // Watergate)'), so each half is individually unbalanced.
+    expect(stripParentheses('(suffix) -gate (i.e. scandal')).toBe('-gate');
+    expect(stripParentheses('derived from Watergate)')).toBe('derived from Watergate');
+  });
+
+  it('eats the whitespace before an aside, not the punctuation after it', () => {
+    expect(stripParentheses('to go (informal); to leave (a place)')).toBe('to go; to leave');
+    expect(stripParentheses('to have to [+de (particle)]')).toBe('to have to [+de]');
+    expect(stripParentheses('firstly, ...')).toBe('firstly, ...');
+  });
+
   it('can strip a gloss down to nothing', () => {
     // This is the case resolveSelectedCluster filters on — a wholly parenthetical
     // gloss (e.g. 上来 "(verb complement indicating success)") has no displayable text.

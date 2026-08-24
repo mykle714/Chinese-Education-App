@@ -146,15 +146,15 @@ carries `suppressed: true`, and **no client reads it today**.
 
 ---
 
-### 9. The decks page and the flp card hand have no "due today" figure
+### 9. The decks page `.duebar` has no "due today" figure (the card hand now does)
 
 | | |
 |---|---|
-| **What** | Artboard 2 heads the decks page with **"24 due today"** and prints a big number on the Study Mix card. Both are a **cooldown-aware ready count** — how many cards have at least one flp mark type off cooldown right now — and no endpoint returns it. `useCategoryCounts` returns BAND totals, which are not the same question: a Target card that was marked ten minutes ago is in the band and is not due |
-| **Why deferred** | It is server work in the middle of a front-end pass: a DAL count over the same eligibility clause `OnDeckVocabService` already applies per fetch (`rankFlpEligible`), plus a service method, a controller route and a wire type. The redesign could ship honestly without it, and shipping a *plausible* number derived from band totals on the client would have been worse than shipping none |
-| **Cost of leaving it** | The decks page's headline figure is the LIBRARY SIZE and the hand's three figures are SET SIZES (`in rotation` / `ready` / `waiting`), each labelled as what it is. Truthful, but it is not the number the design wanted, and a learner cannot tell from this page whether starting a session will actually serve them anything |
-| **Trigger** | Any pass that touches `OnDeckVocabService`'s eligibility filter — the count is the same predicate with `COUNT(*)` instead of a `SELECT`. Do all three modes at once (mix / review / challenge each have their own allowed bands) |
-| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entry 2; `src/features/flashcards/FlashcardsDecksPage.tsx` → the `.duebar`; `src/features/flashcards/StudyHand.tsx`; `server/services/OnDeckVocabService.ts` → `MODE_CONFIGS`, `rankFlpEligible` |
+| **What** | **RESOLVED for the card hand.** All three `StudyHand` figures are now cooldown-aware ready counts (`src/utils/flpReadiness.ts`), so Challenge + Review == Study Mix and each card says how many cards a session could deal right now. What remains is the `.duebar`'s LEFT slot, which artboard 2 reads as **"24 due today"** and which still prints the library SIZE |
+| **Why deferred** | The original deferral — "it is server work: a DAL count, a service method, a controller route and a wire type" — turned out to be **wrong about the cost**. No server work was needed: the fdp already loads every sorted card (`useDecksPanel` → `fetchCollectionCards(ALL_COLLECTION_ID)`), those rows carry `typedMarkHistory`, and the cooldown arithmetic is a client-importable contract (`server/contracts/cooldown.ts`) that `vocabSort` was already using on the same page. Restating `rankFlpEligible`'s predicate on the client cost one pure util. The remaining `.duebar` slot is a **copy** decision, not a data one: "due today" is a different claim from "ready now" (it implies a deadline the app does not model), so the slot was left alone rather than filled with a number whose label would be a lie |
+| **Cost of leaving it** | Small and shrinking. The headline still reads as a library size where the artboard wanted urgency — but the three figures directly beneath it now carry exactly that signal, so the page no longer leaves a learner unable to tell whether a session will serve them anything |
+| **Trigger** | A copy pass on the `.duebar`. If it should show readiness, `flpReadyCountsByBand` already returns it — the work is deciding what the slot SAYS, not computing it |
+| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entry 2; [DECKS_FEATURE.md](./DECKS_FEATURE.md) § "The card hand"; `src/utils/flpReadiness.ts`; `src/features/flashcards/FlashcardsDecksPage.tsx` → the `.duebar`; `server/services/OnDeckVocabService.ts` → `rankFlpEligible` |
 
 ---
 
@@ -179,6 +179,37 @@ carries `suppressed: true`, and **no client reads it today**.
 | **Cost of leaving it** | Filing a component character into a deck costs a drill-in instead of a tap. Nothing is unreachable |
 | **Trigger** | If it comes up in use. The fix is NOT to put the action bar back — it is to let the word trail's active pill carry a small ops affordance, so the actions stay attached to "the word you are looking at" rather than to a tab body |
 | **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entries 19–25; `src/features/flashcards/FlashcardsLearnPage/InfoCardTabContent.tsx` (the comment at tab 0), `src/components/WordToolsRail.tsx`, `src/features/flashcards/FlashcardsLearnPage/CardOpsRail.tsx` |
+
+---
+
+### 12. A silent cloud→browser TTS fallback, with nothing counting it
+
+| | |
+|---|---|
+| **What** | `useTTS.speakText` catches ANY cloud-provider failure and re-speaks through `WebSpeechProvider`, logging one `console.warn` and nothing else. No counter, no beacon, no server-side record — the app cannot answer "how often is narration falling back, and since when". Wanted: a fallback metric. Cheapest useful shape is a `kind: "tts-fallback"` record on the EXISTING client sink (`POST /api/diagnostics/error` / `perf`, `src/utils/errorReporting.ts` → `server/utils/diagnosticsLog.ts`) carrying the reason (HTTP status vs network vs decode vs `Web Audio unavailable`), the lang and the surface — plus a server-side counter of `TTSController.synthesize` failures grouped by upstream status, since one Google 403 is a fleet-wide outage and 200 client beacons for it are 200 records of the same fact |
+| **Why deferred** | Found 2026-08-24 while diagnosing "the redesign broke TTS". It had not broken: Google TTS had been returning **403 `BILLING_DISABLED`** on project `cow2-497203` since ~2026-08-21, so every disk-cache MISS fell back to the browser voice while cached words still played the good voice. Three days, no signal — the only evidence was a `docker logs` grep and the newest mtime in `server/cache/tts/`. Building the metric was not the task in hand |
+| **Cost of leaving it** | A provider outage is invisible until a human notices the robot voice and correctly attributes it — and the natural attribution is "whatever we changed last", which is what happened here. For a tone language the fallback is a correctness regression, not a cosmetic one: the browser voice ignores the SSML `<phoneme>` hint that makes a polyphone read the sense we display. Secondary: with no fast-fail, every uncached word re-pays a full round-trip to a provider we already know is refusing us |
+| **Trigger** | Next time narration is touched, or the first time this fallback is diagnosed a second time. Do the server-side counter first — it is the one that catches an outage without depending on a learner's device reporting in. A short-lived circuit breaker (remember "provider down" for N minutes, fail the request immediately) belongs in the same pass and shares the same state |
+| **References** | `src/hooks/useTTS.ts` → `speakText` (the catch), `src/services/tts/CloudTTSProvider.ts` → `getOrFetchBuffer` (the throw sites), `server/controllers/TTSController.ts` → `synthesize` (maps every upstream failure to 500 — see the note below), `server/services/TTSService.ts` → `callGoogle`; [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md) for the sink this should reuse |
+
+**Related, and worth doing in the same pass:** `TTSController.synthesize` returns **500**
+for an upstream **403**. The client cannot tell "provider unavailable" from "bad request"
+without string-matching an error message, which is exactly what a circuit breaker would
+need to decide. A 502/503 for an upstream failure would make the distinction cheap.
+
+---
+
+### 13. Move TTS from Google to Amazon Polly — with the app's move to AWS, not before
+
+| | |
+|---|---|
+| **What** | Swap the TTS provider behind `TTSService` from Google Cloud Text-to-Speech to **Amazon Polly**, so narration bills to the same cloud account as everything else once the app moves to AWS. Scope is one provider method plus the SSML dialect: add a `callPolly` beside `callGoogle`, select on the existing `TTS_PROVIDER` env var, and port `buildPinyinSsml`. Voices to target: **`Zhiyu`** (cmn-CN, neural) for Chinese, `Mia` (es-MX) or `Lupe`/`Pedro` (es-US, neural) for Spanish, any neural US voice for English — replacing `cmn-CN-Wavenet-A` / `es-US-Neural2-A` / `en-US-Neural2-C` |
+| **Why deferred** | Explicitly decided 2026-08-24: **do it when the whole app migrates to AWS, not as its own project.** Google is wired in and working again (the outage that surfaced this was an expired free trial on project `cow2-497203`, fixed by attaching a real billing account — not a provider problem). Migrating on its own buys nothing: at ~15k characters of lifetime usage the app sits inside the free tier of either provider indefinitely, so the comparison is $0 vs $0, and the only thing a solo migration can do is break tone accuracy. Polly is *cheaper* at volume (~$4/M standard, ~$16/M neural, vs Google WaveNet's $16/M) — a reason to prefer it once the account exists, not a reason to move today |
+| **Cost of leaving it** | One cloud account kept alive purely for TTS after everything else has left it — a second bill, a second set of credentials (`server/google-tts-credentials.json`), and a second billing relationship that can lapse without anyone noticing. That last one is not hypothetical: it is exactly what happened on 2026-08-21 and went undetected for three days (see item 12) |
+| **Trigger** | The whole-app AWS migration. There is **no plan doc for it yet** — when one is written, link this item from it. Do NOT start on a TTS bill; the free tier makes that argument empty |
+| **The one real risk — the pinyin hint** | `buildPinyinSsml` emits `<phoneme alphabet="pinyin" ph="zhong1">`, Google's spelling. Polly uses a different alphabet identifier for Mandarin (believed `x-amazon-pinyin` — **verify against current Polly docs, this was not confirmed**). That tag is not decoration: it is what makes 重点 read *zhòng diǎn* rather than the stale *chóng diǎn* in the `pronunciation` column. Budget the porting effort here, not in auth or caching, and re-test polyphones specifically |
+| **What ports for free** | The whole cache layer is provider-agnostic already. `synthesize()` reads the disk cache before any provider call, and the key is `sha256(provider:voice:text:pinyin)` — so **`provider` and `voice` are already in the key**, and a Polly cutover re-synthesizes into new slots without colliding with the ~674 Google MP3s. No cache wipe, no migration, and a rollback to `TTS_PROVIDER=google` still finds every old file. `TTSService` is constructor-injected from `dal/setup.ts`, so nothing above it changes; the client (`CloudTTSProvider`) never learns which provider answered |
+| **References** | `server/services/TTSService.ts` → `callGoogle`, `voiceForLang`, `voiceTag`, `cacheKey`, `buildPinyinSsml`; `server/.env` (`TTS_PROVIDER`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_TTS_VOICE_*`); `server/dal/setup.ts`. Related: item 12 (the fallback metric — build it BEFORE this migration, so a provider swap has something to prove it worked) |
 
 ## Recently closed
 

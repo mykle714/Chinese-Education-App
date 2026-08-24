@@ -70,3 +70,16 @@ data/hanzi/cache/
 /screenshot*.png
 # Downloaded installer binaries — fetch from upstream instead of committing.
 /*.deb
+# gloss-probe: torch/transformers install dir (~4.7 GB) and python bytecode -- never commit
+server/scripts/gloss-probe/lib/
+server/scripts/gloss-probe/__pycache__/
+server/scripts/gloss-probe/dd_zh.tsv
+# gloss-pipeline: torch venv (~4.9 GB), exported corpus, and build outputs -- never commit
+# The gloss-pipeline venv now lives at ~/.venvs/gloss-pipeline, OUTSIDE the repo — even the
+# light install is ~1k library .py files, and in-tree they bury the 12 real files in every
+# editor and git GUI. This entry stays so an in-tree .venv from an older checkout, or one
+# created by habit, is still never committed.
+server/scripts/gloss-pipeline/.venv/
+server/scripts/gloss-pipeline/glosses.tsv
+server/scripts/gloss-pipeline/corpus-snapshot.txt
+server/scripts/gloss-pipeline/__pycache__/

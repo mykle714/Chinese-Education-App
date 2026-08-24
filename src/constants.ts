@@ -10,8 +10,20 @@ export const DEFAULT_TEST_USER_ID = 'test-user-id';
 // Minute Points Configuration
 // Matched as path prefixes (see useMinutePoints) so parameterized child routes
 // like `/discover/sort/:language` are covered automatically.
+// Pages that accrue minute points, matched as PATH PREFIXES (the page itself and
+// everything under it). Only STUDY surfaces belong here — a screen where the learner
+// is working through cards, text or a game board. Browsing and menu screens
+// deliberately do not accrue: the hubs (Home, Discover, Games, Decks & Cards), the
+// card detail page, deck/collection lists and the mastery centers. They still show
+// the header flame, in its grey idle state, which is the honest answer to "am I
+// earning right now?" — see MinutePointsFireBadge / PageHeader.
+//
+// ⚠️ NOT '/flashcards' — that prefix would re-admit every browsing screen under it
+// (/flashcards/decks, /flashcards/card/:id, /flashcards/deck/:id,
+// /flashcards/collection/*, /flashcards/reading|writing). The legacy desktop
+// flashcards page at exactly '/flashcards' IS a study surface and is listed in
+// MINUTE_POINTS_ELIGIBLE_EXACT_PAGES below instead.
 export const MINUTE_POINTS_ELIGIBLE_PAGES = [
-  '/flashcards',
   '/flashcards/learn',
   '/reader',
   '/discover/sort',
@@ -21,6 +33,13 @@ export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/games/speed-reading',
   '/games/memory-map',
   '/games/hydra-bubbles'
+];
+
+// Eligible pages matched EXACTLY, with no descendants. For a study surface whose path
+// is a parent of unrelated browsing routes — currently only the legacy desktop
+// flashcards page, whose children under /flashcards are all browse screens.
+export const MINUTE_POINTS_ELIGIBLE_EXACT_PAGES = [
+  '/flashcards'
 ];
 
 // Subset of eligible pages that should start accruing time on entry, WITHOUT

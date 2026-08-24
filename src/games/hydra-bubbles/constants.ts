@@ -116,6 +116,26 @@ export const MAX_AVOID_IDS = 200;
 export const LEND_NOTICE_MIN_SCORE = 4;
 
 /**
+ * THE PER-COLOR GUARANTEE TIEBREAK (§ 4.3 invariant 3).
+ *
+ * The board owes the player a live match of BOTH colors — a move that grows it and a
+ * move that shrinks it — but the guarantee is funded entirely out of slots the payout
+ * already bought, and a drain clear buys exactly one. So when neither color has a live
+ * match, one of them has to wait a round, and this is where the line is drawn:
+ *
+ *     fill <  0.5   →  the board has room; the GROWTH move (bloom) is the one worth having
+ *     fill >= 0.5   →  the board is filling; the SHRINK move (drain) is
+ *
+ * 0.5 rather than a tuned number because it is the one point on the axis that needs no
+ * justification — it is "more empty than full". It sits below `DRAIN_ONLY_FILL` (0.75)
+ * so the whole squeeze falls on the drain side, which is consistent with the squeeze
+ * refusing to manufacture bloom at all (`neededColor`, spawnPlanner.ts).
+ *
+ * Referenced by: spawnPlanner.ts -> neededColor; docs/HYDRA_BUBBLES.md § 4.3.
+ */
+export const COLOR_NEED_TIEBREAK_FILL = 0.5;
+
+/**
  * STRAY AGING (§ 4.2c). Every slot that would spawn a stray instead runs a small
  * lottery: either a brand-new card, or the missing half of a stray already sitting on
  * the board. Each stray accrues `SHARES_PER_UNMATCHED_ROUND` per spawn round it goes

@@ -9,7 +9,8 @@ import { FC_FONT } from "../constants";
 import { SIZE } from "../../../theme/scale";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 import type { TabAvailability } from "./infoCardTabAvailability";
-import { sortedSenseClusters } from "../../../utils/definitionUtils";
+import { sortedSenseClusters, hasSynonymsOrRelated } from "../../../utils/definitionUtils";
+import SynonymsRelatedSection, { EipSectionLabel } from "../SynonymsRelatedSection";
 import { Label } from "../../../components/primitives";
 
 /**
@@ -66,6 +67,20 @@ export interface InfoCardTabContentProps {
      * resolvers so the tab body follows the tap immediately.
      */
     selectedSenseIndex?: number;
+    /**
+     * Append the Synonyms + Related Words lists to the bottom of the DEFINITION tab.
+     *
+     * Only the cdp passes this. The eip has three tabs and none of them is synonyms, but
+     * the cdp's sheet body IS this panel now (VocabCardDetailPage), and those two lists
+     * are the one thing its old stacked-`SectionCard` body showed that the panel does
+     * not. They ride under the definition rather than becoming a fourth tab because a
+     * tab is a promise of content and most entries have neither list — an empty tab in
+     * the strip on every card is a worse trade than a section that simply is not there.
+     *
+     * The flp and scp leave it undefined: on those surfaces the panel is the reading
+     * view for a word in a drill, and the lists are reference material the cdp is for.
+     */
+    showSynonymsRelated?: boolean;
 }
 
 const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
@@ -81,6 +96,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
     onSpeakSentence,
     speakingKey,
     selectedSenseIndex,
+    showSynonymsRelated = false,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -137,6 +153,35 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                 )
                 : undefined;
 
+            // Synonyms + Related Words, cdp only (see showSynonymsRelated). Rendered as a
+            // ruled-off section below the facts, using the panel's own label treatment —
+            // the eip has no SectionCard, so the rule is what separates it from the
+            // definition above rather than a second box.
+            const synonymsSection = showSynonymsRelated && hasSynonymsOrRelated(currentEntry) ? (
+                <Box
+                    className="mobile-demo-synonyms-related"
+                    sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                        marginTop: "13px",
+                        paddingTop: "13px",
+                        borderTop: `1px solid ${fc.border}`,
+                    }}
+                >
+                    <SynonymsRelatedSection
+                        entry={currentEntry!}
+                        classPrefix="mobile-demo"
+                        renderLabel={(text, extra) => (
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                <EipSectionLabel>{text}</EipSectionLabel>
+                                {extra}
+                            </Box>
+                        )}
+                    />
+                </Box>
+            ) : null;
+
             return definitionTabHasContent && currentEntry ? (
                 <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column" }}>
                     {/* The paragraph plus the three measured facts — one shared component
@@ -149,12 +194,19 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         paragraphApproved={currentEntry.definitionsApproved}
                         classPrefix="mobile-demo"
                     />
+                    {synonymsSection}
                 </Box>
             ) : (
-                <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
-                    <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
-                        No definition available for this card
-                    </Typography>
+                // No definition — but an entry can still carry synonyms/related, and on the
+                // cdp swallowing them behind an empty-state would lose content the page used
+                // to show. Show the message AND whatever the section has.
+                <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column" }}>
+                    <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
+                        <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
+                            No definition available for this card
+                        </Typography>
+                    </Box>
+                    {synonymsSection}
                 </Box>
             );
         }

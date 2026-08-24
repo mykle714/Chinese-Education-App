@@ -297,7 +297,9 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **none.** Prod is current through migration **153**.
+Current open runbooks: **[docs/GLOSS_CONFUSABILITY_DEPLOY_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_DEPLOY_RUNBOOK.md)**
+(migration **154** + the dev→prod `gloss_meaning_groups` push; 154 is order-independent and
+changes no behaviour on its own). Prod is current through migration **153**.
 
 Deployed and retired on 2026-08-23 (runbook deleted): the arena message column (**152**)
 and the card-fill repaint remap (**153**). Split around the rebuild exactly as its runbook
@@ -486,5 +488,13 @@ statement. A symbol name survives every edit that does not delete the symbol, an
 it *is* deleted the dangling name is a useful signal rather than a silently-wrong number.
 
 When editting code, check the referenced documentation and update it if need be. When editting documentation, check the referenced code to see if there is alignment.
+
+**Fix stale docs on sight — no need to ask.** If, while working on anything, you notice a
+doc that no longer matches the code (a renamed symbol, a behavior that changed, a
+"not yet deployed" banner for something that shipped, a citation pointing at a deleted
+function), correct it in the same pass. Standing permission: do not stop to ask, and do
+not merely mention it in your reply and move on. Two limits: correct only what you have
+actually verified against the code, and if the mismatch means the *design* changed rather
+than the prose drifting, say so in your reply as well as fixing the text.
 
 When implementing features, make sure the document referencing the system/component/mechanism in question has a section on the new behavior/feature.

@@ -1,6 +1,5 @@
 import React from "react";
 import { HeaderIconButton } from "../../components/PageHeader";
-import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 
 interface WordSearchHeaderControlsProps {
     /** Open the settings sheet (timer visibility). */
@@ -35,7 +34,6 @@ const WordSearchHeaderControls: React.FC<WordSearchHeaderControlsProps> = ({ onS
             label="Open settings"
             onClick={onSettingsClick}
         />
-        <MinutePointsFireBadge />
     </>
 );
 

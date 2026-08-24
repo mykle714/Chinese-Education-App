@@ -204,8 +204,11 @@ breakdown degrades to fewer rows rather than to placeholders.
 
 **One row component, both surfaces: `src/features/flashcards/BreakdownRow.tsx`** (the
 design's `.bkr`, 2026-08-24). Rendered by the eip's breakdown tab
-(`FlashcardsLearnPage/InfoCardTabContent.tsx`) and by the cdp's Character Breakdown box
-(`VocabCardDetailBody.tsx`), which previously carried two copies of the same layout.
+(`FlashcardsLearnPage/InfoCardTabContent.tsx`) and by the read-only dictionary cdp's
+Character Breakdown box (`VocabCardDetailBody.tsx`), which previously carried two copies of
+the same layout. The **saved-card cdp** goes through the eip's tab too — it raises
+`InfoCardSection` directly — and drills in by NAVIGATING to the tapped character's card
+detail instead of opening a nested eip tab (`VocabCardDetailPage.handleWordOpen`).
 
 It replaced a wrapping grid of 1:1 block buttons (`InfoCardBlockButton`, deleted), for two
 reasons worth keeping:

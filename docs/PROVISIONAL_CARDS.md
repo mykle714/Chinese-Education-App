@@ -477,12 +477,87 @@ reports a flat `provisionalWords: string[]` instead of threading a flag through 
 generator — and the notice turns those words into cards by fetching them
 (`useProvisionalEntries`, `src/hooks/useProvisionalEntries.ts`).
 
+### During the round — the lent badge (`src/components/LentCardBadge.tsx`)
+
+The notice is a one-shot: once dismissed, a learner mid-round has no way to tell a
+borrowed word from one of their own. That gap is widest on exactly the surfaces whose
+notice is generic — Match Speed and flp cannot even name the set, and a rolling supply
+keeps adding to it after the notice is gone.
+
+`LentCardBadge` is the in-round tell: **one icon**, shown large on the notice and small
+in the corner of a lent card, so the learner meets the mark before they have to read it.
+The icon is currently the **icons8 "Hourglass" (id `15850`)**, held in one constant
+(`LENT_ICON_ID`) — a deliberate placeholder, and the reason both sites go through this
+module rather than naming an id each.
+
+| Site | Form |
+|---|---|
+| `ProvisionalCardsNotice` heading | 30px icon beside the title |
+| `ProvisionalCardsNotice` footnote | 15px inline, only when the caller passes `badgedInRound` — the surfaces that show no badge must not promise one |
+| `HydraLendNotice` | 30px icon above the title (Hydra's bubbles are too small to badge) |
+| `MatchSpeedCard` | 13px on a translucent disc, top-right corner |
+
+**The badge goes on the FOREIGN side only, and that is correctness rather than layout.**
+Badging both faces of a lent pair would mark two board cards as belonging together, so a
+player could match by badge instead of by reading — the same leak Match Speed's fixed
+card size exists to prevent ([MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md)). One badged
+column leaks nothing: every English card is unbadged whatever its partner is.
+
+⚠️ **Deploy caveat.** `GET /api/icons8/:id/image` does **not** lazily download — it 404s
+on a missing row, unlike `POST /api/icons8/:id/ensure` (`Icons8Controller`). The `icons8`
+table syncs prod → dev only (`/data-prod-to-dev`), so a row present on a dev box is not
+evidence it is on prod. `LentCardIcon` therefore hides itself on image error: a missing
+icon degrades to no badge rather than a broken-image glyph on every card. Before this
+ships, confirm the id exists on prod (`SELECT 1 FROM icons8 WHERE "icons8Id" = '15850'`)
+and `POST /api/icons8/15850/ensure` there if it does not.
+
 ### After the round — `src/components/ProvisionalSortOffer.tsx`
 
 The same table comes back as a **popup** asking *"Keep these N cards?"*, with
 **Sort these cards** / **Not now**. This is the best possible moment to ask: the learner
 just spent a whole round with those words. Accepting opens the sort flow in set mode
 (§ 7) on exactly those words, which ends on its own completion popup (§ 7).
+
+#### The offer lists what was REVIEWED, not what was served
+
+A surface with a **fixed board** (Bubble Match, Speed Reading, Word Search) can list the
+cards it was handed, because dealt *is* played. A surface whose supply **streams** cannot:
+the served set is strictly larger than the played one, and each of the three used to
+accumulate it at a different — and progressively earlier — moment.
+
+| Surface | Used to record | What that over-offered |
+|---|---|---|
+| Match Speed | on **fetch**, every buffer top-up | cards that never reached the board |
+| Hydra Bubbles | on **deal** (`useColorBuffers.take`) | bubbles lost to overflow, never matched |
+| flp | on **entry to the working loop** | the loop holds ~10, so a session ended after 3 offered all 10 |
+
+All three now record at the **mark call site** instead, through the shared
+`useMarkedLentWords` (`src/hooks/useMarkedLentWords.ts`). The served set does not
+disappear — it still drives the things that are genuinely about arrival: flp's notice
+(`provisionalSeen`) and Hydra's one-shot mid-run notice (`hasLent`). Only the *offers*
+moved to the reviewed set, including flp's back-arrow gate, which no longer stops a
+learner on the way out over words they never saw.
+
+**Any attempt counts — a hit, a miss, or a mark the server drops on cooldown.** This is
+why recording happens at the call site rather than off the mark response:
+
+* a **miss** is the best possible reason to keep a card, and in Hydra it is the last thing
+  that happens (a wrong match ends the run), so correctness-only would systematically drop
+  the word the player just failed;
+* a **suppressed** mark writes nothing (§ 4b, the hard "next markable at" guard). For lent
+  cards that is routine rather than exotic: the server **re-lends** rows the learner
+  already holds before minting new ones (§ 3b), and the cooldown clock keys off the last
+  *correct* mark on the track — so a learner returning inside the window replays the same
+  borrowed cards with every mark dropped. Keying the offer on what the server recorded
+  would hand that session an **empty** offer, which is a quieter failure than the
+  over-offer it replaced. (A freshly minted card has no history, so its first mark can
+  never be suppressed — this case is re-lent cards only.)
+* the mark request is **fire-and-forget** and races the round ending, so its response may
+  not have landed when the offer is built.
+
+A server-side `typedMarkHistory <> '{}'` filter was considered and rejected for the same
+reason in reverse: a re-lent card arrives already carrying marks, so the server cannot
+tell "reviewed this run" from "reviewed last month".
 
 **On a game** the offer stacks over the run's own result and opens **immediately** when
 the round ends — there is no delay (there used to be a 1.4 s `SORT_OFFER_DELAY_MS` beat;
@@ -505,16 +580,18 @@ end-of-run corner and color.
 
 **On flp** there is no scoreboard to attach the offer to — a study session ends when the
 learner LEAVES — so the offer **gates the back arrow**. The first tap raises it listing
-every card the working loop dealt across the whole session; **Sort these cards** goes to
+every borrowed card the learner REVIEWED across the session (`provisionalReviewed`, not
+the loop's untouched tail — see the subsection above); a session that reviewed no lent
+card is not gated at all. **Sort these cards** goes to
 the sort flow, **Leave anyway** completes the exit. It is a one-shot (`exitOfferShown`):
 tapping back after declining leaves immediately rather than asking twice. It is also not
 minimizable — the learner is on their way out, so a corner puck would have nothing to sit
 over. The loop-empty state shows nothing extra.
 
 Ignoring the offer costs nothing — the cards stay, the marks stay, and it returns after
-the next round. The non-itemized surfaces accumulate the lent words **as they are dealt**
-(`provisionalSeenRef` in `MatchSpeedPage` / `useWorkingLoop`), so by the end of the run
-they can name them even though the opening notice could not.
+the next round. The non-itemized surfaces accumulate the lent words **as they are marked**
+(`useMarkedLentWords`), so by the end of the run they can name them even though the
+opening notice could not.
 
 The offer's table is fetched through the sort-set endpoint (§ 7), which intersects the
 asked-for words with what the learner genuinely still holds. Two consequences worth
@@ -752,6 +829,8 @@ artifact should do the same.
 | Client (shared) | `src/components/MinimizablePopup.tsx` | the scrim / card / corner-puck collapse shell (also backs `GameEndPopup`) |
 | Client (shared) | `src/components/ProvisionalCardGrid.tsx` | the lent cards as `MiniVocabCard` thumbnails, 2 per row |
 | Client (shared) | `src/components/ProvisionalCardsNotice.tsx`, `src/components/ProvisionalSortOffer.tsx` | the pre-round notice; the end-of-round offer popup (which records `?from=` for the exit) |
+| Client (shared) | `src/components/LentCardBadge.tsx` | `LENT_ICON_ID` + the two forms of the borrowed mark (`LentCardIcon`, `LentCardBadge`) — § 5 |
+| Client (shared) | `src/hooks/useMarkedLentWords.ts` | which lent words a session actually REVIEWED — the source for every offer on a streaming surface (§ 5) |
 | Client (shared) | `src/components/ProvisionalSortDonePopup.tsx`, `src/utils/originLabel.ts` | the set-mode completion popup (Back to \<origin\> / Go to Home) and its origin label |
 
 ---

@@ -11,7 +11,9 @@ once.
 | `probe.py` | Scores the gold set with bi-encoder cosine and the NLI cross-encoder → `probe_results.json` |
 | `realdist.py` | Harder test: judges the 400 highest-cosine REAL pairs, the distribution the pipeline actually sees → `realdist_results.json` |
 | `direction.py` | Splits the grey band by entailment DIRECTION — the analysis that found C13 |
-| `*_results.json` | 2026-08-22 baseline. Regress against these. |
+| `rule.py` | **The § 8i / Q11 blocking rule itself** — the one implementation of `decide()`, containment, the WordNet veto and the numeral guard. Step 6 of the real pipeline must call this, not re-implement it |
+| `evaluate.py` | Applies `rule.py` to both result sets and reports the § 7 must-block / must-not-block rates → `rule_eval_results.json`. **No model inference** |
+| `*_results.json` | 2026-08-22 baseline (`rule_eval_results.json`: 2026-08-24). Regress against these. |
 
 ## Running it
 
@@ -25,6 +27,18 @@ pip3 install --target=./lib --break-system-packages transformers sentence-transf
 # dd_zh.tsv: word1 \t dd, for every discoverable zh cluster (see goldset.py docstring)
 PYTHONPATH=$PWD/lib python3 goldset.py && PYTHONPATH=$PWD/lib python3 probe.py
 ```
+
+**Re-deriving the rule needs none of that.** `evaluate.py` reads the cached raw
+probabilities and needs only `nltk` (for the WordNet antonym veto; it degrades gracefully if
+absent), so retuning `TAU_SYN` / `TAU_CONTRA` or changing the must-link is a seconds-long
+loop, not a re-judge — the whole point of § 7 rule 1:
+
+```bash
+pip3 install nltk --break-system-packages
+python3 evaluate.py
+```
+
+Re-run `probe.py` / `realdist.py` **only** when `modelRevision` or `templateVersion` moves.
 
 CPU is fine — the gold set is 39 pairs. `lib/` is ~4.7 GB; delete it after. Add `lib/` to
 .gitignore if you keep it around.

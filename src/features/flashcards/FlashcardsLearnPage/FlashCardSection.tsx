@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Card, CardContent, Typography, useTheme } from "@mui/material";
 import { senseLabelForIndex, resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
-import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel } from "./styled";
+import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel, cardSlotPadding, type CardSlotPadding } from "./styled";
 import {
     CORRECT_COLOR,
     INCORRECT_COLOR,
@@ -82,6 +82,14 @@ interface FlashCardSectionProps {
     // edit mode AND the toolbar would actually overlap the card. Computed by the page via
     // useToolbarOverlap so a roomy viewport (toolbar clears the card) leaves it centered.
     pushDown?: boolean;
+    // The slot's vertical padding — where the card sits, and (when height-bound) how big it
+    // is. Computed by the page from the measured slot + More Info pill (useCardSlotPadding)
+    // rather than fixed here, because the bottom pad has to reserve the pill's band. Optional
+    // so the surfaces that render a card slot without a pill keep the default reservation.
+    pad?: CardSlotPadding;
+    // Lets the page measure the slot (useCardSlotPadding / useToolbarOverlap both need its
+    // height, and neither can reach it from ContentArea once the word-tools rail is above it).
+    slotRef?: React.Ref<HTMLDivElement>;
     // The card-operations rail (`CardOpsRail`, artboard 21), composed by the page and
     // mounted on the ACTIVE FRONT card's answer face. A node rather than three callbacks
     // so this component — which the cdp and three other surfaces also render through —
@@ -89,6 +97,10 @@ interface FlashCardSectionProps {
     topRail?: React.ReactNode;
 }
 
+
+// Fallback slot padding for callers that don't measure (no More Info pill on the surface).
+// Uses the unmeasured-slot branch: resting top pad + the default affordance reservation.
+const DEFAULT_CARD_SLOT_PADDING = cardSlotPadding(0);
 
 // How far off-screen to throw the card (px). 900px safely clears the 402px frame on all viewports.
 const FLY_OUT_X = 900;
@@ -312,6 +324,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     onPersistSense,
     editMode,
     pushDown,
+    pad,
+    slotRef,
     topRail,
 }) => {
     const theme = useTheme();
@@ -337,6 +351,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
         // Card slot: flex:1 absorbs remaining vertical space, position:relative establishes
         // the containing block for DraggableCardContainer (position:absolute inset:0).
         <Box
+            ref={slotRef}
+            className="mobile-demo-card-slot"
             sx={{
                 flex: 1,
                 minHeight: 0,
@@ -379,7 +395,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
             {/* Fills the slot. DraggableCardContainer has definite px dimensions because
                 it is absolutely positioned — this is what makes height:100% on
                 CardAspectWrapper resolve correctly (flex-grown heights are not definite). */}
-            <DraggableCardContainer className="mobile-demo-draggable-container" pushDown={pushDown}>
+            <DraggableCardContainer className="mobile-demo-draggable-container" pushDown={pushDown} pad={pad ?? DEFAULT_CARD_SLOT_PADDING}>
                 {/* CardAspectWrapper: fills the larger of the two axes while preserving
                     aspect-ratio. Default = height-bound (container is wider than card ratio).
                     The @container rule flips to width-bound when the container is narrower

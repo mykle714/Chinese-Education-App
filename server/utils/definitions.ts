@@ -146,12 +146,29 @@ export function longDefToDisplayString(
  * Strip all parenthetical substrings from a definition string for display.
  * Does not mutate the underlying database value.
  * e.g. "to go (informal); to leave (a place)" → "to go; to leave"
+ * Nesting-aware: "a waiter (literally, one who runs (fast))" → "a waiter".
  *
  * Server twin of `stripParentheses` in `src/utils/definitionUtils.ts` — kept in
  * sync manually (separate client/server builds).
  */
 export function stripParentheses(text: string): string {
-  return text.replace(/\s*\([^)]*\)/g, '').trim();
+  let out = '';
+  let depth = 0;
+  for (const ch of text) {
+    // A '(' at any depth opens/deepens an aside; a ')' closes one. Tracking depth
+    // (rather than the old /\s*\([^)]*\)/g) is what makes NESTED asides work: the
+    // regex stopped at the FIRST ')', so 的's gloss — which nests a parenthetical
+    // inside a quoted example — leaked its tail onto the flashcard.
+    // Eat any whitespace already emitted before the aside, reproducing the old
+    // regex's leading `\s*` — without this, "to go (informal); to leave" would
+    // render "to go ; to leave" and "[+de (particle)]" would render "[+de ]".
+    if (ch === '(') { if (depth === 0) out = out.replace(/\s+$/, ''); depth++; continue; }
+    // An unmatched ')' (depth already 0) is dropped rather than kept: a lone close
+    // paren is never displayable text, and it is exactly what 加 used to render.
+    if (ch === ')') { if (depth > 0) depth--; continue; }
+    if (depth === 0) out += ch;
+  }
+  return out.trim();
 }
 
 /**

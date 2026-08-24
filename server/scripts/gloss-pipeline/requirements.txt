@@ -1,0 +1,20 @@
+# Heavy (GPU) environment — needed ONLY by pipeline.py steps 2–5 (embed / retrieve / judge).
+# ~5.4 GB installed, almost all of it CUDA: nvidia 2.7G + torch 1.6G + triton 556M.
+# Everything below `sentence-transformers` is transitive; these six are the real deps.
+#
+#   python3 -m venv ~/.venvs/gloss-pipeline && ~/.venvs/gloss-pipeline/bin/pip install -r requirements.txt
+#
+# The venv is DISPOSABLE — it holds no state. Delete it whenever the disk is wanted and
+# reinstall before the next judge run; the vectors and verdicts live in Postgres, not here.
+hnswlib==0.8.0
+nltk==3.10.3
+psycopg2-binary==2.9.12
+sentence-transformers==6.0.0
+sentencepiece==0.2.2
+
+# Resolved transitively, pinned here because a judge run's output is only comparable to a
+# previous one under the same model code (§ 7 stamps modelRevision, not library versions —
+# see the note in README.md).
+torch==2.5.1+cu121
+transformers==5.15.1
+numpy==2.5.2

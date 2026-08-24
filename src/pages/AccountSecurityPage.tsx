@@ -13,7 +13,6 @@ import {
 } from "@mui/material";
 import LeafPage from "../components/LeafPage";
 import Icon from "../components/Icon";
-import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import { SettingsSection } from "../components/primitives";
 import { useAuth } from "../AuthContext";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -144,7 +143,6 @@ function AccountSecurityPage() {
         <LeafPage
             title="Account & security"
             onBack={() => slideNavigate("/settings")}
-            rightContent={<MinutePointsFireBadge />}
             className="account-security-page"
         >
             <Box className="account-security-page__scroll" sx={{ flex: 1, overflowY: "auto" }}>

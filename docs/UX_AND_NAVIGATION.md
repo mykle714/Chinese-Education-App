@@ -25,6 +25,16 @@ browser's native pan/scroll (which fights the drag interactions). Only set a
 scroll-permitting value (`auto`, `pan-y`, etc.) on a component when explicitly told
 it should be scrollable.
 
+⚠️ **But a container that IS scrollable must scroll natively.** `touch-action: none`
+on a scroller means something has to move it from JS, and a `scrollTop += dy` inside a
+non-passive `touchmove` runs on the **main thread** — so the scroll advances only as
+fast as the main thread finishes each frame, and any render/layout work in the content
+becomes visible stutter. Use `pan-y` (+ `overscroll-behavior: contain`) and let the
+compositor pan it; if a gesture handler must also claim some of those touches, have it
+`preventDefault()` only the ones it actually takes, on the gesture's first (cancelable)
+move. Learned from the decks sheet, 2026-08-24 — see
+[EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) § "Only `resize` is driven by JS".
+
 **The app shell is non-scrollable by default — scrolling is opt-in per page.**
 `html`/`body` are pinned to the visible viewport with `overflow: hidden` (see
 `src/index.css`), and `#root` is the only shell-level scroller (`100dvh`,

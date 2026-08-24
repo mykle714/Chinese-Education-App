@@ -1,0 +1,11 @@
+# LIGHT environment — enough for cluster.py, validate.py and sweep.py, which do pure graph
+# work over the cached verdicts and run NO model inference (see cluster.py's docstring).
+# ~30 MB instead of 5.4 GB. Use this on any box that only re-clusters or re-tunes:
+#
+#   python3 -m venv ~/.venvs/gloss-pipeline && ~/.venvs/gloss-pipeline/bin/pip install -r requirements-graph.txt
+#   ~/.venvs/gloss-pipeline/bin/python cluster.py
+#
+# nltk is optional — rule.py degrades gracefully without it, but then the WordNet antonym
+# veto cannot be recomputed and only the CACHED wordnetAntonym flag is honoured.
+psycopg2-binary==2.9.12
+nltk==3.10.3

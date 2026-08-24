@@ -9,7 +9,6 @@ import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import NodePage from "../../components/NodePage";
-import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
 import { useHideFooter } from "../../hooks/useHideFooter";
 import ForeignText from "../../components/ForeignText";
@@ -1181,7 +1180,7 @@ const SortCardsPage: React.FC = () => {
 
     if (loading) {
         return (
-            <NodePage title="Sort Cards" onBack={() => navigate("/discover")} scrollable={false} headerExtraActions={<MinutePointsFireBadge />}>
+            <NodePage title="Sort Cards" onBack={() => navigate("/discover")} scrollable={false}>
                 <Box className="sort-cards__loading-wrapper" sx={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
                     <DelayedCircularProgress className="sort-cards__spinner" />
                 </Box>
@@ -1193,7 +1192,7 @@ const SortCardsPage: React.FC = () => {
     // the completion popup rather than falling through to the spinner branch below.
     if (setModeDone) {
         return (
-            <NodePage title="Sort Cards" onBack={exitToOrigin} scrollable={false} headerExtraActions={<MinutePointsFireBadge />}>
+            <NodePage title="Sort Cards" onBack={exitToOrigin} scrollable={false}>
                 <ContentArea className="sort-cards__content sort-cards__content--set-complete">
                     <ProvisionalSortDonePopup
                         sortedCount={resolvedCount}
@@ -1208,7 +1207,7 @@ const SortCardsPage: React.FC = () => {
 
     if (!currentPack) {
         return (
-            <NodePage title="Sort Cards" onBack={() => navigate("/discover")} scrollable={false} headerExtraActions={<MinutePointsFireBadge />}>
+            <NodePage title="Sort Cards" onBack={() => navigate("/discover")} scrollable={false}>
                 <ContentArea className="sort-cards__content">
                     <Box className="sort-cards__no-cards-error" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
                         {exhausted
@@ -1267,7 +1266,6 @@ const SortCardsPage: React.FC = () => {
                     >
                         <UndoIcon className="sort-cards__undo-icon" />
                     </IconButton>
-                    <MinutePointsFireBadge />
                 </>
             }
         >
@@ -1535,6 +1533,8 @@ const SortCardsPage: React.FC = () => {
                                 compareTab={compareTab}
                                 onSetCompareSlot={eip.setCompareSlot}
                                 onCompareResult={eip.setCompareResult}
+                                entryTabId={eip.activeTab?.id}
+                                entryTabIndex={eip.activeIndex}
                                 tabStrip={
                                     <EipTabStrip
                                         tabs={eip.tabs}

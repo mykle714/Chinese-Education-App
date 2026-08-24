@@ -197,14 +197,22 @@ When fetching flashcards from `/api/onDeck/distributedWorkingLoop`, each Chinese
 ### Current Status
 - ✅ TypeScript types updated in `src/types.ts`
 - ✅ FlashcardsLearnPage already has `VocabEntry` type with new fields
-- ⏳ Display logic not yet implemented
+- ✅ Display logic implemented — see below
 
-### Next Steps for Frontend
-The data is now available in `currentEntry` on FlashcardsLearnPage. To display:
+### Where each field renders
 
-1. **Synonyms**: Show `currentEntry.synonyms`
-2. **Example Sentences**: Show `currentEntry.exampleSentences` with per-token `CharacterPinyinColorDisplay` using `sentence.segmentMetadata`
-3. **Related Words**: Show `currentEntry.relatedWords` with shared character highlighting
+The data arrives on `currentEntry` (flp/eip) or `entry` (cdp). Every field has exactly
+one renderer, shared by all surfaces:
+
+| Field | Component | Hosts |
+|---|---|---|
+| **Synonyms** (+ `synonymsMetadata` pronunciation/gloss) and **Related Words** | `src/features/flashcards/SynonymsRelatedSection.tsx` | the eip's **definition tab** when the host passes `showSynonymsRelated` (saved-card cdp only — `InfoCardTabContent`), and the read-only dictionary cdp's own `SectionCard` (`VocabCardSections`). Gate both with `hasSynonymsOrRelated` (`src/utils/definitionUtils.ts`) so neither host draws an empty container. Synonyms are AI-enriched with no validation field, so the whole list always carries the AI treatment. |
+| **Example Sentences** | `src/features/flashcards/ExampleSentenceList.tsx` — per-token `ForeignText`/cpcd from `sentence.segmentMetadata` | eip examples tab + both cdps (docs/EXAMPLE_SENTENCES.md) |
+| **Breakdown** | `src/features/flashcards/BreakdownRow.tsx` | eip breakdown tab + both cdps (docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md) |
+
+The flp and scp deliberately do **not** pass `showSynonymsRelated`: on those surfaces the
+panel is the reading view for a word mid-drill, while the cdp is the reference page those
+two lists belong to.
 
 ## Testing
 

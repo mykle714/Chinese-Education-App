@@ -261,6 +261,16 @@ interface HydraStageProps {
     onMark: (entry: VocabEntry, isCorrect: boolean) => void;
     /** Freeze the field while a modal covers it (§ 6.4). */
     paused: boolean;
+    /**
+     * Cleanup mode: the run is over and its end popup has been minimized to a puck.
+     * The final board becomes a no-stakes review playground, exactly as Bubble Match
+     * does post-loss (see BubbleStage's `cleanupMode`): bubbles stay draggable and
+     * matchable so the player can clear the field they lost on, dragging a bubble
+     * lights its correct partner green as a drop hint, a partnerless grab flags
+     * light-red — and NOTHING is banked. No marks, no score, no spawn payout, and a
+     * wrong drop shakes without ending anything (the run has already ended).
+     */
+    cleanupMode: boolean;
     /** Fires the first time a lent card reaches the board, at most once per run. */
     onFirstLend?: () => void;
     /**
@@ -289,6 +299,7 @@ const HydraStage: React.FC<HydraStageProps> = ({
     onGameOver,
     onMark,
     paused,
+    cleanupMode,
     onFirstLend,
     shouldEndRun,
 }) => {
@@ -327,10 +338,18 @@ const HydraStage: React.FC<HydraStageProps> = ({
     const lastFrameRef = useRef(0);
     const doneSinceRef = useRef(0);
     const lendNoticedRef = useRef(false);
+    // Cleanup mode (mirrors the prop, read from the ref-only pointer handlers and the
+    // frame callback) plus the bubble currently green-revealed as a drop hint.
+    const cleanupModeRef = useRef(cleanupMode);
+    const revealedPartnerIdRef = useRef<string | null>(null);
 
     const [, setTick] = useState(0);
     const forceRender = useCallback(() => setTick((t) => t + 1), []);
     const [danger, setDanger] = useState(false);
+    // Permanently silences the danger vignette once the board turns into a review
+    // playground — the alarm has nothing left to warn about, and a pulsing red wash
+    // makes the field harder to read while it is being cleared.
+    const [dangerDismissed, setDangerDismissed] = useState(false);
     const [squeeze, setSqueeze] = useState(false);
     /**
      * The field's fill ratio, QUANTIZED TO 5% STEPS for the HUD bar (§ 3).
@@ -547,7 +566,10 @@ const HydraStage: React.FC<HydraStageProps> = ({
         // Post-run shutdown: stop writing transforms to every node once the field
         // goes static behind the end popup, with a grace cap for the over-packed
         // case that never fully settles.
-        if (phaseRef.current === "done") {
+        // Cleanup is the exception: bubbles must keep separating and settling as the
+        // player drags and clears them, so the loop stays live for as long as the
+        // review board is up.
+        if (phaseRef.current === "done" && !cleanupModeRef.current) {
             if (doneSinceRef.current === 0) doneSinceRef.current = now;
             if (!anyAnimating || now - doneSinceRef.current >= POST_DONE_SETTLE_MS) {
                 loopRunningRef.current = false;
@@ -691,8 +713,66 @@ const HydraStage: React.FC<HydraStageProps> = ({
         []
     );
 
+    // ---- Cleanup mode (post-run review, end popup minimized) ----------------
+    // The same no-stakes playground Bubble Match offers after a loss, ported here
+    // because Hydra's board is the more interesting one to review: an overflow loss
+    // leaves a packed field of words the player never got to, and a wrong-match loss
+    // leaves the pair that ended the run sitting right there. Matches pop and clear
+    // as they do in play, but bank nothing (docs/HYDRA_BUBBLES.md § 7.6).
+
+    // Drop the current green partner hint back to idle. Guarded on the "revealed"
+    // status so it never clobbers a partner that has since become correct/wrong.
+    const clearRevealedPartner = useCallback(() => {
+        const pid = revealedPartnerIdRef.current;
+        revealedPartnerIdRef.current = null;
+        if (!pid) return;
+        const p = bodiesRef.current.find((b) => b.id === pid);
+        if (p && p.status === "revealed") setStatus(p, "idle", SCALE_IDLE);
+    }, [setStatus]);
+
+    // Light the held bubble's partner green (drop hint). Only one is lit at a time.
+    // Returns false when this bubble has no partner on the field — Hydra's board is
+    // mostly STRAYS (§ 4.2), so an unmatchable grab is the common case here, not the
+    // edge case it is in Bubble Match; the caller flags the grab light-red for it.
+    const revealPartner = useCallback(
+        (held: BubbleBody): boolean => {
+            clearRevealedPartner();
+            const partner = bodiesRef.current.find(
+                (b) => b.id !== held.id && b.pairId === held.pairId && b.status === "idle"
+            );
+            if (!partner) return false;
+            setStatus(partner, "revealed", SCALE_IDLE);
+            revealedPartnerIdRef.current = partner.id;
+            forceRender();
+            return true;
+        },
+        [clearRevealedPartner, setStatus, forceRender]
+    );
+
+    // Keep the ref in sync. Entering cleanup silences the danger vignette, releases
+    // the pair left frozen red by a wrong-match loss (a "wrong" body is not grabbable,
+    // and those two are exactly the ones the player most wants to re-try), and
+    // restarts the self-stopped physics loop so the frozen field goes live for
+    // dragging. Leaving it tears down any lingering hint and lets the loop settle.
+    useEffect(() => {
+        cleanupModeRef.current = cleanupMode;
+        if (cleanupMode) {
+            setDangerDismissed(true);
+            for (const b of bodiesRef.current) {
+                if (b.status === "wrong") setStatus(b, "idle", SCALE_IDLE);
+            }
+            forceRender();
+            startLoop();
+        } else {
+            clearRevealedPartner();
+        }
+    }, [cleanupMode, startLoop, clearRevealedPartner, setStatus, forceRender]);
+
     const onPointerDown = useCallback((id: string, e: React.PointerEvent) => {
-        if (phaseRef.current !== "playing" || pausedRef.current) return;
+        // Grabbable while playing, OR during post-run cleanup (run over, popup
+        // minimized). A paused field is never grabbable in either mode.
+        const cleanup = cleanupModeRef.current;
+        if ((phaseRef.current !== "playing" && !cleanup) || pausedRef.current) return;
         const body = bodiesRef.current.find((b) => b.id === id);
         if (!body || body.status === "correct" || body.status === "wrong") return;
 
@@ -710,10 +790,17 @@ const HydraStage: React.FC<HydraStageProps> = ({
             y: e.clientY - rect.top - body.y,
         };
         setStatus(body, "held", SCALE_HELD);
+
+        // Cleanup: light this bubble's partner green as a drop hint. With no partner
+        // on the field it can never be matched, so the grabbed bubble itself is
+        // flagged light-red instead of the usual held dim, for as long as it is held.
+        if (cleanup && !revealPartner(body)) {
+            setStatus(body, "nomatch", SCALE_HELD);
+        }
         forceRender();
 
         if (body.kind === "word" && onSpeak) onSpeak(body.entry);
-    }, [forceRender, onSpeak, setStatus]);
+    }, [forceRender, onSpeak, setStatus, revealPartner]);
 
     useEffect(() => {
         const onMove = (e: PointerEvent) => {
@@ -744,6 +831,9 @@ const HydraStage: React.FC<HydraStageProps> = ({
             held.scale += (held.targetScale - held.scale) * SCALE_LERP;
             writeTransform(held);
 
+            // Update the hover highlight. The green-revealed partner (cleanup drop
+            // hint) is skipped so it stays green while still acting as the drop
+            // target — hoveredIdRef still points at it, so the drop resolves.
             const target = findHoverTarget(held);
             const prevHoverId = hoveredIdRef.current;
             if (target?.id !== prevHoverId) {
@@ -751,7 +841,9 @@ const HydraStage: React.FC<HydraStageProps> = ({
                     const prev = bodiesRef.current.find((b) => b.id === prevHoverId);
                     if (prev && prev.status === "hovered") setStatus(prev, "idle", SCALE_IDLE);
                 }
-                if (target) setStatus(target, "hovered", SCALE_HOVER);
+                if (target && target.id !== revealedPartnerIdRef.current) {
+                    setStatus(target, "hovered", SCALE_HOVER);
+                }
                 hoveredIdRef.current = target?.id ?? null;
                 forceRender();
             }
@@ -770,13 +862,25 @@ const HydraStage: React.FC<HydraStageProps> = ({
                 ? bodiesRef.current.find((b) => b.id === targetId) ?? null
                 : null;
 
-            // A release that lands after the buzzer resolves nothing.
-            if (phaseRef.current !== "playing") {
+            // Cleanup mode (post-run review, popup minimized) resolves drops exactly
+            // as play does — pop on correct, shake on wrong — but banks NOTHING: no
+            // mark, no score, no payout spawn, and no second run end.
+            const cleanup = cleanupModeRef.current;
+
+            // A release that lands after the run ended, and we are NOT reviewing
+            // (e.g. the pointer came up in the same tick the board overflowed):
+            // resolve nothing.
+            if (phaseRef.current !== "playing" && !cleanup) {
                 setStatus(held, "idle", SCALE_IDLE);
                 if (target && target.status === "hovered") setStatus(target, "idle", SCALE_IDLE);
                 forceRender();
                 return;
             }
+
+            // The drag is ending — retire the green partner hint. Guarded on the
+            // "revealed" status, so if the hint bubble IS the drop target it is left
+            // alone here and picks up its correct/wrong status below.
+            clearRevealedPartner();
 
             // Dropped on empty space — not a wrong match, just a drop. Only a drop
             // ONTO a bubble is a judgement (§ 7.1).
@@ -813,11 +917,24 @@ const HydraStage: React.FC<HydraStageProps> = ({
                 // The negative mark goes on the CHINESE bubble's card, matching Bubble
                 // Match: a registered match is always one word + one definition, and
                 // the recognition track belongs to the foreign side.
-                const chinese = held.kind === "word" ? held : target;
-                onMark(chinese.entry, false);
+                //
+                // In cleanup there is no run left to end and no mark to bank: the pair
+                // just shakes and settles back to idle, so a wrong guess on the review
+                // board costs nothing but still reads as wrong.
                 setStatus(held, "wrong", held.targetScale);
                 setStatus(target, "wrong", target.targetScale);
                 forceRender();
+                if (cleanup) {
+                    const to = setTimeout(() => {
+                        if (bodiesRef.current.includes(held)) setStatus(held, "idle", SCALE_IDLE);
+                        if (bodiesRef.current.includes(target)) setStatus(target, "idle", SCALE_IDLE);
+                        forceRender();
+                    }, WRONG_FEEDBACK_MS);
+                    pendingTimeoutsRef.current.push(to);
+                    return;
+                }
+                const chinese = held.kind === "word" ? held : target;
+                onMark(chinese.entry, false);
                 // Let the shake play before the popup lands, so the player sees WHAT
                 // went wrong rather than a score card appearing out of nowhere.
                 const to = setTimeout(() => finishRun("wrongMatch"), WRONG_FEEDBACK_MS);
@@ -825,11 +942,15 @@ const HydraStage: React.FC<HydraStageProps> = ({
                 return;
             }
 
-            // Correct: score, mark, pop, then pay out the cleared color's spawns.
-            onMark(held.entry, true);
-            scoreRef.current += SCORE_PER_MATCH;
-            setScore(scoreRef.current);
-            onScore(scoreRef.current);
+            // Correct: score, mark, pop, then pay out the cleared color's spawns —
+            // all of which a cleanup match skips. It only pops and removes the pair,
+            // so the review board drains toward empty and never refills.
+            if (!cleanup) {
+                onMark(held.entry, true);
+                scoreRef.current += SCORE_PER_MATCH;
+                setScore(scoreRef.current);
+                onScore(scoreRef.current);
+            }
             setStatus(held, "correct", SCALE_IDLE);
             setStatus(target, "correct", SCALE_IDLE);
             forceRender();
@@ -849,13 +970,15 @@ const HydraStage: React.FC<HydraStageProps> = ({
                 nodeMapRef.current.delete(held.id);
                 nodeMapRef.current.delete(target.id);
                 // The card is spent for this run: retired from the buffers so it is
-                // not immediately re-served as its own replacement.
-                buffers.release(held.entry.id);
+                // not immediately re-served as its own replacement. A cleanup clear
+                // does NOT spend it — the run is already over, and retiring it would
+                // only make it scarcer for the next one.
+                if (!cleanup) buffers.release(held.entry.id);
                 pairsRef.current.delete(held.pairId);
                 // THE PAYOUT (§ 2). Planned against the board as it stands AFTER the
                 // pair is removed, which is what makes the fill-keyed table read the
                 // number the player is actually looking at.
-                if (endsRun) {
+                if (endsRun && !cleanup) {
                     forceRender();
                     finishRun("challengeComplete");
                     return;
@@ -878,7 +1001,7 @@ const HydraStage: React.FC<HydraStageProps> = ({
             window.removeEventListener("pointerup", onUp);
             window.removeEventListener("pointercancel", onUp);
         };
-    }, [findHoverTarget, forceRender, onSpeak, setStatus, writeTransform, onMark, onScore, finishRun, runSpawnBatch, colorOf, buffers, shouldEndRun]);
+    }, [findHoverTarget, forceRender, onSpeak, setStatus, writeTransform, onMark, onScore, finishRun, runSpawnBatch, colorOf, buffers, shouldEndRun, clearRevealedPartner]);
 
     return (
         <>
@@ -895,7 +1018,7 @@ const HydraStage: React.FC<HydraStageProps> = ({
             one the spawn table is keyed on. It goes red on the danger band, so the bar
             and the vignette raise the alarm together. */}
         <GameHud className="hydra-stage__hud">
-            {squeeze ? (
+            {squeeze && !dangerDismissed ? (
                 <GameHudLabel
                     className="hydra-stage__squeeze"
                     // The label names the DRAIN tier, so it takes drain's HUE — but its
@@ -922,7 +1045,7 @@ const HydraStage: React.FC<HydraStageProps> = ({
             <GameHudBar
                 className="hydra-stage__fill-bar"
                 fraction={fillBucket}
-                color={danger ? COLORS.dangerInk : COLORS.teaA}
+                color={danger && !dangerDismissed ? COLORS.dangerInk : COLORS.teaA}
             />
         </GameHud>
         <Box
@@ -952,9 +1075,9 @@ const HydraStage: React.FC<HydraStageProps> = ({
                     zIndex: 40,
                     background:
                         "radial-gradient(125% 125% at 50% 50%, rgba(244,67,54,0) 18%, rgba(244,67,54,0.45) 48%, rgba(229,57,53,0.78) 76%, rgba(198,40,40,0.95) 100%)",
-                    opacity: danger ? 1 : 0,
+                    opacity: danger && !dangerDismissed ? 1 : 0,
                     transition: "opacity 0.35s ease",
-                    animation: danger ? "hydraDangerPulse 0.9s ease-in-out infinite" : "none",
+                    animation: danger && !dangerDismissed ? "hydraDangerPulse 0.9s ease-in-out infinite" : "none",
                     "@keyframes hydraDangerPulse": {
                         "0%, 100%": { opacity: 0.7 },
                         "50%": { opacity: 1 },

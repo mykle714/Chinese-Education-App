@@ -18,7 +18,11 @@ import { routeSlideDir, supportsViewTransitions } from "../utils/pageTransition"
 export function useSlideNavigate() {
     const navigate = useNavigate();
     return useCallback(
-        (to: string, options?: { state?: unknown }) => {
+        // `replace` swaps the current history entry instead of pushing a new one. Use
+        // it when the current page has just been CONSUMED by a one-shot action (sending
+        // or accepting a challenge): leaving it on the stack lets Back return to a form
+        // whose button would fire the same action a second time.
+        (to: string, options?: { state?: unknown; replace?: boolean }) => {
             const dir = routeSlideDir(to);
             if (!dir || !supportsViewTransitions()) {
                 navigate(to, options);

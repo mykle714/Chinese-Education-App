@@ -9,7 +9,6 @@ import {
     Flag as FlagIcon,
 } from "@mui/icons-material";
 import ReaderDocumentSurface from "./ReaderDocumentSurface";
-import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
 import { useTheme as useCustomTheme } from "../../contexts/ThemeContext";
@@ -50,7 +49,7 @@ function ReaderDocumentPage() {
     const navigate = useNavigate();
     const theme = useTheme();
     const customTheme = useCustomTheme();
-    const { token, user, isAuthenticated } = useAuth();
+    const { token, user } = useAuth();
     const vocabularyUpdate = useVocabularyUpdate();
     useLockBodyScroll();
 
@@ -320,12 +319,6 @@ function ReaderDocumentPage() {
     const handleApprove = useCallback(() => submitValidation('approve'), [submitValidation]);
     const handleFlag = useCallback(() => submitValidation('flag'), [submitValidation]);
 
-    const headerRightContent = isAuthenticated ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <MinutePointsFireBadge />
-        </Box>
-    ) : undefined;
-
     // Validation docs (migration 104) are read-only — no Edit/Delete-by-editing, just
     // Approve/Flag in the page header alongside the generic Delete (to abandon a
     // downloaded entry without acting on it).
@@ -386,9 +379,8 @@ function ReaderDocumentPage() {
                     <DeleteIcon fontSize="small" />
                 </IconButton>
             )}
-            {headerRightContent}
         </Box>
-    ) : headerRightContent;
+    ) : undefined;
 
     return (
         <ReaderDocumentSurface

@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Typography } from "@mui/material";
 import Icon from "../components/Icon";
 import { useMinutePoints } from "./useMinutePoints";
+import { useAuth } from "../AuthContext";
 import { useMinutePointsPaused } from "./minutePointsPause";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
@@ -26,7 +27,8 @@ import { FONTS } from "../theme/fonts";
  *
  * ── THE THREE STATES ─────────────────────────────────────────────────────────────────
  *   active  the flame and the count in fireActive orange; time is accruing.
- *   idle    both in the muted ink; the user is on an eligible page but not earning.
+ *   idle    both in the muted ink; not earning — either an eligible page the user has
+ *           gone quiet on, or an ineligible one (every menu/browse surface).
  *   paused  same muted ink plus a struck-through count — accumulation is deliberately on
  *           hold (flp icon-layout editor). The old treatment overlaid a large red
  *           no-entry glyph on the flame, which at 15px would be a red smudge; a line
@@ -36,12 +38,22 @@ import { FONTS } from "../theme/fonts";
  * tick re-renders this leaf only — never the page hosting it, which would interrupt an
  * in-progress drag gesture.
  *
- * Rendered by: PageHeader's right slot (see `headerExtraActions` callers) — the reader,
- * flp, quick mark, sort cards, and every game header.
+ * Rendered by: `PageHeader` itself, LAST in its right slot, on EVERY header in the app —
+ * pages neither import nor pass it. On a page that is not in MINUTE_POINTS_ELIGIBLE_PAGES
+ * (the hub menus, the cdp, the deck/collection browsers) `useMinutePoints` forces
+ * `isActive` false, so the badge draws its idle grey there: "not earning" is an answer,
+ * and one worth showing everywhere the learner can ask the question.
+ *
+ * Renders nothing when signed out — there is no balance to report, and "0 0s" would read
+ * as a broken counter rather than as "no account".
  */
 const MinutePointsFireBadge: React.FC = () => {
+    const { user } = useAuth();
     const minutePoints = useMinutePoints();
     const paused = useMinutePointsPaused();
+    // Hooks first, then bail: a signed-out visitor on a public page has no minute
+    // balance, so the header shows no flame at all.
+    if (!user) return null;
     const earning = !paused && minutePoints.isActive;
     const tone = earning ? COLORS.fireActive : COLORS.textSecondary;
 

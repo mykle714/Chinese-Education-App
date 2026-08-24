@@ -57,10 +57,16 @@ const SheetBody = forwardRef<SheetPanelBodyHandle, SheetBodyProps>(function Shee
                         flex: 1,
                         minHeight: 0,
                         overflowY: "auto",
-                        // SheetPanel owns every touchmove on this body (it decides
-                        // between growing the sheet and scrolling this box), so the
-                        // browser must not also pan it. See CLAUDE.md § Touch & Scroll.
-                        touchAction: "none",
+                        // SheetPanel still decides, on the gesture's first committed
+                        // move, between growing the sheet and scrolling this box — but
+                        // it expresses "scroll" by NOT preventing the default, so the
+                        // browser pans this container natively (on the compositor).
+                        // Hence `pan-y` rather than `none`; see SheetPanel.onTouchMove
+                        // and CLAUDE.md § Touch & Scroll.
+                        touchAction: "pan-y",
+                        // The browser owns the pan now, so stop it chaining/bouncing
+                        // out of the sheet into the page behind it.
+                        overscrollBehavior: "contain",
                         display: "flex",
                         flexDirection: "column",
                         // ⚠️ NO SHRINKING. This column is MEANT to overflow and be

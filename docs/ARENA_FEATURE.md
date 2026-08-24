@@ -780,6 +780,14 @@ no writes, no drift.
 * The target is drawn from the **distribution of real scores in that division** from
   recent closed arenas, so a division-11 bot is not lazier than a division-2 human. Until
   there is history to draw from, fall back to a hardcoded per-division band.
+* That draw is then multiplied by **`SYNTHETIC_EFFORT_MULTIPLIER` = 0.25** (`server/services/arenaSynthetic.ts`).
+  See § 6.2a.
+* **A bot's score at the open instant is exactly 0.** `syntheticScoreAt` returns 0 for any
+  elapsed fraction ≤ 0, and the curve is a cumulative sum starting from nothing — no bot
+  ever starts an arena with minutes already banked. A board showing bots well ahead of you
+  the moment you look is either a *closed* arena (elapsed fraction is clamped to 1 during
+  the break, so it shows final scores, § 3) or an arena you were seated into after it
+  opened.
 * The curve is monotonic and slightly irregular (a stepped curve, not a straight line),
   because a perfectly linear climb is obviously mechanical when watched for a day.
 * Determinism matters: the same bot must show the same number to every viewer at the same
@@ -794,6 +802,32 @@ no writes, no drift.
 > normalised to land exactly on target, so a dip is impossible rather than patched.
 > `server/services/arenaSynthetic.ts` → `syntheticScoreAt`; the property is asserted across
 > 50 seeds × 500 samples.
+
+### 6.2a The 75% nerf (2026-08-24)
+
+The target bands and the observed-distribution sample both describe **a real player of
+that division**. A bot gets a quarter of that, via a single
+`SYNTHETIC_EFFORT_MULTIPLIER = 0.25` applied inside `pickSyntheticTarget`.
+
+Why: the first live boards had division-1 bots finishing the week on 100–190 minutes,
+which is *more* than the humans they were padding. Padding exists to give the ladder a
+shape — to make "top 5" and "bottom 5" mean something on a 3-person board (§ 6) — not to be
+the competition. At 0.25 a division-1 bot lands in the 15–40 minute range, so a real player
+who shows up at all clears the padding and the promotion slots go to humans.
+
+Two implementation notes that are load-bearing:
+
+* The multiplier lives in **`pickSyntheticTarget`, not `syntheticScoreAt`** — so the stored
+  `arena_members."syntheticTarget"` keeps meaning literally "this bot's end-of-week score".
+  Scaling at read time would make the stored column a lie and would retroactively rewrite
+  the ranking of already-closed arenas.
+* Because the target is stored at formation, the change only reaches **arenas formed after
+  it ships**. Already-live arenas keep the old targets unless their rows are scaled by hand
+  (`UPDATE arena_members ... WHERE "userId" IS NULL` on unresolved arenas — done on dev
+  2026-08-24, 45 rows). There is no migration; the column and its type are unchanged.
+
+Tests: `server/__tests__/arenaSynthetic.test.ts` asserts the per-division ceiling and that
+the observed-distribution path is nerfed too.
 
 ### 6.3 They occupy real ranks
 

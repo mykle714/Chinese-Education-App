@@ -1,4 +1,5 @@
-import { useRef, forwardRef } from "react";
+import { useRef, useEffect, forwardRef } from "react";
+import { Box } from "@mui/material";
 import SheetPanel, { type SheetPanelHandle } from "./SheetPanel";
 import InfoCardPanelBody, { type InfoCardPanelBodyHandle } from "./InfoCardPanelBody";
 import CompareWorkspace from "../../../components/CompareWorkspace";
@@ -47,7 +48,24 @@ interface InfoCardSectionProps {
     // Optional content slot rendered above the grabber. Used by the entry-tabs
     // feature (see EipTabStrip + useEipTabs) — undefined renders nothing extra.
     tabStrip?: React.ReactNode;
+    // Identity + strip position of the ACTIVE entry tab (useEipTabs: `activeTab.id` /
+    // `activeIndex`). Only used to drive the pager slide below — a change of id means the
+    // panel is now showing a DIFFERENT word, and the sign of the index delta says which
+    // way the trail moved. Undefined (cdp, which has no trail) disables the animation.
+    entryTabId?: string;
+    entryTabIndex?: number;
+    // Appends Synonyms + Related Words to the definition tab. Passed by the cdp only,
+    // which uses this panel as its whole extra-info body and would otherwise lose the
+    // two lists its old stacked-SectionCard body showed (see InfoCardTabContent).
+    showSynonymsRelated?: boolean;
 }
+
+// Entry-tab pager slide (see the effect in the component). Duration/easing match
+// TAB_SWIPE_TRANSITION so the two horizontal motions in this panel — sub-tab track and
+// entry pager — feel like the same gesture at two scales.
+const ENTRY_SLIDE_TRAVEL_PCT = 34;
+const ENTRY_SLIDE_MS = 280;
+const ENTRY_SLIDE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 // Re-export the handle under the original name so callers don't need to update.
 export type InfoCardSectionHandle = SheetPanelHandle;
@@ -76,8 +94,60 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     selectedSenseIndex,
     onSelectSense,
     tabStrip,
+    entryTabId,
+    entryTabIndex,
+    showSynonymsRelated,
 }, ref) => {
     const panelRef = useRef<InfoCardPanelBodyHandle | null>(null);
+    const slideRef = useRef<HTMLDivElement | null>(null);
+    // Last (id, index) we animated FROM. Held in a ref rather than state: nothing renders
+    // from it, and writing it during the effect keeps the comparison to exactly one place.
+    const prevEntryTabRef = useRef<{ id: string | undefined; index: number } | null>(null);
+
+    // PAGER SLIDE between entry tabs (the word trail). Drilling into a link pushes a new
+    // pill and shows its panel; before this, the only motion was the sub-tab track sliding
+    // BACK to Definitions (the new tab starts on sub-tab 0), which read as "we went
+    // backwards" when we had in fact gone forwards to another word. So: the sub-tab track
+    // now jumps silently on an entry change (see InfoCardPanelBody), and the whole panel
+    // body slides in from the side the trail grew towards instead.
+    //
+    // Imperative (WAAPI) and NOT keyed remount: remounting the body would tear down the
+    // three always-mounted tab panes, re-bind SheetPanel's scroll coupling, and throw away
+    // per-pane scroll — the exact mount/unmount churn InfoCardPanelBody's track comment
+    // warns about. Animating the existing element costs one composited transform.
+    //
+    // Enter-only (the outgoing word's panel is already gone by the time we run, since one
+    // body serves every tab), so the travel is a fraction of the panel width rather than a
+    // full page: a full 100% with nothing leaving beside it reads as a glitch.
+    useEffect(() => {
+        const prev = prevEntryTabRef.current;
+        prevEntryTabRef.current = { id: entryTabId, index: entryTabIndex ?? 0 };
+        // First render, or a host that doesn't use entry tabs at all: nothing to animate.
+        if (!prev || entryTabId === undefined || prev.id === entryTabId) return;
+        const el = slideRef.current;
+        if (!el) return;
+
+        // Trail order decides the direction: a pushed tab is appended, so a drill-in always
+        // enters from the right; tapping a pill to the left of the current one enters from
+        // the left, matching the direction the eye just travelled.
+        const dir = (entryTabIndex ?? 0) >= prev.index ? 1 : -1;
+        // Clip only for the duration of the slide: leaving overflow hidden permanently
+        // would cut off anything the panel legitimately overhangs with (menus/popovers).
+        el.style.overflow = "hidden";
+        const anim = el.animate(
+            [
+                { transform: `translateX(${dir * ENTRY_SLIDE_TRAVEL_PCT}%)`, opacity: 0 },
+                { transform: "translateX(0)", opacity: 1 },
+            ],
+            { duration: ENTRY_SLIDE_MS, easing: ENTRY_SLIDE_EASING },
+        );
+        const clearClip = () => { el.style.overflow = ""; };
+        anim.addEventListener("finish", clearClip);
+        anim.addEventListener("cancel", clearClip);
+        // A second drill-in mid-slide cancels the first, which fires `cancel` → clip cleared.
+        return () => anim.cancel();
+    }, [entryTabId, entryTabIndex]);
+
     return (
         <SheetPanel
             ref={ref}
@@ -93,7 +163,15 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             tabStrip={tabStrip}
         >
             {({ bindHeaderDrag }) => (
-                compareTab ? (
+                // Slide wrapper for the entry-tab pager (see the effect above). Transparent
+                // to layout: it repeats the body's own flex sizing so the panel measures and
+                // scrolls exactly as it did before.
+                <Box
+                    ref={slideRef}
+                    className="eip-entry-slide"
+                    sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
+                >
+                {compareTab ? (
                     <CompareWorkspace
                         ref={panelRef}
                         state={compareTab}
@@ -122,10 +200,12 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                         onAddToLibrary={onAddToLibrary}
                         selectedSenseIndex={selectedSenseIndex}
                         onSelectSense={onSelectSense}
+                        showSynonymsRelated={showSynonymsRelated}
                         scrollTouchAction="none"
                         headerDragBind={bindHeaderDrag}
                     />
-                )
+                )}
+                </Box>
             )}
         </SheetPanel>
     );

@@ -15,11 +15,31 @@ import { ARENA_DIVISION_COUNT } from '../contracts/wire.js';
  */
 
 /**
+ * How much of a real player's week a bot is worth.
+ *
+ * Set to 0.25 on 2026-08-24: the first boards showed bots finishing a division-1
+ * week on 100-190 minutes, which is more than the humans they were padding were
+ * earning, so the padding was not filling the middle of the board — it was
+ * winning it. Padding exists to give the ladder a shape, NOT to be the
+ * competition, so a bot now targets a quarter of what its band (or the observed
+ * human distribution) says a real player in that division does.
+ *
+ * Applied in ONE place — `pickSyntheticTarget` — so it nerfs both the fallback
+ * bands and the observed-distribution path, and so the stored
+ * `arena_members."syntheticTarget"` keeps meaning exactly "this bot's
+ * end-of-week score". Scaling at read time instead would have made the stored
+ * column a lie and silently changed the ranking of already-closed arenas.
+ */
+export const SYNTHETIC_EFFORT_MULTIPLIER = 0.25;
+
+/**
  * Per-division fallback target bands, used until there is real history to draw
  * from (§ 6.2).
  *
  * A division-11 bot must not be lazier than a division-2 human, or the top of
- * the ladder becomes the easiest place to stay. These are minutes-per-week.
+ * the ladder becomes the easiest place to stay. These are minutes-per-week
+ * BEFORE `SYNTHETIC_EFFORT_MULTIPLIER` — they describe a real player of that
+ * division, and the multiplier is what turns that into a bot.
  */
 const FALLBACK_TARGET_BANDS: [number, number][] = [
   [60, 160],   // div 1
@@ -72,11 +92,16 @@ export function pickSyntheticTarget(
     const sorted = [...observed].sort((a, b) => a - b);
     const pick = sorted[Math.floor(unitNoise(seed, 1) * sorted.length)];
     const jitter = 0.85 + unitNoise(seed, 2) * 0.3;
-    return Math.max(1, Math.round(pick * jitter));
+    return Math.max(1, Math.round(pick * jitter * SYNTHETIC_EFFORT_MULTIPLIER));
   }
 
   const [lo, hi] = FALLBACK_TARGET_BANDS[d - 1];
-  return Math.round(lo + unitNoise(seed, 3) * (hi - lo));
+  // Math.max(1, ...) so the multiplier can never round a low band down to a
+  // zero-target bot, which would sit at 0 all week and read as broken.
+  return Math.max(
+    1,
+    Math.round((lo + unitNoise(seed, 3) * (hi - lo)) * SYNTHETIC_EFFORT_MULTIPLIER),
+  );
 }
 
 /**

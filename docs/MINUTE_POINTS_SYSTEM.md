@@ -159,7 +159,31 @@ is global except the two rollups listed above.
 - `minutePointsSync.incrementMinutePoint(language, token)` — POSTs `{ timestamp, tz, language }`; `language` is the hook's accrual language (`languageRef.current`), matching the badge/localStorage it just incremented optimistically. `fetchLanguageSummary` GETs `/summary?language&tz&timestamp`. The tz is taken from `Intl.DateTimeFormat().resolvedOptions().timeZone`.
 - `authSync.notifyLogin` — fired from `AuthContext` after login and session restore; POSTs `{ tz }` to `/api/auth/onLogin` so `users.timezone` stays fresh even for users who don't earn points.
 - `MonthlyCalendar` / `StreakCounter` / `LeaderboardPlaceholder` — UI surfaces.
-- `MinutePointsBadge` — fire-icon badge on `/flashcards`, `/flashcards/learn`, `/reader`.
+- `MinutePointsFireBadge` — the app's earning indicator. Rendered by `PageHeader` itself,
+  last in the right slot, on **every** header; pages do not pass it. Orange while earning,
+  grey when idle or on an ineligible page, struck-through when paused, `null` when signed
+  out. Because it calls `useMinutePoints` internally, a page must never mount two
+  `PageHeader`s on an earning route — each hook instance runs its own 1-second accrual tick.
+- `MinutePointsBadge` — the legacy circular badge, still only on the old desktop
+  `/flashcards` page (`FlashcardsPage.tsx`); superseded everywhere else by the fire badge.
+
+### Which pages accrue (`src/constants.ts`)
+
+Accrual is decided by path, not by what a page does:
+
+| List | Match | Members |
+| --- | --- | --- |
+| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | `/flashcards/learn`, `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,speed-reading,memory-map,hydra-bubbles}` |
+| `MINUTE_POINTS_ELIGIBLE_EXACT_PAGES` | exact path only | `/flashcards` (the legacy desktop page) |
+| `MINUTE_POINTS_AUTO_ACTIVE_PAGES` | prefix; subset that starts accruing on mount | `/games` |
+
+Only **study** surfaces earn. Menus and browse screens deliberately do not: the hubs
+(Home, Discover, Games, Decks & Cards), the cdp (`/flashcards/card/:id`), the
+deck/collection browsers and the mastery centers. They still show the flame, grey.
+
+⚠️ `/flashcards` is in the EXACT list for a reason — as a prefix it re-admits every
+browse screen under it. It was a prefix until 2026-08-24, which is why the cdp and the
+Decks & Cards tab used to accrue minutes.
 
 ## Day boundary
 

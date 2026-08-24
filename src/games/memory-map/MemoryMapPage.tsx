@@ -13,7 +13,6 @@ import MemoryMapWorld from "./MemoryMapWorld";
 import MemoryMapPrompt from "./MemoryMapPrompt";
 import { GameFrame } from "../shared/GameFrame";
 import MemoryMapRestartDialog from "./MemoryMapRestartDialog";
-import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { HeaderIconButton, HeaderMetaLabel } from "../../components/PageHeader";
 import { useMemoryMapRun } from "./useMemoryMapRun";
 import { useAuth } from "../../AuthContext";
@@ -217,22 +216,6 @@ const MemoryMapPage: React.FC = () => {
                     label="Restart Memory Map"
                 />
             )}
-
-            {/* RIGHTMOST, and it stays that way: the flame sits in the same corner slot
-                on every surface that shows it (flp, Sort Cards, Quick Mark, Word
-                Search), so a learner's eye can find their minute credits without
-                reading the header. Game-specific controls queue up to its left.
-
-                Shown in EVERY phase, including the empty and error states, because the
-                route is in MINUTE_POINTS_ELIGIBLE_PAGES and in the `/games`
-                start-on-entry subset — time is credited from the moment the page
-                mounts, whether or not a run is under way.
-
-                It calls useMinutePoints() INTERNALLY rather than taking it as a prop,
-                so its per-second tick re-renders the badge alone. That matters more
-                here than anywhere else: a page-level re-render every second would
-                interrupt an in-progress pan. */}
-            <MinutePointsFireBadge />
         </Box>
     );
 

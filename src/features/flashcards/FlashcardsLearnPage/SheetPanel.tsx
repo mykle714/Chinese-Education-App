@@ -1,4 +1,5 @@
-import React, { useCallback, useRef, useLayoutEffect, useEffect, useImperativeHandle, forwardRef } from "react";
+import React, { useCallback, useRef, useState, useLayoutEffect, useEffect, useImperativeHandle, forwardRef } from "react";
+import { createPortal } from "react-dom";
 import { Box } from "@mui/material";
 import { useDrag } from "@use-gesture/react";
 import { EicScrim, InfoSheetContainer, InfoSheetGrabber } from "./styled";
@@ -7,7 +8,10 @@ import { EicScrim, InfoSheetContainer, InfoSheetGrabber } from "./styled";
 // container of whatever body a SheetPanel renders. SheetPanel attaches its
 // touch listeners to `root` (so swipes anywhere on the panel feed the
 // resize/scroll coupling) and reads `scroll.scrollTop` to decide between
-// growing the sheet and letting native scroll take over.
+// growing the sheet and letting native scroll take over. `scroll` must carry
+// `touch-action: pan-y` + `overscroll-behavior: contain`: SheetPanel cancels only
+// the touchmoves it converts into a RESIZE, and leaves scroll gestures to the
+// browser so they run on the compositor.
 export interface SheetPanelBodyHandle {
     root: HTMLDivElement | null;
     scroll: HTMLDivElement | null;
@@ -85,6 +89,12 @@ const DEFAULT_HEIGHT_RATIO = 0.6;
 // Duration of every snap/dismiss animation.
 const SNAP_DURATION_MS = 220;
 
+// Scrim fade. IN is a mount-time keyframe on EicScrim itself (`eicScrimIn`); OUT is
+// driven from here, because only this component knows a dismiss has begun. The out
+// duration matches the sheet's own shrink so the dim and the sheet leave together —
+// the scrim used to stay fully lit for the whole shrink and then vanish in one frame.
+const SCRIM_FADE_OUT_MS = SNAP_DURATION_MS;
+
 // Multiplier applied to every vertical delta that resizes the sheet (grabber /
 // tab-strip drag, touch resize, wheel resize, and release momentum — which
 // inherits the scaling through applyResize). >1 makes the panel travel further
@@ -147,6 +157,53 @@ function computeSnapTarget(h: number, defaultH: number, maxH: number, minH: numb
 // reacts to a given gesture (touch is already top-only via DOM hit-testing).
 const mountedDepths = new Set<number>();
 
+// Where a portaled scrim can live without inverting the paint order.
+//
+// The scrim (z-index 10) must paint BELOW the sheet (z-index 11). Two elements only
+// compare z-indexes when they sit in the SAME stacking context, so the scrim has to be
+// portaled into an ancestor that the sheet also lives inside — and one that fills the
+// screen, or the dim covers only part of it.
+//
+// The phone frame (`.mobile-demo-frame`) satisfies both on a plain page. It does NOT on a
+// page that creates its own stacking context in between: `NodePage`'s `Surface` carries
+// the page-slide `transform` (usePageSlide), and a transformed element both creates a
+// stacking context and becomes the containing block for absolutely positioned
+// descendants. The sheet's z-index 11 is then sealed inside Surface, Surface itself
+// competes at `auto`, and a frame-hosted scrim at z-index 10 paints over the WHOLE page —
+// including the sheet. That is the cdp bug: the eip looked greyed out while it was open.
+//
+// So: walk up from the sheet and stop at the first ancestor that creates a stacking
+// context AND is a containing block for absolute children (`transform`, `filter`,
+// `perspective`, `will-change: transform`, `contain`, `backdrop-filter` — all of which
+// establish both) AND covers the frame, or at the frame itself, whichever comes first —
+// so `inset: 0` always dims the whole screen.
+function nearestScrimHost(el: HTMLElement): HTMLElement {
+    const frame = el.closest(".mobile-demo-frame") as HTMLElement | null;
+    const frameRect = frame?.getBoundingClientRect();
+    for (let node = el.parentElement; node && node !== frame; node = node.parentElement) {
+        const cs = getComputedStyle(node);
+        const createsContext =
+            cs.transform !== "none" ||
+            cs.filter !== "none" ||
+            cs.perspective !== "none" ||
+            cs.backdropFilter !== "none" ||
+            (cs.contain !== "none" && cs.contain !== "normal") ||
+            /transform|filter|perspective/.test(cs.willChange);
+        if (!createsContext) continue;
+        // Only host here if this ancestor actually COVERS the frame. A page surface does
+        // (`position: absolute; inset: 0`); an animated inner box would not, and dimming
+        // just that box is worse than the paint-order bug it would be dodging — fall back
+        // to the frame in that case, which is what every page did before this helper.
+        if (!frameRect) return node;
+        const r = node.getBoundingClientRect();
+        if (r.top <= frameRect.top + 1 && r.left <= frameRect.left + 1 &&
+            r.bottom >= frameRect.bottom - 1 && r.right >= frameRect.right - 1) {
+            return node;
+        }
+    }
+    return frame ?? document.body;
+}
+
 const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     onClose,
     initialHeight,
@@ -160,6 +217,36 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     tabStrip,
 }, ref) => {
     const sheetContainerRef = useRef<HTMLDivElement | null>(null);
+    const scrimRef = useRef<HTMLDivElement | null>(null);
+
+    // ---- Where the scrim mounts -------------------------------------------
+    // The scrim is `position: absolute; inset: 0`, so it dims exactly its nearest
+    // positioned ancestor — which, rendered in place, is the HOST PAGE's content area
+    // (flp's `ContentArea`). That left the page's own header (and anything else outside
+    // the content area) undimmed, so a modal sheet only darkened part of the screen.
+    //
+    // So it is PORTALED out — but NOT unconditionally to the phone frame. It goes to
+    // `nearestScrimHost` (above): the nearest ancestor that both fills the screen and
+    // shares the SHEET's stacking context. Getting that wrong inverts the paint order,
+    // and the scrim ends up dimming the sheet it is supposed to be behind — which is
+    // exactly what happened on the cdp, whose `NodePage` `Surface` carries the page-slide
+    // `transform` (see the helper's comment for the mechanism).
+    //
+    // Whatever host is chosen fills the frame, so the dim still covers the page header.
+    // The footer sits at z-index 100 at frame level (FooterPresenter) and stays ABOVE the
+    // scrim when the scrim is hosted by the frame — deliberately: it is the frame's
+    // furniture, not the page's. Inside a slid page Surface the footer is a sibling of
+    // that Surface, so it stays undimmed there too.
+    //
+    // Resolved in a layout effect (the target is found by walking up from the mounted
+    // sheet), so the scrim mounts on the commit after the sheet — still before paint.
+    const [scrimHost, setScrimHost] = useState<HTMLElement | null>(null);
+    useLayoutEffect(() => {
+        const el = sheetContainerRef.current;
+        if (!el) return;
+        setScrimHost(nearestScrimHost(el));
+    }, []);
+
     // ---- Height model -----------------------------------------------------
     // The sheet's height is driven IMPERATIVELY (heightRef + a direct write to
     // element.style.height), never through React state. Two reasons:
@@ -248,6 +335,19 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         dismissingRef.current = true;
         stopMomentum();
         writeHeight(0, true);
+        // Fade the dim out alongside the shrink. Imperative for the same reason the
+        // height is (see the height-model note): a state flag here would re-render the
+        // entire sheet body — via the `children` render function — on the way out.
+        // Killing the mount-time `eicScrimIn` animation first is what lets a transition
+        // own the opacity; the element has no opacity of its own, so the computed value
+        // falls back to 1 and the transition has a real starting point.
+        const scrim = scrimRef.current;
+        if (scrim) {
+            scrim.style.animation = "none";
+            void scrim.offsetWidth; // flush, so the transition starts from 1 rather than coalescing
+            scrim.style.transition = `opacity ${SCRIM_FADE_OUT_MS}ms ease-out`;
+            scrim.style.opacity = "0";
+        }
         dismissTimerRef.current = window.setTimeout(() => {
             dismissTimerRef.current = null;
             onCloseRef.current?.();
@@ -446,7 +546,19 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 else gestureMode = scrollEl.scrollTop > 0 ? "scroll" : "resize";
             }
             if (gestureMode === "scroll") {
-                scrollEl.scrollTop += dy;
+                // NATIVE SCROLL. We do NOT preventDefault and we do NOT write
+                // scrollTop: the body's scroller carries `touch-action: pan-y`, so
+                // once this gesture is locked to "scroll" the browser pans it on the
+                // COMPOSITOR and gives it a native fling on release.
+                //
+                // It used to be `scrollEl.scrollTop += dy` inside this non-passive
+                // handler, which put the scroll on the main thread — so every frame
+                // of it waited on whatever React/layout work the body was doing, and
+                // a heavy body (the decks panel: ~470 mini cards, each with a cpcd
+                // row that re-measures itself) stuttered badly. The identical card
+                // grid on CollectionViewPage never did, because that page scrolls
+                // natively. Handing the scroll back is what closes that gap.
+                return;
             } else {
                 // A live finger may drag all the way down to the floor — 0 for a
                 // modal panel (that is the dismiss gesture), the resting height
@@ -474,21 +586,26 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 dismiss();
                 return;
             }
+            // A "scroll" gesture is the browser's now, fling included — running our
+            // own rAF momentum on top of a native fling would double-scroll.
+            if (mode === "scroll") return;
             if (Math.abs(velocity) < FLING_MIN_VELOCITY) {
-                if (mode === "resize") settle();
+                settle();
                 return;
             }
-            startMomentum(velocity, mode);
+            startMomentum(velocity);
         };
 
-        // Release momentum, locked to the gesture's mode so a fling can never
-        // cross over between resizing and scrolling:
-        //  - "resize": the panel keeps growing/shrinking, floored at the DEFAULT
-        //    height. A downward fling therefore coasts to the default height and
-        //    stops there; it cannot dismiss. Growing stops dead at the max.
-        //  - "scroll": the content keeps scrolling and stops at its own bounds;
-        //    inertia never spills into a panel resize.
-        const startMomentum = (initialVelocity: number, mode: "resize" | "scroll") => {
+        // Release momentum for a RESIZE fling only — the panel keeps growing or
+        // shrinking, floored at the DEFAULT height, so a downward fling coasts to
+        // the default height and stops there rather than running on into a dismiss;
+        // growing stops dead at the max.
+        //
+        // There is no "scroll" arm any more: a scroll gesture is native (see
+        // onTouchMove), so the browser owns its inertia too. Inertia still cannot
+        // cross between the two, because the gesture's mode is locked on its first
+        // committed move and only the resize arm reaches this function.
+        const startMomentum = (initialVelocity: number) => {
             let v = initialVelocity;
             let lastFrame = performance.now();
             const step = (now: number) => {
@@ -498,22 +615,15 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 const dt = Math.min(now - lastFrame, MOMENTUM_MAX_FRAME_MS);
                 lastFrame = now;
                 const dy = v * dt;
-                if (mode === "resize") {
-                    // Momentum floors at the default height — the fling stops
-                    // there instead of running on into a dismiss.
-                    if (!applyResize(dy, defaultHeightRef.current)) {
-                        settle();
-                        return;
-                    }
-                } else {
-                    const before = scrollEl.scrollTop;
-                    scrollEl.scrollTop = before + dy;
-                    // Hit the top or bottom of the content — nothing moved.
-                    if (scrollEl.scrollTop === before) return;
+                // Momentum floors at the default height — the fling stops there
+                // instead of running on into a dismiss.
+                if (!applyResize(dy, defaultHeightRef.current)) {
+                    settle();
+                    return;
                 }
                 v *= Math.pow(MOMENTUM_DECAY_PER_FRAME, dt / 16);
                 if (Math.abs(v) < MOMENTUM_MIN_VELOCITY) {
-                    if (mode === "resize") settle();
+                    settle();
                     return;
                 }
                 momentumRafRef.current = requestAnimationFrame(step);
@@ -546,12 +656,17 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
 
     return (
         <>
-            {showScrim && (
+            {showScrim && scrimHost && createPortal(
                 <EicScrim
+                    ref={scrimRef}
                     className="mobile-demo-eic-scrim"
-                    onClick={onClose}
+                    // Routed through `dismiss` rather than straight to `onClose`: the tap
+                    // now plays the same shrink-and-fade every other close path plays,
+                    // instead of making the sheet and its dim disappear in one frame.
+                    onClick={dismiss}
                     style={scrimStyle}
-                />
+                />,
+                scrimHost,
             )}
             <InfoSheetContainer
                 ref={sheetContainerRef}

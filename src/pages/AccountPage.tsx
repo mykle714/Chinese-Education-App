@@ -6,7 +6,6 @@ import DelayedCircularProgress from "../components/DelayedCircularProgress";
 import MobileTabScreen from "../components/MobileTabScreen";
 import { HeaderIconButton } from "../components/PageHeader";
 import { FooterSpacer } from "../components/MobileFooter";
-import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import DeckBuckets from "../components/DeckBuckets";
 import IconPickerDialog from "../components/IconPickerDialog";
 import Icon from "../components/Icon";
@@ -77,9 +76,8 @@ function AccountPage() {
         }
     };
 
-    // Header right slot, in the artboard's order: the streak flame, then the gear.
-    // The flame was missing here — every other minute-earning surface carries it, and
-    // artboard 5 draws it on this one too.
+    // Header right slot: just the gear. The streak flame is not passed here —
+    // `PageHeader` renders it into every header itself, flush right of the gear.
     //
     // The gear is the OUTLINED variant, per the artboard: this is the one header in the
     // app carrying a single lone action on the bare paper ground, and an unboxed glyph
@@ -87,7 +85,6 @@ function AccountPage() {
     // actions in a row, use the bare variant instead.
     const headerActions = (
         <>
-            <MinutePointsFireBadge />
             <HeaderIconButton
                 className="account-page__settings-button"
                 icon="settings"

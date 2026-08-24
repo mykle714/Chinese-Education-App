@@ -35,6 +35,23 @@ Local half = TARGET, transport = Git LFS because you have no cross-machine SSH).
 > un-pushed local edits to those tables on the dev box are **lost**. Prod is
 > authoritative; that is the point.
 
+### ⛔ NEVER add `gloss_meaning_groups` to the list above
+
+`gloss_meaning_groups` (migration 154) is the **one table in the app whose source of truth
+is DEV**, not prod. It is derived data: the GPU pipeline in
+`server/scripts/gloss-pipeline/` computes it on the dev box and pushes it **up** with
+`push-groups.ts`. Prod never authors a row.
+
+Adding it here would create a **silent circular sync** — a routine dev refresh would
+overwrite dev's freshly computed groups with prod's copy of *what dev just sent up*, and
+nothing would look broken. The damage would only show up as stale groupings that no
+rebuild seems to fix.
+
+The dev-only build tables `gloss_vectors` and `gloss_pair_verdicts` must likewise never
+appear here (or in `database/migrations/` — see migration 154's header). They exist only
+on the box that runs the job. See
+[docs/GLOSS_CONFUSABILITY.md](../../docs/GLOSS_CONFUSABILITY.md) § 5a.
+
 ### Why `icons8` merges and everything else overwrites
 
 - **`icons8` — merge only, restored FIRST.** A dev box accumulates its OWN icon rows

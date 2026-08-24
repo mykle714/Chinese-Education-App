@@ -535,15 +535,13 @@ a cog that opens a one-row sheet is a drawer hiding a single tool. The **confirm
 what was actually doing the work and it stays: a run can be dozens of prompts long, so
 destroying it takes a deliberate second tap (Word Search's confirm-before-clobber).
 
-**The flame is always the rightmost item.** It occupies the same corner slot on every
-surface that shows it (flp, Sort Cards, Quick Mark), so a learner can find their minute
-credits without reading the header; game-specific controls queue up to its left.
-
-The **minute badge (`MinutePointsFireBadge`) is shown in every phase**, including the
-empty and error states — the route is in `MINUTE_POINTS_ELIGIBLE_PAGES` and in the
-`/games` **start-on-entry** subset, so time is credited from the moment the page mounts
-whether or not a run is under way. A counter that appeared only once you were playing
-would misreport that. The progress count and gear appear only during a run.
+**The flame is always the rightmost item, and this page no longer renders it.** Since
+2026-08-24 `PageHeader` appends `MinutePointsFireBadge` to every header itself, after the
+page's own `rightContent` — so it holds the same corner on every surface in the app and
+game-specific controls queue up to its left. It is therefore present in every phase,
+including the empty and error states, which is what this route wants: it is in
+`MINUTE_POINTS_ELIGIBLE_PAGES` and in the `/games` **start-on-entry** subset, so time is
+credited from the moment the page mounts whether or not a run is under way.
 
 The badge calls `useMinutePoints()` **internally** rather than taking it as a prop, so
 its per-second tick re-renders the badge alone. That matters more on this page than

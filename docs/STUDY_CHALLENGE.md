@@ -1600,6 +1600,17 @@ Consequences: **no temp deck exists before `accepted`** (§ 3.3 creates both dec
 accept transaction), and a declined or expired challenge leaves nothing behind on either
 account except the history row and any Mastered writes the players made while reviewing.
 
+**The review screen is single-use, and history says so.** Send / Accept / Decline all
+leave the screen with `slideNavigate("/friends/challenges", { replace: true })`, so the
+review page's history entry is *replaced* by the friend list rather than pushed over.
+Back from the friend list therefore goes out to `/friends`, and there is no way to
+return to a confirmed word set and tap its Send button against a challenge that already
+exists. (`replace` is an option on `useSlideNavigate`,
+`src/hooks/useSlideNavigate.ts`; the calls are `handleConfirm` / `handleDecline` in
+`src/features/studyChallenge/ChallengeReviewPage.tsx`.) Abandoning the picker *without*
+confirming still uses the ordinary back arrow, which leaves the challenge `pending` as
+described above.
+
 ### 8.3 Cross-language game eligibility
 
 Word Search is Chinese-only ([WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md)), so a

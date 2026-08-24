@@ -639,9 +639,26 @@ What happens instead:
    a learner with no real progress until the widened fallback kicks in.
 
 Match Speed's notice is the **generic** (non-itemized) form — it deals from a rolling
-buffer, so the played set isn't known when the run starts. The lent words are
-accumulated as they are dealt (`provisionalSeenRef`) so the end-of-run "keep these
-cards" offer can still name them.
+buffer, so the played set isn't known when the run starts. The end-of-run "keep these
+cards" offer names the lent words the player actually **reviewed**
+(`useMarkedLentWords`, recorded in `markCard`) — not the ones the buffer fetched, which
+is what it used to do and which included cards that never reached the board at all. See
+docs/PROVISIONAL_CARDS.md § 5.
+
+**The notice fires ONCE, before the run, and never again.** `beginRun` is the only caller
+of `setNoticeOpen`; the mid-run `topUpBuffer` path records lent words but deliberately
+opens nothing. This is a rule for a reaction-time game, not an accident of the code: a
+modal mid-run costs the player clock and lands over a board they are mid-tap on. Hydra
+Bubbles can afford its mid-run `HydraLendNotice` because it has no clock; Match Speed
+cannot, and a top-up that lends mid-run must stay silent.
+
+What replaces it is the **lent badge** — the icons8 hourglass in the top-right corner of
+every borrowed card (`LentCardBadge`, docs/PROVISIONAL_CARDS.md § 5). Mid-run lending is
+therefore visible without ever interrupting: a badged card simply appears in the next
+deal. The badge is on the **foreign side only**; badging both faces would mark a pair as
+belonging together and let the player match by badge rather than by reading, which is the
+same leak the fixed card size prevents (§ Rendering a card). The notice teaches the mark
+via its `badgedInRound` prop, which only Match Speed passes.
 
 Both checks read `available`, which `getGameVocabPool` reports for **all four**
 buckets regardless of which ones the mode requested
@@ -854,7 +871,7 @@ deliberately **thin** — modeled on `WordSearchHeader.tsx`, not on
 | Control | Notes |
 |---|---|
 | **Settings cog** | Opens `MatchSpeedSettingsDialog`. |
-| **Minute-points fire badge** | `MinutePointsFireBadge`. |
+| **Minute-points fire badge** | `MinutePointsFireBadge` — appended by `PageHeader` itself (flush right, after these controls); `MatchSpeedHeader` does not render it. |
 
 Everything else that used to live in the header moved out, because inline toggles
 plus a clock consumed roughly half the bar:
@@ -1059,7 +1076,7 @@ src/games/match-speed/
   MatchSpeedPage.tsx       page shell + phase machine + pool/buffer + marks
   MatchSpeedBoard.tsx      the 5×2 slot grid (ROWS=5 × 2 columns), tap handling, refill tick
   MatchSpeedCard.tsx       one card (foreign or english) + its visual states
-  MatchSpeedHeader.tsx     right-slot controls: settings cog + fire badge
+  MatchSpeedHeader.tsx     right-slot controls: settings cog (the fire badge is PageHeader's)
   MatchSpeedSettingsDialog.tsx  settings sheet: pinyin / tone colors / autoplay
   MatchSpeedTimerBar.tsx   run clock + drain bar, top of the play area
   MatchSpeedEndPopup.tsx   GameEndPopup wrapper pinning classPrefix
@@ -1154,6 +1171,8 @@ it reads from.
 | Backend change | same, plus `server/routes/onDeckRoutes.ts`, `server/dal/shared/dictJoin.ts` (`DICT_COLS`) |
 | Marks | `POST /api/flashcards/mark`; per-type categories → [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
 | Rendering a card | `src/components/ForeignText.tsx`; `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`) |
+| Lent-card badge | `src/components/LentCardBadge.tsx` (`LentCardBadge`, `LENT_ICON_ID`) |
+| Lent words the run reviewed | `src/hooks/useMarkedLentWords.ts` |
 | Medals | `src/games/match-speed/constants.ts` (`MEDAL_THRESHOLDS`, `medalForScore`); shape modeled on `src/games/word-search/constants.ts` (`medalForTime`) |
 | Timer format | `src/utils/timeUtils.ts` (`formatTimeMs`) — shared with Word Search |
 | End popup, cleanup | `src/games/runtime/GameEndPopup.tsx`; `src/games/bubble-match/BubbleStage.tsx` (`cleanupMode`, `revealed`) |

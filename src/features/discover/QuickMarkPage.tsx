@@ -6,7 +6,6 @@ import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import NodePage from "../../components/NodePage";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
-import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { FooterSpacer } from "../../components/MobileFooter";
 import QuickMarkCard from "../../components/QuickMarkCard";
 import { type QuickMarkState, nextQuickMarkState } from "../../components/quickMarkState";
@@ -269,7 +268,6 @@ const QuickMarkPage: React.FC = () => {
                     >
                         save
                     </Button>
-                    <MinutePointsFireBadge />
                 </>
             }
         >

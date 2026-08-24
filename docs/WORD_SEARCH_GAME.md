@@ -565,7 +565,8 @@ is always the same: the header holds settings-shaped controls, not game ones.
     (`wordSearch.settings` in localStorage). Flips only the timer TEXT's
     visibility; the clock keeps ticking regardless (so the finish time / medal
     stays accurate).
-- Fire badge (minute points) — route is in `MINUTE_POINTS_ELIGIBLE_PAGES`.
+- Fire badge (minute points) — rendered by `PageHeader` on every header, flush right of
+  these controls; this route is in `MINUTE_POINTS_ELIGIBLE_PAGES`, so it burns orange here.
 
 ### Cell size
 

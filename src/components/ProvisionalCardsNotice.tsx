@@ -1,6 +1,7 @@
 import React from "react";
 import { COLORS, FONTS, SIZE, WEIGHT } from "../theme";
 import ProvisionalCardGrid from "./ProvisionalCardGrid";
+import { LentCardIcon } from "./LentCardBadge";
 import { useProvisionalEntries } from "../hooks/useProvisionalEntries";
 import type { Language, VocabEntry } from "../types";
 
@@ -58,6 +59,13 @@ export interface ProvisionalCardsNoticeProps {
     words?: string[];
     /** Language of the cards, so they render through ForeignText correctly. */
     language: Language;
+    /**
+     * True when the surface marks its lent cards in-round with `LentCardBadge`, in
+     * which case the footnote teaches the mark. Match Speed does; the surfaces that
+     * itemize their set up front do not, and promising a badge they never show would
+     * be worse than saying nothing.
+     */
+    badgedInRound?: boolean;
 }
 
 const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
@@ -67,6 +75,7 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
     entries,
     words,
     language,
+    badgedInRound = false,
 }) => {
     // Hooks must run unconditionally, so the fetch is gated by `open` rather than by
     // an early return above it.
@@ -111,19 +120,29 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
                     gap: 14,
                 }}
             >
-                <h2
-                    id="provisional-notice-title"
-                    className="provisional-notice__title"
-                    style={{
-                        margin: 0,
-                        fontFamily: FONTS.sans,
-                        fontSize: SIZE.title,
-                        fontWeight: WEIGHT.bold,
-                        color: COLORS.onSurface,
-                    }}
+                {/* The badge the learner will meet again in the top-right corner of
+                    every borrowed card in the round (src/components/LentCardBadge.tsx).
+                    Shown large here so the small in-round mark is already familiar —
+                    that recognition is the whole reason both sites share one icon. */}
+                <div
+                    className="provisional-notice__heading"
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
                 >
-                    Here are some cards to play with
-                </h2>
+                    <LentCardIcon size={30} className="provisional-notice__lent-icon" />
+                    <h2
+                        id="provisional-notice-title"
+                        className="provisional-notice__title"
+                        style={{
+                            margin: 0,
+                            fontFamily: FONTS.sans,
+                            fontSize: SIZE.title,
+                            fontWeight: WEIGHT.bold,
+                            color: COLORS.onSurface,
+                        }}
+                    >
+                        Here are some cards to play with
+                    </h2>
+                </div>
 
                 <p
                     className="provisional-notice__body"
@@ -152,8 +171,19 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
                         color: COLORS.textSecondary,
                     }}
                 >
-                    They're only borrowed for now — your progress on them is saved, and you
-                    can keep the ones you like when the round ends.
+                    {badgedInRound ? (
+                        <>
+                            They're only borrowed for now — look for the{' '}
+                            <LentCardIcon size={15} className="provisional-notice__inline-icon" />{' '}
+                            in the corner of each one. Your progress on them is saved, and
+                            you can keep the ones you like when the round ends.
+                        </>
+                    ) : (
+                        <>
+                            They're only borrowed for now — your progress on them is saved,
+                            and you can keep the ones you like when the round ends.
+                        </>
+                    )}
                 </p>
 
                 <button

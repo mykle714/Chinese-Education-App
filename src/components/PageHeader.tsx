@@ -4,6 +4,7 @@ import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon";
+import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import { FONTS } from "../theme/fonts";
 import { LEADING, WEIGHT } from "../theme/scale";
 
@@ -96,8 +97,9 @@ interface PageHeaderProps {
     // right slot carries three or more actions, which no other prop can tell.
     size?: PageHeaderSize;
     // Single ReactNode slot rendered flush-right (e.g. a settings gear, an undo
-    // button, or the minute-points flame). Compose it from the Header* exports
-    // below rather than hand-rolling chips and buttons per page.
+    // button, a toggle chip). Compose it from the Header* exports below rather than
+    // hand-rolling chips and buttons per page. Do NOT put the minute-points flame
+    // here — the header renders it for every page already (see the right slot).
     rightContent?: React.ReactNode;
 }
 
@@ -152,14 +154,38 @@ const PageHeader: React.FC<PageHeaderProps> = ({
                 titleNode
             )}
 
-            {/* Right: configurable content slot. `marginLeft:auto` rather than
-                `justify-content:space-between` on the container, so a header with no
-                right content still keeps its title hard against the left edge. */}
+            {/* Right: the page's configurable content slot, then the minute-points
+                flame LAST. `marginLeft:auto` rather than `justify-content:space-between` on
+                the container, so a header with no right content still keeps its title
+                hard against the left edge.
+
+                The FLAME IS RENDERED HERE, ONCE, FOR EVERY HEADER IN THE APP — pages do
+                not opt in. It is an ambient indicator ("is my time counting right now?"),
+                and a question the user can only ask where the answer is visible; when it
+                was opt-in the answer was simply absent on the menus (Home, Games,
+                Discover, Decks & Cards, Dictionary, Arena, Friends, …) and on two game
+                pages that had forgotten it (Hydra Bubbles, Speed Reading). Off an
+                eligible page `useMinutePoints` forces `isActive` false, so the badge
+                draws its own IDLE state — grey flame, grey count — which is the correct
+                answer there ("not earning"), not a missing one.
+
+                Flame LAST, so it lands in the same corner of the screen on every page —
+                a fixed place a learner's eye can go for "am I earning?" without reading
+                the header. Per-page actions queue up to its LEFT and vary in number; if
+                the flame led the row, its screen position would move with them.
+
+                ⚠️ Exactly one `PageHeader` may be mounted at a time on a minute-EARNING
+                page. `useMinutePoints` runs a 1-second accrual tick per hook instance,
+                so two live headers on such a page would count every second twice. Today
+                nothing renders two (every call site is one page = one header, and the
+                branchy pages return them from mutually exclusive branches) — keep it
+                that way rather than adding a second header to a page. */}
             <Box
                 className="page-header__right-content"
                 sx={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: `${spec.rightGap}px` }}
             >
                 {rightContent}
+                <MinutePointsFireBadge />
             </Box>
         </Header>
     );
@@ -173,10 +199,10 @@ export default PageHeader;
 // header — before this, every page that needed a toggle re-declared the same 14-line
 // `toggleSx` helper (flp, Bubble Match and Word Search each had a byte-identical copy).
 //
-// The fifth design shape, `.fire`, is NOT here: the app already ships it as
-// `src/minutePoints/MinutePointsFireBadge.tsx` (flame + count in `COLORS.fireActive`,
-// which IS the design's `#E65100`). Adding a `HeaderStreak` next to it would be a
-// second component drawing the same badge, so the badge stays where it is.
+// The fifth design shape, `.fire`, is NOT here and is not a slot primitive at all:
+// the app ships it as `src/minutePoints/MinutePointsFireBadge.tsx` (flame + count in
+// `COLORS.fireActive`, which IS the design's `#E65100`), and `PageHeader` renders it
+// into every header itself. Pages neither import nor pass it.
 
 /**
  * `.hd .meta` — mono uppercase metadata (a card count, a division name, "live").

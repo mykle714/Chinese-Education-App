@@ -1,0 +1,27 @@
+{
+ "modelRevision": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+ "templateVersion": "v1",
+ "tauSyn": 0.3,
+ "tauContra": 0.5,
+ "goldset": {
+  "mustBlockRecall": 1.0,
+  "mustNotBlockWrongBlock": 0.0,
+  "legacyMustBlockRecall": 1.0,
+  "legacyMustNotBlockWrongBlock": 0.0,
+  "misses": []
+ },
+ "realDistribution": {
+  "genuine": 390,
+  "blockedNew": 257,
+  "blockedLegacy": 169,
+  "reasons": {
+   "contradiction": 106,
+   "unrelated": 26,
+   "mutual-entailment": 178,
+   "containment": 79,
+   "numeral-mismatch": 1
+  },
+  "greyBand": 115,
+  "greyBandBlocked": 88
+ }
+}

@@ -65,6 +65,16 @@ export interface DecksPanelState {
     /** Create a deck and prepend it to the list. Throws the server's message verbatim. */
     addDeck: (name: string) => Promise<void>;
 
+    /**
+     * The whole sorted library, UNFILTERED and in load order — the set every figure on
+     * the page is a statement about. Exposed alongside `visibleCards` because the fdp's
+     * study-hand figures are cooldown counts over the LIBRARY, and must not move when the
+     * learner types in the card grid's search box.
+     *
+     * Provisional (lent) rows are already absent: this is a deck read, and those are
+     * hidden from every deck/search read (docs/PROVISIONAL_CARDS.md).
+     */
+    allCards: VocabEntry[];
     /** The whole sorted library, filtered by `cardsSearch` and ordered by `cardsSortKey`. */
     visibleCards: VocabEntry[];
     /** Size of the library BEFORE the search filter — the figure on the section caption. */
@@ -220,6 +230,7 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
         decksLoading,
         decksError,
         addDeck,
+        allCards: cards,
         visibleCards,
         cardsTotal: cards.length,
         cardsLoading,

@@ -145,10 +145,12 @@ never be present on one surface and missing on the other (the historical cause o
 parity bugs — headword underline, English-gloss underline, and the per-sentence
 speaker button had each drifted onto only the eip):
 
-- **eip Examples tab** — `InfoCardPanelBody.tsx` (`effectiveTab === 1`).
-- **cdp** (read-only dictionary cdp + saved-card cdp) — `VocabCardDetailBody.tsx`
-  (`VocabCardSections`), threaded from `features/dictionary/DictionaryCardDetailPage.tsx` and
-  `features/flashcards/VocabCardDetailPage.tsx`.
+- **eip Examples tab** — `InfoCardTabContent.tsx` (`tabIndex === 1`), mounted by
+  `InfoCardPanelBody`. This covers the flp, scp **and the saved-card cdp**, which since
+  2026-08-24 raises the eip itself rather than its own copy of the sections
+  (`VocabCardDetailPage` → `InfoCardSection`).
+- **Read-only dictionary cdp** — `VocabCardDetailBody.tsx` (`VocabCardSections`),
+  threaded from `features/dictionary/DictionaryCardDetailPage.tsx`.
 
 Each per-sentence card carries: a top-right `SpeakerButton` (gated on
 `onSpeakSentence`; both cdp parents pass a slow-rate-aware wrapper honoring

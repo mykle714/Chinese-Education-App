@@ -9,7 +9,7 @@ import {
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import NodePage from "../../components/NodePage";
-import { FOOTER_HEIGHT } from "../../components/MobileFooter";
+import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
 import { API_BASE_URL } from "../../constants";
 import type { VocabEntry } from "../../types";
 import IconPickerDialog from "../../components/IconPickerDialog";
@@ -26,15 +26,13 @@ import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT, FC_FONT } from "./constants";
 import { useCardIconEditor } from "../../cardIcons/editor/useCardIconEditor";
 import CardIconCanvas from "../../cardIcons/editor/CardIconCanvas";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../cardIcons/editor/CardEditToolbar";
-import { VocabCardSections } from "./VocabCardDetailBody";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { useOpenWordCard } from "../../hooks/useOpenWordCard";
 import MasteryWindow from "../../components/mastery/MasteryWindow";
 import WordToolsRail from "../../components/WordToolsRail";
 import Icon from "../../components/Icon";
-import InfoPeek from "./InfoPeek";
-import SheetPanel, { type SheetPanelBodyHandle } from "./FlashcardsLearnPage/SheetPanel";
-import SheetBody from "./FlashcardsLearnPage/SheetBody";
+import SheetPill from "../../components/SheetPill";
+import InfoCardSection from "./FlashcardsLearnPage/InfoCardSection";
 import { apiGet } from '../../api/http';
 
 // Padded content column. The outer NodePage/MobileTabScreen scroll area owns the
@@ -50,17 +48,17 @@ const ContentArea = styled(Box)(() => ({
     position: "relative",
 }));
 
-// Height of the resting `.peek` lip (grabber + one row + its padding). The lip is
-// absolutely positioned at frame level, so the scrolling column has to reserve the
-// space itself or its last row hides behind it. Derived from the lip's own parts
-// rather than typed as one number, so restyling InfoPeek can't silently tuck the
-// mastery cooldowns underneath it.
-const PEEK_ROW_HEIGHT = 22;   // the icon/word/label row
-const PEEK_VPAD_SUM = 9 + 4 + 11 + 15; // top pad + grabber + its margin + bottom pad
-const PEEK_HEIGHT = PEEK_ROW_HEIGHT + PEEK_VPAD_SUM;
-// …plus a breathing gap, and MINUS the footer clearance the scroll area already
-// reserves (the lip stands on top of the footer bar, not beside it).
-const PEEK_CLEARANCE = PEEK_HEIGHT + 12;
+// The extra-info pill — the same capsule the flp and fdp raise their sheets from
+// (`SheetPill`). It is absolutely positioned at FRAME level, so the scrolling column
+// has to reserve its band itself or the last row hides behind it.
+//
+// Offset by the FULL footer clearance, exactly as the fdp's pill is, so it clears the
+// floating footer bar with the gap every other page's last row gets. The scroll area
+// already pads FOOTER_CLEARANCE for that bar, so the column only owes the pill's own
+// height plus a breathing gap.
+const INFO_PILL_HEIGHT = 34;
+const INFO_PILL_BOTTOM = FOOTER_CLEARANCE;
+const INFO_PILL_CLEARANCE = INFO_PILL_HEIGHT + 12;
 
 const VocabCardDetailPage: React.FC = () => {
     usePageTitle("Card");
@@ -95,18 +93,23 @@ const VocabCardDetailPage: React.FC = () => {
     // Guards the destructive delete behind an explicit confirmation (same pattern as
     // the icon reset-to-default dialog below).
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-    // The extra-info sheet (artboard 18's `.peek`). The definition / breakdown /
+    // The extra-info sheet. The definition / breakdown /
     // examples boxes used to run down the page under the hero card, which made the cdp
     // a long scroll whose first screen was the only part most visits read. They are the
     // same content as the flp's eip, so they now live in the same place: a sheet that
-    // rests as a lip at the bottom of the page and is pulled up when wanted. What stays
+    // raised from a pill at the bottom of the page, exactly as the flp raises it. What stays
     // on the page is what the page is FOR — the card, and how well it is known.
     //
     // Modal (not persistent): unlike the decks sheet this one has nothing to show at
     // rest, so it mounts on open and unmounts on close, which also resets its open
-    // animation. `InfoPeek` is the always-drawn lip that opens it.
+    // animation. `SheetPill` is the always-drawn capsule that opens it.
     const [infoOpen, setInfoOpen] = useState(false);
-    const infoBodyRef = useRef<SheetPanelBodyHandle | null>(null);
+    // Which eip tab the panel is on (0 definition / 1 examples / 2 breakdown). Owned by
+    // the PAGE rather than by useEipTabs: the cdp drills in by NAVIGATING to the tapped
+    // word's own card detail (handleWordOpen), so it never has more than one entry in the
+    // panel and has no entry-tab strip to keep state for. Deliberately NOT reset on close
+    // — reopening the panel on the same card returns to the tab you were reading.
+    const [infoTab, setInfoTab] = useState(0);
     // Which definitionClusters sense EnglishBlock currently shows on the hero card.
     // Mirrors CardFace: seeds from this saved card's PERSISTED choice (`selectedSense` label →
     // sorted index, migration 99), falling back to the top/starred sense. Persisted on pick.
@@ -126,6 +129,10 @@ const VocabCardDetailPage: React.FC = () => {
         [entry]
     );
     const handleWordOpen = useOpenWordCard(linkableWords);
+
+    // Per-character rows for the eip's breakdown tab. Memoized because InfoCardSection
+    // takes it as a prop and the panel re-renders on every sheet-resize frame.
+    const infoBreakdownItems = useMemo(() => getBreakdownItems(entry), [entry]);
 
     // "Compare" on the word-tools rail. The flp can open Compare as an eip TAB beside
     // the word it is comparing; the cdp has no tab strip, so it hands the word to the
@@ -282,58 +289,76 @@ const VocabCardDetailPage: React.FC = () => {
             // No top edge-fade: the hero card shouldn't dissolve at the top.
             topFade={false}
             // Frame-level furniture, rendered OUTSIDE the scroll area (see NodePage's
-            // `overlay`): the resting peek lip, and the extra-info sheet it raises.
+            // `overlay`): the extra-info pill, and the sheet it raises.
             overlay={entry && (
                 <>
-                    <InfoPeek
-                        className="vocab-card-detail__info-peek"
-                        word={entry.entryKey}
-                        language={entry.language}
-                        onOpen={() => setInfoOpen(true)}
-                        // The cdp keeps the footer bar, so the lip stands on top of it
-                        // rather than at the bottom of the frame (artboard 18's
-                        // `.peek{bottom:74px}`).
-                        bottom={FOOTER_HEIGHT}
+                    <SheetPill
+                        className="vocab-card-detail__info-pill"
+                        label="More Info"
+                        onClick={() => setInfoOpen(true)}
+                        ariaLabel="Open extra info"
+                        ariaExpanded={infoOpen}
+                        // The cdp keeps the footer bar, so the pill floats above it
+                        // rather than at the bottom of the frame.
+                        bottom={INFO_PILL_BOTTOM}
+                        height={INFO_PILL_HEIGHT}
                         // Greyed while the icon editor is open: the sheet would cover the
-                        // canvas being edited. Same rule the flp's lip follows.
+                        // canvas being edited. Same rule the flp's pill follows.
                         disabled={editMode}
                     />
                     {infoOpen && (
-                        <SheetPanel
-                            bodyRef={infoBodyRef}
+                        /* THE eip — the exact component the flp and scp raise
+                           (InfoCardSection → SheetPanel + InfoCardPanelBody), not a
+                           cdp-shaped copy of its content. The panel brings the entry
+                           header, the underline tab strip, swipe-between-tabs and the
+                           sense picker with it; this page only supplies the entry and
+                           says where a drill-in tap lands.
+
+                           Two deliberate differences from the flp's mount:
+                             • no `tabStrip` — the cdp has no nested entry tabs (see
+                               `infoTab`), so there is nothing for the strip to show.
+                             • `showSynonymsRelated` — Synonyms + Related Words ride at
+                               the bottom of the definition tab, because they are the one
+                               thing the cdp's old stacked-SectionCard body showed that
+                               the eip has no tab for. */
+                        <InfoCardSection
+                            currentEntry={entry}
+                            selectedTab={infoTab}
+                            onTabChange={setInfoTab}
+                            breakdownItems={infoBreakdownItems}
+                            showPinyin={showPinyin}
+                            showPinyinColor={showPinyinColor}
+                            // The cdp's hero card does not flip, so there is no flipped
+                            // state to mirror. (The panel body does not read this prop
+                            // today — see the note on InfoCardPanelBodyProps.isFlipped.)
+                            isFlipped={false}
                             onClose={() => setInfoOpen(false)}
-                        >
-                            <SheetBody
-                                ref={infoBodyRef}
-                                className="vocab-card-detail__info-body"
-                                // VocabCardSections is a stack of self-padded boxes with
-                                // no gutter of its own — it was written for a page column
-                                // that supplied one. The sheet supplies the same 16px.
-                                sx={{ padding: "14px 16px 0", gap: "12px" }}
-                            >
-                                {/* The SAME sections the page used to stack inline, and
-                                    the same ones the read-only dictionary cdp renders —
-                                    only their container changed. */}
-                                <VocabCardSections
-                                    entry={entry}
-                                    showPinyin={showPinyin}
-                                    showPinyinColor={showPinyinColor}
-                                    onWordOpen={handleWordOpen}
-                                    // Keeps the Definition box's long definition on the
-                                    // same sense as the card above it (per-sense
-                                    // longDefinition).
-                                    selectedSenseIndex={selectedSenseIndex}
-                                    // Same slow-rate-aware sentence narration as the flp est.
-                                    onSpeakSentence={
-                                        tts.enabled
-                                            ? (text, pronunciation) =>
-                                                  tts.speakSentence(text, pronunciation, slowExampleSentences ? SLOW_SENTENCE_RATE : 1)
-                                            : undefined
-                                    }
-                                    speakingKey={tts.speakingKey}
-                                />
-                            </SheetBody>
-                        </SheetPanel>
+                            // Drill-in = NAVIGATION on this page: a breakdown row, a
+                            // "Used In" row or an example segment opens that word's own
+                            // card detail (the learner's saved card when they have one,
+                            // else the read-only dictionary cdp — see useOpenWordCard).
+                            // The flp pushes a nested eip tab instead; same taps, and the
+                            // difference is the whole point of a detail PAGE.
+                            onBreakdownItemClick={(item) => handleWordOpen(item.character)}
+                            onUsedInItemClick={(item) => handleWordOpen(item.entryKey)}
+                            onExampleSegmentClick={handleWordOpen}
+                            onSpeak={tts.enabled ? tts.speak : undefined}
+                            // Same slow-rate-aware sentence narration as the flp est.
+                            onSpeakSentence={
+                                tts.enabled
+                                    ? (text, pronunciation) =>
+                                          tts.speakSentence(text, pronunciation, slowExampleSentences ? SLOW_SENTENCE_RATE : 1)
+                                    : undefined
+                            }
+                            speakingKey={tts.speakingKey}
+                            // No `onAddToLibrary`: a card open on the cdp is already saved.
+                            // The panel's sense picker is the SAME pick the hero card shows —
+                            // one page-level index, persisted through the same handler as the
+                            // hero's picker, so the two can never disagree.
+                            selectedSenseIndex={selectedSenseIndex}
+                            onSelectSense={handleSelectSense}
+                            showSynonymsRelated
+                        />
                     )}
                 </>
             )}
@@ -581,11 +606,11 @@ const VocabCardDetailPage: React.FC = () => {
                                 lens={lens}
                             />
 
-                            {/* Clearance for the resting peek lip, which is frame-level
+                            {/* Clearance for the extra-info pill, which is frame-level
                                 furniture and therefore not in this column's flow. Without
-                                it the mastery cooldowns end up behind the lip on a short
+                                it the mastery cooldowns end up behind the pill on a short
                                 card. */}
-                            <Box className="vocab-card-detail__peek-clearance" sx={{ height: `${PEEK_CLEARANCE}px`, flexShrink: 0 }} />
+                            <Box className="vocab-card-detail__info-pill-clearance" sx={{ height: `${INFO_PILL_CLEARANCE}px`, flexShrink: 0 }} />
                         </>
                     ) : null}
                 </ContentArea>

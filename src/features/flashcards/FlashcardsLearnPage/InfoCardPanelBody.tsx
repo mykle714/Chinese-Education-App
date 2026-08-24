@@ -78,6 +78,9 @@ export interface InfoCardPanelBodyProps {
     // re-renders) and persists it to the vet row when there is one — mirroring the
     // flashcard/cdp pickers. Undefined hides the picker entirely.
     onSelectSense?: (index: number) => void;
+    // Appends Synonyms + Related Words to the definition tab. cdp only — see
+    // InfoCardTabContent's `showSynonymsRelated` for why it is a section and not a tab.
+    showSynonymsRelated?: boolean;
 }
 
 // Imperative handle exposing the two elements the bottom-sheet wrapper needs:
@@ -122,6 +125,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     headerDragBind,
     selectedSenseIndex,
     onSelectSense,
+    showSynonymsRelated,
 }, ref) {
     const rootRef = useRef<HTMLDivElement | null>(null);
     // Clipping viewport around the sliding tab track. NOT itself scrollable —
@@ -134,6 +138,11 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     // Mirror of selectedTab readable from the mount-once gesture listeners and
     // the imperative handle getter (both live outside the render cycle).
     const selectedTabRef = useRef(selectedTab);
+    // True for the single frame in which an entry change is repositioning the sub-tab
+    // track with its transition off (see the entry-jump layout effect below).
+    const entryJumpRef = useRef(false);
+    // Entry key the sub-tab track is currently positioned for; see the entry-jump effect.
+    const lastEntryKeyRef = useRef(currentEntry?.entryKey);
     useImperativeHandle(ref, () => ({
         get root() { return rootRef.current; },
         // The scrollable element is the ACTIVE tab's pane. SheetPanel captures
@@ -215,7 +224,11 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     useEffect(() => {
         selectedTabRef.current = selectedTab;
         const track = trackRef.current;
-        if (track && dragDxRef.current === null) {
+        // entryJumpRef: an entry change is repositioning the track this frame with the
+        // transition switched off (see the layout effect below). Clearing the inline
+        // styles here would put the transition straight back and let the very slide we
+        // are suppressing play out.
+        if (track && dragDxRef.current === null && !entryJumpRef.current) {
             track.style.transition = "";
             track.style.transform = "";
         }
@@ -228,6 +241,53 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
             if (pane) pane.scrollTop = 0;
         }
     }, [currentEntry?.entryKey]);
+
+    // ENTRY CHANGE = a silent jump of the sub-tab track, never a slide.
+    //
+    // A drill-in opens a NEW entry tab whose sub-tab starts at Definitions, so the track's
+    // declarative transform changes from (say) Breakdown back to Definitions in the same
+    // commit that swaps the word. Left to the persistent transition that animated
+    // BACKWARDS through the sub-tabs of a word the user had already left — motion that
+    // said "you went back" while the trail said "you went forward". The forward motion is
+    // now the entry pager in InfoCardSection; this one just has to get out of its way.
+    //
+    // Done by pinning the inline transform with transition:none for one frame, then
+    // handing the position back to the declarative style. Same inline-override-then-clear
+    // discipline the drag path uses, so nothing can wedge: the very next tab change or
+    // touchstart re-normalizes the track regardless.
+    useLayoutEffect(() => {
+        // Fires on a sub-tab change too (selectedTab has to be in the deps to be read
+        // here without going stale), so gate on the entry key actually having moved —
+        // a plain tab tap must keep its slide. Seeded with the mounting entry, so the
+        // first render is not treated as a change.
+        const entryKey = currentEntry?.entryKey;
+        if (lastEntryKeyRef.current === entryKey) return;
+        lastEntryKeyRef.current = entryKey;
+        const track = trackRef.current;
+        // A finger is on the track — leave the drag's own inline styles alone.
+        if (!track || dragDxRef.current !== null) return;
+        entryJumpRef.current = true;
+        track.style.transition = "none";
+        track.style.transform = restingTransform(selectedTab);
+        void track.offsetWidth; // flush, so the no-transition position is what gets painted
+        const raf = requestAnimationFrame(() => {
+            entryJumpRef.current = false;
+            if (dragDxRef.current !== null) return;
+            track.style.transition = "";
+            track.style.transform = "";
+        });
+        // Torn down before the rAF ran (a second drill-in in the same frame): clear the
+        // pin here instead, or the track would be left with transition:none AND a stale
+        // inline transform — every later tab tap would jump to the wrong pane, silently.
+        return () => {
+            cancelAnimationFrame(raf);
+            entryJumpRef.current = false;
+            if (dragDxRef.current === null) {
+                track.style.transition = "";
+                track.style.transform = "";
+            }
+        };
+    }, [currentEntry?.entryKey, selectedTab]);
 
     // Gesture listeners are raw `addEventListener`s (not React onTouch* JSX
     // props) attached directly to the clip box, mirroring SheetPanel's own
@@ -668,6 +728,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 onSpeakSentence={onSpeakSentence}
                                 speakingKey={speakingKey}
                                 selectedSenseIndex={selectedSenseIndex}
+                                showSynonymsRelated={showSynonymsRelated}
                             />
                         </Box>
                     ))}

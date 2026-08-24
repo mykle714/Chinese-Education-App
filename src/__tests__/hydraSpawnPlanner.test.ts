@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
     hasLiveMatch,
+    neededColor,
     nextKindByRatio,
     pickBalancedColor,
     planSpawnBatch,
@@ -9,14 +10,16 @@ import {
     type HydraBoardView,
 } from "../games/hydra-bubbles/spawnPlanner";
 import { DRAIN_ONLY_FILL, spawnWeightsAt } from "../games/hydra-bubbles/spawnTable";
+import { COLOR_NEED_TIEBREAK_FILL } from "../games/hydra-bubbles/constants";
 import { HYDRA_COLORS, type HydraColor } from "../games/hydra-bubbles/types";
 
 /**
  * Hydra Bubbles — the spawn algorithm (docs/HYDRA_BUBBLES.md § 4).
  *
- * The two invariants of § 4.3 are what these tests exist for. Everything else about
- * the spawn distribution is tunable; "the board always has something matchable" and
- * "the board can never run to nothing" are not.
+ * The invariants of § 4.3 are what these tests exist for. Everything else about the
+ * spawn distribution is tunable; "the board always has something matchable", "the board
+ * can never run to nothing", and "the player is always offered both a growth move and a
+ * shrink move as far as one slot allows" are not.
  */
 
 const pair = (id: string, hasWord: boolean, hasDefinition: boolean): HydraBoardPair => ({
@@ -291,12 +294,24 @@ describe("stray aging (§ 4.2c)", () => {
         hasDefinition: true,
         unmatchedRounds: 0,
     });
+    /** A live DRAIN match, so the per-color guarantee is already satisfied on both sides. */
+    const liveDrain = (id: string): HydraBoardPair => ({
+        pairId: id,
+        color: "drain",
+        hasWord: true,
+        hasDefinition: true,
+        unmatchedRounds: 0,
+    });
 
     it("ignores strays that have not waited yet", () => {
         // A stray created this round has zero shares, so the slot must introduce a new
         // card. Without this, a fresh stray would be completed immediately and the
         // board would never build up anything for the player to work toward.
-        const view = board([live("a"), stray("fresh", 0)], 0.3);
+        //
+        // BOTH colors must already have a live match for this to be a test of AGING:
+        // the per-color guarantee (§ 4.3 invariant 3) outranks the lottery and would
+        // otherwise complete the fresh drain stray to supply the missing drain match.
+        const view = board([live("a"), liveDrain("d"), stray("fresh", 0)], 0.3);
         const actions = planSpawnBatch(view, 2, seq([0, 0, 0, 0]));
         expect(actions.every((a) => a.type !== "complete")).toBe(true);
     });
@@ -359,5 +374,89 @@ describe("stray aging (§ 4.2c)", () => {
                 );
             expect(bubbles(aged), `payout ${payout}`).toBe(bubbles(fresh));
         }
+    });
+});
+
+
+describe("the per-color guarantee (§ 4.3 invariant 3)", () => {
+    const liveOf = (id: string, color: HydraColor): HydraBoardPair => ({
+        pairId: id,
+        color,
+        hasWord: true,
+        hasDefinition: true,
+        unmatchedRounds: 0,
+    });
+    const strayOf = (id: string, color: HydraColor, unmatchedRounds = 0): HydraBoardPair => ({
+        pairId: id,
+        color,
+        hasWord: true,
+        hasDefinition: false,
+        unmatchedRounds,
+    });
+
+    it("reports no need when both colors are already matchable", () => {
+        expect(neededColor([liveOf("b", "bloom"), liveOf("d", "drain")], 0.3)).toBeNull();
+    });
+
+    it("names the color whose live match is missing", () => {
+        expect(neededColor([liveOf("b", "bloom")], 0.3)).toBe("drain");
+        expect(neededColor([liveOf("d", "drain")], 0.3)).toBe("bloom");
+    });
+
+    it("breaks a two-sided need on fill: growth below the line, shrink at or above it", () => {
+        const noMatch = [strayOf("s", "bloom")];
+        expect(neededColor(noMatch, COLOR_NEED_TIEBREAK_FILL - 0.01)).toBe("bloom");
+        expect(neededColor(noMatch, COLOR_NEED_TIEBREAK_FILL)).toBe("drain");
+    });
+
+    it("never asks for bloom inside the squeeze", () => {
+        // A guaranteed +1 escape would dismantle the drain-only zone (§ 3.1).
+        expect(neededColor([liveOf("d", "drain")], DRAIN_ONLY_FILL)).toBeNull();
+        expect(neededColor([strayOf("s", "bloom")], DRAIN_ONLY_FILL)).toBe("drain");
+    });
+
+    it("spends the slot completing a stray of the needed color", () => {
+        // Bloom is matchable, drain is not, and a drain stray is sitting there — the
+        // cheapest possible fix, and it costs the board no extra bubble.
+        const view = board([liveOf("b", "bloom"), strayOf("d", "drain")], 0.3);
+        const actions = planSpawnBatch(view, 1, seq([0.5]));
+        expect(actions).toEqual([{ type: "complete", pairId: "d", kind: "definition" }]);
+        expect(hasLiveMatch(applyPlan(view, actions), "drain")).toBe(true);
+    });
+
+    it("seeds the needed color when there is no stray of it to complete", () => {
+        // One slot cannot manufacture a live match from nothing (a newPair costs two),
+        // so the most it can do is put the right color on the board for a later slot.
+        const view = board([liveOf("b", "bloom"), strayOf("b2", "bloom")], 0.3);
+        const actions = planSpawnBatch(view, 1, seq([0.5]));
+        expect(actions).toHaveLength(1);
+        expect(actions[0]).toMatchObject({ type: "newStray", color: "drain" });
+    });
+
+    it("costs no extra slots — the guarantee is funded from the payout", () => {
+        // The whole rule is "within budget only": a drain clear buys one bubble whether
+        // or not the guarantee fired, so the economy is untouched.
+        const view = board([liveOf("b", "bloom"), strayOf("d", "drain", 3)], 0.3);
+        const bubbles = (payout: number) =>
+            planSpawnBatch(view, payout, seq([0.5, 0.2, 0.7, 0.9])).reduce(
+                (n, a) => n + (a.type === "newPair" ? 2 : 1),
+                0
+            );
+        expect(bubbles(1)).toBe(1);
+        expect(bubbles(3)).toBe(3);
+    });
+
+    it("converges to both colors matchable over a few clears", () => {
+        // A board that starts with no drain match anywhere should be offered one within
+        // a couple of rounds: seed the color, then complete it.
+        let pairs: HydraBoardPair[] = [liveOf("b", "bloom")];
+        const rng = seq([0.5, 0.2, 0.7, 0.9, 0.1]);
+        for (let round = 0; round < 3; round++) {
+            const view = board(pairs, 0.3);
+            pairs = applyPlan(view, planSpawnBatch(view, 1, rng));
+            for (const p of pairs) if (p.hasWord !== p.hasDefinition) p.unmatchedRounds += 1;
+        }
+        expect(hasLiveMatch(pairs, "drain")).toBe(true);
+        expect(hasLiveMatch(pairs, "bloom")).toBe(true);
     });
 });

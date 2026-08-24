@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Box, IconButton, Snackbar, Alert } from "@mui/material";
 import { FactCheck as FactCheckIcon } from "@mui/icons-material";
 import NodePage from "../../components/NodePage";
-import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { useAuth } from "../../AuthContext";
 import type { Text } from "../../types";
 
@@ -135,7 +134,6 @@ function ReaderPage() {
                     <FactCheckIcon />
                 </IconButton>
             )}
-            <MinutePointsFireBadge />
         </Box>
     ) : undefined;
 

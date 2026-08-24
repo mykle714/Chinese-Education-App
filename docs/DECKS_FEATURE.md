@@ -298,12 +298,15 @@ deck would make the deck itself the answer key.
 | `src/games/GamesCollectionSelector.tsx` | The hub-header "Playing with …" pill + menu (see [GAMES_FEATURE.md](./GAMES_FEATURE.md)) |
 | `src/features/flashcards/CollectionViewPage.tsx` | The generalized page (all three collection kinds) |
 | `src/features/flashcards/MasteredRedirect.tsx` | `/flashcards/mastered` → `/flashcards/collection/mastered` |
-| `src/features/flashcards/FlashcardsDecksPage.tsx` | `/decks` — the study buttons (Review / Challenge / Study Mix / the two Center buttons) and the persistent sheet's mounting. **Lens `core`.** |
+| `src/features/flashcards/FlashcardsDecksPage.tsx` | `/decks` — the study buttons (Review / Challenge / Study Mix / the two Center buttons), the Sets & Cards pill and the modal sheet's mounting. **Lens `core`.** |
 | `src/features/flashcards/MasteryCenterPage.tsx` | `/flashcards/reading` + `/flashcards/writing` — the same panel as a **page**, lens `reading` / `writing` |
 | `src/features/flashcards/useDecksPanel.ts` | **All of the panel's data, for one lens** — the count hooks, the deck fetch, the card-library fetch, the search/sort state and the tile figures. Shared verbatim by the fdp and both Centers. |
 | `src/features/flashcards/DecksPanelBody.tsx` | Body of the panel (`variant: "sheet" \| "page"`): the library duo, the Challenges / Decks shelf rows and the inline Cards grid (`LibraryDuo`, `ShelfRow`, `SectionLabel`) |
 | `src/features/flashcards/LibraryDuo.tsx` | The panel's two library constants (`.duo`) — Learn Now + Mastered, with their figures. The one place the sheet is not spines; see § "Your library" |
 | `src/features/flashcards/StudyHand.tsx` | The three study modes as a fanned hand of cards, on the page behind the sheet (`.fanw`) |
+| `src/features/flashcards/useHandSwipe.ts` | The horizontal throw gesture on the hand's front card — axis arbitration, the flp's drag constants, click suppression |
+| `src/features/flashcards/SlotNumber.tsx` | The slot-machine reel a figure spins as while its count is in flight, and the landing that settles it |
+| `src/utils/flpReadiness.ts` | The hand's ready counts — `rankFlpEligible`'s cooldown rule restated on the client, per band |
 | `src/features/flashcards/NewDeckDialog.tsx` | The "name your deck" prompt behind every panel's `+`; shows the **server's** message verbatim on failure |
 | `src/features/flashcards/AddToDeckMenu.tsx` | The checkbox menu, mounted on the cdp and the eip |
 
@@ -413,7 +416,7 @@ through their own bar.
 |---|---|---|---|
 | Route | `/flashcards/decks` | `/flashcards/reading` | `/flashcards/writing` |
 | Lens | `core` | `reading` | `writing` |
-| Frame | persistent pull-up sheet | node page | node page |
+| Frame | modal pull-up sheet (pill-raised) | node page | node page |
 | Study buttons | Review / Challenge / Study Mix | — | — |
 
 **Why.** One page was answering two questions at once: a learner pursuing reading had
@@ -464,7 +467,7 @@ deck inside the Reading Center would silently drop the learner into a core view 
 `DecksPanelBody` owns every pixel; the three pages differ only in the lens they pass
 and the frame they mount. The Center page is ~110 lines, almost all of it comment.
 
-### `/decks` = a study area + a persistent pull-up sheet
+### `/decks` = a study area + a button-raised pull-up sheet
 
 The page is split across **two surfaces**:
 
@@ -474,19 +477,32 @@ The page is split across **two surfaces**:
 * **Sheet (front)** — sections 2–4, every *set* of cards, in `DecksPanelBody`
   (`variant="sheet"`).
 
-The sheet is the **same component as the eip bottom sheet**,
-`SheetPanel`, in its **persistent** mode (`minHeight` > 0, `showScrim={false}`, no
-`onClose`) — so the drag/fling/scroll-coupling model is shared code, not a second
-implementation. See [EIP_SHEET_GESTURES.md § Two modes](./EIP_SHEET_GESTURES.md).
-Its two stops are:
+The sheet is the **same component as the eip bottom sheet**, `SheetPanel`, used the
+**same way** since 2026-08-24: a **modal** sheet (`minHeight` unset, scrim on, `onClose`
+wired), so it has the eip's three stops and the eip's default 0.5 collapse rule.
 
 | Stop | Value | What shows |
 |---|---|---|
-| **resting** ("closed") | `FOOTER_HEIGHT + FOOTER_EXTRA_GAP + SHEET_LIP` (44) | the grabber and the first caption, sitting just above the footer bar |
+| **0** | — | dismissed; the page unmounts the panel |
+| **default** | `parentHeight × 0.6` | the open height, and the dismiss floor |
 | **max** | `parentHeight × 0.92` | the full list |
 
-It **cannot be dismissed** and has **no open animation** — it is painted at its
-resting height on the first frame. The floating footer (frame-level, `zIndex: 100`)
+It **used to be persistent** (`minHeight = FOOTER_HEIGHT + FOOTER_EXTRA_GAP + SHEET_LIP`,
+`showScrim={false}`, `collapseThresholdRatio` 0.3): a 44px lip above the footer that had
+to be dragged up, with stops `{resting, max}` and no way to dismiss it. Both the lip and
+that stop set are gone.
+
+**How it opens.** The `.flashcards-decks__sets-pill` — a "↑ Sets & Cards" capsule
+anchored `FOOTER_CLEARANCE` above the bottom of the frame, centred, `zIndex: 2`. It is
+the exact counterpart of the flp's More Info pill (`MoreInfoPill` → `openEicSheet`) and
+the cdp's, all three built from the shared `SheetPill` body (`src/components/SheetPill.tsx`;
+the flp keeps its own copy because it MEASURES the pill to size the card slot),
+including the part that matters: the panel is **mounted only while open**
+(`sheetOpen`), so every open replays the `0 → default` animation, and the pill sits
+*under* the sheet's scrim (`zIndex: 10`), so it dims and stops taking taps while the
+sheet is up. Dismiss is the eip's: drag below the default height, or tap the scrim.
+
+The floating footer (frame-level, `zIndex: 100`)
 hovers *over* the sheet at every height, so the sheet's scroller both reserves
 `FOOTER_CLEARANCE` at its bottom **and wears the same bottom edge-fade mask**
 (`EDGE_FADE_MASK_NO_TOP`, exported from `MobileTabScreen` rather than re-derived) —
@@ -513,25 +529,44 @@ the same lens), and splitting them into twenty props let a host pass a lens-scop
 list beside core-scoped counts without the type system noticing. The page keeps only
 what is genuinely page-level: its layout, its snackbar and its `NewDeckDialog`.
 
-⚠️ **`touchAction` differs by variant.** As a *sheet* the scroller is
-`touchAction: "none"`, because `SheetPanel` routes every touchmove itself; as a *page*
-it must be `"pan-y"`, or a Center would not scroll at all — nothing is intercepting
-those touchmoves to scroll it for us (CLAUDE.md § Touch & Scroll: scrolling is opt-in
-per page, and this container is where a Center opts in).
+**`touchAction: "pan-y"` in BOTH variants**, plus `overscroll-behavior: contain`.
+This container is where the panel opts in to scrolling (CLAUDE.md § Touch & Scroll:
+scrolling is opt-in, never inherited). As a *page* nothing intercepts its touchmoves,
+so the browser pans it; as a *sheet* `SheetPanel` still picks the gesture's mode on
+its first committed move, but expresses "scroll" by **not** cancelling the event, so
+the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock").
+
+> It was `"none"` in the sheet variant until 2026-08-24, while `SheetPanel` drove
+> `scrollTop` from JS. That is what made this panel — the app's heaviest scroller at
+> ~470 mini cards — visibly lag when every other card grid, including the identical
+> one on `CollectionViewPage`, did not: a main-thread scroll advances only as fast as
+> the main thread finishes each frame.
 
 1. **The study area** — the only thing left on the page itself, and one choice: *which
    session am I starting*. Three rows, top to bottom (`FlashcardsDecksPage`,
    `src/features/flashcards/StudyHand.tsx`). To study one collection instead, open it
    from the sheet and use its launch button.
 
-   **(a) The library line** (`.duebar`) — the library's size on the left, the scope the
-   modes draw from on the right, both as mono overlines.
+   **(a) The library line** (`.duebar`) — ONE mono overline: the library's size. It is
+   **blank until the count lands**, then fades in over 320ms — the same contract the hand's
+   corner tags keep, so the page has one way of saying "not yet" instead of a mono ellipsis
+   here and empty tags an inch below. It used to read "counting…"; a line that is only ever
+   a figure does not need a second loading vocabulary. The element stays mounted (the fade
+   needs something to run on) and holds `\u00A0` while empty, so the hand beneath does not
+   shift up and settle back.
 
-   > ⚠️ The artboard's left slot reads **"24 due today"**, and the app cannot answer
-   > that: a due count is cooldown-aware (how many cards have ≥1 flp mark type off
-   > cooldown right now) and no endpoint returns it. Band totals are a different
-   > question — a Target card marked ten minutes ago is in the band and is not due — so
-   > the line prints the library SIZE rather than a plausible-looking derivation. See
+   The artboard's right slot carried a second overline naming the scope the modes draw
+   from ("all cards"). It is **gone**. The hand only ever draws from the whole library, so
+   that label was a constant dressed as a scope, and a constant on screen is a question the
+   reader has to rule out. Bring it back only if the hand gains a scope that can change.
+
+   > ⚠️ The artboard's left slot reads **"24 due today"**. A ready count now *exists* —
+   > `flpReadyCountsByBand` is what the three hand cards below print — but "due today" is a
+   > stronger claim than "ready now": it implies a deadline the app does not model, and
+   > nothing expires at midnight. Band totals are a third question again (a Target card
+   > marked ten minutes ago is in the band and is not ready), and this slot prints the
+   > library SIZE, which is honest on its own terms. If it should carry readiness instead,
+   > change the LABEL with it — never print a ready count under a due caption. See
    > [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 9.
 
    **(b) The Centers rail** (`.ctr2`) — one tile per goal the account pursues, omitted
@@ -556,36 +591,164 @@ per page, and this container is where a Center opts in).
      carries the figure and its own `Study now`, so choosing a mode and committing to it
      are two taps. That matters because Review and Challenge are the two modes a learner
      picks on purpose and wants to see the size of first.
-   - **Slot assignment is a rule, not remembered positions.** The front is whatever was
-     last chosen; the other two fall into the two back slots in `FAN_ORDER`
-     (challenge → review → mix). So the hand cannot end up in a layout nobody asked for
-     after two taps, and a given front card always produces the same arrangement.
-   - **A back card's heading is right-aligned.** Its left side is the part the front card
-     overlaps as the fan closes, and a name that slides under another card is worse than
-     no name at all.
+   - **The fan is an ordered stack, and every arrangement is reachable.** `StudyHand`
+     holds a `HandOrder` — the three modes bottom → top, `[back-left, back-right, front]`
+     — rather than deriving the back slots from whichever card is forward. A derived rule
+     has only three states (one per possible front card); the stack has all six.
+     `FAN_ORDER` (challenge → review → mix) now seeds the opening arrangement only.
+   - **Two ways to bring a card forward, and no card ever leaves the frame.**
+     **Swiping** the front card (`useHandSwipe`) sends it to the BACK of the stack and
+     surfaces the card directly behind it — `[a, b, c] → [c, a, b]`, a 3-cycle. Left and
+     right are the **same move**: the hand is a cycle of three, so there is no second
+     direction for a swipe to mean, and the direction survives only as the lean of the card
+     while it is under the finger (`afterSwipe` takes no direction argument at all).
+     **Tapping** a back card promotes it and leaves the other two in their relative order
+     (`afterTap`); tapping the *middle* card is a transposition of the top two. A 3-cycle
+     plus a transposition generate every ordering of three elements, so swipe and tap
+     together reach all six arrangements.
+   - **The gesture shares the flp's feel, not its code.** `useHandSwipe` reads
+     `CARD_DRAG_SENSITIVITY` and `CARD_DISMISS_THRESHOLD_VW` from
+     `src/features/flashcards/constants.ts`, so a throw here and a swipe on the flp card
+     stack answer a finger identically. It is a separate hook from the flp's `useCardDrag`
+     because that one is built around the card FLIP (tap-to-flip classifier, flip lock,
+     `hasFlippedCurrentCard` drag gate, two tutorial hints), none of which a one-faced hand
+     card has. Because the hand sits above a draggable `SheetPanel` inside a scrolling
+     `MobileTabScreen`, the gesture arbitrates its axis: it stays pending until the finger
+     clears 8px, then either claims the horizontal axis or declines outright so the
+     scroll/sheet beneath behaves as if the card were not there.
+   - **A promotion is a hard content switch, not a crossfade.** Geometry animates over
+     260ms (`SLOT_TRANSITION`); the front/back layouts swap at t=0 of the commit. The two
+     layouts are different compositions — a big numeral plus a commit button versus a
+     single name row — not two states of one composition, so there is nothing meaningful
+     to interpolate. The single exception is the card's **name**, whose `font-size` travels
+     with the slot over the same 260ms: the head's height follows that size and the numeral
+     centres against what the head leaves, so an instant 16→27px jump there would jolt the
+     numeral the pre-render exists to hold still. On release the drag offset returns to 0 with the transition back on,
+     and CSS interpolates from the currently-computed transform, so a thrown card carries
+     on from where it was let go instead of snapping to centre first.
+   - **The card behind pre-renders the whole front face.** `backRight` — the one the next
+     swipe promotes — draws its tag, big numeral, hairline and commit button while still in
+     the fan. At rest none of it shows (the played card covers it), so it costs the fan
+     nothing; it pays the moment a throw begins, because the number the learner is deciding
+     on is uncovered **already drawn** instead of appearing once the gesture resolves. The
+     inert button is part of the pre-render on purpose: it reserves the space the numeral
+     centres against, and without it the numeral would centre in a taller box and jump into
+     place on arrival. On the queued card that button is `disabled`, `aria-hidden`, out of
+     the tab order and `pointer-events: none`, so it can neither commit a mode that is not
+     forward nor swallow the tap that brings the card forward.
+   - **Every card wears its figure as a top-right quantity tag** (`N Cards`), with its
+     name at the top-left — on the front card and on the card queued directly behind it
+     (`backRight`) alike. The tag is what carries a number through the whole cycle: it is
+     already legible the instant a throw clears the card behind, and it is already in its
+     final position when that card lands forward, which matters because the promotion is a
+     hard switch and anything that *moves* between the two layouts moves visibly. The cost
+     is that the front card states its figure twice — small in the tag, large in the
+     numeral below — and that repetition is the point rather than an oversight.
+   - **`backLeft` keeps the old right-clustered head.** The bottom card is two promotions
+     from the front and its left edge is the part the fan overlaps first, so a name pinned
+     there would slide under another card, which is worse than no name at all.
    - **Ineligibility is not disablement.** Review greys out with no earned
      Comfortable/Mastered cards, but still fires `onStudy`, so the page can explain
      ("Mark more cards in Study Mix…") rather than leaving a dead card. The card can
      always be brought forward; it is the commit that is refused.
 
-   **The figures.** Each mode's number is the size of the set it draws from, read off the
-   core bands and matching the server's own `MODE_CONFIGS`:
+   **The figures.** Each mode's number is how many cards **that mode could deal right
+   now**: its bands, counted over the library, minus everything still on cooldown.
 
-   | card | figure | caption |
+   | card | bands | caption |
    |---|---|---|
-   | Study Mix | Unfamiliar + Target + Comfortable | `in rotation` |
-   | Review | Comfortable + Mastered | `ready` |
-   | Challenge | Unfamiliar + Target | `waiting` |
+   | Challenge Mix | Unfamiliar + Target | `Cards` |
+   | Review Mix | Comfortable + Mastered | `Cards` |
+   | Study Mix | all four | `Cards` |
 
-   All three are `undefined` until the counts land, and print an **em dash** rather than a
-   provisional `0` — `0` is a real answer every one of these figures can give, so showing
-   it before the fetch resolves is a lie that corrects itself.
+   **While a count is in flight the figure spins.** `SlotNumber`
+   (`src/features/flashcards/SlotNumber.tsx`) renders the big numeral as a blurred
+   slot-machine reel and lands it when the count arrives. Each digit column is a strip of
+   0–9 **repeated twice** inside a one-digit window, driven by two CSS animations with no
+   JS per frame: `slotSpin` translates `0 → -50%` linear-infinite (half a doubled strip is
+   exactly one revolution, so the loop is seamless, and a negative per-reel delay desyncs
+   the columns), and `slotLand` runs `0 → var(--slot-land)` on a decelerating curve, where
+   the variable is one extra revolution *plus* the target digit. `slotLand` is listed second
+   and carries a per-reel stagger, so during its delay only `slotSpin` is active — the reel
+   keeps spinning until its turn — and `forwards` holds the landed digit afterwards. The
+   position discontinuity where `slotLand` starts is invisible under `SPIN_BLUR_PX`, and it
+   is what buys the effect without ever reading a transform back out of the compositor.
+   `SLOT_LINE_HEIGHT` is exported because the host's numeral must use the same
+   `line-height`: the reels are swapped for plain text once landed, and a different line
+   box would change the figure's height at that swap.
+
+   The landing is triggered **by** the arrival, so it never delays the truth — there is no
+   fabricated wind-down holding a fake number after the real one is known. A visitor with
+   `prefers-reduced-motion: reduce` gets no reels at all: the figure is blank until the
+   count lands. This is the app's first reduced-motion guard, scoped to this one animation
+   because a strobing numeral sits exactly where the reader is waiting and cannot be looked
+   away from.
+
+   **The corner tags start blank and fade in.** They are four cramped mono characters in a
+   corner — too small for any placeholder to read as "loading" rather than as a wrong
+   number — so they render empty and cross to `N Cards` over a 320ms opacity transition
+   once the count lands. The element stays mounted throughout so the fade has something to
+   run on. One thing moving on a card reads as *fetching*; two read as noise, and the big
+   numeral is already doing that job.
+
+   ⚠️ **"Challenge Mix" / "Review Mix" are display names only.** The `StudyModeId` values
+   stay `challenge` / `review`: they are the `?mode=` query param the flp parses
+   (`FlashcardsLearnPage` → `selectedMode`) and the keys of the server's `MODE_CONFIGS`.
+   Same rule as the "Learn Now" rename (CLAUDE.md § Terminology) — rename what the learner
+   reads, never the wire. Match Speed's three difficulty modes still read "Review" and
+   "Challenge" (`src/games/match-speed/constants.ts` → `MODE_CONFIGS`); they are the same
+   three ideas on a different surface and were left alone.
+
+   **The two halves partition the four bands, so Challenge + Review == Study Mix.** That
+   identity is the reason the three numbers are worth printing together — the hand shows
+   one pool split two ways and a learner can read the split straight off the cards, which
+   is also why all three captions say the same word. Anything that changes one mode's
+   bands must keep the partition or the hand stops making arithmetic sense.
+
+   Making the figures cooldown-aware corrected a long-standing understatement: Study Mix
+   used to print Unfamiliar + Target + Comfortable and silently omit **Mastered**, while
+   its loop (`DEFAULT_LOOP_CONFIG`, `OnDeckVocabService.ts`) has always dealt 1 Mastered
+   card in 10 — so the figure was short by the largest band a long-running account has.
+
+   **Readiness is the flp's rule, restated — not a second definition.**
+   `src/utils/flpReadiness.ts` applies `rankFlpEligible`'s eligibility test (at least one
+   of the session's two mark types off cooldown, windowed by the card's **core**
+   category) on top of the shared `server/contracts/cooldown.ts` arithmetic. Note this
+   deliberately differs from the card grid's own cooldown SORT, which takes the *maximum*
+   remaining across a bar's tracks windowed by each track's *per-type* category — the
+   grid answers "what has rested longest", these figures answer "what would a session
+   deal me". The util's docblock carries the full comparison.
+
+   **Computed on the client, with no endpoint.** The page already loads every sorted card
+   (`useDecksPanel` → `fetchCollectionCards(ALL_COLLECTION_ID)`, which excludes lent
+   provisional rows), those rows carry `typedMarkHistory`, and the cooldown module is a
+   client-importable contract. A count endpoint would have added a round trip and a
+   second definition of "rested" that could drift from the pool it predicts. `now` is
+   read **once** per computation — a clock advancing mid-count could break the partition
+   by a card. See DEFERRED_WORK.md § 9, whose original "this needs server work" reasoning
+   this disproved.
+
+   All three are `undefined` until the library lands, and print an **em dash** rather than
+   a provisional `0` — `0` is a real answer every one of these figures can give, and on a
+   cooldown count it is a *common* one (a learner who has just finished a session).
+
+   **The Review gate reads the ready count.** Review greys out when nothing in
+   Comfortable/Mastered is off cooldown, and the flp cannot lend its way out of that: a
+   lent card has an empty mark history, so it bands Unfamiliar and can never satisfy a
+   Review pool. Two different zeroes reach that state and they need opposite advice, so
+   the toast branches on `nextFlpReadyMs`: nothing **earned** yet → "Mark more cards in
+   Study Mix to unlock this deck"; everything **resting** → "All your review cards are
+   resting. Next ready in <span>." Challenge and Study Mix stay ungated — provisioning
+   fills their bands.
+
+   Tested by `src/__tests__/flpReadiness.test.ts`, which pins the partition identity, the
+   minimum-across-tracks rule and the core-window choice.
 
    **The hand's bottom padding is derived**, not typed:
-   `SHEET_CLOSED_HEIGHT - FOOTER_CLEARANCE + STUDY_AREA_GAP` — the scroll area already
-   reserves the footer's clearance, so only the amount by which the resting sheet
-   out-stands it is missing. Change `SHEET_LIP` and `Study now` still stops just above the
-   sheet instead of sliding under it.
+   `SETS_PILL_HEIGHT + STUDY_AREA_GAP` — the scroll area already reserves
+   `FOOTER_CLEARANCE`, which is exactly where the Sets & Cards pill is anchored, so only
+   the pill's own band is missing. Change the pill's height and `Study now` still stops
+   just above it instead of sliding under it.
 
    > **Renamed (was Easy / Mix / Hard).** The rename went all the way down — the
    > `StudyMode` values are `'review'` and `'challenge'` in both

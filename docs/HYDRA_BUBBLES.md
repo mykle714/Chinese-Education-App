@@ -436,6 +436,11 @@ A slot is one bubble and a whole new card costs two, so this is also why **a dra
 can never open with a fresh matched pair** while a bloom one buys a pair and still has
 a slot left over.
 
+**Every ratio-rule slot is claimed first by the per-color guarantee** (§ 4.3 invariant
+3): before the stray-aging lottery runs, the slot checks whether the board is missing a
+live match of one of the two colors and, if so, spends itself on that color instead. It
+is a redirection of a slot, never an extra one, so the table above is unchanged.
+
 ### 4.2 The ratio rule
 
 The board targets **50% Chinese / 50% English**, and on an odd total it carries **one
@@ -459,6 +464,11 @@ on its cheapest color still had the next one up — a below-average clear to rea
 With two tiers an
 all-bloom board offers no way to shrink at all, so the balancer is the only thing
 standing between a run of lucky rolls and a board the player cannot act on.
+
+⚠️ **The balancer alone was never sufficient for that**, and § 4.3 invariant 3 is what
+actually closes the gap: this balances the colors of the cards **on** the board, which
+is not the same as the colors that are **matchable**. A perfectly balanced board whose
+drain cards are all strays still offers no shrink move.
 
 **It does not move the economy**, and that is the point of targeting the table rather
 than a flat 50/50. An even split would average `(1+3)/2 = 2` against the 2 bubbles a
@@ -507,7 +517,7 @@ batch and the planner is pure — it sees one board snapshot and has no notion o
 
 ### 4.3 The invariants
 
-Two guarantees, in priority order:
+Three guarantees, in priority order:
 
 1. **Anti-zero (highest priority).** The board must never be able to run down to
    nothing, and must never dead-end with no valid match.
@@ -526,6 +536,58 @@ Two guarantees, in priority order:
    economy at the low end, and player control of board size is the whole point of
    § 3.
 2. **A live match always exists.** Enforced by step 3 of § 4.1.
+3. **Both colors are matchable — as far as one slot allows.** The board owes the
+   player a live **drain** match *and* a live **bloom** match: a move that shrinks the
+   board and a move that grows it.
+
+   **Why invariants 1 and 2 were not enough.** They only ask whether the board is a
+   dead end; they say nothing about what the available match *pays*. A board can sit at
+   a perfect § 3.1 color mix with every drain card a stray and only bloom cards
+   completable, and the player's only legal move is the one that grows the board — the
+   shrink lever § 3 says the whole game is about has quietly been taken away.
+   `pickBalancedColor` (§ 4.2b) does **not** cover this: it balances the colors of the
+   cards **on** the board, not the colors that are **matchable**.
+
+   **Within budget only — this is what separates it from anti-zero.** It never buys a
+   slot the payout did not pay for. It only steers a slot the batch was already going
+   to spend, and a `complete` costs the same one slot and puts the same one bubble on
+   the board as a `newStray` (§ 4.2c), so **E[payout] is untouched**. Two ways the slot
+   gets spent, in order:
+
+   | board state | action | effect |
+   |---|---|---|
+   | a stray of the needed color exists | `complete` it (oldest-waiting first) | guarantee met this instant, board composition unchanged |
+   | no stray of that color | `newStray` of that color, overriding the balancer | a later slot has something to complete |
+
+   A single slot cannot do better: `newPair` is the only one action that makes a live
+   match out of nothing and it costs **two** slots, and buying that here would be
+   exactly the budget override reserved for anti-zero.
+
+   **Therefore it is BEST-EFFORT, not absolute.** A drain clear buys exactly one slot,
+   so a board missing both colors can only be given one of them back per match. When
+   both are missing, **fill breaks the tie** (`COLOR_NEED_TIEBREAK_FILL` = 0.5,
+   `constants.ts`):
+
+   ```
+   fill <  0.5   →  bloom   (room to spare; the growth move is the one worth having)
+   fill >= 0.5   →  drain   (filling up; the shrink move is)
+   ```
+
+   This makes the guarantee mildly **stabilizing** at the margin — the one place in
+   Hydra where that is accepted, because it governs whether the player has a *choice*
+   at all, not what the choice *costs*. The economy still comes entirely from the § 3.1
+   table.
+
+   **Bloom is never manufactured inside the squeeze.** At and above `DRAIN_ONLY_FILL`
+   the guarantee stops asking for bloom, because a guaranteed +1 escape there would
+   dismantle the one state overflow loss depends on (§ 3.1). Bloom cards *already* on
+   the board stay matchable — nothing is taken away, the board simply stops being
+   topped up with the color the table has switched off.
+
+   **It outranks the stray-aging lottery** (§ 4.2c), which is a visible consequence: a
+   *fresh* drain stray is completed immediately when no drain match exists, even though
+   its aging shares are zero. Once both colors are matchable the guarantee goes quiet
+   and the lottery runs normally.
 
 ### 4.4 No duplicate cards
 
@@ -853,11 +915,19 @@ those cooled cards do not count — see § 8.
   board** while it is up (Q6, resolved) — not to protect a clock, which Hydra does
   not have, but because a modal over a live drag either eats the pointer or strands a
   half-finished match underneath it. Freezing also lets Hydra reuse the same notice
-  component as every other game.
+  component as every other game. It heads with the shared **lent mark** — the icons8
+  hourglass every other surface uses for a borrowed card (`LentCardIcon`,
+  docs/PROVISIONAL_CARDS.md § 5). Hydra shows the icon only here: a bubble is far too
+  small to carry a corner badge the way a Match Speed card does.
 * **End of run:** the standard `ProvisionalSortOffer`
   (`src/components/ProvisionalSortOffer.tsx`, sequenced by
-  `useProvisionalSortOffer`), listing every lent card actually used, opening over the
-  score card as soon as the run ends (no delay).
+  `useProvisionalSortOffer`), opening over the score card as soon as the run ends (no
+  delay). It lists the lent cards the player actually **matched against** —
+  `useMarkedLentWords`, recorded in `markCard` — not the ones the buffers dealt. An
+  endless run pops plenty of bubbles that overflow untouched, and asking the player to
+  keep a word they never read is the same mistake as never mentioning the lending at all.
+  Any attempt counts, including a miss (which ends the run) and a mark the server drops
+  on cooldown; the reasoning is in docs/PROVISIONAL_CARDS.md § 5.
 
 ### 6.5 There is no card minimum
 
@@ -989,6 +1059,29 @@ reading the exact ratio; only the display is coarse.
 Bubble Match's shape: a score card ("You cleared 142 bubbles") with **Play Again**
 primary over **Back to Games** secondary, **minimizable to a corner puck**. Play
 Again starts a wholly fresh board.
+
+### 7.3b Cleanup mode — the post-run review board (built 2026-08-24)
+
+Minimizing the end popup turns the final board into a **no-stakes review
+playground**, the same affordance Bubble Match has offered post-loss since it
+shipped (`cleanupMode` in `src/games/bubble-match/BubbleStage.tsx`). Hydra had the
+minimizable popup but not the mode behind it, so the puck revealed a board that
+looked live and answered nothing: `onPointerDown`/`onUp` both returned early on
+`phaseRef.current !== "playing"`, and the rAF loop had already shut itself down.
+
+The contract, `HydraStage` → `cleanupMode` (page: `phase === "over" && popupMinimized`):
+
+| While reviewing | Behaviour |
+|---|---|
+| Grab | Allowed on any non-`correct` bubble. The pair frozen red by a wrong-match loss is **released back to idle on entry**, so the drop that ended the run can be re-tried. |
+| Drop hint | The held bubble's partner lights **green** (`revealed`). No partner on the field → the grabbed bubble itself flags **light-red** (`nomatch`) while held. Hydra's board is mostly strays (§ 4.2), so `nomatch` is the *common* case here, not the edge case it is in Bubble Match. |
+| Correct match | Pops and removes the pair. **No mark, no score, no payout spawn**, and the card is **not** `release`d from the color buffers — the run is over, so spending it would only make it scarcer for the next one. The board drains toward empty and never refills. |
+| Wrong match | Shakes, then settles back to idle. No mark, and **no second run end** — `finishRun` is already spent. |
+| HUD | The danger vignette and the drain-only squeeze warning are **permanently dismissed** on entry (`dangerDismissed`): neither has anything left to warn about, and a pulsing red wash makes a board being read harder to read. The fill bar stays, and falls as the field clears. |
+| Physics | The post-run shutdown is skipped while cleanup is on, so bubbles keep separating and settling under the drags. |
+
+There is no ceiling to retract (Bubble Match does that here) because Hydra has none;
+an overflow board is packed but not crushed, so it settles on its own.
 
 ### 7.4 Marks
 
@@ -1304,6 +1397,8 @@ nothing.
 | Q6 | Does the mid-run lend popup freeze the board? | Yes — a modal over a live drag is the hazard, not the clock | § 6.4 |
 | Q7 | Anti-zero: reactive or a floor count? | Purely reactive; no floor, because a floor re-stabilizes the economy | § 4.3 |
 | Q8 | Spanish, or zh-only? | Both — no `languages` gate | § 9 |
+| Q9 | Per-color match guarantee: may it spend a slot the payout did not buy? | **No — within budget only.** That makes it best-effort rather than absolute, since a drain clear buys one slot | § 4.3 |
+| Q10 | When both colors lack a live match, which one does the single slot go to? | **Board fill decides:** below 0.5 bloom, at or above 0.5 drain | § 4.3 |
 
 ---
 
@@ -1335,12 +1430,16 @@ nothing.
 | the two payout tiers (§ 2.1) | `src/games/hydra-bubbles/types.ts` → `HydraColor` (`"drain"` \| `"bloom"`), `HYDRA_COLORS` |
 | spawn distribution (§ 3) | `src/games/hydra-bubbles/spawnTable.ts` → `rollColor`, `PAYOUT_BY_COLOR`, `HYDRA_SPAWN_ANCHORS`, `DRAIN_ONLY_WEIGHTS`, `expectedPayoutAt` |
 | spawn algorithm + invariants (§ 4) | `src/games/hydra-bubbles/spawnPlanner.ts` → `planSpawnBatch`, `hasLiveMatch`, `nextKindByRatio` |
+| per-color guarantee (§ 4.3 invariant 3) | `src/games/hydra-bubbles/spawnPlanner.ts` → `neededColor`, `oldestStrayOf`, `completionOf`; threshold `COLOR_NEED_TIEBREAK_FILL` in `constants.ts` |
 | color buffers (§ 6.2b) | `src/games/hydra-bubbles/useColorBuffers.ts` → `useColorBuffers`, `fetchColor` (sends the band split + `strictBuckets=1`) |
 | band → color mapping (§ 5) | `src/games/hydra-bubbles/constants.ts` → `BUCKETS_BY_COLOR` |
 | tier offsets (§ 6.2) | `src/games/hydra-bubbles/constants.ts` → `TIER_OFFSET_BY_COLOR` |
 | the field + palette (§ 2.2) | `src/games/hydra-bubbles/HydraStage.tsx` → `FILL_BY_COLOR`, `BLUE_DARK`, `BLUE_LIGHT`; text ink is derived in `src/games/bubbles/Bubble.tsx` → `inkOnFill` |
 | page shell | `src/games/hydra-bubbles/HydraBubblesPage.tsx` |
+| post-run review board (§ 7.3b) | `HydraStage.tsx` → the `cleanupMode` prop, `cleanupModeRef`, `revealPartner`, `clearRevealedPartner`, `dangerDismissed`; `HydraBubblesPage.tsx` → `popupMinimized`. Reference implementation: `src/games/bubble-match/BubbleStage.tsx` → `cleanupMode` |
 | mid-run notice (§ 6.4) | `src/games/hydra-bubbles/HydraLendNotice.tsx` |
+| lent mark shown on it | `src/components/LentCardBadge.tsx` (`LentCardIcon`) |
+| lent words the run reviewed | `src/hooks/useMarkedLentWords.ts` |
 | registry + hub row | `src/games/registry.ts` → `GAME_REGISTRY`; `COLORS.tealAccent` (`src/theme/colors.ts`) |
 | minute points (§ 9) | `src/constants.ts` → `MINUTE_POINTS_ELIGIBLE_PAGES` |
 | challenge spec (§ 7.5) | `server/contracts/wire.ts` → `CHALLENGE_GAMES` |

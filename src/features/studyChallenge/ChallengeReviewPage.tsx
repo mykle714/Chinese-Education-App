@@ -189,7 +189,13 @@ function ChallengeReviewPage() {
             } else {
                 await acceptChallenge(challengeId!, struck, replacements);
             }
-            slideNavigate("/friends/challenges");
+            // REPLACE, never push: this page has been consumed. The challenge now
+            // exists, so the word set on screen is no longer a draft anybody may
+            // confirm — and a pushed entry would let Back return here and tap Send
+            // (or Accept) a second time against a challenge that is already issued.
+            // Replacing makes the friend list the same history entry the review page
+            // occupied, so Back from it goes on out to /friends.
+            slideNavigate("/friends/challenges", { replace: true });
         } catch (err: unknown) {
             setError(challengeErrorMessage(err, isIssuing ? "Could not send the challenge" : "Could not accept the challenge"));
         } finally {
@@ -208,7 +214,9 @@ function ChallengeReviewPage() {
         setBusy(true);
         try {
             await declineChallenge(challengeId);
-            slideNavigate("/friends/challenges");
+            // Same one-shot rule as the confirm above — the invitation is gone, so the
+            // review page must not stay on the back stack.
+            slideNavigate("/friends/challenges", { replace: true });
         } catch (err: unknown) {
             setError(challengeErrorMessage(err, "Could not decline the challenge"));
         } finally {

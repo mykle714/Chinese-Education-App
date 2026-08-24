@@ -127,9 +127,12 @@ styled MUI `Button`/`IconButton`. Three headers each carried a byte-identical
 | `HeaderIconButton` | `.hd .btn` | an icon action. `variant="bare"` (default) for drill-in/game headers carrying 2–4 actions; `variant="outlined"` for a hub header's single lone action, which needs the 32×32 box to separate it from bare paper |
 | `HeaderToggleChip` | `.lhd .tg` | a mono toggle chip. On = solid ink ground + white text — an inversion, not a tint change |
 
-The design's fourth slot shape, `.fire`, is **not** re-exported here: the app already
-ships it as `src/minutePoints/MinutePointsFireBadge.tsx`, whose `COLORS.fireActive`
-is the design's `#E65100` exactly. Put that component in the slot.
+The design's fourth slot shape, `.fire`, is **not** re-exported here and is **not
+passed by pages at all**: `PageHeader` renders `src/minutePoints/MinutePointsFireBadge.tsx`
+itself, LAST in the right slot (flush right, after whatever `rightContent` the page
+supplies), on every header in the app. Its `COLORS.fireActive` is the design's `#E65100`
+exactly. Do not put it in `rightContent` — that draws it twice, and a second live
+`useMinutePoints` instance double-counts accrual on an earning page.
 
 ## Forward navigation — new page slides OVER the old (View Transitions)
 
@@ -296,17 +299,26 @@ an out-of-space one, so every exit — the back arrow to Home, a footer-tab tap,
 browser back — clears the query; `isDictionarySpacePath()` defines the space. A full
 page reload also starts fresh (the singleton is not persisted to storage).
 
-## Card detail (cdp): two surfaces, one shared body
+## Card detail (cdp): two surfaces, two bodies
 
-There are two card-detail pages, both **Node** pages that share the presentational
-sections below the hero (`src/features/flashcards/VocabCardDetailBody.tsx` —
-`VocabCardBadges` + `VocabCardSections`: definition / breakdown+used-in+expansion /
-examples / synonyms+related):
+There are two card-detail pages, both **Node** pages. They agree on everything above
+the fold (hero card + badges) and on every leaf renderer, but since 2026-08-24 they
+show the word's extra info through **different containers**:
+
+| Surface | Extra-info container |
+|---|---|
+| Saved-card cdp (`VocabCardDetailPage`) | **the eip itself** — `InfoCardSection` (`SheetPanel` + `InfoCardPanelBody`), the exact component the flp and scp raise, opened from the shared `SheetPill` "More Info" capsule (`src/components/SheetPill.tsx`) |
+| Read-only dictionary cdp (`DictionaryCardDetailPage`) | `VocabCardSections` (`src/features/flashcards/VocabCardDetailBody.tsx`) — stacked `SectionCard`s down the page |
+
+Underneath, both render the same leaves — `DefinitionFacts`, `BreakdownRow`,
+`UsedInPaginatedList`, `ExampleSentenceList`, `SynonymsRelatedSection` — so a change to
+any one of them lands on both.
 
 - **Saved-card cdp** (`/flashcards/card/:id`, `VocabCardDetailPage`) — loads a vet
   row by id; editable (icon-editor toolbar + delete). Reached from Decks/Mastered, so
-  the **Flashcards** tab stays active. Passes `onWordOpen` (see § "Breakdown drill-in
-  targets" below), so breakdown blocks / used-in rows / example segments are tappable.
+  the **Flashcards** tab stays active. Raises the eip from the "More Info" `SheetPill`; passes
+  `onWordOpen` through the panel's drill-in callbacks (see § "Breakdown drill-in
+  targets" below), so breakdown rows / used-in rows / example segments are tappable.
 - **Read-only dictionary cdp** (`/dictionary/card/:word`, `DictionaryCardDetailPage`)
   — fetches the det row via `/api/dictionary/lookup/:word` and adapts it
   (`dictEntryAdapter`, which now carries `iconId`). **No edits**: no toolbar/delete,
@@ -321,8 +333,13 @@ examples / synonyms+related):
 
 Both surfaces make the Character Breakdown rows (`BreakdownRow`, which replaced the
 square `InfoCardBlockButton` grid on 2026-08-24), the
-single-char **Used In** rows and the example-sentence segments tappable by passing
-`onWordOpen` to `VocabCardSections`. They differ only in where a tap LANDS:
+single-char **Used In** rows and the example-sentence segments tappable — the dictionary
+cdp by passing `onWordOpen` to `VocabCardSections`, the saved-card cdp by wiring the
+eip's `onBreakdownItemClick` / `onUsedInItemClick` / `onExampleSegmentClick` to the same
+handler. **This is the one place the saved cdp deliberately behaves unlike the flp:** the
+flp pushes a nested eip entry tab, the cdp NAVIGATES to the tapped word's own card detail
+(which is what a detail page is for, and why the cdp mounts the panel without a
+`tabStrip`). They differ only in where a tap LANDS:
 
 | Surface | Handler | Target |
 |---|---|---|

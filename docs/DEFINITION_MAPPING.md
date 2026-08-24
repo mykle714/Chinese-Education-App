@@ -52,6 +52,12 @@ Child docs:
      session that has not round-tripped yet;
   2. otherwise (unclustered, single cluster, or a cluster with no usable gloss) →
      the legacy dd, `stripParentheses(definitions[0])` (form #2 → clean headline).
+- **`stripParentheses` is depth-scanning, not regex** (fixed 2026-08-24). It tracks paren
+  nesting, eats the whitespace preceding an aside, swallows an unmatched `(` to end of
+  string and drops an unmatched `)`. The old `/\s*\([^)]*\)/g` stopped at the first `)`,
+  so 27 discoverable glosses — 21 of them Spanish — leaked an aside's tail onto the card
+  (的 rendered `" or 新的[xin1 de5] "new one")`). See
+  [GLOSS_CONFUSABILITY.md](./GLOSS_CONFUSABILITY.md) § 8l for the full diff and rationale.
 - **The rule:** any surface showing a **vet-backed** entry's English meaning MUST call
   the resolver, never `stripParentheses(entry.definition)` directly — `entry.definition`
   is det's `definitions[0]` and ignores the learner's sense pick, so a raw call makes

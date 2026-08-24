@@ -1,6 +1,5 @@
 import React from "react";
 import { HeaderIconButton } from "../../components/PageHeader";
-import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 
 interface MatchSpeedHeaderProps {
     /** Open the settings sheet (pinyin / tone colors / autoplay). */
@@ -31,7 +30,6 @@ const MatchSpeedHeaderControls: React.FC<MatchSpeedHeaderProps> = ({ onSettingsC
             label="Open settings"
             onClick={onSettingsClick}
         />
-        <MinutePointsFireBadge />
     </>
 );
 

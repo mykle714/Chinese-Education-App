@@ -45,8 +45,9 @@ Legend:     ○ skip/none    ✓ Add to Learn Now    Ⓜ Mastered
                           … scrolls …
 ```
 
-- **Header** (`NodePage.headerExtraActions`): **Clear** and **Save** buttons plus
-  the `MinutePointsFireBadge` (mirrors SortCardsPage's header actions).
+- **Header** (`NodePage.headerExtraActions`): **Clear** and **Save** buttons
+  (mirrors SortCardsPage's header actions). The `MinutePointsFireBadge` sits to their
+  right but is NOT passed here — `PageHeader` renders it on every header.
 - **Level bar**: the same HSK/difficulty `Chip`+`Menu` dropdown as
   `SortCardsPage` (`src/features/discover/SortCardsPage.tsx`) **minus the `Auto`
   menu item** — Quick Mark is always a concrete level. Label is `HSK N` for zh,

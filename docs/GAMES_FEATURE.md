@@ -130,8 +130,9 @@ Each individual game gets its own route under `/games/<slug>`.
 `LeafPage` (see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)): the down-arrow back
 button (→ `/games`) is the only way out, there is **no** footer on any of its
 screens (loading / blocked / stage — the level is picked on the hub, so there is
-no in-game picker screen), and the page slides up on enter / down on exit. The pinyin + autoplay toggles and the fire badge live in
-the header's right slot via `BubbleMatchHeaderControls`.
+no in-game picker screen), and the page slides up on enter / down on exit. The pinyin + autoplay toggles live in
+the header's right slot via `BubbleMatchHeaderControls`; the fire badge sits to their
+right and is rendered by `PageHeader` for every page, not passed by the game.
 
 **Word Search is also a leaf page**, wrapped the same way (down arrow → `/games`,
 no footer, slides up on enter).

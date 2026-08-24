@@ -7,17 +7,18 @@ import type { Language } from "../../../types";
 import ProvisionalCardsNotice from "../../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../../components/ProvisionalSortOffer";
 import { addToLibrary } from "../../../utils/vocabApi";
-import { ContentArea } from "./styled";
-import InfoPeek from "../InfoPeek";
+import { ContentArea, MoreInfoPill } from "./styled";
 import CardOpsRail from "./CardOpsRail";
 import WordToolsRail from "../../../components/WordToolsRail";
 import { deleteVocabEntry } from "../../../utils/vocabApi";
 import { FC_FONT } from "../constants";
 import { useLaunchCollection } from "../useLaunchCollection";
+import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
 import { useWorkingLoop, type CardDragControls, type StudyMode } from "./useWorkingLoop";
 import { useCardIconEditor } from "../../../cardIcons/editor/useCardIconEditor";
 import { useToolbarOverlap } from "./useToolbarOverlap";
+import { useCardSlotPadding } from "./useCardSlotPadding";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
 import { getBreakdownItems as buildBreakdownItems } from "../../../utils/breakdownUtils";
@@ -48,7 +49,7 @@ import { useTTS, SLOW_SENTENCE_RATE } from "../../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
 import type { FlpForeignTrack } from "../../../../server/contracts/wire";
 import { foreignPromptTrack } from "../../../../server/contracts/wire";
-import type { VocabEntry } from "../types";
+import type { VocabEntry, SideOneLanguage } from "../types";
 
 const FlashcardsLearnPage: React.FC = () => {
     usePageTitle("Learn");
@@ -149,6 +150,7 @@ const FlashcardsLearnPage: React.FC = () => {
         handleUndoLastMark,
         dropCurrentCard,
         provisionalSeen,
+        provisionalReviewed,
     } = useWorkingLoop({ token, selectedCategory, mode: selectedMode, foreignTrack, prefetch: tts.prefetch, cardDragRef });
 
     const noticeOpen = !noticeDismissed && provisionalSeen.length > 0;
@@ -257,13 +259,16 @@ const FlashcardsLearnPage: React.FC = () => {
      * borrowed cards, the sort offer intercepts the first tap instead of navigating.
      */
     const handleBack = useCallback(() => {
-        if (provisionalSeen.length > 0 && !exitOfferShown) {
+        // Gated on what was REVIEWED, not on what was shown: a session that never got
+        // past its third card should not be stopped on the way out to be asked about
+        // seven words the learner never saw.
+        if (provisionalReviewed.length > 0 && !exitOfferShown) {
             setExitOfferShown(true);
             setExitOfferOpen(true);
             return;
         }
         leaveSession();
-    }, [provisionalSeen.length, exitOfferShown, leaveSession]);
+    }, [provisionalReviewed.length, exitOfferShown, leaveSession]);
 
     // ── Toolbar-overlap push-down gate ────────────────────────────────────────
     // The advanced-edit push-down slides the card down to clear the three-row toolbar, but we
@@ -272,7 +277,18 @@ const FlashcardsLearnPage: React.FC = () => {
     // useToolbarOverlap, which compares the toolbar's bottom edge to the card's centered top.
     const contentAreaRef = useRef<HTMLDivElement | null>(null);
     const toolbarRef = useRef<HTMLDivElement | null>(null);
-    const toolbarOverlaps = useToolbarOverlap(editMode && advMode, contentAreaRef, toolbarRef, cardRef);
+
+    // ── Card-slot padding ─────────────────────────────────────────────────────
+    // Measured, not fixed: the slot's BOTTOM pad has to reserve the band the More Info pill
+    // occupies, otherwise a height-bound card (any viewport short enough that the card fills
+    // the slot's height before its width) runs its bottom edge into the pill. The TOP pad is
+    // the elastic one — it shrinks on a short slot so the reservation costs the whitespace
+    // above the card rather than the card itself. See cardSlotPadding in styled.ts.
+    const cardSlotRef = useRef<HTMLDivElement | null>(null);
+    const moreInfoPillRef = useRef<HTMLDivElement | null>(null);
+    const cardSlotPad = useCardSlotPadding(cardSlotRef, contentAreaRef, moreInfoPillRef);
+
+    const toolbarOverlaps = useToolbarOverlap(editMode && advMode, cardSlotRef, toolbarRef, cardRef, cardSlotPad);
     // Push (and lift the card over the More Info pill) only when the toolbar would overlap.
     const pushCardDown = editMode && advMode && toolbarOverlaps;
 
@@ -300,16 +316,21 @@ const FlashcardsLearnPage: React.FC = () => {
 
     const breakdownItems = buildBreakdownItems(currentEntry);
 
-    // TTS narration: auto-play the Chinese word the moment the Chinese face of
-    // the card first becomes visible. Side 1 is randomized per card — when it's
-    // 'zh' we play on mount; when it's 'en' we wait for the flip (Side 2 always
-    // shows Chinese). Either way, exactly one play per card.
+    // TTS narration: auto-play the Chinese word only while the CHINESE face is the
+    // one on screen. The card has exactly two faces and the flip is one-way, so the
+    // showing face's language is Side 1's when unflipped and its opposite once
+    // flipped: a zh-first card narrates on Side 1 only, an en-first card on Side 2
+    // only. Either way, exactly one play per card, and never over an English face.
     //
-    // Note: this effect can briefly see `chineseVisible === true` on a fresh
-    // card before the working loop swaps in the new random value. The cleanup
-    // calls tts.cancel(); CloudTTSProvider's cancel() bumps its generation so any
-    // in-flight fetch from this stale-state render is dropped before audio.
-    const chineseVisible = currentSideOneLanguage === 'zh' || isFlipped;
+    // `isFlipped` is scoped to the card it was made on (useCardDrag), so this never
+    // sees the outgoing card's flip on a freshly dismissed-to card. The cleanup
+    // still calls tts.cancel(); CloudTTSProvider's cancel() bumps its generation so
+    // an in-flight fetch is dropped before it reaches audio — which is what stops a
+    // zh-first card's narration when the user flips to its English face mid-utterance.
+    const shownFaceLanguage: SideOneLanguage = isFlipped
+        ? (currentSideOneLanguage === 'zh' ? 'en' : 'zh')
+        : currentSideOneLanguage;
+    const chineseVisible = shownFaceLanguage === 'zh';
     useEffect(() => {
         if (!tts.enabled || !autoplayChinese) return;
         if (!chineseVisible || !currentEntry) return;
@@ -419,7 +440,7 @@ const FlashcardsLearnPage: React.FC = () => {
     }, [isFlipped]);
 
     const handleMoreInfoClick = () => {
-        // Disabled while the card editor is open (the peek is also greyed out).
+        // Disabled while the card editor is open (the pill is also greyed out).
         if (editMode) return;
         if (!isFlipped) {
             setShowFlipHint(true);
@@ -531,12 +552,13 @@ const FlashcardsLearnPage: React.FC = () => {
             {/* End-of-session offer. Unlike a game, flp has no scoreboard to attach
                 this to — a session ends when the learner LEAVES — so the offer gates
                 the back arrow instead (see `handleBack` below), listing every lent
-                card the working loop dealt across the whole session. Not minimizable:
+                card the learner actually REVIEWED across the session — the loop holds
+                ~10 at a time, so the dealt set would over-ask. Not minimizable:
                 the learner is on their way out, so the only two answers are "sort
                 them" and "leave anyway". Renders nothing when no cards were lent. */}
             <ProvisionalSortOffer
                 open={exitOfferOpen}
-                words={provisionalSeen}
+                words={provisionalReviewed}
                 language={(user?.selectedLanguage ?? "zh") as Language}
                 onDismiss={leaveSession}
                 dismissLabel="Leave anyway"
@@ -675,6 +697,8 @@ const FlashcardsLearnPage: React.FC = () => {
                 {/* Flashcard fills the rest of the ContentArea. The EIC sheet overlays
                     at the bottom rather than stacking above the flashcard. */}
                 <FlashCardSection
+                    slotRef={cardSlotRef}
+                    pad={cardSlotPad}
                     currentEntry={editingCurrentEntry}
                     nextEntry={displayNextEntry}
                     activeFrontSlot={activeFrontSlot}
@@ -747,7 +771,7 @@ const FlashcardsLearnPage: React.FC = () => {
                         />
                     ) : undefined}
                     editMode={editMode}
-                    // Push down (and lift over the info peek) only when the advanced toolbar
+                    // Push down (and lift over the More Info pill) only when the advanced toolbar
                     // would actually overlap the card — see useToolbarOverlap.
                     pushDown={pushCardDown}
                     // CARD OPERATIONS — customize / add to deck / delete, behind the `•••`
@@ -764,40 +788,33 @@ const FlashcardsLearnPage: React.FC = () => {
                         />
                     ) : undefined}
                 />
-                {/* The extra-info panel's resting LIP (`.peek`, artboards 19–25) — this
-                    replaced the floating "↑ More Info" pill. It is the top edge of the
-                    sheet it opens, so what it offers needs no explaining: there is a panel
-                    down there, it has a grabber, it is about this word, and it opens on the
-                    definition.
+                {/* Centered pill button — ghosted before flip, full opacity after. While
+                    the icon editor is open it stays DRAWN but greyed + inert (isDisabled);
+                    in advanced mode the card slides down and paints over it (the card slot
+                    is raised above the pill in FlashCardSection).
 
-                    Faded until the card is flipped — but still TAPPABLE in that state,
-                    because a tap is how the learner gets the "flip it first" hint. Greyed
-                    and inert only while the icon editor is open, where the panel would
-                    cover the canvas being edited. */}
+                    Still TAPPABLE before the flip (only `isDisabled` swallows taps), because
+                    a tap in that state is how the learner gets the "flip it first" tooltip
+                    below — the pill has to be able to explain itself. */}
                 <Tooltip
                     open={showFlipHint}
                     title="Flip the card first to see extra info."
                     placement="top"
                     arrow
                 >
-                    {/* zIndex drops while the icon editor is open so the pushed-down card
-                        paints OVER the greyed lip, exactly as it did over the pill this
-                        replaced (the card slot lifts to zIndex 3 when pushed — see
-                        FlashCardSection). Above the card otherwise, because the lip is the
-                        sheet's own edge and the sheet is what it opens. */}
-                    <Box className="mobile-demo-info-peek-anchor" sx={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: editMode ? 1 : 4 }}>
-                        {displayCurrentEntry && (
-                            <InfoPeek
-                                className="mobile-demo-info-peek"
-                                word={displayCurrentEntry.entryKey}
-                                language={displayCurrentEntry.language}
-                                onOpen={handleMoreInfoClick}
-                                disabled={editMode}
-                                dimmed={!isFlipped}
-                                pulse={isFlipped && !eicHintConsumed && !editMode}
-                            />
-                        )}
-                    </Box>
+                    <MoreInfoPill
+                        ref={moreInfoPillRef}
+                        className="mobile-demo-more-info-pill"
+                        isFlipped={isFlipped}
+                        isDisabled={editMode}
+                        hintActive={isFlipped && !eicHintConsumed && !editMode}
+                        onClick={handleMoreInfoClick}
+                        aria-disabled={editMode}
+                        aria-label="Open extra info"
+                    >
+                        <Typography sx={{ fontSize: SIZE.body, color: theme.palette.flashcard.onSurface, lineHeight: 1, transform: "translateY(-1px)" }}>↑</Typography>
+                        <Typography sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: theme.palette.flashcard.onSurface, letterSpacing: TRACKING.wide, fontFamily: FC_FONT }}>More Info</Typography>
+                    </MoreInfoPill>
                 </Tooltip>
                 {/* Modal EIC sheet — only mounted when open to reset animation on reopen.
                     Tapping a breakdown/used-in row inside the panel pushes a tab onto
@@ -853,6 +870,8 @@ const FlashcardsLearnPage: React.FC = () => {
                             compareTab={compareTab}
                             onSetCompareSlot={eip.setCompareSlot}
                             onCompareResult={eip.setCompareResult}
+                            entryTabId={eip.activeTab?.id}
+                            entryTabIndex={eip.activeIndex}
                             tabStrip={
                                 <EipTabStrip
                                     tabs={eip.tabs}

@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { Box, useTheme } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
+import { LentCardBadge } from "../../components/LentCardBadge";
 import { resolveDisplayDefinition, resolveDisplayPronunciation, stripParentheses } from "../../utils/definitionUtils";
 import type { Language } from "../../types";
 import type { BoardCard, CardVisualState } from "./types";
@@ -93,6 +94,17 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     const isForeign = card.side === "foreign";
+    // A LENT card is one the server borrowed the player into this run rather than one
+    // they sorted (docs/PROVISIONAL_CARDS.md). Match Speed streams its buffer, so its
+    // pre-round notice cannot name the borrowed words — the corner badge is the only
+    // in-round tell.
+    //
+    // FOREIGN SIDE ONLY, and that is a correctness rule rather than a layout choice:
+    // badging both faces of a lent pair would mark two cards on the board as belonging
+    // together, letting the player match by badge instead of by reading — the same leak
+    // the fixed card size exists to prevent. One badged column leaks nothing, because
+    // every English card is unbadged whatever its partner is.
+    const isLent = isForeign && card.entry.starterPackBucket === "provisional";
 
     // The gloss MUST come from resolveDisplayDefinition — never entry.definition or
     // definitions[0] — so the game shows the same sense the player learned the word
@@ -216,6 +228,9 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                 justifyContent: "center",
                 px: 1,
                 boxSizing: "border-box",
+                // Anchors the lent badge's absolute corner placement below. Harmless
+                // on every other card — nothing else here is positioned.
+                position: "relative",
                 borderRadius: "14px",
                 backgroundColor: background,
                 border: `1px solid ${borderColor}`,
@@ -242,6 +257,7 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                 WebkitTapHighlightColor: "transparent",
             }}
         >
+            {isLent && <LentCardBadge className="match-speed__card-lent-badge" />}
             {isForeign ? (
                 // ForeignText is the public container — never CPCDRow/CPCDBlock
                 // directly. It picks cpcd vs plain text from the language, so this

@@ -108,8 +108,8 @@ duplicated per cluster.
 
 ### Where the per-cluster `frequencyScore` surfaces
 
-The eip definition tab (`InfoCardTabContent.tsx`) and the cdp Definition box
-(`VocabCardDetailBody.tsx`) both render a **"Commonality"** chip — five dots plus an
+The eip definition tab (`InfoCardTabContent.tsx`) and the read-only dictionary cdp's
+Definition box (`VocabCardDetailBody.tsx`) both render a **"Commonality"** chip — five dots plus an
 `N/5` readout. It shows the **selected sense's** cluster score, not the entry's
 `frequencyScore` column: on a polyseme the word-level number contradicts the gloss
 printed directly above it (干 "to do" = 5, 干 "shield" = 1).
@@ -127,6 +127,14 @@ The chip follows the same sense the card is on: both the cdp and the eip pass th
 host page's live `selectedSenseIndex` as the override, so the meter changes on the tap
 rather than waiting for the persisted `selectedSense` to round-trip back (in the eip's
 case via `useEipTabs.syncEntry`).
+
+**Saved-card cdp — two pickers, one index.** Since it raises the eip itself
+(`VocabCardDetailPage` → `InfoCardSection`), that page shows the picker twice: on the hero
+card face (`EnglishBlock`) and in the panel header. Both are driven by the page's single
+`selectedSenseIndex` state and both persist through the same `handleSelectSense`, so they
+cannot disagree. Note the contrast with the flp/scp, where the panel's index lives per
+entry tab inside `useEipTabs` — the cdp has no entry tabs (it drills in by navigating), so
+page state is the simpler home for it.
 
 The returned `senseLabel` is also what decides the chip's **validation target**: non-null
 → the `senseFrequencyScore` field addressed by that label; null → the entry-level

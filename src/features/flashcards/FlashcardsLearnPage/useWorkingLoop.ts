@@ -6,6 +6,7 @@ import { collectionLaunchParams, collectionMarkFields } from "../collectionRef";
 import { markFlashcard, undoFlashcardMark } from "../../../api/flashcards";
 import { CARD_FLY_OUT_MS } from "../constants";
 import { provisionalWords } from "../../../utils/provisionalCards";
+import { useMarkedLentWords } from "../../../hooks/useMarkedLentWords";
 import type {
     VocabEntry,
     MarkCardResult,
@@ -113,11 +114,19 @@ export interface UseWorkingLoopReturn {
      */
     dropCurrentCard: () => void;
     /**
-     * Temporary (provisional) words this session has shown, accumulated across the
+     * Temporary (provisional) words this session has SHOWN, accumulated across the
      * initial loop AND every refill. Empty when the learner's own deck covered the
-     * session. See docs/PROVISIONAL_CARDS.md.
+     * session. Drives the notice — which announces that borrowed cards are in play, so
+     * it must fire on arrival. See docs/PROVISIONAL_CARDS.md.
      */
     provisionalSeen: string[];
+    /**
+     * Temporary words this session actually REVIEWED — the subset of `provisionalSeen`
+     * the learner marked. Drives the "keep these cards?" offers, which must not ask
+     * about the loop's untouched tail: the loop holds ~10 cards, so a session ended
+     * after three would otherwise offer ten. See docs/PROVISIONAL_CARDS.md § 5.
+     */
+    provisionalReviewed: string[];
 }
 
 /**
@@ -181,6 +190,9 @@ export function useWorkingLoop({
     // them. The ref is the authoritative accumulator; the state exists to re-render.
     const provisionalSeenRef = useRef<Set<string>>(new Set());
     const [provisionalSeen, setProvisionalSeen] = useState<string[]>([]);
+    // The reviewed subset, recorded at the mark call site below. `note` is stable, so
+    // destructuring keeps `markCard`'s identity from churning as words are added.
+    const { words: provisionalReviewed, note: noteMarkedLent } = useMarkedLentWords();
 
     // Fold every lent word the loop has shown into the accumulator. Keyed on the loop
     // itself so refills (a mark's replacement card) are picked up as they land, not
@@ -386,6 +398,10 @@ export function useWorkingLoop({
         // advancing. Send the current working loop's ids so the server doesn't
         // return a duplicate.
         const excludeIds = workingLoop.map(card => card.id);
+        // Recorded on the ATTEMPT, before the request — so a mark the server drops on
+        // cooldown still counts as "the learner reviewed this borrowed word", and the
+        // offer does not race the fire-and-forget response (docs/PROVISIONAL_CARDS.md § 5).
+        noteMarkedLent(currentCard);
         markCard(currentCard.id, isCorrect, markType, excludeIds)
             .then(markResult => {
                 if (!markResult) return;
@@ -463,7 +479,7 @@ export function useWorkingLoop({
         setFlyOut(null);
         cardDragRef.current?.resetDragPosition();
         setIsAnimating(false);
-    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, prefetch, cardDragRef, mode, foreignTrack]);
+    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, noteMarkedLent, prefetch, cardDragRef, mode, foreignTrack]);
 
     /**
      * Remove the card currently on front from the loop, WITHOUT marking it.
@@ -563,7 +579,9 @@ export function useWorkingLoop({
         handleUndoLastMark,
         /** Drop the front card from the loop after its vet row has been deleted. */
         dropCurrentCard,
-        /** Lent words this session has shown; drives the notice + the "keep these" offer. */
+        /** Lent words this session has SHOWN; drives the notice. */
         provisionalSeen,
+        /** Lent words this session REVIEWED; drives the "keep these" offers. */
+        provisionalReviewed,
     };
 }

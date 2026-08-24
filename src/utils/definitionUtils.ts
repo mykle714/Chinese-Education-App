@@ -5,9 +5,26 @@ import { numberedToTonedPinyin, readingSyllableCount } from './textUtils';
  * Strip all parenthetical substrings from a definition string for display.
  * Does not mutate the underlying database value.
  * e.g. "to go (informal); to leave (a place)" → "to go; to leave"
+ * Nesting-aware: "a waiter (literally, one who runs (fast))" → "a waiter".
  */
 export function stripParentheses(text: string): string {
-  return text.replace(/\s*\([^)]*\)/g, '').trim();
+  let out = '';
+  let depth = 0;
+  for (const ch of text) {
+    // A '(' at any depth opens/deepens an aside; a ')' closes one. Tracking depth
+    // (rather than the old /\s*\([^)]*\)/g) is what makes NESTED asides work: the
+    // regex stopped at the FIRST ')', so 的's gloss — which nests a parenthetical
+    // inside a quoted example — leaked its tail onto the flashcard.
+    // Eat any whitespace already emitted before the aside, reproducing the old
+    // regex's leading `\s*` — without this, "to go (informal); to leave" would
+    // render "to go ; to leave" and "[+de (particle)]" would render "[+de ]".
+    if (ch === '(') { if (depth === 0) out = out.replace(/\s+$/, ''); depth++; continue; }
+    // An unmatched ')' (depth already 0) is dropped rather than kept: a lone close
+    // paren is never displayable text, and it is exactly what 加 used to render.
+    if (ch === ')') { if (depth > 0) depth--; continue; }
+    if (depth === 0) out += ch;
+  }
+  return out.trim();
 }
 
 /**
@@ -379,4 +396,16 @@ export function iconSearchTerm(definition: string | null | undefined): string {
   let term = stripParentheses(definition ?? '');
   for (const re of ICON_SEARCH_LEADING_STRIPS) term = term.replace(re, '');
   return term.trim();
+}
+
+/**
+ * True when an entry has anything for the Synonyms / Related Words section to show.
+ *
+ * Lives here rather than beside the component (SynonymsRelatedSection) because both
+ * of that section's hosts gate on it BEFORE deciding whether to draw a container —
+ * the cdp's `SectionCard` and the eip definition tab's ruled block would otherwise be
+ * empty boxes. See docs/VOCAB_ENRICHMENT_IMPLEMENTATION.md.
+ */
+export function hasSynonymsOrRelated(entry: { synonyms?: string[] | null; relatedWords?: unknown[] | null } | null | undefined): boolean {
+  return (entry?.synonyms?.length ?? 0) > 0 || (entry?.relatedWords?.length ?? 0) > 0;
 }

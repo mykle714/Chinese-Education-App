@@ -1,16 +1,14 @@
 import { Box, Typography, Chip, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import { resolveCommonality, resolveLongDefinitionForSense, stripParentheses } from "../../utils/definitionUtils";
+import { resolveCommonality, resolveLongDefinitionForSense, hasSynonymsOrRelated } from "../../utils/definitionUtils";
 import type { VocabEntry } from "../../types";
-import ForeignText from "../../components/ForeignText";
 import LongDefinitionDisplay from "../../components/LongDefinitionDisplay";
-import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
-import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { getCategoryColor } from "../../utils/categoryColors";
 import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
 import BreakdownRow from "./BreakdownRow";
 import DefinitionFacts from "./DefinitionFacts";
+import SynonymsRelatedSection from "./SynonymsRelatedSection";
 import UsedInPaginatedList from "./UsedInPaginatedList";
 import { MetadataChipRow } from "./FlashcardsLearnPage/styled";
 import { FC_FONT } from "./constants";
@@ -134,8 +132,6 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
     const hasDefinitionBox = !!(longDefinition || longDefinitionParts?.length || (entry.partsOfSpeech?.length ?? 0) > 0 || commonality.score != null || entry.difficulty != null);
     const hasExamples = entry.exampleSentences && entry.exampleSentences.length > 0;
     const hasSynonyms = entry.synonyms && entry.synonyms.length > 0;
-    const hasRelatedWords = entry.relatedWords && entry.relatedWords.length > 0;
-    const hasSynonymsOrRelated = hasSynonyms || hasRelatedWords;
 
     return (
         <>
@@ -243,86 +239,31 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
             )}
 
             {/* Synonyms & Related Words — not part of the eip's tabs, so this one box
-                holds both, kept at the very bottom. */}
-            {hasSynonymsOrRelated && (
+                holds both, kept at the very bottom. The lists themselves are the SAME
+                component the eip definition tab renders (SynonymsRelatedSection); only
+                the container and the label styling differ. */}
+            {hasSynonymsOrRelated(entry) && (
                 <SectionCard className="vocab-card-detail__synonyms-related">
-                    {hasSynonyms && (
-                        <>
-                            {/* Synonyms are AI-enriched with no validation field, so the whole
-                                list always carries the AI-generated treatment: one badge for the
-                                section, and each chip gets the shared orange box. */}
-                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                                <SectionLabel className="vocab-card-detail__section-label">Synonyms</SectionLabel>
-                                <AiGeneratedBadge className="vocab-card-detail__synonyms-ai-badge" label="AI GENERATED" />
-                            </Box>
-                            <Box className="vocab-card-detail__synonyms-list" sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                                {entry.synonyms!.map((syn) => {
-                                    const meta = entry.synonymsMetadata?.[syn];
-                                    return (
-                                        <Box
-                                            className="vocab-card-detail__synonym-item vocab-card-detail__synonym-item--ai-generated"
-                                            key={syn}
-                                            sx={{
-                                                ...aiGeneratedSurfaceSx,
-                                                borderRadius: "8px",
-                                                padding: "6px 12px",
-                                                display: "flex",
-                                                flexDirection: "column",
-                                                alignItems: "center",
-                                                gap: "2px",
-                                            }}
-                                        >
-                                            <ForeignText
-                                                size="md"
-                                                compact
-                                                text={syn}
-                                                pronunciation={meta?.pronunciation}
-                                            />
-                                            {meta?.definition && (
-                                                <Typography sx={{ fontSize: SIZE.caption, color: fc.textSecondary, fontFamily: FC_FONT, fontStyle: "italic" }}>
-                                                    {stripParentheses(meta.definition)}
-                                                </Typography>
-                                            )}
-                                        </Box>
-                                    );
-                                })}
-                            </Box>
-                        </>
-                    )}
-                    {hasRelatedWords && (
-                        <>
-                            <SectionLabel className="vocab-card-detail__section-label" sx={hasSynonyms ? { mt: 1 } : undefined}>Related Words</SectionLabel>
-                            <Box className="vocab-card-detail__related-words-list" sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                                {entry.relatedWords!.map((rel) => (
-                                    <Box
-                                        className="vocab-card-detail__related-word-item"
-                                        key={rel.id}
-                                        sx={{
-                                            backgroundColor: fc.subtleBg,
-                                            borderRadius: "8px",
-                                            padding: "6px 12px",
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            alignItems: "center",
-                                            gap: "2px",
-                                        }}
-                                    >
-                                        <ForeignText
-                                            size="md"
-                                            compact
-                                            text={rel.entryKey}
-                                            pronunciation={rel.pronunciation}
-                                        />
-                                        {rel.definition && (
-                                            <Typography sx={{ fontSize: SIZE.caption, color: fc.textSecondary, fontFamily: FC_FONT, fontStyle: "italic" }}>
-                                                {stripParentheses(rel.definition)}
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                ))}
-                            </Box>
-                        </>
-                    )}
+                    <SynonymsRelatedSection
+                        entry={entry}
+                        classPrefix="vocab-card-detail"
+                        renderLabel={(text, extra) =>
+                            extra ? (
+                                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                    <SectionLabel className="vocab-card-detail__section-label">{text}</SectionLabel>
+                                    {extra}
+                                </Box>
+                            ) : (
+                                <SectionLabel
+                                    className="vocab-card-detail__section-label"
+                                    // Breathing room only when a Synonyms list sits above it.
+                                    sx={hasSynonyms ? { mt: 1 } : undefined}
+                                >
+                                    {text}
+                                </SectionLabel>
+                            )
+                        }
+                    />
                 </SectionCard>
             )}
         </>

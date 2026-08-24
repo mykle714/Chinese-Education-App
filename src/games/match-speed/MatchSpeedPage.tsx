@@ -48,6 +48,7 @@ import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
+import { useMarkedLentWords } from "../../hooks/useMarkedLentWords";
 import { provisionalWords } from "../../utils/provisionalCards";
 import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
@@ -145,10 +146,17 @@ const MatchSpeedPage: React.FC = () => {
     // the played set isn't known up front — the notice is the GENERIC form (no word
     // list), per CARD_BASELINE_ITEMIZED in server/contracts/wire.ts.
     const [noticeOpen, setNoticeOpen] = useState(false);
-    // Every lent word this run actually dealt, accumulated as the buffer fills, so the
-    // end-of-run "keep these" offer can name them even though the notice couldn't.
-    const provisionalSeenRef = useRef<Set<string>>(new Set());
-    const [provisionalSeen, setProvisionalSeen] = useState<string[]>([]);
+    // The lent words the player actually REVIEWED this run, which is what the end-of-run
+    // "keep these" offer asks about even though the notice couldn't name anything up
+    // front. This used to accumulate every lent card the buffer FETCHED — a set that
+    // includes cards which never reached the board at all. Destructured because
+    // `note`/`reset` are stable while the object identity is not, and `markCard`'s
+    // identity has to survive a word being added.
+    const {
+        words: markedLentWords,
+        note: noteMarkedLent,
+        reset: resetMarkedLent,
+    } = useMarkedLentWords();
 
     // Mandatory on every game page (CLAUDE.md): an edge swipe would otherwise
     // navigate away mid-run. CSS touch-action can't stop the history gesture.
@@ -261,26 +269,6 @@ const MatchSpeedPage: React.FC = () => {
     );
 
     /**
-     * Record any lent (provisional) words in a freshly-fetched batch, so the
-     * end-of-run "keep these" offer can name them even though the pre-run notice
-     * could not. Returns the batch's lent words. Accumulates across buffer top-ups,
-     * because a long run keeps pulling new cards in.
-     */
-    const noteProvisional = useCallback((cards: VocabEntry[]): string[] => {
-        const words = provisionalWords(cards);
-        if (words.length === 0) return words;
-        let changed = false;
-        for (const word of words) {
-            if (!provisionalSeenRef.current.has(word)) {
-                provisionalSeenRef.current.add(word);
-                changed = true;
-            }
-        }
-        if (changed) setProvisionalSeen([...provisionalSeenRef.current]);
-        return words;
-    }, []);
-
-    /**
      * Restore every bucket toward BUFFER_DEPTH. Fired after each refill tick for
      * exactly what was consumed, so the requests stay small and steady.
      *
@@ -295,7 +283,11 @@ const MatchSpeedPage: React.FC = () => {
         fetchPool(topUpQuery(request), true)
             .then((data) => {
                 if (data) {
-                    noteProvisional(data.cards);
+                    // NOTHING IS ANNOUNCED HERE, deliberately. A top-up may well lend —
+                    // the buffer refills all run — but a modal mid-run costs a
+                    // reaction-time game clock and lands over a board the player is
+                    // mid-tap on. Lent cards arriving mid-run are visible instead
+                    // through the corner badge on the card itself (MatchSpeedCard).
                     fillBuffer(bufferRef.current, data.cards, modeConfig);
                 }
             })
@@ -303,7 +295,7 @@ const MatchSpeedPage: React.FC = () => {
             .finally(() => {
                 topUpInFlightRef.current = false;
             });
-    }, [fetchPool, modeConfig, noteProvisional]);
+    }, [fetchPool, modeConfig]);
 
     /**
      * Hand the board `count` pairs, remembering them as on-board for `exclude`.
@@ -337,8 +329,8 @@ const MatchSpeedPage: React.FC = () => {
         setPhase("loading");
         bufferRef.current = emptyBuffer();
         onBoardIdsRef.current = new Set();
-        provisionalSeenRef.current = new Set();
-        setProvisionalSeen([]);
+        // A replay is judged on its own borrowed words, not the previous run's.
+        resetMarkedLent();
         try {
             const data = await fetchPool(modeConfig.poolQuery);
             if (!data) return;
@@ -362,9 +354,10 @@ const MatchSpeedPage: React.FC = () => {
                 : modeConfig;
             setRelaxed(inModeAvailable === 0);
 
-            // Generic notice only — Match Speed cannot name its set up front.
-            const lent = noteProvisional(data.cards);
-            setNoticeOpen(lent.length > 0);
+            // Generic notice only — Match Speed cannot name its set up front. Fired
+            // from HERE and nowhere else: this is the one moment before the clock
+            // starts, so the notice never interrupts a live run (see topUpBuffer).
+            setNoticeOpen(provisionalWords(data.cards).length > 0);
 
             // A challenge board arrives as one shuffled set of contested + filler
             // (the server never reveals which is which by position — Q74), so the
@@ -401,7 +394,7 @@ const MatchSpeedPage: React.FC = () => {
         // `challengeRound`'s members are stable by construction; the object identity
         // is not, and listing it would re-create `beginRun` on every render.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fetchPool, modeConfig, noteProvisional]);
+    }, [fetchPool, modeConfig, resetMarkedLent]);
 
     // A challenge round that cannot be played is stated, never silently downgraded
     // to a casual run that scores nothing.
@@ -520,6 +513,11 @@ const MatchSpeedPage: React.FC = () => {
             // replacement card the endpoint returns.
             markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE, surface: "match-speed" })
                 .catch((err) => console.error(`[MatchSpeed] mark failed → card ${entry.id}:`, err));
+            // Feeds the end-of-run "keep these cards?" offer. Recorded on the ATTEMPT,
+            // so a miss and a cooldown-suppressed mark both count, and never on the
+            // fetch — the buffer holds cards that never reach the board
+            // (docs/PROVISIONAL_CARDS.md § 5).
+            noteMarkedLent(entry);
             // A challenge round is normal play plus a scored event (§ 5.7). A miss is
             // charged at most once per foreign word per run, which the shared runner
             // enforces off the spec — not here.
@@ -531,7 +529,8 @@ const MatchSpeedPage: React.FC = () => {
         },
         // No `token` dep — markFlashcard reads the header at call time, so this
         // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
-        // The challenge round's emit/isContested are stable by construction.
+        // The challenge round's emit/isContested are stable by construction, as is
+        // `noteMarkedLent` (useCallback with no deps).
         // eslint-disable-next-line react-hooks/exhaustive-deps
         []
     );
@@ -585,10 +584,10 @@ const MatchSpeedPage: React.FC = () => {
 
     const showBoard = phase === "countdown" || phase === "playing" || phase === "ended";
 
-    // End-of-run offer to keep the lent cards; opens a beat after the end popup. By
-    // now the run HAS dealt its cards, so the words it borrowed can finally be named
-    // even though the pre-round notice could not name them.
-    const sortOffer = useProvisionalSortOffer(phase === "ended", provisionalSeen);
+    // End-of-run offer to keep the lent cards; opens a beat after the end popup. Named
+    // from what the player REVIEWED — the pre-round notice could not name anything, and
+    // the served set would include cards that sat in the buffer untouched.
+    const sortOffer = useProvisionalSortOffer(phase === "ended", markedLentWords);
 
     return (
         // Match Speed is a LEAF PAGE (docs/LEAF_NODE_PAGES.md): no footer, DOWN back
@@ -602,6 +601,9 @@ const MatchSpeedPage: React.FC = () => {
             onDismiss={() => setNoticeOpen(false)}
             surfaceName="Match Speed"
             language={(user?.selectedLanguage ?? "zh") as Language}
+            // Match Speed badges its lent cards in-round (MatchSpeedCard), so the
+            // notice teaches the mark instead of only announcing the lending.
+            badgedInRound
         />
         <GameLeafPage
             hue={GAME_HUE}
@@ -819,7 +821,7 @@ const MatchSpeedPage: React.FC = () => {
                 {showBoard && (
                     <ProvisionalSortOffer
                         open={sortOffer.open}
-                        words={provisionalSeen}
+                        words={markedLentWords}
                         language={(user?.selectedLanguage ?? "zh") as Language}
                         onDismiss={sortOffer.dismiss}
                         minimized={sortOffer.minimized}

@@ -319,7 +319,8 @@ and the decisions taken are recorded at the end of this sub-entry.
 - **Clearance re-derived, names kept:** `HEIGHT` 64 → **74**, `INSET` 16 → **0**,
   `EXTRA_GAP` 12 → **16**, so `CLEARANCE` 108 → **90** — which is exactly the
   design's `.clear` spacer. The ~8 downstream call sites
-  (`FlashcardsDecksPage`'s `SHEET_CLOSED_HEIGHT` / `STUDY_AREA_BOTTOM_PAD`,
+  (`FlashcardsDecksPage`'s `SHEET_CLOSED_HEIGHT` / `STUDY_AREA_BOTTOM_PAD` — the
+  former is gone since the sets sheet became modal, see DECKS_FEATURE.md,
   `SortCardsPage`, `DecksPanelBody`, `ComparePage`, `CompareWorkspace`) all compose
   the named constants, so they re-derived themselves with no edit.
 - `src/components/FooterPresenter.tsx` — `HIDDEN_OFFSET` is now just
@@ -435,6 +436,28 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   the live-seconds figure (now a 9px faint suffix on the same line instead of a second
   line under the badge) and the paused state (now a **strikethrough on the count** —
   the old treatment overlaid a large red no-entry glyph, which at 15px would be a smudge).
+- **The flame moved into `PageHeader` itself on 2026-08-24, and is now on EVERY header.**
+  It used to be opt-in — each page passed `<MinutePointsFireBadge />` into `rightContent`
+  — so it appeared on the earning surfaces only, and was simply absent on the menus
+  (Home, Games, Discover, Decks & Cards, Dictionary, Arena, Friends, …), on the cdp, and
+  on two game pages that had forgotten it (Hydra Bubbles, Speed Reading). "Am I earning
+  right now?" is a question the learner can only ask where the answer is drawn, so the
+  header now draws it everywhere: on an ineligible page the badge renders its own IDLE
+  grey, which is the correct answer rather than a missing one. Position is **last in the
+  right slot** (flush right, page actions queueing to its left) so it holds the same
+  screen corner regardless of how many actions a page contributes — the Account artboard
+  draws flame-then-gear, and that one ordering was traded for a fixed position app-wide.
+  All ~12 per-page call sites were deleted; pages no longer import it.
+  Two consequences worth keeping in mind: exactly ONE `PageHeader` may be mounted at a
+  time on an earning page (`useMinutePoints` runs a 1s accrual tick per instance), and
+  the badge renders `null` when signed out.
+- **Eligibility was narrowed in the same pass** so "grey on a menu" is actually true:
+  `MINUTE_POINTS_ELIGIBLE_PAGES` had the bare prefix `/flashcards`, which made the cdp,
+  Decks & Cards, the deck/collection browsers and the mastery centers all accrue minutes.
+  The prefix list is now study surfaces only (`/flashcards/learn`, `/reader`,
+  `/discover/sort`, the games), with the legacy desktop `/flashcards` page moved to a new
+  exact-match list, `MINUTE_POINTS_ELIGIBLE_EXACT_PAGES`, so its browse-screen descendants
+  do not inherit eligibility. See docs/MINUTE_POINTS_SYSTEM.md.
 - **The same glyph now appears wherever a flame does.** `MinutePointsBadge` — the legacy
   circular badge on the old desktop flashcards page — swapped its `@mui/icons-material`
   flame for the `Icon` primitive, so the two never disagree about what a flame looks like;
@@ -1315,7 +1338,10 @@ AREA behind it plus one change inside the sheet.
   row above a 3:4 Study Mix slab became a fanned HAND of three cards with one played
   forward. Bringing a card forward is deliberately NOT starting the session — the front
   card carries the figure and its own `Study now`, so choosing a mode and committing are
-  two taps. Slot assignment is a rule (`FAN_ORDER`), not remembered positions.
+  two taps. The fan is an ordered stack (`HandOrder`, bottom → top), seeded from
+  `FAN_ORDER`; a card is brought forward by TAPPING it, or by SWIPING the front card to the
+  back of the stack in either direction (`useHandSwipe`, added later — see
+  DECKS_FEATURE.md § "The card hand"). Swipe and tap together reach all six arrangements.
 - **The Centers rail (`.ctr2`) moved ABOVE the hand.** This resolves the entry's old
   conflict (a): the artboard has a slot for Reading/Writing Center now. They are a
   different KIND of destination — a place to look at your library by skill, not a session
@@ -1328,13 +1354,19 @@ AREA behind it plus one change inside the sheet.
 - **The `.duebar`** prints the library size and the scope. ⚠️ Its artboard reads
   "24 due today", which the app cannot answer — see DEFERRED_WORK.md item 9.
 
-**Figures.** Each mode's number is the size of the set it draws from, read off the core
-bands and matching the server's own `MODE_CONFIGS`: Mix = everything in rotation,
-Review = Comfortable + Mastered, Challenge = Unfamiliar + Target. `undefined` until the
-counts land, so the cards print an em dash rather than a provisional `0` — `0` is a real
-answer every one of these figures can give. The Review gate is unchanged (its bands are
-EARNED and provisioning cannot fill them); an ineligible card still fires `onStudy` so
-the host can explain rather than leaving a dead card.
+**Figures.** Each mode's number is how many cards it could deal RIGHT NOW — its bands
+minus everything on cooldown: Challenge = Unfamiliar + Target, Review = Comfortable +
+Mastered, Mix = all four. The two halves partition the bands, so Challenge + Review ==
+Mix. `undefined` until the library lands, so the cards print an em dash rather than a
+provisional `0` — `0` is a real answer every one of these figures can give, and a common
+one on a cooldown count. Review's gate reads that ready count and its toast branches on
+whether cards are merely resting; an ineligible card still fires `onStudy` so the host
+can explain rather than leaving a dead card.
+
+⚠️ This entry originally shipped **band totals** with per-card captions (`in rotation` /
+`ready` / `waiting`), and Mix's total omitted Mastered even though its loop deals one
+Mastered card in ten. Both were corrected when the figures became cooldown-aware — see
+DECKS_FEATURE.md § "The card hand" for the current rule.
 
 **Artboard 2b** (sheet minimized) needed no work: it is the same page with the sheet at
 its resting lip, which is the sheet's default state.
@@ -1467,7 +1499,7 @@ the artboard's order:
 
 | Artboard shape | Component | Was |
 |---|---|---|
-| `.hd` right slot | `MinutePointsFireBadge` + the outlined settings `HeaderIconButton` | gear only — **the flame was missing on this page** |
+| `.hd` right slot | the outlined settings `HeaderIconButton` + `MinutePointsFireBadge` | gear only — the flame was missing on this page; since 2026-08-24 `PageHeader` renders it on every header, flush right of the gear (the artboard draws it left of the gear; a fixed screen position won) |
 | `.rw` profile | `Row` (`avatar` / `title` / `subtitle` / `meta`) | bespoke `UserInfoSection` — 56px circular MUI `Avatar`, a hairline divider, three loose `Typography`s |
 | `.shelfhd` "Your library" + total | `SectionHeader` with two `Label`s | absent |
 | `.shelf` | `DeckBuckets` (unchanged) | already converted with A3 |
@@ -2068,11 +2100,24 @@ Hydra's pinyin display genuinely is a live toggle.
 - **A `Know / Read / Write` switcher.** See the **D6 amendment** below.
 - **`WordToolsRail` (`.wtl.top`)** above the card — Write it / Compare. Compare hands the
   word to `/compare` through route state (the cdp has no tab strip to host it in).
-- **`InfoPeek` (`.peek`) + a pull-up sheet.** The definition / breakdown / examples boxes
-  no longer run down the page under the card; they are the SAME `VocabCardSections` in a
-  `SheetPanel` raised from a resting lip, so the cdp and the flp now handle "more about
-  this word" identically. What stays on the page is what the page is for: the card, and
-  how well it is known.
+- **A "More Info" pill + a pull-up sheet.** The definition / breakdown / examples boxes
+  no longer run down the page under the card; they are raised from a capsule floating over
+  the bottom of the page, so the cdp and the flp now handle "more about this word"
+  identically. What stays on the page is what the page is for: the card, and how well it is
+  known.
+  **Amended 2026-08-24 (third pass):** the affordance was briefly `InfoPeek` — a resting
+  sheet LIP spanning the page width. That component is **deleted**; the cdp now raises the
+  sheet from the shared `SheetPill` capsule, which the fdp also uses and which reproduces
+  the flp's `MoreInfoPill` spec. All three surfaces show the same `↑ <label>` pill again.
+  **Amended 2026-08-24 (second pass):** the sheet body was `VocabCardSections` in a
+  `SheetBody`; it is now **the eip proper** — `InfoCardSection` — so the two surfaces share
+  the component, not just the idea. The cdp gains the entry header, the underline tab
+  strip, swipe-between-tabs and the in-panel sense picker; it mounts the panel with **no
+  `tabStrip`** (drill-in navigates instead of opening a nested entry tab) and with
+  **`showSynonymsRelated`**, which appends Synonyms + Related Words under the definition
+  tab — the one thing the old stacked-`SectionCard` body showed that the eip has no tab
+  for. Tab state lives on the page (`infoTab`) and survives closing the sheet; the lip
+  names whichever tab it will reopen on. `SheetBody` is left with no callers.
 
 **Preserved, as the entry required:** the whole card-icon editor overlay
 (`useCardIconEditor` / `CardIconCanvas` / `CardEditToolbar`) is untouched — the peek
@@ -2081,7 +2126,8 @@ greys out while it is open, because the sheet would cover the canvas being edite
 **Code:** `src/components/mastery/MasteryWindow.tsx` (new);
 `src/components/primitives/Segmented.tsx` (new, `.trkseg`);
 `src/components/WordToolsRail.tsx` (new); `src/components/wordToolPill.ts` (new);
-`src/features/flashcards/InfoPeek.tsx` (new);
+`src/components/SheetPill.tsx` (new — the shared pill; superseded `InfoPeek.tsx`, deleted
+2026-08-24);
 `src/features/flashcards/FlashcardsLearnPage/SheetBody.tsx` (new);
 `src/features/flashcards/VocabCardDetailPage.tsx`;
 `src/features/flashcards/VocabCardDetailBody.tsx`;
@@ -2115,10 +2161,17 @@ that card's rail).
 
 ### What landed, artboard by artboard
 
-- **19 · the drill card.** `WordToolsRail` above the card. `InfoPeek` (`.peek`) replaces
-  `MoreInfoPill`: the affordance is now the top EDGE of the panel it opens, not a
-  floating capsule, so nothing has to be learned. Marking is still swiping and the two
-  marks are still the loop's vocabulary — unchanged, and already what the app did.
+- **19 · the drill card.** `WordToolsRail` above the card. `InfoPeek` (`.peek`) replaced
+  `MoreInfoPill` here — but that was **REVERTED on 2026-08-24 at the owner's
+  request**: the flp is back on the centred `MoreInfoPill` capsule
+  (`FlashcardsLearnPage/styled.ts` → `MoreInfoPill`), and later the same day the **cdp**
+  was moved onto the pill too (shared `src/components/SheetPill.tsx`), so `InfoPeek` was
+  deleted and the peek/lip shape ships nowhere. The eip it opens, and everything inside it,
+  is unchanged — only the affordance that raises it. One behaviour was
+  kept from the peek: the pill is **tappable while ghosted** (pre-flip), because that tap
+  is what raises the "flip the card first" tooltip; only the icon-editor `isDisabled`
+  state swallows taps. Marking is still swiping and the two marks are still the loop's
+  vocabulary — unchanged, and already what the app did.
 - **21 · card menu.** `CardOpsRail`. The `•••` expands SIDEWAYS along the card's top edge
   into one row of LABELLED glyphs — no scrim, no dropdown, no fan — so the card stays
   readable underneath (you can still see which card you are deleting) and it closes on
@@ -2169,7 +2222,7 @@ that card's rail).
 - The flp header is down to four controls from five.
 
 **Code (new):** `src/components/WordToolsRail.tsx`, `src/components/wordToolPill.ts`,
-`src/features/flashcards/InfoPeek.tsx`,
+`src/components/SheetPill.tsx` (replaced the short-lived `InfoPeek.tsx`),
 `src/features/flashcards/FlashcardsLearnPage/CardOpsRail.tsx`,
 `src/features/flashcards/cardOpsCell.ts`,
 `src/features/flashcards/DefinitionFacts.tsx`,

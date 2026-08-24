@@ -6,7 +6,7 @@ interface UseCardDragReturn {
     dragPosition: { x: number; y: number };
     isDragging: boolean;
     isFlipped: boolean;
-    setIsFlipped: React.Dispatch<React.SetStateAction<boolean>>;
+    setIsFlipped: (value: boolean) => void;
     // Puts the (restored) card back on Side 2 — used by mark-undo, which brings a
     // card the user has already flipped back into view. Survives the per-card
     // reset effect that would otherwise force Side 1 (see restoreFlippedRef).
@@ -43,7 +43,25 @@ export function useCardDrag(
 
     const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
-    const [isFlipped, setIsFlipped] = useState(false);
+    const [isFlippedRaw, setIsFlippedRaw] = useState(false);
+    // The card (resetKey) the current flip belongs to. A dismiss advances resetKey
+    // one render BEFORE the per-card reset effect below clears the flip, so a raw
+    // isFlipped reads "flipped" for the incoming card for that one render. That
+    // window is not cosmetic: the flp's narration effect derives which face is
+    // showing from isFlipped, and a stale `true` made it auto-play the Chinese
+    // audio over an English Side 1 (see FlashcardsLearnPage's "TTS narration"
+    // effect). Scoping the flip to the card it was made on closes that window
+    // without depending on effect ordering.
+    const flippedForKeyRef = useRef<number | null>(null);
+    const isFlipped = isFlippedRaw && flippedForKeyRef.current === resetKey;
+
+    // Exposed setter — only ever called with `false` (a fresh deck fetch forcing
+    // Side 1), so it clears the owning key alongside the flag.
+    const setIsFlipped = useCallback((value: boolean) => {
+        flippedForKeyRef.current = value ? resetKey : null;
+        setIsFlippedRaw(value);
+        // resetKey is read at call time; a stale closure would mis-key the flip.
+    }, [resetKey]);
     // Tracks whether the user has flipped the current card at least once.
     // Dragging/dismissing is blocked until this is true.
     const [hasFlippedCurrentCard, setHasFlippedCurrentCard] = useState(false);
@@ -91,7 +109,8 @@ export function useCardDrag(
     // Perform the one-way Side 1 → Side 2 flip and arm the lockout. Shared by the
     // touch and mouse tap paths so the lock behaves identically across input types.
     const beginFlip = () => {
-        setIsFlipped(true);
+        flippedForKeyRef.current = resetKey;
+        setIsFlippedRaw(true);
         setHasFlippedCurrentCard(true);
         setShowTapToFlipHint(false);
         flipLockRef.current = true;
@@ -107,7 +126,8 @@ export function useCardDrag(
     // and hasFlippedCurrentCard must be true or the card couldn't be swiped again.
     const restoreFlipped = useCallback((targetResetKey: number) => {
         restoreFlippedForKeyRef.current = targetResetKey;
-        setIsFlipped(true);
+        flippedForKeyRef.current = targetResetKey;
+        setIsFlippedRaw(true);
         setHasFlippedCurrentCard(true);
     }, []);
 
@@ -125,7 +145,8 @@ export function useCardDrag(
         const isUndoRestore = restoreFlippedForKeyRef.current === resetKey;
         restoreFlippedForKeyRef.current = null;
         setHasFlippedCurrentCard(isUndoRestore);
-        setIsFlipped(isUndoRestore);
+        flippedForKeyRef.current = isUndoRestore ? resetKey : null;
+        setIsFlippedRaw(isUndoRestore);
         setShowSwipeHint(false);
         setShowTapToFlipHint(false);
         setShakeNonce(0);

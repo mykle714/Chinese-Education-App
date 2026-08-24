@@ -24,6 +24,7 @@ import type { HydraOutcome, HydraPhase } from "./types";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
+import { useMarkedLentWords } from "../../hooks/useMarkedLentWords";
 import { useColorBuffers } from "./useColorBuffers";
 import HydraLendNotice from "./HydraLendNotice";
 import { API_BASE_URL } from "../../constants";
@@ -150,16 +151,30 @@ const HydraBubblesPage: React.FC = () => {
         return remainingContestedRef.current.size === 0;
     }, []);
 
+    // Borrowed words the player actually matched against this run — the source for the
+    // end-of-run sort offer. Destructured because `note`/`reset` are stable while the
+    // object identity is not: `markCard`'s identity must survive a word being added, or
+    // every recorded mark would rebuild `HydraStage`'s pointer handlers mid-run.
+    const {
+        words: markedLentWords,
+        note: noteMarkedLent,
+        reset: resetMarkedLent,
+    } = useMarkedLentWords();
+
     // ---- Run lifecycle ------------------------------------------------------
     const beginRun = useCallback(() => {
         setScore(0);
         setOutcome(null);
         setPopupMinimized(false);
         setLendNoticeOpen(false);
+        // A replay is judged on its own borrowed words, not the previous run's.
+        resetMarkedLent();
         runIdRef.current += 1;
         setRunId(runIdRef.current);
         setPhase("playing");
-    }, []);
+        // `resetMarkedLent` is stable (useCallback with no deps), so listing it keeps the
+        // lint rule satisfied without making `beginRun` churn.
+    }, [resetMarkedLent]);
 
     useEffect(() => {
         if (!user) {
@@ -251,6 +266,11 @@ const HydraBubblesPage: React.FC = () => {
     const markCard = useCallback((entry: VocabEntry, isCorrect: boolean) => {
         markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE, surface: SURFACE })
             .catch((err) => console.error(`[Hydra] mark failed → card ${entry.id}:`, err));
+        // The end-of-run offer is built from what the player REVIEWED, not from what the
+        // buffers dealt: an endless run pops plenty of bubbles the player never matched.
+        // Recorded here rather than off the response, so a miss and a cooldown-suppressed
+        // mark both count (docs/PROVISIONAL_CARDS.md § 5).
+        noteMarkedLent(entry);
         // A challenge round is normal play plus a scored event (§ 5.7). A wrong match
         // ends the run, so at most one miss is ever emitted.
         challengeRound.emit({
@@ -260,7 +280,8 @@ const HydraBubblesPage: React.FC = () => {
         });
         // No `token` dep — markFlashcard reads the header at call time, so this
         // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
-        // challengeRound's emit/isContested are stable by construction.
+        // challengeRound's emit/isContested are stable by construction, as is
+        // `noteMarkedLent` (useCallback with no deps).
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -287,8 +308,10 @@ const HydraBubblesPage: React.FC = () => {
     // own, so pausing it would be friction over a board that has not moved.
     const framePaused = lendNoticeOpen || backgroundPaused;
 
-    // End-of-run offer to keep the lent cards, a beat after the score card.
-    const lentWords = buffers.lentDrawn().map((card) => card.entryKey);
+    // End-of-run offer to keep the lent cards, a beat after the score card. `buffers`
+    // still tracks what was DEALT (`hasLent` arms the one-shot mid-run notice); the offer
+    // asks only about the cards the player actually matched against.
+    const lentWords = markedLentWords;
     const sortOffer = useProvisionalSortOffer(phase === "over", lentWords);
 
     // The centred column shown INSTEAD of the board (spinner, or the blocked
@@ -440,6 +463,11 @@ const HydraBubblesPage: React.FC = () => {
                                     onScore={setScore}
                                     onGameOver={onGameOver}
                                     onMark={markCard}
+                                    // Minimizing the end popup turns the final board
+                                    // into a no-stakes review playground (matchable,
+                                    // no marks), exactly as Bubble Match does after a
+                                    // loss — docs/HYDRA_BUBBLES.md § 7.6.
+                                    cleanupMode={phase === "over" && popupMinimized}
                                     paused={framePaused}
                                     onFirstLend={() => setLendNoticeOpen(true)}
                                     // Ends a challenge round on its last contested

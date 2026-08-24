@@ -294,8 +294,8 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    does NOT change the card-slot's flow height. Instead, in **advanced** mode (when the
    toolbar grows to three rows) the **card is pushed down** toward the bottom of the
    screen to clear as much of the toolbar as possible: `DraggableCardContainer` takes a
-   `pushDown` prop that **redistributes** its symmetric `48px 40px` padding downward to
-   `72px 40px 24px`, **transitioned** so the card glides down/up. Basic mode keeps the single
+   `pushDown` prop that **redistributes** its `pad.top / pad.bottom` padding downward to
+   `pad.sum / 0`, **transitioned** so the card glides down/up. Basic mode keeps the single
    static row, so the card stays centered.
 
    **The push-down is gated on ACTUAL overlap** — it fires only when
@@ -305,13 +305,15 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    visible below it). `toolbarOverlaps` is computed by **`useToolbarOverlap`**
    (`useToolbarOverlap.ts`): it compares the toolbar's measured bottom edge against where the
    card's TOP would sit in its **centered (non-pushed)** layout. That centered top is derived
-   from the `ContentArea` box + the card's height and the exported slot-padding constants
-   (`CARD_SLOT_TOP_PAD` / `CARD_SLOT_VPAD_SUM` in `styled.ts`). Crucially the card's on-screen
+   from the **card slot's** box + the card's height and the slot padding the page passes in
+   (`cardSlotPadding` in `styled.ts`, measured by `useCardSlotPadding` — see the slot-padding
+   section below). It measures the slot rather than `ContentArea` because the word-tools rail
+   sits above the slot, so the two boxes no longer share a top edge. Crucially the card's on-screen
    height is **invariant to the push** (the size guarantee below), so the decision is computed
    from a value the push never changes — pushing the card can't feed back and un-trigger
    itself (no oscillation). The same `pushDown` gates the card slot's zIndex lift over the pill
    (`FlashCardSection.tsx`): a centered card doesn't reach the pill, so it must not steal the
-   pill's stacking. The hook re-measures on ContentArea/toolbar/card resize, on window resize,
+   pill's stacking. The hook re-measures on slot/toolbar/card resize, on window resize,
    and once after the `CARD_EDIT_ANIM_MS` entry animation settles (the toolbar's `<Slide>`
    transform isn't caught by `ResizeObserver`).
 
@@ -319,22 +321,42 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    size. `DraggableCardContainer` is the `@container` sizing target (`containerType:"size"`)
    and `CardAspectWrapper` fills its padded content box, so a height-bound card's size is
    `containerHeight − (topPad + botPad)`. The push-down therefore keeps the **vertical
-   padding SUM constant at 96px** and only shifts the distribution downward (48/48 → 72/24),
-   keeping the identical size on every viewport. (Growing the sum — the old `148/28` = 176px
+   padding SUM constant** (`pad.sum`) and only shifts the distribution downward
+   (`pad.top`/`pad.bottom` → `pad.sum`/`0`), keeping the identical size on every viewport.
+   (Growing the sum — the old `148/28` = 176px
    — shrank any height-bound card by 80px, the "canvas shrinks on certain screen sizes" bug;
    width-bound narrow viewports were unaffected because vertical padding isn't their size
    constraint.) On tight (height-bound) viewports a full-size card can't fully clear the
    3-row toolbar, so the toolbar simply overlays the top of the card — size preservation
    wins over clearance.
 
-   **The pushed card is BOTTOM-ANCHORED** (`alignItems: flex-end` when `pushDown`), so its
-   bottom margin is a constant 24px (= `botPad`) on **every** viewport — matching the More
-   Info pill's own `bottom: 24` (of `ContentArea`). The card's bottom edge thus lands exactly
-   at the pill's bottom edge, sliding down **just far enough to cover the greyed pill and no
-   further**. Centering alone was not enough: on a width-bound viewport with vertical slack a
-   centered card floats with a large bottom margin and never reaches the pill. `flex-end` only
-   repositions the card (never resizes it), so the flp-size guarantee above still holds. Basic
-   mode keeps `center` + the symmetric 48/48 padding.
+   **The pushed card is BOTTOM-ANCHORED** (`alignItems: flex-end` when `pushDown`) with a
+   `0` bottom pad, so it sits flush with the bottom of the slot on **every** viewport and
+   therefore covers the greyed More Info pill completely — the pill's band is exactly what
+   `pad.bottom` reserves in the unpushed layout — and slides down **no further**. Centering
+   alone was not enough: on a width-bound viewport with vertical slack a centered card floats
+   with a large bottom margin and never reaches the pill. `flex-end` only repositions the card
+   (never resizes it), so the flp-size guarantee above still holds. Basic mode keeps `center`
+   + the measured `pad.top` / `pad.bottom`.
+
+   **Slot padding is MEASURED, and the top pad is the elastic one** (`cardSlotPadding` in
+   `styled.ts`; `useCardSlotPadding.ts` feeds it). Two constraints meet in this one number:
+
+   - `pad.bottom` **reserves the band the More Info pill occupies** (its height plus its
+     `bottom: 24` offset, read live as `ContentArea.clientHeight − pill.offsetTop`, plus an
+     8px gap). The old fixed `48px` bottom pad was *smaller* than that band, so on any
+     viewport short enough to make the card **height-bound** the card's bottom edge ran into
+     the pill. The pill is measured via `offsetTop`/`offsetHeight` rather than
+     `getBoundingClientRect()` on purpose: its discoverability pulse is a `translateY`, and
+     rects include transforms, so a rect read would sample a random animation frame and feed
+     a jittering reservation into the card's size.
+   - `pad.top` is `slotHeight × 0.1`, clamped to `[CARD_SLOT_TOP_PAD_MIN, CARD_SLOT_TOP_PAD_MAX]`
+     = `[12, 48]`. The bottom pad cannot shrink (it is a hard reservation), so on a short slot
+     the reservation is paid out of the whitespace **above** the card instead of out of the
+     card. A roomy slot (≳480px) still rests at the familiar 48px.
+
+   There is no feedback loop: the slot's height comes from the `ContentArea` flex layout and
+   the pill is absolutely positioned, so neither moves when the padding changes.
 
    **Animations (all share one timing — both directions).** The toolbar drop, the
    advanced-rows reveal, and the card push-down all run at `CARD_EDIT_ANIM_MS = 300` with
@@ -353,8 +375,11 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    what makes the **closing** motion match the opening one.
 
    **More Info pill** — stays **drawn but greyed + inert** while editing
-   (`disabled={editMode}` on `InfoPeek`, `FlashcardsLearnPage.tsx` — this was
-   `MoreInfoPill` before the 2026-08-24 redesign), NOT removed.
+   (`isDisabled={editMode}` on `MoreInfoPill`, `FlashcardsLearnPage.tsx`), NOT removed.
+   The 2026-08-24 redesign briefly replaced it with `InfoPeek` (a resting sheet lip); the
+   flp was reverted to the pill the same day, and the cdp followed onto the shared
+   `SheetPill` capsule, so `InfoPeek` is gone (see docs/SHELF_REDESIGN.md artboard 19).
+   The cdp greys its own pill while the editor is open for the same reason.
    In advanced mode the card slides down **over** it: the card slot is raised
    (`zIndex: 3` when `editMode && advMode` in `FlashCardSection.tsx`) above the pill's
    `zIndex: 2`, so the card paints over the pill rather than the pill floating on top.
@@ -658,7 +683,8 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    While editing, minute-points accumulation is **paused** (decorating a card isn't
    study time): the page sets a global flag (`minutePoints/minutePointsPause.ts`) that
    `useMinutePoints` reads to skip its per-second tick, and `MinutePointsFireBadge`
-   greys the flame and overlays a red no-entry symbol.
+   greys the flame and strikes through the count (the red no-entry overlay was dropped in
+   the shelf redesign — at 15px it read as a smudge).
 
 3. **Gesture canvas** (`CardIconCanvas.tsx`) — overlays the back face in **advanced
    mode only** (`editMode && advMode`); basic mode renders the draft through the static

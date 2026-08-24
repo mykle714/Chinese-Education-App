@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   pickSyntheticTarget,
+  SYNTHETIC_EFFORT_MULTIPLIER,
   syntheticScoreAt,
   elapsedFraction,
   pickSyntheticName,
@@ -34,6 +35,9 @@ describe('syntheticScoreAt', () => {
   it('starts at zero and converges exactly on the target', () => {
     for (const seed of SEEDS) {
       expect(syntheticScoreAt(seed, 355, 0)).toBe(0);
+      // Every bot on the board reads exactly 0 at the open instant — nobody
+      // starts an arena with minutes already banked.
+      expect(syntheticScoreAt(seed, 355, Number.MIN_VALUE)).toBe(0);
       expect(syntheticScoreAt(seed, 355, 1)).toBe(355);
     }
   });
@@ -103,9 +107,27 @@ describe('pickSyntheticTarget', () => {
     const observed = [300, 320, 340, 360, 380, 400];
     for (const seed of SEEDS) {
       const t = pickSyntheticTarget(3, seed, observed);
-      // Sampled from the observed range, jittered +/-15%.
-      expect(t).toBeGreaterThanOrEqual(Math.round(300 * 0.85));
-      expect(t).toBeLessThanOrEqual(Math.round(400 * 1.15));
+      // Sampled from the observed range, jittered +/-15%, then nerfed to a
+      // quarter of a real player's week (SYNTHETIC_EFFORT_MULTIPLIER).
+      expect(t).toBeGreaterThanOrEqual(
+        Math.round(300 * 0.85 * SYNTHETIC_EFFORT_MULTIPLIER),
+      );
+      expect(t).toBeLessThanOrEqual(
+        Math.round(400 * 1.15 * SYNTHETIC_EFFORT_MULTIPLIER),
+      );
+    }
+  });
+
+  it('lands well under a real player of the same division', () => {
+    // The point of the nerf: padding fills the middle of the board, it does not
+    // win it. A division-1 bot must not out-earn a modest real division-1 week.
+    for (const seed of SEEDS) {
+      expect(pickSyntheticTarget(1, seed)).toBeLessThanOrEqual(
+        Math.ceil(160 * SYNTHETIC_EFFORT_MULTIPLIER),
+      );
+      expect(pickSyntheticTarget(ARENA_DIVISION_COUNT, seed)).toBeLessThanOrEqual(
+        Math.ceil(820 * SYNTHETIC_EFFORT_MULTIPLIER),
+      );
     }
   });
 

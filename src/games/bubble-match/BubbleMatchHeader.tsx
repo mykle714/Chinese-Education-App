@@ -1,6 +1,5 @@
 import React from "react";
 import { HeaderIconButton, HeaderToggleChip } from "../../components/PageHeader";
-import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { isLatinScriptLang } from "../../components/ForeignText";
 import type { Language } from "../../types";
 
@@ -85,7 +84,6 @@ const BubbleMatchHeaderControls: React.FC<BubbleMatchHeaderControlsProps> = ({
                     autoplay
                 </HeaderToggleChip>
             )}
-            <MinutePointsFireBadge />
         </>
     );
 };

@@ -25,8 +25,8 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 // CARDS themselves.
 //
 // ── Three hosts, one body (docs/DECKS_FEATURE.md § "Mastery Centers") ─────────
-//   fdp (/flashcards/decks)  — variant "sheet", lens core. The persistent pull-up
-//       sheet behind the study buttons.
+//   fdp (/flashcards/decks)  — variant "sheet", lens core. The MODAL pull-up sheet
+//       raised by that page's "Sets & Cards" pill.
 //   Reading Center           — variant "page", lens reading.
 //   Writing Center           — variant "page", lens writing.
 //
@@ -59,11 +59,11 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 //   • the forwarded {root, scroll} handle — `root` is the gesture target that
 //     covers the whole body, `scroll` is the single overflow container whose
 //     scrollTop decides between resizing the sheet and scrolling the content;
-//   • `touchAction: "none"` on the scroller, because SheetPanel routes every
-//     touchmove itself rather than letting the browser scroll natively.
-// As a PAGE body neither applies: the ref is harmless (nothing reads it) and the
-// scroller must keep `touchAction: "pan-y"`, or the page would refuse to scroll at
-// all — nothing is intercepting its touchmoves to scroll it for us.
+//   • `touchAction: "pan-y"` on the scroller. SheetPanel inspects every touchmove
+//     to pick the gesture's mode, but only CANCELS the ones it turns into a resize;
+//     a scroll gesture is left to the browser, which pans this container natively.
+// As a PAGE body the handle is harmless (nothing reads it) and the scroller behaves
+// identically — both variants scroll on the compositor.
 //
 // Structurally it mirrors SettingsPanelBody (the other non-eip sheet body) —
 // same skeleton, different content. Data is owned by `useDecksPanel`; this file is
@@ -216,14 +216,19 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                     flex: 1,
                     minHeight: 0,
                     overflowY: "auto",
-                    // SHEET: SheetPanel owns every touchmove on this body (it decides
-                    // between growing the sheet and scrolling this box), so the browser
-                    // must not also pan it.
-                    // PAGE: nothing is intercepting those touchmoves, so the browser
-                    // must pan it — `none` here would make a Mastery Center unscrollable
-                    // on touch (see CLAUDE.md § Touch & Scroll: scrolling is opt-in, and
-                    // this container is where a Center opts in).
-                    touchAction: isSheet ? "none" : "pan-y",
+                    // `pan-y` in BOTH variants — this container is where the panel
+                    // opts in to scrolling (CLAUDE.md § Touch & Scroll).
+                    // PAGE: nothing intercepts these touchmoves, so the browser pans it.
+                    // SHEET: SheetPanel still decides, on the gesture's first committed
+                    //   move, between growing the sheet and scrolling this box — but it
+                    //   now expresses "scroll" by NOT preventing the default, handing the
+                    //   pan to the browser's compositor. It was `none` while the sheet
+                    //   drove scrollTop from JS on the main thread, which is what made
+                    //   this 470-card body stutter (see SheetPanel.onTouchMove).
+                    touchAction: "pan-y",
+                    // Never chain a scroll or a rubber-band out of the sheet into the
+                    // page behind it now that the browser owns the pan.
+                    overscrollBehavior: "contain",
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",

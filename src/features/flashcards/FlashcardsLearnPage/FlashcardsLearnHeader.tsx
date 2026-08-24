@@ -1,6 +1,5 @@
 import React from "react";
 import PageHeader, { HeaderIconButton, HeaderToggleChip } from "../../../components/PageHeader";
-import MinutePointsFireBadge from "../../../minutePoints/MinutePointsFireBadge";
 import type { LastMarkUndoSnapshot } from "../types";
 import type { Language } from "../../../types";
 
@@ -74,7 +73,6 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
                 label="Open settings"
                 onClick={onSettingsClick}
             />
-            <MinutePointsFireBadge />
         </>
     );
 

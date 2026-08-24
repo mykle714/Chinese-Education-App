@@ -6,7 +6,9 @@ all of it: `src/features/flashcards/FlashcardsLearnPage/SheetPanel.tsx`.
 `SheetPanel` is the generic sheet chrome (scrim + rounded container + grabber +
 optional tab strip). It hosts a *body* that exposes `{root, scroll}` through a
 `SheetPanelBodyHandle` ref: `root` is the element the raw touch listeners bind to,
-`scroll` is the element whose `scrollTop` decides resize-vs-scroll. Current bodies:
+`scroll` is the element whose `scrollTop` decides resize-vs-scroll, and which the
+browser pans natively in `scroll` mode (so it needs `touch-action: pan-y` +
+`overscroll-behavior: contain` — see "Gesture mode lock"). Current bodies:
 `InfoCardPanelBody` (eip), `CompareWorkspace` (compare tab), `SettingsPanelBody`,
 `DecksPanelBody` (the /decks sets sheet — see **Persistent mode** below).
 
@@ -26,14 +28,18 @@ one (scp's draggable cards sit at 1000).
 
 ---
 
-## Two modes: modal (eip) and persistent (/decks)
+## Two modes: modal (every host) and persistent (currently unused)
 
 Everything below describes the **modal** sheet — the eip — which opens with an
-animation, dims the page behind a scrim, and is dismissed by dragging it down.
+animation, dims the page behind a scrim, and is dismissed by dragging it down. **Every
+host is modal today**, including the /decks sets sheet (`FlashcardsDecksPage` →
+`DecksPanelBody`, `variant="sheet"`), which was converted from persistent mode on
+2026-08-24 so its stops and its button-to-open entry point match the eip's.
 
-Passing **`minHeight` > 0** switches the same component into **persistent** mode,
-used by the /decks sets sheet (`FlashcardsDecksPage` → `DecksPanelBody`, `variant="sheet"`). A
-persistent sheet is page furniture rather than a modal:
+Passing **`minHeight` > 0** switches the same component into **persistent** mode. The
+mode is still implemented and still correct, but **no caller passes `minHeight` any
+more** — treat the column below as a spec for the next persistent sheet, not as a
+description of something on screen:
 
 | | modal (`minHeight = 0`, default) | persistent (`minHeight > 0`) |
 |---|---|---|
@@ -51,10 +57,10 @@ minHeight > 0`): `computeSnapTarget` drops its dismiss stop, the mount effect sk
 the open animation, and every `applyResize` floor becomes `minHeightRef.current`
 instead of `0`. There is no second implementation of the gesture model.
 
-**Choosing the resting height.** /decks derives it from the floating footer's own
+**Choosing the resting height.** /decks used to derive it from the floating footer's own
 geometry — `FOOTER_HEIGHT + FOOTER_EXTRA_GAP
-+ SHEET_LIP` — so the lip that shows above the pill (grabber + first caption) survives
-any change to the footer. The footer is rendered at frame level with `zIndex: 100`
++ SHEET_LIP` — so the lip that showed above the pill (grabber + first caption) survived
+any change to the footer. A future persistent sheet should do the same. The footer is rendered at frame level with `zIndex: 100`
 (`FooterPresenter`), well above the sheet's internal `11`, so the pill floats **over**
 the sheet at every height; a persistent sheet's body must therefore reserve
 `FOOTER_CLEARANCE` of bottom padding exactly as a page's scroll area does,
@@ -80,10 +86,9 @@ sheet passes `min > 0`, which suppresses the dismiss stop (see above).
 `collapseRatio` comes from the **`collapseThresholdRatio`** prop and defaults to
 **0.5**, which is exactly the plain "nearest stop wins" midpoint rule. A smaller value
 moves the collapse point **down**, so the sheet springs back open from heights that
-used to close it — a partial pull-down no longer counts as "close it". The /decks
-collections sheet passes **0.3** (`SHEET_COLLAPSE_THRESHOLD_RATIO` in
-`FlashcardsDecksPage.tsx`): it must be dragged below 30% of the closed→max travel
-before a release collapses it. Note this only decides between the two upper stops; a
+used to close it — a partial pull-down no longer counts as "close it". The /decks collections sheet used to pass **0.3** while it was persistent — it had to be
+dragged below 30% of the closed→max travel before a release collapsed it — and now takes
+the default 0.5 along with the rest of the eip's model. Note this only decides between the two upper stops; a
 modal panel's dismiss floor is still its default height, untouched by the ratio.
 
 The open height is a fixed fraction of the screen, deliberately *not* measured from
@@ -120,6 +125,31 @@ gesture to begin scrolling (or vice versa).
 - swipe **up** (`dy > 0`) → `resize` while there is room to grow, else `scroll`
 - swipe **down** (`dy < 0`) → `scroll` while the content is off its top, else `resize`
 
+### Only `resize` is driven by JS; `scroll` is native
+
+The mode decides *who moves the pixels*, and this is the load-bearing part:
+
+| Mode | Driver | `preventDefault()`? |
+|---|---|---|
+| `resize` | `applyResize` → a direct write to `element.style.height` | **yes** |
+| `scroll` | the **browser**, panning the body's scroller | **no** — the handler returns |
+
+A body's scroller therefore MUST carry `touch-action: pan-y` (plus
+`overscroll-behavior: contain`, since the browser now owns the pan and would
+otherwise chain it into the page behind the sheet). `SheetPanel` cancels only the
+touchmoves it converts into a resize, and the mode is locked on the gesture's
+**first** committed move — the one touchmove that is still cancelable — so a resize
+is never lost to a scroll the browser already started.
+
+> **Why (2026-08-24).** `scroll` mode used to do `scrollEl.scrollTop += dy` inside
+> this non-passive handler, with the scroller pinned to `touch-action: none`. That
+> put the scroll on the **main thread**, so every frame of it waited on whatever
+> React/layout work the body was doing. On a light body (the eip) it was invisible;
+> on the decks panel — ~470 mini cards, each with a cpcd row that re-measures itself
+> — it stuttered badly. The tell was that the *identical* card grid on
+> `CollectionViewPage` scrolled fine, because that page has always scrolled
+> natively. Handing `scroll` back to the compositor closed the gap.
+
 ---
 
 ## Release: snap, dismiss, or fling
@@ -134,14 +164,18 @@ On `touchend` (only when the *last* finger lifts):
 1. `resize` mode and height < default → **dismiss**. This is the only way a swipe
    closes the panel.
 2. `|v| < FLING_MIN_VELOCITY` → **settle** (`computeSnapTarget`).
-3. otherwise → **momentum**, locked to the gesture's mode.
+3. otherwise → **momentum** — `resize` mode only. A `scroll` gesture is the
+   browser's, fling included; running our rAF momentum on top of a native fling
+   would double-scroll, so `touchend` returns early for it.
 
 ### Momentum floors at the default height
 
 Momentum in `resize` mode is clamped to `[default, max]` — **not** `[0, max]`. So a
 downward fling coasts to the default height and **stops there; momentum never
-dismisses.** An upward fling stops dead at max. In `scroll` mode momentum stops at the
-content's own bounds and never spills into a panel resize.
+dismisses.** An upward fling stops dead at max. Inertia still cannot cross between
+the two modes — not because momentum is mode-locked (it no longer has a `scroll`
+arm at all), but because the gesture's mode is locked before either kind of inertia
+can start.
 
 Momentum integrates with a capped frame time (`MOMENTUM_MAX_FRAME_MS`, 32ms) so one
 janky frame can't teleport the sheet or wipe out the fling through the
@@ -164,7 +198,63 @@ dismisses immediately. Only the top-most mounted `depth` reacts (module-level
 `dismiss()` is idempotent (`dismissingRef`), stops momentum, animates to 0, and calls
 `onClose` on a `SNAP_DURATION_MS + 20` timer — a timer rather than `transitionend`
 because the duration is ours and a timer can't be missed if the transition is
-interrupted or never fires. Tapping the scrim closes immediately without the shrink.
+interrupted or never fires. **Tapping the scrim goes through `dismiss()` too**; it used
+to call `onClose` directly, so the sheet and its dim vanished in a single frame while
+every other close path shrank.
+
+`dismiss()` also **fades the scrim out** over `SCRIM_FADE_OUT_MS` (= `SNAP_DURATION_MS`),
+so the dim leaves with the sheet instead of staying fully lit for the whole shrink and
+then popping off. The fade IN is the other half and lives elsewhere: a mount-time
+keyframe on `EicScrim` (`eicScrimIn`, 0.18s), because mounting is the whole trigger.
+The fade OUT cannot work that way — only `SheetPanel` knows a dismiss has begun — so it
+is written imperatively (`scrimRef`), for the same reason the height is: a state flag
+would re-render the entire sheet body through the `children` render function on the way
+out. It sets `animation: none` first and flushes, so the transition starts from a real
+computed opacity of 1 rather than from the finished keyframe.
+
+A host that unmounts the panel WITHOUT going through `dismiss()` (a route change, say)
+still gets no fade — there is no animation frame left to play it in.
+
+---
+
+## The scrim covers the screen — and must share the sheet's stacking context
+
+`EicScrim` is `position: absolute; inset: 0`, which dims exactly its nearest positioned
+ancestor. Rendered in place that ancestor was the host page's content area (flp's
+`ContentArea`), so the page's own header stayed bright and the dim read as covering only
+part of the screen. `SheetPanel` therefore **portals** the scrim out, in a layout effect
+that walks up from the mounted sheet (`nearestScrimHost`, `SheetPanel.tsx`).
+
+The host is **not** unconditionally the phone frame. It is the nearest ancestor that
+satisfies BOTH of:
+
+1. **It creates a stacking context** (`transform` / `filter` / `perspective` /
+   `backdrop-filter` / `contain` / `will-change: transform`) — or it IS the frame
+   (`.mobile-demo-frame` / `FrameRoot`), which is where the walk stops.
+2. **It covers the frame** (rect check). An animated inner box could satisfy (1) without
+   filling the screen; hosting there would dim a box instead of the page, so the walk
+   falls back to the frame.
+
+`document.body` is the last-resort fallback.
+
+**Why (1) matters — the cdp bug (fixed 2026-08-24).** z-indexes only compare inside a
+shared stacking context. `NodePage`'s `Surface` carries the page-slide `transform`
+(`usePageSlide`), which both creates a stacking context and becomes the containing block
+for absolute descendants. The sheet's `11 + depth·2` was sealed inside `Surface`, `Surface`
+itself competed at `auto`, and a frame-hosted scrim at `10 + depth·2` painted over the
+entire page **including the sheet** — the cdp's eip looked greyed out the whole time it
+was open. Hosting the scrim inside `Surface` puts the two back in one context. Any new
+page archetype that transforms its surface inherits the fix automatically.
+
+- **Not `position: fixed`** — on desktop that resolves against the viewport and would dim
+  the browser window around the phone card.
+- **Plain pages are unchanged.** flp's content area is `position: relative` with
+  `z-index: auto` and creates no stacking context, so the walk still reaches the frame.
+- **The footer stays above the scrim** (`FooterPresenter`, z-index 100) — it is the
+  frame's furniture, not the page's, and on a slid page it is a sibling of the `Surface`
+  that hosts the scrim. The hosts that open a modal sheet under a visible footer keep it
+  (fdp, cdp). flp is a footerless route and scp hides the footer for the sheet's lifetime
+  (`useHideFooter`).
 
 ---
 
@@ -200,21 +290,71 @@ change. See `InfoCardPanelBody.tsx`'s touchmove handler and the constants block 
 
 ---
 
+## Word-trail transitions (entry pager)
+
+Two horizontal motions live in this panel and they must not fight:
+
+| Motion | Scale | Owner |
+|---|---|---|
+| Sub-tab track (definition / examples / breakdown) | one pane | `InfoCardPanelBody` — declarative transform + `TAB_SWIPE_TRANSITION`, plus the drag path above |
+| **Entry pager** (word ↔ word in the trail) | whole panel body | `InfoCardSection` |
+
+A drill-in (breakdown character, example segment, "used in" row) pushes a **new pill**
+onto the trail whose sub-tab starts at Definitions. Because the body is a single
+persistent instance serving every entry tab, that used to show up as the sub-tab track
+sliding **backwards** to Definitions — motion that read as "you went back" while the
+trail had in fact grown forwards.
+
+Now:
+
+1. **The sub-tab track jumps silently on an entry change.** `InfoCardPanelBody`'s
+   entry-jump `useLayoutEffect` pins the track inline with `transition: none` at the new
+   entry's resting transform, flushes, and hands the position back to the declarative
+   style on the next frame. Its `entryJumpRef` also suppresses the `selectedTab` effect's
+   inline-clear for that one frame (which would otherwise restore the transition and let
+   the suppressed slide play). Both the rAF and the effect cleanup clear the pin, so a
+   second drill-in in the same frame cannot leave the track frozen. The effect depends on
+   `selectedTab` as well as the entry key and gates on the key having actually changed —
+   a plain sub-tab tap keeps its normal slide.
+2. **The panel body slides in from the side the trail moved.** `InfoCardSection` runs a
+   WAAPI enter animation (`ENTRY_SLIDE_TRAVEL_PCT` 34%, `ENTRY_SLIDE_MS` 280ms, easing
+   matched to `TAB_SWIPE_TRANSITION`) on a wrapper around the body whenever the active
+   tab's **id** changes; the direction is the sign of the `activeIndex` delta, so a pushed
+   tab (always appended) enters from the right and tapping a pill to the left enters from
+   the left. Hosts opt in by passing `entryTabId` / `entryTabIndex` (flp and scp do; the
+   cdp has no trail and passes neither, disabling the animation).
+   - It is **enter-only** — the outgoing word's DOM is already gone — which is why the
+     travel is a fraction of the panel width rather than a full page.
+   - It is **imperative, not a keyed remount**: remounting would tear down the three
+     always-mounted panes, re-bind `bodyKey`'s scroll coupling, and drop per-pane scroll.
+   - The wrapper sets `overflow: hidden` only for the animation's duration, so nothing
+     the panel legitimately overhangs with (menus/popovers) is clipped at rest.
+3. **The new pill grows into the strip.** `EipEntryTab` carries a mount-time keyframe
+   (`eipPillIn`, `styled.ts`) animating max-width + horizontal padding + opacity, so the
+   pills already on the strip are pushed aside rather than jumped aside. A pill only ever
+   mounts when a word is added to the trail, so the mount *is* the trigger — no state.
+
+---
+
 ## Referenced code
 
 - `src/features/flashcards/FlashcardsLearnPage/SheetPanel.tsx` — everything above
-  (constants block, `computeSnapTarget`, `writeHeight`/`freezeHeight`/`applyResize`,
+  (the scrim portal host, constants block, `computeSnapTarget`, `writeHeight`/`freezeHeight`/`applyResize`,
   `settle`/`dismiss`, `bindHeaderDrag`, the wheel + touch effect, `startMomentum`)
 - `src/features/flashcards/FlashcardsLearnPage/InfoCardSection.tsx` — eip wiring,
-  `bodyKey` (re-binds the coupling when the active tab's scroller changes)
+  `bodyKey` (re-binds the coupling when the active tab's scroller changes), the entry
+  pager slide (`entryTabId` / `entryTabIndex`)
 - `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx` — body handle,
-  per-pane scrollers, horizontal tab-swipe axis lock, end-of-strip rubber-band
+  per-pane scrollers, horizontal tab-swipe axis lock, end-of-strip rubber-band, the
+  entry-jump layout effect (`entryJumpRef`)
+- `src/features/flashcards/FlashcardsLearnPage/styled.ts` — `EipEntryTab` + the
+  `eipPillIn` entrance keyframes
 - `src/features/flashcards/constants.ts` — `TAB_SWIPE_*` gesture constants
   (axis lock, commit ratio, transition, edge rubber-band)
 - `src/components/CompareWorkspace.tsx`, `SettingsPanelBody.tsx` — other sheet bodies
-- `src/features/flashcards/DecksPanelBody.tsx` + `FlashcardsDecksPage.tsx` — the
-  persistent-mode host (`SHEET_LIP`/`SHEET_CLOSED_HEIGHT`, `SHEET_COLLAPSE_THRESHOLD_RATIO`,
-  `minHeight`, `showScrim={false}`, `collapseThresholdRatio`)
+- `src/features/flashcards/DecksPanelBody.tsx` + `FlashcardsDecksPage.tsx` — a second
+  MODAL host (`sheetOpen`, `.flashcards-decks__sets-pill`). It was persistent mode's only
+  caller until 2026-08-24; that mode now has no callers
 - `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` — tab state + drill-in
   lookups (`openForRoot`, `openForEntryKey`, `clear`); takes an optional `language` that
   scopes those lookups

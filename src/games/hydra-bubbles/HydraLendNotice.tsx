@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Button, Typography } from "@mui/material";
 import { WEIGHT } from "../../theme/scale";
 import { COLORS } from "../../theme/colors";
+import { LentCardIcon } from "../../components/LentCardBadge";
 
 /**
  * Hydra Bubbles — the one-shot mid-run lending notice (docs/HYDRA_BUBBLES.md § 6.4).
@@ -55,6 +56,12 @@ const HydraLendNotice: React.FC<HydraLendNoticeProps> = ({ open, onDismiss }) =>
                     boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
                 }}
             >
+                {/* The same mark Match Speed puts in a lent card's corner and the
+                    shared pre-round notice heads with — one icon for "borrowed" across
+                    the app (src/components/LentCardBadge.tsx). Hydra's bubbles are too
+                    small to carry the badge itself, so here it is purely the shared
+                    vocabulary. */}
+                <LentCardIcon size={30} className="hydra-lend-notice__lent-icon" />
                 <Typography
                     className="hydra-lend-notice__title"
                     sx={{ fontSize: 16, fontWeight: WEIGHT.bold }}

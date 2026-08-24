@@ -19,11 +19,18 @@ depends on the answer:
   user before running the `down`/`up --build` step unless they've already told you to
   proceed.
 
-- **If this is the DEV machine** — do **NOT** deploy from here. You cannot reach the
-  prod containers. Your job is only to prepare the code: run `npm run build`, run the
-  tests, then commit and push to `origin main`. The actual deploy happens later on the
-  prod machine (by you or the user running this skill there). Stop after the push and
-  tell the user the code is ready to deploy from prod.
+- **If this is the DEV machine** — prepare the code first: run `npm run build`, run the
+  tests, then commit and push to `origin main`. Then **run the deploy yourself over SSH**
+  — see [`/ssh-prod`](./ssh-prod.md). Prod is a separate machine, but it is reachable from
+  the dev box at `michael@174.127.171.187` with `~/.ssh/id_ed25519_cow_prod`, so there is
+  no need to hand the user a copy-paste block.
+
+  The confirmation rule is unchanged and matters more here, not less: the
+  `down`/`up --build` step **takes the live site down for real users**, so confirm before
+  running it unless the user has already said to proceed. Everything else in this skill
+  still applies verbatim — never `down -v`, derive pending migrations from
+  `schema_migrations` + `migrate.sh --dry-run` rather than a runbook banner, and record
+  each hand-applied migration in `schema_migrations`.
 
 ## Environment
 

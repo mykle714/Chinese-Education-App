@@ -1,11 +1,11 @@
 # Docker Deployment Checklist
 
 ## Pre-Deployment
-- [ ] SSH access to deployment server (174.127.171.180)
+- [ ] SSH access to deployment server (174.127.171.187)
 - [ ] Router admin access for port forwarding
 - [ ] Secure database password and JWT secret ready
 
-## Server Setup (SSH into 174.127.171.180)
+## Server Setup (SSH into 174.127.171.187)
 - [ ] Update system: `sudo apt update && sudo apt upgrade -y`
 - [ ] Install Docker: `curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh`
 - [ ] Install Docker Compose: `sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose`
@@ -58,7 +58,7 @@
 - [ ] Check Docker container status: `docker ps`
 - [ ] Check Docker service logs: `docker-compose -f docker-compose.prod.yml logs`
 - [ ] Verify dictionary counts per language (see verification commands below)
-- [ ] Test external access: http://174.127.171.180
+- [ ] Test external access: http://174.127.171.187
 - [ ] Test from mobile data (outside network)
 - [ ] Verify database connectivity and data persistence
 - [ ] Test dictionary lookup functionality in the app
@@ -87,7 +87,7 @@ docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, de
 ```
 
 ## Important Notes
-- **Your App URL:** http://174.127.171.180
+- **Your App URL:** http://174.127.171.187
 - **Frontend Container:** localhost:3000 (Docker managed)
 - **Backend Container:** localhost:5000 (Docker managed)
 - **Database Container:** PostgreSQL with automatic setup and persistent storage

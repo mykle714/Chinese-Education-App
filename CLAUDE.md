@@ -297,9 +297,14 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **[docs/GLOSS_CONFUSABILITY_DEPLOY_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_DEPLOY_RUNBOOK.md)**
-(migration **154** + the dev→prod `gloss_meaning_groups` push; 154 is order-independent and
-changes no behaviour on its own). Prod is current through migration **153**.
+Current open runbooks: **none for migrations.** Prod is current through migration **154**.
+
+Gloss confusability **half A shipped 2026-08-24**: migration 154 applied and the dev→prod
+`gloss_meaning_groups` push run (7647 rows / 5076 groups, all § 4 checks passed) — its
+runbook is finished and can be deleted. **Half B is built but not deployed:** the runtime
+guard landed in the repo (`b5e2198`) *after* the running prod containers were built, so
+phase 2 is inert — the rows exist and nothing reads them. **The next prod container rebuild
+turns phase 2 on for live users**, and that rebuild needs its own runbook before it happens.
 
 Deployed and retired on 2026-08-23 (runbook deleted): the arena message column (**152**)
 and the card-fill repaint remap (**153**). Split around the rebuild exactly as its runbook

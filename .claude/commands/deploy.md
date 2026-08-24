@@ -1,6 +1,6 @@
 # Deploy to Production
 
-Deploy the current branch to the production server at 174.127.171.180.
+Deploy the current branch to the production server at 174.127.171.187.
 
 ## ⚠️ FIRST: Which machine are you on?
 
@@ -27,7 +27,7 @@ depends on the answer:
 
 ## Environment
 
-- **Server**: 174.127.171.180 — this is the **same machine as dev**. Both dev and prod containers run side by side.
+- **Server**: 174.127.171.187 (hostname `beech-2025`) — a **separate machine from dev**, reachable over SSH (see [`/ssh-prod`](./ssh-prod.md)). Dev runs only `cow-*-local` containers; prod runs only `cow-*-prod`. An older version of this doc claimed they were the same machine with containers side by side — that was wrong, as was the address `174.127.171.180` (nothing answers there).
 - **App directory**: `~/vocabulary-app`
 - **Domain**: `mren.me` — Cloudflare Flexible SSL (Cloudflare terminates HTTPS; server only needs to serve HTTP on port 80)
 - **Access**: When you are invoked *on the prod machine* you have direct Docker + repo access — run the deploy yourself (see "Which machine are you on?" above). When invoked on dev you cannot reach prod at all; only build/test/commit/push. Fall back to handing the user a copy-paste block only for prod commands you genuinely cannot run (e.g. interactive `sudo`).

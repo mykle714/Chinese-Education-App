@@ -2,8 +2,19 @@
 
 **Delete this file once prod is verified.**
 
-**Status: NOT YET DEPLOYED.** Migration 154 has been applied on **dev only**. `push-groups.ts`
-has **never been run against prod**. Prod is currently current through migration **153**.
+**Status: HALF A DEPLOYED AND VERIFIED 2026-08-24.** Migration 154 is applied on prod
+(`max(version)` = 154) and `push-groups.ts` has been run: prod `gloss_meaning_groups` went
+0 → **7647 rows / 5076 groups**, snapshot `zh+es-discoverable-5481rows-7647keys`. All four
+§ 4 checks passed (4a one provenance row; 4b `broken = f` on all four contrast pairs; 4c
+0 oversized groups; 4d `a little`/`a bit`/`a little bit`/`somewhat` all group 44).
+Gold set at push time: recall 8/9 (89%), **must-NOT-block wrong 0/17 (0%)**.
+
+**This runbook is now finished — it may be deleted.** What it does NOT cover is half B:
+the runtime guard exists in the repo (`OnDeckVocabService` → `fetchGroupIds` /
+`glossKeyToGroup`, commit `b5e2198`) but is **NOT in the running prod container**, which
+was built before that commit. Phase 2 is therefore still inert on prod: the rows are there,
+nothing reads them. **The next prod container rebuild turns phase 2 on** — that rebuild is
+half B's deploy and needs its own runbook, per § 0.
 
 > Derive pending work from `schema_migrations` and `migrate.sh --dry-run`, not from this
 > line. If they disagree with this banner, **this banner is the stale one** — that is the

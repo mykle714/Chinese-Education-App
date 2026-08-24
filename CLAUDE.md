@@ -297,7 +297,7 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **none for migrations.** Prod is current through migration **154**.
+Current open runbooks: **[docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md)** (gloss phase-2 half B, the runtime guard — **no migration**; it goes live on the container rebuild). Prod is current through migration **154**.
 
 Gloss confusability **half A shipped 2026-08-24**: migration 154 applied and the dev→prod
 `gloss_meaning_groups` push run (7647 rows / 5076 groups, all § 4 checks passed) — its

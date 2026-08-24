@@ -1,27 +1,33 @@
 # Gloss Confusability — keeping same-meaning cards off one game board
 
-**Status:** Phase 1 **BUILT** (2026-08-22, no migration). Phase 2 **OFFLINE PIPELINE BUILT
-2026-08-24 (migration 154)** — the job runs end to end on the dev box and
-`gloss_meaning_groups` is populated there. **The runtime guard is NOT wired up yet**: § 6's
-`takenGroups` change to the three chokepoints is not written, so the app still behaves
-exactly as phase 1 today. Nothing has been pushed to prod. Every open design question in
-§ 10 was answered 2026-08-22; § 9 carries the residual risks.
+**Status:** Phase 1 **BUILT** (2026-08-22, no migration). Phase 2 offline pipeline **BUILT**
+2026-08-24 (migration 154) and its migration is **live on prod** as of 2026-08-24 (table
+created, empty). Phase 2 runtime guard (§ 6) is **BUILT** 2026-08-24 in
+`OnDeckVocabService.getGameVocabPool`/`getWordSearchGrid`, not yet deployed. It carries no
+migration of its own (154 already covers the table it reads) and needs no cron/ordering
+steps, so it ships through the ordinary `/deploy` flow — no temp runbook. `gloss_meaning_groups`
+is still empty on prod, so even once this code ships the guard is inert until the
+dev-computed groups are pushed up (§ 5a, `push-groups.ts` — not yet run — is what would need
+a runbook, for the prod DB credentials step). Every open design question in § 10 was
+answered 2026-08-22; § 9 carries the residual risks.
 
-**Build status (2026-08-24): the pipeline is BUILT, the runtime is NOT.**
+**Build status (2026-08-24): both halves are BUILT; neither is live for a player yet.**
 
 | Half | State |
 | --- | --- |
 | Offline pipeline (§ 4 steps 1–7) | **BUILT** — `server/scripts/gloss-pipeline/`, runs end to end on dev in ~5 min |
-| `gloss_meaning_groups` (migration 154) | **BUILT AND POPULATED ON DEV** — 7,658 glosses, 5,564 groups. Not on prod |
+| `gloss_meaning_groups` (migration 154) | **BUILT, migration live on prod (empty)** — dev copy has 7,647 glosses, 5,076 groups (§ 8k, post-`stripParentheses`-fix build) |
 | Dev-only build caches (§ 5) | **BUILT** — created by `dev-tables.sql`, deliberately not migrations |
-| Runtime guard (§ 6) | **NOT BUILT** — the three chokepoints still key on dd strings, i.e. phase-1 behaviour |
+| Runtime guard (§ 6) | **BUILT, NOT DEPLOYED** — `OnDeckVocabService.getGameVocabPool` / `getWordSearchGrid` now check `takenGroups` alongside `takenDds`; `MemoryMapService.spawnInto` deliberately untouched (§ 10 opt-out) |
 | Push to prod (§ 5a) | **BUILT, NEVER RUN** — `push-groups.ts`, dry-run verified only |
 
-Because a gloss with no group id imposes no constraint (§ 6 rule 1) and nothing reads the
-table yet, **the built half is inert**: it can be rebuilt, retuned or dropped without
-affecting a single learner. The blocking rule itself lives at
-`server/scripts/gloss-probe/rule.py` → `decide()`; **step 6 calls that, and the runtime
-guard must mirror it — never re-implement it.**
+Because a gloss with no group id imposes no constraint (§ 6 rule 1) and `gloss_meaning_groups`
+is empty on prod, **the guard is inert in production even once its code ships** — every
+`glossKeyToGroup` lookup misses, so behaviour is byte-for-byte phase 1 until § 5a's push
+actually lands rows. It can be deployed, rebuilt, retuned or reverted without affecting a
+single learner ahead of that push. The blocking rule itself lives at
+`server/scripts/gloss-probe/rule.py` → `decide()`; the runtime guard does not re-implement
+it — it only reads the `meaningGroupId` that rule already decided, offline.
 
 **Owner doc for:** the rule that no game may show two cards meaning the same thing at the
 same time, and the offline pipeline that would decide what "the same thing" means.
@@ -396,9 +402,14 @@ makes a dev-authored table acceptable.
 ### As built (2026-08-24)
 
 `push-groups.ts` implements all five requirements above and has been **dry-run verified
-only** — nothing has been pushed to prod, and prod does not yet have migration 154. The
-`/data-prod-to-dev` exclusion warned about below is **now written into that skill**, in its
-own ⛔ section, rather than living only here.
+only** — nothing has been pushed to prod. Migration 154 is live on prod (table created,
+empty) as of 2026-08-24. The `/data-prod-to-dev` exclusion warned about below is **now
+written into that skill**, in its own ⛔ section, rather than living only here.
+
+The pre-flight → push → verification steps for running this on dev are written up as a
+skill: [`/gloss-groups-push`](../.claude/commands/gloss-groups-push.md). It is Track 1
+work — it needs the dev GPU-pipeline box and prod DB credentials, so it can only be run by
+whoever has hands on that machine, not from a prod session.
 
 Two guards worth knowing about, neither of which § 5a asked for but both of which fall out
 of building it:
@@ -444,7 +455,8 @@ and full rebuilds happen only on a deliberate model or template change.
 
 ## 6. Runtime integration
 
-No new chokepoints. The three sets in § 2 change key type:
+**BUILT 2026-08-24**, gated inert by an empty `gloss_meaning_groups` on prod (§ 5a's push
+has not run). No new chokepoints. The three sets in § 2 change key type:
 
 - `OnDeckVocabService.getGameVocabPool` — `takenDds: Set<string>` → also a
   `takenGroups: Set<number>`, loaded for the candidate list in one batched lookup.
@@ -487,7 +499,8 @@ No new chokepoints. The three sets in § 2 change key type:
 
 ## 7. Keeping it up to date — operator instructions
 
-> Written for when phase 2 exists. Nothing below is runnable today.
+> The pipeline and the runtime guard (§ 6) both exist now; § 5a's push to prod is the one
+> step below not yet run.
 
 ### What grows, and how the job notices
 

@@ -443,6 +443,35 @@ export class OnDeckVocabService {
   }
 
   /**
+   * Batch-resolve dd collision keys (`ddCollisionKey`) to their phase-2 near-miss
+   * `meaningGroupId` (`gloss_meaning_groups`, migration 154 — docs/GLOSS_CONFUSABILITY.md
+   * § 6). A key absent from the returned map has not been clustered (or was clustered
+   * as a singleton with no near-miss partner) — callers MUST treat a missing key as
+   * "does not collide," never as a group of its own. This is the "no group id ⇒ no
+   * constraint" invariant the design doc requires: the guard degrades to phase-1
+   * (exact-dd only) behavior for any word the offline pipeline hasn't reached yet.
+   */
+  private async fetchGroupIds(
+    client: PoolClient,
+    glossKeys: string[]
+  ): Promise<Map<string, number>> {
+    const map = new Map<string, number>();
+    const unique = Array.from(new Set(glossKeys.filter((key): key is string => Boolean(key))));
+    if (unique.length === 0) return map;
+
+    const result = await client.query<{ glossKey: string; meaningGroupId: number }>(`
+      SELECT "glossKey", "meaningGroupId"
+      FROM gloss_meaning_groups
+      WHERE "glossKey" = ANY($1::text[])
+    `, [unique]);
+
+    for (const row of result.rows) {
+      map.set(row.glossKey, row.meaningGroupId);
+    }
+    return map;
+  }
+
+  /**
    * Lend `need` cards for a GAME pool and hand them back as playable candidates.
    *
    * The game half of the last fill tier. All policy lives in
@@ -1642,6 +1671,36 @@ export class OnDeckVocabService {
       // with a bubble already on screen — the exact same reason `excludeIds` itself
       // exists, one level up from identity.
       const takenDds = await this.fetchDdKeys(client, userId, language, excludeIds);
+
+      // PHASE 2 NEAR-MISS GUARD (docs/GLOSS_CONFUSABILITY.md § 6). Resolve every
+      // candidate's dd key to its precomputed `meaningGroupId` in one batch — the
+      // same offline clustering `ddCollisionKey` glossKeys are looked up against —
+      // then walk `takenGroups` alongside `takenDds` in `drain()` below. A key with
+      // no row in `gloss_meaning_groups` is simply absent from the map (see
+      // `fetchGroupIds`), so words the pipeline hasn't clustered yet never block.
+      const candidateDdKeys = [
+        ...takenDds,
+        ...Object.values(eligible).flat().map(ddCollisionKey),
+        ...Object.values(cooled).flat().map(ddCollisionKey),
+        ...Object.values(avoided).flat().map(ddCollisionKey),
+      ];
+      const glossKeyToGroup = await this.fetchGroupIds(client, candidateDdKeys);
+      const takenGroups = new Set<number>();
+      for (const key of takenDds) {
+        const groupId = glossKeyToGroup.get(key);
+        if (groupId !== undefined) takenGroups.add(groupId);
+      }
+
+      // HARD everywhere except the two cases lending itself can't run — must mirror
+      // `mayLend` exactly (declared again, unchanged, at tier 5 below) so the two can
+      // never drift apart: a collection-restricted round, and a partial refill that
+      // isn't a rolling-supply surface, both have no fallback to grow into if the
+      // near-miss guard shortens the board, so those two admit a same-meaning-group
+      // card rather than come back short. Exact-dd collisions (`takenDds` above) stay
+      // hard in both cases — identical strings collide regardless.
+      const mayLend = opts.need === undefined || opts.lendOnRefill === true;
+      const groupGuardHard = !opts.collection && mayLend;
+
       // Pop up to `limit` not-yet-selected cards off one category queue.
       const drain = (queue: VocabEntry[], limit: number): void => {
         while (limit > 0 && queue.length > 0) {
@@ -1652,7 +1711,10 @@ export class OnDeckVocabService {
           // An empty key means "no dd to confuse anyone with" and never collides.
           const ddKey = ddCollisionKey(card);
           if (ddKey && takenDds.has(ddKey)) continue;
+          const groupId = ddKey ? glossKeyToGroup.get(ddKey) : undefined;
+          if (groupGuardHard && groupId !== undefined && takenGroups.has(groupId)) continue;
           if (ddKey) takenDds.add(ddKey);
+          if (groupId !== undefined) takenGroups.add(groupId);
           selectedIds.add(card.id);
           cards.push(card);
           limit--;
@@ -1764,7 +1826,7 @@ export class OnDeckVocabService {
       //
       //    The collection exemption has NO opt-out: a restricted round plays the set
       //    the learner chose, rolling supply or not (docs/HYDRA_BUBBLES.md § 6.3).
-      const mayLend = opts.need === undefined || opts.lendOnRefill === true;
+      //    (`mayLend` declared once, above — see the near-miss guard comment there.)
       if (cards.length < target && !opts.collection && mayLend) {
         const lent = await this.lendGameCandidates(
           client, userId, language, target - cards.length, gameMarkType, now,
@@ -1942,6 +2004,26 @@ export class OnDeckVocabService {
       // words back out of `selected`, and a dropped word's dd must become available
       // again or the replacement pass would be excluding a gloss nothing is showing.
       const takenDds = new Set<string>();
+
+      // PHASE 2 NEAR-MISS GUARD (docs/GLOSS_CONFUSABILITY.md § 6), mirroring
+      // `getGameVocabPool`'s `takenGroups`/`glossKeyToGroup`. Word Search has no
+      // `need`/`lendOnRefill` split — a collection-restricted grid is the only round
+      // that never lends — so the guard is hard unless `collection` is set. Unlike
+      // `takenDds`, `glossKeyToGroup` grows over the method's lifetime: challenge
+      // filler and lent rows are fetched AFTER this initial batch (below), so
+      // `loadGroupsFor` re-queries for any new key not already resolved.
+      const glossKeyToGroup = new Map<string, number>();
+      const loadGroupsFor = async (rows: VocabEntry[]): Promise<void> => {
+        const keys = rows.map(ddCollisionKey).filter((key): key is string => Boolean(key));
+        const missing = keys.filter((key) => !glossKeyToGroup.has(key));
+        if (missing.length === 0) return;
+        const found = await this.fetchGroupIds(client, missing);
+        for (const [key, groupId] of found) glossKeyToGroup.set(key, groupId);
+      };
+      await loadGroupsFor([...Object.values(eligible).flat(), ...Object.values(cooled).flat()]);
+      const takenGroups = new Set<number>();
+      const groupGuardHard = !collection;
+
       // Pop up to `limit` unused cards from one queue into `selected`.
       const drain = (queue: VocabEntry[], limit: number): void => {
         while (limit > 0 && queue.length > 0) {
@@ -1949,7 +2031,10 @@ export class OnDeckVocabService {
           if (selectedIds.has(card.id)) continue;
           const ddKey = ddCollisionKey(card);
           if (ddKey && takenDds.has(ddKey)) continue;
+          const groupId = ddKey ? glossKeyToGroup.get(ddKey) : undefined;
+          if (groupGuardHard && groupId !== undefined && takenGroups.has(groupId)) continue;
           if (ddKey) takenDds.add(ddKey);
+          if (groupId !== undefined) takenGroups.add(groupId);
           selectedIds.add(card.id);
           selected.push(card);
           limit--;
@@ -1997,6 +2082,7 @@ export class OnDeckVocabService {
           client, userId, language, fillerIds, gameMarkType, now, 4, true
         );
         (eligible['Target'] ??= []).push(...fillerRows.filter((row) => !selectedIds.has(row.id)));
+        await loadGroupsFor(fillerRows);
         // Top up to `total` from that same filler queue when contested words were
         // dropped for length (> 4 characters cannot be placed) or have no vet row.
         drain(eligible['Target'], Math.max(0, total - selected.length));
@@ -2039,6 +2125,7 @@ export class OnDeckVocabService {
         // Unshift: freshly lent words go to the FRONT of the Unfamiliar queue, ahead
         // of any Unfamiliar card the quota pass left behind.
         (eligible['Unfamiliar'] ??= []).unshift(...lent);
+        await loadGroupsFor(lent);
         drain(eligible['Unfamiliar'], total - selected.length);
       }
 
@@ -2069,6 +2156,11 @@ export class OnDeckVocabService {
         // Release the evicted word's dd so a replacement may legitimately reuse it.
         const victimDd = ddCollisionKey(victim);
         if (victimDd) takenDds.delete(victimDd);
+        // Same release for its near-miss group (§ 6) — correct under the hard guard,
+        // where at most one selected card can ever hold a given group id at once, so
+        // there is nothing else still relying on the group being held.
+        const victimGroupId = victimDd ? glossKeyToGroup.get(victimDd) : undefined;
+        if (victimGroupId !== undefined) takenGroups.delete(victimGroupId);
 
         const replacement = pullReplacement(victim.category);
         if (!replacement) break; // library exhausted — can't reach a clean `total`

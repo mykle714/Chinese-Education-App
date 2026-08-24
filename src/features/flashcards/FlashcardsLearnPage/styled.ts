@@ -81,74 +81,86 @@ export const InfoSheetEntryHeader = styled(Box)(({ theme }) => ({
 // when only the root entry is open (EipTabStrip handles that). Padding mirrors
 // InfoSheetTabStrip's horizontal padding so tab edges align with the
 // underline tab strip below.
+// `.wtrail` — the WORD TRAIL: the words that have been opened in this panel, and how
+// you get back to one. NOT a second content tab strip: the three content tabs
+// (definition / examples / breakdown) are `InfoSheetTabStrip` directly below it, and
+// two underline strips stacked would have read as one two-row control.
+//
+// That distinction is why the trail's pills are ROUNDED and FILLED while the content
+// tabs are underlined — the two strips answer different questions ("which word?" vs
+// "what about it?"), so they are deliberately different shapes.
 export const EipTabStripContainer = styled(Box)(({ theme }) => ({
     display: "flex",
-    gap: 4,
-    padding: "6px 14px 0",
+    alignItems: "center",
+    gap: 7,
+    padding: "11px 16px 12px",
     borderBottom: `1px solid ${theme.palette.flashcard.border}`,
     flexShrink: 0,
     overflow: "hidden",
 }));
 
-// Single "entry tab" pill. Active tab gets a low-alpha fill in its assigned
-// tone color; inactive tabs are transparent. Chinese label only (no pinyin).
+// One word in the trail. The showing word is INK; the rest are grey — a plain
+// present/absent contrast rather than a per-tab hue.
+//
+// The tone-coloured fill this used to carry is gone. Tone colour means ONE thing in
+// this app (a syllable's tone, D2b), and a pill tinted by a colour picked at random
+// from the tone palette was borrowing that vocabulary to say "tab 3" — on a strip
+// sitting directly above cpcd rows where the same five colours mean their real thing.
+// `toneColor` survives on the tab MODEL (useEipTabs) because nothing else assigns tab
+// identity yet; it is simply no longer painted.
 export const EipEntryTab = styled(Box, {
     shouldForwardProp: (prop) => prop !== "isActive" && prop !== "toneColor",
-})<{ isActive: boolean; toneColor: string }>(({ isActive, toneColor, theme }) => ({
+})<{ isActive: boolean; toneColor: string }>(({ isActive, theme }) => ({
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "6px 12px",
-    borderRadius: "8px 8px 0 0",
-    background: isActive ? alpha(toneColor, 0.22) : "transparent",
-    borderBottom: isActive ? `2px solid ${toneColor}` : "2px solid transparent",
-    marginBottom: -1,
+    padding: "6px 11px",
+    borderRadius: "999px",
+    background: isActive ? COLORS.onSurface : COLORS.grey,
+    color: isActive ? COLORS.white : theme.palette.flashcard.textSecondary,
     cursor: "pointer",
     fontFamily: FONTS.cjk,
-    fontSize: SIZE.body,
-    fontWeight: WEIGHT.semibold,
-    color: theme.palette.flashcard.onSurface,
+    fontSize: 14,
+    fontWeight: WEIGHT.bold,
+    letterSpacing: "0.01em",
     lineHeight: 1.1,
     userSelect: "none",
     whiteSpace: "nowrap",
     transition: "background 0.15s ease",
     flexShrink: 0,
-    "&:hover": {
-        background: alpha(toneColor, isActive ? 0.28 : 0.1),
-    },
 }));
 
-// Flex row of underline-style tab buttons.
+// `.tabs2` — the eip's CONTENT tabs: which question about this word is being
+// answered. Underlined rather than filled, because the word trail directly above it is
+// the filled shape; the two strips must not read as one two-row control.
 export const InfoSheetTabStrip = styled(Box)(({ theme }) => ({
     display: "flex",
-    gap: 4,
-    padding: "0 14px 12px",
+    gap: 0,
+    padding: "0 14px",
     borderBottom: `1px solid ${theme.palette.flashcard.border}`,
     flexShrink: 0,
 }));
 
-// Individual underline tab inside the tab strip.
-// Active tab shows a 2px ink underline; inactive is transparent.
+// One content tab. The active one is inked and carries a 2px underline drawn as an
+// INSET SHADOW rather than a border: a border changes the box's height, so the strip
+// used to shift by a pixel as the selection moved.
+//
+// An EMPTY tab (no examples, no breakdown) stays legible but is dimmed — it is still a
+// real destination that says "nothing here for this word", which is an answer.
 export const InfoSheetTab = styled(Box, {
     shouldForwardProp: (prop) => prop !== "isActive" && prop !== "isEmpty",
 })<{ isActive: boolean; isEmpty?: boolean }>(({ isActive, isEmpty, theme }) => ({
     flex: 1,
-    padding: "8px 4px 10px",
+    textAlign: "center",
+    padding: "11px 2px 10px",
     background: "transparent",
     border: "none",
     cursor: "pointer",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 4,
-    borderBottom: isActive
-        ? `2px solid ${theme.palette.flashcard.tabUnderline}`
-        : "2px solid transparent",
-    marginBottom: -1,
+    boxShadow: isActive ? `inset 0 -2px 0 ${theme.palette.flashcard.tabUnderline}` : "none",
     fontFamily: FC_FONT,
     userSelect: "none",
     opacity: isEmpty && !isActive ? 0.4 : 1,
-    transition: "opacity 0.2s ease",
+    transition: "opacity 0.2s ease, box-shadow 0.2s ease",
 }));
 
 export const ArrowIndicator = styled(Box)(({ theme }) => ({

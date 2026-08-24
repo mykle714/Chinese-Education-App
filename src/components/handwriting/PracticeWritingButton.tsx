@@ -2,15 +2,15 @@
  * PracticeWritingButton — the "Practice Writing Me" entry point.
  *
  * A self-contained button that opens the writing-practice popup for a target
- * word. Placed in the eip definition tab's action bar (labelled variant), on the
- * flp main flashcard (back face only, stacked above the audio icon — icon variant),
- * and on the word details page (cdp). Chinese-only for now (the recognizer is
- * zh_CN); renders nothing for other languages.
+ * word. It has three appearances and one behaviour (see `appearance`): the `.wtl`
+ * word-tools rail above the card on the flp and the cdp (rail), the dictionary cdp's
+ * card face (icon), and any plain action row (labeled). Chinese-only for now (the
+ * recognizer is zh_CN); renders nothing for other languages.
  *
  * Spec: docs/HANDWRITING_RECOGNITION.md ("Entry points").
  */
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, IconButton, Tooltip } from "@mui/material";
+import { Badge, Button, IconButton, Tooltip, Typography } from "@mui/material";
 // Writing practice uses the pencil; the flp icon-layout "edit" uses the brush
 // (the two were swapped per design).
 import EditIcon from "@mui/icons-material/Edit";
@@ -18,6 +18,8 @@ import PracticeWritingPopup from "./PracticeWritingPopup";
 import { useAuth } from "../../AuthContext";
 import { fetchCompletedLevels } from "./completions";
 import { markFlashcard } from "../../api/flashcards";
+import Icon from "../Icon";
+import { WORD_TOOL_PILL_SX } from "../wordToolPill";
 
 interface PracticeWritingButtonProps {
   character: string;
@@ -29,11 +31,22 @@ interface PracticeWritingButtonProps {
    * omit on the read-only dictionary cdp (no card to mark).
    */
   vocabEntryId?: number;
-  /** Override the default outlined look. */
+  /** Override the default outlined look. Ignored by the `rail` appearance. */
   variant?: "text" | "outlined" | "contained";
   size?: "small" | "medium" | "large";
-  /** Compact icon button for tight headers (e.g. the flashcard's action column). */
-  iconOnly?: boolean;
+  /**
+   * Which of the three shapes this entry point takes. One component rather than three
+   * because the star fetch, the popup and the Writing mark are the same behaviour on
+   * every surface — only the trigger's shape differs.
+   *
+   *   `labeled` — the default MUI outlined button, "Practice Writing Me".
+   *   `icon`    — a compact icon button for a tight action column (the dictionary
+   *               cdp's card face). Was the `iconOnly` flag.
+   *   `rail`    — the shelf system's `.wtl` pill, "Write it", for `WordToolsRail`
+   *               (artboards 18–25). Its look comes from WORD_TOOL_PILL_SX so the two
+   *               pills on that rail cannot drift apart.
+   */
+  appearance?: "labeled" | "icon" | "rail";
   /** Hide the gold ★N completion superscript (e.g. on the flashcard, for a clean face). */
   hideStarBadge?: boolean;
 }
@@ -44,7 +57,7 @@ export default function PracticeWritingButton({
   vocabEntryId,
   variant = "outlined",
   size = "small",
-  iconOnly = false,
+  appearance = "labeled",
   hideStarBadge = false,
 }: PracticeWritingButtonProps) {
   const { token, isAuthenticated } = useAuth();
@@ -134,36 +147,56 @@ export default function PracticeWritingButton({
     );
   };
 
+  // The three triggers, keyed by appearance. Each is wrapped in the same star badge
+  // and opens the same popup below.
+  const trigger =
+    appearance === "icon" ? (
+      <Tooltip title="Practice writing me">
+        <IconButton
+          className="practice-writing-button"
+          size={size === "large" ? "medium" : "small"}
+          aria-label="Practice writing me"
+          onClick={openPopup}
+          onMouseDown={stop}
+          onTouchStart={stop}
+          onTouchEnd={stop}
+        >
+          <EditIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+    ) : appearance === "rail" ? (
+      // "Write it", not "Practice Writing Me": the rail sits beside "Compare", and a
+      // four-word label next to a one-word one makes the pair read as one button and
+      // one sentence. The glyph is the design's `draw`, not the MUI pencil, so the
+      // rail's two icons come from the same face.
+      <Typography
+        component="button"
+        type="button"
+        className="practice-writing-button practice-writing-button--rail"
+        onClick={openPopup}
+        onMouseDown={stop}
+        onTouchStart={stop}
+        sx={WORD_TOOL_PILL_SX}
+      >
+        <Icon name="draw" size={17} />
+        Write it
+      </Typography>
+    ) : (
+      <Button
+        className="practice-writing-button"
+        variant={variant}
+        size={size}
+        startIcon={<EditIcon />}
+        onClick={openPopup}
+        onMouseDown={stop}
+      >
+        Practice Writing Me
+      </Button>
+    );
+
   return (
     <>
-      {iconOnly
-        ? withStarBadge(
-            <Tooltip title="Practice writing me">
-              <IconButton
-                className="practice-writing-button"
-                size={size === "large" ? "medium" : "small"}
-                aria-label="Practice writing me"
-                onClick={openPopup}
-                onMouseDown={stop}
-                onTouchStart={stop}
-                onTouchEnd={stop}
-              >
-                <EditIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>,
-          )
-        : withStarBadge(
-            <Button
-              className="practice-writing-button"
-              variant={variant}
-              size={size}
-              startIcon={<EditIcon />}
-              onClick={openPopup}
-              onMouseDown={stop}
-            >
-              Practice Writing Me
-            </Button>,
-          )}
+      {withStarBadge(trigger)}
       <PracticeWritingPopup
         open={open}
         character={character}

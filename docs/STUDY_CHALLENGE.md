@@ -357,7 +357,7 @@ use. "Monday" here therefore means Monday 04:00 → Tuesday 04:00 in that user's
 
 | Boundary | Whose clock | Exact instant |
 |---|---|---|
-| Issue window opens | **nobody's — it is global** | Monday **00:00 UTC** (see the week counter below) |
+| Issue window opens | **the challenger's own** | Monday **04:00 local** (see "When a week opens" below) |
 | Accept deadline | **challengee's** | **Wednesday 04:00 local** (i.e. the end of their Tuesday) |
 | Test window opens | **each player's own** | Friday 04:00 local |
 | Test window closes | **each player's own** | Monday 04:00 local — the instant the next issue window opens |
@@ -381,6 +381,46 @@ Boundaries are computed on demand from the stored **week index** plus each user'
 timezone — **not** stored as pre-computed local timestamps, which would go stale the
 moment a player travels.
 
+### When a week opens (2026-08-23)
+
+**A player's challenge week opens at 04:00 on their own Monday**, like every other
+boundary in the app, and a challenge they issue is stamped with the week that is
+current *for them* — `localChallengeWeekIndex(challengerTz, now)`
+(`server/shared/challengeWeek.ts`), not the UTC counter's roll.
+
+Naming the week in UTC (below) and *starting* it in UTC are different decisions, and
+for a while the code did both. Stamping from the counter was not merely early or late:
+
+| Challenger's zone | What the UTC stamp did | Effect |
+|---|---|---|
+| **East of UTC** (e.g. Shanghai, whose Monday 04:00 is Sun 20:00 UTC) | issued into the **outgoing** week for the 4h before the roll | the challenge was born **past its Wednesday accept deadline** — nobody could accept it, and it occupied the pair's *previous* week |
+| **West of UTC** (e.g. Los Angeles, whose Monday 04:00 is 11h after the roll) | issued into the **incoming** week from Sunday evening | harmless, just early |
+
+⚠️ **The two players' weeks therefore roll at different instants**, and in the hours
+between them a pair disagrees about which week it is. Two different week indices never
+collide on `study_challenges_pair_week_uniq`, so the unique index no longer contains a
+crossing pair on its own — the **live-pair guard** does:
+
+> **A pair may hold at most one unfinished challenge, whatever week it is named after.**
+> `StudyChallengeService.issueChallenge` gate 1a.
+
+"Unfinished" is **derived**, never the stored status — `latestTestWindowClose` against
+the row's week — for the same reason every other read here derives its state: the hourly
+job runs late on prod and not at all on dev, and reading `status` would hold Monday's
+challenge hostage to a row the job has not rewritten. The guard is also the invariant
+`getChallengesPage` already assumes when it keys live challenges by opponent, so it is
+now enforced rather than hoped for. It is **not** lifted by `anytime` (§ 2a): it is a
+data invariant, not a calendar.
+
+**One rule did soften, deliberately.** The § 1 decline cooldown ("no second challenge to
+this pair this week") is the pair-week row, and during the disagreement window the two
+players name that week differently — so a friend who declines can, in principle, be
+re-challenged by an opponent whose week has already rolled. The outcome is one extra
+invitation they can decline again or shut off with the per-pair block; the *state* stays
+correct, because the live-pair guard above is what protects the data.
+Pinned by `server/__tests__/challengeWeek.test.ts` and
+`server/__tests__/studyChallengeIssueWeek.test.ts`.
+
 ### The week is a global counter (Q77)
 
 `study_challenges."weekIndex"` is an integer: **whole weeks since Monday 2026-01-05
@@ -397,10 +437,12 @@ zones wrote two different values for one week and BOTH crossing challenges were 
 
 Two consequences, stated plainly:
 
-* **The issue window is the one boundary that is not local.** A new week's challenge
-  slot opens at Monday 00:00 UTC — up to 4h after local Monday 04:00 in Shanghai, up to
-  11h before it in Los Angeles. This is the price of two players agreeing on which week
-  they are in, and it is paid by the *slot*, not by any deadline.
+* **The counter NAMES the week; it does not start it.** Which name a new challenge
+  carries is decided on the challenger's own clock (see "When a week opens" above) —
+  the counter's job is only that both players, and the unique index, agree on what to
+  call the week once it is chosen. This was not always so: until 2026-08-23 the issue
+  window itself rolled at Monday 00:00 UTC, which produced dead-on-arrival challenges
+  east of UTC.
 * **Every deadline stays per-player local.** They are derived from the index's Monday
   DATE plus each player's own zone: `weekBoundary` in `server/shared/challengeWeek.ts`,
   and the identical `DATE '2026-01-05' + 7 * "weekIndex" + N` at 04:00 in
@@ -985,13 +1027,19 @@ next, so no caller ever has to check whether a player has mastered cards.
 **All 12 contested words must appear in every round.** Filler pads the board out to the
 game's natural size; it never displaces a contested word.
 
-> ✅ **WORD SEARCH'S BOARD GREW TO 12 (built 2026-08-22).** `TOTAL_WORDS`
-> (`src/games/word-search/constants.ts`) is derived as half the Bubble Match
-> distribution and sums to 10, so at `CHALLENGE_WORD_COUNT = 12` a normal grid cannot
+> ✅ **WORD SEARCH'S CHALLENGE BOARD GREW TO 12 (built 2026-08-22).** At the time,
+> `TOTAL_WORDS` (`src/games/word-search/constants.ts`) summed to 10 (half the Bubble
+> Match distribution), so at `CHALLENGE_WORD_COUNT = 12` a normal-sized grid couldn't
 > hold the set. A challenge grid therefore takes its target count from
 > `CHALLENGE_WORD_COUNT` and its size from `WORD_SEARCH_CHALLENGE_ROWS/COLS` — **8×8,
-> not 7×7** — because twelve words at the 4-character cap is up to 48 characters, which
-> random placement would almost never fit into 49 cells. Bubble Match (20) and Match
+> not the ordinary board's size** — because twelve words at the 4-character cap is up
+> to 48 characters, which random placement would almost never fit densely enough.
+> `TOTAL_WORDS` was separately raised to 12 on 2026-08-23 (own mix now: 2 Unfamiliar +
+> 6 Target + 3 Comfortable + 1 Mastered), so the two word counts now happen to match —
+> coincidental, not derived one from the other. The ordinary board (9×6, unchanged by
+> that raise) stays a different, tighter size than the 8×8 challenge board: 48 of 54
+> cells full (89%) vs 48 of 64 (75%), which is why the ordinary board leans on
+> template-mode placement far more now. Bubble Match (20) and Match
 > Speed (rolling buffer) are unaffected. This is what makes the
 contested ceiling of 1200 points real in all four games and what makes the rounds
 comparable to each other — a game whose natural board is smaller than 12 must run
@@ -1078,7 +1126,7 @@ games cannot drift into four readings of the same spec.
 |---|---|
 | **Bubble Match** | Nothing but the pool params and the events — plus one new stage signal, `onCeilingDrop`, because the survival bonus starts the instant the ceiling begins descending and only the stage knows when the launcher drained |
 | **Match Speed** | The alternation rule (§ 5.3), extracted as the pure `challengeDeal.ts`. Mid-run buffer top-ups send `&contested=exclude` — the twelve are dealt once and never recycled |
-| **Word Search** | A **bigger grid**: 12 words at the 4-character cap do not fit a 7×7 built for 10, so a challenge grid is **8×8** and its target list is `CHALLENGE_WORD_COUNT`, not `TOTAL_WORDS`. That also takes it out of template mode (7×7 + exactly 10 words), so it always uses random placement. Filler is queued at **twice** the board so the substring de-dup pass has something to substitute WITH — otherwise a set that shares characters fails as `insufficient-distinct`, i.e. a round the player cannot play at all. Challenge boards are never saved to the resume slot |
+| **Word Search** | A **bigger, roomier grid**: even though `TOTAL_WORDS` (12) now equals `CHALLENGE_WORD_COUNT`, a challenge grid stays **8×8** (75% full) rather than the ordinary board's tighter 9×6 (89% full) — its target list is `CHALLENGE_WORD_COUNT`, not `TOTAL_WORDS`, because the actual set is the specific contested word ids, not a band distribution. That also takes it out of template mode (`templateModeApplicable` gates on 9×6 + exactly 12 words, i.e. the ORDINARY board's shape), so a challenge grid always uses random placement. Filler is queued at **twice** the board so the substring de-dup pass has something to substitute WITH — otherwise a set that shares characters fails as `insufficient-distinct`, i.e. a round the player cannot play at all. Challenge boards are never saved to the resume slot |
 | **Hydra Bubbles** | Contested words ride the **bloom** slot, drawn ahead of that buffer's stock; the run ends on the last contested clear (`shouldEndRun` → outcome `challengeComplete`). **Its filler is deliberately NOT `mastered-first`** — see below |
 
 ⚠️ **Hydra is the one exception to § 5.2's filler rule, on purpose.** Its filler comes
@@ -2002,7 +2050,7 @@ incoming requests.
 | Q20 | Desertion mid-round | **no grace period at all** — the game continues and banks what the absent player had. Makes live the one exception to § 5.8's pause rule ([live doc](./STUDY_CHALLENGE_LIVE.md) § 6) |
 | Q74 | Are the 12 contested words visible during play? | **No** — the board is completely normal, no marking and no pre-round list. Keeps filler words played at full effort (they write real marks), costs three game pages nothing, and follows from § 5.7's own premise |
 | Q75 | Word Search's per-second penalty under the pause rule | **it pauses with the clock** — and the audit found it **already does**: Word Search is the only game that listens for `visibilitychange` today. Its `pauseTimer`/`resumeTimer` pair is the reference the other three generalise from (§ 5.8) |
-| Q77 | What identifies a challenge's WEEK | **an integer counter — whole weeks since Monday 2026-01-05 00:00 UTC** (`study_challenges."weekIndex"`, migration 150), not a per-challenger instant. Decided 2026-08-17 after the timestamptz version let a crossing cross-timezone pair create two challenges in one week. The counter has no timezone parameter ON PURPOSE: a week identity that varies by who is asking cannot be a unique index. Accepted cost: the ISSUE window rolls at Monday 00:00 UTC rather than each player's local Monday 04:00 (≤4h late in Shanghai, ≤11h early in Los Angeles). Deadlines are untouched and stay per-player local — they are derived from the index's Monday DATE plus each player's own zone (`weekBoundary`, `server/shared/challengeWeek.ts`; the same arithmetic as `DATE '2026-01-05' + 7 * "weekIndex" + N` in the cron SQL). The epoch is duplicated in three files and is called out in all three. Pinned by `server/__tests__/challengeWeek.test.ts`. |
+| Q77 | What identifies a challenge's WEEK | **an integer counter — whole weeks since Monday 2026-01-05 00:00 UTC** (`study_challenges."weekIndex"`, migration 150), not a per-challenger instant. Decided 2026-08-17 after the timestamptz version let a crossing cross-timezone pair create two challenges in one week. The counter has no timezone parameter ON PURPOSE: a week identity that varies by who is asking cannot be a unique index. **Amended 2026-08-23:** the counter still NAMES the week, but it no longer STARTS it — a challenge is stamped with the challenger's own week (`localChallengeWeekIndex`), so a week opens at Monday 04:00 local like every other boundary. The original "accepted cost" (the issue window rolling at Monday 00:00 UTC) turned out to be a bug east of UTC, not a cost: a Shanghai challenger issuing in the 4h before the roll got the outgoing week and a challenge already past its accept deadline. The cross-timezone crossing case the counter was introduced to fix is now held by the live-pair guard (§ 2 "When a week opens") instead of by the unique index alone. Deadlines are untouched and stay per-player local — they are derived from the index's Monday DATE plus each player's own zone (`weekBoundary`, `server/shared/challengeWeek.ts`; the same arithmetic as `DATE '2026-01-05' + 7 * "weekIndex" + N` in the cron SQL). The epoch is duplicated in three files and is called out in all three. Pinned by `server/__tests__/challengeWeek.test.ts` and `server/__tests__/studyChallengeIssueWeek.test.ts`. |
 | Q76 | Where contested/filler scoring rules live | **a declarative `ChallengeScoringSpec` on `GameDef`** applied by a shared runner, not a per-game callback or a self-reported total. Only a declarative form lets live mode score the same events server-side without the game page existing (§ 5.4) |
 | Q21 | Live invite delivery with no push infrastructure | **not needed** — a permanent waiting-room entrance is the mechanism; the ping (banner, or push under Capacitor) only widens discovery and is capped at one per day per (sender, target) ([live doc](./STUDY_CHALLENGE_LIVE.md) § 4) |
 
@@ -2024,6 +2072,7 @@ This document describes (phase 1 is fully built — see the status table at the 
 `server/shared/challengeWeek.ts`,
 `server/__tests__/challengeWeek.test.ts`,
 `server/__tests__/studyChallengeStatus.test.ts` (the lapsed-accept derivation),
+`server/__tests__/studyChallengeIssueWeek.test.ts` (the local week open + the live-pair guard — § 2),
 `server/__tests__/studyChallengeRound.test.ts` (the round gate — § 5.2a),
 `server/contracts/wire.ts`,
 `server/dal/{interfaces,implementations}/StudyChallengeDAL`,

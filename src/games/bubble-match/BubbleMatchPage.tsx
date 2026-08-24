@@ -15,11 +15,13 @@ import { useLaunchCollection } from "../../features/flashcards/useLaunchCollecti
 import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import type { Language, MarkType, VocabEntry } from "../../types";
 import { foreignPromptTrack } from "../../../server/contracts/wire";
-import LeafPage from "../../components/LeafPage";
+import { GameLeafPage } from "../shared/GameSurface";
+// The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
+import { GAME_HUE } from "./constants";
 import BubbleMatchHeaderControls from "./BubbleMatchHeader";
 import BubbleMatchEndPopup from "./BubbleMatchEndPopup";
 import BubbleStage from "./BubbleStage";
-import { GameFrame } from "../shared/GameFrame";
+import { GameCentered, GameFrame } from "../shared/GameFrame";
 import { GAME_DISTRIBUTION, GAME_KEY, LEVEL_CONFIGS, MARK_TYPE, MAX_AVOID_IDS, MIN_REPLAY_PAIRS, TOTAL_PAIRS } from "./constants";
 import type { LevelConfig } from "./types";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
@@ -462,24 +464,11 @@ const BubbleMatchPage: React.FC = () => {
     // ---- Sub-screens --------------------------------------------------------
     // Full-screen centered content for the non-gameplay phases (loading / blocked
     // / picker). These fully replace the stage.
+    // The centred column shown INSTEAD of the board (spinner, or the blocked
+    // message). The shape is shared — `GameCentered` also owns the rule that text on
+    // the accent ground is white — so this is only the page's class name for it.
     const renderCentered = (children: React.ReactNode) => (
-        <Box
-            className="bubble-match__overlay"
-            sx={{
-                flex: 1,
-                minHeight: 0,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 2.5,
-                px: 4,
-                pb: 3,
-                textAlign: "center",
-            }}
-        >
-            {children}
-        </Box>
+        <GameCentered className="bubble-match__overlay">{children}</GameCentered>
     );
 
     // Shared replay actions for BOTH end-of-run popups (won / lost): a single
@@ -528,7 +517,7 @@ const BubbleMatchPage: React.FC = () => {
     } else if (phase === "blocked") {
         centered = renderCentered(
             <>
-                <Typography className="bubble-match__block-msg" sx={{ fontSize: SIZE.subtitle, color: fc.onSurface, lineHeight: LEADING.normal }}>
+                <Typography className="bubble-match__block-msg" sx={{ fontSize: SIZE.subtitle, lineHeight: LEADING.normal }}>
                     {blockMessage}
                 </Typography>
                 <Button className="bubble-match__block-back" variant="contained" onClick={() => navigate("/games")}>
@@ -590,7 +579,8 @@ const BubbleMatchPage: React.FC = () => {
             entries={provisionalEntries(pool)}
             language={(user?.selectedLanguage ?? "zh") as Language}
         />
-        <LeafPage
+        <GameLeafPage
+            hue={GAME_HUE}
             title="Bubble Match"
             // Back lands where the player came FROM: the challenge, mid-test, or the
             // Games hub for an ordinary run.
@@ -709,7 +699,7 @@ const BubbleMatchPage: React.FC = () => {
                 onResume={resumeFromBackground}
                 classPrefix="bubble-match"
             />
-        </LeafPage>
+        </GameLeafPage>
         </>
     );
 };

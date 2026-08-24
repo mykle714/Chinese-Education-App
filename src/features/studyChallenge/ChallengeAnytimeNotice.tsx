@@ -43,7 +43,9 @@ const CAUTIONS: { label: string; detail: string }[] = [
             "One challenge per pair per week is a unique index, not just a rule, so a second "
             + "challenge to the same friend takes the pair's next free week. Its deadlines then read "
             + "as dates weeks out — ignore them — and that week is occupied for a genuine challenge "
-            + "until the row is deleted.",
+            + "until the row is deleted. The FIRST one has to be finished before you can start "
+            + "another with that friend: at most one unfinished challenge per pair is a data rule, "
+            + "not a calendar one, and this switch does not lift it.",
     },
     {
         label: "It only covers what YOU do",

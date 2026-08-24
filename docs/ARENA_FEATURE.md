@@ -959,8 +959,14 @@ Two consequences worth knowing:
   enrolment would be seated into an arena two days old, alone with 24 bots. It is a
   per-candidate filter rather than a per-bucket skip because one bucket can legitimately
   hold both this week's stragglers and a stale opt-in.
-* **The `closed` page state now renders the same Join card as `opt-in`** (§ 2.3). The two
-  differ only in whether the break is open, which no longer changes what you may do.
+* **Every non-live page state renders the same Join card** (§ 2.3) — `results`, `opt-in`
+  and `closed` alike. They differ only in whether the break is open and whether there is a
+  finished board to show, neither of which changes what you may do. `results` was the one
+  omission, and it was the damaging one: it is the state that covers Sun 16:00 → Tue 04:00,
+  so hiding Join there hid it for the *entire* enrolment window and only revealed it at
+  04:00, after that week had formed without the viewer. The condition is therefore written
+  as `state !== "live"` rather than as a list of the states that qualify — a live seat is
+  the only thing that refuses (`ArenaPage.tsx` → `ArenaPage`, `OptInCard`).
 
 **Code:** `server/services/ArenaService.ts` → `optIn`, `withdraw`, `formArenas`;
 `src/features/arena/ArenaPage.tsx` → `OptInCard`.

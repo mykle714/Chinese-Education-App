@@ -1,6 +1,7 @@
 # Hydra Bubbles — endless recognition drill
 
-**Status: BUILT (2026-08-18), UNPLAYED. Reworked to TWO colors 2026-08-21** (§ 2 —
+**Status: BUILT (2026-08-18), UNPLAYED. Reworked to TWO colors 2026-08-21; the tier
+palette is now YELLOW / BLUE (2026-08-24, § 2.2).** (§ 2 —
 still no migration). The game ships: `src/games/hydra-bubbles/`,
 the `/games/hydra-bubbles` route, a registry entry, a `CHALLENGE_GAMES` spec, and the
 server's rolling-supply lending. No migration was needed at any point — Hydra adds no
@@ -80,8 +81,8 @@ important consequence to hold on to:
 
 ### 2.2 The palette
 
-Each bubble is a **flat body** with no ring. The ladder is **two shades of one blue**
-(2026-08-22) — dark is the harder tier, light the easier one:
+Each bubble is a **flat body** with no ring. The ladder is **yellow / blue**
+(2026-08-24) — warm is the harder tier, cool the easier one:
 
 **Three bubbles share the field, not two.** The two payout tiers plus the **English**
 bubbles, which carry no payout meaning at all. A palette that separates drain from
@@ -91,59 +92,82 @@ bloom beautifully is still broken if either of them reads as English.
 |---|---|---|---|
 | English | `#E7E7EA` inert grey (`COLORS.grey`) | dark | nothing — scenery |
 | bloom — **light blue** | `#D2EBFF` (`COLORS.blu`) | dark | net +1, the known words |
-| drain — **mid blue** | `#79B3EE` — oklch(75% 0.105 250) | dark | net -1, the hard words |
+| drain — **light yellow** | `#F5E7B4` (`COLORS.yel`) | dark | net -1, the hard words |
 
-**All three take black text**, and that is a constraint on the ladder rather than an
-accident: the two tiers are the same object at two values, and a rung whose glyphs invert
-to white stops reading as *"the same thing, darker"* and starts reading as *"a different
-thing"*. It is why drain is **not** `COLORS.bluA` — see below.
+**All three take black text**, and that is a constraint on any replacement rather than an
+accident: the two tiers are one object at two settings, and a rung whose glyphs invert to
+white stops reading as *"the same thing"* and starts reading as *"a different thing"*.
+`inkOnFill` derives that automatically, so a future swap cannot strand dark text on a dark
+body.
 
 Every bubble's border is its own body color: the shared `Bubble` draws a fixed 2px
 border, so a same-color border is how a bubble reads as ringless without changing its
-border box. `BLUE_DARK` / `BLUE_LIGHT` / `DEFINITION_FILL` live in `HydraStage.tsx`.
+border box. `YELLOW_DRAIN` / `BLUE_LIGHT` / `DEFINITION_FILL` live in `HydraStage.tsx`.
 
-#### One channel, and it is VALUE
+**`COLORS.yel` and not `COLORS.org`.** `org` (hue 70) IS `CATEGORY_COLORS.Target`, and
+drain is Unfamiliar + Target — a bubble wearing Target's exact fill would read as a band
+label rather than as a tier. `yel` (hue 92) exists in the ramp precisely to be a gold that
+is not Target's orange.
 
-**Hue encodes nothing.** Both tiers are the ramp's hue 250, so the rule a player learns
-is *"blue means Hydra bubble, dark means this one costs you"* — one rule instead of two
-arbitrary hues to memorize, and **monotonic**: darker is harder. The charcoal/gold pair
-it replaced could never be monotonic, being two unrelated hues at nearly the same
-lightness.
+#### The channel is HUE, and the value read is gone
 
-It is also a much stronger read than any two-hue ladder managed:
+The three bodies all sit at the ramp's 93–94% tier, so drain-vs-bloom and drain-vs-scenery
+are carried by **hue and chroma alone**:
 
 | | drain vs bloom | drain vs scenery | bloom vs scenery |
 |---|---|---|---|
 | charcoal / gold | 1.22:1 | 1.33:1 | 1.09:1 |
 | blue ladder, first cut (`bluA` drain) | 4.46:1 | 4.44:1 | 1.00:1 |
-| **blue ladder, shipped** | **1.80:1** | **1.79:1** | 1.00:1 |
+| blue ladder, shipped 2026-08-22 → 08-24 | 1.80:1 | 1.79:1 | 1.00:1 |
+| **yellow / blue, shipped** | **1.16:1** | **1.16:1** | 1.00:1 |
 
-#### Why drain is not `COLORS.bluA`
+⚠️ **Read that honestly: on value this is the weakest ladder the game has had**, and a
+color-blind player has less to go on than they did with the blue pair, which was both
+better separated and *monotonic* (darker = harder). What carries the current ladder is hue
+distance — hue 92 against hue 250 is the widest warm/cool split in the ramp, a strong read
+for most players and no read at all for some.
 
-The first cut put drain on the ramp's saturated blue (`#1F6CB0`, oklch 52%) and separated
-two and a half times better. It was given up because it is dark enough to need **white**
-glyphs, which breaks the ladder's premise: two rungs of one hue only read as *one scale*
-if the ink is the same on both. So the dark rung is authored on the ramp's own axis at
-the lightness where black text is comfortable — **oklch(75% 0.105 250)**, between `blu`
-(93%) and `bluA` (52%). Authored in oklch, shipped as hex, per SHELF_REDESIGN § A1.
+**The lever, if it needs one, is BLOOM.** Moving bloom to `COLORS.bluTint` `#EEF8FF` was
+previously a trade (it closed the drain gap, since drain was also hue 250); with drain off
+that axis it is now a **free move that helps both weak reads at once** — it opens a value
+gap back into the ladder AND lifts bloom off the scenery grey. Its cost is a near-white
+bubble on the white `.play` panel. One token, on `BLUE_LIGHT` in `HydraStage.tsx`.
 
-| | value |
-|---|---|
-| black text (`#333`, the cpcd glyph) | **5.71:1** — comfortably AA at body-text size |
-| luminance | 0.425 — well clear of `inkOnFill`'s 0.26 pivot, so it takes dark ink with margin |
+#### What the yellow bought
 
-⚠️ **If the tiers need more separation, the room is in BLOOM, not drain.** Bloom can go up
-to `bluTint` `#EEF8FF` (tiers 2.05:1, and it lifts bloom off the scenery grey to 1.15:1),
-at the cost of a near-white bubble on the white `.play` panel.
+- **Tone-3 pinyin, which § 2.2 called "the real constraint on this whole file".** Tone 3 is
+  `#779BE7`, a light BLUE, and it was nearly invisible on the old hue-250 drain body
+  (1.25:1). On a hue-92 yellow it separates by hue instead of competing for value, so the
+  drain bubble's pinyin is legible for the first time. The table below still governs
+  **bloom** and any future move back onto a blue axis.
+- **Half the mastery collision.** The old drain wore the saturated end of the hue the app
+  trains as "mastered" (`COLORS.blu` IS `CATEGORY_COLORS.Mastered`) while containing
+  Unfamiliar + Target. Drain no longer makes that claim. Its own nearest misreading — `yel`
+  sitting near Target's `org` — is half-true, since Target genuinely is half of drain.
+
+#### Retired: the two blue rungs, and why neither survived
+
+Kept because the constraints they were solving for are still live.
+
+**`#79B3EE` — the shipped drain, 2026-08-22 → 2026-08-24.** Authored on the ramp's own
+axis at the lightness where black text is comfortable — **oklch(75% 0.105 250)**, between
+`blu` (93%) and `bluA` (52%), in oklch and shipped as hex per SHELF_REDESIGN § A1. Black
+text scored 5.71:1 on it and its luminance 0.425 sat well clear of `inkOnFill`'s 0.26
+pivot. It gave the ladder its only monotonic read. Replaced by request.
+
+**`COLORS.bluA` `#1F6CB0` — the first cut.** Separated two and a half times better again
+(4.46:1) and was given up because it is dark enough to need **white** glyphs, which breaks
+the premise that two rungs of one hue only read as *one scale* if the ink is the same on
+both. That premise no longer binds the tiers to one hue, but the black-text rule it
+protected still binds any replacement.
 
 ⚠️ **Bloom and the scenery grey are the same value** (1.00:1) — `blu` and `grey` are
 both the ramp's 93% tier, so bloom-vs-English is carried by chroma alone (a blue tint vs
-a neutral). It is the one weak read left, and the same weakness gold had (1.09:1). It is
-tolerable because bloom is the bubble you *want* to clear: mistaking scenery for bloom
-costs a wasted look, not a wrong match. Do **not** fix it by lightening bloom — that
-closes the drain gap. Tint the English bubble further off-hue instead.
+a neutral). It is tolerable because bloom is the bubble you *want* to clear: mistaking
+scenery for bloom costs a wasted look, not a wrong match. See the BLOOM lever above — with
+drain off hue 250, lightening bloom now fixes this instead of costing elsewhere.
 
-#### ⚠️ The cost is tone-3 pinyin, and it is the real constraint on this palette
+#### ⚠️ Tone-3 pinyin: retired for drain, still binding for bloom
 
 **A word bubble renders tone-colored pinyin** (`TONE_COLORS`,
 `src/utils/toneColors.ts`), and tone 3 is `#779BE7` — a light blue at roughly oklch 68%.
@@ -153,7 +177,7 @@ range, and both ends beat the middle:
 | drain body | tone 3 |
 |---|---|
 | `#5E9DDC` — oklch 68% | 1.04:1 — invisible |
-| **`#79B3EE` — oklch 75%, shipped** | **1.25:1 — very weak** |
+| `#79B3EE` — oklch 75%, the retired drain | 1.25:1 — very weak |
 | `#CBC9D2` — the charcoal that shipped | 1.68:1 |
 | `#1F6CB0` — `bluA`, oklch 52% | 1.99:1 |
 
@@ -195,10 +219,9 @@ again.
 
 **Drain used to stay achromatic on purpose** — being the one property no mastery
 surface could collide with, since the four bands, Learn Now's purple and the
-mastered-bar hues are all chromatic. **The blue ladder gives that up knowingly** (see
-the collision note above): a single-hue, value-only ladder buys ~3.7x the tier
-separation, and the argument for achromatic drain assumed the two tiers had to differ
-in hue from each other, which is no longer true.
+mastered-bar hues are all chromatic. Both ladders since have given that up knowingly: the
+blue one bought ~3.7x the tier separation with it, and the current yellow keeps drain
+chromatic while at least moving it OFF the "mastered" hue the blue drain wore.
 
 #### How it got here
 
@@ -220,10 +243,16 @@ Three attempts, each rejected for its own reason:
    three-way framing above.
 4. **Charcoal / gold, second cut** (`#CBC9D2` / `#F4DD98`, shipped 2026-08-21). Fixed
    that adjacency by moving the *inert* bubble to pure white and adding ring weight as a
-   third channel. It worked. It was replaced on 2026-08-22 anyway, by the blue ladder
-   above — not because it read badly but because **two arbitrary hues at nearly the same
+   third channel. It worked. It was replaced on 2026-08-22 anyway, by the blue ladder —
+   not because it read badly but because **two arbitrary hues at nearly the same
    lightness can never be monotonic**, and because unifying the two bubble games on one
    style took the ring channel away, leaving 1.22:1 between the tiers.
+5. **Two shades of one blue** (`#79B3EE` / `COLORS.blu`, 2026-08-22 → 2026-08-24). The
+   best-separated ladder this game has had and the only monotonic one. Replaced by request
+   with the current yellow/blue pair — which, note, lands the game back at a two-hue,
+   same-lightness ladder much like #4, minus the ring channel. § 2.2 records the trade in
+   both directions; the mitigations if it needs them are the BLOOM lever and, failing
+   that, restoring ring weight.
 
 > ⚠️ A note in `HydraStage.tsx` used to claim the English grey was **shared with Bubble
 > Match** and therefore immovable. That was wrong: Bubble Match builds its own
@@ -513,7 +542,7 @@ implementation detail the game owns:
 
 | Card | Color source |
 |---|---|
-| Library card (has mark history) | the color whose **two bands** cover its real **recognition** category — the `gameCategory` stamp `getGameVocabPool` already returns (`server/services/OnDeckVocabService.ts`), mapped through `BUCKETS_BY_COLOR` |
+| Library card (has mark history) | the color whose **two bands** cover its real category **on the run's track** — the `gameCategory` stamp `getGameVocabPool` already returns for the requested `?markType=` (`server/services/OnDeckVocabService.ts`), mapped through `BUCKETS_BY_COLOR`. That track is `recognition` today and becomes the run's latched track under § 6.0. |
 | **Provisional / lent** card | its assigned **difficulty tier** (§ 6.2), *not* its real category — and it keeps that tier for as long as it is lent, even after it has marks (docs/PROVISIONAL_CARDS.md § 3c) |
 
 The band → color mapping (`BUCKETS_BY_COLOR`, `src/games/hydra-bubbles/constants.ts`):
@@ -557,17 +586,55 @@ bubble still reads as its tier while it is being dragged.
 
 ## 6. Card supply
 
-> **Hydra always marks `recognition`, even with pinyin off.** Bubble Match and the flp
-> now switch to the `reading` track when the learner hides pinyin on a zh board — the
-> characters are unaided, which is what reading means
-> ([MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md)). Hydra reads the SAME shared
-> `showPinyin` setting for display but has **not** been converted, so hiding pinyin
-> here changes what the bubbles draw and nothing about what they write. Converting it
-> is not a copy of Bubble Match's patch: Hydra's tier ladder (§ 6.2) and its two color
-> pools (§ 6.2b) are keyed on mastery bands of the track it pools by, so the track has
-> to be latched before the FIRST spawn and honored by every refill in the run.
+> **Hydra marks `recognition` unconditionally TODAY.** The conversion to a
+> pinyin-picked track is designed but **not built** — see § 6.0.
 
 An endless run needs a rolling supply, unlike Bubble Match's fixed 20 pairs.
+
+### 6.0 Pinyin picks the track here too
+
+> STATUS: **DESIGN — decided 2026-08-23, NOT BUILT.** Depends on pinyin becoming a
+> per-game setting first
+> ([GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md)); today
+> Hydra reads the SHARED `showPinyin` for **display only** and always writes
+> `recognition`, so hiding pinyin here changes what the bubbles draw and nothing about
+> what they record. The rule being adopted:
+> [MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md).
+
+Hydra is a foreign → meaning drill, so it takes the same rule as Bubble Match and the
+flp: **pinyin shown ⇒ `recognition`; pinyin hidden on a zh board ⇒ `reading`**, because
+the player then reaches the meaning from the characters alone. Spanish never switches
+(no phonetic layer to hide).
+
+This is **not** a copy of Bubble Match's patch. There, the track is essentially a
+label on a fixed 20-pair deal; here it is an **input to the economy**:
+
+1. **Latch before the FIRST spawn, not at deal — because there is no deal.** § 6.1
+   makes *every* spawn a partial refill. The run's track has to be fixed ahead of the
+   first pool fetch and honored by every refill for the rest of the run, or one run
+   mixes tracks and half its marks are dropped.
+2. **The color ladder re-bands.** § 5's `BUCKETS_BY_COLOR` maps a library card's
+   **recognition** `gameCategory` onto bloom/drain. On a reading run it must read the
+   card's **reading** `gameCategory` instead. The plumbing already exists — that is
+   exactly what `getGameVocabPool`'s `?markType=` selects and stamps — but the
+   distribution feeding the ladder changes completely.
+3. **⚠️ A reading run's bands are nearly all Unfamiliar, and that is the real risk.**
+   This is the trap [MASTERY_REWORK.md § 6](./MASTERY_REWORK.md) already documents for
+   Speed Reading and Word Search No-Pinyin: a sparsely-marked track puts almost every
+   card in `Unfamiliar`/`Target` — i.e. **drain**. Bloom is the union of `Mastered` +
+   `Comfortable`, so a reading run's bloom buffer runs dry far more often than a
+   recognition run's, and § 6.2c ("why bloom is the color that runs dry") gets sharply
+   worse. Since growth is `2·bloomShare − 1` (§ 3.0), a board that cannot source bloom
+   cannot stop growing. What absorbs it is tier lending (§ 6.2): a lent card's color
+   comes from **difficulty**, not from mastery, so it is track-independent and can
+   still fill the bloom buffer. **Confirm the § 3.1 spawn table still terminates on a
+   reading run before shipping this** (tracked as O5 in § 11).
+4. **A reading run must be SILENT** — no autoplay, no `onSpeak`, no TTS prefetch, same
+   as Bubble Match and for the same reason: hearing the word hands over the reading
+   being tested.
+5. **The cooldown gate follows the track for free.** § 8's "next markable at" is
+   already per mark type, so a reading run is gated on the reading clock — a card just
+   cleared on a recognition run is still fresh for a reading one, and vice versa.
 
 ### 6.1 The rolling supply, and why it is unusual
 
@@ -925,8 +992,12 @@ Again starts a wholly fresh board.
 
 ### 7.4 Marks
 
-* Correct match → **positive recognition mark** on the cleared card.
-* The fatal wrong match → **negative recognition mark** on the card that was dragged.
+* Correct match → **positive mark** on the cleared card.
+* The fatal wrong match → **negative mark** on the card that was dragged.
+
+The track is **`recognition`** today, unconditionally. Under § 6.0 it becomes the
+run's latched track (`recognition`, or `reading` on a pinyin-off zh run) — the mark
+must always name the same track the pool was bucketed and cooled on.
 
 Both subject to § 8.
 
@@ -1158,6 +1229,14 @@ owns each decision (linked below); this section now carries only what is still o
 | The client cannot tell what color a lent card is | **Client-side color buffers** — one per tier, so two since the 2026-08-21 rework — drawn from at spawn, topped up async | § 6.2b |
 
 ### Still open
+
+**O5 — Does the § 3.1 spawn table still terminate on a READING run?** (opened
+2026-08-23 with § 6.0.) The table is tuned against the bloom/drain mix a *recognition*
+library produces. A reading track is far more sparsely marked, so nearly every library
+card bands `Unfamiliar`/`Target` = drain, and bloom has to come almost entirely from
+tier lending. If bloom cannot be sourced at the steady-state share, `2·bloomShare − 1`
+stays positive and the board grows without bound. **Blocks shipping § 6.0**; the same
+question applies to any future game pooled on a sparse track.
 
 **O1 — The § 3.1 numbers are a tuning, not a measurement.** The steady-state row
 holds `E[payout]` at 2.10, so the board creeps upward by 0.10 bubbles per match — about

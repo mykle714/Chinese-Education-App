@@ -201,8 +201,11 @@ describe("access classification", () => {
     );
   });
 
-  it("mounts login, register, settings and the 404 with no auth wrapper", () => {
+  it("mounts login, register, both settings pages and the 404 with no auth wrapper", () => {
     const open = ROUTE_META.filter((r) => r.access === "open").map((r) => r.path).sort();
-    expect(open).toEqual(["*", "/login", "/register", "/settings"].sort());
+    // `/settings/account` is open for the same reason `/settings` is: the theme and
+    // language preferences have to be reachable before a session exists, and the
+    // account half of the page renders its own signed-out state.
+    expect(open).toEqual(["*", "/login", "/register", "/settings", "/settings/account"].sort());
   });
 });

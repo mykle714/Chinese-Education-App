@@ -195,6 +195,13 @@ const PAGE_ROUTES: RouteMeta[] = [
     chrome: "leaf",
     note: "Opens from the Account header gear as a slide-up sheet. Has never had an auth wrapper.",
   },
+  {
+    path: "/settings/account",
+    access: "open",
+    shell: "frame",
+    chrome: "leaf",
+    note: "Artboard 11b — the write-heavy half of settings (password + delete). Reached only from the chevron row at the foot of /settings, so it matches its parent's access: the password form and the delete flow both authenticate on their own request.",
+  },
 
   // ── Footerless drill-in that does not slide ──
   {

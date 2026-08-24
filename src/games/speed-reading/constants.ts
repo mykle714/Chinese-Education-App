@@ -1,5 +1,6 @@
 import type { CPCDSize } from "../../components/ForeignText";
 import type { MarkType } from "../../types";
+import type { RampHue } from "../../theme/colors";
 
 /** `wins` table key, shared with the Games hub's badge. */
 export const GAME_KEY = "speedReading";
@@ -208,3 +209,13 @@ export const MEDAL_LABEL: Record<Exclude<Medal, null>, string> = {
     silver: "🥈 Silver",
     bronze: "🥉 Bronze",
 };
+
+/**
+ * THE GAME'S HUE — its hub row's colour AND the accent ground its own screen is
+ * flooded with (docs/SHELF_REDESIGN.md § A6b).
+ *
+ * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
+ * the registry reads this, and the page passes it to `gameSurfaceSx` /
+ * `GameSurfaceProvider`. Tapping a blu row must open a blu screen.
+ */
+export const GAME_HUE: RampHue = "blu";

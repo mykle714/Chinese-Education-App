@@ -1,4 +1,4 @@
-import { COLORS } from "../../theme/colors";
+import { COLORS, type RampHue } from "../../theme/colors";
 import type { MarkType } from "../../types";
 import type { GameCategory, MatchSpeedMode, Medal, ModeConfig } from "./types";
 
@@ -293,3 +293,13 @@ export const CORRECT_CARD_BG = COLORS.grn;
  *  system as the other two rather than as an error dialog dropped onto the board. */
 export const WRONG_CARD_BG = COLORS.red;
 export const WRONG_CARD_INK = COLORS.dangerInk;
+
+/**
+ * THE GAME'S HUE — its hub row's colour AND the accent ground its own screen is
+ * flooded with (docs/SHELF_REDESIGN.md § A6b).
+ *
+ * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
+ * the registry reads this, and the page passes it to `gameSurfaceSx` /
+ * `GameSurfaceProvider`. Tapping a grn row must open a grn screen.
+ */
+export const GAME_HUE: RampHue = "grn";

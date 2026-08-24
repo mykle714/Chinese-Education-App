@@ -417,7 +417,7 @@ const pronunciationKey = (entry: VocabEntry): string => {
  * sunk to the bottom with the dateless cards.
  *
  * WINDOW CATEGORY: the card's PER-TYPE category, which is what the games enforce and
- * what the cdp prints under each bar (MasteryProgressBar → `cooldownRows`). The flp
+ * what the cdp prints under the mastery window (MasteryWindow → `cooldownRows`). The flp
  * widens the window to the card's core category because one flp card shows two types
  * at once, so a flp refill can hold a track back slightly longer than this number —
  * the same caveat the cdp display carries, and for the same reason: a sort can only

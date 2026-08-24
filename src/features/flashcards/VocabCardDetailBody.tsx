@@ -3,15 +3,14 @@ import { styled } from "@mui/material/styles";
 import { resolveCommonality, resolveLongDefinitionForSense, stripParentheses } from "../../utils/definitionUtils";
 import type { VocabEntry } from "../../types";
 import ForeignText from "../../components/ForeignText";
-import MetaChipLabel from "./MetaChipLabel";
 import LongDefinitionDisplay from "../../components/LongDefinitionDisplay";
-import FrequencyScoreDots from "../../components/FrequencyScoreDots";
 import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { getCategoryColor } from "../../utils/categoryColors";
 import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
-import InfoCardBlockButton from "./FlashcardsLearnPage/InfoCardBlockButton";
+import BreakdownRow from "./BreakdownRow";
+import DefinitionFacts from "./DefinitionFacts";
 import UsedInPaginatedList from "./UsedInPaginatedList";
 import { MetadataChipRow } from "./FlashcardsLearnPage/styled";
 import { FC_FONT } from "./constants";
@@ -158,131 +157,16 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                             sx={{ fontSize: SIZE.body, color: fc.onSurface, fontFamily: FC_FONT, lineHeight: 1.6 }}
                         />
                     )}
-                    {/* Meta strip — Difficulty + Parts of Speech + Commonality (frequencyScore),
-                        the same three chips the eip's definition tab shows (InfoCardPanelBody).
-                        Each chip is INDEPENDENTLY validatable (migration 132): it carries its own
-                        approval flag, its own AI-generated treatment, and — for validator accounts
-                        — its own inline Approve/Flag pair (docs/DATA_VALIDATION_SYSTEM.md). */}
-                    {(entry.difficulty != null || (entry.partsOfSpeech?.length ?? 0) > 0 || commonality.score != null) && (
-                        <Box
-                            className="vocab-card-detail__definition-meta-strip"
-                            sx={{
-                                // Two stacked rows: Difficulty + Commonality share a centered
-                                // top row, Parts of Speech gets a full-width row below them
-                                // (its value can be long, so it needs the whole line).
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "10px",
-                                padding: "10px 0 0",
-                                borderTop: `1px solid ${fc.border}`,
-                            }}
-                        >
-                          {/* Top row renders only when it has a chip — otherwise its empty
-                              box would still contribute the column gap above the POS row. */}
-                          {(entry.difficulty != null || commonality.score != null) && (
-                          <Box
-                            className="vocab-card-detail__definition-meta-row"
-                            sx={{ display: "flex", gap: "18px", alignItems: "center", justifyContent: "center" }}
-                          >
-                            {entry.difficulty != null && (
-                                // Difficulty is AI-classified (backfill-hsk-level.js), so it carries the
-                                // AI-generated box (no badge — a small value chip) until a validator
-                                // approves the 'difficulty' field. The label is language-neutral
-                                // ("Difficulty"); only the VALUE names the scale, reading "HSK N" for zh
-                                // (whose 1–6 integers ARE HSK levels) and a bare N elsewhere.
-                                <Box
-                                    className={`vocab-card-detail__level-chip${entry.difficultyApproved ? "" : " vocab-card-detail__level-chip--ai-generated"}`}
-                                    sx={{
-                                        // position:relative anchors MetaChipLabel's absolutely-positioned
-                                        // validator overlay to THIS chip's corner.
-                                        position: "relative",
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "3px",
-                                        ...(entry.difficultyApproved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
-                                    }}
-                                >
-                                    <MetaChipLabel label="Difficulty" field="difficulty" word1={entry.entryKey} language={entry.language} approved={entry.difficultyApproved} classPrefix="vocab-card-detail" />
-                                    <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: fc.onSurface, fontFamily: FC_FONT, whiteSpace: "nowrap" }}>
-                                        {entry.language === 'zh' ? `HSK ${entry.difficulty}` : entry.difficulty}
-                                    </Typography>
-                                </Box>
-                            )}
-                            {commonality.score != null && (
-                                <Box
-                                    className={`vocab-card-detail__frequency-meta${commonality.approved ? "" : " vocab-card-detail__frequency-meta--ai-generated"}`}
-                                    sx={{
-                                        // position:relative anchors MetaChipLabel's absolutely-positioned
-                                        // validator overlay to THIS chip's corner.
-                                        position: "relative",
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "3px",
-                                        // The score is AI-written (the clusterer per sense, or
-                                        // backfill-frequency-score.js for the entry-level column), so it
-                                        // carries the AI-generated box until THAT value is human-approved.
-                                        ...(commonality.approved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
-                                    }}
-                                >
-                                    {/* A per-sense score validates the cluster ('senseFrequencyScore' +
-                                        senseLabel, migration 139); the entry-level fallback validates the
-                                        det column, exactly as before. */}
-                                    <MetaChipLabel
-                                        label="Commonality"
-                                        field={commonality.senseLabel ? "senseFrequencyScore" : "frequencyScore"}
-                                        word1={entry.entryKey}
-                                        language={entry.language}
-                                        senseLabel={commonality.senseLabel}
-                                        approved={commonality.approved}
-                                        classPrefix="vocab-card-detail"
-                                    />
-                                    <Box className="vocab-card-detail__frequency-dots" sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
-                                        {/* Shared with the eip strip + the discover sort card so the three
-                                            meters stay visually identical (FrequencyScoreDots). This used to
-                                            be an inline copy of the same five dots. */}
-                                        <FrequencyScoreDots
-                                            score={commonality.score}
-                                            filledColor={fc.onSurface}
-                                            emptyBorderColor={fc.border}
-                                        />
-                                        <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.onSurface, lineHeight: 1 }}>
-                                            {commonality.score}/5
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            )}
-                          </Box>
-                          )}
-                          {/* Parts of Speech — its own full-width row under the pair above. */}
-                          {(entry.partsOfSpeech?.length ?? 0) > 0 && (
-                            <Box
-                                className={entry.partsOfSpeechApproved ? "vocab-card-detail__pos-chip" : "vocab-card-detail__pos-chip vocab-card-detail__pos-chip--ai-generated"}
-                                sx={{
-                                    // position:relative anchors MetaChipLabel's absolutely-positioned
-                                    // validator overlay to THIS chip's corner.
-                                    position: "relative",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    alignItems: "center",
-                                    gap: "3px",
-                                    // Spans the strip's full width — the value (a comma-joined POS
-                                    // list) is the longest of the three metas.
-                                    width: "100%",
-                                    // Carries the shared AI-generated box (no badge — just the orange
-                                    // border/tint) until the 'partsOfSpeech' field is human-approved.
-                                    // Its own field since migration 132, so definitions churn no
-                                    // longer clears it (docs/DATA_VALIDATION_SYSTEM.md).
-                                    ...(entry.partsOfSpeechApproved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
-                                }}
-                            >
-                                <MetaChipLabel label="Parts of Speech" field="partsOfSpeech" word1={entry.entryKey} language={entry.language} approved={entry.partsOfSpeechApproved} classPrefix="vocab-card-detail" />
-                                <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: fc.onSurface, fontFamily: FC_FONT, textAlign: "center" }}>
-                                    {entry.partsOfSpeech!.join(', ')}
-                                </Typography>
-                            </Box>
-                          )}
-                        </Box>
-                    )}
+                    {/* The three measured facts (DefinitionFacts / `.dfx`) — ONE shared
+                        component with the eip's definition tab. This was ~90 lines of
+                        centred chips, duplicated verbatim between the two surfaces down
+                        to the comments; each field keeps its own validator Approve/Flag
+                        pair and its own AI-provenance treatment. */}
+                    <DefinitionFacts
+                        entry={entry}
+                        selectedSenseIndex={selectedSenseIndex}
+                        classPrefix="vocab-card-detail"
+                    />
                 </SectionCard>
             )}
 
@@ -309,38 +193,32 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
                                 />
                             </Box>
                         ) : (
-                            // Extra inset layer + centered grid — same treatment as
-                            // the eip breakdown tab (InfoCardPanelBody): the block
-                            // buttons flex to fill the padded container.
+                            // One `.bkr` row per component character, in the word's own
+                            // order — the SAME component the eip breakdown tab renders
+                            // (BreakdownRow). Both surfaces used to carry their own copy
+                            // of a 1:1 block-button grid.
+                            //
+                            // Negative side margin cancels the SectionCard's padding so
+                            // each row's hairline runs the full width of the box, which is
+                            // what makes the rows read as one word taken apart rather than
+                            // as a stack of inset cards.
                             <Box
                                 className="vocab-card-detail__breakdown-list"
-                                sx={{ display: "flex", justifyContent: "center", padding: "16px" }}
+                                sx={{ margin: "0 -16px" }}
                             >
-                                {/* Equal auto-fit tracks — identical button size,
-                                    left-to-right then top-down (see the matching
-                                    grid in InfoCardPanelBody). */}
-                                <Box
-                                    className="vocab-card-detail__breakdown-grid"
-                                    sx={{
-                                        display: "grid",
-                                        gridTemplateColumns: "repeat(auto-fit, minmax(min(116px, 100%), 1fr))",
-                                        gap: "10px",
-                                        width: "100%",
-                                    }}
-                                >
                                 {breakdownItems.map((item) => (
-                                    <InfoCardBlockButton
+                                    <BreakdownRow
                                         key={item.character}
                                         className="vocab-card-detail__breakdown-row"
                                         character={item.character}
                                         pinyin={item.pinyin}
                                         definition={item.definition}
+                                        language={entry.language}
                                         showPinyin={showPinyin}
                                         showPinyinColor={showPinyinColor}
                                         onClick={onWordOpen ? () => onWordOpen(item.character) : undefined}
                                     />
                                 ))}
-                                </Box>
                             </Box>
                         )
                     )}

@@ -42,6 +42,17 @@ export const COLORS = {
     grnA: "#387D3D",     // oklch(53% 0.12  145)
     tea: "#C6F2F1",      // oklch(93% 0.045 195)
     teaA: "#007C7C",     // oklch(52% 0.11  195)
+    // `--yel` — the SEVENTH hue, and the one the base ramp in `shelf-system.css` does
+    // NOT define. The artboards add it in their own `:root` because two surfaces need a
+    // gold that is not Target's orange: Speed Reading's game chrome and the decks
+    // page's Study Mix card (`.fc.f`, artboard 2, whose fill is the slightly deeper
+    // oklch(94.5% 0.075 100)). It sits between `org` (70) and `grn` (145) at hue 92–100
+    // — far enough off the org axis that a gold card beside a Target-orange chip does
+    // not read as a second Target. Added as a ramp member rather than inlined at those
+    // two call sites so the next surface that wants gold has somewhere to take it from.
+    yel: "#F5E7B4",      // oklch(94% 0.055  92)
+    yelA: "#96751A",     // oklch(56% 0.12   92)
+    yelTint: "#FDF8E9",  // oklch(97.5% 0.018 92)
 
     // A THIRD tier at oklch(97.5% 0.018 H) — a near-white tint of each hue.
     // The design uses it for the Arena zone rows (`.bd .r.up` / `.r.dn`); it is
@@ -213,6 +224,7 @@ export const RAMP = {
     org: { fill: COLORS.org, ink: COLORS.orgA, tint: COLORS.orgTint },
     grn: { fill: COLORS.grn, ink: COLORS.grnA, tint: COLORS.grnTint },
     tea: { fill: COLORS.tea, ink: COLORS.teaA, tint: COLORS.teaTint },
+    yel: { fill: COLORS.yel, ink: COLORS.yelA, tint: COLORS.yelTint },
 } as const;
 
 /** A hue's key in {@link RAMP} — the unit a component should take when it needs a

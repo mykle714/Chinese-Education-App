@@ -52,13 +52,24 @@ interface LeafPageChildApi {
     onBack: () => void;
 }
 
-interface LeafPageProps {
+export interface LeafPageProps {
     title: string;
     // Where the back arrow goes. Invoked AFTER the slide-down completes.
     onBack: () => void;
     // Header right slot (e.g. a badge / toggle).
     rightContent?: ReactNode;
     surfaceColor?: string;
+    /**
+     * Extra styling for the page SURFACE itself (not its body) — a ground colour plus
+     * the descendant rules that ground forces on the header's ink. `surfaceColor`
+     * covers the common "just repaint the ground" case; this is for the case where
+     * repainting the ground also changes what has to be drawn on top of it.
+     *
+     * Its one caller today is the game surface (`gameSurfaceSx`,
+     * docs/SHELF_REDESIGN.md § A6b), which floods the page with a saturated accent
+     * and therefore has to flip the title, chevron, chips and streak badge to white.
+     */
+    surfaceSx?: SxProps<Theme>;
     contentSx?: SxProps<Theme>;
     contentClassName?: string;
     className?: string;
@@ -85,6 +96,7 @@ const LeafPage = ({
     onBack,
     rightContent,
     surfaceColor,
+    surfaceSx,
     contentSx,
     contentClassName,
     className,
@@ -102,7 +114,12 @@ const LeafPage = ({
             ref={surfaceRef}
             className={className ? `leaf-page ${className}` : "leaf-page"}
             style={style}
-            sx={surfaceColor ? { backgroundColor: surfaceColor } : undefined}
+            // Array form: `surfaceSx` may itself be an array or a theme callback, and
+            // it is APPENDED so a caller passing both wins on the overlap.
+            sx={[
+                ...(surfaceColor ? [{ backgroundColor: surfaceColor }] : []),
+                ...(Array.isArray(surfaceSx) ? surfaceSx : [surfaceSx]),
+            ]}
         >
             {!hideHeader && (
                 <LeafPageHeader title={title} onBack={handleBack} rightContent={rightContent} />

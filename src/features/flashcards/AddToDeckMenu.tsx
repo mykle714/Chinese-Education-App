@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-    IconButton, Menu, MenuItem, Checkbox, ListItemText, Divider,
+    Box, IconButton, Menu, MenuItem, Checkbox, ListItemText, Divider,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button, Tooltip,
 } from "@mui/material";
 import LibraryAddOutlinedIcon from "@mui/icons-material/LibraryAddOutlined";
 import { fetchDecks, fetchDeckMemberships, setDeckMemberships, createDeck, type DeckSummary } from "../../api/decks";
+import Icon from "../../components/Icon";
+import { COLORS } from "../../theme/colors";
+import { CARD_OPS_CELL_SX, CARD_OPS_CELL_LABEL_SX } from "./cardOpsCell";
 
 /**
  * "Add to deck" — an icon button that opens a CHECKBOX menu of the user's decks
@@ -12,8 +15,12 @@ import { fetchDecks, fetchDeckMemberships, setDeckMemberships, createDeck, type 
  *
  * Mounted in two places, both of which already have the card in hand:
  *   • the cdp header actions (VocabCardDetailPage) — bare icon trigger, and
- *   • the eip definition tab's action bar (InfoCardActionBar) — labelled trigger
- *     ("Add to Deck…"), via the `label` prop.
+ *   • the flp card's operations rail (CardOpsRail, artboard 21) — a rail cell, via
+ *     `appearance: "rail"`.
+ *
+ * It used to have a third host, the eip definition tab's action bar
+ * (`InfoCardActionBar`), which is deleted: the panel is information-only now, and
+ * filing a card is a card operation, so it moved onto the card itself.
  *
  * ── Why a whole-set save on close, not a write per tick ───────────────────────
  * Ticking three boxes would otherwise be three requests, and a half-completed
@@ -40,14 +47,26 @@ interface AddToDeckMenuProps {
     color?: string;
     /**
      * When set, the trigger is a LABELLED outlined button carrying this text instead
-     * of the bare icon button — the form used in the eip definition tab's action bar
-     * (InfoCardActionBar), where the actions are named rather than guessed at. Header
-     * hosts (cdp) omit it and keep the compact icon.
+     * of the bare icon button. Header hosts (cdp) omit it and keep the compact icon.
+     *
+     * Ignored by `appearance: "rail"`, which supplies its own fixed label.
      */
     label?: string;
+    /**
+     * `"rail"` renders the trigger as a cell on the flp card's operations rail
+     * (`.crail`, artboard 21): the design's `library_add` glyph over an "add to deck"
+     * micro-label, sized and coloured by `CARD_OPS_CELL_SX` so it is indistinguishable
+     * from the rail's other two cells. Default `"button"` keeps the icon/labelled
+     * shapes above.
+     *
+     * A third shape rather than a `trigger` render-prop: this component owns the deck
+     * fetch, the tick state and the save-on-close, and every host wants exactly that
+     * behaviour behind a differently-shaped button.
+     */
+    appearance?: "button" | "rail";
 }
 
-const AddToDeckMenu: React.FC<AddToDeckMenuProps> = ({ vocabEntryId, className, color, label }) => {
+const AddToDeckMenu: React.FC<AddToDeckMenuProps> = ({ vocabEntryId, className, color, label, appearance = "button" }) => {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
     const [decks, setDecks] = useState<DeckSummary[]>([]);
     // The ticked set, held locally while the menu is open (see the class comment).
@@ -146,7 +165,22 @@ const AddToDeckMenu: React.FC<AddToDeckMenuProps> = ({ vocabEntryId, className, 
 
     return (
         <>
-            {label ? (
+            {appearance === "rail" ? (
+                <Box
+                    component="button"
+                    type="button"
+                    className={className ?? "add-to-deck__button add-to-deck__button--rail"}
+                    aria-label="Add to deck"
+                    onClick={openMenu}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
+                    sx={CARD_OPS_CELL_SX}
+                >
+                    <Icon name="library_add" size={18} color={COLORS.onSurface} />
+                    <Box component="em" sx={CARD_OPS_CELL_LABEL_SX}>add to deck</Box>
+                </Box>
+            ) : label ? (
                 <Button
                     className={className ?? "add-to-deck__button"}
                     variant="outlined"

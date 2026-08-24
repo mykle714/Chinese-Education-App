@@ -163,7 +163,15 @@ stacking) and to omit `showSegmentSpaces`; both were removed so a sentence rende
 byte-for-byte the same in the eip's Examples tab and in the cdp's
 `vocab-card-detail__examples` `SectionCard`. The only remaining difference is the
 chrome *around* the block — the cdp wraps it in a `SectionCard` with an
-"EXAMPLE SENTENCES" `SectionLabel`, the eip renders it bare in the tab panel.
+"EXAMPLE SENTENCES" `SectionLabel`, while the eip heads the tab with a `.shelfhd`
+caption (2026-08-24, artboard 24) naming **which sense** the sentences illustrate
+("sense 1 · the past") and how many there are.
+
+That caption is not decoration. The sentence set CHANGES with the sense pick, and the
+pick is made from a chip in the panel header directly above; without the caption a
+learner who has just switched senses has no way to tell whether they are looking at the
+new set or the old one. It lives in `InfoCardTabContent`, not in `ExampleSentenceList`,
+precisely so the cdp — which has no sense strip over its box — does not inherit it.
 (`SegmentedSentenceDisplay`/`CPCDRow` still accept `compact`; other cdp sections
 use it. `ExampleSentenceList` just never passes it.)
 
@@ -203,7 +211,8 @@ orange `COLORS.aiGenerated` border, ~8% tint, and an `AutoAwesome` "AI GENERATED
 badge (`src/theme/aiGeneratedStyling.ts` + `src/components/AiGeneratedBadge.tsx`,
 same treatment as the dictionary
 AI-fallback card). Approved sentences keep the quiet `flashcard.subtleBg`
-background. Because the flag is computed at read time, a data deploy or backfill
+background **and a transparent border of the same width as the AI one** — without it the
+two states are different sizes and the whole list reflows as sentences get approved. Because the flag is computed at read time, a data deploy or backfill
 that changes a sentence's text automatically demotes it back to AI-generated.
 
 ## Segment popup → eip drill-in

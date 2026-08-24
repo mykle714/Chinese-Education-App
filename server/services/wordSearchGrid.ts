@@ -9,7 +9,7 @@
  * Referenced by docs/WORD_SEARCH_GAME.md §2 (grid generation).
  */
 
-import { WORD_SEARCH_TEMPLATES } from './wordSearchTemplates.js';
+import { WORD_SEARCH_TEMPLATES, WORD_SEARCH_TEMPLATE_ROWS, WORD_SEARCH_TEMPLATE_COLS } from './wordSearchTemplates.js';
 
 export type Rng = () => number;
 
@@ -144,7 +144,7 @@ export const MAX_GRID_ATTEMPTS = 100;
 
 /**
  * Whole-grid regenerations that use random snaking placement before falling
- * back to a fixed template (see docs/WORD_SEARCH_TEMPLATES.md). 10 words all
+ * back to a fixed template (see docs/WORD_SEARCH_TEMPLATES.md). 12 words all
  * at the 4-character cap can wall each other off badly enough that random
  * retries burn through many attempts on bad luck; a template guarantees a fit
  * instead of continuing to gamble. Attempts `RANDOM_GRID_ATTEMPTS` and above
@@ -176,10 +176,11 @@ function shuffle<T>(arr: T[], rng: Rng): T[] {
 
 /**
  * Template mode (docs/WORD_SEARCH_TEMPLATES.md) only applies to the shape this
- * game actually ships: a 7x7 board with exactly 10 words, each <= 4 characters
- * (one word per template slot, no leftover words or slots). Any other shape
- * (e.g. a differently-sized test board) keeps retrying random placement for
- * the full MAX_GRID_ATTEMPTS instead.
+ * game actually ships: a board matching WORD_SEARCH_TEMPLATE_ROWS/COLS with
+ * exactly 12 words, each <= 4 characters (one word per template slot, no
+ * leftover words or slots). Any other shape (e.g. a differently-sized test
+ * board) keeps retrying random placement for the full MAX_GRID_ATTEMPTS
+ * instead.
  */
 function templateModeApplicable(
   prepared: { chars: string[] }[],
@@ -187,8 +188,8 @@ function templateModeApplicable(
   cols: number
 ): boolean {
   return (
-    rows === 7 &&
-    cols === 7 &&
+    rows === WORD_SEARCH_TEMPLATE_ROWS &&
+    cols === WORD_SEARCH_TEMPLATE_COLS &&
     prepared.length === WORD_SEARCH_TEMPLATES[0]?.slots.length &&
     prepared.every((p) => p.chars.length >= 1 && p.chars.length <= 4)
   );
@@ -352,8 +353,8 @@ export function generateWordSearchGrid(
     let templateIndex: number | null = null;
 
     if (useTemplate) {
-      // Template mode (docs/WORD_SEARCH_TEMPLATES.md): pick a random fixed 7x7
-      // layout, shuffle words across its 10 four-cell slots, and for any word
+      // Template mode (docs/WORD_SEARCH_TEMPLATES.md): pick a random fixed 9x6
+      // layout, shuffle words across its 12 four-cell slots, and for any word
       // shorter than 4 characters take a random contiguous run within its
       // slot — the rest of that slot is left null and picked up by the normal
       // filler flood below, same as every other empty cell. Cell-count-wise

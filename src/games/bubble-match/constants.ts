@@ -1,4 +1,4 @@
-import { COLORS } from "../../theme/colors";
+import { COLORS, type RampHue } from "../../theme/colors";
 import type { MarkType } from "../../types";
 import type { LevelConfig } from "./types";
 
@@ -121,3 +121,13 @@ export const WORD_BUBBLE_BG = COLORS.red;
 export const WORD_BUBBLE_BORDER = COLORS.red;
 export const DEFINITION_BUBBLE_BG = COLORS.grey;
 export const DEFINITION_BUBBLE_BORDER = COLORS.grey;
+
+/**
+ * THE GAME'S HUE — its hub row's colour AND the accent ground its own screen is
+ * flooded with (docs/SHELF_REDESIGN.md § A6b).
+ *
+ * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
+ * the registry reads this, and the page passes it to `gameSurfaceSx` /
+ * `GameSurfaceProvider`. Tapping a red row must open a red screen.
+ */
+export const GAME_HUE: RampHue = "red";

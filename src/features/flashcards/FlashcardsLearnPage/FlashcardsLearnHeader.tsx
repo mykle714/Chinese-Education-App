@@ -16,12 +16,11 @@ interface FlashcardsLearnHeaderProps {
     language: Language;
     showPinyin: boolean;
     onTogglePinyin: () => void;
-    // Whether the active card is showing its back (Side 2). The icon-layout editor
-    // only operates on the back face, so the "edit" button is enabled only here.
-    isFlipped: boolean;
-    // True while the icon-layout editor is open (keeps the button from re-triggering).
+    // True while the icon-layout editor is open. The editor has its own draft state, so
+    // a mark-undo during it is meaningless — the button greys out. The editor's own
+    // TOGGLE is no longer here (it moved onto the card's rail), but its STATE still
+    // reaches this header for exactly this reason.
     editMode: boolean;
-    onToggleEdit: () => void;
     onSettingsClick: () => void;
 }
 
@@ -35,17 +34,19 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
     language,
     showPinyin,
     onTogglePinyin,
-    isFlipped,
     editMode,
-    onToggleEdit,
     onSettingsClick,
 }) => {
     // Control-placement principle (see also SettingsPanelBody): the header surfaces
     // only the "quick" pinyin toggle flipped often mid-study. All other learn prefs
     // (tone color, word spacing, autoplay) live in the Settings sheet as "setup"
-    // prefs — the single complete control panel. The "edit" button opens the custom
-    // card icon-layout editor (docs/CARD_ICON_LAYOUT.md); it acts on the back face, so
-    // it is enabled only when the card is flipped to the back.
+    // prefs — the single complete control panel.
+    //
+    // The icon-layout editor's `edit` toggle used to sit here and has MOVED onto the
+    // card, as `customize` on `CardOpsRail` (artboard 19's header does not carry it;
+    // artboard 21 shows where it went). It decorates one specific card, so it belongs to
+    // that card rather than to the session — and this header was carrying five controls
+    // beside a title that interpolates a deck name.
     //
     // Every control here is a PageHeader slot primitive. This file used to carry its
     // own 14-line `toggleSx` helper, byte-identical to copies in BubbleMatchHeader and
@@ -67,18 +68,6 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
                     pinyin
                 </HeaderToggleChip>
             )}
-            {/* Custom icon-layout editor toggle — back face only. Edit (icon-layout)
-                uses the brush; the writing-practice button uses the pencil (the two
-                were swapped per design). */}
-            <HeaderToggleChip
-                className="card-edit-toggle-btn"
-                active={editMode}
-                onClick={onToggleEdit}
-                disabled={!isFlipped}
-                startIcon="brush"
-            >
-                edit
-            </HeaderToggleChip>
             <HeaderIconButton
                 className="mobile-demo-tool-button mobile-demo-settings-button"
                 icon="settings"
@@ -93,7 +82,7 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
         <PageHeader
             title={selectedCategory ? `Learn: ${selectedCategory}` : "Learn"}
             onBack={onBack}
-            // The busiest header in the app — up to five controls beside a title that
+            // Still the busiest header in the app — four controls beside a title that
             // interpolates a deck name. The Learn artboard sets 18px for exactly this.
             size="dense"
             rightContent={rightItems}

@@ -1,59 +1,89 @@
-import React, { useState } from 'react';
+import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { WEIGHT } from '../theme/scale';
+import { Box, Typography, Snackbar, Switch } from '@mui/material';
 import LeafPage from '../components/LeafPage';
-import {
-    Container,
-    Paper,
-    Typography,
-    Box,
-    FormControl,
-    FormLabel,
-    RadioGroup,
-    FormControlLabel,
-    Radio,
-    Card,
-    CardContent,
-    Alert,
-    Chip,
-    Snackbar,
-    Switch,
-    TextField,
-    Button,
-    IconButton,
-    InputAdornment,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogContentText,
-    DialogActions,
-    CircularProgress,
-} from '@mui/material';
-import PaletteIcon from '@mui/icons-material/Palette';
-import LanguageIcon from '@mui/icons-material/Language';
-import VolumeUpIcon from '@mui/icons-material/VolumeUp';
-import SpaceBarIcon from '@mui/icons-material/SpaceBar';
-import LockIcon from '@mui/icons-material/Lock';
-import { Visibility, VisibilityOff, Warning } from '@mui/icons-material';
+import Icon from '../components/Icon';
+import { SettingsSection, OptionRow, SwitchRow } from '../components/primitives';
 import { useTheme, type ThemeMode } from '../contexts/ThemeContext';
 import { useAuth } from '../AuthContext';
 import { LANGUAGE_FLAGS, LANGUAGE_NAMES } from '../types';
 import type { Language } from '../types';
 import { usePageTitle } from '../hooks/usePageTitle';
+import { useSlideNavigate } from '../hooks/useSlideNavigate';
 import { useTTSSettings } from '../hooks/useTTSSettings';
-import { COLORS } from "../theme/colors";
+import { COLORS } from '../theme/colors';
+import { FONTS } from '../theme/fonts';
+
+/**
+ * Settings · preferences (`/settings`) — artboard 11 of the shelf redesign
+ * (docs/SHELF_REDESIGN.md entry 11).
+ *
+ * The READ-heavy half of settings: theme, learning language, narration, display, and a
+ * chevron row down to `/settings/account` (artboard 11b, `AccountSecurityPage`) which
+ * holds the write-heavy half — the password form and the danger zone.
+ *
+ * Everything here is a `SettingsSection` (`.set`) holding `OptionRow`s (`.opt`) and
+ * `SwitchRow`s (`.sw`). It replaced a 675-line stack of MUI `Paper` + `CardContent` +
+ * `FormControl` + `RadioGroup` + full-width `Card` option tiles.
+ *
+ * ⚠️ NO `Container`, NO page padding. `.set`'s own `14px 18px 0` margin is the gutter;
+ * the old `<Container maxWidth="sm" sx={{ py: 4 }}>` would double it.
+ *
+ * Depended on by: docs/SHELF_REDESIGN.md entry 11, docs/LEAF_NODE_PAGES.md,
+ * docs/UX_AND_NAVIGATION.md, docs/EXAMPLE_SENTENCES.md (the word-spacing toggle).
+ */
+
+/**
+ * The swatch each theme is represented by in the four-across row.
+ *
+ * ⚠️ THESE ARE NOT THE THEMES' REAL PALETTES. Each is the one colour that best says
+ * "this is what the app will look like" at 44px — the ground for Light and Dark, the
+ * accent hue for Ocean and Nature — because the themes' own tokens (D4: Dark, Ocean and
+ * Nature are not re-derived for this design yet) would render three near-identical
+ * off-whites. Revisit when those palettes land; until then a swatch is a signpost, not
+ * a preview.
+ */
+const THEME_SWATCHES: Record<ThemeMode, string> = {
+    light: COLORS.background,
+    dark: '#26252B',
+    blue: COLORS.blu,
+    green: COLORS.grn,
+};
 
 function SettingsPage() {
     usePageTitle("Settings");
     const navigate = useNavigate();
+    const slideNavigate = useSlideNavigate();
     const { themeMode, setThemeMode, availableThemes } = useTheme();
-    const { user, updateLanguage, changePassword, deleteAccount, updateDisplaySettings } = useAuth();
+    const { user, updateLanguage, updateDisplaySettings } = useAuth();
     const [languageSuccess, setLanguageSuccess] = useState(false);
     const [languageError, setLanguageError] = useState<string | null>(null);
     const { settings: ttsSettings, update: updateTTSSettings } = useTTSSettings();
 
-    const handleThemeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        setThemeMode(event.target.value as ThemeMode);
+    const activeTheme = availableThemes.find((t) => t.value === themeMode);
+
+    /**
+     * Arrow-key navigation for the theme swatch row.
+     *
+     * A `role="radiogroup"` of `role="radio"` buttons is only half a radio group
+     * without this: the ARIA contract is ONE tab stop for the group, with arrows moving
+     * (and moving the selection) inside it. Paired with the roving `tabIndex` below —
+     * only the selected swatch is tabbable, so Tab enters the group once and leaves it
+     * once instead of stopping four times.
+     *
+     * Both axes are handled because the row is horizontal on screen but a
+     * screen-reader user may drive it either way.
+     */
+    const handleSwatchKeyDown = (e: ReactKeyboardEvent, index: number) => {
+        const delta = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+        if (delta === 0) return;
+        e.preventDefault();
+        const next = availableThemes[(index + delta + availableThemes.length) % availableThemes.length];
+        setThemeMode(next.value);
+        // Focus has to follow the selection or the next arrow press comes from the old
+        // element and the group appears to jump.
+        const row = (e.currentTarget as HTMLElement).parentElement;
+        row?.querySelector<HTMLElement>(`.settings-page__theme-swatch--${next.value}`)?.focus();
     };
 
     // Display preferences (docs/EXAMPLE_SENTENCES.md). Word spacing is account-level
@@ -75,8 +105,7 @@ function SettingsPage() {
         }
     };
 
-    const handleLanguageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const newLanguage = event.target.value as Language;
+    const handleLanguageChange = async (newLanguage: Language) => {
         try {
             await updateLanguage(newLanguage);
             setLanguageSuccess(true);
@@ -84,89 +113,6 @@ function SettingsPage() {
         } catch (error: unknown) {
             setLanguageError(error instanceof Error ? error.message : 'Failed to update language preference');
             setLanguageSuccess(false);
-        }
-    };
-
-    // Password change form state
-    const [currentPassword, setCurrentPassword] = useState("");
-    const [newPassword, setNewPassword] = useState("");
-    const [confirmPassword, setConfirmPassword] = useState("");
-    const [isSubmittingPassword, setIsSubmittingPassword] = useState(false);
-    const [passwordSuccess, setPasswordSuccess] = useState(false);
-    const [passwordError, setPasswordError] = useState<string | null>(null);
-    const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-    const [showNewPassword, setShowNewPassword] = useState(false);
-    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-    const validatePasswordForm = () => {
-        if (!currentPassword) {
-            setPasswordError("Current password is required");
-            return false;
-        }
-        if (!newPassword) {
-            setPasswordError("New password is required");
-            return false;
-        }
-        if (newPassword !== confirmPassword) {
-            setPasswordError("New passwords do not match");
-            return false;
-        }
-        return true;
-    };
-
-    const handleSubmitPasswordChange = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setPasswordError(null);
-        setPasswordSuccess(false);
-        if (!validatePasswordForm()) {
-            return;
-        }
-        setIsSubmittingPassword(true);
-        try {
-            await changePassword(currentPassword, newPassword);
-            setPasswordSuccess(true);
-            setCurrentPassword("");
-            setNewPassword("");
-            setConfirmPassword("");
-        } catch (err: unknown) {
-            setPasswordError(err instanceof Error ? err.message : "Failed to change password");
-        } finally {
-            setIsSubmittingPassword(false);
-        }
-    };
-
-    // Delete account dialog state
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-    const [deletePassword, setDeletePassword] = useState("");
-    const [deleteError, setDeleteError] = useState<string | null>(null);
-    const [isDeleting, setIsDeleting] = useState(false);
-    const [showDeletePassword, setShowDeletePassword] = useState(false);
-
-    const handleOpenDeleteDialog = () => {
-        setDeleteDialogOpen(true);
-        setDeletePassword("");
-        setDeleteError(null);
-    };
-
-    const handleCloseDeleteDialog = () => {
-        setDeleteDialogOpen(false);
-        setDeletePassword("");
-        setDeleteError(null);
-    };
-
-    const handleDeleteAccount = async () => {
-        setDeleteError(null);
-        if (!deletePassword) {
-            setDeleteError("Password is required to delete your account");
-            return;
-        }
-        setIsDeleting(true);
-        try {
-            await deleteAccount(deletePassword);
-            // Navigation to login is handled in the deleteAccount function
-        } catch (err: unknown) {
-            setDeleteError(err instanceof Error ? err.message : "Failed to delete account");
-            setIsDeleting(false);
         }
     };
 
@@ -178,12 +124,12 @@ function SettingsPage() {
         {
             value: 'zh',
             label: `${LANGUAGE_FLAGS.zh} ${LANGUAGE_NAMES.zh}`,
-            description: 'Learn simplified and traditional Chinese characters with pinyin pronunciation'
+            description: 'Simplified and traditional, with pinyin',
         },
         {
             value: 'es',
             label: `${LANGUAGE_FLAGS.es} ${LANGUAGE_NAMES.es}`,
-            description: 'Learn Spanish vocabulary as plain text — no pronunciation overlay'
+            description: 'Plain text — no pronunciation overlay',
         },
     ];
 
@@ -194,396 +140,204 @@ function SettingsPage() {
         // MobileDemoFrame via Layout.tsx (/settings is in MOBILE_DEMO_PATHS).
         <LeafPage title="Settings" onBack={() => navigate("/account")} className="settings-page">
             <Box className="settings-page__scroll" sx={{ flex: 1, overflowY: "auto" }}>
-        <Container maxWidth="sm" sx={{ py: 4 }}>
-            {/* Theme Settings Section */}
-            <Paper elevation={2} sx={{ mb: 4 }}>
-                <CardContent sx={{ p: 4 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <PaletteIcon sx={{ mr: 2, color: 'primary.main' }} />
-                        <Typography variant="h5" component="h2" fontWeight="bold">
-                            Color Theme
-                        </Typography>
-                    </Box>
-
-                    <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-                        Choose a color theme that suits your preference and learning environment.
-                    </Typography>
-
-                    <FormControl component="fieldset" sx={{ width: '100%' }}>
-                        <FormLabel component="legend" sx={{ mb: 2, fontWeight: WEIGHT.bold }}>
-                            Available Themes
-                        </FormLabel>
-                        <RadioGroup
-                            value={themeMode}
-                            onChange={handleThemeChange}
-                            sx={{ gap: 2 }}
-                        >
-                            {availableThemes.map((theme) => (
-                                <Card
-                                    key={theme.value}
-                                    variant="outlined"
-                                    sx={{
-                                        transition: 'all 0.2s ease-in-out',
-                                        cursor: 'pointer',
-                                        border: themeMode === theme.value ? 2 : 1,
-                                        borderColor: themeMode === theme.value ? 'primary.main' : 'divider',
-                                        backgroundColor: themeMode === theme.value ? 'action.selected' : 'background.paper',
-                                        '&:hover': {
-                                            borderColor: 'primary.main',
-                                            backgroundColor: 'action.hover',
-                                        },
-                                    }}
-                                    onClick={() => setThemeMode(theme.value)}
-                                >
-                                    <CardContent sx={{ py: 2 }}>
-                                        <FormControlLabel
-                                            value={theme.value}
-                                            control={<Radio />}
-                                            label={
-                                                <Box sx={{ ml: 1 }}>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                        <Typography variant="h6" component="span" fontWeight="bold">
-                                                            {theme.label}
-                                                        </Typography>
-                                                        {themeMode === theme.value && (
-                                                            <Chip
-                                                                label="Active"
-                                                                size="small"
-                                                                color="primary"
-                                                                sx={{ ml: 2 }}
-                                                            />
-                                                        )}
-                                                    </Box>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        {theme.description}
-                                                    </Typography>
-                                                </Box>
-                                            }
-                                            sx={{
-                                                margin: 0,
-                                                width: '100%',
-                                                '& .MuiFormControlLabel-label': {
-                                                    width: '100%',
-                                                },
-                                            }}
-                                        />
-                                    </CardContent>
-                                </Card>
-                            ))}
-                        </RadioGroup>
-                    </FormControl>
-
-                    <Alert severity="info" sx={{ mt: 3 }}>
-                        <Typography variant="body2">
-                            Your theme preference is automatically saved and will be remembered when you return to the application.
-                        </Typography>
-                    </Alert>
-                </CardContent>
-            </Paper>
-
-            {/* Language Selection Section */}
-            <Paper elevation={2} sx={{ mb: 4 }}>
-                <CardContent sx={{ p: 4 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <LanguageIcon sx={{ mr: 2, color: 'primary.main' }} />
-                        <Typography variant="h5" component="h2" fontWeight="bold">
-                            Learning Language
-                        </Typography>
-                    </Box>
-
-                    <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-                        Select the language you want to learn. This will filter your vocabulary entries and dictionary lookups.
-                    </Typography>
-
-                    <FormControl component="fieldset" sx={{ width: '100%' }}>
-                        <FormLabel component="legend" sx={{ mb: 2, fontWeight: WEIGHT.bold }}>
-                            Available Languages
-                        </FormLabel>
-                        <RadioGroup
-                            value={user?.selectedLanguage || 'zh'}
-                            onChange={handleLanguageChange}
-                            sx={{ gap: 2 }}
-                        >
-                            {availableLanguages.map((lang) => {
-                                const isActive = user?.selectedLanguage === lang.value;
-
-                                return (
-                                    <Card
-                                        key={lang.value}
-                                        variant="outlined"
-                                        sx={{
-                                            transition: 'all 0.2s ease-in-out',
-                                            cursor: 'pointer',
-                                            border: isActive ? 2 : 1,
-                                            borderColor: isActive ? 'primary.main' : 'divider',
-                                            backgroundColor: isActive ? 'action.selected' : 'background.paper',
-                                            '&:hover': {
-                                                borderColor: 'primary.main',
-                                                backgroundColor: 'action.hover',
-                                            },
-                                        }}
-                                        onClick={() => handleLanguageChange({ target: { value: lang.value } } as React.ChangeEvent<HTMLInputElement>)}
-                                    >
-                                        <CardContent sx={{ py: 2 }}>
-                                            <FormControlLabel
-                                                value={lang.value}
-                                                control={<Radio />}
-                                                label={
-                                                    <Box sx={{ ml: 1 }}>
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                                            <Typography variant="h6" component="span" fontWeight="bold">
-                                                                {lang.label}
-                                                            </Typography>
-                                                            {isActive && (
-                                                                <Chip
-                                                                    label="Active"
-                                                                    size="small"
-                                                                    color="primary"
-                                                                    sx={{ ml: 2 }}
-                                                                />
-                                                            )}
-                                                        </Box>
-                                                        <Typography variant="body2" color="text.secondary">
-                                                            {lang.description}
-                                                        </Typography>
-                                                    </Box>
-                                                }
-                                                sx={{
-                                                    margin: 0,
-                                                    width: '100%',
-                                                    '& .MuiFormControlLabel-label': {
-                                                        width: '100%',
-                                                    },
-                                                }}
-                                            />
-                                        </CardContent>
-                                    </Card>
-                                );
-                            })}
-                        </RadioGroup>
-                    </FormControl>
-
-                    <Alert severity="info" sx={{ mt: 3 }}>
-                        <Typography variant="body2">
-                            Currently available: Chinese and Spanish. More languages coming soon!
-                        </Typography>
-                    </Alert>
-                </CardContent>
-            </Paper>
-
-            {/* Narration (TTS) Settings Section */}
-            <Paper elevation={2} sx={{ mb: 4 }} className="narration-settings-section">
-                <CardContent sx={{ p: 4 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <VolumeUpIcon sx={{ mr: 2, color: 'primary.main' }} />
-                        <Typography variant="h5" component="h2" fontWeight="bold">
-                            Narration
-                        </Typography>
-                    </Box>
-
-                    <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-                        Hear Chinese words read aloud as you flip through flashcards.
-                    </Typography>
-
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }} className="narration-enable-row">
-                        <Box>
-                            <Typography variant="body1" fontWeight="bold">Speak Chinese words aloud</Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Plays automatically when you flip a card, plus a speaker button on each card.
-                            </Typography>
-                        </Box>
-                        <Switch
-                            checked={ttsSettings.enabled}
-                            onChange={(e) => updateTTSSettings({ enabled: e.target.checked })}
-                            inputProps={{ 'aria-label': 'Enable narration' }}
-                        />
-                    </Box>
-                </CardContent>
-            </Paper>
-
-            {/* Display Settings Section — Chinese only (see showDisplaySettings) */}
-            {showDisplaySettings && (
-                <Paper elevation={2} sx={{ mb: 4 }} className="settings-page__display-section">
-                    <CardContent sx={{ p: 4 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                            <SpaceBarIcon sx={{ mr: 2, color: 'primary.main' }} />
-                            <Typography variant="h5" component="h2" fontWeight="bold">
-                                Display
-                            </Typography>
-                        </Box>
-
-                        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-                            How Chinese sentences are laid out wherever they appear.
-                        </Typography>
-
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }} className="settings-page__segment-spaces-row">
-                            <Box>
-                                <Typography variant="body1" fontWeight="bold">Show spaces between words</Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    Separates each word in example sentences — on the flashcard info
-                                    panel and the card detail page alike.
-                                </Typography>
-                            </Box>
-                            <Switch
-                                checked={user?.showSegmentSpaces === true}
-                                disabled={displaySaving}
-                                onChange={(e) => handleToggleSegmentSpaces(e.target.checked)}
-                                inputProps={{ 'aria-label': 'Show spaces between words' }}
-                            />
-                        </Box>
-                    </CardContent>
-                </Paper>
-            )}
-
-            {/* Change Password Section */}
-            <Paper elevation={2} sx={{ mb: 4 }} className="settings-page__password-section">
-                <CardContent sx={{ p: 4 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <LockIcon sx={{ mr: 2, color: 'primary.main' }} />
-                        <Typography variant="h5" component="h2" fontWeight="bold">
-                            Change Password
-                        </Typography>
-                    </Box>
-
-                    {passwordSuccess && (
-                        <Alert className="settings-page__password-success-alert" severity="success" sx={{ mb: 2 }}>
-                            Password changed successfully!
-                        </Alert>
-                    )}
-
-                    {passwordError && (
-                        <Alert className="settings-page__password-error-alert" severity="error" sx={{ mb: 2 }}>
-                            {passwordError}
-                        </Alert>
-                    )}
-
-                    <Box className="settings-page__password-form" component="form" onSubmit={handleSubmitPasswordChange} noValidate>
-                        <TextField
-                            margin="normal"
-                            required
-                            fullWidth
-                            name="currentPassword"
-                            label="Current Password"
-                            type={showCurrentPassword ? "text" : "password"}
-                            id="currentPassword"
-                            autoComplete="current-password"
-                            value={currentPassword}
-                            onChange={(e) => setCurrentPassword(e.target.value)}
-                            size="small"
-                            InputProps={{
-                                endAdornment: (
-                                    <InputAdornment position="end">
-                                        <IconButton
-                                            aria-label="toggle password visibility"
-                                            onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                                            edge="end"
-                                            size="small"
-                                        >
-                                            {showCurrentPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                                        </IconButton>
-                                    </InputAdornment>
-                                )
-                            }}
-                        />
-
-                        <TextField
-                            margin="normal"
-                            required
-                            fullWidth
-                            name="newPassword"
-                            label="New Password"
-                            type={showNewPassword ? "text" : "password"}
-                            id="newPassword"
-                            autoComplete="new-password"
-                            value={newPassword}
-                            onChange={(e) => setNewPassword(e.target.value)}
-                            size="small"
-                            InputProps={{
-                                endAdornment: (
-                                    <InputAdornment position="end">
-                                        <IconButton
-                                            aria-label="toggle password visibility"
-                                            onClick={() => setShowNewPassword(!showNewPassword)}
-                                            edge="end"
-                                            size="small"
-                                        >
-                                            {showNewPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                                        </IconButton>
-                                    </InputAdornment>
-                                )
-                            }}
-                        />
-
-                        <TextField
-                            margin="normal"
-                            required
-                            fullWidth
-                            name="confirmPassword"
-                            label="Confirm New Password"
-                            type={showConfirmPassword ? "text" : "password"}
-                            id="confirmPassword"
-                            autoComplete="new-password"
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            size="small"
-                            InputProps={{
-                                endAdornment: (
-                                    <InputAdornment position="end">
-                                        <IconButton
-                                            aria-label="toggle password visibility"
-                                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                            edge="end"
-                                            size="small"
-                                        >
-                                            {showConfirmPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                                        </IconButton>
-                                    </InputAdornment>
-                                )
-                            }}
-                        />
-
-                        <Button
-                            className="settings-page__password-submit-button"
-                            type="submit"
-                            fullWidth
-                            variant="contained"
-                            sx={{ mt: 2 }}
-                            disabled={isSubmittingPassword}
-                            size="small"
-                        >
-                            {isSubmittingPassword ? "Changing..." : "Change Password"}
-                        </Button>
-                    </Box>
-                </CardContent>
-            </Paper>
-
-            {/* Delete Account Section */}
-            <Paper elevation={2} sx={{ mb: 4 }} className="settings-page__delete-section">
-                <CardContent sx={{ p: 4 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <Warning sx={{ mr: 2, color: COLORS.dangerInk }} />
-                        <Typography variant="h5" component="h2" fontWeight="bold" sx={{ color: COLORS.dangerInk }}>
-                            Delete Account
-                        </Typography>
-                    </Box>
-
-                    <Alert className="settings-page__delete-warning-alert" severity="warning" icon={<Warning fontSize="small" />} sx={{ mb: 3 }}>
-                        This action is permanent and cannot be undone.
-                    </Alert>
-
-                    <Button
-                        className="settings-page__delete-button"
-                        fullWidth
-                        variant="outlined"
-                        color="error"
-                        startIcon={<Warning fontSize="small" />}
-                        onClick={handleOpenDeleteDialog}
-                        size="small"
+                {/* ── Colour theme — a four-swatch row ────────────────────────────
+                    The artboard's argument, and it is a good one: four full option
+                    cards cost a third of the screen for a choice made once. The row
+                    is a radiogroup so arrow keys still move between the four. */}
+                <SettingsSection
+                    className="settings-page__theme-section"
+                    icon="palette"
+                    title="Color Theme"
+                    description="Choose a theme that suits your learning environment."
+                >
+                    <Box
+                        className="settings-page__theme-swatches"
+                        role="radiogroup"
+                        aria-label="Color theme"
+                        sx={{ display: 'flex', gap: '9px', marginTop: '11px' }}
                     >
-                        Delete My Account
-                    </Button>
-                </CardContent>
-            </Paper>
+                        {availableThemes.map((theme, index) => {
+                            const selected = themeMode === theme.value;
+                            return (
+                                <Box
+                                    key={theme.value}
+                                    component="button"
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={selected}
+                                    aria-label={`${theme.label} — ${theme.description}`}
+                                    className={`settings-page__theme-swatch settings-page__theme-swatch--${theme.value}`}
+                                    onClick={() => setThemeMode(theme.value)}
+                                    onKeyDown={(e: ReactKeyboardEvent) => handleSwatchKeyDown(e, index)}
+                                    // Roving tabindex — see handleSwatchKeyDown.
+                                    tabIndex={selected ? 0 : -1}
+                                    sx={{
+                                        flex: 1,
+                                        minWidth: 0,
+                                        textAlign: 'center',
+                                        background: 'none',
+                                        border: 'none',
+                                        padding: 0,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    <Box
+                                        className="settings-page__theme-swatch-chip"
+                                        sx={{
+                                            height: 44,
+                                            borderRadius: '12px',
+                                            backgroundColor: THEME_SWATCHES[theme.value],
+                                            // Selection is a RING rather than a border so the
+                                            // swatch's own 44px height never changes — four
+                                            // chips in a row must stay on one baseline.
+                                            boxShadow: selected ? `0 0 0 1.5px ${COLORS.onSurface}` : 'none',
+                                            border: selected ? 'none' : `1px solid ${COLORS.rowBorder}`,
+                                        }}
+                                    />
+                                    <Typography
+                                        className="settings-page__theme-swatch-label"
+                                        sx={{
+                                            fontFamily: FONTS.sans,
+                                            fontSize: 11.5,
+                                            fontWeight: selected ? 600 : 400,
+                                            color: selected ? COLORS.onSurface : COLORS.textSecondary,
+                                            marginTop: '5px',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                        }}
+                                    >
+                                        {theme.label}
+                                    </Typography>
+                                </Box>
+                            );
+                        })}
+                    </Box>
+                    {/* The chosen theme's description, which the swatch row has no room
+                        for. This is also where the old "your preference is saved
+                        automatically" Alert went: an info banner for a control that
+                        applies instantly is a banner nobody needs. */}
+                    {activeTheme && (
+                        <Typography
+                            className="settings-page__theme-active-note"
+                            sx={{
+                                fontFamily: FONTS.sans,
+                                fontSize: 12,
+                                color: COLORS.textSecondary,
+                                lineHeight: 1.45,
+                                marginTop: '9px',
+                            }}
+                        >
+                            {activeTheme.label} · {activeTheme.description}
+                        </Typography>
+                    )}
+                </SettingsSection>
+
+                {/* ── Learning language ──────────────────────────────────────────── */}
+                <SettingsSection
+                    className="settings-page__language-section"
+                    icon="language"
+                    title="Learning Language"
+                    description="Filters your vocabulary entries and dictionary lookups."
+                >
+                    {availableLanguages.map((lang) => (
+                        <OptionRow
+                            key={lang.value}
+                            className={`settings-page__language-option settings-page__language-option--${lang.value}`}
+                            name="learning-language"
+                            value={lang.value}
+                            checked={(user?.selectedLanguage ?? 'zh') === lang.value}
+                            onChange={(value) => handleLanguageChange(value as Language)}
+                            title={lang.label}
+                            subtitle={lang.description}
+                        />
+                    ))}
+                </SettingsSection>
+
+                {/* ── Narration (TTS) ────────────────────────────────────────────── */}
+                <SettingsSection
+                    className="narration-settings-section"
+                    icon="volume_up"
+                    title="Narration"
+                >
+                    <SwitchRow
+                        className="narration-enable-row"
+                        title="Speak Chinese words aloud"
+                        subtitle="Plays when you flip a card, plus a speaker button on each card."
+                        control={
+                            <Switch
+                                checked={ttsSettings.enabled}
+                                onChange={(e) => updateTTSSettings({ enabled: e.target.checked })}
+                                inputProps={{ 'aria-label': 'Enable narration' }}
+                            />
+                        }
+                    />
+                </SettingsSection>
+
+                {/* ── Display — Chinese only (see showDisplaySettings) ───────────── */}
+                {showDisplaySettings && (
+                    <SettingsSection
+                        className="settings-page__display-section"
+                        icon="space_bar"
+                        title="Display"
+                    >
+                        <SwitchRow
+                            className="settings-page__segment-spaces-row"
+                            title="Show spaces between words"
+                            subtitle="Separates each word in example sentences, everywhere they appear."
+                            control={
+                                <Switch
+                                    checked={user?.showSegmentSpaces === true}
+                                    disabled={displaySaving}
+                                    onChange={(e) => handleToggleSegmentSpaces(e.target.checked)}
+                                    inputProps={{ 'aria-label': 'Show spaces between words' }}
+                                />
+                            }
+                        />
+                    </SettingsSection>
+                )}
+
+                {/* ── Down to the write-heavy half (artboard 11b) ─────────────────
+                    A `.set` with no body: the artboard collapses the section card into
+                    a single tappable row when all it does is navigate. */}
+                <Box
+                    component="button"
+                    type="button"
+                    className="settings-page__account-security-row"
+                    onClick={() => slideNavigate('/settings/account')}
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        width: 'calc(100% - 36px)',
+                        margin: '14px 18px 0',
+                        padding: '15px 16px',
+                        borderRadius: '18px',
+                        backgroundColor: COLORS.white,
+                        border: `1px solid ${COLORS.rowBorder}`,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                    }}
+                >
+                    <Icon name="lock" size={19} color={COLORS.iconColor} />
+                    <Typography
+                        sx={{
+                            flex: 1,
+                            fontFamily: FONTS.sans,
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: COLORS.onSurface,
+                        }}
+                    >
+                        Account &amp; security
+                    </Typography>
+                    <Icon name="chevron_right" size={18} color={COLORS.textFaint} />
+                </Box>
+
+                {/* Bottom clearance — a leaf page has no footer, but the last section
+                    still needs air under it when the list is scrolled to the end. */}
+                <Box className="settings-page__bottom-clearance" sx={{ height: 28 }} />
+            </Box>
 
             {/* Success/Error Snackbars */}
             <Snackbar
@@ -598,76 +352,6 @@ function SettingsPage() {
                 onClose={() => setLanguageError(null)}
                 message={languageError}
             />
-        </Container>
-            </Box>
-
-            {/* Delete Account Confirmation Dialog */}
-            <Dialog
-                className="settings-page__delete-dialog"
-                open={deleteDialogOpen}
-                onClose={handleCloseDeleteDialog}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle className="settings-page__dialog-title" sx={{ color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Warning className="settings-page__dialog-warning-icon" /> Delete Account
-                </DialogTitle>
-                <DialogContent className="settings-page__dialog-content">
-                    <DialogContentText className="settings-page__dialog-content-text" sx={{ mb: 3 }}>
-                        Are you sure you want to delete your account? This action is permanent and cannot be undone.
-                    </DialogContentText>
-
-                    {deleteError && (
-                        <Alert className="settings-page__dialog-error-alert" severity="error" sx={{ mb: 2 }}>
-                            {deleteError}
-                        </Alert>
-                    )}
-
-                    <TextField
-                        className="settings-page__dialog-password-field"
-                        autoFocus
-                        margin="dense"
-                        label="Enter your password to confirm"
-                        type={showDeletePassword ? "text" : "password"}
-                        autoComplete="current-password"
-                        fullWidth
-                        variant="outlined"
-                        value={deletePassword}
-                        onChange={(e) => setDeletePassword(e.target.value)}
-                        size="small"
-                        InputProps={{
-                            endAdornment: (
-                                <InputAdornment position="end">
-                                    <IconButton
-                                        aria-label="toggle password visibility"
-                                        onClick={() => setShowDeletePassword(!showDeletePassword)}
-                                        edge="end"
-                                        size="small"
-                                    >
-                                        {showDeletePassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                                    </IconButton>
-                                </InputAdornment>
-                            )
-                        }}
-                    />
-                </DialogContent>
-                <DialogActions className="settings-page__dialog-actions" sx={{ px: 3, pb: 2 }}>
-                    <Button className="settings-page__dialog-cancel-button" onClick={handleCloseDeleteDialog} disabled={isDeleting} size="small">
-                        Cancel
-                    </Button>
-                    <Button
-                        className="settings-page__dialog-delete-button"
-                        onClick={handleDeleteAccount}
-                        color="error"
-                        variant="contained"
-                        disabled={isDeleting}
-                        startIcon={isDeleting ? <CircularProgress size={16} /> : <Warning fontSize="small" />}
-                        size="small"
-                    >
-                        {isDeleting ? "Deleting..." : "Delete"}
-                    </Button>
-                </DialogActions>
-            </Dialog>
         </LeafPage>
     );
 }

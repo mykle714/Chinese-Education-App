@@ -21,7 +21,7 @@ import {
     TAB_SWIPE_EDGE_RUBBER_RATIO,
     TAB_SWIPE_TRANSITION,
 } from "../constants";
-import { SIZE, WEIGHT } from "../../../theme/scale";
+import { WEIGHT } from "../../../theme/scale";
 import { SpeakerButton } from "./FlashCardSection";
 import { isHorizontalGestureClaimed } from "../../../utils/segmentScrubLock";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
@@ -50,10 +50,6 @@ export interface InfoCardPanelBodyProps {
     // in the entry header. Used only by the dictionary EIP — flashcards EIP
     // omits it because those cards are already in the library by definition.
     onAddToLibrary?: (entry: VocabEntry) => void;
-    // Opens (or focuses/refills) the singleton Compare tab for the current entry
-    // (docs/WORD_COMPARE_FEATURE.md). Renders the "Compare To…" button in the
-    // definition tab's action bar; undefined hides it.
-    onOpenCompare?: (entry: VocabEntry) => void;
     // Speaker callback for an example sentence. When provided, each sentence
     // block in the Examples tab renders a SpeakerButton in its top-right
     // corner. Undefined hides the buttons (TTS disabled in settings).
@@ -119,7 +115,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     onExampleSegmentClick,
     onSpeak,
     onAddToLibrary,
-    onOpenCompare,
     onSpeakSentence,
     speakingKey,
     headerCpcdSize = "md",
@@ -450,58 +445,20 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         showPinyin={showPinyin}
                     />
                 )}
-                {/* English gloss + its sense picker, as one row so the triangle trigger
-                    sits immediately after the text (the flp card face and the cdp put it
-                    in the same place). The row carries the flex:1 the Typography used to,
-                    so the header's action column still gets pushed to the far edge. */}
-                {currentEntry && (
-                    <Box
-                        className="mobile-demo-eic-header-english-row"
-                        sx={{ display: "flex", alignItems: "center", gap: 0.25, flex: 1, minWidth: 0 }}
-                    >
-                    <Typography
-                        className="mobile-demo-eic-header-english"
-                        sx={{
-                            fontSize: SIZE.bodyLg,
-                            fontWeight: WEIGHT.medium,
-                            // Matches the flp card face via the shared dd color helper: zh
-                            // renders at full contrast, other languages are de-emphasized one
-                            // step off `onSurface` via the `dd` token.
-                            // (No Contrast pick is applied here — as before, this header
-                            // follows the card theme only, not the per-card override.)
-                            color: ddTextColor(currentEntry.language, undefined, fc),
-                            fontFamily: FC_FONT,
-                            lineHeight: 1.3,
-                            minWidth: 0,
-                        }}
-                    >
-                        {/* The eip header gloss is a dd: it must agree with the flashcard face,
-                            so it resolves through the shared resolver (chosen sense →
-                            definitions[0] fallback) instead of reading definitions[0] directly. */}
-                        {resolveDisplayDefinition(currentEntry, selectedSenseIndex)}
-                    </Typography>
-                    {/* Same picker component the card face mounts (docs/DEFINITION_CLUSTERS.md).
-                        Self-hides when the entry has no real choice of sense. Readings are
-                        never censored here — the eip is a reference surface, not a quiz face. */}
-                    {onSelectSense && (
-                        <SensePicker
-                            entry={currentEntry}
-                            selectedSenseIndex={selectedSenseIndex}
-                            onSelectSense={onSelectSense}
-                            color={fc.textSecondary}
-                            classPrefix="mobile-demo-eic"
-                        />
-                    )}
-                    </Box>
-                )}
                 {/* Header action buttons laid out as a 2-column grid (reading order:
                     Speaker · Add-to-library). Either cell may be absent — Speaker needs
                     onSpeak and Add needs onAddToLibrary on a discoverable entry — so the
                     grid auto-packs whatever renders.
-                    The header keeps only the actions that are about the ENTRY ITSELF
-                    (hear it, save it). Add-to-deck, Compare and Practice Writing moved
-                    out to the definition tab's labelled action bar (InfoCardActionBar),
-                    where they read as named actions instead of unlabelled icons. */}
+                    The header keeps ONLY the actions that are about the ENTRY ITSELF —
+                    hear it, save it. Everything else has left the panel: the artboards
+                    make it information-only, so add-to-deck went onto the card's own
+                    `•••` rail and Compare + Practice Writing onto the word-tools rail
+                    above the card. `InfoCardActionBar`, which used to carry all three at
+                    the end of the definition tab, is deleted.
+
+                    Sits immediately after the headword rather than at the far right,
+                    because the far right now belongs to the sense chip — reading order
+                    is identity (word, how to hear it) → meaning → which sense. */}
                 {currentEntry && (
                     onSpeak ||
                     (onAddToLibrary && currentEntry.discoverable)
@@ -550,6 +507,59 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         )}
                     </Box>
                 )}
+                {/* `.eid` — the gloss of the SHOWING sense, right-aligned into the space
+                    between the headword and the sense chip, with the chip pinned to the
+                    far edge.
+
+                    Right-aligned on purpose: the chip is what the gloss belongs to, so
+                    setting the text against it reads as one statement ("this is what it
+                    means · sense 1 of 9") instead of two things at opposite ends of a
+                    rule. The chip is the SAME control, in the SAME place, on the card, the
+                    card detail and here — a pick made on any of them swaps everything
+                    below, which is why the panel needs no sense list of its own. */}
+                {currentEntry && (
+                    <Box
+                        className="mobile-demo-eic-header-english-row"
+                        sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0, justifyContent: "flex-end" }}
+                    >
+                    <Typography
+                        className="mobile-demo-eic-header-english"
+                        sx={{
+                            flex: 1,
+                            minWidth: 0,
+                            textAlign: "right",
+                            fontSize: 12.5,
+                            letterSpacing: "-0.008em",
+                            fontWeight: WEIGHT.regular,
+                            // Matches the flp card face via the shared dd color helper: zh
+                            // renders at full contrast, other languages are de-emphasized one
+                            // step off `onSurface` via the `dd` token.
+                            // (No Contrast pick is applied here — as before, this header
+                            // follows the card theme only, not the per-card override.)
+                            color: ddTextColor(currentEntry.language, undefined, fc),
+                            fontFamily: FC_FONT,
+                            lineHeight: 1.35,
+                        }}
+                    >
+                        {/* The eip header gloss is a dd: it must agree with the flashcard face,
+                            so it resolves through the shared resolver (chosen sense →
+                            definitions[0] fallback) instead of reading definitions[0] directly. */}
+                        {resolveDisplayDefinition(currentEntry, selectedSenseIndex)}
+                    </Typography>
+                    {/* Same picker component the card face mounts (docs/DEFINITION_CLUSTERS.md).
+                        Self-hides when the entry has no real choice of sense. Readings are
+                        never censored here — the eip is a reference surface, not a quiz face. */}
+                    {onSelectSense && (
+                        <SensePicker
+                            entry={currentEntry}
+                            selectedSenseIndex={selectedSenseIndex}
+                            onSelectSense={onSelectSense}
+                            color={fc.textSecondary}
+                            classPrefix="mobile-demo-eic"
+                        />
+                    )}
+                    </Box>
+                )}
             </InfoSheetEntryHeader>
 
             {/* Underline tab strip. Also acts as a drag-to-resize handle
@@ -573,16 +583,18 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             onClick={() => onTabChange(index)}
                             className={`mobile-demo-tab mobile-demo-tab-${displayLabel.replace(/\s+/g, '-')}`}
                         >
+                            {/* Lower case, as the artboards set it: these are three words
+                                in a strip, not three headings, and Title Case here made
+                                them compete with the gloss directly above. */}
                             <Typography sx={{
-                                fontSize: SIZE.caption,
-                                fontWeight: selectedTab === index ? 700 : 500,
+                                fontSize: 12,
+                                fontWeight: WEIGHT.semibold,
                                 color: selectedTab === index ? fc.onSurface : fc.textSecondary,
                                 fontFamily: FC_FONT,
                                 userSelect: "none",
-                                textTransform: "capitalize",
                                 lineHeight: 1,
                             }}>
-                                {displayLabel.charAt(0).toUpperCase() + displayLabel.slice(1)}
+                                {displayLabel}
                             </Typography>
                         </InfoSheetTab>
                     );
@@ -656,7 +668,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 onSpeakSentence={onSpeakSentence}
                                 speakingKey={speakingKey}
                                 selectedSenseIndex={selectedSenseIndex}
-                                onOpenCompare={onOpenCompare}
                             />
                         </Box>
                     ))}

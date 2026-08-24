@@ -42,6 +42,25 @@ rule. Everything else (no footer, the slide, the clone-on-exit) is unchanged.
 Only Speed Reading uses this today —
 see [SPEED_READING_GAME.md](./SPEED_READING_GAME.md) § Sideways rendering.
 
+#### `surfaceColor` and `surfaceSx` — repainting the ground
+`surfaceColor` is the plain case: one background colour for the whole surface (the two
+card-detail pages pass `COLORS.yellowAccent`).
+
+`surfaceSx` is for the case where repainting the ground also changes what has to be drawn
+ON it. Its only caller is the game surface — `gameSurfaceSx` in
+`src/games/shared/gameSurface.ts` ([SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A6b) — which
+floods the page with a saturated accent and therefore has to flip the title, the back
+chevron, the right slot's icons, `HeaderMetaLabel` and both toggle-chip states to white.
+It does that with **descendant selectors on the `page-header__*` classes** rather than by
+threading an `onAccent` prop through `LeafPage` → `PageHeader` → the four header atoms.
+
+Games do not pass either one directly: they render `GameLeafPage`
+(`src/games/shared/GameSurface.tsx`), which takes a `hue` and supplies both this and the
+context the play panel reads.
+
+⚠️ A caller passing `surfaceColor` AND `surfaceSx` gets the `surfaceSx` value on the
+overlap — the array form appends it last.
+
 ### Node page — hub still in lateral nav
 A node keeps the footer so the user can jump laterally (footer tabs) without
 backing out. It uses the left arrow and a horizontal slide. The slide-**out** to
@@ -300,7 +319,8 @@ examples / synonyms+related):
 
 ### Breakdown drill-in targets
 
-Both surfaces make the Character Breakdown blocks (`InfoCardBlockButton`), the
+Both surfaces make the Character Breakdown rows (`BreakdownRow`, which replaced the
+square `InfoCardBlockButton` grid on 2026-08-24), the
 single-char **Used In** rows and the example-sentence segments tappable by passing
 `onWordOpen` to `VocabCardSections`. They differ only in where a tap LANDS:
 

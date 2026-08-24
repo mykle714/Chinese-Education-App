@@ -12,11 +12,13 @@ import { useLaunchCollection } from "../../features/flashcards/useLaunchCollecti
 import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import type { Language, VocabEntry } from "../../types";
 import { CHALLENGE_WORD_COUNT } from "../../types";
-import LeafPage from "../../components/LeafPage";
+import { GameLeafPage } from "../shared/GameSurface";
+// The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
+import { GAME_HUE } from "./constants";
 import BubbleMatchHeaderControls from "../bubble-match/BubbleMatchHeader";
 import BubbleMatchEndPopup from "../bubble-match/BubbleMatchEndPopup";
 import HydraStage from "./HydraStage";
-import { GameFrame } from "../shared/GameFrame";
+import { GameCentered, GameFrame } from "../shared/GameFrame";
 import { MARK_TYPE, SURFACE } from "./constants";
 import type { HydraOutcome, HydraPhase } from "./types";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
@@ -289,24 +291,11 @@ const HydraBubblesPage: React.FC = () => {
     const lentWords = buffers.lentDrawn().map((card) => card.entryKey);
     const sortOffer = useProvisionalSortOffer(phase === "over", lentWords);
 
+    // The centred column shown INSTEAD of the board (spinner, or the blocked
+    // message). The shape is shared — `GameCentered` also owns the rule that text on
+    // the accent ground is white — so this is only the page's class name for it.
     const renderCentered = (children: React.ReactNode) => (
-        <Box
-            className="hydra__overlay"
-            sx={{
-                flex: 1,
-                minHeight: 0,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 2.5,
-                px: 4,
-                pb: 3,
-                textAlign: "center",
-            }}
-        >
-            {children}
-        </Box>
+        <GameCentered className="hydra__overlay">{children}</GameCentered>
     );
 
     let centered: React.ReactNode = null;
@@ -319,7 +308,7 @@ const HydraBubblesPage: React.FC = () => {
             <>
                 <Typography
                     className="hydra__block-msg"
-                    sx={{ fontSize: SIZE.subtitle, color: fc.onSurface, lineHeight: LEADING.normal }}
+                    sx={{ fontSize: SIZE.subtitle, lineHeight: LEADING.normal }}
                 >
                     {blockMessage}
                 </Typography>
@@ -394,7 +383,8 @@ const HydraBubblesPage: React.FC = () => {
                 A notification, not a review step: no word table, one dismissal, and
                 the field is frozen behind it (§ 6.4). */}
             <HydraLendNotice open={lendNoticeOpen} onDismiss={() => setLendNoticeOpen(false)} />
-            <LeafPage
+            <GameLeafPage
+            hue={GAME_HUE}
                 title="Hydra Bubbles"
                 // Back lands where the player came FROM — the challenge mid-test, or
                 // the Games hub for an ordinary run.
@@ -482,7 +472,7 @@ const HydraBubblesPage: React.FC = () => {
                     onResume={resumeFromBackground}
                     classPrefix="hydra"
                 />
-            </LeafPage>
+            </GameLeafPage>
         </>
     );
 };

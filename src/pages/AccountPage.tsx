@@ -1,26 +1,16 @@
 import { useState } from "react";
-import {
-    Box,
-    Typography,
-    Avatar,
-    Button,
-    IconButton,
-    Snackbar,
-    Checkbox,
-    FormControlLabel,
-    FormGroup,
-} from "@mui/material";
-import { ContentCopy } from "@mui/icons-material";
-import LogoutIcon from "@mui/icons-material/Logout";
+import { Box, Typography, Button, IconButton, Snackbar, Switch } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useSlideNavigate } from "../hooks/useSlideNavigate";
 import DelayedCircularProgress from "../components/DelayedCircularProgress";
-import { styled } from "@mui/material/styles";
 import MobileTabScreen from "../components/MobileTabScreen";
 import { HeaderIconButton } from "../components/PageHeader";
 import { FooterSpacer } from "../components/MobileFooter";
+import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import DeckBuckets from "../components/DeckBuckets";
 import IconPickerDialog from "../components/IconPickerDialog";
+import Icon from "../components/Icon";
+import { Label, Row, RowList, SectionHeader, StatCard } from "../components/primitives";
 import { API_BASE_URL } from "../constants";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
@@ -30,56 +20,25 @@ import { useVelocity } from "../hooks/useVelocity";
 import InfoTip from "../components/InfoTip";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
-import { SIZE, WEIGHT, TRACKING } from "../theme/scale";
 
-// Styled Components — phone-frame sizing comes from MobileDemoFrame via Layout.tsx;
-// the scroll-away header + floating footer + scroll behavior come from
-// MobileTabScreen. Content centering/padding is passed to it via `contentSx`.
-const CONTENT_SX = {
-    alignItems: "center",
-    padding: "20px",
-} as const;
-
-const AccountSection = styled(Box)(() => ({
-    width: "100%",
-    maxWidth: 350,
-    display: "flex",
-    flexDirection: "column",
-    gap: 24,
-}));
-
-const UserInfoSection = styled(Box)(() => ({
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-    paddingBottom: 16,
-    borderBottom: `1px solid ${COLORS.border}`,
-}));
-
-const UserInfoRow = styled(Box)(() => ({
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-}));
-
-const FormSection = styled(Box)(() => ({
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-}));
-
-// Velocity stat card — one big number under an overline label, with a tappable ⓘ
-// carrying the explanation of the unit (see InfoTip). Sits directly under the deck
-// buckets, sharing their sectionCard fill so the two read as one stats block.
-const VelocityCard = styled(Box)(() => ({
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 2,
-    padding: "14px 16px",
-    borderRadius: 16,
-    backgroundColor: COLORS.sectionCard,
-}));
+/**
+ * Account (`/account`) — artboard 5 of the shelf redesign (docs/SHELF_REDESIGN.md
+ * entry 5).
+ *
+ * The page is now assembled ENTIRELY from shelf-system primitives, in the artboard's
+ * order: the profile as a `Row`, the four utcm bands as a `Shelf` under a "Your
+ * library" header, Velocity as a `StatCard`, the two mastery goals as `Row`s with
+ * switches, and Log Out as the `.btn3` outlined block.
+ *
+ * ⚠️ THE PAGE ITSELF HAS NO PADDING, and that is the whole reason the conversion
+ * worked. Every primitive here carries its own page gutter (`RowList` 16px,
+ * `SectionHeader`/`Shelf` 22px, `StatCard` 18px) plus its own top margin, because in
+ * the design those gutters differ per shape. The previous version wrapped everything
+ * in a 20px-padded, 350px-wide centred column, which would double every one of them.
+ *
+ * Depended on by: docs/SHELF_REDESIGN.md entry 5, docs/UX_AND_NAVIGATION.md,
+ * docs/VELOCITY.md, docs/MASTERY_REWORK.md.
+ */
 
 function AccountPage() {
     usePageTitle("Account");
@@ -118,21 +77,28 @@ function AccountPage() {
         }
     };
 
-    // Gear button rendered in the header's right slot → opens the Settings page.
-    // The OUTLINED variant, per the Account artboard: this is the one header in the
-    // app carrying a single lone action on the bare paper ground, and an unboxed
-    // glyph there has nothing separating it from the page. Drill-in headers, which
-    // carry 2–4 actions in a row, use the bare variant instead.
-    const settingsAction = (
-        <HeaderIconButton
-            className="account-page__settings-button"
-            icon="settings"
-            label="Open settings"
-            variant="outlined"
-            onClick={() => slideNavigate("/settings")}
-        />
+    // Header right slot, in the artboard's order: the streak flame, then the gear.
+    // The flame was missing here — every other minute-earning surface carries it, and
+    // artboard 5 draws it on this one too.
+    //
+    // The gear is the OUTLINED variant, per the artboard: this is the one header in the
+    // app carrying a single lone action on the bare paper ground, and an unboxed glyph
+    // there has nothing separating it from the page. Drill-in headers, which carry 2–4
+    // actions in a row, use the bare variant instead.
+    const headerActions = (
+        <>
+            <MinutePointsFireBadge />
+            <HeaderIconButton
+                className="account-page__settings-button"
+                icon="settings"
+                label="Open settings"
+                variant="outlined"
+                onClick={() => slideNavigate("/settings")}
+            />
+        </>
     );
-    // Per-category library card counts, shown as a display-only stat block.
+
+    // Per-category library card counts, shown as the shelf's spine heights.
     const { counts: categoryCounts, loaded: countsLoaded } = useCategoryCounts();
 
     // Velocity — mastery band-steps climbed in the sliding 7-day window for the
@@ -155,7 +121,7 @@ function AccountPage() {
 
     if (isLoading) {
         return (
-            <MobileTabScreen title="Account" contentClassName="account-page__content" contentSx={CONTENT_SX}>
+            <MobileTabScreen title="Account" contentClassName="account-page__content">
                 <DelayedCircularProgress className="account-page__spinner" />
             </MobileTabScreen>
         );
@@ -163,8 +129,11 @@ function AccountPage() {
 
     if (!user) {
         return (
-            <MobileTabScreen title="Account" contentClassName="account-page__content" contentSx={CONTENT_SX}>
-                <Typography className="account-page__no-user-text" sx={{ textAlign: "center", color: COLORS.onSurface }}>
+            <MobileTabScreen title="Account" contentClassName="account-page__content">
+                <Typography
+                    className="account-page__no-user-text"
+                    sx={{ textAlign: "center", padding: "20px", color: COLORS.onSurface, fontFamily: FONTS.sans }}
+                >
                     Please log in to view your account
                 </Typography>
             </MobileTabScreen>
@@ -175,229 +144,197 @@ function AccountPage() {
     const userEmail = user.email;
     const userName = user.name;
 
+    // The shelf header's right-hand figure: the library's total size. It is the sum of
+    // the four bands rather than a fifth number from the server, so it can never
+    // disagree with the spines under it.
+    const totalCards = Object.values(categoryCounts).reduce((sum, n) => sum + n, 0);
+
+    // The avatar OWNS the whole 48px slot (Row's `avatar` escape hatch) because it is
+    // tappable and the styled 36px box the primitive draws for `icon`/`initials` is
+    // neither the right size nor focusable. It is a real <button>, so the picker is
+    // reachable by keyboard — the old MUI Avatar carried role="button" on a div.
+    const avatarButton = (
+        <Box
+            className="account-page__avatar"
+            component="button"
+            type="button"
+            aria-label="Change avatar"
+            onClick={() => setAvatarPickerOpen(true)}
+            sx={{
+                width: 48,
+                height: 48,
+                borderRadius: "15px",
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                // The artboard's own pair: the blue pastel with its `*A` ink, not the
+                // solid `infoInk` disc this used to be.
+                backgroundColor: COLORS.blu,
+                color: COLORS.bluA,
+                boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}`,
+                fontFamily: FONTS.sans,
+                fontSize: 17,
+                fontWeight: 600,
+            }}
+        >
+            {user.avatarIconId ? (
+                <Box
+                    component="img"
+                    className="account-page__avatar-image"
+                    src={`${API_BASE_URL}/api/icons8/${encodeURIComponent(user.avatarIconId)}/image`}
+                    alt=""
+                    sx={{ width: "100%", height: "100%", objectFit: "contain", padding: "6px" }}
+                />
+            ) : (
+                userName.charAt(0).toUpperCase()
+            )}
+        </Box>
+    );
+
     return (
         <>
-            <MobileTabScreen title="Account" contentClassName="account-page__content" contentSx={CONTENT_SX} headerExtraActions={settingsAction}>
-                    <AccountSection className="account-page__account-section">
-                        {/* User Info Section */}
-                        <UserInfoSection className="account-page__user-info-section">
-                            <UserInfoRow className="account-page__user-info-row">
-                                {/* Tappable avatar → opens the icon picker. Renders the
-                                    chosen icons8 icon when set (src), otherwise MUI falls
-                                    back to the name-initial child. */}
-                                <Avatar
-                                    className="account-page__avatar"
-                                    role="button"
-                                    aria-label="Change avatar"
-                                    onClick={() => setAvatarPickerOpen(true)}
-                                    src={
-                                        user.avatarIconId
-                                            ? `${API_BASE_URL}/api/icons8/${encodeURIComponent(user.avatarIconId)}/image`
-                                            : undefined
-                                    }
-                                    imgProps={{ sx: { objectFit: "contain", p: 0.75 } }}
-                                    sx={{
-                                        width: 56,
-                                        height: 56,
-                                        bgcolor: COLORS.infoInk,
-                                        fontSize: SIZE.title,
-                                        fontWeight: WEIGHT.medium,
-                                        cursor: "pointer",
-                                    }}
-                                >
-                                    {userName.charAt(0).toUpperCase()}
-                                </Avatar>
-                                <Box className="account-page__user-text" sx={{ flex: 1 }}>
-                                    <Typography
-                                        className="account-page__user-name"
-                                        sx={{
-                                            fontSize: SIZE.body,
-                                            fontWeight: WEIGHT.medium,
-                                            color: COLORS.onSurface,
-                                            fontFamily: FONTS.sans,
-                                        }}
-                                    >
-                                        {userName}
-                                    </Typography>
-                                    <Typography
-                                        className="account-page__user-email"
-                                        sx={{
-                                            fontSize: SIZE.caption,
-                                            color: COLORS.textSecondary,
-                                            fontFamily: FONTS.sans,
-                                        }}
-                                    >
-                                        {userEmail}
-                                    </Typography>
-                                </Box>
-                            </UserInfoRow>
-                            <Box
-                                className="account-page__user-id-row"
-                                sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
-                            >
-                                <Typography
-                                    className="account-page__user-id"
-                                    sx={{
-                                        fontSize: SIZE.caption,
-                                        color: COLORS.textSecondary,
-                                        fontFamily: FONTS.sans,
-                                    }}
-                                >
-                                    ID: {userId}
-                                </Typography>
+            <MobileTabScreen title="Account" contentClassName="account-page__content" headerExtraActions={headerActions}>
+                {/* Profile — one Row. Its third (mono) line is the copyable user ID,
+                    which Friends needs the learner to be able to hand out. */}
+                <RowList className="account-page__profile">
+                    <Row
+                        className="account-page__profile-row"
+                        avatar={avatarButton}
+                        title={userName}
+                        subtitle={userEmail}
+                        meta={
+                            <>
+                                ID {userId}
                                 <IconButton
                                     className="account-page__copy-user-id-button"
                                     aria-label="Copy user ID"
                                     size="small"
                                     onClick={() => handleCopyUserId(String(userId))}
-                                    sx={{ color: COLORS.textSecondary, padding: "2px" }}
+                                    sx={{ color: COLORS.textFaint, padding: "1px" }}
                                 >
-                                    <ContentCopy sx={{ fontSize: SIZE.body }} />
+                                    <Icon name="content_copy" size={12} color="inherit" />
                                 </IconButton>
-                            </Box>
-                        </UserInfoSection>
+                            </>
+                        }
+                    />
+                </RowList>
 
-                        {/* Deck stats — display-only bucket counts (no navigation).
-                            The buckets are withheld until the counts finish loading, then
-                            mount with a staggered pop-in animation (see DeckBuckets). The
-                            wrapper reserves the row's height up front so the form below
-                            doesn't shift down when the cards appear. */}
-                        <Box className="account-page__deck-stats" sx={{ minHeight: 150 }}>
-                            {countsLoaded && <DeckBuckets counts={categoryCounts} />}
-                        </Box>
+                {/* The library as a shelf: one spine per utcm band, height encoding its
+                    count. Withheld until the counts load, then mounted with a staggered
+                    pop-in; the wrapper reserves the row's height up front so nothing
+                    below shifts when the spines appear. */}
+                <SectionHeader
+                    className="account-page__library-header"
+                    label={
+                        <>
+                            <Label>Your library</Label>
+                            {countsLoaded && <Label className="account-page__library-total">{totalCards.toLocaleString()}</Label>}
+                        </>
+                    }
+                    sx={{ "& > .lab": { flexShrink: 0 } }}
+                />
+                <Box className="account-page__deck-stats" sx={{ minHeight: 152 }}>
+                    {countsLoaded && <DeckBuckets counts={categoryCounts} />}
+                </Box>
 
-                        {/* Velocity — how many mastery bands the learner's cards climbed in
-                            the last 7 days (docs/VELOCITY.md). Held back until loaded so a
-                            0 never flashes before the real number; the wrapper reserves the
-                            height so nothing below shifts. */}
-                        <Box className="account-page__velocity" sx={{ minHeight: 92 }}>
-                            {velocityLoaded && (
-                                <VelocityCard className="account-page__velocity-card">
-                                    {/* Label + the ⓘ that explains the unit. The explanation
-                                        used to be a permanent caption under the number; it is
-                                        one-time information, so it now costs a tap instead of
-                                        a line of small print on every visit. */}
-                                    <Box
-                                        className="account-page__velocity-label-row"
-                                        sx={{ display: "flex", alignItems: "center", gap: 0.25 }}
-                                    >
-                                        <Typography
-                                            className="account-page__velocity-label"
-                                            sx={{
-                                                fontSize: SIZE.caption,
-                                                fontWeight: WEIGHT.semibold,
-                                                letterSpacing: TRACKING.caps,
-                                                textTransform: "uppercase",
-                                                color: COLORS.textSecondary,
-                                                fontFamily: FONTS.sans,
-                                            }}
-                                        >
-                                            Velocity
-                                        </Typography>
-                                        <InfoTip
-                                            className="account-page__velocity-info"
-                                            ariaLabel="What velocity means"
-                                            text={`Mastery level-ups in the last ${windowDays} days`}
-                                        />
-                                    </Box>
-                                    <Typography
-                                        className="account-page__velocity-value"
-                                        sx={{
-                                            fontSize: SIZE.display,
-                                            fontWeight: WEIGHT.bold,
-                                            lineHeight: 1,
-                                            color: COLORS.onSurface,
-                                            fontFamily: FONTS.sans,
-                                        }}
-                                    >
-                                        {velocity}
-                                    </Typography>
-                                </VelocityCard>
-                            )}
-                        </Box>
-
-                        {/* Goals Section — opt into the Reading / Writing mastery goals
-                            (docs/MASTERY_REWORK.md). Recognition + Production are always
-                            pursued and aren't shown here. Hidden for Spanish accounts. */}
-                        {showGoals && (
-                            <FormSection className="account-page__goals-section">
-                                <Typography
-                                    className="account-page__section-title"
-                                    sx={{
-                                        fontSize: SIZE.body,
-                                        fontWeight: WEIGHT.medium,
-                                        color: COLORS.onSurface,
-                                        fontFamily: FONTS.sans,
-                                    }}
-                                >
-                                    Goals
-                                </Typography>
-                                <Typography
-                                    className="account-page__goals-description"
-                                    sx={{
-                                        fontSize: SIZE.caption,
-                                        color: COLORS.textSecondary,
-                                        fontFamily: FONTS.sans,
-                                        mt: 0.5,
-                                        mb: 1,
-                                    }}
-                                >
-                                    Each goal you turn on adds its own progress bar to every
-                                    card, so a card can be mastered separately for knowing it,
-                                    reading it and writing it. Your existing progress is never
-                                    affected — and any reading or writing you have already done
-                                    shows up straight away.
-                                </Typography>
-                                <FormGroup className="account-page__goals-group">
-                                    <FormControlLabel
-                                        className="account-page__goal-reading"
-                                        control={
-                                            <Checkbox
-                                                checked={user?.readingGoal === true}
-                                                disabled={goalSaving !== null}
-                                                onChange={(e) => handleToggleGoal("reading", e.target.checked)}
-                                            />
-                                        }
-                                        label="I want to learn reading"
-                                        sx={{ "& .MuiFormControlLabel-label": { fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.onSurface } }}
+                {/* Velocity — how many mastery bands the learner's cards climbed in the
+                    last 7 days (docs/VELOCITY.md). Held back until loaded so a 0 never
+                    flashes before the real number; the wrapper reserves the height so
+                    nothing below shifts. */}
+                <Box className="account-page__velocity" sx={{ minHeight: 122 }}>
+                    {velocityLoaded && (
+                        <StatCard
+                            className="account-page__velocity-card"
+                            sx={{ textAlign: "center" }}
+                            label={
+                                <>
+                                    Velocity{" "}
+                                    <InfoTip
+                                        className="account-page__velocity-info"
+                                        ariaLabel="What counts as a level-up"
+                                        text="A level-up is one card crossing into a higher mastery band — Unfamiliar → Target → Comfortable → Mastered."
                                     />
-                                    <FormControlLabel
-                                        className="account-page__goal-writing"
-                                        control={
-                                            <Checkbox
-                                                checked={user?.writingGoal === true}
-                                                disabled={goalSaving !== null}
-                                                onChange={(e) => handleToggleGoal("writing", e.target.checked)}
-                                            />
-                                        }
-                                        label="I want to learn writing"
-                                        sx={{ "& .MuiFormControlLabel-label": { fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.onSurface } }}
+                                </>
+                            }
+                            value={velocity}
+                            description={`Mastery level-ups in the last ${windowDays} days`}
+                        />
+                    )}
+                </Box>
+
+                {/* Goals — opt into the Reading / Writing mastery goals
+                    (docs/MASTERY_REWORK.md). Recognition + Production are always pursued
+                    and aren't shown. Hidden for Spanish accounts.
+
+                    The artboard replaces the old explanatory paragraph with one subtitle
+                    per row ("Adds a reading bar to every card"), which is the same fact
+                    said once per control instead of once per section. */}
+                {showGoals && (
+                    <>
+                        <SectionHeader className="account-page__goals-header" label="Goals" />
+                        <RowList className="account-page__goals">
+                            <Row
+                                className="account-page__goal-reading"
+                                icon="menu_book"
+                                hue="red"
+                                title="Learn reading"
+                                subtitle="Adds a reading bar to every card"
+                                trailing={
+                                    <Switch
+                                        className="account-page__goal-reading-switch"
+                                        inputProps={{ "aria-label": "Learn reading" }}
+                                        checked={user.readingGoal === true}
+                                        disabled={goalSaving !== null}
+                                        onChange={(e) => handleToggleGoal("reading", e.target.checked)}
                                     />
-                                </FormGroup>
-                            </FormSection>
-                        )}
+                                }
+                            />
+                            <Row
+                                className="account-page__goal-writing"
+                                icon="edit"
+                                hue="org"
+                                title="Learn writing"
+                                subtitle="Adds a writing bar to every card"
+                                trailing={
+                                    <Switch
+                                        className="account-page__goal-writing-switch"
+                                        inputProps={{ "aria-label": "Learn writing" }}
+                                        checked={user.writingGoal === true}
+                                        disabled={goalSaving !== null}
+                                        onChange={(e) => handleToggleGoal("writing", e.target.checked)}
+                                    />
+                                }
+                            />
+                        </RowList>
+                    </>
+                )}
 
-                        {/* Logout Section — moved here from the removed hamburger drawer. */}
-                        <FormSection className="account-page__logout-section">
-                            <Button
-                                className="account-page__logout-button"
-                                fullWidth
-                                variant="outlined"
-                                color="primary"
-                                startIcon={<LogoutIcon fontSize="small" />}
-                                onClick={handleLogout}
-                                size="small"
-                            >
-                                Log Out
-                            </Button>
-                        </FormSection>
+                {/* Log Out — the `.btn3` outlined block. Its own RowList rather than the
+                    goals' one (where the artboard draws it) so it survives the Spanish
+                    case, which hides the goals section entirely. */}
+                <RowList className="account-page__logout">
+                    <Button
+                        className="account-page__logout-button"
+                        fullWidth
+                        variant="outlined"
+                        color="primary"
+                        startIcon={<Icon name="logout" size={17} color="inherit" />}
+                        onClick={handleLogout}
+                    >
+                        Log Out
+                    </Button>
+                </RowList>
 
-                        {/* Clearance for the floating footer pill — the Log Out button is
-                            the last row and would otherwise sit under the bar. Uses the
-                            shared spacer, not MobileTabScreen's paddingBottom (see the
-                            FooterSpacer comment for why that padding is unreliable). */}
-                        <FooterSpacer />
-                    </AccountSection>
+                {/* Clearance for the floating footer pill — the Log Out button is the
+                    last row and would otherwise sit under the bar. Uses the shared
+                    spacer, not MobileTabScreen's paddingBottom (see the FooterSpacer
+                    comment for why that padding is unreliable). */}
+                <FooterSpacer />
             </MobileTabScreen>
 
             {/* Avatar icon picker — shared icon search/browser. Empty query browses all

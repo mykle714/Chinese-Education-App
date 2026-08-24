@@ -353,7 +353,8 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    what makes the **closing** motion match the opening one.
 
    **More Info pill** — stays **drawn but greyed + inert** while editing
-   (`isDisabled={editMode}` on `MoreInfoPill`, `FlashcardsLearnPage.tsx`), NOT removed.
+   (`disabled={editMode}` on `InfoPeek`, `FlashcardsLearnPage.tsx` — this was
+   `MoreInfoPill` before the 2026-08-24 redesign), NOT removed.
    In advanced mode the card slides down **over** it: the card slot is raised
    (`zIndex: 3` when `editMode && advMode` in `FlashCardSection.tsx`) above the pill's
    `zIndex: 2`, so the card paints over the pill rather than the pill floating on top.

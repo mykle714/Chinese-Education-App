@@ -110,6 +110,76 @@ carries `suppressed: true`, and **no client reads it today**.
 
 ---
 
+### 6. Pinyin is one shared setting across three games, and Hydra's track does not follow it
+
+| | |
+|---|---|
+| **What** | Two halves of one decision (2026-08-23), designed and **not built**. (a) `showPinyin` lives in the flp's `useFlashcardLearnSettings` (`flashcard.learn-settings`) and is read *and written* by Bubble Match, Hydra Bubbles and Match Speed, so a change in one game silently changes the other two plus the cdp/scp/dictionary display. It should be **per game**, following `useWordSearchSettings` / `useDiscoverSettings`. (b) Hydra should then adopt the track rule — pinyin off on a zh board ⇒ `reading` — latched before the first spawn |
+| **Why deferred** | (a) is small but touches five components; (b) is not. Hydra's tier ladder and its two color buffers are keyed on the mastery bands of the track it pools by, so a reading run re-bands the entire board — and a sparsely-marked reading track puts nearly every card in drain, which is the side that grows the board. Whether the § 3.1 spawn table still terminates under that mix is an open question (O5) that has to be answered before the conversion can ship |
+| **Cost of leaving it** | A learner who switches Bubble Match to Reading loses pinyin in Hydra and Match Speed without asking, and Hydra keeps writing `recognition` marks for a board it is drawing as a reading board — the mark no longer describes what the player did. Match Speed is display-only, so it is merely surprising there |
+| **Trigger** | Ship (a) whenever a game's settings are next touched — it stands alone and fixes the leak. (b) waits on O5 |
+| **References** | [GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Pinyin is a per-game setting", [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 6.0 + § 11 O5, [MASTERY_REWORK.md](./MASTERY_REWORK.md) § 1a, `src/hooks/useFlashcardLearnSettings.ts` |
+
+---
+
+### 7. Mastery scoring ignores guess odds, and reading/writing mastery has no buffer
+
+| | |
+|---|---|
+| **What** | Two reworks of the same scoring core (design: [MASTERY_REWORK.md](./MASTERY_REWORK.md) § 8). (a) **Choice-aware marks** — `positiveCount` credits every `isCorrect` equally, but Speed Reading is a 1-in-2 guess, Match Speed 1-in-5, and the **last pair on a Bubble Match / Hydra board is correct by construction**, so it is a guaranteed positive for zero knowledge, once per board. (b) **A buffer zone for the reading and writing bars** — core's Mastered is `min(rec, pro) ≥ 6` (two slots of slack per track), while the single-track bars need a perfect 8/8, so ONE wrong mark un-masters a card and the bar flaps between bands session to session |
+| **Why deferred** | Both edit the same three chokepoints in lockstep — `ReviewMark`/`positiveCount`/`categoryForPbh` in `server/contracts/` plus the SQL mirrors `mastery_positive_count()`, `compute_core_category()` (mig 143) and `compute_type_category()` (mig 128) — so doing them separately pays the TS↔SQL sync cost twice. And the design is not settled: true hysteresis needs stored state, which breaks the invariant that a band is a pure function of one row (the reason `compute_core_category()` is `IMMUTABLE` and no category expression joins another table). Six open questions in § 8.4 |
+| **Cost of leaving it** | A learner who taps randomly through Speed Reading reaches **Target** on the reading bar; every board hands out one free positive; and a reading-mastered card bounces out of Mastered on a single bad tap, which also inflates velocity (a `category_promotions` row per crossing) and flips Memory Map membership and the card's cooldown between 14 and 180 days |
+| **Trigger** | ⚠️ Do NOT ship a band change casually — `computeTypeCategory` is the same function games bucket and cool on, so it moves Memory Map membership, pool quotas and review scheduling retroactively (§ 8.3). **Option (C) — emit no mark when the choice set has one element — is separable, needs no schema or SQL change, and can land any time** ahead of the rest |
+| **References** | [MASTERY_REWORK.md](./MASTERY_REWORK.md) § 8 (§ 8.1 choice odds, § 8.2 buffer, § 8.3 blast radius, § 8.4 open questions), [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 2.1, [VELOCITY.md](./VELOCITY.md), `server/contracts/mastery.ts`, `server/contracts/cooldown.ts` |
+
+---
+
+### 8. Two components render the design's `.shelfhd`, and a page can pick either
+
+| | |
+|---|---|
+| **What** | `ShelfHeader` (`src/components/shelf/Shelf.tsx`) and `SectionHeader` (`src/components/primitives/Label.tsx`) both render the design's `.shelfhd` — a mono overline with an optional right-hand affordance — at the identical `19px 22px 0` padding. Neither is a superset: `ShelfHeader` takes `children` (so it can hold two `Label`s), `SectionHeader` takes a `label` node plus an `action` glyph name and an `actionLabel` for a11y |
+| **Why deferred** | They were built in different parts of Part A (A3 and A5) for different reasons, and the split reads as intentional until you put them side by side. Collapsing them means picking one API and touching every caller; nothing is broken while both exist |
+| **Cost of leaving it** | A page that needs both a shelf caption and a section caption uses two components that look identical, which is how the next divergence gets introduced. Entry 5 (Account) hit exactly this and picked `SectionHeader` for both, so its library header is a shelf caption drawn by the non-shelf component |
+| **Trigger** | The next entry to touch A3 or A5. Merge into `SectionHeader` (the richer API), keep `ShelfHeader` as a re-export or delete it, and fix the `DecksPanelBody` / Reader / Account call sites |
+| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A3, § A5, entry 5; `src/components/shelf/Shelf.tsx`, `src/components/primitives/Label.tsx` |
+
+---
+
+### 9. The decks page and the flp card hand have no "due today" figure
+
+| | |
+|---|---|
+| **What** | Artboard 2 heads the decks page with **"24 due today"** and prints a big number on the Study Mix card. Both are a **cooldown-aware ready count** — how many cards have at least one flp mark type off cooldown right now — and no endpoint returns it. `useCategoryCounts` returns BAND totals, which are not the same question: a Target card that was marked ten minutes ago is in the band and is not due |
+| **Why deferred** | It is server work in the middle of a front-end pass: a DAL count over the same eligibility clause `OnDeckVocabService` already applies per fetch (`rankFlpEligible`), plus a service method, a controller route and a wire type. The redesign could ship honestly without it, and shipping a *plausible* number derived from band totals on the client would have been worse than shipping none |
+| **Cost of leaving it** | The decks page's headline figure is the LIBRARY SIZE and the hand's three figures are SET SIZES (`in rotation` / `ready` / `waiting`), each labelled as what it is. Truthful, but it is not the number the design wanted, and a learner cannot tell from this page whether starting a session will actually serve them anything |
+| **Trigger** | Any pass that touches `OnDeckVocabService`'s eligibility filter — the count is the same predicate with `COUNT(*)` instead of a `SELECT`. Do all three modes at once (mix / review / challenge each have their own allowed bands) |
+| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entry 2; `src/features/flashcards/FlashcardsDecksPage.tsx` → the `.duebar`; `src/features/flashcards/StudyHand.tsx`; `server/services/OnDeckVocabService.ts` → `MODE_CONFIGS`, `rankFlpEligible` |
+
+---
+
+### 10. Three figures the redesigned card surfaces draw but cannot fetch
+
+| | |
+|---|---|
+| **What** | Three separate artboard elements whose data does not reach the client. **(a)** Artboard 2's Mastered tile reads **"+17 this week"**; `masteredAt` (migration 142) makes the delta derivable but no endpoint exposes it, so `LibraryDuo` prints what the set IS instead. **(b)** Artboard 25's breakdown tab ends in a titled paragraph, **"How the parts make the word"**; the det tables carry `breakdownElaboration` for exactly this, but it is not on `server/contracts/wire.ts` and no read path selects it, so `BreakdownRow` renders the rows and stops. **(c)** Artboard 20's `.dfx` shows a per-POS sense count; that one IS derivable (`definitionClusters[].pos`) and ships, but only for CLUSTERED entries — an unclustered word gets the POS list with no counts, deliberately |
+| **Why deferred** | (a) and (b) are each one column on an existing response plus its enrichment path; neither blocked the layout, and both were cheaper to leave a hole for than to add mid-pass. (c) is not deferred at all — it is the correct behaviour, listed here so nobody "fixes" it by defaulting to 1 |
+| **Cost of leaving it** | (a) the sheet's Mastered tile shows a total with no sense of movement, which was the tile's whole argument for existing beside Learn Now. (b) the breakdown tab answers "what is this made of" but not "why does that add up to this meaning", which is the more interesting half |
+| **Trigger** | (b) is the cheaper and more valuable one: add `breakdownElaboration` to the det read path and the wire `VocabEntry`, then render it under the rows. (a) when a velocity/streak pass is next touching `masteredAt` |
+| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entries 2 and 19–25; `src/features/flashcards/LibraryDuo.tsx`, `src/features/flashcards/BreakdownRow.tsx`, `src/features/flashcards/DefinitionFacts.tsx`; [BREAKDOWN_FEATURE_IMPLEMENTATION.md](./BREAKDOWN_FEATURE_IMPLEMENTATION.md) |
+
+---
+
+### 11. A drilled-in eip word lost its Add-to-Deck and Compare
+
+| | |
+|---|---|
+| **What** | `InfoCardActionBar` (Add to Deck… / Compare To… / Practice Writing Me) rode at the end of the eip's definition tab and is **deleted**: artboards 20–25 make the panel information-only, so its three actions moved to the surfaces that own them — `CardOpsRail` on the card (add to deck) and `WordToolsRail` above it (compare, write it). Those rails act on the **card's** word. A word the learner has DRILLED INTO from the breakdown rows or an example segment therefore has no in-panel way to be filed or compared |
+| **Why deferred** | It is a deliberate consequence of the design's own rule ("card operations have left the panel entirely"), not an oversight, and there IS a path: the breakdown rows are tappable and open that word's own page, where both actions live. But it is one more navigation than before for a real thing learners do |
+| **Cost of leaving it** | Filing a component character into a deck costs a drill-in instead of a tap. Nothing is unreachable |
+| **Trigger** | If it comes up in use. The fix is NOT to put the action bar back — it is to let the word trail's active pill carry a small ops affordance, so the actions stay attached to "the word you are looking at" rather than to a tab body |
+| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entries 19–25; `src/features/flashcards/FlashcardsLearnPage/InfoCardTabContent.tsx` (the comment at tab 0), `src/components/WordToolsRail.tsx`, `src/features/flashcards/FlashcardsLearnPage/CardOpsRail.tsx` |
+
 ## Recently closed
 
 ### Build Study Challenge, phase 1 async (closed 2026-08-22 — DONE)
@@ -127,7 +197,10 @@ active-time clock so four games could not drift into four readings of the same s
 full path is [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.2a.
 
 Two things the plan did not anticipate, both recorded in that section: Word Search needed
-an **8×8** grid (twelve 4-character words do not fit 49 cells), and **Hydra Bubbles is a
+an **8×8** grid (twelve 4-character words did not fit the ordinary board's 49 cells at the
+time — that board has since grown to 9×6/54 cells and, since 2026-08-23, also holds twelve
+words itself; the two boards' word counts now coincidentally match but their sizes still
+differ), and **Hydra Bubbles is a
 deliberate exception to the `mastered-first` filler rule** — its filler is its colour
 economy, and mastered-first filler would make every bubble bloom.
 

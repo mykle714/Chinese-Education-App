@@ -194,6 +194,21 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                     input: { padding: '13px 15px' },
                 },
             },
+            // The design's switch. Both artboards that draw one (5 · Account's goals,
+            // 11 · Settings' narration and display) paint `toggle_on` in `--grnA`, so
+            // GREEN — not MUI's primary blue — is what "on" looks like app-wide.
+            //
+            // Scoped to `colorPrimary` per this file's own rule: shape for every colour,
+            // ground and ink only on the `*Primary` slots. No call site passes a `color`
+            // prop today, so every switch in the app picks this up.
+            MuiSwitch: {
+                styleOverrides: {
+                    colorPrimary: {
+                        '&.Mui-checked': { color: COLORS.successInk },
+                        '&.Mui-checked + .MuiSwitch-track': { backgroundColor: COLORS.successInk },
+                    },
+                },
+            },
             // `.mode` — the segmented control: one outlined box, hairline-divided, with
             // the selected segment inverted to ink. MUI's default gives each button its
             // own border and rounds the group's ends; both are undone here.
@@ -239,6 +254,11 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                 ...baseTheme,
                 palette: {
                     mode: 'dark',
+                    // The app's OWN red, not MUI's #d32f2f. Without this, `color="error"`
+                    // controls (the delete button in its dialog) render a different red from
+                    // the `COLORS.dangerInk` border and heading of the section they sit in —
+                    // two reds on one modal. One token, so red means one thing.
+                    error: { main: COLORS.dangerInk },
                     primary: {
                         main: '#90caf9',
                         light: '#bbdefb',
@@ -287,6 +307,11 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                 ...baseTheme,
                 palette: {
                     mode: 'light',
+                    // The app's OWN red, not MUI's #d32f2f. Without this, `color="error"`
+                    // controls (the delete button in its dialog) render a different red from
+                    // the `COLORS.dangerInk` border and heading of the section they sit in —
+                    // two reds on one modal. One token, so red means one thing.
+                    error: { main: COLORS.dangerInk },
                     primary: {
                         main: '#1976d2',
                         light: '#42a5f5',
@@ -335,6 +360,11 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                 ...baseTheme,
                 palette: {
                     mode: 'light',
+                    // The app's OWN red, not MUI's #d32f2f. Without this, `color="error"`
+                    // controls (the delete button in its dialog) render a different red from
+                    // the `COLORS.dangerInk` border and heading of the section they sit in —
+                    // two reds on one modal. One token, so red means one thing.
+                    error: { main: COLORS.dangerInk },
                     primary: {
                         main: '#2e7d32',
                         light: '#4caf50',
@@ -384,6 +414,11 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                 ...baseTheme,
                 palette: {
                     mode: 'light',
+                    // The app's OWN red, not MUI's #d32f2f. Without this, `color="error"`
+                    // controls (the delete button in its dialog) render a different red from
+                    // the `COLORS.dangerInk` border and heading of the section they sit in —
+                    // two reds on one modal. One token, so red means one thing.
+                    error: { main: COLORS.dangerInk },
                     primary: {
                         main: '#1976d2',
                         light: '#42a5f5',
@@ -438,8 +473,8 @@ interface ThemeContextProviderProps {
 const availableThemes = [
     { value: 'light' as ThemeMode, label: 'Light', description: 'Clean and bright theme' },
     { value: 'dark' as ThemeMode, label: 'Dark', description: 'Easy on the eyes in low light' },
-    { value: 'blue' as ThemeMode, label: 'Ocean Blue', description: 'Professional blue theme' },
-    { value: 'green' as ThemeMode, label: 'Nature Green', description: 'Calming green theme' },
+    { value: 'blue' as ThemeMode, label: 'Ocean', description: 'Professional blue theme' },
+    { value: 'green' as ThemeMode, label: 'Nature', description: 'Calming green theme' },
 ];
 
 export function ThemeContextProvider({ children }: ThemeContextProviderProps) {

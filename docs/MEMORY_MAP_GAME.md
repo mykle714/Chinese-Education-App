@@ -519,8 +519,16 @@ stat badge.
 **Leaf page** — down arrow → `/games`, no footer, slides up on enter.
 
 Header: back arrow · **progress count (`23 / 100`)** · a **Restart button**
-(`RestartAltRounded`, the house restart icon — Bubble Match's header uses the same one)
+(`restart_alt`, the house restart icon — Bubble Match's header uses the same one)
 opening a confirm · **minute-credit badge, rightmost**.
+
+Both of the middle two are the SHARED header primitives — `HeaderMetaLabel` and
+`HeaderIconButton` (`src/components/PageHeader.tsx`) — as of 2026-08-23. This header was
+the last one in the app still styling its own text (a raw `Typography`) and drawing its own
+icon (a `@mui/icons-material` `IconButton`), both predating
+[SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A2b/D3. Being the shared components is also the
+only reason the game's accent ground (§ A6b) can repaint them white; a hand-rolled
+`Typography` is invisible to that rule and shipped dark ink on saturated orange.
 
 Restart used to sit behind a settings **gear**, but Restart was the gear's only item and
 a cog that opens a one-row sheet is a drawer hiding a single tool. The **confirm** is

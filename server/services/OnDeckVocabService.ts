@@ -1792,21 +1792,21 @@ export class OnDeckVocabService {
 
   // ---- Word Search game ----------------------------------------------------
 
-  // Grid dimensions: 7 columns wide × 7 rows tall (portrait play area).
+  // Grid dimensions: 6 columns wide × 9 rows tall (portrait play area).
   // See docs/WORD_SEARCH_GAME.md §2.
   /** A Study Challenge round's grid — see the note in getWordSearchGrid. */
   static readonly WORD_SEARCH_CHALLENGE_ROWS = 8;
   static readonly WORD_SEARCH_CHALLENGE_COLS = 8;
-  static readonly WORD_SEARCH_ROWS = 7;
-  static readonly WORD_SEARCH_COLS = 7;
+  static readonly WORD_SEARCH_ROWS = 9;
+  static readonly WORD_SEARCH_COLS = 6;
   // Cap on how many library candidates we pull per category up front. Word Search
   // needs a working set to run the substring de-dup / replacement loop against;
   // this bounds memory for users with very large libraries.
   private static readonly WORD_SEARCH_CANDIDATE_CAP = 500;
 
   /**
-   * Build the Word Search game payload: a clean 10-word set (no word's Chinese
-   * text is a substring of another's) hidden as snaking paths in an 8×8 grid of
+   * Build the Word Search game payload: a clean 12-word set (no word's Chinese
+   * text is a substring of another's) hidden as snaking paths in a 9×6 grid of
    * filler characters.
    *
    * Selection reuses the bubble-match pool shape (requested distribution + the
@@ -1882,21 +1882,25 @@ export class OnDeckVocabService {
       throw new ValidationError('User ID is required');
     }
 
-    // A CHALLENGE GRID IS BIGGER, and it has to be. The board is built for ten
-    // words summing to ~20 characters in 49 cells; a challenge round must place
-    // TWELVE (CHALLENGE_WORD_COUNT), which at the 4-character cap is up to 48
-    // characters — a 7x7 that random placement would almost never satisfy. 8x8 (64
-    // cells) restores roughly the density the placer was tuned at.
+    // A CHALLENGE GRID IS STILL BIGGER, though the word counts now happen to
+    // match: TOTAL_WORDS was raised from 10 to 12 (2026-08-23) on the SAME 9x6
+    // (54-cell) grid, so an ordinary board is now 48-of-54 cells full (89%) —
+    // tighter than the 40-of-49 (82%) it was tuned at. A challenge round places
+    // CHALLENGE_WORD_COUNT (also 12) into 8x8 (64 cells, 75% full), the roomier
+    // density the placer was originally tuned at. The two boards being the same
+    // word count is coincidental, not load-bearing — nothing here compares them.
     //
-    // Note this also takes the grid out of TEMPLATE MODE (`templateModeApplicable`
-    // is 7x7 + exactly 10 words), so a challenge grid always uses random placement
-    // with its full MAX_GRID_ATTEMPTS budget. Acceptable: templates exist to make a
-    // pathological 10-word draw cheap, not to make placement possible at all.
+    // Note the size difference also takes a challenge grid out of TEMPLATE MODE
+    // (`templateModeApplicable` gates on 9x6, not 8x8), so it always uses random
+    // placement with its full MAX_GRID_ATTEMPTS budget. Acceptable: templates
+    // exist to make a pathological 12-word draw cheap, not to make placement
+    // possible at all — and an ordinary board leans on that fallback far more
+    // now, at only 6 holes' worth of slack instead of 14.
     const rows = challenge ? OnDeckVocabService.WORD_SEARCH_CHALLENGE_ROWS : OnDeckVocabService.WORD_SEARCH_ROWS;
     const cols = challenge ? OnDeckVocabService.WORD_SEARCH_CHALLENGE_COLS : OnDeckVocabService.WORD_SEARCH_COLS;
-    // The challenge's own set is the target list — never the requested distribution,
-    // whose sum (TOTAL_WORDS = 10) is smaller than CHALLENGE_WORD_COUNT and would
-    // silently drop two contested words off the board (§ 5.2).
+    // The challenge's own set is the target list — never the requested
+    // distribution. Even now that both sum to 12, the challenge set is the
+    // SPECIFIC contested word ids (§ 5.2), unrelated to a band distribution.
     const total = challenge
       ? challenge.contestedIds.length
       : Object.values(distribution).reduce((sum, n) => sum + n, 0);

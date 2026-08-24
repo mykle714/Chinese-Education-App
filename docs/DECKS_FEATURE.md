@@ -301,7 +301,9 @@ deck would make the deck itself the answer key.
 | `src/features/flashcards/FlashcardsDecksPage.tsx` | `/decks` — the study buttons (Review / Challenge / Study Mix / the two Center buttons) and the persistent sheet's mounting. **Lens `core`.** |
 | `src/features/flashcards/MasteryCenterPage.tsx` | `/flashcards/reading` + `/flashcards/writing` — the same panel as a **page**, lens `reading` / `writing` |
 | `src/features/flashcards/useDecksPanel.ts` | **All of the panel's data, for one lens** — the count hooks, the deck fetch, the card-library fetch, the search/sort state and the tile figures. Shared verbatim by the fdp and both Centers. |
-| `src/features/flashcards/DecksPanelBody.tsx` | Body of the panel (`variant: "sheet" \| "page"`): the Collections / Challenges / Decks shelf rows and the inline Cards grid (`ShelfRow`, `SectionLabel`, `LineSeparator`) |
+| `src/features/flashcards/DecksPanelBody.tsx` | Body of the panel (`variant: "sheet" \| "page"`): the library duo, the Challenges / Decks shelf rows and the inline Cards grid (`LibraryDuo`, `ShelfRow`, `SectionLabel`) |
+| `src/features/flashcards/LibraryDuo.tsx` | The panel's two library constants (`.duo`) — Learn Now + Mastered, with their figures. The one place the sheet is not spines; see § "Your library" |
+| `src/features/flashcards/StudyHand.tsx` | The three study modes as a fanned hand of cards, on the page behind the sheet (`.fanw`) |
 | `src/features/flashcards/NewDeckDialog.tsx` | The "name your deck" prompt behind every panel's `+`; shows the **server's** message verbatim on failure |
 | `src/features/flashcards/AddToDeckMenu.tsx` | The checkbox menu, mounted on the cdp and the eip |
 
@@ -380,7 +382,7 @@ both, so they cannot disagree about what a collection *is*:
 
 | List | Rendered by | Contents |
 |---|---|---|
-| `lensCollectionEntries(lens)` | the decks **panel** — fdp (`core`) and both Centers | that ONE bar's Learn Now + Mastered. Two tiles, one `Collections` group, always. |
+| `lensCollectionEntries(lens)` | the decks **panel** — fdp (`core`) and both Centers | that ONE bar's Learn Now + Mastered. Two entries, one group, always — rendered by `LibraryDuo` rather than as spines. |
 | `builtinCollectionEntries(goals)` | `GamesCollectionSelector` | All Cards, core Learn Now, and one Mastered per **active** bar — the reading/writing ones under a separate `Mastered` caption. |
 
 The Games hub keeps the goal-driven list because there the learner is choosing a set
@@ -462,11 +464,11 @@ deck inside the Reading Center would silently drop the learner into a core view 
 `DecksPanelBody` owns every pixel; the three pages differ only in the lens they pass
 and the frame they mount. The Center page is ~110 lines, almost all of it comment.
 
-### `/decks` = a button column + a persistent pull-up sheet
+### `/decks` = a study area + a persistent pull-up sheet
 
 The page is split across **two surfaces**:
 
-* **Page (behind)** — section 1 only, the study-entry buttons and the Center buttons.
+* **Page (behind)** — section 1 only, the library line, the Center rail and the card hand.
   `MobileTabScreen` is mounted with **`scrollable={false}`**: nothing behind the sheet
   scrolls any more.
 * **Sheet (front)** — sections 2–4, every *set* of cards, in `DecksPanelBody`
@@ -517,37 +519,73 @@ it must be `"pan-y"`, or a Center would not scroll at all — nothing is interce
 those touchmoves to scroll it for us (CLAUDE.md § Touch & Scroll: scrolling is opt-in
 per page, and this container is where a Center opts in).
 
-1. **Review / Study Mix / Challenge**, then the **Center buttons** — the only things
-   left on the page itself. To study one collection, open it from the sheet and use its
-   launch button.
+1. **The study area** — the only thing left on the page itself, and one choice: *which
+   session am I starting*. Three rows, top to bottom (`FlashcardsDecksPage`,
+   `src/features/flashcards/StudyHand.tsx`). To study one collection instead, open it
+   from the sheet and use its launch button.
 
-   Laid out as a **row + a slab**: Review and Challenge sit together on one row at
-   **equal width** (peers — the two halves of one difficulty axis), and **Study Mix**
-   is a **fixed 3:4 (w:h) portrait slab**, centred in the space between that row and
-   the resting sheet and grown until it hits the first edge — width or height,
-   whichever runs out first. Study Mix is the
-   biggest target because it is the one that always works: Review is greyed without
-   earned Comfortable/Mastered cards, and Challenge is a mode choice, while a mixed
-   session is the default thing to do. Its type steps up to `SIZE.title` to match the
-   footprint, and Review/Challenge return to the base `bodyLg` now that each has half
-   a row rather than a quarter.
+   **(a) The library line** (`.duebar`) — the library's size on the left, the scope the
+   modes draw from on the right, both as mono overlines.
 
-   **How the ratio holds.** The slab's slot (`flashcards-decks__mix-slot`) declares
-   `container-type: size`, and the button is `flex: none` with
-   `width: min(100cqw, 75cqh)` + `aspect-ratio: 3 / 4` — `75cqh` being the width a 3:4
-   box has at the slot's full height, so the smaller term wins and the box fills
-   without ever overflowing. It is deliberately **not** `flex: 1`: a flex-grown item
-   has a definite height, and a definite height overrides `aspect-ratio`. The obvious
-   alternative (`height: 100%; width: auto; max-width: 100%`) breaks the ratio too —
-   when `max-width` clamps, the definite height stays put. Container-query units
-   resolve against the slot's **content box**, so the slot's padding is genuine margin
-   around the slab.
+   > ⚠️ The artboard's left slot reads **"24 due today"**, and the app cannot answer
+   > that: a due count is cooldown-aware (how many cards have ≥1 flp mark type off
+   > cooldown right now) and no endpoint returns it. Band totals are a different
+   > question — a Target card marked ten minutes ago is in the band and is not due — so
+   > the line prints the library SIZE rather than a plausible-looking derivation. See
+   > [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 9.
 
-   The slab's bottom padding is **derived**, not typed:
-   `SHEET_CLOSED_HEIGHT - FOOTER_CLEARANCE + STUDY_AREA_GAP` — the scroll
-   area already reserves the footer's clearance, so only the amount by which the
-   resting sheet out-stands it is missing. Change `SHEET_LIP` and the button still
-   stops just above the sheet instead of sliding under it.
+   **(b) The Centers rail** (`.ctr2`) — one tile per goal the account pursues, omitted
+   entirely when it pursues neither (and always for Spanish, which cannot accrue those
+   marks) so the hand keeps that space. They sit ABOVE the hand, not in it, because they
+   are a different KIND of destination: a place to look at your library by skill, not a
+   session to start. Filled with the ramp's **pastels** (reading `red`, writing the new
+   `yel`) rather than the saturated `MARK_TYPE_COLORS` — a tile is a surface, and only
+   marks and mastery cells take the saturated hues (SHELF_REDESIGN.md D2b). See
+   § "Mastery Centers".
+
+   **(c) The card hand** (`StudyHand`, `.fanw`) — Study Mix, Review and Challenge as a
+   fanned hand of three cards with **one played forward**.
+
+   This replaced a Review/Challenge row above a 3:4 Study Mix slab. Three buttons is
+   three peers, which is not what these are: they are one choice, and Study Mix is the
+   answer nine times out of ten. A hand says that in its geometry — exactly one card is
+   forward and readable, the other two are visibly present, named, and one tap from
+   taking its place. Nothing is hidden and nothing is repeated.
+
+   - **Bringing a card forward is deliberately not starting the session.** The front card
+     carries the figure and its own `Study now`, so choosing a mode and committing to it
+     are two taps. That matters because Review and Challenge are the two modes a learner
+     picks on purpose and wants to see the size of first.
+   - **Slot assignment is a rule, not remembered positions.** The front is whatever was
+     last chosen; the other two fall into the two back slots in `FAN_ORDER`
+     (challenge → review → mix). So the hand cannot end up in a layout nobody asked for
+     after two taps, and a given front card always produces the same arrangement.
+   - **A back card's heading is right-aligned.** Its left side is the part the front card
+     overlaps as the fan closes, and a name that slides under another card is worse than
+     no name at all.
+   - **Ineligibility is not disablement.** Review greys out with no earned
+     Comfortable/Mastered cards, but still fires `onStudy`, so the page can explain
+     ("Mark more cards in Study Mix…") rather than leaving a dead card. The card can
+     always be brought forward; it is the commit that is refused.
+
+   **The figures.** Each mode's number is the size of the set it draws from, read off the
+   core bands and matching the server's own `MODE_CONFIGS`:
+
+   | card | figure | caption |
+   |---|---|---|
+   | Study Mix | Unfamiliar + Target + Comfortable | `in rotation` |
+   | Review | Comfortable + Mastered | `ready` |
+   | Challenge | Unfamiliar + Target | `waiting` |
+
+   All three are `undefined` until the counts land, and print an **em dash** rather than a
+   provisional `0` — `0` is a real answer every one of these figures can give, so showing
+   it before the fetch resolves is a lie that corrects itself.
+
+   **The hand's bottom padding is derived**, not typed:
+   `SHEET_CLOSED_HEIGHT - FOOTER_CLEARANCE + STUDY_AREA_GAP` — the scroll area already
+   reserves the footer's clearance, so only the amount by which the resting sheet
+   out-stands it is missing. Change `SHEET_LIP` and `Study now` still stops just above the
+   sheet instead of sliding under it.
 
    > **Renamed (was Easy / Mix / Hard).** The rename went all the way down — the
    > `StudyMode` values are `'review'` and `'challenge'` in both
@@ -558,16 +596,25 @@ per page, and this container is where a Center opts in).
    > session rather than dead-ending; Match Speed's `modeConfigFor` does the same
    > with an old nav-state value.
 
-   **Reading / Writing.** A second, shorter row **under** the slab, one button per goal
-   the account pursues (omitted entirely when it pursues neither, so the slab keeps that
-   space). They read top-to-bottom as: *how hard* → *the everyday session* → *which
-   skill*, and they sit below the slab rather than joining the difficulty row because
-   they are a different kind of destination — a place to look at your library, not a
-   session to start. Colored by **mark type** (reading red, writing yellow —
-   `MARK_TYPE_COLORS`), the same two colors that annotate the bars on the pages they
-   open. See § "Mastery Centers".
-2. **Collections** — the **lens's** two sets as deck tiles: *Learn Now* and *Mastered*.
-   **No *All Cards* tile** — those cards are the panel's last section instead.
+2. **Your library** — the **lens's** two CONSTANTS, *Learn Now* and *Mastered*, as the
+   two wide tiles of `LibraryDuo` (`.duo`). **No *All Cards* tile** — those cards are the
+   panel's last section instead.
+
+   > **The one place the sheet is not spines**, and the reason is what the surface is for
+   > rather than an exception for its own sake. Every other shelf here answers "which
+   > set?" and encodes its count as the spine's HEIGHT — a comparison between neighbours,
+   > exactly right for a row of six decks. These two have no neighbours to be compared
+   > against: "612" and "208" are the figures the learner came to read, and a 74px spine
+   > cannot print a figure at a size worth reading. So they keep the shelf's MATERIAL and
+   > drop its geometry — same single pastel, same inset white highlight, same dark strap
+   > down the left edge, same bottom-heavy corner radius: a spine laid on its side and
+   > opened up far enough to hold a number. This narrows SHELF_REDESIGN.md **D9**; it is
+   > not licence to bring tiles back anywhere else.
+
+   > ⚠️ The artboard prints **"+17 this week"** under Mastered. No endpoint returns that
+   > delta (`masteredAt`, migration 142, makes it derivable), so the caption says what the
+   > set IS instead. Do not synthesise it from the client's own counts —
+   > [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 10.
 
    > **`CollectionGroup` values are user-visible strings.** The /decks sheet uses
    > them as its captions and `GamesCollectionSelector` renders `entry.group`
@@ -825,7 +872,9 @@ bottom. Its trigger has two shapes — a bare icon button, or a labelled outline
 when a `label` prop is given. Mounted in:
 
 * `VocabCardDetailPage.tsx` — the cdp header actions, beside Edit and Delete (icon)
-* `InfoCardActionBar.tsx` — the "Add to Deck…" button in the action bar at the end of
+* `FlashcardsLearnPage/CardOpsRail.tsx` — the `add to deck` cell on the card's own `•••`
+  rail (`AddToDeckMenu` in its `rail` appearance), which is where filing a card lives
+  since 2026-08-24. It replaced the "Add to Deck…" button in the action bar at the end of
   the **eip definition tab** (labelled). It used to live in the eip *header*'s action
   grid as a bare icon; it moved so the action reads as a named button rather than a
   guessed-at glyph.
@@ -988,7 +1037,7 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §3 Launch filter | `vetTable.ts` (`vetDeckClause`, `vetDeckOrProvisionalClause`); `OnDeckVocabService.deckPlayFilter` + its three fetchers; `OnDeckVocabController.resolveCollection`; `routes/flashcardRoutes.ts` (mark body) |
 | §3 Games-hub selector | `src/features/flashcards/selectedCollection.ts`; `src/games/GamesCollectionSelector.tsx`; `src/games/GamesPage.tsx` (`launchPath`); `src/games/word-search/WordSearchHubItem.tsx` (`newGamePath`); `src/api/decks.ts` (`fetchDecks`) |
 | §4 Client | `src/api/decks.ts`, `collectionRef.ts`, `useLaunchCollection.ts`, `CollectionViewPage.tsx`, `FlashcardsDecksPage.tsx`, `useDecksPanel.ts`, `DecksPanelBody.tsx`, `NewDeckDialog.tsx`, `AddToDeckMenu.tsx`, `routes/routeMeta.ts`, `routes/registry.ts` |
-| §4 Mastery Centers | `src/features/flashcards/masteryCenters.ts` (bars, routes, titles, `activeMasteryCenters`); `MasteryCenterPage.tsx`; `useDecksPanel.ts` (the lens); `collectionRef.ts` (`withLens`, `lensFromSearch`, `lensFromCollection`, `LEARN_NOW_COLLECTION_IDS`); `builtinCollections.ts` (`lensCollectionEntries`); `src/hooks/useCategoryCounts.ts` (`?bar=`); `src/components/MiniVocabCard.tsx` + `MiniVocabCardGrid.tsx` (the `lens` prop); `MasteryProgressBar.tsx` (`lens`); `VocabCardDetailPage.tsx` (`?bar=`); `server/contracts/wire.ts` (`LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`, `parseMasteryBar`); `server/dal/shared/vetTable.ts` (`unmasteredBarClause`, `builtinCollectionClause`); `OnDeckVocabService.getCategoryCounts` (the `bar` param); `OnDeckVocabController.getCategoryCounts`; `routes/routeMeta.ts` + `registry.ts`. See [MASTERY_REWORK.md](./MASTERY_REWORK.md). |
+| §4 Mastery Centers | `src/features/flashcards/masteryCenters.ts` (bars, routes, titles, `activeMasteryCenters`); `MasteryCenterPage.tsx`; `useDecksPanel.ts` (the lens); `collectionRef.ts` (`withLens`, `lensFromSearch`, `lensFromCollection`, `LEARN_NOW_COLLECTION_IDS`); `builtinCollections.ts` (`lensCollectionEntries`); `src/hooks/useCategoryCounts.ts` (`?bar=`); `src/components/MiniVocabCard.tsx` + `MiniVocabCardGrid.tsx` (the `lens` prop); `src/components/mastery/MasteryWindow.tsx` (`lens`); `VocabCardDetailPage.tsx` (`?bar=`); `server/contracts/wire.ts` (`LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`, `parseMasteryBar`); `server/dal/shared/vetTable.ts` (`unmasteredBarClause`, `builtinCollectionClause`); `OnDeckVocabService.getCategoryCounts` (the `bar` param); `OnDeckVocabController.getCategoryCounts`; `routes/routeMeta.ts` + `registry.ts`. See [MASTERY_REWORK.md](./MASTERY_REWORK.md). |
 | §4 Spines & built-in collections | `src/components/shelf/*` (`Shelf`, `Spine`, `AddSpine`, `spineGeometry`) (+ `DeckBuckets.tsx`, the Account host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`lensCollectionEntries`, `builtinCollectionEntries`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`, `LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
 | §1 `editMode` + §4 Challenges section | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; `database/migrations/148-create-study-challenges.sql`; `DeckService` → `assertMutable` (the preset mutation guard) and `createPresetDeck`; `DeckDAL` → `createPresetDeck` / `countCustomDecks` / `findDeckEditMode`; `study_challenges.presetDeckIds` |
 | §4 Cards section (inline library) | `src/api/collections.ts` (`fetchCollectionCards`) — also the collection page's built-in read; `src/components/MiniVocabCardGrid.tsx`; `src/utils/vocabSearch.ts` (`filterVocabEntries`); `useDecksPanel.ts` (the fetch, the search + sort state); `DecksPanelBody.tsx` (the section + the `decksSheet.decksOpen` collapse) |

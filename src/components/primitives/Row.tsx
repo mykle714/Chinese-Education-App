@@ -32,13 +32,25 @@ export interface RowProps {
     icon?: string;
     /** Short text avatar (1–2 characters) — a friend's initial. Ignored when `avatar` is given. */
     initials?: string;
-    /** Escape hatch: a fully custom 36×36 avatar (a spine swatch, a photo). */
+    /**
+     * Escape hatch: a fully custom avatar. REPLACES the styled 36×36 box rather than
+     * filling it, so a caller needing a different size, radius or an interactive
+     * avatar (the Account profile row's tappable picker) owns the whole slot.
+     */
     avatar?: React.ReactNode;
     /** Ramp hue for the avatar's pastel fill + glyph ink. Defaults to the neutral grey pair. */
     hue?: RampHue;
     title: React.ReactNode;
     /** Second line. Truncates with an ellipsis — it is a single line by design. */
     subtitle?: React.ReactNode;
+    /**
+     * THIRD line, set in mono — the design's second `.s` inside `.tx`. Only one row in
+     * the artboards has it (Account's profile row, carrying the copyable user ID), so
+     * it is the exception rather than a general-purpose slot: reach for it when a row's
+     * identity genuinely needs a machine-readable line under its subtitle, not to fit
+     * one more sentence in.
+     */
+    meta?: React.ReactNode;
     /** Trailing figure, set in mono: a count, a score, a date. */
     value?: React.ReactNode;
     /** Trailing chevron. Set it when (and only when) the row navigates. */
@@ -79,6 +91,7 @@ export const Row: React.FC<RowProps> = ({
     hue = "grey",
     title,
     subtitle,
+    meta,
     value,
     chevron,
     trailing,
@@ -119,7 +132,9 @@ export const Row: React.FC<RowProps> = ({
                 ...(Array.isArray(sx) ? sx : [sx]),
             ]}
         >
-            {hasAvatar && (
+            {/* `avatar` replaces the box; `icon`/`initials` fill the styled one. */}
+            {avatar !== undefined && avatar}
+            {avatar === undefined && hasAvatar && (
                 <Box
                     className="row__avatar"
                     sx={{
@@ -139,7 +154,7 @@ export const Row: React.FC<RowProps> = ({
                         boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}`,
                     }}
                 >
-                    {avatar ?? (icon ? <Icon name={icon} size={19} color={ink} /> : initials)}
+                    {icon ? <Icon name={icon} size={19} color={ink} /> : initials}
                 </Box>
             )}
 
@@ -164,6 +179,26 @@ export const Row: React.FC<RowProps> = ({
                         }}
                     >
                         {subtitle}
+                    </Typography>
+                )}
+                {meta !== undefined && (
+                    <Typography
+                        className="row__meta"
+                        // A span, not the default <p>: the slot carries an inline copy
+                        // BUTTON alongside its text, and a flex row of controls inside a
+                        // paragraph is invalid markup.
+                        component="span"
+                        sx={{
+                            fontFamily: FONTS.mono,
+                            fontSize: 10.5,
+                            color: COLORS.textFaint,
+                            marginTop: "3px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px",
+                        }}
+                    >
+                        {meta}
                     </Typography>
                 )}
             </Box>

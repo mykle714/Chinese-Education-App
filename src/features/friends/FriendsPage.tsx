@@ -19,7 +19,7 @@ import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { friendErrorMessage, netMinutesLabel } from "./friendLabels";
-import { messageSx, mutedTextSx, navButtonSx, sectionCardSx, smallButtonSx } from "./friendStyles";
+import { cornerBadgeSx, messageSx, mutedTextSx, navButtonSx, sectionCardSx, smallButtonSx } from "./friendStyles";
 
 /**
  * The rank chip left of the avatar. The top three get the podium accents (the same
@@ -201,23 +201,7 @@ function FriendsPage() {
                     >
                         Accept
                         {incomingCount > 0 && (
-                            <Box
-                                className="friends-page__requests-badge"
-                                sx={{
-                                    ml: 0.75,
-                                    minWidth: 20,
-                                    height: 20,
-                                    px: 0.5,
-                                    borderRadius: "10px",
-                                    backgroundColor: COLORS.dangerInk,
-                                    color: "#fff",
-                                    fontSize: SIZE.micro,
-                                    fontWeight: WEIGHT.bold,
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                }}
-                            >
+                            <Box className="friends-page__requests-badge" sx={cornerBadgeSx}>
                                 {incomingCount}
                             </Box>
                         )}
@@ -251,23 +235,7 @@ function FriendsPage() {
                 >
                     Challenges
                     {challengeCount > 0 && (
-                        <Box
-                            className="friends-page__challenges-badge"
-                            sx={{
-                                ml: 0.75,
-                                minWidth: 20,
-                                height: 20,
-                                px: 0.5,
-                                borderRadius: "10px",
-                                backgroundColor: COLORS.dangerInk,
-                                color: "#fff",
-                                fontSize: SIZE.micro,
-                                fontWeight: WEIGHT.bold,
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                            }}
-                        >
+                        <Box className="friends-page__challenges-badge" sx={cornerBadgeSx}>
                             {challengeCount}
                         </Box>
                     )}
@@ -320,12 +288,6 @@ function FriendsPage() {
                     one small query and a spinner flashes more than it informs. */}
                 {loading ? (
                     <Typography className="friends-page__loading" sx={mutedTextSx}>Loading…</Typography>
-                ) : entries.length <= 1 ? (
-                    // <= 1: the viewer's own row is always present, so a board of one
-                    // person is the empty state — a leaderboard of yourself is not one.
-                    <Typography className="friends-page__empty" sx={mutedTextSx}>
-                        No friends yet. Tap <strong>Sent</strong> to add someone by their friend ID.
-                    </Typography>
                 ) : (
                     <Box className="friends-page__leaderboard" sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                         {entries.map((entry) => (
@@ -345,6 +307,16 @@ function FriendsPage() {
                                 actions={<VelocityStat velocity={entry.velocity} />}
                             />
                         ))}
+                        {/* A friendless board still draws — the viewer's own row is always
+                            present, so the board is never blank; it just has one row, which
+                            is also what it looks like the moment a first friend is added.
+                            The hint sits UNDER that row rather than replacing it, so the
+                            empty state teaches the next step without hiding the ranking. */}
+                        {entries.length <= 1 && (
+                            <Typography className="friends-page__empty" sx={mutedTextSx}>
+                                No friends yet. Tap <strong>Send</strong> to add someone by their friend ID.
+                            </Typography>
+                        )}
                     </Box>
                 )}
 

@@ -364,10 +364,11 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   (migration 139) — `MetaChipLabel` threads it straight through, and
   `ValidateFlagButtons` keys its status fetch on it, so switching senses refetches that
   sense's own vote (and clears the previous one's filled icon while the fetch is in
-  flight, since the picker swaps the prop in place rather than remounting). Used by both `VocabCardDetailBody.tsx`
-  and `InfoCardPanelBody.tsx` (they differ only in the `classPrefix` prop), each
-  passing `entry.entryKey` / `entry.language`; the buttons are skipped when `language`
-  is absent (det-fallback entries). The pair is an absolutely-positioned overlay in
+  flight, since the picker swaps the prop in place rather than remounting). Used by **`src/features/flashcards/DefinitionFacts.tsx`** — the ONE component both
+  card-detail surfaces render since 2026-08-24 (the cdp's Definition box and the eip's
+  definition tab), which passes `entry.entryKey` / `entry.language` and its own
+  `classPrefix`; the buttons are skipped when `language` is absent (det-fallback
+  entries). The pair is an absolutely-positioned overlay in
   the chip's **top-right corner** with no surface of its own — styled exactly like the
   est cards' corner buttons, floating over the chip without displacing its text. Each
   parent chip therefore carries `position: relative`. Non-validators see the plain caption exactly as
@@ -521,12 +522,28 @@ All three surfaces (eip Definition tab, cdp) inherit this automatically since
 `VocabCardDetailBody`/`InfoCardPanelBody` are the shared components behind both
 card-detail pages.
 
-> **Note on the twin strips.** The cdp and eip meta strips render the same three
-> chips with the same flags and the same AI treatment, differing only in the eip's
-> zh-only Difficulty gate and in their class-name prefix. Their captions come from
-> ONE shared component, `src/features/flashcards/MetaChipLabel.tsx`; the surrounding
-> chip boxes are still hand-maintained twins, so a fuller `DefinitionMetaStrip`
-> extraction remains available if they drift again.
+> **The twin strips are gone (2026-08-24).** The cdp's and the eip's meta strips were
+> hand-maintained twins — ~90 lines each, identical down to the comments — held together
+> only by the shared caption component. They are now ONE component,
+> **`src/features/flashcards/DefinitionFacts.tsx`** (the design's `.dfx`), rendered by
+> both. Every field keeps its own `MetaChipLabel`, its own approval flag and its own
+> validator pair; what was deduplicated is the layout around them.
+>
+> **One provenance rule changed with it.** Previously each unapproved field drew its own
+> orange box, so a fully-unapproved definition tab showed four of them stacked. Now:
+>
+> - **every** provenance-bearing value present in the block unapproved (the paragraph
+>   included, when the host hands it in) → **ONE** grouped AI block: one border, one
+>   tint, one badge. That is artboard 20b.
+> - **any** value human-approved → back to the per-field boxes, so the approved one is
+>   visibly NOT flagged.
+>
+> The second half is the load-bearing one. Losing the approved/unapproved distinction is
+> the only thing the grouped treatment must never do, which is why the choice is a RULE
+> computed from the flags rather than a prop a caller can get wrong. Because grouping is
+> decided inside the component, the paragraph is passed as a render function receiving
+> `{ grouped }` — a paragraph that draws its own AI border has to stand it down when it
+> is about to be wrapped in one, or the panel shows two badges for one claim.
 
 ---
 
@@ -650,8 +667,10 @@ regeneration loop and a validator's work — treat it as load-bearing.
   `src/api/http.ts` (`apiPost`/`apiDelete`/`apiGet`), wired from `src/features/flashcards/ExampleSentenceList.tsx`
   and `src/components/LongDefinitionDisplay.tsx` (via `src/features/flashcards/VocabCardDetailBody.tsx` +
   `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`), and
-  `src/features/flashcards/MetaChipLabel.tsx` (the three meta-strip chips; passes
-  `senseLabel` for a per-sense Commonality chip)
+  `src/features/flashcards/MetaChipLabel.tsx` (one chip's caption + its validator pair;
+  passes `senseLabel` for a per-sense Commonality chip), hosted by
+  `src/features/flashcards/DefinitionFacts.tsx` (the `.dfx` block both card-detail
+  surfaces render)
 - Backfill guard: `server/scripts/backfill/run-log.js` (`validatedClause`)
 - Read-path surfacing: `server/dal/implementations/DictionaryDAL.ts`
   (`fetchApprovedSentenceContents`/`isSentenceHumanApproved` for `humanApproved`;

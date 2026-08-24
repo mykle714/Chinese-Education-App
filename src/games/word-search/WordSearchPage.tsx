@@ -12,7 +12,9 @@ import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
-import LeafPage from "../../components/LeafPage";
+import { GameLeafPage } from "../shared/GameSurface";
+// The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
+import { GAME_HUE } from "./constants";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import WordSearchHeaderControls from "./WordSearchHeader";
 import WordSearchSettingsDialog from "./WordSearchSettingsDialog";
@@ -20,7 +22,7 @@ import WordSearchWordList from "./WordSearchWordList";
 import WordSearchHintRow from "./WordSearchHintRow";
 import WordSearchGrid, { type WordSearchGridHandle } from "./WordSearchGrid";
 import WordSearchHintBar from "./WordSearchHintBar";
-import { GameFrame, GameHud, GameHudLabel } from "../shared/GameFrame";
+import { GameCentered, GameFrame, GameHud, GameHudLabel } from "../shared/GameFrame";
 import { Label } from "../../components/primitives";
 import GameEndPopup from "../runtime/GameEndPopup";
 import { useWordSearchSettings } from "./useWordSearchSettings";
@@ -744,24 +746,11 @@ const WordSearchPage: React.FC = () => {
         startBoard(payload);
     }, [tts, fetchGrid, startBoard, userId]);
 
+    // The centred column shown INSTEAD of the board (spinner, or the blocked
+    // message). The shape is shared — `GameCentered` also owns the rule that text on
+    // the accent ground is white — so this is only the page's class name for it.
     const renderCentered = (children: React.ReactNode) => (
-        <Box
-            className="word-search__overlay"
-            sx={{
-                flex: 1,
-                minHeight: 0,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 2.5,
-                px: 4,
-                pb: 3,
-                textAlign: "center",
-            }}
-        >
-            {children}
-        </Box>
+        <GameCentered className="word-search__overlay">{children}</GameCentered>
     );
 
     // End-of-run offer to keep the lent cards; opens a beat after the win popup.
@@ -774,7 +763,7 @@ const WordSearchPage: React.FC = () => {
     } else if (phase === "blocked") {
         content = renderCentered(
             <>
-                <Typography className="word-search__block-msg" sx={{ fontSize: SIZE.subtitle, color: fc.onSurface, lineHeight: LEADING.normal }}>
+                <Typography className="word-search__block-msg" sx={{ fontSize: SIZE.subtitle, lineHeight: LEADING.normal }}>
                     {blockMessage}
                 </Typography>
                 <Button className="word-search__block-back" variant="contained" onClick={() => navigate("/games")}>
@@ -818,7 +807,14 @@ const WordSearchPage: React.FC = () => {
                     moving anything else — the old layout had the clock first and had to
                     position the hint meter absolutely to stop it drifting. */}
                 <GameHud className="word-search__hud">
-                    <GameHudLabel className="word-search__hud-mode">
+                    {/* No Pinyin's label ("NO PINYIN · READING & PRODUCTION") is long enough
+                        to overflow the HUD row and clip the timer/found-count off the edge
+                        of GameFrame's `overflow:hidden` panel — this is the one HUD fact
+                        allowed to truncate, so those two stay fully visible. */}
+                    <GameHudLabel
+                        className="word-search__hud-mode"
+                        sx={{ minWidth: 0, flexShrink: 1, overflow: "hidden", textOverflow: "ellipsis" }}
+                    >
                         {modeConfig?.label ?? "Word Search"} · {markTypes.join(" & ") || "recognition"}
                     </GameHudLabel>
                     {showTimer && (
@@ -936,7 +932,8 @@ const WordSearchPage: React.FC = () => {
                 words={data?.provisionalWords ?? []}
                 language={(user?.selectedLanguage ?? "zh") as Language}
             />
-            <LeafPage
+            <GameLeafPage
+            hue={GAME_HUE}
                 title="Word Search"
                 // Back lands where the player came FROM — the challenge mid-test, or
                 // the Games hub for an ordinary run.
@@ -948,7 +945,7 @@ const WordSearchPage: React.FC = () => {
                 }
             >
                 {content}
-            </LeafPage>
+            </GameLeafPage>
             <WordSearchSettingsDialog
                 open={settingsOpen}
                 onClose={() => setSettingsOpen(false)}

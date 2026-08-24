@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, IconButton } from "@mui/material";
-import { Close } from "@mui/icons-material";
+import Icon from "../../../components/Icon";
+import { COLORS } from "../../../theme/colors";
 import { EipTabStripContainer, EipEntryTab } from "./styled";
 import type { EipTab } from "./useEipTabs";
 
@@ -15,10 +16,14 @@ interface EipTabStripProps {
     stripRef: React.RefObject<HTMLDivElement | null>;
 }
 
-// Entry-tab strip rendered between the grabber and the entry header. Hidden
-// entirely when only the root entry is open — overflow math in useEipTabs
-// assumes the strip is mounted before pushing a 2nd tab, so we still mount
-// an invisible container in that case to keep clientWidth measurable.
+// The WORD TRAIL (`.wtrail`, artboards 20/24/25): the words opened in this panel, as
+// filled pills, with a close on the right. Rendered between the grabber and the entry
+// header.
+//
+// Hidden entirely when only the root entry is open — a trail of one is not a trail —
+// but the container still MOUNTS in that case, invisibly: the overflow math in
+// useEipTabs measures its clientWidth before it is allowed to push a 2nd tab, and an
+// unmounted strip measures zero and would reject every tab forever.
 function EipTabStrip({ tabs, activeIndex, onSelect, onCloseActiveTab, isTabbedMode, stripRef }: EipTabStripProps) {
     const isVisible = isTabbedMode;
     return (
@@ -32,7 +37,7 @@ function EipTabStrip({ tabs, activeIndex, onSelect, onCloseActiveTab, isTabbedMo
                     {/* Scrollable tab area fills the remaining space. */}
                     <Box
                         className="eip-entry-tab-list"
-                        sx={{ display: "flex", gap: "4px", flex: 1, minWidth: 0, overflow: "hidden" }}
+                        sx={{ display: "flex", alignItems: "center", gap: "7px", flex: 1, minWidth: 0, overflow: "hidden" }}
                     >
                         {tabs.map((tab, i) => (
                             <EipEntryTab
@@ -47,8 +52,10 @@ function EipTabStrip({ tabs, activeIndex, onSelect, onCloseActiveTab, isTabbedMo
                         ))}
                     </Box>
 
-                    {/* X button closes the active tab. Positioned flush right, outside
-                        the tab list so it's always reachable regardless of tab count. */}
+                    {/* Closes the ACTIVE word, dropping it out of the trail. Flush right,
+                        outside the pill list so it stays reachable however many words are
+                        open — and never inside a pill, where it would turn every word in
+                        the trail into two targets a thumb-width apart. */}
                     <IconButton
                         className="eip-close-tab-btn"
                         size="small"
@@ -58,13 +65,11 @@ function EipTabStrip({ tabs, activeIndex, onSelect, onCloseActiveTab, isTabbedMo
                             alignSelf: "center",
                             flexShrink: 0,
                             padding: "4px",
-                            marginLeft: "2px",
-                            color: "inherit",
-                            opacity: 0.55,
-                            "&:hover": { opacity: 1 },
+                            marginLeft: "auto",
+                            "&:hover": { opacity: 0.75 },
                         }}
                     >
-                        <Close sx={{ fontSize: 16 }} />
+                        <Icon name="close" size={17} color={COLORS.textFaint} />
                     </IconButton>
                 </>
             )}

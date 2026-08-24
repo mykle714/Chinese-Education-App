@@ -660,24 +660,22 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                     // with the highlight painted on the cells themselves, the cell IS
                     // the unit and a square cell is all the evenness the board needs.
                     gap: `${CELL_GAP}px`,
-                    p: "13px",
-                    borderRadius: "16px",
-                    // THE BOARD GROUND. The design puts paper cells straight onto the
-                    // white `.play` panel, which on a real screen is ~1.03:1 — the tiles
-                    // dissolve into the panel and the board stops reading as a board.
-                    // The grid gets the app's inert filled surface (`--grey`) instead, a
-                    // full step darker than the paper cells, so every resting tile has an
-                    // edge without anything having to draw one.
+                    p: "4px",
+                    // NO BOARD GROUND (2026-08-24). The cells sit DIRECTLY on the white
+                    // `.play` panel — the grid box draws nothing at all.
                     //
-                    // Grey and not a hue: the four LIT states are all ramp pastels at the
-                    // same lightness, so a hued ground would sit in the same band as
-                    // whichever state shares its hue. Achromatic is the only ground all
-                    // four can be read against.
+                    // The grey container it replaces existed for one reason: a paper cell
+                    // on the white panel is ~1.03:1, so the tiles dissolved and the board
+                    // stopped reading as a board. That is still true, and the fix moved to
+                    // the CELLS — every one of them now carries the palette's `markOutline`
+                    // inset ring (see the cell's `boxShadow`), which is the app's own
+                    // device for making a near-invisible fill read as a shape. Drawing the
+                    // edge on the tile rather than behind it also keeps the LIT states at
+                    // full strength: a pastel fill on paper is a value step, where a pastel
+                    // fill on grey was the same value as its ground.
                     //
-                    // It replaces a heavy border the board used to draw around itself,
-                    // which read as a second frame a few px inside `GameFrame`'s panel
-                    // (docs/SHELF_REDESIGN.md § A6).
-                    backgroundColor: COLORS.card,
+                    // The 4px padding is only so the outer ring of tiles' shadows are not
+                    // clipped by `overflow: hidden` on the scaler above.
                     // The grid owns all touch gestures (no native scroll/zoom).
                     touchAction: "none",
                     userSelect: "none",
@@ -784,11 +782,22 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                         : isHintCell
                                         ? COLORS.org                  // hint reveal: "trace THESE" — same meaning as `.now`
                                         : COLORS.background,          // resting paper tile
-                                    // The reviewed word (its gloss popup is open) keeps the
-                                    // found green and adds the hue's own ink as a ring —
-                                    // the palette's rule for making a pastel a distinct
-                                    // state without inventing a second green.
-                                    boxShadow: isPopup ? `inset 0 0 0 1.5px ${COLORS.grnA}` : "none",
+                                    // EVERY cell carries the palette's inset ring
+                                    // (`COLORS.markOutline`) — this is what lets the board
+                                    // stand on the bare white panel with no container
+                                    // behind it. A pastel or paper fill at ~1.15:1 is not a
+                                    // shape until something draws its boundary; that is the
+                                    // rule the palette states for every pastel in the app,
+                                    // and the board is now one more caller of it.
+                                    //
+                                    // The reviewed word (its gloss popup is open) REPLACES
+                                    // the ring with the hue's own ink at 1.5px, rather than
+                                    // stacking a second one — the palette's way of making a
+                                    // pastel a distinct state without inventing a second
+                                    // green.
+                                    boxShadow: isPopup
+                                        ? `inset 0 0 0 1.5px ${COLORS.grnA}`
+                                        : `inset 0 0 0 1px ${COLORS.markOutline}`,
                                     // A lit cell darkens its glyph to full ink so the
                                     // character stays the loudest thing in its own tile.
                                     // It does NOT bold: the design's `.wsg span.hit`

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import NodePage from "../../components/NodePage";
 import CompareWorkspace, { type CompareState } from "../../components/CompareWorkspace";
 import { FooterSpacer } from "../../components/MobileFooter";
@@ -21,6 +21,15 @@ import type { LongDefinitionPart, VocabEntry } from "../../types";
 // CompareState lives (an eip tab object there, this `useState` here) and the fact
 // that neither slot is pre-filled, since the user arrives without a source word.
 //
+// ── Arriving WITH a word ──────────────────────────────────────────────────────
+// The cdp's word-tools rail ("Compare", see WordToolsRail) navigates here with the
+// card already in hand, as `location.state.slotA`. Route STATE rather than a URL
+// param because the thing being handed over is a whole VocabEntry the caller has
+// already fetched — putting the word in the path would mean re-looking it up here,
+// and the two copies could then disagree about which sense is selected. A direct
+// visit (the Home hub row) carries no state and opens with both slots empty, exactly
+// as before.
+//
 // Layer: presentation / route shell. All data flow (compare request, dictionary
 // search) is inside CompareWorkspace's hooks.
 
@@ -40,7 +49,14 @@ const ComparePage: React.FC = () => {
     // pinyin toggle — the two slots ARE the reference material here.
     const showPinyin = true;
 
-    const [compareState, setCompareState] = useState<CompareState>(EMPTY_COMPARE_STATE);
+    // Seeded ONCE from the route state — the initial value of the state hook, not an
+    // effect. An effect would re-seed slot A every time the entry object's identity
+    // changed and silently undo a clear the learner had just made.
+    const location = useLocation();
+    const handedOver = (location.state as { slotA?: VocabEntry } | null)?.slotA ?? null;
+    const [compareState, setCompareState] = useState<CompareState>(
+        handedOver ? { ...EMPTY_COMPARE_STATE, slotA: handedOver } : EMPTY_COMPARE_STATE
+    );
 
     // Filling or clearing either slot invalidates the paragraph — it described the OLD
     // pair. Mirrors useEipTabs.setCompareSlot so both surfaces behave identically.

@@ -879,10 +879,17 @@ falling back to "All cards" for a launch with no collection.
 ### `MatchSpeedSettingsDialog`
 
 A `Dialog` sheet mirroring `WordSearchSettingsDialog` (same switch-row shape).
-Three rows, all backed by the shared `useFlashcardLearnSettings` so they persist
-across games: **Show pinyin**, **Tone colors**, **Speak the word on tap**
+Three rows — **Show pinyin**, **Tone colors**, **Speak the word on tap**
 (`autoplayChinese` — pool cards are pre-warmed with `tts.prefetch(card)` as Bubble
 Match does). The two pinyin rows are **language-gated** — see below.
+
+⚠️ **All three are currently backed by the SHARED `useFlashcardLearnSettings`**, i.e.
+the flp's own preferences, so toggling pinyin here also changes Bubble Match, Hydra
+Bubbles, the cdp and the scp. That is being undone: pinyin becomes **per-game**
+([GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md), decided
+2026-08-23, not built), following the `useWordSearchSettings` pattern. For Match Speed
+the toggle is **display only** — it keeps marking `recognition` either way; only Bubble
+Match and (next) Hydra let pinyin pick the track.
 
 ### `MatchSpeedTimerBar`
 
@@ -893,6 +900,13 @@ formatter had no business living in one game's tunables. Under `URGENT_MS` (10s)
 both the digits and the drain bar turn red and the digits pulse. A **drain bar**
 sits under the digits so the run's end is legible peripherally, without parsing
 digits.
+
+**The resting bar is `RAMP[GAME_HUE].ink` — this game's green** — as of 2026-08-23
+([SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A6b). It was `COLORS.infoInk`, the palette's
+neutral blue, which stopped working once the clock came to sit on a strip tinted with the
+game's own hue: a blue bar on a green strip read as a widget borrowed from another screen.
+It cannot be confused with the board's green "matched" fill — that is a card body, this is
+a 4px rule in the chrome. The urgent state is still `dangerInk`.
 
 The bar is mounted from the **countdown phase onward**, at a full bar — so the
 board never shifts down when the run starts — and is **dimmed rather than

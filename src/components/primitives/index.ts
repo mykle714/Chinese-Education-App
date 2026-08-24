@@ -13,3 +13,7 @@ export { Row, RowList } from "./Row";
 export type { RowProps, RowListProps } from "./Row";
 export { default as StatCard } from "./StatCard";
 export type { StatCardProps } from "./StatCard";
+export { Segmented } from "./Segmented";
+export type { SegmentedProps, SegmentedOption } from "./Segmented";
+export { SettingsSection, OptionRow, SwitchRow } from "./SettingsSection";
+export type { SettingsSectionProps, OptionRowProps, SwitchRowProps } from "./SettingsSection";

@@ -23,10 +23,10 @@ import type {
 } from '../contracts/wire.js';
 import {
   acceptDeadline,
-  challengeWeekIndex,
   isAcceptWindowOpen,
   isTestWindowOpen,
   latestTestWindowClose,
+  localChallengeWeekIndex,
   resolveTimezone,
   testWindowClose,
   testWindowOpen,
@@ -205,9 +205,10 @@ export class StudyChallengeService {
     // Resolved ONCE for the whole page, not per row: it is one account-level question
     // and asking it per friend would be one user lookup per row.
     const anytimeOn = await this.resolveAnytime(userId, anytime);
-    // The week is a GLOBAL counter, not this viewer's local Monday — see
-    // shared/challengeWeek.ts. Their timezone still decides every deadline below.
-    const weekIndex = challengeWeekIndex(now);
+    // THE VIEWER'S OWN week, not the UTC counter's: "have we already had our turn
+    // this week" is a question about this player's Monday, and their week opens at
+    // 04:00 local like every other boundary in the app (shared/challengeWeek.ts).
+    const weekIndex = localChallengeWeekIndex(viewerTz, now);
 
     // Index the live challenges by the OTHER player, so each friend row is a map
     // lookup rather than a scan of every challenge per friend.
@@ -447,11 +448,14 @@ export class StudyChallengeService {
     const now = new Date();
     const anytimeOn = await this.resolveAnytime(userId, anytime);
     const challengerTz = await this.timezoneOf(userId);
-    // ⚠️ ONE COUNTER FOR BOTH PLAYERS. This used to be the challenger's local Monday
-    // as an instant, which meant a pair in two timezones stored two different
-    // `weekStart`s for the same week and the pair-week unique index never fired —
-    // both crossing challenges were created. The index is global, so the second
-    // insert now always collides and the loser gets a 409 (shared/challengeWeek.ts).
+    // THE WEEK OPENS ON THE CHALLENGER'S OWN MONDAY 04:00, like every other boundary
+    // in the app — not at the UTC counter's roll. The counter still NAMES the week
+    // (it is the unique index's third column and must be one value for both
+    // players); `localChallengeWeekIndex` only decides WHICH name a challenge issued
+    // right now should carry. Stamping it from UTC instead meant an east-of-UTC
+    // challenger issuing in the gap before the roll got the OUTGOING week, whose
+    // accept deadline was five days in the past — a challenge born expired. See
+    // shared/challengeWeek.ts.
     //
     // ANYTIME PARKS THE CHALLENGE IN THE PAIR'S NEXT FREE WEEK, and it has to: the
     // pair-week rule is not only an app check, it is a UNIQUE INDEX
@@ -462,17 +466,46 @@ export class StudyChallengeService {
     // `anytime` ignores. The accepted cost, stated so it is not a surprise: a parked
     // challenge OCCUPIES that future week for that pair, so a genuine challenge in it
     // is refused until the parked one is deleted.
+    const currentWeek = localChallengeWeekIndex(challengerTz, now);
     const weekIndex = anytimeOn
-      ? await this.nextFreeWeekForPair(userId, friendUserId, challengeWeekIndex(now))
-      : challengeWeekIndex(now);
+      ? await this.nextFreeWeekForPair(userId, friendUserId, currentWeek)
+      : currentWeek;
 
-    // ── The three gates, in the order a user would hit them ──
+    // ── The four gates, in the order a user would hit them ──
     // 1. The pair's week. Any status counts, including declined/expired, which is
     //    what makes the decline cooldown work without a rate limiter. Under `anytime`
     //    the week chosen above is free by construction, so this cannot fire.
     const existing = await this.studyChallengeDAL.findForPairInWeek(userId, friendUserId, weekIndex);
     if (existing) {
       throw new DuplicateError('You already have a challenge with this friend this week');
+    }
+
+    // 1a. AT MOST ONE UNFINISHED CHALLENGE PER PAIR, whatever week it is named after.
+    //     This is the guard that replaces what the UTC counter used to provide for
+    //     free. Now that each player's week opens on their own Monday, a pair in two
+    //     zones spends a few hours disagreeing about which week it is — and two
+    //     different week indices never collide on `study_challenges_pair_week_uniq`,
+    //     so without this check a crossing pair could once again end up with two live
+    //     challenges, two decks and two cap slots (the migration-150 defect).
+    //
+    //     "Unfinished" is DERIVED, never the stored status: a challenge whose test
+    //     window has closed is over even if the hourly job has not rewritten it yet,
+    //     and reading `status` alone would block the new week's challenge until the
+    //     job ran (forever on dev, where the timer is not installed). Same rule as
+    //     everywhere else in this service — the read path never waits for the job.
+    //     Not lifted by `anytime`: it is a data invariant the read path depends on
+    //     (`getChallengesPage` keys live challenges by opponent), not a calendar.
+    const live = await this.studyChallengeDAL.listLiveForUser(userId);
+    const challengeeTz = await this.timezoneOf(friendUserId);
+    const unfinished = live.find((row) => {
+      const other = row.challengerId === userId ? row.challengeeId : row.challengerId;
+      if (other !== friendUserId) return false;
+      const tzA = row.challengerId === userId ? challengerTz : challengeeTz;
+      const tzB = row.challengerId === userId ? challengeeTz : challengerTz;
+      return latestTestWindowClose(row.weekIndex, tzA, tzB).getTime() > now.getTime();
+    });
+    if (unfinished) {
+      throw new DuplicateError('You already have a challenge running with this friend');
     }
 
     // 2. The per-pair opt-out. Either player's flag suppresses challenges BOTH ways,
@@ -494,7 +527,7 @@ export class StudyChallengeService {
 
     // A cross-language pair can only play different-word, because a shared set is
     // impossible for them (Q29). The challengee's language is their own current one.
-    const challengeeTz = await this.timezoneOf(friendUserId);
+    // (Their timezone was already resolved by gate 1a.)
     const challengeeLanguage = await this.selectedLanguageOf(friendUserId);
     if (variant === 'same_word' && challengeeLanguage !== language) {
       // NOT a hard failure of the request: a same-word challenge is defined in the
@@ -537,7 +570,6 @@ export class StudyChallengeService {
       weekIndex,
     });
 
-    void challengeeTz; // resolved above so a bad tz fails here, not at deadline render
     return this.toSummary(row, userId, now, anytimeOn);
   }
 

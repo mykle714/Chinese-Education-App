@@ -13,14 +13,16 @@ import { markFlashcard } from "../../api/flashcards";
 import { authHeader } from "../../utils/authHeader";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { collectionQuerySuffix, collectionTitle } from "../../features/flashcards/collectionRef";
-import LeafPage from "../../components/LeafPage";
+import { GameLeafPage } from "../shared/GameSurface";
+// The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
+import { GAME_HUE } from "./constants";
 import type { Language, VocabEntry } from "../../types";
 import MatchSpeedBoard from "./MatchSpeedBoard";
 import MatchSpeedHeaderControls from "./MatchSpeedHeader";
 import MatchSpeedEndPopup from "./MatchSpeedEndPopup";
 import MatchSpeedSettingsDialog from "./MatchSpeedSettingsDialog";
 import MatchSpeedTimerBar from "./MatchSpeedTimerBar";
-import { GameFrame, GameHint, GameHud, GameHudLabel } from "../shared/GameFrame";
+import { GameCentered, GameFrame, GameHint, GameHud, GameHudLabel } from "../shared/GameFrame";
 import {
     bufferedEntryIds,
     emptyBuffer,
@@ -574,24 +576,11 @@ const MatchSpeedPage: React.FC = () => {
     const medal = medalForScore(score);
     const accuracy = attempts > 0 ? Math.round((score / attempts) * 100) : 0;
 
+    // The centred column shown INSTEAD of the board (spinner, or the blocked
+    // message). The shape is shared — `GameCentered` also owns the rule that text on
+    // the accent ground is white — so this is only the page's class name for it.
     const renderCentered = (children: React.ReactNode) => (
-        <Box
-            className="match-speed__overlay"
-            sx={{
-                flex: 1,
-                minHeight: 0,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 2.5,
-                px: 4,
-                pb: 3,
-                textAlign: "center",
-            }}
-        >
-            {children}
-        </Box>
+        <GameCentered className="match-speed__overlay">{children}</GameCentered>
     );
 
     const showBoard = phase === "countdown" || phase === "playing" || phase === "ended";
@@ -614,7 +603,8 @@ const MatchSpeedPage: React.FC = () => {
             surfaceName="Match Speed"
             language={(user?.selectedLanguage ?? "zh") as Language}
         />
-        <LeafPage
+        <GameLeafPage
+            hue={GAME_HUE}
             title="Match Speed"
             // Back lands where the player came FROM — the challenge mid-test, or the
             // Games hub for an ordinary run.
@@ -656,7 +646,7 @@ const MatchSpeedPage: React.FC = () => {
                         <>
                             <Typography
                                 className="match-speed__block-msg"
-                                sx={{ fontSize: SIZE.subtitle, color: fc.onSurface, lineHeight: LEADING.normal }}
+                                sx={{ fontSize: SIZE.subtitle, lineHeight: LEADING.normal }}
                             >
                                 {blockMessage}
                             </Typography>
@@ -849,7 +839,7 @@ const MatchSpeedPage: React.FC = () => {
                 onResume={resumeFromBackground}
                 classPrefix="match-speed"
             />
-        </LeafPage>
+        </GameLeafPage>
         </>
     );
 };

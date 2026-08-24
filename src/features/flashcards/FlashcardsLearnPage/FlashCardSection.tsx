@@ -82,6 +82,11 @@ interface FlashCardSectionProps {
     // edit mode AND the toolbar would actually overlap the card. Computed by the page via
     // useToolbarOverlap so a roomy viewport (toolbar clears the card) leaves it centered.
     pushDown?: boolean;
+    // The card-operations rail (`CardOpsRail`, artboard 21), composed by the page and
+    // mounted on the ACTIVE FRONT card's answer face. A node rather than three callbacks
+    // so this component — which the cdp and three other surfaces also render through —
+    // never learns what a card operation is.
+    topRail?: React.ReactNode;
 }
 
 
@@ -117,7 +122,12 @@ const CardFace: React.FC<{
     // cluster's `sense` label (or null for the default/starred sense). Absent when there's no
     // user context to save into (e.g. the read-only dictionary cdp uses local-only state).
     onPersistSense?: (entry: VocabEntry, sense: string | null) => void;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, showProgressCategory, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense }) => {
+    // The card-operations rail (`CardOpsRail`, artboard 21). Rendered on the ANSWER face
+    // only, and only for the active front card — the host decides both, the same way it
+    // decides `editCanvas`. Threaded as a node rather than as three callbacks so this
+    // shared component stays ignorant of what a card operation is.
+    topRail?: React.ReactNode;
+}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, showProgressCategory, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
@@ -253,6 +263,7 @@ const CardFace: React.FC<{
                     english: <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={handleSelectSense} inlineActions />,
                 }}
                 editCanvas={editCanvas}
+                topRail={topRail}
                 // Side 2 faces away when the card is showing its front.
                 inert={!isFlipped}
                 cornerBadge={showProgressCategory ? <CategoryChip category={entry.category} /> : undefined}
@@ -301,6 +312,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     onPersistSense,
     editMode,
     pushDown,
+    topRail,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -489,6 +501,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 editCanvas={isFront ? editCanvas : undefined}
                                                 // Only the active front card is interactive, so only it persists picks.
                                                 onPersistSense={isFront ? onPersistSense : undefined}
+                                                // Card operations belong to the card the learner is
+                                                // looking at; the peeking back card has none.
+                                                topRail={isFront ? topRail : undefined}
                                             />
                                         )}
                                     </Box>

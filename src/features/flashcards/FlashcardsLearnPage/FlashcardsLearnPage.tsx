@@ -7,10 +7,13 @@ import type { Language } from "../../../types";
 import ProvisionalCardsNotice from "../../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../../components/ProvisionalSortOffer";
 import { addToLibrary } from "../../../utils/vocabApi";
-import { ContentArea, MoreInfoPill } from "./styled";
+import { ContentArea } from "./styled";
+import InfoPeek from "../InfoPeek";
+import CardOpsRail from "./CardOpsRail";
+import WordToolsRail from "../../../components/WordToolsRail";
+import { deleteVocabEntry } from "../../../utils/vocabApi";
 import { FC_FONT } from "../constants";
 import { useLaunchCollection } from "../useLaunchCollection";
-import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
 import { useWorkingLoop, type CardDragControls, type StudyMode } from "./useWorkingLoop";
 import { useCardIconEditor } from "../../../cardIcons/editor/useCardIconEditor";
@@ -144,6 +147,7 @@ const FlashcardsLearnPage: React.FC = () => {
         nextSideOneLanguage,
         handleCardDismiss,
         handleUndoLastMark,
+        dropCurrentCard,
         provisionalSeen,
     } = useWorkingLoop({ token, selectedCategory, mode: selectedMode, foreignTrack, prefetch: tts.prefetch, cardDragRef });
 
@@ -415,13 +419,46 @@ const FlashcardsLearnPage: React.FC = () => {
     }, [isFlipped]);
 
     const handleMoreInfoClick = () => {
-        // Disabled while the card editor is open (the pill is also greyed out).
+        // Disabled while the card editor is open (the peek is also greyed out).
         if (editMode) return;
         if (!isFlipped) {
             setShowFlipHint(true);
             return;
         }
         openEicSheet();
+    };
+
+    // ── Card operations, off the card's own `•••` rail (CardOpsRail, artboard 21) ──
+    //
+    // Delete is a hard delete of the vet row (its review history with it), so it is
+    // confirmed first — the same guard the cdp puts on the same action.
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+    const handleDeleteConfirmed = useCallback(async () => {
+        if (!currentEntry) return;
+        try {
+            setDeleting(true);
+            await deleteVocabEntry(currentEntry.id);
+            setDeleteConfirmOpen(false);
+            // The row is gone server-side, so the card has to leave the session too or
+            // the loop keeps serving something that no longer exists. No mark, no
+            // undo snapshot — see useWorkingLoop.dropCurrentCard.
+            dropCurrentCard();
+        } catch (err) {
+            console.error("Failed to delete card:", err);
+            setDeleteError(err instanceof Error ? err.message : "Could not delete this card");
+        } finally {
+            setDeleting(false);
+        }
+    }, [currentEntry, dropCurrentCard]);
+
+    // "Compare" on the word-tools rail above the card. The flp has a tab strip of its
+    // own, so it opens Compare AS AN EIP TAB beside the word rather than navigating to
+    // the standalone page (which is what the cdp, having no strip, does).
+    const handleCompare = (target: VocabEntry) => {
+        openEicSheet();
+        eip.openCompareTab(target);
     };
 
     // Lock body scroll while this page is mounted so wheel/touch events that
@@ -522,9 +559,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 language={(user?.selectedLanguage ?? "zh") as Language}
                 showPinyin={showPinyin}
                 onTogglePinyin={() => updateLearnSettings({ showPinyin: !showPinyin })}
-                isFlipped={isFlipped}
                 editMode={editMode}
-                onToggleEdit={() => (editMode ? exitEdit() : enterEdit(() => cardRef.current ? measureDefaultEnglishCenterY(cardRef.current) : null))}
                 onSettingsClick={() => setSettingsOpen(true)}
             />
             <ContentArea
@@ -620,7 +655,24 @@ const FlashcardsLearnPage: React.FC = () => {
                         />
                     </Box>
                 </Slide>
-                {/* Flashcard fills the full ContentArea. The EIC sheet now overlays
+                {/* WORD TOOLS — `Write it` and `Compare`, on the PAGE above the card and
+                    outside its boundary (`.wtl.top`, artboards 19–25). They act on the
+                    word, so they are not on the card's own `•••` rail (which is card
+                    operations only), and they are not at the bottom of the screen, which
+                    belongs to the thumb: the card is swiped there and the info panel is
+                    raised from there.
+
+                    Hidden while the icon editor is open — the fie toolbar overlays exactly
+                    this band, and the card is locked anyway. */}
+                {displayCurrentEntry && !editMode && (
+                    <WordToolsRail
+                        className="mobile-demo-word-tools"
+                        entry={displayCurrentEntry}
+                        onCompare={handleCompare}
+                        sx={{ marginTop: "18px", paddingLeft: "18px", paddingRight: "18px" }}
+                    />
+                )}
+                {/* Flashcard fills the rest of the ContentArea. The EIC sheet overlays
                     at the bottom rather than stacking above the flashcard. */}
                 <FlashCardSection
                     currentEntry={editingCurrentEntry}
@@ -695,32 +747,57 @@ const FlashcardsLearnPage: React.FC = () => {
                         />
                     ) : undefined}
                     editMode={editMode}
-                    // Push down (and lift over the More Info pill) only when the advanced toolbar
+                    // Push down (and lift over the info peek) only when the advanced toolbar
                     // would actually overlap the card — see useToolbarOverlap.
                     pushDown={pushCardDown}
+                    // CARD OPERATIONS — customize / add to deck / delete, behind the `•••`
+                    // on the card's own top edge (artboard 21). Mounted on the ACTIVE FRONT
+                    // card's answer face by FlashCardSection. Suppressed while the fie is
+                    // open (its toolbar already owns the card) and mid-animation (none of
+                    // the three actions is safe against a card that is flying out).
+                    topRail={displayCurrentEntry ? (
+                        <CardOpsRail
+                            entry={displayCurrentEntry}
+                            onCustomize={() => enterEdit(() => cardRef.current ? measureDefaultEnglishCenterY(cardRef.current) : null)}
+                            onDelete={() => setDeleteConfirmOpen(true)}
+                            disabled={editMode || isAnimating}
+                        />
+                    ) : undefined}
                 />
-                {/* Centered pill button — ghosted before flip, full opacity after. While
-                    the icon editor is open it stays DRAWN but greyed + inert (isDisabled);
-                    in advanced mode the card slides down and paints over it (the card slot
-                    is raised above the pill in FlashCardSection). */}
+                {/* The extra-info panel's resting LIP (`.peek`, artboards 19–25) — this
+                    replaced the floating "↑ More Info" pill. It is the top edge of the
+                    sheet it opens, so what it offers needs no explaining: there is a panel
+                    down there, it has a grabber, it is about this word, and it opens on the
+                    definition.
+
+                    Faded until the card is flipped — but still TAPPABLE in that state,
+                    because a tap is how the learner gets the "flip it first" hint. Greyed
+                    and inert only while the icon editor is open, where the panel would
+                    cover the canvas being edited. */}
                 <Tooltip
                     open={showFlipHint}
                     title="Flip the card first to see extra info."
                     placement="top"
                     arrow
                 >
-                    <MoreInfoPill
-                        className="mobile-demo-more-info-pill"
-                        isFlipped={isFlipped}
-                        isDisabled={editMode}
-                        hintActive={isFlipped && !eicHintConsumed && !editMode}
-                        onClick={handleMoreInfoClick}
-                        aria-disabled={editMode}
-                        aria-label="Open extra info"
-                    >
-                        <Typography sx={{ fontSize: SIZE.body, color: theme.palette.flashcard.onSurface, lineHeight: 1, transform: "translateY(-1px)" }}>↑</Typography>
-                        <Typography sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: theme.palette.flashcard.onSurface, letterSpacing: TRACKING.wide, fontFamily: FC_FONT }}>More Info</Typography>
-                    </MoreInfoPill>
+                    {/* zIndex drops while the icon editor is open so the pushed-down card
+                        paints OVER the greyed lip, exactly as it did over the pill this
+                        replaced (the card slot lifts to zIndex 3 when pushed — see
+                        FlashCardSection). Above the card otherwise, because the lip is the
+                        sheet's own edge and the sheet is what it opens. */}
+                    <Box className="mobile-demo-info-peek-anchor" sx={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: editMode ? 1 : 4 }}>
+                        {displayCurrentEntry && (
+                            <InfoPeek
+                                className="mobile-demo-info-peek"
+                                word={displayCurrentEntry.entryKey}
+                                language={displayCurrentEntry.language}
+                                onOpen={handleMoreInfoClick}
+                                disabled={editMode}
+                                dimmed={!isFlipped}
+                                pulse={isFlipped && !eicHintConsumed && !editMode}
+                            />
+                        )}
+                    </Box>
                 </Tooltip>
                 {/* Modal EIC sheet — only mounted when open to reset animation on reopen.
                     Tapping a breakdown/used-in row inside the panel pushes a tab onto
@@ -762,7 +839,6 @@ const FlashcardsLearnPage: React.FC = () => {
                             onSpeakSentence={tts.enabled ? speakSentenceAtRate : undefined}
                             speakingKey={tts.speakingKey}
                             onAddToLibrary={panelAlreadyInLibrary ? undefined : handleAddToLibrary}
-                            onOpenCompare={eip.openCompareTab}
                             selectedSenseIndex={panelSenseIndex}
                             // A pick in the eip header mirrors the flashcard's own picker:
                             // record it on the tab (so the panel re-renders immediately) and
@@ -829,6 +905,49 @@ const FlashcardsLearnPage: React.FC = () => {
                         sx={{ fontFamily: FC_FONT }}
                     >
                         {saveError}
+                    </Alert>
+                </Snackbar>
+                {/* Delete-card confirmation, raised by the card rail's `delete`. A hard
+                    delete of the vet row and its review history, so it must be explicit —
+                    the same guard the cdp puts on the same action. */}
+                <Dialog
+                    className="mobile-demo-delete-dialog"
+                    open={deleteConfirmOpen}
+                    onClose={() => !deleting && setDeleteConfirmOpen(false)}
+                >
+                    <DialogTitle>Delete this card?</DialogTitle>
+                    <DialogContent>
+                        <DialogContentText>
+                            This permanently removes{currentEntry ? ` "${currentEntry.entryKey}"` : " this card"} from
+                            your collection, along with its review history, and takes it out of
+                            this session. This can't be undone.
+                        </DialogContentText>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleDeleteConfirmed} color="error" disabled={deleting}>
+                            Delete
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+                {/* Delete failure — the card is still there and still in the loop, so say
+                    so rather than leaving a dialog that closed on nothing. */}
+                <Snackbar
+                    open={deleteError !== null}
+                    autoHideDuration={4000}
+                    onClose={() => setDeleteError(null)}
+                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
+                    sx={{ zIndex: 2000 }}
+                >
+                    <Alert
+                        severity="error"
+                        variant="filled"
+                        onClose={() => setDeleteError(null)}
+                        sx={{ fontFamily: FC_FONT }}
+                    >
+                        {deleteError}
                     </Alert>
                 </Snackbar>
                 {/* Settings sheet — same drag/scroll behavior as the EIP. Mounted

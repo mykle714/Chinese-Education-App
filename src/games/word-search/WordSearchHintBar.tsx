@@ -1,7 +1,8 @@
 import React from "react";
 import { Box } from "@mui/material";
 import Icon from "../../components/Icon";
-import { COLORS } from "../../theme/colors";
+import { COLORS, RAMP } from "../../theme/colors";
+import { useGameSurfaceHue } from "../shared/gameSurface";
 import { FONTS } from "../../theme/fonts";
 import { LEADING } from "../../theme/scale";
 import { HINT_BAR_UNITS } from "./constants";
@@ -45,6 +46,12 @@ interface WordSearchHintBarProps {
 const WordSearchHintBar: React.FC<WordSearchHintBarProps> = ({ units, ready, onHint, children }) => {
     // Charges are capped at the bar's width; a full bar simply stops filling.
     const banked = Math.min(units, HINT_BAR_UNITS);
+    // A banked charge is drawn in THE GAME'S accent ink (`#ws .hintbar .chg i{background:
+    // var(--purA)}`), not in the app's warning gold. The dots are the one thing on this
+    // row that counts up as the run goes, so they read as part of the game rather than
+    // as a caution — and they now match the ground the whole screen is flooded with.
+    const hue = useGameSurfaceHue();
+    const chargeInk = hue ? RAMP[hue].ink : COLORS.warnInk;
 
     return (
         <Box
@@ -85,7 +92,10 @@ const WordSearchHintBar: React.FC<WordSearchHintBarProps> = ({ units, ready, onH
                     transition: "opacity 150ms linear",
                 }}
             >
-                <Icon name="lightbulb" size={16} color={COLORS.warnInk} fill={ready ? 1 : 0} />
+                {/* Black, not gold: the arm state is already carried by the glyph's FILL
+                    axis and the button's opacity, and a third channel on the same 16px
+                    icon just made the button look like a warning. */}
+                <Icon name="lightbulb" size={16} color={COLORS.onSurface} fill={ready ? 1 : 0} />
                 Hint
             </Box>
 
@@ -105,7 +115,7 @@ const WordSearchHintBar: React.FC<WordSearchHintBarProps> = ({ units, ready, onH
                                 width: "7px",
                                 height: "7px",
                                 borderRadius: "50%",
-                                backgroundColor: filled ? COLORS.warnInk : COLORS.border,
+                                backgroundColor: filled ? chargeInk : COLORS.border,
                                 transition: "background-color 150ms linear",
                             }}
                         />

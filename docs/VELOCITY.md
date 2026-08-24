@@ -132,7 +132,8 @@ of the window within 7 days.
 | route | `server/routes/userRoutes.ts` | Registered before `GET /api/users/:id` so the param route can't shadow it. |
 | client api | `src/api/velocity.ts` | `fetchVelocity(language?)`. No `token` param (FRONTEND_LAYERING §3.2). |
 | client hook | `src/hooks/useVelocity.ts` | Keys on `isAuthenticated` + `selectedLanguage`, **never** `token` (CLAUDE.md silent-refresh rule). |
-| UI | `src/pages/AccountPage.tsx` — `account-page__velocity-card` | One stat card under the deck buckets: the "VELOCITY" overline + a tappable ⓘ (`src/components/InfoTip.tsx`) carrying `"Mastery level-ups in the last N days"`, then the big number. The explanation was a permanent caption until it moved into the ⓘ — it is one-time information, so it costs a tap rather than a line of small print on every visit. |
+| UI | `src/pages/AccountPage.tsx` — `account-page__velocity-card` | The shared `StatCard` primitive (`src/components/primitives/StatCard.tsx`), centred, under the library shelf: the "VELOCITY" overline + a tappable ⓘ (`src/components/InfoTip.tsx`), the big number, then `"Mastery level-ups in the last N days"` as the card's `description`. |
+| ⚠️ The window sentence is BACK in the layout | — | It was a permanent caption, then moved into the ⓘ to keep the number unexplained-until-asked, and artboard 5 of the shelf redesign draws it as visible body copy under the figure again — so it is printed. The ⓘ was NOT deleted along with it: it now answers the question the caption raises rather than repeating it, defining what a level-up is (`Unfamiliar → Target → Comfortable → Mastered`). If the two ever say the same thing again, delete the ⓘ, not the caption. |
 | second consumer | `server/services/FriendsService.getLeaderboard` → `src/features/friends/FriendsPage.tsx` | The friends leaderboard **ranks** on velocity (§ 4a). |
 
 ### 4a. Second consumer — the friends leaderboard

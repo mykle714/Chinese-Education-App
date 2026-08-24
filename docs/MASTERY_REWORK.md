@@ -37,9 +37,10 @@
 > - Client mark sources: flp (`useWorkingLoop.ts`), Word Search
 >   (`WordSearchPage.tsx`), Bubble Match (`BubbleMatchPage.tsx`), Practice Writing
 >   (`PracticeWritingButton.tsx` → `PracticeWritingPopup.tsx`).
-> - Bars UI: `src/features/flashcards/MasteryProgressBar.tsx` (cdp "Mastery"
->   section — **one** bar, the surface's lens, with its per-track cooldowns) and
->   `src/components/MiniVocabCard.tsx` (the hairline strip, likewise one bar).
+> - Bars UI: `src/components/mastery/MasteryWindow.tsx` (cdp "Mastery" section — the
+>   eight-mark `.msb` window for **one** track at a time, defaulting to the surface's
+>   lens, with its per-track cooldowns) and `src/components/MiniVocabCard.tsx` (the
+>   hairline strip, likewise one bar). `MasteryProgressBar` was deleted 2026-08-24.
 >
 > **Movement between bands is logged separately** — see
 > [VELOCITY.md](./VELOCITY.md) (migration 137): a bar's band is derived and keeps
@@ -87,6 +88,11 @@ reading. There is no accuracy floor and no mark suppression. The one exempt path
 is **Skip**, because a skip is not an answer — it fires nothing, exactly as a
 hinted Word Search word does.
 
+> ⚠️ **That argument is now known to be wrong, and § 8.1 is the rework.** It holds for
+> the *ratio* of a guesser's marks but not for the *window*: `positive(reading)` is a
+> COUNT and the bands are cut on the count, so a pure guesser settles around 4/8 =
+> **Target** on the reading bar. Nothing below has changed yet.
+
 **Word Search hints suppress the mark.** A word that received any hint on the
 board emits no mark when found (`hintedWordsRef` / `markWordFound` in
 `src/games/word-search/WordSearchPage.tsx`) — part of the answer was shown, so
@@ -131,12 +137,25 @@ by it being a game rather than a loop — see
   Match's track. A reading run is silent — no autoplay, no narration — since hearing
   the word would supply the reading being tested.
 
-> **Hydra Bubbles has NOT been converted.** It reads the same shared `showPinyin`
-> setting and still marks `recognition` whatever it says, so a learner who switches
-> Bubble Match to Reading also loses pinyin in Hydra without changing Hydra's track.
-> Converting it means the same latch-at-deal treatment — but Hydra's tier ladder is
-> keyed on mastery bands of the track it pools by, so it is a bigger change than
-> Bubble Match's and is deliberately left for its own pass.
+> **Hydra Bubbles is next, and the setting is going per-game** (decided 2026-08-23,
+> **not built**). Two changes that must land together:
+>
+> 1. **Pinyin becomes a per-game setting.** Today Bubble Match, Hydra and Match Speed
+>    share the flp's one `showPinyin` boolean, so switching Bubble Match to Reading
+>    strips pinyin from the other two — neither of which changes track to match — and
+>    a game writing that key also edits the cdp/scp/dictionary display. Each game gets
+>    its own persisted preference; the flp keeps `flashcard.learn-settings` and becomes
+>    its only writer. Word Search, Memory Map and Speed Reading are already per-game.
+>    Full rule: [GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md).
+> 2. **Hydra converts to the track rule**, latched before the first spawn rather than
+>    at deal (it has no deal — every spawn is a refill). Its tier ladder and its two
+>    color buffers are keyed on the mastery bands of the track it pools by, so a
+>    reading run re-bands the whole board and its bloom side thins out badly. Design +
+>    the blocking question: [HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md).
+>
+> **Match Speed gets the per-game toggle but keeps marking `recognition`** — a per-game
+> *setting* is not a per-game *track*; the track rule applies only where these docs say
+> it does.
 
 **Spanish is deliberately excluded**: es renders as plain text with no phonetic layer
 to hide, so the toggle changes nothing on the card and its foreign-first face would
@@ -196,13 +215,26 @@ every account either way — the goal surfaces them, it does not start them.
 
 ### Account settings UI
 
-**Goals** section on the **account page** (`src/pages/AccountPage.tsx`) with two
-checkboxes:
+**Goals** section on the **account page** (`src/pages/AccountPage.tsx`) — a
+`SectionHeader` overline plus two shelf-system `Row`s, each carrying a MUI `Switch`
+in its `trailing` slot:
 
-- ☐ *I want to learn reading*
-- ☐ *I want to learn writing*
+| Row | Glyph / hue | Subtitle | State |
+|---|---|---|---|
+| Learn reading | `menu_book`, `red` | Adds a reading bar to every card | `users.readingGoal` |
+| Learn writing | `edit`, `org` | Adds a writing bar to every card | `users.writingGoal` |
 
-Description copy (the pre-143 demotion warning is **gone** — nothing demotes now):
+**They are switches, not checkboxes, and not the artboard's glyphs.** Artboard 5 of
+the shelf redesign draws `toggle_on` / `toggle_off` Material Symbols; a glyph is not
+focusable, checkable or announced, so the control stays a real form control painted
+the artboard's colours (`COLORS.grnA` when on). The skin is `GOAL_SWITCH_SX` in
+`AccountPage.tsx` and belongs in `MuiSwitch.styleOverrides` once the other ten
+`Switch` call sites are converted.
+
+**The section-level description paragraph is gone**, replaced by the one-line
+subtitle per row above. The paragraph said once, for both goals, what each row now
+says for itself. Its former copy is kept below only as the record of what was
+dropped:
 
 > *Each goal you turn on adds its own progress bar to every card, so a card can be
 > mastered separately for knowing it, reading it and writing it. Your existing
@@ -400,58 +432,96 @@ orders or filters on it, so it carries no index.
 
 ## 5. The progress bars on screen
 
-### cdp — one vertical bar, the surface's lens
+### cdp — the eight-mark window (`.msb`), one track at a time
 
-`src/features/flashcards/MasteryProgressBar.tsx` renders
-`masteryBar(entry.typedMarkHistory, lens)` — a single `BarTrack`, captioned from
-`BAR_LABELS` (**Know** / **Read** / **Write**). The `lens` prop defaults to `core`, so
-a card reached from the fdp, a deck or a search result shows the Know bar alone; a card
-reached from a Mastery Center carries `?bar=` and shows that skill's bar instead
-(`lensFromSearch`, `src/features/flashcards/collectionRef.ts`). The account's goal
-flags are **not** consulted here.
+> **Rewritten 2026-08-24** with the shelf redesign's Card Detail entry. The vertical
+> thermometer this section used to describe (`MasteryProgressBar`) is **deleted**; the
+> component is now `src/components/mastery/MasteryWindow.tsx`. See
+> [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entry 18 and decisions **D6** / **D7**.
 
-- **Height** = that bar's pbh on a fixed axis where **pbh = 8 fills the bar**
-  (Mastered fills; pbh > 8 stays clamped at full).
-- **Segments** = the **positive-mark ratio across that bar's OWN tracks**. So the
-  core bar is a two-color stack (recognition / production) and the reading and
-  writing bars are single-color. A segment's fraction is
-  `positive(type) / Σ positive(bar's types)`.
-- **No band chip.** The bars carry no utcm label of their own — the benchmark lines
-  already show where a bar sits, and the card's band is on the badge row at the top of
-  the page. (The single **core**-band chip that used to sit beside the group is gone
-  too; core is still the whole-card answer everywhere else — deck counts, mini card.)
-- Under each label sit that bar's **cooldown rows** — one per mark type in the bar, so
-  the core column shows two — each a live **`4m 1w 3d 5h 37m 26s` countdown**
-  (`formatCooldownRemaining`, `src/utils/formatDuration.ts`). Same unit discipline as
-  the minute-points formatter beside it: leading zero units dropped, **middle zero
-  units kept**, seconds always printed. The middle zeros are load-bearing here — `m`
-  is both months and minutes, so a collapsed `6m 26s` would read as six *minutes*. A
-  **ready track reads `0s`**, not a word, so every row has the same shape. Months are
-  a flat 30 days and weeks a flat 7, so the 180-day Mastered window is exactly
-  `6m 0w 0d 0h 0m 0s` (the one string long enough to wrap to a second line). Rendered
-  monospace + `tabular-nums` so the row doesn't jitter as digits change; a resting row
-  is dimmed, and a ready one adds a small green **check** (12px
-  `CheckCircleRounded`) beside the `0s` so the state is scannable without reading
-  digits; the row tooltip carries the wording. The component ticks on a **1s** interval so an
-  open page runs down to zero without a reload.
-  - Row order is **`COOLDOWN_ROW_ORDER`** — production above recognition — which is
-    deliberately *not* the bar's segment order (the fill stacks recognition below
-    production, per `BAR_TYPE_ORDER`).
-  - The window used for the display is the **per-type** category
-    (`computeTypeCategory`) — the one every *game* uses. ⚠️ The **flp** widens its
-    window to the card's **core** category (§ 6), so on a card whose per-type and core
-    bands differ the flp holds that track back slightly longer than the cdp number
-    suggests. The display can only name one window; the per-type one is the track's own.
-- The legend lists only the types actually on screen.
+`MasteryWindow` renders `masteryBar(entry.typedMarkHistory, track)` for ONE track,
+captioned from `BAR_LABELS` (**Know** / **Read** / **Write**).
 
-**Placement.** The bars are their own `SectionCard` ("Mastery") **below the hero
-card**, alongside Definition / Breakdown / Examples — see
-`src/features/flashcards/VocabCardDetailPage.tsx`. They used to be a strip beside a
-cpcd block above the hero (the section briefly held up to three columns, which needed
-the full width; it is one column now, centered, and the placement was kept).
-The cpcd block stays where it was, without the bars. The section lives in the page
-rather than in the shared `VocabCardDetailBody` because the read-only **dictionary**
-cdp has no marks to draw.
+**Why the shape changed.** pbh is not a percentage. It is a position in an **eight-mark
+window** — the last eight marks of a track are what the number is computed from, and the
+two cut points (Target at 3, Comfortable at 6) are counts inside that window, not
+milestones on a continuum. A vertical bar with two lines across it drew that as a liquid
+level, which invites "89% of the way to mastered": the wrong mental model, because one bad
+mark does not evaporate a fraction of a tank, it turns one cell off. So the window is
+drawn as what it is — **`PBH_FULL` discrete cells, one per mark**, with the cut points
+ticked between them. Reading a card's state is counting, not estimating.
+
+- **Cells.** Cell `i` covers the pbh interval `[i, i+1)`, so its fill is
+  `clamp(pbh − i, 0, 1)`. The core bar's pbh is FRACTIONAL (the stronger track capped at
+  6 plus a third of the weaker), so its last filled cell can be a **partial** — rendered
+  as a partial rather than rounded, because rounding makes two genuinely different cards
+  read the same. Cell colour is the segment covering the MIDPOINT of the filled part, so
+  a partial cell straddling a boundary takes the colour of the half actually painted.
+- **Composition.** A skill track is one mark type, so one colour. The core track's filled
+  cells are painted in the ratio of its two tracks' positive marks (blue recognition then
+  green production) — the same `positive(type) / Σ positive(bar's types)` split the old
+  bar used. These are the **saturated** `MARK_TYPE_COLORS`, on purpose (D2b).
+- **Ticks.** At `pbh / PBH_FULL` of the row, BETWEEN cells — the band changes when a cell
+  turns on, not part-way through one. Captioned `target` / `comfortable`, hanging above.
+- **`.hd4` heading.** Track name, the band as a **pastel** pill (`BAND_COLORS[...].main`
+  — it is a surface, the cells beside it are the marks), and the figure as
+  `pbh / PBH_FULL`. The core blend prints one decimal ("4.3"); an integer track prints
+  bare. The decimal is load-bearing: printing "4" for both 4.0 and 4.3 hides the weaker
+  track's contribution, which is the one thing the blend adds.
+  - This reverses the old "no band chip" rule, and for a reason: the chip now names the
+    band of the TRACK being looked at, where the page's badge row named only the core
+    one. That badge row (`VocabCardBadges` on the cdp) is gone as a result.
+
+**Which track is on screen — the learner's choice (D6, amended).** A `Segmented` control
+(`Know / Read / Write`, the design's `.trkseg`) sits at the end of the section's rule. It
+**defaults to the surface's lens** — `core` from the fdp / a deck / a search result,
+`reading` or `writing` for a card reached from that Mastery Center (`?bar=`,
+`lensFromSearch`) — so an untouched page still reports exactly one track, the one the
+surface that opened it was asking about. Only one track is ever on screen; the learner is
+simply allowed to say which.
+
+Two rules inside that:
+
+- **All three tracks are always offered, whatever the goals say.** Reading and writing
+  marks accrue whether or not their goal is set (migration 143), so a track hidden behind
+  a goal switch would hide marks the learner has actually earned. The GOAL decides what
+  gets surfaced, sorted and counted elsewhere; it does not decide whether this card's
+  history exists.
+- **The switch re-seeds on the LENS, not on the entry.** Paging between cards keeps the
+  track the learner chose; re-opening a card from a different Center moves it.
+
+**Cooldowns (`.cd3`).** Under the window, one row per mark type in the shown track — so
+the core track shows two — each a live **`4m 1w 3d 5h 37m 26s` countdown**
+(`formatCooldownRemaining`, `src/utils/formatDuration.ts`). Same unit discipline as the
+minute-points formatter: leading zero units dropped, **middle zero units kept**, seconds
+always printed. The middle zeros are load-bearing — `m` is both months and minutes, so a
+collapsed `6m 26s` would read as six *minutes*. A **ready track reads `0s`**, not a word,
+so every row has the same shape. Months are a flat 30 days and weeks a flat 7, so the
+180-day Mastered window is exactly `6m 0w 0d 0h 0m 0s`. Mono + `tabular-nums` so the row
+does not jitter as digits change; a resting row is dimmed as a whole, and a ready one adds
+a small green **check** (`MASTERY_READY_COLOR`) so the state is scannable without reading
+digits. The component ticks on a **1s** interval, one interval for the section rather than
+one per row.
+
+- Row order is **`COOLDOWN_ROW_ORDER`** — production above recognition — deliberately
+  *not* the window's paint order (the fill paints recognition first, per `BAR_TYPE_ORDER`).
+  Kept as an explicit list rather than a `.reverse()`: the two orders answer different
+  questions, and a reverse would silently re-order any bar that later grows a third track.
+- The window used for the display is the **per-type** category (`computeTypeCategory`) —
+  the one every *game* uses. ⚠️ The **flp** widens its window to the card's **core**
+  category (§ 6), so on a card whose per-type and core bands differ the flp holds that
+  track back slightly longer than the cdp number suggests. The display can only name one
+  window; the per-type one is the track's own.
+- Each row is labelled with its `MARK_TYPE_LABELS` name beside its swatch, so the legend
+  the old component carried separately is gone — it was naming colours that now sit next
+  to their own words.
+
+**Placement.** Section rule + switch + window, in normal page flow under the hero card.
+There is no `SectionCard` wrapper any more: `MasteryWindow` owns its own `.sec2` rule, and
+what used to be the Definition / Breakdown / Examples boxes beside it have moved into the
+page's pull-up sheet (entry 18). The component lives in `src/components/mastery/` rather
+than in `VocabCardDetailBody` because the read-only **dictionary** cdp has no marks to
+draw and must not import it.
 
 ### Mini cards — a hairline strip
 
@@ -658,6 +728,7 @@ mark type it emits** (`OnDeckVocabService.isCardGameEligible` / `fetchGameCandid
 | Surface | Mark type | Selection path |
 | --- | --- | --- |
 | Bubble Match | `recognition`, or `reading` with pinyin off (§ 1a) | `getGameVocabPool` (via `?markType=` — the track the run locked at deal time) |
+| Hydra Bubbles | `recognition` — becomes the run's locked track under [HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md) (**not built**) | `getGameVocabPool` (via `?markType=`), refetched every spawn |
 | Match Speed | `recognition` | `getGameVocabPool` (via `?markType=recognition`) |
 | Speed Reading | `reading` | `getGameVocabPool` (via `?markType=reading`) |
 | Word Search — Pinyin | `production` | `getWordSearchGrid` (mode via `?mode=` query) |
@@ -821,6 +892,7 @@ category expression joins `users` — bands are goal-independent across the boar
 | Surface | Buckets by | Cooldown window keyed on |
 | --- | --- | --- |
 | Bubble Match | the run's locked track (§ 1a) per-type category | same track's per-type category |
+| Hydra Bubbles | `recognition` per-type category (the run's locked track under § 6.0) | same track's per-type category |
 | Match Speed | `recognition` per-type category | `recognition` per-type category |
 | Word Search — Pinyin | `production` per-type category | `production` per-type category |
 | Word Search — No-Pinyin | `reading` per-type category | `reading` per-type category |
@@ -848,7 +920,9 @@ types would have no single track to band on. Every current game emits exactly on
 ### Cooldown windows follow the same track
 
 `isTypeOnCooldown` now takes an explicit `windowCategory`. The **duration** table
-(5 min / 24 h / 7 d / 30 d) is unchanged, but games look it up under the **per-type**
+(5 min / 24 h / 14 d / 180 d — `COOLDOWN_MS_BY_CATEGORY`, `server/contracts/cooldown.ts`;
+this line read "7 d / 30 d" until 2026-08-23 and was never right) is unchanged, but
+games look it up under the **per-type**
 category rather than the overall one, so a card that is Mastered overall yet weak in
 Reading rests only 5 minutes before Word Search No-Pinyin may serve it again. The
 flp passes `card.category` and behaves exactly as before.
@@ -861,6 +935,154 @@ decks page). So the client's "you have N Comfortable cards" hint can disagree wi
 the pool the same request assembled. This is a deliberate trade (one shared count
 source); if the hints ever need to match, add a per-type count variant for the game
 callers rather than switching `getCategoryCounts` itself.
+
+---
+
+## 8. Planned rework — choice-aware marks and a Mastered buffer zone
+
+> STATUS: **DESIGN / NOT BUILT.** Opened 2026-08-23. Two changes, bundled because they
+> land on the same three chokepoints and each alone would cost a full TS↔SQL lockstep
+> pass: `ReviewMark` (`server/contracts/wire.ts`), `positiveCount` / `categoryForPbh`
+> (`server/contracts/mastery.ts`), and their SQL mirrors `mastery_positive_count()` /
+> `compute_core_category()` (migration 143) / `compute_type_category()` (migration
+> 128) — kept honest by `server/__tests__/mastery.test.ts`.
+> Tracked as item 7 of [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+
+### 8.1 Problem A — a guessed answer and a recalled one weigh the same
+
+`positiveCount` counts `isCorrect`, full stop. But the surfaces feeding the four tracks
+differ in guess odds by more than an order of magnitude:
+
+| Surface | Answer format | Odds of a correct GUESS | Track |
+|---|---|---|---|
+| flp | self-graded ("I knew it") | n/a — self-report, a different problem (§ 8.1a) | recognition / production / reading |
+| **Speed Reading** | forced two-way choice | **1 in 2** | reading |
+| **Match Speed** | 5 English slots on the board (`ROWS = 5`) | **1 in 5**, rising as rows clear | recognition |
+| **Bubble Match** | 20 pairs on the board (`TOTAL_PAIRS`) | **1 in 20 → 1 in 1** as the board empties | recognition / reading |
+| **Hydra Bubbles** | whatever is on the field | varies per spawn; forced at the end of a colour | recognition |
+| Word Search | find it in the grid | not a choice — positive-only | production / reading |
+| Practice Writing | top-1 stroke grading | not a choice | writing |
+
+Two concrete consequences:
+
+1. **§ 1 of this doc already concedes the first, and the concession does not hold.**
+   It argues Speed Reading's negatives are honest because "a player who taps randomly
+   scores ~50% and earns negative reading marks at that rate". That is true of the
+   *ratio* and false of the *window*: `positive(reading)` is a **count**, not a ratio,
+   and the bands are cut on the count. A pure guesser lands ~4/8 = **Target** on the
+   reading bar, and a lucky one reaches Comfortable, having demonstrated nothing.
+2. **The last match on a board is free.** With one pair left in Bubble Match the only
+   remaining move is correct by construction, and it writes a full-weight positive
+   recognition mark. Same for the last card of a Match Speed column and the last bubble
+   of a Hydra colour. Not a tuning issue — a guaranteed positive for zero knowledge,
+   once per board, every board.
+
+#### Sketch of the options
+
+* **(A) Credit-weighted marks.** Store the choice count on the mark
+  (`ReviewMark.choices?: number`) and credit `1 − 1/N` rather than 1: Speed Reading
+  0.5, Match Speed 0.8, a forced last match 0. `categoryForPbh` already takes a float,
+  so the band cut points need no change. Costs a jsonb shape change (no migration — it
+  *is* jsonb) plus both SQL mirrors.
+* **(B) Asymmetric weighting.** A wrong answer under N choices is strictly more
+  informative than a right one, so keep negatives at full weight and discount only
+  positives. Falls out of (A) for free.
+* **(C) Suppress the forced move.** Emit no mark when the choice set has one element —
+  the same call Word Search already makes for a hinted word
+  ([WORD_SEARCH_GAME.md § 5a](./WORD_SEARCH_GAME.md)), and the cheapest fix for
+  consequence 2 on its own.
+* **(D) Leave the scoring alone and fix it at the source** with deeper boards / harder
+  distractors. Rejected on sight for Speed Reading: two options *is* the game.
+
+**(C) is separable and far cheaper than the rest** — no schema change, no SQL touch,
+three game pages. Worth landing first regardless of where (A)/(B) end up.
+
+#### 8.1a Not in scope: the flp's self-report
+
+The flp is not multiple choice — the learner grades themselves. That has its own
+credibility problem (nothing stops "I knew it" on every card) and its own fix space
+(typed recall, a delay before the reveal). Do not fold it into this work: `choices` is
+**undefined** for a self-graded mark and must credit 1.
+
+### 8.2 Problem B — reading and writing have no buffer, and core does
+
+Core's Mastered condition reduces to **`min(rec, pro) ≥ 6`** — two slots of slack in
+each of two tracks. Reading and writing are their track's raw count, so Mastered means
+a **perfect 8/8** and there is no slack at all:
+
+| Bar | Marks to reach Mastered from one band below | Marks to fall back out |
+|---|---|---|
+| core (from 6/6) | 2 per track, best case | 1–3 |
+| **reading / writing (from 7/8)** | **1** | **1** |
+
+One bad tap in a two-way Speed Reading round — which § 8.1 says a guesser produces half
+the time — un-masters a card. The learner watches a finished bar empty and refill on
+alternate sessions, and because every crossing writes a `masteredAt` stamp and a
+`category_promotions` row, **velocity is inflated by the same flapping**.
+
+What is wanted: **a buffer zone** — enter Mastered at the top, leave it lower down, so
+the bar has hysteresis instead of a knife edge.
+
+#### Sketch of the options
+
+* **(E) True hysteresis.** Enter at 8/8, stay Mastered until the count falls to ≤5.
+  ⚠️ **Breaks the system's central invariant**: a band is a pure function of one row's
+  `typedMarkHistory`, which is why `compute_core_category()` is `IMMUTABLE`, why no
+  category expression joins another table, and why every selection query can band
+  in-query. Hysteresis is *state* and needs somewhere to live. `masteredAt` is the
+  obvious candidate — already per-bar, already stored — but it is deliberately
+  **sticky** (never cleared on regression), so using it as the latch changes what it
+  means, and its one reader (the "Date mastered" sort) depends on the current meaning.
+* **(F) Asymmetric thresholds, no state.** Mastered at ≥7/8, drop out below 6 — a
+  one-slot buffer that stays a pure function of the row. Cheaper and safer than (E),
+  but it is a *wider band*, not true hysteresis: it still flips on whichever line it
+  sits nearest.
+* **(G) Widen the window for single-track bars.** Keep "Mastered = at most one wrong"
+  but measure over 10 or 12 slots instead of 8. Purely derived, no new state, and it
+  makes single-track mastery harder to *reach* as well as harder to lose — arguably the
+  honest reading of a sparse track. Costs a per-track window size (`MARK_WINDOW_SIZE`
+  is one shared constant today, `server/contracts/wire.ts`).
+* **(H) Give the single-track bars a second axis** so they blend like core. There is no
+  natural second reading track; Word Search No-Pinyin's dual reading+production
+  emission hints at one, but inventing a sub-track to make the formula symmetric is the
+  tail wagging the dog.
+
+### 8.3 Blast radius — a band is never only a band
+
+⚠️ Neither change is confined to the bar the learner looks at. `computeTypeCategory` is
+the SAME function games bucket and cool on (§ 7), so a threshold change is also a change
+to game difficulty and to review scheduling:
+
+| Consumer | What a reading-band change does to it |
+|---|---|
+| **Memory Map** membership | The map holds exactly the cards that are **not** reading-mastered (`vetSortedClause() AND NOT masteredBarClause('reading')`, [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 2.1). A buffer changes what is on the map **retroactively** — and placements there are durable, the same reason Memory Map opted out of gloss-confusability phase 2 ([GLOSS_CONFUSABILITY.md](./GLOSS_CONFUSABILITY.md)) |
+| **Cooldown duration** | Reaching Mastered on a track jumps its window from 14 days to **180 days** (`COOLDOWN_MS_BY_CATEGORY`). An easier Mastered parks cards for six months; a harder one drills them more |
+| Speed Reading / Word Search No-Pinyin / Hydra pools | Quotas are per-type bands, and the reading distribution is already nearly all Unfamiliar (§ 6; [HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md) O5) |
+| Mastered collections + counts | `masteredBarClause(bar)`, `GET /api/onDeck/masteredCounts` |
+| Velocity | `category_promotions` is written per crossing; fewer crossings = a smaller number, applied retroactively at read ([VELOCITY.md](./VELOCITY.md)) |
+| `masteredAt` | Not backfilled and not swept on rule changes — cards already stamped keep their stamp under the new rule |
+
+**§ 8.2 leaves core alone; § 8.1 does not.** Recognition marks come from Bubble Match,
+Match Speed and Hydra — all multiple choice — so choice weighting reaches the core bar
+even though the buffer work does not.
+
+### 8.4 Open questions
+
+1. **Credit curve** — is `1 − 1/N` right, or should a two-way choice be worth 0 rather
+   than 0.5? ❓
+2. **Does a weighted count stay presentable?** The cdp segments and the mini-card strip
+   are drawn from `positive(type)`. A fractional count is fine arithmetically, but the
+   "x of 8" a learner infers from the segments stops being true. ❓
+3. **Buffer via state (E), or via thresholds (F)/(G)?** (E) is the only true hysteresis
+   and the only one that breaks the pure-function invariant. ❓
+4. **Does the buffer apply to core too?** Core already has slack, so probably not — but
+   then the three bars stop sharing one `categoryForPbh`, which is exactly what lets one
+   set of benchmark lines serve all three (§ 4). ❓
+5. **May `masteredAt` become the hysteresis latch**, given it is sticky today and read
+   by the "Date mastered" sort? ❓
+6. **Retroactivity.** Both changes re-band every existing card on deploy with no
+   migration, because bands are derived. Acceptable, given Memory Map membership and
+   180-day cooldowns move with them? ❓
 
 ---
 
@@ -984,13 +1206,17 @@ Implications to work through:
   `totalMarkCount`/`totalCorrectCount` were kept here but dropped later by
   migration 149 — see the References section.
 - ✅ **Goal-flag storage**: new `users.readingGoal` / `users.writingGoal` booleans.
-- ✅ **Settings host**: `src/pages/AccountPage.tsx`, labels "I want to learn
-  reading" / "I want to learn writing".
+- ✅ **Settings host**: `src/pages/AccountPage.tsx`. Labels were "I want to learn
+  reading" / "I want to learn writing"; the shelf-redesign conversion shortened them
+  to "Learn reading" / "Learn writing" and moved the explanation into a per-row
+  subtitle (see *Account settings UI*).
 - ✅ **Color collision**: ignore for now; colors to be rectified later.
 
 ## Open questions (remaining — none block the doc; resolve before build)
 
-_All major decisions are settled._ One minor build-time confirmation remains:
+_All decisions for the SHIPPED model are settled._ The open design work is the
+choice-aware / buffer-zone rework — **six questions in § 8.4**, none of which affect
+what is running today. One minor build-time confirmation also remains:
 
 1. Whether `totalMarkCount` / `totalCorrectCount` should become per-type or stay
    all-type aggregates (kept all-type for now). Tracked as item 1 of
@@ -1053,11 +1279,12 @@ Settled since:
   `lastCorrectMarkTimestamp`, `cooldownRemainingMs`, `isTypeOnCooldown`,
   `readyMarkTypes`. Re-exported by `server/services/cardQueueRanking.ts` (server) and
   `src/utils/masteryCompute.ts` (client).
-- `src/features/flashcards/MasteryProgressBar.tsx` (cdp bars + per-track cooldowns),
+- `src/components/mastery/MasteryWindow.tsx` (cdp window + track switch + per-track
+  cooldowns; replaced `src/features/flashcards/MasteryProgressBar.tsx`),
+  `src/components/primitives/Segmented.tsx` (the `.trkseg` track switch),
 - `src/utils/vocabSort.ts` (`cooldownKey` — the Cooldown sort row),
   `src/components/MiniVocabCard.tsx` (hairline strip),
-  `src/features/flashcards/VocabCardDetailPage.tsx` — the "Mastery" `SectionCard`
-  that hosts the bars,
+  `src/features/flashcards/VocabCardDetailPage.tsx` — hosts the window,
   `src/features/flashcards/VocabCardDetailBody.tsx` — `SectionCard`/`SectionLabel`.
 - `src/utils/formatDuration.ts` → `formatCooldownRemaining` (tested by
   `src/__tests__/formatDuration.test.ts`).

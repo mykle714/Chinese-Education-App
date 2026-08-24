@@ -1,5 +1,6 @@
 import type { FlashcardCategory, MarkType } from "../../types";
 import type { HydraColor } from "./types";
+import type { RampHue } from "../../theme/colors";
 
 /**
  * Hydra Bubbles — tunable constants (docs/HYDRA_BUBBLES.md).
@@ -141,3 +142,13 @@ export const LEND_NOTICE_MIN_SCORE = 4;
  */
 export const NEW_CARD_SHARES = 6;
 export const SHARES_PER_UNMATCHED_ROUND = 1;
+
+/**
+ * THE GAME'S HUE — its hub row's colour AND the accent ground its own screen is
+ * flooded with (docs/SHELF_REDESIGN.md § A6b).
+ *
+ * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
+ * the registry reads this, and the page passes it to `gameSurfaceSx` /
+ * `GameSurfaceProvider`. Tapping a tea row must open a tea screen.
+ */
+export const GAME_HUE: RampHue = "tea";

@@ -165,9 +165,13 @@ short viewports, which is a shell-wide change.
 
 ```
 ┌─────────────────────────────┐
-│ ⌄                7/20  0:14 │  header: back · round you're on · count-up clock
+│ ⌄  Speed Reading       0:14 │  header: back · title · count-up clock
 ├─────────────────────────────┤
-│                             │
+│ ROUND 7 OF 20               │  GameHud (a COLUMN, not a row of facts)
+│ ▮▮▮▮▮▮▯▯▯▯                  │  SpeedReadingRoundTicks — 2 rows of 10
+│ ▯▯▯▯▯▯▯▯▯▯                  │  green = right, red = wrong, grey = unplayed
+├─────────────────────────────┤
+│                             │  ← .speed-reading__board starts HERE
 │         nǐ  hǎo             │  pinyin (large)
 │      "hello; hi"            │  display definition
 │            🔊               │  SpeakerButton
@@ -176,26 +180,56 @@ short viewports, which is a shell-wide change.
 │              │              │  (they differ by one character)
 │   LEFT ZONE  │  RIGHT ZONE  │  the whole half is the tap target
 │                             │
-│                             │
 └─────────────────────────────┘
 ```
 
-**The header carries a round counter (`speed-reading__progress`) next to the
-clock.** With the run ending on a count rather than on a countdown, the clock
-alone no longer says how far along you are — a player could not tell round 3 from
-round 19. The counter is secondary-coloured so the time stays the headline.
+**The round counter lives in the HUD, not in the header** (changed 2026-08-23 with
+[SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A6b). It used to sit left of the clock as
+`speed-reading__progress`; the HUD's `Round n of 20` says the same thing beside the pips
+that expand on it, and two statements of it a few millimetres apart made the header read
+as two clocks. The clock keeps the header slot alone — it IS the score in this game.
 
 **It counts the round you are ON, not rounds completed** (`currentRound` in
-`SpeedReadingPage`): the first word on screen reads `1/20` and the last reads
-`20/20`. That is `answered + 1` while a round awaits its answer and plain
+`SpeedReadingPage`): the first word on screen reads `Round 1 of 20` and the last reads
+`Round 20 of 20`. That is `answered + 1` while a round awaits its answer and plain
 `answered` once it has been answered — the same word is still on screen during
 the `FEEDBACK_MS` window, so the number must not tick to the next round early.
-Clamped at both ends: never `0/20` on the loading header, never past the target.
+Clamped at both ends: never `Round 0` on the loading header, never past the target.
 
-The
-clock itself turns red once `totalMs` passes the **bronze** threshold, i.e. once
-the run can no longer medal; that is the count-up equivalent of the old "last ten
-seconds" red.
+The clock itself turns **pastel** red (`COLORS.red`, not `dangerInk`) once `totalMs`
+passes the **bronze** threshold, i.e. once the run can no longer medal; that is the
+count-up equivalent of the old "last ten seconds" red. Pastel because the header now sits
+on the game's saturated blue ground, where a dark semantic red cannot be read.
+
+### The round ticks (`SpeedReadingRoundTicks`)
+
+One pip per round, in answer order, two rows of ten at 8px tall.
+
+**Why the run needs them.** The score here is a TIME and a wrong answer is paid for in
+seconds rather than in a lost round, so before this there was nothing on screen saying how
+the run was actually going: a slow clean run and a fast sloppy one read identically. The
+pips are the run's shape, and because they hold their position they also say WHERE it went
+wrong, which `17/20 correct` on the end card does not.
+
+**Two rows, not one.** Twenty pips in a single row are 14px wide each and a 2px gap is the
+only thing separating a red from its neighbours. At 8px tall a colour can be seen
+peripherally, which is the only way it will be seen at all — the player's eyes are on the
+words.
+
+**The colours are the app's ramp, not the artboard's.** Artboard 15 fills these with
+`#22C55E` / `#EF4444`; they ship as `COLORS.successInk` / `COLORS.dangerInk` / `COLORS.card`
+— the app's one green, one red, and the inert fill every empty track uses. A second
+success/failure pair would make these pips disagree with the tap-zone flash that produced
+them.
+
+**State:** `results: RoundTick[]` in `SpeedReadingPage`, APPENDED on every pick (never
+indexed by ordinal — `answeredRef` is the source of truth for "which round is this", and a
+push cannot disagree with itself). Reset by the replay path alongside `score`/`answered`.
+
+> ⚠️ **`GameHud` is a SIBLING of `.speed-reading__board`, not a child.** The tap zones are
+> `position: absolute; inset: 0` of their container, so anything sharing that container is
+> UNDER them and every tap on it answers the round. The board box exists to bound the zones
+> below the HUD, and the centring that used to be on `GameFrame` moved onto it.
 
 The prompt and the options are **one centred group** (`speed-reading__stack`),
 centred in the play area — **the two options are the only controls on the

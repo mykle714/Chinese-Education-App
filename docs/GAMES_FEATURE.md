@@ -442,6 +442,41 @@ Presentational only; nothing here holds state.
   nearly-drained track is easy to miss in peripheral vision, which is exactly where a clock
   is read mid-game.
 
+- **`GameCentered`** — the centred column a game shows INSTEAD of its board (the queue
+  spinner, the "no cards are playable" message and its way out). Extracted from four
+  byte-identical `renderCentered` helpers that differed only in their class name. It also
+  owns the accent-ground ink rule below, which is why a message inside it must NOT set
+  its own `color`.
+
+**`gameSurface.ts` + `GameSurface.tsx`** — the per-game accent surface
+([SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A6b, the design's `#bm{background:var(--redA)}`
+blocks). A game screen is flooded with ONE saturated hue; the play panel sits on it as a
+white island; the header's ink flips to white. 60% accent ground, 30% white panel, 10% the
+hue's near-white tint on the HUD strip.
+
+| Export | What it is |
+| --- | --- |
+| `GAME_HUE` (in each game's own `constants.ts`) | The game's hue. `GAME_REGISTRY` reads it for the hub row and the page passes it to `GameLeafPage`, so the row's colour and the screen's ground cannot drift apart. |
+| `GameLeafPage` | `LeafPage` + the ground + the header flips + the context, from one `hue` prop. **Every game page uses this instead of `LeafPage`.** |
+| `GameSurfaceProvider` / `useGameSurfaceHue()` | The context. Null when there is no provider, which is what keeps `GameFrame` usable off an accent ground and mountable bare in a test. |
+| `gameSurfaceSx(hue)` | The ground colour plus the descendant rules it forces (title, chevron, right-slot icons, `HeaderMetaLabel`, the streak badge, both toggle-chip states). |
+| `ON_ACCENT_INK` / `ON_ACCENT_LINE` | White, and a 50% white hairline. Anything drawn straight onto the ground needs the first; `COLORS.rowBorder` is an ink alpha and vanishes on a 52%-lightness ground, hence the second. |
+
+**Which hue a game gets is `GameDef.hue`, NOT the artboard's.** The artboards paint Match
+Speed blue, Speed Reading yellow and Hydra green; the shipped hub rows call those three
+green, blue and teal. The hub mapping wins — a green hub row must not open a blue screen —
+and the artboard's yellow is not in the app's ramp at all. Bubble Match (red) and Word
+Search (purple) agree either way.
+
+**The header flips are CSS descendant selectors, the panel's are not.** The header route
+avoids threading an `onAccent` flag through `LeafPage` → `PageHeader` →
+`HeaderIconButton`/`HeaderToggleChip`/`MinutePointsFireBadge`, and it is the design's own
+mechanism (`#bm .lhd h1{color:#fff}`). `GameHud`/`GameTimer`/`GameFrame` read the context
+instead, because a HUD label's colour is overridable per call site (a lives counter turning
+red) and a blanket descendant rule would silently clobber it. One detail worth keeping: the
+chip outline is an inset `box-shadow`, not a `border` — a border would add 2px per chip, and
+the leaf header is already tight enough that "Hydra Bubbles" ellipsises.
+
 **What the frame does NOT discharge:** `useBlockEdgeSwipe(true)` and `touchAction: "none"`
 stay the page's job. The edge-swipe block is a document-level touch handler with a
 lifecycle, and hiding it inside a layout wrapper would make "why can I still swipe out of
@@ -458,7 +493,14 @@ absolutely-positioned overlays INSIDE their stages, at `top: 8`, so bubbles drif
 the text and each field's measured bounds were larger than the area a bubble could
 actually be read in; both stages now return a fragment — HUD row, then measured field.
 Match Speed's `MatchSpeedTimerBar` delegates to `GameTimer` and keeps only
-`RUN_DURATION_MS`, its 10-second urgency threshold and its colours.
+`RUN_DURATION_MS`, its 10-second urgency threshold and its colours — whose resting track
+is now `RAMP[GAME_HUE].ink`, since the clock sits on a strip tinted with that same hue.
+
+Speed Reading has a `GameHud` as of the A6b pass: a round counter over
+`SpeedReadingRoundTicks`. Its HUD is the one that is a COLUMN rather than a row of facts
+(`GameHud`'s `sx` escape hatch), and it is a SIBLING of a new `.speed-reading__board` box
+rather than a child — the tap zones are `inset: 0` of their container, so anything sharing
+that container is under them and every tap on it would answer the round.
 
 ### Layer 3 — Data hooks
 
@@ -1001,8 +1043,8 @@ Renaming a `gameId` counts as removing one game and adding another. Don't.
 
 ## Game: Word Search (`/games/word-search`)
 
-Second game (built). Find 20 of your own vocab words — shown as English glosses —
-hidden as snaking (orthogonal) paths in a 12×16 grid of colored-pinyin (cpcd)
+Second game (built). Find 12 of your own vocab words — shown as English glosses —
+hidden as snaking (orthogonal) paths in a 9×6 grid of colored-pinyin (cpcd)
 characters. Drag or tap to trace; any valid multi-char selection pops a
 dictionary info-card + audio. Count-up timer → medal on completion. Reuses
 Bubble Match's pool + fallback distribution, adds a substring de-dup pass and a
@@ -1020,6 +1062,64 @@ docs/SHELF_REDESIGN.md § 12 for why the ~8% corner overshoot is harmless.) That
 choice is why the speculative Pixi runtime was never adopted and has since been
 deleted (§ Layer 2). It owns its page shell (`LeafPage` + its own flp-style header,
 **no footer** — see Routes above).
+
+### Pinyin is a per-game setting
+
+> STATUS: **DESIGN — decided 2026-08-23, NOT BUILT.** Today Bubble Match, Hydra
+> Bubbles and Match Speed all read *and write* the ONE shared `showPinyin` boolean in
+> `useFlashcardLearnSettings` (`src/hooks/useFlashcardLearnSettings.ts`, stored as
+> `flashcard.learn-settings`), which is the **flp's** setting. Code to change:
+> `BubbleMatchPage` / `BubbleMatchTrackToggle` / `BubbleMatchHeader`,
+> `HydraBubblesPage`, `MatchSpeedPage` / `MatchSpeedSettingsDialog`.
+
+**Every game owns its own pinyin preference.** "Show pinyin" is not one app-wide
+display taste: on a zh board it decides *what skill the board tests*
+([MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md)), so it belongs to the surface doing
+the testing, not to a global blob.
+
+Sharing it leaks in two directions, and both are real today:
+
+* **Between games.** Switching Bubble Match to Reading — which is done *by* hiding
+  pinyin — also strips pinyin from Hydra Bubbles and Match Speed, neither of which the
+  learner touched, and neither of which changes track to match.
+* **Between a drill and its reference material.** The flp owns
+  `flashcard.learn-settings`, and the cdp, the scp and the dictionary cdp read it as a
+  *reading* preference. A game that writes that key is editing the learner's flashcard
+  display from inside a game.
+
+The rule, and how much of it already holds:
+
+| Surface | Where its pinyin preference lives |
+|---|---|
+| flp (+ cdp, scp, dictionary cdp) | `useFlashcardLearnSettings` — **unchanged**; the flp keeps this key and becomes its only writer |
+| **Word Search** | ✅ already per-game — a property of the MODE (`MODE_CONFIGS`, `src/games/word-search/constants.ts`). The precedent. |
+| **Memory Map** | ✅ already per-game — hardcoded `showPinyin={false}`; it is a reading map |
+| **Speed Reading** | ✅ already per-game — hardcoded false; the prompt would spoil itself |
+| **Bubble Match** | ✳ its own persisted setting (the per-run latch is unchanged) |
+| **Hydra Bubbles** | ✳ its own persisted setting — **and its own track conversion**, see [HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md) |
+| **Match Speed** | ✳ its own persisted setting (display only — Match Speed stays `recognition`) |
+
+Follow the existing per-surface pattern — `useWordSearchSettings`
+(`src/games/word-search/useWordSearchSettings.ts`) and `useDiscoverSettings`
+(`src/hooks/useDiscoverSettings.ts`): one hook per game over its own localStorage key,
+defaults merged on read so adding a knob later needs no migration. Four of the seven
+surfaces are already there; this finishes the job rather than inventing a mechanism.
+
+**Defaults stay `true`** (pinyin shown) everywhere, so nobody's track changes silently
+on deploy day: a learner who had hidden pinyin globally is put back on `recognition` in
+Bubble Match until they hide it *in Bubble Match*. That reset is intended — the old
+global value was never a statement about any particular game.
+
+**Language gating is unchanged.** Every pinyin control stays hidden for Latin-script
+languages (`isLatinScriptLang`), and `es` never switches track at all
+([MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md)).
+
+⚠️ **A per-game setting must not become a per-game *track* by accident.** Match Speed
+gets its own toggle for display only and keeps marking `recognition`; the track rule
+applies to a game only where this doc says so (Bubble Match today, Hydra next). A game
+whose pool is bucketed and cooled on one track must never write marks on another —
+they are dropped by the § "next markable at" guard
+([HYDRA_BUBBLES.md § 8](./HYDRA_BUBBLES.md)).
 
 ### Bubble Match: pinyin picks the track
 
@@ -1039,7 +1139,8 @@ Three consequences worth knowing before touching this game:
 1. **The choice is made on the HUB, not in the game.** The pinyin chip is gone from
    the game header; the Games hub's Bubble Match strip carries
    `BubbleMatchTrackToggle` in its `control` slot, which names both tracks
-   (`RECOGNITION ⇄ READING`) and writes the shared `showPinyin` setting.
+   (`RECOGNITION ⇄ READING`) and writes the `showPinyin` setting — today the
+   **shared** one, and per the section above it should be **Bubble Match's own**.
 2. **The run latches the track at deal time** (`lockRunTrack`, called from the first
    pool fetch and reused by every Play-Again refill). The pool is bucketed AND cooled
    on that track when it is requested, so a board dealt on one track and marked on
@@ -1051,9 +1152,11 @@ Three consequences worth knowing before touching this game:
    stage, and no TTS prefetch — narrating the word would hand the player the
    pronunciation the run is asking them to read.
 
-Known wrinkle: `showPinyin` is one shared setting, so turning it off here also hides
-pinyin in **Hydra Bubbles**, which still marks `recognition` regardless. Hydra has not
-been converted; see [MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md).
+Known wrinkle (being fixed): `showPinyin` is one shared setting, so turning it off
+here also hides pinyin in **Hydra Bubbles** and **Match Speed**, neither of which
+changes track to match. Both halves are addressed above — the setting becomes
+per-game (§ "Pinyin is a per-game setting"), and Hydra converts to the reading track
+with it ([HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md)). Neither has shipped.
 
 ### Gameplay
 

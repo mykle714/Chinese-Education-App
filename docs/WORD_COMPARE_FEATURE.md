@@ -68,12 +68,30 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
 `EipTabStrip` / `useEipTabs` system that breakdown-word links use to open additional word tabs.
 
 - **Singleton**: at most one Compare tab exists in the strip at a time.
-- **Entry point**: a labelled "Compare To…" button in `InfoCardActionBar` — the action bar at
-  the END of the eip **definition tab**, alongside "Add to Deck…" and "Practice Writing Me".
-  (It was previously a bare icon in the eip header's action grid, which now keeps only the
-  entry-level actions: `SpeakerButton` and "+ Add to Learn Now".) Tapping it pushes the Compare
-  tab (or focuses the existing one) and **auto-populates slot A** with the word the user
-  navigated from.
+- **Entry point (2026-08-24)**: the **`Compare` pill on `WordToolsRail`**, the rail that sits
+  on the PAGE above the card and outside its boundary (`src/components/WordToolsRail.tsx`,
+  artboards 18–25). Comparing is something you do with the WORD, not an operation on the
+  card, which is the whole split that rail encodes. Two hosts, two destinations:
+  - **flp** — has a tab strip, so it opens Compare as an eip TAB beside the word
+    (`openEicSheet()` then `eip.openCompareTab(entry)`).
+  - **cdp** — has no strip, so it hands the word to the standalone `/compare` page,
+    pre-filling slot A through **route state** (`navigate("/compare", { state: { slotA } })`;
+    `ComparePage` seeds it as the INITIAL value of its state hook, never in an effect — an
+    effect would re-seed on every identity change and silently undo a clear the learner had
+    just made). Route state rather than a URL param because what is handed over is a whole
+    `VocabEntry` the caller already fetched; putting the word in the path would mean
+    re-looking it up and letting the two copies disagree about the selected sense.
+
+  Tapping it pushes the Compare tab (or focuses the existing one) and **auto-populates
+  slot A** with the word the user navigated from.
+
+  > Two earlier homes, both gone: a bare icon in the eip header's action grid (which now
+  > keeps only the entry-level actions, `SpeakerButton` and "+ Add to Learn Now"), and
+  > then a labelled "Compare To…" button in `InfoCardActionBar` at the end of the eip
+  > definition tab. That bar is **deleted** — artboards 20–25 make the panel
+  > information-only. ⚠️ One consequence: a word DRILLED INTO inside the panel can no
+  > longer be compared from there, because the rail acts on the card's word. The path is
+  > to open that word's own page. Tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 11.
 - **Re-entry from a different word** (Compare tab already open): focus it, **refill slot A**
   with the new source word, and **clear slot B** back to the `+` placeholder (decided — the old
   pair is no longer what the user asked about).
@@ -86,7 +104,7 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
 
 References: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` (`EipTab`,
 `measureTabWidth`, overflow fitting — the "Compare" label goes through the same width
-measurement), `EipTabStrip.tsx`, `InfoCardActionBar.tsx` (the definition tab's action bar, the
+measurement), `EipTabStrip.tsx`, `src/components/WordToolsRail.tsx` (the
 `mobile-demo-definition-action-bar` Box), `FlashcardsLearnPage.tsx` (mounts the eip wrapper).
 
 The eip has a single wrapper — the bottom-sheet `InfoCardSection` (`SheetPanel` +
@@ -265,7 +283,7 @@ CREATE TABLE word_comparison_cache (
 | Route / nav | `src/App.tsx`, `src/components/Layout.tsx` (`MOBILE_DEMO_PATHS`), `src/utils/pageTransition.ts` (`NODE_ROUTES`), `src/components/FooterPresenter.tsx` (`FOOTER_ROUTES`), `src/pages/HomePage.tsx` | the `/compare` route, its phone-frame membership, its right-slide direction, its footer (Home tab), and the "Compare Words" hub row |
 | Shared util | `src/utils/dictEntryAdapter.ts` (**moved** out of `features/flashcards/FlashcardsLearnPage/`) | `dictionaryEntryToVocabEntry` — now consumed by the shared workspace, the eip, and the dictionary cdp |
 | Client UI | `src/components/LongDefinitionDisplay.tsx`, `src/components/SegmentedSentenceDisplay.tsx` | shared renderer; `runTranslation` puts a translated run into whole-run (passive) mode |
-| Client UI | `src/features/flashcards/FlashcardsLearnPage/InfoCardActionBar.tsx` | "Compare To…" button in the definition tab's action bar |
+| Client UI | `src/components/WordToolsRail.tsx` | The `Compare` pill above the card, on both the flp and the cdp (2026-08-24; replaced the deleted `InfoCardActionBar`) |
 | Client UI | `src/components/PinyinKeypad.tsx` (**new**, extracted) | shared tone-vowel / accent keypad; replaces DictionaryPage's two inline copies |
 | Client UI | `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx` | new `"xl"` `CPCDSize` |
 | Reused | `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx` | slot-B search + result cards |
@@ -319,7 +337,7 @@ English-query space. Cache hits are always free and don't consume a slot.
   migrations 99–100, `streakDateOf`).
 - eip entry-tab system this extends: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts`,
   `EipTabStrip.tsx`; panel body + header actions: `InfoCardPanelBody.tsx`; definition-tab
-  action bar (the Compare entry point): `InfoCardActionBar.tsx`.
+  word-tools rail (the Compare entry point): `src/components/WordToolsRail.tsx`.
 - Keypad source being extracted: `src/features/dictionary/DictionaryPage.tsx` (`SPECIAL_CHARACTERS`,
   `getVowelColor`, `specialCharButtonSx`).
 - Search reuse: `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx`.

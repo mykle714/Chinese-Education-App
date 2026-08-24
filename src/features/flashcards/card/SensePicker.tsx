@@ -1,23 +1,35 @@
 import React from "react";
-import { Box, IconButton, ListItemIcon, ListItemText, ListSubheader, Menu, MenuItem, Typography, useTheme } from "@mui/material";
-import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
-import StarIcon from "@mui/icons-material/Star";
+import { Box, ListSubheader, Menu, MenuItem, Typography } from "@mui/material";
+import Icon from "../../../components/Icon";
+import { Label } from "../../../components/primitives";
+import { COLORS } from "../../../theme/colors";
+import { FONTS } from "../../../theme/fonts";
 import { ddt, senseGrammarTag, sortedSenseClusters } from "../../../utils/definitionUtils";
 import { numberedToTonedPinyin } from "../../../utils/textUtils";
 import { getToneColor } from "../../../utils/toneColors";
 import FrequencyScoreDots from "../../../components/FrequencyScoreDots";
-import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
+import { SIZE, WEIGHT } from "../../../theme/scale";
 import type { VocabEntry } from "../types";
 import type { DefinitionCluster } from "../../../types";
 
 /**
  * SensePicker — the shared definition-cluster ("sense") chooser.
  *
- * A small triangle trigger that opens a menu of the word's orthogonal senses
- * (`definitionClusters`, migration 90 — see docs/DEFINITION_CLUSTERS.md), one item
- * per cluster rendered through the ddt display transformation. Renders NOTHING when
- * the entry has no real choice (unclustered, or a single cluster), so every host can
- * drop it in unconditionally.
+ * ONE component, every surface, two states (the design's `.ssel` / `.ssheet`,
+ * artboards 19–25):
+ *
+ *   RESTING (`.ssel`) — a counter and a triangle in a small pill, sitting directly
+ *       under the gloss. It is a set-and-forget control, so at rest it takes the least
+ *       room that still says "this word has nine meanings and you are on the first".
+ *   OPEN (`.ssheet`) — one tap lifts a compact sheet showing EVERY sense at once,
+ *       grouped under the readings that separate them, starred default first,
+ *       commonality beside each. The choice is made by comparison, in one look, and
+ *       the sheet closes on the pick.
+ *
+ * Senses are `definitionClusters` (migration 90 — see docs/DEFINITION_CLUSTERS.md),
+ * one row per cluster rendered through the ddt display transformation. Renders NOTHING
+ * when the entry has no real choice (unclustered, or a single cluster), so every host
+ * can drop it in unconditionally.
  *
  * ── Why its own module ────────────────────────────────────────────────────────
  * The trigger + menu (reading sections, star, per-sense commonality meter, grammar
@@ -66,7 +78,6 @@ const SensePicker: React.FC<SensePickerProps> = ({
     censorReadings = false,
     classPrefix = "mobile-demo-flashcard",
 }) => {
-    const theme = useTheme();
     const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
 
     // A picker only makes sense with a real choice — a single-cluster (or unclustered)
@@ -105,6 +116,7 @@ const SensePicker: React.FC<SensePickerProps> = ({
     // Mirrors SpeakerButton: the trigger can sit inside a draggable/flippable card, so
     // press events must not bubble to the card's own touch/mouse handlers.
     const stopCardHandlers = (e: React.SyntheticEvent) => e.stopPropagation();
+    const open = Boolean(anchorEl);
 
     if (!sortedClusters) return null;
 
@@ -118,10 +130,11 @@ const SensePicker: React.FC<SensePickerProps> = ({
         showGrammarTag: boolean,
     ) => {
         const tag = showGrammarTag ? senseGrammarTag(cluster) : null;
+        const selected = index === selectedSenseIndex;
         return (
             <MenuItem
                 key={`sense-${index}`}
-                selected={index === selectedSenseIndex}
+                selected={selected}
                 // The Menu renders in a portal, but React synthetic events bubble
                 // through the React tree — so a tap here would otherwise reach the
                 // card's flip handlers. Stop every press event, same as the trigger.
@@ -129,39 +142,61 @@ const SensePicker: React.FC<SensePickerProps> = ({
                 onMouseDown={stopCardHandlers}
                 onTouchStart={stopCardHandlers}
                 onTouchEnd={stopCardHandlers}
+                sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "9px",
+                    padding: "6px 14px",
+                    minHeight: 0,
+                    "&.Mui-selected, &.Mui-selected:hover": { backgroundColor: COLORS.background },
+                }}
             >
+                <Typography
+                    component="b"
+                    className={`${classPrefix}-sense-label`}
+                    sx={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: 12.5,
+                        // The showing sense is BOLD rather than ticked: the sheet is read
+                        // by comparing every line at once, and a tick in a left gutter
+                        // pushes all nine labels off their own margin to mark one of them.
+                        fontWeight: selected ? WEIGHT.bold : WEIGHT.medium,
+                        letterSpacing: "-0.008em",
+                        whiteSpace: "normal",
+                    }}
+                >
+                    {ddt(cluster)}
+                </Typography>
+                {/* The starred DEFAULT — the sense the card falls back to when the
+                    learner has never picked one. Marked on the sense itself, not in a
+                    gutter, so it costs no column. */}
                 {index === 0 && (
-                    <ListItemIcon sx={{ minWidth: 28 }}>
-                        <StarIcon fontSize="small" sx={{ color: theme.palette.warning.main }} />
-                    </ListItemIcon>
+                    <Icon name="star" size={13} fill={1} color="#F4A700" className={`${classPrefix}-sense-star`} />
                 )}
-                <ListItemText inset={index !== 0} primary={ddt(cluster)} />
                 {/* Per-sense commonality (the cluster's own 1–5 conversation-frequency
                     score, migration 139 / docs/DEFINITION_CLUSTERS.md) — the same meter
-                    the eip and cdp show, shrunk to menu scale and muted to secondary text
-                    so it reads as metadata beside the sense label. It earns its place here
-                    because the zh path GROUPS by reading, so the menu order is no longer
+                    the eip and cdp show, shrunk to sheet scale. It earns its place here
+                    because the zh path GROUPS by reading, so the list order is no longer
                     globally frequency-sorted and the learner otherwise can't tell which of
                     two senses under different readings is the common one. Omitted (rather
                     than shown as five hollow dots) when scoring failed / never ran. */}
                 {cluster.frequencyScore != null && (
-                    // Wrapper carries the spacing/no-shrink: FrequencyScoreDots takes
-                    // colors and sizes but no sx, so layout is the caller's job.
-                    <Box sx={{ ml: 1.5, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                    <Box sx={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
                         <FrequencyScoreDots
                             className={`${classPrefix}-sense-commonality`}
                             score={cluster.frequencyScore}
-                            dotSize={5}
+                            dotSize={6}
                             gap={2.5}
-                            filledColor={theme.palette.text.secondary}
-                            emptyBorderColor={theme.palette.divider}
+                            filledColor={COLORS.onSurface}
+                            emptyBorderColor={COLORS.border}
                         />
                     </Box>
                 )}
                 {tag && (
                     <Typography
                         className={`${classPrefix}-sense-grammar`}
-                        sx={{ ml: 1.5, fontSize: SIZE.micro, color: theme.palette.text.secondary, whiteSpace: 'nowrap' }}
+                        sx={{ fontSize: SIZE.micro, color: COLORS.textSecondary, whiteSpace: "nowrap", flexShrink: 0 }}
                     >
                         {tag}
                     </Typography>
@@ -172,24 +207,92 @@ const SensePicker: React.FC<SensePickerProps> = ({
 
     return (
         <>
-            <IconButton
-                className={`${classPrefix}-sense-trigger`}
-                size="small"
+            {/* RESTING state — `.ssel` (artboards 19–25). A bare triangle said "there
+                is a control here" and nothing else; the counter says the two things a
+                learner actually needs at rest: this word has N meanings, and you are on
+                the first. That makes it a set-and-forget control — it never asks for
+                attention again on a word whose sense is already settled — which is why
+                it can afford to be this small and sit directly under the gloss on every
+                surface (card, card detail, info panel). */}
+            <Box
+                component="button"
+                type="button"
+                className={`${classPrefix}-sense-trigger${open ? " sense-trigger--open" : ""}`}
                 aria-label="Switch definition"
+                aria-expanded={open}
                 onClick={(e) => { stopCardHandlers(e); setAnchorEl(e.currentTarget); }}
                 onMouseDown={stopCardHandlers}
                 onTouchStart={stopCardHandlers}
                 onTouchEnd={stopCardHandlers}
-                sx={color ? { color } : undefined}
+                sx={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "1px",
+                    padding: "3px 4px 3px 8px",
+                    borderRadius: "999px",
+                    border: "none",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    lineHeight: 1,
+                    ...(open
+                        // OPEN: inverted, so the chip reads as the sheet's own handle
+                        // while the sheet is up rather than as one more thing to tap.
+                        ? { backgroundColor: COLORS.onSurface, boxShadow: "none" }
+                        : {
+                              backgroundColor: "rgba(23,22,26,0.05)",
+                              boxShadow: "inset 0 0 0 1px rgba(23,22,26,0.08)",
+                          }),
+                }}
             >
-                <ArrowDropDownIcon fontSize="small" />
-            </IconButton>
+                <Typography
+                    component="span"
+                    className={`${classPrefix}-sense-count`}
+                    sx={{
+                        fontFamily: FONTS.mono,
+                        fontVariantNumeric: "tabular-nums",
+                        fontSize: 10,
+                        letterSpacing: "0.06em",
+                        color: open ? COLORS.white : (color ?? COLORS.iconColor),
+                    }}
+                >
+                    {selectedSenseIndex + 1}/{sortedClusters.length}
+                </Typography>
+                <Icon
+                    name={open ? "arrow_drop_up" : "arrow_drop_down"}
+                    size={16}
+                    color={open ? COLORS.white : (color ?? COLORS.iconColor)}
+                />
+            </Box>
+            {/* OPEN state — `.ssheet` (artboard 23). One tap lifts EVERY sense at once,
+                grouped under the readings that separate them, starred default first,
+                commonality beside each line. The choice is therefore made by COMPARING,
+                in one look, rather than by paging through senses one at a time — and it
+                closes on the pick, so the control goes straight back to being two glyphs
+                under the gloss.
+
+                Still a MUI `Menu` under the restyle: the portal, the anchor tracking, the
+                outside-tap dismiss and the focus trap are exactly what a sheet lifted off
+                a chip inside a draggable card needs, and hand-rolling them here would be
+                three bugs waiting on a surface that is already gesture-heavy. */}
             <Menu
                 className={`${classPrefix}-sense-menu`}
                 anchorEl={anchorEl}
-                open={Boolean(anchorEl)}
+                open={open}
                 onClose={() => setAnchorEl(null)}
-                MenuListProps={{ sx: { py: 0.5 } }}
+                MenuListProps={{ sx: { paddingTop: 0, paddingBottom: "5px" } }}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            width: 262,
+                            maxWidth: "calc(100% - 32px)",
+                            borderRadius: "22px",
+                            border: `1px solid ${COLORS.rowBorder}`,
+                            boxShadow: "0 18px 44px rgba(20,18,26,0.26)",
+                            backgroundColor: COLORS.white,
+                            backgroundImage: "none",
+                        },
+                    },
+                }}
                 // Backdrop/paper taps also bubble through the portal to the card's
                 // flip handlers — swallow them at the Menu root too.
                 onClick={stopCardHandlers}
@@ -197,6 +300,24 @@ const SensePicker: React.FC<SensePickerProps> = ({
                 onTouchStart={stopCardHandlers}
                 onTouchEnd={stopCardHandlers}
             >
+                {/* `.sh` — how many senses there are, and what the right-hand column is.
+                    Rendered ONCE at the top of the sheet rather than repeated over each
+                    reading, which is what it used to be: a column header belongs to the
+                    column, not to the first group in it. */}
+                <Box
+                    className={`${classPrefix}-sense-sheet-header`}
+                    sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "10px",
+                        padding: "11px 14px 8px",
+                        borderBottom: `1px solid ${COLORS.rowBorder}`,
+                    }}
+                >
+                    <Label>{sortedClusters.length} senses</Label>
+                    {sortedClusters.some((c) => c.frequencyScore != null) && <Label>commonality</Label>}
+                </Box>
                 {/* zh: one pinyin-labelled section per distinct reading; MUI's Menu flattens
                     this array of fragments, so ListSubheader + MenuItems render inline.
                     es: no readings to section by, so the clusters render flat with a
@@ -209,23 +330,22 @@ const SensePicker: React.FC<SensePickerProps> = ({
                         className={`${classPrefix}-sense-reading`}
                         disableSticky
                         sx={{
-                            lineHeight: 1.6,
+                            // `.grp` — the reading itself, small and quiet. It is a
+                            // divider between groups of senses, not a title over them.
+                            padding: "8px 14px 3px",
+                            lineHeight: 1.4,
+                            fontSize: 11,
                             fontWeight: WEIGHT.semibold,
-                            bgcolor: 'transparent',
-                            // Row so the heading can carry the right-hand column label
-                            // (see the "Commonality" caption below) opposite the reading.
-                            display: 'flex',
-                            alignItems: 'baseline',
-                            justifyContent: 'space-between',
-                            gap: 1.5,
+                            fontFamily: FONTS.sans,
+                            backgroundColor: "transparent",
+                            color: COLORS.onSurface,
                         }}
                     >
-                        <Box component="span">
                         {/* Front/question side: the reading is the answer, so the heading
                             becomes a bare ordinal label ("Group 1"). Sections are already in
                             frequency order, so the numbering is stable for a given card. */}
                         {censorReadings
-                            ? <span style={{ color: theme.palette.text.secondary }}>{`Group ${sectionIndex + 1}`}</span>
+                            ? <span style={{ color: COLORS.textSecondary }}>{`Group ${sectionIndex + 1}`}</span>
                         /* Per-syllable tone coloring, matching cpcd/pinyin elsewhere. An
                            empty reading (should not happen for a clustered zh entry) falls
                            back to a neutral em dash. */
@@ -236,27 +356,7 @@ const SensePicker: React.FC<SensePickerProps> = ({
                                     <span style={{ color: getToneColor(syllable) }}>{syllable}</span>
                                 </React.Fragment>
                             ))
-                            : <span style={{ color: theme.palette.text.secondary }}>—</span>}
-                        </Box>
-                        {/* Column label for the trailing dot meters. Rendered on the FIRST
-                            section only — repeating it over every reading would read as
-                            part of each heading rather than as a one-time column header —
-                            and only when some cluster actually has a score to show. */}
-                        {sectionIndex === 0 && sortedClusters.some((c) => c.frequencyScore != null) && (
-                            <Box
-                                component="span"
-                                className={`${classPrefix}-sense-commonality-label`}
-                                sx={{
-                                    fontSize: SIZE.micro,
-                                    fontWeight: WEIGHT.regular,
-                                    letterSpacing: TRACKING.wide,
-                                    color: theme.palette.text.secondary,
-                                    whiteSpace: 'nowrap',
-                                }}
-                            >
-                                Commonality
-                            </Box>
-                        )}
+                            : <span style={{ color: COLORS.textSecondary }}>—</span>}
                     </ListSubheader>,
                     // The reading heading above already disambiguates these senses,
                     // so the per-item grammar tag would be noise here.

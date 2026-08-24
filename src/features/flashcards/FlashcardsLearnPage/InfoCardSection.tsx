@@ -28,11 +28,14 @@ interface InfoCardSectionProps {
     // (breakdown chars / example segments) that aren't yet in the library can be
     // added; undefined hides the button (see InfoCardPanelBody).
     onAddToLibrary?: (entry: VocabEntry) => void;
-    // Compare tab (docs/WORD_COMPARE_FEATURE.md). `onOpenCompare` renders the "Compare To…"
-    // button in the definition tab's action bar (undefined hides it). `compareTab` set ⇒ the panel renders CompareWorkspace instead of
-    // InfoCardPanelBody's normal definition/examples/breakdown content — the Compare tab has no
-    // entry/breakdown/sub-tab of its own.
-    onOpenCompare?: (entry: VocabEntry) => void;
+    // Compare tab (docs/WORD_COMPARE_FEATURE.md). `compareTab` set ⇒ the panel renders
+    // CompareWorkspace instead of InfoCardPanelBody's normal definition/examples/breakdown
+    // content — the Compare tab has no entry/breakdown/sub-tab of its own.
+    //
+    // There is no `onOpenCompare` here any more: the panel no longer OPENS the Compare
+    // tab, it only hosts it. The entry point is `WordToolsRail` on the page above the
+    // card (artboards 19–25), because comparing is something you do with the WORD and
+    // the panel is information-only. The flp still owns the tab itself.
     compareTab?: CompareEipTab | null;
     onSetCompareSlot?: (slot: "A" | "B", entry: VocabEntry | null) => void;
     onCompareResult?: (comparison: string | null, comparisonParts?: LongDefinitionPart[] | null) => void;
@@ -67,7 +70,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     onSpeakSentence,
     speakingKey,
     onAddToLibrary,
-    onOpenCompare,
     compareTab,
     onSetCompareSlot,
     onCompareResult,
@@ -118,7 +120,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                         onSpeakSentence={onSpeakSentence}
                         speakingKey={speakingKey}
                         onAddToLibrary={onAddToLibrary}
-                        onOpenCompare={onOpenCompare}
                         selectedSenseIndex={selectedSenseIndex}
                         onSelectSense={onSelectSense}
                         scrollTouchAction="none"

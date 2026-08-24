@@ -5,7 +5,6 @@ import ValidateFlagButtons from "../../components/ValidateFlagButtons";
 import { buildSentencePronunciation } from "../../utils/sentencePronunciation";
 import { renderEnglishWithVocabUnderline } from "./exampleSentenceText";
 import { FC_FONT } from "./constants";
-import { SIZE, LEADING } from "../../theme/scale";
 import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
 import { useAuth } from "../../AuthContext";
@@ -67,7 +66,11 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
   return (
     <Box
       className="example-sentence-list"
-      sx={{ display: "flex", flexDirection: "column", gap: "12px" }}
+      // `.esl` — one card per sentence, on the page's own ground rather than in a
+      // bordered box: provenance is the only thing that draws a border here, so an
+      // approved sentence and a generated one can never be mistaken for each other
+      // (docs/DATA_VALIDATION_SYSTEM.md, artboard 24).
+      sx={{ display: "flex", flexDirection: "column", gap: "10px" }}
     >
       {sentences.map((sentence, index) => {
         // A sentence counts as human-reviewed only when the server attached a valid
@@ -87,12 +90,13 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
           }
           sx={{
             position: "relative",
-            // Approved sentences keep the quiet flashcard background; unapproved ones
-            // take the shared AI surface (its translucent orange tint replaces subtleBg
-            // so the tone matches the dictionary AI card exactly).
-            ...(isHumanApproved ? { background: fc.subtleBg } : aiGeneratedSurfaceSx),
-            borderRadius: "10px",
-            padding: "12px 14px",
+            // Approved sentences keep the quiet flashcard background AND a TRANSPARENT
+            // border of the same width as the AI one: without it the two states are
+            // different sizes and the list reflows as sentences are approved. Spread
+            // FIRST so `aiGeneratedSurfaceSx`'s own border wins for the AI case.
+            ...(isHumanApproved ? { background: fc.subtleBg, border: "1px solid transparent" } : aiGeneratedSurfaceSx),
+            borderRadius: "12px",
+            padding: "11px 13px 12px",
             display: "flex",
             flexDirection: "column",
             gap: "8px",
@@ -176,10 +180,10 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
           <Typography
             className="example-sentence-english"
             sx={{
-              fontSize: SIZE.caption,
+              fontSize: 11.5,
               color: fc.textSecondary,
               fontFamily: FC_FONT,
-              lineHeight: LEADING.normal,
+              lineHeight: 1.5,
             }}
           >
             {renderEnglishWithVocabUnderline(sentence.english, sentence.translatedVocab)}

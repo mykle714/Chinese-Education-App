@@ -62,24 +62,36 @@ export const Label: React.FC<LabelProps> = ({ children, color = COLORS.textFaint
 export interface SectionRuleProps {
     /** The overline text. Kept short — it is uppercased and widely tracked. */
     label: React.ReactNode;
+    /**
+     * An optional control the rule ENDS in, after the hairline — the design's `.sec2`
+     * with a `.trkseg` in it (artboard 18's Mastery section).
+     *
+     * Deliberately different from `SectionHeader`'s `action`: that one is a single
+     * Material Symbols glyph and the header has no hairline, this one is an arbitrary
+     * node sitting at the end of a rule. A control at the far end of a hairline reads
+     * as scoping what follows; a glyph on a bare header row reads as acting on it.
+     */
+    right?: React.ReactNode;
     className?: string;
     sx?: SxProps<Theme>;
 }
 
 /**
- * `.sec2` — a `Label` followed by a hairline filling the remaining width.
+ * `.sec2` — a `Label` followed by a hairline filling the remaining width, and
+ * optionally a control at the far end of it.
  *
  * The hairline is a flex-grown `<Box>` rather than a border on the container so it
  * starts AFTER the text, at whatever width the text happens to be. A border-bottom
  * would run under the label and read as an underline.
  */
-export const SectionRule: React.FC<SectionRuleProps> = ({ label, className, sx }) => (
+export const SectionRule: React.FC<SectionRuleProps> = ({ label, right, className, sx }) => (
     <Box
         className={className ? `section-rule ${className}` : "section-rule"}
         sx={[{ display: "flex", alignItems: "center", gap: "10px", padding: "19px 22px 0" }, ...(Array.isArray(sx) ? sx : [sx])]}
     >
         <Label sx={{ whiteSpace: "nowrap" }}>{label}</Label>
         <Box className="section-rule__line" sx={{ flex: 1, height: "1px", backgroundColor: COLORS.rowBorder }} />
+        {right}
     </Box>
 );
 

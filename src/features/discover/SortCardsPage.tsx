@@ -1516,7 +1516,6 @@ const SortCardsPage: React.FC = () => {
                                 // differently-shaped way to do it inside the panel would
                                 // compete with it. (Drilled-in words can still be added from
                                 // the flp, which is where that affordance lives.)
-                                onOpenCompare={eip.openCompareTab}
                                 selectedSenseIndex={active?.kind === "entry" ? active.selectedSenseIndex : 0}
                                 // A pick in the eip header mirrors the flp/cdp pickers: the tab
                                 // records it (so the panel re-renders at once) and the chosen

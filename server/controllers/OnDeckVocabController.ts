@@ -412,7 +412,7 @@ export class OnDeckVocabController {
 
   /**
    * Build the Word Search game grid.
-   * GET /api/onDeck/wordSearchGrid?Unfamiliar=2&Target=10&Comfortable=6&Mastered=2
+   * GET /api/onDeck/wordSearchGrid?Unfamiliar=2&Target=6&Comfortable=3&Mastered=1
    * Same requested distribution + fallback semantics as the bubble-match pool,
    * plus a substring de-dup pass and snaking grid generation. Returns
    * { grid, words, rows, cols, total, available, sufficient, reason? }.
@@ -431,10 +431,16 @@ export class OnDeckVocabController {
         }
       }
       if (Object.keys(distribution).length === 0) {
+        // Mirrors word-search/constants.ts's GAME_DISTRIBUTION (2/6/3/1 = 12), NOT
+        // bubble-match's 2/10/6/2 — this is a defensive fallback for a query missing
+        // all four category params; the app always sends them (GRID_QUERY), so this
+        // only fires on a manual/raw API call. (Was already wrong before 2026-08-24 —
+        // it matched bubble-match's fallback, not word-search's own, even when this
+        // board was 10 words.)
         distribution.Unfamiliar = 2;
-        distribution.Target = 10;
-        distribution.Comfortable = 6;
-        distribution.Mastered = 2;
+        distribution.Target = 6;
+        distribution.Comfortable = 3;
+        distribution.Mastered = 1;
       }
 
       const language = await getUserLanguage(userId);
@@ -494,7 +500,7 @@ export class OnDeckVocabController {
         // grid would run the identical query. CONTINUE rather than break: the next
         // iteration escalates the multiplier, and it is the ESCALATION that unblocks
         // a learner whose sorted deck is already past the flat baseline but cannot
-        // yield ten distinct-charactered words (`ensureBaseline` is a no-op until the
+        // yield twelve distinct-charactered words (`ensureBaseline` is a no-op until the
         // escalated target exceeds their sorted count). Breaking here left that
         // learner with an empty grid.
         //

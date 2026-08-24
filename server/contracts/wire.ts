@@ -823,15 +823,15 @@ export type CardBaselineSurface =
  * `src/features/flashcards/FlashcardsDecksPage.tsx` (MIN_LIBRARY_CARDS), where they
  * could drift apart from the distributions the server actually served.
  *
- * Word Search is 10 rather than 20 because its grid holds ten words; it additionally
- * needs those words to have mutually distinct characters, which a flat count cannot
- * express — see PROVISION_RETRY_FACTOR.
+ * Word Search is 12 rather than 20 because its grid holds twelve words (raised from
+ * ten on 2026-08-23); it additionally needs those words to have mutually distinct
+ * characters, which a flat count cannot express — see PROVISION_RETRY_FACTOR.
  */
 export const CARD_BASELINES: Record<CardBaselineSurface, number> = {
   'bubble-match': 20,
   'match-speed': 20,
   'speed-reading': 20,
-  'word-search': 10,
+  'word-search': 12,
   flp: 20,
 };
 
@@ -1521,11 +1521,14 @@ export const ARENA_GEOCELL_LENGTH = 5;
  *   * the CONTESTED CEILING per round — `contestedHit` × this count, so 1200 at 12
  *     (the § 5.3/5.4 prose still quotes the ceiling in words; the specs below carry
  *     only the per-event values, which is why they need no edit here);
- *   * WORD SEARCH's board, whose grid is built for `TOTAL_WORDS = 10`
- *     (src/games/word-search/constants.ts). § 5.2 requires every contested word to
- *     appear in every round, so a challenge-mode grid has to grow to this count —
- *     see docs/STUDY_CHALLENGE.md § 5.2. The round runner is not built yet, so this
- *     is a spec obligation on that build, not a live defect.
+ *   * WORD SEARCH's board — `TOTAL_WORDS` (src/games/word-search/constants.ts) was
+ *     raised from 10 to 12 on 2026-08-23, so it now happens to equal
+ *     `CHALLENGE_WORD_COUNT` (coincidental — nothing derives one from the other).
+ *     § 5.2 still requires every contested word to appear in every round, and a
+ *     challenge-mode grid is still a different SIZE than the ordinary board (8×8
+ *     vs 9×6) because it was tuned for looser density — see
+ *     docs/STUDY_CHALLENGE.md § 5.2. The round runner is not built yet, so this is
+ *     a spec obligation on that build, not a live defect.
  */
 export const CHALLENGE_WORD_COUNT = 12;
 

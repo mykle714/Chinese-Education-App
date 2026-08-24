@@ -227,7 +227,11 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   navigates away with the sheet open. See
   [LEAF_NODE_PAGES.md § Transient suppression](./LEAF_NODE_PAGES.md).
 - **Pinyin display follows the flp's saved preference** (`useFlashcardLearnSettings`'s
-  `showPinyin` / `showPinyinColor`). scp exposes no toggle of its own — the panel is a
+  `showPinyin` / `showPinyinColor`) — and that stays true: this key is the **flp's**,
+  read by the reference surfaces (scp, cdp, dictionary cdp). Games are moving OFF it
+  onto their own per-game settings, which is what stops a game from editing this panel
+  ([GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md)).
+  scp exposes no toggle of its own — the panel is a
   read-only detour, not a second settings surface.
 
 ---

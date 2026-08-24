@@ -5,13 +5,14 @@ import { Search, Clear } from "@mui/icons-material";
 import { styled } from "@mui/material/styles";
 import { Shelf, ShelfRow, Spine, AddSpine, spineHeight } from "../../components/shelf";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
+import LibraryDuo from "./LibraryDuo";
 import CollectionSortControl from "./CollectionSortControl";
 import type { VocabEntry } from "../../types";
 import type { DecksPanelState } from "./useDecksPanel";
 import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
 import { EDGE_FADE_MASK_NO_TOP } from "../../components/MobileTabScreen";
 import type { SheetPanelBodyHandle } from "./FlashcardsLearnPage/SheetPanel";
-import { collectionPath, deckTileColors } from "./collectionRef";
+import { deckTileColors } from "./collectionRef";
 import { collectionGlyph } from "./collectionGlyph";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -252,36 +253,32 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                     WebkitMaskImage: EDGE_FADE_MASK_NO_TOP,
                 }}
             >
-                {/* ── Collections ── this LENS's two built-in sets: what is still to be
+                {/* ── YOUR LIBRARY ── this LENS's two constants: what is still to be
                     learned in this bar, and what is finished in it. (All Cards has no
-                    tile — its grid is the Cards section at the bottom.) Every tile is
-                    the same object as a user's deck below; only what defines the set
-                    differs. */}
+                    tile — its grid is the Cards section at the bottom.)
+
+                    These two are the one place the sheet does NOT use a spine, and the
+                    reason is in LibraryDuo's header: their SIZE is what the learner came
+                    to read, and a 74px spine cannot print a figure worth reading. Every
+                    other section below is spines, unchanged (D9). */}
                 <Box
-                    className="decks-panel-body__collections-header"
+                    className="decks-panel-body__library-header"
                     {...(headerDragBind?.() ?? {})}
-                    sx={{ width: "100%", px: 3.5, pt: 0.5, pb: 0.5 }}
+                    sx={{ width: "100%", px: 3.5, pt: 0.5, pb: 0.5, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}
                 >
-                    <SectionLabel className="decks-panel-body__collections-label">Collections</SectionLabel>
+                    <SectionLabel className="decks-panel-body__library-label">Your library</SectionLabel>
+                    <SectionLabel className="decks-panel-body__library-note" sx={{ color: COLORS.textFaint }}>
+                        the two constants
+                    </SectionLabel>
                 </Box>
 
-                <PanelShelf><ShelfRow className="decks-panel-body__collections-row">
-                    {collections.map((entry, index) => (
-                        <Spine
-                            key={entry.key}
-                            className={`decks-panel-body__collection-spine decks-panel-body__collection-spine--${entry.key}`}
-                            label={entry.label}
-                            count={tileCount(entry)}
-                            glyph={collectionGlyph(entry.ref)}
-                            variant={isSheet ? "base" : spineHeight(tileCount(entry))}
-                            height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
-                            color={entry.colors.main}
-                            animationDelay={index * 70}
-                            onClick={() => onOpenPath(collectionPath(entry.ref))}
-                        />
-                    ))}
-                </ShelfRow></PanelShelf>
-
+                <LibraryDuo
+                    className="decks-panel-body__library-duo"
+                    entries={collections}
+                    count={tileCount}
+                    onOpenPath={onOpenPath}
+                    headerDragBind={headerDragBind}
+                />
 
                 {/* ── Challenges ── (docs/STUDY_CHALLENGE.md § 4). Placed immediately
                     BEFORE the user's own Decks so generated sets sit above authored

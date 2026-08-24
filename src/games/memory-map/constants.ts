@@ -1,4 +1,5 @@
 import type { MarkType } from "../../types";
+import type { RampHue } from "../../theme/colors";
 
 /**
  * Memory Map constants (docs/MEMORY_MAP_GAME.md).
@@ -93,3 +94,13 @@ export const MAX_ZOOM = 3;
 
 /** Padding, in world units, left around the map when fitting it to the screen. */
 export const FIT_PADDING = 2;
+
+/**
+ * THE GAME'S HUE — its hub row's colour AND the accent ground its own screen is
+ * flooded with (docs/SHELF_REDESIGN.md § A6b).
+ *
+ * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
+ * the registry reads this, and the page passes it to `gameSurfaceSx` /
+ * `GameSurfaceProvider`. Tapping a org row must open a org screen.
+ */
+export const GAME_HUE: RampHue = "org";

@@ -402,7 +402,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                         }}
                     >
                         {/* The fill carries the SAME per-type breakdown as the cdp bar
-                            (MasteryProgressBar's BarTrack): the core bar splits its
+                            (MasteryWindow's cells): the core bar splits its
                             length between recognition blue and production green in
                             proportion to their positive counts, so a card that is
                             strong one way and weak the other reads that way at

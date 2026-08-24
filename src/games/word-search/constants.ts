@@ -1,17 +1,19 @@
-import { COLORS } from "../../theme/colors";
+import { COLORS, type RampHue } from "../../theme/colors";
 import type { CPCDSize } from "../../components/ForeignText";
 import type { MarkType } from "../../types";
 import type { Medal } from "./types";
-// Word Search uses HALF of Bubble Match's mix, keeping the same category
-// proportions: 1 Unfamiliar + 5 Target + 3 Comfortable + 1 Mastered = 10.
-// Derived from the bubble-match distribution so the two stay in step if it moves.
-import { GAME_DISTRIBUTION as BUBBLE_DISTRIBUTION } from "../bubble-match/constants";
+// Word Search's own mix: 2 Unfamiliar + 6 Target + 3 Comfortable + 1 Mastered = 12.
+// Was HALF of Bubble Match's 2/10/6/2 mix (1/5/3/1 = 10) until this board grew to
+// 12 words; the extra 2 went to Unfamiliar and Target rather than a clean re-scale,
+// so this is now a literal distribution rather than derived from bubble-match's.
+export const GAME_DISTRIBUTION: Record<string, number> = {
+    Unfamiliar: 2,
+    Target: 6,
+    Comfortable: 3,
+    Mastered: 1,
+};
 
-export const GAME_DISTRIBUTION: Record<string, number> = Object.fromEntries(
-    Object.entries(BUBBLE_DISTRIBUTION).map(([cat, n]) => [cat, Math.max(1, Math.round(n / 2))])
-);
-
-/** Total target words in a board (sum of the distribution) = 10. */
+/** Total target words in a board (sum of the distribution) = 12. */
 export const TOTAL_WORDS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
 
 /** This game's key in the shared `wins` table (see useGameWins / migration 78).
@@ -109,7 +111,7 @@ export function modeConfigFor(mode: unknown): WordSearchModeConfig | null {
     return MODE_CONFIGS.find((m) => m.mode === mode) ?? null;
 }
 
-/** `?Unfamiliar=2&Target=10&...` query built from the distribution. */
+/** `?Unfamiliar=2&Target=6&...` query built from the distribution. */
 export const GRID_QUERY = Object.entries(GAME_DISTRIBUTION)
     .map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`)
     .join("&");
@@ -162,7 +164,7 @@ export const HINT_REMAINDER_MARK = "—";
 export const HINT_LETTER_BLANK = "_";
 
 /**
- * cpcd size for each grid cell. `sm` (32px column) for now; 10 rows with pinyin
+ * cpcd size for each grid cell. `sm` (32px column) for now; 9 rows with pinyin
  * may crowd the height on a ~402px frame — accepted for v1, revisit a compact
  * variant later (see docs/WORD_SEARCH_GAME.md §3).
  */
@@ -223,3 +225,13 @@ export function medalForTime(seconds: number): { medal: Medal; emoji: string } {
 export function modeLabel(mode: WordSearchMode): string {
     return MODE_CONFIGS.find((m) => m.mode === mode)?.label ?? mode;
 }
+
+/**
+ * THE GAME'S HUE — its hub row's colour AND the accent ground its own screen is
+ * flooded with (docs/SHELF_REDESIGN.md § A6b).
+ *
+ * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
+ * the registry reads this, and the page passes it to `gameSurfaceSx` /
+ * `GameSurfaceProvider`. Tapping a pur row must open a pur screen.
+ */
+export const GAME_HUE: RampHue = "pur";

@@ -194,12 +194,40 @@ minute-points migration claimed 130)
    node server/scripts/backfill/chinese/backfill-dictionary-breakdown.js
    ```
 
-### Frontend Integration (Future):
-The breakdown data is now available to the client. To display it:
-- Access `currentEntry.breakdown` in FlashcardsLearnPage
-- Replace mock `breakdownItems` data with real breakdown
-- Handle null breakdown gracefully (for non-Chinese cards)
-- Map breakdown object to BreakdownLineItem components
+### Frontend Integration — DONE
+
+`src/utils/breakdownUtils.ts` → `getBreakdownItems(entry)` turns the `breakdown` map into
+one `{ character, pinyin, definition }` per character **in the word's own order**, zipping
+each glyph with its syllable from `entry.pronunciation` and falling back to the map's own
+`pronunciation`. Characters missing from the map are dropped, so a null or partial
+breakdown degrades to fewer rows rather than to placeholders.
+
+**One row component, both surfaces: `src/features/flashcards/BreakdownRow.tsx`** (the
+design's `.bkr`, 2026-08-24). Rendered by the eip's breakdown tab
+(`FlashcardsLearnPage/InfoCardTabContent.tsx`) and by the cdp's Character Breakdown box
+(`VocabCardDetailBody.tsx`), which previously carried two copies of the same layout.
+
+It replaced a wrapping grid of 1:1 block buttons (`InfoCardBlockButton`, deleted), for two
+reasons worth keeping:
+
+- **A square sized to the character clips the GLOSS**, which is the part being read.
+  "to pass; to cross; to go over" does not fit 116px at a legible size.
+- **A grid says "peers to choose between".** A breakdown is not a menu — it is the word
+  taken apart in ORDER, and order is what a column of rows shows and a wrapping grid
+  destroys the moment it wraps.
+
+A row is glyph column (fixed 36px, so every gloss starts on the same margin) → the reading
+as tone-coloured TEXT (`getToneColor` per syllable, a literal palette — see
+SHELF_REDESIGN.md D2b) → the gloss → a chevron. Tapping one opens that character's own
+entry; inside the eip the **word trail** at the top of the panel is how you come back.
+
+⚠️ Artboard 25 also draws a titled paragraph under the rows, *"How the parts make the
+word"*. The det tables carry `breakdownElaboration` for exactly that, but it is **not on
+`server/contracts/wire.ts`** and no read path selects it, so the paragraph is omitted
+rather than faked. Tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 10.
+
+**Single-character words have no breakdown at all** and get a "Used In" list instead
+(`UsedInPaginatedList`) — the same slot, a different question.
 
 ## Testing
 - Create a new Chinese vocab entry - should have breakdown

@@ -102,6 +102,7 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/night-market/user/:userId": lazy(() => import("../features/nightmarket/NightMarketVisitPage")),
   "/tester-dashboard": lazy(() => import("../pages/TesterDashboardPage")),
   "/settings": lazy(() => import("../pages/SettingsPage")),
+  "/settings/account": lazy(() => import("../pages/AccountSecurityPage")),
   "/flashcards/learn": lazy(() => import("../features/flashcards/FlashcardsLearnPage")),
   "/night-market/template-editor": lazy(() => import("../features/nightmarket/TemplateEditorPage")),
   "/night-market/template-sandbox": lazy(() => import("../features/nightmarket/TemplateSandboxPage")),

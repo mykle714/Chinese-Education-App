@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Box, Button, IconButton, Typography } from "@mui/material";
-import RestartAltRoundedIcon from "@mui/icons-material/RestartAltRounded";
-import LeafPage from "../../components/LeafPage";
+import { Box, Button, Typography } from "@mui/material";
+import { GameLeafPage } from "../shared/GameSurface";
+import { ON_ACCENT_INK } from "../shared/gameSurface";
+// The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
+import { GAME_HUE } from "./constants";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import GameEndPopup from "../runtime/GameEndPopup";
 import ForeignText from "../../components/ForeignText";
@@ -12,6 +14,7 @@ import MemoryMapPrompt from "./MemoryMapPrompt";
 import { GameFrame } from "../shared/GameFrame";
 import MemoryMapRestartDialog from "./MemoryMapRestartDialog";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
+import { HeaderIconButton, HeaderMetaLabel } from "../../components/PageHeader";
 import { useMemoryMapRun } from "./useMemoryMapRun";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -190,18 +193,14 @@ const MemoryMapPage: React.FC = () => {
      */
     const header = (
         <Box className="memory-map-header-actions" sx={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {/* `HeaderMetaLabel`, not a hand-rolled Typography: this is the header's
+                mono metadata slot (A2b), and being the shared component is also what
+                lets the accent ground repaint it white (§ A6b). It was the last game
+                header still styling its own text. */}
             {playing && (
-                <Typography
-                    className="memory-map-header-actions__progress"
-                    sx={{
-                        fontFamily: FONTS.sans,
-                        fontSize: SIZE.caption,
-                        fontWeight: WEIGHT.semibold,
-                        color: COLORS.textSecondary,
-                    }}
-                >
+                <HeaderMetaLabel className="memory-map-header-actions__progress">
                     {run.answered}/{run.total}
-                </Typography>
+                </HeaderMetaLabel>
             )}
 
             {/* A direct Restart button rather than a settings gear: Restart was the
@@ -211,14 +210,12 @@ const MemoryMapPage: React.FC = () => {
                 it is what keeps a long run one deliberate step from being destroyed,
                 which is the job the gear was doing. */}
             {playing && (
-                <IconButton
+                <HeaderIconButton
                     className="memory-map-header-actions__restart"
-                    size="small"
+                    icon="restart_alt"
                     onClick={() => setRestartOpen(true)}
-                    aria-label="Restart Memory Map"
-                >
-                    <RestartAltRoundedIcon fontSize="small" />
-                </IconButton>
+                    label="Restart Memory Map"
+                />
             )}
 
             {/* RIGHTMOST, and it stays that way: the flame sits in the same corner slot
@@ -243,7 +240,8 @@ const MemoryMapPage: React.FC = () => {
         run.answered > 0 ? Math.round((run.tally.green / run.answered) * 100) : 0;
 
     return (
-        <LeafPage
+        <GameLeafPage
+            hue={GAME_HUE}
             className="memory-map-page"
             title="Memory Map"
             onBack={() => navigate("/games")}
@@ -258,7 +256,7 @@ const MemoryMapPage: React.FC = () => {
 
             {run.phase === "error" && (
                 <Box className="memory-map-page__error" sx={centeredSx}>
-                    <Typography sx={{ fontSize: SIZE.body, color: COLORS.textSecondary, textAlign: "center" }}>
+                    <Typography sx={{ fontSize: SIZE.body, textAlign: "center" }}>
                         Your map couldn&apos;t be loaded. Check your connection and try again.
                     </Typography>
                 </Box>
@@ -273,7 +271,7 @@ const MemoryMapPage: React.FC = () => {
                         Your map is empty
                     </Typography>
                     <Typography
-                        sx={{ fontSize: SIZE.body, color: COLORS.textSecondary, mb: 3, textAlign: "center" }}
+                        sx={{ fontSize: SIZE.body, mb: 3, textAlign: "center" }}
                     >
                         Sort some cards and they&apos;ll appear here.
                     </Typography>
@@ -439,11 +437,18 @@ const MemoryMapPage: React.FC = () => {
                 onRestart={run.restart}
                 answered={run.answered}
             />
-        </LeafPage>
+        </GameLeafPage>
     );
 };
 
-/** Shared layout for the three non-playing states. */
+/**
+ * Shared layout for the three non-playing states.
+ *
+ * `color` is the accent-ground rule the other five games get from `GameCentered`
+ * (§ A6b): these three blocks are drawn straight onto the game's saturated ground,
+ * where the ink ramp is unreadable. Children that must stay dimmer than the rest set
+ * their own colour — see the error copy, which deliberately does not.
+ */
 const centeredSx = {
     flex: 1,
     display: "flex",
@@ -451,6 +456,7 @@ const centeredSx = {
     alignItems: "center",
     justifyContent: "center",
     padding: "24px",
+    color: ON_ACCENT_INK,
 } as const;
 
 export default MemoryMapPage;

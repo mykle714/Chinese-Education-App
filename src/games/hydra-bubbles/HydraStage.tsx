@@ -65,53 +65,57 @@ import type { ColorBuffers } from "./useColorBuffers";
  *      could be mistaken for the ramp, separated on value, temperature and ring weight.
  *      It worked, and it was replaced anyway — see below.
  *
- * ═══ THE LADDER IS NOW TWO SHADES OF ONE BLUE (2026-08-22) ═══
+ *   4. TWO SHADES OF ONE BLUE (2026-08-22 → 2026-08-24). drain #79B3EE / bloom
+ *      `COLORS.blu`. The best-separated ladder this game has had (1.80:1 between the
+ *      tiers, against charcoal/gold's 1.22:1) and the only monotonic one — value was
+ *      the whole message, darker meant harder. Replaced by request; see YELLOW_DRAIN
+ *      for the full trade.
+ *
+ * ═══ THE LADDER IS NOW YELLOW / BLUE (2026-08-24) ═══
  *
  *              body                        char ink   read
  *   English    #E7E7EA  COLORS.grey        dark       inert — carries no payout info
  *   bloom      #D2EBFF  COLORS.blu         dark       net +1, the known words
- *   drain      #79B3EE  oklch(75% .105)    dark       net −1, the hard words
+ *   drain      #F5E7B4  COLORS.yel         dark       net −1, the hard words
  *
- * ALL THREE TAKE BLACK TEXT. That is a constraint on the ladder, not an accident: the
- * two tiers are the same object at two values, and a rung whose glyphs invert to white
- * stops reading as "the same thing, darker" and starts reading as "a different thing".
+ * ALL THREE TAKE BLACK TEXT, and that is still the constraint on any replacement: the
+ * two tiers are one object at two settings, and a rung whose glyphs invert to white
+ * stops reading as "the same thing" and starts reading as "a different thing".
  *
- * ONE CHANNEL, AND IT IS VALUE. Hue no longer encodes anything: both tiers are hue
- * 250, so the rule a player learns is "blue means Hydra bubble, DARK means this one
- * costs you". That is one rule instead of two arbitrary hues to memorize, and it is
- * monotonic — darker is harder — which the charcoal/gold pair could never be, being
- * two unrelated hues at nearly the same lightness.
- *
- * The separation is also far better than anything the two-hue ladders managed:
+ * THE CHANNEL IS HUE, and the three bodies are all at the ramp's 93–94% tier, so the
+ * separations are:
  *
  *                      drain vs bloom   drain vs scenery   bloom vs scenery
  *   charcoal/gold      1.22:1           1.33:1             1.09:1
  *   blue ladder        1.80:1           1.79:1             1.00:1
+ *   yellow/blue        1.16:1           1.16:1             1.00:1
  *
- * (A first cut put drain on `bluA` #1F6CB0 and scored 4.46:1 — two and a half times
- * better. It was given up to keep black text on both rungs; see BLUE_DARK.)
+ * ⚠️ Read that table honestly: on VALUE this is the weakest ladder of the three, and a
+ * colour-blind player has less to go on than they did with the blue pair. What carries it
+ * is hue distance — hue 92 against hue 250 is the widest warm/cool split in the ramp,
+ * which is a strong read for most players and no read at all for some. The lever if it
+ * needs fixing is documented on YELLOW_DRAIN, and it is bloom, not drain.
  *
  * ⚠️ BLOOM AND THE SCENERY GREY ARE THE SAME VALUE (1.00:1) — `blu` and `grey` are both
  * the ramp's 93% tier, so bloom-vs-English is carried by chroma alone (a blue tint vs a
- * neutral). That is the one weak read left, and it is the same weakness gold had (1.09:1).
- * ⚠️ If the tiers need more separation, the room is in BLOOM, not drain: bloom can go up
- * to `bluTint` #EEF8FF (tiers 2.05:1, and it also lifts bloom off the grey to 1.15:1),
- * at the cost of a near-white bubble on the white `.play` panel.
- * It is tolerable because bloom is the bubble you WANT to clear: mistaking scenery for
- * bloom costs a wasted look, not a wrong match. Do not fix it by lightening bloom — that
- * closes the drain gap. Fix it by tinting the English bubble further off-hue if it matters.
+ * neutral). It is tolerable because bloom is the bubble you WANT to clear: mistaking
+ * scenery for bloom costs a wasted look, not a wrong match.
+ * ⚠️ With a yellow drain, lightening bloom to `bluTint` #EEF8FF no longer closes any gap
+ * — drain is no longer on hue 250 — so it is now a free move that helps BOTH weak reads
+ * at once (bloom off the grey, and a value gap back into the ladder). It costs a
+ * near-white bubble on the white `.play` panel. That is the one lever to reach for first.
  *
- * ⚠️ AND THIS RE-OPENS THE MASTERY COLLISION ON PURPOSE. `COLORS.blu` is EXACTLY
+ * ⚠️ THE MASTERY COLLISION IS NOW HALF WHAT IT WAS. `COLORS.blu` is EXACTLY
  * `CATEGORY_COLORS.Mastered`, and bloom is Mastered + Comfortable — so the pastel is
  * half-true rather than false, which is the best any single token can do for a union.
- * Drain is the harder claim: it wears the SATURATED end of the hue the app trains as
- * "mastered" while containing Unfamiliar + Target. The defence is that the two tiers are
- * one hue, so nothing here asks to be decoded as a band — value is the whole message.
- * If a learner is observed reading a dark blue bubble as "mastered", the fix is to move
- * the WHOLE ladder to a hue with no band (teal, hue 195, `COLORS.tea` / `COLORS.teaA`
- * — same structure, one token swap), NOT to split the tiers across two hues again.
+ * The harder claim was DRAIN's, which used to wear the saturated end of the "mastered"
+ * hue while containing Unfamiliar + Target; the yellow retires that. Drain's own risk is
+ * different and milder: `yel` (hue 92) sits near `org` (hue 70), which IS Target's fill,
+ * and Target is genuinely half of drain — so the nearest misreading is half-true too.
  *
- * ⚠️ THE COST IS TONE-3 PINYIN, AND IT IS THE REAL CONSTRAINT ON THIS WHOLE FILE.
+ * ⚠️ TONE-3 PINYIN WAS THE REAL CONSTRAINT ON THIS WHOLE FILE, AND THE YELLOW DRAIN
+ * RETIRED IT for the drain rung. The measurements below are kept because they still
+ * govern BLOOM (hue 250) and any future move back onto a blue axis.
  * A word bubble renders tone-colored pinyin (`TONE_COLORS`), tone 3 is #779BE7 — a light
  * blue at roughly oklch 68% — and its contrast against a hue-250 body is worst exactly in
  * the MIDDLE of the lightness range:
@@ -134,26 +138,43 @@ import type { ColorBuffers } from "./useColorBuffers";
  * lightness range. Teal (195) does not help: tone 2 #05C793 sits next to it.
  */
 /**
- * The two rungs. Both are hue 250 — the ramp's blue — at two lightnesses.
+ * The two rungs: `COLORS.yel` for drain, `COLORS.blu` for bloom.
  *
- * `BLUE_DARK` is NOT a ramp token, and that is deliberate. The obvious choice was
- * `COLORS.bluA` (#1F6CB0, oklch 52%), which it was for one revision, and it separates
- * beautifully — but it is dark enough to need WHITE glyphs, and a bubble whose text
- * inverts reads as a different KIND of object rather than a darker one. A ladder whose
- * rungs are the same thing at two values has to keep the same ink on both.
+ * ═══ THE DARK BLUE IS GONE (2026-08-24) ═══
  *
- * So the dark rung is authored on the ramp's own axis at the lightness where black text
- * is comfortable — oklch(75% 0.105 250) — sitting between `blu` (93%) and `bluA` (52%).
- * Authored in oklch, shipped as hex, per docs/SHELF_REDESIGN.md § A1.
+ * Drain used to be `BLUE_DARK` #79B3EE — oklch(75% 0.105 250), a NON-token authored
+ * between `blu` (93%) and `bluA` (52%) so that a "two shades of one hue" ladder could
+ * keep black text on both rungs. It was replaced with a light yellow by request, and the
+ * ladder is two HUES again rather than two values. What that trades, plainly:
  *
- *   black text (#333, the cpcd glyph)   5.71:1   — comfortably AA at body-text size
- *   luminance 0.425                              — well clear of inkOnFill's 0.26 pivot,
- *                                                  so it takes dark ink with margin
- *   vs bloom                            1.80:1
- *   vs the English grey                 1.79:1
+ *   LOST — the monotonic value read ("darker is harder"). All three bodies now sit at the
+ *          ramp's 93–94% tier, so drain-vs-bloom and drain-vs-scenery are carried by hue
+ *          and chroma alone. This is the same weakness the charcoal/gold pair had, and it
+ *          is weakest for a colour-blind player. The room to fix it is in BLOOM, not
+ *          drain: `COLORS.bluTint` #EEF8FF opens a value gap against both the yellow and
+ *          the grey, at the cost of a near-white bubble on the white `.play` panel. That
+ *          is a one-token swap on `YELLOW_LIGHT` below.
+ *   WON  — tone-3 pinyin, which was "the real constraint on this whole file". Tone 3 is
+ *          #779BE7, a light BLUE, and it was nearly invisible on a hue-250 body (1.25:1
+ *          on the old drain). On a hue-92 yellow it is separated by hue instead of
+ *          fighting for value, so the drain bubble's pinyin is legible for the first time.
+ *   WON  — the mastery collision on the harder rung. `COLORS.blu` IS
+ *          `CATEGORY_COLORS.Mastered`, so the old drain wore the saturated end of the hue
+ *          the app trains as "mastered" while containing Unfamiliar + Target. Drain no
+ *          longer makes that claim; bloom's half-true one is unchanged.
+ *
+ * `COLORS.yel` and not `COLORS.org`: org (hue 70) IS `CATEGORY_COLORS.Target`, and drain
+ * is Unfamiliar + Target — a bubble wearing Target's exact fill would read as a band
+ * label rather than as a tier. `yel` exists in the ramp precisely to be a gold that is
+ * not Target's orange (see its comment in theme/colors.ts).
+ *
+ * BOTH RUNGS STILL TAKE BLACK TEXT, which remains the constraint on any replacement: the
+ * two tiers must be one object at two settings, and a rung whose glyphs invert to white
+ * reads as a different KIND of object. `inkOnFill` derives that automatically, so a
+ * future swap cannot strand dark text on a dark body.
  */
-const BLUE_DARK = "#79B3EE";     // oklch(75% 0.105 250) — drain: harder words, higher cost
-const BLUE_LIGHT = COLORS.blu;   // #D2EBFF — bloom: known words, pays out
+const YELLOW_DRAIN = COLORS.yel;  // #F5E7B4 — drain: harder words, higher cost
+const BLUE_LIGHT = COLORS.blu;    // #D2EBFF — bloom: known words, pays out
 
 /**
  * Bubble fills — a FLAT body, border color == body color.
@@ -169,7 +190,7 @@ const BLUE_LIGHT = COLORS.blu;   // #D2EBFF — bloom: known words, pays out
  * than the ring ever carried.)
  */
 const FILL_BY_COLOR: Record<HydraColor, BubbleFill> = {
-    drain: { bg: BLUE_DARK, border: BLUE_DARK },
+    drain: { bg: YELLOW_DRAIN, border: YELLOW_DRAIN },
     bloom: { bg: BLUE_LIGHT, border: BLUE_LIGHT },
 };
 
@@ -877,16 +898,20 @@ const HydraStage: React.FC<HydraStageProps> = ({
             {squeeze ? (
                 <GameHudLabel
                     className="hydra-stage__squeeze"
-                    // The label names the DRAIN tier, so it takes exactly the color
-                    // the drain bubbles on screen are wearing (`BLUE_DARK`) rather than
-                    // any mastery token — the warning and the bubbles it is about must
-                    // be the same blue, or the player has two things to connect.
+                    // The label names the DRAIN tier, so it takes drain's HUE — but its
+                    // INK (`COLORS.yelA`), not its body fill. The bubbles wear the 94%
+                    // pastel; a pastel is a fill that things sit on, and as text on the
+                    // HUD's own tint it would be a smudge (the palette states this rule
+                    // for every pastel in the app). Same hue, right tier: the warning and
+                    // the bubbles it is about still read as one thing, and this one is
+                    // legible. It was `BLUE_DARK` when drain was a mid-value blue, which
+                    // was the one lightness where a body colour could double as ink.
                     //
                     // The copy says what the board can now DO, not which tier is
                     // spawning. "drain only" is the internal name (types.ts) and means
                     // nothing to a player; "shrink only" is the same fact stated as the
                     // consequence they are about to live with.
-                    color={BLUE_DARK}
+                    color={COLORS.yelA}
                 >
                     shrink only
                 </GameHudLabel>

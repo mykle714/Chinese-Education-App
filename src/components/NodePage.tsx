@@ -44,6 +44,20 @@ interface NodePageProps {
     scrollable?: boolean;
     // Drop the soft fade at the TOP edge (keeps the bottom fade). See MobileTabScreen.
     topFade?: boolean;
+    /**
+     * Frame-level furniture rendered as a SIBLING of the scroll area, not inside it:
+     * a pull-up `SheetPanel`, a peek lip, a floating overlay.
+     *
+     * It has to be here rather than in `children` because such a panel is
+     * `position: absolute; bottom: 0` and sizes itself from its offset parent's height
+     * — put it in the scroll area and it lands inside the scrolled content, scrolls
+     * away with it, and measures the content's height instead of the frame's. The
+     * `Surface` below is the positioned box that fills the frame, so this slot is the
+     * only place on a NodePage where that geometry is correct.
+     *
+     * The floating footer is rendered above both, at frame level by the app shell.
+     */
+    overlay?: ReactNode;
     children: ReactNode;
 }
 
@@ -57,6 +71,7 @@ const NodePage: React.FC<NodePageProps> = ({
     contentClassName,
     scrollable,
     topFade,
+    overlay,
     children,
 }) => {
     const { surfaceRef, style, exit } = usePageSlide({ axis: "x" });
@@ -83,6 +98,7 @@ const NodePage: React.FC<NodePageProps> = ({
             >
                 {children}
             </MobileTabScreen>
+            {overlay}
         </Surface>
     );
 };

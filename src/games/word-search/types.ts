@@ -49,7 +49,7 @@ export interface PlacedWord {
 /**
  * A det headword whose entire character sequence is drawn exclusively from
  * characters that appear somewhere on the grid — NOT necessarily one of the
- * 10 targets, and not guaranteed to trace an adjacent-cell path (the client
+ * 12 targets, and not guaranteed to trace an adjacent-cell path (the client
  * still checks the actual dragged path). Used to recognize a "bonus" find:
  * a real word the player traced that isn't a target (see doc §4).
  */

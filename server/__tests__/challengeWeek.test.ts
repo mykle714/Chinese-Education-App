@@ -8,7 +8,9 @@ import {
   isAcceptWindowOpen,
   isTestWindowOpen,
   latestTestWindowClose,
+  localChallengeWeekIndex,
   testWindowClose,
+  weekOpen,
   testWindowOpen,
 } from '../shared/challengeWeek.js';
 
@@ -47,6 +49,77 @@ function localOf(instant: Date, tz: string) {
 }
 
 const ZONES = ['UTC', 'Asia/Shanghai', 'America/New_York', 'Europe/London', 'Pacific/Kiritimati'];
+
+describe('localChallengeWeekIndex — when a week OPENS for a player', () => {
+  it('opens the week at 04:00 on that player\'s own Monday, in every zone', () => {
+    for (const tz of ZONES) {
+      const open = weekOpen(32, tz);
+      expect(localOf(open, tz).label).toBe('Mon 04:00');
+      // One millisecond before, the player is still in the previous week.
+      expect(localChallengeWeekIndex(tz, new Date(open.getTime() - 1))).toBe(31);
+      expect(localChallengeWeekIndex(tz, open)).toBe(32);
+    }
+  });
+
+  it('is EAST of UTC that the old UTC stamp was a bug, not just early', () => {
+    // Shanghai's Monday 04:00 lands at Sun 20:00 UTC, four hours BEFORE the counter
+    // rolls. A challenge issued in that gap used to be stamped with the outgoing
+    // week, whose accept deadline had passed five days earlier — born expired.
+    const inTheGap = new Date('2026-08-16T21:00:00Z'); // Mon 05:00 in Shanghai
+    expect(challengeWeekIndex(inTheGap)).toBe(31);
+    expect(localChallengeWeekIndex('Asia/Shanghai', inTheGap)).toBe(32);
+
+    // The proof it matters: the week the UTC counter would have chosen has an
+    // accept deadline in the past, and the one the player's clock chooses does not.
+    expect(acceptDeadline(31, 'Asia/Shanghai').getTime()).toBeLessThan(inTheGap.getTime());
+    expect(acceptDeadline(32, 'Asia/Shanghai').getTime()).toBeGreaterThan(inTheGap.getTime());
+  });
+
+  it('west of UTC, holds the new week back until the local Monday', () => {
+    // Los Angeles: the counter rolls at Sun 17:00 local, 11 hours before their
+    // Monday 04:00. Issuing in that gap must still be LAST week's business.
+    const afterTheRoll = new Date('2026-08-17T02:00:00Z'); // Sun 19:00 in LA
+    expect(challengeWeekIndex(afterTheRoll)).toBe(32);
+    expect(localChallengeWeekIndex('America/Los_Angeles', afterTheRoll)).toBe(31);
+  });
+
+  it('the week a player is in always contains the moment', () => {
+    // The property the descending scan exists to guarantee: for any instant and any
+    // zone, this week has opened and the next has not.
+    const instants = [
+      '2026-08-16T19:59:00Z', '2026-08-16T20:00:00Z', '2026-08-17T00:00:00Z',
+      '2026-08-17T11:00:00Z', '2026-08-17T16:01:00Z', '2026-11-01T09:00:00Z',
+    ].map((iso) => new Date(iso));
+    for (const tz of [...ZONES, 'America/Los_Angeles', 'Pacific/Midway']) {
+      for (const now of instants) {
+        const week = localChallengeWeekIndex(tz, now);
+        expect(weekOpen(week, tz).getTime()).toBeLessThanOrEqual(now.getTime());
+        expect(weekOpen(week + 1, tz).getTime()).toBeGreaterThan(now.getTime());
+      }
+    }
+  });
+
+  it('a week opens exactly when the previous week\'s test window closes', () => {
+    // The same boundary named twice (§ 2) — if these ever drift apart there is a gap
+    // in which a player can neither play nor start again.
+    for (const tz of ZONES) {
+      expect(weekOpen(33, tz).getTime()).toBe(testWindowClose(32, tz).getTime());
+    }
+  });
+
+  it('survives a DST shift — the boundary is a wall clock, not a fixed offset', () => {
+    // US DST ends Sun 2026-11-01. The Monday after is 04:00 EST, an hour later in
+    // UTC than the Monday before was in EDT; a closed-form offset from the UTC
+    // counter would put the roll an hour wrong for that one week.
+    const before = weekOpen(42, 'America/New_York'); // Mon 2026-10-26, EDT
+    const after = weekOpen(43, 'America/New_York');  // Mon 2026-11-02, EST
+    expect(localOf(before, 'America/New_York').label).toBe('Mon 04:00');
+    expect(localOf(after, 'America/New_York').label).toBe('Mon 04:00');
+    expect(after.getTime() - before.getTime()).toBe((7 * 24 + 1) * 60 * 60 * 1000);
+    expect(localChallengeWeekIndex('America/New_York', new Date(after.getTime() - 1))).toBe(42);
+    expect(localChallengeWeekIndex('America/New_York', after)).toBe(43);
+  });
+});
 
 describe('challengeWeekIndex', () => {
   it('anchors week 0 at Monday 2026-01-05 00:00 UTC', () => {

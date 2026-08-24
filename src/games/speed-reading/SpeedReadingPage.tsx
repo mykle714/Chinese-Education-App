@@ -2,13 +2,17 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Box, Button, Typography } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
-import LeafPage from "../../components/LeafPage";
+import { GameLeafPage } from "../shared/GameSurface";
+// The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
+import { GAME_HUE } from "./constants";
 import type { Language } from "../../types";
 import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import LeafPageHeader from "../../components/LeafPageHeader";
-import { GameFrame } from "../shared/GameFrame";
+import { GameCentered, GameFrame, GameHud, GameHudLabel } from "../shared/GameFrame";
+import SpeedReadingRoundTicks, { type RoundTick } from "./SpeedReadingRoundTicks";
+import { ON_ACCENT_INK } from "../shared/gameSurface";
 import GameEndPopup from "../runtime/GameEndPopup";
 import { useAuth } from "../../AuthContext";
 import { markFlashcard } from "../../api/flashcards";
@@ -139,6 +143,13 @@ const SpeedReadingPage: React.FC = () => {
     const [picked, setPicked] = useState<number | null>(null);
     /** Correct picks so far — reported at the end, but NOT the score. */
     const [score, setScore] = useState(0);
+    /**
+     * One entry per ANSWERED round, in order — the HUD's tick grid
+     * (`SpeedReadingRoundTicks`). Kept beside `score` rather than derived from it
+     * because a count cannot say WHICH rounds went wrong, which is the whole reason
+     * the grid is on screen.
+     */
+    const [results, setResults] = useState<RoundTick[]>([]);
     /** Rounds answered so far, out of TARGET_ROUNDS. */
     const [answered, setAnswered] = useState(0);
     /** Wall-clock time since the first round landed, ticked while playing. */
@@ -457,6 +468,10 @@ const SpeedReadingPage: React.FC = () => {
         setAnswered(answeredRef.current);
         if (option.isCorrect) setScore((s) => s + 1);
         else addPenalty();
+        // Appended, never indexed by ordinal: `answeredRef` is the source of truth for
+        // "which round is this", and writing to `results[ordinal]` would need the two to
+        // agree forever. A push cannot disagree with itself.
+        setResults((prev) => [...prev, option.isCorrect ? "correct" : "wrong"]);
         // Sound first: it is the fastest cue to reach the player, and it must not
         // wait on the mark request or the render.
         if (option.isCorrect) playCorrectSound();
@@ -539,6 +554,7 @@ const SpeedReadingPage: React.FC = () => {
         answeredRef.current = 0;
         penaltyRef.current = 0;
         setScore(0);
+        setResults([]);
         setAnswered(0);
         setPenaltyMs(0);
         setPicked(null);
@@ -574,16 +590,10 @@ const SpeedReadingPage: React.FC = () => {
         return round.options[index].isCorrect ? "correct" : "wrong";
     };
 
+    // Shared with the other five games (`GameCentered`), which also owns the rule
+    // that text sitting on the accent ground is white rather than ink.
     const centered = (children: React.ReactNode) => (
-        <Box
-            className="speed-reading__overlay"
-            sx={{
-                flex: 1, minHeight: 0, display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "center", gap: 2.5, px: 4, textAlign: "center",
-            }}
-        >
-            {children}
-        </Box>
+        <GameCentered className="speed-reading__overlay">{children}</GameCentered>
     );
 
     /**
@@ -616,24 +626,20 @@ const SpeedReadingPage: React.FC = () => {
             className="speed-reading__status"
             sx={{ display: "flex", alignItems: "baseline", gap: 1 }}
         >
-            <Typography
-                className="speed-reading__progress"
-                sx={{
-                    fontFamily: FONTS.sans,
-                    fontSize: SIZE.body,
-                    fontWeight: WEIGHT.medium,
-                    color: COLORS.textSecondary,
-                }}
-            >
-                {currentRound}/{TARGET_ROUNDS}
-            </Typography>
+            {/* The `n/20` counter that used to sit left of the clock is GONE: the HUD's
+                tick grid now carries the round number, and stating it twice a few
+                millimetres apart made the header read as two clocks. */}
             <Typography
                 className="speed-reading__clock"
                 sx={{
                     fontFamily: FONTS.sans,
                     fontSize: SIZE.bodyLg,
                     fontWeight: WEIGHT.bold,
-                    color: totalMs > MEDAL_THRESHOLDS.bronze ? COLORS.dangerInk : COLORS.onSurface,
+                    // White on the game's accent ground (§ A6b), and a PASTEL red once
+                    // the run can no longer medal — `dangerInk` is a dark red on a dark
+                    // saturated ground, which is the one place the semantic ink cannot
+                    // be read. The pastel keeps the "it slipped away" signal legible.
+                    color: totalMs > MEDAL_THRESHOLDS.bronze ? COLORS.red : ON_ACCENT_INK,
                     minWidth: 44,
                     textAlign: "right",
                 }}
@@ -660,7 +666,8 @@ const SpeedReadingPage: React.FC = () => {
             entries={queue.provisionalTable}
             language={(user?.selectedLanguage ?? "zh") as Language}
         />
-        <LeafPage
+        <GameLeafPage
+            hue={GAME_HUE}
             title="Speed Reading"
             onBack={() => navigate("/games")}
             hideHeader
@@ -695,7 +702,7 @@ const SpeedReadingPage: React.FC = () => {
                     <>
                         <Typography
                             className="speed-reading__block-msg"
-                            sx={{ fontSize: SIZE.subtitle, color: COLORS.onSurface, lineHeight: LEADING.normal }}
+                            sx={{ fontSize: SIZE.subtitle, lineHeight: LEADING.normal }}
                         >
                             {queue.blockMessage
                                 || (!user ? "Sign in to play Speed Reading."
@@ -714,10 +721,43 @@ const SpeedReadingPage: React.FC = () => {
                        simply takes the place of the play box that was already here. Its
                        flex column, `position: relative` and `minHeight: 0` all come from
                        GameFrame; only the centring is Speed Reading's. */
-                    <GameFrame
-                        className="speed-reading__play"
-                        sx={{ alignItems: "center", justifyContent: "center" }}
-                    >
+                    <GameFrame className="speed-reading__play">
+                        {/* The HUD is a COLUMN here (see GameHud's `sx` note): the round
+                            counter over the run's tick grid, per artboard 15. The clock
+                            stays in the rotated header rather than joining it — it is the
+                            score in this game, and the one number the player glances at
+                            most, so it keeps the position they already look at.
+
+                            ⚠️ It is a SIBLING of the board box below, not a child of it.
+                            The tap zones are `position: absolute; inset: 0` of their
+                            container, so anything sharing that container is UNDER them
+                            and every tap on it answers the round. */}
+                        <GameHud
+                            className="speed-reading__hud"
+                            sx={{ flexDirection: "column", alignItems: "stretch", gap: "8px" }}
+                        >
+                            <GameHudLabel className="speed-reading__hud-round">
+                                Round {currentRound} of {TARGET_ROUNDS}
+                            </GameHudLabel>
+                            <SpeedReadingRoundTicks results={results} total={TARGET_ROUNDS} />
+                        </GameHud>
+
+                        {/* The board: the zones and the content they sit behind. It
+                            exists so the zones' `inset: 0` means "everything below the
+                            HUD" — the centring that used to be on the panel itself moved
+                            here with it. */}
+                        <Box
+                            className="speed-reading__board"
+                            sx={{
+                                position: "relative",
+                                flex: 1,
+                                minHeight: 0,
+                                width: "100%",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                            }}
+                        >
                         {/* ── The controls: the two HALVES of the play area ─────
                             An answer is "tap your side of the screen", not "hit the
                             word" — a target half the play area wide, which under a
@@ -815,6 +855,7 @@ const SpeedReadingPage: React.FC = () => {
                                 ))}
                             </Box>
                         </Box>
+                        </Box>
                     </GameFrame>
                 )}
 
@@ -903,7 +944,7 @@ const SpeedReadingPage: React.FC = () => {
                     at it, and the clock only restarts when the player taps Resume.
 
                     It must live INSIDE the render-prop body: `children` here is the
-                    render-prop FUNCTION, so an overlay placed next to it under <LeafPage>
+                    render-prop FUNCTION, so an overlay placed next to it under <GameLeafPage>
                     would make two children and collapse the prop's union type back to
                     ReactNode (tsc then rejects the function child). */}
                 <GamePausedOverlay
@@ -915,7 +956,7 @@ const SpeedReadingPage: React.FC = () => {
             </Box>
             )}
 
-        </LeafPage>
+        </GameLeafPage>
         </>
     );
 };

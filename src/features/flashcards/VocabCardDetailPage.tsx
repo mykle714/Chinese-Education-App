@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveDisplayDefinition, resolveDisplayPronunciation } from "../../utils/definitionUtils";
+import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveDisplayDefinition } from "../../utils/definitionUtils";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { lensFromSearch } from "./collectionRef";
 import {
@@ -7,11 +7,9 @@ import {
     Slide, Snackbar, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
 } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import { styled } from "@mui/material/styles";
 import NodePage from "../../components/NodePage";
-import { FooterSpacer } from "../../components/MobileFooter";
+import { FOOTER_HEIGHT } from "../../components/MobileFooter";
 import { API_BASE_URL } from "../../constants";
 import type { VocabEntry } from "../../types";
 import IconPickerDialog from "../../components/IconPickerDialog";
@@ -28,11 +26,15 @@ import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT, FC_FONT } from "./constants";
 import { useCardIconEditor } from "../../cardIcons/editor/useCardIconEditor";
 import CardIconCanvas from "../../cardIcons/editor/CardIconCanvas";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../cardIcons/editor/CardEditToolbar";
-import { VocabCardBadges, VocabCardSections, SectionCard, SectionLabel } from "./VocabCardDetailBody";
+import { VocabCardSections } from "./VocabCardDetailBody";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { useOpenWordCard } from "../../hooks/useOpenWordCard";
-import MasteryProgressBar from "./MasteryProgressBar";
-import ForeignText from "../../components/ForeignText";
+import MasteryWindow from "../../components/mastery/MasteryWindow";
+import WordToolsRail from "../../components/WordToolsRail";
+import Icon from "../../components/Icon";
+import InfoPeek from "./InfoPeek";
+import SheetPanel, { type SheetPanelBodyHandle } from "./FlashcardsLearnPage/SheetPanel";
+import SheetBody from "./FlashcardsLearnPage/SheetBody";
 import { apiGet } from '../../api/http';
 
 // Padded content column. The outer NodePage/MobileTabScreen scroll area owns the
@@ -47,6 +49,18 @@ const ContentArea = styled(Box)(() => ({
     gap: "12px",
     position: "relative",
 }));
+
+// Height of the resting `.peek` lip (grabber + one row + its padding). The lip is
+// absolutely positioned at frame level, so the scrolling column has to reserve the
+// space itself or its last row hides behind it. Derived from the lip's own parts
+// rather than typed as one number, so restyling InfoPeek can't silently tuck the
+// mastery cooldowns underneath it.
+const PEEK_ROW_HEIGHT = 22;   // the icon/word/label row
+const PEEK_VPAD_SUM = 9 + 4 + 11 + 15; // top pad + grabber + its margin + bottom pad
+const PEEK_HEIGHT = PEEK_ROW_HEIGHT + PEEK_VPAD_SUM;
+// …plus a breathing gap, and MINUS the footer clearance the scroll area already
+// reserves (the lip stands on top of the footer bar, not beside it).
+const PEEK_CLEARANCE = PEEK_HEIGHT + 12;
 
 const VocabCardDetailPage: React.FC = () => {
     usePageTitle("Card");
@@ -81,6 +95,18 @@ const VocabCardDetailPage: React.FC = () => {
     // Guards the destructive delete behind an explicit confirmation (same pattern as
     // the icon reset-to-default dialog below).
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    // The extra-info sheet (artboard 18's `.peek`). The definition / breakdown /
+    // examples boxes used to run down the page under the hero card, which made the cdp
+    // a long scroll whose first screen was the only part most visits read. They are the
+    // same content as the flp's eip, so they now live in the same place: a sheet that
+    // rests as a lip at the bottom of the page and is pulled up when wanted. What stays
+    // on the page is what the page is FOR — the card, and how well it is known.
+    //
+    // Modal (not persistent): unlike the decks sheet this one has nothing to show at
+    // rest, so it mounts on open and unmounts on close, which also resets its open
+    // animation. `InfoPeek` is the always-drawn lip that opens it.
+    const [infoOpen, setInfoOpen] = useState(false);
+    const infoBodyRef = useRef<SheetPanelBodyHandle | null>(null);
     // Which definitionClusters sense EnglishBlock currently shows on the hero card.
     // Mirrors CardFace: seeds from this saved card's PERSISTED choice (`selectedSense` label →
     // sorted index, migration 99), falling back to the top/starred sense. Persisted on pick.
@@ -100,6 +126,15 @@ const VocabCardDetailPage: React.FC = () => {
         [entry]
     );
     const handleWordOpen = useOpenWordCard(linkableWords);
+
+    // "Compare" on the word-tools rail. The flp can open Compare as an eip TAB beside
+    // the word it is comparing; the cdp has no tab strip, so it hands the word to the
+    // standalone Compare page instead, pre-filling slot A through route state (see
+    // ComparePage). Same feature, same component underneath — only the host differs.
+    const handleCompare = useCallback(
+        (target: VocabEntry) => navigate("/compare", { state: { slotA: target } }),
+        [navigate]
+    );
 
     // The flashcard icon editor (fie) — the same toolbar/canvas flp opens on its
     // back face. There's no "next card" here (single-card page), so nextEntry is
@@ -244,8 +279,64 @@ const VocabCardDetailPage: React.FC = () => {
             // title): 21px collides, so the Card Detail artboard drops to 18px.
             headerSize="dense"
             surfaceColor={COLORS.yellowAccent}
-            // No top edge-fade: the badges/hero card shouldn't dissolve at the top.
+            // No top edge-fade: the hero card shouldn't dissolve at the top.
             topFade={false}
+            // Frame-level furniture, rendered OUTSIDE the scroll area (see NodePage's
+            // `overlay`): the resting peek lip, and the extra-info sheet it raises.
+            overlay={entry && (
+                <>
+                    <InfoPeek
+                        className="vocab-card-detail__info-peek"
+                        word={entry.entryKey}
+                        language={entry.language}
+                        onOpen={() => setInfoOpen(true)}
+                        // The cdp keeps the footer bar, so the lip stands on top of it
+                        // rather than at the bottom of the frame (artboard 18's
+                        // `.peek{bottom:74px}`).
+                        bottom={FOOTER_HEIGHT}
+                        // Greyed while the icon editor is open: the sheet would cover the
+                        // canvas being edited. Same rule the flp's lip follows.
+                        disabled={editMode}
+                    />
+                    {infoOpen && (
+                        <SheetPanel
+                            bodyRef={infoBodyRef}
+                            onClose={() => setInfoOpen(false)}
+                        >
+                            <SheetBody
+                                ref={infoBodyRef}
+                                className="vocab-card-detail__info-body"
+                                // VocabCardSections is a stack of self-padded boxes with
+                                // no gutter of its own — it was written for a page column
+                                // that supplied one. The sheet supplies the same 16px.
+                                sx={{ padding: "14px 16px 0", gap: "12px" }}
+                            >
+                                {/* The SAME sections the page used to stack inline, and
+                                    the same ones the read-only dictionary cdp renders —
+                                    only their container changed. */}
+                                <VocabCardSections
+                                    entry={entry}
+                                    showPinyin={showPinyin}
+                                    showPinyinColor={showPinyinColor}
+                                    onWordOpen={handleWordOpen}
+                                    // Keeps the Definition box's long definition on the
+                                    // same sense as the card above it (per-sense
+                                    // longDefinition).
+                                    selectedSenseIndex={selectedSenseIndex}
+                                    // Same slow-rate-aware sentence narration as the flp est.
+                                    onSpeakSentence={
+                                        tts.enabled
+                                            ? (text, pronunciation) =>
+                                                  tts.speakSentence(text, pronunciation, slowExampleSentences ? SLOW_SENTENCE_RATE : 1)
+                                            : undefined
+                                    }
+                                    speakingKey={tts.speakingKey}
+                                />
+                            </SheetBody>
+                        </SheetPanel>
+                    )}
+                </>
+            )}
             headerExtraActions={entry && (
                 <Box sx={{ display: "flex", alignItems: "center" }}>
                     {/* File this card into any of the user's decks (docs/DECKS_FEATURE.md).
@@ -257,23 +348,26 @@ const VocabCardDetailPage: React.FC = () => {
                     />
                     {/* Opens the same fie (flashcard icon editor) toolbar/canvas flp uses,
                         decorating this card's icon layout/text placement/colors — not a
-                        navigation to a separate edit form. */}
+                        navigation to a separate edit form.
+
+                        Both glyphs are Material Symbols via `Icon` (D3), not
+                        `@mui/icons-material` components: the artboard's header names
+                        `edit` and `delete`, and the ligature face is where every other
+                        converted surface takes its icons from. */}
                     <IconButton
                         className="vocab-card-detail__edit-button"
                         aria-label="Edit card"
                         onClick={() => (editMode ? exitEdit() : enterEdit(() => heroCardRef.current ? measureDefaultEnglishCenterY(heroCardRef.current) : null))}
-                        sx={{ color: editMode ? theme.palette.primary.main : fc.textSecondary }}
                     >
-                        <EditOutlinedIcon />
+                        <Icon name="edit" size={20} color={editMode ? theme.palette.primary.main : COLORS.iconColor} />
                     </IconButton>
                     <IconButton
                         className="vocab-card-detail__delete-button"
                         aria-label="Delete card"
                         disabled={actionLoading}
                         onClick={() => setDeleteConfirmOpen(true)}
-                        sx={{ color: '#ef5350' }}
                     >
-                        <DeleteOutlineIcon />
+                        <Icon name="delete" size={20} color={COLORS.dangerInk} />
                     </IconButton>
                 </Box>
             )}
@@ -368,31 +462,16 @@ const VocabCardDetailPage: React.FC = () => {
                                 </Box>
                             </Slide>
 
-                            <VocabCardBadges entry={entry} />
-
-                            {/* The card's word as a cpcd block. Block layout falls back to
-                                a row automatically past 4 characters (see ForeignText.layout),
-                                so longer words just read as before. The mastery bars used to
-                                sit beside it; they now have their own section below the hero
-                                card, where there is room for the per-track cooldowns. */}
-                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", my: 1.5 }}>
-                                <ForeignText
-                                    size="xl"
-                                    layout="block"
-                                    language={entry.language}
-                                    text={entry.entryKey}
-                                    pronunciation={
-                                        // Sense-resolved, with the SAME `selectedSenseIndex` the
-                                        // hero card's dd below uses — the header and the card sit
-                                        // on one entry and must not print different pinyin for it
-                                        // (they did: the raw column is the unreviewed CEDICT seed,
-                                        // so 重点 read `chóng diǎn` here over `zhòng diǎn` there).
-                                        resolveDisplayPronunciation(entry, selectedSenseIndex)
-                                    }
-                                    showPinyin={showPinyin}
-                                    useToneColor={showPinyinColor}
-                                />
-                            </Box>
+                            {/* WORD TOOLS — `Write it` and `Compare`, on their own rail
+                                above the card and outside its boundary. They act on the
+                                WORD, not on this card, which is why they are not in the
+                                header row above (add-to-deck / edit / delete, all card
+                                operations) — see WordToolsRail. */}
+                            <WordToolsRail
+                                className="vocab-card-detail__word-tools"
+                                entry={entry}
+                                onCompare={handleCompare}
+                            />
 
                             {/* Hero card — the same size/style as the flp (learn page)
                                 card, showing the Side 2 (answer) face: cpcd + writing/audio
@@ -409,8 +488,15 @@ const VocabCardDetailPage: React.FC = () => {
                                     width: "100%",
                                     maxWidth: CARD_BASE_WIDTH,
                                     mx: "auto",
-                                    mt: "32px",
-                                    mb: "40px",
+                                    // The badge row and the standalone cpcd header that
+                                    // used to sit above the card are gone (artboard 18):
+                                    // "the card is the masthead — ONE presentation of the
+                                    // word". The page was printing the headword twice at
+                                    // two sizes, and the category chip now reads off the
+                                    // mastery window's own band pill, which is the band of
+                                    // the track being looked at rather than only the core
+                                    // one. So the card starts right under the tools rail.
+                                    mb: "8px",
                                     position: "relative",
                                 }}
                             >
@@ -478,49 +564,28 @@ const VocabCardDetailPage: React.FC = () => {
                                 />
                             </Box>
 
-                            {/* Mastery (docs/MASTERY_REWORK.md): one pbh track per active
-                                bar, each with its band chip and the PER-TRACK COOLDOWN
-                                underneath ("Ready", or the time left before that mark type
-                                can next be earned). Its own SectionCard rather than a strip
-                                beside the word, because three bars x two cooldown rows needs
-                                the width — and it reads as one more info box alongside
-                                Definition/Breakdown/Examples. Saved cards only: the read-only
-                                dictionary cdp has no marks, which is why this lives here and
-                                not in the shared VocabCardSections. */}
-                            {/* Extra bottom padding: the cooldown rows are the last thing in the box
-                                    and the default 14px reads tight under two stacked rows. */}
-                            <SectionCard className="vocab-card-detail__mastery" sx={{ paddingBottom: "18px", gap: "12px" }}>
-                                <SectionLabel className="vocab-card-detail__section-label">Mastery</SectionLabel>
-                                {/* The LENS, when the card was opened from a Mastery
-                                    Center (`?bar=`): the section then shows that one
-                                    skill's bar and its cooldown instead of every bar the
-                                    account pursues. Undefined everywhere else. */}
-                                <MasteryProgressBar entry={entry} lens={lens} />
-                            </SectionCard>
+                            {/* MASTERY (docs/MASTERY_REWORK.md, artboard 18).
+                                `MasteryWindow` renders the eight-mark window plus its own
+                                `Mastery` rule and the Know / Read / Write switch; the
+                                `lens` is which track it opens on, so a card reached from a
+                                Mastery Center still reports that skill first. The old
+                                vertical bar + its SectionCard wrapper are gone — see D6/D7
+                                in docs/SHELF_REDESIGN.md.
 
-                            {/* Info boxes (definition / breakdown / examples / synonyms) —
-                                shared with the read-only dictionary cdp. onWordOpen makes the
-                                breakdown blocks / used-in rows / example segments drill into
-                                the tapped word's cdp (saved card first, dictionary fallback). */}
-                            <VocabCardSections
+                                Negative side margin cancels ContentArea's 16px so the
+                                section rule runs to the design's 22px page gutter, which
+                                is what every other converted section sits on. */}
+                            <MasteryWindow
+                                className="vocab-card-detail__mastery"
                                 entry={entry}
-                                showPinyin={showPinyin}
-                                showPinyinColor={showPinyinColor}
-                                onWordOpen={handleWordOpen}
-                                // Keeps the Definition box's long definition on the same
-                                // sense as the picker above (per-sense longDefinition).
-                                selectedSenseIndex={selectedSenseIndex}
-                                // Same slow-rate-aware sentence narration as the flp est.
-                                onSpeakSentence={
-                                    tts.enabled
-                                        ? (text, pronunciation) =>
-                                              tts.speakSentence(text, pronunciation, slowExampleSentences ? SLOW_SENTENCE_RATE : 1)
-                                        : undefined
-                                }
-                                speakingKey={tts.speakingKey}
+                                lens={lens}
                             />
 
-                            <FooterSpacer />
+                            {/* Clearance for the resting peek lip, which is frame-level
+                                furniture and therefore not in this column's flow. Without
+                                it the mastery cooldowns end up behind the lip on a short
+                                card. */}
+                            <Box className="vocab-card-detail__peek-clearance" sx={{ height: `${PEEK_CLEARANCE}px`, flexShrink: 0 }} />
                         </>
                     ) : null}
                 </ContentArea>

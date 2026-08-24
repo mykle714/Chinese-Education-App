@@ -1,18 +1,31 @@
 import React from "react";
 import { Box, Typography, useTheme } from "@mui/material";
 import LongDefinitionDisplay from "../../../components/LongDefinitionDisplay";
-import FrequencyScoreDots from "../../../components/FrequencyScoreDots";
-import { aiGeneratedSurfaceSx } from "../../../theme/aiGeneratedStyling";
-import InfoCardBlockButton from "./InfoCardBlockButton";
-import InfoCardActionBar from "./InfoCardActionBar";
+import BreakdownRow from "../BreakdownRow";
+import DefinitionFacts from "../DefinitionFacts";
 import UsedInPaginatedList from "../UsedInPaginatedList";
 import ExampleSentenceList from "../ExampleSentenceList";
-import MetaChipLabel from "../MetaChipLabel";
 import { FC_FONT } from "../constants";
-import { SIZE, WEIGHT } from "../../../theme/scale";
-import { resolveCommonality } from "../../../utils/definitionUtils";
+import { SIZE } from "../../../theme/scale";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 import type { TabAvailability } from "./infoCardTabAvailability";
+import { sortedSenseClusters } from "../../../utils/definitionUtils";
+import { Label } from "../../../components/primitives";
+
+/**
+ * `.shelfhd` inside an eip tab: what the tab is showing on the left, and a fact about
+ * it on the right. Local to this file — it is two `Label`s in a row, and hoisting it
+ * would be a shared component whose only job is to remember the padding.
+ */
+const TabCaption: React.FC<{ left: string; right: string; className?: string }> = ({ left, right, className }) => (
+    <Box
+        className={className}
+        sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", padding: "13px 18px 0" }}
+    >
+        <Label>{left}</Label>
+        <Label>{right}</Label>
+    </Box>
+);
 
 /**
  * The BODY of one eip tab — definition (0), examples (1), or breakdown/used-in (2).
@@ -53,8 +66,6 @@ export interface InfoCardTabContentProps {
      * resolvers so the tab body follows the tap immediately.
      */
     selectedSenseIndex?: number;
-    /** Opens the singleton Compare tab; undefined hides the bar's Compare button. */
-    onOpenCompare?: (entry: VocabEntry) => void;
 }
 
 const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
@@ -70,18 +81,12 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
     onSpeakSentence,
     speakingKey,
     selectedSenseIndex,
-    onOpenCompare,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
-    // Commonality follows the SENSE the card is on, not the entry: a polyseme's word-level
-    // score contradicts the definition printed right above it. The panel's live pick is
-    // passed as the override so the meter changes on the tap, ahead of the persisted
-    // `selectedSense` round-tripping back (useEipTabs.syncEntry) — exactly as the long
-    // definition in `avail` resolves. See docs/DEFINITION_CLUSTERS.md.
-    const commonality = currentEntry
-        ? resolveCommonality(currentEntry, selectedSenseIndex)
-        : { score: null, senseLabel: null, approved: false };
+    // Commonality moved into DefinitionFacts, which resolves it per SENSE from the
+    // `selectedSenseIndex` threaded below — see that component and
+    // docs/DEFINITION_CLUSTERS.md.
     const {
         longDefinition,
         longDefinitionParts,
@@ -93,184 +98,96 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
     } = avail;
 
         if (tabIndex === 0) {
-            // The definition tab's trailing action bar (InfoCardActionBar.tsx): the
-            // card-level actions that used to be icon buttons in the eip header. It rides
-            // at the END of the scrollable content — the header is for identity (headword,
-            // dd, sense, speaker), the tab body is where the learner acts on the word.
-            // Each button self-hides on its own precondition (no vet row ⇒ no deck menu,
-            // non-zh ⇒ no writing practice, no handler ⇒ no compare), and the remaining
-            // ones re-flex to equal widths.
-            const actionBar = currentEntry && (
-                <InfoCardActionBar currentEntry={currentEntry} onOpenCompare={onOpenCompare} />
-            );
+            // ⚠️ NO ACTION BAR any more. `InfoCardActionBar` (Add to Deck / Compare To /
+            // Practice Writing) used to ride at the end of this tab and is DELETED:
+            // artboards 20 and 20b make the panel information-only, and its three
+            // actions moved to where they belong. Practice Writing and Compare are word
+            // tools, so they are on `WordToolsRail` above the card; Add to Deck is a card
+            // operation, so it is on `CardOpsRail` behind the card's `•••`.
+            //
+            // One consequence, accepted rather than overlooked: those rails act on the
+            // CARD's word, not on a word the learner has DRILLED INTO from the breakdown
+            // rows. To file or compare a drilled-in word you now open its own page (the
+            // rows are tappable, which is how you get there). The alternative was a
+            // per-tab action bar inside a panel the design deliberately emptied.
 
-            return definitionTabHasContent ? (
-                <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                    {(longDefinition || longDefinitionParts?.length) && (
-                        <LongDefinitionDisplay
-                            className="mobile-demo-long-definition-text"
-                            longDefinition={longDefinition}
-                            longDefinitionParts={longDefinitionParts}
-                            showPinyin={showPinyin}
-                            showPinyinColor={showPinyinColor}
-                            onSegmentOpen={onExampleSegmentClick}
-                            aiGenerated={!currentEntry?.definitionsApproved}
-                            word1={currentEntry?.entryKey}
-                            language={currentEntry?.language}
-                            sx={{
-                                fontSize: SIZE.body,
-                                color: fc.onSurface,
-                                fontFamily: FC_FONT,
-                                lineHeight: 1.6,
-                            }}
-                        />
-                    )}
-                    {(currentEntry?.difficulty || (currentEntry?.partsOfSpeech?.length ?? 0) > 0 || commonality.score != null) && (
-                        <Box
-                            className="mobile-demo-definition-meta-strip"
-                            sx={{
-                                // Two stacked rows: Difficulty + Commonality share a centered
-                                // top row, Parts of Speech gets a full-width row below them
-                                // (its value can be long, so it needs the whole line).
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "10px",
-                                padding: "10px 0",
-                                borderTop: `1px solid ${fc.border}`,
-                                borderBottom: `1px solid ${fc.border}`,
-                            }}
-                        >
-                          {/* Top row renders only when it has a chip — otherwise its empty
-                              box would still contribute the column gap above the POS row. */}
-                          {((currentEntry?.language === 'zh' && !!currentEntry?.difficulty) || commonality.score != null) && (
-                          <Box
-                            className="mobile-demo-definition-meta-row"
-                            sx={{ display: "flex", gap: "18px", alignItems: "center", justifyContent: "center" }}
-                          >
-                            {/* Difficulty meta: only for zh, whose 1–6 difficulty integers ARE HSK
-                                levels; es uses the same scale but never names it HSK. */}
-                            {currentEntry?.language === 'zh' && currentEntry.difficulty && (
-                                // AI-classified (backfill-hsk-level.js), so it carries the AI-generated
-                                // box (no badge — a small value chip) until the 'difficulty' validation
-                                // field is human-approved (docs/DATA_VALIDATION_SYSTEM.md).
-                                <Box
-                                    className={currentEntry.difficultyApproved ? "mobile-demo-hsk-chip" : "mobile-demo-hsk-chip mobile-demo-hsk-chip--ai-generated"}
-                                    sx={{
-                                        // position:relative anchors MetaChipLabel's absolutely-positioned
-                                        // validator overlay to THIS chip's corner.
-                                        position: "relative",
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "3px",
-                                        ...(currentEntry.difficultyApproved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
-                                    }}
-                                >
-                                    <MetaChipLabel label="Difficulty" field="difficulty" word1={currentEntry!.entryKey} language={currentEntry?.language} approved={currentEntry?.difficultyApproved} classPrefix="mobile-demo" />
-                                    <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: fc.onSurface, fontFamily: FC_FONT, whiteSpace: "nowrap" }}>
-                                        {`HSK ${currentEntry.difficulty}`}
-                                    </Typography>
-                                </Box>
-                            )}
-                            {commonality.score != null && (
-                                // AI-scored (the clusterer for a per-sense score, backfill-frequency-score.js
-                                // for the entry-level one), so it carries the AI-generated box until THAT
-                                // value's validation field is human-approved.
-                                <Box
-                                    className={commonality.approved ? "mobile-demo-frequency-meta" : "mobile-demo-frequency-meta mobile-demo-frequency-meta--ai-generated"}
-                                    sx={{
-                                        // position:relative anchors MetaChipLabel's absolutely-positioned
-                                        // validator overlay to THIS chip's corner.
-                                        position: "relative",
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "3px",
-                                        ...(commonality.approved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
-                                    }}
-                                >
-                                    {/* A per-sense score validates the cluster ('senseFrequencyScore' +
-                                        senseLabel, migration 139); the entry-level fallback validates the
-                                        det column, exactly as before. */}
-                                    <MetaChipLabel
-                                        label="Commonality"
-                                        field={commonality.senseLabel ? "senseFrequencyScore" : "frequencyScore"}
-                                        word1={currentEntry!.entryKey}
-                                        language={currentEntry?.language}
-                                        senseLabel={commonality.senseLabel}
-                                        approved={commonality.approved}
-                                        classPrefix="mobile-demo"
-                                    />
-                                    <Box className="mobile-demo-frequency-dots" sx={{ display: "flex", alignItems: "center", gap: "5px", height: 19 }}>
-                                        <FrequencyScoreDots
-                                            score={commonality.score}
-                                            filledColor={fc.onSurface}
-                                            emptyBorderColor={fc.border}
-                                        />
-                                        <Typography sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: fc.onSurface, fontFamily: FC_FONT, lineHeight: 1 }}>
-                                            {commonality.score}/5
-                                        </Typography>
-                                    </Box>
-                                </Box>
-                            )}
-                          </Box>
-                          )}
-                          {/* Parts of Speech — its own full-width row under the pair above. */}
-                          {(currentEntry?.partsOfSpeech?.length ?? 0) > 0 && (
-                            <Box
-                                className={currentEntry?.partsOfSpeechApproved ? "mobile-demo-pos-chip" : "mobile-demo-pos-chip mobile-demo-pos-chip--ai-generated"}
-                                sx={{
-                                    // position:relative anchors MetaChipLabel's absolutely-positioned
-                                    // validator overlay to THIS chip's corner.
-                                    position: "relative",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    alignItems: "center",
-                                    gap: "3px",
-                                    // Spans the strip's full width — the value (a comma-joined POS
-                                    // list) is the longest of the three metas.
-                                    width: "100%",
-                                    // Orange border/tint only (no badge) until the 'partsOfSpeech'
-                                    // field is human-approved — its own field since migration 132,
-                                    // so definitions churn no longer clears it.
-                                    ...(currentEntry?.partsOfSpeechApproved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" }),
-                                }}
-                            >
-                                <MetaChipLabel label="Parts of Speech" field="partsOfSpeech" word1={currentEntry!.entryKey} language={currentEntry?.language} approved={currentEntry?.partsOfSpeechApproved} classPrefix="mobile-demo" />
-                                <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: fc.onSurface, fontFamily: FC_FONT, textAlign: "center" }}>
-                                    {currentEntry!.partsOfSpeech!.join(', ')}
-                                </Typography>
-                            </Box>
-                          )}
-                        </Box>
-                    )}
-                    {actionBar}
+            // The definition paragraph. Handed to DefinitionFacts as a renderer so ONE
+            // AI treatment can wrap the paragraph and the facts together when nothing in
+            // the block is human-approved (artboard 20b) — `grouped` tells the paragraph
+            // to stand down its own orange box in that case, or the panel shows two.
+            const paragraph = (longDefinition || longDefinitionParts?.length)
+                ? ({ grouped }: { grouped: boolean }) => (
+                    <LongDefinitionDisplay
+                        className="mobile-demo-long-definition-text"
+                        longDefinition={longDefinition}
+                        longDefinitionParts={longDefinitionParts}
+                        showPinyin={showPinyin}
+                        showPinyinColor={showPinyinColor}
+                        onSegmentOpen={onExampleSegmentClick}
+                        aiGenerated={!grouped && !currentEntry?.definitionsApproved}
+                        word1={currentEntry?.entryKey}
+                        language={currentEntry?.language}
+                        sx={{
+                            fontSize: SIZE.body,
+                            color: fc.onSurface,
+                            fontFamily: FC_FONT,
+                            lineHeight: 1.6,
+                        }}
+                    />
+                )
+                : undefined;
+
+            return definitionTabHasContent && currentEntry ? (
+                <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column" }}>
+                    {/* The paragraph plus the three measured facts — one shared component
+                        with the cdp (DefinitionFacts / `.dfx`). This used to be ~90 lines
+                        of centred chips duplicated verbatim in VocabCardDetailBody. */}
+                    <DefinitionFacts
+                        entry={currentEntry}
+                        selectedSenseIndex={selectedSenseIndex}
+                        paragraph={paragraph}
+                        paragraphApproved={currentEntry.definitionsApproved}
+                        classPrefix="mobile-demo"
+                    />
                 </Box>
             ) : (
-                // Even with nothing to read, the actions still apply to the word — an
-                // un-enriched card can still be filed into a deck, compared, or practised.
-                <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                    <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
-                        <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
-                            No definition available for this card
-                        </Typography>
-                    </Box>
-                    {actionBar}
+                <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
+                    <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
+                        No definition available for this card
+                    </Typography>
                 </Box>
             );
         }
 
         if (tabIndex === 1) {
-            // Examples — shared est renderer (see ExampleSentenceList).
+            // Examples — shared est renderer (see ExampleSentenceList), under a caption
+            // naming WHICH SENSE these sentences illustrate (artboard 24). The sense
+            // matters here more than anywhere else in the panel: the sentences change
+            // with the pick, and without the caption a learner who has switched senses
+            // has no way to tell whether they are looking at the new set or the old one.
+            const senseCaption = currentEntry
+                ? sortedSenseClusters(currentEntry)?.[selectedSenseIndex ?? 0]?.sense
+                : undefined;
             return examplesTabHasContent ? (
-                <ExampleSentenceList
-                    sentences={currentEntry!.exampleSentences!}
-                    vocabWord={currentEntry?.entryKey}
-                    language={currentEntry?.language}
-                    showPinyin={showPinyin}
-                    showPinyinColor={showPinyinColor}
-                    onSegmentOpen={onExampleSegmentClick}
-                    onSpeakSentence={onSpeakSentence}
-                    speakingKey={speakingKey}
-                />
+                <>
+                    <TabCaption
+                        className="mobile-demo-examples-caption"
+                        left={senseCaption
+                            ? `sense ${(selectedSenseIndex ?? 0) + 1} · ${senseCaption}`
+                            : "examples"}
+                        right={`${currentEntry!.exampleSentences!.length} ${currentEntry!.exampleSentences!.length === 1 ? "example" : "examples"}`}
+                    />
+                    <ExampleSentenceList
+                        sentences={currentEntry!.exampleSentences!}
+                        vocabWord={currentEntry?.entryKey}
+                        language={currentEntry?.language}
+                        showPinyin={showPinyin}
+                        showPinyinColor={showPinyinColor}
+                        onSegmentOpen={onExampleSegmentClick}
+                        onSpeakSentence={onSpeakSentence}
+                        speakingKey={speakingKey}
+                    />
+                </>
             ) : (
                 <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
                     <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
@@ -282,7 +199,18 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
 
         // tabIndex === 2: Breakdown (multi-char) or Used In (single-char)
         return breakdownTabHasContent ? (
-            <Box className="mobile-demo-breakdown-wrapper" sx={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <Box className="mobile-demo-breakdown-wrapper" sx={{ display: "flex", flexDirection: "column" }}>
+                {/* What this tab is answering, and that the rows go somewhere (artboard
+                    25). "tap to open" rather than a bare chevron caption: the rows drill
+                    into their own entries, and the word trail above is how you come back
+                    — both worth saying once, at the top, instead of per row. */}
+                <TabCaption
+                    className="mobile-demo-breakdown-caption"
+                    left={isSingleChar
+                        ? `${currentEntry?.entryKey ?? ""} · used in`
+                        : `${currentEntry?.entryKey ?? ""} · ${breakdownItems.length} characters`}
+                    right="tap to open"
+                />
                 {isSingleChar ? (
                     // Infinite-scroll list: seeds from the card's ≤4 preview (usedInItems),
                     // pages the rest via /api/dictionary/usedIn.
@@ -296,40 +224,23 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         rowClassName="mobile-demo-used-in-row-button"
                     />
                 ) : (
-                    // Extra inset layer: pads the block-button grid away from the
-                    // tab's edges and centers it, so the buttons (which flex to
-                    // fill the width) sit as a balanced group. Mirrored in the cdp
-                    // (VocabCardDetailBody) so both breakdown surfaces match.
-                    <Box
-                        className="mobile-demo-breakdown-grid-layer"
-                        sx={{ display: "flex", justifyContent: "center", padding: "16px" }}
-                    >
-                        {/* auto-fit tracks: as many equal 1fr columns as fit at
-                            ≥116px each, so buttons stay IDENTICAL in size and flow
-                            left-to-right then wrap top-down (a short last row keeps
-                            the same cell width instead of stretching). */}
-                        <Box
-                            className="mobile-demo-breakdown-grid"
-                            sx={{
-                                display: "grid",
-                                gridTemplateColumns: "repeat(auto-fit, minmax(min(116px, 100%), 1fr))",
-                                gap: "10px",
-                                width: "100%",
-                            }}
-                        >
+                    // One `.bkr` row per component character, in the word's own order
+                    // (BreakdownRow). This was a wrapping grid of 1:1 block buttons; see
+                    // that component's header for why the shape changed.
+                    <Box className="mobile-demo-breakdown-list">
                         {breakdownItems.map((item, index) => (
-                            <InfoCardBlockButton
+                            <BreakdownRow
                                 key={index}
                                 className="mobile-demo-breakdown-row-button"
                                 character={item.character}
                                 pinyin={item.pinyin}
                                 definition={item.definition}
+                                language={currentEntry?.language}
                                 showPinyin={showPinyin}
                                 showPinyinColor={showPinyinColor}
                                 onClick={onBreakdownItemClick ? () => onBreakdownItemClick(item) : undefined}
                             />
                         ))}
-                        </Box>
                     </Box>
                 )}
             </Box>

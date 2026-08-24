@@ -260,7 +260,15 @@ export const HeaderToggleChip: React.FC<{
     className?: string;
 }> = ({ children, active, onClick, disabled = false, startIcon, className }) => (
     <Box
-        className={className ? `page-header__toggle ${className}` : "page-header__toggle"}
+        // The active state carries its own class as well as `aria-pressed`, so a
+        // surrounding surface can restyle just the ON chip with a plain class selector
+        // (the game accent ground does — see gameSurfaceSx). An attribute selector
+        // would work, but a named class is what the rest of the app reads for.
+        className={[
+            "page-header__toggle",
+            active ? "page-header__toggle--active" : "",
+            className ?? "",
+        ].filter(Boolean).join(" ")}
         onClick={disabled ? undefined : onClick}
         role="button"
         aria-pressed={active}

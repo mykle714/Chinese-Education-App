@@ -160,7 +160,11 @@ last 7 days ([VELOCITY.md](./VELOCITY.md)) — not a plain list. One row per per
 * **Ranking is the server's**: the client never re-sorts, and the board has no
   mutations of its own — unfriending happens on `/friends/remove`, so the ranks on
   screen are always exactly the ranks the server assigned.
-* A board of one row — the viewer alone — renders the "No friends yet" empty state.
+* A friendless viewer still gets a **board**, not an empty state: the server always
+  includes the viewer's own row, so the leaderboard renders with that single row and
+  the "No friends yet" hint sits *beneath* it (pointing at **Send**) rather than
+  replacing it. The one-row board is exactly what the screen looks like the moment a
+  first friend is added, so nothing about the layout changes underneath the user.
 
 ### Optimistic vs. confirmed updates
 

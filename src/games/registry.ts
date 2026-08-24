@@ -5,11 +5,13 @@ import type { GameDef } from "./types";
 // `constants` modules (not their pages) keeps this cycle-free — a constants file
 // never imports the registry. Word Search is absent on purpose: its mark type is
 // per-mode, so its hub strip reads it from MODE_CONFIGS instead.
-import { MARK_TYPE as BUBBLE_MATCH_MARK_TYPE } from "./bubble-match/constants";
-import { MARK_TYPE as MATCH_SPEED_MARK_TYPE } from "./match-speed/constants";
-import { MARK_TYPE as SPEED_READING_MARK_TYPE } from "./speed-reading/constants";
-import { MARK_TYPE as MEMORY_MAP_MARK_TYPE } from "./memory-map/constants";
-import { MARK_TYPE as HYDRA_MARK_TYPE } from "./hydra-bubbles/constants";
+import { GAME_HUE as BUBBLE_MATCH_HUE, MARK_TYPE as BUBBLE_MATCH_MARK_TYPE } from "./bubble-match/constants";
+import { GAME_HUE as MATCH_SPEED_HUE, MARK_TYPE as MATCH_SPEED_MARK_TYPE } from "./match-speed/constants";
+import { GAME_HUE as SPEED_READING_HUE, MARK_TYPE as SPEED_READING_MARK_TYPE } from "./speed-reading/constants";
+import { GAME_HUE as MEMORY_MAP_HUE, MARK_TYPE as MEMORY_MAP_MARK_TYPE } from "./memory-map/constants";
+import { GAME_HUE as HYDRA_HUE, MARK_TYPE as HYDRA_MARK_TYPE } from "./hydra-bubbles/constants";
+// Word Search has no shared mark type (it is per-mode), but it does have a hue.
+import { GAME_HUE as WORD_SEARCH_HUE } from "./word-search/constants";
 // The challenge-eligible pool and its scoring numbers (docs/STUDY_CHALLENGE.md § 5.4).
 // They live in the shared wire contract rather than here because THE SERVER draws each
 // challenge's game sequence and cannot load this module (it imports lazy React
@@ -58,7 +60,7 @@ export const GAME_REGISTRY: GameDef[] = [
         // (shortfall message), so we don't gate it out of the menu with
         // requiresAuth — that just made the row invisible while debugging.
         Component: lazy(() => import("./bubble-match/BubbleMatchPage")),
-        hue: "red",
+        hue: BUBBLE_MATCH_HUE,
         markType: BUBBLE_MATCH_MARK_TYPE,
         challengeScoring: challengeScoringFor("bubble-match"),
     },
@@ -69,7 +71,7 @@ export const GAME_REGISTRY: GameDef[] = [
         subtitle: "Hunt words in a grid",
         route: "/games/word-search",
         Component: lazy(() => import("./word-search/WordSearchPage")),
-        hue: "pur",
+        hue: WORD_SEARCH_HUE,
         // No `markType`: Pinyin marks production, No Pinyin marks reading, so the
         // label belongs on each mode sub-card (see WordSearchModeConfig.markType).
         //
@@ -86,7 +88,7 @@ export const GAME_REGISTRY: GameDef[] = [
         subtitle: "30-second clock",
         route: "/games/match-speed",
         Component: lazy(() => import("./match-speed/MatchSpeedPage")),
-        hue: "grn",
+        hue: MATCH_SPEED_HUE,
         markType: MATCH_SPEED_MARK_TYPE,
         challengeScoring: challengeScoringFor("match-speed"),
     },
@@ -97,7 +99,7 @@ export const GAME_REGISTRY: GameDef[] = [
         subtitle: "20 rounds",
         route: "/games/speed-reading",
         Component: lazy(() => import("./speed-reading/SpeedReadingPage")),
-        hue: "blu",
+        hue: SPEED_READING_HUE,
         markType: SPEED_READING_MARK_TYPE,
         // zh-only: a round is built by substituting ONE character of the
         // headword, which presupposes a character-based script. See
@@ -111,7 +113,7 @@ export const GAME_REGISTRY: GameDef[] = [
         subtitle: "Heads grow back",
         route: "/games/hydra-bubbles",
         Component: lazy(() => import("./hydra-bubbles/HydraBubblesPage")),
-        hue: "tea",
+        hue: HYDRA_HUE,
         markType: HYDRA_MARK_TYPE,
         challengeScoring: challengeScoringFor("hydra-bubbles"),
         // No `languages` gate: levels 1..6 exist for every language and nothing in
@@ -130,7 +132,7 @@ export const GAME_REGISTRY: GameDef[] = [
         subtitle: "All Cards only",
         route: "/games/memory-map",
         Component: lazy(() => import("./memory-map/MemoryMapPage")),
-        hue: "org",
+        hue: MEMORY_MAP_HUE,
         markType: MEMORY_MAP_MARK_TYPE,
         // No `languages` gate: the map renders through ForeignText, so Spanish works
         // unchanged. No `challengeScoring` either — a challenge round is recognition

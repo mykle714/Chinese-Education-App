@@ -16,7 +16,8 @@
  *
  * ── The timeline ──────────────────────────────────────────────────────────────
  *
- *   Mon 04:00  ISSUE OPENS    challenger picks friend + variant + word set
+ *   Mon 04:00  ISSUE OPENS    each player's OWN clock — challenger picks friend
+ *                             + variant + word set
  *   Wed 04:00  ACCEPT DEADLINE  the CHALLENGEE's clock — end of their Tuesday
  *   Fri 04:00  TEST OPENS     each player's OWN clock
  *   Mon 04:00  TEST CLOSES    each player's own clock — the instant the next
@@ -57,11 +58,33 @@
  *
  * A UTC-anchored counter FORCES the collision: every instant on earth maps to
  * exactly one index, so whoever inserts second always hits the unique index and
- * gets a 409. The accepted cost is that the ISSUE window now rolls at Monday 00:00
- * UTC rather than each player's local Monday 04:00 — up to 4h late in Shanghai,
- * 11h early in Los Angeles. The DEADLINES are unaffected and stay per-player local
- * (see below): only the question "which week is this" became global, which is the
- * only way two players can agree on the answer.
+ * gets a 409. The counter is the challenge's NAME; only the question "which week is
+ * this" is global, which is the only way two players can agree on the answer.
+ *
+ * ── ...BUT THE WEEK OPENS ON THE PLAYER'S OWN CLOCK (2026-08-23) ──────────────
+ * Naming the week in UTC is not the same as STARTING it in UTC, and for a while
+ * this file did both. `challengeWeekIndex` answers "which week is this instant in,
+ * in UTC"; `localChallengeWeekIndex` answers "which week is this PLAYER in, on the
+ * clock every other boundary in the app uses" — Monday 04:00 local, like the streak
+ * cron and the AI usage counter. Issuing uses the latter, so a new week opens for a
+ * player at 4 AM their Monday, which is what the timeline above promises and what
+ * the UI copy ("Next challenge on Monday") says.
+ *
+ * Stamping the issue from UTC instead was not merely 'early' or 'late' — it was a
+ * BUG east of UTC. Shanghai's Monday 04:00 arrives at Sun 20:00 UTC, four hours
+ * before the counter rolls, so a challenge issued in that gap was stamped with the
+ * OUTGOING week and born already past its Wednesday accept deadline: dead on
+ * arrival, and occupying the pair's previous week. West of UTC the error ran the
+ * other way and was harmless (Los Angeles could issue next week's challenge up to
+ * 11 hours early).
+ *
+ * ⚠️ THE TWO PLAYERS' WEEKS ROLL AT DIFFERENT INSTANTS, and between them a pair
+ * disagrees about which week it is — the same disagreement that let a crossing pair
+ * create two live challenges before migration 150. What contains it now is not the
+ * unique index (two different indices never collide) but the LIVE-PAIR GUARD in
+ * `StudyChallengeService.issueChallenge`: a pair may hold at most one unfinished
+ * challenge at a time, whatever week it is named after. See docs/STUDY_CHALLENGE.md
+ * § 2 "When a week opens".
  *
  * Consequences accepted rather than engineered away: a window can move under a
  * player's feet. Travelling east shortens it; travelling far enough west can make
@@ -96,6 +119,7 @@ export const CHALLENGE_WEEK_START_DOW = MONDAY;
 export const CHALLENGE_BOUNDARY_HOUR = 4;
 
 /** Days from the week's Monday to each boundary. */
+const WEEK_OPEN_DAY_OFFSET = 0;      // Monday 04:00 — the week opens
 const ACCEPT_DEADLINE_DAY_OFFSET = 2; // Wednesday 04:00 — the end of the challengee's Tuesday
 const TEST_OPEN_DAY_OFFSET = 4;       // Friday 04:00
 const TEST_CLOSE_DAY_OFFSET = 7;      // the following Monday 04:00
@@ -143,6 +167,52 @@ function weekBoundary(weekIndex: number, tz: string, dayOffset: number): Date {
     CHALLENGE_BOUNDARY_HOUR,
     tz,
   );
+}
+
+/**
+ * When a week OPENS for a player — Monday 04:00 in THAT player's zone, the instant
+ * they may issue that week's challenges and the instant the previous week's test
+ * window closes (they are the same boundary, one week apart).
+ */
+export function weekOpen(weekIndex: number, playerTz: string): Date {
+  return weekBoundary(weekIndex, playerTz, WEEK_OPEN_DAY_OFFSET);
+}
+
+/**
+ * Which challenge week THIS PLAYER is in right now — the week whose local Monday
+ * 04:00 has most recently passed for them.
+ *
+ * This is the counterpart to `challengeWeekIndex`, and choosing between them is the
+ * whole distinction the module header draws:
+ *   * `challengeWeekIndex(now)` — which week an INSTANT is in, in UTC. The
+ *     challenge's identity. No timezone, because an identity that varies by who is
+ *     asking cannot be a unique index.
+ *   * `localChallengeWeekIndex(tz, now)` — which week a PLAYER is in. Used
+ *     everywhere a user's own "this week" is meant: what a new challenge is stamped
+ *     with, and whether this pair has already had their turn.
+ *
+ * The two answers differ for up to 16 hours around the roll (a zone runs from
+ * UTC−12 to UTC+14, and the boundary sits at 04:00 rather than midnight), which is
+ * why the search below has to look at the neighbouring weeks and cannot simply
+ * offset the arithmetic.
+ *
+ * Implemented as a short descending scan rather than closed-form arithmetic because
+ * the local boundary is a WALL CLOCK: `weekBoundary` resolves 04:00 through the
+ * zone, so a DST shift moves it by an hour and no fixed offset from the UTC counter
+ * is correct in every week. Scanning asks the boundary itself, which is always
+ * right. Three candidates is provably enough — the local Monday 04:00 of week k can
+ * sit at most 16h after and 10h before the UTC instant that starts week k, so the
+ * answer is never further than one week from `challengeWeekIndex`.
+ */
+export function localChallengeWeekIndex(playerTz: string, now: Date): number {
+  const t = now.getTime();
+  const utcWeek = challengeWeekIndex(now);
+  for (const candidate of [utcWeek + 1, utcWeek, utcWeek - 1]) {
+    if (weekOpen(candidate, playerTz).getTime() <= t) return candidate;
+  }
+  // Unreachable for any real zone; returning the UTC answer keeps the function
+  // total rather than letting an exotic offset produce `undefined` downstream.
+  return utcWeek;
 }
 
 /**

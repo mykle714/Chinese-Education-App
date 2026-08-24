@@ -1,7 +1,9 @@
 # Shelf Redesign — app-wide visual system
 
-> **STATUS: IN PROGRESS.** Part A1 (tokens) has landed app-wide; see its **What
-> landed** list. Everything else is still plan.
+> **STATUS: IN PROGRESS.** Part A is complete. Part B has shipped entries **1, 2, 3
+> (menu only), 4, 5, 12–16, 18 and 19–25**; the rest is still plan. Every artboard in the
+> spec file now HAS an entry (see the table below) — an entry with no `Status: DONE` line
+> is unbuilt, not undrawn.
 > Nine of the eleven open questions were **answered 2026-08-20** — see the
 > **Decisions** section near the bottom, which is binding. Q6 and Q8 remain open.
 > Part A is shared groundwork; Part B is one entry per artboard, each independently
@@ -19,13 +21,25 @@ The design lives in the user's Claude Design project **"Cow"**
 | `App Redesign - Shelf System.html` | 18 phone artboards, one per screen. The spec. |
 | `shelf-system.css` | The stylesheet those artboards share — token + primitive definitions. |
 
-Sibling explorations in the same project (`Home Menu - 12 Directions.html`,
-`Decks Page - 12 Directions.html`, `Tone Color Explorations.html`,
-`Definition Tab Explorations.html`) are **earlier alternatives, not the spec**.
-Read them for context on a decision, never as a source of values.
+Sibling explorations in the same project are **earlier alternatives or narrower
+studies, not the spec**: `Centers - Directions.html`, `Color Grammar.html`,
+`Decks Minimized - Directions.html` / `- Directions v2.html`,
+`Arena Division Banners.html`, `Sort Flow - Shelf System.html`. Read them for context
+on a decision, never as a source of values. (The `Home Menu - 12 Directions.html`,
+`Decks Page - 12 Directions.html`, `Tone Color Explorations.html` and
+`Definition Tab Explorations.html` files this section used to list are **no longer in
+the project** — the list above is what `DesignSync.list_files` returned on 2026-08-23.)
 
-Artboards are numbered 1–18 with **no 17** — the design skips it. Nothing is
-missing; the numbering has a hole.
+**PART B NOW COVERS THE WHOLE ARTBOARD SET.** This file was originally written against
+artboards 1–18 (with a numbering hole at 17). As of 2026-08-24 the spec file holds **27**
+artboards and every one has an entry; `data-screen-label` remains the authoritative list.
+
+| Range | Where its entry is |
+|---|---|
+| 1–16, 18 | their own numbered entries below |
+| **17 Deck Preview panel** | the "hole" is the pull-up sheet entry 2 draws — the `.sheet` atom, built in A3 |
+| **2b Decks minimized hand** | a second STATE of entry 2, needing no separate work: it is the same page with the sheet at its resting lip |
+| **19 Flashcard Learn, 20 + 20b Extra Info Panel, 21 Card menu, 22 Swipe coaching, 23 Sense sheet, 24 EIP examples, 25 EIP breakdown** | one combined entry, **19–25**, after entry 18 |
 
 ## The idea in one paragraph
 
@@ -790,8 +804,9 @@ a count, it is a spine.*
 
 ## A5 · Generic atoms
 
-**Status: DONE (2026-08-21).** Depends on A1. Small individually, but **every** Part B
-entry uses several, so they were done as one pass rather than 17 partial ones.
+**Status: DONE (2026-08-21); `Segmented` added 2026-08-24 with entry 18.** Depends on A1.
+Small individually, but **every** Part B entry uses several, so they were done as one pass
+rather than 17 partial ones.
 
 The pass split the fifteen classes three ways, on one question: *does MUI already ship
 this control?*
@@ -824,17 +839,55 @@ should be used **only** when that affordance exists; without an `action` it is a
 ends in a tappable icon, the other in an inert mono fact. Kept as separate components on
 purpose; see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) § "`BentoStrip` vs `ShelfHeader`".
 
+**Added 2026-08-24 (entry 18):** `SectionRule` grew an optional `right` slot — an
+arbitrary node at the far end of the hairline, which is artboard 18's `.sec2` with a
+`.trkseg` in it. Deliberately different from `SectionHeader`'s `action`: that one is a
+single glyph on a header with no rule, this one is a control at the end of one. A control
+at the far end of a hairline reads as SCOPING what follows; a glyph on a bare header row
+reads as ACTING on it.
+
+**`src/components/primitives/Segmented.tsx`** → `Segmented` (`.trkseg`). Added 2026-08-24.
+
+A hairline-outlined pill split into 2–4 mono-uppercase choices, exactly one active. It is
+the third of the design's three "pick one of a few" shapes and they mean different things,
+which is why they stay different components:
+
+| shape | what a pick changes |
+|---|---|
+| `Segmented` (`.trkseg`) | which SLICE of the same data you are looking at — the content below does not change kind, only which track/period/lens it reports. Small and quiet: a lens control, not a destination |
+| `.tabs2` (the eip tab strip) | which KIND of content. Full width, sentence case, underlined |
+| `.chip` / `.mode` (MUI theme overrides) | a filter or a mode that changes what an ACTION will do |
+
+Not a MUI `ToggleButtonGroup`: the group ships 44px touch targets, a ripple and a
+border-collapse scheme that all have to be overridden away to reach an 8.5px mono pill,
+and what survived the overrides was a `Box` with extra steps.
+
 **`src/components/primitives/Row.tsx`** → `Row` (`.rw`), `RowList` (`.rows`).
 
 One entity in a list, where the list is neither a collection the user owns (Shelf) nor a
 menu of destinations (Bento). Slots: `icon`/`initials`/`avatar` + `hue`, `title`,
-`subtitle`, `value`, `chevron`, `trailing`. A row that needs a sixth slot is not a `Row`.
-Like `BentoTile`, it becomes a real `<a>` with `to`, a real `<button>` with only
-`onClick`, and a plain div otherwise.
+`subtitle`, `meta`, `value`, `chevron`, `trailing`. A row that needs one more slot than
+these is not a `Row`. Like `BentoTile`, it becomes a real `<a>` with `to`, a real
+`<button>` with only `onClick`, and a plain div otherwise.
 
 The 36px avatar is a **pastel fill and carries `markOutline`** — the "large and occupied"
 exception (D2a) does not reach something this small, and without the inset ring it sits at
 ~1.15:1 on white and disappears.
+
+Two slots were settled by entry 5 (Account) rather than by this section, because Account's
+profile row is the only row in the artboards that needs either:
+
+- **`avatar` REPLACES the styled box**, it does not fill it. The prop's doc always said
+  "a fully custom avatar" while the code nested the node *inside* the 36px pastel box, so
+  a caller could change the contents and nothing else. Account needs a 48px, radius-15,
+  *tappable* avatar (it opens the icon picker), and a focusable control cannot be built by
+  handing children to a div. There were no other callers, so the code moved to match the
+  doc. `icon` / `initials` still render in the styled box.
+- **`meta` is a THIRD text line, set in mono** — the design's second `.s` inside `.tx`.
+  Exactly one row in the whole artboard set has it (Account's, carrying the copyable user
+  ID), so it is an exception rather than a general slot: reach for it when a row's identity
+  needs a machine-readable line, not to fit one more sentence in. It renders as a `<span>`,
+  not a `<p>`, because Account puts an inline copy **button** in it.
 
 **`src/components/primitives/StatCard.tsx`** → `StatCard` (`.card`).
 
@@ -972,10 +1025,121 @@ clipped by the panel's radius.
 `src/games/match-speed/MatchSpeedTimerBar.tsx`.
 **Docs:** `docs/GAMES_FEATURE.md`. **Size: M.**
 
+## A6b · Game surface COLOUR — the 60/30/10 accent ground
+
+**Status: DONE (2026-08-23).** Depends on A6, A1, A2b. Shared by entries **12–16** and
+Memory Map.
+
+A6 shipped the frame on the app's ordinary paper ground and stopped there. The artboards
+do something else with it, in a per-screen CSS block the first pass skipped entirely
+(`#bm{background:var(--redA)}` and its four siblings): **each game screen is flooded with
+one saturated accent**, the play panel sits on it as a white island, and the header's ink
+flips to white to survive it. 60% accent ground, 30% white panel, 10% the hue's near-white
+tint on the HUD strip.
+
+**Why it earns the trouble.** A game is the one place in this app where the player is
+inside a single activity for minutes with no navigation on screen. Flooding the ground is
+what makes "I am in Word Search" a fact you cannot lose track of, and it is also what turns
+the panel from a card on a page into a board.
+
+### The hue comes from the hub row, not from the artboard
+
+| Game | Hub row (`GameDef.hue`) | Artboard | Ground shipped |
+|---|---|---|---|
+| Bubble Match | red | red | **red** |
+| Word Search | pur | purple | **pur** |
+| Match Speed | grn | blue | **grn** |
+| Speed Reading | blu | yellow | **blu** |
+| Hydra Bubbles | tea | green | **tea** |
+| Memory Map | org | — | **org** |
+
+Three of five artboard hues disagree with the shipped hub, whose mapping is already
+visible and already documented as deliberate ("a persistent per-game color, not a random
+one" — the `tealAccent` comment in `theme/colors.ts`). Copying the artboard would mean a
+green hub row opening a blue screen, so the ground is DERIVED from the hub hue and the
+artboards are treated as five screens drawn before the hub had settled. The design's yellow
+is not in the app's ramp at all, which settles Speed Reading on its own.
+
+Each game owns its hue as `GAME_HUE` in its own `constants.ts`. `GAME_REGISTRY` imports it
+(the same trick it already used for `MARK_TYPE`, which keeps the registry cycle-free), so
+the hub row and the ground read one constant.
+
+### The two mechanisms, and why there are two
+
+| | Mechanism | Why |
+|---|---|---|
+| The header (title, chevron, right-slot icons, `HeaderMetaLabel`, streak badge, both chip states) | CSS descendant selectors in `gameSurfaceSx`, applied to `LeafPage`'s surface | It is the design's own mechanism (`#bm .lhd h1{color:#fff}`), and the alternative is threading an `onAccent` flag through four shared components that only games would ever set. The selectors win on specificity: a 2–3 class descendant rule beats the single-class rule MUI generates for an `sx` colour. |
+| The panel (`GameFrame` border, `GameHud`/`GameTimer` ground + hairline, `GameCentered` ink) | React context — `GameSurfaceProvider` / `useGameSurfaceHue()` | A HUD label's colour is overridable per call site (a lives counter turning red); a blanket descendant rule would silently clobber it. The context is also null-by-default, so every one of these components still draws its pre-A6b self with no provider — which is what keeps them mountable bare in a test. |
+
+`GameLeafPage` (`src/games/shared/GameSurface.tsx`) is what a page actually uses: it takes
+one `hue` and does the ground, the flips and the provider together, so "this game is teal"
+is stated once per page and cannot be stated inconsistently.
+
+### The decisions inside it
+
+- **The HUD strip takes the hue's `tint` (97.5%), not its `fill` (93%).** The artboards are
+  split — Bubble Match and Speed Reading were revised from the pastel to a ~97% tint, the
+  other three were not touched. Nothing moved the other way, so the tint is the direction
+  of travel, and it is also the only one of the two that leaves the strip legibly lighter
+  than a pastel-filled widget sitting inside it. Shipping the artboards literally would
+  have imported a 2-vs-3 inconsistency.
+- **The strip's hairline is the hue's `ink`, not `COLORS.rowBorder`.** On a tinted ground a
+  10% ink alpha is too faint to close the shape. Same reason the panel's own border becomes
+  a 50% WHITE alpha (`ON_ACCENT_LINE`) on the accent ground.
+- **HUD labels default to full ink.** `GameHudLabel`'s default is `COLORS.onSurface`, not
+  `Label`'s faint grey — the design sets these to `#000` on all five game artboards, and a
+  faint grey on a 97.5% tint is not a label, it is a smudge.
+- **The toggle chip's outline is an inset `box-shadow`, not a `border`.** A border adds 2px
+  per chip and the leaf header is already tight enough that "Hydra Bubbles" ellipsises
+  beside two chips, a restart button and the streak badge. An accent ground must not change
+  the header's metrics.
+- **The chip's ON state takes BLACK text**, per the design's latest revision (it was the
+  accent ink). An accent-on-white chip and the accent ground are the same colour, so the
+  chip's label was competing with the thing it sits on.
+- **Text on the ground is white, and `GameCentered` owns that rule.** The four identical
+  `renderCentered` helpers became one component, which was the opportunity: a blocked
+  message that sets its own `color: onSurface` would ship black on a saturated ground, and
+  now it inherits instead. Speed Reading's clock takes the same treatment, except that its
+  "cannot medal any more" state goes to the PASTEL red — `dangerInk` is a dark red, and a
+  dark saturated ground is the one place it cannot be read.
+- **Match Speed's clock track changed hue.** It was `infoInk` (the palette's neutral blue);
+  it is now `RAMP[GAME_HUE].ink`, because a blue bar on a green strip read as a widget
+  borrowed from another screen.
+
+### Two inconsistencies this pass found and fixed at the source
+
+- **Memory Map's header was the last one still styling its own text**: a raw `Typography`
+  for `0/25` and a `@mui/icons-material` `IconButton` for restart, both predating A2b/D3.
+  They are `HeaderMetaLabel` + `HeaderIconButton` now — which is also the only reason the
+  accent ground can repaint them.
+- **Word Search's hint bar was gold.** The lightbulb is black now (the arm state is already
+  carried by the glyph's FILL axis and the button's opacity; a third channel on one 16px
+  icon just made the button look like a warning) and a banked charge dot is the game's
+  accent ink, per `#ws .hintbar .chg i{background:var(--purA)}`.
+
+**Not adopted: artboard 16's Hydra bubble ink** (`.bub.zh` muted, `.py` at full ink). That
+artboard's bubble colours are already recorded as stale in entry 16, its Chinese/English
+assignment is inverted from what ships, and `Bubble`'s ink is DERIVED from the fill
+(`inkOnFill`) precisely so a palette change cannot strand dark text on a dark bubble. A
+hand-set gloss colour would be a per-game knob reintroduced into the one place the app made
+it a rule.
+
+**Also not this pass:** the design's revised `.duo` treatment (a spine bar and a lit inner
+edge on the two stat cards) is on artboard **2 · Decks**, not a game — it belongs to
+entry 2.
+
+**Code:** new `src/games/shared/gameSurface.ts` + `GameSurface.tsx`;
+`src/games/shared/GameFrame.tsx`; all six game pages and their `constants.ts`;
+`src/games/registry.ts`; `src/games/word-search/WordSearchHintBar.tsx`;
+`src/games/match-speed/MatchSpeedTimerBar.tsx`; `src/components/LeafPage.tsx`
+(new `surfaceSx`); `src/components/PageHeader.tsx` (the `--active` chip class).
+**Docs:** `docs/GAMES_FEATURE.md`, `docs/LEAF_NODE_PAGES.md`, and the per-game docs.
+**Size: M.**
+
 ## A7 · Data-display widgets
 
-**Status: PARTIALLY DONE (2026-08-21) — `.bd` shipped, the rest not started.**
-Depends on A1. Each widget is used by 2+ pages, so each is shared.
+**Status: PARTIALLY DONE — `.bd` shipped 2026-08-21, `.msb` shipped 2026-08-24,
+`.cpcd` not started.** Depends on A1. Each widget is used by 2+ pages, so each is shared.
 
 ### ✅ `.bd` — the board (DONE)
 
@@ -1062,38 +1226,53 @@ matches two adjacent rows whose `sx` is byte-identical, and the viewer's row and
 zone-tinted row get different classes. Exactly the separators around the most important
 rows would go missing.
 
-### Not started
+### ✅ `.msb` — the mastery window (DONE 2026-08-24)
 
-- **`.msb` mastery cells** — the segmented-cell bar with a `.tick` goal marker and a
-  `.cd3` legend, the design's rendering of the pbh model. **This is the app's only
-  mastery visualization (D7)**; scale it down for inline/list contexts rather than
-  substituting a different shape. `.trk2` and `.mst` are deliberately **not built**.
-  It still renders **one** bar — the surface's lens (D6); `MasteryProgressBar`'s
-  one-bar-per-lens rule is unchanged.
+`src/components/mastery/MasteryWindow.tsx` → the eight-cell window, its `.tick` cut-point
+markers, the `.hd4` heading (track name + band pill + figure) and the `.cd3` cooldown
+legend, plus the `.sec2` rule and `Segmented` track switch above it. **This is the app's
+only mastery visualization (D7)**; scale it down for inline/list contexts rather than
+substituting a different shape. `.trk2` and `.mst` are deliberately **not built**, and
+`MasteryProgressBar` — which WAS a `.mst` — is deleted.
+
+Three things the build settled:
+
+1. **A cell is a pbh unit, and the last one can be PARTIAL.** The core bar's pbh is a
+   blend (the stronger track capped at 6 plus a third of the weaker), so it is fractional.
+   Rounding it would make two genuinely different cards read the same, so the cell fills
+   to its fraction instead.
+2. **The core bar's filled cells are painted in its SEGMENT ratio**, recognition then
+   production, on the SATURATED mark hexes (D2b). The band pill beside them is the
+   PASTEL — it is a surface, the cells are marks.
+3. **Which track is on screen is now the learner's choice** — see the D6 amendment.
+
+- ~~It still renders one bar — the surface's lens (D6)~~ — superseded by the D6
+  amendment: one track at a time, defaulting to the lens, switchable by the learner.
+
+### Not started
 - **`.cpcd`** — character-over-pinyin, with a `.sm` size. The app already owns this
   as `CPCDRow` / `CPCDBlock`, reached **only** through `ForeignText`. Restyle
   inside those files; do not introduce a new component.
 - **`.ladder`** — the division ladder bars with a `.now` outline (Arena).
 - **`.banner`** — the notched division banner (Arena).
-- **`.hero`** — the flashcard face itself, 295/426 aspect (Card Detail, flp).
+- ~~**`.hero`**~~ — the flashcard face itself, 295/426 aspect. **Done inside entries 18
+  and 19–25**, where it belongs: `CARD_BASE_WIDTH`/`CARD_BASE_HEIGHT` + `CardFaceSide`
+  already were the hero, and what the artboards actually changed about it was its
+  FURNITURE (`.wtl` above it, `.crail` on it, `.peek` below it), not the face.
 
-`.ladder` and `.banner` are Arena-only and `.hero` is Card-Detail-only, so all three are
-arguably better done inside entries 9 and 18 than as standalone shared work — they are in
-A7 because they are drawn more than once in the artboards, not because two features share
-them.
+`.ladder` and `.banner` are Arena-only, so both are arguably better done inside entry 9
+than as standalone shared work — they are in A7 because they are drawn more than once in
+the artboards, not because two features share them.
 
 **Work remaining**
-1. `src/components/mastery/MasteryTrack.tsx` (`.trk2`) and
-   `src/components/mastery/MasteryCells.tsx` (`.msb`), both driven by the existing
-   `masteryBar()` / `PBH_THRESHOLDS` / `PBH_FULL` / `MARK_TYPE_COLORS` model — no
-   new data.
-2. Restyle `CPCDRow` / `CPCDBlock` in place.
+1. Restyle `CPCDRow` / `CPCDBlock` in place.
 
-**Code:** `src/components/leaderboard/Board.tsx` (done); new `src/components/mastery/*`;
-`src/features/flashcards/MasteryProgressBar.tsx`; `src/components/CPCDRow.tsx`;
-`src/components/CPCDBlock.tsx`; `src/components/ForeignText.tsx`.
+**Code:** `src/components/leaderboard/Board.tsx` (done);
+`src/components/mastery/MasteryWindow.tsx` (done); `src/components/CPCDRow.tsx`;
+`src/components/CPCDBlock.tsx`; `src/components/ForeignText.tsx` (the `.cpcd` restyle,
+still to do). **Deleted:** `src/features/flashcards/MasteryProgressBar.tsx`.
 **Docs:** `docs/MASTERY_REWORK.md`, `docs/ARENA_FEATURE.md`,
-`docs/CPCD_PINYIN_SHIFT.md`. **Size: L (was L; `.bd` is out of it).**
+`docs/CPCD_PINYIN_SHIFT.md`. **Size: L (was L; `.bd` and `.msb` are out of it).**
 
 ---
 
@@ -1127,45 +1306,47 @@ as further `.lo` tiles — the mosaic must not assume a fixed tile count.
 
 ## 2 · Decks & Cards — `/flashcards/decks` — **Size: L**
 
-**Status: not started.** The largest single page.
+**Status: DONE (2026-08-24).** Typecheck, lint, build and the 557-test suite clean.
 
-**Today.** Two surfaces. The **page behind** holds the study-entry buttons —
-Review / Challenge, the Study Mix slab, and (when the account pursues them) the
-Reading and Writing Center buttons. The **persistent pull-up sheet** in front holds
-Collections, Challenges, the user's Decks, and below them the whole card library as
-a searchable grid. Data comes from `useDecksPanel(lens)`; the body is
-`DecksPanelBody`, shared with the two Mastery Center pages.
+**What landed.** The SHEET was already converted by A3, so this entry was the STUDY
+AREA behind it plus one change inside the sheet.
 
-**Design.** Sheet kept. Its sections become shelves with `.shelfhd` headers:
-Collections → Mastered (the per-skill Centers) → Challenges → Your decks → the card
-library with its search. Above the sheet, a three-across action row: Review /
-Study Mix / Challenge.
+- **`StudyHand` (`.fanw`) replaces the three study buttons.** Review / Challenge on one
+  row above a 3:4 Study Mix slab became a fanned HAND of three cards with one played
+  forward. Bringing a card forward is deliberately NOT starting the session — the front
+  card carries the figure and its own `Study now`, so choosing a mode and committing are
+  two taps. Slot assignment is a rule (`FAN_ORDER`), not remembered positions.
+- **The Centers rail (`.ctr2`) moved ABOVE the hand.** This resolves the entry's old
+  conflict (a): the artboard has a slot for Reading/Writing Center now. They are a
+  different KIND of destination — a place to look at your library by skill, not a session
+  — so they sit apart from the hand rather than joining it. Pastel fills (D2b), reading on
+  `red` and writing on the new `yel`.
+- **`LibraryDuo` (`.duo`) replaces the Collections spine row.** This resolves conflict
+  (b): the sheet now opens on the learner's two CONSTANTS — Learn Now and Mastered — as
+  two wide tiles carrying their figures. **This narrows D9** (see the amendment there).
+  No per-skill Mastered spine returns; the header comment's rule is intact.
+- **The `.duebar`** prints the library size and the scope. ⚠️ Its artboard reads
+  "24 due today", which the app cannot answer — see DEFERRED_WORK.md item 9.
 
-**Watch out — two conflicts.**
-> **(a)** The artboard's action row is **Review · Study Mix · Challenge**. The real
-> page also carries the **Reading and Writing Center buttons**, which are the only
-> entry points to those pages. The design has no slot for them. Do not silently
-> drop them.
->
-> **(b)** `FlashcardsDecksPage`'s header comment states the page **is the core bar
-> and only the core bar**, and that per-skill tiles must not go back on it. The
-> artboard's "Mastered" shelf showing a *Mastered Reading* spine is arguably that
-> exact thing returning. Confirm before building.
+**Figures.** Each mode's number is the size of the set it draws from, read off the core
+bands and matching the server's own `MODE_CONFIGS`: Mix = everything in rotation,
+Review = Comfortable + Mastered, Challenge = Unfamiliar + Target. `undefined` until the
+counts land, so the cards print an em dash rather than a provisional `0` — `0` is a real
+answer every one of these figures can give. The Review gate is unchanged (its bands are
+EARNED and provisioning cannot fill them); an ineligible card still fires `onStudy` so
+the host can explain rather than leaving a dead card.
 
-**Note.** "All Cards has no spine" in the artboard is **correct and deliberate** —
-its grid is rendered inline at the bottom of the sheet. The existing code already
-does this.
+**Artboard 2b** (sheet minimized) needed no work: it is the same page with the sheet at
+its resting lip, which is the sheet's default state.
 
-**Code:** `src/features/flashcards/FlashcardsDecksPage.tsx`;
+**Code:** `src/features/flashcards/StudyHand.tsx` (new);
+`src/features/flashcards/LibraryDuo.tsx` (new);
+`src/features/flashcards/FlashcardsDecksPage.tsx`;
 `src/features/flashcards/DecksPanelBody.tsx`;
-`src/features/flashcards/useDecksPanel.ts` → `useDecksPanel`, `DecksPanelState`;
-`src/features/flashcards/FlashcardsLearnPage/SheetPanel.tsx`;
-`src/features/flashcards/builtinCollections.ts`;
-`src/features/flashcards/masteryCenters.ts` → `activeMasteryCenters`,
-`MASTERY_CENTER_PATHS`; `src/features/flashcards/collectionGlyph.ts`;
-`src/components/DeckTile.tsx`; `src/components/DeckBuckets.tsx`;
-`src/components/MiniVocabCardGrid.tsx`.
-**Docs:** `docs/DECKS_FEATURE.md`, `docs/MASTERY_REWORK.md`.
+`src/theme/colors.ts` (`yel`/`yelA`/`yelTint` + the `RAMP` entry).
+**Deleted:** the page's `MixButton` / `ReviewButton` / `ChallengeButton` / `CenterButton`
+styled components and `studyButtonBase`.
+**Docs:** `docs/DECKS_FEATURE.md`, `docs/MASTERY_REWORK.md`, `docs/DEFERRED_WORK.md` § 9.
 
 ## 3 · Discover — `/discover` — **Size: TBD**
 
@@ -1278,24 +1459,76 @@ Bento strip — it is the single largest piece of hub work, and it is why D8
 
 ## 5 · Account — `/account` — **Size: M**
 
-**Status: not started.**
+**Status: DONE (2026-08-23).** Typecheck, lint, `vite build` and the unit suite all
+clean; verified in a browser at 420px.
 
-**Today.** `AccountPage` shows the profile block (avatar, email, copyable user ID),
-`DeckBuckets` for the four progress buckets, the Velocity figure with an `InfoTip`,
-the reading/writing goal checkboxes, and Log Out.
+**What landed.** The page is now assembled entirely from shelf-system primitives, in
+the artboard's order:
 
-**Design.** Same content, re-cut: the four buckets become a **shelf** whose spine
-heights encode their counts; Velocity keeps its one big number in a `.card`; goals
-become switch rows; Log Out is a `.btn3` at the bottom.
+| Artboard shape | Component | Was |
+|---|---|---|
+| `.hd` right slot | `MinutePointsFireBadge` + the outlined settings `HeaderIconButton` | gear only — **the flame was missing on this page** |
+| `.rw` profile | `Row` (`avatar` / `title` / `subtitle` / `meta`) | bespoke `UserInfoSection` — 56px circular MUI `Avatar`, a hairline divider, three loose `Typography`s |
+| `.shelfhd` "Your library" + total | `SectionHeader` with two `Label`s | absent |
+| `.shelf` | `DeckBuckets` (unchanged) | already converted with A3 |
+| `.card` Velocity | `StatCard`, centred | bespoke `VelocityCard` on the `sectionCard` fill |
+| `.shelfhd` "Goals" | `SectionHeader` | a bold sentence-case `Typography` + a 5-line paragraph |
+| two goal rows | `Row` + MUI `Switch` | `FormGroup` of `Checkbox` / `FormControlLabel` |
+| `.btn3` Log Out | outlined MUI `Button` (theme-skinned) | same, but `size="small"`, which overrode `.btn3`'s 13px padding |
 
-**Watch out.** Goals are currently MUI `Checkbox`/`FormControlLabel`; the design
-draws toggle switches. Changing the control changes nothing functionally but does
-change the a11y surface — keep them real form controls, not icon glyphs.
+**The page has NO padding of its own, and that is what made the conversion work.**
+Every primitive carries its own page gutter — `RowList` 16px, `SectionHeader` and
+`Shelf` 22px, `StatCard` 18px — plus its own top margin, because in the design those
+gutters differ per shape. The old page wrapped everything in a 20px-padded, 350px-wide
+centred column, which would have doubled every one of them. `DeckBuckets` had zeroed
+`Shelf`'s 22px gutter for exactly that reason; that override is now **removed**, and
+leaving it would have put the spines 22px left of the header above them.
+
+**Decisions taken while building.**
+
+- **The goal toggles are `Switch`es, not the artboard's `toggle_on`/`toggle_off`
+  glyphs** — this entry's own "watch out", and it held. A glyph is not focusable,
+  checkable or announced. The skin (`GOAL_SWITCH_SX`, `COLORS.grnA` when on) is
+  page-local **only** because ten other files still render an unconverted `Switch`; it
+  belongs in `MuiSwitch.styleOverrides` beside the `.btn2`/`.btn3`/`.chip` skins the
+  moment those are converted.
+- **The goals paragraph is gone**, replaced by a one-line `subtitle` per row ("Adds a
+  reading bar to every card"). Same fact, said once per control instead of once per
+  section — the artboard's own change, and it is why the rows have room for a hue and a
+  glyph (`menu_book`/`red`, `edit`/`org`).
+- **Velocity's window sentence is printed again.** It was a caption, then moved into
+  the ⓘ, and the artboard draws it as visible body copy under the figure. The ⓘ was
+  **kept** rather than deleted, and re-pointed: it now defines what a level-up *is*
+  instead of restating the sentence beneath it. If those two ever agree again, delete
+  the ⓘ.
+- **The library total is summed client-side** from the four band counts, not fetched.
+  A fifth number from the server could disagree with the spines under it.
+- **The avatar became a real `<button>`.** It was a div with `role="button"`, so the
+  icon picker was unreachable by keyboard.
+- **The profile row's two `Label`s** sit at either end of `SectionHeader`'s
+  `space-between` — the `action` slot is unused, which its own docstring warns against
+  ("a `SectionHeader` with no `action` is a `SectionRule` that forgot its rule"). The
+  artboard's `.shelfhd` genuinely has no hairline and no affordance here, so the
+  docstring is the thing that is too strict, not the call site.
+
+**Known cost.** The `meta` line renders the **full 36-character UUID**, which measures
+300px of the 388px row at 420px wide — it fits, but on a 360px viewport it wraps to a
+second line and the row grows ~16px. The artboard drew a short display ID (`ID 4821`).
+Not a regression (the old caption carried the same UUID at a larger size), and the copy
+button means nobody has to read it, so it is left alone rather than truncated.
+
+**Not in scope, still true.** The `ShelfHeader` (components/shelf) / `SectionHeader`
+(components/primitives) duplication is real — both render `.shelfhd` with identical
+`19px 22px 0` padding, and this page could have used either. Collapsing them is a
+cleanup for whoever touches A3 or A5 next; it is listed in
+[DEFERRED_WORK.md](./DEFERRED_WORK.md).
 
 **Code:** `src/pages/AccountPage.tsx`; `src/components/DeckBuckets.tsx`;
+`src/components/primitives/Row.tsx` (gained `meta`; `avatar` now replaces the box);
 `src/hooks/useCategoryCounts.ts`; `src/hooks/useVelocity.ts`;
-`src/components/InfoTip.tsx`; `src/utils/categoryColors.ts`.
-**Docs:** `docs/VELOCITY.md`, `docs/UX_AND_NAVIGATION.md`.
+`src/components/InfoTip.tsx`; `src/utils/categoryColors.ts`;
+`src/minutePoints/MinutePointsFireBadge.tsx`.
+**Docs:** `docs/VELOCITY.md`, `docs/MASTERY_REWORK.md`, `docs/UX_AND_NAVIGATION.md`.
 
 ## 6 · Reader — `/reader` — **Size: M**
 
@@ -1533,8 +1766,12 @@ there is no in-game picker to fall back to.
   colour is the only thing either game varies (`BubbleFill` is now just `bg` + `border`).
   See entry 16 for the two Hydra treatments that were retired and what they cost.
 
+- **The screen is RED (2026-08-23, A6b).** The ground, the panel's white-alpha border and
+  the `redTint` HUD strip all come from `GAME_HUE`, which is also the hub row's colour. The
+  header's restart glyph went white with the rest of the header ink.
+
 **Code:** `src/games/bubble-match/BubbleStage.tsx`;
-`src/games/bubble-match/constants.ts` → the base bubble palette;
+`src/games/bubble-match/constants.ts` → the base bubble palette and `GAME_HUE`;
 `src/games/bubbles/Bubble.tsx`. **Docs:** `docs/GAMES_FEATURE.md`.
 
 ## 13 · Word Search — `/games/word-search` — **Size: M**
@@ -1551,13 +1788,37 @@ there is no in-game picker to fall back to.
 - **Charges, not a meter.** With `HINT_COST` at 1 the eight-segment gauge with its
   threshold line was already just "how many hints you have", drawn as a gauge. `.chg`
   dots say it directly.
-- **The gloss list is `.chips`.** The old middot-separated paragraph made a two-word
-  gloss ("job interview") hard to tell from two adjacent one-word ones. **Two** states:
+- **The gloss list is `.chips`** — ⚠️ **reversed 2026-08-24, see below.** **Two** states:
   pending is `.chip.on`, the solid ink pill — the loud state, because a pending chip is
   the game's actual instruction — and found is struck through and faded to the resting
   outline, still present, because the list is also the record of what the run has
   covered. The hinted word gets no chip state: the `.hintbar` reveal one row above
   already names it, and a third treatment would have to out-shout black-pill-pending.
+
+- **⚠️ THE CHIPS ARE GONE (2026-08-24).** The list is one **inline run at 11px separated
+  by faint middots**, out of the pills entirely; the two states survive as full ink vs
+  struck-through-and-faded. Ten black pills are the loudest thing on the screen, and the
+  screen's subject is the BOARD — the list is what you glance at between traces, so set
+  small and inline it reads as a caption under the section header rather than as a second
+  board. This reinstates the very shape `.chips` replaced, and the reason for that
+  replacement is still live: a middot run makes a two-word gloss ("job interview") hard to
+  tell from two adjacent one-word ones. Two things answer it — the middot is `textFaint`
+  with a 7px gap on each side against a ~4px word space, and each gloss is `nowrap`, so it
+  never breaks across rows and a found one strikes through exactly its own words. If it
+  still reads ambiguously the next lever is trimming to a single word, not boxes.
+
+- **⚠️ THE GREY BOARD IS GONE (2026-08-24), and the edge moved onto the tiles.** The grid
+  box now draws nothing — the cells sit directly on `GameFrame`'s white panel, with 4px of
+  padding only so the outer tiles' shadows clear the scaler's `overflow: hidden`. The
+  problem the grey board solved has not gone away (a paper cell on white is ~1.03:1 and
+  the tiles dissolve), so every cell took on the palette's `markOutline` inset ring
+  instead — which is the app's own rule for making a ~1.15:1 fill read as a shape, so the
+  board became one more caller of it rather than a special case with a container. It also
+  **helps the lit states**: a pastel on a paper tile is a value step, where a pastel on the
+  grey board was the same value as its ground. The reviewing state swaps the ring for
+  `grnA` at 1.5px rather than stacking a second one. Whatever comes next, a board ground
+  must stay ACHROMATIC — all four lit fills are ramp pastels at one lightness, so a hued
+  ground sits in the same band as whichever state shares its hue.
 - **`GameHud`, with the clock in the MIDDLE.** `Pinyin · production` — clock —
   `4 of 7 found`. See the A6 adoption table for why the ordering is load-bearing.
 - **`.shelfhd`** above the chips: "Find these words" / "trace to select". The gesture line
@@ -1600,6 +1861,11 @@ there is no in-game picker to fall back to.
 > the mode instead. A chip that looks like a switch and is not is worse than no chip, and
 > the HUD line would make it a second statement of the same fact.
 
+- **The screen is PURPLE (2026-08-23, A6b)**, and the hint bar came with it: the lightbulb
+  is black (its arm state is the glyph's FILL axis plus the button's opacity — a third
+  channel on one 16px icon made the button look like a warning) and a banked charge dot is
+  the game's accent ink rather than the app's warning gold.
+
 **Code:** `src/games/word-search/WordSearchPage.tsx`, `WordSearchHintBar.tsx`,
 `WordSearchHintRow.tsx`, `WordSearchWordList.tsx`, `WordSearchHeader.tsx`,
 `WordSearchGrid.tsx`. **Docs:** `docs/WORD_SEARCH_GAME.md`.
@@ -1632,16 +1898,49 @@ entry was the board and the strip around it.
 - `COL_GAP_PX` 10 → 8, matching `ROW_GAP_PX`. `.msg2` uses one gap on both axes; an
   uneven pair reads as a measurement mistake at this size.
 
-**Code:** `src/games/match-speed/MatchSpeedCard.tsx`, `constants.ts` (the palette block),
-`MatchSpeedPage.tsx`. **Docs:** `docs/MATCH_SPEED_GAME.md`.
+- **The screen is GREEN (2026-08-23, A6b)** — the hub row's hue, not the artboard's blue.
+  The clock's resting track moved with it, from the palette's neutral `infoInk` to
+  `RAMP[GAME_HUE].ink`: a blue bar on a green strip read as a widget borrowed from another
+  screen. It cannot be confused with the board's green "matched" fill — that is a card
+  body, this is a 4px rule in the chrome.
+
+**Code:** `src/games/match-speed/MatchSpeedCard.tsx`, `constants.ts` (the palette block and
+`GAME_HUE`), `MatchSpeedPage.tsx`, `MatchSpeedTimerBar.tsx`.
+**Docs:** `docs/MATCH_SPEED_GAME.md`.
 
 ## 15 · Speed Reading — `/games/speed-reading` — **Size: S**
 
-**Status: not started.**
+**Status: PARTIALLY DONE (2026-08-23) — the HUD landed with A6b; the board did not.**
 
 **Design.** `.play` panel with the timer at the top, per-round result ticks in the
 HUD, the clue as large centred text, and four options that differ by a single
 glyph. Chinese only, by design.
+
+**What landed (the HUD half).**
+- **`SpeedReadingRoundTicks`** — one pip per round, in the HUD strip. The design's
+  revision split them from one row of 4px pips into **two rows of ten at 8px**, and the
+  height is the point: a colour has to be seen peripherally, because that is the only way
+  it will be seen at all with the player's eyes on the words.
+- **Why the run needed them.** This game's score is a TIME and a wrong answer is paid for
+  in seconds rather than in a lost round, so mid-run there was nothing on screen saying how
+  the run was going — a slow clean run and a fast sloppy one read identically. The pips are
+  the run's shape, and because they hold their position they also say WHERE it went wrong.
+- **The colours are the app's, not the artboard's.** `#22C55E` / `#EF4444` are outside the
+  ramp; the pips are `successInk` / `dangerInk` / `COLORS.card`, the app's one green, one
+  red and its inert track fill. A second success/failure pair would have made these pips
+  disagree with the tap-zone flash that produced them.
+- **The header's `n/20` counter is GONE.** The HUD carries the round number now, and
+  stating it twice a few millimetres apart made the header read as two clocks. The clock
+  keeps the header slot on its own — it IS the score in this game.
+- **A `.speed-reading__board` box now sits between the panel and the tap zones.** The zones
+  are `position: absolute; inset: 0`, so before this a HUD added to the panel would have
+  been UNDER them and every tap on it would have answered the round. The centring that used
+  to be on the panel moved onto the board box with them.
+
+**What did NOT land.** The board itself is still the shipped two-half tap surface inside a
+ROTATED stage, not the artboard's upright 2×2 grid of four options with an in-panel
+countdown. That is the rest of this entry, and it is a game-mechanics change (two options
+vs four) as much as a layout one.
 
 **Code:** `src/games/speed-reading/SpeedReadingPage.tsx`;
 `src/games/speed-reading/SpeedReadingPrompt.tsx`;
@@ -1672,11 +1971,26 @@ glyph. Chinese only, by design.
 - Stage ground transparent, `.bub` gloss via the shared `Bubble` (entry 12).
 
 **The artboard's bubble colours are STALE and were not adopted.** Artboard 16 draws six
-hues. The shipped ladder is **two shades of one blue** (2026-08-22): `#79B3EE`
-— oklch(75% 0.105 250) — for drain (harder) and `COLORS.blu` `#D2EBFF` for bloom
-(easier), with the inert English bubble on `COLORS.grey`. Hue encodes nothing — value is
-the whole message, and it is monotonic, which the charcoal/gold pair it replaced could
-not be.
+hues. The shipped ladder is **yellow / blue** (2026-08-24): `COLORS.yel` `#F5E7B4` for
+drain (harder) and `COLORS.blu` `#D2EBFF` for bloom (easier), with the inert English
+bubble on `COLORS.grey`.
+
+It was **two shades of one blue** from 2026-08-22 — `#79B3EE` for drain, where hue encoded
+nothing and value was the whole message. That was the best-separated and only monotonic
+ladder the game has had (1.80:1 between tiers, against 1.16:1 now); the yellow replaced it
+by request. What the swap buys is real and worth recording: **tone-3 pinyin**, which
+`docs/HYDRA_BUBBLES.md` called "the real constraint on this whole file", was nearly
+invisible on a hue-250 body (1.25:1) and separates by hue on a yellow one — and drain no
+longer wears the saturated end of the hue the app trains as "mastered". What it costs is
+the value read, which is now flat across all three bubbles. The lever if that matters is
+**bloom**, not drain: with drain off hue 250, moving bloom to `bluTint` is a free move that
+opens a value gap AND lifts bloom off the scenery grey. § 2.2 of the Hydra doc has the full
+table.
+
+The squeeze warning in the HUD names the drain tier, so it moved with it — to `COLORS.yelA`,
+drain's INK rather than its body. A 94% pastel is a fill; as text on the HUD's own tint it
+is a smudge. The old `BLUE_DARK` was a mid-value blue, the one lightness where a body colour
+could double as ink.
 
 **Both rungs take black text, and that is the rule that sets the palette.** A first cut
 put drain on `COLORS.bluA` `#1F6CB0` and separated 2.5× better (4.46:1 vs 1.80:1), but it
@@ -1723,52 +2037,158 @@ describing what ships.
 **The header keeps its `pinyin` chip**, matching the artboard — unlike Word Search (13),
 Hydra's pinyin display genuinely is a live toggle.
 
+- **The screen is TEAL (2026-08-23, A6b)** — the hub row's hue, not the artboard's green.
+  Artboard 16's revised bubble ink (`.bub.zh` muted with `.py` at full ink) was **not**
+  adopted: that artboard's bubble colours were already stale, its Chinese/English
+  assignment is inverted from what ships, and `Bubble` DERIVES its ink from the fill
+  (`inkOnFill`) so that a palette change cannot strand dark text on a dark bubble. A
+  hand-set gloss colour would put back the per-game knob that rule replaced.
+
 **Code:** `src/games/hydra-bubbles/HydraStage.tsx`, `HydraLendNotice.tsx`.
 **Docs:** `docs/HYDRA_BUBBLES.md`, `docs/PROVISIONAL_CARDS.md`.
 
 ## 18 · Card Detail — `/flashcards/card/:id` — **Size: L**
 
-**Status: not started.** The strongest idea in the redesign, and the one real
-conflict.
+**Status: DONE (2026-08-24).** Typecheck, lint, build and the 557-test suite clean.
 
-**Today.** `VocabCardDetailPage` is a `NodePage` carrying the card face
-(`CardFaceSide`/`ChineseBlock`/`EnglishBlock`), a full in-place **card-icon
-editor** overlay (`useCardIconEditor`, `CardIconCanvas`, `CardEditToolbar`),
-`VocabCardBadges`/`VocabCardSections`, and `MasteryProgressBar`.
+**What landed.**
 
-**Design.** The card becomes the masthead — one presentation of the word over its
-icon arrangement, with speak/draw actions, gloss, and sense dots. Below it: the
-band + commonality dots, then Mastery redrawn as **what the number actually is** —
-an eight-cell window, one cell per mark, coloured by mark type, with the Target and
-Comfortable cut points ticked and each track's cooldown named beside its colour.
+- **The card is the masthead — ONE presentation of the word.** The page used to print
+  the headword TWICE: a large standalone cpcd block, then the hero card carrying it
+  again. The standalone block is gone. So is `VocabCardBadges` (a lone category chip):
+  the band now reads off the mastery window's own band pill, which is the band of the
+  track being looked at rather than only the core one — strictly more information in one
+  fewer place.
+- **`MasteryWindow` (`.msb`) replaces `MasteryProgressBar`.** The vertical thermometer
+  (the design's `.mst`) is deleted per **D7**. pbh is a position in an eight-mark window,
+  not a percentage, so it is drawn as eight discrete cells with the Target and
+  Comfortable cut points ticked between them. The core bar's fractional pbh renders as a
+  PARTIAL last cell rather than rounding, because rounding makes two genuinely different
+  cards read the same. Per-track cooldowns survive as the `.cd3` legend.
+- **A `Know / Read / Write` switcher.** See the **D6 amendment** below.
+- **`WordToolsRail` (`.wtl.top`)** above the card — Write it / Compare. Compare hands the
+  word to `/compare` through route state (the cdp has no tab strip to host it in).
+- **`InfoPeek` (`.peek`) + a pull-up sheet.** The definition / breakdown / examples boxes
+  no longer run down the page under the card; they are the SAME `VocabCardSections` in a
+  `SheetPanel` raised from a resting lip, so the cdp and the flp now handle "more about
+  this word" identically. What stays on the page is what the page is for: the card, and
+  how well it is known.
 
-That reframing maps cleanly onto what already exists: `masteryBar`,
-`PBH_THRESHOLDS`, `PBH_FULL`, `cooldownRemainingMs`, `MARK_TYPE_COLORS`,
-`MARK_TYPE_LABELS`.
+**Preserved, as the entry required:** the whole card-icon editor overlay
+(`useCardIconEditor` / `CardIconCanvas` / `CardEditToolbar`) is untouched — the peek
+greys out while it is open, because the sheet would cover the canvas being edited.
 
-**Watch out — conflict.**
-> The artboard shows **two** bars, labelled *Know* and *Read*. The shipped model
-> has **three** bar ids (`core`, `reading`, `writing`) and deliberately renders
-> **only the bar of the surface's lens** — `MasteryProgressBar` maps over a list
-> that is always length 1, and its header comment says showing all bars at once
-> "made the page answer a question the learner had not asked". The design reverts
-> that without saying so. **Resolved: the code wins — one bar (D6).**
+**Code:** `src/components/mastery/MasteryWindow.tsx` (new);
+`src/components/primitives/Segmented.tsx` (new, `.trkseg`);
+`src/components/WordToolsRail.tsx` (new); `src/components/wordToolPill.ts` (new);
+`src/features/flashcards/InfoPeek.tsx` (new);
+`src/features/flashcards/FlashcardsLearnPage/SheetBody.tsx` (new);
+`src/features/flashcards/VocabCardDetailPage.tsx`;
+`src/features/flashcards/VocabCardDetailBody.tsx`;
+`src/components/NodePage.tsx` (the `overlay` slot);
+`src/components/primitives/Label.tsx` (`SectionRule`'s `right` slot);
+`src/features/dictionary/ComparePage.tsx` (seeds slot A from route state).
+**Deleted:** `src/features/flashcards/MasteryProgressBar.tsx` (368 lines).
+**Docs:** `docs/MASTERY_REWORK.md`, `docs/CARD_ICON_LAYOUT.md`,
+`docs/WORD_COMPARE_FEATURE.md`.
 
-Also: the artboard's hero shows the card face only. The **icon editor overlay must
-survive** the restyle — it is a large piece of behaviour the artboard doesn't draw.
+---
 
-**Code:** `src/features/flashcards/VocabCardDetailPage.tsx`;
-`src/features/flashcards/VocabCardDetailBody.tsx` → `VocabCardBadges`,
-`VocabCardSections`, `SectionCard`, `SectionLabel`;
-`src/features/flashcards/MasteryProgressBar.tsx`;
-`src/utils/masteryCompute.ts` → `masteryBar`, `computeTypeCategory`,
-`cooldownRemainingMs`, `MARK_TYPE_COLORS`, `MARK_TYPE_LABELS`, `BAR_LABELS`,
-`PBH_THRESHOLDS`, `PBH_FULL`; `src/utils/formatDuration.ts` →
-`formatCooldownRemaining`; `src/components/FrequencyScoreDots.tsx`;
-`src/cardIcons/editor/useCardIconEditor.ts`;
-`src/cardIcons/editor/CardIconCanvas.tsx`;
-`src/cardIcons/editor/CardEditToolbar.tsx`.
-**Docs:** `docs/MASTERY_REWORK.md`, `docs/CARD_ICON_LAYOUT.md`.
+## 19–25 · Flashcard Learn + the Extra Info Panel — `/flashcards/learn` — **Size: L**
+
+**Status: DONE (2026-08-24).** The seven artboards this file previously had no entry for.
+Typecheck, lint, build and the 557-test suite clean.
+
+### The rule the whole slice turns on
+
+A flashcard surface carries two kinds of action and they had been mixed together in one
+place (the eip definition tab's `InfoCardActionBar`):
+
+| | |
+|---|---|
+| **CARD operations** — customize, file into a deck, delete | belong to the card object, so they live ON the card, behind its `•••` (`CardOpsRail`, `.crail`) |
+| **WORD tools** — practise writing, load into Compare | would still make sense if the card did not exist, so they live on the PAGE above it (`WordToolsRail`, `.wtl.top`) |
+
+Everything else follows: the eip becomes information-only, `InfoCardActionBar` is
+deleted, and the header sheds its `edit` toggle (it decorates one card, so it went to
+that card's rail).
+
+### What landed, artboard by artboard
+
+- **19 · the drill card.** `WordToolsRail` above the card. `InfoPeek` (`.peek`) replaces
+  `MoreInfoPill`: the affordance is now the top EDGE of the panel it opens, not a
+  floating capsule, so nothing has to be learned. Marking is still swiping and the two
+  marks are still the loop's vocabulary — unchanged, and already what the app did.
+- **21 · card menu.** `CardOpsRail`. The `•••` expands SIDEWAYS along the card's top edge
+  into one row of LABELLED glyphs — no scrim, no dropdown, no fan — so the card stays
+  readable underneath (you can still see which card you are deleting) and it closes on
+  its own `×` rather than on an outside tap (an outside tap here is a flip or a swipe).
+  **Delete is new behaviour on the flp**: it is confirmed, hard-deletes the vet row, and
+  drops the card from the loop via a new `useWorkingLoop.dropCurrentCard` — no mark, no
+  undo snapshot, no fly-out (see that function's comment for each "no").
+- **22 · swipe coaching.** Already shipped (`SwipeHintLabel`); untouched.
+- **23 · sense sheet.** `SensePicker` gets its two designed states: RESTING `.ssel` (a
+  `1/9` counter and a triangle in a small pill) and OPEN `.ssheet` (every sense at once,
+  grouped by reading, starred default first, commonality beside each). Still a MUI `Menu`
+  underneath — the portal, anchor tracking, outside-tap dismiss and focus trap are
+  exactly what a sheet lifted off a chip inside a draggable card needs.
+- **20 / 20b · the definition tab.** `DefinitionFacts` (`.dfx`) replaces the centred chip
+  strip, and replaces the VERBATIM DUPLICATE of it in `VocabCardDetailBody` — ~90 lines
+  each, down to the comments. Parts of speech split into terms with per-POS sense counts;
+  commonality and difficulty share a two-column row, since those are the two measures
+  words get compared by. **20b's grouped AI treatment is a RULE, not a prop**: when every
+  provenance-bearing value present (including the paragraph) is unapproved, the block
+  takes ONE orange border, ONE tint and ONE badge; if ANY value is human-approved it
+  falls back to per-field boxes, because losing the approved/unapproved distinction is
+  the one thing the grouped treatment must never do.
+- **24 · examples.** `.esl` numbers, a `.shelfhd` caption naming WHICH SENSE the
+  sentences illustrate, and a transparent border on approved cards so the list does not
+  reflow as sentences are approved. The AI treatment and the underlines already shipped.
+- **25 · breakdown.** `BreakdownRow` (`.bkr`) replaces the wrapping grid of 1:1 block
+  buttons — a square sized to the character clips the GLOSS, which is the part being
+  read, and a grid destroys the word's own order the moment it wraps. Used by BOTH
+  breakdown surfaces; `InfoCardBlockButton` is deleted.
+- **The word trail (`.wtrail`).** The eip tab strip becomes filled pills — and **loses its
+  tone colours**. Tone colour means ONE thing in this app (D2b); a pill tinted by a hue
+  picked at random from the tone palette was borrowing that vocabulary to say "tab 3", on
+  a strip sitting directly above cpcd rows where the same five colours mean their real
+  thing. `toneColor` survives on the tab MODEL and is simply no longer painted.
+
+### Consequences worth knowing about
+
+- A word DRILLED INTO inside the panel lost its Add-to-Deck and Compare — deliberate, and
+  tracked with its fix in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 11.
+- `CardFaceSide` gained a `topRail` slot (outer face box, last in DOM so it paints over
+  the icon layer without a z-index war). It is threaded page → `FlashCardSection` →
+  `CardFace` → face exactly as `editCanvas` already is, as a NODE rather than three
+  callbacks, so the four surfaces that share `CardFace` never learn what a card operation
+  is.
+- `PracticeWritingButton` and `AddToDeckMenu` each grew one more `appearance` rather than
+  being forked: both own real behaviour (star fetch + popup + Writing mark; deck fetch +
+  tick state + save-on-close) that every host wants behind a differently-shaped trigger.
+- The flp header is down to four controls from five.
+
+**Code (new):** `src/components/WordToolsRail.tsx`, `src/components/wordToolPill.ts`,
+`src/features/flashcards/InfoPeek.tsx`,
+`src/features/flashcards/FlashcardsLearnPage/CardOpsRail.tsx`,
+`src/features/flashcards/cardOpsCell.ts`,
+`src/features/flashcards/DefinitionFacts.tsx`,
+`src/features/flashcards/BreakdownRow.tsx`,
+`src/features/flashcards/FlashcardsLearnPage/SheetBody.tsx`.
+**Code (changed):** `FlashcardsLearnPage.tsx`, `FlashcardsLearnHeader.tsx`,
+`FlashCardSection.tsx`, `card/CardFace.tsx`, `card/SensePicker.tsx`,
+`InfoCardPanelBody.tsx`, `InfoCardTabContent.tsx`, `InfoCardSection.tsx`,
+`EipTabStrip.tsx`, `styled.ts`, `useWorkingLoop.ts`, `ExampleSentenceList.tsx`,
+`AddToDeckMenu.tsx`, `VocabCardDetailBody.tsx`,
+`src/components/handwriting/PracticeWritingButton.tsx`,
+`src/features/discover/SortCardsPage.tsx` (drops the removed `onOpenCompare`).
+**Deleted:** `FlashcardsLearnPage/InfoCardActionBar.tsx`,
+`FlashcardsLearnPage/InfoCardBlockButton.tsx`.
+**Docs:** `docs/DEFINITION_CLUSTERS.md`, `docs/DATA_VALIDATION_SYSTEM.md`,
+`docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md`, `docs/EXAMPLE_SENTENCES.md`,
+`docs/CARD_ICON_LAYOUT.md`, `docs/PRACTICE_WRITING.md`,
+`docs/HANDWRITING_RECOGNITION.md`, `docs/WORD_COMPARE_FEATURE.md`,
+`docs/DECKS_FEATURE.md`, `docs/DEFERRED_WORK.md` §§ 9–11.
 
 ## Not designed
 
@@ -1781,11 +2201,16 @@ this list is the inventory.
   without an artboard using it. **A2/A6 chrome only** — leave the play surface alone.
 - **Night Market** is the Home hero but has no artboard — a Pixi engine surface that
   sits outside this system. **A2 chrome only**; flag before touching anything inside.
-- **flp** (`/flashcards/learn`), the Mastery Centers, Collection View, Sort Cards,
-  Quick Mark, Skipped Cards, the Reader document page, Login/Register and the Study
-  Challenge pages: extrapolated per D10.
+- ~~**flp** (`/flashcards/learn`)~~ — **REMOVED from this list 2026-08-24.** It has an
+  entry (19–25) and it is built. It was never undesigned; this bullet predated the
+  artboards.
+- **The Mastery Centers, Collection View, Sort Cards, Quick Mark, Skipped Cards, the
+  Reader document page, Login/Register and the Study Challenge pages**: extrapolated
+  per D10.
 - **The sort flow** (scp, `/discover/sort/:language`) is an explicit **outstanding
   item** (D11) — out of scope for this pass even though D10 would otherwise cover it.
+  ⚠️ The project now also holds `Sort Flow - Shelf System.html`, so a design exists;
+  it is a sibling file rather than part of the spec artboard set.
 
 ---
 
@@ -1920,19 +2345,47 @@ come out of `MobileFooter`. See A2a for the clearance-constant rework this force
 chosen to match the design's icon vocabulary (D3) — the ghost `.bg` icon on each
 tile. That is a new icon selection pass, tracked in A4, not a port of the old ones.
 
-### D6 · Card Detail keeps ONE mastery bar
-The code wins over artboard 18. `MasteryProgressBar` continues to render the single
-bar for the surface's lens; the artboard is read as showing two *examples* of a
-one-bar component, not a two-bar screen. The rule in `docs/MASTERY_REWORK.md`
-stands unamended — showing every track at once makes the page answer a question the
-learner did not ask.
+### D6 · Card Detail shows ONE mastery bar at a time — AMENDED 2026-08-24
 
-### D7 · One mastery rendering: `.msb`
-Of the design's three (`.trk2` bar, `.msb` segmented cells, `.mst` thermometer),
-**only `.msb` is built.** Use it everywhere a mastery value appears, scaled down for
-inline/list contexts rather than swapped for a different shape. `.trk2` and `.mst`
-are not implemented. Three renderings of one number is what stops a design system
-from being one.
+**As decided (2026-08-20):** the code won over artboard 18. `MasteryProgressBar` rendered
+the single bar for the surface's lens and the artboard's two bars were read as two
+*examples* of a one-bar component. The rule: showing every track at once makes the page
+answer a question the learner did not ask.
+
+**Amendment (2026-08-24), on the user's ruling.** Artboard 18 has since gained a
+`Know / Read / Write` segmented control (`.trkseg`) over a single `.msb` window, and that
+control satisfies D6's own rationale rather than breaking it: **exactly one track is ever
+on screen**, the default is still the surface's lens, and the learner is the one who says
+otherwise. An untouched page reports precisely what D6 said it should.
+
+Two consequences worth stating, because they are where this could go wrong:
+
+- **All three tracks are always offered**, whatever the account's goals say. Reading and
+  writing marks accrue whether or not their goal is set (migration 143), so a track hidden
+  behind a goal switch would hide marks the learner has actually earned. The GOAL decides
+  what gets surfaced, sorted and counted elsewhere; it does not decide whether this card's
+  history exists.
+- **The switch does not follow the card.** It re-seeds when the LENS changes (a card
+  re-opened from a different Center), not when the entry does, so paging between cards
+  keeps the track the learner chose.
+
+Built as `MasteryWindow` + the `Segmented` primitive. The rule in
+`docs/MASTERY_REWORK.md` is amended to match.
+
+### D7 · One mastery rendering: `.msb` — **HONOURED 2026-08-24**
+
+Of the design's three (`.trk2` bar, `.msb` segmented cells, `.mst` thermometer), **only
+`.msb` is built.** Use it everywhere a mastery value appears, scaled down for
+inline/list contexts rather than swapped for a different shape. `.trk2` and `.mst` are
+not implemented. Three renderings of one number is what stops a design system from being
+one.
+
+**Closed out with entry 18.** `MasteryProgressBar` — which WAS a `.mst` thermometer,
+vertical track and all — is deleted and `MasteryWindow` (`.msb`) is the app's single
+rendering. Its header comment carries the argument for the shape: pbh is a position in an
+eight-mark window, not a percentage, and a liquid level invites "89% of the way to
+mastered", which is the wrong mental model — one bad mark does not evaporate a fraction
+of a tank, it turns one cell off.
 
 ### D8 · `HubMenu` is deleted
 `HubMenu.tsx` (439 lines) and `hubMenuCardBase.ts` are removed, all **10** importers
@@ -1940,6 +2393,25 @@ are converted to Bento, and `docs/BENTO_SYSTEM.md` is retired. The heavy part is
 `src/games/word-search/WordSearchHubItem.tsx` (~390 lines, imports six named
 exports) plus `GamesCollectionSelector`, which renders into `HubMenu`'s `header`
 slot — both budgeted into **entry 4**.
+
+### D9 · `DeckTile` is deleted — NARROWED 2026-08-24
+
+> **Narrowing (2026-08-24), on the user's ruling.** The spine remains the single visual
+> for a set of cards, and still governs decks, challenges and bands. **The decks sheet's
+> two LIBRARY CONSTANTS — Learn Now and Mastered — are the one exception** (artboard 2's
+> `.duo`, built as `LibraryDuo`), and the reason is what the surface is for rather than a
+> change of mind:
+>
+> Those two are the only sets whose SIZE is the thing the learner came to read. Every
+> other shelf answers "which set?" and encodes its count as the spine's height — a
+> comparison between neighbours, exactly right for a row of six decks. These two have no
+> neighbours to be compared against; "612" and "208" are the figures, and a 74px spine
+> cannot print a figure at a size worth reading.
+>
+> So they keep the shelf's MATERIAL and drop its geometry: same single pastel, same inset
+> white highlight, same dark strap down the left edge, same bottom-heavy corner radius —
+> a spine laid on its side and opened up far enough to hold a number. Do not read this as
+> licence to bring tiles back anywhere else.
 
 ### D9 · `DeckTile` is deleted
 The app switches to the new design entirely: the **spine replaces the stacked-card
@@ -2018,9 +2490,11 @@ smallest slice that shows the shelf system working on real data, and entry 4 car
 
 **Next**: the review this order stops for. After it, the entries are independent.
 
-After that the entries are independent. Highest value: **2** (Decks) and **18**
-(Card Detail). Cheapest wins: **7** (Dictionary), **10** (Community), **14**,
-**15**, **16**. Most likely to need design work before it can start: **9** (Arena,
+After that the entries are independent. **5** (Account) shipped 2026-08-23 out of this
+order, as a targeted follow-up. **2** (Decks), **18** (Card Detail) and **19–25** (flp +
+eip) — the three highest-value entries and the last of the big ones — shipped together on
+2026-08-24, likewise out of order.
+Cheapest wins: **7** (Dictionary), **10** (Community), **15** — 14 and 16 are done. Most likely to need design work before it can start: **9** (Arena,
 three undrawn states) and **11/11b** (Settings, new route).
 
 # Docs that depend on this one

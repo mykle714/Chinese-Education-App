@@ -67,7 +67,8 @@ function renderZoneDivider(prev: ArenaEntry, cur: ArenaEntry) {
  *
  * FOUR STATES (§ 2.3), and the page is really a switch over them:
  *   live     racing; the board plus a countdown to Sunday 16:00
- *   results  the week just closed; the final board plus what it did to your rung
+ *   results  the week just closed; the final board, what it did to your rung,
+ *            and the SAME Join card as the two states below (no live seat)
  *   opt-in   not racing, the break is open, one button to join next week
  *   closed   not racing, the break has passed — SAME card as opt-in, because
  *            enrolment is no longer gated on the break (§ 8)
@@ -186,7 +187,7 @@ function ArenaPage() {
                     <ResultsBanner divisionChange={board.divisionChange} />
                 )}
 
-                {(board.state === "opt-in" || board.state === "closed") && (
+                {board.state !== "live" && (
                     <OptInCard
                         optedIn={board.optedInNextWeek}
                         busy={busy}
@@ -388,10 +389,12 @@ function OptInCard({
     onJoin: () => void;
     onWithdraw: () => void;
 }) {
-    // Identical in `opt-in` and `closed`: the only difference between those two
-    // states was whether the break was open, and that stopped gating enrolment
-    // (§ 8). Someone without a seat joins next week's arena either way, so
-    // `closed` no longer means "come back on Sunday".
+    // Identical in EVERY non-live state -- `results`, `opt-in` and `closed`. The
+    // gate on enrolment is a live seat, not the clock (§ 8), and none of those
+    // three states has one, so all three offer the same button. `results` used to
+    // be excluded, which hid Join for the whole Sun 16:00 -> Tue 04:00 break --
+    // i.e. for exactly the window in which joining next week is possible -- and
+    // only revealed it at 04:00 once that week had already formed without you.
     if (optedIn) {
         return (
             <Box className="arena-page__optin" sx={sectionCardSx}>

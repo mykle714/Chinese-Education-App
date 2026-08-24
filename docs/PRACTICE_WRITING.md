@@ -39,7 +39,8 @@ slots). Placements:
 
 - **eip** definition tab, in the action bar at the end of the content (labelled variant,
   beside "Add to Deck…" and "Compare To…") —
-  `src/features/flashcards/FlashcardsLearnPage/InfoCardActionBar.tsx`
+  `src/components/WordToolsRail.tsx` (the `Write it` pill above the card on the flp and
+  the cdp — the entry point since 2026-08-24; `InfoCardActionBar` is deleted)
 - **flp main flashcard** front face, stacked above the audio icon (icon variant) —
   `src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` (`ChineseBlock`)
 - **cdp** (word details) — `src/features/flashcards/VocabCardDetailPage.tsx`

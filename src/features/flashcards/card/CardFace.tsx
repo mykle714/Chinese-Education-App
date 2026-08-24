@@ -84,7 +84,7 @@ export const ChineseBlock: React.FC<{
                     character={entry.entryKey}
                     language={entry.language}
                     vocabEntryId={entry.id}
-                    iconOnly
+                    appearance="icon"
                     hideStarBadge
                 />
             )}
@@ -359,13 +359,22 @@ export const CardFaceSide: React.FC<{
     // a direct child of the face box so it can sit in a corner, outside the
     // centered content column.
     cornerBadge?: React.ReactNode;
+    // A control anchored to the face's TOP EDGE, over everything else on it — the flp's
+    // card-operations rail (`CardOpsRail`, artboard 21).
+    //
+    // Distinct from `cornerBadge`, which is a passive mark INSIDE the padded content box
+    // and is already taken by the category chip. This one is interactive, has to paint
+    // over the icon layer and the text blocks, and positions itself against the face's
+    // own edge — so it renders in the OUTER face box, after the content, at the top of
+    // the stacking order. Absent everywhere but the flp.
+    topRail?: React.ReactNode;
     // Per-card background fill (vet.cardColor, migration 94). Painted only when this face is
     // rendering the advanced layout (`isUsingAdvancedLayout`); otherwise the theme default is
     // used. When it applies it overrides the theme's default face color; null/undefined =
     // follow the theme. Only a vetted palette hex reaches here (resolveCardColor). See
     // docs/CARD_ICON_LAYOUT.md.
     cardColor?: string | null;
-}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, cornerBadge, cardColor }) => {
+}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, cornerBadge, topRail, cardColor }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     // Per-card background fill is a decoration that belongs to the ADVANCED layout: it paints
@@ -543,6 +552,11 @@ export const CardFaceSide: React.FC<{
                     </CardContent>
                 )}
             </Box>
+            {/* Top-edge control rail, LAST in the outer box so it paints over the inner
+                clip box (the icon layer + text) without needing a z-index war. It sits in
+                the OUTER box, not the inner one, so `overflow: visible` lets an open rail
+                extend to the card's own corner radius rather than being clipped by it. */}
+            {topRail}
         </Box>
     );
 };

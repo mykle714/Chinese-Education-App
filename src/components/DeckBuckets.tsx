@@ -15,9 +15,10 @@ import { BAND_COLORS } from "../utils/categoryColors";
 
 const BucketsContainer = styled(Shelf)({
     width: "100%",
-    // The Account row is a stats block, not the page's own gutter — it sits inside a
-    // section that already pads itself, so the shelf's 22px gutter is dropped here.
-    padding: 0,
+    // The 22px gutter is INHERITED from Shelf, not overridden. It used to be zeroed
+    // because AccountPage wrapped this in its own 20px-padded column; that column is
+    // gone (the page's primitives each carry their own gutter now), so zeroing it here
+    // would put the spines 22px to the left of the "Your library" header above them.
 });
 
 /** The four utcm bands, in ascending mastery order. */

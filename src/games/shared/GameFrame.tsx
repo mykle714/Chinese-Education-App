@@ -1,8 +1,9 @@
 import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import { Label } from "../../components/primitives";
-import { COLORS } from "../../theme/colors";
+import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
+import { ON_ACCENT_INK, ON_ACCENT_LINE, useGameSurfaceHue } from "./gameSurface";
 
 /**
  * GAME SURFACE CHROME (docs/SHELF_REDESIGN.md § A6, classes `.play` / `.hud` / `.timer`).
@@ -29,6 +30,13 @@ import { FONTS } from "../../theme/fonts";
  * Layer: presentational. Every value below (deadline, score, fraction) is computed by the
  * owning page and passed down; nothing here holds state.
  *
+ * ── THE ACCENT GROUND (§ A6b) ─────────────────────────────────────────────────────
+ * Every part of the frame is hue-aware but hue-OPTIONAL: it reads the enclosing
+ * `GameSurfaceProvider` (`useGameSurfaceHue`) and, when there is one, takes the panel
+ * border, the HUD ground and the timer ground from that hue. With no provider it draws
+ * exactly what it drew before A6b, which is what keeps it usable on a paper-ground
+ * surface and mountable bare in a test.
+ *
  * Used by: docs/GAMES_FEATURE.md, and entries 12–16 of docs/SHELF_REDESIGN.md.
  */
 
@@ -47,7 +55,9 @@ export interface GameFrameProps {
  * the CSS is the artboard's header height plus its gap, not a number the app should
  * hardcode.
  */
-export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx }) => (
+export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx }) => {
+    const hue = useGameSurfaceHue();
+    return (
     <Box
         className={className ? `game-frame ${className}` : "game-frame"}
         sx={[
@@ -61,7 +71,10 @@ export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx })
                 margin: "14px",
                 borderRadius: "24px",
                 backgroundColor: COLORS.white,
-                border: `1px solid ${COLORS.rowBorder}`,
+                // On the accent ground the app's ink-alpha hairline disappears (it is
+                // 10% ink over a 52%-lightness colour); the design switches to a white
+                // alpha there, which reads as a lit edge on the panel instead.
+                border: `1px solid ${hue ? ON_ACCENT_LINE : COLORS.rowBorder}`,
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
@@ -71,7 +84,8 @@ export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx })
     >
         {children}
     </Box>
-);
+    );
+};
 
 export interface GameHudProps {
     /** Typically two or three `GameHudLabel`s. Spread apart, first left, last right. */
@@ -84,6 +98,14 @@ export interface GameHudProps {
      */
     divider?: boolean;
     className?: string;
+    /**
+     * Escape hatch for a HUD that is not one row of facts. Speed Reading's is a
+     * COLUMN — a round label over the run's tick grid — which is what artboard 15
+     * draws (`.hud` with `flex-direction:column;align-items:stretch`). Reach for this
+     * only when the strip genuinely holds a widget rather than labels; the row form is
+     * the one every other game should use.
+     */
+    sx?: SxProps<Theme>;
 }
 
 /**
@@ -94,33 +116,62 @@ export interface GameHudProps {
  * two children pin to the edges, three put one in the middle. A HUD needing four facts
  * is a HUD that should be showing fewer.
  */
-export const GameHud: React.FC<GameHudProps> = ({ children, divider = true, className }) => (
+export const GameHud: React.FC<GameHudProps> = ({ children, divider = true, className, sx }) => {
+    const hue = useGameSurfaceHue();
+    return (
     <Box
         className={className ? `game-hud ${className}` : "game-hud"}
-        sx={{
+        sx={[{
             flexShrink: 0,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             gap: "10px",
             padding: "12px 15px",
-            borderBottom: divider ? `1px solid ${COLORS.rowBorder}` : "none",
-        }}
+            // The 10% of the 60/30/10 split: the strip takes the hue's NEAR-WHITE tint
+            // (97.5%), not its 93% pastel. Two of the five game artboards were revised
+            // from the pastel to a ~97% tint and none the other way, so the tint is
+            // what the design is converging on — and it is the only one of the two that
+            // leaves the strip legibly lighter than a pastel-filled widget sitting in
+            // it. The hairline under it becomes the hue's INK: on a tinted strip the
+            // ink-alpha hairline is too faint to close the shape.
+            backgroundColor: hue ? RAMP[hue].tint : "transparent",
+            borderBottom: divider ? `1px solid ${hue ? RAMP[hue].ink : COLORS.rowBorder}` : "none",
+        }, ...(Array.isArray(sx) ? sx : [sx])]}
     >
         {children}
     </Box>
-);
+    );
+};
 
 export interface GameHudLabelProps {
     children: React.ReactNode;
-    /** Overrides the faint default — e.g. a lives counter turning red on the last life. */
+    /**
+     * Overrides the default — e.g. a lives counter turning red on the last life.
+     *
+     * The default is FULL INK, not `Label`'s faint grey: a HUD fact sits on the hue's
+     * tint rather than on paper, and the design sets these to `#000` on all five game
+     * artboards. It is a prop rather than a descendant CSS rule for exactly this
+     * reason — a blanket rule would also repaint the lives counter.
+     */
     color?: string;
     className?: string;
+    /**
+     * Escape hatch for a HUD fact whose own text length varies (e.g. a mode name
+     * that differs by which hub tile launched the game). Default labels refuse to
+     * wrap AND refuse to shrink — fine when every fact is short and fixed, but a
+     * long variant can then push a later sibling past `GameFrame`'s
+     * `overflow:hidden` and silently clip it. Pass `{ minWidth: 0, flexShrink: 1,
+     * overflow: "hidden", textOverflow: "ellipsis" }` on the one fact allowed to
+     * truncate, and leave the others (e.g. a found-count) at their default so they
+     * stay fully visible.
+     */
+    sx?: SxProps<Theme>;
 }
 
 /** `.hud .lab` — one fact. A `Label` that refuses to wrap; the strip is one line. */
-export const GameHudLabel: React.FC<GameHudLabelProps> = ({ children, color, className }) => (
-    <Label className={className} color={color} sx={{ whiteSpace: "nowrap" }}>
+export const GameHudLabel: React.FC<GameHudLabelProps> = ({ children, color = COLORS.onSurface, className, sx }) => (
+    <Label className={className} color={color} sx={[{ whiteSpace: "nowrap" }, ...(Array.isArray(sx) ? sx : [sx])]}>
         {children}
     </Label>
 );
@@ -235,14 +286,19 @@ export const GameTimer: React.FC<GameTimerProps> = ({
     dimmed = false,
     pulse = false,
     className,
-}) => (
+}) => {
+    const hue = useGameSurfaceHue();
+    return (
     <Box
         className={className ? `game-timer ${className}` : "game-timer"}
         sx={{
             flexShrink: 0,
             textAlign: "center",
             padding: "13px 15px 11px",
-            borderBottom: `1px solid ${COLORS.rowBorder}`,
+            // Same tinted ground and same accent hairline as the HUD strip — the two
+            // stack on one panel and have to read as one band of chrome.
+            backgroundColor: hue ? RAMP[hue].tint : "transparent",
+            borderBottom: `1px solid ${hue ? RAMP[hue].ink : COLORS.rowBorder}`,
             opacity: dimmed ? 0.35 : 1,
             transition: "opacity 200ms linear",
         }}
@@ -291,6 +347,47 @@ export const GameTimer: React.FC<GameTimerProps> = ({
             />
         </Box>
     </Box>
-);
+    );
+};
+
+export interface GameCenteredProps {
+    children: React.ReactNode;
+    className?: string;
+}
+
+/**
+ * The centred column a game shows INSTEAD of its board — a spinner while the queue
+ * loads, or the "no cards are playable" message with its way out.
+ *
+ * Extracted from four byte-identical `renderCentered` helpers (Bubble Match, Hydra,
+ * Match Speed, Word Search) which had drifted only in their class name. It is here
+ * rather than in each page because it is the one shape that replaces the panel, and
+ * because the accent ground gives it a second job: text drawn straight onto a
+ * 52%-lightness ground has to be WHITE, and a page that forgot would ship black-on-
+ * accent. Children inherit the colour, so a message inside this must NOT set its own.
+ */
+export const GameCentered: React.FC<GameCenteredProps> = ({ children, className }) => {
+    const hue = useGameSurfaceHue();
+    return (
+        <Box
+            className={className ? `game-centered ${className}` : "game-centered"}
+            sx={{
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 2.5,
+                px: 4,
+                pb: 3,
+                textAlign: "center",
+                color: hue ? ON_ACCENT_INK : COLORS.onSurface,
+            }}
+        >
+            {children}
+        </Box>
+    );
+};
 
 export default GameFrame;

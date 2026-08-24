@@ -80,7 +80,12 @@ on the next request and runs five hours from there.
 > continue — that is the failure mode, not the all-clear. `oracle-cron.sh` enforces the
 > same rule at launch (its budget gate refuses to start a round at or above
 > `ORACLE_MAX_UTILIZATION`, default 95%), but it can only refuse to *start*; a round that
-> crosses the cap mid-manifest can only be stopped by you.
+> crosses the cap mid-manifest can only be stopped by you. That gate reads
+> `~/.claude/.credentials.json`'s access token, which expires (~8h TTL) and is refreshed
+> only by a live session — on a quiet box the gate will otherwise 401 and fail closed
+> for hours with the plan under-utilized. It now retries once via a throwaway
+> `claude -p` probe on a 401 before skipping, and escalates on stderr after
+> `ORACLE_GATE_FAIL_ESCALATE` (default 3) consecutive non-cap failures.
 
 3. **Check for a parked run**: if the resume note exists (`$ORACLE_RESUME_FILE` when
    set — a parallel/cron worker owns its own; otherwise `server/logs/oracle-resume.md`),

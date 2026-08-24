@@ -34,6 +34,9 @@
 #   ORACLE_MAX_UTILIZATION (default 95%), because spend past the plan cap silently
 #   bills extra-usage credits rather than erroring. See the budget gate below.
 #   ORACLE_MAX_UTILIZATION=0 parks the cron without editing the crontab.
+#   ORACLE_GATE_FAIL_ESCALATE (default 3) is how many CONSECUTIVE unexpected gate
+#   failures (stale credential, unreachable endpoint) it takes before the script
+#   complains on stderr. At-the-cap skips are not failures and never count.
 #
 # CRONTAB (hourly; the lock makes over-scheduling harmless)
 #   PATH=/home/michael/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin
@@ -108,8 +111,11 @@ done
 # only thing standing between an hourly cron and an unbounded credit bill is this
 # check.
 #
-# Fail CLOSED: an unreachable/expired-token usage endpoint skips the round. A
-# missed round costs an hour of throughput; a wrong guess costs money.
+# Fail CLOSED: an unreadable usage endpoint skips the round. A missed round costs an
+# hour of throughput; a wrong guess costs money. The ONE exception is an expired access
+# token (HTTP 401), which is retried once after a forced refresh — see TOKEN FRESHNESS
+# below. Failing closed on that was costing whole days of throughput for no budget
+# reason at all.
 #
 # ORACLE_MAX_UTILIZATION (default 95) is deliberately below 100. A round takes
 # ~30 min, so starting at 99% would cross the cap mid-manifest and finish on
@@ -117,9 +123,44 @@ done
 # The last ~5% of plan budget is the price of that coarseness. Set it to 100 to
 # spend the plan out fully and accept some credit spillover, or to 0 to park the
 # cron entirely without touching the crontab.
+# TOKEN FRESHNESS: the usage endpoint is authenticated with the OAuth access token
+# that Claude Code keeps in ~/.claude/.credentials.json. That token has a ~8h TTL and
+# is refreshed ONLY by a live Claude Code session — nothing on a quiet prod box
+# refreshes it on a schedule. So a passive read of that file eventually sends an
+# expired bearer token and gets a 401, and because the gate fails closed that 401
+# silently parked the cron for hours at a time (8 of 52 ticks over 2026-08-22..24,
+# while the plan had budget to spare). A 401 is therefore treated as SELF-HEALABLE
+# rather than as a budget signal: we spend one trivial `claude -p` turn to make Claude
+# Code refresh the credential through its own supported path, then re-read usage once.
+#
+# We deliberately do NOT perform the OAuth refresh grant here. That would mean writing
+# ~/.claude/.credentials.json by hand while a real session may be writing it too, and
+# refresh tokens rotate on use — losing that race on the prod machine logs the box out
+# of Claude entirely. A throughput bug does not justify that blast radius.
+#
+# Known hole: if the plan is genuinely exhausted, the refresh probe is itself a real
+# (tiny) request and bills a handful of tokens to credits. Accepted — the gate exists
+# to stop a ~30-minute round, not single tokens — but it does mean the
+# "never spend credits" invariant is approximate rather than absolute.
+#
+# ESCALATION: a fail-closed gate is silent by construction, which is exactly how the
+# 401 block went unnoticed for hours. Unexpected failures (auth, unreachable,
+# malformed payload) increment a counter and shout on stderr once it reaches
+# ORACLE_GATE_FAIL_ESCALATE (default 3). An at-the-cap skip is NOT counted, because
+# the weekly cap can legitimately hold the cron down for most of a day.
 MAX_UTIL="${ORACLE_MAX_UTILIZATION:-95}"
-BUDGET=$(python3 - "$MAX_UTIL" <<'PY' 2>&1 || true
-import json, os, sys, urllib.request
+GATE_FAIL_STATE="$LOG_DIR/oracle-gate-failures.$SLUG"
+GATE_FAIL_ESCALATE="${ORACLE_GATE_FAIL_ESCALATE:-3}"
+
+# read_usage: echoes exactly one classified verdict line.
+#   OK   <summary>  — under the cap, safe to start a round
+#   CAP  <detail>   — at/over the cap; the gate working as designed
+#   AUTH <detail>   — HTTP 401, i.e. the on-disk access token is stale (retryable)
+#   ERR  <detail>   — unreachable, malformed creds, or unreadable payload
+# CAP/ERR reasons keep their historical wording so existing log greps still match.
+read_usage() {
+  python3 - "$MAX_UTIL" <<'PY' 2>&1 || true
+import json, os, sys, urllib.error, urllib.request
 
 max_util = float(sys.argv[1])
 try:
@@ -131,8 +172,17 @@ try:
                  "anthropic-beta": "oauth-2025-04-20"},
     )
     data = json.load(urllib.request.urlopen(req, timeout=20))
-except Exception as exc:                      # network, 401, malformed creds
-    print(f"BLOCK usage endpoint unreadable ({type(exc).__name__}: {exc})")
+# HTTPError is caught before Exception on purpose: a 401 is a stale credential the
+# caller can fix by forcing a refresh, whereas a timeout or malformed payload is not
+# worth retrying and must stay a hard skip.
+except urllib.error.HTTPError as exc:
+    if exc.code == 401:
+        print("AUTH access token rejected (HTTP 401 Unauthorized) — stale credential")
+    else:
+        print(f"ERR usage endpoint unreadable (HTTP {exc.code}: {exc.reason})")
+    raise SystemExit(0)
+except Exception as exc:                      # network, malformed creds
+    print(f"ERR usage endpoint unreadable ({type(exc).__name__}: {exc})")
     raise SystemExit(0)
 
 # `limits[]` is the authoritative list — it names every active cap (session,
@@ -160,7 +210,7 @@ if worst is None:                              # no limits[] — fall back
             worst = (key, float(pct))
 
 if worst is None:
-    print("BLOCK usage payload carried no readable limit")
+    print("ERR usage payload carried no readable limit")
     raise SystemExit(0)
 
 kind, pct = worst
@@ -170,15 +220,50 @@ if pct >= max_util:
     for lim in data.get("limits") or []:
         if lim.get("kind") == kind and lim.get("resets_at"):
             resets = f", resets {lim['resets_at']}"
-    print(f"BLOCK {kind} at {pct:g}% >= {max_util:g}% [{summary}]{resets}")
+    print(f"CAP {kind} at {pct:g}% >= {max_util:g}% [{summary}]{resets}")
 else:
     print(f"OK [{summary}] under {max_util:g}%")
 PY
-)
+}
+
+BUDGET="$(read_usage)"
+
+# One retry, and only for a 401. The probe's job is purely to make Claude Code notice
+# the expired token and refresh it; the reply is discarded. Default permission mode on
+# purpose (NOT bypassPermissions like the round below) — cron has no TTY, so the probe
+# cannot take a tool action even if the model tried to. haiku keeps it cheap.
+if [[ "$BUDGET" == AUTH* ]]; then
+  echo "[$(date -uIs)] $SLUG: usage read rejected (${BUDGET#AUTH }) — forcing a token refresh" >> "$RUN_LOG"
+  if timeout 120 claude -p 'Reply with the single word: ok' --model haiku >/dev/null 2>&1; then
+    BUDGET="$(read_usage)"
+    [[ "$BUDGET" == OK* ]] && echo "[$(date -uIs)] $SLUG: token refreshed; usage readable again" >> "$RUN_LOG"
+  else
+    BUDGET="ERR token refresh probe failed — credential likely needs an interactive 'claude auth login'"
+  fi
+fi
+
 if [[ "$BUDGET" != OK* ]]; then
-  echo "[$(date -uIs)] $SLUG: SKIP — ${BUDGET#BLOCK }" >> "$RUN_LOG"
+  # Strip whichever verdict prefix is present so the log keeps its historical
+  # "SKIP — <reason>" shape.
+  REASON="${BUDGET#CAP }"; REASON="${REASON#AUTH }"; REASON="${REASON#ERR }"
+  echo "[$(date -uIs)] $SLUG: SKIP — $REASON" >> "$RUN_LOG"
+
+  if [[ "$BUDGET" == CAP* ]]; then
+    # Being at the cap is the gate succeeding, not failing — clear any failure streak.
+    rm -f "$GATE_FAIL_STATE"
+  else
+    FAILS=$(( $(cat "$GATE_FAIL_STATE" 2>/dev/null || echo 0) + 1 ))
+    echo "$FAILS" > "$GATE_FAIL_STATE"
+    if (( FAILS >= GATE_FAIL_ESCALATE )); then
+      # stderr so cron surfaces it (mail/journal) instead of burying it in RUN_LOG.
+      echo "⚠️  oracle-cron ($SLUG): budget gate has failed $FAILS ticks in a row — the backfill is parked and is NOT budget-limited. Last: $REASON" >&2
+      echo "[$(date -uIs)] $SLUG: ⚠️ ESCALATION — $FAILS consecutive gate failures" >> "$RUN_LOG"
+    fi
+  fi
   exit 0
 fi
+# A usable reading means any failure streak is over.
+rm -f "$GATE_FAIL_STATE"
 
 # ── preflight the manifest ───────────────────────────────────────────────────
 # Script-ahead-of-manifest drift makes the planner under-report stale rows, so an

@@ -130,6 +130,20 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
     return rows[0] ?? null;
   }
 
+  async lockUsersForChallenge(userIds: string[], client: PoolClient): Promise<void> {
+    // De-duplicate (a self-challenge is rejected elsewhere, but a repeated id here
+    // would just take the same lock twice) and sort, so every caller acquires the
+    // same locks in the same order and two crossing requests cannot deadlock.
+    const ordered = [...new Set(userIds)].sort();
+    for (const userId of ordered) {
+      this.requireId(userId, 'userId');
+      // hashtextextended maps the uuid text to the bigint the advisory-lock API
+      // wants. Collisions are harmless: the worst case is two unrelated pairs
+      // serialising against each other for the length of one transaction.
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [userId]);
+    }
+  }
+
   async listLiveForUser(userId: string, client?: PoolClient): Promise<StudyChallengeRow[]> {
     this.requireId(userId, 'userId');
     const { rows } = await this.run<StudyChallengeRow>(client, (c) =>

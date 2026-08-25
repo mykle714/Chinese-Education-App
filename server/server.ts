@@ -32,6 +32,7 @@ import mediaRoutes from './routes/mediaRoutes.js';
 import handwritingRoutes from './routes/handwritingRoutes.js';
 import diagnosticsRoutes from './routes/diagnosticsRoutes.js';
 import metaRoutes from './routes/metaRoutes.js';
+import { writeLimiter } from './middleware/rateLimits.js';
 
 // Load environment variables
 dotenv.config();
@@ -92,6 +93,13 @@ app.use(cookieParser());
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET environment variable is required — refusing to start without it');
 }
+
+// Per-user cap on write traffic, ahead of every router. Mounted here rather than
+// per-route so a new endpoint is covered the day it is added instead of the day
+// someone remembers to add a limiter to it. Reads are skipped inside the limiter.
+// Must sit AFTER cookieParser (it reads the auth cookie as a fallback key) and
+// after the JWT_SECRET guard above (it verifies tokens to key on userId).
+app.use(writeLimiter);
 
 // Mount feature routers. Each router registers its full /api/... paths, so
 // mount order only matters where paths could overlap (they don't across files).

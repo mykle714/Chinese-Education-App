@@ -93,7 +93,8 @@ export class VocabEntryService {
    * may not already have a vocabentries row.
    *
    * Branches:
-   *  - no row → INSERT with starterPackBucket='library' (category is GENERATED → 'Unfamiliar')
+   *  - no row → INSERT with starterPackBucket='library' (an empty `typedMarkHistory`
+   *    bands every bar at 'Unfamiliar', so no mastery state is written here)
    *  - row already in library → no-op
    *  - row with NULL bucket → bucket → 'library' (status='added'). ('skip' rows no
    *    longer occur in vet — skips live in discover_skips since migration 80 — but
@@ -134,8 +135,9 @@ export class VocabEntryService {
 
       if (existing.rows.length === 0) {
         const insertResult = await client.query<{ id: number }>(
-          // category is GENERATED from markHistory (migration 67); a fresh row's
-          // empty history resolves to 'Unfamiliar', so it is not written here.
+          // No mastery state is written: `typedMarkHistory` defaults to '{}' and every
+          // bar derived from it (server/contracts/mastery.ts) bands at 'Unfamiliar'.
+          // (The old GENERATED `category` column was dropped by migrations 101/143.)
           `INSERT INTO ${vetTable} ("userId", "entryKey", language, "starterPackBucket")
            VALUES ($1, $2, $3, 'library')
            RETURNING id`,

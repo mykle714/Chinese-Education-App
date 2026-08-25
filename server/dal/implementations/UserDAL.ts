@@ -191,6 +191,38 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
+   * Compare-and-set the minute-point cooldown. See IUserDAL.claimMinutePointIncrement
+   * for WHY this must be one statement rather than a read followed by a write.
+   *
+   * The WHERE clause is the entire rate limiter: the row is stamped only if it was
+   * eligible, and Postgres serialises concurrent updates of the same row, so a burst
+   * of N simultaneous requests produces exactly one rowCount 1 and N-1 rowCount 0.
+   * `$1::timestamptz - make_interval(secs => $3)` is evaluated server-side so the
+   * comparison never depends on the caller's clock.
+   */
+  async claimMinutePointIncrement(userId: string, now: Date, cooldownSeconds: number): Promise<boolean> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (!now) {
+      throw new ValidationError('Timestamp is required');
+    }
+
+    const result = await this.dbManager.executeQuery(async (client) => {
+      return await client.query(
+        `UPDATE Users
+            SET "lastMinutePointIncrement" = $1
+          WHERE id = $2
+            AND ("lastMinutePointIncrement" IS NULL
+                 OR "lastMinutePointIncrement" <= $1::timestamptz - make_interval(secs => $3))`,
+        [now, userId, cooldownSeconds]
+      );
+    });
+
+    return result.rowsAffected > 0;
+  }
+
+  /**
    * Persist the user's current timezone, but only when it actually differs from
    * what's stored. IS DISTINCT FROM treats NULL safely. Used by the streak-
    * expiration cron, which needs each user's local 4 AM-bounded "today".

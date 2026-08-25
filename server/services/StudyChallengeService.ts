@@ -471,63 +471,8 @@ export class StudyChallengeService {
       ? await this.nextFreeWeekForPair(userId, friendUserId, currentWeek)
       : currentWeek;
 
-    // ── The four gates, in the order a user would hit them ──
-    // 1. The pair's week. Any status counts, including declined/expired, which is
-    //    what makes the decline cooldown work without a rate limiter. Under `anytime`
-    //    the week chosen above is free by construction, so this cannot fire.
-    const existing = await this.studyChallengeDAL.findForPairInWeek(userId, friendUserId, weekIndex);
-    if (existing) {
-      throw new DuplicateError('You already have a challenge with this friend this week');
-    }
-
-    // 1a. AT MOST ONE UNFINISHED CHALLENGE PER PAIR, whatever week it is named after.
-    //     This is the guard that replaces what the UTC counter used to provide for
-    //     free. Now that each player's week opens on their own Monday, a pair in two
-    //     zones spends a few hours disagreeing about which week it is — and two
-    //     different week indices never collide on `study_challenges_pair_week_uniq`,
-    //     so without this check a crossing pair could once again end up with two live
-    //     challenges, two decks and two cap slots (the migration-150 defect).
-    //
-    //     "Unfinished" is DERIVED, never the stored status: a challenge whose test
-    //     window has closed is over even if the hourly job has not rewritten it yet,
-    //     and reading `status` alone would block the new week's challenge until the
-    //     job ran (forever on dev, where the timer is not installed). Same rule as
-    //     everywhere else in this service — the read path never waits for the job.
-    //     Not lifted by `anytime`: it is a data invariant the read path depends on
-    //     (`getChallengesPage` keys live challenges by opponent), not a calendar.
-    const live = await this.studyChallengeDAL.listLiveForUser(userId);
-    const challengeeTz = await this.timezoneOf(friendUserId);
-    const unfinished = live.find((row) => {
-      const other = row.challengerId === userId ? row.challengeeId : row.challengerId;
-      if (other !== friendUserId) return false;
-      const tzA = row.challengerId === userId ? challengerTz : challengeeTz;
-      const tzB = row.challengerId === userId ? challengeeTz : challengerTz;
-      return latestTestWindowClose(row.weekIndex, tzA, tzB).getTime() > now.getTime();
-    });
-    if (unfinished) {
-      throw new DuplicateError('You already have a challenge running with this friend');
-    }
-
-    // 2. The per-pair opt-out. Either player's flag suppresses challenges BOTH ways,
-    //    which is the honest reading of opting out of a mutual commitment.
-    if (await this.pairIsBlocked(userId, friendUserId)) {
-      // Deliberately not "Bob blocked you" — a block is never disclosed to the
-      // blocked friend (§ 1). The controller renders this as a neutral unavailable.
-      throw new ValidationError('Challenges are not available with this friend');
-    }
-
-    // 3. The commitment cap, in THIS language. Lifted by `anytime` so a tester
-    //    working through the flow repeatedly is not stranded six challenges in.
-    const active = await this.studyChallengeDAL.countActiveForUser(userId, language);
-    if (!anytimeOn && active >= MAX_ACTIVE_CHALLENGES) {
-      throw new ValidationError(
-        `You're already in ${MAX_ACTIVE_CHALLENGES} challenges this week`
-      );
-    }
-
     // A cross-language pair can only play different-word, because a shared set is
     // impossible for them (Q29). The challengee's language is their own current one.
-    // (Their timezone was already resolved by gate 1a.)
     const challengeeLanguage = await this.selectedLanguageOf(friendUserId);
     if (variant === 'same_word' && challengeeLanguage !== language) {
       // NOT a hard failure of the request: a same-word challenge is defined in the
@@ -559,15 +504,86 @@ export class StudyChallengeService {
       words[friendUserId] = challengerWords.map((w) => ({ ...w }));
     }
 
-    const row = await this.studyChallengeDAL.createChallenge({
-      challengerId: userId,
-      challengeeId: friendUserId,
-      variant,
-      challengerLanguage: language,
-      challengeeLanguage: storedChallengeeLanguage,
-      gameSequence,
-      words,
-      weekIndex,
+    // Everything above is computed BEFORE the transaction opens. It depends on none
+    // of the gates, and the candidate draw is several queries — holding two advisory
+    // locks across it would serialise unrelated pairs for no benefit.
+
+    // ── The four gates, in the order a user would hit them ──
+    //
+    // ALL OF THEM, AND THE INSERT, RUN INSIDE ONE TRANSACTION HOLDING BOTH PLAYERS'
+    // ADVISORY LOCKS. Gates 1a and 3 are a COUNT and a derived predicate — neither is
+    // expressible as a constraint, so both were plain read-then-write and both were
+    // reachable by two concurrent requests. Gate 1 has an index behind it and would
+    // survive on its own; it is inside the same critical section because splitting the
+    // gates across two transactions is how the next person reintroduces the bug.
+    // See IStudyChallengeDAL.lockUsersForChallenge.
+    const row = await this.txRunner.executeInTransaction(async (tx) => {
+    const client = tx.getClient();
+    await this.studyChallengeDAL.lockUsersForChallenge([userId, friendUserId], client);
+
+    // 1. The pair's week. Any status counts, including declined/expired, which is
+    //    what makes the decline cooldown work without a rate limiter. Under `anytime`
+    //    the week chosen above is free by construction, so this cannot fire.
+    const existing = await this.studyChallengeDAL.findForPairInWeek(userId, friendUserId, weekIndex, client);
+    if (existing) {
+      throw new DuplicateError('You already have a challenge with this friend this week');
+    }
+
+    // 1a. AT MOST ONE UNFINISHED CHALLENGE PER PAIR, whatever week it is named after.
+    //     This is the guard that replaces what the UTC counter used to provide for
+    //     free. Now that each player's week opens on their own Monday, a pair in two
+    //     zones spends a few hours disagreeing about which week it is — and two
+    //     different week indices never collide on `study_challenges_pair_week_uniq`,
+    //     so without this check a crossing pair could once again end up with two live
+    //     challenges, two decks and two cap slots (the migration-150 defect).
+    //
+    //     "Unfinished" is DERIVED, never the stored status: a challenge whose test
+    //     window has closed is over even if the hourly job has not rewritten it yet,
+    //     and reading `status` alone would block the new week's challenge until the
+    //     job ran (forever on dev, where the timer is not installed). Same rule as
+    //     everywhere else in this service — the read path never waits for the job.
+    //     Not lifted by `anytime`: it is a data invariant the read path depends on
+    //     (`getChallengesPage` keys live challenges by opponent), not a calendar.
+    const live = await this.studyChallengeDAL.listLiveForUser(userId, client);
+    const challengeeTz = await this.timezoneOf(friendUserId);
+    const unfinished = live.find((row) => {
+      const other = row.challengerId === userId ? row.challengeeId : row.challengerId;
+      if (other !== friendUserId) return false;
+      const tzA = row.challengerId === userId ? challengerTz : challengeeTz;
+      const tzB = row.challengerId === userId ? challengeeTz : challengerTz;
+      return latestTestWindowClose(row.weekIndex, tzA, tzB).getTime() > now.getTime();
+    });
+    if (unfinished) {
+      throw new DuplicateError('You already have a challenge running with this friend');
+    }
+
+    // 2. The per-pair opt-out. Either player's flag suppresses challenges BOTH ways,
+    //    which is the honest reading of opting out of a mutual commitment.
+    if (await this.pairIsBlocked(userId, friendUserId)) {
+      // Deliberately not "Bob blocked you" — a block is never disclosed to the
+      // blocked friend (§ 1). The controller renders this as a neutral unavailable.
+      throw new ValidationError('Challenges are not available with this friend');
+    }
+
+    // 3. The commitment cap, in THIS language. Lifted by `anytime` so a tester
+    //    working through the flow repeatedly is not stranded six challenges in.
+    const active = await this.studyChallengeDAL.countActiveForUser(userId, language, client);
+    if (!anytimeOn && active >= MAX_ACTIVE_CHALLENGES) {
+      throw new ValidationError(
+        `You're already in ${MAX_ACTIVE_CHALLENGES} challenges this week`
+      );
+    }
+
+      return this.studyChallengeDAL.createChallenge({
+        challengerId: userId,
+        challengeeId: friendUserId,
+        variant,
+        challengerLanguage: language,
+        challengeeLanguage: storedChallengeeLanguage,
+        gameSequence,
+        words,
+        weekIndex,
+      }, client);
     });
 
     return this.toSummary(row, userId, now, anytimeOn);
@@ -613,16 +629,7 @@ export class StudyChallengeService {
       throw new ValidationError('The time to accept this challenge has passed');
     }
 
-    // The cap is checked AGAIN here, not only on issue (Q65). This is the second
-    // half of "a slot is only ever spent by your own decisions": accepting is the
-    // decision, and between issue and accept the user may have accepted five others.
     const myLanguage = row.challengeeLanguage;
-    const active = await this.studyChallengeDAL.countActiveForUser(userId, myLanguage);
-    if (!anytimeOn && active >= MAX_ACTIVE_CHALLENGES) {
-      throw new ValidationError(
-        `You're already in ${MAX_ACTIVE_CHALLENGES} challenges this week`
-      );
-    }
 
     // The challengee's rejections reshape the set, and the FINAL set is the one they
     // accept — the challenger does not get a second veto (Q7). Safe because the
@@ -694,6 +701,27 @@ export class StudyChallengeService {
 
     const summary = await this.txRunner.executeInTransaction(async (tx) => {
       const client = tx.getClient();
+
+      // Serialise against this player's other challenge operations before counting.
+      // Both players are locked, not just the accepter, so this transaction cannot
+      // interleave with an issue involving either of them.
+      await this.studyChallengeDAL.lockUsersForChallenge([userId, opponentId], client);
+
+      // The cap is checked AGAIN here, not only on issue (Q65). This is the second
+      // half of "a slot is only ever spent by your own decisions": accepting is the
+      // decision, and between issue and accept the user may have accepted five others.
+      //
+      // INSIDE the transaction, and inside the lock. It used to run before
+      // `executeInTransaction` opened, so N simultaneous accepts all read the same
+      // pre-accept count, all passed, and all created their decks — the cap is a
+      // COUNT, which no constraint can enforce, so the critical section is the only
+      // thing holding it.
+      const active = await this.studyChallengeDAL.countActiveForUser(userId, myLanguage, client);
+      if (!anytimeOn && active >= MAX_ACTIVE_CHALLENGES) {
+        throw new ValidationError(
+          `You're already in ${MAX_ACTIVE_CHALLENGES} challenges this week`
+        );
+      }
 
       // Materialise both players' sets and create both decks inside the same
       // transaction as the status flip. Note the deck insert and the

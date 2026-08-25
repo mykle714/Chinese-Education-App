@@ -5,6 +5,12 @@ import { dbManager } from '../dal/base/DatabaseManager.js';
 import { sanitizeDocumentContent } from '../utils/sanitizeContent.js';
 
 /**
+ * Ceiling on user-authored documents per account. A bound on volume, not a product
+ * limit — see `createText`. System/validation documents are excluded from the count.
+ */
+const MAX_DOCUMENTS_PER_USER = 500;
+
+/**
  * Text Service - Contains all business logic for text/document operations
  * Handles validation, authorization, and text management for the Reader feature
  */
@@ -25,7 +31,20 @@ export class TextService {
     if (!user) {
       throw new NotFoundError('User not found');
     }
-    
+
+    // A CEILING ON DOCUMENTS PER ACCOUNT. Each field was already bounded (title 200,
+    // description 500, content 50 000) but the NUMBER of documents was not, so the
+    // only limit on how much a single account could store was how fast it could POST.
+    // Set far above any plausible reading library — this exists to stop a loop, not
+    // to ration documents, and the message says which one it is so a real user who
+    // somehow reaches it knows what to do.
+    const existingCount = await this.countUserCreatedTexts(userId);
+    if (existingCount >= MAX_DOCUMENTS_PER_USER) {
+      throw new ValidationError(
+        `You already have ${MAX_DOCUMENTS_PER_USER} documents. Delete one to make room.`
+      );
+    }
+
     // Get character count
     const characterCount = textData.content.length;
 
@@ -268,6 +287,21 @@ export class TextService {
       systemTexts: texts.filter(t => !t.isUserCreated).length,
       totalCharacters: texts.reduce((sum, t) => sum + t.characterCount, 0)
     };
+  }
+
+  /**
+   * How many documents this user has authored. Counts only `isUserCreated` rows, so
+   * the system/validation documents the app composes on their behalf never eat into
+   * the allowance.
+   */
+  private async countUserCreatedTexts(userId: string): Promise<number> {
+    const result = await dbManager.executeQuery<{ count: string }>(async (client) => {
+      return await client.query(
+        'SELECT COUNT(*)::text AS count FROM texts WHERE "userId" = $1 AND "isUserCreated" = true',
+        [userId]
+      );
+    });
+    return parseInt(result.recordset[0]?.count ?? '0', 10);
   }
 
   // Private helper methods

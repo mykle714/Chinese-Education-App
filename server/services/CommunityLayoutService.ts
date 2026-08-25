@@ -3,6 +3,28 @@ import { VocabEntryService } from './VocabEntryService.js';
 import { Language, IconLayoutItem } from '../types/index.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
 import { isAdvancedLayout } from '../dal/shared/advancedLayout.js';
+
+/**
+ * The longest `entryKey` a vote may name.
+ *
+ * `community_layout_votes."entryKey"` is an unconstrained `VARCHAR` — no length, no
+ * foreign key — so before this guard a single request could store a key of any size
+ * the JSON body limit allowed. Sized well above the longest real headword in either
+ * corpus; it is a sanity bound, not a linguistic rule.
+ *
+ * ⚠️ A `VARCHAR(64)` on the column would be the durable fix and would also cover the
+ * rows already there. That is a schema change, so it is proposed rather than applied.
+ */
+const MAX_VOTE_ENTRY_KEY_LENGTH = 64;
+
+function assertVotableEntryKey(entryKey: string): void {
+  if (typeof entryKey !== 'string' || entryKey.trim().length === 0) {
+    throw new ValidationError('entryKey is required');
+  }
+  if (entryKey.length > MAX_VOTE_ENTRY_KEY_LENGTH) {
+    throw new ValidationError(`entryKey must be ${MAX_VOTE_ENTRY_KEY_LENGTH} characters or fewer`);
+  }
+}
 import {
   CommunityDesign,
   VotedDesignKey,
@@ -59,7 +81,7 @@ export class CommunityLayoutService {
   }
 
   /** Cast a vote (rejected with 'already-voted' if the viewer already voted this design this week). */
-  vote(
+  async vote(
     voterUserId: string,
     ownerUserId: string,
     entryKey: string,
@@ -68,6 +90,17 @@ export class CommunityLayoutService {
     if (voterUserId === ownerUserId) {
       // Shouldn't reach here (feeds exclude the viewer's own designs), but guard anyway.
       throw new ValidationError('You cannot vote for your own design');
+    }
+    assertVotableEntryKey(entryKey);
+    // THE DESIGN MUST EXIST. `community_layout_votes` has FKs on both user columns
+    // but none on `entryKey` — nothing tied a vote to a real design, so a hand-rolled
+    // POST could write vote rows naming words the owner has never laid out, and the
+    // tally for a design is a COUNT over exactly those rows. `applyDesign` already
+    // re-checks the snapshot for the same reason (an owner may change a design
+    // between page load and action); voting is the other half of that pair.
+    const snapshot = await this.communityLayoutDAL.getDesignLayout(ownerUserId, entryKey, language);
+    if (!snapshot || !isAdvancedLayout(snapshot.iconLayout)) {
+      throw new NotFoundError('That design no longer exists');
     }
     return this.communityLayoutDAL.recordVote(voterUserId, ownerUserId, entryKey, language);
   }
@@ -79,6 +112,10 @@ export class CommunityLayoutService {
     entryKey: string,
     language: Language,
   ): Promise<boolean> {
+    // Length-checked but NOT existence-checked: removing a vote is subtractive, so a
+    // key naming nothing simply deletes nothing. Requiring the design to still exist
+    // would make a vote un-removable the moment its owner deleted the layout.
+    assertVotableEntryKey(entryKey);
     return this.communityLayoutDAL.removeVote(voterUserId, ownerUserId, entryKey, language);
   }
 

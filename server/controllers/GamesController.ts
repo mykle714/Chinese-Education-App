@@ -3,6 +3,7 @@ import { GameAssetService } from '../services/GameAssetService.js';
 import { GameProgressService } from '../services/GameProgressService.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
 import { GameAssetsResponse, GameProgressResponse } from '../types/games.js';
+import { isKnownGameId } from '../constants.js';
 
 /**
  * Games framework HTTP layer.
@@ -64,6 +65,15 @@ export class GamesController {
 
       const { gameId } = req.params;
       const { state } = req.body ?? {};
+
+      // Whitelisted, not passed through: `gameId` is a raw path segment keying a
+      // (userId, gameId) upsert, so an unrecognised slug writes a save row for a
+      // game that does not exist — unbounded rows per account for the cost of a
+      // loop. See KNOWN_GAME_IDS.
+      if (!isKnownGameId(gameId)) {
+        res.status(404).json({ error: 'Unknown game', code: 'ERR_UNKNOWN_GAME' });
+        return;
+      }
 
       const progress = await this.gameProgressService.save(userId, gameId, state);
       res.status(201).json({ gameId, progress });

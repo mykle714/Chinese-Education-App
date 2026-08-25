@@ -192,6 +192,16 @@ rewrites (9, 19, 29, 40, 44, 79, 96, 110). Probe the schema, then `--baseline`.
 
 ---
 
+## 6a. Guards against a hand-rolled client
+
+Validation and role gates belong in the **service**, not the controller, so a second
+caller cannot bypass them — and an invariant that actually matters must be enforced
+atomically (one statement, or a transaction holding an advisory lock), never as a
+read-then-write across a round trip.
+
+→ [API_ABUSE_HARDENING.md](./API_ABUSE_HARDENING.md) — the three failure shapes, the
+global write limiter, the role-gate inventory, and the open items.
+
 ## 7. Code references
 
 | Section | Files |

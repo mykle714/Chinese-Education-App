@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ArenaService } from '../services/ArenaService.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
+import { resolveLanguage } from '../utils/languageParam.js';
 
 /**
  * Arena HTTP layer (docs/ARENA_FEATURE.md § 10).
@@ -27,7 +28,9 @@ export class ArenaController {
    */
   private contextOf(req: Request): { language: string; tz: string } {
     return {
-      language: (req.query.language as string) || 'zh',
+      // Coerced to a supported language for the same reason optIn is: `withdraw`
+      // writes through to user_languages, which has no CHECK on the column.
+      language: resolveLanguage(req.query.language),
       tz: (req.query.tz as string) || 'UTC',
     };
   }
@@ -49,7 +52,12 @@ export class ArenaController {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const language = req.body?.language || (req.query.language as string) || 'zh';
+      // VALIDATED, not passed through. `setOptInWeek` UPSERTS into user_languages,
+      // and that table has no CHECK on `language` — an unvalidated string here wrote
+      // a progress row for a language the app does not support, which then shows up
+      // in the leaderboard's per-user sum, in arena formation and in the penalty
+      // cron's partitioning. Coerce to a supported language instead.
+      const language = resolveLanguage(req.body?.language ?? req.query.language);
       const tz = req.body?.tz || (req.query.tz as string) || 'UTC';
       const weekKey = await this.arenaService.optIn(userId, language, tz);
       res.json({ weekKey });

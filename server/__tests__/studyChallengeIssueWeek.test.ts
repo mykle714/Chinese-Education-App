@@ -66,6 +66,9 @@ function serviceFor(live: StudyChallengeRow[], tz = SHANGHAI) {
         countActiveForUser: async () => 0,
         findCandidates: async () => [],
         findDisplayFieldsByWords: async () => ({}),
+        // The gates + insert now run inside one advisory-locked transaction; the
+        // lock itself is a no-op against a stub client.
+        lockUsersForChallenge: async () => undefined,
         createChallenge: async (input: { weekIndex: number }) => {
             created.push(input);
             return liveRow({ ...input, challengerId: ALICE, challengeeId: BOB, status: 'pending' });
@@ -95,9 +98,15 @@ function serviceFor(live: StudyChallengeRow[], tz = SHANGHAI) {
     };
 
     const starterPacks = { estimateLevel: async () => 3 };
+    // Runs the callback inline against a stub client — the week arithmetic under test
+    // does not care that it is inside a transaction, only that one is available.
+    const txRunner = {
+        executeInTransaction: async (fn: (tx: { getClient: () => unknown }) => Promise<unknown>) =>
+            fn({ getClient: () => ({}) }),
+    };
     const unused = {} as never;
     const service = new StudyChallengeService(
-        challengeDAL, friendshipDAL, userDAL as never, unused, unused, starterPacks as never, unused
+        challengeDAL, friendshipDAL, userDAL as never, unused, unused, starterPacks as never, txRunner as never
     );
     return { service, created };
 }

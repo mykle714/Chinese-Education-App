@@ -886,13 +886,26 @@ export class StarterPacksService {
    * Look up a discover card by its (per-table) surrogate id, scoped to the
    * language-appropriate dictionary table. Returns just the fields sortCard needs
    * (word1 + language). Replaces DictionaryDAL.findById, which is _zh-only.
+   *
+   * ⚠️ GATED ON `discoverable`, and it must stay that way. The supply queries that
+   * FEED discover already filter on the flag, so a well-behaved client can only ever
+   * send an id this returns — but a hand-rolled `POST /api/starterPacks/sort` can
+   * send any det id at all. Without the gate that call adds an arbitrary dictionary
+   * row to the caller's library, including rows whose enrichment columns
+   * (`partsOfSpeech`, `longDefinition`, `exampleSentences`, and zh's `breakdown` /
+   * `classifier` / `wordForms`) are still null, which is precisely the state
+   * CLAUDE.md's mark-discoverable rule exists to keep out of learners' decks.
+   *
+   * Safe for the provisional-promotion path: lent cards are drawn from
+   * `discoverable = TRUE` rows too (`ProvisionalCardDAL._supplyGate`), so promoting
+   * one still resolves here.
    */
   private async _findDiscoverCardById(cardId: number, language: string): Promise<{ word1: string; language: string } | null> {
     const table = this._dictTable(language);
     const client = await db.getClient();
     try {
       const result = await client.query<{ word1: string; language: string }>(`
-        SELECT word1, language FROM ${table} WHERE id = $1
+        SELECT word1, language FROM ${table} WHERE id = $1 AND ${this._supplyGate('')}
       `, [cardId]);
       return result.rows[0] ?? null;
     } finally {

@@ -31,3 +31,28 @@ export const MINUTE_POINTS_CONFIG = {
 // returns HTTP 429. Cache hits don't count. See docs/DICTIONARY_AI_FALLBACK_SEARCH.md
 // and dictionary_ai_usage (migration 99).
 export const DICTIONARY_AI_DAILY_LIMIT = parseInt(process.env.DICTIONARY_AI_DAILY_LIMIT || '10');
+
+/**
+ * Every game slug the app recognises — the whitelist for `/api/games/:gameId/*`.
+ *
+ * `gameprogress` is keyed `(userId, gameId)` and `gameId` arrives as a raw path
+ * segment, so without this list a caller can mint an unbounded number of save rows
+ * on their own account simply by varying the slug. The table is not the point; the
+ * point is that "which games exist" is a fixed, known set and an endpoint that
+ * accepts anything else is accepting garbage.
+ *
+ * Mirrors the client registry (`src/games/registry.ts` → `GAMES`). Adding a game
+ * means adding its slug here — the 404 is the reminder.
+ */
+export const KNOWN_GAME_IDS = [
+  'bubble-match',
+  'word-search',
+  'match-speed',
+  'speed-reading',
+  'hydra-bubbles',
+  'memory-map',
+] as const;
+
+export function isKnownGameId(value: unknown): value is (typeof KNOWN_GAME_IDS)[number] {
+  return typeof value === 'string' && (KNOWN_GAME_IDS as readonly string[]).includes(value);
+}

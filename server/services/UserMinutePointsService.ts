@@ -16,6 +16,21 @@ import {
 } from '../utils/streakDate.js';
 
 /**
+ * How long a user must wait between credited minutes. Just under 60s so a client
+ * ticking on a one-minute timer is never rejected for arriving a few milliseconds
+ * early. Enforced as an atomic compare-and-set, not a read-then-check — see
+ * `incrementMinutePoints`.
+ */
+const MINUTE_POINT_COOLDOWN_SECONDS = 59;
+
+/**
+ * How far a client's self-reported timestamp may sit from server time before it is
+ * ignored. Generous enough for a genuinely skewed device clock, far too small to
+ * reach another 04:00-bounded local day, which is the thing an attacker wants.
+ */
+const MAX_CLIENT_CLOCK_SKEW_MS = 30 * 60 * 1000;
+
+/**
  * UserMinutePoints Service.
  *
  * LAYER: service. Owns the study-time economy: earning minutes, crossing the daily
@@ -63,16 +78,36 @@ export class UserMinutePointsService {
     }
 
     const now = new Date();
-    if (user.lastMinutePointIncrement) {
-      const secondsSinceLast = (now.getTime() - user.lastMinutePointIncrement.getTime()) / 1000;
-      if (secondsSinceLast < 59) {
-        const wait = Math.ceil(59 - secondsSinceLast);
-        throw new ValidationError(`Please wait ${wait} more seconds before incrementing again`);
-      }
+    // ── THE COOLDOWN IS CLAIMED, NOT CHECKED ────────────────────────────────
+    // One statement decides eligibility AND stamps the row, so concurrent requests
+    // cannot all pass. This used to be a read here plus an UPDATE at the end of the
+    // method, with a dozen awaits in between: a scripted client firing N requests at
+    // once had them all read the same stale timestamp and all bank a minute. Minute
+    // points fund night-market unlocks, so that gap MINTED CURRENCY rather than
+    // merely relaxing a rate limit. See IUserDAL.claimMinutePointIncrement.
+    //
+    // Side effect of claiming up front: the window now runs from the start of a
+    // request rather than its completion. That is strictly the safer direction and
+    // is invisible at a 59-second granularity.
+    const claimed = await this.userDAL.claimMinutePointIncrement(
+      userId, now, MINUTE_POINT_COOLDOWN_SECONDS
+    );
+    if (!claimed) {
+      // Only reached on the losing side of the claim, so re-reading for an exact
+      // remaining-seconds figure is not worth a second round trip.
+      throw new ValidationError('Please wait before incrementing again');
     }
 
     const tz = resolveTimezone(request.tz);
-    const clientTimestamp = this.parseTimestamp(request.timestamp);
+    // CLAMPED, NOT TRUSTED. The client's own clock decides which LOCAL DAY the minute
+    // lands on, which is legitimate (it drove the timer), but an unbounded timestamp
+    // let a scripted client bank minutes into arbitrary past or future days —
+    // fabricating calendar history and, worse, stamping `lastStreakDate` far in the
+    // future, where the penalty cron reads the account as permanently current and the
+    // streak can never break. Anything further from server time than the tolerance is
+    // replaced by server now, so a merely skewed device still works and a crafted
+    // timestamp buys nothing.
+    const clientTimestamp = this.clampToServerNow(this.parseTimestamp(request.timestamp), now);
     const streakDate = streakDateOf(clientTimestamp, tz);
 
     // The minute is attributed to the language the client says it accrued for —
@@ -107,8 +142,6 @@ export class UserMinutePointsService {
       await this.advanceStreakForDate(userId, language, streakDate);
       console.log(`[MINUTE-POINTS-SERVICE] 🔥 ${language} streak advanced for user ${userId.substring(0, 8)}... on ${streakDate}`);
     }
-
-    await this.userDAL.updateLastMinutePointIncrement(userId, now);
 
     // Reconcile THIS LANGUAGE's night-market unlock entitlement against its new wallet
     // (best-effort). Each language grows its own market, so the grant is scoped to the
@@ -362,6 +395,22 @@ export class UserMinutePointsService {
     }
 
     await this.userLanguagesDAL.setStreak(userId, language, newStreak, streakDate);
+  }
+
+  /**
+   * Replace a client timestamp that is implausibly far from server time with server
+   * now. See the call site for why this is a clamp rather than a rejection: a user
+   * with a skewed device clock keeps working (their minute simply lands on the
+   * server-derived day), while a crafted timestamp cannot reach `streakDateOf`.
+   */
+  private clampToServerNow(clientTimestamp: Date, now: Date): Date {
+    const skewMs = Math.abs(clientTimestamp.getTime() - now.getTime());
+    if (skewMs <= MAX_CLIENT_CLOCK_SKEW_MS) return clientTimestamp;
+    console.warn(
+      `[MINUTE-POINTS-SERVICE] client timestamp ${clientTimestamp.toISOString()} is ` +
+        `${Math.round(skewMs / 1000)}s from server time — clamping to now`
+    );
+    return now;
   }
 
   private parseTimestamp(input: string): Date {

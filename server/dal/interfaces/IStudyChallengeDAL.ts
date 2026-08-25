@@ -65,6 +65,31 @@ export interface IStudyChallengeDAL {
   listLiveForUser(userId: string, client?: PoolClient): Promise<StudyChallengeRow[]>;
 
   /**
+   * Take transaction-scoped advisory locks on a set of users, so that any two
+   * challenge operations touching an overlapping set of users run one after the
+   * other rather than interleaving.
+   *
+   * WHY AN ADVISORY LOCK AND NOT A CONSTRAINT. Two of the issue-time invariants
+   * cannot be expressed in SQL:
+   *   * "at most one UNFINISHED challenge per pair, whatever week it is named
+   *     after" — `unfinished` is derived from both players' timezones, so no index
+   *     can compute it; and
+   *   * "at most MAX_ACTIVE_CHALLENGES per (user, language)" — a COUNT, which no
+   *     unique index expresses either.
+   * Both were read-then-write, and both are reachable: a crossing pair in two
+   * timezones can compute DIFFERENT week indices (so `study_challenges_pair_week_uniq`
+   * does not collide) and end up with two live challenges, two decks and two cap
+   * slots — the migration-150 defect, re-opened by a race.
+   *
+   * Locks are ACQUIRED IN SORTED ORDER, which is what makes concurrent A→B and B→A
+   * requests deadlock-free: both take the same lock first.
+   *
+   * `pg_advisory_xact_lock` releases on commit or rollback, so there is no unlock
+   * path to forget. Must be called inside a transaction.
+   */
+  lockUsersForChallenge(userIds: string[], client: PoolClient): Promise<void>;
+
+  /**
    * How many challenges the user is COMMITTED to in one language — issued and
    * still pending, plus accepted, in either role. Incoming pending invitations are
    * excluded, because a slot must only ever be spent by the user's own decision

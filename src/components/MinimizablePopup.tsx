@@ -2,6 +2,7 @@ import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Box, IconButton, useTheme } from "@mui/material";
 import CloseFullscreenRoundedIcon from "@mui/icons-material/CloseFullscreenRounded";
 import OpenInFullRoundedIcon from "@mui/icons-material/OpenInFullRounded";
+import { SHADOW } from "../theme/shadows";
 
 // Resting visual constants for the minimized "tiny square" puck. Measured in
 // px so the collapse transform can land the card exactly on top of the square.
@@ -176,7 +177,7 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
                     py: 3.5,
                     borderRadius: "20px",
                     backgroundColor: fc.flashCard,
-                    boxShadow: "0 18px 48px rgba(0, 0, 0, 0.32)",
+                    boxShadow: SHADOW.popover,
                     transformOrigin: "center center",
                     transition: `transform ${MORPH_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${MORPH_MS}ms ease`,
                     ...(minimized && {
@@ -252,7 +253,7 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
                             borderRadius: "14px",
                             backgroundColor: puckBg,
                             color: puckFg,
-                            boxShadow: "0 8px 20px rgba(0, 0, 0, 0.28)",
+                            boxShadow: SHADOW.float,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",

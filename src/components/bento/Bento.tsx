@@ -5,6 +5,7 @@ import { styled } from "@mui/material/styles";
 import Icon from "../Icon";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
+import { SHADOW } from "../../theme/shadows";
 
 /**
  * Bento — the menu primitive (docs/SHELF_REDESIGN.md § A4). The component that
@@ -44,12 +45,24 @@ import { FONTS } from "../../theme/fonts";
  * Used by: entries 1 (Home), 3 (Discover), 4 (Games), 5 (Account).
  */
 
-/** `.bento` — the 2-column grid. The 16px gutter is the design's menu gutter (the
- *  Shelf's is 22px; they are different numbers on purpose, since a tile's own 14px
- *  of padding already insets its text). */
-const Bento = styled(Box)(() => ({
+/**
+ * `.bento` — the grid. The 16px gutter is the design's menu gutter (the Shelf's is 22px;
+ * they are different numbers on purpose, since a tile's own 14px of padding already
+ * insets its text).
+ *
+ * TWO COLUMNS IS THE DEFAULT AND THE NORM — it is what every hub in the app uses, and
+ * what makes a tile big enough to carry a title and a subtitle. `columns={3}` exists for
+ * the one shape the artboards also draw (Friends, artboard 8): a row of SIBLING ACTIONS
+ * that belong together and are named in one word each. At three columns a tile is too
+ * narrow for a subtitle, so pair it with `variant="low"` and let the ghost glyph carry
+ * the meaning the one-word label compresses. Do not reach for it to fit more
+ * destinations on a hub — that is what a `BentoStrip` is for.
+ */
+const Bento = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "columns",
+})<{ columns?: 2 | 3 }>(({ columns = 2 }) => ({
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: `repeat(${columns}, 1fr)`,
     gap: 10,
     padding: "14px 16px 0",
 }));
@@ -79,7 +92,7 @@ function tileLinkProps(to?: string, state?: unknown, onClick?: (e: React.MouseEv
     return onClick ? { component: "button" as React.ElementType, type: "button", onClick } : {};
 }
 
-export type BentoTileVariant = "base" | "hero" | "low";
+export type BentoTileVariant = "base" | "hero" | "low" | "compact";
 
 /** Per-variant geometry. Kept as a table rather than branches so the three variants
  *  can be read against each other — the ghost glyph's size and offset change with
@@ -91,6 +104,10 @@ const TILE_VARIANTS: Record<
     base: { minHeight: 112, span: 1, title: 15.5, letterSpacing: "-0.015em", sub: 11.5, ghost: 92, ghostTop: -14 },
     hero: { minHeight: 150, span: 2, title: 23, letterSpacing: "-0.028em", sub: 12.5, ghost: 140, ghostTop: -26 },
     low: { minHeight: 90, span: 1, title: 15.5, letterSpacing: "-0.015em", sub: 11.5, ghost: 92, ghostTop: -14 },
+    // The 3-up tile (Friends, artboard 8). Everything shrinks TOGETHER, and the ghost
+    // shrinks most: at a third of the screen the tile is ~117px wide, so `low`'s 92px
+    // glyph would fill it corner to corner and stop reading as a wash behind the label.
+    compact: { minHeight: 74, span: 1, title: 14, letterSpacing: "-0.015em", sub: 11, ghost: 66, ghostTop: -10 },
 };
 
 export interface BentoTileProps {
@@ -122,9 +139,33 @@ export interface BentoTileProps {
      * on it to distinguish two tiles, because the title is doing that job.
      */
     icon?: string;
-    /** `.pin` — a mono pill badge on translucent white, top-right. */
+    /** `.pin` — a mono pill badge in the tile's top-right corner. */
     pin?: ReactNode;
+    /**
+     * What the pin MEANS, which is the only thing that decides its colour:
+     *   `"default"` — a fact about the destination ("14 decks", "2 modes"). Translucent
+     *                 white, so it reads as a quiet note on the tile's own pastel.
+     *   `"alert"`   — a count of things WAITING FOR THE USER (friend requests, pending
+     *                 challenges). The app's danger pink on white, because an unread
+     *                 count that blends into its tile is a notification nobody sees.
+     *
+     * The distinction is deliberate and worth keeping: if every pin were alert-coloured
+     * the tiles would all shout, and if none were, the two counts on the Friends hub —
+     * the entire discovery mechanism for challenges (docs/STUDY_CHALLENGE.md § 1, Q48) —
+     * would be indistinguishable from a deck count.
+     */
+    pinTone?: "default" | "alert";
     variant?: BentoTileVariant;
+    /**
+     * Force the tile across every column of its grid, keeping `variant`'s geometry.
+     *
+     * `hero` already spans full width — it IS the big full-width tile — so this is for
+     * the other combination the artboards use: a SHORT tile that still owns its own row
+     * (Friends' Challenges bar, a `compact`/`low` tile under a 3-up of siblings). Width
+     * and height are separate decisions, and folding them into one enum would mean
+     * minting a variant per pairing.
+     */
+    fullWidth?: boolean;
     /** Destination route — the whole tile becomes a `RouterLink` to this path. */
     to?: string;
     /** Router `state` to carry with the navigation (Bubble Match's chosen level). */
@@ -146,13 +187,17 @@ export const BentoTile: React.FC<BentoTileProps> = ({
     hue,
     icon,
     pin,
+    pinTone = "default",
     variant = "base",
+    fullWidth = false,
     to,
     state,
     onClick,
     className,
 }) => {
     const v = TILE_VARIANTS[variant];
+    const alertPin = pinTone === "alert";
+    const spansGrid = fullWidth || v.span === 2;
     const link = tileLinkProps(to, state, onClick);
     const { fill, ink } = RAMP[hue];
     return (
@@ -166,7 +211,10 @@ export const BentoTile: React.FC<BentoTileProps> = ({
                 border: "none",
                 textAlign: "left",
                 font: "inherit",
-                gridColumn: v.span === 2 ? "span 2" : undefined,
+                // `1 / -1` rather than `span 2`: a hero is "the full width of whatever
+                // grid it is in", and spelling it as a span silently means "two thirds"
+                // the moment it lands in a 3-column Bento.
+                gridColumn: spansGrid ? "1 / -1" : undefined,
                 minHeight: v.minHeight,
                 borderRadius: "19px",
                 padding: "14px",
@@ -177,7 +225,7 @@ export const BentoTile: React.FC<BentoTileProps> = ({
                 // free for the ghost glyph to bleed into.
                 justifyContent: "flex-end",
                 background: fill,
-                boxShadow: "0 1px 2px rgba(20, 18, 26, 0.05)",
+                boxShadow: SHADOW.rest,
                 cursor: to || onClick ? "pointer" : "default",
                 textDecoration: "none",
             }}
@@ -193,7 +241,7 @@ export const BentoTile: React.FC<BentoTileProps> = ({
             )}
             {pin && (
                 <Box
-                    className="bento-tile__pin"
+                    className={`bento-tile__pin bento-tile__pin--${pinTone}`}
                     sx={{
                         position: "absolute",
                         top: 12,
@@ -201,10 +249,25 @@ export const BentoTile: React.FC<BentoTileProps> = ({
                         zIndex: 1,
                         fontFamily: FONTS.mono,
                         fontSize: 10,
-                        color: COLORS.onSurface,
-                        background: "rgba(255, 255, 255, 0.72)",
+                        // An alert pin is a solid chip and needs a proper minimum size:
+                        // a one-digit count in a pill sized by its padding renders as an
+                        // oval, not the circle a notification badge is read as.
+                        ...(alertPin
+                            ? {
+                                color: COLORS.white,
+                                background: COLORS.dangerInk,
+                                fontWeight: 600,
+                                minWidth: 20,
+                                textAlign: "center",
+                                padding: "4px 6px",
+                                lineHeight: 1.2,
+                            }
+                            : {
+                                color: COLORS.onSurface,
+                                background: "rgba(255, 255, 255, 0.72)",
+                                padding: "4px 8px",
+                            }),
                         borderRadius: "999px",
-                        padding: "4px 8px",
                     }}
                 >
                     {pin}
@@ -293,7 +356,7 @@ export const BentoStrip: React.FC<BentoStripProps> = ({
     children,
     className,
 }) => (
-    <Box className={`bento-strip${className ? ` ${className}` : ""}`} sx={{ gridColumn: "span 2" }}>
+    <Box className={`bento-strip${className ? ` ${className}` : ""}`} sx={{ gridColumn: "1 / -1" }}>
         <Box
             className="bento-strip__header"
             onClick={onActionClick}

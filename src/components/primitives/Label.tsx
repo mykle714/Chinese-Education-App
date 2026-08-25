@@ -98,6 +98,15 @@ export const SectionRule: React.FC<SectionRuleProps> = ({ label, right, classNam
 export interface SectionHeaderProps {
     /** The overline text, or any node when the left side is richer than one label. */
     label: React.ReactNode;
+    /**
+     * A mono FACT at the right end — "last 7 days", "25 players", "×12 wins".
+     *
+     * The same slot `BentoStrip` has, and it means the same thing: a statement about the
+     * set that follows, never a control. Rendered before `action`, though a header
+     * carrying both is unusual — a section with a status AND an affordance is usually two
+     * ideas that want separating.
+     */
+    meta?: React.ReactNode;
     /** Material Symbols name for the right-hand affordance (e.g. "chevron_right", "add"). */
     action?: string;
     onActionClick?: () => void;
@@ -117,6 +126,7 @@ export interface SectionHeaderProps {
  */
 export const SectionHeader: React.FC<SectionHeaderProps> = ({
     label,
+    meta,
     action,
     onActionClick,
     actionLabel,
@@ -137,6 +147,9 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
         ]}
     >
         {typeof label === "string" ? <Label>{label}</Label> : label}
+        {/* Wrapped in `Label` only when it is bare text; a node is left alone, so a caller
+            can pass an already-coloured or already-sized fact. */}
+        {meta !== undefined && (typeof meta === "string" ? <Label className="section-header__meta">{meta}</Label> : meta)}
         {action && (
             <Box
                 className="section-header__action"

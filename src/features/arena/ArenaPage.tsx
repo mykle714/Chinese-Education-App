@@ -5,9 +5,12 @@ import { FooterSpacer } from "../../components/MobileFooter";
 import { Fragment } from "react";
 import ArenaEntryRow from "./ArenaEntryRow";
 import ArenaMessageDialog from "./ArenaMessageDialog";
+import DivisionBanner from "./DivisionBanner";
+import Icon from "../../components/Icon";
 import { HeaderIconButton } from "../../components/PageHeader";
 import { Board, BoardZone } from "../../components/leaderboard/Board";
-import { SectionRule } from "../../components/primitives";
+import { Label, SectionCard, SectionRule } from "../../components/primitives";
+import { RAMP } from "../../theme/colors";
 import {
     fetchArenaBoard,
     optInToArena,
@@ -21,17 +24,7 @@ import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import {
-    divisionColor,
-    divisionName,
-    divisionTextColor,
-    errorTextSx,
-    formatRemaining,
-    joinButtonSx,
-    mutedTextSx,
-    secondaryButtonSx,
-    sectionCardSx,
-} from "./arenaStyles";
+import { errorTextSx, formatRemaining, mutedTextSx } from "./arenaStyles";
 
 /**
  * The divider between two adjacent rows, or null when nothing changes there.
@@ -171,20 +164,31 @@ function ArenaPage() {
             return <Typography sx={mutedTextSx}>The arena is unavailable right now.</Typography>;
         }
 
+        // The viewer's own rank, for the countdown card's right-hand slot. Read off the
+        // board rather than tracked separately, so it can never disagree with the row the
+        // page is drawing; `undefined` when they have no seat this week.
+        const viewerRank = board.entries.find((e) => e.isViewer)?.rank;
+
         return (
             <>
-                <DivisionHeader division={board.division} />
+                {/* The banner is drawn in EVERY state, and that is deliberate. It is the
+                    page's identity — the rung you hold does not stop existing between
+                    weeks — so it anchors the opt-in and closed states too, which would
+                    otherwise be a bare card on an empty page with nothing saying what
+                    arena they are about to join. */}
+                <DivisionBanner division={board.division} className="arena-page__banner" />
 
                 {board.state === "live" && board.boundaries && (
                     <CountdownCard
                         closesAt={board.boundaries.closesAt}
                         timezone={board.boundaries.timezone}
                         showTimezone={board.boundaries.timezoneDiffersFromViewer}
+                        rank={viewerRank}
                     />
                 )}
 
                 {board.state === "results" && (
-                    <ResultsBanner divisionChange={board.divisionChange} />
+                    <ResultsCard divisionChange={board.divisionChange} />
                 )}
 
                 {board.state !== "live" && (
@@ -200,7 +204,14 @@ function ArenaPage() {
 
                 {board.entries.length > 0 && (
                     <>
-                        <SectionRule label="Minutes earned" />
+                        {/* `.shelfhd` in the artboard — the size of the field on the left,
+                            the unit on the right. Both are facts about the board, so this
+                            is a rule with a trailing label rather than a header with an
+                            affordance: there is nothing here to tap. */}
+                        <SectionRule
+                            label={`Board · ${board.entries.length}`}
+                            right={<Label sx={{ whiteSpace: "nowrap" }}>minutes</Label>}
+                        />
                         <Board className="arena-page__board">
                             {board.entries.map((entry, i) => (
                                 <Fragment key={`${entry.userId ?? "bot"}-${entry.rank}`}>
@@ -254,45 +265,6 @@ function ArenaPage() {
     );
 }
 
-/** The rung the viewer currently holds. */
-function DivisionHeader({ division }: { division: number }) {
-    return (
-        <Box
-            className="arena-page__division"
-            sx={{
-                ...sectionCardSx,
-                display: "flex",
-                alignItems: "center",
-                gap: 1.25,
-                backgroundColor: divisionColor(division),
-            }}
-        >
-            <Typography
-                sx={{
-                    fontFamily: FONTS.sans,
-                    fontSize: SIZE.subtitle,
-                    fontWeight: WEIGHT.bold,
-                    color: divisionTextColor(division),
-                }}
-            >
-                {divisionName(division)}
-            </Typography>
-            <Typography
-                sx={{
-                    fontFamily: FONTS.sans,
-                    fontSize: SIZE.micro,
-                    // On a dark rung the muted grey disappears, so the secondary line
-                    // takes the same inverted colour and leans on opacity instead.
-                    color: divisionTextColor(division),
-                    opacity: 0.7,
-                }}
-            >
-                Division {division} of 12
-            </Typography>
-        </Box>
-    );
-}
-
 /**
  * Time left in the live week.
  *
@@ -306,10 +278,13 @@ function CountdownCard({
     closesAt,
     timezone,
     showTimezone,
+    rank,
 }: {
     closesAt: string;
     timezone: string;
     showTimezone: boolean;
+    /** The viewer's current position, shown at the right end. Omitted when they have no seat. */
+    rank?: number;
 }) {
     const [remaining, setRemaining] = useState(() => new Date(closesAt).getTime() - Date.now());
 
@@ -324,50 +299,74 @@ function CountdownCard({
     }, [closesAt]);
 
     return (
-        <Box className="arena-page__countdown" sx={sectionCardSx}>
-            <Typography
-                sx={{
-                    fontFamily: FONTS.sans,
-                    fontSize: SIZE.body,
-                    fontWeight: WEIGHT.semibold,
-                    color: COLORS.onSurface,
-                }}
-            >
-                {formatRemaining(remaining)} left
-            </Typography>
-            <Typography
-                sx={{ fontFamily: FONTS.sans, fontSize: SIZE.micro, color: COLORS.textSecondary }}
-            >
-                Closes Sunday 16:00{showTimezone ? ` (${timezone})` : ""}
-            </Typography>
-        </Box>
+        // The time and the rank share one baseline, as artboard 9 draws them: the two
+        // facts a competitor checks in the same glance are "how long have I got" and
+        // "where am I", and putting them on separate lines makes that two glances.
+        <SectionCard className="arena-page__countdown">
+            <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "12px" }}>
+                <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                        sx={{
+                            fontFamily: FONTS.sans,
+                            fontSize: 15,
+                            fontWeight: WEIGHT.semibold,
+                            color: COLORS.onSurface,
+                        }}
+                    >
+                        {formatRemaining(remaining)} left
+                    </Typography>
+                    {/* Sentence case, not the overline's uppercase: this is a TIME, and
+                        tracking a clock reading out to 0.14em makes it unreadable. */}
+                    <Label sx={{ textTransform: "none", letterSpacing: "0.04em", marginTop: "3px", display: "block" }}>
+                        Closes Sunday 16:00{showTimezone ? ` (${timezone})` : ""}
+                    </Label>
+                </Box>
+                {rank !== undefined && <Label sx={{ whiteSpace: "nowrap" }}>rank {rank}</Label>}
+            </Box>
+        </SectionCard>
     );
 }
 
-/** What last week's finish did to the viewer's rung. */
-function ResultsBanner({ divisionChange }: { divisionChange: number | null }) {
-    const text =
-        divisionChange === 1 ? "You were promoted."
-            : divisionChange === -1 ? "You were relegated."
-                : "You held your division.";
-    const tint =
-        divisionChange === 1 ? COLORS.greenAccent
-            : divisionChange === -1 ? COLORS.redAccent
-                : COLORS.sectionCard;
+/**
+ * What last week's finish did to the viewer's rung.
+ *
+ * ⚠️ EXTRAPOLATED — artboard 9 draws only the `live` state (docs/SHELF_REDESIGN.md entry
+ * 9 flags this as the redesign's biggest gap). The rule applied here, and to `OptInCard`
+ * below, is: use the page's OWN vocabulary rather than inventing a third one. So the
+ * outcome is a `SectionCard` filled with the ramp pastel the BOARD already uses for the
+ * same idea — `RAMP.grn` for promotion, `RAMP.red` for demotion — carrying the matching
+ * arrow from `BoardZone`. A competitor who watched the green line all week meets the same
+ * green when they cross it.
+ *
+ * `hold` is deliberately untinted, for the same reason `BoardZone`'s hold band is:
+ * tinting every outcome would make the tint carry no information, and "nothing happened
+ * to you" is exactly the case that should not shout.
+ */
+function ResultsCard({ divisionChange }: { divisionChange: number | null }) {
+    const promoted = divisionChange === 1;
+    const demoted = divisionChange === -1;
+    const text = promoted ? "You were promoted."
+        : demoted ? "You were relegated."
+            : "You held your division.";
+    const hue = promoted ? RAMP.grn : demoted ? RAMP.red : null;
+    const arrow = promoted ? "arrow_upward" : demoted ? "arrow_downward" : null;
 
     return (
-        <Box className="arena-page__results" sx={{ ...sectionCardSx, backgroundColor: tint }}>
-            <Typography
-                sx={{
-                    fontFamily: FONTS.sans,
-                    fontSize: SIZE.body,
-                    fontWeight: WEIGHT.semibold,
-                    color: COLORS.onSurface,
-                }}
-            >
-                {text}
-            </Typography>
-        </Box>
+        <SectionCard className="arena-page__results" background={hue?.fill}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {arrow && hue && <Icon name={arrow} size={17} color={hue.ink} weight={600} />}
+                <Typography
+                    sx={{
+                        fontFamily: FONTS.sans,
+                        fontSize: SIZE.body,
+                        fontWeight: WEIGHT.semibold,
+                        color: COLORS.onSurface,
+                    }}
+                >
+                    {text}
+                </Typography>
+            </Box>
+        </SectionCard>
     );
 }
 
@@ -397,39 +396,62 @@ function OptInCard({
     // only revealed it at 04:00 once that week had already formed without you.
     if (optedIn) {
         return (
-            <Box className="arena-page__optin" sx={sectionCardSx}>
-                <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.body, color: COLORS.onSurface }}>
+            <SectionCard className="arena-page__optin">
+                <Label>You are entered</Label>
+                <Typography
+                    sx={{ fontFamily: FONTS.sans, fontSize: SIZE.body, color: COLORS.onSurface, mt: "4px" }}
+                >
                     You're in next week's arena.
                 </Typography>
-                <Button className="arena-page__withdraw" sx={secondaryButtonSx} onClick={onWithdraw} disabled={busy}>
+                {/* Outlined, not contained: withdrawing is the reversal of the action this
+                    card exists to offer, so it must not wear the page's one ink pill. */}
+                <Button
+                    className="arena-page__withdraw"
+                    variant="outlined"
+                    fullWidth
+                    onClick={onWithdraw}
+                    disabled={busy}
+                    sx={{ mt: "12px" }}
+                >
                     Withdraw
                 </Button>
-            </Box>
+            </SectionCard>
         );
     }
 
     return (
-        <Box className="arena-page__optin" sx={sectionCardSx}>
+        <SectionCard className="arena-page__optin">
             <Typography
                 sx={{
                     fontFamily: FONTS.sans,
-                    fontSize: SIZE.body,
+                    fontSize: 15.5,
                     fontWeight: WEIGHT.semibold,
+                    letterSpacing: "-0.015em",
                     color: COLORS.onSurface,
                 }}
             >
                 Join next week's arena
             </Typography>
             <Typography
-                sx={{ fontFamily: FONTS.sans, fontSize: SIZE.micro, color: COLORS.textSecondary, mt: 0.5, mb: 1 }}
+                sx={{ fontFamily: FONTS.sans, fontSize: 12.5, lineHeight: 1.45, color: COLORS.textSecondary, mt: "5px" }}
             >
                 We use your rough area only to group you with nearby players. We never show
                 it to anyone, and you can skip it.
             </Typography>
-            <Button className="arena-page__join" sx={joinButtonSx} onClick={onJoin} disabled={busy}>
+            {/* `.btn2` — the design's one ink pill, which the MUI theme already draws on a
+                contained Button. The arena's join used to be a green fill; green means
+                PROMOTION everywhere else on this page, and spending it on a button made
+                the page's one semantic colour ambiguous. */}
+            <Button
+                className="arena-page__join"
+                variant="contained"
+                onClick={onJoin}
+                disabled={busy}
+                sx={{ mt: "12px" }}
+            >
                 {busy ? "Joining…" : "Join"}
             </Button>
-        </Box>
+        </SectionCard>
     );
 }
 

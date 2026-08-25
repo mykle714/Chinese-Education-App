@@ -4,6 +4,7 @@ import { styled } from "@mui/material/styles";
 import Icon from "../Icon";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
+import { SHADOW } from "../../theme/shadows";
 
 /**
  * Shelf — the container primitive for a collection the user owns
@@ -74,7 +75,7 @@ const Board = styled(Box)(() => ({
     height: 3,
     borderRadius: 2,
     background: COLORS.wood,
-    boxShadow: "0 2px 5px rgba(20, 18, 26, 0.14)",
+    boxShadow: SHADOW.board,
 }));
 
 export interface ShelfRowProps {

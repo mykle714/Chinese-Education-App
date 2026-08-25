@@ -1600,6 +1600,20 @@ Consequences: **no temp deck exists before `accepted`** (§ 3.3 creates both dec
 accept transaction), and a declined or expired challenge leaves nothing behind on either
 account except the history row and any Mastered writes the players made while reviewing.
 
+**Issue and accept are serialised per pair.** Two of the issue-time gates cannot be
+expressed as constraints — "at most one UNFINISHED challenge per pair, whatever week
+it is named after" is derived from both players' timezones, and the
+`MAX_ACTIVE_CHALLENGES` cap is a COUNT — so both were read-then-write and both were
+reachable concurrently. A crossing pair in two timezones can compute *different* week
+indices, which means `study_challenges_pair_week_uniq` does not collide and the pair
+ends up with two live challenges, two decks and two cap slots: the migration-150
+defect, re-opened by a race. All four gates and the insert now run inside one
+transaction holding `pg_advisory_xact_lock` on **both** players (sorted, so crossing
+requests cannot deadlock), and the accept path's cap check moved *inside* its existing
+transaction and under the same lock. The candidate draw stays outside the lock — it
+depends on none of the gates. See `IStudyChallengeDAL.lockUsersForChallenge` and
+[API_ABUSE_HARDENING.md](./API_ABUSE_HARDENING.md) § 1a.
+
 **The review screen is single-use, and history says so.** Send / Accept / Decline all
 leave the screen with `slideNavigate("/friends/challenges", { replace: true })`, so the
 review page's history entry is *replaced* by the friend list rather than pushed over.

@@ -5,6 +5,7 @@ import Icon from "../Icon";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SPINE_SIZES, SPINE_VARIANTS, spineScale, type SpineVariant } from "./spineGeometry";
+import { SHADOW } from "../../theme/shadows";
 
 /**
  * Spine — the app's single visual for *a set of cards*, and the atom of the shelf
@@ -93,7 +94,7 @@ const SpineRoot = styled(Box, {
     // Two shadows in one: an outer drop shadow that lifts the spine off the board,
     // and a wide INSET white highlight on the right edge that rounds the body so it
     // reads as a cylinder rather than a flat swatch.
-    boxShadow: "2px 3px 9px rgba(20, 18, 26, 0.14), inset -6px 0 12px rgba(255, 255, 255, 0.5)",
+    boxShadow: SHADOW.spine,
     display: "flex",
     flexDirection: "column",
     justifyContent: "space-between",

@@ -276,7 +276,7 @@ All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both con
 - The server `GET /api/dictionary/search` response gains `canAskAi: boolean` and an optional
   `aiCacheEntry` (a fresh non-empty cache hit, auto-shown without a button).
 - **`DictionaryPage.tsx`** renders the orange unclickable card **at the top of the results** (above
-  the breakdown / regular result cards) so a just-generated answer is immediately visible without
+  the breakdown / regular result rows) so a just-generated answer is immediately visible without
   scrolling — for a cache hit or after an AI tap. The inline orange **"AI"** pill sits next to the
   blue results pill when `canAskAi`; tapping it shows an "Asking AI…" spinner (also at the top), then
   the card, or a "couldn't find a likely match" note if the model returned empty (`aiNoMatch`). The

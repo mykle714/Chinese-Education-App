@@ -204,6 +204,16 @@ language.
 | `POST /api/community/unvote` | `{ ownerUserId, entryKey, language? }` | `{ removed: boolean }` (deletes this week's vote) |
 | `POST /api/community/applyDesign` | `{ ownerUserId, entryKey, language?, override? }` | `{ result: 'applied' \| 'added-and-applied' \| 'would-override' }` |
 
+**Vote validation** (`CommunityLayoutService.vote`): self-votes are refused, `entryKey`
+is capped at 64 characters, and **the design must still exist** — the service re-reads
+`getDesignLayout(ownerUserId, entryKey, language)` and requires an advanced layout
+before recording. `community_layout_votes` has FKs on both user columns but **none on
+`entryKey`**, so nothing otherwise tied a vote to a real design and a hand-rolled POST
+could inflate a tally for words the owner never laid out. `unvote` is length-checked
+but deliberately *not* existence-checked: it is subtractive, and requiring the design
+to survive would make a vote un-removable once its owner deleted the layout. See
+[API_ABUSE_HARDENING.md](./API_ABUSE_HARDENING.md).
+
 `limit` is clamped to `[1, 30]` (default 10). Feeds exclude the viewer's own rows
 (`ve."userId" <> viewer`) **and** anything the viewer authored
 (`COALESCE(ve.author, ve."userId") <> viewer`). Each `CommunityDesign` carries `authorUserId` +

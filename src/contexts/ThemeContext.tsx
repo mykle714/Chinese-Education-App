@@ -8,6 +8,7 @@ import { DD_TONES } from '../utils/cardTextColor';
 // SEMANTIC name matches the token are pulled from here — see the note below on the
 // several palettes that share values by coincidence.
 import { COLORS } from '../theme/colors';
+import { SHADOW } from '../theme/shadows';
 
 // Per-surface color tokens for the flashcard learn page.
 // All 19 fields must be defined for every theme — no optional fields.
@@ -440,7 +441,11 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                     eic: { header: COLORS.header },
                     flashcard: {
                         background:         COLORS.background,
-                        flashCard:          COLORS.card,
+                        // The card face. Warm cream since 2026-08-24 (was COLORS.card,
+                        // #E7E7EA) — see the `cardFace` note in theme/colors.ts. Only the
+                        // LIGHT theme moved; Dark / Ocean / Nature keep their own faces
+                        // and are not re-derived yet (docs/SHELF_REDESIGN.md § D4).
+                        flashCard:          COLORS.cardFace,
                         border:             'rgba(92,92,102,0.18)',
                         onSurface:          COLORS.onSurface,
                         dd:                 DD_TONES.dark,
@@ -455,9 +460,14 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         tabUnderline:       COLORS.onSurface,
                         imagePlaceholder:   '#ffffff',
                         hskPill:            COLORS.hskChip,
-                        cardShadow:         '2px 4px 4px rgba(0,0,0,0.25)',
-                        cardShadowSubtle:   '1px 2px 3px rgba(0,0,0,0.15)',
-                        sheetShadow:        '0 -8px 32px rgba(0,0,0,0.18)',
+                        // Elevation comes from the design's shadow system (theme/shadows.ts,
+                        // docs/SHELF_REDESIGN.md § D13) — ink-tinted, straight down, wide
+                        // and faint. The old values here were pure black, cast diagonally
+                        // to the lower-right, and three times too dark. LIGHT THEME ONLY;
+                        // Dark / Ocean / Nature keep theirs and are not re-derived (D4).
+                        cardShadow:         SHADOW.lifted,
+                        cardShadowSubtle:   SHADOW.raised,
+                        sheetShadow:        SHADOW.panelUp,
                     },
                 },
             });

@@ -3,6 +3,7 @@ import { Box, useTheme } from "@mui/material";
 import CardIconLayer from "../../cardIcons/CardIconLayer";
 import { ChineseBlock, EnglishBlock } from "../../features/flashcards/FlashcardsLearnPage/FlashCardSection";
 import type { CommunityDesign, VocabEntry } from "../../types";
+import { SHADOW } from "../../theme/shadows";
 
 /**
  * Large read-only render of a community design used by the zoom (docs/COMMUNITY_PAGE.md). Lays
@@ -47,7 +48,7 @@ const CommunityCardView: React.FC<{
         backgroundColor: fc.flashCard,
         borderRadius: "12px",
         overflow: "hidden",
-        boxShadow: "0 8px 28px rgba(0,0,0,0.28)",
+        boxShadow: SHADOW.lifted,
       }}
     >
       {/* Icon arrangement behind the content (same layer the flashcard uses). */}

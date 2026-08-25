@@ -1,6 +1,7 @@
-import { Box, Typography } from "@mui/material";
+import { Typography } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import { Label } from "./Label";
+import SectionCard from "./SectionCard";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 
@@ -19,7 +20,12 @@ import { FONTS } from "../../theme/fonts";
  * long figure ("1,284") read as one shape instead of four digits. The pair is copied
  * verbatim rather than snapped to the scale.
  *
- * Sibling primitives: `Label` / `SectionRule` / `SectionHeader`, `Row` / `RowList`.
+ * WHAT IT IS NOT: the shell. The white / 18px / hairline box is `SectionCard`, which this
+ * renders into — so a screen that wants a `.card` around content which is NOT one big
+ * figure reaches for that directly instead of taking this one and fighting its slots.
+ *
+ * Sibling primitives: `SectionCard`, `Label` / `SectionRule` / `SectionHeader`,
+ * `Row` / `RowList`.
  */
 
 export interface StatCardProps {
@@ -39,19 +45,7 @@ export interface StatCardProps {
 }
 
 const StatCard: React.FC<StatCardProps> = ({ label, value, description, action, className, sx }) => (
-    <Box
-        className={className ? `stat-card ${className}` : "stat-card"}
-        sx={[
-            {
-                margin: "14px 18px 0",
-                padding: "14px 16px",
-                borderRadius: "18px",
-                backgroundColor: COLORS.white,
-                border: `1px solid ${COLORS.rowBorder}`,
-            },
-            ...(Array.isArray(sx) ? sx : [sx]),
-        ]}
-    >
+    <SectionCard className={className ? `stat-card ${className}` : "stat-card"} sx={sx}>
         {/* The design's `.card .k` tracks at 0.13em where `.lab` tracks at 0.14em. That
             0.01em is below the threshold where anyone can tell, and keeping two overline
             recipes alive guarantees they drift, so this normalizes onto `Label`. */}
@@ -79,7 +73,7 @@ const StatCard: React.FC<StatCardProps> = ({ label, value, description, action, 
             </Typography>
         )}
         {action}
-    </Box>
+    </SectionCard>
 );
 
 export default StatCard;

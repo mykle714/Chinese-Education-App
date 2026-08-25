@@ -5,6 +5,7 @@ import AddToDeckMenu from "../AddToDeckMenu";
 import { CARD_OPS_CELL_SX, CARD_OPS_CELL_LABEL_SX } from "../cardOpsCell";
 import { COLORS } from "../../../theme/colors";
 import type { VocabEntry } from "../types";
+import { SHADOW } from "../../../theme/shadows";
 
 /**
  * `CardOpsRail` — the design's `.cdot` / `.crail` (artboard 21): everything that
@@ -128,7 +129,7 @@ export const CardOpsRail: React.FC<CardOpsRailProps> = ({
                 gap: "1px",
                 backgroundColor: "rgba(255,255,255,0.94)",
                 borderRadius: "999px",
-                boxShadow: "0 6px 18px rgba(20,18,26,0.15)",
+                boxShadow: SHADOW.float,
                 padding: "5px",
             }}
         >

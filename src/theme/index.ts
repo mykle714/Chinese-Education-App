@@ -4,3 +4,4 @@ export { FONTS } from "./fonts";
 export { SIZE, WEIGHT, LEADING, TRACKING, type SizeToken } from "./scale";
 export { COLORS, type ColorToken } from "./colors";
 export { TEXT, type TextRole } from "./typography";
+export { SHADOW, type ShadowToken } from "./shadows";

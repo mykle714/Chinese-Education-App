@@ -7,6 +7,7 @@ import type { CommunityDesign, Language } from "../../types";
 import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { PHONE_OVERLAY_SX } from "../../components/phoneGeometry";
+import { SHADOW } from "../../theme/shadows";
 
 /**
  * The floating zoom for a tapped community design (docs/COMMUNITY_PAGE.md). Mirrors the
@@ -83,7 +84,7 @@ const CommunityDesignZoom: React.FC<{
             borderRadius: "999px",
             px: 1.5,
             py: 1,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+            boxShadow: SHADOW.float,
           }}
         >
           <VoteButton design={design} voted={voted} voteDeltas={voteDeltas} language={language} onVoteChange={onVoteChange} size="large" />

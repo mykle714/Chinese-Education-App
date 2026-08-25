@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Avatar, Box, Typography } from "@mui/material";
 import { API_BASE_URL } from "../../constants";
-import { COLORS } from "../../theme/colors";
+import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
 
@@ -119,7 +119,6 @@ function FriendPersonRow({ name, email, avatarIconId, secondary, actions, leadin
                 // White on the paper ground, not the beige card fill: beige is the
                 // FLASHCARD's material, and a person is not a card.
                 borderRadius: "16px",
-                backgroundColor: COLORS.white,
                 ...(onRowPress && {
                     cursor: "pointer",
                     // Press feedback on the WHOLE row, which is the point: the thing
@@ -127,16 +126,21 @@ function FriendPersonRow({ name, email, avatarIconId, secondary, actions, leadin
                     transition: "filter 120ms ease, transform 120ms ease",
                     "&:active": { filter: "brightness(0.97)", transform: "scale(0.995)" },
                 }),
-                // "You" is marked with a border, not a fill: a different fill would
-                // read as a different KIND of row rather than as the same row, yours.
+                // "You" is marked with the ORG PASTEL FILL and a transparent border —
+                // artboard 8, and the same treatment `BoardRow.highlighted` already uses
+                // on the arena board. Before the redesign this was a 2px blue ring, which
+                // meant the app answered "which row is me" two different ways on its two
+                // leaderboards. A fill also survives what a ring cannot: on a board where
+                // rows are already tinted by something else (the arena's promotion and
+                // relegation zones) an outline competes with the tint, while a fill
+                // replaces it. The border stays in the box model at 1px, transparent, so
+                // a highlighted row keeps the exact height of a plain one and the list
+                // does not jog where the viewer sits.
                 border: highlighted
-                    ? `2px solid ${COLORS.infoInk}`
+                    ? "1px solid transparent"
                     : `1px solid ${COLORS.rowBorder}`,
-                // Compensate for the thicker border so highlighted and plain rows
-                // keep the same outer height and the list stays evenly spaced.
-                // `.rw` padding, minus the extra border pixel on a highlighted row so
-                // both keep the same outer height and the list stays evenly spaced.
-                p: highlighted ? "10px 12px" : "11px 13px",
+                backgroundColor: highlighted ? RAMP.org.fill : COLORS.white,
+                p: "11px 13px",
             }}
         >
             {leading}

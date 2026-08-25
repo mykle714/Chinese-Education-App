@@ -433,7 +433,7 @@ else follows):
 | Collections | Learn Now + Mastered Cards | that bar's Learn Now + Mastered |
 | Tile figures | `?bar=core` band counts | `?bar=<skill>` band counts |
 | Card grid order | "Recently added" (a deck: "Date added") | that bar's **Mastery · Lowest** |
-| Sort menu | one row set per **active** bar | that ONE bar's rows, unqualified |
+| Sort menu | one row set per **active** bar | that ONE bar's rows |
 | Cooldown row | longest-resting of recognition/production | longest-resting of that bar's track |
 | Each card | ONE strip + badge, **core** band | ONE strip + badge, **that bar's** band |
 | cdp Mastery section | the **core** bar + its two cooldown rows | that bar + its cooldown row |
@@ -1147,11 +1147,15 @@ what let the orderings double without the menu doubling.
 **The mastery, cooldown and date-mastered rows are per bar, and goal-gated.**
 `sortBundles` emits one of each per `activeBars(goals)` entry (or per the lens bar
 alone); `MASTERY_KEY_BAR`, `COOLDOWN_KEY_BAR` and `MASTERED_AT_KEY_BAR` map each key
-back to the bar its comparator reads. A bar is
-named in the row label (`Mastery (Read)`) **only when more than one bar is active** —
-a learner with no goals reads plain "Mastery", i.e. the menu they had before migration
-143 — and so does a learner inside a Center, where the lens has already narrowed the
-list to one bar. Date mastered reads `masteredAtForBar(entry.masteredAt, bar)`, that bar's **own**
+back to the bar its comparator reads. A row label names its bar
+(`Mastery (Read)`) only when **more than one bar is active** *and* the bar is a
+**per-skill** one. The core bar is never named: the unqualified label *is* the core
+bar, so the menu reads "Mastery" / "Mastery (Read)" / "Mastery (Write)" and never
+"Mastery (Know)". The core exemption exists because the fdp's Cards section offers the
+core rows **alone** (`allowPerSkillBars={false}`), where a "(Know)" suffix named a
+distinction the menu was not drawing. A learner with no goals still reads plain
+"Mastery" — the menu they had before migration 143 — and so does a learner inside a
+Center, where the lens has already narrowed the list to one bar. Date mastered reads `masteredAtForBar(entry.masteredAt, bar)`, that bar's **own**
 stamp rather than the newest across bars, so a reading crossing cannot reorder the
 core list. See [MASTERY_REWORK.md § Three bars](./MASTERY_REWORK.md).
 

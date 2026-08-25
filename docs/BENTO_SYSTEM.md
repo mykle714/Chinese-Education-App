@@ -48,8 +48,47 @@ variants are written as branches instead of a table.
 | Variant | Min height | Span | Title | Ghost |
 |---|---|---|---|---|
 | `base` | 112 | 1 | 15.5px | 92px @ `top:-14` |
-| `hero` | 150 | 2 | 23px | 140px @ `top:-26` |
+| `hero` | 150 | full | 23px | 140px @ `top:-26` |
 | `low` | 90 | 1 | 15.5px | 92px @ `top:-14` |
+| `compact` | 74 | 1 | 14px | **66px** @ `top:-10` |
+
+`compact` was added 2026-08-24 for the 3-column Friends bento. Note the ghost shrinks
+*more* than the tile does: at a third of a phone's width the tile is ~117px across, and
+`low`'s 92px glyph would fill it corner to corner and stop reading as a wash behind the
+label. The pairing is the whole reason this is a table.
+
+### Grid width — `columns`, and `fullWidth`
+
+`Bento` takes `columns={2 | 3}`. **Two is the default and the norm**: it is what every hub
+uses, and it is what makes a tile wide enough to carry a title *and* a subtitle. Three
+exists for the one shape the artboards also draw (Friends, artboard 8) — a row of SIBLING
+ACTIONS named in one word each. At three columns there is no room for a subtitle, so pair
+it with `variant="compact"` and let the ghost glyph carry what the one-word label
+compresses. Do not reach for it to fit more destinations on a hub; that is `BentoStrip`.
+
+A tile spans the full grid via `gridColumn: "1 / -1"`, **not** `span 2` — a hero is "the
+full width of whatever grid it is in", and spelling it as a span silently means *two
+thirds* in a 3-column bento. `BentoStrip` uses the same.
+
+`hero` already implies full width. `fullWidth` is the other combination: a SHORT tile that
+still owns its row (Friends' Challenges bar). Width and height are separate decisions, and
+folding them into one enum would mean a variant per pairing.
+
+### Pins — `pin` and `pinTone`
+
+`pin` is the mono pill in a tile's top-right. `pinTone` says what it MEANS, which is the
+only thing that decides its colour:
+
+| Tone | Looks like | For |
+|---|---|---|
+| `"default"` | translucent white on the tile's own pastel | a fact about the destination — "14 decks", "2 modes" |
+| `"alert"` | `COLORS.dangerInk` on white, min-width 20 | a count of things **waiting for the user** — friend requests, pending challenges |
+
+Keep the distinction. If every pin were alert-coloured the hub would shout; if none were,
+the Friends hub's challenge count — which is the *entire* discovery mechanism for
+challenges, since the app sends no notifications of any kind — would be indistinguishable
+from a deck count. An alert pin also needs the explicit `minWidth`: a one-digit count in a
+pill sized only by its padding renders as an oval, not the circle a badge is read as.
 
 ### Colour: tiles take a hue KEY, not a colour
 
@@ -113,6 +152,7 @@ right end for status. Code: `BentoStripProps.control` (`src/components/bento/Ben
 | **Home** (`src/pages/HomePage.tsx`) | Night Market `hero`; Games / Arena / Reader / Dictionary `base`; Community / Friends / Compare Words `low`. Role-gated tiles (`isValidator`, `isTemplateAuthor`) **append** as further `low` tiles — the mosaic must never assume a fixed tile count. An odd count leaves the last row half-empty on purpose; stretching the orphan would give a dev tool Night Market's weight. |
 | **Discover** (`src/features/discover/DiscoverPage.tsx`) | Sort Cards `hero`; Quick Mark and Skipped Cards `base`. |
 | **Games** (`src/games/GamesPage.tsx`) | `CollectionChip` above the grid; Bubble Match and Word Search as strips; Match Speed / Speed Reading / Hydra Bubbles / Memory Map as tiles. |
+| **Friends** (`src/features/friends/FriendsPage.tsx`) | The one `columns={3}` caller, and the one that is a MENU OF ACTIONS rather than of destinations: Send / Accept / Remove as `compact` tiles (blu / grn / red — valence, not decoration), then Challenges as `low` + `fullWidth` with a subtitle. Both counted tiles use `pinTone="alert"`. Its tiles pass `to` **and** an `onClick` that intercepts the plain-click to run the drill-in slide, so they keep real link behaviour for modified clicks. |
 
 Games' two strips are **special-cased in the page**, not driven by a generic
 `GameDef.levels` field, because they are the only two fan-out games. Word Search's

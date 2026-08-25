@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Box, Button, Typography } from "@mui/material";
-import SendIcon from "@mui/icons-material/Send";
-import MarkEmailUnreadIcon from "@mui/icons-material/MarkEmailUnread";
-import PersonRemoveIcon from "@mui/icons-material/PersonRemove";
-import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import { Box, Chip, Typography } from "@mui/material";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
+import { Bento, BentoTile } from "../../components/bento";
+import { Label, SectionCard, SectionHeader } from "../../components/primitives";
+import Icon from "../../components/Icon";
 import FriendPersonRow from "./FriendPersonRow";
 import { fetchFriendsLeaderboard, fetchIncomingRequests } from "../../api/friends";
 import { fetchChallengeBadge } from "../../api/studyChallenges";
@@ -15,24 +13,32 @@ import type { FriendLeaderboardEntry } from "../../api/friends";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
-import { COLORS } from "../../theme/colors";
+import { COLORS, RAMP, type RampHue } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
-import { SIZE, WEIGHT } from "../../theme/scale";
+import { WEIGHT } from "../../theme/scale";
 import { friendErrorMessage, netMinutesLabel } from "./friendLabels";
-import { cornerBadgeSx, messageSx, mutedTextSx, navButtonSx, sectionCardSx, smallButtonSx } from "./friendStyles";
+import { messageSx, mutedTextSx } from "./friendStyles";
 
 /**
- * The rank chip left of the avatar. The top three get the podium accents (the same
- * pastel family the rest of the app uses — gold-ish yellow, silver-ish blue, bronze-ish
- * red) so the head of the board is readable at a glance; everyone else gets the neutral
- * surface, because tinting all rows would make the tint meaningless.
+ * The rank chip left of the avatar (`.rw .av` at 28px, artboard 8).
+ *
+ * The top three get the podium accents so the head of the board is readable at a glance;
+ * everyone else gets the neutral grey, because tinting all rows would make the tint
+ * meaningless. The hues are the ramp's — gold-ish org, silver-ish blue, bronze-ish red —
+ * which is what the artboard draws and also what this component already chose before the
+ * redesign, so the podium did not have to move.
+ *
+ * ⚠️ THE INSET RING IS NOT OPTIONAL. A 28px pastel chip is small and unoccupied — the
+ * fill-vs-ink rule's exception (large AND occupied) does not apply — so without the ring
+ * it sits at ~1.15:1 on white and simply is not a shape (docs/SHELF_REDESIGN.md § D2).
+ * It also does the work in the one collision the podium creates: the viewer's own row is
+ * filled with the SAME org pastel that rank 1's chip wears, so a rank-1 viewer would
+ * otherwise see their chip dissolve into their row.
  */
+const PODIUM_HUES: Record<number, RampHue> = { 1: "org", 2: "blu", 3: "red" };
+
 function RankBadge({ rank }: { rank: number }) {
-    const podium: Record<number, string> = {
-        1: COLORS.yellowAccent,
-        2: COLORS.blueAccent,
-        3: COLORS.redAccent,
-    };
+    const { fill, ink } = RAMP[PODIUM_HUES[rank] ?? "grey"];
     return (
         <Box
             className={`friends-page__rank friends-page__rank--${rank}`}
@@ -42,14 +48,15 @@ function RankBadge({ rank }: { rank: number }) {
                 height: 28,
                 px: 0.5,
                 borderRadius: "14px",
-                backgroundColor: podium[rank] ?? COLORS.iconBg,
+                backgroundColor: fill,
+                boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}`,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontFamily: FONTS.sans,
-                fontSize: SIZE.caption,
+                fontFamily: FONTS.mono,
+                fontSize: 12,
                 fontWeight: WEIGHT.bold,
-                color: COLORS.onSurface,
+                color: ink,
             }}
         >
             {rank}
@@ -82,7 +89,7 @@ function VelocityStat({ velocity }: { velocity: number }) {
                 className="friends-page__velocity-value"
                 sx={{
                     fontFamily: FONTS.sans,
-                    fontSize: SIZE.subtitle,
+                    fontSize: 17,
                     fontWeight: WEIGHT.bold,
                     color: velocity > 0 ? COLORS.onSurface : COLORS.textSecondary,
                     lineHeight: 1.1,
@@ -92,7 +99,7 @@ function VelocityStat({ velocity }: { velocity: number }) {
             </Typography>
             <Typography
                 className="friends-page__velocity-unit"
-                sx={{ fontFamily: FONTS.sans, fontSize: SIZE.micro, color: COLORS.textSecondary }}
+                sx={{ fontFamily: FONTS.sans, fontSize: 10, color: COLORS.textSecondary }}
             >
                 velocity
             </Typography>
@@ -110,7 +117,7 @@ function VelocityStat({ velocity }: { velocity: number }) {
  * wallet. The server owns the ranking — this page never re-sorts, so what it draws
  * is always the ranks the server assigned.
  *
- * The board itself is READ-ONLY. Three buttons across the top lead to the three
+ * The board itself is READ-ONLY. Three tiles across the top lead to the three
  * action screens — "Send" (compose + outgoing pending, revocable), "Accept"
  * (incoming, with a count badge so the user knows to look) and "Remove" (unfriend)
  * — so no mutation sits on a ranking row.
@@ -118,6 +125,19 @@ function VelocityStat({ velocity }: { velocity: number }) {
  * The viewer's own user ID is shown here with a copy button because the ID *is*
  * the friend handle — there is no username column, so the only way for someone to
  * friend you is for you to hand them this string.
+ *
+ * ── THE ACTIONS ARE A BENTO NOW, NOT A ROW OF BUTTONS (SHELF_REDESIGN entry 8) ───────
+ * They were three MUI `Button`s with the count badge overhanging the corner. The
+ * artboard makes them a 3-up bento of `compact` tiles, and the change is more than a
+ * skin: a tile has a ghost glyph and room for a real label, so the icon can carry the
+ * meaning the one-word name compresses INSIDE the target rather than crammed into a
+ * `startIcon`. It also puts the count where every other count in the app lives (the
+ * tile `pin`) instead of on a bespoke `cornerBadgeSx` that only this page had — that
+ * fragment and `navButtonSx` are both deleted with this conversion.
+ *
+ * Colour still carries the ACTION's valence, as it did before and as the request rows
+ * already do (Accept green / Decline red on IncomingRequestsPage): green for the
+ * affirmative one, red for the destructive one, neutral blue for the rest.
  */
 function FriendsPage() {
     usePageTitle("Friends");
@@ -174,89 +194,102 @@ function FriendsPage() {
         }
     }, [user?.id]);
 
+    /**
+     * A tile that is a real anchor AND slides.
+     *
+     * `to` gives it the link affordances every Bento tile in the app has — middle-click,
+     * open-in-new-tab, a status-bar URL, keyboard focus — while the intercepted click
+     * runs the drill-in slide transition these four destinations have always used. A
+     * modified click (⌘/ctrl/middle) never reaches `preventDefault`, so it still opens a
+     * tab the way a link should.
+     */
+    const slideTo = (path: string) => (e: React.MouseEvent) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        slideNavigate(path);
+    };
+
     return (
         <NodePage title="Friends" onBack={() => navigate("/")} contentClassName="friends-page__content">
-            <Box className="friends-page" sx={{ display: "flex", flexDirection: "column", gap: 2, px: 2, pt: 1 }}>
+            <Box className="friends-page">
 
                 {/* The three action screens. This board is READ-ONLY — every mutation
                     (send a request, answer one, unfriend) lives behind one of these
-                    buttons, so no destructive control sits on a ranking row where it
-                    can be mis-tapped while reading scores. Equal thirds, all
-                    thumb-reachable; the icons carry the meaning the one-word labels
-                    compress. */}
-                <Box className="friends-page__nav-buttons" sx={{ display: "flex", gap: 1 }}>
-                    <Button
-                        className="friends-page__send-button"
-                        onClick={() => slideNavigate("/friends/sent")}
-                        startIcon={<SendIcon />}
-                        sx={navButtonSx(COLORS.blueAccent)}
-                    >
-                        Send
-                    </Button>
-                    <Button
-                        className="friends-page__accept-button"
-                        onClick={() => slideNavigate("/friends/requests")}
-                        startIcon={<MarkEmailUnreadIcon />}
-                        sx={navButtonSx(COLORS.greenAccent)}
-                    >
-                        Accept
-                        {incomingCount > 0 && (
-                            <Box className="friends-page__requests-badge" sx={cornerBadgeSx}>
-                                {incomingCount}
-                            </Box>
-                        )}
-                    </Button>
-                    <Button
-                        className="friends-page__remove-button"
-                        onClick={() => slideNavigate("/friends/remove")}
-                        startIcon={<PersonRemoveIcon />}
-                        sx={navButtonSx(COLORS.redAccent)}
-                    >
-                        Remove
-                    </Button>
-                </Box>
+                    tiles, so no destructive control sits on a ranking row where it can
+                    be mis-tapped while reading scores. Equal thirds, all thumb-reachable. */}
+                <Bento className="friends-page__actions" columns={3}>
+                    <BentoTile
+                        className="friends-page__send-tile"
+                        title="Send"
+                        hue="blu"
+                        icon="send"
+                        variant="compact"
+                        to="/friends/sent"
+                        onClick={slideTo("/friends/sent")}
+                    />
+                    <BentoTile
+                        className="friends-page__accept-tile"
+                        title="Accept"
+                        hue="grn"
+                        icon="mark_email_unread"
+                        variant="compact"
+                        pin={incomingCount > 0 ? incomingCount : undefined}
+                        pinTone="alert"
+                        to="/friends/requests"
+                        onClick={slideTo("/friends/requests")}
+                    />
+                    <BentoTile
+                        className="friends-page__remove-tile"
+                        title="Remove"
+                        hue="red"
+                        icon="person_remove"
+                        variant="compact"
+                        to="/friends/remove"
+                        onClick={slideTo("/friends/remove")}
+                    />
 
-                {/* Study Challenges (docs/STUDY_CHALLENGE.md § 1) — a fourth drill-in,
-                    on its own row rather than as a fourth equal third, because it is a
-                    FEATURE rather than one of the three friend-list actions, and
-                    squeezing it into that row would make all four labels unreadable.
+                    {/* Study Challenges (docs/STUDY_CHALLENGE.md § 1) — a fourth drill-in,
+                        on its own full-width row rather than as a fourth equal quarter,
+                        because it is a FEATURE rather than one of the three friend-list
+                        actions, and squeezing it into that row would make all four labels
+                        unreadable. Its own row is also what buys it a subtitle.
 
-                    ⚠️ THE BADGE IS THE ONLY WAY A CHALLENGE IS EVER ANNOUNCED. There are
-                    no notifications of any kind — no push, no email, no native badge — so
-                    this dot, and the row's own dot inside it, are the entire discovery
-                    mechanism (Q48). The count is deliberately LANGUAGE-BLIND: a challenge
-                    in a language the viewer is not currently studying is invisible on the
-                    challenges page itself, and this badge is the one thread back to it. */}
-                <Button
-                    className="friends-page__challenges-button"
-                    onClick={() => slideNavigate("/friends/challenges")}
-                    startIcon={<EmojiEventsIcon />}
-                    sx={navButtonSx(COLORS.yellowAccent)}
-                >
-                    Challenges
-                    {challengeCount > 0 && (
-                        <Box className="friends-page__challenges-badge" sx={cornerBadgeSx}>
-                            {challengeCount}
-                        </Box>
-                    )}
-                </Button>
+                        ⚠️ THE BADGE IS THE ONLY WAY A CHALLENGE IS EVER ANNOUNCED. There
+                        are no notifications of any kind — no push, no email, no native
+                        badge — so this pin, and the row's own dot inside it, are the
+                        entire discovery mechanism (Q48). Hence `pinTone="alert"`: a count
+                        that blends into its tile is a notification nobody sees. The count
+                        is deliberately LANGUAGE-BLIND — a challenge in a language the
+                        viewer is not currently studying is invisible on the challenges
+                        page itself, and this pin is the one thread back to it. */}
+                    <BentoTile
+                        className="friends-page__challenges-tile"
+                        title="Challenges"
+                        subtitle="The only place a challenge is announced"
+                        hue="org"
+                        icon="emoji_events"
+                        variant="low"
+                        fullWidth
+                        pin={challengeCount > 0 ? challengeCount : undefined}
+                        pinTone="alert"
+                        to="/friends/challenges"
+                        onClick={slideTo("/friends/challenges")}
+                    />
+                </Bento>
 
                 {/* Your own ID — the shareable friend handle. */}
-                <Box
-                    className="friends-page__my-id"
-                    sx={sectionCardSx}
-                >
-                    <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, color: COLORS.textSecondary }}>
+                <SectionCard className="friends-page__my-id">
+                    <Label sx={{ letterSpacing: "0.04em", textTransform: "none", fontSize: 11.5 }}>
                         Your friend ID — share this so others can add you
-                    </Typography>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5 }}>
+                    </Label>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: "10px", mt: "6px" }}>
                         <Typography
                             className="friends-page__my-id-value"
                             sx={{
                                 flex: 1,
                                 minWidth: 0,
                                 fontFamily: FONTS.mono,
-                                fontSize: SIZE.caption,
+                                fontSize: 12,
                                 color: COLORS.onSurface,
                                 wordBreak: "break-all",
                                 // The ID is meant to be copied by hand when the clipboard
@@ -267,29 +300,48 @@ function FriendsPage() {
                         >
                             {user?.id ?? "—"}
                         </Typography>
-                        <Button
-                            className="friends-page__copy-id-button"
+                        {/* The artboard's control here is a `.chip`, and in this codebase
+                            that is MUI's `Chip` — the theme skins outlined chips as the
+                            design's resting pill (see ThemeContext, MuiChip). Deliberately
+                            NOT an outlined `Button`: the theme maps that to `.btn3`, a
+                            13px-padded radius-14 BLOCK action, which beside a one-line ID
+                            would be three times the height of the text it acts on. */}
+                        <Chip
+                            className="friends-page__copy-id-chip"
+                            variant="outlined"
+                            clickable
                             onClick={handleCopyId}
-                            startIcon={<ContentCopyIcon sx={{ fontSize: 16 }} />}
-                            sx={{ ...smallButtonSx, flexShrink: 0 }}
-                        >
-                            {copied ? "Copied" : "Copy"}
-                        </Button>
+                            icon={<Icon name={copied ? "check" : "content_copy"} size={14} />}
+                            label={copied ? "Copied" : "Copy"}
+                            sx={{ flexShrink: 0 }}
+                        />
                     </Box>
-                </Box>
+                </SectionCard>
 
                 {error && (
-                    <Typography className="friends-page__error" sx={messageSx}>
+                    <Typography className="friends-page__error" sx={{ ...messageSx, px: "22px", pt: 1.5 }}>
                         {error}
                     </Typography>
                 )}
+
+                <SectionHeader
+                    className="friends-page__leaderboard-header"
+                    label="Leaderboard · velocity"
+                    meta="last 7 days"
+                />
 
                 {/* List / empty / loading. Loading text rather than a spinner: the list is
                     one small query and a spinner flashes more than it informs. */}
                 {loading ? (
                     <Typography className="friends-page__loading" sx={mutedTextSx}>Loading…</Typography>
                 ) : (
-                    <Box className="friends-page__leaderboard" sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                    <Box
+                        className="friends-page__leaderboard"
+                        // 6px, not the `RowList` 8px: the artboard tightens the gap on this
+                        // one list because a RANKING is a sequence — rows spaced like
+                        // independent cards stop reading as positions against each other.
+                        sx={{ display: "flex", flexDirection: "column", gap: "6px", padding: "9px 16px 0" }}
+                    >
                         {entries.map((entry) => (
                             <FriendPersonRow
                                 key={entry.userId}

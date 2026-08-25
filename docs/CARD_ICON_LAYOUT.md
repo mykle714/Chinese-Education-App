@@ -172,9 +172,15 @@ palette key), or `NULL` = the **auto** option = follow the active theme's defaul
 color. Persists the editor's **card** menu background swatch per saved word (the "card"
 tool — internal key `contrast` — see "Edit-mode UX"). The offered chips (laid out in TWO
 rows of five) are — row 1 (neutrals): `auto` (`NULL`, shown as the red no-fill glyph), grey
-`#D8D8DC`, beige `#F5EBE0`, white `#FFFFFF`, black `#000000`; row 2 (pastel hues): red
-`#F2BAC9`, green `#BAF2D8`, blue `#BAD7F2`, yellow `#F2E2BA`, purple `#D8BAF2` (`grey` pins
-the light-theme face color; `auto` merely follows the theme). It tints any flashcard face that is
+`#E7E7EA`, beige `#F5EBE0`, white `#FFFFFF`, black `#000000`; row 2 (pastel hues): red
+`#FFF2F2`, green `#F0FAF0`, blue `#EEF8FF`, yellow `#FFF5EA`, purple `#F8F4FF`. (These hexes
+were repainted onto the shelf ramp — the pre-redesign set this doc used to list, grey
+`#D8D8DC` / red `#F2BAC9` / green `#BAF2D8` / blue `#BAD7F2` / yellow `#F2E2BA` / purple
+`#D8BAF2`, is gone; migration 153 remapped the stored ones.) `grey` pins the light-theme
+GREY regardless of theme; `auto` merely follows the theme — **and since 2026-08-24 those two
+are visibly different**, because the light theme's default face is now the design's warm cream
+`COLORS.cardFace` (`#FBF7EC`) rather than that same grey. See docs/SHELF_REDESIGN.md § D12.
+It tints any flashcard face that is
 **rendering the advanced layout** (always the back/answer side; the front only when it is the English
 side) and the mini card thumbnails (`MiniVocabCard`) — see the gating note below. The single source
 of truth
@@ -538,7 +544,9 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
        purple). Tapping a chip tints the **whole
        card face (both sides)** via `vet.cardColor` (migration 94); the active chip shows an
        accent ring. `auto`/`null` = follow the theme, so an auto card stores `NULL`; the
-       explicit `grey` chip pins the light-theme face color regardless of theme. The fill is
+       explicit `grey` chip pins the ramp grey (`COLORS.card`) regardless of theme — which
+       the light theme's own face no longer is, so the two chips finally differ (§ D12 of
+       docs/SHELF_REDESIGN.md). The fill is
        applied in `FlashCardSection.tsx` `CardFaceSide`
        (`resolveCardColor(cardColor) ?? fc.flashCard`).
      - two **text-color rows** — the **foreign word** (label = the card's characters) and the

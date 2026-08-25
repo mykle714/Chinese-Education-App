@@ -5,7 +5,8 @@ import UndoIcon from "@mui/icons-material/Undo";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
 import FriendPersonRow from "./FriendPersonRow";
-import { messageSx, mutedTextSx, sectionCardSx, sendButtonSx, smallButtonSx } from "./friendStyles";
+import { SectionCard } from "../../components/primitives";
+import { messageSx, mutedTextSx, sendButtonSx, smallButtonSx } from "./friendStyles";
 import { friendErrorMessage, requestedAtLabel } from "./friendLabels";
 import { deleteFriendRequest, fetchOutgoingRequests, sendFriendRequest } from "../../api/friends";
 import type { FriendRequestSummary } from "../../api/friends";
@@ -101,11 +102,10 @@ function SentRequestsPage() {
         >
             <Box className="sent-requests-page" sx={{ display: "flex", flexDirection: "column", gap: 2, px: 2, pt: 1 }}>
 
-                {/* Compose — the app's only way to create a friendship. */}
-                <Box
-                    className="sent-requests-page__compose"
-                    sx={sectionCardSx}
-                >
+                {/* Compose — the app's only way to create a friendship. `SectionCard`
+                    carries its own `.card` gutters, which this page's own `px: 2` column
+                    already provides, so the margin is zeroed rather than doubled. */}
+                <SectionCard className="sent-requests-page__compose" sx={{ margin: 0 }}>
                     <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: COLORS.onSurface }}>
                         Add a friend by their friend ID
                     </Typography>
@@ -146,7 +146,7 @@ function SentRequestsPage() {
                             {error}
                         </Typography>
                     )}
-                </Box>
+                </SectionCard>
 
                 {loading ? (
                     <Typography className="sent-requests-page__loading" sx={mutedTextSx}>Loading…</Typography>

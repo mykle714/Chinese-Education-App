@@ -296,14 +296,17 @@ const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProp
                             ) : undefined,
                         }}
                     />
-                    <Box className="compare-workspace__results" sx={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {/* No gap between rows: `.dr` separates with its own bottom hairline
+                        (docs/SHELF_REDESIGN.md § entry 7), and a gap would leave the
+                        hairlines floating between detached rows. */}
+                    <Box className="compare-workspace__results" sx={{ display: 'flex', flexDirection: 'column' }}>
                         {search.loading && (
                             <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
                                 <CircularProgress size={22} />
                             </Box>
                         )}
                         {!search.loading && resultEntries.map((entry) => (
-                            <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleSelect} />
+                            <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleSelect} inset={4} />
                         ))}
                         {!search.loading && search.debouncedSearchTerm && resultEntries.length === 0 && (
                             <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: 'center', py: 2, fontFamily: UI_FONT }}>

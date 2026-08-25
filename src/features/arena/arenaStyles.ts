@@ -24,69 +24,37 @@ export const DIVISION_NAMES = [
     "Iridium", "Obsidian", "Titanium", "Jade", "Diamond", "Legendary",
 ] as const;
 
-/**
- * One accent per rung, index-aligned with DIVISION_NAMES.
- *
- * The walk is pale-and-neutral at the bottom → warm through the medal rungs →
- * dark through the heavy-metal rungs (Iridium, Obsidian) → saturated at the top,
- * so the ladder reads as a climb using only existing tokens (no new palette).
- */
-// ⚠️ PARTIALLY RE-DERIVED for the shelf redesign (docs/SHELF_REDESIGN.md, D2).
-// Rungs 10-12 used to be `greenMain / blueMain / purpleAccent`. Those tokens are
-// PASTELS now, which inverted the whole point of the walk — the ladder ended paler
-// than it started. They are re-pointed at the ramp's saturated members so the climb
-// still terminates dark. The lower rungs are untouched.
-//
-// This is a minimal repair, not a considered pass: the sequence still dips pale at
-// rungs 5-6 after a warm rung 4, which reads oddly. Re-derive the whole 12-step walk
-// against the new ramp when Arena is converted (entry 9).
-export const DIVISION_COLORS = [
-    COLORS.card, COLORS.cardBeige, COLORS.header, COLORS.yellowMain,
-    COLORS.rowHoverBg, COLORS.iconBg, COLORS.textSecondary, COLORS.iconColor,
-    COLORS.blueAccent, COLORS.successInk, COLORS.infoInk, COLORS.purA,
-] as const;
-
 /** 1-based division → its display name, clamped so a bad value cannot crash the page. */
 export function divisionName(division: number): string {
     const i = Math.min(Math.max(Math.round(division), 1), DIVISION_NAMES.length);
     return DIVISION_NAMES[i - 1];
 }
 
-/** 1-based division → its accent colour. */
-export function divisionColor(division: number): string {
-    const i = Math.min(Math.max(Math.round(division), 1), DIVISION_COLORS.length);
-    return DIVISION_COLORS[i - 1];
-}
+// ⚠️ `DIVISION_COLORS`, `divisionColor` and `divisionTextColor` lived here until the
+// shelf redesign's entry 9. They were a 12-step walk over the app's UI tokens, and they
+// carried a standing note asking to be re-derived when Arena was converted.
+//
+// That re-derivation has NOT happened, and this file is no longer where it would live.
+// The rung's appearance belongs to `DivisionBanner.tsx`, which currently draws every rung
+// in the same neutral grey — an explicit placeholder, taken so that shipping the banner
+// did not also mean taking a palette decision (the design's twelve material plates would
+// have minted ~30 hexes outside the ramp). Do NOT reinstate a colour ladder here; the
+// banner is the one component that decides what a rung looks like.
+// Tracked in docs/DEFERRED_WORK.md.
+//
+// `joinButtonSx` is gone too: the MUI theme already skins `variant="contained"` as the
+// design's `.btn2` ink pill, so the arena's primary actions need no bespoke sx at all.
+// (Join used to be a green fill, which spent the page's PROMOTION colour on a button.)
 
 /**
- * Rungs whose accent is dark enough that the default dark body text on top of it
- * fails to read — Iridium and Obsidian. Listed explicitly (1-based) rather than
- * computed from luminance so the set is auditable when the palette is retuned.
+ * The quiet actions in a dialog's action bar — Clear, Cancel.
+ *
+ * A dialog bar is the one place the design's two button skins do not fit: `.btn2` is a
+ * filled pill and `.btn3` is a full-width block, and a row of three of either reads as
+ * three equally-weighted commitments. These stay bare text so the one contained Save
+ * beside them is unmistakably the primary.
  */
-const DARK_DIVISIONS = new Set<number>([7, 8]);
-
-/** 1-based division → the text colour to use ON its accent. */
-export function divisionTextColor(division: number): string {
-    const i = Math.min(Math.max(Math.round(division), 1), DIVISION_COLORS.length);
-    return DARK_DIVISIONS.has(i) ? COLORS.background : COLORS.onSurface;
-}
-
-/** The primary call to action — Join. */
-export const joinButtonSx = {
-    textTransform: "none",
-    fontFamily: FONTS.sans,
-    fontSize: SIZE.body,
-    fontWeight: WEIGHT.semibold,
-    color: COLORS.onSurface,
-    backgroundColor: COLORS.greenAccent,
-    borderRadius: 3,
-    py: 1,
-    px: 3,
-    "&:hover": { backgroundColor: COLORS.greenAccent, filter: "brightness(0.97)" },
-} as const;
-
-/** Secondary / withdraw. */
-export const secondaryButtonSx = {
+export const dialogQuietButtonSx = {
     textTransform: "none",
     fontFamily: FONTS.sans,
     fontSize: SIZE.caption,
@@ -105,13 +73,8 @@ export const mutedTextSx = {
     py: 3,
 } as const;
 
-/** A boxed section — the countdown card, the opt-in card, the results banner. */
-export const sectionCardSx = {
-    p: 1.5,
-    borderRadius: 3,
-    backgroundColor: COLORS.sectionCard,
-    border: `1px solid ${COLORS.rowBorder}`,
-} as const;
+// ⚠️ `sectionCardSx` also lived here — a third copy of the design's `.card`, which is now
+// the `SectionCard` primitive (src/components/primitives/SectionCard.tsx).
 
 /** Inline error line. */
 export const errorTextSx = {

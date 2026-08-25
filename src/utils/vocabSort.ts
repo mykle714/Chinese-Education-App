@@ -248,10 +248,16 @@ export const sortBundles = (
   // Under a skill lens the account has that goal by construction (the Center's button
   // is gated on it), so the lens bar is simply the whole list.
   const bars = lens === "core" ? activeBars(goals) : [lens];
-  // A bar is named in a row label only when there is more than one bar to tell apart.
-  // A learner with no goals reads "Mastery", not "Mastery (Know)".
+  // Two conditions, both required, before a row label names its bar:
+  //   • there is more than one bar to tell apart (a lone bar needs no qualifier — a
+  //     Center's menu reads "Mastery", because the page title already said the skill);
+  //   • the bar is a PER-SKILL one. The core bar is never named: the unqualified label
+  //     IS the core bar, so a learner reads "Mastery" / "Mastery (Read)" /
+  //     "Mastery (Write)" and never "Mastery (Know)". The fdp's Cards section is why —
+  //     it offers the core rows ALONE (`allowPerSkillBars={false}`), so a "(Know)"
+  //     suffix there named a distinction the menu was not drawing.
   const qualify = (base: string, bar: MasteryBarId): string =>
-    bars.length > 1 ? `${base} (${BAR_LABELS[bar]})` : base;
+    bars.length > 1 && bar !== "core" ? `${base} (${BAR_LABELS[bar]})` : base;
 
   const masteryRow = (bar: MasteryBarId): SortBundle => ({
     id: `mastery:${bar}`,

@@ -211,6 +211,27 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 | **What ports for free** | The whole cache layer is provider-agnostic already. `synthesize()` reads the disk cache before any provider call, and the key is `sha256(provider:voice:text:pinyin)` — so **`provider` and `voice` are already in the key**, and a Polly cutover re-synthesizes into new slots without colliding with the ~674 Google MP3s. No cache wipe, no migration, and a rollback to `TTS_PROVIDER=google` still finds every old file. `TTSService` is constructor-injected from `dal/setup.ts`, so nothing above it changes; the client (`CloudTTSProvider`) never learns which provider answered |
 | **References** | `server/services/TTSService.ts` → `callGoogle`, `voiceForLang`, `voiceTag`, `cacheKey`, `buildPinyinSsml`; `server/.env` (`TTS_PROVIDER`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_TTS_VOICE_*`); `server/dal/setup.ts`. Related: item 12 (the fallback metric — build it BEFORE this migration, so a provider swap has something to prove it worked) |
 
+### 14. MUI numeric elevations are the last shadows outside the design's system
+
+| | |
+|---|---|
+| **What** | Roughly ten call sites still write `boxShadow: 2 \| 3 \| 4 \| 6` — MUI's own elevation index, which resolves to MUI's default **pure-black** shadow ladder. Convert them to `SHADOW` (`src/theme/shadows.ts`) like every other card and floating surface. Known sites: `src/components/FlashCard.tsx` (4), `src/components/VocabDisplayCard.tsx`, `src/features/flashcards/FlashcardsPage.tsx` (3), `src/components/SegmentedSentenceDisplay.tsx`, `src/components/VocabEntryCards.tsx`, `src/games/word-search/WordSearchGrid.tsx` |
+| **Why deferred** | Split out of the D13 shadow adoption on 2026-08-24 to keep that pass reviewable. It is a different KIND of edit: the `rgba(...)` sites were a mechanical find-and-replace, but a numeric elevation carries no information about what the surface IS, so each one has to be read and assigned a role token by hand (`raised`? `float`? `menu`?). Several are also on components that predate the redesign and may be deleted rather than converted |
+| **Cost of leaving it** | These are **invisible to the obvious check**: a `grep` for `rgba(0` over `src/` now comes back almost clean, which reads as "the shadow migration is done" when ten surfaces are still on MUI's black ladder. That false all-clear is the real cost — more than the visual drift, which is subtle |
+| **Trigger** | Whichever entry next touches one of those files (`FlashCard` and `VocabDisplayCard` in particular are old and un-converted), or a deliberate sweep. Do it with `git grep -nE "boxShadow: [0-9]"` rather than from this list, which will go stale |
+| **References** | `src/theme/shadows.ts` → `SHADOW`; docs/SHELF_REDESIGN.md § D13 (the three rules and the role names) |
+
+### 15. The arena's twelve division rungs all look identical
+
+| | |
+|---|---|
+| **What** | `DivisionBanner` draws every rung — Slate through Legendary — on the same neutral grey. It needs a per-rung fill, and a per-rung ink for any fill dark enough to fail normal body text |
+| **Why deferred** | The redesign's entry 9 shipped the banner's SHAPE (name, ladder position, next rung, twelve ticks, the pennant notch) without settling its MATERIAL. The design project's `Arena Division Banners.html` draws all twelve as distinct materials, and porting them — in full, then flattened to base gradients — would have minted ~30 hex values outside the ramp. Both ports were withdrawn on the user's ruling (2026-08-24) rather than take that palette decision under deadline. **D2 is therefore unbroken, and there is no arena-palette precedent to cite** |
+| **Cost of leaving it** | A ladder whose rungs look alike is not a finished ladder: the point of twelve *named* rungs is that climbing one should look like something. What currently differentiates them is the name, the "N of 12" line and the tick row — the ticks carrying more weight than they were drawn to carry. This is the redesign's largest open visual gap, and unlike most gaps it is on a screen a competitor stares at for a week |
+| **The decision to take** | Three options were costed: (a) port the twelve plates as a contained exception to D2 — a rung is a MATERIAL, and the ramp has fewer hues than the ladder has rungs, so ramp-only forces repeats; (b) ramp-only and accept the repeats; (c) the flattened middle, `linear-gradient` layers kept and every `repeating-*` / `radial-gradient` / `conic-gradient` texture dropped. (c) was built and withdrawn; the port rule is recorded in SHELF_REDESIGN entry 9 so it can be rebuilt exactly |
+| **Trigger** | Any deliberate pass on Arena's look, or the moment someone asks why every division looks the same. Arena is **dev-only** — it is not in front of a prod user, which is part of why this could wait |
+| **References** | `src/features/arena/DivisionBanner.tsx` (the whole change lives here); `src/features/arena/arenaStyles.ts` → `DIVISION_NAMES`; docs/ARENA_FEATURE.md § 7.0; docs/SHELF_REDESIGN.md entry 9 and D2 |
+
 ## Recently closed
 
 ### Build Study Challenge, phase 1 async (closed 2026-08-22 — DONE)

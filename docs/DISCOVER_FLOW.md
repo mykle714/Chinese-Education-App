@@ -78,6 +78,18 @@ provisional card is always a word the sort flow can later offer. On top of the g
 each query still applies the Tier-1 level filter `difficulty BETWEEN 1 AND 6`
 (`_levelConfig().validPredicate`).
 
+The gate also guards the **write** side, not only supply. `sortCard`'s id lookup
+(`StarterPacksService._findDiscoverCardById`) applies `_supplyGate()` too, because a
+hand-rolled `POST /api/starterPacks/sort` can send any det id — without it, that call
+adds an arbitrary dictionary row to the caller's library, including rows whose
+enrichment columns are still null. Safe for provisional promotion: lent cards are
+drawn from `discoverable = TRUE` rows as well. See
+[API_ABUSE_HARDENING.md](./API_ABUSE_HARDENING.md) § 1b.
+
+⚠️ The two `_supplyGate` implementations are byte-identical copies kept in sync by
+hand. They agree today; a change to one silently desynchronises discover from
+provisional lending.
+
 ### Historical: the retired `sortable` flag
 
 Migration 110 added a zh-only second flag, `sortable` — a lower bar meaning

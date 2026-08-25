@@ -71,7 +71,13 @@ revoke moment is preserved), `revokeAllForUser`. Wired in `server/dal/setup.ts`
 - Route registrations live in `server/routes/authRoutes.ts` (split out of
   server.ts). `login`/`register` sit behind `authLimiter` (20/15min/IP) and
   `refresh` behind the looser `refreshLimiter` (120/15min/IP) — see
-  `server/middleware/rateLimits.ts`.
+  `server/middleware/rateLimits.ts`. Every other **write** sits behind the global
+  `writeLimiter` (600/5min, keyed on **userId**), mounted in `server.ts` ahead of the
+  routers — see [API_ABUSE_HARDENING.md](./API_ABUSE_HARDENING.md) § 2. It recovers
+  the userId by verifying the access token itself, because the routers apply
+  `authenticateToken` individually and `req.user` does not exist yet at that point;
+  that verification never throws and never responds, so token-failure status codes
+  stay the auth middleware's business.
 - `setAuthCookies` / `clearAuthCookies` — the access cookie is path `/`
   (sent with every request); the refresh cookie is path `/api/auth` (only sent to
   refresh/logout/delete-account, shrinking exposure). **`clearCookie` must use the

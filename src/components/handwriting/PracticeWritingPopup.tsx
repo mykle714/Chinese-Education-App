@@ -26,6 +26,7 @@ import { recordCompletion } from "./completions";
 import { getWritingDraft, setWritingDraft } from "./writingDraftStore";
 import type { Ink, WritingCanvasHandle } from "./types";
 import { PHONE_OVERLAY_SX } from "../phoneGeometry";
+import { SHADOW } from "../../theme/shadows";
 
 type AssistMode = "trace" | "walkthrough" | "memorize" | "test";
 
@@ -376,7 +377,7 @@ export default function PracticeWritingPopup({
   const floatingBarSx = {
     bgcolor: COLORS.header,
     borderRadius: 999,
-    boxShadow: "0 2px 10px rgba(0,0,0,0.12)",
+    boxShadow: SHADOW.chip,
   } as const;
 
   // ── Single generalized lockout ──────────────────────────────────────────────
@@ -443,7 +444,7 @@ export default function PracticeWritingPopup({
       sx={{
         minWidth: 88,
         borderRadius: 3,
-        boxShadow: "0 2px 10px rgba(0,0,0,0.12)",
+        boxShadow: SHADOW.chip,
         textTransform: "none",
         // Disabled = solid, clearly-visible light grey (not the faint MUI default).
         "&.Mui-disabled": { backgroundColor: COLORS.card, color: COLORS.textSecondary, opacity: 1 },
@@ -575,7 +576,7 @@ export default function PracticeWritingPopup({
     height: FOCUS_SIZE,
     borderRadius: 3,
     backgroundColor: "#fff",
-    boxShadow: "0 2px 12px rgba(0,0,0,0.16)",
+    boxShadow: SHADOW.chip,
     overflow: "hidden",
   } as const;
 

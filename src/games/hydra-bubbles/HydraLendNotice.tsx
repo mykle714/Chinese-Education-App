@@ -3,6 +3,7 @@ import { Box, Button, Typography } from "@mui/material";
 import { WEIGHT } from "../../theme/scale";
 import { COLORS } from "../../theme/colors";
 import { LentCardIcon } from "../../components/LentCardBadge";
+import { SHADOW } from "../../theme/shadows";
 
 /**
  * Hydra Bubbles — the one-shot mid-run lending notice (docs/HYDRA_BUBBLES.md § 6.4).
@@ -53,7 +54,7 @@ const HydraLendNotice: React.FC<HydraLendNoticeProps> = ({ open, onDismiss }) =>
                     flexDirection: "column",
                     gap: 1,
                     textAlign: "center",
-                    boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+                    boxShadow: SHADOW.menu,
                 }}
             >
                 {/* The same mark Match Speed puts in a lent card's corner and the

@@ -153,6 +153,24 @@ the solver left alone (any comfortable natural gap) get **no apostrophe**.
 | `COLUMN_WIDTH` | Per-size column-box width that defines overflow. |
 | `OVERLAP_BY_SIZE` | Negative inter-cell margin (visual density of the glyphs). |
 | `BIG_PINYIN_SCALE` | Multiplier applied to the pinyin font **and** the reserved pinyin band when the `bigPinyin` prop is on (1.2 → ~15.6px at `sm`). |
+| `CHAR_LINE_HEIGHT` | Line-height of both the glyph and the pinyin text (1.21). Shared by the render and by `cpcdNaturalSize`, so a measured cell and a rendered one cannot disagree. |
+
+### `cpcdNaturalSize(size, opts)` — the cell's box, without measuring the DOM
+
+Exported from `CPCDRow.tsx`. Returns the natural (untransformed) `{width, height}`
+of ONE character cell, derived from the same per-size tables the component renders
+with: `width = charCount × COLUMN_WIDTH`, `height = VERTICAL_PADDING + round(charFont
+× CHAR_LINE_HEIGHT) + the reserved pinyin band`. `opts` mirrors the props that move
+those numbers (`charCount`, `compact`, `bigPinyin`, `reservePinyin`).
+
+It exists because a cpcd cell is **much taller than it is wide**, so a caller that
+wants a square (or otherwise explicit) tile around one cannot get there with
+`aspect-ratio: 1` — that makes the browser reconcile a content-**width**-derived
+width against a content-**height**-derived height, and engines disagree (see the
+Safari overflow warning in [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §3 "Cell
+size"). Size the track from this instead and let the cell stretch into it.
+
+Callers: `src/games/word-search/WordSearchGrid.tsx` (`cellSide`).
 
 ### Interaction with `bigPinyin`
 

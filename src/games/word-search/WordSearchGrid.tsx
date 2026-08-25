@@ -1,6 +1,7 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, Popper, Typography } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
+import { cpcdNaturalSize } from "../../components/CPCDRow";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { getToneColor } from "../../utils/toneColors";
 import { FONTS } from "../../theme/fonts";
@@ -188,7 +189,33 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
 }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const innerRef = useRef<HTMLDivElement>(null);
-    const scale = useFitScale(containerRef, innerRef, [grid, showPinyin], GRID_MARGIN);
+    /**
+     * Side (px) of one square board tile, BEFORE `useFitScale`'s transform.
+     *
+     * Derived from the cpcd cell's own natural box rather than from
+     * `aspect-ratio: 1` on the tile. A cpcd cell is much taller than it is wide
+     * (a 32px `sm` column under a ~57px glyph+pinyin stack), so `aspect-ratio`
+     * asked the browser to square a box whose width came from content-width and
+     * whose height came from content-height — and inside a `repeat(N, 1fr)`
+     * track the two engines disagreed about which one sizes the track. Safari
+     * laid the grid box out at the narrow (content-width) figure while painting
+     * tracks at the tall one: the board overflowed the play panel to the right,
+     * every tile past column 5 was clipped, and `useFitScale` — which measures
+     * the BOX (`offsetWidth`), not the tracks — saw a board that fit and left
+     * the scale at 1. Explicit px tracks make the box and the tracks the same
+     * number in every engine, which is also what makes the fit-scaler's input
+     * honest. See docs/WORD_SEARCH_GAME.md §3.
+     *
+     * `bigPinyin` follows `showPinyin` exactly as the cell below passes it; the
+     * pinyin BAND is reserved in both modes (No Pinyin hides the syllable but
+     * keeps its space), so `reservePinyin` stays true.
+     */
+    const cellSide = useMemo(() => {
+        const natural = cpcdNaturalSize(CELL_SIZE, { bigPinyin: showPinyin, reservePinyin: true });
+        return Math.ceil(Math.max(natural.width, natural.height));
+    }, [showPinyin]);
+
+    const scale = useFitScale(containerRef, innerRef, [grid, showPinyin, cellSide], GRID_MARGIN);
 
     // Current in-progress selection path. Mirrored to a ref so the pointer
     // handlers (which close over stale state otherwise) read the latest value.
@@ -653,12 +680,15 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                     position: "relative",
                     transformOrigin: "center center",
                     display: "grid",
-                    gridTemplateColumns: `repeat(${grid[0]?.length ?? 0}, 1fr)`,
-                    // Rows size themselves off each cell's `aspect-ratio: 1` (below).
-                    // The board used to force a measured row track so that a stadium
-                    // drawn between two character CENTERS had equal pitch on both axes;
-                    // with the highlight painted on the cells themselves, the cell IS
-                    // the unit and a square cell is all the evenness the board needs.
+                    gridTemplateColumns: `repeat(${grid[0]?.length ?? 0}, ${cellSide}px)`,
+                    gridAutoRows: `${cellSide}px`,
+                    // Both axes are the SAME explicit px track (`cellSide`), so every
+                    // tile is square by construction and the grid's own box width is
+                    // the width it paints. The board used to force a measured row
+                    // track so that a stadium drawn between two character CENTERS had
+                    // equal pitch on both axes; with the highlight painted on the
+                    // cells themselves, the cell IS the unit and a square cell is all
+                    // the evenness the board needs.
                     gap: `${CELL_GAP}px`,
                     p: "4px",
                     // NO BOARD GROUND (2026-08-24). The cells sit DIRECTLY on the white
@@ -752,7 +782,11 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     // squares the run of lit cells has the same visual
                                     // weight going down as going across, so a word that
                                     // turns a corner still looks like one word.
-                                    aspectRatio: "1",
+                                    //
+                                    // The square comes from the grid's equal px tracks
+                                    // (`cellSide`), which the cell stretches into — NOT
+                                    // from `aspect-ratio: 1`, which cost the board a
+                                    // Safari-only right-overflow (see `cellSide`).
                                     borderRadius: "8px",
                                     // THE SELECTION SYSTEM. Every highlight — resting,
                                     // tracing, found, hinted, missed — is a fill on the

@@ -108,8 +108,9 @@ second is what a competitor is actually scanning for.
 ⚠️ **The user-facing word is "Demotion"; the wire value is `zone: 'relegate'`.** That
 mismatch is deliberate — the API is a contract and the label is copy. Do not align them.
 
-`arenaStyles.ts` lost `zoneRowSx` and `rankChipSx` to this; its division ladder helpers
-(`DIVISION_NAMES`, `DIVISION_COLORS`, `divisionName`/`divisionColor`) are untouched.
+`arenaStyles.ts` lost `zoneRowSx` and `rankChipSx` to this. It has since also lost the
+division **colours** (§ 7.0): `DIVISION_NAMES` and `divisionName` remain, but a rung's
+appearance is `DivisionBanner`'s now — and is currently an unstyled placeholder.
 
 ```
  ┌──────────────────────────────────────────────┐
@@ -895,15 +896,46 @@ tell whether "Division 7" is good, but can tell that Platinum is above Gold.
 The ladder is a **materials** progression — soft stone → the three medals → rare and
 engineered metals → gems → the unnamed top rung.
 
-* **Code**: `src/features/arena/arenaStyles.ts` → `DIVISION_NAMES`, `DIVISION_COLORS`,
-  `divisionName`, `divisionColor`, `divisionTextColor`. Consumed by
-  `src/features/arena/ArenaPage.tsx` → `DivisionHeader`.
-* Both arrays are index-aligned and 0-based (`division - 1`); the two lookup helpers clamp,
+* **Code**: `src/features/arena/arenaStyles.ts` → `DIVISION_NAMES`, `divisionName`.
+  Consumed by `src/features/arena/DivisionBanner.tsx`.
+* `DIVISION_NAMES` is index-aligned and 0-based (`division - 1`); the lookup helpers clamp,
   so a division outside 1–12 renders the nearest rung rather than crashing the page.
-* `DIVISION_COLORS` is drawn entirely from existing `src/theme/colors` tokens — no arena
-  palette. Two rungs (Iridium, Obsidian) are dark enough that the default dark body text
-  fails on them, so **any surface tinted with `divisionColor` must take its foreground from
-  `divisionTextColor`**, never from `COLORS.onSurface` directly.
+
+#### The division banner
+
+Since the shelf redesign's entry 9, a rung is drawn as the artboard's hanging pennant: the
+name at 27px, the ladder position beside it, the next rung under it, twelve ticks along the
+bottom, and a notch cut into the foot by `clip-path`. It replaced `DivisionHeader`, a
+tinted card. It is drawn in **all four page states**, because the rung you hold does not
+stop existing between weeks and the opt-in state would otherwise be a bare card with
+nothing naming the arena you are joining.
+
+> #### ⚠️ The plate itself is an UNSTYLED PLACEHOLDER (2026-08-24)
+>
+> **Every rung currently wears the same neutral grey.** The design project's
+> `Arena Division Banners.html` draws all twelve as distinct materials — quarried stone,
+> struck medals, machined alloys, cut gems — and those were ported and then **withdrawn on
+> the user's ruling**: twelve hand-authored gradients meant ~30 hex values outside the
+> ramp, and that palette decision is not being taken yet.
+>
+> **This is a placeholder, not a design.** A ladder whose rungs all look alike is not a
+> finished ladder — the point of twelve named rungs is that climbing one should look like
+> something. Right now the only things on the banner that change as you climb are the name,
+> the "N of 12" line, and the tick row.
+>
+> Everything needed to finish it is in `DivisionBanner.tsx`: give it a per-rung fill and, if
+> any fill is dark, a per-rung ink. Nothing else on the page reads a division's appearance.
+> Tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+
+One decision from the withdrawn version was kept, because it should outlive the
+placeholder: everything on the banner that is not full-strength ink is an **opacity** of
+that same ink, never a second colour token. Whatever the twelve grounds turn out to be, a
+fixed "muted" colour will fail on some of them; a transparency of a working ink cannot.
+
+> **`.ladder` was closed as superseded, not deferred.** The redesign's § A7 listed a
+> separate twelve-bar ladder widget. It exists in `shelf-system.css` but in none of the 27
+> spec artboards — the shipped design folds that information into this banner's ticks. Two
+> places stating which rung you hold can disagree; do not build it.
 
 ### 7.1 Where the division lives — `user_languages`, not `users`
 
@@ -1002,7 +1034,19 @@ Two consequences worth knowing:
   as `state !== "live"` rather than as a list of the states that qualify — a live seat is
   the only thing that refuses (`ArenaPage.tsx` → `ArenaPage`, `OptInCard`).
 
+**The request language is coerced, never passed through.** `optIn` and `withdraw` both
+write to `user_languages` (`setOptInWeek` UPSERTS the row), and that table's `language`
+column carries **no CHECK constraint** — so a hand-rolled `POST /api/arena/optIn` with
+`{"language":"xx"}` used to create a progress row for a language the app does not
+support, which then appears in the leaderboard's per-user sum, in arena formation's
+bucketing and in the penalty cron's partitioning. `ArenaController` now runs both the
+body and the query value through `resolveLanguage` (`server/utils/languageParam.ts`),
+which coerces anything unsupported to `'zh'`. `geoCell` and `message` were already
+validated in `ArenaService` (`GEOCELL_PATTERN`, `MESSAGE_MAX`); `/api/arena/admin/tick`
+is gated on `users.isValidator` in the controller.
+
 **Code:** `server/services/ArenaService.ts` → `optIn`, `withdraw`, `formArenas`;
+`server/controllers/ArenaController.ts` → `optIn`, `contextOf`, `adminTick`;
 `src/features/arena/ArenaPage.tsx` → `OptInCard`.
 
 > **Proposed:** `user_languages."arenaOptInWeek" date NULL` — the date of the

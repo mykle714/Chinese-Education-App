@@ -150,13 +150,19 @@ last 7 days ([VELOCITY.md](./VELOCITY.md)) — not a plain list. One row per per
   nothing.
 * Velocity counts only the bars **that person** pursues (`activeBars` on their own
   `readingGoal`/`writingGoal`), matching what their own Account page shows.
-* **The viewer is in the board**, marked `isCurrentUser`: name suffixed "(you)"
-  and a blue 2px border instead of the 1px neutral one (the padding drops to 11px
-  so row heights stay equal).
-* Ranks 1–3 get podium-tinted chips; everyone else gets the neutral surface.
-* The three top buttons are coloured by their action's valence — Send neutral blue,
+* **The viewer is in the board**, marked `isCurrentUser`: name suffixed "(you)" and the
+  row filled with the **org pastel**, its border kept at 1px transparent so heights stay
+  equal. This was a 2px blue ring until the shelf redesign's entry 8; it changed because
+  `BoardRow.highlighted` (the arena board) already used the org fill for the same idea,
+  and the app was answering "which row is me" two different ways on its two leaderboards.
+* Ranks 1–3 get podium-tinted chips (org / blu / red from `RAMP`), everyone else grey.
+  Every chip carries the `markOutline` inset ring — mandatory at 28px, and load-bearing
+  for rank 1, whose org chip would otherwise dissolve into a rank-1 viewer's org row.
+* The three top **tiles** are coloured by their action's valence — Send neutral blue,
   Accept green, Remove red — the same green/red pairing the request rows use for
-  Accept/Decline. `navButtonSx` is a factory over the fill colour.
+  Accept/Decline. They are `BentoTile`s (`variant="compact"`, `columns={3}`) since entry
+  8; the pending counts are tile `pin`s with `pinTone="alert"`, which replaced the
+  friends-only `navButtonSx` / `cornerBadgeSx` fragments (both deleted).
 * **Ranking is the server's**: the client never re-sorts, and the board has no
   mutations of its own — unfriending happens on `/friends/remove`, so the ranks on
   screen are always exactly the ranks the server assigned.

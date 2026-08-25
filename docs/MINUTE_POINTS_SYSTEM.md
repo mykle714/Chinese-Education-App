@@ -162,7 +162,10 @@ is global except the two rollups listed above.
 - `MinutePointsFireBadge` — the app's earning indicator. Rendered by `PageHeader` itself,
   last in the right slot, on **every** header; pages do not pass it. Orange while earning,
   grey when idle or on an ineligible page, struck-through when paused, `null` when signed
-  out. Because it calls `useMinutePoints` internally, a page must never mount two
+  out. Progress toward the next point (`progressToNextPoint`) is drawn as a rising orange
+  fill inside the flame glyph rather than as a seconds number — see
+  [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § the `.hd .fire` decisions. `liveSeconds` is
+  still consumed, but only for the badge's `title` text. Because it calls `useMinutePoints` internally, a page must never mount two
   `PageHeader`s on an earning route — each hook instance runs its own 1-second accrual tick.
 - `MinutePointsBadge` — the legacy circular badge, still only on the old desktop
   `/flashcards` page (`FlashcardsPage.tsx`); superseded everywhere else by the fire badge.
@@ -211,6 +214,39 @@ on each call.
 | GET  | `/api/users/minutePoints/calendar/:yearMonth`  | path: `YYYY-MM`; query: `language` | Dense per-day list (one language) with `minutesEarned` and `penaltyMinutes` |
 | POST | `/api/auth/onLogin`                            | `{ tz }`                       | Post-login bookkeeping (currently: refresh `users.timezone`) |
 | GET  | `/api/leaderboard`                              | —                              | `currentStreak` is `null` for non-public users |
+
+### Abuse resistance of the increment path
+
+`POST /api/users/minutePoints/increment` is the app's **only currency source** — minute
+points fund night-market unlocks via `unlocksForMinutes`, so every guard here is an
+economy guard, not a politeness limit. Two of them are load-bearing, and both were
+originally written in a form a scripted client could walk straight past.
+
+* **The 59-second cooldown is CLAIMED, not checked.**
+  `UserMinutePointsService.incrementMinutePoints` calls
+  `IUserDAL.claimMinutePointIncrement`, a single compare-and-set
+  (`UPDATE … WHERE "lastMinutePointIncrement" IS NULL OR … <= now − 59s`). Postgres
+  serialises concurrent updates of one row, so a burst of N simultaneous requests
+  yields exactly one winner. The previous shape — read the column, compare in JS, bank
+  the minute, stamp the column at the END of the method — let all N reads see the same
+  stale timestamp and all N bank a minute, which minted unlock entitlement.
+  ⚠️ Do not "simplify" this back into a read plus a later `updateLastMinutePointIncrement`.
+* **The client timestamp is CLAMPED, not trusted.** The client's own clock legitimately
+  decides which 04:00-bounded local day a minute lands on, but an unbounded value let a
+  crafted request bank minutes into arbitrary days — fabricating calendar history, and
+  stamping `user_languages."lastStreakDate"` into the future, where the hourly penalty
+  cron reads the account as permanently current and the streak can never break.
+  `clampToServerNow` replaces anything more than `MAX_CLIENT_CLOCK_SKEW_MS` (30 min)
+  from server time with server now, so a genuinely skewed device still works.
+
+`language` is already coerced at the HTTP edge by `resolveWriteLanguage`
+(`server/utils/languageParam.ts`), which matters because `user_languages.language` has
+**no CHECK constraint** — an unvalidated string there writes a progress row for a
+language the app does not support.
+
+Code: `server/services/UserMinutePointsService.ts` → `incrementMinutePoints`,
+`clampToServerNow`; `server/dal/implementations/UserDAL.ts` →
+`claimMinutePointIncrement`; `server/controllers/UserMinutePointsController.ts`.
 
 ## Streak break flow
 

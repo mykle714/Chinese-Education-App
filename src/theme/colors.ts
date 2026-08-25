@@ -73,7 +73,25 @@ export const COLORS = {
     header: "#F2F2F4",           // --header — unchanged; the design uses this exact value
     white: "#FFFFFF",            // --white — cards, rows, sheets sit ON the paper ground
     card: "#E7E7EA",             // --grey — inert filled surfaces (tracks, empty cells)
-    cardBeige: "#F5EBE0",        // the flashcard face fill; the design's `.hero` uses this exact value
+    // THE CARD FACE. Every flashcard face, mini card and card preview that has no
+    // per-card `cardColor` override lands here, via the light theme's
+    // `flashcard.flashCard` (ThemeContext). It is the design's own card fill: the
+    // artboards paint `.hero` (the full flashcard face) AND `.mgrid .mcd` (frame 17's
+    // mini card previews) with this exact value, so the big face and its thumbnails are
+    // literally the same surface — which is the point of frame 17's caption, "the
+    // preview is literally the card".
+    //
+    // Warm cream, not the grey it used to be (`COLORS.card`, #E7E7EA). The ground the
+    // app runs on is warm (`--paper` #FBFAF8) and a neutral grey card sitting on it read
+    // as slightly dead — and it also made the fie's `auto` swatch indistinguishable from
+    // its explicit `grey` swatch in the light theme, which is the one place those two are
+    // supposed to differ.
+    cardFace: "#FBF7EC",         // the design's `.hero` / `.mgrid .mcd` fill
+    // A SECOND, DEEPER beige. NOT the card face — the artboards use it for the base
+    // `.mcd` before `.mgrid` overrides it, and the app uses it for eip/info panels and a
+    // couple of hub tiles. Named for its colour rather than its role because it has no
+    // single role; `cardFace` above is the one with a role.
+    cardBeige: "#F5EBE0",        // the design's bare `.mcd` fill
     infoCard: "#F5EBE0",         // same beige — kept as a distinct token for eip surfaces
     sectionCard: "#FFFFFF",      // was a beige; the design puts sections on white over paper
     iconBg: "#E7E7EA",           // --grey — the tinted square behind a leading icon

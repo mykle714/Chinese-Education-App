@@ -11,6 +11,7 @@ import FrequencyScoreDots from "../../../components/FrequencyScoreDots";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 import type { VocabEntry } from "../types";
 import type { DefinitionCluster } from "../../../types";
+import { SHADOW } from "../../../theme/shadows";
 
 /**
  * SensePicker — the shared definition-cluster ("sense") chooser.
@@ -287,7 +288,7 @@ const SensePicker: React.FC<SensePickerProps> = ({
                             maxWidth: "calc(100% - 32px)",
                             borderRadius: "22px",
                             border: `1px solid ${COLORS.rowBorder}`,
-                            boxShadow: "0 18px 44px rgba(20,18,26,0.26)",
+                            boxShadow: SHADOW.popover,
                             backgroundColor: COLORS.white,
                             backgroundImage: "none",
                         },

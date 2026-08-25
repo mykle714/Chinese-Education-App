@@ -4,6 +4,7 @@ import ProvisionalCardGrid from "./ProvisionalCardGrid";
 import { LentCardIcon } from "./LentCardBadge";
 import { useProvisionalEntries } from "../hooks/useProvisionalEntries";
 import type { Language, VocabEntry } from "../types";
+import { SHADOW } from "../theme/shadows";
 
 /**
  * ProvisionalCardsNotice — the pre-round "we lent you some cards" popup.
@@ -114,7 +115,7 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
                     background: COLORS.infoCard,
                     borderRadius: 20,
                     padding: "24px 22px",
-                    boxShadow: "0 12px 32px rgba(0, 0, 0, 0.22)",
+                    boxShadow: SHADOW.menu,
                     display: "flex",
                     flexDirection: "column",
                     gap: 14,

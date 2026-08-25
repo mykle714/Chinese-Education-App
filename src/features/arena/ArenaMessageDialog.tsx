@@ -4,7 +4,7 @@ import { setArenaMessage } from "../../api/arena";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import { errorTextSx, joinButtonSx, secondaryButtonSx } from "./arenaStyles";
+import { dialogQuietButtonSx, errorTextSx } from "./arenaStyles";
 
 /**
  * The arena message editor (docs/ARENA_FEATURE.md § 2.1a).
@@ -117,18 +117,18 @@ export default function ArenaMessageDialog({
                     strangers can read has to be retractable in one tap. */}
                 <Button
                     className="arena-message-dialog__clear"
-                    sx={{ ...secondaryButtonSx, mr: "auto" }}
+                    sx={{ ...dialogQuietButtonSx, mr: "auto" }}
                     onClick={() => save(null)}
                     disabled={busy || (!initialMessage && draft.trim().length === 0)}
                 >
                     Clear
                 </Button>
-                <Button className="arena-message-dialog__cancel" sx={secondaryButtonSx} onClick={onClose} disabled={busy}>
+                <Button className="arena-message-dialog__cancel" sx={dialogQuietButtonSx} onClick={onClose} disabled={busy}>
                     Cancel
                 </Button>
                 <Button
                     className="arena-message-dialog__save"
-                    sx={joinButtonSx}
+                    variant="contained"
                     onClick={() => save(draft)}
                     disabled={busy}
                 >

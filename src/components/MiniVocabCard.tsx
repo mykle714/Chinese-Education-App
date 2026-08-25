@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Box, Typography, IconButton } from "@mui/material";
+import { Box, Typography, IconButton, useTheme } from "@mui/material";
 import ForeignText from "./ForeignText";
 import CardIconLayer from "../cardIcons/CardIconLayer";
 import { iconImageUrl, isAdvancedLayout } from "../cardIcons/cardIconLayout";
@@ -13,6 +13,7 @@ import { getCategoryColor } from "../utils/categoryColors";
 import { masteryBar, BAR_LABELS, MARK_TYPE_COLORS, type MasteryBarId } from "../utils/masteryCompute";
 import { COLORS } from "../theme/colors";
 import { SIZE, WEIGHT } from "../theme/scale";
+import { SHADOW } from "../theme/shadows";
 
 interface MiniVocabCardProps {
     entry: VocabEntry;
@@ -78,6 +79,7 @@ const barStripHeight = (n: number): number =>
     n === 0 ? 0 : n * BAR_STRIP.height + (n - 1) * BAR_STRIP.gap;
 
 const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs, showMasteryStrip = true, lens = "core" }) => {
+    const fc = useTheme().palette.flashcard;
     // An empty list when the strip is suppressed, so the ONE array drives both the
     // rendering below and the definition's bottom offset — there is no second way for
     // the two to disagree about how much room the strip takes. Otherwise exactly one
@@ -117,7 +119,13 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
     // (that one drives whether the icon layer renders and must not fire for a text-only-advanced
     // card that has no iconLayout). A basic card keeps the default thumbnail color.
     const isUsingAdvancedLayout = isAdvancedLayout(entry.iconLayout, entry.textLayout);
-    const faceBg = (isUsingAdvancedLayout ? resolveCardColor(entry.cardColor) : undefined) ?? COLORS.card;
+    // Falls back to the THEME's card face, not to a fixed token. It used to fall back to
+    // `COLORS.card`, which was the same value as the light theme's face and so looked
+    // right — but it meant a mini card ignored the theme entirely, staying light-grey on
+    // Dark / Ocean / Nature while the full-size face beside it changed. Frame 17 of the
+    // design turns on these two being the same surface ("the preview is literally the
+    // card"), so they now read the same source. Matches `CardFace`'s `faceBg`.
+    const faceBg = (isUsingAdvancedLayout ? resolveCardColor(entry.cardColor) : undefined) ?? fc.flashCard;
     return (
         <Box
             className="mini-vocab-card"
@@ -127,7 +135,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 height: 132,
                 backgroundColor: faceBg,
                 borderRadius: '12px',
-                boxShadow: '2px 4px 4px rgba(0, 0, 0, 0.25)',
+                boxShadow: SHADOW.raised,   // `.mcd` — the design's mini-card elevation
                 cursor: onClick ? 'pointer' : 'default',
                 transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
                 // CSS containment: let the browser skip layout/paint for cards
@@ -148,7 +156,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 '&:hover': {
                     ...(onClick ? {
                         transform: 'translateY(-4px)',
-                        boxShadow: '2px 6px 8px rgba(0, 0, 0, 0.3)',
+                        boxShadow: SHADOW.float,    // one step up on hover-lift
                     } : {}),
                     '& .action-buttons': {
                         opacity: 1,
@@ -192,10 +200,10 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                             color: 'white',
                             width: 28,
                             height: 28,
-                            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                            boxShadow: SHADOW.chip,
                             '&:hover': {
                                 backgroundColor: '#1976d2',
-                                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)',
+                                boxShadow: SHADOW.float,
                             },
                         }}
                     >
@@ -217,10 +225,10 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                             color: 'white',
                             width: 28,
                             height: 28,
-                            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                            boxShadow: SHADOW.chip,
                             '&:hover': {
                                 backgroundColor: '#d32f2f',
-                                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)',
+                                boxShadow: SHADOW.float,
                             },
                         }}
                     >
@@ -261,7 +269,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                         // pastel one needs the ramp's inset ring instead, or it dissolves
                         // into the card behind it. Both, here: the ring defines the edge,
                         // the shadow keeps it reading as a raised badge.
-                        boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}, 0 1px 2px rgba(0, 0, 0, 0.3)`,
+                        boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}, ${SHADOW.rest}`,
                     }}
                 >
                     {badgeCategory.charAt(0)}

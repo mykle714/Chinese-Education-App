@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box, Typography, useTheme } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import ForeignText from "./ForeignText";
 import { iconImageUrl } from "../cardIcons/cardIconLayout";
@@ -8,6 +8,7 @@ import type { DiscoverCard } from "../types";
 import type { QuickMarkState } from "./quickMarkState";
 import { COLORS } from "../theme/colors";
 import { SIZE, WEIGHT } from "../theme/scale";
+import { SHADOW } from "../theme/shadows";
 
 interface QuickMarkCardProps {
     card: DiscoverCard;
@@ -29,7 +30,7 @@ const StateIndicator: React.FC<{ state: QuickMarkState }> = ({ state }) => {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.3)",
+        boxShadow: SHADOW.rest,
     } as const;
 
     if (state === "library") {
@@ -65,6 +66,10 @@ const StateIndicator: React.FC<{ state: QuickMarkState }> = ({ state }) => {
 // same as Sort Cards) and the tappable 3-state mark indicator (top-right). Tapping the
 // card cycles the mark; nothing persists until the page's Save (docs/QUICK_MARK.md).
 const QuickMarkCardComponent: React.FC<QuickMarkCardProps> = ({ card, state, onCycle, animationDelayMs }) => {
+    // The theme's card face — the same source MiniVocabCard and CardFace read. This card
+    // mirrors MiniVocabCard's geometry, so it has to mirror its fill too; a fixed token
+    // here would leave a Quick Mark grid grey while every other mini card went cream.
+    const fc = useTheme().palette.flashcard;
     return (
         <Box
             className="quick-mark-card"
@@ -72,9 +77,9 @@ const QuickMarkCardComponent: React.FC<QuickMarkCardProps> = ({ card, state, onC
             sx={{
                 width: 92,
                 height: 132,
-                backgroundColor: COLORS.card,
+                backgroundColor: fc.flashCard,
                 borderRadius: "12px",
-                boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
+                boxShadow: SHADOW.raised,
                 cursor: "pointer",
                 // Same offscreen-skipping containment MiniVocabCard uses — a level can
                 // hold hundreds of cards once pages accumulate.
@@ -110,7 +115,7 @@ const QuickMarkCardComponent: React.FC<QuickMarkCardProps> = ({ card, state, onC
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.3)",
+                        boxShadow: SHADOW.rest,
                     }}
                 >
                     {card.frequencyScore}

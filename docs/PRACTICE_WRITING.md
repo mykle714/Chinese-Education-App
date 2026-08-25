@@ -204,6 +204,13 @@ character = `COUNT(*)` grouped by `entryKey`.
   `POST /api/handwriting/completions {language,entryKey,level}` →
   records (idempotent) and returns the full `{ completedLevels }`.
 - Client: `fetchCompletedLevels` / `recordCompletion` (`completions.ts`).
+- **Input validation** (`validateCompletionTarget`, `server/routes/handwritingRoutes.ts`):
+  `language` is coerced through `resolveWriteLanguage` and `entryKey` is capped at 8
+  code points. Neither was checked before, so the table accepted rows for unsupported
+  languages and keys of any length. The key is deliberately **not** validated against
+  the dictionary — a learner may practise a component character with no headword row
+  of its own, and rejecting those would break the feature to close a smaller hole than
+  the length cap already closes.
 
 **Award flow:** on an all-correct Verify for an un-completed level, the popup POSTs
 the completion and lifts the returned full set up to the button (`onLevelsChange`),

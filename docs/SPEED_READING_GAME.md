@@ -231,6 +231,13 @@ push cannot disagree with itself). Reset by the replay path alongside `score`/`a
 > UNDER them and every tap on it answers the round. The board box exists to bound the zones
 > below the HUD, and the centring that used to be on `GameFrame` moved onto it.
 
+> **Two options is final; artboard 15's four is superseded (2026-08-24).** The Shelf
+> Redesign's artboard for this game draws an upright 2×2 grid of FOUR options with an
+> in-panel countdown. It is not being built. Going from two options to four is a
+> difficulty change, not a layout change — it alters both the guess baseline and the time
+> a round takes — and the game reads well on two. The shipped rotated two-half tap surface
+> is the design of record; see `docs/SHELF_REDESIGN.md` § 15.
+
 The prompt and the options are **one centred group** (`speed-reading__stack`),
 centred in the play area — **the two options are the only controls on the
 screen** (see [§ There is no Skip](#there-is-no-skip)). The prompt sits directly

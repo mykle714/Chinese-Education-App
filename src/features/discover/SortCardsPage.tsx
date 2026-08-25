@@ -36,6 +36,7 @@ import { useCategoryCounts } from "../../hooks/useCategoryCounts";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
+import { SHADOW } from "../../theme/shadows";
 
 // The on-deck unit is now a SORT PACK (docs/SORT_CARDS_REQUIREMENTS.md §4.5): up to 3
 // draggable cards (no sentence band). The client holds a short FIFO queue of PACKS
@@ -201,7 +202,7 @@ const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?:
         // pastel (~1.15:1 on paper) AND this tile renders at 0.23 opacity when it is not
         // the active drop target, so without an edge it disappears entirely.
         // ⚠️ Even with the ring, 0.23 may now be too faint — check on a device.
-        boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}, 1px 4px 4px rgba(0, 0, 0, 0.25)`,
+        boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}, ${SHADOW.raised}`,
         opacity: highlight ? 0.9 : 0.23,
         transition: "opacity 0.2s ease-in-out, transform 0.2s ease-in-out",
         transform: highlight ? "scale(1.05)" : "scale(1)",
@@ -255,7 +256,7 @@ const OnDeckSection = styled(Box)({
     // the "platform floating above the page" depth cue.
     boxShadow: [
         "inset 0 2px 0 rgba(255, 255, 255, 0.7)",
-        "0 -6px 16px rgba(0, 0, 0, 0.14)",
+        SHADOW.peekUp,
     ].join(", "),
     display: "flex",
     flexDirection: "column",
@@ -394,7 +395,7 @@ const SortTallyLabel = styled(Typography)({
 
 const AnimatedBox = animated(Box);
 
-const CardShell = styled(AnimatedBox)<{ locked?: boolean }>(({ locked }) => ({
+const CardShell = styled(AnimatedBox)<{ locked?: boolean }>(({ locked, theme }) => ({
     position: "relative",
     // BOTH dimensions are stated explicitly rather than letting `aspect-ratio`
     // derive the width from the height. iOS Safari does not resolve an
@@ -417,13 +418,19 @@ const CardShell = styled(AnimatedBox)<{ locked?: boolean }>(({ locked }) => ({
     minWidth: 0,
     // Locked (already-sorted) cards sink toward the page background instead of
     // sitting on the card surface color, reinforcing "not draggable".
-    backgroundColor: locked ? COLORS.header : COLORS.card,
+    // The unlocked fill is the THEME's card face — the same source every other card
+    // surface reads (MiniVocabCard, CardFace, QuickMarkCard). A fixed token here would
+    // make the one card a learner actually drags the only card in the app still grey.
+    backgroundColor: locked ? COLORS.header : theme.palette.flashcard.flashCard,
     borderRadius: 12,
     // A dropped shadow reads as "raised"; a locked card instead gets a soft
     // inward shadow so it reads as recessed/pressed-into-the-background.
     boxShadow: locked
-        ? "inset 0 2px 5px rgba(0, 0, 0, 0.22)"
-        : "2px 4px 4px rgba(0, 0, 0, 0.25)",
+        // No design equivalent for "recessed" — the artboards never draw a pressed-in
+        // card — so this stays hand-authored, but re-inked to the shadow hue so it does
+        // not sit next to the tokens as the one pure-black shadow left on the page.
+        ? "inset 0 2px 5px rgba(20, 18, 26, 0.22)"
+        : SHADOW.raised,
     padding: 10,
     display: "flex",
     flexDirection: "column",

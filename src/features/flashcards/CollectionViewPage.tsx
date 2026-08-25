@@ -28,6 +28,7 @@ import {
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
+import { SHADOW } from "../../theme/shadows";
 
 /**
  * ONE page for every collection of cards (docs/DECKS_FEATURE.md).
@@ -304,7 +305,7 @@ const CollectionViewPage: React.FC = () => {
                         textTransform: "none",
                         color: COLORS.onSurface,
                         backgroundColor: COLORS.greenAccent,
-                        boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
+                        boxShadow: SHADOW.raised,
                         "&:hover": { backgroundColor: COLORS.greenAccent },
                     }}
                 >

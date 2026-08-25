@@ -583,9 +583,9 @@ keeps the reserved pinyin band even when the syllable is hidden (so toggling
 pinyin never shifts layout) — enlarging it in **No Pinyin** mode would push
 every glyph upward for nothing.
 
-One knock-on effect, self-correcting: **grid height is unaffected**, because every
-cell is `aspect-ratio: 1` and the taller content simply centres inside the square it
-was already given.
+One knock-on effect: the reserved band is part of what sets the tile's size, since
+the square tile is sized from the cpcd cell's natural box (see below) and that box is
+taller with `bigPinyin` on. **Pinyin** tiles are 57px, **No Pinyin** tiles 53px.
 
 More pinyin overflows its 32px column at this scale, so expect more
 shifting/separator apostrophes — see
@@ -596,10 +596,27 @@ A `useFitScale` wrapper in
 (transforms don't affect `elementFromPoint`, so drag hit-testing still works),
 so it renders at real `sm` size and shrinks only as needed on short screens.
 
-**Every cell is a square** (`aspect-ratio: 1`, the design's `.wsg span`) spaced by
+**Every cell is a square** (the design's `.wsg span`) spaced by
 `CELL_GAP` px on both axes (`constants.ts`, 4px). Squareness is what lets a traced
 path read as a path: on a board of squares a run of lit cells weighs the same going
 down as going across, so a word that turns a corner still looks like one word.
+
+The square comes from **explicit, equal px tracks** — `WordSearchGrid`'s `cellSide`
+memo asks `cpcdNaturalSize` (`src/components/CPCDRow.tsx`) for the cpcd cell's natural
+box and takes `ceil(max(width, height))`, which both `gridTemplateColumns` and
+`gridAutoRows` are then set to; the cell stretches into its track.
+
+> ⚠️ It must NOT go back to `aspect-ratio: 1` on the cell inside `repeat(N, 1fr)`
+> tracks, which is how this shipped until 2026-08-24. A cpcd cell is far taller than
+> it is wide (a 32px `sm` column under a ~57px glyph+pinyin stack), so that asked the
+> engine to reconcile a track width derived from content-**width** with a tile height
+> derived from content-**height**. Chromium reconciled them; **Safari did not** — it
+> laid the grid box out at the narrow figure and painted the wide tracks, so on iOS
+> the board overflowed the play panel to the right with columns clipped off-screen,
+> a dead gutter on the left, and `useFitScale` (which measures the grid **box** via
+> `offsetWidth`, not the painted tracks) reporting that everything fit and leaving
+> the scale at 1. Explicit px tracks keep the box and the tracks equal in every
+> engine, which is also what keeps the fit-scaler's input honest.
 
 ### The selection system
 

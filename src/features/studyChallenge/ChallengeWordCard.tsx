@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Box, Button, Typography } from "@mui/material";
+import { Box, Button, Typography, useTheme } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import ForeignText from "../../components/ForeignText";
 import { iconImageUrl } from "../../cardIcons/cardIconLayout";
@@ -11,6 +11,7 @@ import {
     CHALLENGE_WORD_THUMBNAIL_HEIGHT as THUMBNAIL_HEIGHT,
 } from "./challengeStyles";
 import type { ChallengeReviewWord } from "./reviewWord";
+import { SHADOW } from "../../theme/shadows";
 
 interface ChallengeWordCardProps {
     word: ChallengeReviewWord;
@@ -45,6 +46,7 @@ const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
     disabled = false,
     animationDelayMs,
 }) => {
+    const fc = useTheme().palette.flashcard;
     return (
         <Box
             className="challenge-word-card"
@@ -64,9 +66,12 @@ const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
                 sx={{
                     width: CHALLENGE_WORD_CARD_WIDTH,
                     height: THUMBNAIL_HEIGHT,
-                    backgroundColor: COLORS.card,
+                    // The theme's card face, like every other mini card (MiniVocabCard,
+                    // QuickMarkCard) — this one already promises "the geometry identical
+                    // to the other two mini cards", and the fill is part of that.
+                    backgroundColor: fc.flashCard,
                     borderRadius: "12px",
-                    boxShadow: "2px 4px 4px rgba(0, 0, 0, 0.25)",
+                    boxShadow: SHADOW.raised,
                     position: "relative",
                     overflow: "hidden",
                     // Ten cards at most, but the containment costs nothing and keeps
@@ -98,7 +103,7 @@ const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            boxShadow: "0 1px 2px rgba(0, 0, 0, 0.3)",
+                            boxShadow: SHADOW.rest,
                         }}
                     >
                         {word.frequencyScore}

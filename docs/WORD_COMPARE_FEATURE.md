@@ -137,13 +137,15 @@ and panel body.
 - **Slot A / Slot B**: two side-by-side cards each holding an **xl** `ForeignText` (cpcd row).
   Slot A auto-fills from the source word (`entryKey` + `pronunciation`). Slot B starts empty
   with a `+` indicator.
-  - `CPCDSize` currently tops out at `"lg"` (`src/components/CPCDRow.tsx`); this feature adds an
-    **`"xl"` size** — new entries in `COLUMN_WIDTH`, `CHAR_FONT_SIZE`, `PINYIN_RESERVED_HEIGHT`
-    (CPCDRow) and `PLAIN_CHAR_FONT` / `PLAIN_COMPACT_CHAR_FONT` (ForeignText).
+  - `CPCDSize` gained an **`"xl"` size** for this feature — entries in `COLUMN_WIDTH`,
+    `CHAR_FONT_SIZE`, `PINYIN_RESERVED_HEIGHT` (CPCDRow) and `PLAIN_CHAR_FONT` /
+    `PLAIN_COMPACT_CHAR_FONT` (ForeignText). **Shipped**: `"xl"` is in `CPCDSize` today.
 - **Slot B tap → mini search bar**: tapping the empty (or filled) slot B opens a compact search
   input in the below-slots area, with the **special-character keypad above it** (keypad is
   visible **only while the search bar is open** — decided). The area below lists **dictionary
-  result cards** (`DictionaryEntryRow`) driven by the existing `useDictionarySearch` hook —
+  result rows** (`DictionaryEntryRow`, the shelf system's `.dr` since 2026-08-24 — flat and
+  hairline-separated, not cards; pass `inset` to match the panel's own padding) driven by the
+  existing `useDictionarySearch` hook —
   same debounce, segment mode, and language scoping as the dictionary page. Search scope is the
   **full dictionary** (any det row — decided).
 - **Keypad**: the tone-marked vowel buttons currently inlined (twice — mobile + desktop
@@ -286,7 +288,7 @@ CREATE TABLE word_comparison_cache (
 | Client UI | `src/components/WordToolsRail.tsx` | The `Compare` pill above the card, on both the flp and the cdp (2026-08-24; replaced the deleted `InfoCardActionBar`) |
 | Client UI | `src/components/PinyinKeypad.tsx` (**new**, extracted) | shared tone-vowel / accent keypad; replaces DictionaryPage's two inline copies |
 | Client UI | `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx` | new `"xl"` `CPCDSize` |
-| Reused | `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx` | slot-B search + result cards |
+| Reused | `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx` | slot-B search + result rows (`.dr`) |
 
 ---
 
@@ -340,7 +342,8 @@ English-query space. Cache hits are always free and don't consume a slot.
   word-tools rail (the Compare entry point): `src/components/WordToolsRail.tsx`.
 - Keypad source being extracted: `src/features/dictionary/DictionaryPage.tsx` (`SPECIAL_CHARACTERS`,
   `getVowelColor`, `specialCharButtonSx`).
-- Search reuse: `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx`.
+- Search reuse: `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx`
+  (the `.dr` row — see docs/SHELF_REDESIGN.md § Part B entry 7).
 - cpcd sizing (new `"xl"`): `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx`.
 - Token-refresh client rule (load effects must not key on `token`):
   [TOKEN_EXPIRATION_IMPLEMENTATION.md](./TOKEN_EXPIRATION_IMPLEMENTATION.md).

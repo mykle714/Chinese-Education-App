@@ -87,6 +87,84 @@ const PINYIN_MIN_GAP_PX = 2;
 // number — by ordinary arithmetic. 1.2 puts `sm` pinyin at ~15.6px against its
 // 26px glyph: a readability bump that still reads as secondary to the character.
 const BIG_PINYIN_SCALE = 1.2;
+// Line-height applied to BOTH the character glyph and the pinyin text. A shared
+// constant rather than two literals because `cpcdNaturalSize` (below) has to
+// reproduce the glyph's line box exactly — a cell measured with a different
+// factor than it renders with is the kind of drift that only shows up as a
+// clipped board on one browser.
+const CHAR_LINE_HEIGHT = 1.21;
+
+/**
+ * Convert one of the font tables above to px. The tables mix `px` and `rem`
+ * (a historical split — the small sizes were authored in px, the large ones in
+ * rem), so anything that has to do ARITHMETIC on them has to normalize first.
+ * `rem` is resolved against the document root font size at call time, falling
+ * back to the CSS initial 16px when there is no document (tests, SSR).
+ */
+function fontPx(value: string): number {
+    const n = parseFloat(value);
+    if (Number.isNaN(n)) return 0;
+    if (!value.trim().endsWith("rem")) return n;
+    const root =
+        typeof document !== "undefined"
+            ? parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+            : 16;
+    return n * root;
+}
+
+export interface CpcdNaturalSizeOptions {
+    /** Characters in the cell being measured. A cell is `charCount` columns wide. */
+    charCount?: number;
+    /** Mirrors CPCDRow's `compact` — picks the compact font tables. */
+    compact?: boolean;
+    /** Mirrors CPCDRow's `bigPinyin` — scales the reserved pinyin band. */
+    bigPinyin?: boolean;
+    /**
+     * Whether the cell reserves vertical space for the pinyin row. CPCDRow
+     * reserves it whenever the item HAS a syllable, even when the syllable is
+     * hidden (so toggling pinyin doesn't shift surrounding layout) — so a caller
+     * rendering pronounced text should pass true even for `showPinyin={false}`.
+     */
+    reservePinyin?: boolean;
+}
+
+/**
+ * The natural (untransformed) px box ONE cpcd character cell occupies, derived
+ * from the same per-size tables the component renders with.
+ *
+ * WHY THIS IS EXPORTED — a cpcd cell is WIDER-THAN-TALL nowhere and TALLER-THAN-
+ * WIDE always (a 32px `sm` column carrying a ~57px glyph+pinyin stack), so a
+ * caller that wants a SQUARE tile around one cannot get there with
+ * `aspect-ratio: 1`: that asks the browser to reconcile a width derived from
+ * content-width with a height derived from content-height, and browsers disagree
+ * about which one wins inside a `1fr` grid track. Word Search shipped exactly
+ * that and its board painted 59.5px tracks inside a box laid out at ~32px per
+ * column on Safari — the grid overflowed its panel to the right and the
+ * fit-scaler, measuring the box rather than the tracks, saw nothing wrong.
+ * Callers that need a square (or otherwise explicit) cpcd cell should size the
+ * track from this and let the cell stretch into it.
+ *
+ * Used by: src/games/word-search/WordSearchGrid.tsx (square board tiles).
+ * Docs: docs/WORD_SEARCH_GAME.md §3.
+ */
+export function cpcdNaturalSize(
+    size: CPCDSize,
+    { charCount = 1, compact = false, bigPinyin = false, reservePinyin = true }: CpcdNaturalSizeOptions = {}
+): { width: number; height: number } {
+    const charFont = fontPx(compact ? COMPACT_CHAR_FONT[size] : CHAR_FONT_SIZE[size]);
+    const band = reservePinyin
+        ? bigPinyin
+            ? Math.round(PINYIN_RESERVED_HEIGHT[size] * BIG_PINYIN_SCALE)
+            : PINYIN_RESERVED_HEIGHT[size]
+        : 0;
+    return {
+        width: Math.max(1, charCount) * COLUMN_WIDTH[size],
+        // Same stack the char cell renders: padding-top, the glyph's line box,
+        // then the reserved pinyin band as padding-bottom.
+        height: fontPx(VERTICAL_PADDING[size]) + Math.round(charFont * CHAR_LINE_HEIGHT) + band,
+    };
+}
+
 // A separator apostrophe is drawn between two adjacent SAME-TONE syllables only
 // when the collision solver actually had to PUSH that pair apart — i.e. their
 // pinyin texts were touching and got relaxed to the bare PINYIN_MIN_GAP_PX
@@ -393,7 +471,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                                 // Per-card Contrast override colors the glyph only (not the
                                 // pinyin); falls back to the theme default. docs/CARD_ICON_LAYOUT.md.
                                 color: characterColor ?? "text.primary",
-                                lineHeight: 1.21,
+                                lineHeight: CHAR_LINE_HEIGHT,
                             }}
                         >
                             <span className="char-pinyin-display__character">{item.character}</span>
@@ -446,7 +524,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                                 fontFamily: FONTS.sans,
                                 fontStretch: "condensed",
                                 color: color as string,
-                                lineHeight: 1.21,
+                                lineHeight: CHAR_LINE_HEIGHT,
                                 visibility: showPinyin ? undefined : "hidden",
                                 whiteSpace: "nowrap",
                                 pointerEvents: "auto",

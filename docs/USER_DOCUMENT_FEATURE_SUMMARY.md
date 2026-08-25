@@ -151,6 +151,15 @@ texts (
 > set, and the Reader shows Approve/Flag actions for it. See
 > [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md).
 
+## Limits
+
+Per-document field caps live in `TextService.validateTextData`: title 200, description
+500, content 50 000 characters. Per **account**, `createText` caps user-authored
+documents at `MAX_DOCUMENTS_PER_USER` (500) — counting only `isUserCreated` rows, so
+the validation documents the app composes on a validator's behalf never eat into the
+allowance. The count existed unbounded until 2026-08-24; see
+[API_ABUSE_HARDENING.md](./API_ABUSE_HARDENING.md) § 1c.
+
 ## Next Steps
 
 ### To Deploy:

@@ -1,11 +1,18 @@
 # Shelf Redesign — app-wide visual system
 
-> **STATUS: IN PROGRESS.** Part A is complete. Part B has shipped entries **1, 2, 3
-> (menu only), 4, 5, 12–16, 18 and 19–25**; the rest is still plan. Every artboard in the
+> **STATUS: IN PROGRESS.** Part A is complete except **A7's `.cpcd`**, which is now the
+> only shared widget left (`.banner` shipped inside entry 9; `.ladder` is closed as
+> superseded — see A7).
+> Part B has shipped entries **1, 2, 3 (menu only), 4, 5, 7, 8, 9, 12–16, 18 and 19–25**;
+> **6** and **11/11b** are still plan, and **10** is rejected at the card (see its entry). Every artboard in the
 > spec file now HAS an entry (see the table below) — an entry with no `Status: DONE` line
 > is unbuilt, not undrawn.
-> Nine of the eleven open questions were **answered 2026-08-20** — see the
-> **Decisions** section near the bottom, which is binding. Q6 and Q8 remain open.
+> The design questions were **answered 2026-08-20** — see the **Decisions** section
+> near the bottom, which is binding. What is still unsettled is listed under
+> **Still open**, just above the Decisions section.
+> (This line used to say "Q6 and Q8 remain open"; the numbered question list it
+> referred to is not in this file and is not in its git history, so the reference
+> was dangling. **Still open** is the live list.)
 > Part A is shared groundwork; Part B is one entry per artboard, each independently
 > pickup-able once Part A lands. Update each entry's **Status** line as work lands.
 > Delete this file once every entry reads DONE and the behaviour has been folded
@@ -178,9 +185,11 @@ both clean.
   longer works now that `CATEGORY_COLORS` is itself pastel — that is a pastel ring on
   a pastel fill. Bubbles are `bg: COLORS.red / border: COLORS.redA`, because the
   player reads the payout tier off a moving bubble and needs the separation.
-- **Arena's `DIVISION_COLORS` is only partially repaired.** Three rungs became pastels
-  and inverted the ladder's pale→dark climb; they are re-pointed at the saturated
-  members so it still ends dark. The full 12-step walk wants re-deriving in entry 9.
+- **Arena's division ladder has no colours at all now.** `DIVISION_COLORS` (the partially
+  repaired walk over UI tokens) was deleted in entry 9, and its replacement — the design's
+  twelve material plates — was withdrawn on the user's ruling rather than minting ~30
+  hexes outside the ramp. Every rung is the same neutral grey pending a decision. See
+  entry 9 and DEFERRED_WORK.md; this is the **largest open visual gap** in the redesign.
 - **Sort Cards' drop buckets render at `opacity: 0.23` when inactive.** A pastel at
   23% may now be too faint even with the ring. Flagged in the file; needs a device.
 - **Unverified, and wanting eyes on a real screen rather than a typecheck:** the
@@ -246,10 +255,24 @@ re-export `CATEGORY_COLORS` from `src/utils/categoryColors.ts`.
 `src/theme/index.ts`; `src/utils/categoryColors.ts` → `CATEGORY_COLORS`;
 `index.html`; `src/index.css`. **Size: M.**
 
+### A1 addendum · Elevation (added 2026-08-24)
+
+A1 moved colour and type onto the design's tokens but left SHADOWS alone, so every card
+in the app kept a pure-black, diagonally-cast, tight-and-dark drop while its colour and
+geometry matched the artboards. The design's shadow system now lives in
+`src/theme/shadows.ts` as `SHADOW`, exported from the `theme` barrel alongside `COLORS`,
+`FONTS`, `SIZE`. The three rules it encodes and the roles it names are in **D13**; read
+that before authoring a new `boxShadow`.
+
+**Code:** `src/theme/shadows.ts` → `SHADOW`; `src/theme/index.ts`;
+`src/contexts/ThemeContext.tsx` → `flashcard.cardShadow` / `.cardShadowSubtle` /
+`.sheetShadow`.
+
 ## A2 · App chrome — footer, headers, shell
 
-**Status: not started.** Depends on A1. **Touches every page in the app**, including
-the ~dozen that have no artboard, so it lands before any single page is converted.
+**Status: DONE (2026-08-20)** — all three sub-entries (A2a footer, A2b headers,
+A2c shell) landed. Depended on A1. **Touches every page in the app**, including
+the ~dozen that have no artboard, so it landed before any single page was converted.
 
 This is the highest-leverage entry in the plan and the one with the largest blast
 radius: `MobileTabScreen` has **20** importers, `NodePage` **25**, `LeafPage` **21**,
@@ -426,16 +449,39 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   `HeaderStreak` would have been a second component drawing the same badge.
 - **The badge itself was converted to `.hd .fire` on 2026-08-21** — Material Symbols
   Rounded `local_fire_department` at **15px**, mono count at **11px**, 4px gap, both in
-  `fireActive`. What came off it: the MUI `Badge` count bubble with its border, the
+  `fireActive`. (The glyph went to **22.5px**, 50% over the design, on 2026-08-24 when it
+  took on the fill level — see the next entry; the count stayed at 11px.) What came off it: the MUI `Badge` count bubble with its border, the
   animated `drop-shadow` glow, the `IconButton` ground, and the `@mui/icons-material`
   import (D5). The old badge was the loudest thing in every header while reporting
   something ambient — that time is accruing, which is true nearly always. It is now quiet
   when unread and legible when read, and the one moment worth noticing (a point landing)
   is still a scale pulse, which now has no glow competing with it.
   Two affordances the design has no opinion on were KEPT because they are functional:
-  the live-seconds figure (now a 9px faint suffix on the same line instead of a second
-  line under the badge) and the paused state (now a **strikethrough on the count** —
-  the old treatment overlaid a large red no-entry glyph, which at 15px would be a smudge).
+  progress toward the next point and the paused state (now a **strikethrough on the count**
+  — the old treatment overlaid a large red no-entry glyph, which at 15px would be a smudge).
+- **The live-seconds figure became the flame's fill on 2026-08-24.** It had been a 9px
+  faint `42s` suffix beside the count, which put two numbers in one readout where only
+  one of them (the count) is worth reading. The glyph now renders twice — a 24%-opacity
+  ghost under a solid `fireActive` copy clipped to a bottom-anchored window whose height
+  is `progressToNextPoint`, mapped onto the glyph's ink band (8%–94% of the em box,
+  because a Material Symbols glyph does not touch its box edges and a raw 0–100% clip
+  would look stalled at both ends). The window carries a **1s linear** transition, but it
+  plays for one shape of change only: a rise of about **1/60 of the band**, which is what
+  one second of study is worth (`SMOOTH_STEP_LIMIT_PCT`). Everything else snaps — the wrap
+  at a point landing (interpolating it would drain the flame and read as losing progress;
+  the scale pulse marks the moment instead) and any larger rise, which is a load or a
+  resync and would otherwise sweep a whole minute past the eye in a second. **The level is
+  never reset by going idle**: `ACTIVITY_TIMEOUT_MS` is 15s, so `isActive` flips off
+  constantly, and an early version that zeroed the fill while idle replayed a full 0→level
+  climb on every resume — the visible bug that produced this rule. **Idle changes the ink
+  and nothing else**: the 24% ghost and the solid level are drawn in every state, so a
+  greyed flame still shows how far into the minute the learner was when they stopped. The
+  exact
+  seconds survive in the badge's `title`. **The glyph was enlarged 50% (15px → 22.5px,
+  `FLAME_SIZE_PX`) in the same change**: at 15px the ink band is ~13px tall, so one second
+  is a fifth of a pixel and the creep is invisible. The size is what makes the animation
+  readable. The count stays at 11px, so the flame rather than the number is now the thing
+  the eye lands on — which matches what it reports.
 - **The flame moved into `PageHeader` itself on 2026-08-24, and is now on EVERY header.**
   It used to be opt-in — each page passed `<MinutePointsFireBadge />` into `rightContent`
   — so it appeared on the earning surfaces only, and was simply absent on the menus
@@ -862,6 +908,11 @@ should be used **only** when that affordance exists; without an `action` it is a
 ends in a tappable icon, the other in an inert mono fact. Kept as separate components on
 purpose; see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) § "`BentoStrip` vs `ShelfHeader`".
 
+**Added 2026-08-24 (entry 8):** `SectionHeader` grew an optional `meta` slot — a mono fact
+at the right end ("last 7 days", "25 players"), which is what `.shelfhd` carries on
+artboard 8. Same slot and same meaning as `BentoStrip`'s `meta`: a statement about the set
+that follows, never a control. A bare string is wrapped in a `Label`; a node is left alone.
+
 **Added 2026-08-24 (entry 18):** `SectionRule` grew an optional `right` slot — an
 arbitrary node at the far end of the hairline, which is artboard 18's `.sec2` with a
 `.trkseg` in it. Deliberately different from `SectionHeader`'s `action`: that one is a
@@ -924,6 +975,23 @@ makes a long figure read as one shape. Its `action` slot takes a plain MUI
 The design's `.card .k` tracks at `.13em` where `.lab` tracks at `.14em`; `StatCard`
 normalizes onto `Label`. Two overline recipes guarantee drift and nobody can see 0.01em.
 
+**`src/components/primitives/SectionCard.tsx`** → `SectionCard` (`.card`, the SHELL).
+Added 2026-08-24 (entry 8).
+
+`StatCard` is this plus a fixed three-slot content layout, and that layout is right for
+one big figure and wrong for everything else — the arena's countdown is a time and a rank
+on one baseline, the friends page's ID card is a mono string and a copy chip. Until this
+existed, each such screen kept a private `sectionCardSx`: **three copies in three
+features, and all three had drifted from the design** — a `borderRadius: 3` (24px) where
+it says 18px, `p: 1.5` (12px) where it says 14/16. So the shell is its own component,
+`StatCard` renders into it, and a screen wanting a `.card` around its own content reaches
+for the shell directly.
+
+Its one prop beyond `children` is `background`, for the single case where a card's FILL is
+the message (the arena's results card going green on a promotion) — not for decoration.
+The `14px 18px 0` margin is the component's own, matching `.card`; pass `sx={{ margin: 0 }}`
+where a page column already insets it.
+
 ### The theme overrides, and their one scoping rule
 
 **SHAPE is overridden for every colour; GROUND AND INK only on the `*Primary` slots.**
@@ -966,9 +1034,11 @@ re-derived yet.
 (`onPersonPress` leaves the actions outside the tappable half, `onRowPress` swallows the
 whole row). Folding that in would push a friends-only concern into every list in the app.
 
-`DictionaryEntryRow` is deliberately untouched: the design gives dictionary hits their
-**own** class (`.dr` — headword, pinyin row, gloss, no avatar), so it is an A7 widget, not
-a `.rw`.
+`DictionaryEntryRow` was deliberately left out of this pass: the design gives dictionary
+hits their **own** class (`.dr` — headword, pinyin row, gloss, no avatar), so it is not a
+`.rw`. It was converted on 2026-08-24 as part of **entry 7**, where it belongs — `.dr` is
+used on exactly one screen, so it stayed a page component rather than becoming a shared
+A7 widget.
 
 **Code:** `src/components/primitives/*`; `src/contexts/ThemeContext.tsx`;
 `src/features/friends/FriendPersonRow.tsx`. Verified unchanged: `src/components/TipBox.tsx`,
@@ -1161,8 +1231,11 @@ entry 2.
 
 ## A7 · Data-display widgets
 
-**Status: PARTIALLY DONE — `.bd` shipped 2026-08-21, `.msb` shipped 2026-08-24,
-`.cpcd` not started.** Depends on A1. Each widget is used by 2+ pages, so each is shared.
+**Status: PARTIALLY DONE — `.bd` shipped 2026-08-21, `.msb` shipped 2026-08-24, `.banner`
+shipped 2026-08-24 (inside entry 9), `.ladder` closed as superseded, `.cpcd` not started
+and now the only item left.** Depends on A1. Each widget here should be used by 2+
+FEATURES; `.banner` and `.ladder` were listed on the weaker test of "drawn more than once
+in the artboards", which is what sent them back to Arena.
 
 ### ✅ `.bd` — the board (DONE)
 
@@ -1275,20 +1348,30 @@ Three things the build settled:
 ### Not started
 - **`.cpcd`** — character-over-pinyin, with a `.sm` size. The app already owns this
   as `CPCDRow` / `CPCDBlock`, reached **only** through `ForeignText`. Restyle
-  inside those files; do not introduce a new component.
-- **`.ladder`** — the division ladder bars with a `.now` outline (Arena).
-- **`.banner`** — the notched division banner (Arena).
+  inside those files; do not introduce a new component. **This is now the whole of A7's
+  remaining work.**
+
+### Closed 2026-08-24 with entry 9
+- ~~**`.banner`**~~ — the notched division banner. **Built as
+  `src/features/arena/DivisionBanner.tsx`**, inside entry 9 rather than as shared work,
+  because only Arena has divisions.
+- ~~**`.ladder`**~~ — **SUPERSEDED, not deferred.** It is defined in `shelf-system.css`
+  but drawn in **none of the 27 spec artboards**; the shipped design folds the same
+  information into the banner's twelve ticks. A separate ladder would be a second place
+  the app states which rung you hold, and two of those can disagree. Do not build it.
 - ~~**`.hero`**~~ — the flashcard face itself, 295/426 aspect. **Done inside entries 18
   and 19–25**, where it belongs: `CARD_BASE_WIDTH`/`CARD_BASE_HEIGHT` + `CardFaceSide`
   already were the hero, and what the artboards actually changed about it was its
   FURNITURE (`.wtl` above it, `.crail` on it, `.peek` below it), not the face.
 
-`.ladder` and `.banner` are Arena-only, so both are arguably better done inside entry 9
-than as standalone shared work — they are in A7 because they are drawn more than once in
-the artboards, not because two features share them.
+The `.ladder` / `.banner` question is settled: both were Arena-only, listed in A7 because
+they are drawn more than once in the artboards rather than because two features share them.
+Entry 9 built the banner in `src/features/arena/` and closed the ladder as superseded — the
+general lesson being that **"drawn twice" is not the same as "shared"**, and A7 should hold
+only widgets two different FEATURES consume.
 
 **Work remaining**
-1. Restyle `CPCDRow` / `CPCDBlock` in place.
+1. Restyle `CPCDRow` / `CPCDBlock` in place. (The only item left in A7.)
 
 **Code:** `src/components/leaderboard/Board.tsx` (done);
 `src/components/mastery/MasteryWindow.tsx` (done); `src/components/CPCDRow.tsx`;
@@ -1596,8 +1679,8 @@ change on a page whose shell doesn't scroll. Check the touch rules before wiring
 
 ## 7 · Dictionary — `/dictionary` — **Size: S**
 
-**Status: PARTIAL — the keypad is DONE (2026-08-22), the rows are not started.**
-Smaller than the artboard suggests.
+**Status: DONE.** The keypad landed 2026-08-22, the rows on 2026-08-24. Typecheck, lint,
+`vite build` and the 576-test suite all clean. Smaller than the artboard suggests.
 
 **Today.** `DictionaryPage` is a `NodePage` with `PinyinKeypad`, a search
 `TextField`, result count + AI chip, `DictionaryEntryRow` results, and MUI
@@ -1616,92 +1699,253 @@ members, except the i-row, which is the artboard's own inline `oklch(95% 0.055 1
 and six vowels need six distinguishable hues. `es` keeps the same keycap but unfilled:
 it has no tone system, so a hue would imply a distinction that does not exist.
 
-**Design.** Rows go typographic — no icon, no invented first-character tile. The
-headword is the visual anchor, tone-coloured pinyin above the gloss, chevron at the
-end. Keypad grouped by vowel, four tones each, each group tinted.
+**The rows landed as `.dr`.** They were an MUI `Card` each, laid out in a 1–3 column
+`grid` with a 16px gap: a stacked-word/pinyin/two-line-gloss block inside an elevated,
+hover-lifting box. Three separate signals that a search hit is an object you might pick
+up, on a list whose only job is to be scanned. They are now the artboard's flat
+typographic row — headword, tone-coloured pinyin beneath it, one ellipsized gloss line,
+chevron — separated by a hairline rather than by whitespace, and full-bleed to the page
+edge. The grids are gone in all three places (exact-segment, "starts with", and regular
+results); a `SectionRule` announces the groups where a centred `Divider` used to.
 
-**Watch out.**
-> **The page prints its own title twice.** `NodePage`'s back-arrow header says
-> "Dictionary" and an `h1` immediately below says it again. The artboard has only the
-> header. Not touched here — it is a `NodePage` question, not a keypad one — but it is
-> the first thing wrong on the screen.
+**The headword goes through `ForeignText`, and the row has two shapes because of it.**
+For Chinese it is the artboard's layout exactly: the headword is a fixed narrow anchor,
+so it takes a shrink-proof left column and the gloss takes the rest of the line. For
+Spanish the headword moves ONTO the flexible column, above the gloss — a Latin headword
+is variable-width (`extraordinariamente` is 19 glyphs where 时间 is two) and pinning it to
+a shrink-proof column squeezes the gloss off the row. It also has no pronunciation line to
+sit under, which is the thing that made the two-column split worth having. Tone colours
+come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
 
-Two constraints: tone colours must come from the app's existing tone palette, not
-the hexes inlined in the artboard; and the headword must render through
-`ForeignText`, never `CPCDRow` directly (`CPCDRow`/cpcd are private, `'es'` is
-plain text).
+**Two deviations from the artboard, both deliberate:**
+- **The headword is `sm` cpcd (26px glyph / 13px pinyin), not the artboard's 21/12.5.**
+  `CPCDSize` is a fixed five-step scale shared by every foreign-text surface in the app;
+  adding a sixth step for one row would be a worse trade than 5px. `sm`'s pinyin (13px)
+  is within half a pixel of the artboard's anyway.
+- **The gloss carries every sense, joined with `; `, not just the first.** The artboard
+  shows "time; period" for 时间. The line is ellipsized and the row height is fixed either
+  way, so the extra senses are free information.
 
-**Code:** `src/features/dictionary/DictionaryPage.tsx`;
+**The duplicate page title is gone.** `NodePage`'s back-arrow header said "Dictionary"
+and an `h1` a few millimetres below said it again; the artboard has only the header. This
+entry previously deferred it as "a `NodePage` question, not a keypad one" — it is neither,
+it was just a stray heading, and it was removed with the rows.
+
+**Still on the old look, deliberately out of scope:** the pager. The artboard draws it as
+a row of `.chip` pills (`1 2 3 ›`); it is still an MUI `Pagination`. A5 themed `Chip` and
+`Button` but not `Pagination`, so converting it is a theme-override question rather than a
+row question.
+
+**`CompareWorkspace` inherits the new row.** Its slot-B mini search renders the same
+component, so it changed too: its 8px inter-row gap was removed (a `.dr` separates with
+its own hairline, and a gap leaves those hairlines floating) and it passes `inset={4}`,
+the row's one styling prop, so text inside an already-inset panel is not twice-indented.
+
+**Code:** `src/features/dictionary/DictionaryPage.tsx` → `FULL_BLEED_LIST_SX`;
 `src/components/DictionaryEntryRow.tsx`; `src/components/PinyinKeypad.tsx` →
-`ZH_ROWS`, `ES_ROWS`, `KeyGroup`; `src/components/ForeignText.tsx`;
-`src/hooks/useDictionarySearch.ts`.
+`ZH_ROWS`, `ES_ROWS`, `KeyGroup`; `src/components/ForeignText.tsx` →
+`isLatinScriptLang`; `src/components/primitives/Label.tsx` → `SectionRule`;
+`src/components/CompareWorkspace.tsx`; `src/hooks/useDictionarySearch.ts`.
 **Docs:** `docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md`,
-`docs/DICTIONARY_AI_FALLBACK_SEARCH.md`.
+`docs/DICTIONARY_AI_FALLBACK_SEARCH.md`, `docs/WORD_COMPARE_FEATURE.md`.
 
 ## 8 · Friends — `/friends` — **Size: M**
 
-**Status: not started.**
+**Status: DONE (2026-08-24).** Typecheck, lint, build and the 576-test suite clean.
 
-**Today.** `FriendsPage` is a `NodePage` with nav buttons to the three mutating
-pages, a challenge-badge button, the copyable friend ID, and a velocity leaderboard
-of `FriendPersonRow`s with `RankBadge` podium tints.
+**What it was.** `FriendsPage` was a `NodePage` with three MUI `Button`s to the mutating
+pages, a fourth for challenges, a hand-rolled `sectionCardSx` box for the friend ID, and a
+velocity leaderboard of `FriendPersonRow`s.
 
-**Design.** A 3-up bento of the mutating actions (Send / Accept / Remove) carrying
-their badge counts, a full-width Challenges tile, the friend-ID `.card`, then the
-leaderboard as `.rw` rows with podium tints and a per-person language wallet.
+**What landed.** The artboard's shape: a 3-up `Bento` of `compact` tiles (Send / Accept /
+Remove) carrying their counts as tile `pin`s, a full-width Challenges tile, the friend-ID
+`SectionCard`, a `SectionHeader` and the leaderboard rows.
 
-**Note.** The podium tints in the artboard match the code's existing choice
-(`RankBadge`: 1 = yellow, 2 = blue, 3 = red) — no change needed there.
+### The conversion needed four additions to the shared primitives
 
-**Code:** `src/features/friends/FriendsPage.tsx` → `RankBadge`;
+None of them is friends-specific, and each closes a gap the artboards had already drawn
+elsewhere:
+
+| Addition | Why |
+|---|---|
+| `Bento` `columns={2\|3}` | Artboard 8 is the only 3-column bento in the set. Two stays the default and the norm. |
+| `BentoTile` `variant="compact"` | The 3-up tile: 74px tall, 14px title, and a **66px** ghost glyph rather than 92px — at a third of a phone's width the `low` glyph fills the tile corner to corner and stops reading as a wash. |
+| `BentoTile` `fullWidth` | Width and height were the same enum. Challenges is a SHORT tile that owns its row, which `hero` (150px) could not express. `hero` now means `1 / -1` instead of `span 2`, so a hero in a 3-column grid is full width rather than two thirds. |
+| `BentoTile` `pinTone="alert"` | The count pins here are things WAITING FOR THE USER, not facts about a destination. Danger pink on white vs. the default translucent white. |
+| `SectionHeader` `meta` | The `.shelfhd` right-hand slot ("last 7 days"). Same slot, same meaning, as `BentoStrip`'s `meta` — a fact about the set, never a control. |
+
+### Two fragments deleted, and one primitive extracted
+
+`navButtonSx` and `cornerBadgeSx` are **gone**. The badge in particular was a friends-only
+recipe for a thing the app does everywhere; it is the tile `pin` now.
+
+`sectionCardSx` is gone from **both** `friendStyles.ts` and `arenaStyles.ts`, along with a
+third inline copy — three hand-written spellings of the design's `.card`, and **all three
+had drifted from it**: a `borderRadius: 3` (24px) where the design says 18px, and `p: 1.5`
+(12px) where it says 14/16. They are now `SectionCard` (§ A5), which `StatCard` also
+renders into — `StatCard` is that shell plus its three text slots, and a screen that wants
+a `.card` around content that is not one big figure reaches for the shell directly.
+
+### Two deliberate deviations
+
+**The Copy control is a `Chip`, not a `Button`.** The artboard writes `.chip`, and in this
+codebase the theme maps outlined **Chip** to that pill. An outlined `Button` maps to
+`.btn3` — a 13px-padded, radius-14 BLOCK action, three times the height of the ID line it
+sits beside.
+
+**The leaderboard's "this is you" row changed treatment**, from a 2px blue ring to the org
+pastel fill the artboard draws — which is also what `BoardRow.highlighted` already used on
+the arena board. The app was answering "which row is me" two different ways on its two
+leaderboards. A fill also survives what a ring cannot: on a board whose rows are already
+tinted by something else (the arena's zones) an outline competes with the tint while a
+fill replaces it. The border stays at 1px transparent so the row keeps its exact height.
+
+**Bug fixed on the way past:** `RankBadge` was a 28px pastel chip with **no inset ring**,
+so at ~1.15:1 it was barely a shape on white (D2). It matters more now than it did — the
+viewer's own row is filled with the same org pastel that rank 1's chip wears, so a rank-1
+viewer would have watched their chip dissolve into their row.
+
+**Code:** `src/features/friends/FriendsPage.tsx` → `RankBadge`, `VelocityStat`, `slideTo`;
 `src/features/friends/FriendPersonRow.tsx`; `src/features/friends/friendStyles.ts`;
-`src/features/friends/friendLabels.ts` → `netMinutesLabel`;
-`src/api/friends.ts` → `fetchFriendsLeaderboard`, `fetchIncomingRequests`;
-`src/api/studyChallenges.ts` → `fetchChallengeBadge`.
-**Docs:** `docs/FRIENDS_FEATURE.md`, `docs/VELOCITY.md`, `docs/STUDY_CHALLENGE.md`.
+`src/features/friends/SentRequestsPage.tsx`;
+`src/components/bento/Bento.tsx` → `TILE_VARIANTS`, `BentoTile`;
+`src/components/primitives/SectionCard.tsx`; `src/components/primitives/StatCard.tsx`;
+`src/components/primitives/Label.tsx` → `SectionHeader`.
+**Docs:** `docs/FRIENDS_FEATURE.md`, `docs/BENTO_SYSTEM.md`, `docs/VELOCITY.md`,
+`docs/STUDY_CHALLENGE.md`.
 
 ## 9 · Arena — `/arena` — **Size: M** *(L if all four states are drawn)*
 
-**Status: not started.**
+**Status: DONE (2026-08-24), all four states.** Typecheck, lint, build and the 576-test
+suite clean. The board itself (`.bd`) had already landed with A7; what this entry added is
+the banner, the state chrome around it, and the twelve-rung material ladder.
 
-**Today.** `ArenaPage` is **a switch over four states** — `live`, `results`,
-`opt-in`, `closed` — plus the location opt-in flow (`shareArenaLocation`). The page
-**never re-sorts**: the server assigns every rank including the zone on each row.
+Arena is **built on dev, not on prod** — check `docs/ARENA_FEATURE.md` before assuming a
+field exists on prod.
 
-**Design.** A stylized division banner (name + "10 of 12" + a twelve-tick climb), a
-countdown card naming the close time in the user's timezone, then the board with
-green promotion / red relegation zones closed by shelf boards.
+### The division banner replaced a tinted card — and `.ladder` with it
 
-**Watch out — the biggest gap in the redesign.**
-> The artboard draws **only the `live` state**. There is no design for `results`,
-> `opt-in`, or `closed`, and none for the location-sharing prompt. Either extend
-> the shelf language to the other three yourself, or get them designed. Do not ship
-> a redesigned `live` beside three untouched MUI states.
+`DivisionHeader` was a `sectionCardSx` box tinted from a 12-step walk over the app's UI
+tokens. It is `DivisionBanner` now: the artboard's hanging pennant — the name at 27px, the
+ladder position beside it, the next rung under it, twelve ticks along the bottom, and a
+**notch** cut into the foot by `clip-path`. The notch is the load-bearing part; it is what
+makes the shape read as a pennant rather than as a card someone tinted, and it is the one
+element on the page allowed to break the white-card material because it states STANDING
+rather than containing information.
 
-Also: Arena is **built on dev, not on prod** — check `docs/ARENA_FEATURE.md` before
-assuming a field exists on prod.
+> **§ A7's `.ladder` is closed as SUPERSEDED, not deferred.** It is defined in
+> `shelf-system.css` but appears in **none of the 27 spec artboards** — the shipped design
+> folds the same information into this banner's twelve ticks. That is strictly better: a
+> separate ladder would be a second place the app says which rung you hold, and two of
+> those can disagree. Nothing should build it.
 
-**Code:** `src/features/arena/ArenaPage.tsx`;
-`src/features/arena/ArenaEntryRow.tsx`; `src/features/arena/arenaStyles.ts` →
-`divisionColor`, `divisionName`, `divisionTextColor`, `formatRemaining`;
+### ⚠️ The plate is an UNSTYLED PLACEHOLDER, and D2 is NOT excepted
+
+`DIVISION_COLORS` carried a standing note asking for a re-derivation "when Arena is
+converted (entry 9)". **That re-derivation did not happen, and the old ladder is gone
+anyway** — so between shipping this entry and settling the question, every rung wears the
+same neutral grey.
+
+The history matters, because it is the thing most likely to be re-litigated:
+
+1. The design project's `Arena Division Banners.html` draws all twelve rungs as
+   **materials** — quarried stone, struck medals, machined alloys, cut gems. It is a
+   sibling exploration, not a spec artboard, and it is the only place the other eleven
+   rungs are drawn at all (artboard 9 draws Jade and nothing else).
+2. Those plates were ported, first in full and then flattened to their base gradients.
+3. **Both were withdrawn on the user's ruling (2026-08-24).** Twelve hand-authored
+   gradients meant ~30 hex values living outside the ramp, and that palette decision is
+   not being taken yet.
+
+So **D2 stands unbroken**: there is no arena palette, and there is no exception to point
+at the next time something wants one.
+
+**What the placeholder costs, stated plainly so nobody mistakes it for a design:** a ladder
+whose rungs all look alike is not a finished ladder. The entire point of twelve named rungs
+is that climbing one should look like something. What still differentiates rungs is the
+name, the "N of 12" line, and the tick row — which is doing more work than it was drawn to
+do. Tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+
+**Everything needed to finish it is in one component.** `DivisionBanner` is the only thing
+on the page that decides what a rung looks like: give it a per-rung fill and, if any fill
+is dark, a per-rung ink. `arenaStyles.ts` keeps only the NAMES.
+
+One decision from the withdrawn version was kept deliberately, because it should outlive
+the placeholder: everything on the banner that is not full-strength ink is an **opacity**
+of that ink, never a second colour token. Whatever the twelve grounds turn out to be, a
+fixed "muted" colour will fail on some of them; a transparency of a working ink cannot.
+
+### The three undrawn states, and the rule used to extrapolate them
+
+This entry was flagged as the redesign's biggest gap — the artboard draws only `live`.
+All four states ship redesigned. The rule applied was **use the page's own vocabulary
+rather than inventing a third one**:
+
+- **The banner is drawn in EVERY state.** The rung you hold does not stop existing between
+  weeks, and without it the opt-in and closed states are a bare card on an empty page with
+  nothing saying which arena you are about to join.
+- **`results`** is a `SectionCard` filled with the ramp pastel the **board already uses for
+  the same idea** — `RAMP.grn` for promotion, `RAMP.red` for demotion — carrying the
+  matching arrow from `BoardZone`. A competitor who watched the green line all week meets
+  the same green when they cross it. `hold` is untinted, for the same reason `BoardZone`'s
+  hold band is.
+- **`opt-in` / `closed`** are a `SectionCard` with the theme's own `.btn2` and `.btn3`.
+
+**Join stopped being green.** It was a green fill, which spent the page's PROMOTION colour
+on a button and made the one semantic colour on the screen ambiguous. It is the design's
+ink pill now; Withdraw is the outlined block.
+
+**Two small gains from the artboard:** the countdown card puts the time and the viewer's
+rank on **one baseline** (the two facts checked in the same glance), and the board's
+section rule carries the field size on the left and the unit on the right
+(`Board · 25` … `minutes`).
+
+**Code:** `src/features/arena/ArenaPage.tsx` → `CountdownCard`, `ResultsCard`,
+`OptInCard`, `renderZoneDivider`; `src/features/arena/DivisionBanner.tsx`;
+`src/features/arena/ArenaEntryRow.tsx`;
+`src/features/arena/arenaStyles.ts` → `divisionName`, `formatRemaining`,
+`dialogQuietButtonSx`; `src/features/arena/ArenaMessageDialog.tsx`;
+`src/components/primitives/SectionCard.tsx`;
 `src/api/arena.ts` → `fetchArenaBoard`, `optInToArena`, `withdrawFromArena`,
 `shareArenaLocation`.
 **Docs:** `docs/ARENA_FEATURE.md`.
 
 ## 10 · Community — `/community` — **Size: S**
 
-**Status: not started.** The closest match between design and code.
+**Status: not started — and the tile conversion is REJECTED, not pending.** It was built on
+2026-08-24 and reverted the same day on the user's ruling: **the mini preview cards stay as the
+app renders them.** Do not re-attempt the tile. What is left of this entry, if anything, is the
+page chrome around the feeds — not the card.
+
+> **What was tried and undone.** The build wrapped each thumbnail in the artboard's 138px tile
+> (white, radius 16, hairline outline) and scaled the `MiniVocabCard` up 1.5× to fill it, moved
+> the vote to an inline mono caret, and made the row headers `.shelfhd`. The revert took all of
+> it. The lesson to carry forward is the general one: **the app's mini card is already the
+> design's mini card.** Frame 17 is explicit that "the preview is literally the card" — so a
+> community thumbnail does not need new chrome to belong to the system, it needs the same fill
+> and geometry the rest of the app's cards use. That fill landed instead; see the **Decisions**
+> section, D12.
 
 **Today.** `CommunityPage` already is a `NodePage` with `CommunitySearchBar` over
 two horizontally-scrolling, infinitely-paginated `CommunityFeedRow`s — "For words
 you're learning" and "Top this week" — with a search-active mode that replaces both.
 
-**Design.** Same structure. Only the card chrome changes.
+**Design.** Same structure. Only the card chrome changes — and that chrome is the part that
+was rejected.
 
 **Watch out.** The design notes these tiles are "the one place real artwork
 belongs" — each slot is an actual user-made card icon layout. The pastel blocks in
 the artboard are **placeholders for real designs**. Do not implement them as
 pastels.
+
+**Two loose ends the reverted build surfaced, both still true and neither fixed:**
+- `CommunitySearchBar`'s per-entry heading interpolates `word1 · pronunciation` into a plain
+  `<Typography>` — a Chinese headword on the UI sans face with its pinyin inlined as ASCII
+  beside it. It should go through `ForeignText`, the only public way to draw a foreign word.
+- Community thumbnails draw `MiniVocabCard`'s **mastery strip**, but their `VocabEntry` is
+  synthesized from somebody else's design and carries no mark history — so the strip renders an
+  empty bar, a readout of the VIEWER's standing on a surface not asking about it. It wants
+  `showMasteryStrip={false}`.
 
 **Code:** `src/features/community/CommunityPage.tsx`;
 `src/features/community/CommunityFeedRow.tsx`;
@@ -1942,7 +2186,8 @@ entry was the board and the strip around it.
 
 ## 15 · Speed Reading — `/games/speed-reading` — **Size: S**
 
-**Status: PARTIALLY DONE (2026-08-23) — the HUD landed with A6b; the board did not.**
+**Status: DONE (2026-08-24).** The HUD landed with A6b on 2026-08-23; the board is
+**deliberately not converted** — see "The board stays as it is" below. Nothing outstanding.
 
 **Design.** `.play` panel with the timer at the top, per-round result ticks in the
 HUD, the clue as large centred text, and four options that differ by a single
@@ -1969,10 +2214,13 @@ glyph. Chinese only, by design.
   been UNDER them and every tap on it would have answered the round. The centring that used
   to be on the panel moved onto the board box with them.
 
-**What did NOT land.** The board itself is still the shipped two-half tap surface inside a
-ROTATED stage, not the artboard's upright 2×2 grid of four options with an in-panel
-countdown. That is the rest of this entry, and it is a game-mechanics change (two options
-vs four) as much as a layout one.
+**The board stays as it is — closed on the user's ruling (2026-08-24).** The board is the
+shipped two-half tap surface inside a ROTATED stage, and it is staying that way. The
+artboard's upright 2×2 grid of four options with an in-panel countdown is **superseded, not
+pending**: converting it would have been a game-mechanics change (two options vs four) as
+much as a layout one, and the game plays well on two. Do not re-open this as leftover work
+— an agent reading the artboard set will find 15 drawn one way and built another, and this
+paragraph is the reason.
 
 **Code:** `src/games/speed-reading/SpeedReadingPage.tsx`;
 `src/games/speed-reading/SpeedReadingPrompt.tsx`;
@@ -2513,6 +2761,91 @@ Where a surface has real design weight and the primitives don't obviously answer
 chosen back into this entry so the next agent inherits the decision instead of
 re-deriving it.
 
+### D13 · Elevation is the design's shadow system, and it lives in one token file
+**Decided 2026-08-24, on the user's ruling.** The design has a shadow system; the app had
+a habit. `src/theme/shadows.ts` (`SHADOW`) is now the only place a shadow is authored.
+
+Every shadow in `shelf-system.css` obeys three rules, and the app's old ones obeyed none:
+
+| | The design | The app before |
+|---|---|---|
+| **Hue** | ink — `rgba(20,18,26,α)` | pure black — `rgba(0,0,0,α)` |
+| **Direction** | straight down, `0 Ypx` | diagonal, `2px 4px` (lit from upper-left) |
+| **Blur vs alpha** | wide and faint — `0 3px 10px @ .10` | tight and dark — `2px 4px 4px @ .25` |
+
+The hue matters because the ground is warm (`--paper` #FBFAF8): a pure-black shadow on a
+warm ground reads as a grey smudge rather than as absence of light — the same reasoning the
+border tokens already followed. The direction matters because a diagonal offset on every
+surface implies a light source the design does not have; the ONE exception is the spine (and
+its 26×34 swatch), which keeps a sideways cast because it is a physical object standing on a
+board rather than a plane floating over one.
+
+**The tokens are ROLES, not a numeric ladder.** `lifted` (the full card face) has a bigger
+offset than `float` (a small rail) but a LOWER alpha, because at card size a `float` alpha
+reads as dirt under the card. Pick by what the thing is: `rest` · `raised` · `chip` ·
+`float` · `lifted` · `menu` · `popover` · `board` · `spine`/`spineSwatch`, plus the three
+upward ones for bottom-anchored surfaces (`peekUp` · `sheetUp` · `panelUp`).
+
+**Where it is wired.** The light theme's `flashcard.cardShadow` / `.cardShadowSubtle` /
+`.sheetShadow` now resolve to `SHADOW.lifted` / `.raised` / `.panelUp`, so every call site
+already reading the theme moved for free. Dark / Ocean / Nature keep their own and are not
+re-derived (D4).
+
+**Converted directly:** `MiniVocabCard`, `QuickMarkCard`, `ChallengeWordCard`, the scp's
+`CardShell` + bucket tile + platform, `CollectionViewPage`, `CommunityCardView`, `Shelf`,
+`Spine`, `SensePicker`, `CardOpsRail`, `Bento`, `MinimizablePopup`, `HydraLendNotice`,
+`ProvisionalCardsNotice`, `CommunityDesignZoom`, `CardIconOrderList`,
+`PracticeWritingPopup`.
+
+**Deliberately NOT converted, and why:**
+- **`StudyHand`'s front card** — a two-shadow stack (one ABOVE it, one below) so it reads as
+  lifted off the two cards behind. No single token expresses that, and its ink is already
+  the design's.
+- **`LibraryDuo`** — the spine shape at a different inset alpha (.35 vs .5), authored that
+  way in entry 2 on purpose. `SHADOW.spine` would silently change it.
+- **The scp's LOCKED card** — the artboards never draw a pressed-in card, so there is no
+  design value for "recessed". Left hand-authored, but re-inked to the shadow hue so it is
+  not the one pure-black shadow left on the page.
+- **Game internals** (`BubbleStage`, `Bubble`, `WordSearchGrid`) and the icon editor's
+  canvas handles (`CardIconCanvas`) — these are rendering surfaces with their own physical
+  look, not app chrome.
+- **`MinutePointsBadge`** — its active state is a coloured GLOW, not a shadow, and the whole
+  component is still on pre-redesign MUI palette colours. It wants its own pass.
+- **MUI numeric elevations** (`boxShadow: 2 | 3 | 4 | 6`, ~10 sites: `FlashCard`,
+  `VocabDisplayCard`, `FlashcardsPage`, `SegmentedSentenceDisplay`, `VocabEntryCards`,
+  `WordSearchGrid`) — these resolve to MUI's own black ladder and are invisible to a grep
+  for `rgba`. Converting them is a separate sweep; **tracked in DEFERRED_WORK.md.**
+
+### D12 · The card face is the design's cream, and every card reads it from the theme
+**Decided 2026-08-24, on the user's ruling, taken from artboard 17.**
+
+The app's default card face was `COLORS.card` — `#E7E7EA`, the ramp's neutral grey, the same
+token every inert track and empty cell uses. The design's card face is **`#FBF7EC`**, a warm
+cream: the artboards paint `.hero` (the full flashcard face) AND `.mgrid .mcd` (frame 17's
+mini card previews) with that one value, which is what frame 17's caption means by "the
+preview is literally the card". The app now uses it as the default face.
+
+Three consequences worth stating, because each was a latent inconsistency this change forced
+into the open rather than a new decision:
+
+1. **It is one token, `COLORS.cardFace`, reached through the theme.** The light theme's
+   `flashcard.flashCard` points at it, and every card surface reads `fc.flashCard`. Dark /
+   Ocean / Nature keep their own faces and are not re-derived (D4).
+2. **Four surfaces were not reading the theme at all** and had to be converted, or they would
+   have stayed grey while the flashcard went cream: `MiniVocabCard`, `QuickMarkCard`,
+   `ChallengeWordCard` and the scp's `CardShell`. All four are card faces; all four hard-coded
+   `COLORS.card`. They looked correct only because the light theme's face happened to be that
+   same token — which also meant a mini card silently ignored Dark / Ocean / Nature.
+3. **The fie's `auto` and `grey` swatches are now actually different.** `cardColor.ts` has
+   always documented `auto` (follow the theme) as a distinct chip from `grey` (pin the
+   light-theme grey), and in the light theme they rendered identically. They no longer do.
+
+**`COLORS.cardBeige` (`#F5EBE0`) is NOT the card face** and its comment used to claim it was.
+It is the artboards' bare `.mcd` fill — the value `.mgrid` overrides — and the app uses it for
+eip/info panels and two hub tiles. `cardFace` is the one with a role; `cardBeige` is named for
+its colour because it has no single role. No stored `vet."cardColor"` changed, so this needs no
+migration: `null` means "follow the theme", and the theme is what moved.
+
 ### D11 · Discover is being redesigned — artboard 3 is superseded
 The user is producing a new Discover design. Entry 3 is **blocked** on it; do not
 build from the existing artboard. The **sort flow** (scp, `/discover/sort/:language`)
@@ -2547,8 +2880,23 @@ After that the entries are independent. **5** (Account) shipped 2026-08-23 out o
 order, as a targeted follow-up. **2** (Decks), **18** (Card Detail) and **19–25** (flp +
 eip) — the three highest-value entries and the last of the big ones — shipped together on
 2026-08-24, likewise out of order.
-Cheapest wins: **7** (Dictionary), **10** (Community), **15** — 14 and 16 are done. Most likely to need design work before it can start: **9** (Arena,
-three undrawn states) and **11/11b** (Settings, new route).
+**7** (Dictionary) shipped 2026-08-24, and 12–16 are closed — 15 by ruling that its board
+stays as shipped, and **10** by ruling that its CARD stays as shipped (both are rejections,
+not conversions; two of the three "cheapest wins" turned out to be things the app had already
+got right). **8** (Friends) and **9** (Arena) shipped together on 2026-08-24, which also
+emptied A7 of everything but `.cpcd`: entry 9 built `.banner` in `src/features/arena/` and
+closed `.ladder` as superseded by the banner's own ticks.
+
+Entry 9 also settled the thing that had been blocking it — the three states the artboard
+never drew. They were extrapolated rather than commissioned, under the rule **"use the
+page's own vocabulary rather than inventing a third one"**, which is the pattern to reuse
+on any future entry with an incomplete artboard: the results card is filled with the same
+`RAMP.grn` / `RAMP.red` the board's own promotion and demotion zones already use, so a
+competitor meets the colour they have been watching all week.
+
+What is left is **6** (Reader — a real interaction change, per-row buttons becoming a
+long-press on a non-scrolling shell), **11/11b** (Settings, which needs design work and is
+the only entry that adds a route), and A7's **`.cpcd`** restyle.
 
 # Docs that depend on this one
 

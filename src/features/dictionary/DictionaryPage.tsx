@@ -11,7 +11,6 @@ import {
     Alert,
     Pagination,
     Chip,
-    Divider,
     CircularProgress,
 } from '@mui/material';
 import { Search, Clear, AutoAwesome } from '@mui/icons-material';
@@ -23,11 +22,20 @@ import { useAuth } from '../../AuthContext';
 import type { DictionaryEntry, Language } from '../../types';
 import DictionaryEntryRow from '../../components/DictionaryEntryRow';
 import PinyinKeypad from '../../components/PinyinKeypad';
+import { SectionRule } from '../../components/primitives/Label';
 import { FooterSpacer } from '../../components/MobileFooter';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useDictionarySearch } from '../../hooks/useDictionarySearch';
 import { useSlideNavigate } from '../../hooks/useSlideNavigate';
 import { dictionaryBrowseState } from './dictionaryBrowseState';
+
+// `.dr` rows carry their own 22px side padding (the artboard's, matching every other
+// full-bleed list in the shelf system), so a list of them has to escape the Container's
+// gutter — otherwise the hairline between rows stops short of both edges and the rows
+// read as a card with no border. The negative margin cancels MUI's Container padding
+// at each breakpoint; the rows put the space back.
+const FULL_BLEED_LIST_SX_ARRAY = [{ mx: { xs: -2, sm: -3 } }] as const;
+const FULL_BLEED_LIST_SX = FULL_BLEED_LIST_SX_ARRAY[0];
 
 // dictionaryBrowseState (the persisted query/page/scroll singleton) now lives in
 // ./dictionaryBrowseState so the Layout route watcher can reset it on exit from
@@ -134,22 +142,10 @@ function DictionaryPage() {
                 minHeight: 'calc(100% - 8px)',
             }}
         >
-            {/* Header */}
-            <Typography
-                className="dictionary-page__title"
-                variant="h3"
-                component="h1"
-                gutterBottom
-                sx={{
-                    mb: 3,
-                    fontSize: {
-                        xs: 'clamp(2rem, 8vw, 3.5rem)',
-                        sm: 'clamp(1.5rem, 5vw, 3rem)',
-                    },
-                }}
-            >
-                Dictionary
-            </Typography>
+            {/* No page title here on purpose: NodePage's back-arrow header already
+                says "Dictionary", and the artboard has only that one. The h1 that
+                used to sit here printed the name a second time a few millimetres
+                below it (docs/SHELF_REDESIGN.md § entry 7, "Watch out"). */}
 
             {/* Search Bar and Special Characters - Mobile (below title, in normal flow) */}
             {isMobile && (
@@ -294,18 +290,15 @@ function DictionaryPage() {
                         .map((group, idx) => (
                             <Box key={`exact-${group.segment}`} className="dictionary-page__segment-exact-group">
                                 {idx > 0 && (
-                                    <Divider className="dictionary-page__segment-divider" sx={{ my: 2 }} />
+                                    <SectionRule
+                                        className="dictionary-page__segment-rule"
+                                        label={group.segment}
+                                        sx={{ padding: '19px 0 0' }}
+                                    />
                                 )}
-                                <Box
-                                    className="dictionary-page__segment-exact-grid"
-                                    sx={{
-                                        display: 'grid',
-                                        gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' },
-                                        gap: 2,
-                                    }}
-                                >
+                                <Box className="dictionary-page__segment-exact-list" sx={FULL_BLEED_LIST_SX}>
                                     {group.exactEntries.map((entry) => (
-                                        <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} />
+                                        <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} />
                                     ))}
                                 </Box>
                             </Box>
@@ -317,21 +310,14 @@ function DictionaryPage() {
                         .filter(g => g.prefixEntries.length > 0)
                         .map((group) => (
                             <Box key={`prefix-${group.segment}`} className="dictionary-page__segment-prefix-section">
-                                <Divider className="dictionary-page__starts-with-divider" sx={{ my: 1.5 }}>
-                                    <Typography variant="caption" color="text.secondary">
-                                        Starts with "{group.segment}"
-                                    </Typography>
-                                </Divider>
-                                <Box
-                                    className="dictionary-page__segment-prefix-grid"
-                                    sx={{
-                                        display: 'grid',
-                                        gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' },
-                                        gap: 2,
-                                    }}
-                                >
+                                <SectionRule
+                                    className="dictionary-page__starts-with-rule"
+                                    label={`Starts with “${group.segment}”`}
+                                    sx={{ padding: '19px 0 6px' }}
+                                />
+                                <Box className="dictionary-page__segment-prefix-list" sx={FULL_BLEED_LIST_SX}>
                                     {group.prefixEntries.map((entry) => (
-                                        <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} />
+                                        <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} />
                                     ))}
                                 </Box>
                             </Box>
@@ -343,22 +329,15 @@ function DictionaryPage() {
             {/* Regular Search Results Grid */}
             {!loading && !isSegmentMode && entries.length > 0 && (
                 <Box
-                    className="dictionary-page__results-grid"
-                    sx={{
-                        display: 'grid',
-                        gridTemplateColumns: {
-                            xs: '1fr',
-                            md: 'repeat(auto-fit, minmax(20rem, 1fr))',
-                        },
-                        gap: 2,
-                        mb: 3,
-                    }}
+                    className="dictionary-page__results-list"
+                    sx={[...FULL_BLEED_LIST_SX_ARRAY, { mb: 3 }]}
                 >
                     {entries.map((entry) => (
                         <DictionaryEntryRow
                             key={entry.id}
                             entry={entry}
                             onClick={handleEntryClick}
+                            language={userLanguage}
                         />
                     ))}
                 </Box>

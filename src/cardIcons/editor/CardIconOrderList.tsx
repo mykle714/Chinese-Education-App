@@ -5,6 +5,7 @@ import LockIcon from "@mui/icons-material/Lock";
 import LockOpenIcon from "@mui/icons-material/LockOpen";
 import type { IconLayoutItem } from "../../types";
 import { iconImageUrl } from "../cardIconLayout";
+import { SHADOW } from "../../theme/shadows";
 
 // The locked-state gold (matches the canvas corner indicator + toolbar lock button) and the
 // unlocked grey, so the order list reads the same lock affordance as the rest of the editor.
@@ -271,7 +272,7 @@ const CardIconOrderList: React.FC<{
                         pointerEvents: "none",
                         backgroundColor: "#fff",
                         borderRadius: "8px",
-                        boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
+                        boxShadow: SHADOW.float,
                         zIndex: 2000,
                     }}
                 >

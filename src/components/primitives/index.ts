@@ -11,6 +11,8 @@ export { Label, SectionRule, SectionHeader } from "./Label";
 export type { LabelProps, SectionRuleProps, SectionHeaderProps } from "./Label";
 export { Row, RowList } from "./Row";
 export type { RowProps, RowListProps } from "./Row";
+export { default as SectionCard } from "./SectionCard";
+export type { SectionCardProps } from "./SectionCard";
 export { default as StatCard } from "./StatCard";
 export type { StatCardProps } from "./StatCard";
 export { Segmented } from "./Segmented";

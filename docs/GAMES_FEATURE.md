@@ -126,6 +126,12 @@ mark.
 
 Each individual game gets its own route under `/games/<slug>`.
 
+The slug is also a **server-side whitelist**: `KNOWN_GAME_IDS` (`server/constants.ts`)
+mirrors the client `GAME_REGISTRY`, and `/api/games/:gameId/progress` 404s on anything
+else. `gameprogress` is keyed `(userId, gameId)` and the segment arrives raw, so
+without the list a caller mints unbounded save rows on their own account by varying
+the slug. Adding a game means adding its slug there — the 404 is the reminder.
+
 **Bubble Match is a leaf page (no footer).** `BubbleMatchPage` is wrapped in
 `LeafPage` (see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)): the down-arrow back
 button (→ `/games`) is the only way out, there is **no** footer on any of its

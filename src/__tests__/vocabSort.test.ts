@@ -278,15 +278,16 @@ describe("sort menu", () => {
     expect(both).toContain("masteredOldestWriting");
   });
 
-  it("names the bar in a row label only when there is more than one bar", () => {
-    // A learner with no goals should never read "Mastery (Know)" — there is nothing
-    // to tell it apart from.
+  it("names only the PER-SKILL bars in a row label; the core row stays unqualified", () => {
+    // The core bar is the default reading of "Mastery", so it is never suffixed —
+    // no learner should ever read "Mastery (Know)", with or without other goals set.
     const single = sortBundles("zh", GOALS).map((b) => b.label);
     expect(single).toContain("Mastery");
     expect(single).toContain("Date mastered");
 
     const multi = sortBundles("zh", { reading: true, writing: false }).map((b) => b.label);
-    expect(multi).toContain("Mastery (Know)");
+    expect(multi).toContain("Mastery");
+    expect(multi).not.toContain("Mastery (Know)");
     expect(multi).toContain("Mastery (Read)");
   });
 

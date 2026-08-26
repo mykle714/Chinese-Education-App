@@ -370,6 +370,18 @@ from and precedes the §7 run report (which is written once, at the very end of 
 run, and may be much later); logging here is what makes the finding visible in the
 meantime.
 
+**Also add the word to the exclusion file** —
+`server/scripts/backfill/shared/oracle-excluded-words.json` (committed, keyed by
+`zh`/`es`) — with `{word1, reason, droppedAt}`. `oracle-plan.js` reads this file and
+excludes every listed `word1` from `--new` (and general) scope queries. Without this
+step the word simply wins the commonness ranking again next round, gets dropped
+again, and burns a batch slot for nothing — this happened for five words
+(阿三/小日本/台巴子/老黑/日人民报) across dozens of rounds from 2026-08-24 onward
+before the exclusion file existed. `oracle-concerns.md` stays the append-only
+*history* of why; this file is the planner's live exclusion *set* — both are
+required, not one or the other. Do not remove an entry unless the underlying det
+row's `definitions` actually changed such that the drop reason no longer applies.
+
 ## 5. Verify
 
 Run `/mark-discoverable` §A4 (zh) / §B4 (es) verification SQL. Every newly

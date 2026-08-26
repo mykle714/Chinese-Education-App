@@ -1,0 +1,11 @@
+{
+  "_comment": "Words the oracle-backfill §3c content policy has dropped (slur / explicit-sexual-content primary sense) and that must never be re-offered by oracle-plan.js --new. Append an entry here whenever a round drops a word per .claude/commands/oracle-backfill.md §3c, in addition to the per-run log line in server/logs/oracle-concerns.md (which stays the append-only history; this file is the planner's live exclusion set). Do not remove an entry unless the underlying det row's definitions changed such that the drop reason no longer applies.",
+  "zh": [
+    { "word1": "阿三", "reason": "slur — derogatory ethnic epithet for Indian people, primary/only sense", "droppedAt": "2026-08-24T09:18:13Z" },
+    { "word1": "小日本", "reason": "slur — derogatory epithet for Japanese people (\"Jap\"), primary/only sense", "droppedAt": "2026-08-24T09:18:13Z" },
+    { "word1": "台巴子", "reason": "slur — derogatory mainland-Chinese epithet for Taiwanese people, primary/only sense", "droppedAt": "2026-08-24T09:18:13Z" },
+    { "word1": "老黑", "reason": "slur — derogatory epithet for Black people, primary/only sense", "droppedAt": "2026-08-24T09:18:13Z" },
+    { "word1": "日人民报", "reason": "explicit-sexual/vulgar — pun-insult built on 肏(cao4)/日 wordplay targeting a specific publication, only sense", "droppedAt": "2026-08-24T09:18:13Z" }
+  ],
+  "es": []
+}

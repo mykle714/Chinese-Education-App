@@ -62,6 +62,7 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '../../.env.docker') });
@@ -112,6 +113,24 @@ if (SHARD_RAW !== null) {
     console.error(`❌ --shard=k/N needs N >= 1 and 0 <= k < N, got k=${SHARD_K} N=${SHARD_N}.`);
     process.exit(1);
   }
+}
+
+// Content-policy exclusions (§3c drops: slur / explicit-sexual primary sense). Without
+// this, the same handful of words keep winning the --new commonness ranking every
+// round, get dropped again, and burn a batch slot for nothing — this file is what
+// makes a drop permanent instead of re-litigated every round. Loaded eagerly (not
+// lazily inside main) so a malformed file fails before any DB work, same rationale as
+// the --shard validation above. Source of truth for WHY a word is here stays
+// server/logs/oracle-concerns.md (append-only history); this file is only the live
+// exclusion set the planner query reads.
+const EXCLUDED_WORDS_PATH = path.join(__dirname, 'shared/oracle-excluded-words.json');
+let EXCLUDED_WORDS = [];
+try {
+  const raw = JSON.parse(fs.readFileSync(EXCLUDED_WORDS_PATH, 'utf8'));
+  EXCLUDED_WORDS = Array.isArray(raw[LANG]) ? raw[LANG].map((e) => e.word1) : [];
+} catch (err) {
+  console.error(`❌ could not read/parse ${EXCLUDED_WORDS_PATH}: ${err.message}`);
+  process.exit(1);
 }
 
 // Fail fast on an unknown language rather than planning zh under an es-shaped intent.
@@ -193,6 +212,14 @@ async function main() {
     if (SHARD_N !== null && !WORDS.length) {
       scope += `
                AND (d.id % ${SHARD_N}) = ${SHARD_K}`;
+    }
+
+    // Content-policy exclusions (see EXCLUDED_WORDS above). Not applied to --words=:
+    // an explicit word list is a direct instruction, same rationale as --shard.
+    if (EXCLUDED_WORDS.length && !WORDS.length) {
+      params.push(EXCLUDED_WORDS);
+      scope += `
+               AND NOT (d.word1 = ANY($${params.length}::text[]))`;
     }
 
     // Every scope plans the FULL manifest: a row is either fully enriched and shipped

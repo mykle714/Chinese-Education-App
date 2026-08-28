@@ -303,6 +303,13 @@ verified on the infrastructure checks; it stays open only until someone opens a 
 board and confirms it fills rather than coming back short, which is the one over-blocking
 symptom those checks cannot see. Prod is current through migration **154**.
 
+> **A rubric/prompt change does NOT need a runbook.** Bumping a backfill's
+> `SCRIPT_VERSION` (+ its `requiredScripts.js` entry) makes every already-enriched row a
+> candidate again, and rows heal in place — deploy normally and drain with
+> `run-lazy-enrichment.js`. See
+> [DISCOVER_LAZY_ENRICHMENT.md](./docs/DISCOVER_LAZY_ENRICHMENT.md) § 5a for the two
+> limits (partial coverage, and `--stale` vs `--rescore-only` on the clusterer).
+
 Gloss confusability shipped in two halves on 2026-08-24, and the split is worth
 remembering as a pattern: **half A** (migration 154 + the dev→prod `gloss_meaning_groups`
 push, 7647 rows / 5076 groups) was inert by construction because no shipped code read the
@@ -382,6 +389,12 @@ to pull `icons8`, `dictionaryentries_zh`, `dictionaryentries_es`,
 whose source of truth is **DEV** — it is GPU-computed derived data pushed **up**. It must be
 explicitly EXCLUDED from `/data-prod-to-dev`, or a routine dev refresh silently overwrites
 the freshly-computed groups with prod's copy of what dev just sent.
+⚠️ **TEMPORARY (2026-08-28): a pull will undo dev's `frequencyScore` repair.** Dev's det
+rows were repaired to satisfy `frequencyScore == MAX(definitionClusters[*].frequencyScore)`
+(430 zh + 562 es rows); prod has not been repaired yet, so a pull re-imports the drift.
+Either run `scripts/backfill/shared/repair-frequency-score-drift.js` against prod first, or
+re-run it on dev after the pull — it is deterministic, costs nothing and is idempotent.
+**Delete this note once prod has been repaired.**
 → Retired push flow, kept for the `icons8` FK rule + the 2026-07-02 incident: [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)
 
 ### Docker Commands & Setup

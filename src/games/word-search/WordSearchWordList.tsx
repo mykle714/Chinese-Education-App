@@ -2,6 +2,7 @@ import React from "react";
 import { Box } from "@mui/material";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
+import { HINT_ACCENT_COLOR } from "./constants";
 import { stripParentheses } from "../../utils/definitionUtils";
 import type { PlacedWord } from "./types";
 
@@ -9,6 +10,10 @@ interface WordSearchWordListProps {
     words: PlacedWord[];
     /** entryKeys already found (struck through). */
     found: Set<string>;
+    /** The entryKey the hint bar is currently spelling out, or null when no hint
+     *  is active. Highlighted in the hint ink so the mask one row above is
+     *  visibly attached to the gloss it belongs to. */
+    hintEntryKey?: string | null;
 }
 
 /**
@@ -38,14 +43,20 @@ interface WordSearchWordListProps {
  *             the record of what the run has covered, and the fade is what makes the
  *             remaining work countable at a glance.
  *
- * The HINTED word deliberately has NO state of its own. The `.hintbar` reveal already
- * names it, spelled out character by character, one row above — a third treatment would
- * say the same thing in a weaker way.
+ * A third state, added 2026-08-28: the HINTED word is tinted in `HINT_ACCENT_COLOR`, the
+ * same ink the `.hintbar` lightbulb, charge dots and reveal mask use. It previously had no
+ * state at all, on the theory that the reveal one row above already named it — but the
+ * reveal names it in PINYIN (or in component glyphs), which is precisely the thing the
+ * player cannot yet read, so nothing on screen connected the mask to the meaning it was
+ * spelling. The tint is the connection, and it costs no layout: colour only, no weight or
+ * size change, so the run's rhythm is unchanged. A hinted word that gets FOUND drops the
+ * tint — found beats hinted, and the hint state is cleared at that moment anyway
+ * (`WordSearchPage`'s `onFound`).
  *
  * Wraps freely; the row band it sits in is allowed to scroll if a long set overflows.
  * See docs/WORD_SEARCH_GAME.md §3.
  */
-const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found }) => {
+const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found, hintEntryKey = null }) => {
     return (
         <Box
             className="word-search__word-list"
@@ -67,6 +78,9 @@ const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found })
                     .split(/[,;]/)[0]
                     .trim();
                 const isFound = found.has(w.entryKey);
+                // Found beats hinted: a struck-through gloss keeps the faded treatment
+                // even if the hint row was still pointed at it when it was found.
+                const isHinted = !isFound && w.entryKey === hintEntryKey;
                 return (
                     // A fragment per word, so the separator is a SIBLING of the gloss
                     // rather than a child of it — a `::before` would be struck through
@@ -92,7 +106,11 @@ const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found })
                         )}
                         <Box
                             component="span"
-                            className={`word-search__word-list-item${isFound ? " word-search__word-list-item--found" : " word-search__word-list-item--pending"}`}
+                            className={`word-search__word-list-item${
+                                isFound
+                                    ? " word-search__word-list-item--found"
+                                    : " word-search__word-list-item--pending"
+                            }${isHinted ? " word-search__word-list-item--hinted" : ""}`}
                             sx={{
                                 fontFamily: FONTS.sans,
                                 fontSize: 11,
@@ -105,7 +123,11 @@ const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found })
                                 maxWidth: "100%",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
-                                color: isFound ? COLORS.textSecondary : COLORS.onSurface,
+                                color: isFound
+                                    ? COLORS.textSecondary
+                                    : isHinted
+                                    ? HINT_ACCENT_COLOR
+                                    : COLORS.onSurface,
                                 ...(isFound && {
                                     textDecoration: "line-through",
                                     opacity: 0.5,

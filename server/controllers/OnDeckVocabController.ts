@@ -35,7 +35,7 @@ export class OnDeckVocabController {
      * (docs/STUDY_CHALLENGE.md § 5.2). A challenge board is still a GAME POOL, so it
      * is served from this controller's endpoints rather than a second pool loader —
      * but only the challenge service can say whether this player may have it, which
-     * round they are on, and which twelve words it is made of.
+     * round they are on, and which nine words it is made of.
      */
     private studyChallengeService: StudyChallengeService
   ) {}
@@ -330,7 +330,7 @@ export class OnDeckVocabController {
       // A named, authorized challenge round short-circuits everything below: the
       // band distribution, the baseline top-up and the fallback ladder are all
       // answers to "what MIX should this board have", and a challenge board's
-      // composition is already decided — the twelve contested words plus
+      // composition is already decided — the nine contested words plus
       // `mastered-first` filler. Resolved first so an out-of-window request fails
       // before any lending happens.
       const challengeRound = await this.resolveChallengeRound(req, userId);
@@ -339,7 +339,7 @@ export class OnDeckVocabController {
         // full board is the sum of its requested distribution (Bubble Match's 20),
         // and a partial refill states `need` (a Match Speed buffer top-up). Reusing
         // those two rather than inventing a challenge-specific parameter is what
-        // keeps a challenge round the same size as a casual one — the twelve
+        // keeps a challenge round the same size as a casual one — the nine
         // contested words are ADDED to the board's composition, never a cap on it.
         const boardSize = need ?? Object.values(distribution).reduce((sum, n) => sum + n, 0);
         res.json(await this.onDeckVocabService.getChallengeGamePool(
@@ -431,15 +431,15 @@ export class OnDeckVocabController {
         }
       }
       if (Object.keys(distribution).length === 0) {
-        // Mirrors word-search/constants.ts's GAME_DISTRIBUTION (2/6/3/1 = 12), NOT
+        // Mirrors word-search/constants.ts's GAME_DISTRIBUTION (1/5/2/1 = 9), NOT
         // bubble-match's 2/10/6/2 — this is a defensive fallback for a query missing
         // all four category params; the app always sends them (GRID_QUERY), so this
         // only fires on a manual/raw API call. (Was already wrong before 2026-08-24 —
         // it matched bubble-match's fallback, not word-search's own, even when this
         // board was 10 words.)
-        distribution.Unfamiliar = 2;
-        distribution.Target = 6;
-        distribution.Comfortable = 3;
+        distribution.Unfamiliar = 1;
+        distribution.Target = 5;
+        distribution.Comfortable = 2;
         distribution.Mastered = 1;
       }
 
@@ -500,7 +500,7 @@ export class OnDeckVocabController {
         // grid would run the identical query. CONTINUE rather than break: the next
         // iteration escalates the multiplier, and it is the ESCALATION that unblocks
         // a learner whose sorted deck is already past the flat baseline but cannot
-        // yield twelve distinct-charactered words (`ensureBaseline` is a no-op until the
+        // yield nine distinct-charactered words (`ensureBaseline` is a no-op until the
         // escalated target exceeds their sorted count). Breaking here left that
         // learner with an empty grid.
         //

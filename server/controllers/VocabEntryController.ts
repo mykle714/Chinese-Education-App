@@ -237,6 +237,44 @@ export class VocabEntryController {
   }
 
   /**
+   * Persist (or clear) the learner's own note for one vet row.
+   * PATCH /api/vocabEntries/:id/note
+   *   body: { note: string | null }
+   * `null` (or a blank/whitespace-only string) clears the note; the service trims it and
+   * caps it at CARD_NOTE_MAX_LENGTH. See docs/CARD_NOTES.md.
+   */
+  async updateNote(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const entryId = parseInt(req.params.id);
+      if (isNaN(entryId)) {
+        res.status(400).json({ error: 'Invalid entry ID', code: 'ERR_INVALID_ENTRY_ID' });
+        return;
+      }
+
+      // Accept a string (the note text) or null (clear). The length cap and the
+      // blank-is-null normalization are the service's job — this only guards the type,
+      // so a malformed body can't reach the DAL.
+      const { note } = req.body ?? {};
+      if (note !== null && typeof note !== 'string') {
+        res.status(400).json({ error: 'note must be a string or null' });
+        return;
+      }
+
+      const language = await getUserLanguage(userId);
+      const updated = await this.vocabEntryService.updateNote(userId, entryId, language, note);
+
+      // Echo the PERSISTED value (trimmed / capped / nulled), not the submitted one, so the
+      // card renders exactly what is stored rather than the learner's raw input.
+      res.json({ id: updated.id, note: updated.note ?? null });
+    } catch (error) {
+      handleControllerError(error, res, 'VocabEntryController.updateNote');
+    }
+  }
+
+  /**
    * Persist (or clear) the learner's chosen definition-cluster sense for one vet row.
    * PATCH /api/vocabEntries/:id/selectedSense
    *   body: { selectedSense: string | null }

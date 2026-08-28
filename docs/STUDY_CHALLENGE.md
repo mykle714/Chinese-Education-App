@@ -454,6 +454,38 @@ Two consequences, stated plainly:
 (`server/shared/challengeWeek.ts`), migration 150, and the cron SQL. Changing one alone
 renumbers every stored week and silently moves every deadline.
 
+### `users.timezone` must be fresh, or the deadline renders at the wrong hour
+
+Deadlines are computed server-side from `users.timezone` and serialized to the client as
+**absolute instants** (`ChallengeDeadlines.testOpensAt` / `testClosesAt` /
+`acceptDeadline`, `StudyChallengeService.toSummary`). The client then formats them with
+`toLocaleTimeString(undefined, …)` — i.e. **in the browser's zone**
+(`challengeLabels.deadlineLabel`). Two different zones, and nothing on screen names
+either of them.
+
+So when the stored column disagrees with the browser, the copy is simply wrong by the
+offset, and looks like a bug in the week arithmetic. **Observed 2026-08-28:** an account
+that had never been through the login hook still held the column default (`NOT NULL
+DEFAULT 'UTC'`); the server correctly produced Friday **04:00 UTC**, and a UTC−7 browser
+rendered it as **"9 PM Thursday"**.
+
+The fix was to close the gaps in how the column is kept fresh, not to change the
+boundary math — which was correct throughout. There are now four triggers (creation,
+login/restore, every ~15-minute token rotation, and a foregrounded tab whose zone
+changed); the full contract lives in
+[STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) under "Refresh path for
+`users.timezone`", and the client half is documented in `src/utils/authSync.ts`.
+
+⚠️ **Any account created outside the app** — a seed script, `POST /api/users`, a
+fixture — starts on `'UTC'` and stays there until its owner logs in. On a dev box that
+reads as a Study Challenge feature that opens its window seven hours early.
+
+**Not adopted (yet): labelling the zone.** Arena already ships
+`ArenaBoundaries.timezone` + `timezoneDiffersFromViewer` (`src/api/arena.ts`) so its
+countdown can say which clock it means. `ChallengeDeadlines` does not, so a stale column
+is silent rather than self-explaining. Worth mirroring if this recurs — see
+[DEFERRED_WORK.md](./DEFERRED_WORK.md).
+
 ### If a player's timezone changes mid-challenge (Q50)
 
 **Always use the current `users.timezone`.** Deadlines are recomputed from it on every
@@ -563,7 +595,7 @@ the client labels it.
 
 ---
 
-## 3. Same-word challenge — choosing the 12 words
+## 3. Same-word challenge — choosing the 9 words
 
 ### 3.1 Candidate pool (server)
 
@@ -642,7 +674,7 @@ itself.
 Both players run the **same** screen, at different times:
 
 ```
-challenger:  [see 12 words] → mark any "I already know this" → replaced → confirm → PENDING
+challenger:  [see 9 words] → mark any "I already know this" → replaced → confirm → PENDING
 challengee:  [see the 12]   → mark any "I already know this" → replaced → accept  → ACCEPTED
 ```
 
@@ -719,7 +751,7 @@ challengee:  [see the 12]   → mark any "I already know this" → replaced → 
   struck" rebuilds the shown list exactly. Code:
   `StudyChallengeService.acceptChallenge`; `AcceptChallengeBody`
   (`server/types/studyChallenge.ts`).
-* No word may repeat within the set, and the set is exactly 12 (`CHALLENGE_WORD_COUNT`).
+* No word may repeat within the set, and the set is exactly 9 (`CHALLENGE_WORD_COUNT`).
 
 **There is no limit on strikes.** A player may reject all 12, and the 12 replacements
 after that, indefinitely. No cap, no "you have 3 left" copy, no special state — the
@@ -753,7 +785,7 @@ Atomically, in one transaction:
 
 ### Why `library` and not `provisional`
 
-Accepting a challenge **is** the sorting decision. Both players saw all twelve words, were
+Accepting a challenge **is** the sorting decision. Both players saw all nine words, were
 invited to strike any they already knew, and confirmed the rest — that is a stronger,
 more deliberate act of choosing than a discover swipe, so there is nothing left for a
 later "keep these cards?" prompt to ask. Handing them over as `provisional` would mean
@@ -854,7 +886,7 @@ entirely** when the user has no active challenge deck, exactly as the `Mastered`
 is when no reading/writing goal is set.
 
 **Each deck is named after the opponent — `vs Bob`** — because that is what the learner
-actually remembers about a set of twelve words.
+actually remembers about a set of nine words.
 
 **Duplicate names are allowed for challenge decks (Q30).** Two live challenges against
 the same friend in the same language may both be called `vs Bob`; they are distinguished
@@ -1024,25 +1056,25 @@ The mode is a parameter on `ProvisionalCardService.ensureBaseline` / `lendCards`
 travels on the pool request as `?provisionMode=`. Every step degrades silently to the
 next, so no caller ever has to check whether a player has mastered cards.
 
-**All 12 contested words must appear in every round.** Filler pads the board out to the
+**All 9 contested words must appear in every round.** Filler pads the board out to the
 game's natural size; it never displaces a contested word.
 
-> ✅ **WORD SEARCH'S CHALLENGE BOARD GREW TO 12 (built 2026-08-22).** At the time,
-> `TOTAL_WORDS` (`src/games/word-search/constants.ts`) summed to 10 (half the Bubble
-> Match distribution), so at `CHALLENGE_WORD_COUNT = 12` a normal-sized grid couldn't
-> hold the set. A challenge grid therefore takes its target count from
-> `CHALLENGE_WORD_COUNT` and its size from `WORD_SEARCH_CHALLENGE_ROWS/COLS` — **8×8,
-> not the ordinary board's size** — because twelve words at the 4-character cap is up
-> to 48 characters, which random placement would almost never fit densely enough.
-> `TOTAL_WORDS` was separately raised to 12 on 2026-08-23 (own mix now: 2 Unfamiliar +
-> 6 Target + 3 Comfortable + 1 Mastered), so the two word counts now happen to match —
-> coincidental, not derived one from the other. The ordinary board (9×6, unchanged by
-> that raise) stays a different, tighter size than the 8×8 challenge board: 48 of 54
-> cells full (89%) vs 48 of 64 (75%), which is why the ordinary board leans on
-> template-mode placement far more now. Bubble Match (20) and Match
-> Speed (rolling buffer) are unaffected. This is what makes the
-contested ceiling of 1200 points real in all four games and what makes the rounds
-comparable to each other — a game whose natural board is smaller than 12 must run
+> ✅ **WORD SEARCH'S CHALLENGE BOARD IS NOW THE ORDINARY BOARD (2026-08-28).** History:
+> the challenge board was built on 2026-08-22 at **8×8** while `TOTAL_WORDS`
+> (`src/games/word-search/constants.ts`) summed to 10 on a 9×6 grid, because twelve
+> words at the 4-character cap is up to 48 characters and random placement would
+> almost never fit that densely; `TOTAL_WORDS` then rose to 12 on 2026-08-23, matching
+> the count but not the size. On **2026-08-28** both counts dropped to **9** and the
+> ordinary board shrank to **7×6**, which removed the pressure the split existed to
+> relieve: 9 words × 4 cells = 36 of 42 cells (86%) on either board. So
+> `WORD_SEARCH_CHALLENGE_ROWS/COLS` were **deleted** — one size, one density, one
+> tuning, and a challenge board is now template-eligible like any other (see
+> docs/WORD_SEARCH_GAME.md § 1c). A challenge round still takes its target LIST from
+> `CHALLENGE_WORD_COUNT` (the specific contested ids), not from `TOTAL_WORDS`; the two
+> 9s are separately declared and neither derives from the other. Bubble Match (20) and
+> Match Speed (rolling buffer) are unaffected. This is what makes the
+contested ceiling of 900 points real in all four games and what makes the rounds
+comparable to each other — a game whose natural board is smaller than 9 must run
 longer in challenge mode rather than drop words. The one deliberate exception is Match
 Speed, whose rolling buffer expresses this as an alternation rule instead (§ 5.3), and
 whose alternation lapses to filler only once **all 12 have been dealt**.
@@ -1052,7 +1084,7 @@ the lending sense — they are usually the player's own mastered cards. So:
 
 | Term | Means |
 |---|---|
-| **contested** | one of the challenge's 12 words — what the challenge is actually measuring |
+| **contested** | one of the challenge's 9 words — what the challenge is actually measuring |
 | **filler** | every other card on the board, whatever its origin |
 | **provisional** | reserved for its existing meaning: a card the server *lent* (`starterPackBucket = 'provisional'`) |
 
@@ -1095,14 +1127,14 @@ idempotent), because `vocabEntryId` is a convenience pointer that may dangle: a 
 who deleted a contested card during the study week still plays it (Q54).
 
 **The board — `OnDeckVocabService.getChallengeGamePool`.** The contested rows are
-addressed by id **with the cooldown ignored** (all twelve appear in every round — an
+addressed by id **with the cooldown ignored** (all nine appear in every round — an
 obligation, not a preference), then `ProvisionalCardService.getFillerPool` tops the board
 up to *the game's own size* down the `mastered-first` ladder. The board size is the sum
-of the game's requested distribution, or its `need` on a refill — the twelve are **added
+of the game's requested distribution, or its `need` on a refill — the nine are **added
 to** the board's normal composition, never a cap on it.
 
 ⚠️ **The result is SHUFFLED, and that is a correctness requirement (Q74).** Returning the
-twelve first would let anyone read the split straight off the payload or off the deal
+nine first would let anyone read the split straight off the payload or off the deal
 order. Games classify by WORD, against the set they already hold, never by position.
 
 **The client — `src/games/runtime/useChallengeRound.ts`.** Every eligible game mounts it
@@ -1125,8 +1157,8 @@ games cannot drift into four readings of the same spec.
 | Game | What its board integration needed |
 |---|---|
 | **Bubble Match** | Nothing but the pool params and the events — plus one new stage signal, `onCeilingDrop`, because the survival bonus starts the instant the ceiling begins descending and only the stage knows when the launcher drained |
-| **Match Speed** | The alternation rule (§ 5.3), extracted as the pure `challengeDeal.ts`. Mid-run buffer top-ups send `&contested=exclude` — the twelve are dealt once and never recycled |
-| **Word Search** | A **bigger, roomier grid**: even though `TOTAL_WORDS` (12) now equals `CHALLENGE_WORD_COUNT`, a challenge grid stays **8×8** (75% full) rather than the ordinary board's tighter 9×6 (89% full) — its target list is `CHALLENGE_WORD_COUNT`, not `TOTAL_WORDS`, because the actual set is the specific contested word ids, not a band distribution. That also takes it out of template mode (`templateModeApplicable` gates on 9×6 + exactly 12 words, i.e. the ORDINARY board's shape), so a challenge grid always uses random placement. Filler is queued at **twice** the board so the substring de-dup pass has something to substitute WITH — otherwise a set that shares characters fails as `insufficient-distinct`, i.e. a round the player cannot play at all. Challenge boards are never saved to the resume slot |
+| **Match Speed** | The alternation rule (§ 5.3), extracted as the pure `challengeDeal.ts`. Mid-run buffer top-ups send `&contested=exclude` — the nine are dealt once and never recycled |
+| **Word Search** | **The same board as a casual run** since 2026-08-28 — 7×6, 9 words, template mode when it applies (the separate 8×8 challenge grid was deleted; see § 5.2). Its target list is still `CHALLENGE_WORD_COUNT`, not `TOTAL_WORDS`, because the actual set is the specific contested word ids, not a band distribution. Filler is queued at **twice** the board so the substring de-dup pass has something to substitute WITH — otherwise a set that shares characters fails as `insufficient-distinct`, i.e. a round the player cannot play at all. Challenge boards are never saved to the resume slot |
 | **Hydra Bubbles** | Contested words ride the **bloom** slot, drawn ahead of that buffer's stock; the run ends on the last contested clear (`shouldEndRun` → outcome `challengeComplete`). **Its filler is deliberately NOT `mastered-first`** — see below |
 
 ⚠️ **Hydra is the one exception to § 5.2's filler rule, on purpose.** Its filler comes
@@ -1134,7 +1166,7 @@ from its own colour buffers, whose bands ARE the payout ladder
 ([HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 5): a board padded entirely from the player's
 mastered cards would be a board of nothing but bloom, which is not the game. So a Hydra
 round draws only the contested set from the challenge and leaves the economy untouched.
-Its difficulty comes from the challenge SHAPE (clear all twelve, a wrong match ends the
+Its difficulty comes from the challenge SHAPE (clear all nine, a wrong match ends the
 run) rather than from filler selection.
 
 **Background pause came back with it.** Hydra deliberately had none — nothing in a
@@ -1163,10 +1195,10 @@ other rather than leaving a hole; a drained set never comes back; and a run whos
 buffer is starved deals contested pairs rather than nothing.
 
 The consequence is deliberate and worth stating: Match Speed's contested scoring has a
-hard ceiling of **1200 points** (12 × 100), and a player who clears the set early spends
+hard ceiling of **900 points** (9 × 100), and a player who clears the set early spends
 the rest of the run earning 20s. That makes *clearing the set* the goal of the round
-rather than raw taps-per-second — the challenge is a measure of the twelve words, so once
-those twelve are answered the round has already said what it was built to say.
+rather than raw taps-per-second — the challenge is a measure of the nine words, so once
+those nine are answered the round has already said what it was built to say.
 
 It also means the two players' Match Speed scores converge near the top of the range,
 which is the intended shape: past a certain point the round stops separating them and
@@ -1216,7 +1248,7 @@ Per-game rules as specified:
 | bonus if the run is **lost** | **0** |
 
 > **The bonus is deliberately large and deliberately all-or-nothing (Q68).** At up to
-> +500 against +1200 for twelve contested matches, surviving is worth roughly a third of the
+> +500 against +900 for nine contested matches, surviving is worth more than a third of the
 > round, and losing forfeits it entirely. That is not an imbalance to tune away: Bubble
 > Match *is* a survival game, and a challenge score that ignored whether the player
 > survived would be scoring a different game than the one they played. The cliff is also
@@ -1321,7 +1353,7 @@ same recognition track that a match in a casual Bubble Match run would. The comp
 is a study session that happens to be scored twice — once for mastery, once for the
 challenge.
 
-**The board looks completely normal, too (Q74).** The twelve contested words are **not
+**The board looks completely normal, too (Q74).** The nine contested words are **not
 marked, highlighted, or distinguished in any way** during play — no glow, no accent, no
 pre-round "these are the ones that count" list. The contested/filler split is invisible
 until the results screen.
@@ -1341,7 +1373,7 @@ Three reasons, in order of weight:
 Design consequences, stated so nobody is surprised by them later:
 
 * **Contested words gain mastery during the test.** A player can walk out of a challenge
-  with several of the twelve words banded up. That is the feature working, not a leak.
+  with several of the nine words banded up. That is the feature working, not a leak.
 * **A word can cross into Mastered mid-test.** Banding is a service-layer compute over
   `typedMarkHistory`, so round 3 may see a word that was Unfamiliar in round 1. Nothing
   in the scoring reads the band — contested/filler is fixed when the round's board is
@@ -1549,7 +1581,7 @@ have no such band. Different-word mode drops the shared set so each plays at the
 edge — the contest is "who studied harder this week", not "who is further along".
 
 That purpose settles the fairness question. **Scores are compared raw, with no
-normalisation** by level or by the set's mean `frequencyScore`: each player's 12 words
+normalisation** by level or by the set's mean `frequencyScore`: each player's 9 words
 are hard *for them*, which is the whole premise. Adding a handicap would re-introduce
 exactly the level comparison the mode exists to avoid.
 
@@ -1639,7 +1671,7 @@ characters.
 
 ### 8.4 Settled here
 
-* **Q27 — Set size is fixed at 12** (`CHALLENGE_WORD_COUNT`, raised from 10 on 2026-08-17), not a choice. Set size
+* **Q27 — Set size is fixed at 9** (`CHALLENGE_WORD_COUNT`: 10 → 12 on 2026-08-17, 12 → 9 on 2026-08-28), not a choice. Set size
   determines how many points are available, so both players must use the same number
   anyway — making it selectable would add a negotiation to buy nothing. It is a constant,
   so it can be changed globally later without a schema or protocol change.
@@ -1661,14 +1693,14 @@ numbers start at **147**. 145 is the `user_languages` rename and **146 is taken*
 object the table represents. Everything that is a property of *the challenge* lives on
 the challenge — including the word sets, the round scores and the generated deck ids, as
 jsonb — rather than being scattered across the vet and deck tables as foreign
-bookkeeping. This is safe because a challenge is **bounded**: exactly 2 players, 12 words
+bookkeeping. This is safe because a challenge is **bounded**: exactly 2 players, 9 words
 each, 3 rounds each, then it is finished forever. Unbounded collections would still
 deserve their own table.
 
 ### `study_challenges` — the only new table
 
 The whole feature is **one table**. A challenge is a small, bounded, self-contained
-object: two players, twelve words each, three rounds each, one outcome. Everything about it
+object: two players, nine words each, three rounds each, one outcome. Everything about it
 is intrinsic to it, so everything lives on it.
 
 | Column | Type | Notes |
@@ -1679,7 +1711,7 @@ is intrinsic to it, so everything lives on it.
 | `challengerLanguage` / `challengeeLanguage` | varchar(8) | equal unless cross-language |
 | `status` | varchar(16) | `pending \| accepted \| declined \| expired \| complete \| no_contest`. There is **no** "accepted but unpicked" state — see § 8.2 |
 | `gameSequence` | jsonb | the 3 chosen game ids **in order**, drawn once, shared |
-| `words` | jsonb | **each player's 12 words**, keyed by user id — see below |
+| `words` | jsonb | **each player's 9 words**, keyed by user id — see below |
 | `rounds` | jsonb | **each player's played rounds**, keyed by user id — see below |
 | `presetDeckIds` | jsonb | `{ "<userId>": <deckId>, ... }` — the generated decks to drop on cleanup (§ 4) |
 | `issuedAt` | timestamptz | when it was sent; a log field, not a boundary anchor |
@@ -1710,7 +1742,7 @@ sharply because it is the one place they could:
 
 | Question | Source of truth |
 |---|---|
-| **Which 12 words is this challenge about?** | `study_challenges.words` — always, forever |
+| **Which 9 words is this challenge about?** | `study_challenges.words` — always, forever |
 | **Is this word in the user's library?** | the **vet row** — always |
 
 `vocabEntryId` is a **convenience pointer, never an identity and never a claim of
@@ -2025,7 +2057,7 @@ incoming requests.
 | Q16 | Tie | **draw**, no hidden tiebreak |
 | Q17 | `expired` vs `no_contest` | **distinct** — expired never had an agreed set or decks |
 | Q25 | Challenger's set on decline | **discarded**; no deck before `accepted`. Mastered writes made while reviewing persist |
-| Q27 | Set size | **fixed 12** (`CHALLENGE_WORD_COUNT`; 10 until 2026-08-17) — size changes the points available, so it must be equal anyway |
+| Q27 | Set size | **fixed 9** (`CHALLENGE_WORD_COUNT`; 10 until 2026-08-17, 12 until 2026-08-28) — size changes the points available, so it must be equal anyway |
 | Q29 | Who chooses the variant | **the challenger**, stated in the invitation. Cross-language pairs are offered different-word only |
 
 | Q8 | Bucket for materialised contested words | **`library`** — accepting the set *is* the sorting decision; see § 3.3 |
@@ -2047,7 +2079,7 @@ incoming requests.
 | Q57 | Setting the block mid-challenge | **only blocks new challenges** — the in-flight one plays out. Keeps a one-tap toggle from becoming an escape hatch; unfriending remains the hard exit (§ 1) |
 | Q58 | A game is removed while challenges hold its id | **a scheduling rule, not runtime handling** — retire it from the challenge-eligible pool a week before deleting it. Written into [GAMES_FEATURE.md](./GAMES_FEATURE.md) |
 | Q59 | Account deletion mid-challenge | **let it cascade** — the challenge row and its history vanish for both sides, matching how `friendships` already treats a deleted account (§ 9) |
-| Q27 | Set size | **fixed at 12** (`CHALLENGE_WORD_COUNT`; 10 until 2026-08-17) — a constant, not a choice (§ 8.4). Raising it is one edit plus copy, but it moves the per-round contested ceiling (12 × 100 = 1200) and obliges Word Search's challenge grid to hold 12 (§ 5.2) |
+| Q27 | Set size | **fixed at 9** (`CHALLENGE_WORD_COUNT`; 10 until 2026-08-17, 12 until 2026-08-28) — a constant, not a choice (§ 8.4). Changing it is one edit plus copy, but it moves the per-round contested ceiling (9 × 100 = 900) and obliges Word Search's board to hold that many (§ 5.2) |
 | Q60 | Where the time-triggered work runs | **a third step in the hourly `cow-maintenance` unit**, not a new schedule; four passes, including a sweep for preset decks orphaned by Q59's cascade (§ 9) |
 | Q61 | Testing a week-long, cron-driven feature | **test on prod** — it has no users yet and is effectively a PPE. No dev-only clock offset and no trigger endpoints (§ 9) |
 | Q62 | Who chooses the variant | **the challenger**, stated in the invitation; cross-language pairs get different-word only (§ 8.4) |

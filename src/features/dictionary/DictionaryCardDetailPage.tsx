@@ -12,13 +12,14 @@ import { useAuth } from "../../AuthContext";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
-import { useTTS, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
+import { useTTS } from "../../hooks/useTTS";
 import { COLORS } from "../../theme/colors";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "../../features/flashcards/FlashcardsLearnPage/FlashCardSection";
 import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT } from "../../features/flashcards/constants";
 import { dictionaryEntryToVocabEntry } from "../../utils/dictEntryAdapter";
 import { resolveSelectedSenseIndex } from "../../utils/definitionUtils";
 import { VocabCardBadges, VocabCardSections } from "../../features/flashcards/VocabCardDetailBody";
+import WordToolsRail from "../../components/WordToolsRail";
 
 // READ-ONLY dictionary card detail (cdp) — the page a dictionary result opens into
 // (instead of the eip popup). It's a NODE page (keeps the footer; see
@@ -29,7 +30,8 @@ import { VocabCardBadges, VocabCardSections } from "../../features/flashcards/Vo
 //
 // Read-only means: NO edit toolbar / delete, and the hero always renders the det's
 // representative icon in BASIC layout (never the advanced iconLayout editor). The
-// only write affordance is "+ to Learn Now" for discoverable entries.
+// only write affordance is "+ to Learn Now" for discoverable entries (the word-tools
+// rail's Practice Writing drill records no mark here — there is no vet row to mark).
 //
 // Drill-ins: breakdown/used-in rows and example-sentence segments open the cdp of
 // the tapped word — the same drill-in the eip offers, except it navigates here
@@ -43,7 +45,7 @@ const DictionaryCardDetailPage: React.FC = () => {
     const slideNavigate = useSlideNavigate();
     const { user } = useAuth();
     const { settings } = useFlashcardLearnSettings();
-    const { showPinyinColor, slowExampleSentences } = settings;
+    const { showPinyinColor } = settings;
     // cdp always shows pinyin regardless of the flp pinyin toggle — pinyin is
     // core reference info on the detail page, so we ignore settings.showPinyin here.
     const showPinyin = true;
@@ -149,6 +151,20 @@ const DictionaryCardDetailPage: React.FC = () => {
                     <>
                         <VocabCardBadges entry={entry} />
 
+                        {/* WORD TOOLS — `Write it`, on its own rail above the card and
+                            outside its boundary; the sole Practice Writing entry point for
+                            this page now that the on-card button is gone (see
+                            docs/PRACTICE_WRITING.md). `onCompare` is omitted because this
+                            read-only page has nowhere to load a comparison into, so the
+                            rail self-hides the Compare pill — and hides itself entirely for
+                            a non-zh / >4-character word, which has no writing drill. The
+                            adapted det entry has no vet row, so the rail passes no
+                            vocabEntryId and the drill records no writing mark. */}
+                        <WordToolsRail
+                            className="dictionary-card-detail__word-tools"
+                            entry={entry}
+                        />
+
                         {/* Hero card — read-only: always the det's representative icon in
                             BASIC layout (iconLayout/textLayout null, advanced off). */}
                         <Box
@@ -179,9 +195,8 @@ const DictionaryCardDetailPage: React.FC = () => {
                                             entry={entry}
                                             showPinyin={showPinyin}
                                             showPinyinColor={showPinyinColor}
-                                            onSpeak={tts.enabled ? tts.speak : undefined}
+                                            onSpeak={tts.speak}
                                             speakingKey={tts.speakingKey}
-                                            showWriting
                                             inlineActions
                                             selectedSenseIndex={selectedSenseIndex}
                                         />
@@ -191,7 +206,6 @@ const DictionaryCardDetailPage: React.FC = () => {
                                             entry={entry}
                                             selectedSenseIndex={selectedSenseIndex}
                                             onSelectSense={setSelectedSenseIndex}
-                                            inlineActions
                                         />
                                     ),
                                 }}
@@ -208,13 +222,7 @@ const DictionaryCardDetailPage: React.FC = () => {
                             // as the picker above (per-sense longDefinition).
                             selectedSenseIndex={selectedSenseIndex}
                             onWordOpen={handleWordOpen}
-                            // Same slow-rate-aware sentence narration as the flp est.
-                            onSpeakSentence={
-                                tts.enabled
-                                    ? (text, pronunciation) =>
-                                          tts.speakSentence(text, pronunciation, slowExampleSentences ? SLOW_SENTENCE_RATE : 1)
-                                    : undefined
-                            }
+                            onSpeakSentence={tts.speakSentence}
                             speakingKey={tts.speakingKey}
                         />
 

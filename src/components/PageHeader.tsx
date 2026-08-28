@@ -272,10 +272,13 @@ export const HeaderIconButton: React.FC<{
 );
 
 /**
- * `.lhd .tg` — a mono toggle chip ("pinyin", "autoplay"). Off = grey fill + ink2
- * text; on = solid ink + white text. Note this is an INVERSION, not a tint change:
- * the design signals "on" by flipping the chip to the ink ground, which reads at a
- * glance in a way a slightly-darker grey does not.
+ * `.lhd .tg` — a mono toggle chip ("pinyin"). Off = grey fill + ink2 text; on =
+ * solid ink + white text. Note this is an INVERSION, not a tint change: the design
+ * signals "on" by flipping the chip to the ink ground, which reads at a glance in a
+ * way a slightly-darker grey does not.
+ *
+ * For a control with MORE than two states, use HeaderCycleChip below — binary
+ * `aria-pressed` cannot describe one.
  */
 export const HeaderToggleChip: React.FC<{
     children: React.ReactNode;
@@ -316,6 +319,58 @@ export const HeaderToggleChip: React.FC<{
         }}
     >
         {startIcon && <Icon name={startIcon} size={13} color={active ? COLORS.white : COLORS.iconColor} />}
+        {children}
+    </Box>
+);
+
+/**
+ * A multi-state sibling of HeaderToggleChip: one tap advances to the next state
+ * rather than flipping a boolean, and the chip's own icon + label say which state
+ * is live. Same `.lhd .tg` skin, so a header can mix the two without looking it.
+ *
+ * `active` drives only the ink/grey inversion — it means "this state does
+ * something", not "on". A three-state control has no boolean to expose, so this
+ * chip carries NO `aria-pressed`; `ariaLabel` must name the current state and
+ * ideally what tapping does, since that is all a screen reader gets.
+ *
+ * Built for the audio-mode chip (off / passthrough / media) — see
+ * src/components/AudioModeChip.tsx and docs/AUDIO_PLAYBACK.md.
+ */
+export const HeaderCycleChip: React.FC<{
+    children: React.ReactNode;
+    /** Whether the CURRENT state is a doing-something state (drives the inversion). */
+    active: boolean;
+    icon: string;
+    ariaLabel: string;
+    onClick?: () => void;
+    className?: string;
+}> = ({ children, active, icon, ariaLabel, onClick, className }) => (
+    <Box
+        className={[
+            "page-header__toggle",
+            "page-header__cycle",
+            active ? "page-header__toggle--active" : "",
+            className ?? "",
+        ].filter(Boolean).join(" ")}
+        onClick={onClick}
+        role="button"
+        aria-label={ariaLabel}
+        sx={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            fontFamily: FONTS.mono,
+            fontSize: 10,
+            lineHeight: LEADING.none,
+            padding: "6px 8px",
+            borderRadius: "7px",
+            whiteSpace: "nowrap",
+            backgroundColor: active ? COLORS.onSurface : COLORS.grey,
+            color: active ? COLORS.white : COLORS.iconColor,
+            cursor: "pointer",
+        }}
+    >
+        <Icon name={icon} size={13} color={active ? COLORS.white : COLORS.iconColor} />
         {children}
     </Box>
 );

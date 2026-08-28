@@ -785,9 +785,17 @@ export class DictionaryDAL implements IDictionaryDAL {
           // rendered here. Trust the stored segmentation when present; fall back to a
           // live GSA only for rows written before the pass existed (no `segments`).
           const prioritySegments = entry.word1 ? [entry.word1] : undefined;
+          // Per-sentence segmentation exceptions authored by the backfill's audit pass:
+          // multi-char tokens that are real words but are NOT one word in THIS sentence
+          // (真是 in "他真是个行家"). Unioned with the entry-wide matchException set rather
+          // than replacing it. Already baked into a stored `segments`, so this only
+          // changes the fallback below — but it still gates drill rungs on every row.
+          const sentenceExcludeTokens = sentence.segmentExceptions?.length
+            ? new Set([...excludeTokens, ...sentence.segmentExceptions])
+            : excludeTokens;
           const segments = Array.isArray(sentence.segments) && sentence.segments.length > 0
             ? sentence.segments
-            : segmentWithDict(sentence.foreignText, dictMap, excludeTokens, prioritySegments);
+            : segmentWithDict(sentence.foreignText, dictMap, sentenceExcludeTokens, prioritySegments);
           // Build per-segment metadata via the shared helper. Example sentences use the
           // full feature set: particle/classifier annotation (gated by the segment POS dict),
           // per-segment sense → cluster dd (senseDict), context-matched fallback definitions
@@ -798,6 +806,9 @@ export class DictionaryDAL implements IDictionaryDAL {
             translatedContext: sentence.english,
             includeWordForms: true,
             senseDict: sentence.senseDict,
+            // matchException tokens — and this sentence's own segmentExceptions — must not
+            // come back as drill rungs either; see buildDrillRungs (docs/SEGMENT_DRILL_DOWN.md).
+            excludeTokens: sentenceExcludeTokens,
           });
 
           return {
@@ -1321,7 +1332,7 @@ export class DictionaryDAL implements IDictionaryDAL {
         // dictionary's best/first sense.
         const segments = segmentWithDict(run.value, dictMap, excludeTokens);
         const segmentMetadata: Record<string, RenderedSegmentMeta> =
-          buildSegmentMetadata(segments, dictMap);
+          buildSegmentMetadata(segments, dictMap, { excludeTokens });
         // Whole-run translation when this run was translated (see citationsByText). Keyed on
         // the run's exact text, which is what the generator was handed, so the key matches.
         //

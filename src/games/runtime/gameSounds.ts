@@ -14,11 +14,24 @@
  * gesture. `resume()` covers the case where the OS suspended it (backgrounded
  * tab, an incoming call) between rounds.
  *
- * Used by: src/games/speed-reading/SpeedReadingPage.tsx.
+ * Used by: src/games/speed-reading/SpeedReadingPage.tsx and
+ * src/games/memory-map/MemoryMapPage.tsx.
  * Documented in: docs/SPEED_READING_GAME.md.
  */
 
-/** One shared context for the whole app — browsers cap how many can exist. */
+/**
+ * One shared context for the GAME SOUNDS — browsers cap how many can exist.
+ *
+ * ⚠️ Not the app's only AudioContext: CloudTTSProvider owns a second, separate
+ * one for narration, with its own gesture-unlock state. The two are unaware of
+ * each other, so a gesture that unlocks one does not unlock the other.
+ *
+ * The resume-on-every-call pattern in getContext() below is the RIGHT one, and
+ * narration did not have it: CloudTTSProvider latched its unlock after the first
+ * gesture, so an OS interruption left its context suspended for the rest of the
+ * session while these blips kept playing. Fixed 2026-08-28 by copying this shape
+ * — see docs/AUDIO_PLAYBACK.md § 5. Do not add a latch here either.
+ */
 let ctx: AudioContext | null = null;
 
 /** Set once a context fails to construct, so we stop retrying every tap. */

@@ -59,6 +59,79 @@ describe('stripParentheses', () => {
     // gloss (e.g. 上来 "(verb complement indicating success)") has no displayable text.
     expect(stripParentheses('(verb complement indicating success)')).toBe('');
   });
+
+  // ── inline morphemes (the "personal(ly)" exception) ────────────────────────
+  // A short lowercase parenthetical GLUED to a word is part of the word. Deleting it
+  // is what made 下手's breakdown read "personal" instead of "personally".
+  it('rejoins a short lowercase parenthetical glued to a word', () => {
+    expect(stripParentheses('personal(ly)')).toBe('personally');
+    expect(stripParentheses('there still remain(s)')).toBe('there still remains');
+    expect(stripParentheses('over the past year(s)')).toBe('over the past years');
+    expect(stripParentheses("to abandon one's child(ren)")).toBe("to abandon one's children");
+    expect(stripParentheses('I mean(t) that')).toBe('I meant that');
+  });
+
+  it('rejoins a glued PREFIX morpheme too', () => {
+    expect(stripParentheses('(hand)bag')).toBe('handbag');
+    expect(stripParentheses('in(to) administration')).toBe('into administration');
+  });
+
+  it('rejoins the morpheme even when it sits inside an aside that is then stripped', () => {
+    // 林's gloss: the inner "(s)" must not be treated as a nesting level.
+    expect(stripParentheses('(bound form) circle(s) (i.e. specific group of people)')).toBe('circles');
+    expect(stripParentheses('to shoulder (push with the shoulder(s))')).toBe('to shoulder');
+  });
+
+  // The other side of the rule: an aside that merely LOST ITS SPACE is shaped
+  // identically at the parenthesis and must still be stripped. Only the CONTENT
+  // separates the two cases, which is why the test is `^[a-z]{1,4}$` and not adjacency.
+  it('still strips a glued parenthetical whose content is a real aside', () => {
+    expect(stripParentheses('skimming(of milk)')).toBe('skimming');
+    expect(stripParentheses('folk prescription(same as X)')).toBe('folk prescription');
+    expect(stripParentheses('regardless of, irrespective of(+ de)')).toBe('regardless of, irrespective of');
+    expect(stripParentheses('made by Heaven and arranged by Earth(idiom)')).toBe('made by Heaven and arranged by Earth');
+  });
+
+  it('leaves uppercase / digit-bearing glued parentheticals to the aside rule', () => {
+    // Chemical and mathematical formulas: mangled either way, but they must not be
+    // pulled into the morpheme rule, where "(OH)" would become part of the word.
+    expect(stripParentheses('calcium hydroxide Ca(OH)2')).toBe('calcium hydroxide Ca2');
+    expect(stripParentheses('copper(II) acetoarsenite')).toBe('copper acetoarsenite');
+  });
+});
+
+/**
+ * The backfill scripts run outside the server tsconfig build, so they carry their own
+ * JS implementation (scripts/backfill/shared/lib/stripParentheses.js). It used to be
+ * THREE hand-copied `\s*\([^)]*\)` regexes that had silently drifted from this
+ * scanner — a regex stops at the first ')', so nested asides leaked into whatever the
+ * backfill WROTE to the database. They are one module now; this asserts it stays in
+ * step with the server twin. (The client twin, src/utils/definitionUtils.ts, is a
+ * third copy for the same build-boundary reason — keep all three in sync.)
+ */
+describe('stripParentheses — backfill JS twin parity', () => {
+  it('agrees with the server implementation on every case above', async () => {
+    const { stripParentheses: backfillStrip } = await import(
+      '../scripts/backfill/shared/lib/stripParentheses.js'
+    );
+    const cases = [
+      'to run (quickly)', '(informal) hello', 'plain gloss',
+      'a waiter (literally, one who runs (fast))',
+      'to box (fight against (a person) in a boxing match)',
+      '(an aside (nested) still an aside)', '(suffix) -gate (i.e. scandal',
+      'derived from Watergate)', 'to go (informal); to leave (a place)',
+      'to have to [+de (particle)]', 'firstly, ...',
+      '(verb complement indicating success)',
+      'personal(ly)', 'there still remain(s)', 'over the past year(s)',
+      "to abandon one's child(ren)", 'I mean(t) that', '(hand)bag',
+      'in(to) administration', '(bound form) circle(s) (i.e. specific group of people)',
+      'to shoulder (push with the shoulder(s))', 'skimming(of milk)',
+      'folk prescription(same as X)', 'regardless of, irrespective of(+ de)',
+      'made by Heaven and arranged by Earth(idiom)', 'calcium hydroxide Ca(OH)2',
+      'copper(II) acetoarsenite', '',
+    ];
+    for (const c of cases) expect(backfillStrip(c)).toBe(stripParentheses(c));
+  });
 });
 
 describe('generateShortDefinition', () => {

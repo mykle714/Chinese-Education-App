@@ -1,5 +1,6 @@
 import React from "react";
 import PageHeader, { HeaderIconButton, HeaderToggleChip } from "../../../components/PageHeader";
+import AudioModeChip from "../../../components/AudioModeChip";
 import type { LastMarkUndoSnapshot } from "../types";
 import type { Language } from "../../../types";
 
@@ -20,7 +21,6 @@ interface FlashcardsLearnHeaderProps {
     // TOGGLE is no longer here (it moved onto the card's rail), but its STATE still
     // reaches this header for exactly this reason.
     editMode: boolean;
-    onSettingsClick: () => void;
 }
 
 const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
@@ -34,12 +34,19 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
     showPinyin,
     onTogglePinyin,
     editMode,
-    onSettingsClick,
 }) => {
-    // Control-placement principle (see also SettingsPanelBody): the header surfaces
-    // only the "quick" pinyin toggle flipped often mid-study. All other learn prefs
-    // (tone color, word spacing, autoplay) live in the Settings sheet as "setup"
-    // prefs — the single complete control panel.
+    // Control placement: this header now holds EVERY control the flp has. Its
+    // settings sheet was deleted on 2026-08-28 once its last row moved out — tone
+    // color went to /settings → Display (a display pref, not a study control), and
+    // the progress-category chip was removed from the card back altogether. What is
+    // left is genuinely per-session — pinyin and audio mode — so it belongs here.
+    //
+    // Audio moved here on 2026-08-28, out of the sheet, when it stopped being a flp
+    // pref and became the app-wide narration setting: muting the app on entering a
+    // quiet room is the most time-sensitive control on this page, and it should not
+    // cost a sheet open. AudioModeChip is self-contained (it reads the setting
+    // itself) and identical on every surface that renders it — scp, Bubble Match,
+    // Hydra, Match Speed. See docs/AUDIO_PLAYBACK.md.
     //
     // The icon-layout editor's `edit` toggle used to sit here and has MOVED onto the
     // card, as `customize` on `CardOpsRail` (artboard 19's header does not carry it;
@@ -67,12 +74,8 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
                     pinyin
                 </HeaderToggleChip>
             )}
-            <HeaderIconButton
-                className="mobile-demo-tool-button mobile-demo-settings-button"
-                icon="settings"
-                label="Open settings"
-                onClick={onSettingsClick}
-            />
+            {/* Narration audio mode — every language; narration is not Chinese-only. */}
+            <AudioModeChip className="flashcards-learn__audio-chip" />
         </>
     );
 
@@ -80,8 +83,8 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
         <PageHeader
             title={selectedCategory ? `Learn: ${selectedCategory}` : "Learn"}
             onBack={onBack}
-            // Still the busiest header in the app — four controls beside a title that
-            // interpolates a deck name. The Learn artboard sets 18px for exactly this.
+            // Still the busiest header in the app — up to five controls beside a title
+            // that interpolates a deck name. The Learn artboard sets 18px for this.
             size="dense"
             rightContent={rightItems}
         />

@@ -30,7 +30,7 @@ import type { Language, DiscoverCard, SortPack } from "../../types";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useAuth } from "../../AuthContext";
 import { useTTS } from "../../hooks/useTTS";
-import { useDiscoverSettings } from "../../hooks/useDiscoverSettings";
+import AudioModeChip from "../../components/AudioModeChip";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useCategoryCounts } from "../../hooks/useCategoryCounts";
 import { COLORS } from "../../theme/colors";
@@ -632,12 +632,10 @@ const SortCardsPage: React.FC = () => {
     // Read once per distinct query string; the list is a stable input to the fetch below.
     }, [searchParams]);
     const tts = useTTS();
-    const { settings: discoverSettings, update: updateDiscoverSettings } = useDiscoverSettings();
     // The eip renders pinyin per the SAME saved preference the flp uses, so a learner who
     // turned pinyin off there doesn't get it back here. scp deliberately exposes no toggle
     // of its own — the panel is a read-only detour, not a second settings surface.
     const { settings: learnSettings } = useFlashcardLearnSettings();
-    const audioUnlockedRef = useRef(false);
     // `useTTS` returns a NEW object identity every time its internal `speakingKey` state
     // flips — which happens on every autoplay narration start/stop. Depending on `tts`
     // directly in the callbacks below would therefore re-create them on each narration
@@ -858,11 +856,14 @@ const SortCardsPage: React.FC = () => {
         return null;
     }, []);
 
-    const unlockAudioOnce = useCallback(() => {
-        if (!audioUnlockedRef.current) {
-            audioUnlockedRef.current = true;
-            ttsRef.current.unlockAudio();
-        }
+    // Prime the audio sinks from this gesture. Deliberately NOT guarded by a
+    // "did it once" ref: `CloudTTSProvider.unlock()` is repeatable and cheap by
+    // design (one `ctx.state` read when there is nothing to do), and it is the
+    // only way to recover a context the OS suspended mid-session. A local latch
+    // here would spend that recovery on the first drag of the session and leave
+    // narration dead until reload — the exact bug fixed on 2026-08-28.
+    const unlockAudio = useCallback(() => {
+        ttsRef.current.unlockAudio();
     }, []);
 
     // Fires when a card is first picked up (drag start). Unlocks audio (mobile requires
@@ -870,19 +871,19 @@ const SortCardsPage: React.FC = () => {
     // hit-tests share one threshold. Narration itself is handled by the pack-level
     // autoplay effect below, not per-pickup.
     const handleCardPickup = useCallback(() => {
-        unlockAudioOnce();
+        unlockAudio();
         snapshotBucketRects();
-    }, [unlockAudioOnce, snapshotBucketRects]);
+    }, [unlockAudio, snapshotBucketRects]);
 
     // Tap-to-play for a single card's header speaker button. Unlocks audio on the
     // gesture (mobile) then narrates just that card's word. Independent of the
     // pack-level autoplay effect — this is an on-demand replay.
     const handlePlayCardAudio = useCallback(
         (card: DiscoverCard) => {
-            unlockAudioOnce();
+            unlockAudio();
             void ttsRef.current.speakSentence(card.entryKey, card.pronunciation ?? undefined);
         },
-        [unlockAudioOnce]
+        [unlockAudio]
     );
 
     // Open the eip for one on-deck card. A DiscoverCard is NOT a VocabEntry — it carries
@@ -927,12 +928,12 @@ const SortCardsPage: React.FC = () => {
     // autoplay/TTS gets turned off mid-sequence.
     useEffect(() => {
         if (!currentPack) return;
-        if (!tts.enabled || !discoverSettings.autoplay) return;
+        if (!tts.autoplay) return;
         let cancelled = false;
         (async () => {
             for (const card of currentPack.cards) {
                 if (cancelled) return;
-                await tts.speakSentence(card.entryKey, card.pronunciation ?? undefined);
+                await tts.autoSpeakSentence(card.entryKey, card.pronunciation ?? undefined);
             }
         })();
         return () => {
@@ -940,7 +941,7 @@ const SortCardsPage: React.FC = () => {
             tts.cancel();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPack?.packKey, tts.enabled, discoverSettings.autoplay]);
+    }, [currentPack?.packKey, tts.autoplay]);
 
     // Advance past a completed pack: drop the head and refill the tail with one pack,
     // excluding the packKeys we still hold so the replacement is never a duplicate.
@@ -1233,22 +1234,12 @@ const SortCardsPage: React.FC = () => {
             scrollable={false}
             headerExtraActions={
                 <>
-                    <Button
-                        className="sort-cards__autoplay-toggle"
-                        variant={discoverSettings.autoplay ? "contained" : "text"}
-                        size="small"
-                        onClick={() => updateDiscoverSettings({ autoplay: !discoverSettings.autoplay })}
-                        aria-pressed={discoverSettings.autoplay}
-                        sx={{
-                            minWidth: "unset", px: 1, py: 0.25, height: "30px",
-                            fontSize: SIZE.micro, textTransform: "lowercase", lineHeight: LEADING.normal,
-                            borderRadius: "6px", color: COLORS.onSurface,
-                            backgroundColor: discoverSettings.autoplay ? COLORS.card : "transparent",
-                            "&:hover": { backgroundColor: discoverSettings.autoplay ? COLORS.card : "transparent" },
-                        }}
-                    >
-                        autoplay
-                    </Button>
+                    {/* The APP-WIDE narration audio mode, not a page-local pref. One
+                        tap cycles off → passthrough → media; the same setting has its
+                        explained three-option form on /settings. Was a bespoke MUI
+                        Button styled inline here; it is now the shared chip, so scp
+                        matches the flp and game headers exactly. */}
+                    <AudioModeChip className="sort-cards__audio-chip" />
                     {/* Skip — de-emphasized (§5.1): a small header action, not a drag bucket.
                         Defers every remaining unsorted card in the on-deck pack. */}
                     <Button
@@ -1406,10 +1397,13 @@ const SortCardsPage: React.FC = () => {
                                     className="sort-cards__card-slot"
                                 >
                                     {/* Header band: "Commonality" caption over the 5-dot
-                                        register meter (frequencyScore, 1 = literary … 5 =
-                                        natural colloquial) + an x/5 readout. Lives on the
-                                        platform, not the card, so it stays put while the
-                                        card is dragged into a bucket. */}
+                                        frequency meter (frequencyScore, 1 = almost never
+                                        spoken … 5 = constant in daily speech) + an x/5
+                                        readout. NOT a register scale — that was the
+                                        pre-migration-122 `vernacularScore` meaning; see
+                                        docs/DEFINITION_MAPPING.md. Lives on the platform,
+                                        not the card, so it stays put while the card is
+                                        dragged into a bucket. */}
                                     <CardDeckHeader className="sort-cards__card-deck-header">
                                         {card.frequencyScore != null && (
                                             <>
@@ -1512,8 +1506,8 @@ const SortCardsPage: React.FC = () => {
                                 onUsedInItemClick={(item) => eip.openForEntryKey(item.entryKey)}
                                 onExampleSegmentClick={(segment) => eip.openForEntryKey(segment)}
                                 depth={0}
-                                onSpeak={tts.enabled ? tts.speak : undefined}
-                                onSpeakSentence={tts.enabled ? tts.speakSentence : undefined}
+                                onSpeak={tts.speak}
+                                onSpeakSentence={tts.speakSentence}
                                 speakingKey={tts.speakingKey}
                                 // NOTE: no `onAddToLibrary` — the "+" header button stays
                                 // hidden here on purpose. On scp, adding to Learn Now IS the

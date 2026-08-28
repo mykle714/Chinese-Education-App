@@ -35,10 +35,13 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * Two ways, and both promote a card without any card leaving the frame:
  *
  *   • TAP a back card — it goes to the front, the other two keep their relative order.
- *   • SWIPE the front card, in EITHER direction (`useHandSwipe`). The thrown card goes to
- *     the back of the stack and the card directly behind it surfaces. Left and right are
- *     the same move: the direction is which way the card leans as you throw it, nothing
- *     more — the hand is a cycle, and a cycle has no two ends to steer toward.
+ *   • THROW the front card, in ANY direction (`useHandSwipe`). The card follows the finger
+ *     on both axes — as an flp card does — and commits once it is far enough from where
+ *     the gesture started, measured as straight-line distance, so the commit boundary is a
+ *     circle rather than two side gates. Every direction is the same move: the thrown card
+ *     goes to the back of the stack and the card directly behind it surfaces. Direction is
+ *     only the path the card takes out of the frame — the hand is a cycle, and a cycle has
+ *     no ends to steer toward.
  *
  * Between them the two gestures reach ALL SIX arrangements of the three cards, which is
  * why the fan is stored rather than derived (see `afterTap` / `afterSwipe`).
@@ -86,11 +89,17 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * centres against what the head leaves, so a 16→27px jump there would jolt the numeral the
  * pre-render exists to hold still.
  *
- * ── Ineligibility is not disablement ──────────────────────────────────────────
+ * ── Ineligibility is not disablement, and a zero is not a fault ───────────────
  * A mode with no eligible cards (Review, whose bands are EARNED and cannot be filled
- * by provisioning — see docs/PROVISIONAL_CARDS.md) renders greyed but still fires
- * `onStudy`, so the host can explain why rather than leaving a dead card. The card can
- * always be brought forward; it is the commit that is refused.
+ * by provisioning — see docs/PROVISIONAL_CARDS.md) still fires `onStudy`, so the host
+ * can explain why rather than leaving a dead card. The card can always be brought
+ * forward; it is the commit that is refused.
+ *
+ * It is NOT greyed for it. A count of 0 is the ordinary end of a session — every card
+ * marked, everything resting — and draining a card's colour turns that into a failure
+ * state the learner reads as "something is wrong with this mode". The card keeps its
+ * hue and swaps its corner tag for a plain-language `zeroMessage` ("All caught up!"),
+ * which says the same thing in words the number cannot.
  *
  * Referenced by docs/SHELF_REDESIGN.md (entry 2) and docs/DECKS_FEATURE.md.
  */
@@ -124,11 +133,24 @@ export interface StudyHandCard {
     figure: number | undefined;
     /** What the figure IS, in a word or two — it follows the number in the tag ("Cards"). */
     figureCaption: string;
+    /**
+     * What the corner tag says INSTEAD of "0 Cards" when the figure lands on zero.
+     * Display copy the host owns, because the right sentence is per-mode: an empty
+     * Review pool means "All caught up!", an empty Challenge/Mix pool means the learner
+     * needs more cards. Omit to keep the plain "0 Cards".
+     */
+    zeroMessage?: string;
     /** Ramp hue for the card's fill. */
     hue: RampHue;
     /**
-     * Whether a session can actually be started. False greys the card and its button;
-     * `onStudy` still fires so the host can say why.
+     * Whether a session can actually be started. Three states, and the third matters:
+     * `true`/`undefined` render identically (an offered card), `false` greys the COMMIT
+     * BUTTON ONLY — never the card's fill or opacity, see "a zero is not a fault" above.
+     *
+     * Leave it `undefined` while the answer is still being fetched rather than passing a
+     * provisional `false`: the strict `=== false` test below exists so a host with an
+     * in-flight count cannot accidentally paint a loading state onto the card. `onStudy`
+     * fires in every state, so the host can explain a refusal in its own words.
      */
     eligible?: boolean;
 }
@@ -154,9 +176,6 @@ const SLOTS = {
 const SLOT_TRANSITION_MS = 260;
 const SLOT_TRANSITION = `top ${SLOT_TRANSITION_MS}ms ease, left ${SLOT_TRANSITION_MS}ms ease, right ${SLOT_TRANSITION_MS}ms ease, transform ${SLOT_TRANSITION_MS}ms ease`;
 
-/** Grey fill for a mode with nothing to draw from — the card is present, not offered. */
-const INELIGIBLE_FILL = COLORS.grey;
-
 /**
  * Promote `id` to the front, leaving the other two in their existing relative order.
  * This is the TAP path.
@@ -168,10 +187,10 @@ function afterTap(order: HandOrder, id: StudyModeId): HandOrder {
 
 /**
  * Send the front card to the BACK of the stack and surface the one directly behind it.
- * This is the SWIPE path, and it is DIRECTION-AGNOSTIC by design — a left throw and a
- * right throw produce the same result. The hand is a cycle of three, so there is no
- * second direction for a swipe to mean; the direction only shows in the lean of the card
- * as it leaves (`useHandSwipe`'s tilt).
+ * This is the THROW path, and it is DIRECTION-AGNOSTIC by design — a throw left, right, up
+ * or down produces the same result. The hand is a cycle of three, so there is no second
+ * direction for a throw to mean; the direction only shows in the card's exit path, and in
+ * the lean it takes from the horizontal component of the drag (`useHandSwipe`'s tilt).
  *
  * Writing the stack `[a, b, c]` (bottom → top): `[a, b, c] → [c, a, b]`, a 3-cycle.
  *
@@ -199,8 +218,8 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
         [order]
     );
 
-    // Throwing the front card. The gesture reports a direction, which is deliberately
-    // ignored: both directions are the same rotation (see `afterSwipe`). `setOrder` takes
+    // Throwing the front card. The gesture reports NO direction, because every direction is
+    // the same rotation of the hand (see `afterSwipe`). `setOrder` takes
     // the updater form because a fast second swipe can land before the first has
     // re-rendered, and each swipe must compose onto the stack the previous one produced.
     const handleSwipe = useCallback(() => {
@@ -233,7 +252,13 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                 const slot = slotOf(card.id);
                 const isFront = slot === "front";
                 const geometry = SLOTS[slot];
+                // Ineligibility dims the COMMIT only. The card's fill and opacity stay
+                // put: a zero count is a normal, frequent outcome and must not read as a
+                // broken card (see "a zero is not a fault" in the docblock).
                 const greyed = card.eligible === false;
+                // A landed zero speaks in words rather than printing "0 Cards" — the
+                // number alone reads as a shortfall, the sentence reads as a state.
+                const isZero = card.figure === 0;
                 // The corner tag has nothing to say until the count lands, so it says
                 // nothing — see the tag's own comment below.
                 const figureKnown = card.figure !== undefined;
@@ -283,11 +308,11 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                             // middle.
                             transformOrigin: "50% 0",
                             transition: isBeingDragged ? "none" : SLOT_TRANSITION,
-                            // Vertical panning stays with the page/sheet beneath; the
-                            // horizontal axis is claimed by the gesture (which calls
-                            // preventDefault once it has committed to it).
-                            ...(isFront ? { touchAction: "pan-y" } : {}),
-                            backgroundColor: greyed ? INELIGIBLE_FILL : RAMP[card.hue].fill,
+                            // The throw is omnidirectional, so the played card claims the
+                            // touch on BOTH axes once it clears the gesture's slop — the
+                            // page/sheet beneath is scrolled from anywhere but this card.
+                            ...(isFront ? { touchAction: "none" } : {}),
+                            backgroundColor: RAMP[card.hue].fill,
                             borderRadius: "22px",
                             border: `1px solid ${COLORS.border}`,
                             padding: isFront ? "15px 16px 14px" : "10px 16px 14px",
@@ -300,7 +325,6 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                             flexDirection: "column",
                             cursor: isFront ? (isBeingDragged ? "grabbing" : "grab") : "pointer",
                             overflow: "hidden",
-                            opacity: greyed ? 0.72 : 1,
                         }}
                     >
                         <Box
@@ -372,7 +396,11 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                     transition: "opacity 320ms ease",
                                 }}
                             >
-                                {figureKnown ? `${card.figure!.toLocaleString()} ${card.figureCaption}` : ""}
+                                {!figureKnown
+                                    ? ""
+                                    : isZero && card.zeroMessage
+                                        ? card.zeroMessage
+                                        : `${card.figure!.toLocaleString()} ${card.figureCaption}`}
                             </Typography>
                         </Box>
 

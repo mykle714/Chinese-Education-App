@@ -21,6 +21,13 @@
  *     gloss clusters skip the API.)
  *   Stage C — SCORE each cluster's conversation frequency 1–5 (lib/frequencyScore.js),
  *     independently — the whole point of clustering (会 "can"=5 vs "accounts"=1).
+ *   Stage C.5 — TIEBREAK ORDER (shared/lib/tiebreakOrder.js): the 1–5 scale is
+ *     coarse and Stage C scores each cluster without seeing its siblings, so
+ *     clusters routinely tie. Every read path sorts by score with a STABLE sort,
+ *     which means a tie is decided by this array's order — i.e. by whichever sense
+ *     the card stars and shows by default. This pass ranks the tied clusters (and
+ *     only those, within the slots they already occupy) by the marginal commonality
+ *     difference that was too small to move their band. No API call when nothing ties.
  *
  * HUMAN REVIEW: there is no review file. Anything the clustering model is even
  * slightly unsure about (prompt rule 6 → reviewNotes), plus low-confidence
@@ -41,8 +48,17 @@
  *   npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --words=会,中  # specific words
  *   npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --ids=1,2,3
  *   npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --no-critic   # skip the Stage B critic
+ *   npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --no-tiebreak # skip the Stage C.5 tied-sense ordering
  *   npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --merge-pass  # Stage A.5: consolidate over-fine clusters
  *   npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --rescore-only # Stage C ONLY: re-score existing multi-cluster rows, keep the partition
+ *
+ * ⚠ AFTER A SCORING-ONLY SCRIPT_VERSION BUMP, USE `--rescore-only`, NOT `--stale`.
+ * A version bump marks every row stale, and `--stale` re-runs the WHOLE pipeline
+ * (split → critic → merge), which repartitions senses — new `sense` labels break
+ * `vet.selectedSense`, `longDefinition`'s per-sense keying and the est sentence tags,
+ * all of which address a cluster BY LABEL. When only the frequency rubric changed,
+ * `--rescore-only` runs Stage C alone and leaves the partition (and every label)
+ * exactly as it was. See docs/DEFINITION_CLUSTERS.md.
  */
 
 import dotenv from 'dotenv';
@@ -55,10 +71,12 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
+import { reconcileFrequencyScore } from '../shared/lib/senseClusters.js';
 import { createGlossOrderer } from './lib/orderGlosses.js';
 import { createFrequencyScorer } from './lib/frequencyScore.js';
+import { createClusterTiebreaker } from '../shared/lib/tiebreakOrder.js';
 
-const SCRIPT_VERSION = 6; // bump when this script's logic/prompt changes (v6: Stage C scores the SENSE, not the headword — the per-cluster call now passes `sense` so the scorer switches to sense mode, and its temperature drops 0.1 → 0; this is what made 老 default to "experienced" and 和 to "to mix / blend", and is why 39.4% of clustered entries had tied top scores. Re-run with --rescore-only; v5: Stage C rubric re-pointed from register to everyday-conversation frequency, and the per-cluster key renamed vernacularScore → frequencyScore, migration 122; v4: Stage A.5 merge prompt no longer fuses etymologically-related but context-distinct senses, e.g. 月 moon vs month; v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
+const SCRIPT_VERSION = 9; // bump when this script's logic/prompt changes (v9: Stage C.5 — tied clusters (equal frequencyScore) are now ORDERED by a dedicated ranking pass instead of falling through to whatever order Stage A emitted; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. Ordering only — no cluster's score, label or glosses change, so --rescore-only picks it up safely. v8: THE FREQUENCY AXIS CHANGED — Stage C now scores how much a sense would STAND OUT in casual conversation rather than how often it occurs; bands 4+5 merged and the old band 1 split. All pre-2026-08-28 cluster scores are on the old axis — re-score with --rescore-only. v7: the shared rubric now credits BOUND FORMS through their compounds — a bound morpheme heard constantly inside common compounds is frequent, not rare — and the cluster write now enforces the word/cluster frequency invariant, det."frequencyScore" == MAX(cluster.frequencyScore), in the same statement; re-score with --rescore-only. v6: Stage C scores the SENSE, not the headword — the per-cluster call now passes `sense` so the scorer switches to sense mode, and its temperature drops 0.1 → 0; this is what made 老 default to "experienced" and 和 to "to mix / blend", and is why 39.4% of clustered entries had tied top scores. Re-run with --rescore-only; v5: Stage C rubric re-pointed from register to everyday-conversation frequency, and the per-cluster key renamed vernacularScore → frequencyScore, migration 122; v4: Stage A.5 merge prompt no longer fuses etymologically-related but context-distinct senses, e.g. 月 moon vs month; v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const includeAll  = process.argv.includes('--all');
@@ -71,6 +89,9 @@ const mergePass   = process.argv.includes('--merge-pass'); // Stage A.5 consolid
 // partition was never in question — only the scores were — and a full re-cluster would
 // have meant ~4x the API calls plus the risk of churning senses that were already right.
 const rescoreOnly = process.argv.includes('--rescore-only');
+// --no-tiebreak: skip Stage C.5. The tiebreak costs one extra call per entry that
+// HAS a tie (none otherwise); this is the escape hatch for a cheap/offline run.
+const skipTiebreak = process.argv.includes('--no-tiebreak');
 
 const idsArg = process.argv.find(a => a.startsWith('--ids='));
 const targetIds = idsArg ? idsArg.replace('--ids=', '').split(',').map(Number) : null;
@@ -106,6 +127,8 @@ const REVIEW_MARKER = '⚠ CLUSTER REVIEW';
 // Shared cores (decision 5: one source of truth for ordering + frequency).
 const { pass1Sort, pass2Critique } = createGlossOrderer({ anthropic, cachedSystem });
 const { scoreFrequency } = createFrequencyScorer({ anthropic });
+// Stage C.5 — ranks clusters that TIE on frequencyScore (see shared/lib/tiebreakOrder.js).
+const { tiebreakClusterOrder } = createClusterTiebreaker({ anthropic, cachedSystem, model: CLUSTER_MODEL, language: 'Chinese' });
 
 // ─── Stage A: clustering prompt ───────────────────────────────────────────────
 
@@ -387,7 +410,7 @@ async function run() {
     console.log(`Found ${entries.length} entries to cluster\n`);
 
     let updated = 0, failed = 0, opusRetries = 0;
-    let totalClusters = 0, multiClusterWords = 0, flaggedEntries = 0;
+    let totalClusters = 0, multiClusterWords = 0, flaggedEntries = 0, tiebreakCalls = 0;
 
     for (const row of entries) {
       const definitions = Array.isArray(row.definitions)
@@ -432,16 +455,10 @@ async function run() {
             }
             finalClusters.push({ ...cluster, frequencyScore });
           }
-          // Re-sorting is NOT done here: `sortedSenseClusters` orders on read, so the
-          // stored array order stays whatever the clusterer chose. Changing it here
-          // would make the stored order and the read order two competing opinions.
-          const top = finalClusters.reduce((a, b) => ((b.frequencyScore ?? -1) > (a.frequencyScore ?? -1) ? b : a));
-          const tied = finalClusters.filter((c) => (c.frequencyScore ?? -1) === (top.frequencyScore ?? -1)).length;
-          if (tied > 1) {
-            // The tie is the fingerprint of the old bug (every cluster scored as the
-            // headword). After v6 it should be rare, so surface any that survive.
-            reviewNotes.push(`${tied} clusters tied at top score ${top.frequencyScore} — default sense decided by array order`);
-          }
+          // Cross-band re-sorting is NOT done here: `sortedSenseClusters` orders by
+          // score on read, so the stored order stays whatever the clusterer chose and
+          // the two never become competing opinions. Ties WITHIN a band are the one
+          // thing the read-side sort cannot decide — Stage C.5 below settles those.
         } else if (definitions.length === 1) {
           // ── Fast path (zero API calls) ──────────────────────────────────────
           // A single-definition entry is trivially one cluster, so skip EVERY model
@@ -546,6 +563,18 @@ async function run() {
           }
         }
 
+        // ── Stage C.5: order the clusters that TIED on frequencyScore ──────────
+        // Runs for both paths above: a --rescore-only pass produces exactly the same
+        // ties a full pass does, and the tiebreak is what turns them into a decision.
+        // Ordering only — labels/glosses/scores are untouched, so no `selectedSense`
+        // label, per-sense longDefinition key or est sentence tag can break.
+        if (!skipTiebreak && finalClusters.length > 1) {
+          const t = await tiebreakClusterOrder(row.word1, finalClusters);
+          finalClusters = t.clusters;
+          reviewNotes.push(...t.notes);
+          if (t.called) tiebreakCalls++;
+        }
+
         totalClusters += finalClusters.length;
         if (finalClusters.length > 1) multiClusterWords++;
         if (reviewNotes.length) flaggedEntries++;
@@ -563,9 +592,21 @@ async function run() {
         // Print review flags to stdout for the calling agent to surface.
         printReviewFlags(row.word1, row.id, reviewNotes);
 
+        // Enforce the word/cluster frequency invariant in the SAME statement that
+        // writes the clusters, so the two numbers can never drift apart again:
+        // det."frequencyScore" == MAX(cluster.frequencyScore). See the header of
+        // scripts/backfill/shared/lib/senseClusters.js for the rule and its history.
+        // The word column is guarded separately from the clusters — a validator who
+        // approved `frequencyScore` outranks the invariant, and the CASE leaves their
+        // number alone (the only way this entry can stay inconsistent, by design).
+        const reconciled = reconcileFrequencyScore(row.frequencyScore, finalClusters);
         await client.query(
-          `UPDATE dictionaryentries_zh SET "definitionClusters" = $1::jsonb WHERE id = $2`,
-          [JSON.stringify(finalClusters), row.id]
+          `UPDATE dictionaryentries_zh
+              SET "definitionClusters" = $1::jsonb,
+                  "frequencyScore" = CASE WHEN ${validatedClause(['frequencyScore'], 'dictionaryentries_zh')}
+                                          THEN $3::int ELSE "frequencyScore" END
+            WHERE id = $2`,
+          [JSON.stringify(reconciled.clusters ?? finalClusters), row.id, reconciled.wordScore]
         );
         await stampEntries(client, 'dictionaryentries_zh', row.id);
         updated++;
@@ -597,6 +638,7 @@ async function run() {
     console.log(`Total clusters    : ${totalClusters}`);
     console.log(`Multi-cluster words: ${multiClusterWords}`);
     console.log(`Flagged for review: ${flaggedEntries} entr${flaggedEntries === 1 ? 'y' : 'ies'} (see "${REVIEW_MARKER}" lines above)`);
+    console.log(`Tiebreak calls    : ${tiebreakCalls}${skipTiebreak ? ' (--no-tiebreak)' : ''} — entries with senses tied on score`);
     console.log(`Opus retries      : ${opusRetries}`);
     console.log('='.repeat(60));
   } finally {

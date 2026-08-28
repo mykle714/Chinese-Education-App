@@ -269,7 +269,7 @@ export interface ActiveChallengeCount {
  * Resolved by `StudyChallengeService.getRoundContext` and consumed by the pool
  * reads in `OnDeckVocabService` — the game itself never sees it. It is the answer
  * to three questions the pool cannot ask the client for, because a client could
- * lie about any of them: WHICH challenge, WHICH round, and WHICH twelve words.
+ * lie about any of them: WHICH challenge, WHICH round, and WHICH nine words.
  *
  * `vocabEntryIds` is positional against `words` and is re-materialised on the way
  * out, so a player who deleted a contested card mid-week still gets a playable

@@ -21,7 +21,7 @@ punished exactly the learner who most needed to practise — the new one:
 | Bubble Match | 20 (distribution sum) | `src/games/bubble-match/constants.ts` |
 | Match Speed | 20 (`ENTRY_GATE_CARDS`) + "no on-mode cards" | `src/games/match-speed/constants.ts` |
 | Speed Reading | 20 (`ENTRY_GATE_CARDS`) | `src/games/speed-reading/constants.ts` |
-| Word Search | 12 distinct-character words | `src/games/word-search/constants.ts` |
+| Word Search | 9 distinct-character words | `src/games/word-search/constants.ts` |
 | flp | 20 (`MIN_LIBRARY_CARDS`) | `src/features/flashcards/FlashcardsDecksPage.tsx` |
 
 They are now **baselines** — how many cards the surface *wants*, not a bar the learner
@@ -213,7 +213,7 @@ There are **two triggers**, and they answer different questions:
 ⚠️ **`getFillerPool` is the odd one out: it lends LAST but it is not really about
 lending.** The other two answer "does this learner have enough cards"; this one answers
 "which of their own cards should pad a board that is measuring something ELSE" — a
-challenge round measures its twelve contested words, so its filler must not be a source
+challenge round measures its nine contested words, so its filler must not be a source
 of difficulty. Lending is merely its final rung, reached by a brand-new player and by
 nobody else.
 
@@ -602,7 +602,7 @@ nothing left to give **does not appear at all**.
 
 ## 6. Word Search is the awkward one
 
-Word Search needs twelve words with **mutually distinct characters**. A row count cannot
+Word Search needs nine words with **mutually distinct characters**. A row count cannot
 express that, so meeting the baseline does *not* guarantee a buildable grid.
 
 `OnDeckVocabController.getWordSearchGrid` therefore escalates: build the grid, and while

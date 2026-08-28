@@ -8,7 +8,6 @@ import { FC_FONT } from "./constants";
 import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
 import { useAuth } from "../../AuthContext";
-import { tts } from "../../services/tts";
 import type { VocabEntry, Language, ValidationField } from "../../types";
 
 // One example sentence, as stored on a vet/det row.
@@ -26,8 +25,8 @@ const EXAMPLE_SENTENCE_FIELDS: ValidationField[] = [
 //   - the eip's Examples tab (InfoCardPanelBody), and
 //   - the read-only + saved cdp (VocabCardDetailBody / VocabCardSections).
 // Every est feature (headword underline, English-gloss underline, per-segment
-// definition popups + drill-in, per-sentence audio, the drag-scrub gesture that
-// walks the selection word-by-word with audio) lives here exactly once.
+// definition popups + drill-in, per-sentence audio, per-word tap-to-narrate)
+// lives here exactly once.
 interface ExampleSentenceListProps {
   sentences: ExampleSentence[];
   // Headword to underline within each sentence's foreign text (and, via
@@ -166,16 +165,10 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
             language={language}
             selectable
             onSegmentOpen={onSegmentOpen}
-            // Drag-scrub: while a segment is selected, a horizontal drag anywhere
-            // on screen walks the selection word-by-word and narrates each word.
-            // Reuses the sentence-narration callback (same (text, pronunciation)
-            // signature), so it inherits the parent's slow-rate wrapper and is
-            // absent whenever narration is off.
+            // Tap-to-narrate: tapping a word speaks it. Reuses the sentence-narration
+            // callback (same (text, pronunciation) signature), so it inherits the
+            // parent's slow-rate wrapper and is absent whenever narration is off.
             onSegmentSpeak={onSpeakSentence}
-            // Unlock the audio context on the gesture's pointerdown — the scrub's
-            // own narration fires from pointermove, too late for mobile autoplay
-            // policy to treat it as user-initiated.
-            onScrubStart={onSpeakSentence ? () => tts.cloud.unlock() : undefined}
           />
           <Typography
             className="example-sentence-english"

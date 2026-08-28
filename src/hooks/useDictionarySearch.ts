@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "../constants";
 import { hasChinese } from "../utils/textUtils";
 import { authHeader } from "../utils/authHeader";
-import { getBrowserTimezone } from "../minutePoints/minutePointsSync";
+import { getBrowserTimezone } from "../utils/browserTimezone";
 import type { DictionaryEntry, AiDictionaryEntry } from "../types";
 
 export interface SegmentGroup {

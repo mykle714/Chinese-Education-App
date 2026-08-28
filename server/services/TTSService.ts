@@ -275,29 +275,48 @@ function xmlEscape(s: string): string {
   return s.replace(/[&<>"']/g, c => XML_ESCAPES[c]);
 }
 
+// A Han ideograph — the only kind of character a pinyin syllable can belong to.
+// Punctuation, latin letters and digits are passed through to the SSML untouched.
+const HAN_CHAR = /\p{Script=Han}/u;
+
 /**
  * Build SSML wrapping each hanzi with a <phoneme alphabet="pinyin" ph="..."/>
  * hint. Returns null when we can't safely build a hint — caller should fall
  * back to the plain-text `input.text` path.
  *
+ * Syllables are aligned to the text's **Han characters only**. Everything else —
+ * 「，」「。」, latin letters, digits — is emitted as escaped SSML text between the
+ * phoneme tags, so Google still gets the punctuation it needs for sentence prosody.
+ * This is what makes a whole EXAMPLE SENTENCE hintable: the previous rule (one
+ * syllable per character, punctuation included) could never match a real sentence,
+ * so every sentence fell through to the plain-text path and the provider guessed
+ * each reading — narrating 行家 as *xíng jiā* against the *háng jiā* on screen.
+ *
  * Bail-out conditions (in order):
  *   1. No pinyin at all.
- *   2. Syllable count ≠ character count. The original "中" + "zhōng" works,
- *      "你好吗" + "nǐ hǎo ma" works, but anything misaligned (e.g. compounds
- *      with embedded punctuation, or 儿化音 fusions) is too risky to guess.
+ *   2. Syllable count ≠ Han-character count. "中" + "zhōng" works, "你好吗" +
+ *      "nǐ hǎo ma" works, "说到茶，他…" + its per-segment pinyin works; anything
+ *      misaligned (儿化音 fusions, a segment whose pinyin went missing) is still
+ *      too risky to guess, because one extra syllable shifts every reading after it.
  *   3. Any syllable fails normalization (junk char).
  */
 export function buildPinyinSsml(text: string, pinyin?: string | null): string | null {
   if (!pinyin) return null;
   const syllables = pinyin.trim().split(/\s+/).filter(Boolean);
   const chars = [...text];
-  if (syllables.length === 0 || syllables.length !== chars.length) return null;
+  const hanCount = chars.filter(c => HAN_CHAR.test(c)).length;
+  if (syllables.length === 0 || syllables.length !== hanCount) return null;
 
   const parts: string[] = [];
-  for (let i = 0; i < chars.length; i++) {
-    const ph = toNumberedPinyin(syllables[i]);
+  let s = 0;
+  for (const ch of chars) {
+    if (!HAN_CHAR.test(ch)) {
+      parts.push(xmlEscape(ch));
+      continue;
+    }
+    const ph = toNumberedPinyin(syllables[s++]);
     if (!ph) return null;
-    parts.push(`<phoneme alphabet="pinyin" ph="${ph}">${xmlEscape(chars[i])}</phoneme>`);
+    parts.push(`<phoneme alphabet="pinyin" ph="${ph}">${xmlEscape(ch)}</phoneme>`);
   }
   return `<speak>${parts.join('')}</speak>`;
 }

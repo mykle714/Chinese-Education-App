@@ -195,7 +195,9 @@ both clean.
 - **Unverified, and wanting eyes on a real screen rather than a typecheck:** the
   mark cells at 8px, the flp's tone-colored pinyin, and the three category chips
   that flipped from white-on-saturated to ink-on-pastel (MiniVocabCard's corner
-  badge, VocabCardDetailBody's chip, CardFace's `CategoryChip`).
+  badge, VocabCardDetailBody's chip, and CardFace's `CategoryChip` — the last of
+  which was **deleted on 2026-08-28** with the card-back category, so only two
+  remain to verify).
 
 <details><summary>oklch → sRGB hex, for re-deriving a value</summary>
 
@@ -482,14 +484,24 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   is a fifth of a pixel and the creep is invisible. The size is what makes the animation
   readable. The count stays at 11px, so the flame rather than the number is now the thing
   the eye lands on — which matches what it reports.
+- **The fill is a STUDY-SURFACE treatment only, since 2026-08-28.** Off-study pages —
+  every hub, the cdp, the deck/collection browsers — now draw a single **solid
+  `fireActive` flame** beside the count: no 24% ghost, no clipped fill layer, no pulse.
+  The badge branches on `isEligiblePage`, deliberately NOT on `!isActive`, because
+  "cannot earn here" and "could earn here but has gone quiet" are different answers and
+  only the second has a level worth showing. The previous behaviour carried the greyed
+  gauge everywhere, which put a part-full level on pages where it is frozen by
+  construction — the eye re-reads it on every visit and gets nothing back. The fill layer
+  is UNMOUNTED off-study rather than pinned at 100%, so it cannot animate on the way in
+  or out; the base glyph simply goes from 24% opacity to full.
 - **The flame moved into `PageHeader` itself on 2026-08-24, and is now on EVERY header.**
   It used to be opt-in — each page passed `<MinutePointsFireBadge />` into `rightContent`
   — so it appeared on the earning surfaces only, and was simply absent on the menus
   (Home, Games, Discover, Decks & Cards, Dictionary, Arena, Friends, …), on the cdp, and
   on two game pages that had forgotten it (Hydra Bubbles, Speed Reading). "Am I earning
   right now?" is a question the learner can only ask where the answer is drawn, so the
-  header now draws it everywhere: on an ineligible page the badge renders its own IDLE
-  grey, which is the correct answer rather than a missing one. Position is **last in the
+  header now draws it everywhere: on an ineligible page the badge renders its own
+  OFF-STUDY treatment, which is the correct answer rather than a missing one. Position is **last in the
   right slot** (flush right, page actions queueing to its left) so it holds the same
   screen corner regardless of how many actions a page contributes — the Account artboard
   draws flame-then-gear, and that one ordering was traded for a fixed position app-wide.
@@ -1422,9 +1434,9 @@ AREA behind it plus one change inside the sheet.
   forward. Bringing a card forward is deliberately NOT starting the session — the front
   card carries the figure and its own `Study now`, so choosing a mode and committing are
   two taps. The fan is an ordered stack (`HandOrder`, bottom → top), seeded from
-  `FAN_ORDER`; a card is brought forward by TAPPING it, or by SWIPING the front card to the
-  back of the stack in either direction (`useHandSwipe`, added later — see
-  DECKS_FEATURE.md § "The card hand"). Swipe and tap together reach all six arrangements.
+  `FAN_ORDER`; a card is brought forward by TAPPING it, or by THROWING the front card to the
+  back of the stack in any direction (`useHandSwipe`, added later — see
+  DECKS_FEATURE.md § "The card hand"). Throw and tap together reach all six arrangements.
 - **The Centers rail (`.ctr2`) moved ABOVE the hand.** This resolves the entry's old
   conflict (a): the artboard has a slot for Reading/Writing Center now. They are a
   different KIND of destination — a place to look at your library by skill, not a session
@@ -1444,7 +1456,9 @@ Mix. `undefined` until the library lands, so the cards print an em dash rather t
 provisional `0` — `0` is a real answer every one of these figures can give, and a common
 one on a cooldown count. Review's gate reads that ready count and its toast branches on
 whether cards are merely resting; an ineligible card still fires `onStudy` so the host
-can explain rather than leaving a dead card.
+can explain rather than leaving a dead card. An ineligible or zeroed card **keeps its
+ramp fill** (only the commit button dims) and swaps its corner tag for a `zeroMessage` —
+"All caught up!" on Review, "Ready for more cards!" on Challenge/Mix.
 
 ⚠️ This entry originally shipped **band totals** with per-card captions (`in rotation` /
 `ready` / `waiting`), and Mix's total omitted Mastered even though its loop deals one
@@ -2400,7 +2414,7 @@ place (the eip definition tab's `InfoCardActionBar`):
 
 | | |
 |---|---|
-| **CARD operations** — customize, file into a deck, delete | belong to the card object, so they live ON the card, behind its `•••` (`CardOpsRail`, `.crail`) |
+| **CARD operations** — customize, file into a deck, write a note on it | belong to the card object, so they live ON the card, behind its `•••` (`CardOpsRail`, `.crail`) |
 | **WORD tools** — practise writing, load into Compare | would still make sense if the card did not exist, so they live on the PAGE above it (`WordToolsRail`, `.wtl.top`) |
 
 Everything else follows: the eip becomes information-only, `InfoCardActionBar` is
@@ -2422,11 +2436,18 @@ that card's rail).
   vocabulary — unchanged, and already what the app did.
 - **21 · card menu.** `CardOpsRail`. The `•••` expands SIDEWAYS along the card's top edge
   into one row of LABELLED glyphs — no scrim, no dropdown, no fan — so the card stays
-  readable underneath (you can still see which card you are deleting) and it closes on
+  readable underneath (you can still see which card you are acting on) and it closes on
   its own `×` rather than on an outside tap (an outside tap here is a flip or a swipe).
-  **Delete is new behaviour on the flp**: it is confirmed, hard-deletes the vet row, and
-  drops the card from the loop via a new `useWorkingLoop.dropCurrentCard` — no mark, no
-  undo snapshot, no fly-out (see that function's comment for each "no").
+  The rail shipped as customize / add to deck / **delete**, where delete was new behaviour
+  on the flp: confirmed, hard-deleting the vet row and dropping the card from the loop via
+  `useWorkingLoop.dropCurrentCard` — no mark, no undo snapshot, no fly-out.
+
+  **Superseded 2026-08-28**: the third cell is now **`note`** (the learner's own note on
+  the card — [CARD_NOTES.md](./CARD_NOTES.md)), and delete is gone from the flp entirely.
+  Deleting is rare, irreversible and takes the review history with it, so it belongs on a
+  surface the learner navigated TO (the cdp header, the shelf's multi-select) rather than
+  one tap from the card they are drilling. `useWorkingLoop.dropCurrentCard`, which existed
+  only for that flow, was deleted with it.
 - **22 · swipe coaching.** Already shipped (`SwipeHintLabel`); untouched.
 - **23 · sense sheet.** `SensePicker` gets its two designed states: RESTING `.ssel` (a
   `1/9` counter and a triangle in a small pill) and OPEN `.ssheet` (every sense at once,

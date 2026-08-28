@@ -4,8 +4,9 @@
  * For each discoverable zh entry, uses Claude AI to generate natural, contextually
  * appropriate example sentences. Each stored sentence includes Chinese, an English
  * translation, a `translatedVocab` pointer, a `sense` (the target word's
- * EXACT `definitionClusters` label), the authoritative GSA `segments`, and four
- * segment-keyed dicts — `partOfSpeechDict`, `numberDict`, `tenseDict`, `senseDict`.
+ * EXACT `definitionClusters` label), the authoritative GSA `segments`, any
+ * `segmentExceptions` the segmentation audit found, and four segment-keyed dicts —
+ * `partOfSpeechDict`, `numberDict`, `tenseDict`, `senseDict`.
  *
  * TWO-PHASE PIPELINE (generation → segment-wise tagging):
  *   Generation emits ONLY sentence text + `translatedVocab` + `sense`
@@ -45,8 +46,12 @@
  *   3. Validator agent (Sonnet) → flags common AI mistakes per sentence
  *   4. Repair agent (Opus) → for each flagged sentence, drafts a corrected
  *      replacement informed by the validator's critique, re-validated once
- *   5. Tagging pass (Sonnet, tagSentenceSegments) → per-sentence: GSA-segment the
- *      final text, then tag each segment with POS + sense + number
+ *   5. Segmentation audit (Sonnet, auditSegmentation) → per-sentence: names the
+ *      multi-char segments the context-free GSA glued together wrongly (真是 in
+ *      "他真是个行家"), stored as `segmentExceptions` and fed back as exclude tokens
+ *      so the text is re-segmented before anything is tagged
+ *   6. Tagging pass (Sonnet, tagSentenceSegments) → per-sentence: tag each surviving
+ *      segment with POS + sense + number + tense
  *
  * Usage:
  *   npx tsx /app/scripts/backfill-example-sentences.js             # full backfill
@@ -70,7 +75,7 @@ import {
   buildExcludeSet,
   segmentWithDict,
 } from '../../../dal/shared/segmentString.js';
-const SCRIPT_VERSION = 6; // bump when this script's logic/prompt changes (v6: move `tense` from a single sentence-level generation field to a per-verb segment-keyed `tenseDict` emitted by the tagging pass; generation no longer emits `tense`) (v5: pull per-token POS/number out of generation into a post-generation segment-wise tagging pass — GSA-segment-keyed partOfSpeechDict/numberDict/senseDict + persisted `segments`; generation now emits only `targetPos` for coverage)
+const SCRIPT_VERSION = 7; // bump when this script's logic/prompt changes (v7: add the segmentation-audit pass — a model call between the GSA and the tagger names multi-char segments the context-free GSA glued together wrongly, stored per-sentence as `segmentExceptions` and fed back as exclude tokens before tagging) (v6: move `tense` from a single sentence-level generation field to a per-verb segment-keyed `tenseDict` emitted by the tagging pass; generation no longer emits `tense`) (v5: pull per-token POS/number out of generation into a post-generation segment-wise tagging pass — GSA-segment-keyed partOfSpeechDict/numberDict/senseDict + persisted `segments`; generation now emits only `targetPos` for coverage)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -115,6 +120,8 @@ const VALIDATOR_MODEL = 'claude-sonnet-4-6';
 const REGENERATOR_MODEL = 'claude-opus-4-8';
 // Post-generation segment-wise tagger (POS + sense + number per GSA segment).
 const TAGGER_MODEL = 'claude-sonnet-4-6';
+// Segmentation auditor — names segments the context-free GSA glued together wrongly.
+const AUDITOR_MODEL = 'claude-sonnet-4-6';
 
 const ALLOWED_TENSES = new Set(['past', 'present', 'future']);
 const ALLOWED_NUMBERS = new Set(['singular', 'plural']);
@@ -719,6 +726,108 @@ async function loadSegmentDictData(client, foreignText) {
   return { dictMap: buildDictMap(dictEntries), excludeTokens: buildExcludeSet(dictEntries), clustersBySeg, posBySeg };
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+//  Segmentation audit (runs BEFORE tagging)
+//
+//  The GSA is context-free: it picks the highest-scoring dictionary match at each
+//  length tier, so a real headword that merely HAPPENS to span two adjacent
+//  characters wins even when those characters are acting separately. The classic
+//  case is 真是 — a real word ("indeed"), but in "他真是个行家" the 真 modifies and the
+//  是 is the copula, so gluing them mislabels the whole clause and gives the learner
+//  a popup for a word that isn't there.
+//
+//  Only a reader who understands the sentence can tell those apart, so one model
+//  call per sentence audits the emitted segmentation and names the multi-character
+//  segments that should be split. The names are stored per-sentence
+//  (`segmentExceptions`) and fed straight back into segmentWithDict as exclude
+//  tokens — single characters are never excludable, so a rejected 真是 falls apart
+//  into 真 + 是 for free.
+//
+//  Deliberately per-sentence, NOT the entry-wide `matchException` column: 真是 is a
+//  perfectly good word in other sentences, and matchException would also suppress it
+//  in the Reader.
+// ────────────────────────────────────────────────────────────────────────────
+const SEGMENT_AUDITOR_SYSTEM = `You audit the word-segmentation of a Chinese sentence for a language-learning app.
+
+You are given the sentence, its English translation, and how an automatic segmenter split it into words. The segmenter is context-free: it always prefers the longest dictionary word it can find, so it sometimes glues together two adjacent characters that are really doing separate jobs in this sentence.
+
+Your job: name every MULTI-CHARACTER segment that is NOT functioning as a single word here — i.e. its characters happen to spell a real word, but in THIS sentence they belong to different parts of the clause and should be read separately.
+
+Report a segment ONLY when splitting it is clearly right. In particular:
+- Report it when the characters straddle a grammatical boundary — e.g. "真是" segmented out of "他真是个行家", where 真 is an adverb modifying what follows and 是 is the copula.
+- Report it when one character belongs to the preceding word and the other starts the next word.
+- Do NOT report a segment just because it is uncommon, or because you would have preferred a different but equally valid analysis.
+- Do NOT report single-character segments or punctuation — they cannot be split.
+- Most sentences have NOTHING to report. An empty list is the normal, expected answer.
+
+Respond with ONLY a JSON array of the offending segment strings, copied character-for-character from the segment list:
+["<segment>", ...]
+Respond with [] when the segmentation is correct.`;
+
+/**
+ * Ask the model which multi-character segments of `segments` should not have been
+ * matched as words in this sentence.
+ *
+ * Fails OPEN (empty array) exactly like the tagger: a flaky or unparseable response
+ * must never block storage — the sentence simply keeps the raw GSA segmentation,
+ * which is what every row shipped before this pass existed.
+ *
+ * @returns string[] of validated exception tokens (order-preserving, de-duplicated)
+ */
+async function auditSegmentation(sentence, targetWord, segments) {
+  // Only multi-character Han segments are candidates: single chars are the GSA's
+  // last-resort fallback and cannot be excluded, and punctuation is never matched.
+  const candidates = segments.filter(
+    seg => [...seg].length > 1 && /\p{Script=Han}/u.test(seg)
+  );
+  if (candidates.length === 0) return [];
+
+  const userText = `Chinese: ${sentence.foreignText}
+English: ${sentence.english}
+
+Segmentation produced: ${segments.map(seg => `"${seg}"`).join(' ')}
+
+Multi-character segments to judge:
+${candidates.map((seg, i) => `${i + 1}. "${seg}"`).join('\n')}`;
+
+  let parsed;
+  try {
+    const response = await anthropic.messages.create({
+      model: AUDITOR_MODEL,
+      max_tokens: 300,
+      temperature: 0,
+      system: cachedSystem(SEGMENT_AUDITOR_SYSTEM),
+      messages: [{ role: 'user', content: userText }],
+    });
+    parsed = parseJsonFromResponse(response.content[0].text, { array: true });
+  } catch (err) {
+    // An oracle export capture is a control-flow signal, not an auditor failure — it
+    // must propagate so the round can author the audit prompt (same rule as the tagger).
+    if (err?.oracleExport) throw err;
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  // Validate every returned token against what we actually emitted. A hallucinated
+  // token would be a silent no-op in segmentWithDict, but storing it would leave a
+  // misleading record on the row.
+  const candidateSet = new Set(candidates);
+  const accepted = [];
+  const seen = new Set();
+  for (const token of parsed) {
+    if (typeof token !== 'string') continue;
+    const trimmed = token.trim();
+    if (!candidateSet.has(trimmed) || seen.has(trimmed)) continue;
+    // NEVER exempt the headword: the sentence exists to demonstrate it, and the
+    // tagging pass forces it to win segmentation (prioritySegments). Excluding it
+    // would fight that pass and strip the target's own popup/underline.
+    if (targetWord && trimmed === targetWord) continue;
+    seen.add(trimmed);
+    accepted.push(trimmed);
+  }
+  return accepted;
+}
+
 // Static tagger instructions → cached system; only the per-sentence text + segment
 // list ride in the user message.
 const SEGMENT_TAGGER_SYSTEM = `You label the segments of a Chinese sentence with grammatical metadata for a language-learning app. You are given the sentence, its English translation, and its FIXED segmentation — use exactly the segments provided, in the given order; never re-split, merge, or add segments.
@@ -790,15 +899,42 @@ ${segLines}`;
 
 /**
  * Produce the segment-keyed render data for one finished sentence:
- *   { segments, partOfSpeechDict, senseDict, numberDict, tenseDict }.
+ *   { segments, segmentExceptions, partOfSpeechDict, senseDict, numberDict, tenseDict }.
  * `targetWord` is forced to win segmentation (prioritySegments) so it always surfaces
  * as its own segment, matching the read path.
+ *
+ * THREE steps, in this order — the audit MUST precede the tagger, because the tagger
+ * tags whatever segmentation survives and its dict keys are the stored segment strings:
+ *   1. GSA-segment the final text (read-path algorithm, entry-wide matchException applied)
+ *   2. Audit that segmentation (auditSegmentation) → per-sentence `segmentExceptions`,
+ *      then RE-segment with those folded into the exclude set
+ *   3. Tag each surviving segment with POS / sense / number / tense
  */
 async function tagSentenceSegments(client, sentence, targetWord) {
   const data = await loadSegmentDictData(client, sentence.foreignText);
-  const segments = data
-    ? segmentWithDict(sentence.foreignText, data.dictMap, data.excludeTokens, targetWord ? [targetWord] : undefined)
+  const prioritySegments = targetWord ? [targetWord] : undefined;
+
+  let segments = data
+    ? segmentWithDict(sentence.foreignText, data.dictMap, data.excludeTokens, prioritySegments)
     : [...sentence.foreignText];
+
+  // Segmentation audit — see auditSegmentation. Skipped entirely when the dictionary
+  // load failed (segments are then bare characters, which cannot be mis-glued).
+  let segmentExceptions = [];
+  if (data) {
+    segmentExceptions = await auditSegmentation(sentence, targetWord, segments);
+    if (segmentExceptions.length > 0) {
+      // Union, don't replace: the entry-wide matchException tokens still apply. A new
+      // Set keeps loadSegmentDictData's cached set unmutated for the next sentence.
+      const excludeWithExceptions = new Set([...data.excludeTokens, ...segmentExceptions]);
+      segments = segmentWithDict(
+        sentence.foreignText,
+        data.dictMap,
+        excludeWithExceptions,
+        prioritySegments
+      );
+    }
+  }
 
   const clustersBySeg = data?.clustersBySeg ?? new Map();
   const posBySeg = data?.posBySeg ?? new Map();
@@ -858,7 +994,7 @@ async function tagSentenceSegments(client, sentence, targetWord) {
     }
   }
 
-  return { segments, partOfSpeechDict, senseDict, numberDict, tenseDict };
+  return { segments, segmentExceptions, partOfSpeechDict, senseDict, numberDict, tenseDict };
 }
 
 async function run() {
@@ -896,6 +1032,8 @@ async function run() {
     let totalFlagged = 0;     // sentences the validator rejected
     let totalRepaired = 0;    // flagged sentences successfully replaced by Opus
     let totalStillFlagged = 0; // Opus replacements that still tripped a rule (kept anyway)
+    let totalSegmentExceptions = 0; // segments the audit pass split apart (across all sentences)
+    let sentencesWithExceptions = 0; // how many sentences carried at least one
 
     for (const row of entries) {
       try {
@@ -932,10 +1070,24 @@ async function run() {
         // folds it into partOfSpeechDict[targetWord]).
         const taggedSentences = [];
         for (const s of finalSentences) {
-          const { segments, partOfSpeechDict, senseDict, numberDict, tenseDict } =
+          const { segments, segmentExceptions, partOfSpeechDict, senseDict, numberDict, tenseDict } =
             await tagSentenceSegments(client, s, row.word1);
           const { targetPos, ...rest } = s;
-          taggedSentences.push({ ...rest, segments, partOfSpeechDict, senseDict, numberDict, tenseDict });
+          // `segmentExceptions` is omitted when empty (the common case) so the stored
+          // jsonb doesn't grow an empty array on every sentence in the corpus.
+          taggedSentences.push({
+            ...rest,
+            segments,
+            ...(segmentExceptions.length > 0 ? { segmentExceptions } : {}),
+            partOfSpeechDict,
+            senseDict,
+            numberDict,
+            tenseDict,
+          });
+          if (segmentExceptions.length > 0) {
+            totalSegmentExceptions += segmentExceptions.length;
+            sentencesWithExceptions++;
+          }
         }
 
         await client.query(
@@ -956,6 +1108,9 @@ async function run() {
             console.log(`           translatedVocab: ${s.translatedVocab}`);
             console.log(`           sense (target): ${s.sense}`);
             console.log(`           segments: ${JSON.stringify(s.segments)}`);
+            if (s.segmentExceptions?.length) {
+              console.log(`           ✂ split by audit: ${JSON.stringify(s.segmentExceptions)}`);
+            }
             console.log(`           POS: ${JSON.stringify(s.partOfSpeechDict)}`);
             console.log(`           senses: ${JSON.stringify(s.senseDict)}`);
             console.log(`           number: ${JSON.stringify(s.numberDict)}`);
@@ -986,6 +1141,9 @@ async function run() {
     console.log(`Flagged sentences : ${totalFlagged}`);
     console.log(`Repaired by Opus  : ${totalRepaired}`);
     if (totalStillFlagged) console.log(`Still flagged*    : ${totalStillFlagged} (Opus version kept anyway)`);
+    if (totalSegmentExceptions) {
+      console.log(`Segments split    : ${totalSegmentExceptions} by the audit pass, across ${sentencesWithExceptions} sentence(s)`);
+    }
     console.log('='.repeat(60) + '\n');
   } finally {
     client.release();

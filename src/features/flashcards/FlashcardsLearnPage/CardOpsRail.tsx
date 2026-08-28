@@ -13,18 +13,23 @@ import { SHADOW } from "../../../theme/shadows";
  *
  * ── The rule this rail encodes ────────────────────────────────────────────────
  * Only true CARD operations live here — customize its icon arrangement, file it into a
- * deck, delete it. Things you do with the WORD (practise writing it, load it into
+ * deck, write a note on it. Things you do with the WORD (practise writing it, load it into
  * Compare) are on `WordToolsRail`, above the card and outside its boundary. The split
  * is not cosmetic: a word tool would still make sense if this card did not exist, and a
  * card operation would not.
+ *
+ * DELETE IS DELIBERATELY NOT HERE. It used to hold the third slot; the note editor took
+ * that slot (docs/CARD_NOTES.md). Deleting a card is rare, irreversible and takes its
+ * review history with it, so it belongs on a surface the learner has navigated TO — the
+ * cdp header, and the shelf's multi-select — not one tap from the card they are drilling.
  *
  * ── Why a rail and not a menu ─────────────────────────────────────────────────
  * The `•••` expands SIDEWAYS along the top edge into one row of labelled glyphs. No
  * scrim, no dropdown, no radial fan — three deliberate consequences:
  *
  *   • the card stays fully readable underneath, so the learner can still see which
- *     card they are about to delete;
- *   • every option is labelled, so `delete` beside `add to deck` is never a guess at
+ *     card they are about to act on;
+ *   • every option is labelled, so `note` beside `add to deck` is never a guess at
  *     an unlabelled glyph;
  *   • it opens and closes in place, inside the card's own bounds, so it cannot be
  *     mistaken for page chrome the way a portaled MUI `Menu` is.
@@ -36,22 +41,27 @@ import { SHADOW } from "../../../theme/shadows";
  * ── Where it is mounted ───────────────────────────────────────────────────────
  * Inside the card's SIDE 2 face (`CardFaceSide`'s `topRail` slot, threaded from the flp
  * page the same way `editCanvas` is), so it flips and drags with the card exactly as
- * drawn. Front card only, answer face only — a `•••` on a question face would offer to
- * delete a card the learner has not yet seen the answer to.
+ * drawn. Front card only, answer face only. Answer-face-only matters for the note in
+ * particular: the note renders on that same face, so opening its editor from the question
+ * face would put a text box on a side that never shows it.
  *
  * The cdp does NOT use this: artboard 18 keeps its three card operations in the page
  * header, which that page has and the flp does not.
  *
  * Referenced by docs/SHELF_REDESIGN.md (artboard 21), docs/CARD_ICON_LAYOUT.md
- * (customize) and docs/DECKS_FEATURE.md (add to deck).
+ * (customize), docs/DECKS_FEATURE.md (add to deck) and docs/CARD_NOTES.md (note).
  */
 
 export interface CardOpsRailProps {
     entry: VocabEntry;
     /** Open the flashcard icon editor (fie) on this card. */
     onCustomize: () => void;
-    /** Ask to delete this card — the host raises the confirmation. */
-    onDelete: () => void;
+    /**
+     * Open the in-place note editor on this card (vet.note, migration 155). The editor
+     * itself lives at the card's bottom edge (`CardNote`) — this cell only opens it, so
+     * the rail closes on the same tap and leaves the card readable underneath.
+     */
+    onEditNote: () => void;
     /**
      * Suppress the whole control. The fie is already open (its own toolbar owns the
      * card), or the card is mid-animation and none of these actions is safe.
@@ -63,7 +73,7 @@ export interface CardOpsRailProps {
 export const CardOpsRail: React.FC<CardOpsRailProps> = ({
     entry,
     onCustomize,
-    onDelete,
+    onEditNote,
     disabled = false,
     className,
 }) => {
@@ -155,12 +165,12 @@ export const CardOpsRail: React.FC<CardOpsRailProps> = ({
             <Box
                 component="button"
                 type="button"
-                className="card-ops-rail__delete"
-                onClick={(e) => { stop(e); setOpen(false); onDelete(); }}
+                className="card-ops-rail__note"
+                onClick={(e) => { stop(e); setOpen(false); onEditNote(); }}
                 sx={CARD_OPS_CELL_SX}
             >
-                <Icon name="delete" size={18} color={COLORS.dangerInk} />
-                <Box component="em" sx={{ ...CARD_OPS_CELL_LABEL_SX, color: COLORS.dangerInk }}>delete</Box>
+                <Icon name="sticky_note_2" size={18} color={COLORS.onSurface} />
+                <Box component="em" sx={CARD_OPS_CELL_LABEL_SX}>note</Box>
             </Box>
 
             <Box

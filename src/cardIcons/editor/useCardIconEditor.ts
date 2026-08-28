@@ -26,7 +26,7 @@ import {
 } from "../cardTextLayout";
 import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "../cardIconApi";
 import { iconSearchTerm, resolveDisplayDefinition } from "../../utils/definitionUtils";
-import { saveSelectedSense } from "../../utils/vocabApi";
+import { saveSelectedSense, saveCardNote } from "../../utils/vocabApi";
 import {
     ICON_LAYOUT_MAX_ITEMS,
     type IconLayoutItem,
@@ -325,6 +325,10 @@ export function useCardIconEditor({ currentEntry, nextEntry }: UseCardIconEditor
     // (vet.selectedSense, migration 99) — so a sense picked this session sticks when the card
     // is re-promoted in the stack, without a refetch. See docs/DEFINITION_CLUSTERS.md.
     const [selectedSenseOverrides, setSelectedSenseOverrides] = useState<Record<number, string | null>>({});
+    // Same session-override pattern for the learner's own card note (vet.note, migration
+    // 155) — so a note written this session shows on the card immediately and survives the
+    // card being re-promoted in the stack, without a refetch. See docs/CARD_NOTES.md.
+    const [noteOverrides, setNoteOverrides] = useState<Record<number, string | null>>({});
 
     // Merge any saved-this-session icon-layout / snap-config / text-color / text-layout
     // overrides into an entry before render (and before enterEdit seeds the drafts from it).
@@ -338,9 +342,10 @@ export function useCardIconEditor({ currentEntry, nextEntry }: UseCardIconEditor
             if (e.id in textLayoutOverrides) merged = { ...merged, textLayout: textLayoutOverrides[e.id] };
             if (e.id in cardColorOverrides) merged = { ...merged, cardColor: cardColorOverrides[e.id] };
             if (e.id in selectedSenseOverrides) merged = { ...merged, selectedSense: selectedSenseOverrides[e.id] };
+            if (e.id in noteOverrides) merged = { ...merged, note: noteOverrides[e.id] };
             return merged;
         },
-        [iconLayoutOverrides, snapConfigOverrides, textColorsOverrides, textLayoutOverrides, cardColorOverrides, selectedSenseOverrides],
+        [iconLayoutOverrides, snapConfigOverrides, textColorsOverrides, textLayoutOverrides, cardColorOverrides, selectedSenseOverrides, noteOverrides],
     );
     const displayCurrentEntry = applyIconOverride(currentEntry);
     const displayNextEntry = applyIconOverride(nextEntry);
@@ -849,6 +854,30 @@ export function useCardIconEditor({ currentEntry, nextEntry }: UseCardIconEditor
         // reload/reset a page on a silent token refresh".
     }, []);
 
+    // Persist a card's own note (migration 155). Optimistic, exactly like persistSelectedSense:
+    // seed the session override so the note appears on the card the moment the editor closes,
+    // and PATCH in the background. On failure, roll the override back to the entry's server
+    // value and surface the same toast the layout saves use — the note the learner typed is
+    // gone from the card, which is the honest signal that it did not save.
+    //
+    // The server normalizes (trim / blank → null / cap), so the ECHOED value is written back
+    // over the optimistic one: what the card shows then matches what is stored, even when the
+    // two differ (trailing whitespace, an over-long paste).
+    const persistNote = useCallback((entry: VocabEntry, note: string | null) => {
+        const prev = entry.note ?? null;
+        setNoteOverrides((o) => ({ ...o, [entry.id]: note }));
+        saveCardNote(entry.id, note)
+            .then((saved) => setNoteOverrides((o) => ({ ...o, [entry.id]: saved.note ?? null })))
+            .catch((err) => {
+                console.error("Failed to save card note:", err);
+                setNoteOverrides((o) => ({ ...o, [entry.id]: prev }));
+                setSaveError("Couldn't save your note. Please try again.");
+            });
+        // No deps for the same reason persistSelectedSense has none: saveCardNote reads the
+        // bearer token itself at call time. See CLAUDE.md "Never reload/reset a page on a
+        // silent token refresh".
+    }, []);
+
     // Clear the fie reload breadcrumb if the page unmounts while still in edit mode
     // (e.g. an in-app navigation away). That's a clean exit, not an OS reload, so the
     // next full page load must NOT misread a lingering crumb. See utils/errorReporting.ts.
@@ -916,6 +945,7 @@ export function useCardIconEditor({ currentEntry, nextEntry }: UseCardIconEditor
         handleSaveLayout,
         handleResetConfirmed,
         persistSelectedSense,
+        persistNote,
         undoAdv,
         redoAdv,
         pushAdvHistory,

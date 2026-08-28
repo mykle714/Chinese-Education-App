@@ -108,12 +108,6 @@ export interface UseWorkingLoopReturn {
     handleCardDismiss: (direction: "left" | "right") => Promise<void>;
     handleUndoLastMark: () => Promise<void>;
     /**
-     * Remove the front card from the loop without marking it — used after its vet row
-     * has been deleted (`CardOpsRail`'s delete). See the implementation for why this is
-     * not a dismiss.
-     */
-    dropCurrentCard: () => void;
-    /**
      * Temporary (provisional) words this session has SHOWN, accumulated across the
      * initial loop AND every refill. Empty when the learner's own deck covered the
      * session. Drives the notice — which announces that borrowed cards are in play, so
@@ -481,52 +475,6 @@ export function useWorkingLoop({
         setIsAnimating(false);
     }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, noteMarkedLent, prefetch, cardDragRef, mode, foreignTrack]);
 
-    /**
-     * Remove the card currently on front from the loop, WITHOUT marking it.
-     *
-     * The one caller is the card-operations rail's delete (`CardOpsRail`, artboard 21):
-     * the card's vet row has just been destroyed, so it must leave the session too or
-     * the loop keeps serving a card the server no longer has.
-     *
-     * Deliberately NOT a dismiss:
-     *   • no mark and no `lastMarkUndoSnapshot` — an undo keyed on a mark that never
-     *     existed is rejected by the server and reads to the learner as a failure, and
-     *     "undo" could not bring the deleted row back anyway;
-     *   • no fly-out animation and no replacement fetch — the card is gone rather than
-     *     answered, so throwing it sideways would look like a swipe the learner did not
-     *     make, and asking the server for a top-up on a delete is not this action's job
-     *     (the next refill picks it up).
-     *
-     * Re-anchors on the card that FOLLOWS the deleted one, by id rather than by index,
-     * so the visible card does not jump when the filter shifts everything down one. An
-     * emptied loop lands on `currentEntry === null`, which is the page's empty state.
-     */
-    const dropCurrentCard = useCallback(() => {
-        if (workingLoop.length === 0 || isAnimating) return;
-        const removed = workingLoop[currentIndex];
-        if (!removed) return;
-        const successor = workingLoop.length > 1
-            ? workingLoop[(currentIndex + 1) % workingLoop.length]
-            : null;
-        setWorkingLoop(prevLoop => {
-            const newLoop = prevLoop.filter(card => card.id !== removed.id);
-            const anchorIndex = successor ? newLoop.findIndex(card => card.id === successor.id) : -1;
-            setCurrentIndex(anchorIndex >= 0 ? anchorIndex : 0);
-            return newLoop;
-        });
-        // The successor becomes the front card, so its Side 1 language becomes the
-        // current one and the card two along becomes the new back slot — the same
-        // promotion a dismiss does, minus the animation.
-        setCurrentSideOneLanguage(nextSideOneLanguage);
-        const newBackCard = workingLoop[(currentIndex + 2) % workingLoop.length];
-        if (newBackCard) setNextSideOneLanguage(sideOneForCard(newBackCard, foreignTrack));
-        // A deleted card must not remain undoable: its snapshot's `workingLoop` holds
-        // the row that no longer exists, and restoring it would put a dead card back on
-        // screen.
-        setLastMarkUndoSnapshot(null);
-        cardDragRef.current?.resetDragPosition();
-    }, [workingLoop, isAnimating, currentIndex, nextSideOneLanguage, foreignTrack, cardDragRef]);
-
     const handleUndoLastMark = useCallback(async () => {
         if (!lastMarkUndoSnapshot || isAnimating || isUndoing) return;
 
@@ -578,7 +526,6 @@ export function useWorkingLoop({
         handleCardDismiss,
         handleUndoLastMark,
         /** Drop the front card from the loop after its vet row has been deleted. */
-        dropCurrentCard,
         /** Lent words this session has SHOWN; drives the notice. */
         provisionalSeen,
         /** Lent words this session REVIEWED; drives the "keep these" offers. */

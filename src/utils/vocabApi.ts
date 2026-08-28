@@ -272,6 +272,26 @@ export async function saveSelectedSense(
 }
 
 /**
+ * Persist (or clear) the learner's own note on one card (vet.note, migration 155).
+ * Pass `null` — or a blank string — to clear it. The server trims, caps at
+ * CARD_NOTE_MAX_LENGTH, and normalizes a blank note to null, so the value it echoes back
+ * is what the card must render (it can differ from what was sent). Only meaningful for a
+ * real vet row; the read-only dictionary cdp has no user card and never calls this.
+ * See docs/CARD_NOTES.md.
+ *
+ * @returns the row's persisted `note` after the write (echoed by the server).
+ */
+export async function saveCardNote(
+  entryId: number,
+  note: string | null,
+): Promise<{ id: number; note: string | null }> {
+  return apiPatch<{ id: number; note: string | null }>(
+    `/api/vocabEntries/${entryId}/note`,
+    { note },
+  );
+}
+
+/**
  * Estimates the number of API calls needed for a given set of tokens
  * Useful for performance monitoring and user feedback
  * @returns Estimation object with cache hit/miss information

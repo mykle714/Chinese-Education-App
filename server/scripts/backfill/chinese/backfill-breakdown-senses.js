@@ -35,6 +35,18 @@
  *   {char: senseLabel}; each label is validated against that character's own cluster
  *   labels (invalid/absent → fall back to the most-frequent cluster + a ⚠ review line).
  *
+ * DRIFT — why `--reconcile` exists
+ *   `sense` is a stable POINTER (a label, not an index) so it survives re-clustering.
+ *   It does not survive a RELABEL: re-running the clusterer on a component character
+ *   can rename or drop the label this script stored, and the pointer then resolves to
+ *   nothing. The stored `definition` freezes at whatever the cluster said when it was
+ *   tagged, and neither this script's default gate ("already carries a sense") nor the
+ *   enrichmentLog stamp can tell. A 2026-08-28 audit found 1143 of 8724 stored senses
+ *   (13%) orphaned this way, concentrated on the COMMONEST characters (大 36 words,
+ *   水 35, 有 30, 手 19) — a bulk relabel, not a long tail.
+ *   `--reconcile` re-tags exactly those rows, using the SAME query the oracle planner
+ *   uses to surface them (DRIFT_PROBES.breakdownSenseOrphan in the manifest).
+ *
  * Depends on: backfill-dictionary-breakdown.js (breakdown must exist) and
  * backfill-cluster-definitions.js (component chars must be clustered) having run first.
  * Referenced by docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md and docs/DEFINITION_MAPPING.md.
@@ -49,6 +61,11 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
+import { clusterLeadGloss, defaultClusterIndex, usableClusters } from '../shared/lib/senseClusters.js';
+// --reconcile reuses the manifest's probe rather than re-deriving the drift condition:
+// the planner and this script MUST agree on which rows are drifted, or the planner
+// keeps naming rows the script's own gate then silently skips.
+import { DRIFT_PROBES } from '../shared/lib/requiredScripts.js';
 
 const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -70,32 +87,22 @@ const getArg = (name) => {
 const ALL = hasFlag('--all');           // include non-discoverable zh entries
 const FORCE = hasFlag('--force');        // re-tag even rows that already carry a sense
 const STALE = hasFlag('--stale');        // also re-tag rows stamped below SCRIPT_VERSION
+// --reconcile: also re-tag rows whose stored sense LABEL no longer matches any cluster
+// on the component character. See the DRIFT header note and DRIFT_PROBES in the manifest.
+const RECONCILE = hasFlag('--reconcile');
 const SPOT_CHECK = hasFlag('--spot-check'); // 5 entries, NO writes, verbose
 const LIMIT = getArg('--limit') ? parseInt(getArg('--limit'), 10) : null;
 const wordsArg = getArg('--words');
 const targetWords = wordsArg ? wordsArg.split(',').map((s) => s.trim()).filter(Boolean) : null;
 
 // ── helpers ───────────────────────────────────────────────────────────────
-// Lead gloss of a cluster, parentheticals stripped — the server analog of the
-// frontend ddt() (src/utils/definitionUtils.ts). Falls back to the sense label.
-function clusterLeadGloss(cluster) {
-  const g = Array.isArray(cluster?.glosses) ? cluster.glosses.find((x) => typeof x === 'string' && x.trim()) : null;
-  const stripped = (g ?? '').replace(/\s*\([^)]*\)/g, '').trim();
-  return stripped || (typeof cluster?.sense === 'string' ? cluster.sense : '');
-}
-
-// The default cluster for a character (used when the model can't disambiguate):
-// the most-frequent sense, matching the frontend's sortedSenseClusters index-0
-// default. Ties keep source order.
+// clusterLeadGloss / defaultClusterIndex / usableClusters live in the shared lib
+// (imported above) — they were duplicated here and in the cluster backfill until
+// 2026-08-28. defaultCluster is the "model couldn't disambiguate" fallback: the
+// most-frequent sense, matching the frontend's sortedSenseClusters index-0 default.
 function defaultCluster(clusters) {
-  return [...clusters].sort((a, b) => (b?.frequencyScore ?? 0) - (a?.frequencyScore ?? 0))[0];
-}
-
-// Only keep well-formed clusters that actually carry a usable label.
-function usableClusters(definitionClusters) {
-  return Array.isArray(definitionClusters)
-    ? definitionClusters.filter((c) => c && typeof c.sense === 'string' && c.sense.trim().length > 0)
-    : [];
+  const idx = defaultClusterIndex(clusters);
+  return idx >= 0 ? clusters[idx] : undefined;
 }
 
 function parseJsonObject(text) {
@@ -246,10 +253,27 @@ async function run() {
     // (Same convention as backfill-classifier.js; --all forces the gate off outright.)
     if (!ALL && !targetWords?.length) conds.push('discoverable = TRUE');
     // Default: skip rows already sense-tagged. --stale ALSO re-tags rows stamped below
-    // the current SCRIPT_VERSION; --force re-tags everything.
+    // the current SCRIPT_VERSION; --reconcile ALSO re-tags rows whose stored sense label
+    // was orphaned by a re-clustering of the component character; --force re-tags all.
+    //
+    // WHY --reconcile has to exist: the default gate reads "breakdown text contains
+    // 'sense' ⇒ done", so an orphaned row is excluded FOREVER — the only escape was
+    // --force, which re-tags all ~9.5k rows (and re-spends the prompts) to repair the
+    // ~1k that actually drifted.
     if (!FORCE) {
       const notTagged = `breakdown::text NOT LIKE '%"sense"%'`;
-      conds.push(STALE ? `(${notTagged} OR ${staleClause()})` : notTagged);
+      const alternatives = [notTagged];
+      if (STALE) alternatives.push(staleClause());
+      if (RECONCILE) {
+        const { rows: drifted } = await client.query(
+          DRIFT_PROBES.breakdownSenseOrphan.sql('dictionaryentries_zh'));
+        console.log(`🔁 --reconcile: ${drifted.length} row(s) with an orphaned sense label`);
+        if (drifted.length) {
+          params.push(drifted.map((r) => r.id));
+          alternatives.push(`id = ANY($${params.length}::int[])`);
+        }
+      }
+      conds.push(alternatives.length === 1 ? alternatives[0] : `(${alternatives.join(' OR ')})`);
     }
     if (targetWords?.length) { params.push(targetWords); conds.push(`word1 = ANY($${params.length})`); }
 

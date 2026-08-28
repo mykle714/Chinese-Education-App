@@ -7,6 +7,7 @@ import { UserLanguagesDAL } from './implementations/UserLanguagesDAL.js';
 import { DictionaryDAL } from './implementations/DictionaryDAL.js';
 import { UserService } from '../services/UserService.js';
 import { VocabEntryService } from '../services/VocabEntryService.js';
+import { FlashcardMarkService } from '../services/FlashcardMarkService.js';
 import { OnDeckVocabService } from '../services/OnDeckVocabService.js';
 import { UserMinutePointsService } from '../services/UserMinutePointsService.js';
 import { DictionaryService } from '../services/DictionaryService.js';
@@ -123,6 +124,11 @@ const studyChallengeDAL = new StudyChallengeDAL();
 const userService = new UserService(userDAL, refreshTokenDAL);
 const dictionaryService = new DictionaryService(dictionaryDAL);
 const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictionaryService);
+// The single owner of "a learner reviewed a card" — cooldown gate, typed mark
+// windows, mastery crossings and the velocity log (docs/MASTERY_REWORK.md). Depends
+// only on the two DALs it writes, so it can sit anywhere after them; kept beside
+// vocabEntryService because both are vet-write services.
+const flashcardMarkService = new FlashcardMarkService(vocabEntryDAL, categoryPromotionDAL);
 // Request-time (validator-gated) trigger for the zh discover lazy-enrichment pipeline
 // (docs/DISCOVER_LAZY_ENRICHMENT.md §5). Injected into the two trigger points below.
 const lazyEnrichmentService = new LazyEnrichmentService(userDAL);
@@ -294,6 +300,7 @@ export {
   winsDAL,
   winsController,
   categoryPromotionDAL,
+  flashcardMarkService,
   velocityController,
   communityLayoutDAL,
   communityLayoutService,

@@ -29,8 +29,10 @@
 >   `server/dal/shared/vetTable.ts`, spliced into the selection queries in
 >   `OnDeckVocabService`, `StarterPacksService`, `CommunityLayoutDAL`. **None of
 >   them joins `users` any more** — no band depends on account state.
-> - Mark/undo: `server/routes/flashcardRoutes.ts` (typed `type` param; per-type
->   8-window; the mark's bar and both bands derived in-handler).
+> - Mark/undo: `server/services/FlashcardMarkService.ts` → `applyMark` / `undoMark`
+>   (typed `type` param; per-type 8-window; the mark's bar and both bands derived in
+>   the service). `server/routes/flashcardRoutes.ts` is now HTTP plumbing only, and
+>   the vet read/write is `VocabEntryDAL.findMarkState` / `updateMarkHistory`.
 > - Goal flags API: `PUT /api/users/goals` (`UserController.updateGoals` →
 >   `UserService.updateGoals`); surfaced via `useAuth().updateGoals` and the
 >   account page Goals section (`src/pages/AccountPage.tsx`).
@@ -44,7 +46,7 @@
 >
 > **Movement between bands is logged separately** — see
 > [VELOCITY.md](./VELOCITY.md) (migration 137): a bar's band is derived and keeps
-> no history, so the mark handler appends a `category_promotions` row — now
+> no history, so `applyMark` appends a `category_promotions` row — now
 > carrying `bar` — whenever that bar's band before ≠ after.
 
 ## Goal
@@ -111,7 +113,8 @@ The two Word Search modes already exist and are chosen at launch from the hub
 > `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx`,
 > `OnDeckVocabService.DEFAULT_FOREIGN_TRACK` + the threaded `foreignTrack` parameter,
 > `OnDeckVocabController.getDistributedWorkingLoop`, `POST /api/flashcards/mark`
-> (`server/routes/flashcardRoutes.ts`).
+> (`server/routes/flashcardRoutes.ts` — `foreignTrack` steers the REFILL only, so it
+> stays in the route beside the rest of the replacement-card parsing).
 
 A zh card shown foreign-first **with pinyin** can be answered off the phonetic aid, so
 it tests recognition of the meaning. With the flp's **"Show pinyin"** setting off
@@ -392,7 +395,9 @@ bar** (it was a bare `timestamptz` in 142):
 { "core": "2026-08-01T…Z", "reading": "2026-08-09T…Z" }   // writing key absent: never crossed
 ```
 
-The mark handler writes exactly one key, for the bar the mark belongs to:
+`applyMark` writes exactly one key, for the bar the mark belongs to (passed to
+`VocabEntryDAL.updateMarkHistory` as a `MasteredAtWrite` descriptor, so the same
+statement carries the history and the stamp):
 
 ```
 barCategoryBefore !== 'Mastered' && barCategoryAfter === 'Mastered'
@@ -404,9 +409,9 @@ Four rules govern each key:
 * **Sticky.** Never cleared on regression. It means "the LAST time this card crossed
   into Mastered", so one bad mark cannot erase the date. A later re-crossing
   overwrites it.
-* **Undo retracts its own stamp.** `/undoLastMark` removes **only the undone mark's
+* **Undo retracts its own stamp.** `undoMark` removes **only the undone mark's
   bar's key**, and only when that key holds the exact timestamp of the mark being
-  undone (`"masteredAt" = "masteredAt" - $6::text`) — the same rule as the
+  undone (a `{ bar, stamp: null }` write, i.e. `"masteredAt" - $4::text`) — the same rule as the
   `category_promotions` delete beside it. The key is dropped rather than rewound to
   the previous crossing, because the previous crossing is unrecoverable. This is safe
   for a bar that was already Mastered before the mark: no transition fired then, so
@@ -576,8 +581,8 @@ rendered at 0 width.
 ## 6. Per-type cooldown (flp working-loop selection)
 
 > STATUS: **IMPLEMENTED**. Code: `server/services/OnDeckVocabService.ts`
-> (cooldown helpers + both selection paths), `server/routes/flashcardRoutes.ts`
-> (refill call site), `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`
+> (cooldown helpers + both selection paths), `server/services/FlashcardMarkService.ts`
+> (the hard mark-time gate), `server/routes/flashcardRoutes.ts` (refill call site), `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`
 > (`sideOneForCard` face-steering). Types: `readyMarkTypes` on `VocabEntry`
 > (`server/types/index.ts`, `src/types.ts`).
 
@@ -1141,8 +1146,8 @@ Implications to work through:
   `WHERE category = X` filters. This is the biggest build cost of the rework — a
   SQL helper (or generated-per-query expression) that mirrors the service-layer
   `computeUtcm` is needed so in-query filtering and read-path display agree.
-- `flashcardRoutes.ts` mark/undo endpoints currently `RETURNING category`; they
-  must instead compute it in the handler after the mark write.
+- The mark/undo endpoints used to `RETURNING category`; they now compute it in app
+  code after the write (`FlashcardMarkService.applyMark` → `computeCoreCategory`).
 - `FlashcardCategory` typing stays; only its derivation moves.
 
 ### Account settings — goal flags storage — DECIDED: new users columns
@@ -1232,26 +1237,29 @@ Settled since:
 
 ## References (code touched by this feature)
 
-- `server/routes/flashcardRoutes.ts` — mark/undo endpoints (mark write path; also
-  writes/deletes the `category_promotions` velocity log — see [VELOCITY.md](./VELOCITY.md)).
+- `server/services/FlashcardMarkService.ts` — `applyMark` / `undoMark`: the mark write
+  path, the cooldown gate, the `masteredAt` stamp, and the `category_promotions`
+  velocity log it writes and deletes (see [VELOCITY.md](./VELOCITY.md)).
+- `server/routes/flashcardRoutes.ts` — the mark/undo endpoints' HTTP layer, plus the
+  flp replacement-card composition that still rides on `POST /api/flashcards/mark`.
+- `server/dal/implementations/VocabEntryDAL.ts` — `findMarkState` (the both-tables
+  probe, with the `FOR UPDATE` row lock) and `updateMarkHistory`.
 - `database/migrations/67-*.sql`, `69-*.sql` — `compute_flashcard_category()`.
 - `database/migrations/142-add-mastered-at-to-vocabentries.sql` — `masteredAt`, plus
-  its stamp/retract sites in `server/routes/flashcardRoutes.ts` and its one reader,
-  `src/utils/vocabSort.ts`.
+  its stamp/retract sites in `server/services/FlashcardMarkService.ts` and its one
+  reader, `src/utils/vocabSort.ts`.
 - `database/migrations/143-three-mastery-bars.sql` — `compute_core_category()`,
   `masteredAt` → jsonb, `category_promotions.bar`. On prod since 2026-08-11; it
   intentionally left `compute_utcm_category()` in place for the deploy window.
 - `database/migrations/147-drop-compute-utcm-category.sql` — the contract half of the
-  above: drops the now-dead `compute_utcm_category()`. Applied on dev 2026-08-17,
-  **not yet on prod** — it rides along with the next `/deploy` and needs no runbook; see
-  [DEFERRED_WORK.md](./DEFERRED_WORK.md) § Recently closed for the verification SQL.
+  above: drops the now-dead `compute_utcm_category()`. **On prod since 2026-08-17.**
 - `database/migrations/149-drop-lifetime-mark-counters.sql` — drops vet's
   `totalMarkCount` / `totalCorrectCount`. Migration 101 kept them when it dropped the
   success-rate columns they fed; nothing ever read them again, so they were write-only
   from 101 until 149. ⚠️ **Contract migration** — the code that stopped writing them
-  (`flashcardRoutes` mark + undo, `VocabEntryDAL.updateTypedMarkHistory`) must be live
-  first, which the standard `/deploy` order already guarantees. Applied on dev
-  2026-08-17, **not yet on prod**.
+  (the mark + undo path, now `FlashcardMarkService`, and
+  `VocabEntryDAL.updateTypedMarkHistory`) had to be live first, so it was applied
+  AFTER the container rebuild. **On prod since 2026-08-17.**
 - `server/contracts/mastery.ts` — **the definition of the bars**; mirrored by
   `server/__tests__/mastery.test.ts`, which pins the TS/SQL agreement.
 - `server/contracts/wire.ts` — `MasteryBarId`, `MASTERY_BARS`,

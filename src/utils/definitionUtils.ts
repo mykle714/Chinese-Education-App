@@ -2,12 +2,48 @@ import type { DefinitionCluster, LongDefinitionPart, VocabEntry } from '../types
 import { numberedToTonedPinyin, readingSyllableCount } from './textUtils';
 
 /**
+ * Unwrap INLINE MORPHEMES before the aside scanner runs.
+ *
+ * A parenthetical GLUED to a word (no space on at least one side) whose content is a
+ * short run of lowercase letters is part of the word, not an aside about it:
+ *   "personal(ly)" · "child(ren)" · "circle(s)" · "remain(s)" · "(hand)bag"
+ * Deleting it turns an adverb into an adjective — 手's cluster gloss "personal(ly)"
+ * used to reach the flashcard as the bare adjective "personal", which is how 下手's
+ * breakdown came to read that way.
+ *
+ * The `^[a-z]{1,4}$` content test is what separates these from a real aside that
+ * merely lost its space — "skimming(of milk)", "prescription(same as 丹方)",
+ * "(idiom)fig." — which are shaped IDENTICALLY at the parenthesis and must still be
+ * stripped. Adjacency alone cannot tell the two apart; only the content can.
+ * Measured against the whole det corpus (2026-08-28): fires on 50 of the 118 glued
+ * strings, declines all 12 missing-space asides and all 35 chemical/math formulas
+ * ("Ca(OH)2", "(CH2O)6" — uppercase or digit-bearing content).
+ *
+ * Two accepted errors at that threshold, both on non-discoverable rows:
+ *   • misses the longer optional prefixes — "(house)wife", "(roller)blading",
+ *     "(tender)loin" render as "wife" / "blading" / "loin";
+ *   • fires wrongly on "manganese(iv) oxide" → "manganeseiv oxide".
+ * Widening the cap past 4 starts eating "(idiom)", so 4 is the balance point.
+ */
+const INLINE_MORPHEME = /(?<=[A-Za-z0-9])\(([a-z]{1,4})\)|\(([a-z]{1,4})\)(?=[A-Za-z0-9])/g;
+
+function unwrapInlineMorphemes(text: string): string {
+  return text.replace(INLINE_MORPHEME, (_match, glued, prefix) => glued ?? prefix);
+}
+
+/**
  * Strip all parenthetical substrings from a definition string for display.
  * Does not mutate the underlying database value.
  * e.g. "to go (informal); to leave (a place)" → "to go; to leave"
  * Nesting-aware: "a waiter (literally, one who runs (fast))" → "a waiter".
+ * EXCEPTION — a short lowercase parenthetical glued to a word is an inline morpheme,
+ * not an aside, and is rejoined rather than dropped: "personal(ly)" → "personally",
+ * "(hand)bag" → "handbag". See unwrapInlineMorphemes for the exact rule.
  */
 export function stripParentheses(text: string): string {
+  // Inline morphemes are rejoined FIRST; everything the scanner then sees is a
+  // genuine aside. See unwrapInlineMorphemes above for why the split is by content.
+  text = unwrapInlineMorphemes(text);
   let out = '';
   let depth = 0;
   for (const ch of text) {
@@ -79,6 +115,14 @@ export function senseGrammarTag(
  * The drop is scoped to the PICKER/dd path deliberately: label-addressed reads (a segment's
  * tagged sense, a breakdown char's gloss) still see every cluster and apply their own
  * empty-gloss fallback — see `resolveSenseGloss` in server/utils/definitions.ts.
+ *
+ * TIES ARE NOT ARBITRARY. The sort is stable and the comparator returns 0 for two clusters
+ * sharing a score, so a tie falls through to the stored array order — which decides the
+ * STARRED default sense. That order is authored: the backfill ranks tied clusters by the
+ * marginal commonality the coarse 1-5 scale cannot record (zh Stage C.5,
+ * server/scripts/backfill/shared/lib/tiebreakOrder.js; es CLUSTER_RULES rule 7). Never
+ * re-order `definitionClusters` on the client, and never sort it into a new array on the
+ * server before this runs — doing either discards that ranking.
  *
  * Single source of truth for the sense picker's ordering: EnglishBlock renders from this,
  * and the persistence layer resolves `selectedSense` labels against the SAME order. See

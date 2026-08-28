@@ -7,15 +7,10 @@
  */
 
 import { API_BASE_URL } from '../constants';
-
-/** Browser-resolved IANA timezone, with a UTC fallback. */
-export function getBrowserTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  } catch {
-    return 'UTC';
-  }
-}
+// Moved to utils/ 2026-08-28: five of its callers are outside this feature, so it
+// is a shared util rather than a minute-points one. Imported here, not re-exported,
+// so there is exactly one path to it.
+import { getBrowserTimezone } from '../utils/browserTimezone';
 
 /** Per-language snapshot powering the home screen + fire badge. */
 export interface LanguageMinuteSummary {

@@ -195,10 +195,30 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
 
       // Seed today's milliseconds from the server's whole-minute count, but keep
       // any same-day local sub-minute progress that the server hasn't seen yet.
+      //
+      // SUB-MINUTE PROGRESS IS NEVER REPORTED. `incrementMinutePoint` only fires when a
+      // whole minute lands, so `todayMinutes` is by construction a floor: the server can
+      // never know about the 59 seconds a learner banked before closing the tab. Those
+      // seconds live only in localStorage (written by the 1s tick, the inactivity
+      // timeout, `beforeunload`, and the leaving-an-eligible-page effect), and this is
+      // where they are handed back.
+      //
+      // A plain `Math.max` was not enough. It keeps the remainder in the common case
+      // (local is ahead, because it holds the same minutes PLUS loose seconds), but drops
+      // it the moment the server is ahead — i.e. whenever another device has studied
+      // since this one last synced. The remainder is then re-attached to the server's
+      // figure instead: it is real study time on this device that no server round-trip
+      // could have carried, so the only alternative is to discard it. The worst case is
+      // crediting under a minute of stale local remainder on top of another device's
+      // total, which is bounded and errs in the learner's favour.
       const serverTodayMilli =
         serverData ? serverData.todayMinutes * MINUTE_POINTS_CONFIG.MILLISECONDS_PER_POINT : 0;
       const localTodayMilli = sameDay ? stored.todaysMinutePointsMilli : 0;
-      const todaysMinutePointsMilli = Math.max(serverTodayMilli, localTodayMilli);
+      const localRemainderMilli = localTodayMilli % MINUTE_POINTS_CONFIG.MILLISECONDS_PER_POINT;
+      const todaysMinutePointsMilli = Math.max(
+        localTodayMilli,
+        serverTodayMilli + localRemainderMilli
+      );
 
       const freshStorage: MinutePointsStorage = {
         todaysMinutePointsMilli,

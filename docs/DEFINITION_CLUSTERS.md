@@ -100,7 +100,7 @@ clustered). Array of cluster objects; ONE shape for both languages:
 | `reading` | zh: numbered pinyin for **this** sense — heteronyms differ (会计 → `kuai4`), so a future per-reading row split is a pure data migration, not a schema change. **NULL for es**. Read by the flp sense-picker's section headings and by the est read path, where it becomes the *rendered* pinyin of a tagged segment (see the est consumer row below) — so a wrong reading here is now user-visible in two places, not just the picker |
 | `pos` | part(s) of speech for this sense — **always `string[] \| null`** (single-POS senses are a 1-element array). Normalized at write time by `toPosArray`; existing rows were migrated string→array. es reuses the raw Wiktionary abbreviations (`n`, `v`, `adj`, …) |
 | `gender` | es: grammatical gender of **this** sense (`m`, `f`, `mf`, `m-p`, …). This is what a Spanish gender-homograph's second det ROW became in migration 123. **NULL for zh** |
-| `frequencyScore` | 1–5 everyday-conversation frequency, scored **independently per cluster** (`null` = scoring failed). Same rubric/scale as the word-level `frequencyScore`. Also the **sort key**: `sortedSenseClusters` orders by it, so the highest-scoring cluster is the entry's default/starred sense. **This is the number the eip/cdp "Commonality" chip shows** — see below |
+| `frequencyScore` | 1–5 conversational commonality — how much this sense would stand out if a friend used it casually (axis re-pointed 2026-08-28; see [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md)) — scored **independently per cluster** (`null` = scoring failed). Same rubric/scale as the word-level `frequencyScore`. Also the **sort key**: `sortedSenseClusters` orders by it, so the highest-scoring cluster is the entry's default/starred sense. **This is the number the eip/cdp "Commonality" chip shows** — see below |
 | `glosses` | verbatim source glosses, ordered prototypical→vernacular within the cluster |
 
 **Difficulty stays at the word level** (the `difficulty` column) and is *not*
@@ -149,6 +149,71 @@ Referenced code: `src/utils/definitionUtils.ts` (`resolveCommonality`,
 `src/features/flashcards/VocabCardDetailBody.tsx`,
 `src/components/FrequencyScoreDots.tsx` (the shared five-dot meter),
 `src/__tests__/resolveCommonality.test.ts`.
+
+### The word/cluster frequency invariant
+
+```
+det."frequencyScore"  ==  MAX(definitionClusters[*].frequencyScore)
+```
+
+**Why it must hold.** The word-level score is *defined* as "score its most
+frequently-heard everyday meaning" (the `word` polysemy guideline in
+`scripts/backfill/chinese/lib/frequencyScore.js`), and the clusters **are** that
+word's meanings. The word-level number is therefore not independent evidence — it is
+the max of the per-sense numbers.
+
+**Why it drifted.** The two numbers are written by two independent AI passes that
+never see each other — `backfill-frequency-score.js` writes the column,
+`backfill-cluster-definitions.js` Stage C writes the per-cluster scores — with no
+reconciliation between them. A 2026-08-28 audit found the invariant violated on
+**430 / 4276** comparable zh rows (10%) and **562 / 885** comparable discoverable es
+rows (63%).
+
+**Why it is user-visible.** The two numbers feed *different* surfaces, so a learner
+can see both at once and they contradict: the eip/cdp **Commonality** chip shows the
+selected *cluster's* score, while the *word* column drives starter-pack and
+provisional-card ordering, search relevance and the gsa tie-break. 讨论 shipped as
+word = 3 with its only sense scored 5.
+
+**Repair rule — ratchet up.** Neither pass dominates, so the repair takes
+`max(word, maxCluster)` on both sides rather than trusting one:
+
+| direction | example | why the higher number wins |
+|---|---|---|
+| word < max cluster (354 zh, 561 es) | 讨论 word 3, sense "to discuss" 5 | the sense pass deflates common words — its guideline pushes back against headword familiarity |
+| word > max cluster (76 zh, 1 es) | 老公 word 5, senses "husband" 3 / "eunuch" 1 | the sense pass under-scored the *core* sense; the word pass had it right |
+
+When the clusters need lifting, only the **default** cluster is raised — the one the
+learner is already on — so the repair never changes which sense a card shows. A rare
+sense is never raised (老公 "eunuch" stays at 1), and nothing is ever lowered.
+
+**Bound forms count through their compounds** (rubric rule added 2026-08-28). A
+morpheme that is never uttered alone is still *heard* constantly if the compounds
+carrying that meaning are common: 自 is bound, yet a learner meets it daily inside
+自己/自由/自动, so its senses score as frequent. This is what separates a
+bound-but-everywhere morpheme (自) from a genuinely rare one (兮).
+
+**How it is now enforced.** `reconcileFrequencyScore`
+(`scripts/backfill/shared/lib/senseClusters.js`) is the single implementation, called
+from three places:
+
+| where | when |
+|---|---|
+| `scripts/backfill/shared/repair-frequency-score-drift.js` | one-off repair of existing rows; language-generic, no API calls, `--dry-run` supported |
+| both `backfill-cluster-definitions.js` (zh + es) | every cluster write reconciles the word column in the **same statement** |
+| both `backfill-frequency-score.js` (zh + es) | the word write is floored at the entry's best cluster score, in SQL |
+
+A validator's approval outranks the invariant: every path skips (or `CASE`-guards)
+entries validated on `frequencyScore` / `senseFrequencyScore`, which is the one way a
+row may legitimately remain inconsistent.
+
+Referenced code: `server/scripts/backfill/shared/lib/senseClusters.js`
+(`reconcileFrequencyScore`, `defaultClusterIndex`, `maxClusterScore`,
+`clusterLeadGloss`, `isDisplayable`),
+`server/scripts/backfill/shared/repair-frequency-score-drift.js`,
+`server/scripts/backfill/{chinese,spanish}/backfill-cluster-definitions.js`,
+`server/scripts/backfill/{chinese,spanish}/backfill-frequency-score.js`,
+`server/__tests__/frequencyInvariant.test.ts`.
 
 ### Where the per-cluster `reading` surfaces — the display pinyin
 
@@ -313,12 +378,56 @@ The two intentionally diverge — `definitions` is **not** a strict flatten of
 | **A.5 — Merge (opt-in `--merge-pass`)** | A second Sonnet call reviews Stage-A's candidate clusters and **consolidates over-similar ones**, leaning toward merging but never crossing a reading boundary and never fusing an incoherent grab-bag. It only **regroups** existing glosses, so the result is re-checked as an exact partition; on any error or validation failure it **keeps Stage A's clusters** (the merge must never lose a gloss). | `backfill-cluster-definitions.js` (`MERGE_INSTRUCTIONS`, `mergeClusters`, `mergeUser`) |
 | **B — Order/prune within cluster** | Reuses the shared Pass-1/2 gloss-ordering pipeline per cluster (skips the API for ≤1-gloss clusters). Standalone-safe: Pass-1 also prunes broken/archaic glosses, so the clusterer runs on raw cedict glosses too. | `lib/orderGlosses.js` (`createGlossOrderer` → `pass1Sort`, `pass2Critique`) |
 | **C — Score frequency** | Scores each cluster's conversation frequency 1–5 **independently** (会 "can"=5 vs "accounts"=1), identical rubric to the word-level scorer. | `lib/frequencyScore.js` (`createFrequencyScorer` → `scoreFrequency`) |
+| **C.5 — Tiebreak order** | Ranks the clusters that came back with the **same** `frequencyScore`, because array order is what every read-side sort uses to break a score tie (see "Ties" below). One call per entry that *has* a tie, none otherwise. Permutes tied clusters **within the slots they already occupy** — cross-band order is left to the read-side sort, and no `sense`, `glosses`, `pos` or score is edited. On any failure the original order is kept and a review note is printed. Skippable with `--no-tiebreak`. | `shared/lib/tiebreakOrder.js` (`createClusterTiebreaker` → `tiebreakClusterOrder`, `tieGroups`) |
 
 The clusterer then writes **only** `definitionClusters` and stamps the run log.
 
 Stage A's model is overridable for A/B testing via the `CLUSTER_MODEL` env var
 (defaults to Sonnet; e.g. `CLUSTER_MODEL=claude-opus-4-8` runs the whole split on
 Opus). The Opus retry escalation is independent of this.
+
+### Ties: why array order is a ranking, not an accident
+
+Every read path orders a word's senses with the **same** comparator — highest
+`frequencyScore` first, nulls last — in three twins that must stay in lockstep:
+`sortedSenseClusters` (`src/utils/definitionUtils.ts`), `resolveSelectedCluster`
+(`server/utils/definitions.ts`) and `defaultClusterIndex`
+(`server/scripts/backfill/shared/lib/senseClusters.js`). The comparator returns 0 for two
+clusters sharing a score, and all three sorts are **stable**, so a tie falls through to the
+order of the stored `definitionClusters` array. Index 0 of that sorted list is the sense the
+card shows as its dd and the one the picker **stars**, so a tie at the top score is not a
+cosmetic question — it picks the default sense.
+
+Ties are structural, not rare. The 1–5 scale is coarse **on purpose** (it asks how much a
+sense would stand out, not how often it occurs), and Stage C scores each cluster in an
+**independent** call that never sees its siblings — so it cannot break its own ties even in
+principle. Before v6, when the scorer was accidentally scoring the *headword* for every
+cluster, 39.4% of clustered discoverable entries had their default decided this way; v6 cut
+the rate but not the mechanism.
+
+**Stage C.5 is the missing comparison** (added 2026-08-28, zh `SCRIPT_VERSION` 9). It shows
+one model every cluster that landed on the same band and asks only which of them a learner
+meets first — the marginal difference the 1–5 scale was too coarse to record. Its rubric:
+everyday concrete usage over figurative; a sense that stands alone as a word over one that
+only lives inside fixed compounds; broader coverage over a narrow/domain sense; plain modern
+usage over formal, regional or dated. The score is an **input** there and never an output —
+the model is explicitly forbidden to re-score, so a "this is really more common" judgement
+comes out as an order, not as a band change.
+
+What C.5 may change is deliberately narrow: **only** the relative order of clusters that
+already share a score, and only among the array slots those clusters already occupy.
+Cross-band order stays owned by the read-side sort (two opinions about it would be one too
+many), and non-displayable clusters are excluded from every tie group since the picker drops
+them before it sorts. Because nothing but order changes, C.5 can never orphan a
+`vet.selectedSense` label, a per-sense `longDefinition` key or an est sentence tag — all of
+which address a cluster **by label**. That is also why `--rescore-only` runs it: a re-score
+produces exactly the ties C.5 exists to settle.
+
+Spanish does the same job **inline** rather than as a separate pass (`CLUSTER_RULES` rule 7,
+`spanish/backfill-cluster-definitions.js`, `SCRIPT_VERSION` 3): its single generate call
+already sees every cluster *and* assigns every score, so it can emit the clusters in ranked
+order directly. The zh scorer's per-cluster isolation is what forces zh to pay for an extra
+call.
 
 ### Shared cores (one source of truth)
 
@@ -345,7 +454,26 @@ docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --spot-check  # 5 entries, NO writes, verbose
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --merge-pass  # Stage A.5: consolidate over-fine clusters
 docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --no-critic   # skip the Stage B critic
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --no-tiebreak # skip the Stage C.5 tied-sense ordering
+docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --rescore-only # Stage C only: re-score, keep the partition
 ```
+
+### ⚠ After a scoring-only `SCRIPT_VERSION` bump, use `--rescore-only`, never `--stale`
+
+A version bump marks every row stale, so `--stale` is the reflex — and it is the wrong
+flag here. `--stale` re-runs the WHOLE pipeline (Stage A split → B critic → A.5 merge),
+which **repartitions senses and mints new `sense` labels**. Labels are addresses:
+`vet.selectedSense` (the learner's saved sense choice), `longDefinition`'s per-sense
+keying and the est sentences' `sense` tags all resolve a cluster BY LABEL, and an
+unmatched label silently falls back to the default sense. A learner who picked one
+sense of 会 would be moved off it.
+
+`--rescore-only` runs Stage C alone: same clusters, same labels, new numbers. Use it
+whenever only the frequency rubric changed — as it did on 2026-08-28, when the scale's
+axis was re-pointed (see [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) §
+`frequencyScore`). The same distinction applies to the lazy-enrichment bulk drain,
+which spawns steps with `--stale`: see
+[DISCOVER_LAZY_ENRICHMENT.md](./DISCOVER_LAZY_ENRICHMENT.md) § 5.
 
 **Every entry with ≥1 definition is clustered — single-gloss words included** (they
 become a trivial one-cluster array, never left NULL). There is no `definitions > 1`
@@ -419,9 +547,9 @@ verbatim, none invented or dropped) deterministically, before any model judges q
 
 | Stage | What | Code |
 |---|---|---|
-| **Generate** | Opus partitions the entry's glosses into clusters, labels each sense, assigns pos/gender, orders glosses within the cluster, and scores each cluster's conversation frequency 1–5. | `generateClusters`, `CLUSTER_RULES` |
+| **Generate** | Opus partitions the entry's glosses into clusters, labels each sense, assigns pos/gender, orders glosses within the cluster, scores each cluster's conversation frequency 1–5, **and emits the clusters most- to least-common** — rule 7, with same-score ties ordered by the marginal difference the 1–5 scale cannot record, because array order is what breaks a tie on read (see "Ties" above). This is zh's Stage C.5 done inline; one call sees every cluster and its score, so es needs no separate pass. | `generateClusters`, `CLUSTER_RULES` |
 | **Check** | Deterministic: exact partition, unique sense labels, score range. No API call. | `checkShape` |
-| **Review** | Sonnet judges *quality* only — mixed meanings, mergeable duplicates, violated pos/gender boundaries, a wrong lead gloss, an implausible score. | `validateClusters` |
+| **Review** | Sonnet judges *quality* only — mixed meanings, mergeable duplicates, violated pos/gender boundaries, a wrong lead gloss, an implausible score, **and a cluster order that would star the wrong default sense**. | `validateClusters` |
 | **Retry** | Opus regenerates against the critique; if the retry fails the partition check, the first (mechanically valid) attempt is kept — a rejected retry must never lose a gloss. | `regenerateClusters`, `runPipeline` |
 
 **Seeded clusters are input, not output.** Migration 123 wrote a *mechanical* cluster
@@ -446,7 +574,7 @@ were rows. And like zh it never writes `definitions`.
 |---|---|---|
 | **Example sentences** (est) — generation | The list of `sense` labels + per-cluster `frequencyScore`, to tag each generated sentence with the target-word sense it demonstrates and to steer coverage toward every register-4/5 sense. | `server/scripts/backfill/chinese/backfill-example-sentences.js` (`buildSenseContext`) — see [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) |
 | **Example sentences** (est) — per-segment tagging | Each segment's own cluster labels are offered to the tagging pass, which writes a `senseDict[segment]` label; at read time the matching cluster supplies **both** that segment's displayed dd (`ddt(cluster)`) **and** its pronunciation (`cluster.reading`, tone-marked) — so a heteronym in a sentence reads as the sense the sentence uses (会 = kuài in "to reckon accounts"), including in TTS narration. | `backfill-example-sentences.js` (`tagSentenceSegments`), `server/dal/shared/segmentString.ts` (`buildSegmentMetadata`, `senseReading`), `server/utils/pinyinTones.ts` |
-| **sense-picker** (shared `SensePicker`) | **Two states, one component (redesigned 2026-08-24, artboards 19–25).** RESTING (`.ssel`) is a small pill carrying a counter and a triangle — `1/9` — sitting directly under the gloss on every surface. It replaced a bare triangle, which said "there is a control here" and nothing else; the counter says the two things a learner needs at rest (this word has nine meanings; you are on the first), which is what lets a set-and-forget control be this small and stop asking for attention on a word whose sense is settled. OPEN (`.ssheet`) lifts a compact sheet showing EVERY sense at once, so the choice is made by COMPARING in one look rather than by paging; it closes on the pick. The sheet's own header names the count and the trailing column ONCE (a column header belongs to the column, not to the first group in it — it used to be repeated into the first reading heading). Rows mark the showing sense by **weight**, not by a tick in a gutter: a tick pushes all nine labels off their own margin to mark one of them. Still a MUI `Menu` underneath the restyle — the portal, anchor tracking, outside-tap dismiss and focus trap are exactly what a sheet lifted off a chip inside a draggable card needs, and hand-rolling them on a gesture-heavy surface would be three bugs. Mounted by the flp/cdp card face (`EnglishBlock`) **and by the eip definition header** (`InfoCardPanelBody`) — one component, so the two surfaces always offer the same senses in the same order under the same labels. It self-hides when the entry has no real choice. `ddt(cluster)` renders each cluster as a display string in the dropdown. **zh — sectioned by `reading`**: one `ListSubheader` per distinct pinyin, tone-marked via `numberedToTonedPinyin` and per-syllable tone-colored via `getToneColor`, preserving the frequency sort within each section and the star on the global default (index 0). **es — flat list**: `senseSections` returns null when no cluster carries a reading (sectioning would emit one meaningless "—" heading over the whole list), so each row renders instead with its own `senseGrammarTag` ("n · m") to carry the disambiguation. Both paths render through the same `renderSenseItem` so selection/star/stop-propagation can't drift apart. **Front/question side censors the readings**: on flp Side 1 (English question side) `EnglishBlock` is passed `censorReadings`, which replaces each pinyin heading with a neutral ordinal label ("Group 1", "Group 2", … in section order) — the grouping still tells the learner which senses share a reading, but the pronunciation and tones (the answer they are supposed to produce) are not leaked. The back/answer side, both cdps, and the community card view leave the prop off and show real tone-colored pinyin. The clusters are ordered by the shared `sortedSenseClusters(entry)` helper (highest frequency first) — the single source of truth both the picker and the persistence layer address. That helper also decides *which* clusters are offered at all: clusters with no displayable English are dropped and the picker is suppressed entirely below two survivors (see "Displayable clusters" below). **Each row carries a commonality meter**: the cluster's own `frequencyScore` renders as a 5px `FrequencyScoreDots` trailing the label (muted to `text.secondary` / `divider`), the same meter the eip and cdp show at full size. It is needed here precisely because the zh path re-groups by reading, so menu order is no longer globally frequency-sorted and nothing else tells the learner which of two senses under different readings is the common one. A cluster whose score is null renders no meter (rather than five hollow dots, which would read as "score 0"). The **first** reading heading doubles as the column header for that meter: the `ListSubheader` becomes a space-between row with the tone-colored reading on the left and a micro "Commonality" caption on the right (suppressed on later sections, where it would read as part of the heading rather than as a one-time column label, and when no cluster is scored). The es flat path has no subheader, so its meters are unlabelled. | `src/utils/definitionUtils.ts` (`ddt`, `senseGrammarTag`, `sortedSenseClusters`), `src/features/flashcards/card/SensePicker.tsx` (`senseSections`, `renderSenseItem`), `src/features/flashcards/card/CardFace.tsx` (`EnglishBlock` — mounts it), `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx` (eip header — mounts it with `classPrefix="mobile-demo-eic"`), `src/components/FrequencyScoreDots.tsx`, `src/utils/textUtils.ts` (`numberedToTonedPinyin`), `src/utils/toneColors.ts` (`getToneColor`) |
+| **sense-picker** (shared `SensePicker`) | **Two states, one component (redesigned 2026-08-24, artboards 19–25).** RESTING (`.ssel`) is a small pill carrying a counter and a triangle — `1/9` — sitting directly under the gloss on every surface. It replaced a bare triangle, which said "there is a control here" and nothing else; the counter says the two things a learner needs at rest (this word has nine meanings; you are on the first), which is what lets a set-and-forget control be this small and stop asking for attention on a word whose sense is settled. OPEN (`.ssheet`) lifts a compact sheet showing EVERY sense at once, so the choice is made by COMPARING in one look rather than by paging; it closes on the pick. The sheet's own header names the count and the trailing column ONCE (a column header belongs to the column, not to the first group in it — it used to be repeated into the first reading heading). Rows mark the showing sense by **weight**, not by a tick in a gutter: a tick pushes all nine labels off their own margin to mark one of them. Still a MUI `Menu` underneath the restyle — the portal, anchor tracking, outside-tap dismiss and focus trap are exactly what a sheet lifted off a chip inside a draggable card needs, and hand-rolling them on a gesture-heavy surface would be three bugs. Mounted by the flp/cdp card face (`EnglishBlock`) **and by the eip definition header** (`InfoCardPanelBody`) — one component, so the two surfaces always offer the same senses in the same order under the same labels. It self-hides when the entry has no real choice. `ddt(cluster)` renders each cluster as a display string in the dropdown. **zh — sectioned by `reading`**: one `ListSubheader` per distinct pinyin, tone-marked via `numberedToTonedPinyin` and per-syllable tone-colored via `getToneColor`, preserving the frequency sort within each section and the star on the global default (index 0). **es — flat list**: `senseSections` returns null when no cluster carries a reading (sectioning would emit one meaningless "—" heading over the whole list), so each row renders instead with its own `senseGrammarTag` ("n · m") to carry the disambiguation. Both paths render through the same `renderSenseItem` so selection/star/stop-propagation can't drift apart. **Front/question side censors the readings**: on flp Side 1 (English question side) `EnglishBlock` is passed `censorReadings`, which replaces each pinyin heading with a neutral ordinal label ("-pinyin 1-", "-pinyin 2-", … in section order) — the grouping still tells the learner which senses share a reading, but the pronunciation and tones (the answer they are supposed to produce) are not leaked. The back/answer side, both cdps, and the community card view leave the prop off and show real tone-colored pinyin. The clusters are ordered by the shared `sortedSenseClusters(entry)` helper (highest frequency first) — the single source of truth both the picker and the persistence layer address. That helper also decides *which* clusters are offered at all: clusters with no displayable English are dropped and the picker is suppressed entirely below two survivors (see "Displayable clusters" below). **Each row carries a commonality meter**: the cluster's own `frequencyScore` renders as a 5px `FrequencyScoreDots` trailing the label (muted to `text.secondary` / `divider`), the same meter the eip and cdp show at full size. It is needed here precisely because the zh path re-groups by reading, so menu order is no longer globally frequency-sorted and nothing else tells the learner which of two senses under different readings is the common one. A cluster whose score is null renders no meter (rather than five hollow dots, which would read as "score 0"). The meter's column is labelled ONCE, by the sheet header described above (`… senses` on the left, `commonality` on the right, suppressed when no cluster is scored) — it used to be folded into the first `ListSubheader`, which read as part of that reading's heading rather than as a one-time column label. **Layout on the card face**: the trigger sits in flow, in a wrapping row, beside the gloss — with a hidden twin balancing it on the gloss's other side so the text itself stays centered. It squeezes (and wraps) a long gloss rather than being pushed off the card's right edge, and drops onto its own line under the text when even that leaves no room. | `src/utils/definitionUtils.ts` (`ddt`, `senseGrammarTag`, `sortedSenseClusters`), `src/features/flashcards/card/SensePicker.tsx` (`senseSections`, `renderSenseItem`), `src/features/flashcards/card/CardFace.tsx` (`EnglishBlock` — mounts it), `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx` (eip header — mounts it with `classPrefix="mobile-demo-eic"`), `src/components/FrequencyScoreDots.tsx`, `src/utils/textUtils.ts` (`numberedToTonedPinyin`), `src/utils/toneColors.ts` (`getToneColor`) |
 | **Long definition** (eip Definition tab, cdp) | The unit of generation is the cluster × POS pair: `backfill-long-definitions.js` writes one `longDefinition` entry per (cluster, part of speech), keyed by the cluster's `sense` label — a cluster whose `pos` lists several roles gets one definition per role, since the roles carry different meanings (docs/DEFINITION_MAPPING.md #5). `buildSlots` does the expansion; a cluster with no `pos` of its own yields one slot whose POS the model picks from the word-level `partsOfSpeech`. At read time the learner sees only the sense their card is on — resolved server-side by `resolveLongDefinition` and client-side (following the optimistic sense picker, no refetch) by `resolveLongDefinitionForSense`, both using the same sorted-cluster + `selectedSense` pick as dd. A re-clustering that changes a `sense` label orphans that sense's definition until the backfill re-runs (readers fall back to the default sense). | `server/scripts/backfill/chinese/backfill-long-definitions.js`; `server/utils/definitions.ts` (`resolveLongDefinition`, `resolveSelectedCluster`, `longDefToDisplayString`); `server/dal/implementations/DictionaryDAL.ts` (`enrichLongDefinitionMetadataBatch` — ships every sense as `longDefinitionSenses`); `src/utils/definitionUtils.ts` (`resolveLongDefinitionForSense`); `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`; `src/features/flashcards/VocabCardDetailBody.tsx` |
 | **Character breakdown** (bt tab + Word Search) | Each component character's *context-correct* gloss = the char's cluster keyed by `breakdown[char].sense` (the label written by `backfill-breakdown-senses.js`), rendered via `ddt`. The breakdown tab reads the materialized `breakdown[char].definition`; Word Search re-resolves it live at grid build via `resolveSenseGloss`. Both surface the **same dd**. | `server/utils/definitions.ts` (`resolveSenseGloss`); `server/services/OnDeckVocabService.ts` (`getWordSearchGrid`); `src/utils/breakdownUtils.ts` — see [BREAKDOWN_FEATURE_IMPLEMENTATION.md](./BREAKDOWN_FEATURE_IMPLEMENTATION.md) §5b, [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §2/§4 |
 | **Per-account sense selection** (`selectedSense`, migration 99) | The learner's chosen sense is persisted **per user per word** so it survives reloads/re-promotion. Stored as the cluster's `sense` LABEL (not an index) so it's stable across re-clustering/re-scoring; resolved back to a sorted index on read (falls back to the default/starred sense if the label no longer matches). Only the user-context surfaces **persist** a pick (flp card face, saved-card cdp, and the eip header picker when the panel's entry has a vet row) — the read-only dictionary cdp's picker, and an eip tab drilled into a word the learner has not saved, are local-only, never saved (there is no vet row to write). The index→label conversion is the shared `senseLabelForIndex` helper, so every host stores index 0 as NULL. **Every dd surface READS the pick**, via `resolveDisplayDefinition` — see [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3 for the full call-site list. Payloads that flatten dd to a plain string server-side (word-search word list, related words, used-in pass 1) resolve it with the server twin in `server/utils/definitions.ts`. An **open eip follows a pick made on the card underneath it**: entry tabs hold a snapshot, so the flp re-seeds the matching tab via `useEipTabs.syncEntry` whenever `selectedSense` changes — and `syncEntry` re-derives the tab's own `selectedSenseIndex` from the fresher entry, so the panel picker and the card picker converge rather than fighting. The reverse direction works too — **an eip pick updates the flashcard in the same session**: the pick is recorded on the tab (`useEipTabs.setActiveSenseIndex`) and persisted by the host page, and `persistSelectedSense`'s optimistic session override lands the new label on the current entry with no refetch. The card face's own sense index therefore re-seeds on `entry.selectedSense`, not just on `entry.id` (`CardFaceSide` in `FlashCardSection.tsx`) — keyed on the id alone, the face's stale local index would out-rank the fresher label until the card was cycled. **Dictionary lookups carry the requester's pick**: `GET /api/dictionary/lookup/:term` attaches `selectedSense` from the caller's vet row when they have that word as a card, so an eip drill-in and the dictionary cdp show the same sense as their flashcard (absent ⇒ default/starred sense). | vet column `selectedSense` (`database/migrations/99-add-selected-sense-to-vocabentries.sql`); `src/utils/definitionUtils.ts` (`resolveSelectedSenseIndex`, `senseLabelForIndex`, `resolveDisplayDefinition`); `server/utils/definitions.ts` (`resolveDisplayDefinition` — server twin); `src/utils/vocabApi.ts` (`saveSelectedSense`); `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` (`syncEntry`, `setActiveSenseIndex`); `server/controllers/DictionaryController.ts` (`lookupTerm` — attaches the caller's `selectedSense`); `src/utils/dictEntryAdapter.ts` (carries `definitionClusters` + `selectedSense`); `server/dal/implementations/VocabEntryDAL.ts` (`findRelatedBySharedCharacters`, `findUsedInForCharacter`); `server/services/OnDeckVocabService.ts` (`getWordSearchGrid`); flp: `useCardIconEditor.ts` (`persistSelectedSense`) → `FlashCardSection.tsx` (`CardFace.handleSelectSense`); saved-card cdp: `VocabCardDetailPage.tsx` (`handleSelectSense`); eip header: `FlashcardsLearnPage.tsx` / `SortCardsPage.tsx` (`onSelectSense` → `InfoCardSection` → `InfoCardPanelBody`); server: `PATCH /api/vocabEntries/:id/selectedSense` (`VocabEntryController.updateSelectedSense` → `VocabEntryService.updateSelectedSense` → `VocabEntryDAL.updateSelectedSense`) |
@@ -498,8 +626,8 @@ every cluster and apply their own empty-gloss fallback (`resolveSenseGloss` retu
 named explicitly rather than chosen from a list.
 
 Client and server twins must stay in lockstep:
-`src/utils/definitionUtils.ts` (`sortedSenseClusters`, lines 58-88) and
-`server/utils/definitions.ts` (`resolveSelectedCluster`, lines 203-224).
+`src/utils/definitionUtils.ts` (`sortedSenseClusters`) and
+`server/utils/definitions.ts` (`resolveSelectedCluster`).
 
 ## Human review: model self-flagging via stdout
 

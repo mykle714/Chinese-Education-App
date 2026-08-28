@@ -4,7 +4,7 @@
 > describes the shipped structure for future agents.
 
 The second game in the Games hub (see [GAMES_FEATURE.md](./GAMES_FEATURE.md)).
-The player is given 12 of their own vocabulary words and hunts for each one
+The player is given 9 of their own vocabulary words and hunts for each one
 inside a grid of Chinese characters. Words are hidden as **snaking paths**
 (orthogonally-connected runs of cells), padded out with filler characters.
 
@@ -13,18 +13,19 @@ and reuses the same colored-pinyin cell primitive (`CPCDRow` / cpcd).
 
 ---
 
-## 1. Card selection (which 12 words)
+## 1. Card selection (which 9 words)
 
 Reuses Bubble Match's pool machinery so the two games feel like siblings.
 
 - **Word Search's own distribution**, no longer a clean half of Bubble Match's
   (`GAME_DISTRIBUTION` in `src/games/bubble-match/constants.ts` is 2/10/6/2):
-  `2 Unfamiliar + 6 Target + 3 Comfortable + 1 Mastered = 12`. This was a literal
-  half (1/5/3/1 = 10) until `TOTAL_WORDS` was raised to 12 on 2026-08-23, which
-  added the two extra words to Unfamiliar and Target rather than re-scaling
-  proportionally — the word-search `GAME_DISTRIBUTION`
-  (`src/games/word-search/constants.ts`) is now a literal record, not derived
-  from Bubble Match's.
+  `1 Unfamiliar + 5 Target + 2 Comfortable + 1 Mastered = 9`. It started as a
+  literal half of Bubble Match's (1/5/3/1 = 10), went to 2/6/3/1 = 12 on
+  2026-08-23, and came back to 9 on 2026-08-28 when the board shrank to 7×6 —
+  the word that came off was a Comfortable one, so the board still leans on the
+  band the player is actively learning. The word-search `GAME_DISTRIBUTION`
+  (`src/games/word-search/constants.ts`) is a literal record, not derived from
+  Bubble Match's.
 - **Same lend-then-borrow top-up** when a bucket is short: first **lend** the
   shortfall (`OnDeckVocabService.lendGameCandidates`, 2026-08-17 — lent words are
   unshifted onto the fresh `Unfamiliar` queue so the substring-dedup replacement
@@ -67,15 +68,15 @@ everywhere the longer one is placed. So after the pool is assembled we enforce:
 
 Algorithm (server-side):
 
-1. Assemble the 12-card pool (distribution + fallback, as above).
+1. Assemble the 9-card pool (distribution + fallback, as above).
 2. Scan for any pair where one word's Chinese text is a substring of another's.
 3. For each offending pair, **drop the shorter word** and pull a replacement
    **of the same progress category** first, then falling back through the same
    fallback order — excluding cards already in the pool.
 4. Re-run the substring scan. Repeat until the pool is clean **or** the user's
    entire library has been exhausted as replacement candidates.
-5. If a clean set of 12 cannot be assembled, the game is **blocked** with:
-   *"You need at least 12 Learn Now cards with distinct characters to play Word
+5. If a clean set of 9 cannot be assembled, the game is **blocked** with:
+   *"You need at least 9 Learn Now cards with distinct characters to play Word
    Search."* (mirrors the bubble-match blocked-phase copy). ⚠️ This description predates
    the provisional-cards system (docs/PROVISIONAL_CARDS.md) — a short library is now
    topped up with lent cards rather than blocking; see `WordSearchPage.tsx`'s note that
@@ -86,8 +87,8 @@ Algorithm (server-side):
 
 ### 1b. English de-duplication (dd collision)
 
-A second, independent constraint on the same 12 words, enforced app-wide across every
-game: **no two targets may share a dd**. The word list prints twelve English glosses in a
+A second, independent constraint on the same 9 words, enforced app-wide across every
+game: **no two targets may share a dd**. The word list prints nine English glosses in a
 column, and two identical ones leave the player no way to know which grid word a gloss
 is asking for.
 
@@ -97,8 +98,8 @@ above it needs no re-scan pass — a colliding candidate is simply never admitte
 it does have to **release** a key when the substring loop evicts a word, or the
 replacement pull would be reserving a gloss that nothing is showing.
 
-A grid that cannot reach 12 dd-distinct words falls out the same door as a grid that
-cannot reach 12 character-distinct ones: `reason: 'insufficient-distinct'`, which the
+A grid that cannot reach 9 dd-distinct words falls out the same door as a grid that
+cannot reach 9 character-distinct ones: `reason: 'insufficient-distinct'`, which the
 controller answers by escalating the provisional baseline and retrying.
 
 Full rule and the other two chokepoints:
@@ -108,35 +109,35 @@ Extending it to NEAR-identical glosses is designed (unbuilt) in
 
 ---
 
-### 1c. Study Challenge rounds — 12 words on an 8×8 grid (built 2026-08-22)
+### 1c. Study Challenge rounds — the same 9-word 7×6 board (built 2026-08-22)
 
 Word Search is challenge-eligible **as Pinyin only** (Pinyin is production; No Pinyin is
 reading, and a challenge round is recognition or production —
 [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.1). A challenge round replaces section 1's
-selection entirely: the target list is the challenge's **twelve contested words**, and the
+selection entirely: the target list is the challenge's **nine contested words**, and the
 filler that pads it comes from the `mastered-first` ladder rather than from the band
 buckets.
 
-Two things about the grid itself change, and both are load-bearing:
+The GRID, however, no longer changes at all:
 
 | | Ordinary board | Challenge board |
 |---|---|---|
-| Targets | `TOTAL_WORDS` = 12 | `CHALLENGE_WORD_COUNT` = 12 |
-| Size | 9×6 (54 cells) | **8×8 (64 cells)** — `WORD_SEARCH_CHALLENGE_ROWS/COLS` |
-| Placement | template mode when it applies, else random | **always random** |
+| Targets | `TOTAL_WORDS` = 9 | `CHALLENGE_WORD_COUNT` = 9 (separately declared) |
+| Size | 7×6 (42 cells) — `WORD_SEARCH_ROWS/COLS` | the same 7×6 constants |
+| Placement | template mode when it applies, else random | identical |
 
-**Why bigger.** Twelve words at the 4-character cap is up to 48 characters, which random
-placement would almost never fit into 54 cells. 8×8 restores roughly the density the
-placer was tuned at.
-
-**Why always random.** `templateModeApplicable` is defined as 9×6 with exactly 12 words
-(docs/NIGHT_MARKET_TEMPLATES.md's sibling, `WORD_SEARCH_TEMPLATES`), so a challenge grid
-falls out of template mode by construction and uses its full `MAX_GRID_ATTEMPTS` budget of
-random attempts. Acceptable: templates exist to make a pathological 12-word draw cheap,
-not to make placement possible at all.
+**Why one size (2026-08-28).** A challenge round used to get its own roomier **8×8**
+board, because twelve words at the 4-character cap is up to 48 characters and random
+placement would almost never fit that into the then-54-cell ordinary grid. Two sizes meant
+two densities and two tunings, and — since `templateModeApplicable` gates on the exact
+board dimensions — a challenge board could never reach template mode, which is precisely
+the fallback a dense board needs most. Dropping both counts to 9 removed the pressure that
+justified the split: 9 words × 4 cells = 36 of 42 cells either way. `WORD_SEARCH_CHALLENGE_ROWS/COLS`
+were deleted; both boards read `WORD_SEARCH_ROWS`/`WORD_SEARCH_COLS`, so a challenge board
+is now template-eligible on the same terms as any other.
 
 **The substring de-dup pass is why Word Search scores contested and filler differently.**
-An arbitrary set of twelve words will not reliably have mutually distinct characters
+An arbitrary set of nine words will not reliably have mutually distinct characters
 (§ 1a), so some contested word will sometimes have to be dropped and replaced — and the
 replacement is filler. At a flat 100 a player whose set forced four substitutions would be
 paid full price for four easy words; at 100/20 the split is invisible when the whole set
@@ -151,24 +152,24 @@ and would also overwrite the player's own casual save.
 
 ## 2. Grid generation (new, server-side per user request)
 
-> ⚠️ **Challenge mode's word count now happens to match the ordinary board's — that's
-> coincidental, not derived.** Everything in this document describes the normal
-> board, whose size is `TOTAL_WORDS = 12` (`src/games/word-search/constants.ts`,
-> own literal distribution — see §1). A study-challenge round must contain
-> every contested word (docs/STUDY_CHALLENGE.md § 5.2) and that set is
-> `CHALLENGE_WORD_COUNT = 12` since 2026-08-17, so a challenge grid still takes its
-> target-word count from that constant (the SPECIFIC contested ids, not a band
-> distribution) rather than `TOTAL_WORDS`, and still uses a bigger, roomier
-> **8×8** grid rather than the ordinary board's tighter 9×6 (§2 below). Not
-> built yet — the scored round runner is the outstanding piece — but the 8×8 grid and
-> the distinct-character rule below are what that build has to satisfy with 12 words.
+> ⚠️ **Challenge mode's word count matches the ordinary board's — but the two are
+> separately declared, not derived from each other.** Everything in this document
+> describes the normal board, whose size is `TOTAL_WORDS = 9`
+> (`src/games/word-search/constants.ts`, own literal distribution — see §1). A
+> study-challenge round must contain every contested word
+> (docs/STUDY_CHALLENGE.md § 5.2) and that set is `CHALLENGE_WORD_COUNT = 9`
+> (since 2026-08-28), so a challenge grid still takes its target-word count from
+> that constant (the SPECIFIC contested ids, not a band distribution) rather than
+> `TOTAL_WORDS`. The GRID is now identical in both modes (§1c). Not built yet —
+> the scored round runner is the outstanding piece — but that shared board and the
+> distinct-character rule below are what that build has to satisfy with 9 words.
 
-Grid is **6 columns wide × 9 rows tall** (portrait; fills the play rectangle).
+Grid is **6 columns wide × 7 rows tall** (portrait; fills the play rectangle).
 Each cell holds exactly one Chinese character (one cpcd cell).
 
 ### Placement (snaking)
 
-For each of the 12 words, in order:
+For each of the 9 words, in order:
 
 1. Pick a **random empty start cell** for the word's first character.
 2. For each subsequent character, pick a **random empty cell adjacent** to the
@@ -179,14 +180,14 @@ For each of the 12 words, in order:
 3. If at any step no valid (empty, in-bounds) adjacent cell exists,
    **backtrack**: abandon this placement and retry from a new random start.
 4. Retry the word up to **10 times**. If it still fails, **regenerate the whole
-   grid from scratch** (all words re-placed). A 9×6 (54-cell) grid holding ≤12
+   grid from scratch** (all words re-placed). A 7×6 (42-cell) grid holding ≤9
    short words is tighter than the old 10×10, so retries/regenerations will fire
    more often under this cap — revisit `MAX_WORD_ATTEMPTS`/`MAX_GRID_ATTEMPTS`
    (`server/services/wordSearchGrid.ts`) if placement failures become noticeable.
 
 Words are capped at **≤4 characters** (enforced at pool-assembly time, §1) and,
 after `RANDOM_GRID_ATTEMPTS` (5) failed whole-grid regenerations, placement
-falls back to one of 10 pre-authored template layouts that guarantee all 12
+falls back to one of 11 pre-authored template layouts that guarantee all 9
 words fit — see [WORD_SEARCH_TEMPLATES.md](./WORD_SEARCH_TEMPLATES.md) for the
 full design.
 
@@ -221,7 +222,7 @@ practice.)
 
 ### Filler
 
-After all 12 words are placed, every remaining empty cell is filled with a
+After all 9 words are placed, every remaining empty cell is filled with a
 character drawn from a **level-appropriate filler bag**. The server:
 
 1. Computes the user's estimated difficulty level via
@@ -283,7 +284,7 @@ The grid endpoint returns, roughly:
 
 ```ts
 {
-  words: Array<{                 // the 12 targets (order = top-of-screen order)
+  words: Array<{                 // the 9 targets (order = top-of-screen order)
     entryKey: string;            // Chinese word1
     pinyin: string;              // tone-marked, per-syllable for cpcd
     definition: string;          // English gloss shown in the top list
@@ -306,7 +307,7 @@ The grid endpoint returns, roughly:
 ```
 
 **Per-character sense definition (`sense`/`definition` on target cells).** Every
-cell belonging to one of the 12 target words carries the character's
+cell belonging to one of the 9 target words carries the character's
 *context-correct* gloss — the meaning it has **inside that word**, not its generic
 standalone gloss (上 in 上班 is "to go up", not "upper"). The server resolves this
 at grid-build time (`OnDeckVocabService.getWordSearchGrid`): it reads the word's
@@ -386,7 +387,7 @@ Three consequences worth knowing:
 - **Two bars move.** `production` feeds the **core** bar, `reading` feeds the
   **reading** bar. The rule "a mark belongs to exactly one bar" is unchanged — these
   are two separate marks — but a No-Pinyin find is the first review ACTION that moves
-  two bars. `barForMarkType` and the mark handler are untouched by this.
+  two bars. `barForMarkType` and `FlashcardMarkService.applyMark` are untouched by this.
 - **The secondary mark is best-effort.** The board was pooled on the primary track, so
   a card can be off cooldown for `reading` while still cooling for `production`; the
   mark endpoint then drops the production mark and logs `[MarkSuppressed]`
@@ -438,7 +439,9 @@ so its hub count is inherently whole-game. See
 When a saved board exists, `WordSearchHubItem` **prepends a 1:1 square card**
 before the two mode buttons. Its **normal face** is styled like a real hub card:
 a **"Resume"** title (matches `HubMenuCardTitle` — bodyLg / medium / onSurface),
-then the parked board's **timer** (frozen `elapsedMs`) and **X/12 found** inlined
+then the parked board's **timer** (frozen `elapsedMs`) and **X/N found** inlined (N is the
+SAVED board's own word count — `savedWordCount` reads `saved.data.words.length`, not
+`TOTAL_WORDS`, so a board parked before a size change still counts to its own total)
 on one row, then the **mode** (Pinyin / No Pinyin), with an **✕** inset in the
 top-right corner.
 
@@ -464,27 +467,34 @@ Vertical stack inside the standard leaf-page content area:
 ┌─────────────────────────────┐
 │ header (down-arrow · hint · settings cog · fire badge)
 ├─────────────────────────────┤
-│  12 English glosses, 1–2 compact lines              │  ← "Lv1 Chill" type style
+│  9 English glosses, 1–2 compact lines              │  ← "Lv1 Chill" type style
 ├─────────────────────────────┤
 │ ╭─────────────────────────╮ │
 │ │                         │ │
-│ │   rounded-rect grid     │ │  ← 9×6 cpcd cells
+│ │   rounded-rect grid     │ │  ← 7×6 cpcd cells
 │ │   of cpcd cells         │ │
 │ │                         │ │
 │ ╰─────────────────────────╯ │
 └─────────────────────────────┘
 ```
 
-- **Word list (top):** the 12 targets shown as their **English glosses** (a
+- **Word list (top):** the 9 targets shown as their **English glosses** (a
   recall drill — you read the meaning and hunt the Chinese in the grid), set as **one
   inline run at 11px, separated by faint middots** (changed 2026-08-24). **Two** states
   and only two: **pending** — full ink, still the loud one relative to its neighbours
   because a pending gloss is the game's actual instruction; and **found** — struck
   through and faded, still present, because the list is also the record of what the run
   has covered and the fade is what makes the remaining work countable at a glance.
-  The **hinted** word has no state of its own: the `.hintbar` reveal one row above
-  already names it character by character, and a third treatment would say the same thing
-  in a weaker way.
+  A **third** state was added 2026-08-28: the **hinted** word (`hintEntryKey`, passed down
+  from `WordSearchPage`) is tinted in `HINT_ACCENT_COLOR` — the ink the `.hintbar`
+  lightbulb, charge dots and reveal mask already use — so the mask is visibly attached to
+  the gloss it is spelling. It used to have no state at all, on the theory that the reveal
+  one row above already named it; but the reveal names it in PINYIN (or in component
+  glyphs), which is exactly what the player cannot yet read, so nothing on screen connected
+  the mask to a meaning. The tint is colour only — no weight or size change — so the run's
+  rhythm is unchanged, and **found beats hinted** (a found gloss keeps the struck-through
+  fade). Code: `WordSearchWordList.tsx` (`hintEntryKey` prop, `isHinted`,
+  `.word-search__word-list-item--hinted`).
 
   ⚠️ **This replaced the design's `.chip`s, and it reinstates a shape that was itself
   replaced once.** The chips were a solid ink pill per pending word; ten black pills are
@@ -500,7 +510,7 @@ Vertical stack inside the standard leaf-page content area:
   `OnDeckVocabService.getWordSearchGrid` via `resolveDisplayDefinition`, so they honor the
   learner's per-card `selectedSense`; kept short so they tile, and a very long definition is
   truncated. See [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3.)
-- **Grid (bottom):** the 9×6 array of cpcd cells, **sitting directly on the white
+- **Grid (bottom):** the 7×6 array of cpcd cells, **sitting directly on the white
   `.play` panel with no container of its own** (changed 2026-08-24 — see "The board has
   no ground" below). Each cell is one cpcd
   character (may be wrapped per-row in `CPCDRow`). The grid respects the header
@@ -592,7 +602,7 @@ shifting/separator apostrophes — see
 [CPCD_PINYIN_SHIFT.md](./CPCD_PINYIN_SHIFT.md) § "Interaction with `bigPinyin`".
 
 A `useFitScale` wrapper in
-`WordSearchGrid.tsx` scales the whole 9×6 grid down to fit the play area
+`WordSearchGrid.tsx` scales the whole 7×6 grid down to fit the play area
 (transforms don't affect `elementFromPoint`, so drag hit-testing still works),
 so it renders at real `sm` size and shrinks only as needed on short screens.
 
@@ -720,7 +730,7 @@ tap-cell-by-cell building** — a lone tap is simply a one-cell path.
     popup. `MISS_FLASH_MS` is tunable in `constants.ts`.
   - **Bonus word, 2+ characters (blue, no auto-clear).** The path's characters
     (forward or reversed) match a `bonusWords` entry — a real det headword
-    built entirely from characters on this grid, but not one of the 12
+    built entirely from characters on this grid, but not one of the 9
     targets. The same shake plays once, the selection turns blue
     (`COLORS.blueAccent`) instead of red, and the word's definition appears in
     the review-popup style (below). Unlike a true miss this has **no timer** —
@@ -769,7 +779,7 @@ Implemented in `WordSearchGrid.tsx`:
 
 - A `foundWordByCell` reverse index maps each locked cell → its `PlacedWord`. In
   `onPointerDown`, a tap that lands on a locked cell short-circuits the drag and
-  calls `toggleWordPopup` instead (locked cells can never belong to a *remaining*
+  calls `tapFoundWord` instead (locked cells can never belong to a *remaining*
   target because words are disjoint, so they never start a trace).
 - The popup is a MUI `Popper` portal (escapes the grid's `overflow:hidden`),
   anchored to a **virtual element** whose rect (`anchorRectForCells`) is the union
@@ -778,13 +788,46 @@ Implemented in `WordSearchGrid.tsx`:
   `popupWord.cells`) and the bonus-word miss popup above (over the just-traced
   `path`, via `invalid.bonus`) — `activePopup` picks whichever is active (a
   found-word review always takes precedence; the two can't overlap in practice
-  since starting a new drag clears `popupWord`). The rect is recomputed on
-  `popupWord`/`invalid`/`scale` change (the `useFitScale` transform moves every
+  since starting a new drag clears the review). The rect is recomputed on
+  `review`/`invalid`/`scale` change (the `useFitScale` transform moves every
   cell's viewport rect).
-- Toggling: tapping the open word (or another found word) closes/switches it;
-  tapping an unfound cell or the background dismisses it (`clearSelection` also
-  clears `popupWord`). The reviewed word's cells get a darker-green
+- Tapping an unfound cell or the background dismisses the review (`clearSelection`
+  also clears it). The reviewed span's cells get a darker-green
   `word-search__cell--reviewing` fill.
+
+#### Repeat taps drill down (2026-08-28)
+
+A second tap **inside the reviewed span narrows it** rather than closing it:
+学生 → 生 → closed; 中国人 → 中国 → 国 → closed. The chain, the pick rule and the
+server side are documented once in
+**[SEGMENT_DRILL_DOWN.md](./SEGMENT_DRILL_DOWN.md)** — it is the same gesture, and the
+same `pickDrillRung`, that the example-sentence popups use.
+
+Word-search specifics:
+
+- The open review is a `WordReview` (`{ word, start, end, text, pinyin, definition }`)
+  where `start`/`end` index into `word.cells`, so a rung stays contiguous however the
+  word snakes. It replaced the old `popupWord: PlacedWord | null`.
+- The **reviewing fill/ring paints only the current rung's cells**, so drilling visibly
+  shrinks it from the whole word down to a single tile.
+- **The last rung's gloss comes from the grid cell**, not from the drill list — the cell
+  carries the character's sense *in this word* (see the next section), while a rung only
+  knows the standalone lead sense.
+- **Audio follows the drill**: the whole word on the first tap (cached from the find),
+  then each rung. A tap that closes the review is silent — and, since 2026-08-28, it also
+  **cancels** narration that is still fetching or still sounding (`silence` prop on
+  `WordSearchGrid`, wired to `tts.cancel()` as `silenceWord` in `WordSearchPage`). The
+  audio is part of the SELECTION, not something fired alongside it: without the cancel, a
+  play requested by the opening tap could land a beat after the highlight it belonged to
+  was already dismissed, which reads as "deselecting played a sound". Dismissing a review
+  by tapping off the word silences it the same way. Opening a new selection needs no
+  explicit stop — the TTS provider cancels the previous play before starting its own.
+- Tapping a different found word — or a part of the same word outside the reviewed span —
+  starts a fresh review there instead of drilling.
+- Rungs ride on `PlacedWord.drill`, resolved at grid build by widening the existing
+  per-character `definitionClusters` query to every ≤4-char substring of every target
+  word (same round trip). The field is **optional**: boards saved before this shipped go
+  straight from the whole word to the tapped character.
 
 ### Tapping a single target character (context-correct sense popup)
 
@@ -807,15 +850,17 @@ helps the player *learn* the word by seeing each character's contextual sense
   single-character bonus/miss behavior. **Found** words are intercepted earlier in
   `onPointerDown` (whole-word review popup), so the per-character popup applies to
   *unfound* target characters.
+- This popup is **already a single character**, so it has nothing to drill to and the
+  drill-down above does not apply to it — it is dismissed, not narrowed, by the next tap.
 
-**Win:** all 12 words found. There is **no lose state** — see §5.
+**Win:** all 9 words found. There is **no lose state** — see §5.
 
 ---
 
 ## 5. Game mode — count-up timer + medals
 
 - **No difficulty levels, no lose state.** One relaxed mode; the player can work
-  on a board **indefinitely** until all 12 are found.
+  on a board **indefinitely** until all 9 are found.
 - **Incrementing (count-up) timer** runs from the first interaction to the last
   find, shown live in the header/HUD.
 - On completion, a **medal** is awarded by total time against tunable thresholds
@@ -918,10 +963,12 @@ hint nudges recall without handing over the answer.
   `HINT_REMAINDER_MARK` is no longer used on the pinyin board at all; it
   lives on as the No-Pinyin board's `COMPONENT_BLANK`, §5a-ii, where there
   is no letter count to show.)
-- **No matching gloss treatment.** The hinted word's chip used to be tinted (and
-  later filled) to pair it with the mask. It no longer is — the `.hintbar` reveal
-  names the word directly, and every unfound chip is already the solid ink pill
-  (§3), so there is no quieter state left for "hinted" to occupy.
+- **Matching gloss treatment (reinstated 2026-08-28).** The hinted word's gloss in the
+  top list is tinted `HINT_ACCENT_COLOR`, pairing it with the mask (§3). This was dropped
+  when the list was chips — a solid ink pill left no quieter state for "hinted" to occupy
+  — but the list is now an inline 11px run, where a colour change is available and cheap.
+  Without it the mask spells a word in pinyin the player cannot yet read, with nothing on
+  screen saying which meaning it belongs to.
 - **Spending (`useHint` / `canUseHint` in `WordSearchPage.tsx`):**
   1. If a word is already being hinted (`hintEntryKey`) and it's still unfound
      with reveal steps left, drain `HINT_COST` (1) and buy **one more step of
@@ -1135,7 +1182,7 @@ Frontend (`src/games/word-search/`):
   (a lone tap is a one-cell path), client-side target-path matching against a
   server-sent `bonusWords` list for the blue non-target-word miss (§4, fires
   `onBonusFound` for the hint-award hook — see §5a), a `useFitScale` transform
-  so the 9×6 `sm` grid fits short screens, the **English-gloss popup** shared
+  so the 7×6 `sm` grid fits short screens, the **English-gloss popup** shared
   by found-word review and bonus-word misses (tap a locked word, or trace a
   bonus word, → `Popper` popup; `foundWordByCell` / `toggleWordPopup` /
   `anchorRectForCells` / `activePopup`; see §4), and the hint's **orange
@@ -1205,16 +1252,17 @@ Server:
   `MAX_DEDUP_PASSES`) that re-rolls filler cells so no target's character
   sequence traces through an unintended path elsewhere in the grid — see §2a;
   it runs identically after either placement method.
-- `server/services/wordSearchTemplates.ts` — the 10 fixed 9×6 template
+- `server/services/wordSearchTemplates.ts` — the 11 fixed 7×6 template
   layouts (`WORD_SEARCH_TEMPLATES`) used by the fallback above — see
   [WORD_SEARCH_TEMPLATES.md](./WORD_SEARCH_TEMPLATES.md).
 - `server/services/OnDeckVocabService.ts` — `getWordSearchGrid` (pool assembly +
   substring de-dup/replacement + level-bounded filler harvest from
   `dictionaryentries_zh` via `StarterPacksService.estimateLevel` +
   enrich/prewarm + grid gen + the post-generation `bonusWords` regex query — see
-  §2 Output payload). Grid dims: `WORD_SEARCH_ROWS`/`WORD_SEARCH_COLS`.
+  §2 Output payload). Grid dims: `WORD_SEARCH_ROWS`/`WORD_SEARCH_COLS` (7×6) —
+  the ONE pair every mode reads, challenge rounds included (§1c).
 - `server/controllers/OnDeckVocabController.ts` — `getWordSearchGrid` handler
-  (parses the distribution query, defaults to 2/6/3/1).
+  (parses the distribution query, defaults to 1/5/2/1).
 - `server/routes/onDeckRoutes.ts` — `GET /api/onDeck/wordSearchGrid`.
 
 ## 7. Dependencies / cross-references

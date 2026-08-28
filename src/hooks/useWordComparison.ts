@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { API_BASE_URL } from "../constants";
 import { authHeader } from "../utils/authHeader";
-import { getBrowserTimezone } from "../minutePoints/minutePointsSync";
+import { getBrowserTimezone } from "../utils/browserTimezone";
 import type { Language, LongDefinitionPart } from "../types";
 
 interface UseWordComparisonResult {

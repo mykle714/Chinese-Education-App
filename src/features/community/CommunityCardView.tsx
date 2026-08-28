@@ -11,8 +11,8 @@ import { SHADOW } from "../../theme/shadows";
  * arrangement fills the face behind the content, and the lower third holds the cpcd word
  * (`ChineseBlock`) above the English definition (`EnglishBlock`) — the same components and
  * geometry (`top: 66.67%`, padding `clamp(16px,7%,72px) 30px`) as `CardFaceSide` in
- * FlashCardSection.tsx. The interactive audio/writing buttons are omitted (no `onSpeak`,
- * `showWriting` off) since this is a preview.
+ * FlashCardSection.tsx. The interactive audio button is omitted (no `onSpeak`) since this
+ * is a preview.
  */
 const CommunityCardView: React.FC<{
   design: CommunityDesign;

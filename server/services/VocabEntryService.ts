@@ -3,7 +3,7 @@ import csv from 'csv-parser';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { DictionaryService } from './DictionaryService.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language, IconLayoutItem, ICON_LAYOUT_MAX_ITEMS, SnapConfig, TextColors, TextColorMode, TextLayout, TextLayoutItem, TextBlock, CARD_COLOR_VALUES } from '../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language, IconLayoutItem, ICON_LAYOUT_MAX_ITEMS, SnapConfig, TextColors, TextColorMode, TextLayout, TextLayoutItem, TextBlock, CARD_COLOR_VALUES, CARD_NOTE_MAX_LENGTH } from '../types/index.js';
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
 import db from '../db.js';
 import { vetTableForLanguage } from '../dal/shared/vetTable.js';
@@ -254,6 +254,35 @@ export class VocabEntryService {
   ): Promise<VocabEntry> {
     const clean = selectedSense === null ? null : String(selectedSense).slice(0, 500);
     const updated = await this.vocabEntryDAL.updateSelectedSense(userId, entryId, language, clean);
+    if (!updated) {
+      // No row matched the id for this user — either it doesn't exist or isn't theirs.
+      throw new NotFoundError('Vocabulary entry not found');
+    }
+    return updated;
+  }
+
+  /**
+   * Persist (or clear) the learner's own note on one vet row (migration 155).
+   *
+   * This is the single place the note's meaning is normalized, so every writer agrees:
+   *   • trimmed — leading/trailing whitespace typed on the card is not content;
+   *   • a note that is empty after trimming is stored as NULL, not '' — "no note" has one
+   *     representation, so the render path's `entry.note` check is a plain truthiness test
+   *     and an all-spaces note doesn't reserve a strip at the bottom of the card;
+   *   • hard-capped at CARD_NOTE_MAX_LENGTH. The on-card editor already caps input, so a
+   *     longer body is a client bug or a hand-rolled request — truncate rather than reject,
+   *     matching how `selectedSense` bounds its label.
+   * See docs/CARD_NOTES.md.
+   */
+  async updateNote(
+    userId: string,
+    entryId: number,
+    language: string,
+    note: string | null
+  ): Promise<VocabEntry> {
+    const trimmed = note === null ? '' : String(note).trim();
+    const clean = trimmed === '' ? null : trimmed.slice(0, CARD_NOTE_MAX_LENGTH);
+    const updated = await this.vocabEntryDAL.updateNote(userId, entryId, language, clean);
     if (!updated) {
       // No row matched the id for this user — either it doesn't exist or isn't theirs.
       throw new NotFoundError('Vocabulary entry not found');

@@ -161,13 +161,14 @@ const MemoryMapPage: React.FC = () => {
      * `useTTS` already falls back cloud → browser internally.
      */
     function speakWord(word: MemoryMapWordData) {
-        if (!tts.enabled) return;
         // Synchronous, from inside the real pointer gesture: primes the shared
         // AudioContext so mobile autoplay policy does not swallow the first play of the
         // session, which resolves only after an await.
         tts.unlockAudio();
+        // autoSpeakSentence: answer feedback is automatic narration, so the
+        // autoplay setting gates it inside the hook.
         void tts
-            .speakSentence(word.entryKey, word.pronunciation ?? undefined)
+            .autoSpeakSentence(word.entryKey, word.pronunciation ?? undefined)
             .catch(() => {});
     }
 

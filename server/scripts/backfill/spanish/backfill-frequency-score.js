@@ -64,8 +64,10 @@ import { parseBackfillArgs } from '../shared/lib/cli.js';
 import { parseModelJson } from '../shared/lib/json.js';
 import { runBackfill } from '../shared/lib/runner.js';
 import { FREQUENCY_SCORE_LABELS } from '../shared/lib/frequencyLabels.js';
+import { SCALE_AND_GUIDELINES, POLYSEMY_GUIDELINE } from './lib/frequencyRubric.js';
+import { reconcileFrequencyScore } from '../shared/lib/senseClusters.js';
 
-const SCRIPT_VERSION = 4; // bump when this script's logic/prompt changes (v4: register rubric → everyday-conversation frequency, migration 122)
+const SCRIPT_VERSION = 5; // bump when this script's logic/prompt changes (v5: THE AXIS CHANGED — conversational commonality (stands-out) rather than frequency-of-occurrence; bands 4+5 merged, old band 1 split; rubric extracted to lib/frequencyRubric.js and now shared with the clusterer. Pre-2026-08-28 scores are on the old axis. v4: register rubric → everyday-conversation frequency, migration 122)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -75,6 +77,11 @@ const { stampEntries, accrueUsage, staleClause, validatedClause } = initRunLog({
 // protects the row (migration 132, docs/DATA_VALIDATION_SYSTEM.md). Coarser than the
 // zh side, where the two columns have separate scripts and separate guards.
 const validatedFilter = `AND ${validatedClause(['frequencyScore', 'difficulty'], 'dictionaryentries_es')}`;
+
+// Guard for the cluster half of the write: a validator's approved per-sense score
+// outranks the invariant, so the CASE leaves their clusters untouched.
+const senseValidated = validatedClause(['senseFrequencyScore'], 'dictionaryentries_es');
+
 
 const { isSpotCheck, isBatch } = parseBackfillArgs();
 const isRandom = process.argv.includes('--random');
@@ -88,23 +95,9 @@ const spotCheckLimit = limitArg ? parseInt(limitArg.split('=')[1], 10) : 5;
 
 const MODEL = 'claude-sonnet-4-6';
 
-// Shared scale and guidelines used in both prompt modes
-// TODO(es-linguistics): example words per band are first-pass and need a Spanish
-// speaker's review. Consider the target dialect baseline before a real run.
-const SCALE_AND_GUIDELINES = `Scale — how often would a learner living in a Spanish-speaking environment actually HEAR or SAY this word in everyday conversation?
-  5 = Constant — comes up daily; unavoidable in ordinary talk about food, family, time, feelings, getting around (e.g. comer, casa, tiempo, bueno, mañana)
-  4 = Common — comes up most weeks in ordinary conversation; a learner meets it early and often (e.g. trabajo, teléfono, estudiar, más o menos, ayudar)
-  3 = Moderately common — comes up now and then, usually when the topic calls for it; not part of daily small talk (e.g. libertad, cirugía, acuerdo, medio ambiente)
-  2 = Uncommon in speech — a speaker might go months without saying it; mostly met while reading, in news, or in specialist talk (e.g. actualmente, no obstante, exponer, índole)
-  1 = Almost never spoken — literary, archaic, or narrowly technical; essentially absent from ordinary conversation (e.g. otrora, asaz, mas meaning "but", henchir)
-
-Guidelines:
-  - Score FREQUENCY OF OCCURRENCE in everyday spoken Spanish, NOT register. Do not lower a score because a word sounds formal, clinical, or bookish — only because it comes up rarely in conversation.
-  - Do not raise a score because a word is vivid slang. Slang confined to one region or subculture is INFREQUENT (2) even though it is maximally casual.
-  - A word that is universally known but rarely uttered scores low (2): recognition is not frequency.
-  - A neutral, unremarkable, high-traffic word scores high (4–5) even though it is not colloquial in flavour — trabajo and tiempo are register-neutral AND extremely frequent.
-  - Judge the word as a spoken-conversation item; ignore how often it appears in written corpora, textbooks, or news.
-  - If a word has multiple meanings that differ in frequency, score its most frequently-heard everyday meaning.`;
+// The scale, guidelines and polysemy split now live in ./lib/frequencyRubric.js so the
+// Spanish CLUSTERER scores on the same brief (it previously had only the band names).
+// Imported above as SCALE_AND_GUIDELINES / POLYSEMY_GUIDELINE.
 
 // Difficulty scale: how hard the word is for an English-speaking learner to ACQUIRE.
 // Measures acquisition cost, not how often the word is heard.
@@ -168,9 +161,10 @@ No markdown, no extra text.`;
 
 Task: Give the given word TWO independent scores, each an integer from 1 to 5.
 
-(A) CONVERSATION FREQUENCY — how often does this word actually come up in everyday spoken Spanish? This is a frequency judgment, NOT a register judgment: how casual, formal, or literary the word sounds is irrelevant. A plain, unglamorous word that everyone says constantly scores 5; a vividly colloquial word that rarely comes up scores low.
+(A) CONVERSATIONAL COMMONALITY — if a friend said this word to you in casual conversation, how much would it stand out? A plain, unglamorous word that everyone says scores 5; a word that would make a listener blink scores low. Formality by itself is not the question — conspicuousness is.
 
 ${SCALE_AND_GUIDELINES}
+${POLYSEMY_GUIDELINE.word}
 
 (B) DIFFICULTY — how hard is this word for an English-speaking learner to acquire?
 
@@ -234,7 +228,7 @@ async function run() {
 
   try {
     const { rows: entries } = await client.query(`
-      SELECT id, word1, pronunciation, definitions
+      SELECT id, word1, pronunciation, definitions, "definitionClusters"
       FROM dictionaryentries_es
       WHERE language = 'es'
         AND discoverable = TRUE
@@ -276,11 +270,26 @@ async function run() {
         // 1..5 (the Spanish encoding — see _levelConfig in StarterPacksService).
         // The column is a smallint (migration 92), so the score is written as a
         // number. Both columns are written in one statement.
+        // Enforce the word/cluster frequency invariant on the way in:
+        // "frequencyScore" == MAX(cluster scores). A model score BELOW the best cluster
+        // is lifted to it; a model score ABOVE every cluster lifts the entry's DEFAULT
+        // cluster instead, so the two agree without changing which sense the card shows.
+        // See scripts/backfill/shared/lib/senseClusters.js. $4 is NULL unless the
+        // clusters actually changed, so an unclustered entry never gets a jsonb 'null'.
+        const reconciled = reconcileFrequencyScore(result.frequency, row.definitionClusters);
         await client.query(
           `UPDATE dictionaryentries_es
-             SET "frequencyScore" = $1, "difficulty" = $2
+             SET "frequencyScore" = $1::int,
+                 "difficulty" = $2,
+                 "definitionClusters" = CASE WHEN $4::jsonb IS NOT NULL AND ${senseValidated}
+                                             THEN $4::jsonb ELSE "definitionClusters" END
            WHERE id = $3`,
-          [result.frequency, result.difficulty, row.id]
+          [
+            reconciled.wordScore,
+            result.difficulty,
+            row.id,
+            reconciled.clustersChanged ? JSON.stringify(reconciled.clusters) : null,
+          ]
         );
         await stampEntries(client, 'dictionaryentries_es', row.id);
 

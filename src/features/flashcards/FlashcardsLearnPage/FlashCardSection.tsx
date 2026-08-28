@@ -24,7 +24,8 @@ export { SpeakerButton };
 // here so existing `from "./FlashCardSection"` imports keep working.
 // See docs/ARCHITECTURE_REVIEW.md finding 9.
 export { ChineseBlock, EnglishBlock, CardFaceSide } from "../card/CardFace";
-import { CardFaceSide, ChineseBlock, EnglishBlock, CategoryChip } from "../card/CardFace";
+import { CardFaceSide, ChineseBlock, EnglishBlock } from "../card/CardFace";
+import CardNote from "../card/CardNote";
 
 interface FlashCardSectionProps {
     currentEntry: VocabEntry | null;
@@ -43,7 +44,6 @@ interface FlashCardSectionProps {
     showPinyin: boolean;
     showPinyinColor: boolean;
     // When true, the card's progress category renders as a colored chip on Side 2.
-    showProgressCategory: boolean;
     // Side 1 language for the front-slot card. Side 2 always shows both.
     sideOneLanguage: SideOneLanguage;
     // Side 1 language for the back-slot (peeking) card — different random value
@@ -95,6 +95,15 @@ interface FlashCardSectionProps {
     // so this component — which the cdp and three other surfaces also render through —
     // never learns what a card operation is.
     topRail?: React.ReactNode;
+    // ── Card note (vet.note, migration 155) ──────────────────────────────────
+    // The note itself is read straight off the entry and rendered on the ANSWER face by
+    // this component (every card that has one shows it, on every surface). These three
+    // props are only about EDITING it in place, which is the flp's business: the page owns
+    // "which card's note is open" so the same state can gate the drag handlers.
+    // See docs/CARD_NOTES.md.
+    noteEditing?: boolean;
+    onSaveNote?: (note: string | null) => void;
+    onCancelNote?: () => void;
 }
 
 
@@ -116,7 +125,6 @@ const CardFace: React.FC<{
     isAnimating: boolean;
     showPinyin: boolean;
     showPinyinColor: boolean;
-    showProgressCategory: boolean;
     sideOneLanguage: SideOneLanguage;
     dragPosition: { x: number; y: number };
     dismissThreshold: number;
@@ -139,7 +147,16 @@ const CardFace: React.FC<{
     // decides `editCanvas`. Threaded as a node rather than as three callbacks so this
     // shared component stays ignorant of what a card operation is.
     topRail?: React.ReactNode;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, showProgressCategory, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail }) => {
+    // ── Card note (vet.note, migration 155) ──────────────────────────────────
+    // The note itself is read straight off the entry and rendered on the ANSWER face by
+    // this component (every card that has one shows it, on every surface). These three
+    // props are only about EDITING it in place, which is the flp's business: the page owns
+    // "which card's note is open" so the same state can gate the drag handlers.
+    // See docs/CARD_NOTES.md.
+    noteEditing?: boolean;
+    onSaveNote?: (note: string | null) => void;
+    onCancelNote?: () => void;
+}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
@@ -232,7 +249,7 @@ const CardFace: React.FC<{
                 inert={isFlipped}
             >
                 {sideOneLanguage === 'zh'
-                    ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={speakWithSense} speakingKey={speakingKey} showWriting={false} selectedSenseIndex={selectedSenseIndex} />
+                    ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={speakWithSense} speakingKey={speakingKey} selectedSenseIndex={selectedSenseIndex} />
                     : <EnglishBlock
                         entry={entry}
                         selectedSenseIndex={selectedSenseIndex}
@@ -256,8 +273,8 @@ const CardFace: React.FC<{
                 cardColor={entry.cardColor}
                 // Two blocks supplied separately so each is positioned absolutely by its center
                 // (migration 91) — default grid spot or saved custom placement. While editing,
-                // the canvas renders these instead. The foreign block's action buttons render
-                // IN-FLOW (inlineActions) so they're part of the block's box, matching the fie
+                // the canvas renders these instead. The foreign block's speaker button renders
+                // IN-FLOW (inlineActions) so it's part of the block's box, matching the fie
                 // canvas (whose selection/clamp include them) 1:1.
                 textBlocks={{
                     foreign: (
@@ -267,18 +284,30 @@ const CardFace: React.FC<{
                             showPinyinColor={showPinyinColor}
                             onSpeak={onSpeak}
                             speakingKey={speakingKey}
-                            showWriting
                             inlineActions
                             selectedSenseIndex={selectedSenseIndex}
                         />
                     ),
-                    english: <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={handleSelectSense} inlineActions />,
+                    english: <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={handleSelectSense} />,
                 }}
                 editCanvas={editCanvas}
                 topRail={topRail}
+                // The learner's note, pinned to the bottom edge of the ANSWER face only
+                // (a note is commentary on the answer — on the question face it would be
+                // an unasked-for hint). CardNote renders nothing when there is no note
+                // and no edit is open, which is the common case. While the fie canvas owns
+                // the face, the note is suppressed: the canvas is a design surface and the
+                // note is not part of the design it edits.
+                bottomNote={editCanvas ? undefined : (
+                    <CardNote
+                        entry={entry}
+                        editing={noteEditing}
+                        onSave={onSaveNote}
+                        onCancel={onCancelNote}
+                    />
+                )}
                 // Side 2 faces away when the card is showing its front.
                 inert={!isFlipped}
-                cornerBadge={showProgressCategory ? <CategoryChip category={entry.category} /> : undefined}
             />
 
             {/* Drag overlay — shown on the front card and the card currently flying off */}
@@ -311,7 +340,6 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     emptyMessage,
     showPinyin,
     showPinyinColor,
-    showProgressCategory,
     sideOneLanguage,
     nextSideOneLanguage,
     showSwipeHint,
@@ -327,6 +355,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     pad,
     slotRef,
     topRail,
+    noteEditing,
+    onSaveNote,
+    onCancelNote,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -468,7 +499,12 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                     <Box
                                         key={isFront ? `front-${shakeNonce}` : `slot-${slot}`}
                                         ref={isFront ? cardRef : undefined}
-                                        {...(isFront && !editMode ? {
+                                        // Handlers are detached while the note editor is open for the
+                                        // same reason they are during a fie edit: the card must not flip
+                                        // or swipe away under a gesture aimed at the editor. CardNote also
+                                        // stops its own events — this covers the ones that START on the
+                                        // note and travel off it.
+                                        {...(isFront && !editMode && !noteEditing ? {
                                             onTouchStart: handlers.onTouchStart,
                                             onTouchEnd: handlers.onTouchEnd,
                                             onMouseDown: handlers.onMouseDown,
@@ -501,7 +537,6 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 isAnimating={isAnimating}
                                                 showPinyin={showPinyin}
                                                 showPinyinColor={showPinyinColor}
-                                                showProgressCategory={showProgressCategory}
                                                 sideOneLanguage={slotSideOneLanguages[slot]}
                                                 // Suppress the drag overlay on the newly promoted card while
                                                 // the previous card is still flying out (isAnimating window).
@@ -520,6 +555,13 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 // Card operations belong to the card the learner is
                                                 // looking at; the peeking back card has none.
                                                 topRail={isFront ? topRail : undefined}
+                                                // Only the active front card's note is
+                                                // editable; the peeking back card still
+                                                // RENDERS its note (read-only) so it doesn't
+                                                // pop in when the card is promoted.
+                                                noteEditing={isFront ? noteEditing : false}
+                                                onSaveNote={isFront ? onSaveNote : undefined}
+                                                onCancelNote={isFront ? onCancelNote : undefined}
                                             />
                                         )}
                                     </Box>

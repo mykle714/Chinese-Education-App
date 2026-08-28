@@ -308,7 +308,7 @@ export class ProvisionalCardService {
    * hard-coding a number and re-introducing the drift the baselines table removed.
    *
    * `multiplier` over-provisions past the baseline. Only Word Search uses it: its
-   * twelve words must have mutually DISTINCT characters, a constraint a row count
+   * nine words must have mutually DISTINCT characters, a constraint a row count
    * cannot express, so it retries with a bigger pool (PROVISION_RETRY_FACTOR).
    */
   async ensureBaselineForSurface(

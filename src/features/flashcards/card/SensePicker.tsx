@@ -55,7 +55,7 @@ export interface SensePickerProps {
     /** Trigger icon color — each host matches its own surrounding text. */
     color?: string;
     /**
-     * When true, the zh reading headings are replaced by neutral "Group N" labels.
+     * When true, the zh reading headings are replaced by neutral "-pinyin N-" labels.
      * Used on the FRONT/question side of a flashcard, where the card shows only
      * English and the learner is supposed to produce the Chinese — a tone-colored
      * pinyin heading would hand them the pronunciation (and the tones) for free.
@@ -343,10 +343,10 @@ const SensePicker: React.FC<SensePickerProps> = ({
                         }}
                     >
                         {/* Front/question side: the reading is the answer, so the heading
-                            becomes a bare ordinal label ("Group 1"). Sections are already in
+                            becomes a bare ordinal label ("-pinyin 1-"). Sections are already in
                             frequency order, so the numbering is stable for a given card. */}
                         {censorReadings
-                            ? <span style={{ color: COLORS.textSecondary }}>{`Group ${sectionIndex + 1}`}</span>
+                            ? <span style={{ color: COLORS.textSecondary }}>{`-pinyin ${sectionIndex + 1}-`}</span>
                         /* Per-syllable tone coloring, matching cpcd/pinyin elsewhere. An
                            empty reading (should not happen for a clustered zh entry) falls
                            back to a neutral em dash. */

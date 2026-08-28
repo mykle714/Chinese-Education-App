@@ -675,7 +675,7 @@ drawn as one of a test's three rounds — see
 the shared plumbing. What is specific to THIS game:
 
 **Why it needs a rule at all.** Every other eligible game has a fixed board, so "all
-twelve contested words appear in the round" is a fact about board composition. Match
+nine contested words appear in the round" is a fact about board composition. Match
 Speed deals from a rolling buffer into ten slots against a 30-second clock, so the same
 guarantee has to become a rule about the DEAL:
 
@@ -688,7 +688,7 @@ guarantee has to become a rule about the DEAL:
 |---|---|
 | The opening fetch | carries `?challengeId=` and comes back as one SHUFFLED set of contested + filler. `beginRun` splits it against the challenge's own word list — contested into the deal state's queue, the rest into the ordinary `CardBuffer` via `fillBuffer` |
 | `drawPairs` | in a challenge round, delegates to `dealChallengePairs` (`challengeDeal.ts`, pure + tested) with the buffered draw as its filler source; otherwise unchanged |
-| Buffer top-ups | send `&contested=exclude`, so a refill is pure filler. The twelve are dealt ONCE and never recycled — a re-served contested word would be a second bite at a word the round has already scored |
+| Buffer top-ups | send `&contested=exclude`, so a refill is pure filler. The nine are dealt ONCE and never recycled — a re-served contested word would be a second bite at a word the round has already scored |
 | Mode | a challenge round always launches as **Study Mix**. Review and Challenge are hard bucket restrictions, and `fillBuffer` drops off-mode cards — under either of them half a challenge board would be thrown away on arrival |
 
 **Parity is counted over the RUN, not per call.** The board refills a few holes at a
@@ -870,7 +870,8 @@ deliberately **thin** — modeled on `WordSearchHeader.tsx`, not on
 
 | Control | Notes |
 |---|---|
-| **Settings cog** | Opens `MatchSpeedSettingsDialog`. |
+| **pinyin chip** | `HeaderToggleChip`. Hidden for Latin-script languages — see the language-gating note below. |
+| **audio chip** | `AudioModeChip` — the app-wide 3-state narration control, self-contained and identical on every surface. [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md). |
 | **Minute-points fire badge** | `MinutePointsFireBadge` — appended by `PageHeader` itself (flush right, after these controls); `MatchSpeedHeader` does not render it. |
 
 Everything else that used to live in the header moved out, because inline toggles
@@ -878,7 +879,9 @@ plus a clock consumed roughly half the bar:
 
 | Moved | To | Why |
 |---|---|---|
-| **pinyin / color / autoplay toggles** | `MatchSpeedSettingsDialog` (behind the cog) | They are set-once-and-forget, not per-tap controls. Same "quick controls in the header, everything else behind the cog" split flp and Word Search use. |
+| **pinyin toggle** | the cog, then **back to the header** (2026-08-28) | With the other two rows gone the sheet held one row — and NOTHING at all for a Latin-script language, since every row was script-gated. A cog opening an empty dialog is worse than a chip. |
+| **tone-color toggle** | the cog, then **`/settings` → Display** (2026-08-28) | It is not Match Speed's setting, or any page's: it applies to every reading the app renders. `/settings` is now the ONLY place it is edited. |
+| **autoplay toggle** | the cog, then **back to the header** (2026-08-28) | It stopped being a game pref: it is now the app-wide narration setting ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md)), and it is the one control here a player changes mid-session. Every surface that offers it offers it in the header. |
 | **Countdown timer** | `MatchSpeedTimerBar`, pinned to the top of the **play area** | The clock is game state, not page chrome. A countdown the player has to look away from the board to read is a countdown they stop reading. |
 
 ### The HUD strip and the hint line
@@ -893,62 +896,31 @@ Inside the play panel, under the clock (shelf redesign entry 14):
 The collection name comes from `collectionTitle` (`src/features/flashcards/collectionRef.ts`),
 falling back to "All cards" for a launch with no collection.
 
-### `MatchSpeedSettingsDialog`
+### No settings sheet
 
-A `Dialog` sheet mirroring `WordSearchSettingsDialog` (same switch-row shape).
-Three rows — **Show pinyin**, **Tone colors**, **Speak the word on tap**
-(`autoplayChinese` — pool cards are pre-warmed with `tts.prefetch(card)` as Bubble
-Match does). The two pinyin rows are **language-gated** — see below.
+`MatchSpeedSettingsDialog` was **deleted on 2026-08-28**. Its three rows had all
+stopped being Match Speed's: pinyin and audio became header chips, tone coloring
+moved to `/settings` → Display. Nothing replaced the cog — the header holds the two
+chips directly.
 
-⚠️ **All three are currently backed by the SHARED `useFlashcardLearnSettings`**, i.e.
-the flp's own preferences, so toggling pinyin here also changes Bubble Match, Hydra
-Bubbles, the cdp and the scp. That is being undone: pinyin becomes **per-game**
-([GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md), decided
-2026-08-23, not built), following the `useWordSearchSettings` pattern. For Match Speed
-the toggle is **display only** — it keeps marking `recognition` either way; only Bubble
-Match and (next) Hydra let pinyin pick the track.
+Two consequences worth carrying forward:
 
-### `MatchSpeedTimerBar`
+- **`clockPaused` lost a source.** It is now `noticeOpen || backgroundPaused`. The
+  chips do not pause the run, and should not: the pause rule covers **input-blocking
+  overlays** only (docs/GAMES_FEATURE.md § Backgrounding pauses the clock), and a
+  header chip leaves the board playable. A chip that paused the clock would be a free
+  stopwatch stop.
+- **The settings are still the SHARED ones.** `showPinyin` remains
+  `useFlashcardLearnSettings`', so toggling it here also changes Bubble Match, Hydra
+  and the flp; the audio mode is `useTTSSettings`', shared with everything. That was
+  true when they lived in the sheet and is unchanged — only where they are edited moved.
 
-`m:ss` counting down from 0:30 via the shared `formatTimeMs`
-(`src/utils/timeUtils.ts`) — hoisted there out of
-`src/games/word-search/constants.ts` as part of this work, since a game-agnostic
-formatter had no business living in one game's tunables. Under `URGENT_MS` (10s)
-both the digits and the drain bar turn red and the digits pulse. A **drain bar**
-sits under the digits so the run's end is legible peripherally, without parsing
-digits.
-
-**The resting bar is `RAMP[GAME_HUE].ink` — this game's green** — as of 2026-08-23
-([SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A6b). It was `COLORS.infoInk`, the palette's
-neutral blue, which stopped working once the clock came to sit on a strip tinted with the
-game's own hue: a blue bar on a green strip read as a widget borrowed from another screen.
-It cannot be confused with the board's green "matched" fill — that is a card body, this is
-a 4px rule in the chrome. The urgent state is still `dangerInk`.
-
-The bar is mounted from the **countdown phase onward**, at a full bar — so the
-board never shifts down when the run starts — and is **dimmed rather than
-removed** once the run ends, for the same reason (the end card owns the result;
-a frozen `0:00` would otherwise read as broken).
-
-Minute points: add `/games/match-speed` to `MINUTE_POINTS_ELIGIBLE_PAGES`
-(`src/constants.ts`). The start-on-entry subset is already the path prefix
-`/games` (`MINUTE_POINTS_AUTO_ACTIVE_PAGES`, `src/constants.ts`), so it is
-covered automatically.
-
-### Language scope
-
-The game is **language-agnostic**, following the user's selected language exactly
-as Bubble Match does — the pool endpoint is already language-scoped and
-`ForeignText` renders Latin-script languages (`es`) as plain text with no pinyin
-overlay.
-
-**But the pinyin toggles must be language-gated**: for a Latin-script language the
-pinyin and pinyin-color controls are meaningless (`ForeignText` ignores them
-entirely) and must be **hidden**, not merely inert. `MatchSpeedSettingsDialog`
-therefore takes the active language and renders those two rows only for
-character-based languages, via `isLatinScriptLang` imported from `ForeignText` —
-the canonical owner of that set — rather than re-testing `=== "es"`. (Bubble
-Match's header had the same latent bug; it was fixed in the same pass.)
+**Language gating survived the move.** For a Latin-script language the pinyin control
+is meaningless (`ForeignText` ignores the flag entirely) and must be **hidden**, not
+merely inert. `MatchSpeedHeader` takes the active language and renders the chip only
+for character-based languages, via `isLatinScriptLang` imported from `ForeignText` —
+the canonical owner of that set — rather than re-testing `=== "es"`. (Bubble Match's
+header had the same latent bug; it was fixed in the same pass.)
 
 ---
 
@@ -1076,8 +1048,7 @@ src/games/match-speed/
   MatchSpeedPage.tsx       page shell + phase machine + pool/buffer + marks
   MatchSpeedBoard.tsx      the 5×2 slot grid (ROWS=5 × 2 columns), tap handling, refill tick
   MatchSpeedCard.tsx       one card (foreign or english) + its visual states
-  MatchSpeedHeader.tsx     right-slot controls: settings cog (the fire badge is PageHeader's)
-  MatchSpeedSettingsDialog.tsx  settings sheet: pinyin / tone colors / autoplay
+  MatchSpeedHeader.tsx     right-slot controls: pinyin chip + audio chip (fire badge is PageHeader's)
   MatchSpeedTimerBar.tsx   run clock + drain bar, top of the play area
   MatchSpeedEndPopup.tsx   GameEndPopup wrapper pinning classPrefix
   cardBuffer.ts            weighted category roll + per-category buffer + fallback
@@ -1134,8 +1105,8 @@ All steps complete — kept as the build order a similar game should follow.
    fade animations.
 5. ✅ `MatchSpeedPage.tsx` — `LeafPage`, `useBlockEdgeSwipe(true)`, phase machine,
    pool prefetch + buffer top-up, marks, timer.
-6. ✅ `MatchSpeedHeader.tsx` + `MatchSpeedSettingsDialog.tsx` +
-   `MatchSpeedTimerBar.tsx` + `MatchSpeedEndPopup.tsx`; `formatTimeMs` hoisted to
+6. ✅ `MatchSpeedHeader.tsx` + `MatchSpeedSettingsDialog.tsx` (the latter deleted
+   2026-08-28) + `MatchSpeedTimerBar.tsx` + `MatchSpeedEndPopup.tsx`; `formatTimeMs` hoisted to
    `src/utils/timeUtils.ts` (word-search importers re-pointed).
 7. ✅ Registry entry + `MINUTE_POINTS_ELIGIBLE_PAGES`.
 8. ✅ `docs/GAMES_FEATURE.md` + `docs/MASTERY_REWORK.md` updated; this doc flipped

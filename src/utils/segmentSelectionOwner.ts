@@ -2,12 +2,9 @@
 //
 // Every example sentence renders its own SegmentedSentenceDisplay, and each one
 // owns its selection state independently. Without a shared owner, tapping a word
-// in sentence B leaves sentence A's word selected: A's tap-to-dismiss rule (the
-// scrub-enabled pointerup handler) keeps the selection alive whenever the tap
-// lands on ANY `.cpcd-row__char-cell` — it cannot tell its own characters from a
-// sibling display's. The result is two popups open at once and two competing
-// claims on horizontal gestures (see segmentScrubLock), which makes the drag-scrub
-// ambiguous about which sentence it should walk.
+// in sentence B leaves sentence A's word selected: A's outside-tap dismiss rule
+// only fires for taps outside A's own row, and it cannot tell its own characters
+// from a sibling display's. The result is two popups open at once.
 //
 // The invariant this enforces: **at most one segment selection exists in the app
 // at any time.** A display claims ownership the moment it selects a segment, and

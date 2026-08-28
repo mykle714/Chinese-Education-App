@@ -27,6 +27,21 @@
 import { apiPost } from './http';
 import type { MarkType, ReviewMark, VocabEntry } from '../types';
 
+/**
+ * Every surface that may record a mark. Add a case here when a new game starts
+ * writing marks — the compiler then forces the call site to use a value the
+ * `[MarkSuppressed]` log analysis already groups on.
+ */
+export type MarkSurface =
+    | "flp"
+    | "bubble-match"
+    | "hydra-bubbles"
+    | "match-speed"
+    | "memory-map"
+    | "speed-reading"
+    | "word-search"
+    | "practice-writing";
+
 /** A single review mark. `mode` is flp-only — it caps the replacement card's category. */
 export interface MarkFlashcardRequest {
     cardId: number;
@@ -53,7 +68,7 @@ export interface MarkFlashcardRequest {
     deckId?: number;
     collection?: string;
     /**
-     * Which surface produced this mark ("bubble-match", "flp", …).
+     * Which surface produced this mark.
      *
      * PURELY DIAGNOSTIC — no server behavior branches on it. It exists so the
      * suppressed-mark log (docs/HYDRA_BUBBLES.md § 8.1) can tell apart the two
@@ -61,8 +76,12 @@ export interface MarkFlashcardRequest {
      * ordinary run — the collision we do NOT want and are measuring), versus a
      * deck/collection round that deliberately ignores cooldown (§ 6.3 — intended).
      * Without it the log is one undifferentiated count and answers nothing.
+     *
+     * A UNION, not a free string, precisely because it is diagnostic: a typo in a
+     * free-text field silently opens a new bucket in the log and the analysis quietly
+     * under-counts the surface it was meant to measure. Nothing would ever fail.
      */
-    surface?: string;
+    surface?: MarkSurface;
     /**
      * flp working-loop only: which track this session's FOREIGN-FIRST face exercises
      * ('reading' for a zh session with "Show pinyin" off, else 'recognition' —

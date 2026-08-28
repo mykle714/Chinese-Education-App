@@ -359,7 +359,7 @@ function ChallengeDetailPage() {
                                             {/* The board never says which words are contested
                                                 (Q74), so this is the only place the format is
                                                 stated at all. */}
-                                            One attempt each, in this order. Your twelve words are mixed
+                                            One attempt each, in this order. Your challenge words are mixed
                                             into an ordinary board — play the whole board.
                                         </Typography>
                                     </>

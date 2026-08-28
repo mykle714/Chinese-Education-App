@@ -147,6 +147,18 @@ The manifest — not this document — decides what "pending" means:
 - **Approval protection**: a step whose validation field a validator approved or
   flagged is never pending, mirroring `validatedClause` in the scripts themselves.
   The planner prints these under `🛡 validator-protected`.
+- **Cross-row drift** (`driftProbe`): a step whose stored output was invalidated by a
+  change to ANOTHER row. The row's own stamp still reads current, so neither
+  applicability nor version-staleness can see it — the planner runs each probe as its
+  own set query and OR-s the ids into the candidate scope. It prints these under
+  `⚠ cross-row drift`, with both an in-batch and a **corpus-wide** count.
+  Today the only probe is `breakdownSenseOrphan`: `backfill-breakdown-senses` stores a
+  cluster's `sense` LABEL per component character, and a later re-clustering of that
+  character can rename the label, orphaning the pointer. **Repair is
+  `--reconcile`** on that script, NOT `--force` — `--force` re-tags all ~9.5k rows and
+  re-spends every prompt to fix the ~1k that drifted. A corpus-wide count that stays
+  flat across rounds means the reconcile pass is not actually running; say so in the
+  report rather than looping on it.
 - **Opt-in steps** (`optional: true`): excluded from the plan *and* from the promotion
   bar unless asked for. Today this is `backfill-icons` only — the one step that must
   reach an external paid API (icons8), which an oracle run cannot answer locally. **The
@@ -400,6 +412,34 @@ WHERE language = 'zh' AND discoverable
 
 Non-zero means something set `discoverable` outside `promote-discoverable.js` /
 `/mark-discoverable` — a CLAUDE.md violation. Stop and report it.
+
+Finally, confirm the round did not CREATE cross-row drift. Re-running the clusterer on
+a character silently orphans every breakdown sense pointing at a label it renamed, so a
+round that touched `backfill-cluster-definitions` should end with the drift count no
+higher than it started:
+
+```sql
+-- compare against the "corpus-wide" number the planner printed at the START of the round
+WITH valid AS (
+  SELECT c.word1 AS ch, cl->>'sense' AS sense
+    FROM dictionaryentries_zh c,
+         jsonb_array_elements(COALESCE(c."definitionClusters", '[]'::jsonb)) cl
+   WHERE char_length(c.word1) = 1
+), tagged AS (
+  SELECT d.id, kv.key AS ch, kv.value->>'sense' AS sense
+    FROM dictionaryentries_zh d, jsonb_each(d.breakdown) kv
+   WHERE d.breakdown IS NOT NULL AND jsonb_typeof(d.breakdown) = 'object'
+     AND kv.value->>'sense' IS NOT NULL
+)
+SELECT count(DISTINCT t.id) AS rows_with_orphaned_sense
+  FROM tagged t LEFT JOIN valid v ON v.ch = t.ch AND v.sense = t.sense
+ WHERE v.ch IS NULL;
+```
+
+A RISE means the round relabelled clusters without reconciling the breakdowns that
+point at them. That is not a stop condition — it is repairable in the next round with
+`backfill-breakdown-senses.js --reconcile` — but it must go in the report, because
+nothing else will surface it.
 
 ## 6. Loop — running to exhaustion is MANDATORY
 

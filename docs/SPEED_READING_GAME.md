@@ -1009,7 +1009,7 @@ guarded by a ref so it fires once per run. The hub shows the lifetime `×N`.
 | `src/components/LeafPage.tsx` | `hideHeader` + render-prop children (added for this game) |
 | `src/components/LeafPageHeader.tsx` | rendered by the page itself, inside the stage |
 | `src/components/ForeignText.tsx` | the option text (row layout → `CPCDRow`), `showPinyin={false}` |
-| `src/utils/sentencePronunciation.ts` | `buildSentencePronunciation` — per-segment pinyin for a sentence round's prompt and TTS hint (shared with the flp est list) |
+| `src/utils/sentencePronunciation.ts` | `buildSentencePronunciation` — per-segment pinyin for a sentence round's prompt and TTS hint (shared with the flp est list). Skips punctuation segments; see [EXAMPLE_SENTENCES.md § Punctuation is skipped](./EXAMPLE_SENTENCES.md#punctuation-is-skipped-not-a-missing-pronunciation) |
 | ~~`src/components/handwriting/GlyphSvg.tsx`~~ | **no longer used here** — the options were per-character SVG glyphs until they moved to cpcd |
 | `src/games/registry.ts` | `GameDef` entry (route, colour, `languages`) |
 | `src/games/GamesPage.tsx` | renders it via the generic `HubMenuRow` branch |

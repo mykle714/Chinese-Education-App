@@ -201,7 +201,14 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                         selectedSenseIndex={selectedSenseIndex}
                         onSelectSense={onSelectSense}
                         showSynonymsRelated={showSynonymsRelated}
-                        scrollTouchAction="none"
+                        // `pan-y`, NOT `none`. SheetPanel decides between growing the sheet
+                        // and scrolling the pane on the gesture's first committed move, and
+                        // it expresses "scroll" by NOT calling preventDefault — the browser
+                        // pans the pane natively. With `none` the browser refuses that pan
+                        // and nothing scrolls once the sheet is at max height (the est tab,
+                        // the only pane tall enough to notice, just froze). Horizontal is
+                        // still ours: `pan-y` leaves the tab-swipe free to preventDefault.
+                        scrollTouchAction="pan-y"
                         headerDragBind={bindHeaderDrag}
                     />
                 )}

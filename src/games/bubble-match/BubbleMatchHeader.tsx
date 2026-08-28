@@ -1,5 +1,6 @@
 import React from "react";
 import { HeaderIconButton, HeaderToggleChip } from "../../components/PageHeader";
+import AudioModeChip from "../../components/AudioModeChip";
 import { isLatinScriptLang } from "../../components/ForeignText";
 import type { Language } from "../../types";
 
@@ -12,11 +13,11 @@ interface BubbleMatchHeaderControlsProps {
      *  § "Bubble Match: pinyin picks the track"). Hydra Bubbles still toggles live. */
     showPinyin?: boolean;
     onTogglePinyin?: () => void;
-    /** The autoplay toggle. OMIT BOTH to hide it — Bubble Match hides it on a READING
-     *  run, where hearing the word would hand over the pronunciation the run is
-     *  testing the player to read. */
-    autoplayChinese?: boolean;
-    onToggleAutoplayChinese?: () => void;
+    /** Whether to show the narration audio-mode chip. It is self-contained (it
+     *  reads the app-wide setting itself — see AudioModeChip), so this is a plain
+     *  visibility flag. Pass FALSE on a READING run, where hearing the word would
+     *  hand over the pronunciation the run is testing the player to read. */
+    showAudioChip?: boolean;
     /** Restart the current level with the same words. When omitted (e.g. outside
      *  the live "playing" phase) the restart button is hidden. */
     onRestart?: () => void;
@@ -24,13 +25,13 @@ interface BubbleMatchHeaderControlsProps {
 
 /**
  * Right-side header controls for the bubble games: an optional restart button
- * (same level, same words), up to two quick toggles (pinyin + autoplay, mirroring
- * FlashcardsLearnHeader) and the minute-points fire badge.
+ * (same level, same words), the pinyin toggle, the narration audio-mode chip
+ * (mirroring FlashcardsLearnHeader) and the minute-points fire badge.
  *
- * EVERY TOGGLE IS OPTIONAL and hidden when its caller passes no handler. Hydra
- * Bubbles takes both; Bubble Match takes neither its pinyin one (that setting now
- * chooses the run's mastery track, so it is picked on the hub before the deal) nor,
- * on a reading run, its autoplay one.
+ * EVERY CONTROL IS OPTIONAL and hidden when its caller says so. Hydra Bubbles takes
+ * both; Bubble Match takes neither its pinyin one (that setting now chooses the
+ * run's mastery track, so it is picked on the hub before the deal) nor, on a
+ * reading run, the audio chip.
  *
  * Bubble Match is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md), so the header + down
  * chevron come from LeafPage/LeafPageHeader; this component just fills LeafPage's
@@ -46,8 +47,7 @@ const BubbleMatchHeaderControls: React.FC<BubbleMatchHeaderControlsProps> = ({
     language,
     showPinyin,
     onTogglePinyin,
-    autoplayChinese,
-    onToggleAutoplayChinese,
+    showAudioChip = false,
     onRestart,
 }) => {
     // The pinyin chip needs a caller that owns the setting AND a non-Latin script:
@@ -55,7 +55,7 @@ const BubbleMatchHeaderControls: React.FC<BubbleMatchHeaderControlsProps> = ({
     // button on screen would ship a control that visibly does nothing.
     const showPinyinControls =
         showPinyin !== undefined && onTogglePinyin !== undefined && !isLatinScriptLang(language);
-    const showAutoplayControl = autoplayChinese !== undefined && onToggleAutoplayChinese !== undefined;
+
 
     return (
         <>
@@ -75,15 +75,7 @@ const BubbleMatchHeaderControls: React.FC<BubbleMatchHeaderControlsProps> = ({
                     pinyin
                 </HeaderToggleChip>
             )}
-            {showAutoplayControl && (
-                <HeaderToggleChip
-                    className="autoplay-toggle-btn"
-                    active={autoplayChinese}
-                    onClick={onToggleAutoplayChinese}
-                >
-                    autoplay
-                </HeaderToggleChip>
-            )}
+            {showAudioChip && <AudioModeChip className="bubble-match__audio-chip" />}
         </>
     );
 };

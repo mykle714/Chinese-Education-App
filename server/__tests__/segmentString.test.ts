@@ -5,6 +5,7 @@ import {
   getAllSubstrings,
   segmentWithDict,
   buildSegmentMetadata,
+  buildDrillRungs,
   splitHanRuns,
   SEGMENTATION_MAX_TOKEN_CHARS,
 } from '../dal/shared/segmentString.js';
@@ -276,5 +277,122 @@ describe('buildSegmentMetadata — sense-aware pronunciation', () => {
     } as DictionaryEntry;
     const meta = buildSegmentMetadata(['会计'], dict(kuaiji), { senseDict: { 会计: 'accounting' } });
     expect(meta['会计'].pronunciation).toBe('kuài jì');
+  });
+});
+
+
+/**
+ * buildDrillRungs — the tap-to-drill chain (docs/SEGMENT_DRILL_DOWN.md).
+ *
+ * A rung is a det headword strictly INSIDE a segment. The client picks among them
+ * (src/utils/segmentDrill.ts); this only has to emit the right candidates, with the
+ * right offsets, in longest-first order.
+ */
+describe('buildDrillRungs', () => {
+  it('emits every shorter headword inside the segment, longest-first', () => {
+    const rungs = buildDrillRungs('中国人', dict(entry('中国人'), entry('中国'), entry('国人'), entry('中'), entry('国'), entry('人')));
+    expect(rungs.map(r => r.text)).toEqual(['中国', '国人', '中', '国', '人']);
+  });
+
+  it('never emits the segment itself — a rung must be strictly narrower', () => {
+    const rungs = buildDrillRungs('中国', dict(entry('中国'), entry('中'), entry('国')));
+    expect(rungs.map(r => r.text)).toEqual(['中', '国']);
+  });
+
+  it('carries the character offset, so a repeated character drills to the tapped half', () => {
+    const rungs = buildDrillRungs('人人', dict(entry('人人'), entry('人')));
+    expect(rungs).toEqual([
+      { text: '人', offset: 0, definition: '人-def' },
+      { text: '人', offset: 1, definition: '人-def' },
+    ]);
+  });
+
+  it('returns nothing for a single character — it is already the floor of the chain', () => {
+    expect(buildDrillRungs('人', dict(entry('人')))).toEqual([]);
+  });
+
+  it('skips substrings the dictionary has no entry for', () => {
+    const rungs = buildDrillRungs('中国人', dict(entry('中国人'), entry('人')));
+    expect(rungs.map(r => r.text)).toEqual(['人']);
+  });
+
+  it('honors matchException for multi-char rungs but never for single characters', () => {
+    const rungs = buildDrillRungs(
+      '中国人',
+      dict(entry('中国'), entry('中')),
+      { excludeTokens: new Set(['中国', '中']) }
+    );
+    expect(rungs.map(r => r.text)).toEqual(['中']);
+  });
+
+  it('drops a rung with no resolvable definition rather than shipping a blank popup', () => {
+    const noDef = { ...entry('中'), definitions: [] } as DictionaryEntry;
+    const rungs = buildDrillRungs('中国', dict(noDef, entry('国')));
+    expect(rungs.map(r => r.text)).toEqual(['国']);
+  });
+
+  /**
+   * Single-character rungs are glossed from the PARENT word's `breakdown` sense — the
+   * same map the flashcard breakdown tab renders — so a drill-down and the bt can never
+   * disagree about which sense a character carries inside this word.
+   * See docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md § 5b.
+   */
+  describe('single-char rungs follow the parent word’s breakdown sense', () => {
+    /** 行: the classic heteronym — xíng "to walk" vs háng "row/business". */
+    function xingEntry(): DictionaryEntry {
+      return {
+        ...entry('行'),
+        pronunciation: 'xíng',
+        definitions: ['to walk'],
+        definitionClusters: [
+          { sense: 'to walk', reading: 'xing2', pos: ['verb'], gender: null, frequencyScore: 5, glosses: ['to walk'] },
+          { sense: 'row / business', reading: 'hang2', pos: ['noun'], gender: null, frequencyScore: 3, glosses: ['business'] },
+        ],
+      } as DictionaryEntry;
+    }
+
+    /** 银行 "bank", whose breakdown tags 行 as the háng sense. */
+    function yinhangEntry(): DictionaryEntry {
+      return {
+        ...entry('银行'),
+        breakdown: { 行: { definition: 'business', sense: 'row / business' } },
+      } as DictionaryEntry;
+    }
+
+    it('uses the tagged cluster’s gloss AND reading, not the character’s standalone lead sense', () => {
+      const rungs = buildDrillRungs('银行', dict(yinhangEntry(), xingEntry()));
+      const hang = rungs.find(r => r.text === '行');
+      expect(hang?.definition).toBe('business');
+      expect(hang?.pronunciation).toBe('háng'); // numbered cluster reading, tone-converted
+    });
+
+    it('falls back to the standalone lead sense when the parent has no breakdown', () => {
+      const rungs = buildDrillRungs('银行', dict(entry('银行'), xingEntry()));
+      const hang = rungs.find(r => r.text === '行');
+      expect(hang?.definition).toBe('to walk');
+      expect(hang?.pronunciation).toBe('xíng');
+    });
+
+    it('falls back to the breakdown’s STORED gloss when its label matches no cluster', () => {
+      // A stale label — the character was re-clustered after the breakdown was written.
+      const stale = { ...yinhangEntry(), breakdown: { 行: { definition: 'business (stored)', sense: 'gone' } } } as DictionaryEntry;
+      const rungs = buildDrillRungs('银行', dict(stale, xingEntry()));
+      expect(rungs.find(r => r.text === '行')?.definition).toBe('business (stored)');
+    });
+
+    it('does not apply the breakdown to multi-character rungs (it is keyed by character)', () => {
+      const parent = {
+        ...entry('中国人'),
+        breakdown: { 中国: { definition: 'never used', sense: 'bogus' } },
+      } as DictionaryEntry;
+      const rungs = buildDrillRungs('中国人', dict(parent, entry('中国'), entry('人')));
+      expect(rungs.find(r => r.text === '中国')?.definition).toBe('中国-def');
+    });
+  });
+
+  it('context-matches a rung definition against the English translation', () => {
+    const multi = { ...entry('会'), definitions: ['can', 'to reckon accounts'] } as DictionaryEntry;
+    const rungs = buildDrillRungs('会计', dict(multi), { translatedContext: 'she learned to reckon accounts' });
+    expect(rungs[0].definition).toBe('to reckon accounts');
   });
 });

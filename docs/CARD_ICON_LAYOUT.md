@@ -45,9 +45,10 @@ A face renders icons when it shows the English block: **Side 1 only when it is E
 (`showIcon={sideOneLanguage === 'en'}`), and **Side 2 (back) always**. Applies to both
 the default single icon and a custom layout.
 
-Separately, the **practice-writing button** exists on the **back face only** — the Side
-1 `ChineseBlock` is passed `showWriting={false}` so it never renders there (the audio
-button still appears on whichever face shows the Chinese).
+The card face carries **no practice-writing button**; the audio button is the only
+action on it, and appears on whichever face shows the Chinese. Practice Writing moved
+off the card entirely (2026-08-28) to `WordToolsRail` above it — see
+docs/PRACTICE_WRITING.md ("Entry points").
 
 Icons are drawn in a layer **behind** the cpcd, English text, buttons, and labels (a
 lower `zIndex` than `CardContent` — see the stacking-context note under the gesture
@@ -62,7 +63,15 @@ The live **edit canvas** lives in the **outer** box (so its selection indicators
 overflow the card edge — see the gesture-canvas section); the canvas clips its **own**
 icons internally instead. This split is what lets the selection outline + resize handle
 poke past the card boundary into the surrounding card padding while ordinary icons stay
-clipped. (`FlashCardSection.tsx` `CardFaceSide`.)
+clipped. (`CardFaceSide` now lives in `src/features/flashcards/card/CardFace.tsx`;
+`FlashCardSection.tsx` re-exports it.)
+
+Two other things ride in that **outer** box for the same reason — they must paint over the
+icon layer and position against the face's own edge: `topRail` (the card-operations rail,
+[SHELF_REDESIGN.md](./SHELF_REDESIGN.md) artboard 21) and `bottomNote` (the learner's card
+note, [CARD_NOTES.md](./CARD_NOTES.md)). The note is deliberately **not** part of the
+movable-text system below — it is chrome, not card design, so the fie can neither move it
+nor see it (the canvas suppresses it while an edit is open).
 
 **3D-flip hit-testing:** CSS backface culling does not reliably exclude the rotated
 -away face from *hit-testing*, so the away-facing `CardFaceSide` is made `inert`
@@ -289,8 +298,12 @@ paging past page 0 — falls back to the live `/api/icons8/search` as before.
 All in `src/features/flashcards/FlashcardsLearnPage/`.
 
 1. **Header** (`FlashcardsLearnHeader.tsx`)
-   - The `autoplay` quick-toggle is **removed** from the header (it remains in the
-     Settings sheet, `SettingsPanelBody.tsx`).
+   - The `autoplay` quick-toggle was **removed** from the header here, then
+     **restored to it on 2026-08-28** as the three-state `AudioModeChip` when
+     narration became one app-wide setting
+     ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md)). The Settings sheet it briefly lived
+     in (`SettingsPanelBody.tsx`) and the header's settings cog were both deleted the
+     same day — the flp has no settings sheet any more.
    - An **edit** button is added. It is **enabled only when the card is flipped to
      the back** (`disabled={!isFlipped || editMode}`) and greyed out on the front,
      because the arrangement lives on the back face.
@@ -1044,7 +1057,12 @@ flex column they can't grow), so the gap clears a multi-line English definition.
   right edge, so they're **part of the block's measured box** — the selection outline frames
   them and the on-card clamp keeps them on-card. The static back-face render uses
   `inlineActions` too (default and custom), so it matches the fie 1:1; only the **front face /
-  Side 1** keeps the absolute-button flex column (its text stays centered). A **separate,
+  Side 1** keeps the absolute-button flex column (its text stays centered). The ENGLISH block's
+  sense trigger (`CardFace.EnglishBlock` → `SensePicker`) has no such switch any more — it is
+  **always in-flow, in a wrapping row**, on every face: the absolute variant occupied no layout,
+  so a wide gloss pushed the trigger past the card's (and on the large card view the viewport's)
+  right edge. A hidden twin of the trigger balances it on the text's other side, so the gloss
+  itself stays centered. A **separate,
   simpler gesture path** (`bindText` / `bindTextHandle`, with `beginText*`/`runText*`
   handlers) drives them — tap selects, drag translates, pinch + a corner handle resize/rotate,
   lock freezes + shakes. It's separate from the icon path (only two fixed blocks: no

@@ -17,9 +17,6 @@ export interface TTSRequest {
     // polyphones (中 zhōng vs. zhòng) cache and play distinctly. WebSpeech
     // ignores it. Browsers don't expose phoneme overrides.
     pronunciation?: string | null;
-    // 0.5..2.0. Providers that bake rate into audio should ignore this and let
-    // the audio element apply playbackRate; cache stays valid across rate changes.
-    rate?: number;
 }
 
 export interface TTSProvider {

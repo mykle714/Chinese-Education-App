@@ -63,14 +63,15 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { posAbbrevToFriendly } from '../shared/lib/esPos.js';
-import { FREQUENCY_SCORE_LABELS } from '../shared/lib/frequencyLabels.js';
+import { SCALE_AND_GUIDELINES, POLYSEMY_GUIDELINE } from './lib/frequencyRubric.js';
 import { parseModelJson } from '../shared/lib/json.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
+import { reconcileFrequencyScore } from '../shared/lib/senseClusters.js';
 
-const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 3; // bump when this script's logic/prompt changes (v3: rule 7 — clusters must now be EMITTED most- to least-common, with same-score ties ordered by the marginal difference the 1-5 scale cannot record; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. zh does the same job in a separate Stage C.5 pass (shared/lib/tiebreakOrder.js) because its scorer never sees a cluster's siblings; here one call already sees them all. v2: Stage-C scoring now receives the FULL rubric from lib/frequencyRubric.js — it previously had only the five band names — and that rubric's axis changed to conversational commonality; pre-2026-08-28 cluster scores are stale)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const { stampEntries } = initRunLog({
+const { stampEntries, validatedClause } = initRunLog({
   script: 'spanish/backfill-cluster-definitions',
   version: SCRIPT_VERSION,
   anthropic,
@@ -139,11 +140,22 @@ Hard rules:
    proper noun) naming the shared meaning. Labels must be UNIQUE within the word —
    they are how a learner's saved sense choice is addressed.
 
-6. SCORE each cluster's everyday-conversation frequency 1-5, independently:
-${Object.entries(FREQUENCY_SCORE_LABELS).map(([n, label]) => `     ${n} = ${label}`).join('\n')}
+6. SCORE each cluster's conversational commonality 1-5, independently, on this scale:
+${SCALE_AND_GUIDELINES}
+${POLYSEMY_GUIDELINE.sense}
    Score THE SENSE, not the spelling: a very common word can have a rare sense.
 
-7. FLAG YOUR DOUBTS. Add a short note to "reviewNotes" for anything you are even
+7. ORDER THE CLUSTERS most- to least-common, using the same scores you just gave.
+   Where two clusters share a score, the array order is what decides between them:
+   every read path sorts these clusters by score with a stable sort, so a tie falls
+   through to the order you emit here, and the first of the tied clusters is the
+   sense the flashcard shows by default. Break such a tie on the MARGINAL difference
+   the 1-5 scale was too coarse to record — the sense a learner meets first and hears
+   most: everyday concrete usage before figurative or specialist usage, plain modern
+   usage before anything formal, regional or dated. Do not change a score to express
+   the difference; express it in the order.
+
+8. FLAG YOUR DOUBTS. Add a short note to "reviewNotes" for anything you are even
    slightly unsure about — an ambiguous sense boundary, a gloss that could sit in
    two clusters, an uncertain gender, a broken or unintelligible source gloss. Err
    heavily toward flagging; these notes are read by a human.
@@ -269,6 +281,9 @@ Check specifically:
   - Was a same-meaning common-gender token wrongly split into two clusters (rule 1)?
   - Is each cluster's lead gloss its most prototypical one (rule 4)?
   - Is any frequencyScore obviously wrong for THAT SENSE (rule 6)?
+  - Are the clusters ordered most- to least-common, and is the FIRST of any group
+    sharing a score the one a learner meets first (rule 7)? A wrong order here
+    silently picks the card's default sense.
 
 Respond with ONLY one of:
   {"accept": true}
@@ -396,13 +411,33 @@ function friendlyPosTags(clusters) {
   return [...tags];
 }
 
-async function writeClusters(client, id, clusters) {
+/**
+ * Write one entry's clusters, and enforce the word/cluster frequency invariant in the
+ * same statement: det."frequencyScore" == MAX(cluster.frequencyScore). Doing it here
+ * rather than in a later pass is what stops the two numbers drifting apart — see the
+ * header of scripts/backfill/shared/lib/senseClusters.js for the rule and its history.
+ *
+ * The word column is guarded separately from the clusters: a validator who approved
+ * `frequencyScore` outranks the invariant, and the CASE leaves their number untouched
+ * (the only way an entry can remain inconsistent, by design).
+ *
+ * @param {number|null} wordScore - the entry's current det."frequencyScore"
+ */
+async function writeClusters(client, id, clusters, wordScore) {
+  const reconciled = reconcileFrequencyScore(wordScore, clusters);
   await client.query(
     `UPDATE dictionaryentries_es
         SET "definitionClusters" = $1::jsonb,
-            "partsOfSpeech" = $2::jsonb
+            "partsOfSpeech" = $2::jsonb,
+            "frequencyScore" = CASE WHEN ${validatedClause(['frequencyScore'], 'dictionaryentries_es')}
+                                    THEN $4::int ELSE "frequencyScore" END
       WHERE id = $3`,
-    [JSON.stringify(clusters), JSON.stringify(friendlyPosTags(clusters)), id]
+    [
+      JSON.stringify(reconciled.clusters ?? clusters),
+      JSON.stringify(friendlyPosTags(clusters)),
+      id,
+      reconciled.wordScore,
+    ]
   );
   await stampEntries(client, 'dictionaryentries_es', id);
 }
@@ -447,7 +482,7 @@ async function run() {
          AND val.action IN ('approve','flag'))`;
 
     const { rows } = await client.query(
-      `SELECT id, word1, definitions, "definitionClusters"
+      `SELECT id, word1, definitions, "definitionClusters", "frequencyScore"
          FROM dictionaryentries_es
         WHERE language = 'es' AND discoverable = TRUE
           AND jsonb_array_length(definitions) > 0
@@ -496,7 +531,7 @@ async function run() {
         }
 
         const stored = result.clusters.map(toStoredCluster);
-        if (!isDryRun) await writeClusters(client, row.id, stored);
+        if (!isDryRun) await writeClusters(client, row.id, stored, row.frequencyScore);
 
         console.log(`  ${row.word1} → ${stored.length} cluster(s)${result.note ? '  (' + result.note + ')' : ''}`);
         for (const c of stored) {

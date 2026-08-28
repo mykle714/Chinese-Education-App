@@ -24,12 +24,11 @@ export class WebSpeechProvider implements TTSProvider {
 
         const utter = new SpeechSynthesisUtterance(req.text);
         utter.lang = req.lang;
-        utter.rate = req.rate ?? 1.0;
+        // Rate is left at the browser default — the app has no speech-rate
+        // setting, and utterances are always spoken at normal speed.
 
         const voice = pickVoice(req.lang);
         if (voice) utter.voice = voice;
-
-        const rate = req.rate ?? 1.0;
 
         return new Promise<void>((resolve) => {
             let settled = false;
@@ -54,7 +53,7 @@ export class WebSpeechProvider implements TTSProvider {
             // so the promise always settles. We only resolve (never cancel) so a
             // still-speaking utterance under an over-short estimate isn't cut off.
             // ~3 chars/sec is deliberately slow; min 4s floor for short words.
-            const estSeconds = Math.max(4, req.text.length / 3) / rate;
+            const estSeconds = Math.max(4, req.text.length / 3);
             watchdog = setTimeout(finish, Math.ceil(estSeconds * 1000) + 750);
 
             window.speechSynthesis.speak(utter);

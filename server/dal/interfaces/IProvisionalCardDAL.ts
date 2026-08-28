@@ -116,7 +116,7 @@ export interface IProvisionalCardDAL {
    * ⚠️ THIS IS NOT LENDING. Every row it returns is a card the user already holds;
    * it exists so a Study Challenge round can pad its board with the player's OWN
    * easiest material before borrowing anything. Filler must not be a source of
-   * difficulty: a challenge measures its twelve contested words, and padding the board
+   * difficulty: a challenge measures its nine contested words, and padding the board
    * with words the player has never seen would add noise and reward whoever got
    * luckier filler. `default` lending is the LAST rung of the ladder, reached only
    * when the player's whole library is exhausted — which is exactly a brand-new

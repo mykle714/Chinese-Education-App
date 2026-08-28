@@ -138,7 +138,10 @@ button (→ `/games`) is the only way out, there is **no** footer on any of its
 screens (loading / blocked / stage — the level is picked on the hub, so there is
 no in-game picker screen), and the page slides up on enter / down on exit. The pinyin + autoplay toggles live in
 the header's right slot via `BubbleMatchHeaderControls`; the fire badge sits to their
-right and is rendered by `PageHeader` for every page, not passed by the game.
+right and is rendered by `PageHeader` for every page, not passed by the game. The
+autoplay chip edits the **app-wide** narration autoplay flag, not a game pref — the
+same control appears in every other narrating surface's header
+([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md)).
 
 **Word Search is also a leaf page**, wrapped the same way (down arrow → `/games`,
 no footer, slides up on enter).
@@ -683,18 +686,21 @@ it to whatever moves on its own:
 
 | Game | `clockPaused` is true while | What freezes | Code |
 | --- | --- | --- | --- |
-| Match Speed | the provisional notice or the settings sheet is open | the 3·2·1 countdown **and** the 30 s run clock | `MatchSpeedPage.tsx` (`clockPaused`, the countdown effect, the run-clock effect) |
+| Match Speed | the provisional notice is open | the 3·2·1 countdown **and** the 30 s run clock | `MatchSpeedPage.tsx` (`clockPaused`, the countdown effect, the run-clock effect) |
 | Word Search | the provisional notice or the settings sheet is open | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchPage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
 | Speed Reading | the provisional notice is open | the count-up clock — `startAtRef` is pushed forward by the paused span on resume | `SpeedReadingPage.tsx` (`clockPaused`, `pausedAtRef`, the clock effect) |
 | Bubble Match | the provisional notice is open | the bubble launcher, the descending ceiling and the overfill loss check | `BubbleMatchPage.tsx` (`clockPaused`) → `BubbleStage.tsx` (`paused`, `pausedRef`, `stepFrame`, the launch interval) |
 
 Three consequences worth keeping in mind when adding a popup or a game:
 
-- **Only input-blocking overlays qualify.** `ProvisionalCardsNotice` and the
-  settings sheets take the whole screen, so a frozen clock cannot be used to study
-  a live board. Word Search's in-grid gloss popups are deliberately **excluded**:
-  they are small anchored tooltips that leave the board playable, so pausing on
-  them would hand the player a free stopwatch stop.
+- **Only input-blocking overlays qualify.** `ProvisionalCardsNotice` and Word
+  Search's settings sheet take the whole screen, so a frozen clock cannot be used to
+  study a live board. Word Search's in-grid gloss popups are deliberately
+  **excluded**: they are small anchored tooltips that leave the board playable, so
+  pausing on them would hand the player a free stopwatch stop. Match Speed lost its
+  settings-sheet pause source on 2026-08-28 when that sheet was deleted — its
+  replacements are header chips, which leave the board playable and correctly do
+  **not** pause ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md)).
 - **End-of-run popups are irrelevant.** The end popup and `ProvisionalSortOffer`
   only ever open once the run is scored and the clock has already stopped.
 - **Resume must not pay the pause back.** A count-down clock re-arms from the time
@@ -786,7 +792,7 @@ force, not a rule in waiting. It lives here because it is a **registry contract*
 feature detail.
 
 A Study Challenge round is an ordinary run of an ordinary game over a board that
-mixes **contested** words (the challenge's twelve) with **filler** (everything else
+mixes **contested** words (the challenge's nine) with **filler** (everything else
 the board needed). The two score differently. A game that wants to be
 challenge-eligible must declare how.
 
@@ -864,7 +870,7 @@ const challengeRound = useChallengeRound({
 ```
 
 1. **Append `challengeRound.poolParams`** to your existing pool request. That turns the
-   ordinary pool into the round's board — the twelve contested words plus
+   ordinary pool into the round's board — the nine contested words plus
    `mastered-first` filler, assembled and SHUFFLED server-side. You do not select them.
 2. **Emit where you already mark.** `challengeRound.emit({ kind: "hit" | "miss", word:
    entry.entryKey, contested: challengeRound.isContested(entry.entryKey) })`. Classify at
@@ -1301,7 +1307,7 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   `{ cards, requested, available, total, needed, sufficient }`.
 
   ⚠️ **`?challengeId=&gameId=&mode=` short-circuits the whole band ladder** and serves a
-  Study Challenge round's board instead — the twelve contested words plus
+  Study Challenge round's board instead — the nine contested words plus
   `mastered-first` filler, shuffled, in the same response shape
   (`OnDeckVocabService.getChallengeGamePool`; `&contested=exclude` for a mid-run refill).
   `/api/onDeck/wordSearchGrid` takes the same three params. The request is authorized by

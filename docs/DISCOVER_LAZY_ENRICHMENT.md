@@ -324,6 +324,38 @@ validator accounts** (`users.isValidator`):
 > worker script (`run-lazy-enrichment.js`) survives **only as a manual / bulk backfill
 > CLI** (e.g. a one-off re-heal after a big `SCRIPT_VERSION` bump), not as a scheduler.
 
+### 5a. Re-healing the corpus after a `SCRIPT_VERSION` bump
+
+`pendingSteps` is version-aware, so bumping a script's `SCRIPT_VERSION` (and the
+matching entry in `shared/lib/requiredScripts.js`) is all it takes to make every
+already-enriched row a candidate again. **No migration and no deploy runbook is needed
+for a rubric or prompt change** — the bump IS the mechanism, and rows heal in place.
+
+```bash
+# dry run: prints the candidate set and the planned command sequence, writes nothing
+docker exec cow-backend-local npx tsx scripts/backfill/run-lazy-enrichment.js
+docker exec cow-backend-local npx tsx scripts/backfill/run-lazy-enrichment.js --apply --limit=25
+```
+
+Two limits to know before relying on it:
+
+1. **Coverage is not the whole corpus.** The runtime triggers fire only when a
+   *validator* opens or sorts a *specific* word, and the bulk drain's candidacy requires
+   `EXISTS (a vet row for word1)` — words someone actually sorted. Words nobody has
+   touched keep their old values indefinitely. That is fine for content a learner only
+   sees on the card itself, but **not** for a column used as a RANKING key across the
+   whole corpus (`frequencyScore` drives starter-pack ordering, provisional-card
+   ordering, search relevance and the gsa tie-break): a partial re-heal leaves old and
+   new values sorted against each other. For those, follow the drain with one explicit
+   full-corpus run of the changed script.
+2. **The drain spawns steps with `--stale`.** For `backfill-cluster-definitions` that
+   re-runs the whole clustering pipeline and **repartitions senses**, which renames the
+   `sense` labels that `vet.selectedSense`, `longDefinition` and the est tags address by
+   name. After a scoring-only bump, run that one script yourself with `--rescore-only`
+   first, so the drain finds it already stamped and skips it. See
+   [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "After a scoring-only
+   `SCRIPT_VERSION` bump".
+
 **Validator gate + why.** All lazy AI spend is bounded to trusted curators: a
 non-validator opening or sorting a word is a **no-op**. Validators effectively *prime*
 an entry — they are the ones reviewing/curating content (see
@@ -374,6 +406,20 @@ both the runtime trigger and the manual CLI):
    uses. **No new tracking column** — reuse `enrichmentLog`. Each manifest step also
    carries its `version` (= the script's `SCRIPT_VERSION`, kept in sync by hand) and
    its `validationFields`.
+
+   > **A third, CROSS-ROW staleness axis exists that this worker does not use yet.**
+   > A step may declare a `driftProbe` (`DRIFT_PROBES` in the manifest) — a step whose
+   > stored output was invalidated by a change to ANOTHER row. It cannot compile into
+   > `buildIncompletePredicate`, because whether this row is stale depends on rows the
+   > predicate never looks at; it is a set-returning query the caller runs once and
+   > feeds to `pendingSteps`/`isComplete` as their optional 4th argument
+   > `driftedStepIds`. **This worker omits that argument**, which preserves its exact
+   > previous behavior — so a drifted row still sorts and enriches as "complete" here,
+   > and is only repaired when an oracle round plans it (`oracle-plan.js` →
+   > `runDriftProbes`). Wiring it in would mean running the probe per sort request;
+   > it is ~30 ms corpus-wide for the one probe that exists, but it has not been
+   > measured under the worker's request path. See
+   > docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md § 5b-drift.
 
    > **Step ids are paths relative to `scripts/backfill/`, not always `chinese/<name>`.**
    > Most steps live under `chinese/`, but the language-shared icon step is the bare id

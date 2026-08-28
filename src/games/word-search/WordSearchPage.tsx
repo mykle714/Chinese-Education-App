@@ -320,7 +320,18 @@ const WordSearchPage: React.FC = () => {
             // on the reading track, Pinyin on production (docs/MASTERY_REWORK.md
             // § Per-type cooldown). `mode` is set once on mount, so capturing it in
             // this empty-deps callback is stable.
-            const res = await fetch(`${API_BASE_URL}/api/onDeck/wordSearchGrid?${GRID_QUERY}&mode=${mode ?? ""}&surface=word-search${collectionSuffix}${challengeParamsRef.current}`, {
+            //
+            // An active challenge round's `poolParams` (challengeParamsRef.current)
+            // already carries its own `&mode=` (useChallengeRound.ts) — appending
+            // ours too would send TWO `mode` keys on the query string. Express's
+            // default parser turns duplicate keys into an array, which fails
+            // `resolveChallengeRound`'s `typeof req.query.mode === 'string'` check
+            // and silently coerces the round's mode to null, mismatching the drawn
+            // round and permanently 400ing every challenge Word Search launch
+            // (`ValidationError: Round N of this test is not that game`). So the
+            // page's own `mode=` is only appended when no challenge round supplies it.
+            const ownModeParam = challengeRoundActiveRef.current ? "" : `&mode=${mode ?? ""}`;
+            const res = await fetch(`${API_BASE_URL}/api/onDeck/wordSearchGrid?${GRID_QUERY}${ownModeParam}&surface=word-search${collectionSuffix}${challengeParamsRef.current}`, {
                 credentials: "include",
                 headers: authHeader(),
             });

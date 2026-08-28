@@ -52,7 +52,14 @@ export class OnDeckVocabController {
     const rawId = req.query.challengeId;
     if (rawId == null || String(rawId).trim() === '') return null;
     const gameId = typeof req.query.gameId === 'string' ? req.query.gameId : '';
-    const rawMode = typeof req.query.mode === 'string' ? req.query.mode : '';
+    // A duplicate `mode=` query key (once possible from WordSearchPage's own
+    // fetch double-appending it alongside useChallengeRound's poolParams — fixed,
+    // but defense in depth here) parses to an ARRAY under Express's default `qs`
+    // parser, not a string. Take the first value rather than silently discarding
+    // it to null, which mismatched the drawn round's mode and 400'd every
+    // affected launch (`ValidationError: Round N of this test is not that game`).
+    const rawModeValue = Array.isArray(req.query.mode) ? req.query.mode[0] : req.query.mode;
+    const rawMode = typeof rawModeValue === 'string' ? rawModeValue : '';
     return this.studyChallengeService.getRoundContext(
       userId,
       String(rawId),

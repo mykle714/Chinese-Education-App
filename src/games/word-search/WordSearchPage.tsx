@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Button, Typography, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
@@ -63,6 +63,7 @@ const WordSearchPage: React.FC = () => {
     usePageTitle("Word Search");
     const navigate = useNavigate();
     const location = useLocation();
+    const [searchParams] = useSearchParams();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     const { user } = useAuth();
@@ -81,7 +82,16 @@ const WordSearchPage: React.FC = () => {
     // A direct/stray visit with no valid mode redirects to /games (see the
     // redirect effect below) rather than defaulting. Pinyin, when shown, is
     // always tone-colored — the colorless variant was removed.
-    const [modeConfig] = useState(() => modeConfigFor((location.state as { mode?: string } | null)?.mode));
+    //
+    // A challenge round's `?mode=` query param is the fallback: `state` does not
+    // survive a reload (challengeLaunch.ts), and without this a mid-round refresh
+    // lost `modeConfig` and bounced the player to /games, discarding an in-progress
+    // challenge round even though `useChallengeRound` itself reads `challengeId`
+    // from the URL and stays active. Only a challenge launch ever sets `?mode=`, so
+    // an ordinary hub launch is unaffected.
+    const [modeConfig] = useState(() => modeConfigFor(
+        (location.state as { mode?: string } | null)?.mode ?? searchParams.get("mode")
+    ));
     const mode = modeConfig?.mode;
     const showPinyin = modeConfig?.showPinyin ?? false;
     // Which mastery track(s) a find marks — a property of the chosen mode, not of

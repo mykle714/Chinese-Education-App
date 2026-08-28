@@ -1933,7 +1933,16 @@ export class OnDeckVocabService {
      * comes from the `mastered-first` ladder. The grid is the SAME size as an
      * ordinary board (see WORD_SEARCH_ROWS) — both hold 9 words.
      */
-    challenge?: { contestedIds: number[]; contestedWords: string[] } | null
+    challenge?: {
+      contestedIds: number[];
+      contestedWords: string[];
+      /** Filler queue size as a multiple of `total` (default 2). The controller
+          escalates this and retries when the de-dup pass comes up short — the
+          challenge equivalent of the non-challenge path's PROVISION_RETRY_FACTOR
+          loop, since there is no baseline to lend against here: the contested nine
+          are fixed, so a bigger spare filler queue is the only lever. */
+      fillerMultiplier?: number;
+    } | null
   ): Promise<{
     grid: GridCell[][] | null;
     words: WordSearchGrid['words'];
@@ -2069,13 +2078,16 @@ export class OnDeckVocabService {
           client, userId, language, challenge.contestedIds, gameMarkType, now, 4, true
         );
         drain(contestedRows, contestedRows.length);
-        // Twice the board, because this queue serves TWO jobs: topping the target
-        // list up to `total`, and feeding the de-dup loop's replacements. A queue
-        // sized exactly to the board leaves nothing to substitute WITH, and the grid
-        // then fails as `insufficient-distinct` — which for a challenge round is a
-        // round the player cannot play at all.
+        // At least twice the board, because this queue serves TWO jobs: topping the
+        // target list up to `total`, and feeding the de-dup loop's replacements. A
+        // queue sized exactly to the board leaves nothing to substitute WITH, and the
+        // grid then fails as `insufficient-distinct` — which for a challenge round is
+        // a round the player cannot play at all. Doubling only reduces the odds of
+        // that rather than eliminating them, so the controller escalates
+        // `fillerMultiplier` and retries when it still isn't enough.
         const fillerIds = await this.provisionalCardService.getFillerPool(
-          userId, language, total * 2, challenge.contestedWords, challenge.contestedIds
+          userId, language, total * (challenge.fillerMultiplier ?? 2),
+          challenge.contestedWords, challenge.contestedIds
         );
         const fillerRows = await this.fetchRowsByIds(
           client, userId, language, fillerIds, gameMarkType, now, 4, true

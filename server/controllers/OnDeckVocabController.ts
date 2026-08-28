@@ -468,10 +468,26 @@ export class OnDeckVocabController {
       // generator, the same client, a bigger board and a fixed word list.
       const challengeRound = await this.resolveChallengeRound(req, userId);
       if (challengeRound) {
-        res.json(await this.onDeckVocabService.getWordSearchGrid(
+        // Same "de-dup pass can still come up short" failure mode as the non-challenge
+        // retry loop below (see its comment), but there is no baseline to lend against
+        // here — the contested nine are fixed — so escalation means asking
+        // `getFillerPool` for a bigger spare queue instead of a bigger lent baseline.
+        // Without this retry, a contested set that can't be cleanly de-duped even
+        // against a doubled filler queue was a permanent dead end for that round.
+        let fillerMultiplier = 2;
+        let result = await this.onDeckVocabService.getWordSearchGrid(
           userId, challengeRound.language, distribution, gameMarkType, null, [],
-          { contestedIds: challengeRound.vocabEntryIds, contestedWords: challengeRound.words }
-        ));
+          { contestedIds: challengeRound.vocabEntryIds, contestedWords: challengeRound.words, fillerMultiplier }
+        );
+        for (let attempt = 1; attempt <= PROVISION_RETRY_FACTOR && !result.sufficient; attempt++) {
+          if (result.reason !== 'insufficient-distinct') break;
+          fillerMultiplier += 1;
+          result = await this.onDeckVocabService.getWordSearchGrid(
+            userId, challengeRound.language, distribution, gameMarkType, null, [],
+            { contestedIds: challengeRound.vocabEntryIds, contestedWords: challengeRound.words, fillerMultiplier }
+          );
+        }
+        res.json(result);
         return;
       }
 

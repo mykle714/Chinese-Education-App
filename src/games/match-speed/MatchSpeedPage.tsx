@@ -20,7 +20,6 @@ import type { Language, VocabEntry } from "../../types";
 import MatchSpeedBoard from "./MatchSpeedBoard";
 import MatchSpeedHeaderControls from "./MatchSpeedHeader";
 import MatchSpeedEndPopup from "./MatchSpeedEndPopup";
-import MatchSpeedSettingsDialog from "./MatchSpeedSettingsDialog";
 import MatchSpeedTimerBar from "./MatchSpeedTimerBar";
 import { GameCentered, GameFrame, GameHint, GameHud, GameHudLabel } from "../shared/GameFrame";
 import {
@@ -109,7 +108,7 @@ const MatchSpeedPage: React.FC = () => {
     const { user } = useAuth();
     const tts = useTTS();
     const { settings, update } = useFlashcardLearnSettings();
-    const { showPinyin, showPinyinColor, autoplayChinese } = settings;
+    const { showPinyin, showPinyinColor } = settings;
     const { recordWin } = useGameWins(GAME_KEY);
 
     // The difficulty mode tapped on the Games hub, via nav `state`
@@ -179,8 +178,6 @@ const MatchSpeedPage: React.FC = () => {
     /** Attempts (correct + wrong) — the denominator of the end card's accuracy. */
     const [attempts, setAttempts] = useState(0);
     const [popupMinimized, setPopupMinimized] = useState(false);
-    /** Settings sheet (pinyin / tone colors / autoplay), behind the header cog. */
-    const [settingsOpen, setSettingsOpen] = useState(false);
     /** Bumped per run so the board remounts with a clean slate on Play Again. */
     const [runId, setRunId] = useState(0);
 
@@ -207,10 +204,14 @@ const MatchSpeedPage: React.FC = () => {
     // here rather than read from `clockPaused` (declared below, after the loaders):
     // a challenge round's ACTIVE-TIME clock and the 30-second run clock must stop on
     // exactly the same conditions (§ 5.8), and Match Speed's pause sources are the
-    // two modal sheets plus backgrounding.
+    // provisional notice plus backgrounding. (A settings sheet used to be a third:
+    // it was deleted on 2026-08-28 when both its settings moved to the header and
+    // /settings. Its replacements are header chips, which do NOT pause — they leave
+    // the board playable, and the pause rule covers input-blocking overlays only.
+    // See docs/GAMES_FEATURE.md § Backgrounding pauses the clock.)
     const challengeRound = useChallengeRound({
         gameId: "match-speed",
-        paused: noticeOpen || settingsOpen || backgroundPaused,
+        paused: noticeOpen || backgroundPaused,
         running: phase === "playing",
     });
     // Read from a ref inside `fetchPool`, whose identity is stable by design.
@@ -247,7 +248,7 @@ const MatchSpeedPage: React.FC = () => {
             const res = await fetch(
                 `${API_BASE_URL}/api/onDeck/gamePool?${query}&markType=${MARK_TYPE}&surface=match-speed&exclude=${excludeIds.join(",")}${collectionSuffix}`
                 + challengeParamsRef.current
-                // MID-RUN TOP-UPS ARE FILLER ONLY (§ 5.3). The twelve contested words
+                // MID-RUN TOP-UPS ARE FILLER ONLY (§ 5.3). The contested words
                 // are dealt once, from the opening fetch, and are never recycled back
                 // into the buffer — so a refill that re-served them would hand the
                 // player a second bite at a word the round has already scored.
@@ -440,7 +441,7 @@ const MatchSpeedPage: React.FC = () => {
     // (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). The 30-second run
     // clock is the thing being protected here: without this, backgrounding the app
     // spent the whole run.
-    const clockPaused = noticeOpen || settingsOpen || backgroundPaused;
+    const clockPaused = noticeOpen || backgroundPaused;
 
     // The 3·2·1·Go countdown. The board is already primed and readable behind it,
     // so the opening board gets a beat to be read and the run clock starts from an
@@ -613,19 +614,14 @@ const MatchSpeedPage: React.FC = () => {
             onBack={() => navigate(challengeRound.challengeId
                 ? `/friends/challenges/${challengeRound.challengeId}`
                 : "/games")}
-            rightContent={<MatchSpeedHeaderControls onSettingsClick={() => setSettingsOpen(true)} />}
+            rightContent={
+                <MatchSpeedHeaderControls
+                    language={language}
+                    showPinyin={showPinyin}
+                    onTogglePinyin={() => update({ showPinyin: !showPinyin })}
+                />
+            }
         >
-            <MatchSpeedSettingsDialog
-                open={settingsOpen}
-                onClose={() => setSettingsOpen(false)}
-                language={language}
-                showPinyin={showPinyin}
-                onToggleShowPinyin={(v) => update({ showPinyin: v })}
-                showPinyinColor={showPinyinColor}
-                onToggleShowPinyinColor={(v) => update({ showPinyinColor: v })}
-                autoplayChinese={autoplayChinese}
-                onToggleAutoplayChinese={(v) => update({ autoplayChinese: v })}
-            />
             <Box
                 className="match-speed__content"
                 sx={{
@@ -701,7 +697,7 @@ const MatchSpeedPage: React.FC = () => {
                             // frozen once the run ends until the popup is minimized
                             // into cleanup mode.
                             frozen={phase === "countdown" || (phase === "ended" && !cleanupMode)}
-                            onSpeak={autoplayChinese && tts.enabled ? tts.speak : undefined}
+                            onSpeak={tts.autoplay ? tts.autoSpeak : undefined}
                         />
 
                         {/* 3·2·1·Go, over a readable board. */}

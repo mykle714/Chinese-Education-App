@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY } from "./constants";
 
 /**
- * `useHandSwipe` — the horizontal throw gesture on `StudyHand`'s FRONT card.
+ * `useHandSwipe` — the free (omnidirectional) throw gesture on `StudyHand`'s FRONT card.
  *
  * ── Why this is not `useCardDrag` ─────────────────────────────────────────────
  * The flp's `useCardDrag` (FlashcardsLearnPage/useCardDrag.ts) looks like the same
@@ -15,34 +15,47 @@ import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY } from "./constants";
  * What the two DO share is the physical feel, and that is shared properly — through
  * `CARD_DRAG_SENSITIVITY` and `CARD_DISMISS_THRESHOLD_VW` in `../constants`, so the
  * hand and the flp stack respond to a finger identically and stay in step if either
- * number is retuned.
+ * number is retuned. As of the omnidirectional rework they also share the SHAPE of the
+ * gesture: the card follows the finger on both axes and commits on radial distance,
+ * exactly as an flp card does. The one thing the flp keeps to itself is *meaning* per
+ * direction (left = incorrect, right = correct); the hand is a cycle of three, so every
+ * direction is the same rotation (see `onSwipe` below).
  *
- * ── Axis arbitration ──────────────────────────────────────────────────────────
+ * ── Claiming the gesture ──────────────────────────────────────────────────────
  * The hand sits on the fdp above a draggable `SheetPanel`, inside a scrollable
- * `MobileTabScreen`. So the gesture cannot simply claim every touch: it stays PENDING
- * until the finger has travelled `AXIS_SLOP` px, then commits to horizontal (ours,
- * `preventDefault` from then on) or vertical (declined outright, so the scroll/sheet
- * beneath behaves as if the card were not there). A gesture that never clears the slop
- * is a tap and is left alone.
+ * `MobileTabScreen`. Because the card now moves on BOTH axes, the gesture can no longer
+ * hand the vertical axis back to those: once the finger has travelled `DRAG_SLOP` px in
+ * any direction the card owns the touch and `preventDefault`s it. The front card is
+ * therefore `touchAction: "none"` in `StudyHand` — a finger that starts ON the played
+ * card drags the card, and the page/sheet beneath is scrolled from anywhere else. A
+ * gesture that never clears the slop is still a tap and is left alone.
  *
  * Referenced by docs/DECKS_FEATURE.md and docs/SHELF_REDESIGN.md (entry 2).
  */
 
 /**
- * NOTE: `onSwipe` takes NO direction. The hand is a cycle of three cards, so a left throw
- * and a right throw are the same move — the thrown card goes to the back and the one
- * behind it surfaces (`StudyHand` → `afterSwipe`). The direction survives only as the
- * lean of the card while it is under the finger.
+ * NOTE: `onSwipe` takes NO direction. The hand is a cycle of three cards, so every throw
+ * is the same move — the thrown card goes to the back and the one behind it surfaces
+ * (`StudyHand` → `afterSwipe`). The direction survives only as the path the card takes
+ * out from under the finger.
  */
 
-/** Travel (px) before the gesture commits to an axis. Below this it is still a tap. */
-const AXIS_SLOP = 8;
+/** Travel (px) before the gesture stops being a tap and starts moving the card. */
+const DRAG_SLOP = 8;
 
-/** Tilt (deg per px of drag) — the same gentle lean the flp card takes. */
+/** Tilt (deg per px of HORIZONTAL drag) — the same gentle lean the flp card takes. */
 const DRAG_TILT = 0.05;
 
-/** Phase of the current pointer interaction. See "Axis arbitration" above. */
-type GesturePhase = "idle" | "pending" | "dragging" | "declined";
+/** Phase of the current pointer interaction. See "Claiming the gesture" above. */
+type GesturePhase = "idle" | "pending" | "dragging";
+
+/** Live drag offset in px, already amplified by `CARD_DRAG_SENSITIVITY`. */
+export interface DragOffset {
+    x: number;
+    y: number;
+}
+
+const NO_DRAG: DragOffset = { x: 0, y: 0 };
 
 export interface UseHandSwipeReturn {
     /**
@@ -57,11 +70,11 @@ export interface UseHandSwipeReturn {
      * state update, so the binding effect re-runs and follows the front card.
      */
     cardRef: (el: HTMLDivElement | null) => void;
-    /** Live horizontal offset (px, already amplified). 0 at rest and after a commit. */
-    dragX: number;
+    /** Live offset on both axes (px, already amplified). `{0,0}` at rest and after a commit. */
+    drag: DragOffset;
     /** True only while the finger/cursor owns the card, so the host can kill its transition. */
     isDragging: boolean;
-    /** Ready-made transform for the front card: drag translate + proportional tilt. */
+    /** Ready-made transform for the front card: drag translate + tilt from the x component. */
     dragTransform: string;
     handlers: {
         onTouchStart: (e: React.TouchEvent) => void;
@@ -92,39 +105,45 @@ export function useHandSwipe(onSwipe: () => void): UseHandSwipeReturn {
     // eaten. Cleared by that click, or by the next pointer-down if no click arrives.
     const suppressClickRef = useRef(false);
 
-    const [dragX, setDragX] = useState(0);
-    // Mirror of `dragX` for the release handlers to read. Without it `handleDocumentMouseUp`
+    const [drag, setDrag] = useState<DragOffset>(NO_DRAG);
+    // Mirror of `drag` for the release handlers to read. Without it `handleDocumentMouseUp`
     // would have to close over the state, and the effect that registers it would tear down
     // and re-add both document listeners on EVERY mousemove.
-    const dragXRef = useRef(0);
+    const dragRef = useRef<DragOffset>(NO_DRAG);
     // Mirrors phaseRef for rendering AND for the document-listener effect below, which
     // must re-run when a mouse drag starts/stops. A ref alone cannot drive either.
     const [isDragging, setIsDragging] = useState(false);
 
     // Threshold in px against the card's OWN rendered width, not the viewport: the fdp
     // frame is capped well below `window.innerWidth` on desktop, where a viewport-derived
-    // threshold would be unreachably wide.
+    // threshold would be unreachably wide. The SAME number governs both axes, so the
+    // commit boundary is a circle — a throw upward has to travel exactly as far as a
+    // throw sideways, which is what "far enough away in any direction" means physically.
     const dismissThreshold = () =>
         CARD_DISMISS_THRESHOLD_VW * (cardElRef.current?.offsetWidth ?? window.innerWidth);
 
     /** Shared release path for both input types. */
-    const endGesture = useCallback((offset: number) => {
+    const endGesture = useCallback((offset: DragOffset) => {
         phaseRef.current = "idle";
         setIsDragging(false);
-        // Always return to 0. On a commit the host simultaneously moves this card into a
-        // BACK slot, and CSS transitions animate from the currently-computed transform —
+        // Always return to {0,0}. On a commit the host simultaneously moves this card into
+        // a BACK slot, and CSS transitions animate from the currently-computed transform —
         // so zeroing here does not snap the card, it hands it to the 260ms slot
         // transition from wherever the finger let go. Below threshold, the same
         // transition simply carries it home.
-        dragXRef.current = 0;
-        setDragX(0);
-        if (Math.abs(offset) > dismissThreshold()) onSwipe();
+        dragRef.current = NO_DRAG;
+        setDrag(NO_DRAG);
+        if (Math.hypot(offset.x, offset.y) > dismissThreshold()) onSwipe();
     }, [onSwipe]);
 
-    /** Advance a PENDING gesture once the finger has cleared the slop circle. */
-    const arbitrateAxis = (dx: number, dy: number): GesturePhase => {
-        if (Math.abs(dx) < AXIS_SLOP && Math.abs(dy) < AXIS_SLOP) return "pending";
-        return Math.abs(dx) > Math.abs(dy) ? "dragging" : "declined";
+    /** Has a PENDING gesture travelled far enough to stop being a tap? */
+    const clearedSlop = (dx: number, dy: number) => Math.hypot(dx, dy) >= DRAG_SLOP;
+
+    /** Amplify the raw pointer delta and publish it to both the state and the ref mirror. */
+    const applyDelta = (rawX: number, rawY: number) => {
+        const next = { x: rawX * CARD_DRAG_SENSITIVITY, y: rawY * CARD_DRAG_SENSITIVITY };
+        dragRef.current = next;
+        setDrag(next);
     };
 
     const handleTouchStart = (e: React.TouchEvent) => {
@@ -137,23 +156,20 @@ export function useHandSwipe(onSwipe: () => void): UseHandSwipeReturn {
     // Native, non-passive: a React `onTouchMove` is registered passively, so its
     // `preventDefault()` is ignored and the page would scroll under the drag.
     const handleTouchMove = useCallback((e: TouchEvent) => {
-        if (phaseRef.current === "idle" || phaseRef.current === "declined") return;
+        if (phaseRef.current === "idle") return;
 
         const touch = e.touches[0];
         const rawX = touch.clientX - dragStart.current.x;
         const rawY = touch.clientY - dragStart.current.y;
 
         if (phaseRef.current === "pending") {
-            const next = arbitrateAxis(rawX, rawY);
-            if (next === "pending") return;
-            phaseRef.current = next;
-            if (next === "declined") return;
+            if (!clearedSlop(rawX, rawY)) return;
+            phaseRef.current = "dragging";
             setIsDragging(true);
         }
 
         if (e.cancelable) e.preventDefault();
-        dragXRef.current = rawX * CARD_DRAG_SENSITIVITY;
-        setDragX(dragXRef.current);
+        applyDelta(rawX, rawY);
     }, []);
 
     // Re-binds whenever the played card changes, which is exactly what the callback ref
@@ -166,16 +182,15 @@ export function useHandSwipe(onSwipe: () => void): UseHandSwipeReturn {
 
     const handleTouchEnd = (e: React.TouchEvent) => {
         if (phaseRef.current !== "dragging") {
-            // A tap or a declined (vertical) gesture — leave both to the elements
-            // beneath. Do NOT preventDefault: on a tap that would cancel the synthetic
-            // click the `Study now` button needs.
+            // A tap — leave it to the elements beneath. Do NOT preventDefault: on a tap
+            // that would cancel the synthetic click the `Study now` button needs.
             phaseRef.current = "idle";
             return;
         }
         // A real drag: suppress the synthetic mouse/click burst that would otherwise
         // land on whatever is under the release point.
         if (e.cancelable) e.preventDefault();
-        endGesture(dragXRef.current);
+        endGesture(dragRef.current);
     };
 
     const handleMouseDown = (e: React.MouseEvent) => {
@@ -183,41 +198,38 @@ export function useHandSwipe(onSwipe: () => void): UseHandSwipeReturn {
         dragStart.current = { x: e.clientX, y: e.clientY };
         phaseRef.current = "pending";
         // Mouse needs the document listeners live from `pending`, not from `dragging`:
-        // the move that DECIDES the axis is itself a document-level move.
+        // the move that CLEARS the slop is itself a document-level move.
         setIsDragging(true);
     };
 
     const handleDocumentMouseMove = useCallback((e: MouseEvent) => {
-        if (phaseRef.current === "idle" || phaseRef.current === "declined") return;
+        if (phaseRef.current === "idle") return;
 
         const rawX = e.clientX - dragStart.current.x;
         const rawY = e.clientY - dragStart.current.y;
 
         if (phaseRef.current === "pending") {
-            const next = arbitrateAxis(rawX, rawY);
-            if (next === "pending") return;
-            phaseRef.current = next;
-            if (next === "declined") { setIsDragging(false); return; }
+            if (!clearedSlop(rawX, rawY)) return;
+            phaseRef.current = "dragging";
         }
 
         suppressClickRef.current = true;
-        dragXRef.current = rawX * CARD_DRAG_SENSITIVITY;
-        setDragX(dragXRef.current);
+        applyDelta(rawX, rawY);
     }, []);
 
     const handleDocumentMouseUp = useCallback(() => {
         if (phaseRef.current === "dragging") {
-            endGesture(dragXRef.current);
+            endGesture(dragRef.current);
             return;
         }
-        // Pending (a plain click) or declined (a vertical drag): no commit, just release
-        // the listeners so `Study now` gets its click.
+        // Pending (a plain click): no commit, just release the listeners so `Study now`
+        // gets its click.
         phaseRef.current = "idle";
         setIsDragging(false);
     }, [endGesture]);
 
     // Attached from mouse-DOWN rather than from a confirmed drag, so the pending-phase
-    // arbitration above can see the deciding move. Detached on every release path.
+    // slop test above can see the deciding move. Detached on every release path.
     useEffect(() => {
         if (!isDragging) return;
         document.addEventListener("mousemove", handleDocumentMouseMove);
@@ -237,9 +249,12 @@ export function useHandSwipe(onSwipe: () => void): UseHandSwipeReturn {
 
     return {
         cardRef,
-        dragX,
+        drag,
         isDragging,
-        dragTransform: `translateX(${dragX}px) rotate(${dragX * DRAG_TILT}deg)`,
+        // The tilt reads from x only: a card thrown straight up should rise flat, and a
+        // y-coupled rotation would make a vertical throw spin for no reason the hand can
+        // explain.
+        dragTransform: `translate(${drag.x}px, ${drag.y}px) rotate(${drag.x * DRAG_TILT}deg)`,
         handlers: {
             onTouchStart: handleTouchStart,
             onTouchEnd: handleTouchEnd,

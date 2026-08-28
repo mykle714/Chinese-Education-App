@@ -15,7 +15,8 @@ import { anytimeQuerySuffix } from "../../features/studyChallenge/challengeAnyti
  * exactly as it always did, except for three things:
  *
  *   1. it appends `poolParams` to its pool request, which turns the ordinary game
- *      pool into the round's board (twelve contested words + `mastered-first`
+ *      pool into the round's board (the CHALLENGE_WORD_COUNT contested words +
+ *      `mastered-first`
  *      filler — the server assembles it, see `OnDeckVocabService.getChallengeGamePool`);
  *   2. it calls `emit` where it already calls its mark function, tagging each event
  *      `contested` via `isContested`;
@@ -65,7 +66,7 @@ export interface ChallengeRoundState {
     challenge: ChallengeSummary | null;
     /** `&challengeId=…&gameId=…&mode=…`, ready to append to a pool query. */
     poolParams: string;
-    /** Is this board card one of the twelve? Always false outside a challenge. */
+    /** Is this board card one of the contested set? Always false outside a challenge. */
     isContested: (entryKey: string) => boolean;
     /** Feed the scorer. Ignored outside a challenge, and after the run has ended. */
     emit: (event: ChallengeEvent) => void;

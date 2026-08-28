@@ -145,8 +145,27 @@ export type SegmentMetadata = Record<
     definition?: string;
     particleOrClassifier?: ParticleOrClassifierInfo;
     wordForms?: Record<string, string>;
+    /** Tap-to-drill chain: shorter det headwords inside this segment, longest-first. */
+    drill?: SegmentDrillRung[];
   }
 >;
+
+/**
+ * One rung of a segment's tap-to-drill chain (docs/SEGMENT_DRILL_DOWN.md). A det
+ * headword that is a strict substring of its parent segment, at a known character
+ * offset inside it. Produced by `buildDrillRungs`
+ * (server/dal/shared/segmentString.ts) at read time — no stored column.
+ */
+export interface SegmentDrillRung {
+  /** The sub-word, verbatim. */
+  text: string;
+  /** Character offset within the parent segment (0-based, code-point indexed). */
+  offset: number;
+  /** Gloss shown when this rung is selected; rungs without one are never emitted. */
+  definition: string;
+  /** Tone-marked pinyin, when the entry has one — narrated on select. */
+  pronunciation?: string;
+}
 
 /**
  * One AI-generated example sentence with its tagging-pass metadata.
@@ -165,6 +184,14 @@ export interface ExampleSentence {
   sense?: string;
   /** Authoritative GSA segmentation from the tagging pass; rendered verbatim when present. */
   segments?: string[];
+  /**
+   * Multi-character tokens the segmentation-audit pass judged NOT to be a single word
+   * in THIS sentence (e.g. 真是 in a sentence where 真 and 是 act separately). Fed to
+   * `segmentWithDict` as exclude tokens, so they can never be matched here — scoped to
+   * this one sentence, unlike the entry-wide `matchException` column.
+   * See docs/EXAMPLE_SENTENCES.md § Segmentation audit.
+   */
+  segmentExceptions?: string[];
   /** POS tag per GSA segment; drives form modification + particle/classifier annotation. */
   partOfSpeechDict?: Record<string, string>;
   /** Grammatical number per noun segment; selects the plural English form in the popup. */
@@ -295,7 +322,7 @@ export interface ExampleSentenceDefinitionPronunciationOverride {
  * 'partsOfSpeech'    = the POS tag list (split out of the definitions bundle by
  *                      migration 132);
  * 'difficulty'       = the 1–6 difficulty level (HSK level for zh);
- * 'frequencyScore'   = the 1–5 everyday-conversation score ("Commonality") of the
+ * 'frequencyScore'   = the 1–5 conversational-commonality score ("Commonality") of the
  *                      ENTRY — shown only on a word with no sense choice to make;
  * 'senseFrequencyScore' = the 1–5 score of ONE definitionCluster (migration 139).
  *                      This is the number the eip/cdp Commonality chip shows on a
@@ -823,15 +850,16 @@ export type CardBaselineSurface =
  * `src/features/flashcards/FlashcardsDecksPage.tsx` (MIN_LIBRARY_CARDS), where they
  * could drift apart from the distributions the server actually served.
  *
- * Word Search is 12 rather than 20 because its grid holds twelve words (raised from
- * ten on 2026-08-23); it additionally needs those words to have mutually distinct
- * characters, which a flat count cannot express — see PROVISION_RETRY_FACTOR.
+ * Word Search is 9 rather than 20 because its grid holds nine words (10 → 12 on
+ * 2026-08-23, then 12 → 9 on 2026-08-28 when the board shrank to 7×6); it
+ * additionally needs those words to have mutually distinct characters, which a flat
+ * count cannot express — see PROVISION_RETRY_FACTOR.
  */
 export const CARD_BASELINES: Record<CardBaselineSurface, number> = {
   'bubble-match': 20,
   'match-speed': 20,
   'speed-reading': 20,
-  'word-search': 12,
+  'word-search': 9,
   flp: 20,
 };
 
@@ -1145,6 +1173,15 @@ export interface RelatedWord {
 }
 
 /**
+ * Hard cap on a card note (`VocabEntryBase.note`, vet column, migration 155), in
+ * characters. Shared so the on-card editor's counter and the server's truncation agree
+ * on one number — a client that lets the learner type past the cap would silently lose
+ * the tail on save. Enforced in code, not as a `varchar(n)`, so raising it is a code
+ * deploy rather than a table rewrite. See docs/CARD_NOTES.md.
+ */
+export const CARD_NOTE_MAX_LENGTH = 200;
+
+/**
  * Vocab entry (flashcard), as shipped to the client.
  *
  * Identity fields (`userId`, `language`, `starterPackBucket`) are optional HERE and
@@ -1180,12 +1217,18 @@ export interface VocabEntryBase {
   /** Per-SENSE commonality approvals; see DictionaryEntryBase. */
   approvedSenseFrequencyLabels?: readonly string[];
 
-  /** 1 = almost never spoken … 5 = constant in daily speech (from the det row). */
+  /** 1 = would stop the conversation … 5 = everyday (from the det row). */
   frequencyScore?: number | null;
   /** Orthogonal sense clusters, joined from det via DICT_JOIN. */
   definitionClusters?: DefinitionCluster[] | null;
   /** Per-card chosen cluster `sense` label (vet column, migration 99). NULL = default. */
   selectedSense?: string | null;
+  /**
+   * The learner's own free-text note about this card (vet column, migration 155).
+   * At most CARD_NOTE_MAX_LENGTH characters; NULL/absent = no note. Rendered at the
+   * bottom of the card's answer face only. See docs/CARD_NOTES.md.
+   */
+  note?: string | null;
 
   /** Per-type mark streams (migration 101); see docs/MASTERY_REWORK.md. */
   typedMarkHistory?: TypedMarkHistory;
@@ -1300,8 +1343,8 @@ export interface DiscoverCard {
   script?: string | null;
   difficulty?: DifficultyLevel | null;
   /**
-   * Everyday-conversation frequency for the whole entry (1 = almost never spoken …
-   * 5 = constant in daily speech), read straight from the det `frequencyScore` column.
+   * Conversational commonality for the whole entry (1 = would stop the conversation …
+   * 5 = everyday), read straight from the det `frequencyScore` column.
    * Drives the sort-flow supply ordering (most frequent first) and the mini-card badge.
    */
   frequencyScore?: number | null;
@@ -1510,27 +1553,28 @@ export const ARENA_GEOCELL_LENGTH = 5;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Words in a challenge set — fixed at 12, deliberately not a choice (Q27, § 8.4).
+ * Words in a challenge set — fixed at 9, deliberately not a choice (Q27, § 8.4).
  *
  * Set size decides how many points are available, so both players must use the
  * same number anyway; making it selectable would add a negotiation round trip to
  * buy nothing. Being a constant, it changes globally with no schema or protocol
- * change — 10 → 12 on 2026-08-17 was exactly this edit plus copy.
+ * change — 10 → 12 on 2026-08-17 and 12 → 9 on 2026-08-28 were each exactly this
+ * edit plus copy.
  *
- * ⚠️ TWO THINGS ARE DERIVED FROM IT RATHER THAN STORED, and both move when it does:
- *   * the CONTESTED CEILING per round — `contestedHit` × this count, so 1200 at 12
- *     (the § 5.3/5.4 prose still quotes the ceiling in words; the specs below carry
- *     only the per-event values, which is why they need no edit here);
- *   * WORD SEARCH's board — `TOTAL_WORDS` (src/games/word-search/constants.ts) was
- *     raised from 10 to 12 on 2026-08-23, so it now happens to equal
- *     `CHALLENGE_WORD_COUNT` (coincidental — nothing derives one from the other).
- *     § 5.2 still requires every contested word to appear in every round, and a
- *     challenge-mode grid is still a different SIZE than the ordinary board (8×8
- *     vs 9×6) because it was tuned for looser density — see
- *     docs/STUDY_CHALLENGE.md § 5.2. The round runner is not built yet, so this is
- *     a spec obligation on that build, not a live defect.
+ * ⚠️ ONE THING IS DERIVED FROM IT RATHER THAN STORED, and it moves when this does:
+ * the CONTESTED CEILING per round — `contestedHit` × this count, so 900 at 9 (the
+ * § 5.3/5.4 prose still quotes the ceiling in words; the specs below carry only the
+ * per-event values, which is why they need no edit here).
+ *
+ * WORD SEARCH's board (`TOTAL_WORDS`, src/games/word-search/constants.ts) also
+ * holds 9, and the two are separately declared — nothing derives one from the
+ * other, they simply landed on the same number again on 2026-08-28. A challenge
+ * round now plays on the SAME 7×6 grid as an ordinary board (the old roomier 8×8
+ * challenge grid was removed): one size, one density, one tuning. § 5.2 still
+ * requires every contested word to appear in every round. The round runner is not
+ * built yet, so that remains a spec obligation on that build.
  */
-export const CHALLENGE_WORD_COUNT = 12;
+export const CHALLENGE_WORD_COUNT = 9;
 
 /**
  * Rounds (games) in a test — 3, drawn without repetition from the eligible pool.
@@ -1859,7 +1903,7 @@ export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
       // (§ 5.3): every other pair dealt must be contested, and when the contested
       // words run out the alternation lapses to filler rather than recycling them.
       // That gives its contested score a hard ceiling of
-      // CHALLENGE_WORD_COUNT × contestedHit (1200 at 12) and makes CLEARING THE SET
+      // CHALLENGE_WORD_COUNT × contestedHit (900 at 9) and makes CLEARING THE SET
       // the goal of the round rather than raw taps-per-second.
     },
   },

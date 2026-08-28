@@ -8,22 +8,23 @@ import type { CardPair } from "./types";
  * network and the board, and hands the two card sources in here.
  *
  * ── WHY MATCH SPEED NEEDS A RULE AT ALL ───────────────────────────────────────
- * Every other challenge game has a fixed board, so "all twelve contested words
+ * Every other challenge game has a fixed board, so "all the contested words
  * appear in the round" is a statement about its composition. Match Speed deals from
  * a rolling buffer with ten slots and a 30-second clock, so the same guarantee has
  * to become a rule about the DEAL: **every other pair filled is a contested one**,
  * while any contested word is left undealt.
  *
- * Half and not all: a board that were 100% contested would exhaust the twelve in
- * the first few seconds and spend the rest of the run on filler anyway, with the
- * player never seeing the two mixed.
+ * Half and not all: a board that were 100% contested would exhaust the contested
+ * set in the first few seconds and spend the rest of the run on filler anyway,
+ * with the player never seeing the two mixed.
  *
  * ── THE CONSEQUENCES ARE THE POINT ────────────────────────────────────────────
  * Contested words are DRAINED, never recycled, so:
- *   * once the twelve are dealt the alternation lapses and the rest of the run is
+ *   * once the contested set is dealt the alternation lapses and the rest of the run is
  *     filler at 20 points a pair;
- *   * contested scoring has a hard ceiling of 12 × 100, which makes CLEARING THE
- *     SET the goal of the round rather than raw taps-per-second;
+ *   * contested scoring has a hard ceiling of CHALLENGE_WORD_COUNT × 100 (900 at 9),
+ *     which makes CLEARING THE SET the goal of the round rather than raw
+ *     taps-per-second;
  *   * two strong players converge near the top of the range — past that point this
  *     round stops separating them and the other rounds decide the match.
  */
@@ -48,7 +49,7 @@ export function emptyDealState(): ChallengeDealState {
  * EITHER SOURCE MAY RUN DRY, and each slot falls through to the other rather than
  * being left blank: a hole on the board is worse than an off-parity pair, and the
  * fall-through is also what makes the alternation lapse to pure filler on its own
- * once the twelve are gone.
+ * once the contested set is gone.
  *
  * Stops early — returning fewer than `count` — only when BOTH sources are empty,
  * which the caller handles the same way it always has: leave the slot for the next

@@ -31,12 +31,17 @@
 #  10. backfill-expansion                    — generate expansion form (AI)
 #  11. backfill-classifier                   — assign measure words (AI)
 #  12. backfill-dictionary-breakdown         — per-character breakdown (AI)
+#  13. repair-frequency-score-drift          — enforce frequencyScore == MAX(cluster scores) (no AI)
 #
 # Ordering constraints (mirror of the /mark-discoverable §A3 pipeline — keep the two in sync):
 #   - frequency-score + parts-of-speech BEFORE clustering (the single-definition fast path
 #     copies both onto the lone cluster).
 #   - clustering BEFORE long-definitions and example-sentences: both key off the `sense`
 #     labels in `definitionClusters` and skip rows that aren't clustered yet.
+#   - the frequency repair runs LAST: it reconciles the word-level score with the
+#     per-cluster scores, so both must already be written. It is a safety net — steps 6
+#     and 7 now enforce the invariant themselves — and it costs nothing (no API calls).
+#     See docs/DEFINITION_CLUSTERS.md § "The word/cluster frequency invariant".
 #
 # Note: exampleSentencesMetadata is NOT a pipeline step. Segment metadata
 # (pronunciation, definition, particleOrClassifier per token) is computed
@@ -144,6 +149,12 @@ run_script "Step 11: Classifiers" "backfill-classifier.js"
 
 # Step 12: Per-character breakdown for multi-character words (AI)
 run_script "Step 12: Dictionary Breakdown" "backfill-dictionary-breakdown.js"
+
+# Step 13 lives in backfill/shared/ (it is language-generic), so it bypasses run_script's
+# SCRIPT_DIR. Scoped to zh here; the es pipeline runs its own --language=es pass.
+print_header "Step 13: Frequency Invariant Repair"
+docker exec -i "$BACKEND_CONTAINER" sh -c "npx tsx /app/scripts/backfill/shared/repair-frequency-score-drift.js --language=zh"
+print_success "Step 13: Frequency Invariant Repair complete"
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))

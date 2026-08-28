@@ -16,7 +16,7 @@ import IconPickerDialog from "../../components/IconPickerDialog";
 import { clearWritingDraft } from "../../components/handwriting/writingDraftStore";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
-import { useTTS, SLOW_SENTENCE_RATE } from "../../hooks/useTTS";
+import { useTTS } from "../../hooks/useTTS";
 import { COLORS } from "../../theme/colors";
 import AddToDeckMenu from "./AddToDeckMenu";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "./FlashcardsLearnPage/FlashCardSection";
@@ -74,7 +74,7 @@ const VocabCardDetailPage: React.FC = () => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     const { settings } = useFlashcardLearnSettings();
-    const { showPinyinColor, slowExampleSentences } = settings;
+    const { showPinyinColor } = settings;
     // cdp always shows pinyin regardless of the flp pinyin toggle — pinyin is
     // core reference info on the detail page, so we ignore settings.showPinyin here.
     const showPinyin = true;
@@ -342,14 +342,8 @@ const VocabCardDetailPage: React.FC = () => {
                             onBreakdownItemClick={(item) => handleWordOpen(item.character)}
                             onUsedInItemClick={(item) => handleWordOpen(item.entryKey)}
                             onExampleSegmentClick={handleWordOpen}
-                            onSpeak={tts.enabled ? tts.speak : undefined}
-                            // Same slow-rate-aware sentence narration as the flp est.
-                            onSpeakSentence={
-                                tts.enabled
-                                    ? (text, pronunciation) =>
-                                          tts.speakSentence(text, pronunciation, slowExampleSentences ? SLOW_SENTENCE_RATE : 1)
-                                    : undefined
-                            }
+                            onSpeak={tts.speak}
+                            onSpeakSentence={tts.speakSentence}
                             speakingKey={tts.speakingKey}
                             // No `onAddToLibrary`: a card open on the cdp is already saved.
                             // The panel's sense picker is the SAME pick the hero card shows —
@@ -499,8 +493,8 @@ const VocabCardDetailPage: React.FC = () => {
                             />
 
                             {/* Hero card — the same size/style as the flp (learn page)
-                                card, showing the Side 2 (answer) face: cpcd + writing/audio
-                                actions, the English definition (with sense-picker when the
+                                card, showing the Side 2 (answer) face: cpcd + audio
+                                action, the English definition (with sense-picker when the
                                 entry has multiple orthogonal senses), and the entry's icon
                                 arrangement. Reuses CardFaceSide/ChineseBlock/EnglishBlock
                                 from FlashcardsLearnPage so any change to the flp back face
@@ -542,9 +536,8 @@ const VocabCardDetailPage: React.FC = () => {
                                                 entry={editingCurrentEntry!}
                                                 showPinyin={showPinyin}
                                                 showPinyinColor={showPinyinColor}
-                                                onSpeak={tts.enabled ? tts.speak : undefined}
+                                                onSpeak={tts.speak}
                                                 speakingKey={tts.speakingKey}
-                                                showWriting
                                                 inlineActions
                                                 selectedSenseIndex={selectedSenseIndex}
                                             />
@@ -554,7 +547,6 @@ const VocabCardDetailPage: React.FC = () => {
                                                 entry={editingCurrentEntry!}
                                                 selectedSenseIndex={selectedSenseIndex}
                                                 onSelectSense={handleSelectSense}
-                                                inlineActions
                                             />
                                         ),
                                     }}
@@ -576,14 +568,13 @@ const VocabCardDetailPage: React.FC = () => {
                                                     entry={editingCurrentEntry!}
                                                     showPinyin={showPinyin}
                                                     showPinyinColor={showPinyinColor}
-                                                    onSpeak={tts.enabled ? tts.speak : undefined}
+                                                    onSpeak={tts.speak}
                                                     speakingKey={tts.speakingKey}
-                                                    showWriting
-                                                    inlineActions
+                                                        inlineActions
                                                     selectedSenseIndex={selectedSenseIndex}
                                                 />
                                             )}
-                                            englishNode={<EnglishBlock entry={editingCurrentEntry!} selectedSenseIndex={selectedSenseIndex} inlineActions />}
+                                            englishNode={<EnglishBlock entry={editingCurrentEntry!} selectedSenseIndex={selectedSenseIndex} />}
                                         />
                                     ) : undefined}
                                 />

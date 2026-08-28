@@ -64,6 +64,20 @@ Breakdown enrichment is two ordered passes over `dictionaryentries_zh.breakdown`
 - Scope: discoverable, multi-character (`char_length(word1) > 1`) zh entries with
   `breakdown IS NULL`; `--words=未来,摸脉` to target specific entries.
 - Run-logged via `stampEntries`; progress tracking and error handling.
+- `--stale` additionally re-selects rows stamped below `SCRIPT_VERSION` (via
+  `staleClause()`, `server/scripts/backfill/run-log.js`). Two caveats before using it:
+  - ⚠️ **It clobbers 5b.** The write is a wholesale `SET breakdown = $1` with
+    `generateBreakdown`'s output, which carries **no `sense` key** — a `--stale` run
+    erases every sense tag 5b wrote and reverts each gloss to the isolated-character
+    lead. Follow it with 5b `--force`, or make 5a merge over the prior breakdown first.
+  - It cannot detect the staleness that actually matters here. 5a's output is a
+    function of *other rows'* `definitions`, so a later run of
+    `backfill-process-definitions-array` on a component character silently invalidates
+    every breakdown built from it (心服口服's breakdown was stamped 2026-07-03; 服's
+    glosses were reordered 2026-08-11, leaving the breakdown showing the demoted
+    `"Taiwan pr. [fu2]"` gloss). `staleClause()` compares a row's stamp to a code
+    constant, never to another row's stamp — a dependency-staleness gate would need to
+    compare `enrichmentLog` `ranAt` timestamps across the component characters.
 - Usage: `node server/scripts/backfill/chinese/backfill-dictionary-breakdown.js`
 - NOTE: the old per-vet `backfill-breakdown.js` was removed after the migration-66
   vet split / migration-73 legacy drop — this det-based script supersedes it.
@@ -93,9 +107,49 @@ Breakdown enrichment is two ordered passes over `dictionaryentries_zh.breakdown`
   clustered by `backfill-cluster-definitions.js` first; an un-clustered component
   char is carried through unchanged and fixed on a later re-run.
 - Flags: `--words=会议,银行`, `--all` (include non-discoverable), `--force` (re-tag
-  rows already carrying a `sense`), `--limit=N`, `--spot-check` (5 entries, NO
-  writes, verbose).
+  rows already carrying a `sense`), `--stale` (below `SCRIPT_VERSION`),
+  `--reconcile` (**sense drift** — see below), `--limit=N`, `--spot-check`
+  (5 entries, NO writes, verbose).
 - Usage: `docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-breakdown-senses.js`
+
+#### 5b-drift. Orphaned sense labels — the third staleness axis
+
+Storing the cluster **label** rather than its index buys stability across
+re-clustering and re-scoring, but **not across a RELABEL**. When
+`backfill-cluster-definitions.js` runs again on a component character it may rename or
+drop the label 5b stored, and the pointer then resolves to nothing:
+
+- the stored `definition` **freezes** at whatever the cluster said when it was tagged;
+- the model's choice can no longer be audited or refreshed against the live clusters;
+- **nothing notices** — the row's `enrichmentLog` stamp is still current, and 5b's own
+  gate ("breakdown text already contains `sense` ⇒ done") excludes the row forever.
+
+A 2026-08-28 audit of the dev corpus found **1143 of 8724 stored senses (13%)
+orphaned**, concentrated on the *commonest* characters (大 36 words, 水 35, 有 30,
+高 29, 电 28, 手 19) — i.e. a bulk relabel, not a long tail. The symptom that surfaced
+it: 下手's 手 stores `"personally / by hand"`, which matches no current 手 cluster
+(nearest: `"personally / first-hand"`), and the gloss it froze — `personal` — is the
+wrong sense for 下手 in the first place.
+
+**Detection** lives in the enrichment manifest as a *drift probe*:
+`DRIFT_PROBES.breakdownSenseOrphan` in
+`server/scripts/backfill/shared/lib/requiredScripts.js`. Drift is a **cross-row**
+signal — whether this row is stale depends on the COMPONENT characters' rows — so it
+cannot compile into `buildIncompletePredicate` like `when` and `version` do. It is a
+set-returning query the caller runs once per round; `oracle-plan.js` →
+`runDriftProbes` OR-s its ids into the candidate scope and passes them to
+`pendingSteps`/`isComplete` as the 4th argument `driftedStepIds`, so a drifted row is
+re-planned and cannot promote. Keep the query **set-based** (`LEFT JOIN … IS NULL`):
+the correlated `NOT EXISTS` form takes >120 s on the zh corpus, the joined form ~30 ms.
+
+**Repair** is `--reconcile` on 5b, which re-tags exactly the drifted rows using that
+same probe query. Without it the only escape was `--force`, which re-tags all ~9.5k
+rows — and re-spends every prompt — to fix the ~1k that actually drifted.
+
+Referenced code: `backfill-breakdown-senses.js` (`RECONCILE`),
+`shared/lib/requiredScripts.js` (`DRIFT_PROBES`, `driftProbesFor`, `pendingSteps`,
+`isComplete`), `oracle-plan.js` (`runDriftProbes`),
+`server/__tests__/driftProbes.test.ts`.
 
 **5c. Elaborate the non-obvious breakdowns (AI)** —
 `server/scripts/backfill/chinese/backfill-breakdown-elaboration.js`

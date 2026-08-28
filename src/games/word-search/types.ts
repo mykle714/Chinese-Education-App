@@ -6,6 +6,8 @@
  * docs/WORD_SEARCH_GAME.md.
  */
 
+import type { SegmentDrillRung } from "../../types";
+
 /** One grid cell: a Chinese character and its pinyin syllable. */
 export interface GridCell {
     char: string;
@@ -44,6 +46,15 @@ export interface PlacedWord {
      * Absent on boards saved before this shipped; treat as all-empty.
      */
     charComponents?: string[][];
+    /**
+     * Tap-to-drill chain: every det headword strictly INSIDE `entryKey`, longest-first,
+     * each with its character offset in the word. Repeat-tapping a found word narrows
+     * its review popup through these rungs before it lands on a single character
+     * (docs/SEGMENT_DRILL_DOWN.md). Resolved server-side at grid build; absent for
+     * words with no shorter headword inside, and for boards saved before this shipped
+     * (the chain then goes straight from the whole word to the tapped character).
+     */
+    drill?: SegmentDrillRung[];
 }
 
 /**

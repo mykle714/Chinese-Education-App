@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, Popper, Typography } from "@mui/material";
 import type { Instance as PopperInstance } from "@popperjs/core";
 import { stripParentheses } from "../utils/definitionUtils";
 import ForeignText, { type CPCDRowItem, isLatinScriptLang } from "./ForeignText";
 import { FONTS } from "../theme/fonts";
 import { SIZE } from "../theme/scale";
-import { claimHorizontalGesture } from "../utils/segmentScrubLock";
 import { claimSegmentSelection, registerSegmentSelectionOwner } from "../utils/segmentSelectionOwner";
+import { pickDrillRung } from "../utils/segmentDrill";
+import type { SegmentDrillRung } from "../types";
 
 type Size = "xs" | "sm" | "md";
 
@@ -22,30 +23,6 @@ const SEGMENT_GAP_BY_SIZE: Record<Size, string> = {
   sm: "4px",
   md: "6px",
 };
-
-// --- Drag-scrub gesture ------------------------------------------------------
-// While a segment is selected, a horizontal drag started ANYWHERE on the screen
-// walks the selection word-by-word through this sentence and narrates each word
-// it lands on. Enabled per call site by passing `onSegmentSpeak` (est only).
-//
-// Horizontal travel (px) that advances the selection by one segment. This is the
-// gesture's one tuning knob — lower = more sensitive (shorter drag per word).
-const SCRUB_STEP_PX = 28;
-// Horizontal travel before a gesture is committed to being a scrub (vs. a tap).
-const SCRUB_LOCK_PX = 12;
-// If the pointer travels this far vertically before locking horizontally, the
-// gesture is a scroll and we bail out for the rest of the pointer sequence.
-const SCRUB_VERTICAL_ABORT_PX = 12;
-// How long after a scrub ends that character taps stay suppressed, so the
-// trailing touchend/click of the drag doesn't re-select the word under the finger.
-const SCRUB_TAP_SUPPRESS_MS = 300;
-// Debounce on SCRUB narration: the word only plays once the selection has sat
-// still this long. Sweeping across a sentence therefore narrates the word you
-// settle on instead of machine-gunning every word the drag crossed, and a slow
-// word-by-word drag still narrates each one (each step outlasts the delay).
-// Tap-to-narrate is deliberately NOT debounced — it is a single deliberate act,
-// and it must fire inside the touch gesture to satisfy mobile autoplay policy.
-const SCRUB_AUDIO_DELAY_MS = 300;
 
 // Vertical offset (px, subtracted from the char glyph's bottom edge) for the
 // vocab-word underline. sm sits 1px lower than xs/md to match its glyph metrics.
@@ -64,6 +41,9 @@ interface SegmentMeta {
   definition?: string;
   particleOrClassifier?: { type: 'particle' | 'classifier'; definition: string };
   wordForms?: Record<string, string>;
+  // Shorter det headwords inside this segment, longest-first — the tap-to-drill chain.
+  // See src/utils/segmentDrill.ts and docs/SEGMENT_DRILL_DOWN.md.
+  drill?: SegmentDrillRung[];
 }
 
 interface SentenceData {
@@ -119,17 +99,31 @@ interface SegmentedSentenceDisplayProps {
   // 126). The popup is passive in this mode — the run is a phrase, not a headword, so
   // there is no single word for `onSegmentOpen` to drill into.
   runTranslation?: string | null;
-  // DRAG-SCRUB. When provided, the drag-scrub gesture is enabled: while a segment
-  // is selected, a horizontal drag anywhere on screen moves the selection one
-  // segment per SCRUB_STEP_PX of travel and calls this with the newly selected
-  // segment + its pronunciation so the caller can narrate it. Omit to keep the
-  // display tap-only (long definitions, whole-run citations).
+  // TAP-TO-NARRATE. When provided, tapping a segment calls this with that segment
+  // + its pronunciation so the caller can narrate it. Omit to keep the display
+  // silent (long definitions, whole-run citations). Whole-run mode never narrates:
+  // its selection is a phrase, not a headword.
   onSegmentSpeak?: (segment: string, pronunciation?: string) => void;
-  // Called synchronously on the pointerdown that *may* begin a scrub. Callers use
-  // it to unlock the audio context inside a real user gesture — the narration
-  // itself fires later, from pointermove, which mobile autoplay policy won't
-  // accept as the unlocking gesture. See useTTS.unlockAudio.
-  onScrubStart?: () => void;
+}
+
+/**
+ * The current selection, in this display's absolute character indices.
+ *
+ * `segment` is the selected TEXT — the tapped GSA segment at first, then each narrower
+ * drill rung (src/utils/segmentDrill.ts) as the learner keeps tapping. It doubles as the
+ * headword the popup's chevron opens, and it is deliberately EMPTY in whole-run mode,
+ * where the selection is a cited phrase rather than a word (see `isPopupInteractive`).
+ *
+ * `pronunciation` is carried on the range rather than looked up from `segmentMetadata`
+ * at narration time, because a drill rung is not a key in that map — only top-level
+ * segments are.
+ */
+interface SelectedRange {
+  start: number;
+  end: number;
+  segment: string;
+  definition?: string;
+  pronunciation?: string;
 }
 
 interface CharRenderData {
@@ -196,7 +190,6 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   onSegmentOpen,
   runTranslation,
   onSegmentSpeak,
-  onScrubStart,
 }) => {
   // Whole-run mode is on only when a translation actually arrived for this run — a run the
   // backfill hasn't reached yet falls back to the per-segment popup.
@@ -214,7 +207,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   // update() to re-run placement after the popup's content reflows post-open.
   const popperInstanceRef = useRef<PopperInstance | null>(null);
   const charRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const [selectedRange, setSelectedRange] = useState<{ start: number; end: number; segment: string; definition?: string } | null>(null);
+  const [selectedRange, setSelectedRange] = useState<SelectedRange | null>(null);
   // Viewport-space rect of the highlighted word(s); used as Popper anchor so the
   // popup escapes any ancestor scroll container's overflow clipping.
   const [popupAnchorRect, setPopupAnchorRect] = useState<DOMRect | null>(null);
@@ -229,14 +222,10 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   // the popup disappearing mid-traversal.
   const dismissTimerRef = useRef<number | null>(null);
 
-  // --- Drag-scrub state ------------------------------------------------------
-  // Enabled only when the caller wired narration AND this display is in
-  // per-segment mode (a whole-run citation has no word-by-word selection to walk).
-  const scrubEnabled = !!onSegmentSpeak && !isWholeRun;
-  // Mirror of selectedRange for the document-level scrub listeners. Those listeners
-  // are installed once per selection *existence* (not per selection *value*), so
-  // they must not close over a specific range — their own setSelectedRange calls
-  // would otherwise tear the gesture's listeners down mid-drag.
+  // Mirror of selectedRange, kept in sync synchronously by the handlers that write
+  // it. Tap handling reads the PREVIOUS selection to decide select-vs-deselect, and
+  // must not do that from inside a setState updater (a side effect — narration —
+  // hangs off the decision, and StrictMode invokes updaters twice).
   const selectedRangeRef = useRef(selectedRange);
   useEffect(() => {
     selectedRangeRef.current = selectedRange;
@@ -248,76 +237,17 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   // its own (both match `.cpcd-row__char-cell`). So selecting is an explicit
   // CLAIM: every other mounted display clears itself. Without it, tapping a word
   // in a second sentence leaves the first sentence's word selected — two popups
-  // open, and two competing claims on horizontal gestures for the scrub to walk.
-  // Pending (debounced) scrub narration. Only ever one in flight: each step
-  // replaces the previous word's pending play, so a fast sweep collapses to a
-  // single utterance for the word the drag comes to rest on. Declared up here
-  // because the selection-owner callback below also has to drop it.
-  const narrationTimerRef = useRef<number | null>(null);
-  const cancelPendingNarration = useCallback(() => {
-    if (narrationTimerRef.current !== null) {
-      window.clearTimeout(narrationTimerRef.current);
-      narrationTimerRef.current = null;
-    }
-  }, []);
-
+  // open at once.
   const selectionTokenRef = useRef({});
   useEffect(
     () =>
       registerSegmentSelectionOwner(selectionTokenRef.current, () => {
-        // Clear the ref alongside the state: the scrub's document listeners read
-        // the ref, and a stale range there would let a drag resurrect a selection
-        // this display no longer owns. A queued narration goes with it — the word
-        // it belongs to is no longer selected anywhere.
+        // Clear the ref alongside the state: the tap handler reads the ref, and a
+        // stale range there would let the next tap read as a DRILL into a selection
+        // this display no longer owns.
         selectedRangeRef.current = null;
-        cancelPendingNarration();
         setSelectedRange(null);
       }),
-    [cancelPendingNarration]
-  );
-  // True from the moment a scrub locks until SCRUB_TAP_SUPPRESS_MS after it ends.
-  // Character cells select on touchend, and touchend targets the element the touch
-  // STARTED on — so without this, ending a scrub re-selects the word the drag began
-  // over, undoing the scrub's final step.
-  const suppressTapRef = useRef(false);
-  const suppressTapTimerRef = useRef<number | null>(null);
-  // In-flight gesture state. Lives in a ref, not in the effect's closure, because
-  // the listeners are re-installed whenever a callback prop's identity changes —
-  // which happens mid-drag (narration flips the parent's `speakingKey`). Closure
-  // state would silently reset the drag at that moment; ref state survives it.
-  const gestureRef = useRef({
-    armed: false,
-    pointerId: -1,
-    originX: 0,
-    originY: 0,
-    locked: false,
-    // X position the next step is measured from; advanced by exactly one step
-    // width per step, so a slow drag ratchets word by word.
-    ratchetX: 0,
-  });
-  // Latest callback props, read by the listeners so their identity is not a
-  // dependency of the listener-install effect.
-  const onSegmentSpeakRef = useRef(onSegmentSpeak);
-  const onScrubStartRef = useRef(onScrubStart);
-  useEffect(() => {
-    onSegmentSpeakRef.current = onSegmentSpeak;
-    onScrubStartRef.current = onScrubStart;
-  });
-  // Reads callbacks/timers through refs only, so the scrub's long-lived document
-  // listeners can safely close over the first render's copy of this function.
-  const queueSegmentNarration = useCallback((segment: string, pronunciation?: string) => {
-    cancelPendingNarration();
-    narrationTimerRef.current = window.setTimeout(() => {
-      narrationTimerRef.current = null;
-      onSegmentSpeakRef.current?.(segment, pronunciation);
-    }, SCRUB_AUDIO_DELAY_MS);
-  }, [cancelPendingNarration]);
-
-  useEffect(
-    () => () => {
-      if (suppressTapTimerRef.current !== null) window.clearTimeout(suppressTapTimerRef.current);
-      if (narrationTimerRef.current !== null) window.clearTimeout(narrationTimerRef.current);
-    },
     []
   );
 
@@ -438,24 +368,6 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     return groups;
   }, [chars.length, charData]);
 
-  // The ordered list of segments a scrub can land on: one entry per segment head
-  // (charData[i].start === i), punctuation excluded — it carries no gloss and no
-  // audio, exactly as it is inert to taps. Index into this list IS the scrub
-  // position, so stepping is a simple ±1 with clamping at both ends.
-  const scrubSegments = useMemo(
-    () =>
-      charData
-        .map((info, index) => ({ info, index }))
-        .filter(({ info, index }) => info && info.start === index && !isPunctuation(info.segment))
-        .map(({ info }) => ({
-          start: info.start,
-          end: info.end,
-          segment: info.segment,
-          definition: info.definition,
-        })),
-    [charData]
-  );
-
   useEffect(() => {
     if (!selectedRange || !rowRef.current) {
       setPopupAnchorRect(null);
@@ -518,13 +430,8 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     }
   }, [selectedRange, chars.length, showSegmentSpaces]);
 
+  // Tap anywhere off this row (and off the popup) dismisses the selection.
   useEffect(() => {
-    // With scrub enabled the dismiss decision moves to POINTERUP (see the scrub
-    // effect): a scrub may start anywhere on screen, including outside this row,
-    // and clearing on pointerdown would destroy the selection the drag is meant
-    // to move. Tap-to-dismiss still happens — just one event later.
-    if (scrubEnabled) return;
-
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
       // Keep the popup open when the tap is on the row or on the popup itself;
@@ -540,7 +447,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown, true);
     };
-  }, [scrubEnabled]);
+  }, []);
 
   // Measure DOM positions of vocab word chars and compute underline rects.
   // useLayoutEffect ensures measurement runs after the browser has laid out the DOM,
@@ -619,244 +526,106 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
   // The range a tap on `charIndex` selects: the tapped SEGMENT normally, or the entire run
   // (with the run translation as its popup text) in whole-run mode. `segment` stays empty in
   // whole-run mode so the popup renders passive — see isPopupInteractive.
-  const rangeFromIndex = (charIndex: number): { start: number; end: number; segment: string; definition?: string } => {
+  const rangeFromIndex = (charIndex: number): SelectedRange => {
     if (isWholeRun) {
       return { start: 0, end: Math.max(chars.length - 1, 0), segment: "", definition: runTranslation ?? undefined };
     }
+    return segmentRangeAt(charIndex);
+  };
+
+  // The tapped character's whole GSA segment, as a selection. Split out of
+  // rangeFromIndex because the drill uses it too: it is whole-run mode's second rung.
+  const segmentRangeAt = (charIndex: number): SelectedRange => {
     const info = charData[charIndex];
-    return { start: info.start, end: info.end, segment: info.segment, definition: info.definition };
+    return {
+      start: info.start,
+      end: info.end,
+      segment: info.segment,
+      definition: info.definition,
+      pronunciation: sentence.segmentMetadata?.[info.segment]?.pronunciation,
+    };
+  };
+
+  // --- Tap-to-drill -------------------------------------------------------------
+  // A tap that lands INSIDE the current selection narrows it instead of dismissing it:
+  // the longest dictionary headword that still covers the tapped character wins, and
+  // when nothing narrower is left the selection cancels. See src/utils/segmentDrill.ts
+  // for the rule and docs/SEGMENT_DRILL_DOWN.md for the gesture.
+  //
+  // Returns the next rung, or null meaning "cancel".
+  const drillFromIndex = (current: SelectedRange, charIndex: number): SelectedRange | null => {
+    const info = charData[charIndex];
+
+    // Whole-run mode's first rung is the entire cited phrase, which has no drill list of
+    // its own (it is a clause, not a headword — see `runTranslation`). Its next rung is
+    // the GSA segment under the finger; from there the segment's own rungs take over.
+    // A punctuation cell, or a segment the dictionary can't gloss, ends the chain rather
+    // than opening an empty popup.
+    if (current.segment === "") {
+      const segmentRange = segmentRangeAt(charIndex);
+      const narrower = segmentRange.end - segmentRange.start < current.end - current.start;
+      if (narrower) return segmentRange.definition ? segmentRange : null;
+      // The run IS a single segment, so its span already equals the current selection —
+      // fall through and drill into that segment's rungs.
+    }
+
+    // Rungs always come from the TOP-LEVEL segment's list, whatever rung we are standing
+    // on: pickDrillRung filters by containment in `current`, so 中华人民共和国's own list
+    // supplies 人民 first and then 人 / 民 once the selection has narrowed to 人民.
+    const rung = pickDrillRung(
+      sentence.segmentMetadata?.[info.segment]?.drill,
+      info.start,
+      current,
+      charIndex
+    );
+    if (!rung) return null;
+    return {
+      start: rung.start,
+      end: rung.end,
+      segment: rung.text,
+      definition: rung.definition,
+      pronunciation: rung.pronunciation,
+    };
   };
 
   const selectFromIndex = (charIndex: number) => {
-    // A scrub in progress owns the selection — ignore hover/tap selection until it settles.
-    if (suppressTapRef.current) return;
     claimSegmentSelection(selectionTokenRef.current);
     setSelectedRange(rangeFromIndex(charIndex));
   };
 
   const toggleFromIndex = (charIndex: number) => {
-    if (suppressTapRef.current) return;
-    const next = rangeFromIndex(charIndex);
     // Read the previous range from the ref rather than from a setState updater:
     // narration is a side effect and must not run inside the updater (StrictMode
-    // invokes updaters twice). The ref is also advanced synchronously here, same
-    // as the scrub's step(), so a fast second tap sees this tap's result.
+    // invokes updaters twice). The ref is also advanced synchronously here, so a
+    // fast second tap sees this tap's result.
     const prev = selectedRangeRef.current;
-    const isDeselect = !!prev && prev.start === next.start && prev.end === next.end && prev.segment === next.segment;
-    const resolved = isDeselect ? null : next;
+    // A tap inside the live selection DRILLS (narrow, then eventually cancel); a tap
+    // anywhere else starts a fresh selection on that character's segment. This is what
+    // replaced the old plain deselect-on-second-tap — cancelling is now just the end of
+    // the drill chain, which a single-character selection reaches immediately, so a
+    // one-character segment still toggles exactly as it always did.
+    const isDrill = !!prev && charIndex >= prev.start && charIndex <= prev.end;
+    const resolved = isDrill ? drillFromIndex(prev!, charIndex) : rangeFromIndex(charIndex);
     // Claim before writing our own state — the claim clears OTHER displays only,
-    // so ordering is safe, and a deselect needs no claim (nobody else holds one).
+    // so ordering is safe, and a cancelling tap needs no claim (nobody else holds one).
     if (resolved) claimSegmentSelection(selectionTokenRef.current);
     selectedRangeRef.current = resolved;
     setSelectedRange(resolved);
-    // A tap supersedes any word a just-finished scrub had queued — otherwise the
-    // previous word would still speak on top of (or right after) this one.
-    cancelPendingNarration();
-    // Tapping a segment narrates it — the same per-segment narration the drag-scrub
-    // uses. Only when the caller wired narration (est) and the tap SELECTS (a tap
-    // that dismisses the popup stays silent). Whole-run mode has an empty segment,
-    // so citations stay silent too. This runs inside the touchend gesture, which is
-    // what satisfies mobile autoplay policy.
+    // Tapping a segment narrates it — only when the caller wired narration (est) and
+    // the tap resolved to something (a tap that cancels the selection stays silent).
+    // Each drill rung narrates in turn; whole-run mode has an empty segment, so a
+    // citation stays silent until the drill reaches a real headword inside it. This runs inside the
+    // touchend gesture, which is what satisfies mobile autoplay policy.
     if (resolved && resolved.segment) {
-      onSegmentSpeakRef.current?.(
+      // The range carries its own pronunciation: a drill rung is not a key in
+      // segmentMetadata (only top-level segments are), so the map lookup is only the
+      // fallback for ranges built before this field existed.
+      onSegmentSpeak?.(
         resolved.segment,
-        sentence.segmentMetadata?.[resolved.segment]?.pronunciation
+        resolved.pronunciation ?? sentence.segmentMetadata?.[resolved.segment]?.pronunciation
       );
     }
   };
-
-  // --- Drag-scrub gesture ----------------------------------------------------
-  // Installed on the DOCUMENT (so the drag can start anywhere on screen) and only
-  // while this sentence actually holds a selection — which is also what keeps
-  // sibling sentences from all reacting to the same drag.
-  //
-  // Gesture shape (see the SCRUB_* constants):
-  //   pointerdown → arm, remember the origin, let the caller unlock audio
-  //   pointermove → commit to a scrub once horizontal travel dominates; thereafter
-  //                 every SCRUB_STEP_PX of travel ratchets the selection one segment
-  //                 and narrates it. Vertical-dominant travel aborts the gesture so
-  //                 the panel scrolls normally.
-  //   pointerup   → if no scrub happened, apply the deferred tap-to-dismiss
-  const hasSelection = !!selectedRange;
-
-  // While this sentence holds a selection, the scrub OWNS horizontal gestures:
-  // the eip's swipe-to-change-tab stands down (see segmentScrubLock) so one drag
-  // can't both walk the words and slide the panel. Releasing the selection hands
-  // side-swiping back — that is the documented way to page the eip again.
-  useEffect(() => {
-    if (!scrubEnabled || !hasSelection) return;
-    return claimHorizontalGesture();
-  }, [scrubEnabled, hasSelection]);
-
-  useEffect(() => {
-    if (!scrubEnabled || !hasSelection || scrubSegments.length === 0) return;
-
-    const gesture = gestureRef.current;
-    const stepPx = SCRUB_STEP_PX;
-
-    // Index of the currently selected segment within scrubSegments, or -1 when the
-    // selection is something scrubbing doesn't track (e.g. a stale range).
-    const currentIndex = (): number => {
-      const selected = selectedRangeRef.current;
-      if (!selected) return -1;
-      return scrubSegments.findIndex((s) => s.start === selected.start && s.end === selected.end);
-    };
-
-    // Move the selection one segment in `direction` and narrate it.
-    // Returns false when clamped at the first/last segment (no wrap-around).
-    const step = (direction: 1 | -1): boolean => {
-      const next = currentIndex() + direction;
-      if (next < 0 || next >= scrubSegments.length) return false;
-      const target = scrubSegments[next];
-      const range = {
-        start: target.start,
-        end: target.end,
-        segment: target.segment,
-        definition: target.definition,
-      };
-      // Update the ref synchronously: one fast pointermove can cross several step
-      // widths, and each iteration's currentIndex() must see the previous step's
-      // result. React state won't have committed yet at that point.
-      selectedRangeRef.current = range;
-      setSelectedRange(range);
-      // Debounced, not immediate — see SCRUB_AUDIO_DELAY_MS. The audio context was
-      // already unlocked by onScrubStart on this gesture's pointerdown, so playing
-      // from a timer is still allowed.
-      queueSegmentNarration(
-        target.segment,
-        sentence.segmentMetadata?.[target.segment]?.pronunciation
-      );
-      return true;
-    };
-
-    const endScrubSuppression = () => {
-      if (suppressTapTimerRef.current !== null) window.clearTimeout(suppressTapTimerRef.current);
-      suppressTapTimerRef.current = window.setTimeout(() => {
-        suppressTapRef.current = false;
-        suppressTapTimerRef.current = null;
-      }, SCRUB_TAP_SUPPRESS_MS);
-    };
-
-    const handleDown = (event: PointerEvent) => {
-      if (gesture.armed) return; // ignore secondary pointers (second finger, etc.)
-      gesture.armed = true;
-      gesture.pointerId = event.pointerId;
-      gesture.originX = event.clientX;
-      gesture.originY = event.clientY;
-      gesture.ratchetX = event.clientX;
-      gesture.locked = false;
-      // Must run inside the gesture: narration starts from pointermove, which is
-      // too late to satisfy mobile autoplay policy on its own.
-      onScrubStartRef.current?.();
-    };
-
-    const handleMove = (event: PointerEvent) => {
-      if (!gesture.armed || event.pointerId !== gesture.pointerId) return;
-      const dx = event.clientX - gesture.originX;
-      const dy = event.clientY - gesture.originY;
-
-      if (!gesture.locked) {
-        // Vertical-dominant travel means the user is scrolling — disarm for the
-        // rest of this pointer sequence so the scroll runs untouched.
-        if (Math.abs(dy) > SCRUB_VERTICAL_ABORT_PX && Math.abs(dy) >= Math.abs(dx)) {
-          gesture.armed = false;
-          return;
-        }
-        if (Math.abs(dx) < SCRUB_LOCK_PX || Math.abs(dx) <= Math.abs(dy)) return;
-        gesture.locked = true;
-        suppressTapRef.current = true;
-        // NOTE: the ratchet is deliberately NOT re-based here — it still measures
-        // from the gesture's origin, so the first word lands at exactly
-        // SCRUB_STEP_PX of travel rather than at lock distance + a full step.
-        // A mouse drag over selectable sentence text would otherwise paint a text
-        // selection across the page; suppress it for the duration of the scrub.
-        document.body.style.userSelect = "none";
-        window.getSelection?.()?.removeAllRanges();
-      }
-
-      // Ratchet: consume one step width per segment moved. On a clamp (sentence
-      // edge) we re-base to the current X so reversing direction responds
-      // immediately instead of first paying back the overshoot.
-      while (event.clientX - gesture.ratchetX >= stepPx) {
-        if (!step(1)) {
-          gesture.ratchetX = event.clientX;
-          break;
-        }
-        gesture.ratchetX += stepPx;
-      }
-      while (gesture.ratchetX - event.clientX >= stepPx) {
-        if (!step(-1)) {
-          gesture.ratchetX = event.clientX;
-          break;
-        }
-        gesture.ratchetX -= stepPx;
-      }
-    };
-
-    const handleUp = (event: PointerEvent) => {
-      if (!gesture.armed || event.pointerId !== gesture.pointerId) return;
-      gesture.armed = false;
-
-      if (gesture.locked) {
-        gesture.locked = false;
-        document.body.style.userSelect = "";
-        endScrubSuppression();
-        return;
-      }
-
-      // No scrub happened → this was a tap. Apply the dismiss rule that normally
-      // lives on pointerdown: taps land on characters (they select themselves) or
-      // on the popup (it opens the eip); anything else clears the selection.
-      const target = event.target as Element | null;
-      const node = target as Node | null;
-      const onPopup = !!node && !!popupRef.current?.contains(node);
-      const onCharacter = !!target?.closest?.(".cpcd-row__char-cell");
-      if (!onPopup && !onCharacter) {
-        // Dismissing also drops any word still queued from an earlier scrub, so
-        // audio can't arrive after the selection it belongs to is gone.
-        cancelPendingNarration();
-        selectedRangeRef.current = null;
-        setSelectedRange(null);
-      }
-    };
-
-    const handleCancel = (event: PointerEvent) => {
-      if (!gesture.armed || event.pointerId !== gesture.pointerId) return;
-      gesture.armed = false;
-      if (gesture.locked) {
-        gesture.locked = false;
-        document.body.style.userSelect = "";
-        endScrubSuppression();
-      }
-    };
-
-    // Capture phase so a child's stopPropagation() (notably the popup's) can't hide
-    // the gesture from us. Passive: we never preventDefault — a scrub coexists with
-    // whatever the browser does natively.
-    const options: AddEventListenerOptions = { capture: true, passive: true };
-    document.addEventListener("pointerdown", handleDown, options);
-    document.addEventListener("pointermove", handleMove, options);
-    document.addEventListener("pointerup", handleUp, options);
-    document.addEventListener("pointercancel", handleCancel, options);
-    return () => {
-      document.removeEventListener("pointerdown", handleDown, options);
-      document.removeEventListener("pointermove", handleMove, options);
-      document.removeEventListener("pointerup", handleUp, options);
-      document.removeEventListener("pointercancel", handleCancel, options);
-    };
-    // Callback props are read through refs, so they are deliberately NOT deps:
-    // their identity churns mid-drag (narration flips the parent's speakingKey)
-    // and re-installing listeners on every such render is pure waste.
-  }, [scrubEnabled, hasSelection, scrubSegments, sentence.segmentMetadata, queueSegmentNarration, cancelPendingNarration]);
-
-  // Safety net: if this display unmounts mid-scrub (panel closed, card advanced),
-  // restore the page's text selectability that the scrub disabled.
-  useEffect(
-    () => () => {
-      if (gestureRef.current.locked) document.body.style.userSelect = "";
-    },
-    []
-  );
 
   const showPopup = !!(selectedRange && selectedRange.definition && popupAnchorRect);
 
@@ -899,10 +668,8 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       onMouseEnter={cancelDismiss}
       onMouseLeave={scheduleDismiss}
       // Deselect when tapping container background (whitespace between/around
-      // characters). With scrub enabled this is deferred to pointerup inside the
-      // scrub effect — a drag that begins on the background must be able to move
-      // the selection, not destroy it.
-      onPointerDown={scrubEnabled ? undefined : () => setSelectedRange(null)}
+      // characters).
+      onPointerDown={() => setSelectedRange(null)}
     >
       {highlightRects.map((highlightRect, index) => (
         <Box

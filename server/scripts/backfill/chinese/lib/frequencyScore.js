@@ -1,5 +1,16 @@
 /**
- * Shared everyday-conversation FREQUENCY scoring core (Chinese).
+ * Shared CONVERSATIONAL-COMMONALITY scoring core (Chinese).
+ *
+ * ⚠ THE AXIS CHANGED ON 2026-08-28 (no migration — the column is still a 1-5
+ * smallint). The scale used to ask "how OFTEN does this occur in speech"; it now asks
+ * "how much would this word STAND OUT if a friend said it in casual conversation".
+ * Bands 4 and 5 were merged (both are now everyday-common) and the freed slot went to
+ * the bottom, splitting the old band 1 into "would stop the conversation" (1) and
+ * "odd but forgivable" (2), and lifting 目前-class words to 3. The old scale put 53%
+ * of the DISCOVERABLE zh corpus — words deliberately chosen to be taught — into
+ * "uncommon" or "almost never spoken", which is self-refuting. Every score written
+ * before this date is on the old axis; the SCRIPT_VERSION bumps on both callers mark
+ * those rows stale so `--stale` (or an oracle run) re-scores them.
  *
  * Owns the 1–5 rubric behind `frequencyScore` (det column + the same-named key on
  * each definitionClusters element) so the word-level backfill and the definition-
@@ -35,19 +46,21 @@
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
 // Shared scale and guidelines used in every prompt mode.
-export const SCALE_AND_GUIDELINES = `Scale — how often would a learner living in a Mandarin-speaking environment actually HEAR or SAY this word in everyday conversation?
-  5 = Constant — comes up daily; unavoidable in ordinary talk about food, family, time, feelings, getting around (e.g. 吃饭, 时间, 朋友, 好吃, 明天)
-  4 = Common — comes up most weeks in ordinary conversation; a learner meets it early and often (e.g. 工作, 手机, 学习, 随便, 差不多)
-  3 = Moderately common — comes up in conversation now and then, when the topic calls for it; not part of daily small talk (e.g. 自由, 环境, 手术, 政府)
-  2 = Uncommon in speech — a speaker might go months without saying it; mostly encountered while reading, in news, or in specialist talk (e.g. 目前, 阐述, 就业率)
-  1 = Almost never spoken — literary, classical, archaic, or narrowly technical; essentially absent from ordinary conversation (e.g. 余 meaning "I/me", 翌日, 兮, 乃)
+export const SCALE_AND_GUIDELINES = `Scale — if a friend said this word to you in a CASUAL conversation, how much would it stand out?
+  5 = Everyday — you will hear or say it this week without trying; the basic vocabulary of food, family, time, feelings, work, getting around (e.g. 吃饭, 时间, 朋友, 明天, 工作, 手机, 学习, 差不多)
+  4 = Common when the topic comes up — not daily, but completely normal in ordinary talk; nobody would think twice (e.g. 自由, 环境, 政府, 手术)
+  3 = Unremarkable — you would NOT be surprised to hear it in casual conversation, even if you would not reach for it yourself (e.g. 目前, 因此, 各自)
+  2 = Odd but forgivable — you would notice it. Stiff, bookish or specialist for casual talk, but the conversation carries on (e.g. 阐述, 就业率)
+  1 = Would stop the conversation — genuinely strange to say to a friend: classical, archaic, or hyper-technical (e.g. 兮, 乃, 翌日, 余 meaning "I/me")
 
 Guidelines:
-  - Score FREQUENCY OF OCCURRENCE in everyday spoken Mandarin, NOT register. Do not lower a score because a word sounds formal, clinical, or bookish — only because it comes up rarely in conversation.
-  - Do not raise a score because a word is vivid slang. Slang that only one subculture uses is INFREQUENT (2) even though it is maximally casual.
-  - A word that is widely known but rarely uttered scores low (2): recognition is not frequency.
-  - A neutral, unremarkable, high-traffic word scores high (4–5) even though it is not colloquial in flavour — 时间 and 工作 are register-neutral AND extremely frequent.
-  - Judge the word as a spoken-conversation item; ignore how often it appears in written corpora, textbooks, or news.`;
+  - THE AXIS IS HOW MUCH THE WORD STANDS OUT, not how many times a day it occurs. 5 and 4 are separated by frequency; 3, 2 and 1 are separated by how strange the word would sound in casual speech. Ask "would a friend saying this make me blink?" before you ask "how often is it said?".
+  - RECOGNITION COUNTS. A word everyone knows but rarely reaches for is a 3 — unremarkable — NOT a 2. Only drop to 2 when hearing it casually would actually make a listener notice.
+  - Formal flavour alone is not a penalty. 政府 is formal and still a 4. Formality costs points only at the point where it becomes conspicuous in casual talk.
+  - Do not raise a score because a word is vivid slang. Slang confined to one subculture is a 2: most listeners WOULD notice it.
+  - BOUND FORMS COUNT THROUGH THEIR COMPOUNDS. A morpheme never uttered alone is still met constantly if the compounds carrying that meaning are common: 自 "self" is bound, yet a learner meets it every day inside 自己/自由/自动, so it is a high band, not a low one. Do not score a bound form down merely for being bound. (This is what separates a bound-but-everywhere morpheme like 自 from a genuinely rare one like 兮.)
+  - Judge the word as a SPOKEN item; ignore how often it appears in written corpora, textbooks, or news.
+  - Calibration: these words were chosen to be taught to learners, so most of them belong in 3-5. Reserve 2 and 1 for words that would genuinely make a listener pause — do not spend them on words that are merely not daily.`;
 
 /**
  * The final guideline, which is the ONE line that must differ between the two callers.
@@ -80,9 +93,9 @@ Guidelines:
  * a tie, i.e. by JSON array order.
  */
 const POLYSEMY_GUIDELINE = {
-  word: `  - If a word has multiple meanings that differ in frequency, score its most frequently-heard everyday meaning.`,
-  sense: `  - Score ONLY the sense stated above. IGNORE how common the word is in its other meanings — a very common word's rare sense must score LOW. 会 is constant as "can/will" (5) but near-never as "to reckon accounts" (1); score the sense in front of you, not the headword.
-  - Do not let the word's overall familiarity raise the score. The question is how often speakers use it WITH THIS MEANING.`,
+  word: `  - If a word has multiple meanings, score the one that would stand out LEAST — its most everyday meaning.`,
+  sense: `  - Score ONLY the sense stated above. IGNORE how ordinary the word is in its other meanings — a very common word's rare sense must score LOW. 会 is everyday as "can/will" (5) but would stop a casual conversation as "to reckon accounts" (1); score the sense in front of you, not the headword.
+  - Do not let the word's overall familiarity raise the score. The question is how a listener would react to it WITH THIS MEANING.`,
 };
 
 // Band names are the same scale in every language, so they live in the shared lib

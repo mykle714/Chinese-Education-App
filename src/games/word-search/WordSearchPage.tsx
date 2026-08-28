@@ -592,12 +592,22 @@ const WordSearchPage: React.FC = () => {
         // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
     }, [markTypes]);
 
-    // Play a word's narration (guarded by the TTS enabled flag). Shared by the
-    // find-time play below and the grid's tap-to-replay / blue-match plays; the
-    // CloudTTSProvider caches the decoded buffer, so repeats within a game are
-    // instant and only the first play hits the server.
+    // Play a word's narration. Shared by the find-time play below and the grid's
+    // tap-to-replay / blue-match plays; the CloudTTSProvider caches the audio, so
+    // repeats within a game are instant and only the first play hits the server.
+    // autoSpeakSentence, not speakSentence: the game speaks on its own schedule,
+    // so it is gated by the autoplay setting (a grid tap is a game move, not a
+    // press of a speaker button).
     const speakWord = useCallback((entryKey: string, pinyin: string) => {
-        if (tts.enabled) tts.speakSentence(entryKey, pinyin);
+        void tts.autoSpeakSentence(entryKey, pinyin);
+    }, [tts]);
+
+    // Stop whatever the grid last asked for. Passed to the grid as `silence` and
+    // called on a DESELECTING tap: the narration belongs to the selection, so
+    // closing a review popup must also cut a play that is still fetching or still
+    // sounding — without this it arrives after the highlight it explained is gone.
+    const silenceWord = useCallback(() => {
+        tts.cancel();
     }, [tts]);
 
     const onFound = useCallback((word: PlacedWord) => {
@@ -859,7 +869,7 @@ const WordSearchPage: React.FC = () => {
                     <Label>trace to select</Label>
                 </Box>
 
-                <WordSearchWordList words={data.words} found={found} />
+                <WordSearchWordList words={data.words} found={found} hintEntryKey={hintEntryKey} />
 
                 <WordSearchGrid
                     ref={gridRef}
@@ -875,6 +885,7 @@ const WordSearchPage: React.FC = () => {
                     onBonusFound={onBonusFound}
                     onFirstInteraction={handleFirstInteraction}
                     speak={speakWord}
+                    silence={silenceWord}
                 />
                 </GameFrame>
 

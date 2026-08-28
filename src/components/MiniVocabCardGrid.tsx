@@ -1,10 +1,11 @@
-import { type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { Box, Alert } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import MiniVocabCard from "./MiniVocabCard";
 import type { MasteryBarId } from "../utils/masteryCompute";
 import DelayedCircularProgress from "./DelayedCircularProgress";
 import { useIncrementalList } from "../hooks/useIncrementalList";
+import { useWindowedRows } from "../hooks/useWindowedRows";
 import type { VocabEntry } from "../types";
 
 // Fixed-width wrapping grid of MiniVocabCards. Shared by the /decks Learn Now
@@ -38,6 +39,13 @@ const REVEAL_BATCH = 3;
 // rendered with no entrance animation. This keeps the waterfall short and snappy
 // for large decks (mastered can be hundreds of cards) instead of dragging the
 // stagger out over the whole list.
+//
+// ⚠️ This cap is a purely COSMETIC bound on the waterfall, and it costs the paced
+// reveal its other job: past card 15 the remainder arrives in one commit, which on a
+// large library is precisely the blocking mount the pacing was introduced to remove.
+// What makes that safe is WINDOW_MIN_ITEMS below — the single commit only ever
+// contains the rows in the window. Do not raise this cap expecting it to help
+// responsiveness, and do not remove the windowing expecting the cap to.
 const CASCADE_LIMIT = 15;
 
 // Per-card delay (ms) between successive cards in `staggerReveal` mode. Applied as a
@@ -54,6 +62,28 @@ const CARDS_PER_ROW = 3; // matches the 364px row width (and REVEAL_BATCH)
 const CARD_HEIGHT_PX = 132; // MiniVocabCard fixed height
 const ROW_GAP_PX = 16; // CardsPreviewContainer `gap`
 const GRID_PADDING_PX = 28; // CardsPreviewContainer `padding`
+
+// ── Windowing ────────────────────────────────────────────────────────────────
+//
+// Past this many entries the grid stops mounting every card and mounts only the rows
+// near the viewport (useWindowedRows), with two spacers standing in for the rest.
+//
+// WHY, given the paced reveal above already exists: the reveal spread the mount over
+// time but never bounded it, and `CASCADE_LIMIT` later capped the PACING rather than
+// the total — so past 15 cards the whole remainder lands in one commit. On the decks
+// panel, which since the Cards section moved onto it holds the learner's ENTIRE
+// library (470 cards on the large test account), that single commit is what makes the
+// sheet stutter as it opens and swallows the first taps on it. Windowing makes the
+// commit's size independent of the library's.
+//
+// The threshold is ~5 screens of cards: below it the whole grid is close enough to the
+// viewport that windowing would mount nearly everything anyway, and pay two forced
+// layouts per scroll frame for nothing.
+const WINDOW_MIN_ITEMS = 45;
+
+// How far beyond the visible band rows are kept mounted. ~3 rows each way, so a fast
+// fling has mounted cards to travel through while the next measurement lands.
+const WINDOW_OVERSCAN_PX = 450;
 
 const reservedGridHeight = (count: number, cardHeightPx: number): number => {
     const rows = Math.ceil(count / CARDS_PER_ROW);
@@ -130,12 +160,32 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
     const pacedEntries = useIncrementalList(entries, REVEAL_BATCH, undefined, CASCADE_LIMIT);
     const visibleEntries = staggerReveal ? entries : pacedEntries;
 
+    // Mount only the rows near the viewport once the list is long enough to be worth
+    // it. Restricted to the STANDARD card: `renderCard` callers draw their own card,
+    // and windowing can only do its spacer arithmetic on a fixed lattice — a custom
+    // card that is not exactly `cardHeightPx` tall on every row would make the spacers
+    // lie and the scroll position jump. Those callers already bound their own lists
+    // (Quick Mark paginates), so they lose nothing by staying un-windowed.
+    const gridRef = useRef<HTMLDivElement | null>(null);
+    const windowingEnabled = !renderCard && visibleEntries.length > WINDOW_MIN_ITEMS;
+    const rowWindow = useWindowedRows(gridRef, {
+        itemCount: visibleEntries.length,
+        perRow: CARDS_PER_ROW,
+        rowHeight: cardHeightPx,
+        rowGap: ROW_GAP_PX,
+        padTop: GRID_PADDING_PX,
+        overscanPx: WINDOW_OVERSCAN_PX,
+        enabled: windowingEnabled,
+    });
+    const windowedEntries = visibleEntries.slice(rowWindow.start, rowWindow.end);
+
     // Reserve the final height while cards are being revealed so growing rows
     // don't push sibling sections below the grid downward (see reservedGridHeight).
     const showingCards = !loading && !error && entries.length > 0;
 
     return (
         <CardsPreviewContainer
+            ref={gridRef}
             className={containerClassName}
             sx={showingCards ? { minHeight: reservedGridHeight(entries.length, cardHeightPx) } : undefined}
         >
@@ -164,7 +214,24 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
                 // past the limit are revealed all at once and render with no
                 // entrance animation (undefined animationDelayMs).
                 <>
-                    {visibleEntries.map((entry, index) => {
+                    {/* Full-width flex items standing in for the rows the window left
+                        out, so the grid's height and every rendered card's position are
+                        exactly what they would be with the whole list mounted. Each
+                        spacer's height is already NET of the container's `gap` (see
+                        useWindowedRows), which is what keeps the total honest:
+                          leading + gap + rendered rows + gap + trailing
+                            == rows*cardHeight + (rows-1)*gap. */}
+                    {rowWindow.leadingPx > 0 && (
+                        <Box
+                            className={`${classPrefix}-window-spacer-top`}
+                            aria-hidden
+                            sx={{ width: "100%", height: rowWindow.leadingPx }}
+                        />
+                    )}
+                    {windowedEntries.map((entry, offset) => {
+                        // The card's TRUE index in the list — the window is a slice, and
+                        // an offset-based delay would restart the cascade mid-list.
+                        const index = rowWindow.start + offset;
                         // Paced mode: each card animates on reveal with delay 0 (the
                         // reveal timing itself is the waterfall). Stagger mode: all cards
                         // mount together, so the first CASCADE_LIMIT get an increasing
@@ -185,6 +252,16 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
                             />
                         );
                     })}
+                    {rowWindow.trailingPx > 0 && (
+                        <Box
+                            className={`${classPrefix}-window-spacer-bottom`}
+                            aria-hidden
+                            sx={{ width: "100%", height: rowWindow.trailingPx }}
+                        />
+                    )}
+                    {/* After the trailing spacer on purpose: a paginating caller's
+                        "load more" sentinel must sit at the true end of the list, so it
+                        is reached by scrolling rather than by the window moving. */}
                     {footer}
                 </>
             )}

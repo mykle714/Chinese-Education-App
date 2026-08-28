@@ -5,29 +5,28 @@ import { useCallback, useEffect, useState } from 'react';
 const STORAGE_KEY = 'flashcard.learn-settings';
 
 export interface FlashcardLearnSettings {
+    // Whether the reading line shows at all. Toggled from the flp header chip and
+    // the Match Speed settings sheet; read by every surface that renders a reading.
     showPinyin: boolean;
+    // Whether that reading is tinted by tone. Toggled from /settings → Display (it
+    // is a display preference, not a study control) and from Match Speed's sheet.
     showPinyinColor: boolean;
-    // NOTE: word spacing ("Show spaces between words") is NOT here — it moved to
-    // an account-level setting (users."showSegmentSpaces", migration 129) so the
-    // eip and the cdp can't disagree. Read it from useAuth(), toggle it on the
-    // Account page. See docs/EXAMPLE_SENTENCES.md.
-    autoplayChinese: boolean;
-    // Show the card's progress category (Unfamiliar/Target/Comfortable/Mastered)
-    // as a colored chip on the back (Side 2) of the card. Opt-in, off by default.
-    showProgressCategory: boolean;
-    // Slow down example-sentence (est) narration to 0.65× for easier listening.
-    // Scoped to the est tab only — the flashcard word itself always plays at 1×,
-    // as does all narration outside the flp. Off (1×) by default. See useTTS /
-    // SLOW_SENTENCE_RATE and FlashcardsLearnPage's onSpeakSentence wiring.
-    slowExampleSentences: boolean;
+    // NOTE: this hook no longer has a settings sheet of its own. The flp's sheet was
+    // deleted on 2026-08-28 once its last row moved out; both prefs above are now
+    // edited from the flp header chip and /settings. Three things that used to live
+    // here and where they went:
+    //   • word spacing → account-level (users."showSegmentSpaces", migration 129),
+    //     so the eip and the cdp can't disagree. Read from useAuth(), toggled on the
+    //     Account page. See docs/EXAMPLE_SENTENCES.md.
+    //   • narration autoplay → the unified narration setting (useTTSSettings, the
+    //     3-state Off/Passthrough/Media control), because it applies to the games and
+    //     the scp as much as to the flp. See docs/AUDIO_PLAYBACK.md.
+    //   • progress category on the card back → DELETED with the chip it drove.
 }
 
 const DEFAULT_SETTINGS: FlashcardLearnSettings = {
     showPinyin: true,
     showPinyinColor: true,
-    autoplayChinese: true,
-    showProgressCategory: false,
-    slowExampleSentences: false,
 };
 
 function loadSettings(): FlashcardLearnSettings {

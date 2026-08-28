@@ -58,6 +58,30 @@ Child docs:
   so 27 discoverable glosses — 21 of them Spanish — leaked an aside's tail onto the card
   (的 rendered `" or 新的[xin1 de5] "new one")`). See
   [GLOSS_CONFUSABILITY.md](./GLOSS_CONFUSABILITY.md) § 8l for the full diff and rationale.
+- **Inline-morpheme exception** (added 2026-08-28). A parenthetical GLUED to a word (no
+  space on at least one side) whose content matches `^[a-z]{1,4}$` is an inline
+  morpheme, not an aside, and is **rejoined** rather than dropped: `personal(ly)` →
+  `personally`, `child(ren)` → `children`, `(hand)bag` → `handbag`. Without it the strip
+  turns an adverb into an adjective — 手's cluster gloss `personal(ly)` reached the card
+  as the bare `personal`, which is how 下手's breakdown came to read that way.
+  The `^[a-z]{1,4}$` **content** test is load-bearing: an aside that merely lost its
+  space (`skimming(of milk)`, `prescription(same as 丹方)`, `(idiom)fig.`) is shaped
+  IDENTICALLY at the parenthesis, so adjacency alone cannot separate the two.
+  Measured over the whole det corpus (446,517 display strings, 118 glued): the rule
+  fires on 50, declines all 12 missing-space asides and all 35 chemical/math formulas
+  (`Ca(OH)2`, `copper(II)` — uppercase or digit-bearing). Two accepted errors, both on
+  non-discoverable rows: it misses the longer optional prefixes (`(house)wife` →
+  `wife`) and fires wrongly on `manganese(iv) oxide`. Implemented in
+  `unwrapInlineMorphemes`, called by `stripParentheses`.
+- **Three implementations, one behavior.** Separate builds mean the transform exists in
+  `src/utils/definitionUtils.ts` (client), `server/utils/definitions.ts` (server) and
+  `server/scripts/backfill/shared/lib/stripParentheses.js` (backfill scripts, which sit
+  outside the server tsconfig `include`). Keep all three in sync;
+  `server/__tests__/definitions.test.ts` asserts parity between the latter two. The
+  backfill module replaced THREE hand-copied `/\s*\([^)]*\)/g` regexes
+  (`senseClusters.js` `clusterLeadGloss`/`isDisplayable`, `backfill-icons.js`) that had
+  never followed the 2026-08-24 scanner fix — so nested asides were still leaking into
+  what the backfill **wrote to the database**, not just what the app displayed.
 - **The rule:** any surface showing a **vet-backed** entry's English meaning MUST call
   the resolver, never `stripParentheses(entry.definition)` directly — `entry.definition`
   is det's `definitions[0]` and ignores the learner's sense pick, so a raw call makes
@@ -251,6 +275,7 @@ Rough order; each is an idempotent backfill in
 | 3 | Expand abbreviations | `backfill-expand-abbreviations.js` | expands cedict abbreviations in each gloss |
 | 4 | Split commas (es only) + reorder + prune (+ synthetic headline) | `backfill-process-definitions-array.js` | **es:** breaks comma-joined synonym runs into one gloss per element (see below); **both:** rewrites `definitions` ordering; may prepend a synthetic short lead gloss (owns the column) |
 | 5 | Word-level frequency | `backfill-frequency-score.js` | sets word-level `frequencyScore` (drives GSA, not a definition form) |
+| 5b | Frequency reconciliation | `shared/repair-frequency-score-drift.js` | safety net only — every scorer now enforces `frequencyScore == MAX(cluster scores)` on write. No API calls; runs as the last step of both enrichment pipelines, and by hand for rows written before 2026-08-28 |
 | 6 | Cluster | `backfill-cluster-definitions.js` | produces `definitionClusters` (form #6) |
 | 7 | Long definition | `backfill-long-definitions.js` | produces `longDefinition` (form #5), one definition per cluster from step 6 |
 | 8 | Cite translations | `backfill-longdef-citations.js` | produces `longDefinitionCitations` (form #5b) — one English translation per Chinese run quoted in step 7's text. Re-running step 7 invalidates it. |
@@ -327,16 +352,35 @@ implementation instead of duplicating prompts:
 
 ### `frequencyScore` — what the 1–5 number means (migration 122)
 `frequencyScore` (det column on `dictionaryentries_zh` / `dictionaryentries_es`, plus
-the same-named key on every `definitionClusters` element) measures **how often a word
-or sense comes up in everyday conversation**:
+the same-named key on every `definitionClusters` element) measures **how much a word
+or sense would stand out if a friend said it in casual conversation**:
 
-| Score | Band | Meaning |
+| Score | Band | Test |
 |---|---|---|
-| 5 | Constant in daily speech | comes up daily in ordinary talk |
-| 4 | Common | comes up most weeks; met early and often |
-| 3 | Moderately common | comes up when the topic calls for it |
-| 2 | Uncommon in speech | mostly met while reading or in specialist talk |
-| 1 | Almost never spoken | literary, classical, archaic, or narrowly technical |
+| 5 | Everyday | you will hear or say it this week without trying |
+| 4 | Common when topical | not daily, but nobody would think twice |
+| 3 | Unremarkable | you would not be *surprised* to hear it casually, even if you would not reach for it |
+| 2 | Odd but forgivable | you would notice — stiff, bookish, specialist — but the conversation carries on |
+| 1 | Would stop the conversation | genuinely strange to say to a friend: classical, archaic, hyper-technical |
+
+**The axis changed on 2026-08-28 (no migration).** It used to ask *how often* a word
+occurs; it now asks *how conspicuous* it would be. Bands 4 and 5 were merged — both are
+now everyday-common — and the freed slot went to the bottom, splitting the old band 1
+into "would stop the conversation" (1) and "odd but forgivable" (2) and lifting
+目前-class words to 3. The trigger: under the old scale **53% of the discoverable zh
+corpus (2,244 of 4,224 words we deliberately teach) sat in bands 1–2**, i.e. labelled
+"you'd rarely or never hear this" — self-refuting for a curated learning corpus, and
+the mechanism behind bound morphemes like 自 scoring low.
+
+Only the top two bands are frequency judgments; 3/2/1 are reaction judgments. Two
+consequences for the prompts: **recognition now counts** (a known-but-rarely-said word
+is a 3, not a 2 — the old rubric said the exact opposite), and **formal flavour alone
+is not a penalty** (政府 is formal and a 4).
+
+⚠ **Every score written before 2026-08-28 is on the old axis.** `SCRIPT_VERSION` was
+bumped on all four scorers (zh/es × word/cluster) so `--stale` and the oracle planner
+treat those rows as needing a re-score. Until that runs, stored numbers and the rubric
+disagree.
 
 **It is NOT a register score.** Until migration 122 the column was named
 `vernacularScore` and scored register (casual↔literary): 5 = sounds colloquial,
@@ -349,8 +393,34 @@ the Quick Mark universe gate `BETWEEN 3 AND 5`
 (`server/utils/definitions.ts`). Under register semantics a colloquial-but-rare
 word outranked a very common register-neutral one (自由 "freedom" scored 3).
 
-Do not re-introduce register language into the scorer prompts. Register is no longer
-scored anywhere in the app.
+Do not re-introduce register language into the scorer prompts. Register is **not**
+scored anywhere in the app — and note the 2026-08-28 axis change did not bring it
+back. "Would this stand out?" is not "does this sound casual?": 政府 sounds formal and
+scores 4, while subculture slang sounds maximally casual and scores 2. Conspicuousness,
+not formality.
+
+**Consumers are almost all rank-order, so the axis change is safe for them.** Starter
+packs, provisional cards, the gsa tie-break and search relevance all read the column
+through `ORDER BY ... DESC`, which is invariant under a monotone rescale. The one hard
+threshold is the Quick Mark universe gate `BETWEEN 3 AND 5` — its floor now means "you
+would not be surprised to hear this", which is a better gate than before, but it admits
+more words. Merging bands 4 and 5 does flatten the top of that sort key, where starter
+packs live; the secondary key there is `de.id ASC`, i.e. arbitrary, so a real tie-break
+(HSK level or `difficulty`) is worth adding — tracked in
+[DEFERRED_WORK.md](./DEFERRED_WORK.md).
+
+**The word column is the MAX of the cluster scores, not an independent number.**
+`det."frequencyScore" == MAX(definitionClusters[*].frequencyScore)` — enforced at
+write time by both clusterers and by `reconcileFrequencyScore`
+(`server/scripts/backfill/shared/lib/senseClusters.js`). The two used to be written by
+two AI passes that never saw each other and disagreed on 10% of zh / 63% of es
+discoverable clustered rows; the full rule, the repair pass and the ratchet-up policy
+are in [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "The word/cluster frequency
+invariant".
+
+**Bound forms count through their compounds.** A morpheme that is never uttered alone
+still scores as frequent when the compounds carrying that meaning are common — 自 is
+heard daily via 自己/自由/自动. Only genuine rarity (兮, 翌日) scores low.
 
 **Surfaced to users as "Commonality"** — a 5-dot meter (`src/components/FrequencyScoreDots.tsx`)
 on the cdp (`VocabCardDetailBody.tsx`), the eip (`InfoCardPanelBody.tsx`), scp

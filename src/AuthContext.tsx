@@ -10,7 +10,8 @@ import type { Language, User } from './types';
 import { apiPost, apiPut, apiDelete } from './api/http';
 import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetchInterceptor';
 import { setRefreshHandlers, attemptTokenRefresh, endServerSession } from './utils/tokenRefresh';
-import { notifyLogin } from './utils/authSync';
+import { notifyLogin, syncTimezoneIfChanged } from './utils/authSync';
+import { getBrowserTimezone } from './utils/browserTimezone';
 import * as authStorage from './utils/authStorage';
 import { authLog, authError, tokenPreview, readBodySafely, rateLimitInfo } from './utils/authDebug';
 
@@ -207,6 +208,33 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
+    // The stable auth identity — see the effect below.
+    const userId = user?.id;
+
+    // Re-check the browser's timezone whenever a backgrounded tab comes forward.
+    //
+    // The other three triggers (registration, login/restore, token rotation) all
+    // fire on a session EVENT. A tab that is left open — the PWA case — can go days
+    // without one while its owner changes zone, and every 04:00-local boundary the
+    // server computes for them is wrong until something re-syncs. `syncTimezoneIfChanged`
+    // is change-detected, so a foreground with the same zone costs one Intl lookup
+    // and no request.
+    //
+    // Keyed on the stable auth identity (`user?.id`), NEVER on `token`: this must
+    // not be torn down and rebuilt on every silent 15-minute rotation (CLAUDE.md,
+    // "never reload on token refresh"). The callback reads the token from
+    // authStorage at CALL time for the same reason.
+    useEffect(() => {
+        if (!userId) return;
+        const onVisible = () => {
+            if (document.visibilityState !== 'visible') return;
+            // Fire-and-forget, but never unhandled: authSync logs its own failures.
+            void syncTimezoneIfChanged(authStorage.getToken());
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+    }, [userId]);
+
     // Login function
     const login = async (email: string, password: string) => {
         setError(null);
@@ -281,7 +309,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ email, name, password }),
+                // `tz` is sent AT CREATION so the row is never born on the
+                // `users.timezone` column default ('UTC'). Without it an account
+                // reads as a UTC user — and every 04:00-local boundary is computed
+                // in the wrong zone — until its owner's first login or minute
+                // point. See utils/authSync.ts for the full freshness contract.
+                body: JSON.stringify({ email, name, password, tz: getBrowserTimezone() }),
                 credentials: 'include'
             });
 

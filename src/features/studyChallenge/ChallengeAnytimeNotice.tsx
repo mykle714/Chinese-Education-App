@@ -3,6 +3,7 @@ import { Box, Typography } from "@mui/material";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
+import { CHALLENGE_WORD_COUNT } from "../../types";
 
 /**
  * What "Allow anytime" actually does to the data, shown WHILE IT IS ON
@@ -10,8 +11,8 @@ import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
  *
  * ⚠️ THIS IS NOT A DISCLAIMER, IT IS THE FEATURE'S DOCUMENTATION AT THE POINT OF USE.
  * The hatch lifts a calendar, and every consequence below is something a tester will
- * otherwise meet as a bug report against themselves: a library that grew twelve cards
- * they never sorted, a deck they did not make, a challenge dated three weeks out, a
+ * otherwise meet as a bug report against themselves: a library that grew a
+ * challenge's worth of cards they never sorted, a deck they did not make, a challenge dated three weeks out, a
  * friend who cannot accept, rounds that vanish when the switch goes off. All of them
  * are correct behaviour; none of them is guessable.
  *
@@ -27,7 +28,7 @@ const CAUTIONS: { label: string; detail: string }[] = [
     {
         label: "It writes real cards and a real deck",
         detail:
-            "Accepting materialises all 12 words as Learn Now cards on BOTH accounts and creates a "
+            `Accepting materialises all ${CHALLENGE_WORD_COUNT} words as Learn Now cards on BOTH accounts and creates a `
             + "\"vs <name>\" deck for each. The deck is dropped when that player finishes the test — "
             + "abandon the challenge instead and it stays on /decks.",
     },

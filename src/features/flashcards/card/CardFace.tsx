@@ -4,10 +4,9 @@ import { sortedSenseClusters, resolveDisplayDefinition, resolveDisplayPronunciat
 import {
     CARD_FACE_JUSTIFY,
     CARD_FLIP_MS,
-    FC_FONT,
     FC_FONT_CJK,
 } from "../constants";
-import { SIZE, WEIGHT, LEADING, TRACKING } from "../../../theme/scale";
+import { WEIGHT } from "../../../theme/scale";
 import type { VocabEntry } from "../types";
 import type { IconLayoutItem, TextLayout } from "../../../types";
 import CardIconLayer from "../../../cardIcons/CardIconLayer";
@@ -16,11 +15,8 @@ import { resolveTextLayout, textItemTransform, defaultEnglishTopAnchorTransform 
 import ForeignText from "../../../components/ForeignText";
 import SensePicker from "./SensePicker";
 import { SpeakerButton } from "../../../components/SpeakerButton";
-import PracticeWritingButton from "../../../components/handwriting/PracticeWritingButton";
-import { getCategoryColor } from "../../../utils/categoryColors";
 import { resolveTextColor, DD_TONES } from "../../../utils/cardTextColor";
 import { resolveCardColor } from "../../../utils/cardColor";
-import { COLORS } from "../../../theme/colors";
 
 /**
  * The reusable flashcard FACE — the visual card itself, independent of the drill.
@@ -51,10 +47,7 @@ export const ChineseBlock: React.FC<{
     showPinyinColor: boolean;
     onSpeak?: (entry: VocabEntry) => void;
     speakingKey?: string | null;
-    // The practice-writing button exists on the SECOND side (back) only — the front
-    // passes false so it never appears there.
-    showWriting?: boolean;
-    // When true the speaker/writing actions are laid out IN-FLOW (a column to the right of
+    // When true the speaker action is laid out IN-FLOW (a column to the right of
     // the text) instead of absolutely positioned off the text's right edge. In-flow makes the
     // actions part of the block's measured box, so the fie selection outline + on-card clamp
     // include them (the movable-text case). Default (false) keeps the actions absolute so they
@@ -66,34 +59,23 @@ export const ChineseBlock: React.FC<{
     // resolves its gloss from — see resolveDisplayPronunciation. Omit to fall back to
     // the entry's persisted `selectedSense`.
     selectedSenseIndex?: number;
-}> = ({ entry, showPinyin, showPinyinColor, onSpeak, speakingKey, showWriting = false, inlineActions = false, selectedSenseIndex }) => {
-    const showWritingButton = showWriting && entry.language === "zh";
+}> = ({ entry, showPinyin, showPinyinColor, onSpeak, speakingKey, inlineActions = false, selectedSenseIndex }) => {
     // Per-card Contrast override for the foreign-word GLYPHS only (pinyin is untouched).
     // Undefined = theme default. See docs/CARD_ICON_LAYOUT.md.
     const characterColor = resolveTextColor(entry.textColors?.foreign);
-    // The writing + audio buttons, stacked vertically (writing on top, speaker below),
-    // mirroring the eip header stack. Either may be absent (non-zh hides writing; no onSpeak
-    // hides audio). Rendered the same whether absolute or in-flow — only the wrapper differs.
-    const actions = (onSpeak || showWritingButton) ? (
+    // The audio button. Practice Writing used to sit above it here (an on-card relic);
+    // that entry point now lives ONLY on `WordToolsRail` above the card — see
+    // docs/PRACTICE_WRITING.md ("Entry points"). Absent when no onSpeak is passed.
+    // Rendered the same whether absolute or in-flow — only the wrapper differs.
+    const actions = onSpeak ? (
         <Box
             className="mobile-demo-flashcard-actions"
             sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}
         >
-            {showWritingButton && (
-                <PracticeWritingButton
-                    character={entry.entryKey}
-                    language={entry.language}
-                    vocabEntryId={entry.id}
-                    appearance="icon"
-                    hideStarBadge
-                />
-            )}
-            {onSpeak && (
-                <SpeakerButton
-                    onClick={() => onSpeak(entry)}
-                    isLoading={speakingKey === entry.entryKey}
-                />
-            )}
+            <SpeakerButton
+                onClick={() => onSpeak(entry)}
+                isLoading={speakingKey === entry.entryKey}
+            />
         </Box>
     ) : null;
     return (
@@ -166,20 +148,20 @@ export const EnglishBlock: React.FC<{
     // the pick resets to the top (starred) sense whenever the card changes.
     selectedSenseIndex?: number;
     onSelectSense?: (index: number) => void;
-    // When true, the sense-trigger renders IN-FLOW (mirrors ChineseBlock's inlineActions):
-    // Side 2's movable-text editor measures the text block's own (width: max-content) box
-    // for its selection outline + clamp, so an absolutely-positioned trigger would escape
-    // that measurement. Side 1 (front, English mode) omits this — same asymmetry as
-    // ChineseBlock. See docs/CARD_ICON_LAYOUT.md "Movable text".
-    inlineActions?: boolean;
-    // When true, the picker's zh reading headings are replaced by neutral "Group N"
+    // NOTE: EnglishBlock has no `inlineActions` prop (ChineseBlock still does). Its
+    // sense-trigger is ALWAYS in-flow: the absolute variant hung off the text's right edge
+    // without occupying layout, so a wide gloss pushed it past the card edge, and being in
+    // flow is also what Side 2's movable-text editor needs (it measures the text block's own
+    // width: max-content box for the selection outline + clamp).
+    // See docs/CARD_ICON_LAYOUT.md "Movable text".
+    // When true, the picker's zh reading headings are replaced by neutral "-pinyin N-"
     // labels. Used on the FRONT/question side, where the card shows only English and the
     // learner is supposed to produce the Chinese — a tone-colored pinyin heading in the
     // sense menu would hand them the pronunciation (and the tones) for free. The grouping
     // itself is still useful (it shows which senses share a reading), so only the label is
     // censored; the back/answer side and all non-quiz surfaces show the real pinyin.
     censorReadings?: boolean;
-}> = ({ entry, selectedSenseIndex = 0, onSelectSense, inlineActions = false, censorReadings = false }) => {
+}> = ({ entry, selectedSenseIndex = 0, onSelectSense, censorReadings = false }) => {
     const theme = useTheme();
     // The dd draws from DD_TONES (dark grey / muted light grey) rather than the foreign
     // glyphs' pure black/white — it is supporting text, so it sits one step off full
@@ -228,13 +210,31 @@ export const EnglishBlock: React.FC<{
         // mirrors ChineseBlock's outer row exactly.
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }} className="mobile-demo-flashcard-english-block">
             {/* Inner wrapper shrinks to the whole assembly's width — same role as
-                ChineseBlock's inner wrapper (see its comment for the centering rationale). */}
+                ChineseBlock's inner wrapper (see its comment for the centering rationale).
+
+                `maxWidth: 100%` + `flexWrap` are what keep the sense chip ON the card. The
+                trigger used to hang off the text's right edge absolutely (left: 100%), which
+                is invisible to layout: once the gloss grew wide enough to fill the card, the
+                chip sat past the card's — and on the large card view the viewport's — right
+                edge and could not be tapped. In flow it instead squeezes the text (which
+                wraps), and when even the gloss's longest word leaves no room beside it, the
+                whole chip wraps onto its own line under the text. */}
             <Box
-                sx={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
+                sx={{
+                    position: 'relative',
+                    display: 'inline-flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    maxWidth: '100%',
+                    rowGap: 0.5,
+                }}
                 className="mobile-demo-flashcard-english-inner"
             >
-                {inlineActions && actions && (
-                    <Box aria-hidden sx={{ visibility: 'hidden', mr: 1 }}>{actions}</Box>
+                {/* Hidden twin of the actions column, balancing the real one on the other
+                    side so the TEXT — not the text+chip group — is what ends up centered. */}
+                {actions && (
+                    <Box aria-hidden className="mobile-demo-flashcard-english-actions-spacer" sx={{ visibility: 'hidden', mr: 1, flexShrink: 0 }}>{actions}</Box>
                 )}
                 {/* Dedicated row layer around just the text — mirrors CPCDRow's own root Box
                     (position:relative, distinct from ForeignText's enclosing "-inner" flex
@@ -243,8 +243,11 @@ export const EnglishBlock: React.FC<{
                     layer that stays the true visual center of the assembly — the hidden spacer
                     above balances the in-flow actions below so centering the "-inner" wrapper
                     (via "-block"'s justifyContent:center) centers THIS row, not the row+actions
-                    group. */}
-                <Box className="mobile-demo-flashcard-english-row" sx={{ position: 'relative' }}>
+                    group.
+
+                    `minWidth: 0` overrides the flex default (min-content), so a long gloss
+                    shrinks and wraps here rather than pushing the chip out of the wrapper. */}
+                <Box className="mobile-demo-flashcard-english-row" sx={{ position: 'relative', minWidth: 0 }}>
                     <Typography sx={{
                         fontSize: englishFontSize(text),
                         fontWeight: WEIGHT.regular,
@@ -256,54 +259,13 @@ export const EnglishBlock: React.FC<{
                         {text}
                     </Typography>
                 </Box>
+                {/* Always in flow: part of the measured box, so the fie selection outline +
+                    on-card clamp include it (what `inlineActions` used to opt into on Side 2),
+                    and so it can never be laid out past the card's edge. */}
                 {actions && (
-                    inlineActions ? (
-                        // In-flow: part of the measured box, so the fie selection/clamp include it.
-                        // Balanced by the hidden spacer above so the row itself stays centered.
-                        <Box sx={{ ml: 1, display: 'flex' }}>{actions}</Box>
-                    ) : (
-                        // Absolute: hangs off the text's right edge without shifting it —
-                        // same positioning ChineseBlock uses for its (non-inline) actions.
-                        <Box sx={{ position: 'absolute', left: '100%', top: '50%', transform: 'translateY(-50%)', ml: 1 }}>
-                            {actions}
-                        </Box>
-                    )
+                    <Box className="mobile-demo-flashcard-english-actions" sx={{ ml: 1, display: 'flex', flexShrink: 0 }}>{actions}</Box>
                 )}
             </Box>
-        </Box>
-    );
-};
-
-// Progress-category chip shown in the top-left corner of Side 2 when the setting
-// is enabled. Absolutely positioned within the card face (matching MiniVocabCard's
-// top-left badge). Tinted with the shared category color. Renders only when a
-// category is present on the entry.
-export const CategoryChip: React.FC<{ category?: string }> = ({ category }) => {
-    if (!category) return null;
-    const color = getCategoryColor(category);
-    return (
-        <Box
-            className="mobile-demo-flashcard-category-chip"
-            sx={{
-                position: 'absolute',
-                top: 12,
-                left: 12,
-                zIndex: 2,
-                display: 'inline-flex',
-                alignItems: 'center',
-                px: 1.25,
-                py: 0.25,
-                borderRadius: '999px',
-                backgroundColor: color,
-                // The category colors are PASTELS post-redesign (docs/SHELF_REDESIGN.md,
-                // D2). The chip sits on the card's beige face, so it needs the ramp's
-                // inset ring to hold an edge, and ink rather than white for its label.
-                boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}`,
-            }}
-        >
-            <Typography sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: COLORS.onSurface, fontFamily: FC_FONT, lineHeight: LEADING.normal, letterSpacing: TRACKING.wide }}>
-                {category}
-            </Typography>
         </Box>
     );
 };
@@ -355,26 +317,30 @@ export const CardFaceSide: React.FC<{
     // the rotated-away face from hit-testing, so it would otherwise capture the
     // canvas's pointer events.
     inert?: boolean;
-    // Optional absolutely-positioned element (e.g. the category chip) rendered as
-    // a direct child of the face box so it can sit in a corner, outside the
-    // centered content column.
-    cornerBadge?: React.ReactNode;
     // A control anchored to the face's TOP EDGE, over everything else on it — the flp's
     // card-operations rail (`CardOpsRail`, artboard 21).
     //
-    // Distinct from `cornerBadge`, which is a passive mark INSIDE the padded content box
-    // and is already taken by the category chip. This one is interactive, has to paint
-    // over the icon layer and the text blocks, and positions itself against the face's
-    // own edge — so it renders in the OUTER face box, after the content, at the top of
-    // the stacking order. Absent everywhere but the flp.
+    // It is interactive, has to paint over the icon layer and the text blocks, and
+    // positions itself against the face's own edge — so it renders in the OUTER face
+    // box, after the content, at the top of the stacking order. Absent everywhere but
+    // the flp. (It used to be contrasted here with a passive `cornerBadge` slot, whose
+    // only user was the progress-category chip; both were removed on 2026-08-28 when
+    // the mastery category came off the card back.)
     topRail?: React.ReactNode;
+    // A strip anchored to the face's BOTTOM EDGE — the learner's own note on this card
+    // (`CardNote`, vet.note, migration 155). Like `topRail` it renders in the OUTER face
+    // box so it paints over the icon layer and the text blocks, and like `topRail` it is
+    // passed as a node so this shared face stays ignorant of what a note is (and of who is
+    // allowed to edit one). Answer face only — see CardNote's doc comment. Renders nothing
+    // when the card has no note and no edit is open. See docs/CARD_NOTES.md.
+    bottomNote?: React.ReactNode;
     // Per-card background fill (vet.cardColor, migration 94). Painted only when this face is
     // rendering the advanced layout (`isUsingAdvancedLayout`); otherwise the theme default is
     // used. When it applies it overrides the theme's default face color; null/undefined =
     // follow the theme. Only a vetted palette hex reaches here (resolveCardColor). See
     // docs/CARD_ICON_LAYOUT.md.
     cardColor?: string | null;
-}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, cornerBadge, topRail, cardColor }) => {
+}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, topRail, bottomNote, cardColor }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     // Per-card background fill is a decoration that belongs to the ADVANCED layout: it paints
@@ -448,7 +414,6 @@ export const CardFaceSide: React.FC<{
                 justifyContent: CARD_FACE_JUSTIFY,
                 ...(editing && { pointerEvents: "none" }),
             }}>
-                {cornerBadge}
                 {/* Icon layer sits BEHIND the content (cpcd / English / buttons) so the
                     card info always reads on top — for a saved arrangement. (While editing the
                     live canvas in the outer box replaces this static layer; the content below
@@ -557,6 +522,12 @@ export const CardFaceSide: React.FC<{
                 the OUTER box, not the inner one, so `overflow: visible` lets an open rail
                 extend to the card's own corner radius rather than being clipped by it. */}
             {topRail}
+            {/* Bottom-edge note strip. In the OUTER box for the same reasons the rail is:
+                it must paint over the inner clip box (icon layer + text blocks), and while
+                it is being edited its own controls sit at the card's very edge. Rendered
+                AFTER the rail so an open note editor stacks above an open rail — the two
+                overlap only in the pathological case of a very tall note on a short card. */}
+            {bottomNote}
         </Box>
     );
 };

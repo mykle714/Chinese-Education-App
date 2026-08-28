@@ -107,8 +107,8 @@ const BubbleMatchPage: React.FC = () => {
     const fc = theme.palette.flashcard;
     const { user } = useAuth();
     const tts = useTTS();
-    const { settings, update } = useFlashcardLearnSettings();
-    const { showPinyin, showPinyinColor, autoplayChinese } = settings;
+    const { settings } = useFlashcardLearnSettings();
+    const { showPinyin, showPinyinColor } = settings;
 
     // THE RUN'S MASTERY TRACK, LOCKED WHEN THE BOARD IS DEALT (docs/MASTERY_REWORK.md
     // § 1a). Pinyin shown ⇒ this is a recognition drill; pinyin hidden on a zh board ⇒
@@ -595,12 +595,7 @@ const BubbleMatchPage: React.FC = () => {
                     // `runTrack`). Autoplay is offered only on a recognition run —
                     // narrating the word on a READING run would hand the player the
                     // pronunciation the run is asking them to read.
-                    autoplayChinese={runTrack === "recognition" ? autoplayChinese : undefined}
-                    onToggleAutoplayChinese={
-                        runTrack === "recognition"
-                            ? () => update({ autoplayChinese: !autoplayChinese })
-                            : undefined
-                    }
+                    showAudioChip={runTrack === "recognition"}
                     // Restart is only meaningful mid-run; the won/lost popup owns
                     // replay otherwise. Restarts the live level on the same words.
                     //
@@ -649,8 +644,8 @@ const BubbleMatchPage: React.FC = () => {
                                 // the meaning from the characters, and narration would
                                 // supply the reading being tested.
                                 onSpeak={
-                                    boardShowPinyin && autoplayChinese && tts.enabled
-                                        ? tts.speak
+                                    boardShowPinyin && tts.autoplay
+                                        ? tts.autoSpeak
                                         : undefined
                                 }
                                 onLevelWin={onLevelWin}

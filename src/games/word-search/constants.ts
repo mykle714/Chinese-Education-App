@@ -2,18 +2,19 @@ import { COLORS, type RampHue } from "../../theme/colors";
 import type { CPCDSize } from "../../components/ForeignText";
 import type { MarkType } from "../../types";
 import type { Medal } from "./types";
-// Word Search's own mix: 2 Unfamiliar + 6 Target + 3 Comfortable + 1 Mastered = 12.
-// Was HALF of Bubble Match's 2/10/6/2 mix (1/5/3/1 = 10) until this board grew to
-// 12 words; the extra 2 went to Unfamiliar and Target rather than a clean re-scale,
-// so this is now a literal distribution rather than derived from bubble-match's.
+// Word Search's own mix: 1 Unfamiliar + 5 Target + 2 Comfortable + 1 Mastered = 9.
+// The board went 12 words → 9 on 2026-08-28 (and 9×6 → 7×6 with it), which put the
+// mix back on the "HALF of Bubble Match's 2/10/6/2" shape it started from (1/5/3/1
+// = 10); the one extra word came off Comfortable rather than Target, so the board
+// still leans on the band the player is actively learning.
 export const GAME_DISTRIBUTION: Record<string, number> = {
-    Unfamiliar: 2,
-    Target: 6,
-    Comfortable: 3,
+    Unfamiliar: 1,
+    Target: 5,
+    Comfortable: 2,
     Mastered: 1,
 };
 
-/** Total target words in a board (sum of the distribution) = 12. */
+/** Total target words in a board (sum of the distribution) = 9. */
 export const TOTAL_WORDS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
 
 /** This game's key in the shared `wins` table (see useGameWins / migration 78).
@@ -164,9 +165,9 @@ export const HINT_REMAINDER_MARK = "—";
 export const HINT_LETTER_BLANK = "_";
 
 /**
- * cpcd size for each grid cell. `sm` (32px column) for now; 9 rows with pinyin
- * may crowd the height on a ~402px frame — accepted for v1, revisit a compact
- * variant later (see docs/WORD_SEARCH_GAME.md §3).
+ * cpcd size for each grid cell. `sm` (32px column). The board is 7 rows tall
+ * (down from 9 on 2026-08-28), so the pinyin row no longer crowds the height on
+ * a ~402px frame (see docs/WORD_SEARCH_GAME.md §3).
  */
 export const CELL_SIZE: CPCDSize = "sm";
 

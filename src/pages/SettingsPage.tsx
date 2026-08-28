@@ -10,9 +10,33 @@ import { LANGUAGE_FLAGS, LANGUAGE_NAMES } from '../types';
 import type { Language } from '../types';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useSlideNavigate } from '../hooks/useSlideNavigate';
-import { useTTSSettings } from '../hooks/useTTSSettings';
+import { useTTSSettings, AUDIO_MODE_ORDER, type AudioMode } from '../hooks/useTTSSettings';
+import { useFlashcardLearnSettings } from '../hooks/useFlashcardLearnSettings';
 import { COLORS } from '../theme/colors';
 import { FONTS } from '../theme/fonts';
+
+// The narration control's three states, in the order they appear. Copy is
+// deliberately concrete about the COST of each route rather than naming the
+// mechanism: a learner cannot act on "media element vs Web Audio", but can act on
+// "pauses your music" and "follows the silent switch". See docs/AUDIO_PLAYBACK.md.
+const AUDIO_MODE_COPY: Record<AudioMode, { title: string; subtitle: string }> = {
+    off: {
+        title: 'Off',
+        subtitle: 'Nothing plays on its own. Tap a speaker button to hear a word.',
+    },
+    passthrough: {
+        title: 'Play over everything',
+        subtitle: 'Plays even when your phone is on silent. Pauses music, and adds playback controls to your lock screen.',
+    },
+    media: {
+        title: 'Play alongside media',
+        subtitle: "Mixes with music and video without interrupting them, but stays silent when your phone's silent switch is on.",
+    },
+};
+
+// Order comes from AUDIO_MODE_ORDER, the same constant the header chip cycles
+// through — so the list here and the tap sequence there can never disagree.
+const AUDIO_MODE_OPTIONS = AUDIO_MODE_ORDER.map((value) => ({ value, ...AUDIO_MODE_COPY[value] }));
 
 /**
  * Settings · preferences (`/settings`) — artboard 11 of the shelf redesign
@@ -58,7 +82,10 @@ function SettingsPage() {
     const { user, updateLanguage, updateDisplaySettings } = useAuth();
     const [languageSuccess, setLanguageSuccess] = useState(false);
     const [languageError, setLanguageError] = useState<string | null>(null);
-    const { settings: ttsSettings, update: updateTTSSettings } = useTTSSettings();
+    const { mode: audioMode, setMode: setAudioMode } = useTTSSettings();
+    // Tone coloring lives in the flp learn-settings blob (it is read by every surface
+    // that renders a reading); this page is simply where it is now EDITED.
+    const { settings: learnSettings, update: updateLearnSettings } = useFlashcardLearnSettings();
 
     const activeTheme = availableThemes.find((t) => t.value === themeMode);
 
@@ -254,24 +281,32 @@ function SettingsPage() {
                     ))}
                 </SettingsSection>
 
-                {/* ── Narration (TTS) ────────────────────────────────────────────── */}
+                {/* ── Narration (TTS) ─────────────────────────────────────────────
+                    The app's ONE narration setting. Three states on one axis for the
+                    reader, two fields underneath (autoplay + route) so that turning
+                    audio off and back on restores the route they picked — see
+                    useTTSSettings and docs/AUDIO_PLAYBACK.md. Rendered as OptionRows
+                    (not a Switch) to match the Learning Language section, the app's
+                    other pick-one control. A speaker button always speaks, in every
+                    state, which is why "Off" describes autoplay rather than silence. */}
                 <SettingsSection
                     className="narration-settings-section"
                     icon="volume_up"
                     title="Narration"
+                    description="How the app plays audio on your phone."
                 >
-                    <SwitchRow
-                        className="narration-enable-row"
-                        title="Speak Chinese words aloud"
-                        subtitle="Plays when you flip a card, plus a speaker button on each card."
-                        control={
-                            <Switch
-                                checked={ttsSettings.enabled}
-                                onChange={(e) => updateTTSSettings({ enabled: e.target.checked })}
-                                inputProps={{ 'aria-label': 'Enable narration' }}
-                            />
-                        }
-                    />
+                    {AUDIO_MODE_OPTIONS.map((option) => (
+                        <OptionRow
+                            key={option.value}
+                            className={`narration-mode-option narration-mode-option--${option.value}`}
+                            name="narration-mode"
+                            value={option.value}
+                            checked={audioMode === option.value}
+                            onChange={(value) => setAudioMode(value as AudioMode)}
+                            title={option.title}
+                            subtitle={option.subtitle}
+                        />
+                    ))}
                 </SettingsSection>
 
                 {/* ── Display — Chinese only (see showDisplaySettings) ───────────── */}
@@ -291,6 +326,26 @@ function SettingsPage() {
                                     disabled={displaySaving}
                                     onChange={(e) => handleToggleSegmentSpaces(e.target.checked)}
                                     inputProps={{ 'aria-label': 'Show spaces between words' }}
+                                />
+                            }
+                        />
+                        {/* Tone coloring. Moved here from the flp settings sheet on
+                            2026-08-28 (that sheet was then empty and was deleted): it is
+                            a DISPLAY preference, applying to every reading the app
+                            renders — flp, cdp, eip, the games, example sentences — not a
+                            study control belonging to one page. Unlike the row above it
+                            is still device-local (`flashcard.learn-settings`), not an
+                            account column; it sits beside one because they answer the
+                            same kind of question, not because they share a store. */}
+                        <SwitchRow
+                            className="settings-page__pinyin-color-row"
+                            title="Color pinyin by tone"
+                            subtitle="Tints each syllable by its tone, everywhere pinyin appears."
+                            control={
+                                <Switch
+                                    checked={learnSettings.showPinyinColor}
+                                    onChange={(e) => updateLearnSettings({ showPinyinColor: e.target.checked })}
+                                    inputProps={{ 'aria-label': 'Color pinyin by tone' }}
                                 />
                             }
                         />

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useDeferredValue } from "react";
 import { useAuth } from "../../AuthContext";
 import { useCategoryCounts } from "../../hooks/useCategoryCounts";
 import { useMasteredCounts } from "../../hooks/useMasteredCounts";
@@ -198,9 +198,18 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
     // screen while the user types. Both memos stay referentially stable while their
     // inputs are unchanged, so MiniVocabCardGrid's reveal cascade isn't restarted by
     // an unrelated re-render.
+    //
+    // The search term is DEFERRED before it reaches the filter. The keystroke itself
+    // updates `cardsSearch` at normal priority so the input never lags a character
+    // behind the finger; re-filtering the library and re-rendering the grid ride the
+    // deferred copy, which React is free to interrupt and re-do when the next
+    // keystroke lands. Without it every character committed a full re-filter, a
+    // re-sort and a grid remount before the caret could move — the cost the windowed
+    // grid reduced but did not remove, since the filter still walks the whole library.
+    const deferredSearch = useDeferredValue(cardsSearch);
     const filteredCards = useMemo(
-        () => filterVocabEntries(cards, cardsSearch),
-        [cards, cardsSearch]
+        () => filterVocabEntries(cards, deferredSearch),
+        [cards, deferredSearch]
     );
     const visibleCards = useMemo(
         () => sortVocabEntries(filteredCards, cardsSortKey),

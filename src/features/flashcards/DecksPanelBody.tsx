@@ -65,9 +65,10 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 // As a PAGE body the handle is harmless (nothing reads it) and the scroller behaves
 // identically — both variants scroll on the compositor.
 //
-// Structurally it mirrors SettingsPanelBody (the other non-eip sheet body) —
-// same skeleton, different content. Data is owned by `useDecksPanel`; this file is
-// presentation only.
+// It is now the ONLY non-eip sheet body: it used to mirror the flp's
+// SettingsPanelBody (same skeleton, different content), which was deleted on
+// 2026-08-28 when the flp ran out of settings. Data is owned by `useDecksPanel`;
+// this file is presentation only.
 //
 // Docs: docs/DECKS_FEATURE.md, docs/MOBILE_TAB_SCREEN_LAYOUT.md.
 
@@ -122,7 +123,7 @@ const SectionLabel = styled(Typography)(() => ({
 //
 // It is a VIEW preference rather than account data, so it stays on the device
 // (localStorage) instead of costing a column and a round trip — the same choice
-// useTTSSettings / useDiscoverSettings make. Reads are guarded because a private
+// useTTSSettings makes. Reads are guarded because a private
 // browsing context can throw on access, and a lost preference must never take the
 // section down with it: the fallback is "expanded", the state the section has when
 // nothing is known about the user.

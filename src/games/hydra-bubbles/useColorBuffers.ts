@@ -130,7 +130,7 @@ export function useColorBuffers(
     /**
      * THE CHALLENGE QUEUE (docs/HYDRA_BUBBLES.md § 7.5, docs/STUDY_CHALLENGE.md § 5).
      *
-     * A challenge round's twelve contested words are served from HERE, ahead of the
+     * A challenge round's contested words are served from HERE, ahead of the
      * bloom buffer's own stock, and only ever into a BLOOM slot: their payout is
      * bloom's (3) whatever the learner's real mastery of them, which is the same
      * colour/mastery disjunction § 5 already allows for a lent card.

@@ -2,7 +2,7 @@ import { Box } from "@mui/material";
 import { COLORS } from "../theme/colors";
 
 interface FrequencyScoreDotsProps {
-  /** The word's frequencyScore, 1 (almost never spoken) … 5 (constant in daily speech). */
+  /** The word's frequencyScore, 1 (would stop the conversation) … 5 (everyday). */
   score: number;
   /** Dot diameter in px (default 8, matching the eip frequency meter). */
   dotSize?: number;
@@ -17,7 +17,7 @@ interface FrequencyScoreDotsProps {
 
 /**
  * Five-dot meter for a word's `frequencyScore` — how often it comes up in everyday
- * conversation (1 = almost never spoken … 5 = constant in daily speech): `score` dots
+ * conversation (1 = would stop the conversation … 5 = everyday): `score` dots
  * filled, the rest hollow. Shared by the eip frequency row (InfoCardPanelBody) and the
  * discover sort-card mini badge (SortCardsPage) so the two stay visually identical —
  * presentation layer, colors passed in by the caller so it adapts to the flashcard

@@ -9,8 +9,10 @@ optional tab strip). It hosts a *body* that exposes `{root, scroll}` through a
 `scroll` is the element whose `scrollTop` decides resize-vs-scroll, and which the
 browser pans natively in `scroll` mode (so it needs `touch-action: pan-y` +
 `overscroll-behavior: contain` — see "Gesture mode lock"). Current bodies:
-`InfoCardPanelBody` (eip), `CompareWorkspace` (compare tab), `SettingsPanelBody`,
-`DecksPanelBody` (the /decks sets sheet — see **Persistent mode** below).
+`InfoCardPanelBody` (eip), `CompareWorkspace` (compare tab) and `DecksPanelBody`
+(the /decks sets sheet — see **Persistent mode** below). A fourth,
+`SettingsPanelBody` (the flp settings sheet), was deleted on 2026-08-28 when the
+last of its rows moved out — see [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md).
 
 **Mount sites.** Despite living under `FlashcardsLearnPage/`, the eip sheet is no longer
 flp-private: the sort cards page (scp) mounts the same `InfoCardSection` + `EipTabStrip`
@@ -149,6 +151,16 @@ is never lost to a scroll the browser already started.
 > — it stuttered badly. The tell was that the *identical* card grid on
 > `CollectionViewPage` scrolled fine, because that page has always scrolled
 > natively. Handing `scroll` back to the compositor closed the gap.
+
+> **The eip's own panes were missed by that change (fixed 2026-08-28).**
+> `InfoCardSection` kept passing `scrollTouchAction="none"` down to
+> `InfoCardPanelBody`'s three tab panes, so in the eip `scroll` mode did nothing at
+> all: `SheetPanel` correctly stopped writing `scrollTop`, and the browser refused
+> to pan a `touch-action: none` element. The symptom was that a drag grew the sheet
+> normally but the content stayed frozen once the sheet hit max height — visible
+> only on the est tab, the one pane whose content routinely overflows. The panes now
+> pass `pan-y`, which also leaves the tab-swipe free to `preventDefault` horizontal
+> moves (the browser never owns those under `pan-y`).
 
 ---
 
@@ -351,7 +363,7 @@ Now:
   `eipPillIn` entrance keyframes
 - `src/features/flashcards/constants.ts` — `TAB_SWIPE_*` gesture constants
   (axis lock, commit ratio, transition, edge rubber-band)
-- `src/components/CompareWorkspace.tsx`, `SettingsPanelBody.tsx` — other sheet bodies
+- `src/components/CompareWorkspace.tsx` — the other sheet body
 - `src/features/flashcards/DecksPanelBody.tsx` + `FlashcardsDecksPage.tsx` — a second
   MODAL host (`sheetOpen`, `.flashcards-decks__sets-pill`). It was persistent mode's only
   caller until 2026-08-24; that mode now has no callers

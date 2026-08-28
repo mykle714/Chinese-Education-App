@@ -1,6 +1,6 @@
 import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
-import { IVocabEntryDAL } from '../interfaces/IVocabEntryDAL.js';
+import { IVocabEntryDAL, VetMarkState, MasteredAtWrite } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory, DefinitionCluster } from '../../types/index.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../../utils/definitions.js';
@@ -230,6 +230,35 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     return result.recordset[0] ?? null;
   }
 
+  // Persist (or clear) the learner's own note for one vet row (migration 155). The note
+  // arrives already trimmed and capped by the service (a blank note is normalized to null
+  // there, not here — the DAL does not decide what "empty" means). Ownership enforced in
+  // the WHERE (id + userId), routed to the language's physical vet table.
+  // See docs/CARD_NOTES.md.
+  async updateNote(
+    userId: string,
+    id: string | number,
+    language: string,
+    note: string | null
+  ): Promise<VocabEntry | null> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (!id) throw new ValidationError('id is required');
+    if (!language) throw new ValidationError('language is required');
+
+    const table = vetTableForLanguage(language);
+    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
+      return await client.query(
+        `UPDATE ${table}
+            SET "note" = $1::text
+          WHERE id = $2 AND "userId" = $3
+          RETURNING *`,
+        [note, id, userId]
+      );
+    });
+
+    return result.recordset[0] ?? null;
+  }
+
   // Look up a single vet row by id, scoped to a language so it routes to that
   // language's physical table (vet is split per language — migration 66). Callers
   // resolve the language from the request / the user's active language.
@@ -250,6 +279,110 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       `, [id]);
     });
     return result.recordset[0] || null;
+  }
+
+  // ── Mark state: read-lock-write for the review endpoints ──────────────────
+  // These two are the only vet methods that take the caller's PoolClient, because
+  // the mark and undo paths are transactions owned by FlashcardMarkService
+  // (docs/BACKEND_LAYERING.md § 3 — the connection moves up a layer, the SQL does not).
+
+  async findMarkState(
+    userId: string,
+    cardId: number,
+    opts: { client?: PoolClient; forUpdate?: boolean } = {}
+  ): Promise<VetMarkState | null> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (typeof cardId !== 'number') {
+      throw new ValidationError('cardId must be a number');
+    }
+    // A row lock outside a transaction is released immediately and protects nothing,
+    // so refuse the combination rather than silently returning an unlocked row.
+    if (opts.forUpdate && !opts.client) {
+      throw new ValidationError('findMarkState: forUpdate requires a transaction client');
+    }
+
+    // Probe both physical tables — ids are globally unique across the pair (shared
+    // sequence), so at most one returns a row and the first hit wins. Table names come
+    // from the VET_PHYSICAL_TABLES whitelist, never from caller input.
+    const lock = opts.forUpdate ? ' FOR UPDATE' : '';
+    const runProbe = async (client: PoolClient): Promise<VetMarkState | null> => {
+      for (const table of VET_PHYSICAL_TABLES) {
+        const result = await client.query(
+          `SELECT "language", "typedMarkHistory", "masteredAt"
+             FROM ${table}
+            WHERE id = $1 AND "userId" = $2${lock}`,
+          [cardId, userId]
+        );
+        if (result.rows.length > 0) {
+          const row = result.rows[0];
+          return {
+            // Fall back to the table the row came from: `language` is NOT NULL in
+            // practice, but the write below picks a table from this value and must
+            // never be handed undefined.
+            language: row.language || (table === 'vocabentries_es' ? 'es' : 'zh'),
+            typedMarkHistory: row.typedMarkHistory || {},
+            masteredAt: row.masteredAt ?? null,
+          };
+        }
+      }
+      return null;
+    };
+
+    if (opts.client) return runProbe(opts.client);
+    const result = await this.dbManager.executeQuery<VetMarkState>(async (client) => {
+      const state = await runProbe(client);
+      // executeQuery expects a pg QueryResult shape; wrap the single row.
+      return { rows: state ? [state] : [], rowCount: state ? 1 : 0 } as any;
+    });
+    return result.recordset[0] || null;
+  }
+
+  async updateMarkHistory(
+    userId: string,
+    cardId: number,
+    language: string,
+    history: TypedMarkHistory,
+    masteredAt?: MasteredAtWrite | null,
+    client?: PoolClient
+  ): Promise<boolean> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    if (!language) {
+      throw new ValidationError('Language is required');
+    }
+
+    // Three shapes of write, all one statement:
+    //   no descriptor  → history only (the overwhelming majority of marks)
+    //   stamp: string  → jsonb_set with create_if_missing, so the OTHER bars' crossings
+    //                    are merged rather than replaced, and COALESCE seeds a null column
+    //   stamp: null    → drop just this bar's key (undo retracting its own crossing)
+    // `bar` is a MasteryBarId union value, never client input, but it still travels as a
+    // bound parameter rather than being spliced into the SQL.
+    const params: any[] = [JSON.stringify(history), cardId, userId];
+    let masteredAtSet = '';
+    if (masteredAt && masteredAt.stamp !== null) {
+      masteredAtSet = `, "masteredAt" = jsonb_set(COALESCE("masteredAt", '{}'::jsonb), $4::text[], to_jsonb($5::text), true)`;
+      params.push(`{${masteredAt.bar}}`, masteredAt.stamp);
+    } else if (masteredAt) {
+      masteredAtSet = `, "masteredAt" = "masteredAt" - $4::text`;
+      params.push(masteredAt.bar);
+    }
+
+    const sql = `
+      UPDATE ${vetTableForLanguage(language)}
+         SET "typedMarkHistory" = $1${masteredAtSet}
+       WHERE id = $2 AND "userId" = $3
+    `;
+
+    if (client) {
+      const result = await client.query(sql, params);
+      return (result.rowCount || 0) > 0;
+    }
+    const result = await this.dbManager.executeQuery(async (c) => c.query(sql, params));
+    return result.rowsAffected > 0;
   }
 
   /**
@@ -789,9 +922,12 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
    *     "frequencyScore". These carry a real `vocabEntryId`.
    *   - Pass 2 rows (`is_user = 0`): global det words containing the char that are NOT
    *     already in the user's vet (deduped via NOT EXISTS). `vocabEntryId` is null.
-   * Only words with frequencyScore 3–5 are surfaced (common enough to be useful);
-   * this filter also excludes null-score rows, including in-library words whose det
-   * row has no score. ORDER BY is_user DESC, "frequencyScore" DESC NULLS LAST,
+   * Only words with frequencyScore 3–5 are surfaced; this filter also excludes
+   * null-score rows, including in-library words whose det row has no score.
+   * Since the 2026-08-28 axis change the floor of 3 reads as "you would not be
+   * surprised to hear this in casual conversation" (it used to mean "moderately
+   * common"), which is a better gate for Quick Mark but admits more words. See
+   * docs/DEFINITION_MAPPING.md § frequencyScore. ORDER BY is_user DESC, "frequencyScore" DESC NULLS LAST,
    * char_length ASC, "entryKey" ASC — the user's saved (in-library) words come
    * first, then by commonality, then shortest-word-first, with entryKey as a final
    * deterministic tiebreak so pagination windows never overlap or skip.
@@ -883,8 +1019,9 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
               AND ${vetSortedClause()}
           )
       ) m
-      -- Only surface reasonably common words (frequencyScore 3–5); this also drops
-      -- null-score rows, so an in-library word with no det score is filtered out too.
+      -- Only surface words a learner would not be surprised to hear (frequencyScore
+      -- 3–5 on the post-2026-08-28 axis); this also drops null-score rows, so an
+      -- in-library word with no det score is filtered out too.
       WHERE m."frequencyScore" BETWEEN 3 AND 5
       ORDER BY m.is_user DESC, m."frequencyScore" DESC NULLS LAST, char_length(m."entryKey") ASC, m."entryKey" ASC
       LIMIT $4 OFFSET $5

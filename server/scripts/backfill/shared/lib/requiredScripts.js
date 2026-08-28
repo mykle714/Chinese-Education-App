@@ -26,6 +26,12 @@
  *     answered locally by an oracle run, and a missing `iconId` degrades gracefully
  *     everywhere it is read. Opt in with `--with-icons` on oracle-plan.js /
  *     promote-discoverable.js.
+ *   - driftProbe (optional): names a CROSS-ROW staleness check in DRIFT_PROBES. The
+ *     other two axes (`when`, `version`) are per-row and compile into
+ *     buildIncompletePredicate; a drift probe cannot, because "is this row stale?"
+ *     depends on OTHER rows. It is therefore a separate set-returning query the caller
+ *     runs ONCE per round, whose ids are then OR-ed into the candidate scope and fed
+ *     to pendingSteps/isComplete as `driftedStepIds`. Today: breakdownSenseOrphan.
  *   - validationFields (optional): the `validations.field`(s) this script writes.
  *     If a validator has approved/flagged one, the script self-skips it via
  *     `validatedClause`, so the worker must NOT run the step on that row and must
@@ -38,7 +44,9 @@
  *     (These mirror the scripts' own validatedClause calls — see each script.)
  *
  * "Not done" is VERSION-aware everywhere (buildIncompletePredicate / isComplete /
- * pendingSteps all agree): an applicable, non-approved step is pending when it is
+ * pendingSteps all agree), and additionally DRIFT-aware wherever the caller supplies
+ * `driftedStepIds` (pendingSteps/isComplete's 4th argument — see driftProbesFor).
+ * A caller that omits it keeps exactly the old two-axis behavior: an applicable, non-approved step is pending when it is
  * MISSING a stamp OR stamped BELOW its manifest `version`. A version bump therefore
  * re-triggers ONLY that one script (never "stale everything"), and it re-triggers even
  * an already-shipped word — the worker's candidate query drops the `discoverable=FALSE`
@@ -82,10 +90,10 @@ export const REQUIRED_SCRIPTS_ZH = [
   { id: 'backfill-icons',                             when: 'always',    version: 1, deterministic: true, optional: true },
   { id: 'chinese/backfill-word-forms',                when: 'always',    version: 3 },
   { id: 'chinese/backfill-hsk-level',                 when: 'always',    version: 2, validationFields: ['difficulty'] },
-  { id: 'chinese/backfill-frequency-score',           when: 'always',    version: 2, validationFields: ['frequencyScore'] },
+  { id: 'chinese/backfill-frequency-score',           when: 'always',    version: 4, validationFields: ['frequencyScore'] },
   // Writes `definitionClusters`, whose per-cluster frequencyScore is reviewable as
   // 'senseFrequencyScore' (migration 139) — mirrors the script's own validatedClause.
-  { id: 'chinese/backfill-cluster-definitions',       when: 'always',    version: 6, validationFields: ['senseFrequencyScore'] },
+  { id: 'chinese/backfill-cluster-definitions',       when: 'always',    version: 8, validationFields: ['senseFrequencyScore'] },
   // Long-definitions writes ONE definition per (SENSE, POS) PAIR, taking its senses (and the
   // `sense` labels it keys on) plus each sense's POS list from `definitionClusters` — so it
   // MUST follow clustering, and skips any row that isn't clustered yet. docs/DEFINITION_CLUSTERS.md.
@@ -94,7 +102,7 @@ export const REQUIRED_SCRIPTS_ZH = [
   // that step's output and must follow it. Re-running long-definitions for a word invalidates
   // this column for that word. docs/DEFINITION_MAPPING.md #5b.
   { id: 'chinese/backfill-longdef-citations',         when: 'always',    version: 2, validationFields: ['definitions'] },
-  { id: 'chinese/backfill-example-sentences',         when: 'always',    version: 6, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
+  { id: 'chinese/backfill-example-sentences',         when: 'always',    version: 7, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
   { id: 'chinese/backfill-classifier',                when: 'nounPos',   version: 2 },
   // ── the breakdown chain (multi-char rows only) ──────────────────────────────
   // Placed LAST, after everything that can still rewrite `definitions`: the sense-tagger
@@ -103,12 +111,22 @@ export const REQUIRED_SCRIPTS_ZH = [
   // later step then changes. They also have no consumer downstream in the pipeline, so
   // nothing else waits on them.
   //
-  // ⚠️ CROSS-ROW DEPENDENCY the manifest cannot express: backfill-breakdown-senses reads
-  // `definitionClusters` off the COMPONENT CHARACTERS' OWN det rows, not off this row.
-  // Manifest ordering only sequences steps WITHIN one row, so a late slot does not
-  // guarantee the components are clustered. An un-clustered component is carried through
-  // unchanged (no `sense`) and healed on a later re-run — see the script header.
-  { id: 'chinese/backfill-breakdown-senses',          when: 'multiChar', version: 1 },
+  // ⚠️ CROSS-ROW DEPENDENCY: backfill-breakdown-senses reads `definitionClusters` off
+  // the COMPONENT CHARACTERS' OWN det rows, not off this row. Manifest ORDERING only
+  // sequences steps WITHIN one row, so a late slot does not guarantee the components
+  // are clustered. An un-clustered component is carried through unchanged (no `sense`)
+  // and healed on a later re-run — see the script header.
+  //
+  // The other half of that dependency is DRIFT, which no per-row signal can see: the
+  // step stores a cluster's `sense` LABEL as a stable pointer, and a later re-clustering
+  // of the COMPONENT can rename or drop that label, orphaning the pointer. The row's own
+  // stamp still reads current, and the script's default gate ("breakdown text contains
+  // 'sense' ⇒ done") excludes it forever short of a full --force re-tag. A 2026-08-28
+  // audit found 1143 of 8724 stored senses (13%) orphaned this way, concentrated on the
+  // COMMONEST characters (大, 水, 有, 手 …) — i.e. a bulk relabel, not a long tail.
+  // `driftProbe` is the third staleness axis that catches it; see DRIFT_PROBES below.
+  { id: 'chinese/backfill-breakdown-senses',          when: 'multiChar', version: 1,
+    driftProbe: 'breakdownSenseOrphan' },
   // Judges the sense-tagged glosses, so it MUST follow the tagger. Writes NULL for the
   // majority ("breakdown is straightforward") and stamps every row it decides, so its
   // done-state lives in this stamp — never in `breakdownElaboration IS NULL`.
@@ -156,9 +174,9 @@ export const REQUIRED_SCRIPTS_ES = [
   { id: 'backfill-icons',                               when: 'always',         version: 1, deterministic: true, optional: true },
   // Writes BOTH `frequencyScore` and `difficulty` in one pass, so a review of either
   // chip protects the row — mirrors the script's own validatedClause.
-  { id: 'spanish/backfill-frequency-score',             when: 'always',         version: 4, validationFields: ['frequencyScore', 'difficulty'] },
+  { id: 'spanish/backfill-frequency-score',             when: 'always',         version: 5, validationFields: ['frequencyScore', 'difficulty'] },
   // Guards on 'definitions' too (re-clustering re-presents them) — mirrors the script.
-  { id: 'spanish/backfill-cluster-definitions',         when: 'always',         version: 1, validationFields: ['definitions', 'senseFrequencyScore'] },
+  { id: 'spanish/backfill-cluster-definitions',         when: 'always',         version: 2, validationFields: ['definitions', 'senseFrequencyScore'] },
   { id: 'spanish/backfill-long-definitions',            when: 'always',         version: 2, validationFields: ['definitions'] },
   { id: 'spanish/backfill-example-sentences',           when: 'always',         version: 1, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
 ];
@@ -208,6 +226,75 @@ export function detTableForLanguage(language) {
 export const VALIDATION_FIELDS = [...new Set(
   [...REQUIRED_SCRIPTS_ZH, ...REQUIRED_SCRIPTS_ES].flatMap((s) => s.validationFields || [])
 )];
+
+// ── cross-row drift probes (the THIRD staleness axis) ──────────────────────────
+//
+// `when` and `version` are per-row and compile into buildIncompletePredicate. A drift
+// probe cannot: whether a row is stale depends on OTHER rows' data, so it is a
+// set-returning query the caller runs ONCE per round and OR-s into its candidate scope.
+//
+// Each probe is `{ step, describe, sql(detTable) }`, where `sql` returns
+// `(id int, word1 text)` — every det row whose stored output for `step` has been
+// invalidated by a change elsewhere. Keep them SET-BASED: the obvious correlated
+// `NOT EXISTS` form of breakdownSenseOrphan takes >120s on the zh corpus, while the
+// hash-joined form below runs in ~30ms over the same 114k rows.
+
+/** @type {Record<string, {step: string, describe: string, sql: (detTable: string) => string}>} */
+export const DRIFT_PROBES = {
+  /**
+   * Orphaned breakdown sense pointers.
+   *
+   * backfill-breakdown-senses stores, per component character, the LABEL of the
+   * `definitionClusters` entry that character carries inside this word — a label
+   * rather than an index precisely so it survives re-clustering (the same stability
+   * contract as vet.selectedSense, migration 99). But a re-clustering run may RENAME
+   * or DROP the label, and then the pointer resolves to nothing: the stored
+   * `definition` freezes at whatever the cluster said when it was tagged, the choice
+   * can no longer be audited or refreshed, and nothing in the per-row signals notices.
+   *
+   * Example (2026-08-28): 下手's 手 stores sense "personally / by hand", which matches
+   * no current 手 cluster — the nearest is "personally / first-hand" — and the gloss it
+   * froze ("personal") is the wrong sense for 下手 in the first place.
+   *
+   * zh-only: es breakdowns do not exist (no `breakdown` column on dictionaryentries_es).
+   */
+  breakdownSenseOrphan: {
+    step: 'chinese/backfill-breakdown-senses',
+    describe: 'breakdown sense label no longer matches any cluster on the component character',
+    sql: (detTable) => `
+      WITH valid AS (
+        SELECT c.word1 AS ch, cl->>'sense' AS sense
+          FROM ${detTable} c,
+               jsonb_array_elements(COALESCE(c."definitionClusters", '[]'::jsonb)) cl
+         WHERE char_length(c.word1) = 1
+      ), tagged AS (
+        SELECT d.id, d.word1, kv.key AS ch, kv.value->>'sense' AS sense
+          FROM ${detTable} d,
+               jsonb_each(d.breakdown) kv
+         WHERE d.breakdown IS NOT NULL
+           AND jsonb_typeof(d.breakdown) = 'object'
+           AND kv.value->>'sense' IS NOT NULL
+      )
+      SELECT DISTINCT t.id, t.word1
+        FROM tagged t
+        LEFT JOIN valid v ON v.ch = t.ch AND v.sense = t.sense
+       WHERE v.ch IS NULL`,
+  },
+};
+
+/**
+ * The drift probes declared by `steps`, as `[probeName, probe]` pairs. Empty for a
+ * manifest whose steps declare none (today: all of es).
+ */
+export function driftProbesFor(steps = DEFAULT_SCRIPTS_ZH) {
+  return steps
+    .filter((step) => step.driftProbe)
+    .map((step) => [step.driftProbe, DRIFT_PROBES[step.driftProbe]])
+    .filter(([name, probe]) => {
+      if (!probe) throw new Error(`requiredScripts: unknown driftProbe "${name}"`);
+      return true;
+    });
+}
 
 // ── applicability ─────────────────────────────────────────────────────────────
 
@@ -295,12 +382,18 @@ function stampInfo(row, id) {
  *   MINUS its opt-in `optional` steps; pass `scriptsForLanguage(lang, opts)`, or any
  *   subset, to narrow — or to widen, via `{includeOptional: true}`)
  */
-export function pendingSteps(row, approvedFields = new Set(), steps = DEFAULT_SCRIPTS_ZH) {
+export function pendingSteps(row, approvedFields = new Set(), steps = DEFAULT_SCRIPTS_ZH,
+                             driftedStepIds = new Set()) {
   return steps.filter((step) => {
     if (!appliesTo(step, row)) return false;
+    // Approval still wins over drift: a validator-reviewed field is authoritative even
+    // when the data it was derived from moved (mirrors validatedClause in the scripts).
     if (isProtected(step, approvedFields)) return false;
     const { present, version } = stampInfo(row, step.id);
-    return !present || version < step.version;
+    if (!present || version < step.version) return true;
+    // Third axis: stamped and current, but a DRIFT PROBE says another row invalidated
+    // this step's output. See DRIFT_PROBES.
+    return driftedStepIds.has(step.id);
   });
 }
 
@@ -312,12 +405,16 @@ export function pendingSteps(row, approvedFields = new Set(), steps = DEFAULT_SC
  * — there is no stuck state. `steps` defaults to the zh manifest without its opt-in
  * steps, so an `optional` step never keeps a row from promoting.
  */
-export function isComplete(row, approvedFields = new Set(), steps = DEFAULT_SCRIPTS_ZH) {
+export function isComplete(row, approvedFields = new Set(), steps = DEFAULT_SCRIPTS_ZH,
+                           driftedStepIds = new Set()) {
   return steps.every((step) => {
     if (!appliesTo(step, row)) return true;
     if (isProtected(step, approvedFields)) return true;
     const { present, version } = stampInfo(row, step.id);
-    return present && version >= step.version;
+    if (!(present && version >= step.version)) return false;
+    // A drifted step is NOT complete — otherwise a row whose breakdown pointers have
+    // been orphaned would promote (or stay promoted) carrying an unauditable sense.
+    return !driftedStepIds.has(step.id);
   });
 }
 

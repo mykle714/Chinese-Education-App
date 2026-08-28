@@ -42,6 +42,18 @@ const FULL_BLEED_LIST_SX = FULL_BLEED_LIST_SX_ARRAY[0];
 // the Dictionary space. It is still seeded into useDictionarySearch below and
 // kept in sync by the effects further down.
 
+// The dictionary search accepts several shapes of query (see DictionaryDAL ->
+// searchByWord1): the headword itself, pinyin — tone-marked, plain, or numbered, spaced or
+// spaceless (zh only) — and English definition text. Nothing else on the page says so, so the
+// empty-state placeholder spells the formats out with one word written each accepted way; the
+// numbered form in particular is otherwise undiscoverable.
+const SEARCH_PLACEHOLDERS: Partial<Record<Language, string>> = {
+    zh: '你好, nǐ hǎo, ni3 hao3',
+    es: 'hola, hello',
+};
+const searchPlaceholderFor = (language: Language): string =>
+    SEARCH_PLACEHOLDERS[language] ?? `Search ${language.toUpperCase()} dictionary...`;
+
 function DictionaryPage() {
     usePageTitle("Dictionary");
     const navigate = useNavigate();
@@ -163,7 +175,7 @@ function DictionaryPage() {
                     <TextField
                         className="dictionary-page__search-input"
                         fullWidth
-                        placeholder={`Search ${userLanguage.toUpperCase()} dictionary...`}
+                        placeholder={searchPlaceholderFor(userLanguage)}
                         value={searchInput}
                         onChange={handleSearchChange}
                         inputRef={searchInputRef}

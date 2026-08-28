@@ -35,8 +35,8 @@ Delete an item when it is done; this file is a queue, not a history.
 ### 1. Tell the learner when a card is resting and earning nothing
 
 *Added 2026-08-18 with Hydra Bubbles; narrowed 2026-08-20 when lending moved to the
-bottom of the fill ladder. Code: `server/routes/flashcardRoutes.ts` (the
-`[MarkSuppressed]` branch), `OnDeckVocabService.getGameVocabPool` /
+bottom of the fill ladder. Code: `server/services/FlashcardMarkService.ts` →
+`applyMark` (the `[MarkSuppressed]` branch), `OnDeckVocabService.getGameVocabPool` /
 `getDistributedWorkingLoop` (the fill tiers). Docs:
 [HYDRA_BUBBLES.md § 8.1](./HYDRA_BUBBLES.md),
 [PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md).*
@@ -231,6 +231,27 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 | **The decision to take** | Three options were costed: (a) port the twelve plates as a contained exception to D2 — a rung is a MATERIAL, and the ramp has fewer hues than the ladder has rungs, so ramp-only forces repeats; (b) ramp-only and accept the repeats; (c) the flattened middle, `linear-gradient` layers kept and every `repeating-*` / `radial-gradient` / `conic-gradient` texture dropped. (c) was built and withdrawn; the port rule is recorded in SHELF_REDESIGN entry 9 so it can be rebuilt exactly |
 | **Trigger** | Any deliberate pass on Arena's look, or the moment someone asks why every division looks the same. Arena is **dev-only** — it is not in front of a prod user, which is part of why this could wait |
 | **References** | `src/features/arena/DivisionBanner.tsx` (the whole change lives here); `src/features/arena/arenaStyles.ts` → `DIVISION_NAMES`; docs/ARENA_FEATURE.md § 7.0; docs/SHELF_REDESIGN.md entry 9 and D2 |
+
+### 16. Starter-pack ordering has no real tie-break under the merged top band
+
+| | |
+|---|---|
+| **What** | Every `frequencyScore` consumer that sorts (`StarterPacksService`, `ProvisionalCardService`, the gsa tie-break in `segmentString.ts`, dictionary search relevance) orders by `de."frequencyScore" DESC NULLS LAST, de.id ASC`. The secondary key is the surrogate id — i.e. arbitrary. It needs a real one: HSK level for zh, `difficulty` for es |
+| **Why deferred** | It was survivable while the top of the scale was spread over two bands. The 2026-08-28 axis change **merged bands 4 and 5**, so the most common words — exactly the ones starter packs are built from — now collapse into a single band ordered by insertion id. The fix is a one-line ORDER BY change per call site, but "which secondary key" is a curation decision that deserves its own look, not a rider on a rubric change |
+| **Cost of leaving it** | A learner's first pack is ordered arbitrarily within the everyday band. Nothing breaks; the ordering is simply not the ordering anyone intended. Roughly 1,015 zh discoverable words sat in the old 4∪5 |
+| **Note (2026-08-28)** | The **per-sense** half of this same problem is now fixed: clusters tied on `frequencyScore` are ranked by a backfill pass before they are stored, so the read-side stable sort inherits a real order (docs/DEFINITION_CLUSTERS.md § Ties). That fix does **not** transfer here — it is a model pass over one word's senses, whereas these are SQL `ORDER BY`s over thousands of rows and need a stored column as the secondary key |
+| **Trigger** | The re-score under the new rubric landing (it makes the flattening real in the data), or any complaint that early packs feel randomly ordered |
+| **References** | `server/services/StarterPacksService.ts` (`ORDER BY` in the pack + recycle queries), `server/services/ProvisionalCardService.ts`, `server/dal/shared/segmentString.ts`, `server/dal/implementations/DictionaryDAL.ts`; docs/DEFINITION_MAPPING.md § `frequencyScore` |
+
+### 17. Study Challenge deadlines don't say which clock they are on
+
+| | |
+|---|---|
+| **What** | Mirror Arena's `ArenaBoundaries.timezone` + `timezoneDiffersFromViewer` (`src/api/arena.ts`) onto `ChallengeDeadlines`, so `challengeLabels.deadlineLabel` can format in — or at least name — the zone the server actually used. Today the server computes each boundary from `users.timezone` and ships an **absolute instant**, which the client formats in the **browser's** zone, and no copy names either |
+| **Why deferred** | The 2026-08-28 root cause was a stale `users.timezone`, and that is now fixed at the source: the column is written at creation, on login/restore, on every ~15-minute token rotation, and on a foregrounded tab whose zone changed ([STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md), "Refresh path"). With the column fresh, the two zones agree and the label is right. Labelling is defence-in-depth against a case that should no longer occur, and it costs a wire-contract change plus copy on three surfaces |
+| **Cost of leaving it** | When the column IS stale, the failure is silent and reads as a broken feature: a Friday 04:00 window rendered as "9 PM Thursday" for a UTC-stored account on a UTC−7 browser, with nothing on screen to hint that a timezone is involved. It took a code read to diagnose |
+| **Trigger** | A second report of a challenge deadline at an unexpected hour, or any new surface that renders a server-computed local boundary as an absolute instant (that is the third instance, and the point at which the two implementations should become one helper) |
+| **References** | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 2 "`users.timezone` must be fresh", `server/services/StudyChallengeService.ts` → `toSummary`, `src/features/studyChallenge/challengeLabels.ts` → `deadlineLabel`, `src/api/arena.ts` → `ArenaBoundaries` |
 
 ## Recently closed
 

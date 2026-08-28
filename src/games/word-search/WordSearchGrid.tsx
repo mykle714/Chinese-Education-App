@@ -14,6 +14,22 @@ import {
     MISS_FLASH_MS,
 } from "./constants";
 import type { BonusWord, Coord, GridCell, PlacedWord } from "./types";
+import { pickDrillRung } from "../../utils/segmentDrill";
+
+/**
+ * An open review of a found word, narrowed to the drill rung the player has tapped
+ * down to. `start`/`end` index into `word.cells` (inclusive) and begin as the whole
+ * word; `text`/`pinyin`/`definition` describe THAT span, so the popup and the audio
+ * always agree with the ring on the board. See docs/SEGMENT_DRILL_DOWN.md.
+ */
+interface WordReview {
+    word: PlacedWord;
+    start: number;
+    end: number;
+    text: string;
+    pinyin: string;
+    definition: string;
+}
 
 /** Imperative handle so the page can clear an in-progress selection (e.g. on a
  *  background tap). */
@@ -62,6 +78,16 @@ interface WordSearchGridProps {
      * the rest of the game, so repeats are instant.
      */
     speak?: (entryKey: string, pinyin: string) => void;
+    /**
+     * Silence any narration that is playing or still being fetched. The audio is
+     * part of the SELECTION, not something fired alongside it: a tap that
+     * deselects (closes a found word's review popup, or dismisses it by tapping
+     * off the word) must take the sound with it, otherwise a play requested by
+     * the previous tap lands a beat later — after the highlight it belonged to is
+     * already gone. Opening a new selection needs no explicit stop: `speak`'s
+     * provider cancels the previous play before starting its own.
+     */
+    silence?: () => void;
 }
 
 const key = (r: number, c: number) => `${r},${c}`;
@@ -186,6 +212,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     onBonusFound,
     onFirstInteraction,
     speak,
+    silence,
 }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const innerRef = useRef<HTMLDivElement>(null);
@@ -231,10 +258,22 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     const draggingRef = useRef(false);
     const interactedRef = useRef(false);
 
-    // A found word whose English gloss popup is currently open (tap a found word
-    // to review its meaning — mirrors the example-sentence segment popup). Anchor
-    // is the viewport rect of the word's topmost row, recomputed on scale change.
-    const [popupWord, setPopupWord] = useState<PlacedWord | null>(null);
+    // The open review of a FOUND word (tap a found word to see its meaning — mirrors
+    // the example-sentence segment popup), narrowed to whichever drill rung the player
+    // has tapped down to. Anchor is the viewport rect of the reviewed span's topmost
+    // row, recomputed on scale change.
+    //
+    // `start`/`end` are indices into `word.cells`, inclusive, and start out covering the
+    // whole word. Each repeat tap inside the reviewed span narrows them to the longest
+    // headword still under the finger, then to the tapped character, then cancels —
+    // see `drillReview` and docs/SEGMENT_DRILL_DOWN.md. Because they are cell-path
+    // indices rather than grid coordinates, a rung stays contiguous however the word
+    // snakes across the board.
+    const [review, setReview] = useState<WordReview | null>(null);
+    // Mirror of `review`, advanced synchronously by the tap handler. The handler must read
+    // the PREVIOUS rung to decide narrow-vs-open, and narration hangs off that decision, so
+    // it cannot be read from inside a setState updater (StrictMode runs updaters twice).
+    const reviewRef = useRef<WordReview | null>(null);
     const [popupAnchorRect, setPopupAnchorRect] = useState<DOMRect | null>(null);
 
     // A single target-word character whose context-correct definition popup is open
@@ -277,7 +316,8 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         }
         setPathBoth([]);
         draggingRef.current = false;
-        setPopupWord(null);
+        reviewRef.current = null; // cleared alongside the state — see reviewRef
+        setReview(null);
         setCharPopup(null);
         setInvalid(null);
     }, [setPathBoth]);
@@ -314,6 +354,20 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         }
         return set;
     }, [hintedWord, found]);
+
+    useEffect(() => {
+        reviewRef.current = review;
+    }, [review]);
+
+    // Cells covered by the CURRENT review rung — the reviewing ring shrinks with the
+    // drill, from the whole found word down to the single tapped tile.
+    const reviewedCells = useMemo(() => {
+        const set = new Set<string>();
+        if (review) {
+            for (const [r, c] of review.word.cells.slice(review.start, review.end + 1)) set.add(key(r, c));
+        }
+        return set;
+    }, [review]);
 
     // DOM refs for each cell, keyed the same as `key()`, so bridge geometry can be
     // measured from actual layout (cell size varies with pinyin/font — see
@@ -413,17 +467,67 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         return new DOMRect(left, top, right - left, bottom - top);
     }, []);
 
-    // Tap a found word to toggle its English gloss popup (tapping the open one, or
-    // any other found word, closes/switches it — same feel as est segment taps).
-    const toggleWordPopup = useCallback((word: PlacedWord) => {
-        setPopupWord((prev) => (prev && prev.entryKey === word.entryKey ? null : word));
-    }, []);
+    // Narrow an open review by one rung, or return null meaning "close it" — the same
+    // drill gesture the example-sentence popups use, over a word's cell path instead of
+    // a sentence's characters. See src/utils/segmentDrill.ts.
+    const drillReview = useCallback(
+        (current: WordReview, tappedIdx: number): WordReview | null => {
+            if (current.end <= current.start) return null; // already a single character
+            const rung = pickDrillRung(current.word.drill, 0, current, tappedIdx);
+            if (rung && rung.end > rung.start) {
+                return {
+                    word: current.word,
+                    start: rung.start,
+                    end: rung.end,
+                    text: rung.text,
+                    pinyin: rung.pronunciation ?? "",
+                    definition: rung.definition,
+                };
+            }
+            // Last rung: the tapped character on its own. Its gloss is taken from the GRID
+            // CELL rather than from the drill list, because the cell carries the sense the
+            // character has IN THIS WORD (resolved at grid build) while a rung only knows
+            // the standalone lead sense. A character with neither ends the chain instead of
+            // opening a blank popup.
+            const [r, c] = current.word.cells[tappedIdx];
+            const cell = grid[r]?.[c];
+            const definition = cell?.definition ?? rung?.definition;
+            if (!cell || !definition) return null;
+            return { word: current.word, start: tappedIdx, end: tappedIdx, text: cell.char, pinyin: cell.pinyin, definition };
+        },
+        [grid]
+    );
 
-    // Keep the popup anchor in sync with the open word and the current fit scale
+    // Tap a found word to open its review popup; tap again INSIDE the reviewed span to
+    // drill one rung narrower (and eventually close it); tap a different found word — or
+    // a part of this one outside the reviewed span — to start a fresh review there.
+    // Returns what should be narrated, so the caller can speak inside the touch gesture.
+    const tapFoundWord = useCallback(
+        (word: PlacedWord, cell: Coord): { text: string; pinyin: string } | null => {
+            const tappedIdx = word.cells.findIndex((wc) => eq(wc, cell));
+            const prev = reviewRef.current;
+            const isDrill =
+                !!prev &&
+                prev.word.entryKey === word.entryKey &&
+                tappedIdx >= prev.start &&
+                tappedIdx <= prev.end;
+            const next = isDrill
+                ? drillReview(prev!, tappedIdx)
+                : { word, start: 0, end: word.cells.length - 1, text: word.entryKey, pinyin: word.pinyin, definition: word.definition };
+            // The ref advances synchronously alongside the state so a fast second tap
+            // drills from THIS tap's rung rather than from the one React has yet to commit.
+            reviewRef.current = next;
+            setReview(next);
+            return next ? { text: next.text, pinyin: next.pinyin } : null;
+        },
+        [drillReview]
+    );
+
+    // Keep the popup anchor in sync with the reviewed span and the current fit scale
     // (a resize re-scales the grid, moving every cell's viewport rect).
     useLayoutEffect(() => {
-        setPopupAnchorRect(popupWord ? anchorRectForCells(popupWord.cells) : null);
-    }, [popupWord, scale, anchorRectForCells]);
+        setPopupAnchorRect(review ? anchorRectForCells(review.word.cells.slice(review.start, review.end + 1)) : null);
+    }, [review, scale, anchorRectForCells]);
 
     // Anchor for the bonus-word miss popup — mirrors the found-word popup above,
     // but keyed off the traced path (`invalid.bonus`) instead of a found word.
@@ -450,8 +554,8 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     // grid's snaking path can visually read in any direction — up/down/backwards —
     // so the on-grid glyphs alone don't reliably show the word in order. (A single
     // character has no reading-order ambiguity, so it passes its own glyph.)
-    const activePopup = popupWord
-        ? { rect: popupAnchorRect, entryKey: popupWord.entryKey, pinyin: popupWord.pinyin, definition: popupWord.definition }
+    const activePopup = review
+        ? { rect: popupAnchorRect, entryKey: review.text, pinyin: review.pinyin, definition: review.definition }
         : charPopup
         ? { rect: charAnchorRect, entryKey: charPopup.char, pinyin: charPopup.pinyin, definition: charPopup.definition }
         : invalid?.bonus
@@ -559,22 +663,29 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
             // that word's English gloss popup and skip the drag entirely.
             const fw = foundWordByCell.get(key(cell[0], cell[1]));
             if (fw) {
-                // Replay the found word's audio on every review tap (cached from
-                // the initial find, so this is instant).
-                speak?.(fw.entryKey, fw.pinyin);
-                toggleWordPopup(fw);
+                // Narrate whatever the tap resolved to — the whole word on the first tap,
+                // then each narrower rung as the player drills. (The word's own audio is
+                // cached from the find, so that case is instant; a rung fetches once.) A
+                // tap that CLOSES the review stays silent.
+                const spoken = tapFoundWord(fw, cell);
+                if (spoken) speak?.(spoken.text, spoken.pinyin);
+                else silence?.(); // the tap that closed the review — kill its audio too
                 return;
             }
             // Any other pointer-down dismisses an open popup and begins a drag; a
-            // release without movement leaves a one-cell path.
-            setPopupWord(null);
+            // release without movement leaves a one-cell path. Dismissing a review by
+            // tapping off the word is a deselect like any other, so it silences the
+            // narration that review requested.
+            if (reviewRef.current) silence?.();
+            reviewRef.current = null;
+            setReview(null);
             setCharPopup(null);
             markInteracted();
             draggingRef.current = true;
             setPathBoth([cell]);
             (e.target as Element).setPointerCapture?.(e.pointerId);
         },
-        [markInteracted, setPathBoth, foundWordByCell, toggleWordPopup, invalid, speak]
+        [markInteracted, setPathBoth, foundWordByCell, tapFoundWord, invalid, speak, silence]
     );
 
     // Extend the in-progress path to `cell` — shared by `onPointerMove` (each
@@ -745,7 +856,9 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                         const isFound = foundCells.has(key(r, c));
                         // Cells of the found word whose gloss popup is open — ringed
                         // so it reads as the actively-reviewed word.
-                        const isPopup = !!popupWord && popupWord.entryKey === foundWordByCell.get(key(r, c))?.entryKey;
+                        // Only the cells of the CURRENT rung carry the reviewing ring, so
+                        // drilling visibly shrinks the ring from the whole word down to one tile.
+                        const isPopup = reviewedCells.has(key(r, c));
                         // A single-character bonus match is deliberately excluded
                         // (see `invalid` above): no shake and no color change, just
                         // its definition popup.

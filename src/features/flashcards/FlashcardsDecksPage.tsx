@@ -141,6 +141,13 @@ const HAND_HUES: Record<StudyModeId, RampHue> = {
 };
 
 /**
+ * Corner-tag copy for a mode whose pool has landed on 0 and whose zero means "there is
+ * nothing ready to draw" rather than "you finished". Shared by Challenge and Study Mix,
+ * which empty for the same reason; Review's zero gets its own sentence at the call site.
+ */
+const ZERO_MESSAGE_MORE_CARDS = "Ready for more cards!";
+
+/**
  * The two bands each mode draws from. They PARTITION the four utcm bands, which is what
  * makes Challenge + Review == Study Mix on the hand — see "The three modes' figures".
  * Module scope so the readiness memos below have a stable dependency.
@@ -220,9 +227,11 @@ const FlashcardsDecksPage: React.FC = () => {
         [panel.allCards, foreignTrack]
     );
 
-    // `undefined` until the library lands, so the cards print an em dash rather than a
-    // provisional 0 — 0 is a real answer every one of these figures can give, and on a
-    // cooldown count it is a COMMON one (a learner who just finished a session).
+    // `undefined` until the library lands, so the cards spin their numeral (SlotNumber)
+    // rather than printing a provisional 0 — 0 is a real answer every one of these figures
+    // can give, and on a cooldown count it is a COMMON one (a learner who just finished a
+    // session). Anything DERIVED from these figures owes the same honesty: see
+    // `reviewEligible` below, which stays undefined for the same reason.
     const figuresLoaded = !panel.cardsLoading;
     const ready = useCallback((name: string): number => readyCounts[name] || 0, [readyCounts]);
     const challengePool = figuresLoaded ? ready("Unfamiliar") + ready("Target") : undefined;
@@ -250,7 +259,20 @@ const FlashcardsDecksPage: React.FC = () => {
     // a Challenge loop, even for an account with nothing sorted. Study Mix likewise:
     // there is NO card-count gate into /flashcards/learn any more, because the
     // working-loop endpoint lends cards to reach the flp baseline.
-    const reviewEligible = (reviewPool ?? 0) > 0;
+    // TRI-STATE, and the third state is the point: `undefined` means "not counted yet".
+    //
+    // This used to be `(reviewPool ?? 0) > 0`, which collapsed unknown into ineligible and
+    // so declared the mode empty for the whole length of the library fetch. StudyHand paid
+    // that out as a GREY CARD (it greyed the fill and dropped the opacity at the time), so
+    // every visit to this page repainted the Review card grey → blue as the cards landed.
+    // Same mistake the figures already avoid by staying `undefined` rather than showing a
+    // provisional 0 — a zero this page has not earned yet must not reach the UI, as a
+    // number or as a colour.
+    //
+    // StudyHand tests `eligible === false` strictly, so `undefined` renders exactly like an
+    // eligible card, which is the right default: a learner who owns Review cards (the
+    // common case) sees no state change at all when the count arrives.
+    const reviewEligible = reviewPool === undefined ? undefined : reviewPool > 0;
 
     // Time until the soonest Review card rests out, for the greyed-card toast. null when
     // none is resting — which, given reviewPool is 0 here, means the learner owns none.
@@ -264,15 +286,25 @@ const FlashcardsDecksPage: React.FC = () => {
         // the `?mode=` query param the flp parses (FlashcardsLearnPage → `selectedMode`)
         // and the server's own `MODE_CONFIGS` keys. Same split the "Learn Now" rename
         // made (CLAUDE.md § Terminology): rename what the learner reads, never the wire.
-        { id: "challenge", label: "Challenge Mix", figure: challengePool, figureCaption: "Cards", hue: HAND_HUES.challenge },
-        { id: "review", label: "Review Mix", figure: reviewPool, figureCaption: "Cards", hue: HAND_HUES.review, eligible: reviewEligible },
-        { id: "mix", label: "Study Mix", figure: inRotation, figureCaption: "Cards", hue: HAND_HUES.mix },
+        //
+        // `zeroMessage` is what the corner tag says instead of "0 Cards", and it differs
+        // by mode because the two zeroes mean opposite things. Review's pool empties
+        // because the learner CLEARED it — every Comfortable/Mastered card is resting —
+        // so that zero is an achievement. Challenge/Mix empty because there is nothing
+        // ready to draw at all, which is a prompt to go get more.
+        { id: "challenge", label: "Challenge Mix", figure: challengePool, figureCaption: "Cards", zeroMessage: ZERO_MESSAGE_MORE_CARDS, hue: HAND_HUES.challenge },
+        { id: "review", label: "Review Mix", figure: reviewPool, figureCaption: "Cards", zeroMessage: "All caught up!", hue: HAND_HUES.review, eligible: reviewEligible },
+        { id: "mix", label: "Study Mix", figure: inRotation, figureCaption: "Cards", zeroMessage: ZERO_MESSAGE_MORE_CARDS, hue: HAND_HUES.mix },
     ], [challengePool, reviewPool, inRotation, reviewEligible]);
 
     // ONE commit handler for all three cards. The mode is a query param on the same
     // route, so the branch is only about the Review gate.
     const handleStudy = useCallback((id: StudyModeId) => {
-        if (id === "review" && !reviewEligible) { setMarkMoreSnackOpen(true); return; }
+        // Only a KNOWN-empty Review pool is refused. While the count is still in flight
+        // the tap goes through: the flp does its own provisioning and gating, and blocking
+        // on a number this page has not received yet would make the card feel dead for the
+        // first moment of every visit.
+        if (id === "review" && reviewEligible === false) { setMarkMoreSnackOpen(true); return; }
         navigate(id === "mix" ? "/flashcards/learn" : `/flashcards/learn?mode=${id}`);
     }, [navigate, reviewEligible]);
 

@@ -218,10 +218,15 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 - FIFO is now a **queue of packs** (target 2: on-deck + buffer).
 - Render: up to **3 resized draggable cards** (no sentence band — removed). Autoplay
   is pack-level, not per-pickup: an effect keyed on `currentPack.packKey` narrates
-  every card's own word audio via `tts.speakSentence(card.entryKey, card.pronunciation)`
-  left to right, once per pack landing on-deck, whenever `discoverSettings.autoplay`
-  and `tts.enabled` are both true. Drag start only unlocks audio (mobile gesture
-  requirement); it no longer triggers narration itself. Locked (`sorted`) cards:
+  every card's own word audio via `tts.autoSpeakSentence(card.entryKey, card.pronunciation)`
+  left to right, once per pack landing on-deck, whenever `tts.autoplay` is true. (The
+  page-local `discoverSettings.autoplay` and the master `tts.enabled` flag are both
+  gone — narration autoplay is one app-wide setting now, and `autoSpeakSentence`
+  enforces it internally. See [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md).) Drag start only unlocks audio (mobile gesture
+  requirement) via `unlockAudio`, on **every** pickup — the page deliberately keeps
+  no "already unlocked" ref, because `unlock()` is the app's only recovery from an
+  OS-suspended AudioContext (see [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md) § 5); it
+  no longer triggers narration itself. Locked (`sorted`) cards:
   undraggable + "sorted!" watermark, but still narrated in the sequence.
 - Per-card drag → `POST /sort` (`lastInPack` true on the final unsorted card). Card
   animates out; pack stays on deck (immutability §4.2).

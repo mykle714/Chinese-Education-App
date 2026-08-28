@@ -10,7 +10,6 @@ import { addToLibrary } from "../../../utils/vocabApi";
 import { ContentArea, MoreInfoPill } from "./styled";
 import CardOpsRail from "./CardOpsRail";
 import WordToolsRail from "../../../components/WordToolsRail";
-import { deleteVocabEntry } from "../../../utils/vocabApi";
 import { FC_FONT } from "../constants";
 import { useLaunchCollection } from "../useLaunchCollection";
 import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
@@ -31,8 +30,6 @@ import { measureDefaultEnglishCenterY } from "../../../cardIcons/cardTextLayout"
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../../cardIcons/editor/CardEditToolbar";
 import IconPickerDialog from "../../../components/IconPickerDialog";
 import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveDisplayDefinition } from "../../../utils/definitionUtils";
-import SheetPanel, { type SheetPanelBodyHandle } from "./SheetPanel";
-import SettingsPanelBody from "./SettingsPanelBody";
 import {
     Dialog,
     DialogTitle,
@@ -45,7 +42,7 @@ import {
 } from "@mui/material";
 import { clearWritingDraft } from "../../../components/handwriting/writingDraftStore";
 import { usePageTitle } from "../../../hooks/usePageTitle";
-import { useTTS, SLOW_SENTENCE_RATE } from "../../../hooks/useTTS";
+import { useTTS } from "../../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
 import type { FlpForeignTrack } from "../../../../server/contracts/wire";
 import { foreignPromptTrack } from "../../../../server/contracts/wire";
@@ -88,28 +85,9 @@ const FlashcardsLearnPage: React.FC = () => {
         : undefined;
 
     const { settings: learnSettings, update: updateLearnSettings } = useFlashcardLearnSettings();
-    const { showPinyin, showPinyinColor, autoplayChinese, showProgressCategory, slowExampleSentences } = learnSettings;
-    // Settings sheet open/close. Independent from the EIC sheet so the two can
-    // coexist if needed (each one renders its own SheetPanel).
-    const [settingsOpen, setSettingsOpen] = useState(false);
-    // Ref to SettingsPanelBody so SheetPanel can wire its scroll/resize coupling.
-    const settingsBodyRef = useRef<SheetPanelBodyHandle | null>(null);
+    const { showPinyin, showPinyinColor } = learnSettings;
 
     const tts = useTTS();
-
-    // Example-sentence (est) narration honors the flp "slow sentences" toggle:
-    // 0.65× when on, 1× otherwise. Scoped here so the flashcard word (onSpeak)
-    // and every non-flp caller stay at the default 1×. Memoized so InfoCardSection
-    // children don't re-render when unrelated state changes.
-    const speakSentenceAtRate = useCallback(
-        (text: string, pronunciation?: string) =>
-            tts.speakSentence(text, pronunciation, slowExampleSentences ? SLOW_SENTENCE_RATE : 1),
-        // tts.speakSentence is itself memoized (stable) — depending on the whole
-        // tts object would re-create this every render. Same pattern as the
-        // narration effect above.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [tts.speakSentence, slowExampleSentences],
-    );
 
     // Bridge ref handed to useWorkingLoop so it can read/drive the card-drag layer
     // (flip state + drag-position reset) without a render-time dependency on
@@ -148,7 +126,6 @@ const FlashcardsLearnPage: React.FC = () => {
         nextSideOneLanguage,
         handleCardDismiss,
         handleUndoLastMark,
-        dropCurrentCard,
         provisionalSeen,
         provisionalReviewed,
     } = useWorkingLoop({ token, selectedCategory, mode: selectedMode, foreignTrack, prefetch: tts.prefetch, cardDragRef });
@@ -232,6 +209,7 @@ const FlashcardsLearnPage: React.FC = () => {
         handleSaveLayout,
         handleResetConfirmed,
         persistSelectedSense,
+        persistNote,
         undoAdv,
         redoAdv,
         pushAdvHistory,
@@ -332,15 +310,16 @@ const FlashcardsLearnPage: React.FC = () => {
         : currentSideOneLanguage;
     const chineseVisible = shownFaceLanguage === 'zh';
     useEffect(() => {
-        if (!tts.enabled || !autoplayChinese) return;
         if (!chineseVisible || !currentEntry) return;
-        tts.speak(currentEntry);
+        // autoSpeak is a no-op when autoplay is off, so the setting is enforced
+        // in one place rather than re-checked at every narration site.
+        tts.autoSpeak(currentEntry);
         // Cancel narration if the user advances mid-utterance.
         return () => tts.cancel();
-        // tts.speak/cancel are stable across renders; depending on them would
+        // tts.autoSpeak/cancel are stable across renders; depending on them would
         // re-fire narration on every settings change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [chineseVisible, currentEntry?.id, tts.enabled, autoplayChinese]);
+    }, [chineseVisible, currentEntry?.id, tts.autoplay]);
 
     // EIC modal sheet — opened by the centered "More Info" pill button.
     const [isEicOpen, setIsEicOpen] = useState(false);
@@ -451,28 +430,24 @@ const FlashcardsLearnPage: React.FC = () => {
 
     // ── Card operations, off the card's own `•••` rail (CardOpsRail, artboard 21) ──
     //
-    // Delete is a hard delete of the vet row (its review history with it), so it is
-    // confirmed first — the same guard the cdp puts on the same action.
-    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-    const [deleting, setDeleting] = useState(false);
-    const [deleteError, setDeleteError] = useState<string | null>(null);
-    const handleDeleteConfirmed = useCallback(async () => {
+    // The card note (vet.note, migration 155) is edited IN PLACE at the bottom of the
+    // answer face, so the page owns only "is the editor open". It lives here rather than
+    // inside CardNote because the same flag has to detach the card's drag/flip handlers
+    // (FlashCardSection), which the note component cannot reach. Opening it is the job of
+    // the card rail's `note` cell — which took the slot `delete` used to hold; deleting a
+    // card now lives on the cdp header and the shelf's multi-select. See docs/CARD_NOTES.md.
+    const [noteEditing, setNoteEditing] = useState(false);
+    // Close any open editor when the card changes underneath it (a mark, an undo, a drop).
+    // Without this the next card is promoted with an editor already open, seeded from a
+    // note the learner never asked to edit.
+    useEffect(() => { setNoteEditing(false); }, [currentEntry?.id]);
+    const handleSaveNote = useCallback((note: string | null) => {
+        setNoteEditing(false);
         if (!currentEntry) return;
-        try {
-            setDeleting(true);
-            await deleteVocabEntry(currentEntry.id);
-            setDeleteConfirmOpen(false);
-            // The row is gone server-side, so the card has to leave the session too or
-            // the loop keeps serving something that no longer exists. No mark, no
-            // undo snapshot — see useWorkingLoop.dropCurrentCard.
-            dropCurrentCard();
-        } catch (err) {
-            console.error("Failed to delete card:", err);
-            setDeleteError(err instanceof Error ? err.message : "Could not delete this card");
-        } finally {
-            setDeleting(false);
-        }
-    }, [currentEntry, dropCurrentCard]);
+        // Optimistic + background PATCH, with a rollback + toast on failure — the same
+        // session-override machinery the sense pick uses (useCardIconEditor.persistNote).
+        persistNote(currentEntry, note);
+    }, [currentEntry, persistNote]);
 
     // "Compare" on the word-tools rail above the card. The flp has a tab strip of its
     // own, so it opens Compare AS AN EIP TAB beside the word rather than navigating to
@@ -582,7 +557,6 @@ const FlashcardsLearnPage: React.FC = () => {
                 showPinyin={showPinyin}
                 onTogglePinyin={() => updateLearnSettings({ showPinyin: !showPinyin })}
                 editMode={editMode}
-                onSettingsClick={() => setSettingsOpen(true)}
             />
             <ContentArea
                 ref={contentAreaRef}
@@ -712,17 +686,22 @@ const FlashcardsLearnPage: React.FC = () => {
                     emptyMessage={emptyMessage}
                     showPinyin={showPinyin}
                     showPinyinColor={showPinyinColor}
-                    showProgressCategory={showProgressCategory}
                     sideOneLanguage={currentSideOneLanguage}
                     nextSideOneLanguage={nextSideOneLanguage}
                     showSwipeHint={showSwipeHint}
                     showTapToFlipHint={showTapToFlipHint}
                     shakeNonce={shakeNonce}
                     handlers={handlers}
-                    onSpeak={tts.enabled ? tts.speak : undefined}
+                    onSpeak={tts.speak}
                     speakingKey={tts.speakingKey}
                     // Persist the learner's definition-cluster sense pick per account (migration 99).
                     onPersistSense={persistSelectedSense}
+                    // The card note's in-place editor (migration 155). Only the OPEN/CLOSE
+                    // state is the page's — the draft text lives in CardNote, so a keystroke
+                    // doesn't re-render the card slot. See docs/CARD_NOTES.md.
+                    noteEditing={noteEditing}
+                    onSaveNote={handleSaveNote}
+                    onCancelNote={() => setNoteEditing(false)}
                     // Gesture canvas only in advanced mode; basic mode renders the draft
                     // through the static icon layer (via editingCurrentEntry above).
                     editCanvas={editMode && advMode ? (
@@ -736,9 +715,9 @@ const FlashcardsLearnPage: React.FC = () => {
                             snap={{ move: snapMove, rotate: snapRotate, resize: snapResize }}
                             // Movable text (migration 91): the live draft + the two real text
                             // nodes (built from the live-colored editingCurrentEntry). The foreign
-                            // block renders the SAME speaker + writing-practice buttons the flp
-                            // back face shows (onSpeak/showWriting), so the learner previews WHERE
-                            // those buttons will sit relative to the moved text. They're inert here
+                            // block renders the SAME speaker button the flp back face shows
+                            // (onSpeak), so the learner previews WHERE that button will sit
+                            // relative to the moved text. It's inert here
                             // (the text-content wrapper is pointerEvents:none) — pure preview chrome.
                             textLayout={textDraft}
                             onTextChange={setTextDraftBoth}
@@ -747,9 +726,8 @@ const FlashcardsLearnPage: React.FC = () => {
                                     entry={editingCurrentEntry}
                                     showPinyin={showPinyin}
                                     showPinyinColor={showPinyinColor}
-                                    onSpeak={tts.enabled ? tts.speak : undefined}
+                                    onSpeak={tts.speak}
                                     speakingKey={tts.speakingKey}
-                                    showWriting
                                     // In-flow so the buttons are part of the block's box — the
                                     // selection outline + on-card clamp include them.
                                     inlineActions
@@ -783,7 +761,7 @@ const FlashcardsLearnPage: React.FC = () => {
                         <CardOpsRail
                             entry={displayCurrentEntry}
                             onCustomize={() => enterEdit(() => cardRef.current ? measureDefaultEnglishCenterY(cardRef.current) : null)}
-                            onDelete={() => setDeleteConfirmOpen(true)}
+                            onEditNote={() => setNoteEditing(true)}
                             disabled={editMode || isAnimating}
                         />
                     ) : undefined}
@@ -852,8 +830,8 @@ const FlashcardsLearnPage: React.FC = () => {
                             onUsedInItemClick={(item) => eip.openForEntryKey(item.entryKey)}
                             onExampleSegmentClick={(segment) => eip.openForEntryKey(segment)}
                             depth={0}
-                            onSpeak={tts.enabled ? tts.speak : undefined}
-                            onSpeakSentence={tts.enabled ? speakSentenceAtRate : undefined}
+                            onSpeak={tts.speak}
+                            onSpeakSentence={tts.speakSentence}
                             speakingKey={tts.speakingKey}
                             onAddToLibrary={panelAlreadyInLibrary ? undefined : handleAddToLibrary}
                             selectedSenseIndex={panelSenseIndex}
@@ -926,65 +904,6 @@ const FlashcardsLearnPage: React.FC = () => {
                         {saveError}
                     </Alert>
                 </Snackbar>
-                {/* Delete-card confirmation, raised by the card rail's `delete`. A hard
-                    delete of the vet row and its review history, so it must be explicit —
-                    the same guard the cdp puts on the same action. */}
-                <Dialog
-                    className="mobile-demo-delete-dialog"
-                    open={deleteConfirmOpen}
-                    onClose={() => !deleting && setDeleteConfirmOpen(false)}
-                >
-                    <DialogTitle>Delete this card?</DialogTitle>
-                    <DialogContent>
-                        <DialogContentText>
-                            This permanently removes{currentEntry ? ` "${currentEntry.entryKey}"` : " this card"} from
-                            your collection, along with its review history, and takes it out of
-                            this session. This can't be undone.
-                        </DialogContentText>
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleDeleteConfirmed} color="error" disabled={deleting}>
-                            Delete
-                        </Button>
-                    </DialogActions>
-                </Dialog>
-                {/* Delete failure — the card is still there and still in the loop, so say
-                    so rather than leaving a dialog that closed on nothing. */}
-                <Snackbar
-                    open={deleteError !== null}
-                    autoHideDuration={4000}
-                    onClose={() => setDeleteError(null)}
-                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
-                    sx={{ zIndex: 2000 }}
-                >
-                    <Alert
-                        severity="error"
-                        variant="filled"
-                        onClose={() => setDeleteError(null)}
-                        sx={{ fontFamily: FC_FONT }}
-                    >
-                        {deleteError}
-                    </Alert>
-                </Snackbar>
-                {/* Settings sheet — same drag/scroll behavior as the EIP. Mounted
-                    only while open so the open animation replays on each invocation.
-                    Depth 99 keeps it above any open EIP panel stack. */}
-                {settingsOpen && (
-                    <SheetPanel
-                        onClose={() => setSettingsOpen(false)}
-                        bodyRef={settingsBodyRef}
-                        depth={99}
-                    >
-                        <SettingsPanelBody
-                            ref={settingsBodyRef}
-                            settings={learnSettings}
-                            update={updateLearnSettings}
-                        />
-                    </SheetPanel>
-                )}
             </ContentArea>
 
             {/* Add-icon search dialog (download-on-select). docs/CARD_ICON_LAYOUT.md */}

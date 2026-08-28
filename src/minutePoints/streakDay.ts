@@ -7,7 +7,7 @@
  * reaches across into the shared server module; everything else imports from here.
  */
 import { streakDateOf, resolveTimezone } from '../../server/shared/streakDay';
-import { getBrowserTimezone } from './minutePointsSync';
+import { getBrowserTimezone } from '../utils/browserTimezone';
 
 /**
  * The streak-day label (YYYY-MM-DD, 4 AM-bounded) for a given instant, using the

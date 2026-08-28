@@ -232,10 +232,28 @@ stored `users.timezone`.
   all of a user's languages). The night-market decay target became per-language in the same
   migration `130-per-language-streaks.sql`, which added `language` to `nightmarketunlocks` +
   `nightmarkettemplatelocations` and widened their corner/lookup indexes to include it.
-- **Refresh path for `users.timezone`**: written by the client on (a) every
-  successful login or session restore via `POST /api/auth/onLogin`
-  (`UserController.onLogin`), and (b) every minute-points increment via
-  `UserMinutePointsService`.
+- **Refresh path for `users.timezone`** — four overlapping triggers, so an account is
+  never stranded on the column default (`NOT NULL DEFAULT 'UTC'`):
+  1. **account creation** — `POST /api/auth/register` carries `tz`
+     (`UserController.register` → `UserService.createUser`), so a row is never *born*
+     on the default;
+  2. **login and session restore** — `POST /api/auth/onLogin`
+     (`authSync.notifyLogin` → `UserController.onLogin` → `UserService.refreshUserContext`);
+  3. **every access-token rotation** — `POST /api/auth/refresh` carries `tz`
+     (`utils/tokenRefresh.ts` → `UserController.refresh`). At ~15 minutes this is the
+     app's only heartbeat for a logged-in client, and the only trigger that catches a
+     zone changing **mid-session** (travel, an OS clock fix). Best-effort on the
+     server: a failed tz write never fails the rotation;
+  4. **a foregrounded tab whose zone changed** — `authSync.syncTimezoneIfChanged` on
+     `visibilitychange`, change-detected so the common case makes no request;
+  plus every minute-points increment via `UserMinutePointsService` — which covers only
+  users who actually study, which is why 1–4 exist.
+
+  Triggers 1, 3 and 4 were added 2026-08-28 after a Study Challenge test window was
+  reported as opening at "9 PM Thursday": the account had never been through the login
+  hook, so its zone read `UTC`, the server computed Friday 04:00 **UTC**, and the client
+  formatted that instant in the browser's UTC−7. See
+  [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 2.
 
 **Language attribution (migration 62).** `userminutepoints` is keyed by
 `(userId, streakDate, language)`. The penalty is global, so the row is stamped on

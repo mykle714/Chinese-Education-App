@@ -52,6 +52,8 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
+import { stripParentheses } from './shared/lib/stripParentheses.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '../../.env.docker') });
 
@@ -128,14 +130,9 @@ async function searchTopIcon(term) {
 //  Search-term cascade (dd → word1 → remaining definitions[] via ddt)
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Mirror of src/utils/definitionUtils.ts (stripParentheses / iconSearchTerm / ddt).
-// Kept as a plain JS copy rather than imported since this script runs outside the
-// frontend build (same pattern as backfill-long-definitions.js's stripParentheses
-// mirror). Keep in sync if the frontend versions change.
-
-function stripParentheses(text) {
-  return (text ?? '').replace(/\s*\([^)]*\)/g, '').trim();
-}
+// `stripParentheses` is imported from shared/lib rather than re-declared: this
+// script's local copy was the old `\s*\([^)]*\)` regex and had silently drifted from
+// the app's nesting-aware scanner. See shared/lib/stripParentheses.js.
 
 const ICON_SEARCH_LEADING_STRIPS = [
   /^to\s+be\s+/i, // copular infinitive ("to be hungry")

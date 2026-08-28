@@ -143,15 +143,51 @@ export function longDefToDisplayString(
 }
 
 /**
+ * Unwrap INLINE MORPHEMES before the aside scanner runs.
+ *
+ * A parenthetical GLUED to a word (no space on at least one side) whose content is a
+ * short run of lowercase letters is part of the word, not an aside about it:
+ *   "personal(ly)" · "child(ren)" · "circle(s)" · "remain(s)" · "(hand)bag"
+ * Deleting it turns an adverb into an adjective — 手's cluster gloss "personal(ly)"
+ * used to reach the flashcard as the bare adjective "personal", which is how 下手's
+ * breakdown came to read that way.
+ *
+ * The `^[a-z]{1,4}$` content test is what separates these from a real aside that
+ * merely lost its space — "skimming(of milk)", "prescription(same as 丹方)",
+ * "(idiom)fig." — which are shaped IDENTICALLY at the parenthesis and must still be
+ * stripped. Adjacency alone cannot tell the two apart; only the content can.
+ * Measured against the whole det corpus (2026-08-28): fires on 50 of the 118 glued
+ * strings, declines all 12 missing-space asides and all 35 chemical/math formulas
+ * ("Ca(OH)2", "(CH2O)6" — uppercase or digit-bearing content).
+ *
+ * Two accepted errors at that threshold, both on non-discoverable rows:
+ *   • misses the longer optional prefixes — "(house)wife", "(roller)blading",
+ *     "(tender)loin" render as "wife" / "blading" / "loin";
+ *   • fires wrongly on "manganese(iv) oxide" → "manganeseiv oxide".
+ * Widening the cap past 4 starts eating "(idiom)", so 4 is the balance point.
+ */
+const INLINE_MORPHEME = /(?<=[A-Za-z0-9])\(([a-z]{1,4})\)|\(([a-z]{1,4})\)(?=[A-Za-z0-9])/g;
+
+function unwrapInlineMorphemes(text: string): string {
+  return text.replace(INLINE_MORPHEME, (_match, glued, prefix) => glued ?? prefix);
+}
+
+/**
  * Strip all parenthetical substrings from a definition string for display.
  * Does not mutate the underlying database value.
  * e.g. "to go (informal); to leave (a place)" → "to go; to leave"
  * Nesting-aware: "a waiter (literally, one who runs (fast))" → "a waiter".
+ * EXCEPTION — a short lowercase parenthetical glued to a word is an inline morpheme,
+ * not an aside, and is rejoined rather than dropped: "personal(ly)" → "personally",
+ * "(hand)bag" → "handbag". See unwrapInlineMorphemes for the exact rule.
  *
  * Server twin of `stripParentheses` in `src/utils/definitionUtils.ts` — kept in
  * sync manually (separate client/server builds).
  */
 export function stripParentheses(text: string): string {
+  // Inline morphemes are rejoined FIRST; everything the scanner then sees is a
+  // genuine aside. See unwrapInlineMorphemes above for why the split is by content.
+  text = unwrapInlineMorphemes(text);
   let out = '';
   let depth = 0;
   for (const ch of text) {
@@ -223,6 +259,11 @@ type SenseCluster = {
  *
  * Returns null when there is no real choice to make (unclustered, or a single cluster) —
  * the same `< 2` gate the client applies — so callers use their flat fallback.
+ *
+ * The sort is STABLE and the comparator ties on equal scores, so two equally-common senses
+ * are separated by the stored array order — which the backfill authors deliberately (zh
+ * Stage C.5 / es CLUSTER_RULES rule 7, docs/DEFINITION_CLUSTERS.md § Ties). Preserve that
+ * order on any path that reshapes `definitionClusters`.
  *
  * Clusters with no displayable English (a lead gloss that is entirely parenthetical, e.g.
  * 上来 "(verb complement indicating success)") are dropped before that gate, mirroring the

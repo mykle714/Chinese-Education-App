@@ -75,19 +75,31 @@ const SMOOTH_STEP_LIMIT_PCT = ((INK_TOP_PCT - INK_BOTTOM_PCT) / 60) * 1.6;
  * scale pulse marks the moment instead), and any larger rise, which is a load or a resync
  * and would otherwise sweep a whole minute of progress past the eye in one second.
  *
- * ── THE THREE STATES ─────────────────────────────────────────────────────────────────
- *   active  the flame in fireActive orange, filling; time is accruing.
- *   idle    the same flame and the same level, in muted ink — not earning, either an
- *           eligible page the user has gone quiet on or an ineligible one (every menu/browse
- *           surface). Only the COLOUR changes between active and idle: the level is neither
- *           reset nor flattened, because the banked seconds are not lost, because resetting
- *           it made every resume replay the whole fill in one second, and because a learner
- *           returning to the page should find the flame where they left it.
- *   paused  same muted ink plus a struck-through count — accumulation is deliberately on
- *           hold (flp icon-layout editor). The old treatment overlaid a large red
- *           no-entry glyph on the flame, which at header sizes is a red smudge, and which
- *           would now also obscure the fill level; a line through the number says "this is
- *           not counting" at any size and leaves the glyph alone.
+ * ── THE STATES ───────────────────────────────────────────────────────────────────────
+ * The badge draws in one of two MODES, chosen by whether the current page can earn at all
+ * (`isEligiblePage`). The gauge only exists where the number it reports can move.
+ *
+ *   OFF-STUDY MODE (every menu, hub and browse surface — the cdp, the deck browsers, the
+ *   hubs). One flat, solid `fireActive` flame beside the count. No ghost, no clipped fill
+ *   layer, no pulse. A part-full gauge on a page that cannot fill it is a lie the eye has
+ *   to re-check every time it lands there: it invites the learner to watch a level that
+ *   is frozen by construction. The count is still the real balance, so the flame here is
+ *   pure identity — "this is your minutes number" — and nothing more.
+ *
+ *   STUDY MODE (`MINUTE_POINTS_ELIGIBLE_PAGES`) — the ghost + fill treatment, in two
+ *   activity states:
+ *     active  the flame in fireActive orange, filling; time is accruing.
+ *     idle    the same flame and the same level, in muted ink — an eligible page the user
+ *             has gone quiet on. Only the COLOUR changes between active and idle: the
+ *             level is neither reset nor flattened, because the banked seconds are not
+ *             lost, because resetting it made every resume replay the whole fill in one
+ *             second, and because a learner returning to the page should find the flame
+ *             where they left it.
+ *     paused  same muted ink plus a struck-through count — accumulation is deliberately on
+ *             hold (flp icon-layout editor). The old treatment overlaid a large red
+ *             no-entry glyph on the flame, which at header sizes is a red smudge, and
+ *             which would now also obscure the fill level; a line through the number says
+ *             "this is not counting" at any size and leaves the glyph alone.
  *
  * Calls `useMinutePoints` internally rather than taking it as a prop, so the per-second
  * tick re-renders this leaf only — never the page hosting it, which would interrupt an
@@ -95,9 +107,9 @@ const SMOOTH_STEP_LIMIT_PCT = ((INK_TOP_PCT - INK_BOTTOM_PCT) / 60) * 1.6;
  *
  * Rendered by: `PageHeader` itself, LAST in its right slot, on EVERY header in the app —
  * pages neither import nor pass it. On a page that is not in MINUTE_POINTS_ELIGIBLE_PAGES
- * (the hub menus, the cdp, the deck/collection browsers) `useMinutePoints` forces
- * `isActive` false, so the badge draws its idle grey there: "not earning" is an answer,
- * and one worth showing everywhere the learner can ask the question.
+ * `useMinutePoints` also forces `isActive` false; the badge does not lean on that, it
+ * branches on `isEligiblePage` directly, because "cannot earn here" and "could earn here
+ * but has gone quiet" are different answers and only the second one has a level to show.
  *
  * Renders nothing when signed out — there is no balance to report, and "0" would read
  * as a broken counter rather than as "no account".
@@ -107,8 +119,14 @@ const MinutePointsFireBadge: React.FC = () => {
     const minutePoints = useMinutePoints();
     const paused = useMinutePointsPaused();
 
+    // A page that cannot accrue minutes gets the flat solid flame — see OFF-STUDY MODE
+    // above. Note this is NOT `!isActive`: an eligible page the learner has gone quiet on
+    // is still a study surface and keeps its (greyed) gauge.
+    const isStudySurface = minutePoints.isEligiblePage;
     const earning = !paused && minutePoints.isActive;
-    const tone = earning ? COLORS.fireActive : COLORS.textSecondary;
+    // Off-study the flame is always solid orange: there is no earning/idle distinction to
+    // report there, so greying it would only ask a question the page cannot answer.
+    const tone = (earning || !isStudySurface) ? COLORS.fireActive : COLORS.textSecondary;
 
     // 0–100 progress toward the next minute point, mapped onto the glyph's ink band.
     // Computed whether or not we are earning: the seconds already banked are not lost when
@@ -193,13 +211,20 @@ const MinutePointsFireBadge: React.FC = () => {
                         position: "absolute",
                         left: 0,
                         bottom: 0,
-                        opacity: 0.24,
+                        // Faint only in study mode, where it is the GROUND the level is
+                        // read against. Off-study there is no level, so the same glyph is
+                        // drawn at full strength and is the whole badge.
+                        opacity: isStudySurface ? 0.24 : 1,
+                        transition: "opacity 0.3s ease-out",
                     }}
                 />
-                {/* The level. A bottom-anchored window over an identical glyph: the window
-                    grows, the glyph inside it does not move (it is pinned to the window's
-                    bottom edge, which is the wrapper's bottom edge). */}
-                <Box
+                {/* The level, STUDY MODE ONLY. A bottom-anchored window over an identical
+                    glyph: the window grows, the glyph inside it does not move (it is
+                    pinned to the window's bottom edge, which is the wrapper's bottom
+                    edge). Off-study it is not rendered at all rather than merely held at
+                    100% — an unmounted layer cannot animate on the way in or out, and the
+                    solid base glyph above already reads as a full flame. */}
+                {isStudySurface && <Box
                     className="minute-points-fire-badge__flame-fill"
                     aria-hidden
                     sx={{
@@ -226,7 +251,7 @@ const MinutePointsFireBadge: React.FC = () => {
                         fill={1}
                         sx={{ position: "absolute", left: 0, bottom: 0, transition: "color 0.3s ease-out" }}
                     />
-                </Box>
+                </Box>}
             </Box>
             <Typography
                 className="minute-points-fire-badge__count"

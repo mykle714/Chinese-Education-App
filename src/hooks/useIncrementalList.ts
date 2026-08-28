@@ -7,7 +7,10 @@ import { useState, useEffect } from "react";
  * Two goals at once:
  *  1. Responsiveness — each batch is a tiny commit and the `intervalMs` gap
  *     between batches leaves the main thread free, so taps on surrounding
- *     buttons run immediately while the list fills in.
+ *     buttons run immediately while the list fills in. ⚠️ A `cascadeLimit`
+ *     GIVES THIS UP for everything past the limit: the remainder is revealed in
+ *     one commit, so a caller that passes one is relying on something else to
+ *     bound the size of that commit (MiniVocabCardGrid windows the list).
  *  2. A visible sequential cascade — the gap is paced (not one-per-frame), so
  *     each batch's pop-in animation reads as a distinct step rather than every
  *     card popping at once. (At ~16ms/frame the batches overlap the 400ms pop

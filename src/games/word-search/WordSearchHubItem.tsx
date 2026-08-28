@@ -14,6 +14,17 @@ import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import type { GameDef } from "../types";
 import { loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
 import { GAME_KEY, MODE_CONFIGS, TOTAL_WORDS, modeLabel, modeMarkTypes, type WordSearchMode } from "./constants";
+
+/**
+ * How many targets the PARKED board has — read off the saved payload, never from
+ * `TOTAL_WORDS`. A save written before a board-size change (12 words until
+ * 2026-08-28) still resumes and still plays to its own word count, so "3/12" must
+ * keep saying 12 even once new boards are 9. `TOTAL_WORDS` remains the right number
+ * for a board that has not been dealt yet.
+ */
+function savedWordCount(saved: SavedWordSearchState): number {
+    return saved.data.words.length || TOTAL_WORDS;
+}
 import { formatTimeMs } from "../../utils/timeUtils";
 import { MARK_TYPE_LABELS } from "../../utils/masteryCompute";
 
@@ -256,7 +267,7 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, className }
                                         className="word-search-hub__resume-stats"
                                         sx={{ fontSize: 10.5, color: COLORS.textSecondary, fontFamily: FONTS.mono, whiteSpace: "nowrap" }}
                                     >
-                                        {formatTimeMs(saved.elapsedMs)} · {saved.found.length}/{TOTAL_WORDS}
+                                        {formatTimeMs(saved.elapsedMs)} · {saved.found.length}/{savedWordCount(saved)}
                                     </Typography>
                                     <Typography
                                         className="word-search-hub__resume-mode"
@@ -297,7 +308,7 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, className }
                 <DialogContent>
                     <DialogContentText sx={{ fontSize: SIZE.body }}>
                         Starting a new game will erase your saved Word Search game
-                        {savedGame ? ` (${modeLabel(savedGame.mode)}, ${savedGame.found.length}/${TOTAL_WORDS} found)` : ""}.
+                        {savedGame ? ` (${modeLabel(savedGame.mode)}, ${savedGame.found.length}/${savedWordCount(savedGame)} found)` : ""}.
                         This can't be undone.
                     </DialogContentText>
                 </DialogContent>

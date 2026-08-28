@@ -14,6 +14,10 @@
  *   - applicability (`when`): breakdown only on multi-char, classifier only on nouns, …
  *   - version-aware staleness: a step is pending when MISSING a stamp or stamped
  *     BELOW its manifest version — so a version bump re-triggers only that script.
+ *   - CROSS-ROW drift (`driftProbe`): a step whose stored output was invalidated by a
+ *     change to ANOTHER row. Neither the stamp nor the script's own doneGate can see
+ *     this, so each probe runs as its own set query and its ids are OR-ed into the
+ *     candidate scope — see runDriftProbes() and DRIFT_PROBES in the manifest.
  *   - approval protection: a step whose validation field a validator approved/flagged
  *     is never pending (mirrors validatedClause in the scripts themselves).
  *
@@ -74,6 +78,7 @@ import {
   buildIncompletePredicate,
   scriptsForLanguage,
   detTableForLanguage,
+  driftProbesFor,
 } from './shared/lib/requiredScripts.js';
 
 const argv = process.argv.slice(2);
@@ -166,6 +171,41 @@ const CHAR_FREQ_CTE = `
      GROUP BY c.ch
   )`;
 
+/**
+ * Run every drift probe the manifest declares for this language, ONCE.
+ *
+ * Returns `{ idsByStep, wordsById }`: which step ids each det row has drifted on, and
+ * the word for each drifted id (so the plan can name them without a second lookup).
+ * Probes are set-based and cheap (~30ms for the whole zh corpus); they are run BEFORE
+ * the candidate query so their ids can widen its scope — a drifted row is otherwise
+ * invisible to buildIncompletePredicate, which only ever looks at the row itself.
+ */
+async function runDriftProbes(client, steps, detTable) {
+  const idsByStep = new Map();   // step id → Set<det id>
+  const wordsById = new Map();   // det id → word1
+  for (const [name, probe] of driftProbesFor(steps)) {
+    let rows;
+    try {
+      ({ rows } = await client.query(probe.sql(detTable)));
+    } catch (err) {
+      // A probe is a diagnostic, not the plan itself: a broken one must not take the
+      // whole round down, but it must be LOUD — silently planning without it looks
+      // exactly like "no drift", which is the failure this feature exists to end.
+      console.error(`⚠️  drift probe "${name}" failed, continuing without it: ${err.message}`);
+      continue;
+    }
+    if (!idsByStep.has(probe.step)) idsByStep.set(probe.step, new Set());
+    for (const r of rows) {
+      idsByStep.get(probe.step).add(r.id);
+      wordsById.set(r.id, r.word1);
+    }
+    if (rows.length) {
+      console.log(`  ⚠ drift [${name}] — ${rows.length} row(s): ${probe.describe}`);
+    }
+  }
+  return { idsByStep, wordsById };
+}
+
 async function main() {
   const client = await db.getClient();
   try {
@@ -227,10 +267,22 @@ async function main() {
     // is no longer a subset of steps worth planning on its own.
     const steps = MANIFEST;
 
+    // Cross-row drift, resolved BEFORE the candidate query so its ids can widen the
+    // scope. `driftedIds` is the union across probes — the per-step split stays in
+    // idsByStep so pendingSteps can attribute the drift to the right script.
+    const { idsByStep, wordsById } = await runDriftProbes(client, steps, DET_TABLE);
+    const driftedIds = [...new Set([...idsByStep.values()].flatMap((set) => [...set]))];
+
     // buildIncompletePredicate encodes applicability + version-staleness + approval
     // protection. A --words run skips it: an explicit word list is an instruction to
     // look at those rows, and the per-row pendingSteps below still reports honestly.
-    const incomplete = WORDS.length ? 'TRUE' : buildIncompletePredicate('d', steps);
+    // A drifted row is fully stamped and would fail that predicate, so it is OR-ed in
+    // explicitly — this is the whole point of the third axis.
+    let incomplete = WORDS.length ? 'TRUE' : buildIncompletePredicate('d', steps);
+    if (!WORDS.length && driftedIds.length) {
+      params.push(driftedIds);
+      incomplete = `(${incomplete} OR d.id = ANY($${params.length}::int[]))`;
+    }
 
     const lim = Number.isFinite(LIMIT) && LIMIT > 0 ? LIMIT : 50;
     const cols = `d.id, d.word1, d.pronunciation, d.definitions, d."partsOfSpeech",
@@ -282,10 +334,17 @@ async function main() {
     // Aggregate: script id → the words needing it.
     const byScript = new Map(steps.map((s) => [s.id, []]));
     const protectedCount = new Map();
+    // Which steps THIS row has drifted on — the 4th argument to pendingSteps.
+    const driftedStepsFor = (id) =>
+      new Set([...idsByStep].filter(([, ids]) => ids.has(id)).map(([stepId]) => stepId));
+
+    let driftPlanned = 0;
     for (const row of rows) {
       const approved = approvedByRow.get(row.id) || new Set();
       for (const f of approved) protectedCount.set(f, (protectedCount.get(f) || 0) + 1);
-      for (const step of pendingSteps(row, approved, steps)) byScript.get(step.id).push(row.word1);
+      const drifted = driftedStepsFor(row.id);
+      if (drifted.size) driftPlanned++;
+      for (const step of pendingSteps(row, approved, steps, drifted)) byScript.get(step.id).push(row.word1);
     }
 
     if (AS_JSON) {
@@ -295,6 +354,12 @@ async function main() {
         scope: ONLY_DISCOVERABLE ? 'discoverable' : ONLY_NEW ? 'new' : WORDS.length ? 'words' : 'all',
         candidates: rows.map((r) => ({ id: r.id, word1: r.word1, discoverable: r.discoverable })),
         plan: [...byScript].filter(([, w]) => w.length).map(([id, words]) => ({ id, words })),
+        drift: [...idsByStep].map(([stepId, ids]) => ({
+          step: stepId,
+          total: ids.size,                                  // corpus-wide, not just this batch
+          inBatch: [...ids].filter((id) => rows.some((r) => r.id === id)).length,
+          words: [...ids].map((id) => wordsById.get(id)).filter(Boolean).slice(0, 50),
+        })),
       }, null, 2));
       return;
     }
@@ -336,6 +401,17 @@ async function main() {
       console.log('\n  Then promote the batch (re-derives completeness; never promotes a half-done row):');
       console.log(`      scripts/backfill/promote-discoverable.js --words=${rows.slice(0, 8).map((r) => r.word1).join(',')}`
         + `${rows.length > 8 ? ' …' : ''} --apply`);
+    }
+    if (driftPlanned) {
+      // Say the corpus-wide total too: the batch is LIMIT-ed, so "12 in this batch"
+      // with 994 outstanding is a very different situation from 12 out of 12, and the
+      // difference decides whether the round should keep pulling drift batches.
+      console.log('\n  ⚠ cross-row drift (re-planned despite a current stamp — see DRIFT_PROBES):');
+      for (const [stepId, ids] of idsByStep) {
+        if (!ids.size) continue;
+        console.log(`      ${stepId.replace(/^(chinese|spanish)\//, '')}: `
+          + `${driftPlanned} in this batch, ${ids.size} corpus-wide`);
+      }
     }
     if (protectedCount.size) {
       console.log('\n  🛡 validator-protected (these steps are skipped, content is authoritative):');

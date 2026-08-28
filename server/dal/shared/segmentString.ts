@@ -1,4 +1,4 @@
-import { DictionaryEntry, ParticleClassifierEntry, DefinitionCluster } from '../../types/index.js';
+import { DictionaryEntry, ParticleClassifierEntry, DefinitionCluster, BreakdownMap } from '../../types/index.js';
 import { ddt } from '../../utils/definitions.js';
 import { numberedToTonedPinyin, readingSyllableCount } from '../../utils/pinyinTones.js';
 
@@ -15,6 +15,11 @@ export interface SegmentMeta {
   frequencyScore?: number | null;
   wordForms?: Record<string, string>;  // AI-generated English conjugation map (e.g. {past: "ran", present: "runs"})
   definitionClusters?: DefinitionCluster[] | null;  // Orthogonal sense clusters (zh; migration 90) — used to resolve a segment's dd from its tagged sense (senseDict)
+  // Per-component-character sense tags for THIS word (backfill-breakdown-senses.js) —
+  // the same map the flashcard breakdown tab renders. Drives single-character drill
+  // rungs so a drill-down and the bt agree on which sense a character carries here.
+  // See buildDrillRungs and docs/SEGMENT_DRILL_DOWN.md.
+  breakdown?: BreakdownMap | null;
 }
 
 function normalizeText(value: string): string {
@@ -148,6 +153,7 @@ export function buildDictMap(dictEntries: DictionaryEntry[]): Map<string, Segmen
         ...(esOverride?.definition != null && { overrideDefinition: esOverride.definition }),
         ...(entry.wordForms != null && { wordForms: entry.wordForms }),
         ...(entry.definitionClusters != null && { definitionClusters: entry.definitionClusters }),
+        ...(entry.breakdown != null && { breakdown: entry.breakdown }),
       });
     }
   }
@@ -327,6 +333,168 @@ export interface RenderedSegmentMeta {
   definition?: string;
   particleOrClassifier?: { type: 'particle' | 'classifier'; definition: string };
   wordForms?: Record<string, string>;
+  /**
+   * Narrower det headwords contained inside this segment, driving tap-to-drill
+   * (docs/SEGMENT_DRILL_DOWN.md). Longest-first. Empty/absent for single characters
+   * and for segments no shorter headword sits inside.
+   */
+  drill?: SegmentDrillRung[];
+}
+
+/**
+ * One rung of a segment's tap-to-drill chain: a det headword that is a STRICT
+ * substring of the segment, at a known character offset inside it.
+ *
+ * Why this can be shipped for free: every enrichment path already batch-loads a det
+ * row for EVERY <=4-char substring of the text (`getAllSubstrings` -> `buildDictMap`),
+ * because that is how the greedy segmenter picks its winners. Until now everything
+ * that lost the segmentation was discarded; a rung is simply one of those losers,
+ * kept. So there is no extra query, no stored column and no backfill behind this —
+ * `segmentMetadata` is built at read time.
+ *
+ * Referenced by:
+ *   - src/utils/segmentDrill.ts (the client-side rung picker)
+ *   - src/components/SegmentedSentenceDisplay.tsx (est + long definition)
+ *   - docs/SEGMENT_DRILL_DOWN.md
+ */
+export interface SegmentDrillRung {
+  /** The sub-word, verbatim. Always a det headword and strictly shorter than its parent. */
+  text: string;
+  /** Character offset of `text` within the parent segment (0-based, code-point indexed). */
+  offset: number;
+  /**
+   * The gloss the popup shows for this rung. Always present — a rung that resolved no
+   * definition is DROPPED rather than shipped, because the popup only renders when it has
+   * text, and a blank popup would read as a broken tap rather than as the end of the chain.
+   */
+  definition: string;
+  /** Tone-marked pinyin, when the entry has one. Used to narrate the rung on select. */
+  pronunciation?: string;
+}
+
+/**
+ * Resolve ONE token's popup gloss + pinyin from a sense label, applying the app's
+ * single priority order. Extracted because two callers need the identical rule:
+ * `buildSegmentMetadata` (a top-level segment, labelled by the example-sentence tagging
+ * pass via `senseDict`) and `buildDrillRungs` (a single-character rung, labelled by the
+ * parent word's `breakdown`). Before the extraction the tagged-cluster resolution existed
+ * only inside buildSegmentMetadata, and a drill rung would have had to re-implement it.
+ *
+ * Definition priority: manual override > the tagged cluster's lead gloss (ddt) >
+ * `staleGloss` > translation-context match against the flat definitions.
+ * Pronunciation priority: manual override > the tagged cluster's own `reading`
+ * (tone-converted and syllable-count-guarded by `senseReading`) > `stalePronunciation` >
+ * the entry-level column.
+ *
+ * `staleGloss`/`stalePronunciation` are the values the BREAKDOWN stores alongside its
+ * sense label. They sit BELOW the live cluster resolution deliberately: the label is the
+ * source of truth (it survives re-clustering), while the stored gloss is a snapshot that
+ * `backfill-dictionary-breakdown.js` can clobber and that goes stale when a character's
+ * glosses are later reordered — see docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md § 5b. They
+ * are still worth having as the rung's last sense-aware answer before the generic
+ * fallback.
+ *
+ * @param meta - the token's own dictionary metadata (from buildDictMap)
+ * @param text - the token, used only to guard the cluster reading's syllable alignment
+ * @param senseLabel - the cluster label this token carries in context, if any
+ * @param translatedContext - the English translation, for the generic fallback match
+ */
+function resolveSenseView(
+  meta: SegmentMeta,
+  text: string,
+  senseLabel: string | null | undefined,
+  translatedContext: string | null,
+  stale?: { gloss?: string; pronunciation?: string }
+): { definition?: string; pronunciation?: string } {
+  const matchedCluster = senseLabel && meta.definitionClusters
+    ? meta.definitionClusters.find(c => c.sense === senseLabel)
+    : undefined;
+
+  // ddt can be "" when the cluster's lead gloss is purely parenthetical (e.g. a
+  // particle's "(grammatical particle …)"); `|| undefined` lets that empty result fall
+  // through to the next source instead of blanking the definition.
+  const clusterDd = matchedCluster ? ddt(matchedCluster) || undefined : undefined;
+  const definition = meta.overrideDefinition
+    ?? clusterDd
+    ?? stale?.gloss
+    ?? pickDefinitionForTranslatedSentence(meta, translatedContext);
+
+  const pronunciation = meta.overridePronunciation
+    ?? senseReading(matchedCluster?.reading, text)
+    ?? stale?.pronunciation
+    ?? meta.pronunciation;
+
+  return {
+    ...(definition ? { definition } : {}),
+    ...(pronunciation ? { pronunciation } : {}),
+  };
+}
+
+/**
+ * Build a segment's tap-to-drill chain: every det headword strictly inside `segment`,
+ * ordered LONGEST-FIRST (which is also the order the client walks them in).
+ *
+ * Every offset is emitted separately, not just every distinct string: a repeated
+ * character (人人, 走走) drills to the half the player actually tapped, which is only
+ * decidable with the offset.
+ *
+ * Definitions here are NOT sense-tagged. The example-sentence tagging pass labels the
+ * senses of the top-level segments only, so a rung falls back to the same
+ * translation-context match un-tagged segments use. That is the right level of effort:
+ * a rung is a "what is this piece?" answer, not the card's dd.
+ *
+ * @param segment - the parent segment (a GSA winner, or a stored tagging-pass token)
+ * @param dictMap - the same pre-built lookup the segmenter ran on (from buildDictMap)
+ * @param opts.excludeTokens - matchException tokens (from buildExcludeSet); skipped for
+ *   multi-char rungs exactly as `segmentWithDict` skips them, so a token the dictionary
+ *   says is not a real word here cannot come back as a drill rung. Single characters are
+ *   never excluded, mirroring the segmenter.
+ * @param opts.translatedContext - the English translation, for definition matching.
+ */
+export function buildDrillRungs(
+  segment: string,
+  dictMap: Map<string, SegmentMeta>,
+  opts?: { excludeTokens?: Set<string>; translatedContext?: string | null }
+): SegmentDrillRung[] {
+  const chars = [...segment];
+  if (chars.length < 2) return [];
+
+  const { excludeTokens, translatedContext = null } = opts ?? {};
+  const rungs: SegmentDrillRung[] = [];
+  // The PARENT word's per-character sense tags — the same map the flashcard breakdown tab
+  // (bt) renders. A single-character rung is glossed from this rather than from the
+  // character's own lead sense, so drilling 银行 → 行 says "row/business" (háng), which is
+  // what the breakdown says, instead of the standalone "to walk". Multi-character rungs
+  // get no such answer: `breakdown` is keyed by CHARACTER only.
+  const parentBreakdown = dictMap.get(segment)?.breakdown ?? undefined;
+
+  // Cap at the segmenter's own window: dictMap only ever holds <=4-char substrings, so
+  // longer slices of an over-length segment could never resolve anyway.
+  const maxLength = Math.min(SEGMENTATION_MAX_TOKEN_CHARS, chars.length - 1);
+  for (let length = maxLength; length >= 1; length--) {
+    for (let offset = 0; offset + length <= chars.length; offset++) {
+      const text = chars.slice(offset, offset + length).join('');
+      const meta = dictMap.get(text);
+      if (!meta) continue;
+      if (length > 1 && excludeTokens?.has(text)) continue;
+
+      // Single characters resolve through the parent's breakdown sense; longer rungs have
+      // no breakdown entry, so they fall through resolveSenseView's generic path.
+      const bd = length === 1 ? parentBreakdown?.[text] : undefined;
+      const { definition, pronunciation } = resolveSenseView(
+        meta,
+        text,
+        bd?.sense,
+        translatedContext,
+        bd ? { gloss: bd.definition, pronunciation: bd.pronunciation } : undefined
+      );
+      if (!definition) continue; // see SegmentDrillRung.definition — no gloss, no rung
+
+      rungs.push({ text, offset, definition, ...(pronunciation ? { pronunciation } : {}) });
+    }
+  }
+
+  return rungs;
 }
 
 /**
@@ -388,54 +556,42 @@ export function buildSegmentMetadata(
     translatedContext?: string | null;
     includeWordForms?: boolean;
     senseDict?: Record<string, string>;
+    excludeTokens?: Set<string>;
   }
 ): Record<string, RenderedSegmentMeta> {
-  const { pacMap, partOfSpeechDict, translatedContext = null, includeWordForms = false, senseDict } = opts ?? {};
+  const { pacMap, partOfSpeechDict, translatedContext = null, includeWordForms = false, senseDict, excludeTokens } = opts ?? {};
   const result: Record<string, RenderedSegmentMeta> = {};
 
   for (const seg of segments) {
     const segMeta = dictMap.get(seg);
     const pacEntries = pacMap?.get(seg);
+    // Tap-to-drill rungs (docs/SEGMENT_DRILL_DOWN.md). Computed BEFORE the
+    // "is there any data for this segment" gate below, because a segment can have no det
+    // row of its own and still contain shorter headwords — a stored tagging-pass token the
+    // dictionary never had, for instance. That segment still deserves a drill chain.
+    const drill = buildDrillRungs(seg, dictMap, { excludeTokens, translatedContext });
 
     // Only emit an entry when there's at least one data source for the segment.
-    if (!segMeta && !pacEntries?.length) continue;
+    if (!segMeta && !pacEntries?.length && drill.length === 0) continue;
 
     const entry: RenderedSegmentMeta = {};
+    if (drill.length > 0) entry.drill = drill;
 
     if (segMeta) {
       // The sense this segment carries HERE, as tagged by the example-sentence tagging
-      // pass. It drives BOTH the displayed definition and the pronunciation below, so a
-      // heteronym reads as the same sense on both halves of the popup.
-      const senseLabel = senseDict?.[seg];
-      const matchedCluster = senseLabel && segMeta.definitionClusters
-        ? segMeta.definitionClusters.find(c => c.sense === senseLabel)
-        : undefined;
-
-      // Pronunciation resolution priority:
-      //   1. manual override (verbatim),
-      //   2. the tagged sense's own cluster `reading` — heteronyms are a hard cluster
-      //      boundary (docs/DEFINITION_CLUSTERS.md), so this is the ONLY sense-correct
-      //      source: 会 in the "to reckon accounts" sense is kuài, not the entry-level huì,
-      //   3. the entry-level stored pronunciation (un-tagged/un-clustered segments).
-      // Cluster readings are numbered ("kuai4"), the column is tone-marked ("huì"), so the
-      // reading is converted before it can stand in for it.
-      const clusterPronunciation = senseReading(matchedCluster?.reading, seg);
-      const pronunciation = segMeta.overridePronunciation ?? clusterPronunciation ?? segMeta.pronunciation;
+      // pass, drives BOTH halves of the popup — so a heteronym reads as the same sense in
+      // its gloss and its pinyin (会 in the "to reckon accounts" sense is kuài, not the
+      // entry-level huì; heteronyms are a hard cluster boundary, see
+      // docs/DEFINITION_CLUSTERS.md). The full priority order, and why the drill rungs
+      // share it, is documented on resolveSenseView.
+      const { definition, pronunciation } = resolveSenseView(
+        segMeta,
+        seg,
+        senseDict?.[seg],
+        translatedContext
+      );
       if (pronunciation) entry.pronunciation = pronunciation;
-      // Definition resolution priority:
-      //   1. manual override (verbatim),
-      //   2. the segment's TAGGED sense → ddt(matching cluster) — the cluster's own
-      //      stripped lead gloss (the sense the tagging pass says this segment carries here),
-      //   3. translation string-match against the flat definitions (legacy fallback, and the
-      //      only path for un-tagged/un-clustered segments).
-      // ddt can be "" when the cluster's lead gloss is purely parenthetical (e.g. a
-      // particle's "(grammatical particle …)"); `|| undefined` lets that empty result
-      // fall through to the string-match fallback instead of blanking the definition.
-      const clusterDd = matchedCluster ? ddt(matchedCluster) || undefined : undefined;
-      const bestDefinition = segMeta.overrideDefinition
-        ?? clusterDd
-        ?? pickDefinitionForTranslatedSentence(segMeta, translatedContext);
-      if (bestDefinition) entry.definition = bestDefinition;
+      if (definition) entry.definition = definition;
       if (includeWordForms && segMeta.wordForms) entry.wordForms = segMeta.wordForms;
     }
 

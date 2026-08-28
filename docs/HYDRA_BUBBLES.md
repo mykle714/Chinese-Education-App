@@ -1102,7 +1102,7 @@ comparable length.
 
 | Aspect | Free play | Challenge |
 |---|---|---|
-| Score | bubbles cleared | contested/filler points over the **12** challenge words (`CHALLENGE_WORD_COUNT`) |
+| Score | bubbles cleared | contested/filler points over the **9** challenge words (`CHALLENGE_WORD_COUNT`) |
 | Run ends | wrong match, or overflow | **the last challenge word is matched** |
 | Spawn table | § 3.1 | § 3.1, unchanged |
 
@@ -1122,20 +1122,21 @@ Rules:
   a filler bloom. A drain roll never places a challenge word.
 * **Bloom is 55% of the growth zone and 100% of the opening**, so challenge words
   surface far more readily than they did on the old 30% yellow slot — and the § 3.1
-  table needs no per-mode reweighting to deliver ten of them. The one place they cannot
+  table needs no per-mode reweighting to deliver the whole set. The one place they cannot
   spawn is the **squeeze** (drain-only), which is a bounded zone the player is digging
   out of rather than a state a run sits in.
-* **The run ends the moment the tenth challenge word is cleared**, and the timer stops
+* **The run ends the moment the LAST challenge word is cleared**, and the timer stops
   there. Filler bubbles still on the board are irrelevant, and overflow after that
   point cannot happen because the run is already over.
 * **A wrong match still ends the run**, early and without score for what is left:
   challenge words already matched are banked, unmatched ones score **zero**. A player
-  who cleared 8 of 10 therefore outranks one who cleared 3, which speed alone could
+  who cleared 8 of 9 therefore outranks one who cleared 3, which speed alone could
   not express.
 
-⚠️ **TEN BECAME TWELVE.** This section was written when a challenge set was ten words;
-`CHALLENGE_WORD_COUNT` was raised to 12 on 2026-08-17. Read every "ten" here as "the
-challenge set", which the code reads from the constant and never hard-codes.
+⚠️ **THE SET SIZE HAS MOVED TWICE.** This section was written when a challenge set was
+ten words; `CHALLENGE_WORD_COUNT` went to 12 on 2026-08-17 and to **9** on 2026-08-28.
+Read every "ten"/"tenth" here as "the challenge set" / "the last of it", which the code
+reads from the constant and never hard-codes.
 
 #### How it is wired (2026-08-22)
 
@@ -1153,7 +1154,7 @@ the filler IS the colour economy: bands decide colour (§ 5), so a board padded 
 from Mastered cards would be a board of nothing but bloom — the ladder inverted and the
 squeeze unreachable. A Hydra challenge round therefore draws only the CONTESTED set from
 the challenge and leaves the buffers untouched. Its difficulty comes from the challenge
-SHAPE (clear all twelve, a wrong match ends the run), exactly as this section already
+SHAPE (clear all nine, a wrong match ends the run), exactly as this section already
 argued.
 
 **Background pause is now armed for challenge rounds** (§ 7.1c's own caveat, honoured):
@@ -1220,7 +1221,7 @@ the board, which is any learner playing two rounds back to back. Those marks wer
 recorded before the guard; under it they silently stop being recorded.
 
 **Resolved: ship the guard as designed, and log every suppressed mark server-side.**
-*(Built. The log line is `[MarkSuppressed]` in `server/routes/flashcardRoutes.ts`.)*
+*(Built. The log line is `[MarkSuppressed]` in `server/services/FlashcardMarkService.ts` → `applyMark`.)*
 The cooled tier stays — and on **2026-08-20 it was promoted above lending**
 (PROVISIONAL_CARDS.md § 4b), which settles the open question below in its favour and
 makes suppression *more* common by design: re-showing a resting card that earns nothing
@@ -1367,7 +1368,7 @@ written and shipping: **±100 / ±20, no bonus** (`CHALLENGE_GAMES`,
 STILL open is the second half — **how a partial run's TIME compares against a complete
 one.** Today time is not scored at all, so the numbers rank a partial run below a
 complete one on contested hits alone: a player who cleared 8 of 12 outranks one who
-cleared 3, but two players who both cleared all twelve are separated only by their
+cleared 3, but two players who both cleared all nine are separated only by their
 filler, not by speed. That is a defensible floor and not the final design — the honest
 fix is a completion bonus that decays with elapsed active time, which the existing
 `survival`/`elapsedPenalty` bonus kinds can already express without new machinery.
@@ -1451,7 +1452,7 @@ nothing.
 | re-lend before minting | `ProvisionalCardService.acquireLentCards` → `ProvisionalCardDAL.findHeldProvisional`, called from `lendGameCandidates` (was `OnDeckVocabService.fetchRelendable`, removed 2026-08-20) |
 | lend as the last fill tier (§ 4b) | `OnDeckVocabService.getGameVocabPool` → tier 5; `fetchRowsByIds` (was `fetchLentRows`, generalised 2026-08-22 when the challenge board needed the same hydration) |
 | challenge board (§ 7.5) | `OnDeckVocabService.getChallengeGamePool`; `StudyChallengeService.getRoundContext` |
-| cooldown mark guard (§ 8) | `server/routes/flashcardRoutes.ts` → the `[MarkSuppressed]` branch |
+| cooldown mark guard (§ 8) | `server/services/FlashcardMarkService.ts` → `applyMark`, the `[MarkSuppressed]` branch |
 | **Tests** | |
 | economy signs | `src/__tests__/hydraSpawnTable.test.ts` |
 | spawn invariants | `src/__tests__/hydraSpawnPlanner.test.ts` |

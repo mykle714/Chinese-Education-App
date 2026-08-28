@@ -304,7 +304,7 @@ deck would make the deck itself the answer key.
 | `src/features/flashcards/DecksPanelBody.tsx` | Body of the panel (`variant: "sheet" \| "page"`): the library duo, the Challenges / Decks shelf rows and the inline Cards grid (`LibraryDuo`, `ShelfRow`, `SectionLabel`) |
 | `src/features/flashcards/LibraryDuo.tsx` | The panel's two library constants (`.duo`) — Learn Now + Mastered, with their figures. The one place the sheet is not spines; see § "Your library" |
 | `src/features/flashcards/StudyHand.tsx` | The three study modes as a fanned hand of cards, on the page behind the sheet (`.fanw`) |
-| `src/features/flashcards/useHandSwipe.ts` | The horizontal throw gesture on the hand's front card — axis arbitration, the flp's drag constants, click suppression |
+| `src/features/flashcards/useHandSwipe.ts` | The omnidirectional throw gesture on the hand's front card — slop classifier, radial commit threshold, the flp's drag constants, click suppression |
 | `src/features/flashcards/SlotNumber.tsx` | The slot-machine reel a figure spins as while its count is in flight, and the landing that settles it |
 | `src/utils/flpReadiness.ts` | The hand's ready counts — `rankFlpEligible`'s cooldown rule restated on the client, per band |
 | `src/features/flashcards/NewDeckDialog.tsx` | The "name your deck" prompt behind every panel's `+`; shows the **server's** message verbatim on failure |
@@ -597,11 +597,15 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
      has only three states (one per possible front card); the stack has all six.
      `FAN_ORDER` (challenge → review → mix) now seeds the opening arrangement only.
    - **Two ways to bring a card forward, and no card ever leaves the frame.**
-     **Swiping** the front card (`useHandSwipe`) sends it to the BACK of the stack and
-     surfaces the card directly behind it — `[a, b, c] → [c, a, b]`, a 3-cycle. Left and
-     right are the **same move**: the hand is a cycle of three, so there is no second
-     direction for a swipe to mean, and the direction survives only as the lean of the card
-     while it is under the finger (`afterSwipe` takes no direction argument at all).
+     **Throwing** the front card (`useHandSwipe`) sends it to the BACK of the stack and
+     surfaces the card directly behind it — `[a, b, c] → [c, a, b]`, a 3-cycle. The throw is
+     **omnidirectional**: the card follows the finger on both axes, exactly as an flp card
+     does, and commits once its straight-line distance from the start of the gesture passes
+     `CARD_DISMISS_THRESHOLD_VW × card width` — one radius for every direction, so the
+     commit boundary is a circle rather than two side gates. Every direction is the **same
+     move**: the hand is a cycle of three, so there is no second direction for a throw to
+     mean, and the direction survives only as the card's exit path and the lean it takes
+     from the drag's horizontal component (`afterSwipe` takes no direction argument at all).
      **Tapping** a back card promotes it and leaves the other two in their relative order
      (`afterTap`); tapping the *middle* card is a transposition of the top two. A 3-cycle
      plus a transposition generate every ordering of three elements, so swipe and tap
@@ -612,10 +616,13 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
      stack answer a finger identically. It is a separate hook from the flp's `useCardDrag`
      because that one is built around the card FLIP (tap-to-flip classifier, flip lock,
      `hasFlippedCurrentCard` drag gate, two tutorial hints), none of which a one-faced hand
-     card has. Because the hand sits above a draggable `SheetPanel` inside a scrolling
-     `MobileTabScreen`, the gesture arbitrates its axis: it stays pending until the finger
-     clears 8px, then either claims the horizontal axis or declines outright so the
-     scroll/sheet beneath behaves as if the card were not there.
+     card has. The hand sits above a draggable `SheetPanel` inside a scrolling
+     `MobileTabScreen`, and because the throw now uses BOTH axes it can no longer hand the
+     vertical one back to them: the gesture stays pending until the finger clears 8px in
+     any direction, then claims the touch outright (`preventDefault`), and the front card
+     is `touchAction: "none"`. A finger that starts on the played card drags the card; the
+     page and the sheet are scrolled from anywhere else. Below 8px it is still a tap, so
+     `Study now` and the back cards keep their clicks.
    - **A promotion is a hard content switch, not a crossfade.** Geometry animates over
      260ms (`SLOT_TRANSITION`); the front/back layouts swap at t=0 of the commit. The two
      layouts are different compositions — a big numeral plus a commit button versus a
@@ -644,13 +651,22 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
      hard switch and anything that *moves* between the two layouts moves visibly. The cost
      is that the front card states its figure twice — small in the tag, large in the
      numeral below — and that repetition is the point rather than an oversight.
+   - **A landed `0` swaps the tag for a sentence** (`StudyHandCard.zeroMessage`). "0 Cards"
+     reads as a shortfall; the state it actually describes is either "you finished" or
+     "go get more", so the tag says which: Review prints **"All caught up!"**, Challenge
+     and Study Mix print **"Ready for more cards!"** (`ZERO_MESSAGE_MORE_CARDS`). The big
+     numeral still shows the `0` — the tag is the gloss on it, not a replacement.
    - **`backLeft` keeps the old right-clustered head.** The bottom card is two promotions
      from the front and its left edge is the part the fan overlaps first, so a name pinned
      there would slide under another card, which is worse than no name at all.
-   - **Ineligibility is not disablement.** Review greys out with no earned
-     Comfortable/Mastered cards, but still fires `onStudy`, so the page can explain
-     ("Mark more cards in Study Mix…") rather than leaving a dead card. The card can
-     always be brought forward; it is the commit that is refused.
+   - **Ineligibility is not disablement, and a zero is not a fault.** Review is
+     ineligible with no earned Comfortable/Mastered cards, but still fires `onStudy`, so
+     the page can explain ("Mark more cards in Study Mix…") rather than leaving a dead
+     card. The card can always be brought forward; it is the commit that is refused.
+     **The card is not greyed for it** — its ramp fill and opacity are unchanged, and only
+     the `Study now` button dims. A `0` is the ordinary end of a session (everything
+     marked, everything resting), and draining the card's colour would turn that into a
+     failure state; the `zeroMessage` above says it in words instead.
 
    **The figures.** Each mode's number is how many cards **that mode could deal right
    now**: its bands, counted over the library, minus everything still on cooldown.
@@ -728,12 +744,24 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    by a card. See DEFERRED_WORK.md § 9, whose original "this needs server work" reasoning
    this disproved.
 
-   All three are `undefined` until the library lands, and print an **em dash** rather than
-   a provisional `0` — `0` is a real answer every one of these figures can give, and on a
-   cooldown count it is a *common* one (a learner who has just finished a session).
+   All three are `undefined` until the library lands, and the numeral spins as a
+   `SlotNumber` reel rather than printing a provisional `0` — `0` is a real answer every
+   one of these figures can give, and on a cooldown count it is a *common* one (a learner
+   who has just finished a session).
 
-   **The Review gate reads the ready count.** Review greys out when nothing in
-   Comfortable/Mastered is off cooldown, and the flp cannot lend its way out of that: a
+   **Nothing else on a card may read that `undefined` as a zero either.** `reviewEligible`
+   is tri-state (`undefined` = not counted yet) for exactly this reason: it used to be
+   `(reviewPool ?? 0) > 0`, which declared the mode empty for the whole length of the
+   library fetch and — while `StudyHand` still greyed the card itself — repainted the
+   Review card **grey → blue** on every visit to the page. `StudyHand` tests
+   `eligible === false` strictly, so the loading state now renders identically to an
+   offered card. Challenge and Study Mix pass no `eligible` at all and were never
+   affected.
+
+   **The Review gate reads the ready count.** Review goes ineligible (dimmed commit
+   button, full-colour card) when nothing in Comfortable/Mastered is off cooldown —
+   and only once that is *known*: a tap while the count is still in flight starts the
+   session rather than raising the toast, and the flp cannot lend its way out of that: a
    lent card has an empty mark history, so it bands Unfamiliar and can never satisfy a
    Review pool. Two different zeroes reach that state and they need opposite advice, so
    the toast branches on `nextFlpReadyMs`: nothing **earned** yet → "Mark more cards in
@@ -816,8 +844,9 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    dictionary bars use — so typing costs no round trip and there is no second notion of
    "matches". The caption's figure is the **unfiltered** total: it names the size of the
    library, and a number that shrank while you typed would be reporting the search
-   instead. The grid paces its own reveal, so a large library never mounts in one
-   blocking render.
+   instead. The grid mounts only the rows near the viewport, so its cost does not grow
+   with the library (see "Why the card grid is windowed" below); the search term is
+   deferred before it reaches the filter, so the input never lags the finger.
 
    It carries the **same sort picker as the collection page** — the shared
    `CollectionSortControl` (see § "Sort by"), minus the deck-only *Date added* row,
@@ -857,6 +886,69 @@ all**. *Collections* wraps (a fixed set of two or three, known to fit); *Challen
 Every row is **left-aligned**. The old `TileGrid` centred its short rows and left-aligned
 its growing ones; centring is wrong on a shelf, because the board runs the full width of
 the row and spines floating in the middle of it read as a mistake.
+
+### Why the card grid is windowed
+
+**Code:** `src/components/MiniVocabCardGrid.tsx`, `src/hooks/useWindowedRows.ts`
+(`computeRowWindow`), `src/hooks/useIncrementalList.ts`,
+`src/components/MiniVocabCard.tsx`, `src/features/flashcards/useDecksPanel.ts`.
+
+This section holds the learner's **entire** library — mastered cards included — inside a
+pull-up sheet. On the large test account that is **470** cards, and the panel is mounted
+only when the sheet opens, so the whole grid's mount lands *inside the sheet's opening
+animation*. Everything below exists because of that one fact.
+
+Four mechanisms, in the order they were added, each doing a different job:
+
+| Mechanism | What it removes | What it does NOT do |
+|---|---|---|
+| `memo` on `MiniVocabCard` + stable `onCardClick` | Re-rendering every card when unrelated page state changes (a snackbar, a dialog) | Nothing about the first mount |
+| `content-visibility: auto` + `contain-intrinsic-size` on the card | Layout and paint for offscreen cards | React still creates every element — this is a *browser*-side skip |
+| `useIncrementalList` (the paced reveal) | The mount happening in ONE commit | Bound the total; and past `CASCADE_LIMIT` it stops pacing at all |
+| `useWindowedRows` (windowing) | The rows themselves — only ~20 cards exist at a time | Apply to `renderCard` callers (see below) |
+
+The load-bearing point is the third row's caveat. The paced reveal was introduced to keep
+the panel's buttons pressable while the list filled in; `CASCADE_LIMIT = 15` was later
+added for a purely cosmetic reason (a 470-step waterfall is absurd) and, as a side effect,
+returned everything past card 15 to a single commit. Windowing is what makes that cap
+safe: the commit is large in *entries* but small in *rows*, because only the rows in the
+window are ever mounted. **Neither the cap nor the windowing can be removed on the
+assumption that the other one covers it.**
+
+**How the window is measured.** `useWindowedRows` measures the band against the nearest
+**scrollable ancestor**, not the viewport. On this panel the grid and its scroller move
+together while the sheet is dragged taller, so a scroller-relative band is unchanged by
+the resize and needs no recomputation during the gesture — only the scroller's *height*
+matters, and a `ResizeObserver` catches that. Measurement is rAF-coalesced, the scroll
+listener is registered on `window` with `capture: true` (scroll events do not bubble), and
+the ancestor walk happens once per subscription rather than once per frame.
+
+**How the height stays honest.** The rows outside the window are replaced by two
+full-width spacers. Each spacer is itself a flex item, so the container's own 16px `gap`
+supplies the separation on its inner side — which is why each spacer's height is `rows ×
+(cardHeight + gap) − gap`. The invariant (`leading + gap + rendered + gap + trailing ==
+totalRows × cardHeight + (totalRows − 1) × gap`) is unit-tested over a band swept down the
+whole list in `src/__tests__/windowedRows.test.ts`. Get it wrong and the scroll position
+jumps as rows enter the window; that is the failure this arithmetic is guarding against.
+
+**Two deliberate limits:**
+
+- **Windowing is off below `WINDOW_MIN_ITEMS` (45)** — about five screens. Under that,
+  nearly everything is inside the band anyway and the two forced layouts per scroll frame
+  would buy nothing.
+- **Windowing is off for `renderCard` callers** (Quick Mark, the two challenge pages).
+  The spacer arithmetic is only valid on a **fixed lattice**; a custom card that is not
+  exactly `cardHeightPx` tall on every row would make the spacers lie. Those callers
+  bound their own lists — Quick Mark paginates — so they lose nothing. **A new
+  `renderCard` caller with an unbounded list must page or window itself.**
+
+**The search box.** `useDecksPanel` runs the term through `useDeferredValue` before it
+reaches `filterVocabEntries`. The keystroke updates the input at normal priority so the
+caret never stalls; the re-filter, re-sort and grid re-render ride the deferred copy,
+which React discards and redoes when the next character arrives. Note that a new filter
+result is a new array identity, which **restarts the reveal cascade** — the results
+visibly pop in on each settled keystroke. That is currently accepted as reading like
+"results arriving" rather than as a defect.
 
 ### Every set on the page is the same object
 
@@ -1208,6 +1300,7 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §4 Spines & built-in collections | `src/components/shelf/*` (`Shelf`, `Spine`, `AddSpine`, `spineGeometry`) (+ `DeckBuckets.tsx`, the Account host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`lensCollectionEntries`, `builtinCollectionEntries`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`, `LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
 | §1 `editMode` + §4 Challenges section | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; `database/migrations/148-create-study-challenges.sql`; `DeckService` → `assertMutable` (the preset mutation guard) and `createPresetDeck`; `DeckDAL` → `createPresetDeck` / `countCustomDecks` / `findDeckEditMode`; `study_challenges.presetDeckIds` |
 | §4 Cards section (inline library) | `src/api/collections.ts` (`fetchCollectionCards`) — also the collection page's built-in read; `src/components/MiniVocabCardGrid.tsx`; `src/utils/vocabSearch.ts` (`filterVocabEntries`); `useDecksPanel.ts` (the fetch, the search + sort state); `DecksPanelBody.tsx` (the section + the `decksSheet.decksOpen` collapse) |
+| §4 Why the card grid is windowed | `src/hooks/useWindowedRows.ts` (`useWindowedRows`, `computeRowWindow`, `seedWindow`, `scrollParentOf`); `src/components/MiniVocabCardGrid.tsx` (`WINDOW_MIN_ITEMS`, `WINDOW_OVERSCAN_PX`, `CASCADE_LIMIT`, the two spacers); `src/hooks/useIncrementalList.ts`; `src/components/MiniVocabCard.tsx` (`memo`, `contentVisibility`); `src/features/flashcards/useDecksPanel.ts` (`useDeferredValue` on the search term); `src/__tests__/windowedRows.test.ts` |
 | §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `server/contracts/cooldown.ts` (`cooldownRemainingMs`) + `server/contracts/mastery.ts` (`computeTypeCategory`) for the Cooldown key; `src/features/flashcards/CollectionSortControl.tsx` (the shared button + menu, both visibility gates); `CollectionViewPage.tsx` and `useDecksPanel.ts` (each holds its own key + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |
 
 Related docs: [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (small-deck top-up),

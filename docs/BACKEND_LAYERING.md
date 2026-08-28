@@ -104,9 +104,9 @@ transactional path itself stayed untested because there was no seam to assert on
 `TransactionRunner` is declared in `server/types/dal.ts` beside `ITransaction`, not in
 any one service, so the second and third adopters do not import a type from a sibling.
 
-**Both transaction sites in the codebase conform** (2026-08-17):
-`services/FriendsService.ts` → `removeFriend`, and `services/StudyChallengeService.ts`
-→ `acceptChallenge`. Note this rule is about the *transaction runner* specifically;
+**All three transaction sites in the codebase conform** (2026-08-28):
+`services/FriendsService.ts` → `removeFriend`, `services/StudyChallengeService.ts`
+→ `acceptChallenge`, and `services/FlashcardMarkService.ts` → `applyMark` / `undoMark`. Note this rule is about the *transaction runner* specifically;
 the `dbManager.executeQuery` calls in `TextService`, `ValidationService`,
 `NightMarketTemplateService` and `LazyEnrichmentService` are the separate
 service-writes-SQL problem tracked in § 4 below.

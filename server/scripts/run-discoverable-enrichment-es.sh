@@ -39,6 +39,7 @@
 #                                              also writes partsOfSpeech (AI)
 #   7. backfill-long-definitions             — generate longDefinition per sense (AI)
 #   8. backfill-example-sentences            — generate example sentences per sense (AI)
+#   9. repair-frequency-score-drift          — enforce frequencyScore == MAX(cluster scores) (no AI)
 #
 # Why this order:
 #   - Steps 1-3 all rewrite `definitions`; everything downstream reads it.
@@ -163,6 +164,14 @@ run_script "Step 7: Long Definitions" "backfill-long-definitions.js"
 
 # Step 8: Generate example sentences per sense (AI) — reads cluster `sense` labels
 run_script "Step 8: Example Sentences" "backfill-example-sentences.js"
+
+# Step 9 lives in backfill/shared/ (language-generic), so it bypasses run_script's
+# SCRIPT_DIR. It reconciles the word-level frequencyScore with the per-cluster scores —
+# steps 5 and 6 already enforce the invariant, this is the safety net. No API calls.
+# See docs/DEFINITION_CLUSTERS.md § "The word/cluster frequency invariant".
+print_header "Step 9: Frequency Invariant Repair"
+docker exec -i "$BACKEND_CONTAINER" sh -c "npx tsx /app/scripts/backfill/shared/repair-frequency-score-drift.js --language=es"
+print_success "Step 9: Frequency Invariant Repair complete"
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))

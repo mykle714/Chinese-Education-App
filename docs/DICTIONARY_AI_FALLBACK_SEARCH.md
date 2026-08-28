@@ -35,7 +35,7 @@ Given a search term, results are resolved in this order; the first stage that yi
 ```
 1. Normal search        word1 ILIKE / pronunciation ~ / definitions ~* / numbered-pinyin (spaced)
    │  (0 rows)
-2. Spaceless pinyin      segment the term into pinyin syllables (tone digits allowed) — enumerate
+2. Spaceless pinyin      segment the term into pinyin syllables (tone digits OR tone marks) — enumerate
    │                     ALL valid tilings, not just one — and re-run the numbered-pinyin match on
    │                     each re-spaced form. Real det rows, rendered normally.
    │  (0 rows)
@@ -61,6 +61,16 @@ A new server util **`server/utils/pinyinSegment.ts`**:
   backtracking segmenter. Each syllable may carry a **trailing tone digit `0–5`** (numbers are
   supported: `jian4shen1` tiles to `["jian4","shen1"]`; the digit binds to the syllable it
   follows). Returns every ordered syllable list that tiles the whole string; `[]` if none.
+  - **Tone MARKS are accepted too** (`nǐhǎo` → `["ni3","hao3"]`, `lǚyóu` → `["lv3","you2"]`). A mark
+    sits on a vowel *inside* its syllable, so it can't be rewritten as a digit in place — `ha3o`
+    would tile as `["ha3","o"]`. Instead `stripToneMarks` lowers the marked vowels to plain ASCII
+    (and `ü`/`ǖǘǚǜ` to the column's `v` spelling) while recording each tone's **character index**;
+    after tiling, `applyTones` suffixes each token with the digit of whichever mark landed inside
+    its span. `TONE_MARKED_VOWELS` is the inverse of `numberedToTonedSyllable`
+    (`server/utils/pinyinTones.ts`) — keep the two vowel tables in step.
+  - Only **spaceless** marked input needed this: `nǐ hǎo` with its space already matches stage 1's
+    `pronunciation ~` regex (the column stores tone-marked, space-separated pinyin), and `nihao`
+    already tiled because it is plain ASCII. `nǐhǎo` was the one combination that reached neither.
   - **Why all tilings, not greedy max-munch:** some syllables double as *starter* segments that a
     previous syllable could also have absorbed — e.g. `an` in `xian` (`["xian"]` vs `["xi","an"]`),
     `ang`, `en`, `er`, `ou`. A single greedy choice would silently drop the alternative real word,
@@ -299,7 +309,7 @@ All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both con
 | Migration | `database/migrations/100-create-dictionary-ai-usage.sql` | the per-user daily-usage counter table |
 | Constant | `server/constants.ts` | `DICTIONARY_AI_DAILY_LIMIT` (default 10, env-overridable) |
 | Error | `server/types/dal.ts` | `RateLimitError` (HTTP 429, `code: 'ERR_RATE_LIMIT'`) |
-| Util | `server/utils/pinyinSegment.ts` (**new**) | `segmentPinyin`, `isAllPinyin` (syllable inventory + max-munch) |
+| Util | `server/utils/pinyinSegment.ts` (**new**) | `segmentPinyin`, `isAllPinyin` (syllable inventory + max-munch), `stripToneMarks`/`applyTones` (tone-mark input) |
 | Util | `server/utils/streakDate.ts` | `resolveTimezone`, `streakDateOf` — reused to bound the daily limit to the local streak-day |
 | DAL | `server/dal/implementations/DictionaryDAL.ts` | **per-language table/column routing in `searchByWord1`** (`dictTableForLanguage`, `dictionaryColumns`, `isZh`-gated pinyin/pronunciation clauses); stage-2 segmentation fallback (zh-only); `getAiCacheEntry`, `upsertAiCacheEntry`; return `canAskAi`; `getAiUsageCount`, `incrementAiUsage` (daily limit) |
 | DAL iface | `server/dal/interfaces/IDictionaryDAL.ts` | new method signatures (incl. `getAiUsageCount`/`incrementAiUsage`) |

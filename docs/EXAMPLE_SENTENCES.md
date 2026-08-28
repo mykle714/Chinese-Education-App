@@ -9,28 +9,37 @@ tappable segments with per-segment definition popups.
 Each dictionary entry carries an `exampleSentences` array (jsonb). Per sentence the
 data holds the foreign text, an English translation, a `translatedVocab` pointer,
 a `sense` (the exact `definitionClusters` sense label the **target word**
-carries in that sentence), the authoritative GSA **`segments`**, and four
+carries in that sentence), the authoritative GSA **`segments`**, any
+**`segmentExceptions`** the segmentation audit found, and four
 **segment-keyed** dicts — `partOfSpeechDict`, `numberDict`, `tenseDict`, and
 `senseDict`. At read time the DAL renders the stored `segments` (falling back to a
 live greedy segmentation for pre-tagging rows) and attaches per-segment metadata;
 the client renders each segment as **cpcd** with a hover/tap popup.
 
-### Two-phase generation (generation → segment-wise tagging)
+### Three-phase generation (generation → segmentation audit → segment-wise tagging)
 
-Sentence text and the render-time per-segment data are produced by **two separate
+Sentence text and the render-time per-segment data are produced by **three separate
 steps** in `backfill-example-sentences.js`:
 
 1. **Generation** (Sonnet, Opus repair) emits only the sentence text +
    `translatedVocab` + `sense` (target, multi-sense) + `targetPos` (the
    target word's POS — a *coverage-steering signal only*, **not stored**).
-2. **Tagging pass** (`tagSentenceSegments`, Sonnet) runs the **same GSA the read path
-   uses** on the final text, then one model call tags **each GSA segment** with its
+2. **Segmentation audit** (`auditSegmentation`, Sonnet) runs the **same GSA the read
+   path uses** on the final text, then one model call names the multi-character
+   segments that are *not one word in this sentence*. Those become the sentence's
+   `segmentExceptions` and the text is **re-segmented** with them excluded. See
+   [Segmentation audit](#segmentation-audit-per-sentence-segmentexceptions) below.
+3. **Tagging pass** (`tagSentenceSegments`, Sonnet) tags **each surviving segment** with its
    contextual `pos`, `sense` (from *that segment's own* `definitionClusters`),
    `number` (nouns), and `tense` (verbs). The segmentation is persisted (`segments`)
    and the four dicts are keyed by the GSA segment string, so read-time lookups align
    exactly. `tense` is **per-verb**, not per-sentence, so a sentence mixing tenses
    (`I bought books, will return them tomorrow`) inflects each verb's popup gloss on
    its own tag.
+
+Step 2 **must** precede step 3: the four dicts are keyed by the segment strings, so
+tagging a segmentation the audit is about to change would leave every key pointing at
+a segment that no longer exists.
 
 This replaced the earlier design where generation emitted an **AI-token-keyed**
 `partOfSpeechDict`/`numberDict` that could silently misalign with the read-time GSA
@@ -99,6 +108,61 @@ A manual `exampleSentenceDefinitionPronunciationOverride` still wins over both.
 (`ddt` = `stripParentheses(cluster.glosses[0])`; the client twin lives in
 `src/utils/definitionUtils.ts`.)
 
+### Segmentation audit (per-sentence `segmentExceptions`)
+
+The GSA is **context-free**: at each length tier it takes the highest-scoring
+dictionary match, so a real headword that merely *happens* to span two adjacent
+characters wins even when those characters are doing separate jobs. The canonical
+case is 真是 — a genuine word ("indeed") — inside 他**真是**个行家, where 真 is an adverb
+and 是 is the copula. Segmenting them together mislabels the clause and hands the
+learner a popup for a word that isn't in the sentence.
+
+Only a reader who understands the sentence can tell the two apart, so one model call
+per sentence (`auditSegmentation`, `backfill-example-sentences.js`) reviews the
+emitted segmentation and returns the multi-character segments that should be split:
+
+```
+Chinese: 他真是个行家。          →  ["真是"]
+Segmentation produced: "他" "真是" "个" "行家" "。"
+```
+
+The result is stored on the sentence as **`segmentExceptions: string[]`** (a key in
+the existing `exampleSentences` jsonb — **no migration**) and passed straight back
+into `segmentWithDict` as exclude tokens, **unioned with** the entry-wide
+`matchException` set rather than replacing it. Single characters are never
+excludable (they are the GSA's last-resort fallback), so a rejected 真是 falls apart
+into 真 + 是 for free.
+
+**Why per-sentence and not `matchException`.** The `matchException` column is
+entry-wide and shared with the Reader — listing 真是 there would suppress it in every
+other sentence and in every user document, where it *is* the right segmentation. The
+exception is a fact about **this sentence**, so it lives on this sentence.
+
+Three guards on what the model returns (`auditSegmentation`):
+
+| Guard | Why |
+|---|---|
+| Token must be **one of the segments actually emitted** | a hallucinated token is a silent no-op in `segmentWithDict`; storing it would leave a misleading record on the row |
+| Token must be **≥ 2 characters** | single chars cannot be excluded at all |
+| Token is **never the target headword** | the sentence exists to demonstrate it, and the tagging pass forces it to win segmentation (`prioritySegments`); excluding it would strip the target's own popup and underline |
+
+The call **fails open** — an unparseable or errored response yields `[]` and the
+sentence keeps the raw GSA segmentation, which is exactly what every row shipped
+before this pass existed. (An `err.oracleExport` throw still propagates; it is a
+control-flow signal, not a failure.) `segmentExceptions` is **omitted when empty**,
+the common case, so the corpus does not grow an empty array per sentence.
+
+**Read-time role.** Because the corrected segmentation is persisted on `segments`,
+the stored list is *not* what fixes the render — it is the durable record of *why*
+that segmentation looks the way it does. It still does two live jobs in
+`enrichExampleSentencesMetadataBatch`: it feeds the **live-GSA fallback** for rows
+written before the tagging pass existed, and it is unioned into the `excludeTokens`
+handed to `buildSegmentMetadata`, so an audited token can never come back as a
+**drill rung** either ([SEGMENT_DRILL_DOWN.md](./SEGMENT_DRILL_DOWN.md)).
+
+Shipped in `SCRIPT_VERSION 7`, so `--stale` regenerates every previously-stamped
+entry through the new pass.
+
 ### Sense-aware pinyin (heteronyms)
 
 The pronunciation half exists because a heteronym's reading **is** a function of its
@@ -107,7 +171,7 @@ entry-level `pronunciation` column is only correct for the entry's *primary* sen
 Before this, 会 in the "to reckon accounts" sense rendered **huì** in the cpcd row and
 narrated as huì; it now renders **kuài**, and tone coloring follows for free (cpcd
 derives tone from the diacritic). The same value is the pinyin hint passed to cloud
-TTS by tap-to-speak and the drag-scrub, so narration is fixed by the same change.
+TTS by tap-to-speak, so narration is fixed by the same change.
 
 Two conversions/guards live in `senseReading` (`segmentString.ts`):
 
@@ -133,9 +197,10 @@ Covered by `server/__tests__/segmentString.test.ts`
 | Layer | Where | Role |
 |---|---|---|
 | Generation | `server/scripts/backfill/chinese/backfill-example-sentences.js` (generator/validator/repair) | Produces the sentence text + `translatedVocab`/`sense`/`targetPos` (target-word coverage signal only) |
-| Tagging pass | same file (`tagSentenceSegments` + `callSegmentTagger`) | Runs the read-path GSA on the final text, then tags each segment with `pos`/`sense`/`number`/`tense`; persists `segments` + the four segment-keyed dicts |
-| Read/enrichment | `server/dal/implementations/DictionaryDAL.ts` (`enrichExampleSentencesMetadataBatch`) + `server/dal/shared/segmentString.ts` (`buildSegmentMetadata`, `senseReading`) | Renders stored `segments` (live GSA fallback); attaches per-segment pronunciation/definition/wordForms, resolving **both** dd and pronunciation from `senseDict` → `ddt(cluster)` / `cluster.reading` |
-| Presentation (one sentence) | `src/components/SegmentedSentenceDisplay.tsx` | Renders one sentence's segments as cpcd; hover/tap shows the segment popup; draws the headword underline (`vocabWord`); hosts the drag-scrub gesture (see below) |
+| Segmentation audit | same file (`auditSegmentation`) | Runs the read-path GSA on the final text, then names the multi-char segments that aren't one word here; persists `segmentExceptions` and re-segments with them excluded |
+| Tagging pass | same file (`tagSentenceSegments` + `callSegmentTagger`) | Tags each surviving segment with `pos`/`sense`/`number`/`tense`; persists `segments` + the four segment-keyed dicts |
+| Read/enrichment | `server/dal/implementations/DictionaryDAL.ts` (`enrichExampleSentencesMetadataBatch`) + `server/dal/shared/segmentString.ts` (`buildSegmentMetadata`, `senseReading`) | Renders stored `segments` (live GSA fallback, honoring `segmentExceptions`); attaches per-segment pronunciation/definition/wordForms, resolving **both** dd and pronunciation from `senseDict` → `ddt(cluster)` / `cluster.reading` |
+| Presentation (one sentence) | `src/components/SegmentedSentenceDisplay.tsx` | Renders one sentence's segments as cpcd; hover/tap shows the segment popup; draws the headword underline (`vocabWord`) |
 | Presentation (est block) | `src/features/flashcards/ExampleSentenceList.tsx` | **Single source of truth for the est UI** — maps the sentence list into per-sentence cards (speaker button + `SegmentedSentenceDisplay` + English gloss). See below. |
 
 ## The est block is one shared component (`ExampleSentenceList`)
@@ -153,8 +218,10 @@ speaker button had each drifted onto only the eip):
   threaded from `features/dictionary/DictionaryCardDetailPage.tsx`.
 
 Each per-sentence card carries: a top-right `SpeakerButton` (gated on
-`onSpeakSentence`; both cdp parents pass a slow-rate-aware wrapper honoring
-`slowExampleSentences`, matching the flp), the `SegmentedSentenceDisplay` (with
+`onSpeakSentence`; all three surfaces pass `useTTS`'s `speakSentence` directly —
+the MANUAL variant, so a speaker press speaks in every narration mode, including
+`Off`. See [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md) § 4), the
+`SegmentedSentenceDisplay` (with
 `vocabWord`/`language` so the headword is underlined), and the English translation
 rendered through `renderEnglishWithVocabUnderline` (`exampleSentenceText.tsx`, shared)
 which underlines the `translatedVocab` substring.
@@ -200,7 +267,8 @@ It was previously a device-local flp toggle in
 ExampleSentenceList`. The cdp had no way to reach that chain and so always rendered
 un-spaced. `ExampleSentenceList` now reads the account value itself and **the prop
 no longer exists on any of those components** — no caller can forget to thread it.
-The flp settings sheet (`SettingsPanelBody`) deliberately no longer lists the row.
+The flp settings sheet deliberately no longer listed the row — and that sheet is
+itself gone as of 2026-08-28, when the last of its settings moved out.
 
 ### AI-generated vs human-approved styling
 
@@ -242,28 +310,58 @@ tapped segment's headword.
   popup closes and lands on whatever is behind it (the "tap registers behind the popup" bug).
   The native capture-phase outside-tap dismiss handler additionally whitelists `popupRef`.
 
+## Tap-to-drill (repeat tap narrows the selection)
+
+A tap landing **inside the live selection** narrows it to the longest dictionary
+headword still under the finger, instead of dismissing it: 中华人民共和国 → 人民 → 民 →
+cancelled. Cancelling is now the *end* of that chain rather than the whole of it, so a
+one-character segment still behaves exactly as before (tap to select, tap to dismiss) —
+it reaches the floor of the chain immediately.
+
+Full rule, the server-side rung construction and the other two surfaces that share it:
+**[SEGMENT_DRILL_DOWN.md](./SEGMENT_DRILL_DOWN.md)**.
+
+- **Where.** `toggleFromIndex` routes an inside-the-selection tap to `drillFromIndex`
+  (`SegmentedSentenceDisplay.tsx`); any other tap starts a fresh selection. The picker
+  itself is `pickDrillRung` (`src/utils/segmentDrill.ts`), shared with Word Search.
+- **Data.** `segmentMetadata[segment].drill` — shorter det headwords inside the segment
+  with their offsets, built at read time by `buildDrillRungs`. No stored column.
+- **Whole-run citations** (long definition / compare) gain one rung above the segment:
+  the phrase first, then the tapped GSA segment, then that segment's rungs. The popup is
+  passive while the phrase is selected and becomes eip-tappable once the drill reaches a
+  real headword.
+- **Highlight and popup** need no special handling: both are computed from the
+  selection's character range, so narrowing repaints for free.
+
 ## Tap-to-speak (single segment)
 
-Tapping a segment **selects it and narrates it** — the same per-segment narration the
-drag-scrub uses, just for one word instead of a walked sequence.
+Tapping a segment **selects it and narrates it**.
+
+> A companion **drag-scrub** gesture (a horizontal drag walked the selection word by
+> word and narrated each one) was **removed on 2026-08-28** along with its
+> `src/utils/segmentScrubLock.ts` claim, its `onScrubStart` prop, and the `"none"`
+> axis it forced on the eip's tab swipe. Tap-to-speak is now the only per-word
+> narration path, and horizontal gestures belong to the eip tab swipe unconditionally.
 
 - **Where.** `toggleFromIndex` in `SegmentedSentenceDisplay.tsx` (the handler behind
   `CPCDRow`'s `onTapToggle` → cell `onTouchEnd`). It fires
   `onSegmentSpeak(segment, segmentMetadata[segment]?.pronunciation)` — the identical call
-  `step()` makes during a scrub, so tap narration inherits the parent's slow-rate wrapper
-  (`slowExampleSentences`) and the pinyin-hinted TTS cache key for free.
+  so tap narration inherits the pinyin-hinted TTS cache key for free. Pronunciation comes from the selection
+  itself (`SelectedRange.pronunciation`), falling back to
+  `segmentMetadata[segment].pronunciation` — a drill rung is **not** a key in that map,
+  only top-level segments are, so the rung carries its own pinyin hint.
 - **Gating.** Narration only happens where `onSegmentSpeak` is wired, i.e. est
   (`ExampleSentenceList.tsx`). Long-definition, expansion-tab and citation displays pass no
   narration callback and stay silent on tap. Whole-run (citation) mode resolves an empty
   `segment`, so it is silent as well.
-- **Select-only.** A tap that *deselects* (re-tapping the selected word, dismissing the
-  popup) does not speak. `toggleFromIndex` therefore resolves the next range against
+- **Select-only.** A tap that *cancels* the selection does not speak; every tap that
+  lands on a segment or a drill rung does, including each rung of a drill-down (see
+  Tap-to-drill above). `toggleFromIndex` therefore resolves the next range against
   `selectedRangeRef.current` and advances the ref synchronously instead of using a
   `setSelectedRange` updater — a side effect must not live inside an updater (StrictMode
   double-invokes them), and the synchronous ref write keeps a fast second tap correct.
 - **Autoplay.** The call runs inside the `touchend` gesture, which by itself satisfies
-  mobile autoplay policy — no separate `tts.cloud.unlock()` priming is needed on this path
-  (unlike the scrub, whose audio starts from `pointermove`).
+  mobile autoplay policy — no separate `tts.cloud.unlock()` priming is needed.
 - **Desktop.** Character cells select on hover (`onMouseEnter`) and only toggle on
   `onTouchEnd`, so tap-to-speak is a touch-path behavior; hovering never narrates.
 
@@ -275,13 +373,10 @@ a segment in one sentence clears the selection in every other mounted
 
 - **Why it needs enforcing.** Each sentence renders its own display with its own
   `selectedRange` state, and a display's tap-to-dismiss rule cannot tell its own
-  characters from a sibling's — both the scrub-enabled `pointerup` rule
-  (`target.closest('.cpcd-row__char-cell')`) and the non-scrub capture-phase
-  `pointerdown` rule (`rowRef.contains(target)`) treat a tap on *another* sentence's
-  word as "not an outside tap". Left alone, tapping a word in sentence B leaves
-  sentence A's word selected: two popups open at once, and two competing
-  `claimHorizontalGesture()` claims, so the drag-scrub is ambiguous about which
-  sentence it should walk.
+  characters from a sibling's — the capture-phase `pointerdown` rule
+  (`rowRef.contains(target)`) treats a tap on *another* sentence's word as "not an
+  outside tap". Left alone, tapping a word in sentence B leaves sentence A's word
+  selected, and two popups are open at once.
 - **Mechanism.** `src/utils/segmentSelectionOwner.ts` — a module-level registry of
   `{ token, clear }` owners, deliberately not React context (the displays are siblings
   under call sites with no shared state to lift into, and the claim must land
@@ -289,93 +384,15 @@ a segment in one sentence clears the selection in every other mounted
   identity token (`useRef({})`) and unregisters on unmount.
 - **Claim points.** `selectFromIndex` (desktop hover) and `toggleFromIndex` (touch tap)
   call `claimSegmentSelection(token)` before writing their own state; the claim clears
-  *other* owners only, so that ordering is safe. A deselecting tap does not claim —
-  nobody else holds a selection to clear.
-- **`clear` drops the ref too**, not just the state: the scrub's document-level
-  listeners read `selectedRangeRef`, and a stale range there would let a drag resurrect
-  a selection the display no longer owns.
+  *other* owners only, so that ordering is safe. Every tap that resolves to a selection
+  claims, drill rungs included; a tap that cancels does not — nobody else holds a
+  selection to clear.
+- **`clear` drops the ref too**, not just the state: `toggleFromIndex` reads
+  `selectedRangeRef` to decide drill-vs-fresh-select, and a stale range there would make
+  the next tap read as a drill into a selection this display no longer owns.
 - **Scope is global, not per-est-block** — a selection in the long-definition or compare
   display is cleared by an est tap and vice versa, which is what "one popup on screen"
   should mean.
-
-## Drag-scrub (walk the selection word-by-word with audio)
-
-While a segment is selected, a **horizontal drag started anywhere on screen** walks
-the selection through that sentence one segment at a time and **narrates each word**
-it lands on. This makes "read this sentence word by word" a single continuous
-gesture instead of a tap-per-word.
-
-- **Where.** `SegmentedSentenceDisplay.tsx` (the `SCRUB_*` constants + the drag-scrub
-  `useEffect`). It is **opt-in per call site** via the `onSegmentSpeak` prop, wired only
-  by `ExampleSentenceList` — long-definition/citation displays stay tap-only, and
-  whole-run mode (`runTranslation`) is excluded since it has no word-by-word selection.
-- **Only the sentence holding the selection reacts.** The document listeners are
-  installed only while *that* instance has a `selectedRange`, so sibling sentences
-  and other displays ignore the same drag.
-- **Gesture.** `pointerdown` arms and remembers the origin → `pointermove` commits to a
-  scrub once horizontal travel passes `SCRUB_LOCK_PX` (12px) **and dominates vertical**
-  travel; vertical-dominant travel past `SCRUB_VERTICAL_ABORT_PX` disarms the gesture so
-  the panel scrolls normally → thereafter every `SCRUB_STEP_PX` of travel ratchets the
-  selection one segment and fires `onSegmentSpeak`. Listeners are
-  `capture: true, passive: true` — the scrub never `preventDefault`s.
-- **Tuning.** `SCRUB_STEP_PX` (currently **28px per word**) is the gesture's one knob;
-  lower = more sensitive. The ratchet measures from the gesture's ORIGIN, not from where
-  the axis locked, so the first word lands at exactly one step of travel rather than at
-  lock distance + a full step.
-- **The selection owns horizontal gestures.** While a segment is selected, the eip's
-  swipe-to-change-tab **stands down** — otherwise one drag would both walk the words and
-  slide the panel. The user deselects (tap off a word) to side-swipe the eip again.
-  Mechanism: `src/utils/segmentScrubLock.ts`, a ref-counted module-level claim
-  (`claimHorizontalGesture` / `isHorizontalGestureClaimed`) held for as long as a
-  scrub-enabled selection exists. `InfoCardPanelBody`'s axis lock resolves horizontal
-  intent to a new `"none"` axis when the claim is held: it `stopPropagation`s (keeping
-  SheetPanel's vertical resize/dismiss listener out of the gesture) but leaves the track
-  untouched and does **not** `preventDefault`, so the scrub's pointer events flow
-  normally. **Vertical scrolling is never affected.** A plain module flag rather than
-  context because both sides are raw non-React listeners needing a synchronous answer
-  mid-gesture, with no re-render.
-- **Ends of the sentence clamp** — no wrap, no hand-off to the neighboring sentence. On
-  a clamp the ratchet re-bases to the current X so reversing direction responds
-  immediately instead of first repaying the overshoot.
-- **Steppable segments** = one entry per segment head, punctuation excluded (`scrubSegments`),
-  matching what taps can select.
-- **Tap/selection interactions** (the fiddly parts):
-  - Tap-to-dismiss moved from `pointerdown` to `pointerup` **when scrub is enabled** (both
-    the document handler and the row's own background handler): a scrub may start outside
-    the row, and clearing on pointerdown would destroy the very selection the drag moves.
-    On a no-scrub pointerup, anything that is not a `.cpcd-row__char-cell` and not the
-    popup clears the selection — the previous behavior, one event later.
-  - `suppressTapRef` blocks `selectFromIndex`/`toggleFromIndex` from the moment a scrub
-    locks until `SCRUB_TAP_SUPPRESS_MS` (300ms) after it ends. Character cells select on
-    `touchend`, and **touchend targets the element the touch started on**, so without this
-    the drag's release would re-select the word it began over and undo the last step.
-  - Gesture state lives in a **ref** (`gestureRef`), not the effect closure, because
-    narration flips the parent's `speakingKey` mid-drag; closure state would reset the
-    drag on that re-render. The callback props are likewise read through refs and kept
-    out of the effect deps for the same reason.
-  - `selectedRangeRef` is updated **synchronously** inside the step, since one fast
-    pointermove can cross several step widths before React commits.
-  - The scrub sets `document.body.style.userSelect = "none"` while locked (desktop mouse
-    drags would otherwise paint a text selection across the page) and restores it on
-    pointerup/cancel/unmount.
-- **Audio.** `ExampleSentenceList` passes the existing `onSpeakSentence` callback as
-  `onSegmentSpeak` — same `(text, pronunciation)` signature — so word narration inherits
-  the parent's slow-rate wrapper and is absent whenever narration is off. Pronunciation
-  comes from `segmentMetadata[segment].pronunciation` (the pinyin hint the cloud TTS
-  cache keys on). `onScrubStart` fires on the gesture's `pointerdown` and calls
-  `tts.cloud.unlock()` — the narration itself starts from `pointermove`, which mobile
-  autoplay policy will not accept as the unlocking gesture (see `useTTS.unlockAudio`).
-- **Scrub narration is debounced** by `SCRUB_AUDIO_DELAY_MS` (300ms): each step replaces
-  the previous word's pending play (`queueSegmentNarration`), so sweeping across a
-  sentence speaks only the word the drag comes to rest on instead of machine-gunning
-  every word it crossed. A deliberate word-by-word drag is unaffected — each step
-  outlasts the delay. The pending play is dropped when a tap supersedes it, when the
-  selection is dismissed, when another display claims the selection, and on unmount, so
-  audio can never arrive for a word that is no longer selected.
-  **Tap-to-narrate is NOT debounced** — it is a single deliberate act, and it must fire
-  inside the touch gesture to satisfy mobile autoplay policy. (Playing from a timer is
-  fine for the scrub only because `onScrubStart` already unlocked the context on that
-  gesture's pointerdown.)
 
 > Popup placement: the definition popup is a MUI `Popper` portal anchored to a
 > viewport-space virtual element (so it escapes ancestor overflow clipping). Popper
@@ -392,6 +409,7 @@ gesture instead of a tap-per-word.
 
 | Concept | Doc | One-liner |
 |---|---|---|
+| **Tap-to-drill** | [SEGMENT_DRILL_DOWN.md](./SEGMENT_DRILL_DOWN.md) | A repeat tap narrows the selection to the longest headword still under the finger, down to a single character and then cancel. Shared with the long-definition display and the Word Search found-word review; rungs (`segmentMetadata[...].drill`) are built at read time from substrings the segmenter already loaded. |
 | **Form modification** | [EXAMPLE_SENTENCE_FORM_MODIFICATION.md](./EXAMPLE_SENTENCE_FORM_MODIFICATION.md) | The segment popup shows the contextually inflected English gloss (right tense / number / POS form for *this* sentence) via the per-headword `wordForms` inventory + the per-segment `partOfSpeechDict`/`numberDict`/`tenseDict` signals, selected at runtime by `resolveWordForm`. |
 
 ## Consumers outside the est
@@ -408,8 +426,25 @@ Two consequences for this pipeline: a sentence is only usable there if it
 **literally contains its entry's headword** (the round alters one character of the
 headword *in situ*), and `buildSentencePronunciation` — now at
 `src/utils/sentencePronunciation.ts`, shared with the est list — returns
-`undefined` unless **every** segment carries a `pronunciation`, in which case both
-the prompt's pinyin line and the TTS hint are dropped for that round.
+`undefined` unless every **Han-bearing** segment carries a `pronunciation`, in which
+case both the prompt's pinyin line and the TTS hint are dropped for that round.
+
+### Punctuation is skipped, not a missing pronunciation
+
+Punctuation segments (`，`, `。`) have no det row and so never carry a
+`pronunciation`. `buildSentencePronunciation` **skips** any segment with no Han
+character rather than bailing on it. Until 2026-08-28 it bailed, which meant it
+returned `undefined` for effectively every example sentence — they all end in `。` —
+so the est speaker button and the Speed Reading sentence round both silently shipped
+*no* pinyin hint to TTS and the provider guessed each reading. That was audible:
+行家 was narrated *xíng jiā* inside a sentence while the cpcd above it read *háng jiā*.
+
+The server half of the same fix is `buildPinyinSsml` (`server/services/TTSService.ts`),
+which now aligns the hint's syllables to the text's **Han characters only** and passes
+punctuation through as plain SSML text between the `<phoneme>` tags. Both halves are
+required: the client must omit punctuation syllables and the server must expect them
+omitted. A misaligned count (syllables ≠ Han characters) still bails to the plain-text
+path, because one extra syllable shifts every reading after it.
 
 ## Related
 

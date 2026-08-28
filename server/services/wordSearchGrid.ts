@@ -10,6 +10,7 @@
  */
 
 import { WORD_SEARCH_TEMPLATES, WORD_SEARCH_TEMPLATE_ROWS, WORD_SEARCH_TEMPLATE_COLS } from './wordSearchTemplates.js';
+import type { SegmentDrillRung } from '../dal/shared/segmentString.js';
 
 export type Rng = () => number;
 
@@ -44,6 +45,15 @@ export interface WordSearchInput {
    * See docs/WORD_SEARCH_GAME.md §5a and CLIENT-side WordSearchHintRow.tsx.
    */
   charComponents?: string[][];
+  /**
+   * Tap-to-drill chain for this word: every det headword strictly inside `entryKey`,
+   * longest-first, each with its offset in the word (docs/SEGMENT_DRILL_DOWN.md).
+   * A repeat tap on a FOUND word narrows the review popup through these before it
+   * reaches a single character. Absent for 2-character words with no shorter headword
+   * inside, and for boards generated before this shipped — the client then goes
+   * straight from the whole word to the tapped character.
+   */
+  drill?: SegmentDrillRung[];
 }
 
 /** A single grid cell: one Chinese character + its pinyin syllable. */
@@ -144,7 +154,7 @@ export const MAX_GRID_ATTEMPTS = 100;
 
 /**
  * Whole-grid regenerations that use random snaking placement before falling
- * back to a fixed template (see docs/WORD_SEARCH_TEMPLATES.md). 12 words all
+ * back to a fixed template (see docs/WORD_SEARCH_TEMPLATES.md). 9 words all
  * at the 4-character cap can wall each other off badly enough that random
  * retries burn through many attempts on bad luck; a template guarantees a fit
  * instead of continuing to gamble. Attempts `RANDOM_GRID_ATTEMPTS` and above
@@ -177,7 +187,7 @@ function shuffle<T>(arr: T[], rng: Rng): T[] {
 /**
  * Template mode (docs/WORD_SEARCH_TEMPLATES.md) only applies to the shape this
  * game actually ships: a board matching WORD_SEARCH_TEMPLATE_ROWS/COLS with
- * exactly 12 words, each <= 4 characters (one word per template slot, no
+ * exactly 9 words, each <= 4 characters (one word per template slot, no
  * leftover words or slots). Any other shape (e.g. a differently-sized test
  * board) keeps retrying random placement for the full MAX_GRID_ATTEMPTS
  * instead.
@@ -353,8 +363,8 @@ export function generateWordSearchGrid(
     let templateIndex: number | null = null;
 
     if (useTemplate) {
-      // Template mode (docs/WORD_SEARCH_TEMPLATES.md): pick a random fixed 9x6
-      // layout, shuffle words across its 12 four-cell slots, and for any word
+      // Template mode (docs/WORD_SEARCH_TEMPLATES.md): pick a random fixed 7x6
+      // layout, shuffle words across its 9 four-cell slots, and for any word
       // shorter than 4 characters take a random contiguous run within its
       // slot — the rest of that slot is left null and picked up by the normal
       // filler flood below, same as every other empty cell. Cell-count-wise

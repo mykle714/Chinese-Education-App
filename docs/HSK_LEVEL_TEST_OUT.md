@@ -245,7 +245,7 @@ level, enforced by the DB rather than by the service.
 (`vetTableForLanguage`, `coreCategoryExpr`, `vetSortedClause`) ·
 `server/services/VocabEntryService.ts` (`addToLibrary` — the single-card analogue of
 § 6.1) · `server/services/StarterPacksService.ts` (`estimateLevel`, `_levelConfig`) ·
-`server/routes/flashcardRoutes.ts` (the mark handler this path deliberately bypasses) ·
+`server/services/FlashcardMarkService.ts` (the mark path this one deliberately bypasses) ·
 `ddCollisionKey` (gloss guard).
 
 Docs that will need a section if this ships:

@@ -11,8 +11,12 @@
  * "xian" apostrophe ambiguity, resolved here by trying every branch.)
  *
  * Tone digits (0–5) are supported: a digit binds to the syllable it immediately follows
- * ("jian4shen1" -> ["jian4","shen1"]). `isAllPinyin` gates whether the search UI offers the
- * "AI" synthetic-entry button.
+ * ("jian4shen1" -> ["jian4","shen1"]). **Tone MARKS are supported too** ("nǐhǎo" ->
+ * ["ni3","hao3"]) — see `stripToneMarks`; the mark sits on a vowel in the middle of its
+ * syllable, so it can't simply be rewritten as a digit in place ("ha3o" would tile as
+ * ["ha3","o"]). Instead the marks are stripped to plain letters before tiling and re-attached
+ * to whichever token ended up containing the marked position. `isAllPinyin` gates whether the
+ * search UI offers the "AI" synthetic-entry button.
  */
 
 // Canonical atonal Hanyu Pinyin syllabary (~410 syllables). ü is written `v` to match how the
@@ -86,12 +90,74 @@ for (const bucket of SYLLABLES_BY_FIRST.values()) {
 const MAX_TILINGS = 50;
 
 /**
+ * Tone-marked vowel -> [plain letter, tone digit]. The plain letter is what the ASCII
+ * `SYLLABLE_LIST` above spells, so ü and its four toned forms all normalize to `v` (the
+ * `numberedPinyin` column's spelling: 女 = "nv3").
+ *
+ * This is the inverse of `numberedToTonedSyllable` in `server/utils/pinyinTones.ts` — that one
+ * places a mark, this one lifts it back off. Keep the vowel tables in step.
+ */
+const TONE_MARKED_VOWELS: Record<string, [string, string]> = {
+  'ā': ['a', '1'], 'á': ['a', '2'], 'ǎ': ['a', '3'], 'à': ['a', '4'],
+  'ē': ['e', '1'], 'é': ['e', '2'], 'ě': ['e', '3'], 'è': ['e', '4'],
+  'ī': ['i', '1'], 'í': ['i', '2'], 'ǐ': ['i', '3'], 'ì': ['i', '4'],
+  'ō': ['o', '1'], 'ó': ['o', '2'], 'ǒ': ['o', '3'], 'ò': ['o', '4'],
+  'ū': ['u', '1'], 'ú': ['u', '2'], 'ǔ': ['u', '3'], 'ù': ['u', '4'],
+  'ǖ': ['v', '1'], 'ǘ': ['v', '2'], 'ǚ': ['v', '3'], 'ǜ': ['v', '4'],
+  'ü': ['v', ''],  // umlaut only, no tone
+};
+
+/**
+ * Rewrite tone-marked pinyin into the plain ASCII the tiler understands, remembering which
+ * position each tone came from. Every replacement is one character for one character, so the
+ * returned `tones` indices line up with the returned string.
+ */
+function stripToneMarks(input: string): { plain: string; tones: Map<number, string> } {
+  const tones = new Map<number, string>();
+  let plain = '';
+  for (const ch of input) {
+    const mapped = TONE_MARKED_VOWELS[ch];
+    if (mapped) {
+      const [letter, tone] = mapped;
+      if (tone) tones.set(plain.length, tone);
+      plain += letter;
+    } else {
+      plain += ch;
+    }
+  }
+  return { plain, tones };
+}
+
+/**
+ * Re-attach the stripped tone marks to a tiling. Walks the tokens in order, tracking each one's
+ * span in the plain string, and suffixes a token with the digit of any mark that fell inside it.
+ * A token that already carries an explicit digit (the user typed "nǐhao3") keeps it, and if a
+ * syllable somehow holds two marks the first wins — neither case is legal pinyin, so the only
+ * requirement is that it stay deterministic rather than throw.
+ */
+function applyTones(tokens: string[], tones: Map<number, string>): string[] {
+  let pos = 0;
+  return tokens.map(token => {
+    const start = pos;
+    pos += token.length;
+    if (/[0-5]$/.test(token)) return token; // explicit digit already bound here
+    for (let i = start; i < pos; i++) {
+      const tone = tones.get(i);
+      if (tone) return token + tone;
+    }
+    return token;
+  });
+}
+
+/**
  * Enumerate every valid syllable tiling of `input` (whitespace-insensitive). Each returned tiling
  * is an ordered list of syllable tokens, each token being a syllable optionally carrying a trailing
  * tone digit (e.g. "jian4"). Returns `[]` when the string can't be fully tiled into valid pinyin.
  */
 export function segmentPinyin(input: string): string[][] {
-  const s = input.toLowerCase().replace(/\s+/g, '');
+  // Tone marks come off first (and ü -> v with them), so the tiler only ever sees the ASCII
+  // syllabary; `tones` maps a position in `s` to the digit that was lifted off it.
+  const { plain: s, tones } = stripToneMarks(input.toLowerCase().replace(/\s+/g, ''));
   if (!s) return [];
 
   // Backtracking with memoization on the start position. rec(pos) = every tiling of s[pos..].
@@ -127,7 +193,8 @@ export function segmentPinyin(input: string): string[][] {
     return out;
   }
 
-  return rec(0);
+  const tilings = rec(0);
+  return tones.size > 0 ? tilings.map(tokens => applyTones(tokens, tones)) : tilings;
 }
 
 /**

@@ -37,13 +37,22 @@ The button renders only for **`language === "zh"`** and **1–4 code points**
 (`charCount`), else `null` (the recognizer is `zh_CN`; the 2×2 grid has only four
 slots). Placements:
 
-- **eip** definition tab, in the action bar at the end of the content (labelled variant,
-  beside "Add to Deck…" and "Compare To…") —
-  `src/components/WordToolsRail.tsx` (the `Write it` pill above the card on the flp and
-  the cdp — the entry point since 2026-08-24; `InfoCardActionBar` is deleted)
-- **flp main flashcard** front face, stacked above the audio icon (icon variant) —
-  `src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` (`ChineseBlock`)
-- **cdp** (word details) — `src/features/flashcards/VocabCardDetailPage.tsx`
+There is exactly **one** entry point per page, the `Write it` pill on `WordToolsRail`
+(`src/components/WordToolsRail.tsx`, `rail` appearance) — a rail **above** the card and
+outside its boundary, because the drill acts on the WORD, not on the card. Hosts:
+
+- **flp** — `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx`
+- **vocab cdp** — `src/features/flashcards/VocabCardDetailPage.tsx`
+- **dictionary cdp** — `src/features/dictionary/DictionaryCardDetailPage.tsx` (rail
+  rendered without `onCompare`, so only the `Write it` pill shows; the adapted det
+  entry has no vet row, so the drill records no Writing mark)
+
+**Removed placements.** The compact `icon` button that stacked above the speaker on the
+card face (`ChineseBlock`'s `showWriting` prop) was deleted on 2026-08-28 — a relic of
+the pre-rail design that put a word tool inside the card. `ChineseBlock` now renders the
+speaker only, and the `icon` appearance + `hideStarBadge` prop are gone with it. The eip's
+`InfoCardActionBar` (labelled variant) was deleted earlier, when the panel became
+information-only.
 
 The button owns `completedLevels: Set<string>` as the single source of truth: it
 fetches on mount (`fetchCompletedLevels`), passes it into the popup, and updates it
@@ -51,8 +60,7 @@ when the popup reports a fresh completion. The popup is always rendered (control
 by `open`).
 
 **Star badge.** A gold `★N` superscript (N = completed levels) shows on the button
-via `withStarBadge`. The **flp flashcard** instance passes `hideStarBadge` to omit
-it (clean card face); eip and cdp keep it.
+via `withStarBadge`, on every surface (it is hidden only at a count of zero).
 
 ---
 

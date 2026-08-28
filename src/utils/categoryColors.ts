@@ -19,7 +19,8 @@ import type { MasteryBarId } from "../../server/contracts/wire";
 //
 // ⚠️ And text on one of these must be INK (`COLORS.onSurface`), never white — white on
 // a pastel is ~1.1:1. Three call sites were flipped when this landed: MiniVocabCard's
-// corner badge, VocabCardDetailBody's category chip, CardFace's CategoryChip.
+// corner badge and VocabCardDetailBody's category chip. (A third, CardFace's
+// `CategoryChip` on the flp card back, was deleted on 2026-08-28.)
 //
 // The near-white partner of each hue (--redTint etc.) is the `accent` in BAND_COLORS
 // below and the `*Accent` token in theme/colors.ts. For INK sitting on a pastel, use

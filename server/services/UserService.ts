@@ -70,10 +70,23 @@ export class UserService {
     // Hash password (business logic)
     const hashedPassword = await bcrypt.hash(userData.password, SALT_ROUNDS);
     
-    // Create user with hashed password
+    // Create user with hashed password.
+    //
+    // `timezone` is resolved rather than passed through, for two reasons: the
+    // column is NOT NULL, and `buildInsertQuery` inserts every key it is given —
+    // so a `timezone: undefined` from a caller that omitted it would try to write
+    // NULL. resolveTimezone maps both an absent and a bogus zone to 'UTC', which
+    // is the column default, so an omitting caller behaves exactly as before.
+    //
+    // Setting it HERE, at creation, is what stops an account being born on a zone
+    // it never chose: until this existed, a user's row read 'UTC' until their next
+    // login or first minute point, and every 04:00-local boundary (streak cron,
+    // AI usage day, study-challenge windows) was computed in the wrong zone
+    // meanwhile.
     const newUser = await this.userDAL.create({
       ...userData,
-      password: hashedPassword
+      password: hashedPassword,
+      timezone: resolveTimezone(userData.timezone)
     });
     
     // Remove password from response for security
@@ -446,9 +459,26 @@ export class UserService {
   // IUserLanguagesDAL.getTotalsForAllUsers(). See docs/PER_LANGUAGE_STREAKS.md.
 
   /**
-   * Post-login bookkeeping. Today: refresh users.timezone so the hourly
-   * streak-expiration cron computes the right local-day boundary even for
-   * users who log in without earning any minute points.
+   * Session bookkeeping: keep `users.timezone` current for the caller.
+   *
+   * Called from three places, which together are the app's timezone-freshness
+   * contract (docs/STUDY_CHALLENGE.md § 2, "whose clock"):
+   *   * `POST /api/auth/onLogin` — login and session restore;
+   *   * `POST /api/auth/refresh` — the ~15-minute heartbeat, which is the only
+   *     one that catches a zone changing MID-session (travel, OS clock fix);
+   *   * a foregrounded tab whose zone no longer matches what it last sent.
+   * Creation is covered separately by `createUser`, and the minute-point paths
+   * refresh it too (UserMinutePointsService).
+   *
+   * Why it matters beyond the streak cron it was written for: every 04:00-local
+   * boundary in the app derives from this column, and the user-visible ones —
+   * study-challenge accept/test windows — are serialized to the client as
+   * ABSOLUTE instants and then formatted in the BROWSER's zone. So a stale
+   * column does not merely mis-bucket a day server-side; it renders a visibly
+   * wrong hour ("test opens 9 PM Thursday" for a Friday-04:00 boundary computed
+   * in UTC for a UTC−7 viewer).
+   *
+   * A `tz` of `undefined` is a no-op; a bogus one resolves to 'UTC'.
    */
   async refreshUserContext(userId: string, ctx: { tz?: string }): Promise<void> {
     if (!userId) {

@@ -58,7 +58,7 @@ const HydraBubblesPage: React.FC = () => {
     const { user } = useAuth();
     const tts = useTTS();
     const { settings, update } = useFlashcardLearnSettings();
-    const { showPinyin, showPinyinColor, autoplayChinese } = settings;
+    const { showPinyin, showPinyinColor } = settings;
     const language = (user?.selectedLanguage ?? "zh") as Language;
 
     // An edge swipe mid-drag would navigate away; CSS touch-action cannot stop the
@@ -109,7 +109,7 @@ const HydraBubblesPage: React.FC = () => {
     const remainingContestedRef = useRef<Set<string>>(new Set());
 
     /**
-     * The round's twelve contested words, as playable cards.
+     * The round's contested words, as playable cards.
      *
      * `need = CHALLENGE_WORD_COUNT` asks the server for the contested set and no
      * filler — Hydra's filler is its own colour supply (see `challengeCards`).
@@ -141,7 +141,7 @@ const HydraBubblesPage: React.FC = () => {
      * Does clearing this word end the run? Yes on the LAST contested word (§ 7.5).
      *
      * Filler clears never end a run, and neither does clearing a contested word
-     * while others are outstanding — so a challenge round is "clear all twelve,
+     * while others are outstanding — so a challenge round is "clear the whole set,
      * fastest", with a wrong match ending it early and the unmatched words scoring
      * nothing.
      */
@@ -419,8 +419,7 @@ const HydraBubblesPage: React.FC = () => {
                         language={language}
                         showPinyin={showPinyin}
                         onTogglePinyin={() => update({ showPinyin: !showPinyin })}
-                        autoplayChinese={autoplayChinese}
-                        onToggleAutoplayChinese={() => update({ autoplayChinese: !autoplayChinese })}
+                        showAudioChip
                         // Restarting mid-run is just a new run — Hydra has no board
                         // worth preserving, so it shares the Play Again path.
                         // NEVER during a challenge round: one attempt each (§ 5.1a),
@@ -459,7 +458,7 @@ const HydraBubblesPage: React.FC = () => {
                                     language={language}
                                     showPinyin={showPinyin}
                                     showPinyinColor={showPinyinColor}
-                                    onSpeak={autoplayChinese && tts.enabled ? tts.speak : undefined}
+                                    onSpeak={tts.autoplay ? tts.autoSpeak : undefined}
                                     onScore={setScore}
                                     onGameOver={onGameOver}
                                     onMark={markCard}

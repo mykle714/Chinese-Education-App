@@ -80,6 +80,7 @@ export type {
 
 export {
   CARD_COLOR_VALUES,
+  CARD_NOTE_MAX_LENGTH,
   ENTRY_LEVEL_VALIDATION_FIELDS,
   FLASHCARD_CATEGORY,
   FLASHCARD_CATEGORIES,
@@ -150,6 +151,15 @@ export interface UserCreateData {
   password: string;
   /** Defaults to true in the database. */
   isPublic?: boolean;
+  /**
+   * The registering client's IANA timezone. Optional because the column is
+   * NOT NULL DEFAULT 'UTC' and a caller with no browser (a seed script, a test)
+   * legitimately has none — but any caller that CAN supply it should, because a
+   * row born 'UTC' stays 'UTC' until that user next logs in or earns a minute
+   * point, and every 04:00-local boundary in the app is wrong for them until
+   * then (docs/STUDY_CHALLENGE.md § 2). UserService.createUser resolves this.
+   */
+  timezone?: string;
 }
 
 export interface UserLoginData {

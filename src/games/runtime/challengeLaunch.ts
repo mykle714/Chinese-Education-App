@@ -55,7 +55,7 @@ const LAUNCHES: Record<string, { route: string; title: string; state: Record<str
         route: "/games/match-speed",
         title: "Match Speed",
         // Study Mix, NOT Review or Challenge: those modes are hard bucket
-        // restrictions, and a challenge board is a fixed twelve words plus
+        // restrictions, and a challenge board is a fixed word set plus
         // mastered-first filler — a restriction would throw half of it away.
         state: { mode: "mixed" },
     },

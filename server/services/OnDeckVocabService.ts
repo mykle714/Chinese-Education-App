@@ -21,6 +21,10 @@ import {
   type WordSearchGrid,
 } from './wordSearchGrid.js';
 import { resolveSenseGloss, resolveDisplayDefinition, resolveDisplayPronunciation, ddCollisionKey } from '../utils/definitions.js';
+// Tap-to-drill rung construction, shared with the example-sentence / long-definition
+// enrichment paths so both chains obey one rule. See docs/SEGMENT_DRILL_DOWN.md.
+import { getAllSubstrings, buildDictMap, buildExcludeSet, buildDrillRungs, type SegmentDrillRung } from '../dal/shared/segmentString.js';
+import type { DictionaryEntry } from '../types/index.js';
 
 // Difficulty-targeted study modes launched from the decks page (Review/Challenge
 // buttons). Each mode shapes BOTH the initial working-loop distribution and the
@@ -364,7 +368,7 @@ export class OnDeckVocabService {
     /**
      * Skip the per-type cooldown filter — for a caller whose ids are NOT a
      * preference but an obligation. The only such caller today is a Study Challenge
-     * board: all twelve contested words must appear in every round
+     * board: all nine contested words must appear in every round
      * (docs/STUDY_CHALLENGE.md § 5.2), and the filler ladder is deliberately the
      * player's most MASTERED cards, which are exactly the ones most likely to be
      * resting. Dropping either for a cooldown would silently shrink the board that
@@ -1387,24 +1391,24 @@ export class OnDeckVocabService {
    *
    * A challenge board answers a different question from every other game pool, so
    * it is a different assembly rather than a `mode` on the one above. The normal
-   * pool asks "give me a difficulty MIX"; this one asks "give me THESE twelve
+   * pool asks "give me a difficulty MIX"; this one asks "give me THESE nine
    * words, plus whatever is easiest to pad the board out with". Two hard rules
    * follow, and neither can be expressed as a bucket distribution:
    *
-   *  1. **All twelve contested words appear in every round.** Filler pads the board
+   *  1. **All nine contested words appear in every round.** Filler pads the board
    *     out to the game's natural size; it never displaces a contested word. So the
    *     contested rows are addressed BY ID and hydrated with the cooldown ignored —
    *     a contested word that happens to be resting is still contested.
    *  2. **Filler is the player's easiest available material**, via the
    *     `mastered-first` ladder (`ProvisionalCardService.getFillerPool`): Mastered →
    *     Comfortable → Target → Unfamiliar → lent. Filler must not be a source of
-   *     difficulty — a challenge measures the twelve, and padding with words the
+   *     difficulty — a challenge measures the nine, and padding with words the
    *     player has never seen would add noise and reward whoever got luckier filler.
    *     That is also why filler scores 20 rather than 100 (§ 5.4).
    *
    * ⚠️ THE RESULT IS SHUFFLED, and that is a correctness requirement, not a
    * nicety (Q74). The board must not reveal which words are contested; handing the
-   * twelve back first would let any client — and any player watching the deal
+   * nine back first would let any client — and any player watching the deal
    * order — read the split straight off the payload. The games classify by WORD
    * against the set they already hold, never by position.
    *
@@ -1854,12 +1858,16 @@ export class OnDeckVocabService {
 
   // ---- Word Search game ----------------------------------------------------
 
-  // Grid dimensions: 6 columns wide × 9 rows tall (portrait play area).
+  // Grid dimensions: 6 columns wide × 7 rows tall (portrait play area).
   // See docs/WORD_SEARCH_GAME.md §2.
-  /** A Study Challenge round's grid — see the note in getWordSearchGrid. */
-  static readonly WORD_SEARCH_CHALLENGE_ROWS = 8;
-  static readonly WORD_SEARCH_CHALLENGE_COLS = 8;
-  static readonly WORD_SEARCH_ROWS = 9;
+  //
+  // ONE BOARD SIZE FOR EVERY MODE. A Study Challenge round used to get its own
+  // roomier 8×8 grid; that split was removed on 2026-08-28 (with the 12 → 9 word
+  // drop) because two sizes meant two densities, two tunings, and — since
+  // `templateModeApplicable` gates on these exact dimensions — a challenge board
+  // that could never reach template mode. Challenge and ordinary boards now read
+  // the SAME constants and therefore share the placement fallback.
+  static readonly WORD_SEARCH_ROWS = 7;
   static readonly WORD_SEARCH_COLS = 6;
   // Cap on how many library candidates we pull per category up front. Word Search
   // needs a working set to run the substring de-dup / replacement loop against;
@@ -1867,8 +1875,8 @@ export class OnDeckVocabService {
   private static readonly WORD_SEARCH_CANDIDATE_CAP = 500;
 
   /**
-   * Build the Word Search game payload: a clean 12-word set (no word's Chinese
-   * text is a substring of another's) hidden as snaking paths in a 9×6 grid of
+   * Build the Word Search game payload: a clean 9-word set (no word's Chinese
+   * text is a substring of another's) hidden as snaking paths in a 7×6 grid of
    * filler characters.
    *
    * Selection reuses the bubble-match pool shape (requested distribution + the
@@ -1921,9 +1929,9 @@ export class OnDeckVocabService {
     lentIds: number[] = [],
     /**
      * STUDY CHALLENGE ROUND (docs/STUDY_CHALLENGE.md § 5.2). When present the board
-     * is not a band mix at all: the contested words ARE the target list, filler comes
-     * from the `mastered-first` ladder, and the grid grows (see CHALLENGE_ROWS) to
-     * hold twelve words instead of ten.
+     * is not a band mix at all: the contested words ARE the target list and filler
+     * comes from the `mastered-first` ladder. The grid is the SAME size as an
+     * ordinary board (see WORD_SEARCH_ROWS) — both hold 9 words.
      */
     challenge?: { contestedIds: number[]; contestedWords: string[] } | null
   ): Promise<{
@@ -1944,24 +1952,15 @@ export class OnDeckVocabService {
       throw new ValidationError('User ID is required');
     }
 
-    // A CHALLENGE GRID IS STILL BIGGER, though the word counts now happen to
-    // match: TOTAL_WORDS was raised from 10 to 12 (2026-08-23) on the SAME 9x6
-    // (54-cell) grid, so an ordinary board is now 48-of-54 cells full (89%) —
-    // tighter than the 40-of-49 (82%) it was tuned at. A challenge round places
-    // CHALLENGE_WORD_COUNT (also 12) into 8x8 (64 cells, 75% full), the roomier
-    // density the placer was originally tuned at. The two boards being the same
-    // word count is coincidental, not load-bearing — nothing here compares them.
-    //
-    // Note the size difference also takes a challenge grid out of TEMPLATE MODE
-    // (`templateModeApplicable` gates on 9x6, not 8x8), so it always uses random
-    // placement with its full MAX_GRID_ATTEMPTS budget. Acceptable: templates
-    // exist to make a pathological 12-word draw cheap, not to make placement
-    // possible at all — and an ordinary board leans on that fallback far more
-    // now, at only 6 holes' worth of slack instead of 14.
-    const rows = challenge ? OnDeckVocabService.WORD_SEARCH_CHALLENGE_ROWS : OnDeckVocabService.WORD_SEARCH_ROWS;
-    const cols = challenge ? OnDeckVocabService.WORD_SEARCH_CHALLENGE_COLS : OnDeckVocabService.WORD_SEARCH_COLS;
+    // ONE GRID SIZE, challenge or not (see WORD_SEARCH_ROWS). Both boards hold 9
+    // words — TOTAL_WORDS and CHALLENGE_WORD_COUNT are separately-declared 9s, not
+    // one derived from the other — in 7x6 (42 cells), so 36-of-42 cells (86%) are
+    // word cells either way, and both boards are eligible for TEMPLATE MODE
+    // (`templateModeApplicable` gates on exactly these dimensions).
+    const rows = OnDeckVocabService.WORD_SEARCH_ROWS;
+    const cols = OnDeckVocabService.WORD_SEARCH_COLS;
     // The challenge's own set is the target list — never the requested
-    // distribution. Even now that both sum to 12, the challenge set is the
+    // distribution. Even though both sum to 9, the challenge set is the
     // SPECIFIC contested word ids (§ 5.2), unrelated to a band distribution.
     const total = challenge
       ? challenge.contestedIds.length
@@ -2061,7 +2060,7 @@ export class OnDeckVocabService {
       // The contested words go in first, whole, cooldown ignored — they are an
       // obligation, not a preference. The `mastered-first` filler is then pushed
       // onto a FRESH queue rather than into `selected`, so the substring-de-dup loop
-      // below can draw replacements from it: an arbitrary set of twelve words will
+      // below can draw replacements from it: an arbitrary set of nine words will
       // not reliably have mutually distinct characters, and when one has to be
       // dropped a filler word takes its place. That substitution is exactly why Word
       // Search scores contested and filler differently (§ 5.4) rather than a flat 100.
@@ -2266,19 +2265,48 @@ export class OnDeckVocabService {
       // sub-character visual parts the No Pinyin hint ladder reveals one at a time. It
       // rides this existing query rather than adding a round trip, since both are
       // per-target-character facts keyed by the same word1 list.
+      //
+      // The same query is ALSO widened from the single characters to every <=4-char
+      // SUBSTRING of every target word, so it can build each word's tap-to-drill chain
+      // (docs/SEGMENT_DRILL_DOWN.md): tapping a found 中国人 narrows to 中国 before it
+      // narrows to a character. Widening this existing round trip is what keeps the
+      // feature free here — est and long definitions already load the same substring set
+      // for their segmenter, but a word-search grid never had a reason to.
       const targetChars = [...new Set(withAudio.flatMap((w) => [...w.entryKey]))];
+      const drillCandidates = [...new Set(withAudio.flatMap((w) => getAllSubstrings(w.entryKey)))];
       const charClusters = new Map<string, Array<{ sense?: string | null; glosses?: string[] | null }>>();
       const charComponentsMap = new Map<string, string[]>();
+      const drillByWord = new Map<string, SegmentDrillRung[]>();
       if (targetChars.length > 0) {
         const clustersResult = await client.query<{
           word1: string;
           definitionClusters: unknown;
           components: unknown;
         }>(`
-          SELECT word1, "definitionClusters", components
+          SELECT word1, pronunciation, definitions, "definitionClusters", components,
+                 "matchException", "frequencyScore", "exampleSentenceDefinitionPronunciationOverride",
+                 -- The target word's own breakdown, so a single-character drill rung is
+                 -- glossed with the sense that character carries IN THIS WORD (the same
+                 -- answer the bt gives). The client prefers the grid cell's definition for
+                 -- that rung, which resolves identically; this keeps the shipped rung list
+                 -- self-consistent for the cell-less fallback path.
+                 breakdown
           FROM dictionaryentries_zh
           WHERE language = 'zh' AND word1 = ANY($1)
-        `, [targetChars]);
+        `, [drillCandidates]);
+
+        // Rungs are resolved with the shared builder so the word-search chain and the
+        // example-sentence chain can never drift apart. No English context exists here
+        // (a grid is a word list, not prose), so rung glosses are the entry's lead sense.
+        const drillEntries = clustersResult.rows as unknown as DictionaryEntry[];
+        const drillDictMap = buildDictMap(drillEntries);
+        const drillExcludeTokens = buildExcludeSet(drillEntries);
+        for (const w of withAudio) {
+          if (drillByWord.has(w.entryKey)) continue;
+          const rungs = buildDrillRungs(w.entryKey, drillDictMap, { excludeTokens: drillExcludeTokens });
+          if (rungs.length > 0) drillByWord.set(w.entryKey, rungs);
+        }
+
         for (const row of clustersResult.rows) {
           if (!charClusters.has(row.word1) && Array.isArray(row.definitionClusters)) {
             charClusters.set(row.word1, row.definitionClusters as Array<{ sense?: string | null; glosses?: string[] | null }>);
@@ -2316,6 +2344,7 @@ export class OnDeckVocabService {
           definition: resolveDisplayDefinition(w),
           charSenses,
           charComponents: [...w.entryKey].map((char) => charComponentsMap.get(char) ?? []),
+          drill: drillByWord.get(w.entryKey),
         };
       });
       const generated = generateWordSearchGrid(inputs, fillerPool, rows, cols);

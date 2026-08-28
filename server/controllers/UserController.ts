@@ -88,12 +88,17 @@ export class UserController {
    */
   async register(req: Request, res: Response): Promise<void> {
     try {
-      const { email, name, password } = req.body;
+      // `tz` is the browser's IANA zone, sent by AuthContext.register. Optional —
+      // an old client or a scripted signup omits it and the service falls back to
+      // 'UTC' — but supplying it is what keeps the account off the column default
+      // for the window between signup and the first login/minute point.
+      const { email, name, password, tz } = req.body;
 
       const newUser = await this.userService.createUser({
         email,
         name,
-        password
+        password,
+        timezone: tz
       });
 
       await this.seedNightMarketHub(newUser.id, newUser.selectedLanguage || 'zh');
@@ -152,6 +157,23 @@ export class UserController {
       );
 
       this.setAuthCookies(res, result.token, result.refreshToken);
+
+      // Refresh the stored timezone off the back of the rotation. This endpoint is
+      // the app's only ~15-minute heartbeat for a logged-in client, so it is the
+      // cheapest place to keep `users.timezone` current: no new request, and it
+      // catches what the login hook structurally cannot — a session that stays
+      // open while the user travels or corrects their OS clock.
+      //
+      // Best-effort and AWAITED-but-caught: a failure here must not turn a
+      // successful token rotation into a 401, which would log the user out.
+      const { tz } = req.body || {};
+      if (tz !== undefined) {
+        try {
+          await this.userService.refreshUserContext(result.user.id, { tz });
+        } catch (tzError) {
+          console.error('refresh: timezone sync failed (non-fatal)', tzError);
+        }
+      }
 
       // Return the new access token + user so the client can update in-memory
       // state and the Authorization header it sends on subsequent requests.
@@ -519,12 +541,15 @@ export class UserController {
    */
   async createUser(req: Request, res: Response): Promise<void> {
     try {
-      const { email, name, password } = req.body;
+      // Accepts `tz` for the same reason as register() — an admin/scripted
+      // creation that knows the user's zone should not leave the row on 'UTC'.
+      const { email, name, password, tz } = req.body;
 
       const newUser = await this.userService.createUser({
         email,
         name,
-        password
+        password,
+        timezone: tz
       });
 
       await this.seedNightMarketHub(newUser.id, newUser.selectedLanguage || 'zh');

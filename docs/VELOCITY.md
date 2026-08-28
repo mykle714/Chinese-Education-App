@@ -19,7 +19,7 @@ the same as pushing another card's core bar up a band. See §2a for which bars c
 
 Related: [MASTERY_REWORK.md](./MASTERY_REWORK.md) (the utcm bands velocity is
 measured in), [FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md](./FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md)
-(the mark/undo handlers that write the log).
+(`FlashcardMarkService.applyMark` / `undoMark`, which write the log).
 
 ---
 
@@ -49,8 +49,8 @@ deploy and the number becomes meaningful after ~7 days of use.
 | A mark pushes a card up two bands at once | ✅ `bandsClimbed = 2` | pbh is continuous — one mark can cross two boundaries (see the test in `server/__tests__/velocity.test.ts`). This is why the step count is stored, not assumed to be 1. |
 | A mark demotes a card | ❌ | Velocity measures upward movement only; demotions are not subtracted. |
 | Toggling the reading/writing **goal** | ❌ | Since migration 143 a toggle re-bands *nothing* — it only changes which bars are counted at read time (§2a). No mark, no row. |
-| Seeding a card as "already learned" (`updateTypedMarkHistory`) | ❌ | Goes through `VocabEntryDAL`, not the mark handler — a declaration, not a review. |
-| Undoing a mark | 🔁 rows deleted | `undoLastMark` deletes by `(vocabEntryId, markTimestamp)`, so an undone mark gives back the band-steps it earned. |
+| Seeding a card as "already learned" (`updateTypedMarkHistory`) | ❌ | Goes through `VocabEntryDAL`, not `FlashcardMarkService` — a declaration, not a review. |
+| Undoing a mark | 🔁 rows deleted | `undoMark` deletes by `(vocabEntryId, markTimestamp)`, so an undone mark gives back the band-steps it earned. |
 
 **One mark writes at most one row.** `BAR_MARK_TYPES` partitions the four mark types
 across the three bars, so a review can promote exactly one bar — there is no fan-out
@@ -126,8 +126,8 @@ of the window within 7 days.
 |---|---|---|
 | contract | `server/contracts/mastery.ts` — `CATEGORY_ORDER`, `categoryRank()`, `bandsClimbed()` | The band-step arithmetic. Shared with the client via `src/utils/masteryCompute.ts`. |
 | DAL | `server/dal/implementations/CategoryPromotionDAL.ts` (behind `ICategoryPromotionDAL`) | The only SQL. Every method takes an optional `PoolClient` so a caller already holding a connection or a transaction can enlist the query (BACKEND_LAYERING §3). |
-| write (mark) | `server/routes/flashcardRoutes.ts` — after the mark's bar band is computed | `bandsClimbed(barCategoryBefore, barCategoryAfter) > 0` → `recordPromotion({…, bar})`. Note it measures **the mark's own bar**, not the core band. **Best-effort**: wrapped in try/catch and logged, because losing a stat must never fail a user's review write. |
-| write (undo) | `server/routes/flashcardRoutes.ts` — inside the undo transaction | `deleteForMark(cardId, markTimestamp, client)`. **Not** best-effort: it rolls back with the rest of the undo. |
+| write (mark) | `server/services/FlashcardMarkService.ts` → `applyMark`, after the mark's bar band is computed | `bandsClimbed(barCategoryBefore, barCategoryAfter) > 0` → `recordPromotion({…, bar})`. Note it measures **the mark's own bar**, not the core band. **Best-effort**, and issued AFTER the mark's transaction commits: a failed INSERT inside that transaction would abort the mark itself, and losing a stat must never fail a user's review write. |
+| write (undo) | `server/services/FlashcardMarkService.ts` → `undoMark`, inside the undo transaction | `deleteForMark(cardId, markTimestamp, client)`. **Not** best-effort: it rolls back with the rest of the undo. |
 | controller | `server/controllers/VelocityController.ts` | `GET /api/users/me/velocity`. No service layer — the only rules are picking the headline language (mirrors `WinsController`) and resolving `activeBars()` from the account's goal flags. It always loads the user now, since the bar filter needs the flags. |
 | route | `server/routes/userRoutes.ts` | Registered before `GET /api/users/:id` so the param route can't shadow it. |
 | client api | `src/api/velocity.ts` | `fetchVelocity(language?)`. No `token` param (FRONTEND_LAYERING §3.2). |

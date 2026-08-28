@@ -149,22 +149,43 @@ is global except the two rollups listed above.
 - `UserMinutePointsService.adjustMinutesForAuthor(userId, delta, timestamp, tz)` — **template-author-only** dev tool (`POST /api/nightMarket/dev/adjustMinutes`, gated on `isTemplateAuthor`, 403 otherwise, NOT rate-limited). `delta > 0` adds to today's `minutesEarned` + credits **both** counters; `delta < 0` adds `|delta|` to today's `penaltyMinutes` (gross intact) + debits net only (floored); then reconciles the night market (`NightMarketPlacementService.reconcileUnlocks` — grant on +, decay on −; decay also prunes empty dangling templates). Backs the nmp ±1/±5/±30 + Submit buttons. See docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md.
 - DAL split: the day ledger (`IUserMinutePointsDAL`) serves per-day/per-month reads; the wallet/streak/gross row (`IUserLanguagesDAL`) serves balances and streaks. `getMinutesForDate` still sums a day across all languages but is now used only by the test-only leaderboard — the streak threshold reads the single-language day total returned by `addMinutesForDate`.
 - `database/cron/expire-stale-streaks.sql` — hourly Postgres cron, the **sole authority for streak breaks and point penalties**. For each user below the threshold (`today − lastStreakDate ≥ 2`, in the user's stored tz, 4 AM-bounded), it debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then the remainder on day 7+) from `totalMinutePoints` — **floored at the balance's 24-hour checkpoint**, so no debit crosses a multiple of 1440 — resets `currentStreak = 0`, and stamps the amount actually debited as `penaltyMinutes` on the missed day (`today − 1`) unless that amount is 0. Once per user per local day (`lastPenaltyDate` guard). See `docs/STREAK_EXPIRATION_CRON.md`.
-- `UserController.onLogin` — post-login hook (`POST /api/auth/onLogin`). Today: refreshes `users.timezone` from the client so the cron has an up-to-date tz for every active user.
+- `UserController.onLogin` — post-login hook (`POST /api/auth/onLogin`). Today: refreshes `users.timezone` from the client so the cron has an up-to-date tz for every active user. It is no longer the only such trigger: `UserController.register` sets the zone at creation, `UserController.refresh` re-syncs it on every ~15-minute token rotation, and a foregrounded tab re-sends it on change. All four funnel through `UserService.refreshUserContext` / `createUser`; the full contract is in [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) ("Refresh path for `users.timezone`").
 - `LeaderboardService` — masks `currentStreak` to `null` for non-public users.
 
 ### Client
 
 - `useMinutePoints` (hook) — local accumulating timer + reads the per-language server summary (`fetchLanguageSummary`). Scoped to `user.selectedLanguage`; re-seeds today/total/streak when the language changes. localStorage is keyed by `(userId, language)`. The timer runs only while `isActive`, which `useActivityDetection` sets on the first `click`/`keydown`/`touchstart`/`pointerdown` and holds for `ACTIVITY_TIMEOUT_MS` (15s) after the last interaction. **Auto-active on game entry:** for pages matching `MINUTE_POINTS_AUTO_ACTIVE_PAGES` (`/games/*`, see `src/constants.ts`) the hook calls `recordActivity()` on mount so accrual starts immediately, without waiting for the first tap; other eligible pages (flashcards, reader) still require an interaction.
+- **Sub-minute seconds survive leaving the page.** `incrementMinutePoint` only fires on a
+  whole minute, so the server's `todayMinutes` is a floor and can never carry the 59
+  seconds a learner banked before navigating away or closing the tab. Those milliseconds
+  live in localStorage (`minutePointsStorage`, keyed by `(userId, language)`), written by
+  the 1-second tick, the inactivity timeout, `beforeunload`, and the leaving-an-eligible-
+  page effect. On load the hook reconciles as
+  `max(localMilli, serverMilli + (localMilli % 60000))`: the local value normally wins
+  because it holds the same whole minutes plus the loose seconds, and when another device
+  has pushed the server ahead the local **remainder** is re-attached to the server's
+  figure instead of being discarded. Worst case this re-credits under a minute of stale
+  remainder, which is bounded and errs toward the learner. Same-streak-day only —
+  `isSameStreakDay` gates the whole local value, so pre-04:00 progress is not resurrected
+  on the next day's first login.
 - `useCalendarMinutePoints` (hook) — fetches the calendar endpoint with `?language=`, derives `isToday`/`hasData` in browser tz.
-- `minutePointsSync.incrementMinutePoint(language, token)` — POSTs `{ timestamp, tz, language }`; `language` is the hook's accrual language (`languageRef.current`), matching the badge/localStorage it just incremented optimistically. `fetchLanguageSummary` GETs `/summary?language&tz&timestamp`. The tz is taken from `Intl.DateTimeFormat().resolvedOptions().timeZone`.
-- `authSync.notifyLogin` — fired from `AuthContext` after login and session restore; POSTs `{ tz }` to `/api/auth/onLogin` so `users.timezone` stays fresh even for users who don't earn points.
+- `minutePointsSync.incrementMinutePoint(language, token)` — POSTs `{ timestamp, tz, language }`; `language` is the hook's accrual language (`languageRef.current`), matching the badge/localStorage it just incremented optimistically. `fetchLanguageSummary` GETs `/summary?language&tz&timestamp`. The tz comes from `utils/browserTimezone.getBrowserTimezone` — the app-wide helper (it lived in this file until 2026-08-28, when five callers outside minute points made it a shared util).
+- `authSync.notifyLogin` — fired from `AuthContext` after login and session restore; POSTs `{ tz }` to `/api/auth/onLogin` so `users.timezone` stays fresh even for users who don't earn points. Failures are logged via `authDebug.authError` rather than swallowed — the symptom they hide (a deadline rendered at the wrong hour) is untraceable otherwise.
+- `authSync.syncTimezoneIfChanged` — same POST, but only when the browser's zone differs from what this tab last sent. Wired to `visibilitychange` in `AuthContext` for the long-lived-tab case.
+- `utils/tokenRefresh.doRefresh` — sends `{ tz }` on `POST /api/auth/refresh`, piggybacking the ~15-minute rotation.
 - `MonthlyCalendar` / `StreakCounter` / `LeaderboardPlaceholder` — UI surfaces.
 - `MinutePointsFireBadge` — the app's earning indicator. Rendered by `PageHeader` itself,
-  last in the right slot, on **every** header; pages do not pass it. Orange while earning,
-  grey when idle or on an ineligible page, struck-through when paused, `null` when signed
-  out. Progress toward the next point (`progressToNextPoint`) is drawn as a rising orange
-  fill inside the flame glyph rather than as a seconds number — see
-  [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § the `.hd .fire` decisions. `liveSeconds` is
+  last in the right slot, on **every** header; pages do not pass it. `null` when signed
+  out. It draws in one of two **modes**, keyed on `isEligiblePage` (not on `isActive`):
+  - **Off-study** (any page that cannot accrue — the hubs, the cdp, the browsers): one
+    flat, solid `fireActive` flame beside the count. No ghost layer, no fill, no pulse —
+    a gauge on a page that cannot move it only invites the learner to watch a frozen
+    level.
+  - **Study** (`MINUTE_POINTS_ELIGIBLE_PAGES`): the ghost + fill treatment. Orange while
+    earning, grey when idle, struck-through count when paused. Progress toward the next
+    point (`progressToNextPoint`) is drawn as a rising fill inside the flame glyph rather
+    than as a seconds number — see [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § the
+    `.hd .fire` decisions. `liveSeconds` is
   still consumed, but only for the badge's `title` text. Because it calls `useMinutePoints` internally, a page must never mount two
   `PageHeader`s on an earning route — each hook instance runs its own 1-second accrual tick.
 - `MinutePointsBadge` — the legacy circular badge, still only on the old desktop
@@ -182,7 +203,9 @@ Accrual is decided by path, not by what a page does:
 
 Only **study** surfaces earn. Menus and browse screens deliberately do not: the hubs
 (Home, Discover, Games, Decks & Cards), the cdp (`/flashcards/card/:id`), the
-deck/collection browsers and the mastery centers. They still show the flame, grey.
+deck/collection browsers and the mastery centers. They still show the flame — solid
+orange with the count, in the badge's off-study mode (it was grey with a frozen fill
+level until 2026-08-28).
 
 ⚠️ `/flashcards` is in the EXACT list for a reason — as a prefix it re-admits every
 browse screen under it. It was a prefix until 2026-08-24, which is why the cdp and the
@@ -213,6 +236,8 @@ on each call.
 | POST | `/api/users/minutePoints/increment`            | `{ timestamp, tz, language? }` | Adds 1 to the payload `language` (falls back to `selectedLanguage`); may advance THAT language's streak |
 | GET  | `/api/users/minutePoints/calendar/:yearMonth`  | path: `YYYY-MM`; query: `language` | Dense per-day list (one language) with `minutesEarned` and `penaltyMinutes` |
 | POST | `/api/auth/onLogin`                            | `{ tz }`                       | Post-login bookkeeping (currently: refresh `users.timezone`) |
+| POST | `/api/auth/register`                           | `{ email, name, password, tz? }` | `tz` sets `users.timezone` at creation so the row is never born on the `'UTC'` default |
+| POST | `/api/auth/refresh`                            | `{ tz? }`                      | Token rotation; `tz` is a best-effort timezone re-sync (never fails the rotation) |
 | GET  | `/api/leaderboard`                              | —                              | `currentStreak` is `null` for non-public users |
 
 ### Abuse resistance of the increment path

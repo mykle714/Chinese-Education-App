@@ -1,18 +1,23 @@
 /**
- * Backfill Script: AI-powered everyday-conversation FREQUENCY scoring for
+ * Backfill Script: AI-powered CONVERSATIONAL-COMMONALITY scoring for
  * dictionaryentries_zh
  *
  * For each discoverable zh entry where "frequencyScore" IS NULL, asks Claude Sonnet
- * how often the word comes up in ordinary spoken Mandarin:
+ * how much the word would stand out if a friend said it in casual Mandarin:
  *
- *   5 = Constant — comes up daily in ordinary talk
- *   4 = Common — comes up most weeks; a learner meets it early and often
- *   3 = Moderately common — comes up when the topic calls for it
- *   2 = Uncommon in speech — mostly met while reading or in specialist talk
- *   1 = Almost never spoken — literary, classical, archaic, or narrowly technical
+ *   5 = Everyday — heard or said this week without trying
+ *   4 = Common when the topic comes up — normal; nobody would think twice
+ *   3 = Unremarkable — you would not be surprised to hear it casually
+ *   2 = Odd but forgivable — you would notice; the conversation carries on
+ *   1 = Would stop the conversation — classical, archaic, or hyper-technical
  *
  * The rubric itself lives in ./lib/frequencyScore.js, shared with the per-cluster
  * scorer in backfill-cluster-definitions.js so both score on one identical scale.
+ *
+ * NOTE (SCRIPT_VERSION 4, 2026-08-28): the AXIS changed from frequency-of-occurrence
+ * to how-much-it-stands-out — bands 4+5 merged, the old band 1 split into 1 and 2.
+ * There is NO migration; the column is still a 1-5 smallint, but every score written
+ * before that date means something different. `--stale` re-scores them.
  *
  * NOTE (migration 122, SCRIPT_VERSION 2): this scored REGISTER (colloquial↔literary)
  * until it was renamed and re-pointed at frequency — every consumer (gsa tie-break,
@@ -41,7 +46,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog } from '../run-log.js';
 import { createFrequencyScorer, SCORE_LABELS } from './lib/frequencyScore.js';
-const SCRIPT_VERSION = 2; // bump when this script's logic/prompt changes (v2: register rubric → everyday-conversation frequency, migration 122)
+import { reconcileFrequencyScore } from '../shared/lib/senseClusters.js';
+const SCRIPT_VERSION = 4; // bump when this script's logic/prompt changes (v4: THE AXIS CHANGED — the scale now asks how much a word would STAND OUT in casual conversation, not how often it occurs. Bands 4+5 merged, old band 1 split into 1 ("would stop the conversation") and 2 ("odd but forgivable"), 目前-class words lifted to 3. All pre-2026-08-28 scores are on the old axis — re-score with --stale; v3: rubric now credits BOUND FORMS through their compounds — 自 is frequent via 自己/自由 — and the write enforces the word/cluster frequency invariant; v2: register rubric → everyday-conversation frequency, migration 122)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -72,6 +78,10 @@ const scoreGate = isStale ? `("frequencyScore" IS NULL OR ${staleClause()})` : '
 // The rubric + scorer live in the shared lib (./lib/frequencyScore.js) so the
 // definition-clustering backfill scores each sense cluster on the identical 1–5
 // scale. Spot-check mode asks for one-line reasoning alongside the score.
+// Guard for the cluster half of the write: a validator's approved per-sense score
+// outranks the invariant, so the CASE leaves their clusters untouched.
+const senseValidated = validatedClause(['senseFrequencyScore'], 'dictionaryentries_zh');
+
 const { scoreFrequency } = createFrequencyScorer({ anthropic });
 
 async function run() {
@@ -89,7 +99,7 @@ async function run() {
 
   try {
     const { rows: entries } = await client.query(`
-      SELECT id, word1, pronunciation, definitions
+      SELECT id, word1, pronunciation, definitions, "definitionClusters"
       FROM dictionaryentries_zh
       WHERE language = 'zh'
         ${discoverableGate}
@@ -125,9 +135,25 @@ async function run() {
           console.log(`${result.score}`);
         }
 
+        // Enforce the word/cluster frequency invariant on the way in:
+        // "frequencyScore" == MAX(cluster scores). A model score BELOW the best
+        // cluster is lifted to it; a model score ABOVE every cluster lifts the entry's
+        // DEFAULT cluster instead, so the two numbers agree without changing which
+        // sense the card shows. See scripts/backfill/shared/lib/senseClusters.js.
+        // $3 is NULL unless the clusters actually changed, so an unclustered entry is
+        // never handed a jsonb 'null'.
+        const reconciled = reconcileFrequencyScore(result.score, row.definitionClusters);
         await client.query(
-          `UPDATE dictionaryentries_zh SET "frequencyScore" = $1 WHERE id = $2`,
-          [result.score, row.id]
+          `UPDATE dictionaryentries_zh
+              SET "frequencyScore" = $1::int,
+                  "definitionClusters" = CASE WHEN $3::jsonb IS NOT NULL AND ${senseValidated}
+                                              THEN $3::jsonb ELSE "definitionClusters" END
+            WHERE id = $2`,
+          [
+            reconciled.wordScore,
+            row.id,
+            reconciled.clustersChanged ? JSON.stringify(reconciled.clusters) : null,
+          ]
         );
         await stampEntries(client, 'dictionaryentries_zh', row.id);
 

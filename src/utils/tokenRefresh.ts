@@ -13,6 +13,7 @@
 import { API_BASE_URL } from '../constants';
 import * as authStorage from './authStorage';
 import { authLog, authError, tokenPreview } from './authDebug';
+import { getBrowserTimezone } from './browserTimezone';
 
 // The unpatched fetch, captured at MODULE-EVAL time.
 //
@@ -97,6 +98,14 @@ async function doRefresh(): Promise<string | null> {
     const res = await nativeFetch(`${API_BASE_URL}/api/auth/refresh`, {
       method: 'POST',
       credentials: 'include', // send the httpOnly refresh cookie
+      headers: { 'Content-Type': 'application/json' },
+      // Piggyback the browser's timezone on the ~15-minute rotation. This is the
+      // app's only heartbeat for a logged-in client, so it is the cheapest way to
+      // keep `users.timezone` fresh — and the only trigger that catches a zone
+      // changing MID-session (travel, an OS clock fix). The server treats it as
+      // best-effort: a failed tz write never fails the rotation.
+      // See utils/authSync.ts for the full freshness contract.
+      body: JSON.stringify({ tz: getBrowserTimezone() }),
     });
 
     if (!res.ok) {

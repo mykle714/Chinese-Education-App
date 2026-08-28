@@ -20,11 +20,16 @@ const wordsFilter = targetWords?.length
   ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
   : '';
 
-// --stale: also (re)process rows stamped below this script's SCRIPT_VERSION or never
-// stamped — needed so a populated-but-unstamped tone row can be stamped (the
-// on-first-sort worker relies on this to reach completeness). See run-log staleClause.
-const isStale = process.argv.includes('--stale');
-const toneGate = isStale ? `(tone IS NULL OR ${staleClause()})` : 'tone IS NULL';
+// Staleness is folded into the gate unconditionally (not behind --stale): this script
+// is deterministic and idempotent, so re-selecting a populated-but-unstamped row costs
+// nothing but a recompute+stamp, and doing it always closes a recurring gap — a row
+// whose tone was filled outside a stamped run (e.g. the original import) previously
+// satisfied `tone IS NULL`'s complement forever and never got its enrichmentLog stamp,
+// which blocked promote-discoverable.js's completeness bar even though the data was
+// correct. Confirmed recurring across oracle rounds 2026-08-28T02:32:06Z and
+// 2026-08-28T06:20:16Z, both of which had to re-run with --stale by hand. --stale is
+// kept as a recognized (now no-op) flag for callers that still pass it.
+const toneGate = `(tone IS NULL OR ${staleClause()})`;
 
 const TONE_MARK_MAP = {
   'ā': 1, 'á': 2, 'ǎ': 3, 'à': 4,

@@ -31,7 +31,7 @@
 #
 # BUDGET
 #   A round is skipped (exit 0) when plan utilization is at or above
-#   ORACLE_MAX_UTILIZATION (default 95%), because spend past the plan cap silently
+#   ORACLE_MAX_UTILIZATION (default 75%), because spend past the plan cap silently
 #   bills extra-usage credits rather than erroring. See the budget gate below.
 #   ORACLE_MAX_UTILIZATION=0 parks the cron without editing the crontab.
 #   ORACLE_GATE_FAIL_ESCALATE (default 3) is how many CONSECUTIVE unexpected gate
@@ -152,12 +152,14 @@ LAST_STATUS_FILE="$LOG_DIR/oracle-last-status.$SLUG"
 # below. Failing closed on that was costing whole days of throughput for no budget
 # reason at all.
 #
-# ORACLE_MAX_UTILIZATION (default 95) is deliberately below 100. A round takes
+# ORACLE_MAX_UTILIZATION (default 75) is deliberately well below 100. A round takes
 # ~30 min, so starting at 99% would cross the cap mid-manifest and finish on
 # credits — the gate can only refuse to *start*, it cannot stop a round in flight.
-# The last ~5% of plan budget is the price of that coarseness. Set it to 100 to
-# spend the plan out fully and accept some credit spillover, or to 0 to park the
-# cron entirely without touching the crontab.
+# Lowered from the original 95 default on 2026-08-28 so the cron parks well clear of
+# the weekly cap (`worst` still picks the WORST of session/weekly_all/weekly_scoped —
+# see `limits[]` below — this is a global tightening, not a weekly-only threshold).
+# Set it to 100 to spend the plan out fully and accept some credit spillover, or to
+# 0 to park the cron entirely without touching the crontab.
 # TOKEN FRESHNESS: the usage endpoint is authenticated with the OAuth access token
 # that Claude Code keeps in ~/.claude/.credentials.json. That token has a ~8h TTL and
 # is refreshed ONLY by a live Claude Code session — nothing on a quiet prod box
@@ -183,7 +185,7 @@ LAST_STATUS_FILE="$LOG_DIR/oracle-last-status.$SLUG"
 # malformed payload) increment a counter and shout on stderr once it reaches
 # ORACLE_GATE_FAIL_ESCALATE (default 3). An at-the-cap skip is NOT counted, because
 # the weekly cap can legitimately hold the cron down for most of a day.
-MAX_UTIL="${ORACLE_MAX_UTILIZATION:-95}"
+MAX_UTIL="${ORACLE_MAX_UTILIZATION:-75}"
 GATE_FAIL_STATE="$LOG_DIR/oracle-gate-failures.$SLUG"
 GATE_FAIL_ESCALATE="${ORACLE_GATE_FAIL_ESCALATE:-3}"
 
@@ -334,7 +336,7 @@ if [[ -n "${DRY_RUN:-}" ]]; then
   echo "  notes      : $ORACLE_NOTES_FILE"
   echo "  lock       : $LOCK"
   echo "  log        : $RUN_LOG"
-  echo "  budget     : $BUDGET (gate ${ORACLE_MAX_UTILIZATION:-95}%)"
+  echo "  budget     : $BUDGET (gate ${ORACLE_MAX_UTILIZATION:-75}%)"
   exit 0
 fi
 

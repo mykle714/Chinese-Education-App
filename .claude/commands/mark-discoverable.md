@@ -152,7 +152,7 @@ single-char batch will report "0 entries" — that is correct, not a failure.
 ### A4. Verify enrichment
 
 ```sql
-SELECT word1, tone, "hskLevel",
+SELECT word1, tone, difficulty,
   "longDefinition" IS NOT NULL AS has_long_def,
   -- has_longdef_citations is TRUE even for '[]' — a definition with nothing translatable
   -- (quotes no Chinese, or every quoted run is itself a det headword) records "done" as [].

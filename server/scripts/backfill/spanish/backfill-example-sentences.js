@@ -50,7 +50,7 @@ const SCRIPT_VERSION = 1; // bump when this script's logic/prompt changes
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // run-log: track duration, version, words/mode, and token usage/cost
-const { stampEntries, validatedClause } = initRunLog({ script: 'spanish/backfill-example-sentences', version: SCRIPT_VERSION, anthropic: anthropic });
+const { stampEntries, validatedClause, staleClause } = initRunLog({ script: 'spanish/backfill-example-sentences', version: SCRIPT_VERSION, anthropic: anthropic });
 // This script regenerates the WHOLE exampleSentences array, so skip any entry
 // whose example sentences a validator has approved/flagged (migration 104,
 // docs/DATA_VALIDATION_SYSTEM.md).
@@ -367,6 +367,34 @@ async function run() {
   const client = await db.getClient();
 
   try {
+    // Stamp-only reconciliation pass: a row can already have populated exampleSentences
+    // (written by an earlier, unstamped run — a hand-authored oracle round, an
+    // interrupted pass) while carrying no enrichmentLog stamp for this script.
+    // oracle-plan.js decides "pending" purely from the stamp, so such a row keeps
+    // reappearing in every planned batch even though there is nothing left to
+    // generate — a structural planner/doneGate desync confirmed recurring across the
+    // 2026-08-25T12:29:15Z and 2026-08-26T07:28:49Z oracle rounds, both of which had
+    // to fall back to `--all-discoverable` (a full, costly LLM regenerate) just to
+    // force the stamp. Closing it here costs no API calls: only stamp, never touch
+    // content. Skips --spot-check/--words-scoped runs so ad-hoc invocations stay
+    // narrow, and honors validatedFilter so a validator-approved/flagged row is never
+    // touched by this script at all, stamp included.
+    if (!isSpotCheck && !isAllDiscoverable) {
+      const { rows: reconcile } = await client.query(`
+        SELECT id FROM dictionaryentries_es
+        WHERE language = 'es'
+          AND discoverable = TRUE
+          AND "exampleSentences" IS NOT NULL AND "exampleSentences" != '[]'::jsonb
+          ${validatedFilter}
+          AND ${staleClause()}
+          ${wordsFilter}
+      `);
+      if (reconcile.length) {
+        await stampEntries(client, 'dictionaryentries_es', reconcile.map(r => r.id));
+        console.log(`🔖 Stamped ${reconcile.length} already-populated, previously-unstamped row(s) — no generation needed\n`);
+      }
+    }
+
     const { rows: entries } = await client.query(`
       SELECT id, word1, pronunciation, definitions, "partsOfSpeech"
       FROM dictionaryentries_es

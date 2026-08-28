@@ -589,6 +589,7 @@ async function run() {
     let updated  = 0;
     let unchanged = 0;
     let failed   = 0;
+    let exported = 0;
     let confirmed = 0;
     let refined   = 0;
     let lowConf   = 0;
@@ -699,6 +700,7 @@ async function run() {
 
         if (!orderChanged) {
           console.log(`unchanged${pass2Disagreed ? ' (pass2 differed but matched original)' : ''}`);
+          await stampEntries(client, 'dictionaryentries_es', row.id);
           unchanged++;
           continue;
         }
@@ -738,6 +740,18 @@ async function run() {
         }
 
       } catch (err) {
+        // Oracle export phase: the prompt was captured (split, pass1, critic, or
+        // short-gloss — whichever link in the chain is next) and the row deliberately
+        // unwound before the write could happen. Not a failure — counting it as one is
+        // what made every apply cycle report "Failed/invalid: N" for rows that were
+        // actually progressing normally through a multi-call chain. (See the ORACLE
+        // MODE block in run-log.js and the same guard in shared/lib/runner.js and the
+        // zh sibling script.)
+        if (err?.oracleExport) {
+          console.log('captured');
+          exported++;
+          continue;
+        }
         console.log(`FAILED: ${err.message}`);
         failed++;
       }
@@ -755,6 +769,7 @@ async function run() {
       console.log(`Updated         : ${updated}`);
       console.log(`Unchanged       : ${unchanged}`);
       console.log(`Failed/invalid  : ${failed}`);
+      console.log(`Exported(oracle): ${exported}`);
       console.log(`Glosses pruned  : ${glossesPruned}`);
       console.log(`Comma runs split: ${glossesSplit}`);
     }

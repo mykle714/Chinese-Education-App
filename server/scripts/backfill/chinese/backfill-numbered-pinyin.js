@@ -31,11 +31,17 @@ const wordsFilter = targetWords?.length
   ? `AND word1 = ANY(ARRAY[${targetWords.map(w => `'${w.replace(/'/g, "''")}'`).join(', ')}])`
   : '';
 
-// --stale: also (re)process rows stamped below SCRIPT_VERSION or never stamped, so a
-// populated-but-unstamped numberedPinyin row can be stamped (the on-first-sort worker
-// relies on this to reach completeness). See run-log staleClause.
-const isStale = process.argv.includes('--stale');
-const pinyinGate = isStale ? `("numberedPinyin" IS NULL OR ${staleClause()})` : '"numberedPinyin" IS NULL';
+// Staleness is folded into the gate unconditionally (not behind --stale): this script
+// is deterministic and idempotent, so re-selecting a populated-but-unstamped row costs
+// nothing but a recompute+stamp, and doing it always closes a recurring gap — a row
+// whose numberedPinyin was filled outside a stamped run (e.g. the original import)
+// previously satisfied the IS NULL gate's complement forever and never got its
+// enrichmentLog stamp, which blocked promote-discoverable.js's completeness bar even
+// though the data was correct. Confirmed recurring across oracle rounds
+// 2026-08-28T02:32:06Z and 2026-08-28T06:20:16Z, both of which had to re-run with
+// --stale by hand. --stale is kept as a recognized (now no-op) flag for callers that
+// still pass it. Mirrors chinese/backfill-tones.js.
+const pinyinGate = `("numberedPinyin" IS NULL OR ${staleClause()})`;
 
 /**
  * Maps every toned diacritic vowel to [base vowel, tone number].

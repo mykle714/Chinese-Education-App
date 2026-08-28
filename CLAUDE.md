@@ -301,7 +301,7 @@ Current open runbooks: **[docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./
 (gloss phase-2 half B, the runtime guard — **no migration**). **Deployed 2026-08-24** and
 verified on the infrastructure checks; it stays open only until someone opens a real game
 board and confirms it fills rather than coming back short, which is the one over-blocking
-symptom those checks cannot see. Prod is current through migration **154**.
+symptom those checks cannot see. Prod is current through migration **155**.
 
 > **A rubric/prompt change does NOT need a runbook.** Bumping a backfill's
 > `SCRIPT_VERSION` (+ its `requiredScripts.js` entry) makes every already-enriched row a

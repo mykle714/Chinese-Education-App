@@ -1,6 +1,6 @@
 # Card Notes
 
-**Status: BUILT 2026-08-28. Migration 155 — applied on dev, NOT yet on prod.**
+**Status: BUILT 2026-08-28. Migration 155 — applied on dev and on prod (deployed 2026-08-28).**
 
 A learner's own free-text note about ONE of their flashcards — the thing the dictionary
 cannot tell them ("my landlord says this one", "not the 借 one", "from ch. 4"). At most

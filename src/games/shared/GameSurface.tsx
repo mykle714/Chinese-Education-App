@@ -1,6 +1,7 @@
 import { GameSurfaceContext, gameSurfaceSx } from "./gameSurface";
 import LeafPage, { type LeafPageProps } from "../../components/LeafPage";
-import type { RampHue } from "../../theme/colors";
+import { RAMP, type RampHue } from "../../theme/colors";
+import { useThemeColor } from "../../hooks/useThemeColor";
 
 /**
  * The two COMPONENTS of the per-game accent surface (docs/SHELF_REDESIGN.md § A6b).
@@ -13,10 +14,18 @@ import type { RampHue } from "../../theme/colors";
  *
  * Wrap the WHOLE page, not just the frame: the end-of-run popups and the paused
  * overlay are siblings of the panel, and they are on the accent ground too.
+ *
+ * It also claims the phone's STATUS-BAR strip for the same hue. That strip is painted
+ * by the browser from `<meta name="theme-color">`, so no amount of CSS inside the tree
+ * can reach it — without this, a red game header sat under a paper-white band and the
+ * accent ground visibly stopped short of the top of the screen. Doing it here rather
+ * than in each game means the two colours are read from ONE `hue` and cannot drift.
+ * See src/hooks/useThemeColor.ts.
  */
-export const GameSurfaceProvider: React.FC<{ hue: RampHue; children: React.ReactNode }> = ({ hue, children }) => (
-    <GameSurfaceContext.Provider value={hue}>{children}</GameSurfaceContext.Provider>
-);
+export const GameSurfaceProvider: React.FC<{ hue: RampHue; children: React.ReactNode }> = ({ hue, children }) => {
+    useThemeColor(RAMP[hue].ink);
+    return <GameSurfaceContext.Provider value={hue}>{children}</GameSurfaceContext.Provider>;
+};
 
 /**
  * `LeafPage` for a GAME: the accent ground, the header-ink flips it forces, and the

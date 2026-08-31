@@ -68,7 +68,7 @@ clipped. (`CardFaceSide` now lives in `src/features/flashcards/card/CardFace.tsx
 
 Two other things ride in that **outer** box for the same reason — they must paint over the
 icon layer and position against the face's own edge: `topRail` (the card-operations rail,
-[SHELF_REDESIGN.md](./SHELF_REDESIGN.md) artboard 21) and `bottomNote` (the learner's card
+[SHELF_REDESIGN.md](./SHELF_REDESIGN.md) artboard 21) and `noteSlot` (the learner's card
 note, [CARD_NOTES.md](./CARD_NOTES.md)). The note is deliberately **not** part of the
 movable-text system below — it is chrome, not card design, so the fie can neither move it
 nor see it (the canvas suppresses it while an edit is open).
@@ -78,6 +78,18 @@ nor see it (the canvas suppresses it while an edit is open).
 (`pointerEvents: none`) — Side 1 when `isFlipped`, Side 2 when `!isFlipped`. Without
 this, the away face intercepts taps meant for the visible face (e.g. the writing
 -practice / audio buttons on the back).
+
+**Mid-flip exposure of the card behind (`contentHidden`).** The flip is a `rotateY` on
+the whole card, so at the halfway point the front card is edge-on (zero projected width)
+and the flp's peeking **back** card — the second slot, which holds the next entry so no
+content flashes in on dismiss — is briefly shown in full, leaking the next word.
+`CardFaceSide` therefore takes a `contentHidden` prop that hides the face's **direct
+children** (inner clip box, edit canvas, `topRail`, `noteSlot`) while leaving the outer
+box's background fill and rounded corners painted, so the stack keeps its shape and only
+its content goes blank. `FlashCardSection` opens that window (`flipInProgress`, held for
+`CARD_FLIP_MS`) on a `false -> true` flip and passes `contentHidden` to the back slot's
+`CardFace` only. Card-change resets to `!isFlipped` deliberately do **not** open it: no
+flip animation runs there, and hiding would pop the freshly promoted card's content in.
 
 ## Where else the layout renders (card-grid thumbnails)
 

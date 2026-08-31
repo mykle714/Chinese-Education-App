@@ -161,6 +161,12 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             // every tab change must re-bind the scroll/resize coupling.
             bodyKey={compareTab ? "compare" : `info-${selectedTab}`}
             tabStrip={tabStrip}
+            // Title for the merge header the sheet grows once it covers the host page's
+            // own header (SheetPanel). Named for the ENTRY POINT rather than the word on
+            // screen — the pill that opens it says "More Info", and the entry header
+            // right below already carries the headword, so repeating it would be the
+            // only thing on screen twice.
+            title={compareTab ? "Compare" : "More Info"}
         >
             {({ bindHeaderDrag }) => (
                 // Slide wrapper for the entry-tab pager (see the effect above). Transparent

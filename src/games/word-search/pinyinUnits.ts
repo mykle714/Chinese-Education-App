@@ -78,11 +78,12 @@ export function countPinyinUnits(pinyin: string): number {
 /**
  * Total hint presses the word's pinyin absorbs before only its grid location is
  * left to give. The ladder has TWO stages (see docs/WORD_SEARCH_GAME.md §5a):
- *   1. one press per character to reveal that character's LETTER COUNT (its
- *      island turns from a count-free dash into one blank per letter), then
- *   2. one press per phonetic unit, round-robin across characters.
- * So the cap is characters + units.
+ *   0. ONE press for the whole SKELETON — every character's island appears at
+ *      once as one blank per hidden letter, so a single charge buys the word's
+ *      character count and every letter count together, then
+ *   1. one press per phonetic unit, round-robin across characters.
+ * So the cap is 1 + units.
  */
 export function countPinyinRevealSteps(pinyin: string): number {
-    return pinyinSyllables(pinyin).length + countPinyinUnits(pinyin);
+    return 1 + countPinyinUnits(pinyin);
 }

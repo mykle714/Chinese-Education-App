@@ -13,7 +13,6 @@ import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useTTS } from "../../hooks/useTTS";
-import { COLORS } from "../../theme/colors";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "../../features/flashcards/FlashcardsLearnPage/FlashCardSection";
 import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT } from "../../features/flashcards/constants";
 import { dictionaryEntryToVocabEntry } from "../../utils/dictEntryAdapter";
@@ -124,7 +123,8 @@ const DictionaryCardDetailPage: React.FC = () => {
             // Matches the vet Card Detail page, which the design draws at 18px — the
             // two are the same surface and must not disagree on their title size.
             headerSize="dense"
-            surfaceColor={COLORS.yellowAccent}
+            // No `surfaceColor` — the app's standard ground, in lockstep with the vet cdp
+            // above. Both used to paint yellowAccent.
             // No top edge-fade: the hero card shouldn't dissolve at the top.
             topFade={false}
             headerExtraActions={entry?.discoverable ? (

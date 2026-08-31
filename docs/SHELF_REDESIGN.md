@@ -379,9 +379,11 @@ and the decisions taken are recorded at the end of this sub-entry.
   shows. The **inversion survives**: `InfoSheetContainer` moved from
   `theme.palette.flashcard.background` (the same value as the page behind it, so the
   sheet read as a sheet only because of its shadow) to `COLORS.white`, matching the
-  design's `.sheet` / `.eic` / `.pnl`. The two card-detail pages keep
-  `COLORS.yellowAccent`; it is within ~1% of paper, so there is no step. The rule is
-  written into `docs/MOBILE_TAB_SCREEN_LAYOUT.md` so it does not come back.
+  design's `.sheet` / `.eic` / `.pnl`. The two card-detail pages kept
+  `COLORS.yellowAccent` (within ~1% of paper, so there was no step) until **2026-08-28**,
+  when they too moved to the default paper ground at the owner's request — no page paints
+  its own now. The rule is written into `docs/MOBILE_TAB_SCREEN_LAYOUT.md` so it does not
+  come back.
 - **Inactive tabs carry a transparent underline placeholder.** The design only
   specifies `.fbar div.on::after`; without a placeholder the active tab's 8px
   underline would push its label 8px above the other three.
@@ -1179,6 +1181,14 @@ the hub row and the ground read one constant.
 `GameLeafPage` (`src/games/shared/GameSurface.tsx`) is what a page actually uses: it takes
 one `hue` and does the ground, the flips and the provider together, so "this game is teal"
 is stated once per page and cannot be stated inconsistently.
+
+There is a THIRD surface the ground has to reach and neither mechanism above can touch: the
+phone's status-bar strip. The browser paints that band from `<meta name="theme-color">`, so
+`GameSurfaceProvider` also calls `useThemeColor(RAMP[hue].ink)`
+(`src/hooks/useThemeColor.ts`) — a LIFO stack of claims, because a `usePageSlide` exit keeps
+the outgoing page mounted while the incoming one mounts beneath it and a plain set/reset
+would let the departing page clear the arriving page's colour. Non-game screens hold no
+claim and get the paper default declared in `index.html`.
 
 ### The decisions inside it
 
@@ -2448,6 +2458,12 @@ that card's rail).
   surface the learner navigated TO (the cdp header, the shelf's multi-select) rather than
   one tap from the card they are drilling. `useWorkingLoop.dropCurrentCard`, which existed
   only for that flow, was deleted with it.
+
+  **Also 2026-08-28**: the rail is no longer flp-only — the **cdp** mounts it on its hero
+  card's `topRail` as well, because its `note` cell is the only affordance that opens the
+  note editor and the note now shows on both card surfaces. Its `customize` and
+  `add to deck` cells therefore duplicate two of that page's header actions (artboard 18's
+  header row); the header alone keeps `delete`.
 - **22 · swipe coaching.** Already shipped (`SwipeHintLabel`); untouched.
 - **23 · sense sheet.** `SensePicker` gets its two designed states: RESTING `.ssel` (a
   `1/9` counter and a triangle in a small pill) and OPEN `.ssheet` (every sense at once,

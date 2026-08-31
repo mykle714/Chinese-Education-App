@@ -2,7 +2,9 @@ import React, { useCallback, useRef, useState, useLayoutEffect, useEffect, useIm
 import { createPortal } from "react-dom";
 import { Box } from "@mui/material";
 import { useDrag } from "@use-gesture/react";
-import { EicScrim, InfoSheetContainer, InfoSheetGrabber } from "./styled";
+import { EicScrim, InfoSheetContainer, InfoSheetGrabber, SheetMergeHeaderSlot } from "./styled";
+import PageHeader from "../../../components/PageHeader";
+import { useHideFooter } from "../../../hooks/useHideFooter";
 
 // Imperative handle exposing the gesture-root wrapper and the inner scrollable
 // container of whatever body a SheetPanel renders. SheetPanel attaches its
@@ -76,15 +78,54 @@ interface SheetPanelProps {
     // it — useDrag is the only path). useDrag's filterTaps keeps tab-selection
     // and the close-tab taps working.
     tabStrip?: React.ReactNode;
+    // Title for the MERGE HEADER — the page-style header that grows in over the last
+    // MERGE_ZONE_PX of travel, once the sheet is tall enough to have covered the host
+    // page's own header. It is a real PageHeader (size "node", chevron-down), so a
+    // merged sheet wears the app's one header rather than a lookalike, and its chevron
+    // dismisses the sheet: at full height the scrim is completely covered, so the
+    // tap-to-close target that used to live in the 8% gap has to come back somewhere.
+    //
+    // Omitting it is allowed but discouraged for a modal sheet — the sheet still grows
+    // to full height, it just does so with no way out but a downward drag.
+    title?: string;
 }
 
 // ---------------------------------------------------------------------------
 // Geometry + motion constants
 // ---------------------------------------------------------------------------
 
-// Sheet height as a fraction of the parent (screen) height.
-const MAX_HEIGHT_RATIO = 0.92;
+// Sheet height as a fraction of the parent (the FRAME — see the portal note in the
+// component: the sheet is hosted at frame level, not inside the page's content area).
+//
+// The cap is 1: a fully-grown sheet is exactly as tall as the screen. It used to be
+// 0.92, and that 8% strip of visible scrim was doing two jobs — it said "there is a
+// page behind this" and it was the tap-to-dismiss target. At 1 both are gone, which is
+// why growing into the last MERGE_ZONE_PX also MERGES the sheet's chrome into the
+// page's: the corners flatten, the shadow drops and a real header (title + close
+// chevron) grows in, so a maxed sheet reads as the whole screen rather than as a sheet
+// whose top edge fell off. See writeMergeChrome.
+const MAX_HEIGHT_RATIO = 1;
 const DEFAULT_HEIGHT_RATIO = 0.6;
+
+// The last slice of travel below the cap, over which the sheet stops looking like a
+// sheet and starts looking like a page. Everything in writeMergeChrome interpolates
+// linearly across it, so the merge is a continuous function of the finger's position —
+// not a state flip at a threshold, which would pop mid-drag.
+const MERGE_ZONE_PX = 64;
+// Chrome the merge dissolves. Both MUST match InfoSheetContainer's own values in
+// styled.ts — they are the "unmerged" end of the interpolation.
+const SHEET_CORNER_RADIUS_PX = 20;
+const SHEET_TOP_PADDING_PX = 10;
+// Fallback for the merge header's height, used only if it cannot be measured on mount.
+const MERGE_HEADER_FALLBACK_PX = 52;
+
+// Base stacking for the portaled scrim + sheet. Both are hosted at FRAME level now
+// (see the portal note), so they no longer compete with their page's content area —
+// they compete with the page's top-level layers, and those go high: the scp lifts its
+// draggable cards to 1000 and its eip host to 1100. Chosen below MUI's modal layer
+// (1300) so a real Dialog still covers the sheet.
+const SCRIM_BASE_Z_INDEX = 1200;
+const SHEET_BASE_Z_INDEX = 1201;
 
 // Duration of every snap/dismiss animation.
 const SNAP_DURATION_MS = 220;
@@ -215,9 +256,21 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     collapseThresholdRatio = 0.5,
     children,
     tabStrip,
+    title,
 }, ref) => {
     const sheetContainerRef = useRef<HTMLDivElement | null>(null);
     const scrimRef = useRef<HTMLDivElement | null>(null);
+    // Rendered IN PLACE (and never painted) purely so the host walk below has a node to
+    // start from: both the scrim and the sheet are portaled away, so without it there
+    // would be nothing of this component left in the page's DOM to locate.
+    const anchorRef = useRef<HTMLDivElement | null>(null);
+    // Wrapper around the merge header. Its height/opacity are written imperatively for
+    // the same reason the sheet's height is (see the height-model note) — one style
+    // write per frame instead of a re-render of the whole body.
+    const mergeHeaderRef = useRef<HTMLDivElement | null>(null);
+    const mergeHeaderHeightRef = useRef(MERGE_HEADER_FALLBACK_PX);
+    // Last merge ratio written, so a frame that does not change it writes no styles.
+    const lastMergeRef = useRef(-1);
 
     // ---- Where the scrim mounts -------------------------------------------
     // The scrim is `position: absolute; inset: 0`, so it dims exactly its nearest
@@ -240,12 +293,35 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     //
     // Resolved in a layout effect (the target is found by walking up from the mounted
     // sheet), so the scrim mounts on the commit after the sheet — still before paint.
+    // ---- Where the SHEET mounts (2026-08-30) -------------------------------
+    // The sheet is portaled to the SAME host as the scrim, and that is what lets it
+    // reach full height. Rendered in place it is `absolute; bottom: 0` against the host
+    // PAGE's content box — which starts BELOW the page header (flp's ContentArea, scp's
+    // EipHost) and is clipped by MobileTabScreen's ScrollArea — so `parentElement.
+    // clientHeight` could never include the header and growing past it would just be
+    // cut off. Hosted at frame level, `bottom: 0` is the real bottom edge (scp no
+    // longer needs its negative-bottom FOOTER_CLEARANCE trick for this) and
+    // `parentHeight` is the whole screen, so MAX_HEIGHT_RATIO = 1 covers everything.
+    //
+    // The cost is that both layers leave their page's stacking context and now sort
+    // against the page's top-level layers — hence SCRIM/SHEET_BASE_Z_INDEX above.
     const [scrimHost, setScrimHost] = useState<HTMLElement | null>(null);
     useLayoutEffect(() => {
-        const el = sheetContainerRef.current;
+        const el = anchorRef.current;
         if (!el) return;
+        // A state write in a LAYOUT effect is flushed before paint, so the sheet still
+        // mounts in the same frame the host does — no flash of an unportaled sheet.
         setScrimHost(nearestScrimHost(el));
     }, []);
+
+    // A modal sheet owns the screen for its lifetime, so the floating footer pill —
+    // rendered at frame level (FooterPresenter, z-index 100) and outside every page's
+    // DOM — must slide away. This used to be each host page's job (scp and cdp both
+    // called useHideFooter themselves, and flp/decks had simply never noticed the
+    // overlap); now that a sheet can cover the entire screen it is the sheet's own
+    // business, and one hold here covers every host. A persistent sheet keeps the
+    // footer: it is page furniture that the pill is meant to float over.
+    useHideFooter(minHeight <= 0);
 
     // ---- Height model -----------------------------------------------------
     // The sheet's height is driven IMPERATIVELY (heightRef + a direct write to
@@ -289,6 +365,47 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     const collapseRatioRef = useRef(collapseThresholdRatio);
     collapseRatioRef.current = collapseThresholdRatio;
 
+    // Paint the "merging into the page" chrome for a given sheet height. `t` runs 0 → 1
+    // across the last MERGE_ZONE_PX below the cap: 0 is a sheet (rounded, shadowed, no
+    // header), 1 is a page (square, flat, headed). Everything here is a direct style
+    // write, never React state — this runs on every touchmove and every momentum frame,
+    // and a re-render at that rate is exactly what the height model exists to avoid.
+    const writeMergeChrome = useCallback((h: number, animate: boolean) => {
+        const el = sheetContainerRef.current;
+        if (!el) return;
+        const maxH = parentHeightRef.current * MAX_HEIGHT_RATIO;
+        const t = clamp((h - (maxH - MERGE_ZONE_PX)) / MERGE_ZONE_PX, 0, 1);
+        // Nothing to paint if the ratio has not moved — and nothing to animate either,
+        // so this early-out is safe on the animated path too. It keeps every drag below
+        // the merge zone (t stays 0) down to a single style write per frame.
+        if (t === lastMergeRef.current) return;
+        lastMergeRef.current = t;
+        const transition = animate
+            ? `border-radius ${SNAP_DURATION_MS}ms ease-out, padding-top ${SNAP_DURATION_MS}ms ease-out`
+            : "none";
+        const radius = SHEET_CORNER_RADIUS_PX * (1 - t);
+        el.style.borderTopLeftRadius = `${radius}px`;
+        el.style.borderTopRightRadius = `${radius}px`;
+        // "" (not a value) hands the property back to the stylesheet, so the sheet's
+        // real shadow token is restored rather than a copy of it frozen here. The
+        // shadow is what makes a sheet read as a surface sitting ON the page; a merged
+        // sheet IS the page, so it must not cast one.
+        el.style.boxShadow = t >= 1 ? "none" : "";
+        el.style.paddingTop = `${SHEET_TOP_PADDING_PX * (1 - t)}px`;
+        const header = mergeHeaderRef.current;
+        if (header) {
+            header.style.transition = animate
+                ? `height ${SNAP_DURATION_MS}ms ease-out, opacity ${SNAP_DURATION_MS}ms ease-out`
+                : "none";
+            header.style.height = `${mergeHeaderHeightRef.current * t}px`;
+            header.style.opacity = `${t}`;
+            // Only takes taps once it is fully there: a half-faded close chevron that
+            // already swallows taps is worse than one that is not there yet.
+            header.style.pointerEvents = t >= 1 ? "auto" : "none";
+        }
+        return transition;
+    }, []);
+
     // The single writer for the sheet's height. `animate` turns the CSS height
     // transition on for this write and off for every other one — so grabbing a
     // snapping sheet mid-animation immediately returns to 1:1 finger tracking
@@ -297,9 +414,15 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         heightRef.current = h;
         const el = sheetContainerRef.current;
         if (!el) return;
-        el.style.transition = animate ? `height ${SNAP_DURATION_MS}ms ease-out` : "none";
+        // The merge chrome rides the SAME transition as the height, so the corners,
+        // the shadow and the header arrive exactly when the sheet reaches its stop
+        // rather than snapping ahead of it.
+        const chromeTransition = writeMergeChrome(h, animate);
+        el.style.transition = animate
+            ? `height ${SNAP_DURATION_MS}ms ease-out${chromeTransition ? `, ${chromeTransition}` : ""}`
+            : "none";
         el.style.height = `${h}px`;
-    }, []);
+    }, [writeMergeChrome]);
 
     // Stop any in-flight height animation at exactly the height that is on
     // screen right now, and return it. A gesture must take over from what the
@@ -393,6 +516,14 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         if (!sheetContainerRef.current) return;
         const parentH = sheetContainerRef.current.parentElement?.clientHeight ?? window.innerHeight;
         parentHeightRef.current = parentH;
+        // Measure the merge header's NATURAL height once, from the header element
+        // itself rather than its wrapper: the wrapper is clipped to 0 from the first
+        // paint, but its child still lays out at full size inside it. Measured rather
+        // than hard-coded so the header can change size (PageHeader's title scales,
+        // and its padding is a design token) without the merge clipping it.
+        const headerEl = mergeHeaderRef.current?.firstElementChild as HTMLElement | null;
+        const measured = headerEl?.getBoundingClientRect().height ?? 0;
+        if (measured > 0) mergeHeaderHeightRef.current = measured;
         // Resting height on mount, in priority order:
         //   1. explicit initialHeight (a child panel matching its parent's extent)
         //   2. the floor, for a persistent panel — it is already "closed", so
@@ -412,8 +543,12 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         // Written before paint, so the sheet never flashes at its natural height.
         writeHeight(0);
         requestAnimationFrame(() => writeHeight(targetHeight, true));
+        // Keyed on scrimHost, NOT []: the sheet is portaled, so it is not in the DOM on
+        // this component's first commit — it mounts on the commit that resolves the
+        // host, and that is the one whose layout can be measured. The guard above makes
+        // the first pass a no-op.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [scrimHost]);
 
     // Cancel in-flight work if the panel is unmounted from the outside (e.g.
     // scrim tap, parent state change) while a fling or dismiss is running.
@@ -645,17 +780,28 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             root.removeEventListener("touchend", onTouchEnd);
             root.removeEventListener("touchcancel", onTouchEnd);
         };
+        // `scrimHost` is in the deps alongside bodyKey, and it is load-bearing: the
+        // sheet (and therefore the body behind bodyRef) is portaled, so it does not
+        // exist on this component's first commit — this effect would find a null root,
+        // bail, and never run again, leaving the panel with no touch handlers at all.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [bodyKey]);
+    }, [bodyKey, scrimHost]);
 
+    // Both layers are portaled to the frame-level host, so their z-indexes are always
+    // stated here (the stylesheet's 10/11 only ever applied while they were rendered
+    // inside their page). `depth * 2` keeps a stacked child panel and its scrim above
+    // their parent's pair.
     const stackZ = depth * 2;
-    const scrimStyle: React.CSSProperties = depth > 0 ? { zIndex: 10 + stackZ } : {};
+    const scrimStyle: React.CSSProperties = { zIndex: SCRIM_BASE_Z_INDEX + stackZ };
     // NOTE: no `height` key here on purpose — height is owned imperatively by
-    // writeHeight (see the height-model comment above).
-    const sheetStyle: React.CSSProperties = depth > 0 ? { zIndex: 11 + stackZ } : {};
+    // writeHeight (see the height-model comment above). Same for the merge chrome
+    // (border radius, top padding, shadow) — writeMergeChrome owns those.
+    const sheetStyle: React.CSSProperties = { zIndex: SHEET_BASE_Z_INDEX + stackZ };
 
     return (
         <>
+            {/* Never painted — see anchorRef. */}
+            <Box ref={anchorRef} className="mobile-demo-eic-anchor" sx={{ display: "none" }} />
             {showScrim && scrimHost && createPortal(
                 <EicScrim
                     ref={scrimRef}
@@ -668,11 +814,34 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 />,
                 scrimHost,
             )}
+            {scrimHost && createPortal(
             <InfoSheetContainer
                 ref={sheetContainerRef}
                 className="mobile-demo-eic-sheet"
                 style={sheetStyle}
             >
+                {/* MERGE HEADER — the app's real PageHeader, clipped to zero height
+                    until the sheet grows into the merge zone and then interpolated in
+                    by writeMergeChrome. It is the first flex child, so the grabber and
+                    everything below it are pushed down by exactly as much header as is
+                    currently showing; nothing has to reserve space for it.
+
+                    Chevron DOWN, not a back arrow: this dismisses the sheet in the
+                    direction a drag would, and it is the only close affordance left
+                    once the sheet covers the scrim. */}
+                {title && (
+                    <SheetMergeHeaderSlot
+                        ref={mergeHeaderRef}
+                        className="mobile-demo-eic-merge-header"
+                    >
+                        <PageHeader
+                            title={title}
+                            size="node"
+                            arrowDirection="down"
+                            onBack={dismiss}
+                        />
+                    </SheetMergeHeaderSlot>
+                )}
                 {/* Draggable zone: grabber pill only. Header/tabs are outside
                     this zone so taps on header icons aren't captured by useDrag. */}
                 <Box
@@ -696,7 +865,9 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                     </Box>
                 )}
                 {typeof children === "function" ? children({ bindHeaderDrag }) : children}
-            </InfoSheetContainer>
+            </InfoSheetContainer>,
+            scrimHost,
+            )}
         </>
     );
 });

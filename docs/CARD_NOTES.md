@@ -4,8 +4,10 @@
 
 A learner's own free-text note about ONE of their flashcards — the thing the dictionary
 cannot tell them ("my landlord says this one", "not the 借 one", "from ch. 4"). At most
-**200 characters**. Shown at the **bottom edge of the card's answer face (side 2) only**,
-and edited **in place** there from the card-operations rail.
+**100 characters**. Shown at the **top edge of the card's answer face (side 2) only**, in
+the band to the left of the `•••` card-ops dot,
+and edited **in place** there from the card-operations rail. Both card surfaces show it:
+the flp's flipped card and the **cdp's hero card**, through the same components.
 
 ---
 
@@ -15,25 +17,34 @@ and edited **in place** there from the card-operations rail.
 |---|---|
 | **Where it is stored** | `vocabentries_zh."note"` / `vocabentries_es."note"` — `text`, NULL = no note (migration 155) |
 | **Whose it is** | per **user, per word** — the vet row's identity is `(userId, entryKey, language)`. Two learners studying 什么 keep separate notes; the shared det entry is untouched |
-| **How long** | `CARD_NOTE_MAX_LENGTH` = 200 characters, enforced in code (see § 3) |
-| **Where it shows** | the **answer face only** — side 2 of the flashcard, pinned to the bottom edge |
+| **How long** | `CARD_NOTE_MAX_LENGTH` = 100 characters, enforced in code (see § 3) |
+| **Where it shows** | the **answer face only** — side 2 of the flp flashcard and the cdp's hero card (which IS an answer face), pinned to the top edge, left of the `•••` |
 | **Where it is written** | in place on that same strip, opened from `CardOpsRail`'s `note` cell |
 
 ### Why the answer face only
 
 A note is the learner's commentary on the **answer**. On the question face it would be an
 unrequested hint, and on a recognition prompt it could hand over the answer outright. The
-face gate is the caller's (`CardFace` mounts `CardNote` in side 2's `bottomNote` slot and
+face gate is the caller's (`CardFace` mounts `CardNote` in side 2's `noteSlot` slot and
 nowhere else), which is the same rule the icon layer follows — icons render only on
 English-bearing faces (see [CARD_ICON_LAYOUT.md](./CARD_ICON_LAYOUT.md)).
 
-### Why the bottom EDGE and not a text block
+### Why the top EDGE and not a text block
 
 The two card text blocks (foreign / english) are **movable**: the fie can drag, scale and
 rotate them anywhere on the card. The note is deliberately **not** part of that system. It
-is chrome, not card design, so it keeps a fixed berth along the bottom where it can never
+is chrome, not card design, so it keeps a fixed berth along one edge where it can never
 be dragged over the word it annotates, and the fie's canvas suppresses it entirely while
 an edit is open (the canvas edits a design; the note is not part of that design).
+
+**Why the TOP edge** (moved 2026-08-28; it shipped on the bottom edge that morning): the
+face's own content grows **downward** — the english block sits centred-to-low and its
+definition can run to three lines — so a bottom strip overlapped the definition exactly
+when the note was also long, i.e. whenever both were most worth reading. The top band is
+the one strip of the face nothing else claims. It stops short of the `•••` dot
+(`CARD_OPS_DOT_GUTTER` = 49px in `CardNote.tsx`, covering the dot's `right: 11` + its 30px
+puck + a gap), so the note and the card-ops control share the edge rather than overlap.
+The editor uses the same berth, so a note is typed at the width it is displayed at.
 
 ### Why delete left the rail
 
@@ -65,10 +76,11 @@ animation.
 | **Client API** | `src/utils/vocabApi.ts` → `saveCardNote` | thin PATCH; returns the persisted note |
 | **Client state** | `src/cardIcons/editor/useCardIconEditor.ts` → `persistNote`, `noteOverrides` | optimistic session override + rollback, merged into the entry by `applyIconOverride` |
 | **Page** | `FlashcardsLearnPage` → `noteEditing`, `handleSaveNote` | owns only *is the editor open*, because that flag also gates the drag handlers |
-| **Card plumbing** | `FlashCardSection` → `CardFace` | renders `CardNote` into side 2's `bottomNote`; detaches drag/flip handlers while editing |
-| **Face slot** | `src/features/flashcards/card/CardFace.tsx` → `CardFaceSide` prop `bottomNote` | a node slot in the OUTER face box, like `topRail` |
+| **Card plumbing** | `FlashCardSection` → `CardFace` | renders `CardNote` into side 2's `noteSlot`; detaches drag/flip handlers while editing |
+| **Face slot** | `src/features/flashcards/card/CardFace.tsx` → `CardFaceSide` prop `noteSlot` | a node slot in the OUTER face box, like `topRail` |
 | **UI** | `src/features/flashcards/card/CardNote.tsx` → `CardNote` | the strip itself: read mode, inline edit mode, counter, ✓/✕ |
 | **Entry point** | `FlashcardsLearnPage/CardOpsRail.tsx` → `onEditNote` | the rail's third cell |
+| **cdp** | `VocabCardDetailPage` → `noteEditing`, `handleSaveNote` | mounts the SAME `CardOpsRail` (`topRail`) and `CardNote` (`noteSlot`) on its hero card, off the same `useCardIconEditor.persistNote` |
 
 The read path needs **no** changes: vocab reads select `ve.*` and the zh read wrapper
 (`server/dal/shared/vetTable.ts` → `vetReadFrom`) uses `SELECT *`, so `note` arrives on
@@ -83,7 +95,7 @@ every entry the client already fetches.
 * **trimmed** — leading/trailing whitespace typed on the card is not content;
 * **blank → `NULL`**, never `''` — "no note" has exactly one representation, so the render
   path's check is a plain truthiness test and an all-spaces note does not reserve a strip
-  at the bottom of the card;
+  at the top of the card;
 * **capped at `CARD_NOTE_MAX_LENGTH`** — truncate rather than reject, matching how
   `selectedSense` bounds its label.
 
@@ -94,7 +106,7 @@ text the server would silently drop. Because the server can still change what it
 (trim, cap), the controller echoes the **persisted** value and `persistNote` writes that
 echo back over its optimistic override — the card ends up showing what is stored.
 
-It is a `text` column, not `varchar(200)`, on purpose: raising the cap is then a code
+It is a `text` column, not `varchar(100)`, on purpose: raising the cap is then a code
 deploy rather than a table rewrite.
 
 ---
@@ -139,12 +151,29 @@ Other behaviours worth keeping:
 * The editor closes on its own ✓ / ✕, never on an outside tap — an outside tap on this
   surface is a flip or a mark, and spending it on dismissal would eat the gesture or mark
   the card by accident. Same rule as `CardOpsRail`.
+* **The phone keyboard's confirm key saves** (`CardNote` → `onKeyDown` / `onBeforeInput`).
+  On a phone the ✓ button is not the obvious "I'm done" affordance — the keyboard's own
+  return key is — so a bare `Enter` commits instead of inserting a newline, and
+  `enterKeyHint="done"` relabels the key to match. A note is a one-line aside, not prose,
+  so the lost newline costs nothing; **Shift+Enter** still inserts one on desktop. Two
+  handlers, not one, because many Android IMEs report the keystroke as `keyCode 229` and
+  the `keydown` never carries `Enter` — the `beforeinput` event still arrives typed
+  `insertLineBreak` / `insertParagraph`, and that is the path that makes the confirm key
+  work on those keyboards.
 * The page closes the editor whenever the front card changes (`currentEntry?.id`), so a
   promoted card is never handed an open editor seeded from the previous card's note.
+* The editor keeps read mode's **leading `sticky_note_2` icon**, at the same offset, with
+  the textarea beside it — the strip must read as the *same* element gaining a caret, not
+  as a different panel appearing over the card. The icon is `pointerEvents: none`, so a
+  press on it lands on the textarea instead of pulling focus off it.
 * The textarea opts **out** of the app-wide `user-select: none` (CLAUDE.md "Touch &
   Scroll") — without it the learner cannot place a caret or select what they wrote.
-* Read mode clamps to **three lines**; a full 200-character note is taller than the berth.
+* Read mode clamps to **three lines**; a full 100-character note is taller than the berth.
   The whole text is always reachable by reopening the editor.
+* On the **cdp** the two guards above collapse to one: that hero card neither flips nor
+  drags, so there are no handlers to detach and `CardNote`'s own event-stopping is the whole
+  story. The page still closes the editor when `entry?.id` changes, because a breakdown /
+  used-in drill-in navigates this same page to another word.
 * The peeking back card renders its note read-only (so it does not pop in on promotion)
   but is never editable — and the whole back card is `pointerEvents: none` regardless.
 
@@ -167,9 +196,10 @@ page on a silent token refresh".
 
 ## 6 · Not built (deliberately)
 
-* **No note anywhere but the flp card face.** The cdp, the shelf's mini cards, the games
-  and the eip do not show it. A note is study-time commentary on the answer; surfacing it
-  in a game would leak an answer, and in a list it would be noise.
+* **No note outside the two full card faces.** The flp's flipped card and the cdp's hero
+  card show it; the shelf's mini cards, the games and the eip do not. A note is study-time
+  commentary on the answer — surfacing it in a game would leak an answer, and in a list it
+  would be noise.
 * **No search over notes.** Nothing indexes the column.
 * **No history/versioning.** A note is overwritten in place.
 * **No per-sense notes.** The note belongs to the CARD, not to a `definitionClusters`

@@ -14,7 +14,7 @@ import {
 import type { MasteryBarId } from "../../utils/masteryCompute";
 import Icon from "../../components/Icon";
 import { Label } from "../../components/primitives";
-import StudyHand, { type StudyHandCard, type StudyModeId } from "./StudyHand";
+import StudyHand, { HAND_CARD_RESTING_SHADOW, type StudyHandCard, type StudyModeId } from "./StudyHand";
 import SheetPill from "../../components/SheetPill";
 import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
 import type { VocabEntry } from "../../types";
@@ -41,11 +41,13 @@ import { WEIGHT } from "../../theme/scale";
 //                    into a session held as a fanned HAND of cards — Study Mix played
 //                    forward, Review and Challenge peeking behind it (`StudyHand`,
 //                    artboards 2 / 2b). Always reachable without moving anything.
-//   SHEET (front)  — a MODAL pull-up panel holding every SET of cards:
-//                    Collections, Challenges and the user's Decks, and BELOW them the
-//                    learner's whole card library as a searchable grid. It is not on
-//                    screen at rest: the "Sets & Cards" pill above the footer opens it
-//                    (see DecksPanelBody).
+//   SHEETS (front) — TWO modal pull-up panels, raised by the two pills sitting side
+//                    by side above the footer (see "The two pills" below):
+//                      Cards — the library duo (Learn Now / Mastered) over the whole
+//                              card library as a searchable, sortable grid;
+//                      Decks — the SETS: Challenges and the user's own Decks.
+//                    Neither is on screen at rest. Both are the same component
+//                    (`DecksPanelBody`) rendering a different `section`.
 //
 // ── This page is the CORE bar, and only the core bar ─────────────────────────
 // Every figure behind the sheet and inside it answers one question: how well does the
@@ -94,13 +96,25 @@ import { WEIGHT } from "../../theme/scale";
 // of the frame. The design has no tinted page grounds at all (artboard 2 is `--paper`
 // with a `--white` sheet), so the tint came out rather than the bar being repainted.
 
-// ── The "Sets & Cards" pill ───────────────────────────────────────────────────
-// The sheet's only entry point, and the direct counterpart of the flp's More Info
-// pill: a capsule floating over the bottom of the study area, under the sheet's own
-// scrim (zIndex 2 vs the scrim's 10) so it dims and goes inert while the sheet is up.
+// ── The two pills ─────────────────────────────────────────────────────────────
+// The sheets' only entry points, and the direct counterpart of the flp's More Info
+// pill: capsules floating over the bottom of the study area, under the sheet's own
+// scrim (zIndex 2 vs the scrim's 10) so they dim and go inert while a sheet is up.
 //
-// It is offset by the FULL footer clearance rather than by FOOTER_HEIGHT, so it
-// clears the floating pill bar with the same gap every other page's last row gets.
+// There are TWO because there are two sheets. One "Sets & Cards" pill used to raise a
+// single panel that stacked four captioned sections — the library duo, Challenges,
+// Decks and a several-hundred-card grid — into one scroller, so the two errands it
+// serves ("where is that word?" and "which set do I open?") were separated by a scroll
+// rather than by a name. Splitting the panel splits its entry point with it: the pill's
+// LABEL is now the answer to which sheet you get, which is what a capsule that says
+// "Sets & Cards" could never be.
+//
+// They are laid out by `SheetPill`'s `align` — each offset half a gap off the frame's
+// midline, so the PAIR is centred whatever the labels measure and neither pill has to
+// know the other's width.
+//
+// They are offset by the FULL footer clearance rather than by FOOTER_HEIGHT, so they
+// clear the floating pill bar with the same gap every other page's last row gets.
 const SETS_PILL_HEIGHT = 34;
 const SETS_PILL_BOTTOM = FOOTER_CLEARANCE;
 
@@ -171,10 +185,13 @@ const FlashcardsDecksPage: React.FC = () => {
     // Body of the sets sheet; SheetPanel reads {root, scroll} off this handle to
     // wire its resize/scroll coupling.
     const sheetBodyRef = useRef<SheetPanelBodyHandle | null>(null);
-    // Is the modal sets sheet up? Mirrors the flp's `isEicOpen`: the panel is mounted
-    // ONLY while true, so each open replays SheetPanel's 0 → default animation instead
-    // of reappearing at whatever height the last session left it.
-    const [sheetOpen, setSheetOpen] = useState(false);
+    // WHICH sheet is up, or null for neither. One state rather than two booleans: the
+    // sheets are modal and mutually exclusive, and two flags could describe a state
+    // (both open) that the surface has no rendering for. Mirrors the flp's `isEicOpen`
+    // in its lifetime — the panel is mounted ONLY while a section is named, so each
+    // open replays SheetPanel's 0 → default animation instead of reappearing at
+    // whatever height the last session left it.
+    const [openSheet, setOpenSheet] = useState<"cards" | "decks" | null>(null);
     // Toast shown when a greyed Review button is tapped (no eligible cards yet).
     const [markMoreSnackOpen, setMarkMoreSnackOpen] = useState(false);
     const [newDeckOpen, setNewDeckOpen] = useState(false);
@@ -427,11 +444,21 @@ const FlashcardsDecksPage: React.FC = () => {
                                             gap: "9px",
                                             alignItems: "flex-start",
                                             textAlign: "left",
-                                            border: "none",
+                                            // Same object family as the hand below: a
+                                            // pastel card lying on the page. It carries
+                                            // the hand's hairline and its RESTING
+                                            // elevation (never the front card's lifted
+                                            // one — a tile is not the played card), so
+                                            // the rail no longer reads as a flat patch
+                                            // of colour beside three real cards. The
+                                            // radius stays smaller than the hand's 22px
+                                            // because the tile is roughly half its size.
+                                            border: `1px solid ${COLORS.border}`,
                                             cursor: "pointer",
                                             borderRadius: "15px",
                                             padding: "13px 13px 14px",
                                             backgroundColor: RAMP[CENTER_HUES[bar]].fill,
+                                            boxShadow: HAND_CARD_RESTING_SHADOW,
                                         }}
                                     >
                                         <Icon name={CENTER_GLYPHS[bar]} size={19} sx={{ opacity: 0.72 }} />
@@ -460,38 +487,61 @@ const FlashcardsDecksPage: React.FC = () => {
                     </Box>
                 </MobileTabScreen>
 
-                {/* The "Sets & Cards" pill — the sheet's entry point, and the twin of
-                    the flp's More Info pill (shared body: `SheetPill`). It sits INSIDE
+                {/* The two sheet pills — the sheets' entry points, and the twins of
+                    the flp's More Info pill (shared body: `SheetPill`). They sit INSIDE
                     the positioned frame (not the scroll area) at zIndex 2, so
-                    SheetPanel's scrim (zIndex 10) covers it while the sheet is up: the
+                    SheetPanel's scrim (zIndex 10) covers them while a sheet is up: a
                     pill dims and stops taking taps exactly when it has nothing left to
-                    do. */}
+                    do. Left is Cards, right is Decks — the same left-to-right order the
+                    two sheets' contents have on the page's own vocabulary (a card is
+                    the unit, a deck is the container). */}
                 <SheetPill
-                    className="flashcards-decks__sets-pill"
-                    label="Sets & Cards"
-                    onClick={() => setSheetOpen(true)}
-                    ariaLabel="Open sets and cards"
-                    ariaExpanded={sheetOpen}
+                    className="flashcards-decks__cards-pill"
+                    label="Cards"
+                    align="left"
+                    onClick={() => setOpenSheet("cards")}
+                    ariaLabel="Open your cards"
+                    ariaExpanded={openSheet === "cards"}
+                    bottom={SETS_PILL_BOTTOM}
+                    height={SETS_PILL_HEIGHT}
+                />
+                <SheetPill
+                    className="flashcards-decks__decks-pill"
+                    label="Decks"
+                    align="right"
+                    onClick={() => setOpenSheet("decks")}
+                    ariaLabel="Open your decks"
+                    ariaExpanded={openSheet === "decks"}
                     bottom={SETS_PILL_BOTTOM}
                     height={SETS_PILL_HEIGHT}
                 />
 
-                {/* The sets sheet. MODAL, with the eip's stops and scrim: mounted only
-                    while open, dismissed by a downward drag or a scrim tap. */}
-                {sheetOpen && (
+                {/* The open sheet, if any. MODAL, with the eip's stops and scrim:
+                    mounted only while open, dismissed by a downward drag or a scrim tap.
+                    ONE SheetPanel for both sections, keyed on the section so switching
+                    sheets remounts rather than swapping content under a held height. */}
+                {openSheet && (
                 <SheetPanel
-                    onClose={() => setSheetOpen(false)}
+                    key={openSheet}
+                    onClose={() => setOpenSheet(null)}
                     bodyRef={sheetBodyRef}
                     // The body's scroll element is stable, but its identity changes
                     // when the deck list first arrives (the empty-state message and
                     // the tiles mount into it), so re-bind once decks have loaded.
-                    bodyKey={panel.decksLoading ? "loading" : "ready"}
+                    // The section is in the key too: the two bodies are different
+                    // elements, and the Decks one must not inherit the Cards one's
+                    // binding.
+                    bodyKey={`${openSheet}-${panel.decksLoading ? "loading" : "ready"}`}
+                    // Merge header title = the pill that opened the sheet, so a sheet
+                    // pulled to full height still says which of the two you are in.
+                    title={openSheet === "cards" ? "Cards" : "Decks"}
                 >
                     {({ bindHeaderDrag }) => (
                         <DecksPanelBody
                             ref={sheetBodyRef}
                             panel={panel}
                             variant="sheet"
+                            section={openSheet}
                             onOpenPath={slideNavigate}
                             onOpenCard={handleOpenCard}
                             onNewDeck={() => setNewDeckOpen(true)}

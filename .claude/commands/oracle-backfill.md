@@ -58,10 +58,13 @@ curl -s https://api.anthropic.com/api/oauth/usage \
 
 `five_hour.utilization` is a **percentage** (the dollar fields are always null on
 this plan). Note `resets_at` — it is the boundary of the *current* window, **not the
-end of the run**. A run spans as many windows as it takes; at ~75% you park and wait
-for the reset rather than finishing (§6a). Size the round you start next against the
-time left in the window: near the boundary, prefer parking over starting a batch that
-will be interrupted mid-manifest.
+end of the run**. A run spans as many windows as it takes; at **~99%** you park and
+wait for the reset rather than finishing (§6a). The session window is gated far tighter
+than the weekly cap on purpose — overrunning it only gets requests refused until the
+window resets, whereas overrunning the weekly cap spends real credits (§1.2), so run the
+five-hour window right to the edge and keep the wide margin for weekly. Size the round
+you start next against the time left in the window: near the boundary, prefer parking
+over starting a batch that will be interrupted mid-manifest.
 
 `resets_at` is `null` when utilization is 0 (no window is open yet); the window opens
 on the next request and runs five hours from there.
@@ -79,7 +82,9 @@ on the next request and runs five hours from there.
 > (§6a) and wait for `resets_at`. Do not treat "requests still succeed" as permission to
 > continue — that is the failure mode, not the all-clear. `oracle-cron.sh` enforces the
 > same rule at launch (its budget gate refuses to start a round at or above
-> `ORACLE_MAX_UTILIZATION`, default 75% as of 2026-08-28, lowered from 95%), but it can only refuse to *start*; a round that
+> the **weekly** caps at `ORACLE_MAX_UTILIZATION`, default 75% as of 2026-08-28, lowered
+> from 95%, and the **session** window separately at `ORACLE_MAX_UTILIZATION_SESSION`,
+> default 99% — the two caps fail in different currencies), but it can only refuse to *start*; a round that
 > crosses the cap mid-manifest can only be stopped by you. That gate reads
 > `~/.claude/.credentials.json`'s access token, which expires (~8h TTL) and is refreshed
 > only by a live session — on a quiet box the gate will otherwise 401 and fail closed
@@ -459,7 +464,7 @@ nothing else will surface it.
 Keep looping §3 → §5 with a fresh batch, **across session windows**, until a §6
 guardrail trips or the user stops you. That is the *only* successful end state.
 
-> **A window boundary is not an ending.** `five_hour.utilization` reaching ~75%, or
+> **A window boundary is not an ending.** `five_hour.utilization` reaching ~99%, or
 > `resets_at` passing, means *this five-hour window* is spent — not the run. The
 > corpus is ~113k unenriched zh rows deep; no single window can finish it, so
 > treating the boundary as a finish line ends the run at an arbitrary point that has
@@ -540,10 +545,11 @@ Re-check §1 and compare `five_hour.utilization` against the previous round.
 > Either way, **record the flat reading and your reasoning in the run report** — whether
 > you halted or kept going.
 
-If the **highest active limit** in `limits[]` (session *and* weekly — §1.2) is < ~75%,
-return to §3 with a fresh batch **immediately** — do not write the report, do not
-summarize, do not hand back. At ~75% on any of them, go to §6a. The run ends only
-when a guardrail above trips.
+If every active limit in `limits[]` is under **its own** threshold — session < ~99%,
+weekly (`weekly_all`/`weekly_scoped`) < ~75% (§1.2) — return to §3 with a fresh batch
+**immediately** — do not write the report, do not summarize, do not hand back. When any
+one of them reaches its threshold, go to §6a. The run ends only when a guardrail above
+trips.
 
 > Note the asymmetry: the flat-usage check is the one stop condition that asks for
 > judgment, and the judgment it asks for is *whether to stop*. Everything else in §6
@@ -552,9 +558,10 @@ when a guardrail above trips.
 
 ### 6a. Crossing the window boundary — park, wait, resume
 
-At ~75% utilization the window is effectively spent. Note the asymmetry between the two
-caps: near the **five-hour** boundary requests do eventually start being refused, but at
-the **weekly** boundary they do not — with extra usage enabled you can author straight
+At ~99% of the five-hour window (or ~75% of a weekly cap) the budget is effectively
+spent. That asymmetry is the whole point: near the **five-hour** boundary requests do
+eventually start being refused — costing throughput, nothing more, and the window resets
+on its own — but at the **weekly** boundary they do not — with extra usage enabled you can author straight
 through it onto credits (§1.2), so nothing external will stop you. Park on either. The
 run does not end there — it **pauses**. Three steps:
 

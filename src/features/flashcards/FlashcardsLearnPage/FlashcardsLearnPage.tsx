@@ -316,10 +316,15 @@ const FlashcardsLearnPage: React.FC = () => {
         tts.autoSpeak(currentEntry);
         // Cancel narration if the user advances mid-utterance.
         return () => tts.cancel();
+        // CONTENT IDENTITY ONLY. `tts.autoplay` is deliberately NOT a dep: it used to
+        // be, and the off → on edge then re-ran this effect and narrated the card
+        // already on screen just because the learner tapped the header audio chip.
+        // Changing a setting is not a request to hear a word. The reverse direction
+        // (turning audio off must stop an utterance) is handled once in useTTS.
         // tts.autoSpeak/cancel are stable across renders; depending on them would
         // re-fire narration on every settings change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [chineseVisible, currentEntry?.id, tts.autoplay]);
+    }, [chineseVisible, currentEntry?.id]);
 
     // EIC modal sheet — opened by the centered "More Info" pill button.
     const [isEicOpen, setIsEicOpen] = useState(false);

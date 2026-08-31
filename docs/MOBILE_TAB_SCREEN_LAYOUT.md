@@ -86,8 +86,9 @@ ScreenRoot            position: relative
   > visible colour step across the bottom 74px of the frame. `/decks` and the Mastery
   > Centers used to pass the grey `COLORS.header` and did exactly that; both now use
   > the default. If a page needs to feel tinted, tint an INNER surface — a card, a
-  > sheet, a section — not the page ground. The card-detail pages' `COLORS.yellowAccent`
-  > is fine because it is within ~1% of paper.
+  > sheet, a section — not the page ground. The two card-detail pages used to pass
+  > `COLORS.yellowAccent` (harmless — within ~1% of paper) and now pass nothing at all:
+  > **no page sets `surfaceColor` today.**
 - `contentSx` styles only the content column (padding, `alignItems`, nested
   selectors). The header is intentionally excluded so it always stays flush and
   full-width regardless of content centering.

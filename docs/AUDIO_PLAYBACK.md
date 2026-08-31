@@ -18,23 +18,23 @@ Two ways in, one setting:
   subtitles have room to say "pauses music" and "follows the silent switch").
 - **`AudioModeChip`** — one header chip that CHANGES them mid-study: each tap
   advances off → passthrough → media → off. Rendered on the flp, scp, Bubble Match,
-  Hydra Bubbles and Match Speed headers.
+  Hydra Bubbles, Match Speed and Word Search headers.
 
 Both go through `useTTSSettings`, so they cannot disagree, and both take their order
 from `AUDIO_MODE_ORDER` — the picker lists it, the chip cycles it. Three states:
 
 | State | Autoplay | Route | iOS silent switch | Other audio | Lock-screen controls |
 |---|---|---|---|---|---|
-| **Off** | no | (remembered) | — | — | — |
-| **Play over everything** (`passthrough`) | yes | media element | **ignored** — plays anyway | **pauses** music/video | **appear** |
-| **Play alongside media** (`media`) | yes | Web Audio | **honored** — silent | **mixes**, undisturbed | none |
+| **Mute** (`off`) | no | (remembered) | — | — | — |
+| **Default** (`passthrough`) | yes | media element | **ignored** — plays anyway | **pauses** music/video | **appear** |
+| **Media** (`media`) | yes | Web Audio | **honored** — silent | **mixes**, undisturbed | none |
 
 **Default: `passthrough`.** A learner who turns audio on wants to hear it, and
 the worst failure is "I pressed play and nothing happened" because a hardware
 switch was flipped. The cost is visible and self-explanatory; silence is not.
 
-`Off` is **not a third route** — it is autoplay turned off. A speaker button
-still speaks in every state, including `Off`. This is why the stored model has
+`off` (shown to the learner as **Mute**) is **not a third route** — it is autoplay turned off. A speaker button
+still speaks in every state, including `off`. This is why the stored model has
 two fields and the UI has three states:
 
 ```ts
@@ -43,7 +43,7 @@ interface TTSSettings { autoplay: boolean; route: 'passthrough' | 'media' }
 type AudioMode = 'off' | 'passthrough' | 'media'   // the UI projection
 ```
 
-Selecting `Off` clears `autoplay` and **leaves `route` untouched**, so an
+Selecting Mute clears `autoplay` and **leaves `route` untouched**, so an
 off → on round trip returns to the route the user picked.
 
 ### The chip
@@ -54,18 +54,92 @@ cycle order, and adding it to a new header is one tag. A surface that must hide 
 (Bubble Match on a reading run, where hearing the word hands over the pronunciation
 being tested) simply does not render it.
 
-Each state shows an icon plus a three-or-four character label — `volume_off`/"off",
-`volume_up`/"loud", `multitrack_audio`/"mix" — because it sits in the app's most
-crowded header. The `ariaLabel` carries the full meaning, since a screen reader gets
-neither the icon nor any hint that the control cycles.
+Each state shows a speaker glyph plus one word: `volume_off`/**mute** ·
+`volume_up`/**default** · `graphic_eq`/**media**. The glyphs make it legible as an
+audio control before the label is read; the labels are the `/settings` picker's
+option titles, one for one, so nobody has to work out that the chip and the picker
+are the same setting.
+
+**Two labels are copy, not the stored value** — `off` and `passthrough` are
+persisted contracts and do not move:
+
+- **`mute`, not `off`.** `off` names the setting's state; `mute` names what the tap
+  does to the phone in the learner's hand.
+- **`default`, not `passthrough`.** It *is* the default route
+  (`DEFAULT_SETTINGS.route`), and "passthrough" names the iOS audio-session
+  mechanism — accurate, but nothing a learner can act on. The subtitle explains.
+
+⚠️ **Verify every glyph name against Material Symbols.** `multitrack_audio` was the
+first choice for `media`; it is a Material *Icons* name absent from the Symbols face,
+so it rendered as the raw string `MULTITRACK_AUDIO` in the flp header — see
+`src/components/Icon.tsx`.
+
+Header width is the cheaper thing to spend than clarity: `PageHeader` ellipsizes its
+title and holds `rightContent` at `flexShrink: 0`, so a wider chip costs deck-name
+characters on the flp and nothing else. The labels were once shortened to "loud" and
+"mix" purely for width, and that is the failure mode to avoid — **a label must be a
+word the learner also sees on `/settings`, never an abbreviation invented for the
+chip.**
+
+The chip is **fixed-width**, sized to its own longest label (`default`, 7
+characters, plus a fixed allowance for the glyph) via `HeaderCycleChip`'s `widthCh` and measured in `ch` against the mono
+face, plus `CYCLE_CHIP_SLACK_CH` (**4ch**) of breathing room — `widthCh` alone is the
+label's exact advance width, which both clips the last glyph to subpixel rounding and
+reads as cramped inside the chip's radius. It therefore does not resize as the user taps
+through, and the controls to its left hold still under the thumb.
+`MODE_LABEL_WIDTH_CH` derives the count from `MODE_CHIP`, so adding or renaming a
+state cannot silently bring the jump back.
+
+The `ariaLabel` carries the full meaning, since a screen reader gets neither a glyph
+nor any hint that the control cycles.
+
+### ⛔ Changing the mode must not make a sound
+
+Tapping the chip changes a setting; it is not a request to hear a word. The speaker
+button is.
+
+Every automatic-narration effect is gated on `autoplay`, which made putting
+`tts.autoplay` in such an effect's **dep list** look harmless — but it re-runs the
+effect on the off → on edge, so switching to `default` (or `media`) narrated the card
+already on screen, and on the scp replayed the entire on-deck pack. Both effects now
+key on **content identity only** (`currentEntry?.id`, `currentPack?.packKey`).
+
+The opposite direction still has to work — turning audio off must stop whatever is
+mid-utterance, or "mute" leaves a word playing. That lives **once**, in `useTTS`,
+edge-triggered on the on → off transition so a deliberate speaker press while muted
+is not cancelled out from under the user. Surfaces get it for free and must not
+re-add the flag to a dep list to obtain it.
+
+*Code:* `src/hooks/useTTS.ts` → the `wasAutoplayOnRef` effect;
+`src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx` → the
+`chineseVisible` narration effect; `src/features/discover/SortCardsPage.tsx` → the
+pack autoplay effect.
 
 `HeaderCycleChip` (`src/components/PageHeader.tsx`) is its skin: the same `.lhd .tg`
 chip as `HeaderToggleChip` but with **no `aria-pressed`**, which is boolean and
 cannot describe three states.
 
+### One value, not one per hook instance
+
+`useTTSSettings` is backed by a **module-level store** read through
+`useSyncExternalStore`, not by `useState`. `useTTS` is called from ~13 components
+and several are mounted at once — on the flp, the header's `AudioModeChip` and the
+page's card-flip narration effect are two separate hook instances of the same
+setting.
+
+With per-instance `useState` they diverged on every tap: the chip flipped its own
+copy to `off` and wrote localStorage, while the page's copy stayed `autoplay: true`
+and kept narrating (and kept lighting the speaker spinner) until the page
+remounted. The chip *looked* obeyed and wasn't. Any future knob added to
+`TTSSettings` inherits the shared store for free; **do not reintroduce local state
+for it.** A `storage` listener adopts writes from other tabs (that event does not
+fire in the writing tab, so `setSettings` notifies its own listeners directly).
+
+*Code:* `src/hooks/useTTSSettings.ts` → `getSnapshot`, `subscribe`, `setSettings`.
+
 *Code:* `src/hooks/useTTSSettings.ts` → `TTSSettings`, `AudioMode`,
 `AUDIO_MODE_ORDER`, `useTTSSettings` (`mode`/`setMode`/`cycleMode`);
-`src/components/AudioModeChip.tsx` → `MODE_CHIP`; `src/components/PageHeader.tsx` →
+`src/components/AudioModeChip.tsx` → `MODE_CHIP`, `MODE_LABEL_WIDTH_CH`; `src/components/PageHeader.tsx` →
 `HeaderCycleChip`; `src/pages/SettingsPage.tsx` → `AUDIO_MODE_COPY`.
 
 ---
@@ -145,9 +219,16 @@ whole contract:
 
 The gate lives inside the hook, so a call site never re-checks the setting.
 Automatic sites today: the flp card-flip narration, the scp on-deck pack
-sequence, Word Search's find/replay plays, Memory Map's answer feedback, and the
-bubble games' reveal. **A game-tile tap counts as automatic**, not manual — only
-a dedicated speaker button breaks the silence of `Off`.
+sequence, Word Search's find/replay plays, Memory Map's answer feedback, Speed
+Reading's per-round clue (`SpeedReadingPage` → `autoSpeak`, distinct from the
+manual `speak` its speaker button uses), and the bubble games' reveal. **A
+game-tile tap counts as automatic**, not manual — only a dedicated speaker button
+breaks the silence of `off`.
+
+> Calling the manual pair from an automatic site is a real bug, not a style slip:
+> it plays audio in `off` **and** lights the speaker button's spinner, because
+> `speakingKey` is only ever set for a narration that actually runs. Speed
+> Reading's round-landing effect did exactly this until 2026-08-28.
 
 ### The fallback rule
 
@@ -312,13 +393,16 @@ parsed object).
 that offered an autoplay control still offers one, now reading and writing the
 unified flag — and all of them are in the **page header** as an `autoplay` chip:
 flp (`FlashcardsLearnHeader`), scp (`SortCardsPage` header actions), Bubble Match
-and Hydra (`BubbleMatchHeaderControls`), Match Speed (`MatchSpeedHeader`). The two
+and Hydra (`BubbleMatchHeaderControls`), Match Speed (`MatchSpeedHeader`) and Word
+Search (`WordSearchHeaderControls`, added 2026-08-29 — the game narrates found words,
+blue matches and review rungs, so it needed a mid-play mute like the rest). The two
 that were buried — flp's settings-sheet row and Match Speed's dialog row — moved up
 on 2026-08-28, so the chip means the same thing and sits in the same place
 everywhere. The *setting* was unified; the affordances were made consistent.
 
-Word Search and Memory Map narrate automatically and are gated by the same flag but
-expose **no** control of their own; their headers are unchanged.
+Memory Map narrates automatically and is gated by the same flag but exposes **no**
+control of its own; its header is unchanged. Word Search was in that group until
+2026-08-29 and now renders the chip (see above).
 
 **Two settings sheets are gone.** `SettingsPanelBody` and the header's settings cog
 were deleted on 2026-08-28: audio moved to the header chip, tone coloring moved to

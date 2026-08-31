@@ -30,10 +30,16 @@
 #   DRY_RUN=1 SHARD=0/3 oracle-cron.sh   # verify wiring; no session, no prod writes
 #
 # BUDGET
-#   A round is skipped (exit 0) when plan utilization is at or above
-#   ORACLE_MAX_UTILIZATION (default 75%), because spend past the plan cap silently
-#   bills extra-usage credits rather than erroring. See the budget gate below.
-#   ORACLE_MAX_UTILIZATION=0 parks the cron without editing the crontab.
+#   A round is skipped (exit 0) when any active plan cap is at or above ITS OWN
+#   threshold. The two caps are gated separately because they fail in different
+#   currencies (see the budget gate below):
+#     ORACLE_MAX_UTILIZATION         (default 75%) — the weekly caps. Spend past the
+#       weekly cap silently bills extra-usage credits rather than erroring, so the
+#       gate keeps a wide margin.
+#     ORACLE_MAX_UTILIZATION_SESSION (default 99%) — the five-hour window. Overrunning
+#       it only gets requests refused until the window resets, so a solo backfill may
+#       run it to the edge.
+#   Either set to 0 parks the cron without editing the crontab.
 #   ORACLE_GATE_FAIL_ESCALATE (default 3) is how many CONSECUTIVE unexpected gate
 #   failures (stale credential, unreachable endpoint) it takes before the script
 #   complains on stderr. At-the-cap skips are not failures and never count.
@@ -152,14 +158,26 @@ LAST_STATUS_FILE="$LOG_DIR/oracle-last-status.$SLUG"
 # below. Failing closed on that was costing whole days of throughput for no budget
 # reason at all.
 #
-# ORACLE_MAX_UTILIZATION (default 75) is deliberately well below 100. A round takes
-# ~30 min, so starting at 99% would cross the cap mid-manifest and finish on
-# credits — the gate can only refuse to *start*, it cannot stop a round in flight.
-# Lowered from the original 95 default on 2026-08-28 so the cron parks well clear of
-# the weekly cap (`worst` still picks the WORST of session/weekly_all/weekly_scoped —
-# see `limits[]` below — this is a global tightening, not a weekly-only threshold).
-# Set it to 100 to spend the plan out fully and accept some credit spillover, or to
-# 0 to park the cron entirely without touching the crontab.
+# THE THRESHOLD IS PER CAP GROUP, because the two caps fail in completely different
+# currencies:
+#
+#   weekly  (weekly_all, weekly_scoped) — ORACLE_MAX_UTILIZATION, default 75.
+#     Overrunning this costs REAL DOLLARS: requests past 100% keep succeeding and bill
+#     against pay-as-you-go extra-usage credits. A round takes ~30 min, so starting at
+#     99% would cross the cap mid-manifest and finish on credits — the gate can only
+#     refuse to *start*, it cannot stop a round in flight. Hence a wide margin.
+#     Lowered from the original 95 default on 2026-08-28.
+#
+#   session (the five-hour window)      — ORACLE_MAX_UTILIZATION_SESSION, default 99.
+#     Overrunning this costs only THROUGHPUT: at the five-hour boundary requests are
+#     genuinely refused, and the window resets on its own a few hours later. There is
+#     no credit spillover to protect against, so holding the session window back to 75%
+#     was pure waste — a solo backfill may run it right to the edge. Raised to 99 on
+#     2026-08-28.
+#
+# Either variable set to 100 spends its cap out fully and accepts the consequences
+# (credit spillover on weekly; a mid-round refusal wall on session); either set to 0
+# parks the cron entirely without touching the crontab.
 # TOKEN FRESHNESS: the usage endpoint is authenticated with the OAuth access token
 # that Claude Code keeps in ~/.claude/.credentials.json. That token has a ~8h TTL and
 # is refreshed ONLY by a live Claude Code session — nothing on a quiet prod box
@@ -185,7 +203,8 @@ LAST_STATUS_FILE="$LOG_DIR/oracle-last-status.$SLUG"
 # malformed payload) increment a counter and shout on stderr once it reaches
 # ORACLE_GATE_FAIL_ESCALATE (default 3). An at-the-cap skip is NOT counted, because
 # the weekly cap can legitimately hold the cron down for most of a day.
-MAX_UTIL="${ORACLE_MAX_UTILIZATION:-75}"
+MAX_UTIL="${ORACLE_MAX_UTILIZATION:-75}"                 # weekly caps (dollars)
+MAX_UTIL_SESSION="${ORACLE_MAX_UTILIZATION_SESSION:-99}" # five-hour window (throughput only)
 GATE_FAIL_STATE="$LOG_DIR/oracle-gate-failures.$SLUG"
 GATE_FAIL_ESCALATE="${ORACLE_GATE_FAIL_ESCALATE:-3}"
 
@@ -196,10 +215,20 @@ GATE_FAIL_ESCALATE="${ORACLE_GATE_FAIL_ESCALATE:-3}"
 #   ERR  <detail>   — unreachable, malformed creds, or unreadable payload
 # CAP/ERR reasons keep their historical wording so existing log greps still match.
 read_usage() {
-  python3 - "$MAX_UTIL" <<'PY' 2>&1 || true
+  python3 - "$MAX_UTIL" "$MAX_UTIL_SESSION" <<'PY' 2>&1 || true
 import json, os, sys, urllib.error, urllib.request
 
-max_util = float(sys.argv[1])
+max_util_weekly  = float(sys.argv[1])
+max_util_session = float(sys.argv[2])
+
+# Which threshold governs a given cap. A cap we do not recognise is billed at the
+# WEEKLY (conservative) threshold on purpose: an unknown limit might be one that
+# spills onto credits, and the cheap mistake is skipping a round.
+def threshold_for(group, kind):
+    if (group or kind or "").startswith("session"):
+        return max_util_session
+    return max_util_weekly
+
 try:
     creds = json.load(open(os.path.expanduser("~/.claude/.credentials.json")))
     token = creds["claudeAiOauth"]["accessToken"]
@@ -225,41 +254,45 @@ except Exception as exc:                      # network, malformed creds
 # `limits[]` is the authoritative list — it names every active cap (session,
 # weekly_all, per-model weekly_scoped) with a normalized percent. The legacy
 # five_hour/seven_day objects are kept as a fallback for older payload shapes.
-worst, pcts = None, []
+# Each cap is measured against ITS OWN threshold, so a five-hour window at 90% no
+# longer parks the cron on the weekly cap's margin.
+caps, pcts = [], []                            # caps: (kind, pct, threshold)
 for lim in data.get("limits") or []:
     if not lim.get("is_active"):
         continue
     pct = lim.get("percent")
     if pct is None:
         continue
-    pcts.append(f"{lim.get('kind', '?')}={pct:g}%")
-    if worst is None or pct > worst[1]:
-        worst = (lim.get("kind", "?"), float(pct))
+    kind = lim.get("kind", "?")
+    pcts.append(f"{kind}={pct:g}%")
+    caps.append((kind, float(pct), threshold_for(lim.get("group"), kind)))
 
-if worst is None:                              # no limits[] — fall back
-    for key in ("five_hour", "seven_day"):
+if not caps:                                   # no limits[] — fall back
+    for key, group in (("five_hour", "session"), ("seven_day", "weekly")):
         obj = data.get(key) or {}
         pct = obj.get("utilization")
         if pct is None:
             continue
         pcts.append(f"{key}={pct:g}%")
-        if worst is None or pct > worst[1]:
-            worst = (key, float(pct))
+        caps.append((key, float(pct), threshold_for(group, key)))
 
-if worst is None:
+if not caps:
     print("ERR usage payload carried no readable limit")
     raise SystemExit(0)
 
-kind, pct = worst
 summary = " ".join(pcts)
-if pct >= max_util:
+gates = f"session {max_util_session:g}% / weekly {max_util_weekly:g}%"
+# The binding cap is the one furthest past (or closest to) its own threshold — a
+# plain max() over percent would let a lenient session reading mask a weekly one.
+kind, pct, thresh = max(caps, key=lambda c: c[1] - c[2])
+if pct >= thresh:
     resets = ""
     for lim in data.get("limits") or []:
         if lim.get("kind") == kind and lim.get("resets_at"):
             resets = f", resets {lim['resets_at']}"
-    print(f"CAP {kind} at {pct:g}% >= {max_util:g}% [{summary}]{resets}")
+    print(f"CAP {kind} at {pct:g}% >= {thresh:g}% [{summary}]{resets}")
 else:
-    print(f"OK [{summary}] under {max_util:g}%")
+    print(f"OK [{summary}] under {gates}")
 PY
 }
 
@@ -336,7 +369,7 @@ if [[ -n "${DRY_RUN:-}" ]]; then
   echo "  notes      : $ORACLE_NOTES_FILE"
   echo "  lock       : $LOCK"
   echo "  log        : $RUN_LOG"
-  echo "  budget     : $BUDGET (gate ${ORACLE_MAX_UTILIZATION:-75}%)"
+  echo "  budget     : $BUDGET (gates: session ${MAX_UTIL_SESSION}% / weekly ${MAX_UTIL}%)"
   exit 0
 fi
 

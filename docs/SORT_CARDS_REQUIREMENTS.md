@@ -204,23 +204,27 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   deliberately not wired: on scp, adding to Learn Now *is* the drag gesture the whole
   page is built around, and a second, differently-shaped way to do it inside the panel
   would compete with it. (The flp still offers it for drilled-in words.)
-- **Sheet geometry.** The sheet is hosted by `EipHost`, absolutely positioned against
-  `ContentArea` (which is `position: relative` for exactly this reason) and stretched
-  `bottom: -FOOTER_CLEARANCE`. Without that negative bottom the sheet would
-  float 90px above the screen edge, because `MobileTabScreen`'s ScrollArea reserves
-  that band for the footer bar; `OnDeckSection` uses the same trick to paint
-  its platform under the pill. `SheetPanel` sizes itself from
-  `parentElement.clientHeight`, so `EipHost` is what caps the sheet's height (measured:
-  host 800px tall → sheet opens at 480px = the 0.6 default ratio, flush to the bottom
-  edge).
-- **`EipHost` needs an explicit z-index (1100).** Every on-deck card carries an inline
-  `zIndex: 1000` — `CardShell`'s lift for the card being dragged — which beats
-  `SheetPanel`'s internal scrim/sheet values of 10/11 outright. Without a z-index on the
-  host, **the cards paint straight through the open sheet**. Giving `EipHost` a z-index
-  makes it a stacking context, so the sheet moves above the cards as one unit and
-  SheetPanel's internal ordering is untouched. If `CardShell`'s value ever changes, this
-  must stay above it.
-- **The footer pill slides away while the sheet is open** (`useHideFooter(eipOpen)`).
+- **Sheet geometry — `EipHost` no longer caps the sheet (2026-08-30).** `SheetPanel`
+  now portals BOTH its scrim and its sheet to the frame-level host, so the sheet sizes
+  itself from the frame and pins to the real bottom edge no matter what `EipHost` does
+  (see [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) § "Mount sites"). That is what
+  lets the sheet reach full height and merge into the page header — hosted inside
+  `ContentArea` it was clipped below that header and could never have covered it.
+  `EipHost` survives as the mount point for `InfoCardSection` itself, but its two
+  load-bearing tricks are now vestigial **for the sheet**:
+  - the `bottom: -FOOTER_CLEARANCE` stretch, which stopped the sheet floating 90px above
+    the screen edge (`MobileTabScreen`'s ScrollArea reserves that band for the footer
+    bar; `OnDeckSection` uses the same trick to paint its platform under the pill);
+  - the explicit `zIndex: 1100`, which kept the on-deck cards' inline `zIndex: 1000`
+    (`CardShell`'s drag lift) from painting straight through the open sheet. The sheet
+    now carries `SHEET_BASE_Z_INDEX` (1201) at frame level and clears the cards itself.
+
+  Neither is worth deleting blind — `EipHost` is still a stacking context wrapping this
+  page's info affordances — but a future change to `CardShell`'s lift no longer has to
+  be mirrored here.
+- **The footer pill slides away while the sheet is open.** `SheetPanel` takes the
+  `useHideFooter` hold itself for every modal sheet (2026-08-30); this page's own
+  `useHideFooter(eipOpen)` call was deleted as a duplicate.
   It is rendered at frame level by `FooterPresenter`, outside this page's DOM, so it
   *cannot* be layered under the sheet by any z-index here — it would otherwise hover on
   top of the panel's content. It slides back on close, and on unmount if the user

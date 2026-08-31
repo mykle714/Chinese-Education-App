@@ -173,6 +173,19 @@ const SLOTS = {
 } as const;
 
 /** How long a card takes to travel between slots after a promotion. */
+/**
+ * The resting elevation of a hand card — the two cards behind the front one. Exported
+ * because the Decks page's Mastery Center tiles sit on the same surface, one row above
+ * the hand, and have to read as the SAME kind of object: a card lying on the page. Both
+ * therefore carry this shadow plus a `COLORS.border` hairline; only the front card of
+ * the hand goes higher (it adds an upward shadow, inline below).
+ *
+ * ⚠️ Not a `SHADOW` token (src/theme/shadows.ts): this sits between `raised` and
+ * `float`, and the hand's two values predate the token set. Fold it into the tokens the
+ * next time the elevation scale is revisited.
+ */
+export const HAND_CARD_RESTING_SHADOW = "0 5px 16px rgba(20,18,26,0.14)";
+
 const SLOT_TRANSITION_MS = 260;
 const SLOT_TRANSITION = `top ${SLOT_TRANSITION_MS}ms ease, left ${SLOT_TRANSITION_MS}ms ease, right ${SLOT_TRANSITION_MS}ms ease, transform ${SLOT_TRANSITION_MS}ms ease`;
 
@@ -320,7 +333,7 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                 // The front card carries a shadow ABOVE it as well, so it
                                 // reads as lifted off the two behind rather than pasted on.
                                 ? "0 -2px 5px rgba(20,18,26,0.05), 0 10px 26px rgba(20,18,26,0.16)"
-                                : "0 5px 16px rgba(20,18,26,0.14)",
+                                : HAND_CARD_RESTING_SHADOW,
                             display: "flex",
                             flexDirection: "column",
                             cursor: isFront ? (isBeingDragged ? "grabbing" : "grab") : "pointer",

@@ -493,12 +493,29 @@ const SpeedReadingPage: React.FC = () => {
     }, [round, tts]);
 
     /**
+     * The AUTOMATIC variant of speak(), for the per-round narration effect below.
+     * It must go through `autoSpeakSentence`, not `speakSentence`: the round
+     * landing is the app speaking on its own, so it is gated by the autoplay
+     * setting and stays completely silent in 'off' mode — no playback, and no
+     * speaker-button spinner either, since the hook never sets `speakingKey` for
+     * a suppressed auto utterance. The speaker BUTTON above keeps the manual
+     * `speak`, which speaks in every mode including 'off'.
+     */
+    const autoSpeak = useCallback(() => {
+        if (!round) return;
+        const { speechText, speechPinyin } = roundPrompt(round);
+        void tts.autoSpeakSentence(speechText, speechPinyin);
+    }, [round, tts]);
+
+    /**
      * Auto-narration: every round speaks its word as it lands, without the
      * player having to reach for the speaker button. Under a clock, a tap spent
      * on the speaker is a tap not spent answering, so the audio has to arrive on
      * its own to be usable at all — the speaker button stays for replays.
      *
-     * Guarded on ROUND IDENTITY rather than on a dep list: `speak` changes
+     * Silent in 'off' mode: it calls `autoSpeak`, not `speak`.
+     *
+     * Guarded on ROUND IDENTITY rather than on a dep list: `autoSpeak` changes
      * identity whenever `tts` does (every render), so this effect re-runs
      * constantly and the ref is what makes narration fire exactly once per
      * round. Playback is not cancelled on advance — the next round's speak()
@@ -510,8 +527,8 @@ const SpeedReadingPage: React.FC = () => {
         if (phase !== "ready" || !round) return;
         if (spokenRoundRef.current === round) return;
         spokenRoundRef.current = round;
-        speak();
-    }, [phase, round, speak]);
+        autoSpeak();
+    }, [phase, round, autoSpeak]);
 
     // ── Score ────────────────────────────────────────────────────────────────
     /**

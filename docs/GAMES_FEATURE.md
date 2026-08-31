@@ -472,6 +472,15 @@ hue's near-white tint on the HUD strip.
 | `gameSurfaceSx(hue)` | The ground colour plus the descendant rules it forces (title, chevron, right-slot icons, `HeaderMetaLabel`, the streak badge, both toggle-chip states). |
 | `ON_ACCENT_INK` / `ON_ACCENT_LINE` | White, and a 50% white hairline. Anything drawn straight onto the ground needs the first; `COLORS.rowBorder` is an ink alpha and vanishes on a 52%-lightness ground, hence the second. |
 
+**The status-bar strip follows the ground too (2026-08-28).** `GameSurfaceProvider` calls
+`useThemeColor(RAMP[hue].ink)` (`src/hooks/useThemeColor.ts`), which rewrites
+`<meta name="theme-color">` for as long as the game is mounted. That band above the header
+is painted by the BROWSER, not by the page, so nothing in the React tree can reach it —
+before this, an accent game screen sat under a paper-white strip on iOS and the ground
+visibly stopped short of the top of the phone. It lives on the provider rather than in each
+game so both colours come from the one `hue`. Default (every non-game screen) is
+`COLORS.background`, declared in `index.html`.
+
 **Which hue a game gets is `GameDef.hue`, NOT the artboard's.** The artboards paint Match
 Speed blue, Speed Reading yellow and Hydra green; the shipped hub rows call those three
 green, blue and teal. The hub mapping wins — a green hub row must not open a blue screen —

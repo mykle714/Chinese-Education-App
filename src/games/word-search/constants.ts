@@ -147,20 +147,23 @@ export const HINT_ACCENT_COLOR = COLORS.warnInk;
  * of underscores would imply a count that doesn't exist. A single em dash
  * carries no count at all. See §5a-ii.
  *
- * The Pinyin board used to share this mark, but now blanks its remainder
- * letter-by-letter with `HINT_LETTER_BLANK` (see below).
+ * The Pinyin board does NOT use it: its first hint press buys the whole
+ * skeleton (every island as `HINT_LETTER_BLANK` per hidden letter), so it has
+ * no state in which an island's length is unknown. It briefly carried a
+ * count-only rung drawn with this mark (2026-08-29, same day); see `buildMask`
+ * for why that rung was dropped again.
  */
 export const HINT_REMAINDER_MARK = "—";
 
 /**
  * Blank stand-in for ONE still-hidden pinyin letter on the Pinyin board's hint
- * mask — classic hangman spacing, one underscore per omitted letter, so an
- * island's total length is visible from the start and each reveal visibly
- * consumes the blanks it fills. Deliberately leaks the syllable's letter count
- * (the earlier single-dash mark hid it); knowing "this syllable is 4 letters"
- * is a useful, honest scaffold and keeps the mask width stable as units fill
- * in. Tone diacritics ride on their letter (`ǎ` is one blank, not two).
- * See §5a.
+ * mask — classic hangman spacing, one underscore per omitted letter, so the
+ * whole word's length is visible from the first press and each reveal visibly
+ * consumes the blanks it fills. Deliberately leaks every syllable's letter
+ * count, which is what that first press buys: knowing "this syllable is 4
+ * letters" is a useful, honest scaffold rather than an answer, and it keeps the
+ * mask width stable as units fill in. Tone diacritics ride on their letter (`ǎ`
+ * is one blank, not two). See §5a.
  */
 export const HINT_LETTER_BLANK = "_";
 
@@ -194,8 +197,8 @@ export const GRID_MARGIN = 12;
 
 /**
  * How long a true miss's flash (red highlight + shake) stays visible before
- * auto-clearing. A bonus-word match (blue for 2+ characters, or plain yellow
- * with no shake for a single character — see `WordSearchGrid.tsx`) has NO
+ * auto-clearing. A bonus-word match is blue at every length — 2+ characters also
+ * shake, a single character does not (see `WordSearchGrid.tsx`) — and has NO
  * auto-dismiss timer: its definition popup stays open until the player taps
  * elsewhere. Tunable.
  */

@@ -1179,7 +1179,7 @@ export interface RelatedWord {
  * the tail on save. Enforced in code, not as a `varchar(n)`, so raising it is a code
  * deploy rather than a table rewrite. See docs/CARD_NOTES.md.
  */
-export const CARD_NOTE_MAX_LENGTH = 200;
+export const CARD_NOTE_MAX_LENGTH = 100;
 
 /**
  * Vocab entry (flashcard), as shipped to the client.
@@ -1274,7 +1274,8 @@ export interface VocabEntryBase {
   /**
    * flp face-steering (docs/MASTERY_REWORK.md § Per-type cooldown): the subset of
    * flp-reviewable mark types ('recognition'/'production') whose PER-TYPE cooldown has
-   * elapsed. The client shows the matching face; both present ⇒ random. Absent on
+   * elapsed. The client shows the matching face; both present ⇒ a weighted flip
+   * biased toward the track with less progress (src/utils/flpFaceSteering.ts). Absent on
    * cards not routed through flp selection (games, dictionary lookups).
    */
   readyMarkTypes?: MarkType[];

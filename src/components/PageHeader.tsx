@@ -324,27 +324,61 @@ export const HeaderToggleChip: React.FC<{
 );
 
 /**
+ * Horizontal breathing room inside a HeaderCycleChip, in `ch` of its mono face, on
+ * top of the longest label's exact width. Tuned by eye rather than derived: a chip
+ * sized to its text to the character reads as clipped even when it is not, and a
+ * word sitting flush against the chip's radius reads as cramped.
+ */
+const CYCLE_CHIP_SLACK_CH = 4;
+
+/**
+ * What a leading icon costs the chip's fixed width: the 13px glyph plus the 5px gap
+ * before the label. Added to the width only when an icon is actually passed, so the
+ * `ch` count keeps meaning "characters of label" rather than becoming a fudge that
+ * silently bakes in an icon that may not be there.
+ */
+const CYCLE_CHIP_ICON_ALLOWANCE_PX = 18;
+
+/**
  * A multi-state sibling of HeaderToggleChip: one tap advances to the next state
- * rather than flipping a boolean, and the chip's own icon + label say which state
- * is live. Same `.lhd .tg` skin, so a header can mix the two without looking it.
+ * rather than flipping a boolean, and the chip's own label says which state is live.
+ * Same `.lhd .tg` skin, so a header can mix the two without looking it.
  *
  * `active` drives only the ink/grey inversion — it means "this state does
  * something", not "on". A three-state control has no boolean to expose, so this
  * chip carries NO `aria-pressed`; `ariaLabel` must name the current state and
  * ideally what tapping does, since that is all a screen reader gets.
  *
- * Built for the audio-mode chip (off / passthrough / media) — see
+ * A cycling chip's labels differ in length, so unlike `HeaderToggleChip` it needs a
+ * FIXED width: sized to its own longest label via `widthCh`, it stays put as the
+ * user taps through, and everything to its left stops shuffling sideways under the
+ * thumb that is still tapping. The optional per-state `icon` is included in that
+ * width via CYCLE_CHIP_ICON_ALLOWANCE_PX, so it does not eat the label's room.
+ *
+ * Built for the audio-mode chip (mute / passthrough / media) — see
  * src/components/AudioModeChip.tsx and docs/AUDIO_PLAYBACK.md.
  */
 export const HeaderCycleChip: React.FC<{
     children: React.ReactNode;
     /** Whether the CURRENT state is a doing-something state (drives the inversion). */
     active: boolean;
-    icon: string;
+    /**
+     * Fixed label width, in `ch` of the chip's MONO face — so it is an exact
+     * character count, not an estimate. Pass the longest label's length, derived
+     * from the label table rather than hard-coded, so adding a state cannot make
+     * the chip jump again.
+     */
+    widthCh: number;
+    /**
+     * Optional leading Material Symbols glyph, per state. Verify any name against
+     * https://fonts.google.com/metadata/icons — a name missing from the face renders
+     * as its own raw text inside the chip (see src/components/Icon.tsx).
+     */
+    icon?: string;
     ariaLabel: string;
     onClick?: () => void;
     className?: string;
-}> = ({ children, active, icon, ariaLabel, onClick, className }) => (
+}> = ({ children, active, widthCh, icon, ariaLabel, onClick, className }) => (
     <Box
         className={[
             "page-header__toggle",
@@ -358,6 +392,7 @@ export const HeaderCycleChip: React.FC<{
         sx={{
             display: "inline-flex",
             alignItems: "center",
+            justifyContent: "center",
             gap: "5px",
             fontFamily: FONTS.mono,
             fontSize: 10,
@@ -365,12 +400,20 @@ export const HeaderCycleChip: React.FC<{
             padding: "6px 8px",
             borderRadius: "7px",
             whiteSpace: "nowrap",
+            // `ch` against the mono face is one character advance, so `widthCh` chars
+            // is EXACTLY the longest label with zero slack — enough for subpixel
+            // rounding to clip its last glyph, and far too tight to read as a chip.
+            // CYCLE_CHIP_SLACK_CH is the breathing room, added inside the derived
+            // value so every state still measures identically.
+            width: icon
+                ? `calc(${widthCh}ch + ${CYCLE_CHIP_SLACK_CH}ch + ${CYCLE_CHIP_ICON_ALLOWANCE_PX}px)`
+                : `calc(${widthCh}ch + ${CYCLE_CHIP_SLACK_CH}ch)`,
             backgroundColor: active ? COLORS.onSurface : COLORS.grey,
             color: active ? COLORS.white : COLORS.iconColor,
             cursor: "pointer",
         }}
     >
-        <Icon name={icon} size={13} color={active ? COLORS.white : COLORS.iconColor} />
+        {icon && <Icon name={icon} size={13} color={active ? COLORS.white : COLORS.iconColor} />}
         {children}
     </Box>
 );

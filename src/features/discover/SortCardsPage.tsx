@@ -10,7 +10,6 @@ import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import NodePage from "../../components/NodePage";
 import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
-import { useHideFooter } from "../../hooks/useHideFooter";
 import ForeignText from "../../components/ForeignText";
 import FrequencyScoreDots from "../../components/FrequencyScoreDots";
 import SpeakerButton from "../../components/SpeakerButton";
@@ -119,12 +118,16 @@ const ContentArea = styled(Box)({
 });
 
 // Positioning host for the eip bottom sheet (docs/SORT_CARDS_REQUIREMENTS.md §4.7).
-// SheetPanel's scrim is `absolute; inset: 0` and its sheet is `absolute; bottom: 0`,
-// both resolved against THIS element, and SheetPanel sizes the sheet from
-// `parentElement.clientHeight` — so this host defines both the scrim's extent and the
-// sheet's maximum height.
 //
-// The negative bottom is load-bearing: ContentArea stops at MobileTabScreen's
+// ⚠️ SINCE 2026-08-30 THIS HOST NO LONGER SIZES OR POSITIONS THE SHEET. SheetPanel
+// portals both its scrim and its sheet to the FRAME (so the sheet can grow to full
+// height and merge into the page header — see docs/EIP_SHEET_GESTURES.md), which means
+// it resolves `inset: 0` / `bottom: 0` / `parentElement.clientHeight` against the frame,
+// not against this box. Everything below is kept because it documents why this element
+// exists and what used to depend on it; the two notes marked VESTIGIAL are no longer
+// load-bearing for the sheet.
+//
+// VESTIGIAL (was load-bearing before the sheet was portaled): ContentArea stops at MobileTabScreen's
 // ScrollArea *content* box, which sits FOOTER_CLEARANCE (90px) above the
 // screen bottom so page content clears the floating footer pill. A sheet pinned to
 // ContentArea's bottom would therefore hover with a 90px band of page background
@@ -133,15 +136,15 @@ const ContentArea = styled(Box)({
 // it. This is the same trick OnDeckSection uses to paint the platform under the pill.
 // The pill itself cannot be layered under the sheet (it is rendered at frame level by
 // FooterPresenter, outside this page's DOM, so no z-index here reaches it) — instead the
-// page slides it away for the sheet's lifetime via useHideFooter. The reserved band
-// stays reserved either way, which is why this offset is unconditional.
+// SheetPanel itself now slides it away for the sheet's lifetime (useHideFooter). The
+// reserved band stays reserved either way, which is why this offset is unconditional.
 //
-// The z-index is load-bearing too. Every on-deck card carries `zIndex: 1000` (see
+// VESTIGIAL (same reason): the z-index. Every on-deck card carries `zIndex: 1000` (see
 // CardShell's inline style — it lifts a card being dragged above its neighbours and the
-// buckets), which beats SheetPanel's internal scrim/sheet z-indexes of 10/11 outright:
-// without this the cards paint straight through the open sheet. Setting a z-index here
-// makes EipHost a stacking context, so the whole sheet moves as one above the cards and
-// SheetPanel's internal ordering is left untouched.
+// buckets), which beat SheetPanel's in-place scrim/sheet z-indexes of 10/11 outright:
+// without this the cards painted straight through the open sheet. The portaled sheet
+// carries SHEET_BASE_Z_INDEX (1201) at frame level and clears the cards on its own, so
+// this stacking context now only orders this page's own info affordances.
 const EIP_HOST_Z_INDEX = 1100; // > CardShell's 1000
 const EipHost = styled(Box)({
     position: "absolute",
@@ -703,11 +706,10 @@ const SortCardsPage: React.FC = () => {
     // entryKey whose lookup is in flight, so only the tapped card's info button
     // shows a spinner. Also gates re-taps on that same card.
     const [eipLoadingKey, setEipLoadingKey] = useState<string | null>(null);
-    // Slide the floating footer pill out while the sheet is up. The pill is rendered at
-    // frame level (outside this page's DOM), so it would otherwise hover ON TOP of the
-    // sheet's content — no z-index here can reach it. Suppression is released
-    // automatically on close and on unmount. See FooterVisibilityContext.
-    useHideFooter(eipOpen);
+    // NOTE: the footer pill is no longer suppressed here. SheetPanel takes the hold
+    // itself for the lifetime of every modal sheet (see useHideFooter there), because a
+    // sheet can now grow to cover the whole screen and the pill would float over it on
+    // every host, not just this one.
 
     const bucketRefs = useRef<Map<string, HTMLElement>>(new Map());
     // Bucket geometry snapshotted at drag START — before any bucket is highlighted.
@@ -924,8 +926,15 @@ const SortCardsPage: React.FC = () => {
     // pack (keyed on packKey so it fires exactly once when a pack lands on-deck,
     // not on every re-render). Cards already resolved/locked are still narrated —
     // this is about hearing the pack's words, not just the still-sortable ones.
-    // Cancelled (and any in-flight utterance stopped) if the pack changes or
-    // autoplay/TTS gets turned off mid-sequence.
+    // Cancelled (and any in-flight utterance stopped) if the pack changes; turning
+    // audio off mid-sequence stops the utterance via useTTS, which cancels on the
+    // on → off edge for every surface at once.
+    //
+    // `tts.autoplay` is deliberately NOT a dep. It used to be, and the off → on edge
+    // then replayed the whole on-deck pack the moment the learner tapped the header
+    // audio chip. Changing a setting is not a request to hear the pack again; the
+    // per-card speaker button is. The guard below reads the flag as it stood when
+    // the pack landed, which is the only moment auto-narration is meant to start.
     useEffect(() => {
         if (!currentPack) return;
         if (!tts.autoplay) return;
@@ -941,7 +950,7 @@ const SortCardsPage: React.FC = () => {
             tts.cancel();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPack?.packKey, tts.autoplay]);
+    }, [currentPack?.packKey]);
 
     // Advance past a completed pack: drop the head and refill the tail with one pack,
     // excluding the packKeys we still hold so the replacement is never a duplicate.

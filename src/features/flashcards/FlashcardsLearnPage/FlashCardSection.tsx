@@ -8,6 +8,7 @@ import {
     CARD_DISMISS_THRESHOLD_VW,
     CARD_FLY_OUT_TRANSITION,
     CARD_FLIP_TRANSITION,
+    CARD_FLIP_MS,
     FC_FONT,
 } from "../constants";
 import { SIZE, WEIGHT } from "../../../theme/scale";
@@ -156,7 +157,10 @@ const CardFace: React.FC<{
     noteEditing?: boolean;
     onSaveNote?: (note: string | null) => void;
     onCancelNote?: () => void;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote }) => {
+    // Blank this card's content (both faces) while keeping its surface. Set on the peeking
+    // BACK card while the front card is mid-flip — see `flipInProgress` in FlashCardSection.
+    contentHidden?: boolean;
+}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote, contentHidden }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
@@ -247,6 +251,7 @@ const CardFace: React.FC<{
                 // intercepts taps meant for the visible face (e.g. the writing/audio
                 // buttons on the back). Side 1 faces away whenever the card is flipped.
                 inert={isFlipped}
+                contentHidden={contentHidden}
             >
                 {sideOneLanguage === 'zh'
                     ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={speakWithSense} speakingKey={speakingKey} selectedSenseIndex={selectedSenseIndex} />
@@ -292,13 +297,13 @@ const CardFace: React.FC<{
                 }}
                 editCanvas={editCanvas}
                 topRail={topRail}
-                // The learner's note, pinned to the bottom edge of the ANSWER face only
+                // The learner's note, pinned to the top edge of the ANSWER face only
                 // (a note is commentary on the answer — on the question face it would be
                 // an unasked-for hint). CardNote renders nothing when there is no note
                 // and no edit is open, which is the common case. While the fie canvas owns
                 // the face, the note is suppressed: the canvas is a design surface and the
                 // note is not part of the design it edits.
-                bottomNote={editCanvas ? undefined : (
+                noteSlot={editCanvas ? undefined : (
                     <CardNote
                         entry={entry}
                         editing={noteEditing}
@@ -308,6 +313,7 @@ const CardFace: React.FC<{
                 )}
                 // Side 2 faces away when the card is showing its front.
                 inert={!isFlipped}
+                contentHidden={contentHidden}
             />
 
             {/* Drag overlay — shown on the front card and the card currently flying off */}
@@ -364,6 +370,26 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
 
     // Threshold in px, computed against card's actual rendered width for desktop consistency.
     const dismissThreshold = CARD_DISMISS_THRESHOLD_VW * (cardRef.current?.offsetWidth ?? window.innerWidth);
+
+    // True for the duration of a flip animation. The flip is a 3D rotateY on the front card,
+    // so at the halfway point that card is edge-on (zero projected width) and the peeking
+    // BACK card — which sits behind it holding the stack's shape — is briefly shown in full,
+    // leaking the NEXT card's word. While this is true the back card renders its surface only
+    // (see CardFaceSide's `contentHidden`).
+    //
+    // Only a false -> true transition opens the window: the flip is one-way per card, and the
+    // reset to false happens on a card CHANGE, where the slots are swapping and no flip
+    // animation runs (hiding there would pop the freshly promoted back card's content in).
+    const [flipInProgress, setFlipInProgress] = React.useState(false);
+    React.useEffect(() => {
+        if (!isFlipped) {
+            setFlipInProgress(false);
+            return;
+        }
+        setFlipInProgress(true);
+        const timer = window.setTimeout(() => setFlipInProgress(false), CARD_FLIP_MS);
+        return () => window.clearTimeout(timer);
+    }, [isFlipped]);
 
     // Each slot gets its entry: the front slot shows currentEntry, back slot shows nextEntry.
     const slotEntries: [VocabEntry | null, VocabEntry | null] =
@@ -555,6 +581,10 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 // Card operations belong to the card the learner is
                                                 // looking at; the peeking back card has none.
                                                 topRail={isFront ? topRail : undefined}
+                                                // The back card is exposed while the front
+                                                // card passes edge-on through the flip — blank
+                                                // its content for that window.
+                                                contentHidden={!isFront && flipInProgress}
                                                 // Only the active front card's note is
                                                 // editable; the peeking back card still
                                                 // RENDERS its note (read-only) so it doesn't

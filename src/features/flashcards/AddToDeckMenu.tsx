@@ -13,14 +13,16 @@ import { CARD_OPS_CELL_SX, CARD_OPS_CELL_LABEL_SX } from "./cardOpsCell";
  * "Add to deck" — an icon button that opens a CHECKBOX menu of the user's decks
  * (docs/DECKS_FEATURE.md).
  *
- * Mounted in two places, both of which already have the card in hand:
- *   • the cdp header actions (VocabCardDetailPage) — bare icon trigger, and
- *   • the flp card's operations rail (CardOpsRail, artboard 21) — a rail cell, via
- *     `appearance: "rail"`.
+ * Mounted in exactly ONE place today: the card's operations rail (`CardOpsRail`,
+ * artboard 21) as a rail cell, via `appearance: "rail"` — which both the flp and the cdp
+ * now mount, so filing a card is the same control on every surface.
  *
- * It used to have a third host, the eip definition tab's action bar
- * (`InfoCardActionBar`), which is deleted: the panel is information-only now, and
- * filing a card is a card operation, so it moved onto the card itself.
+ * It used to have two other hosts, both gone: the eip definition tab's action bar
+ * (`InfoCardActionBar`, deleted — the panel is information-only now) and the cdp's header
+ * actions (2026-08-28 — a card operation belongs ON the card, and the cdp's hero card
+ * carries the rail). NOTE that this leaves the `button` appearance and the `color` /
+ * `label` props with no caller; they are kept for the next host that wants a labelled or
+ * bare-icon trigger.
  *
  * ── Why a whole-set save on close, not a write per tick ───────────────────────
  * Ticking three boxes would otherwise be three requests, and a half-completed

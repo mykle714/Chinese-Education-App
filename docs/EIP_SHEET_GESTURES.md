@@ -18,15 +18,31 @@ last of its rows moved out — see [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md).
 flp-private: the sort cards page (scp) mounts the same `InfoCardSection` + `EipTabStrip`
 + `useEipTabs` trio from each on-deck card's info button
 ([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)). Everything on this
-page applies to both. The one thing a host must supply is a **positioned parent**:
-`SheetPanel`'s scrim (`absolute; inset: 0`) and container (`absolute; bottom: 0`) resolve
-against it, and the height model below reads `parentElement.clientHeight` — so that
-parent, not the viewport, is what caps the sheet. Two things that parent must also do on
-a footer-bearing page (both learned the hard way on scp — see its `EipHost`): stretch
-down through `FOOTER_CLEARANCE`, or the sheet floats above the screen edge; and
-carry a z-index above anything the host page lifts, because the scrim/sheet z-indexes
-below (10/11) are *internal* to `SheetPanel` and lose to any page element with a bigger
-one (scp's draggable cards sit at 1000).
+page applies to both.
+
+**A host no longer supplies a positioned parent (2026-08-30).** Both the scrim *and* the
+sheet are portaled to the frame-level host (see "The scrim covers the screen"), so
+`absolute; inset: 0` and `absolute; bottom: 0` resolve against the whole screen and
+`parentElement.clientHeight` — the number the height model caps on — is the frame's.
+That is what makes `MAX_HEIGHT_RATIO = 1` mean *the whole screen*: rendered in place the
+sheet sat inside the page's content area, which starts **below** the page header and is
+clipped by `MobileTabScreen`'s `ScrollArea`, so it could never have covered the header no
+matter what ratio it was given.
+
+Two host obligations disappeared with it: stretching the host down through
+`FOOTER_CLEARANCE` (scp's `EipHost` negative bottom — now vestigial for the sheet), and
+giving the host a z-index above anything the page lifts. What replaces the latter is
+`SCRIM_BASE_Z_INDEX` / `SHEET_BASE_Z_INDEX` (**1200 / 1201**, `+ depth·2` per stack
+level): the two layers now sort against the page's *top-level* layers, and those go high
+— scp lifts its draggable cards to 1000 and its eip host to 1100. 1200 sits below MUI's
+modal layer (1300), so a real `Dialog` still covers the sheet.
+
+Because the sheet is portaled, nothing of `SheetPanel` is left in the page's DOM to walk
+up from — so it renders an unpainted **anchor** (`display: none`) in place purely to give
+`nearestScrimHost` a starting node, resolves the host in a layout effect (flushed before
+paint, so there is no frame in which the sheet is unportaled), and mounts the sheet only
+once the host is known. The mount/open-animation effect is keyed on `scrimHost` rather
+than `[]` for exactly that reason.
 
 ---
 
@@ -77,7 +93,7 @@ content dissolves under the pill rather than being cut by it.
 |---|---|---|
 | `0` | — | dismissed (panel unmounts after the shrink animation) |
 | **default** | `parentHeight * DEFAULT_HEIGHT_RATIO` (0.6), or `initialHeight` for a stacked child panel | the open height; **also the floor** |
-| **max** | `parentHeight * MAX_HEIGHT_RATIO` (0.92) | fully expanded |
+| **max** | `parentHeight * MAX_HEIGHT_RATIO` (**1**) | fully expanded — the sheet IS the screen |
 
 There is **no resting stop between 0 and default**. `computeSnapTarget(h, default,
 max, min, collapseRatio)` is the single rule every release path uses: below default →
@@ -95,6 +111,49 @@ modal panel's dismiss floor is still its default height, untouched by the ratio.
 
 The open height is a fixed fraction of the screen, deliberately *not* measured from
 content, so every eip tab opens to the same extent.
+
+### The cap is 1, and the top stop MERGES the sheet into the page (2026-08-30)
+
+`MAX_HEIGHT_RATIO` used to be **0.92**, and that 8% strip of visible scrim was doing two
+jobs at once: it said "there is a page behind this", and it was the tap-to-dismiss
+target. Raising the cap to **1** removes both, so the top stop had to grow chrome that
+replaces them. `writeMergeChrome` (`SheetPanel.tsx`) interpolates a ratio `t` from 0 → 1
+across the last **`MERGE_ZONE_PX` (64)** of travel below the cap and paints, all of it as
+direct style writes on the sheet element:
+
+| at `t = 0` (a sheet) | at `t = 1` (a page) |
+|---|---|
+| `border-radius: 20px 20px 0 0` | square corners |
+| `flashcard.sheetShadow` | no shadow — a merged sheet is not a surface *on* anything |
+| `padding-top: 10px` above the grabber | `0`, so the header sits flush with the top edge |
+| merge header clipped to zero height | full-height `PageHeader`, opacity 1, taking taps |
+
+Because it is a linear function of the sheet's height, the merge is continuous under the
+finger — there is no state flip at a threshold to pop mid-drag — and on an *animated*
+write it inherits the same `SNAP_DURATION_MS` transition as the height, so the corners,
+the shadow and the header all arrive exactly when the sheet reaches its stop. It writes
+nothing on a frame where `t` has not moved, which is every frame of a drag below the
+merge zone. Like the height, **none of it is React state** — same reason (see "Height is
+imperative").
+
+### The merge header
+
+The **`title`** prop supplies it; it is a real `PageHeader` (`size="node"`,
+`arrowDirection="down"`), not a lookalike, so the header a merged sheet wears is the
+app's one header. It lives in `SheetMergeHeaderSlot` (`styled.ts`) — a `height: 0;
+overflow: hidden` box that is the sheet's **first flex child**, so whatever height the
+merge has faded in pushes the grabber and everything below it down, and nothing has to
+reserve space for it. The slot is clipped from the first paint but its child still lays
+out at natural size inside it, which is how `SheetPanel` **measures** the header once on
+mount instead of hard-coding a height that `PageHeader`'s design tokens could invalidate.
+
+The chevron points **down** and calls `dismiss` — the direction a drag would close it,
+and the only close affordance left once the sheet covers the scrim.
+
+Titles, one per host: `InfoCardSection` passes **"More Info"** (or **"Compare"** on the
+compare tab) and thereby covers flp, scp and cdp at once; `FlashcardsDecksPage` passes
+**"Cards"** / **"Decks"**, matching the pill that opened the sheet. A sheet with no
+`title` still grows to full height — it just has no way out but a downward drag.
 
 ### Height is imperative, not React state
 
@@ -235,7 +294,9 @@ still gets no fade — there is no animation frame left to play it in.
 ancestor. Rendered in place that ancestor was the host page's content area (flp's
 `ContentArea`), so the page's own header stayed bright and the dim read as covering only
 part of the screen. `SheetPanel` therefore **portals** the scrim out, in a layout effect
-that walks up from the mounted sheet (`nearestScrimHost`, `SheetPanel.tsx`).
+that walks up from the panel's in-place anchor (`nearestScrimHost`, `SheetPanel.tsx`).
+Since 2026-08-30 the **sheet is portaled to the same host**, for the height reason in
+"Mount sites" above; everything below about choosing that host applies to both layers.
 
 The host is **not** unconditionally the phone frame. It is the nearest ancestor that
 satisfies BOTH of:
@@ -262,11 +323,22 @@ page archetype that transforms its surface inherits the fix automatically.
   the browser window around the phone card.
 - **Plain pages are unchanged.** flp's content area is `position: relative` with
   `z-index: auto` and creates no stacking context, so the walk still reaches the frame.
-- **The footer stays above the scrim** (`FooterPresenter`, z-index 100) — it is the
-  frame's furniture, not the page's, and on a slid page it is a sibling of the `Surface`
-  that hosts the scrim. The hosts that open a modal sheet under a visible footer keep it
-  (fdp, cdp). flp is a footerless route and scp hides the footer for the sheet's lifetime
-  (`useHideFooter`).
+- **The footer is hidden for every modal sheet, by the sheet itself** (2026-08-30).
+  `SheetPanel` calls `useHideFooter(minHeight <= 0)`, so the hold covers its whole
+  lifetime on every host and is released on unmount. It used to be each page's job —
+  `useHideFooter(eipOpen)` in `SortCardsPage`, `useHideFooter(infoOpen)` in
+  `VocabCardDetailPage`, **both now deleted** — which left flp and fdp's modal sheets
+  without one. A **persistent** sheet keeps the footer: it is page furniture whose
+  resting height is chosen to clear the bar, not a modal that takes over the screen.
+
+  Hiding the bar is not cosmetic. It is opaque, rendered at frame level
+  (`FooterPresenter`, z-index 100) and outside every page's DOM, so it covered the
+  sheet's bottom ~`FOOTER_CLEARANCE`px — including the end of whichever tab pane was
+  showing. The pane still scrolled (its content had already reached the end); the end
+  was simply underneath the bar, which read as "this tab refuses to scroll". That was
+  the cdp definition-tab report (fixed 2026-08-28). Note the sheet's z-index now clears
+  the bar on its own (1201 > 100); the hold is what keeps the bar from sitting *beside*
+  a full-height sheet with nothing to do.
 
 ---
 
@@ -365,8 +437,9 @@ Now:
   (axis lock, commit ratio, transition, edge rubber-band)
 - `src/components/CompareWorkspace.tsx` — the other sheet body
 - `src/features/flashcards/DecksPanelBody.tsx` + `FlashcardsDecksPage.tsx` — a second
-  MODAL host (`sheetOpen`, `.flashcards-decks__sets-pill`). It was persistent mode's only
-  caller until 2026-08-24; that mode now has no callers
+  MODAL host (`openSheet`, the `.flashcards-decks__cards-pill` /
+  `.flashcards-decks__decks-pill` pair). It was persistent mode's only caller until
+  2026-08-24; that mode now has no callers
 - `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` — tab state + drill-in
   lookups (`openForRoot`, `openForEntryKey`, `clear`); takes an optional `language` that
   scopes those lookups

@@ -327,20 +327,29 @@ export const CardFaceSide: React.FC<{
     // only user was the progress-category chip; both were removed on 2026-08-28 when
     // the mastery category came off the card back.)
     topRail?: React.ReactNode;
-    // A strip anchored to the face's BOTTOM EDGE — the learner's own note on this card
-    // (`CardNote`, vet.note, migration 155). Like `topRail` it renders in the OUTER face
+    // A strip anchored to the face's TOP EDGE, left of the `•••` — the learner's own note
+    // on this card (`CardNote`, vet.note, migration 155). It shares the top edge with
+    // `topRail`'s dot rather than the bottom edge, because the face's own content grows
+    // downward (see CardNote). Like `topRail` it renders in the OUTER face
     // box so it paints over the icon layer and the text blocks, and like `topRail` it is
     // passed as a node so this shared face stays ignorant of what a note is (and of who is
     // allowed to edit one). Answer face only — see CardNote's doc comment. Renders nothing
     // when the card has no note and no edit is open. See docs/CARD_NOTES.md.
-    bottomNote?: React.ReactNode;
+    noteSlot?: React.ReactNode;
     // Per-card background fill (vet.cardColor, migration 94). Painted only when this face is
     // rendering the advanced layout (`isUsingAdvancedLayout`); otherwise the theme default is
     // used. When it applies it overrides the theme's default face color; null/undefined =
     // follow the theme. Only a vetted palette hex reaches here (resolveCardColor). See
     // docs/CARD_ICON_LAYOUT.md.
     cardColor?: string | null;
-}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, topRail, bottomNote, cardColor }) => {
+    // Blank the face's CONTENT while keeping its SURFACE (background fill + rounded corners).
+    // Used by the flp's card stack: the 3D flip takes the front card edge-on at the halfway
+    // point, and for those frames the peeking back card is fully exposed — so its content is
+    // hidden for the duration of the flip while the card itself keeps holding the stack's
+    // shape. Applied to the face's direct children (icon layer, text, rail, note) rather than
+    // to this box, so the fill survives.
+    contentHidden?: boolean;
+}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, topRail, noteSlot, cardColor, contentHidden }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     // Per-card background fill is a decoration that belongs to the ADVANCED layout: it paints
@@ -388,6 +397,8 @@ export const CardFaceSide: React.FC<{
             visibility: inert ? "hidden" : "visible",
             transition: `visibility 0s ${inert ? CARD_FLIP_MS / 2 : 0}ms`,
             ...(inert && { pointerEvents: "none" }),
+            // See `contentHidden`: hide everything painted ON the face, keep the face itself.
+            ...(contentHidden && { "& > *": { visibility: "hidden" } }),
         }}>
             {/* Edit canvas lives in the OUTER (overflow:visible) box so its selection
                 overlay can escape the card boundary. The canvas clips its OWN icons to the
@@ -522,12 +533,13 @@ export const CardFaceSide: React.FC<{
                 the OUTER box, not the inner one, so `overflow: visible` lets an open rail
                 extend to the card's own corner radius rather than being clipped by it. */}
             {topRail}
-            {/* Bottom-edge note strip. In the OUTER box for the same reasons the rail is:
-                it must paint over the inner clip box (icon layer + text blocks), and while
-                it is being edited its own controls sit at the card's very edge. Rendered
-                AFTER the rail so an open note editor stacks above an open rail — the two
-                overlap only in the pathological case of a very tall note on a short card. */}
-            {bottomNote}
+            {/* Top-edge note strip, sharing the edge with the rail's `•••` (it stops short
+                of it). In the OUTER box for the same reasons the rail is: it must paint over
+                the inner clip box (icon layer + text blocks), and while it is being edited its
+                own controls sit at the card's very edge. Rendered AFTER the rail so an open
+                note editor stacks above an open rail — which is also why the editor may run
+                under an EXPANDED rail's row: opening the note editor closes the rail. */}
+            {noteSlot}
         </Box>
     );
 };

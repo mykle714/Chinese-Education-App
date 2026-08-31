@@ -48,7 +48,7 @@ export function useFooterSuppressed(): boolean {
  * mounted. Releasing on unmount is automatic, so a page that navigates away with its
  * modal still open can't strand the footer off-screen.
  *
- * Callers: SortCardsPage (while the eip sheet is open).
+ * Callers: SortCardsPage and VocabCardDetailPage (both while the eip sheet is open).
  */
 export function useHideFooter(hidden: boolean): void {
     const { acquire } = useContext(FooterVisibilityContext);

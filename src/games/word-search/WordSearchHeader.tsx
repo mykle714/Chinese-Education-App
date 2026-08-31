@@ -1,5 +1,6 @@
 import React from "react";
 import { HeaderIconButton } from "../../components/PageHeader";
+import AudioModeChip from "../../components/AudioModeChip";
 
 interface WordSearchHeaderControlsProps {
     /** Open the settings sheet (timer visibility). */
@@ -7,8 +8,16 @@ interface WordSearchHeaderControlsProps {
 }
 
 /**
- * Right-side header controls for Word Search: the settings cog and the minute-points
- * fire badge, and nothing else.
+ * Right-side header controls for Word Search: the narration audio-mode chip and the
+ * settings cog, and nothing else.
+ *
+ * The audio chip is the SAME self-contained `AudioModeChip` the flp, scp, Bubble
+ * Match/Hydra Bubbles and Match Speed headers render — it reads the app-wide
+ * `useTTSSettings` value itself, so there is nothing to wire and no way for this
+ * surface's label, icon or cycle order to drift from the others. Word Search speaks
+ * on its own schedule (a found word, a blue match, a review rung — all through
+ * `autoSpeakSentence`), so it is exactly the kind of surface that needs a mid-play
+ * mute without a trip to /settings. See docs/AUDIO_PLAYBACK.md.
  *
  * Three things have left this slot over time, and the reason is the same each time —
  * the header holds SETTINGS-shaped controls, not game ones (docs/SHELF_REDESIGN.md
@@ -28,6 +37,7 @@ interface WordSearchHeaderControlsProps {
  */
 const WordSearchHeaderControls: React.FC<WordSearchHeaderControlsProps> = ({ onSettingsClick }) => (
     <>
+        <AudioModeChip className="word-search__audio-chip" />
         <HeaderIconButton
             className="word-search__settings-btn"
             icon="settings"

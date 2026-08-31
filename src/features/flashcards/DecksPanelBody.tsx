@@ -25,10 +25,11 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 // CARDS themselves.
 //
 // ── Three hosts, one body (docs/DECKS_FEATURE.md § "Mastery Centers") ─────────
-//   fdp (/flashcards/decks)  — variant "sheet", lens core. The MODAL pull-up sheet
-//       raised by that page's "Sets & Cards" pill.
-//   Reading Center           — variant "page", lens reading.
-//   Writing Center           — variant "page", lens writing.
+//   fdp (/flashcards/decks)  — variant "sheet", lens core. TWO modal pull-up sheets,
+//       raised by that page's side-by-side "Cards" and "Decks" pills, each rendering
+//       this body with a different `section` (see below).
+//   Reading Center           — variant "page", lens reading, section "all".
+//   Writing Center           — variant "page", lens writing, section "all".
 //
 // The three differ in exactly two things: how the body is FRAMED (a resizable sheet
 // vs. a page's own scroll area) and which mastery bar it is read through. Everything
@@ -53,6 +54,22 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 // The Decks section above it collapses (chevron on its caption, remembered in
 // localStorage) so a learner with many decks can fold them away and put the card
 // grid straight under the built-in collections.
+//
+// ── `section`: one body, two sheets (fdp only) ────────────────────────────────
+// One scroller carrying library duo + challenges + decks + a 500-card grid asked the
+// learner to scroll past every OTHER idea to reach the one they came for, and gave the
+// sheet four captions competing to name it. So the fdp splits the body's sections
+// across two sheets, each named after the one question it answers:
+//
+//   "cards" — the library duo (Learn Now / Mastered: the two constants those cards
+//             are counted into) + the Cards section: search, sort, grid.
+//   "decks" — the SETS: Challenges, then the user's own Decks.
+//
+// The split is a HOST choice, not a change to what the panel is: the Mastery Centers
+// are whole pages with room for the lot, so they pass "all" and render exactly what
+// they always did, in the original order. Nothing about the data changes with the
+// section — `useDecksPanel` still computes one lens's whole state, and both fdp sheets
+// read the SAME hook instance on the page, so opening one does not refetch the other.
 //
 // ── The sheet contract (variant "sheet" only) ────────────────────────────────
 // As a SheetPanel body it obeys that contract (see SheetPanel):
@@ -152,6 +169,12 @@ export interface DecksPanelBodyProps {
      * touch handling); "page" is a Mastery Center, where the body scrolls itself.
      */
     variant?: "sheet" | "page";
+    /**
+     * Which of the body's sections to render. "all" (default) is the whole stack, in
+     * its original order — what a Mastery Center page shows. The fdp's two sheets pass
+     * "cards" and "decks"; see the `section` note at the top of this file.
+     */
+    section?: "all" | "cards" | "decks";
     /** Navigate to a set (a collection page or a deck page). */
     onOpenPath: (path: string) => void;
     /** Navigate to one card's detail page. */
@@ -169,6 +192,7 @@ export interface DecksPanelBodyProps {
 const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(function DecksPanelBody({
     panel,
     variant = "sheet",
+    section = "all",
     onOpenPath,
     onOpenCard,
     onNewDeck,
@@ -181,6 +205,11 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
         cardsSearch, setCardsSearch, cardsSortKey, setCardsSortKey,
     } = panel;
     const isSheet = variant === "sheet";
+    // Which halves of the stack this host asked for. Two booleans rather than a chain
+    // of `section === …` at five call sites, so adding a third section later touches
+    // one line each.
+    const showCards = section === "all" || section === "cards";
+    const showDecks = section === "all" || section === "decks";
     const rootRef = useRef<HTMLDivElement | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     // Purely presentational, so it lives here rather than in the page: nothing above
@@ -259,242 +288,250 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                     WebkitMaskImage: EDGE_FADE_MASK_NO_TOP,
                 }}
             >
-                {/* ── YOUR LIBRARY ── this LENS's two constants: what is still to be
-                    learned in this bar, and what is finished in it. (All Cards has no
-                    tile — its grid is the Cards section at the bottom.)
+                {showCards && (<>
+                    {/* ── YOUR LIBRARY ── this LENS's two constants: what is still to be
+                        learned in this bar, and what is finished in it. (All Cards has no
+                        tile — its grid is the Cards section at the bottom.)
 
-                    These two are the one place the sheet does NOT use a spine, and the
-                    reason is in LibraryDuo's header: their SIZE is what the learner came
-                    to read, and a 74px spine cannot print a figure worth reading. Every
-                    other section below is spines, unchanged (D9). */}
-                <Box
-                    className="decks-panel-body__library-header"
-                    {...(headerDragBind?.() ?? {})}
-                    sx={{ width: "100%", px: 3.5, pt: 0.5, pb: 0.5, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}
-                >
-                    <SectionLabel className="decks-panel-body__library-label">Your library</SectionLabel>
-                    <SectionLabel className="decks-panel-body__library-note" sx={{ color: COLORS.textFaint }}>
-                        the two constants
-                    </SectionLabel>
-                </Box>
-
-                <LibraryDuo
-                    className="decks-panel-body__library-duo"
-                    entries={collections}
-                    count={tileCount}
-                    onOpenPath={onOpenPath}
-                    headerDragBind={headerDragBind}
-                />
-
-                {/* ── Challenges ── (docs/STUDY_CHALLENGE.md § 4). Placed immediately
-                    BEFORE the user's own Decks so generated sets sit above authored
-                    ones and the user's decks keep a stable position at the bottom.
-
-                    OMITTED ENTIRELY when there is no active challenge deck — an empty
-                    captioned section is noise in a panel whose job is to be scannable.
-
-                    There is NO lock badge; the deck's immutability shows up as the
-                    absence of controls on its own page. */}
-                {challengeDecks.length > 0 && (
-                    <>
-                        <Box
-                            className="decks-panel-body__challenges-header"
-                            {...(headerDragBind?.() ?? {})}
-                            sx={{ width: "100%", px: 3.5, pt: 2, pb: 1 }}
-                        >
-                            <SectionLabel className="decks-panel-body__challenges-label">Challenges</SectionLabel>
-                        </Box>
-                        <PanelShelf><ShelfRow className="decks-panel-body__challenges-list" scrollable>
-                            {challengeDecks.map((deck, index) => (
-                                <Spine
-                                    key={deck.id}
-                                    className="decks-panel-body__challenge-spine"
-                                    label={deck.name}
-                                    count={deck.cardCount}
-                                    glyph={collectionGlyph({ kind: "deck", deckId: deck.id })}
-                                    variant={isSheet ? "base" : spineHeight(deck.cardCount)}
-                                    height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
-                                    color={deckTileColors(deck.id).main}
-                                    animationDelay={Math.min(index, 5) * 70}
-                                    onClick={() => onOpenPath(`/flashcards/deck/${deck.id}`)}
-                                />
-                            ))}
-                        </ShelfRow></PanelShelf>
-                    </>
-                )}
-
-                {/* ── Decks ── the user's own sets. COLLAPSIBLE: the whole caption row
-                    is the toggle (a wide target beats a 24px chevron on a phone), while
-                    the + button keeps its own handler and stops the tap from also
-                    folding the section it is about to add to.
-
-                    The caption row still carries headerDragBind, so a vertical DRAG
-                    started on it resizes the sheet; useDrag's filterTaps is what keeps
-                    the tap-to-toggle working through the same binding. */}
-                <Box
-                    className="decks-panel-body__decks-header"
-                    {...(headerDragBind?.() ?? {})}
-                    role="button"
-                    aria-expanded={decksOpen}
-                    onClick={toggleDecksOpen}
-                    sx={{
-                        width: "100%", px: 3.5, pt: 2, pb: 1,
-                        display: "flex", alignItems: "center", justifyContent: "space-between",
-                        cursor: "pointer",
-                    }}
-                >
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                        {/* Rotated rather than swapped for a second icon, so the arrow
-                            turns with the section instead of cutting to a new glyph. */}
-                        <ExpandMoreIcon
-                            className="decks-panel-body__decks-chevron"
-                            sx={{
-                                fontSize: 20,
-                                color: COLORS.onSurface,
-                                transition: "transform 180ms ease",
-                                transform: decksOpen ? "rotate(0deg)" : "rotate(-90deg)",
-                            }}
-                        />
-                        <SectionLabel className="decks-panel-body__decks-label">
-                            Decks{authoredDecks.length > 0 ? ` (${authoredDecks.length})` : ""}
+                        These two are the one place the sheet does NOT use a spine, and the
+                        reason is in LibraryDuo's header: their SIZE is what the learner came
+                        to read, and a 74px spine cannot print a figure worth reading. Every
+                        other section below is spines, unchanged (D9). */}
+                    <Box
+                        className="decks-panel-body__library-header"
+                        {...(headerDragBind?.() ?? {})}
+                        sx={{ width: "100%", px: 3.5, pt: 0.5, pb: 0.5, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}
+                    >
+                        <SectionLabel className="decks-panel-body__library-label">Your library</SectionLabel>
+                        <SectionLabel className="decks-panel-body__library-note" sx={{ color: COLORS.textFaint }}>
+                            the two constants
                         </SectionLabel>
                     </Box>
-                </Box>
 
-                <Collapse in={decksOpen} timeout={180} sx={{ width: "100%" }} unmountOnExit>
-                    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
-                        {(decksError || (!decksLoading && authoredDecks.length === 0)) && (
-                            <Box className="decks-panel-body__decks-message" sx={{ width: "100%", px: 3.5, pb: 1 }}>
-                                <Typography
-                                    className={decksError ? "decks-panel-body__decks-error" : "decks-panel-body__decks-empty"}
-                                    sx={{ fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.textSecondary }}
-                                >
-                                    {decksError ??
-                                        "No decks yet. Tap + to make one, then add cards to it from any card's detail page."}
-                                </Typography>
-                            </Box>
-                        )}
-
-                        {/* The user's decks, wrapping at three per row — the same tile as
-                            every built-in set above, carrying the deck's derived pastel
-                            (deckTileColors: computed from the id, never stored). */}
-                        {/* Scrolls sideways rather than wrapping: this is the one
-                            GROWING list on the panel, and a wrapped second line would
-                            put its spines below the board, standing on nothing. The
-                            AddSpine rides at the end of the row — it is the design's
-                            own "new deck" affordance (`.sp.add`), which is why the
-                            section header no longer carries a + button. */}
-                        <PanelShelf><ShelfRow className="decks-panel-body__decks-list" scrollable>
-                            {authoredDecks.map((deck, index) => (
-                                <Spine
-                                    key={deck.id}
-                                    className="decks-panel-body__deck-spine"
-                                    label={deck.name}
-                                    count={deck.cardCount}
-                                    glyph={collectionGlyph({ kind: "deck", deckId: deck.id })}
-                                    variant={isSheet ? "base" : spineHeight(deck.cardCount)}
-                                    height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
-                                    color={deckTileColors(deck.id).main}
-                                    // Stagger only within the first couple of rows; past
-                                    // that the cascade would run longer than the scroll.
-                                    animationDelay={Math.min(index, 5) * 70}
-                                    onClick={() => onOpenPath(`/flashcards/deck/${deck.id}`)}
-                                />
-                            ))}
-                            <AddSpine
-                                className="decks-panel-body__new-deck-spine"
-                                label="New deck"
-                                height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
-                                onClick={onNewDeck}
-                            />
-                        </ShelfRow></PanelShelf>
-                    </Box>
-                </Collapse>
-
-
-                {/* ── Cards ── the learner's whole sorted library, inline, replacing the
-                    All Cards TILE that used to send them to a page to see the same grid.
-                    Search is client-side over the already-loaded set (the page owns the
-                    filter, via the same filterVocabEntries the collection page uses), so
-                    typing costs no round trip.
-
-                    The caption shows the UNFILTERED total: it names the size of the set,
-                    and a number that shrank as you typed would be reporting the search
-                    rather than the library. */}
-                <Box
-                    className="decks-panel-body__cards-header"
-                    {...(headerDragBind?.() ?? {})}
-                    sx={{ width: "100%", px: 3.5, pt: 2, pb: 1 }}
-                >
-                    <SectionLabel className="decks-panel-body__cards-label">
-                        Cards{cardsTotal > 0 ? ` (${cardsTotal})` : ""}
-                    </SectionLabel>
-                </Box>
-
-                {/* Sized to the 364px card grid below so the input lines up over the
-                    cards, exactly as it does on the collection page. */}
-                <Box className="decks-panel-body__cards-search" sx={{ width: 364, maxWidth: "100%", px: 3.5 }}>
-                    <TextField
-                        className="decks-panel-body__cards-search-input"
-                        fullWidth
-                        size="small"
-                        placeholder="Search your cards..."
-                        value={cardsSearch}
-                        onChange={(e) => setCardsSearch(e.target.value)}
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <Search sx={{ color: COLORS.textSecondary }} />
-                                </InputAdornment>
-                            ),
-                            endAdornment: cardsSearch ? (
-                                <InputAdornment position="end">
-                                    <IconButton
-                                        className="decks-panel-body__cards-search-clear"
-                                        aria-label="Clear search"
-                                        size="small"
-                                        onClick={() => setCardsSearch("")}
-                                    >
-                                        <Clear fontSize="small" />
-                                    </IconButton>
-                                </InputAdornment>
-                            ) : undefined,
-                        }}
-                        sx={{ backgroundColor: COLORS.background, borderRadius: "8px" }}
+                    <LibraryDuo
+                        className="decks-panel-body__library-duo"
+                        entries={collections}
+                        count={tileCount}
+                        onOpenPath={onOpenPath}
+                        headerDragBind={headerDragBind}
                     />
-                </Box>
+                </>)}
 
-                {/* Same picker as the collection page (CollectionSortControl), on the
-                    same 364px column as the search box and the grid. */}
-                <CollectionSortControl
-                    classPrefix="decks-panel-body__cards"
-                    sortKey={cardsSortKey}
-                    onSortKeyChange={setCardsSortKey}
-                    language={language}
-                    goals={goals}
-                    lens={lens}
-                    // Common orderings only: this is the whole library, opened to FIND
-                    // a card, so the per-skill (reading / writing) mastery rows are
-                    // left to the collection pages that are about those bars.
-                    allowPerSkillBars={false}
-                    sx={{ width: 364, maxWidth: "100%", px: 3.5, pt: 1 }}
-                />
+                {showDecks && (<>
+                    {/* ── Challenges ── (docs/STUDY_CHALLENGE.md § 4). Placed immediately
+                        BEFORE the user's own Decks so generated sets sit above authored
+                        ones and the user's decks keep a stable position at the bottom.
 
-                <MiniVocabCardGrid
-                    entries={visibleCards}
-                    // One strip per card, on the panel's own bar (core in the fdp).
-                    lens={lens}
-                    loading={cardsLoading}
-                    error={cardsError}
-                    emptyMessage={
-                        cardsSearch.trim()
-                            ? "No cards match your search."
-                            : "Please go to the Discover tab to select cards you would like to learn"
-                    }
-                    onCardClick={onOpenCard}
-                    containerClassName="decks-panel-body__cards-grid"
-                    classPrefix="decks-panel-body__cards"
-                />
+                        OMITTED ENTIRELY when there is no active challenge deck — an empty
+                        captioned section is noise in a panel whose job is to be scannable.
+
+                        There is NO lock badge; the deck's immutability shows up as the
+                        absence of controls on its own page. */}
+                    {challengeDecks.length > 0 && (
+                        <>
+                            <Box
+                                className="decks-panel-body__challenges-header"
+                                {...(headerDragBind?.() ?? {})}
+                                sx={{ width: "100%", px: 3.5, pt: 2, pb: 1 }}
+                            >
+                                <SectionLabel className="decks-panel-body__challenges-label">Challenges</SectionLabel>
+                            </Box>
+                            <PanelShelf><ShelfRow className="decks-panel-body__challenges-list" scrollable>
+                                {challengeDecks.map((deck, index) => (
+                                    <Spine
+                                        key={deck.id}
+                                        className="decks-panel-body__challenge-spine"
+                                        label={deck.name}
+                                        count={deck.cardCount}
+                                        glyph={collectionGlyph({ kind: "deck", deckId: deck.id })}
+                                        variant={isSheet ? "base" : spineHeight(deck.cardCount)}
+                                        height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
+                                        color={deckTileColors(deck.id).main}
+                                        animationDelay={Math.min(index, 5) * 70}
+                                        onClick={() => onOpenPath(`/flashcards/deck/${deck.id}`)}
+                                    />
+                                ))}
+                            </ShelfRow></PanelShelf>
+                        </>
+                    )}
+                </>)}
+
+                {showDecks && (<>
+                    {/* ── Decks ── the user's own sets. COLLAPSIBLE: the whole caption row
+                        is the toggle (a wide target beats a 24px chevron on a phone), while
+                        the + button keeps its own handler and stops the tap from also
+                        folding the section it is about to add to.
+
+                        The caption row still carries headerDragBind, so a vertical DRAG
+                        started on it resizes the sheet; useDrag's filterTaps is what keeps
+                        the tap-to-toggle working through the same binding. */}
+                    <Box
+                        className="decks-panel-body__decks-header"
+                        {...(headerDragBind?.() ?? {})}
+                        role="button"
+                        aria-expanded={decksOpen}
+                        onClick={toggleDecksOpen}
+                        sx={{
+                            width: "100%", px: 3.5, pt: 2, pb: 1,
+                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                            cursor: "pointer",
+                        }}
+                    >
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                            {/* Rotated rather than swapped for a second icon, so the arrow
+                                turns with the section instead of cutting to a new glyph. */}
+                            <ExpandMoreIcon
+                                className="decks-panel-body__decks-chevron"
+                                sx={{
+                                    fontSize: 20,
+                                    color: COLORS.onSurface,
+                                    transition: "transform 180ms ease",
+                                    transform: decksOpen ? "rotate(0deg)" : "rotate(-90deg)",
+                                }}
+                            />
+                            <SectionLabel className="decks-panel-body__decks-label">
+                                Decks{authoredDecks.length > 0 ? ` (${authoredDecks.length})` : ""}
+                            </SectionLabel>
+                        </Box>
+                    </Box>
+
+                    <Collapse in={decksOpen} timeout={180} sx={{ width: "100%" }} unmountOnExit>
+                        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
+                            {(decksError || (!decksLoading && authoredDecks.length === 0)) && (
+                                <Box className="decks-panel-body__decks-message" sx={{ width: "100%", px: 3.5, pb: 1 }}>
+                                    <Typography
+                                        className={decksError ? "decks-panel-body__decks-error" : "decks-panel-body__decks-empty"}
+                                        sx={{ fontSize: SIZE.body, fontFamily: FONTS.sans, color: COLORS.textSecondary }}
+                                    >
+                                        {decksError ??
+                                            "No decks yet. Tap + to make one, then add cards to it from any card's detail page."}
+                                    </Typography>
+                                </Box>
+                            )}
+
+                            {/* The user's decks, wrapping at three per row — the same tile as
+                                every built-in set above, carrying the deck's derived pastel
+                                (deckTileColors: computed from the id, never stored). */}
+                            {/* Scrolls sideways rather than wrapping: this is the one
+                                GROWING list on the panel, and a wrapped second line would
+                                put its spines below the board, standing on nothing. The
+                                AddSpine rides at the end of the row — it is the design's
+                                own "new deck" affordance (`.sp.add`), which is why the
+                                section header no longer carries a + button. */}
+                            <PanelShelf><ShelfRow className="decks-panel-body__decks-list" scrollable>
+                                {authoredDecks.map((deck, index) => (
+                                    <Spine
+                                        key={deck.id}
+                                        className="decks-panel-body__deck-spine"
+                                        label={deck.name}
+                                        count={deck.cardCount}
+                                        glyph={collectionGlyph({ kind: "deck", deckId: deck.id })}
+                                        variant={isSheet ? "base" : spineHeight(deck.cardCount)}
+                                        height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
+                                        color={deckTileColors(deck.id).main}
+                                        // Stagger only within the first couple of rows; past
+                                        // that the cascade would run longer than the scroll.
+                                        animationDelay={Math.min(index, 5) * 70}
+                                        onClick={() => onOpenPath(`/flashcards/deck/${deck.id}`)}
+                                    />
+                                ))}
+                                <AddSpine
+                                    className="decks-panel-body__new-deck-spine"
+                                    label="New deck"
+                                    height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
+                                    onClick={onNewDeck}
+                                />
+                            </ShelfRow></PanelShelf>
+                        </Box>
+                    </Collapse>
+                </>)}
+
+
+                {showCards && (<>
+                    {/* ── Cards ── the learner's whole sorted library, inline, replacing the
+                        All Cards TILE that used to send them to a page to see the same grid.
+                        Search is client-side over the already-loaded set (the page owns the
+                        filter, via the same filterVocabEntries the collection page uses), so
+                        typing costs no round trip.
+
+                        The caption shows the UNFILTERED total: it names the size of the set,
+                        and a number that shrank as you typed would be reporting the search
+                        rather than the library. */}
+                    <Box
+                        className="decks-panel-body__cards-header"
+                        {...(headerDragBind?.() ?? {})}
+                        sx={{ width: "100%", px: 3.5, pt: 2, pb: 1 }}
+                    >
+                        <SectionLabel className="decks-panel-body__cards-label">
+                            Cards{cardsTotal > 0 ? ` (${cardsTotal})` : ""}
+                        </SectionLabel>
+                    </Box>
+
+                    {/* Sized to the 364px card grid below so the input lines up over the
+                        cards, exactly as it does on the collection page. */}
+                    <Box className="decks-panel-body__cards-search" sx={{ width: 364, maxWidth: "100%", px: 3.5 }}>
+                        <TextField
+                            className="decks-panel-body__cards-search-input"
+                            fullWidth
+                            size="small"
+                            placeholder="Search your cards..."
+                            value={cardsSearch}
+                            onChange={(e) => setCardsSearch(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <Search sx={{ color: COLORS.textSecondary }} />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: cardsSearch ? (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            className="decks-panel-body__cards-search-clear"
+                                            aria-label="Clear search"
+                                            size="small"
+                                            onClick={() => setCardsSearch("")}
+                                        >
+                                            <Clear fontSize="small" />
+                                        </IconButton>
+                                    </InputAdornment>
+                                ) : undefined,
+                            }}
+                            sx={{ backgroundColor: COLORS.background, borderRadius: "8px" }}
+                        />
+                    </Box>
+
+                    {/* Same picker as the collection page (CollectionSortControl), on the
+                        same 364px column as the search box and the grid. */}
+                    <CollectionSortControl
+                        classPrefix="decks-panel-body__cards"
+                        sortKey={cardsSortKey}
+                        onSortKeyChange={setCardsSortKey}
+                        language={language}
+                        goals={goals}
+                        lens={lens}
+                        // Common orderings only: this is the whole library, opened to FIND
+                        // a card, so the per-skill (reading / writing) mastery rows are
+                        // left to the collection pages that are about those bars.
+                        allowPerSkillBars={false}
+                        sx={{ width: 364, maxWidth: "100%", px: 3.5, pt: 1 }}
+                    />
+
+                    <MiniVocabCardGrid
+                        entries={visibleCards}
+                        // One strip per card, on the panel's own bar (core in the fdp).
+                        lens={lens}
+                        loading={cardsLoading}
+                        error={cardsError}
+                        emptyMessage={
+                            cardsSearch.trim()
+                                ? "No cards match your search."
+                                : "Please go to the Discover tab to select cards you would like to learn"
+                        }
+                        onCardClick={onOpenCard}
+                        containerClassName="decks-panel-body__cards-grid"
+                        classPrefix="decks-panel-body__cards"
+                    />
+                </>)}
             </Box>
         </Box>
     );

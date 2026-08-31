@@ -57,6 +57,20 @@ export const InfoSheetContainer = styled(Box)(({ theme }) => ({
     boxShadow: theme.palette.flashcard.sheetShadow,
 }));
 
+// Clipping slot for the sheet's MERGE HEADER (see SheetPanel's writeMergeChrome).
+// It holds a real PageHeader but starts at zero height with `overflow: hidden`, so the
+// header is fully laid out — and therefore measurable — from the first paint while
+// showing nothing. SheetPanel interpolates its height/opacity as the sheet grows into
+// the top of the screen, which is what turns the sheet into a page.
+export const SheetMergeHeaderSlot = styled(Box)({
+    height: 0,
+    opacity: 0,
+    overflow: "hidden",
+    flexShrink: 0,
+    // Off until the header is fully merged in; SheetPanel flips it (see writeMergeChrome).
+    pointerEvents: "none",
+});
+
 // Centered grabber pill at the top of the info sheet.
 export const InfoSheetGrabber = styled(Box)(({ theme }) => ({
     width: 44,

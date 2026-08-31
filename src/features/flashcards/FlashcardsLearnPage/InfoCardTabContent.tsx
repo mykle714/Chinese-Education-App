@@ -13,13 +13,22 @@ import { sortedSenseClusters, hasSynonymsOrRelated } from "../../../utils/defini
 import SynonymsRelatedSection, { EipSectionLabel } from "../SynonymsRelatedSection";
 import { Label } from "../../../components/primitives";
 
-// Empty run-out at the bottom of the examples tab, so the last sentence can be
-// scrolled up off the pane's bottom edge instead of ending flush against it —
-// that edge is exactly where a thumb rests on a phone. The est is the one tab
-// that routinely overflows, so it is the only one that gets this. Rigid
-// (`flexShrink: 0`) in case the pane ever becomes a flex column, and
-// pointer-transparent so it can never eat a tap meant for the sentence above it.
-const EST_SCROLL_SPACER_PX = 96;
+// Empty run-out at the bottom of a tab pane, so its last row can be scrolled up off the
+// pane's bottom edge instead of ending flush against it — that edge is exactly where a
+// thumb rests on a phone. Only tabs that ROUTINELY overflow get one: adding it to a short
+// pane would make it scrollable for no reason. Two qualify — the est always, and the
+// definition tab when it is carrying Synonyms + Related Words (the cdp's mount, see
+// `showSynonymsRelated`), which is what pushes that tab past a screen. Rigid
+// (`flexShrink: 0`) in case the pane ever becomes a flex column, and pointer-transparent
+// so it can never eat a tap meant for the content above it.
+const PANE_SCROLL_SPACER_PX = 96;
+
+const PaneScrollSpacer: React.FC<{ className: string }> = ({ className }) => (
+    <Box
+        className={className}
+        sx={{ height: `${PANE_SCROLL_SPACER_PX}px`, flexShrink: 0, pointerEvents: "none" }}
+    />
+);
 
 /**
  * `.shelfhd` inside an eip tab: what the tab is showing on the left, and a fact about
@@ -203,6 +212,9 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         classPrefix="mobile-demo"
                     />
                     {synonymsSection}
+                    {/* Scroll-past spacer, only when this tab is carrying the extra
+                        section — see PANE_SCROLL_SPACER_PX. */}
+                    {synonymsSection && <PaneScrollSpacer className="mobile-demo-definition-scroll-spacer" />}
                 </Box>
             ) : (
                 // No definition — but an entry can still carry synonyms/related, and on the
@@ -215,6 +227,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         </Typography>
                     </Box>
                     {synonymsSection}
+                    {synonymsSection && <PaneScrollSpacer className="mobile-demo-definition-scroll-spacer" />}
                 </Box>
             );
         }
@@ -247,11 +260,8 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         onSpeakSentence={onSpeakSentence}
                         speakingKey={speakingKey}
                     />
-                    {/* Scroll-past spacer — see EST_SCROLL_SPACER_PX. */}
-                    <Box
-                        className="mobile-demo-examples-scroll-spacer"
-                        sx={{ height: `${EST_SCROLL_SPACER_PX}px`, flexShrink: 0, pointerEvents: "none" }}
-                    />
+                    {/* Scroll-past spacer — see PANE_SCROLL_SPACER_PX. */}
+                    <PaneScrollSpacer className="mobile-demo-examples-scroll-spacer" />
                 </>
             ) : (
                 <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>

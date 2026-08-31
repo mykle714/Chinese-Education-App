@@ -43,8 +43,10 @@ Only Speed Reading uses this today —
 see [SPEED_READING_GAME.md](./SPEED_READING_GAME.md) § Sideways rendering.
 
 #### `surfaceColor` and `surfaceSx` — repainting the ground
-`surfaceColor` is the plain case: one background colour for the whole surface (the two
-card-detail pages pass `COLORS.yellowAccent`).
+`surfaceColor` is the plain case: one background colour for the whole surface. **No page
+passes it today** — the two card-detail pages were the last callers and moved to the
+default `COLORS.background` ground (2026-08-28); the prop stays because it is the cheap
+way to repaint a page that has a reason to.
 
 `surfaceSx` is for the case where repainting the ground also changes what has to be drawn
 ON it. Its only caller is the game surface — `gameSurfaceSx` in

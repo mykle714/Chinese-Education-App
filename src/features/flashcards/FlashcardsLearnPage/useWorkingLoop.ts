@@ -15,41 +15,9 @@ import type {
     MarkType,
 } from "../types";
 import type { FlpForeignTrack } from "../../../../server/contracts/wire";
-
-// Which mark type a flp review produces (docs/MASTERY_REWORK.md): an English-first
-// prompt asks the learner to PRODUCE the foreign word; a foreign-first prompt tests
-// the session's `foreignTrack` — RECOGNITION of the meaning when the phonetic aid is
-// there, READING when it isn't (zh with "Show pinyin" off). The session's track is
-// decided once, by the page (see UseWorkingLoopArgs.foreignTrack).
-const markTypeForSideOne = (
-    sideOne: SideOneLanguage,
-    foreignTrack: FlpForeignTrack
-): MarkType => (sideOne === "en" ? "production" : foreignTrack);
-
-// Choose which language shows on a specific card's Side 1, honoring the server's
-// per-type cooldown steering (docs/MASTERY_REWORK.md § Per-type cooldown). The
-// card's `readyMarkTypes` lists the flp mark types currently off cooldown — stamped
-// by the server for THIS session's track pair, which is why the same `foreignTrack`
-// has to be sent on the fetch. We map production ↔ 'en' (English-first) and the
-// foreign track ↔ 'zh' (foreign-first), mirroring markTypeForSideOne:
-//   - only production ready    → English-first
-//   - only the foreign track   → foreign-first
-//   - both ready (or the field is absent, e.g. an older payload) → honor
-//     `preferEnglishFirst`, otherwise a coin flip (the historical behavior).
-// Side 2 always shows both.
-const sideOneForCard = (
-    card: VocabEntry | null | undefined,
-    foreignTrack: FlpForeignTrack,
-    preferEnglishFirst = false
-): SideOneLanguage => {
-    const ready = card?.readyMarkTypes;
-    const canProduction = !ready || ready.includes("production");
-    const canForeign = !ready || ready.includes(foreignTrack);
-    if (canProduction && !canForeign) return "en";
-    if (canForeign && !canProduction) return "zh";
-    if (preferEnglishFirst) return "en";
-    return Math.random() < 0.5 ? "en" : "zh";
-};
+// Face steering — which language Side 1 shows, and which mark type that face writes.
+// Pure util so the cooldown gate + weaker-track bias can be tested without the hook.
+import { markTypeForSideOne, sideOneForCard } from "../../../utils/flpFaceSteering";
 
 // Minimal contract the working loop needs from the card-drag layer. Passed as a
 // ref so this hook can read the latest flip value (for undo snapshots) and drive
@@ -258,7 +226,7 @@ export function useWorkingLoop({
                 // gives a consistent initial view. Per-type cooldown still wins: if
                 // the first card's production track is cooling, sideOneForCard falls
                 // back to the recognition face. Subsequent fetches (category swaps
-                // without unmount) go back to the steered coin flip.
+                // without unmount) go back to the steered, weakness-biased flip.
                 setCurrentSideOneLanguage(
                     sideOneForCard(cards[0], foreignTrack, isFirstWorkingLoopFetchRef.current)
                 );

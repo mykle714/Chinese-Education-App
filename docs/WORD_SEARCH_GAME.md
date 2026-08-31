@@ -641,7 +641,7 @@ from the design's `.wsg span` / `.hit` / `.now` (artboard 13):
 | reviewing | `COLORS.grn`, ring swapped to `COLORS.grnA` at 1.5px | the found word whose gloss popup is open |
 | hint reveal | `COLORS.org` | "trace THESE" — the same meaning as `.now` |
 | miss | `COLORS.red` | wrong trace; transient, and outranks whatever is under it |
-| bonus | `COLORS.blu` | a real word that wasn't a target |
+| bonus | `COLORS.blu` | a real det word or character that wasn't a target — a traced multi-character bonus word (which also shakes), a traced single-character headword, or the tapped character of an unfound target showing its contextual gloss. Outranks the miss fill. |
 
 #### The board has no ground (2026-08-24)
 
@@ -731,18 +731,24 @@ tap-cell-by-cell building** — a lone tap is simply a one-cell path.
   - **Bonus word, 2+ characters (blue, no auto-clear).** The path's characters
     (forward or reversed) match a `bonusWords` entry — a real det headword
     built entirely from characters on this grid, but not one of the 9
-    targets. The same shake plays once, the selection turns blue
-    (`COLORS.blueAccent`) instead of red, and the word's definition appears in
+    targets. The same shake plays once, the traced cells turn blue
+    (`COLORS.blu`) instead of red, and the word's definition appears in
     the review-popup style (below). Unlike a true miss this has **no timer** —
     it stays up until the player dismisses it by tapping elsewhere.
-  - **Bonus word, 1 character (no highlight at all, no shake, no auto-clear).**
+
+    > Until 2026-08-29 the blue never actually appeared: the cell-fill chain in
+    > `WordSearchGrid.tsx` tested `isInvalidCell` **first**, and a multi-character
+    > bonus satisfies that predicate too (it is the shake condition), so red won
+    > every time. The fill now tests `isBonusCell` first and `isInvalidCell`
+    > second; `isInvalidCell` still governs the shake alone.
+  - **Bonus word, 1 character (blue, no shake, no auto-clear).**
     A lone tap is just a one-cell query, so if that single character is itself
-    a det headword, it resolves here: no selection shape is drawn at all — not
-    even the normal yellow in-progress color (`selectionColor` is `null` in
-    this case in `WordSearchGrid.tsx`) — no shake, and only the definition
-    popup appears, again with no timer until dismissed. A single character is
-    a much smaller "find" than a whole word, so it skips the miss-flash
-    treatment entirely.
+    a det headword, it resolves here: the tapped cell turns the same blue with
+    **no shake**, and its definition popup appears with no timer until
+    dismissed. A single character is a much smaller "find" than a whole word,
+    so it skips the shake — but not the color, because blue is what "you
+    uncovered a real meaning that isn't a target" means on this board and one
+    character means exactly that.
   - **Dismissing a bonus match:** any new `onPointerDown` — starting a fresh
     drag, tapping a found word (which opens that word's own popup instead),
     or a background tap (`WordSearchPage`'s `handleBackgroundPointerDown` →
@@ -844,8 +850,12 @@ helps the player *learn* the word by seeing each character's contextual sense
   target character the contextual sense wins over its generic standalone gloss.
 - Renders through the **same** `Popper`/`activePopup` path as the found-word and
   bonus popups (`charPopup` → `{ entryKey: char, pinyin, definition }`), anchored
-  over the single cell via `anchorRectForCells`. It leaves no highlight and has no
-  auto-dismiss; any new `onPointerDown`/`clearSelection` closes it.
+  over the single cell via `anchorRectForCells`. The tapped cell **stays lit and
+  turns blue** (`charPopupCells` → `isBonusCell` in the fill chain), the same blue
+  a bonus-word match paints — the two mean the same thing to the player. Before
+  2026-08-29 `submit` cleared the path here, which left the popup floating with
+  nothing on the board pointing at it. There is no auto-dismiss; any new
+  `onPointerDown`/`clearSelection` closes it and clears the highlight.
 - **Filler** cells carry no `definition`, so they fall through to the existing
   single-character bonus/miss behavior. **Found** words are intercepted earlier in
   `onPointerDown` (whole-word review popup), so the per-character popup applies to
@@ -926,43 +936,57 @@ hint nudges recall without handing over the answer.
   shove the grid down. **Blank by default** — nothing renders here until the
   player's first hint spend. Once a hint has picked a word, the row shows a
   mask built by `buildMask`: **one "island" per Chinese
-  character** in the word (space-separated, one per `pinyin` syllable), but
-  **only for characters the player has paid to see** — everything is bought
-  one press at a time along a **two-stage ladder**:
-  1. **Letter counts, one character per press, left to right.** A character
-     whose length hasn't been bought yet is **not drawn at all** — no
-     placeholder — so the mask never leaks how many characters are still to
-     come; the word's **character count is itself learned one press at a
-     time**. The Nth press appends the Nth island as **one
-     `HINT_LETTER_BLANK` ("_") per hidden letter** — classic hangman spacing
-     showing that syllable's full length. So an N-character word spends its
-     first N presses purely on lengths.
-  2. **Phonetic units, only after every island's length is showing.** The
-     remaining presses fill blanks in, and each reveal visibly consumes the
-     blanks it fills. Units are distributed **round-robin across characters**
-     (`distributeRevealTiers`), not filled one island at a time: every
-     character's 1st unit is given out before any character's 2nd, then every
-     2nd before any 3rd, wrapping until the word is fully spelled out — a
-     character with fewer units than the current tier is simply skipped.
+  character** in the word (space-separated, one per `pinyin` syllable), bought
+  along a **two-stage ladder**:
+  0. **The skeleton, whole, for one press.** The first press draws **every**
+     island at once as **one `HINT_LETTER_BLANK` ("_") per hidden letter** —
+     classic hangman spacing for the entire word. A single charge therefore
+     buys the word's character count *and* every character's letter count.
+     This is scaffolding, not an answer: it says where to put your attention
+     and fixes the mask's width, while the reveals that actually cost the
+     puzzle something are the SOUNDS below.
+  1. **Phonetic units, one per press thereafter.** Each fills blanks in, and
+     each reveal visibly consumes the blanks it fills. Units are distributed
+     **round-robin across characters** (`distributeRevealTiers`), not filled
+     one island at a time: every character's 1st unit is given out before any
+     character's 2nd, then every 2nd before any 3rd, wrapping until the word is
+     fully spelled out — a character with fewer units than the current tier is
+     simply skipped.
 
   E.g. a 2-char word like 变化 (biàn huà, units `b·i·àn` and `h·u·à`) goes
-  `____` → `____ ___` → `b___ ___` → `b___ h__` → `bi__ h__` →
-  `bi__ hu_` → `biàn hu_` → `biàn huà`. The word's total reveal steps are
-  therefore `characters + units` (`countPinyinRevealSteps`, `pinyinUnits.ts`),
-  which is what `totalRevealUnits` in `WordSearchPage.tsx` gates on before
-  moving to the location reveal.
+  `____ ___` → `b___ ___` → `b___ h__` → `bi__ h__` → `bi__ hu_` →
+  `biàn hu_` → `biàn huà`. The word's total reveal steps are therefore
+  `1 + units` (`countPinyinRevealSteps`, `pinyinUnits.ts`), which is what
+  `totalRevealUnits` in `WordSearchPage.tsx` gates on before moving to the
+  location reveal — the mask saturates on exactly that press, so the next one
+  buys the location.
 
   Tone diacritics ride on their letter, so `ǎ` is one blank
   (`buildMask`/`letterCount` normalize to NFC before counting).
-  (History: the hidden portion was 3 fixed underscores, then a single
-  count-free `HINT_REMAINDER_MARK` dash, then a blank-per-letter shown for
-  every character from the first press; the dash hid the length so well that
-  a mask gave the player almost nothing to anchor on, but handing every
-  length over at once gave away the whole word's shape for one unit — hence
-  the staged ladder above, where an unbought character is simply absent.
-  `HINT_REMAINDER_MARK` is no longer used on the pinyin board at all; it
-  lives on as the No-Pinyin board's `COMPONENT_BLANK`, §5a-ii, where there
-  is no letter count to show.)
+
+  **History — this rung has been re-cut four times, always around the same
+  question: how much of the word's SHAPE one charge buys.** (a) three fixed
+  underscores; (b) a single count-free `HINT_REMAINDER_MARK` dash per island,
+  which hid the length so completely the mask gave nothing to anchor on;
+  (c) the whole skeleton from the first press; (d) one character's letter count
+  per press with unbought characters **not drawn at all** — which fixed (c)'s
+  "whole shape for one unit" complaint but created the opposite one, since the
+  first press on a two-character word printed `____`, selling the character
+  count and the first syllable's length together; and briefly (e) a dedicated
+  count-only rung (`— —`) ahead of (d)'s per-character lengths. **Settled
+  2026-08-29 on (c)**: staging the skeleton meant spending three or four
+  charges before the mask said a single letter, which read as a tax rather than
+  a hint. `HINT_REMAINDER_MARK` is consequently unused on the pinyin board and
+  lives on as the No-Pinyin board's `COMPONENT_BLANK` (§5a-ii), where there is
+  no letter count to show.
+
+  > ⚠️ `hintRevealCount` was **re-priced** by this change: the same stored
+  > number now sits further along a shorter ladder. A board resumed from a
+  > snapshot written before 2026-08-29 shows *more* of its hinted word than it
+  > did when parked, and a counter above the new cap (`1 + units`) simply reads
+  > as fully spelled out, so the next press buys the location reveal. Harmless
+  > and self-correcting; no migration.
+
 - **Matching gloss treatment (reinstated 2026-08-28).** The hinted word's gloss in the
   top list is tinted `HINT_ACCENT_COLOR`, pairing it with the mask (§3). This was dropped
   when the list was chips — a solid ink pill left no quieter state for "hinted" to occupy
@@ -972,9 +996,9 @@ hint nudges recall without handing over the answer.
 - **Spending (`useHint` / `canUseHint` in `WordSearchPage.tsx`):**
   1. If a word is already being hinted (`hintEntryKey`) and it's still unfound
      with reveal steps left, drain `HINT_COST` (1) and buy **one more step of
-     that same word** (`hintRevealCount++` — the next character's letter count,
-     or once all lengths are showing, the next pinyin unit in round-robin
-     order) — the mask grows in place.
+     that same word** (`hintRevealCount++` — the next pinyin unit in round-robin
+     order, the skeleton having been bought by the first press) — the mask grows
+     in place.
   2. If that word is still unfound but its pinyin is **already fully spelled
      out** (no units left to reveal) and its location **isn't yet
      revealed**, drain `HINT_COST` and lock onto it: `hintLocationRevealed =
@@ -990,8 +1014,9 @@ hint nudges recall without handing over the answer.
      and hint stays locked on this word — it never advances to another one —
      until the word is actually found.
   4. Otherwise (no active hint yet, or the active word was just found) drain
-     `HINT_COST`, pick a new random still-unfound word, and reveal its first
-     unit.
+     `HINT_COST`, pick a new random still-unfound word, and set
+     `hintRevealCount = 1` — its **stage-0 rung**, i.e. the whole skeleton
+     (pinyin board) or its first component reveal (No Pinyin board).
   `canUseHint()` — which gates the header hint button — mirrors this: it's
   true whenever case 3 applies (free, no unit check) or whenever
   `hintUnits >= HINT_COST` and some word is still unfound (cases 1/2/4).

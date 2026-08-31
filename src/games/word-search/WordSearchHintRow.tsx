@@ -12,8 +12,8 @@ interface WordSearchHintRowProps {
      *  (or the last hinted word was just found). */
     word: PlacedWord | null;
     /** How many hint presses have been spent on `word` so far. On the pinyin
-     *  board the first N presses (N = character count) buy each character's
-     *  LETTER COUNT in turn, and everything after that buys phonetic units
+     *  board press 1 buys the word's whole SKELETON — every character's letter
+     *  count at once — and every press after that buys one phonetic unit,
      *  distributed round-robin across characters (see `buildMask` /
      *  `distributeRevealTiers` below). On the components board it is a plain
      *  count of revealed component glyphs (`distributeComponentReveals` in
@@ -61,34 +61,43 @@ function letterCount(text: string): number {
 }
 
 /**
- * Build the mask: one "island" per Chinese character (so the island count
- * openly gives away the word's character count — that's intentional), revealed
- * in TWO stages as `revealCount` grows (see docs/WORD_SEARCH_GAME.md §5a):
+ * Build the mask: one "island" per Chinese character, revealed in TWO stages as
+ * `revealCount` grows (see docs/WORD_SEARCH_GAME.md §5a):
  *
- *   Stage 1 — LETTER COUNTS, one character per press, left to right. A
- *   character whose length hasn't been bought yet is NOT DRAWN AT ALL — not
- *   even a placeholder — so the mask doesn't leak how many characters are
- *   still to come; each press appends the next island as one
- *   `HINT_LETTER_BLANK` ("_") per hidden letter, i.e. classic hangman spacing
- *   showing that syllable's full length. (The word's character count is
- *   therefore only learned by paying for it, one character at a time.)
+ *   Stage 0 — THE SKELETON, bought whole by the first press. Every island
+ *   appears at once as one `HINT_LETTER_BLANK` ("_") per hidden letter, so a
+ *   single charge buys the word's character count AND every character's letter
+ *   count — classic hangman spacing for the entire word.
  *
- *   Stage 2 — PHONETIC UNITS, only after every island's length is showing.
- *   The leftover presses (`revealCount - syllableCount`) are distributed
+ *   Stage 1 — PHONETIC UNITS, one per press thereafter. They are distributed
  *   round-robin across islands via `distributeRevealTiers` (see above) rather
- *   than filling one island completely before the next, and each reveal
- *   visibly eats the blanks it fills.
+ *   than filling one island completely before the next, and each reveal visibly
+ *   eats the blanks it fills.
  *
- * e.g. 变化 (biàn huà): `____` → `____ ___` → `b___ ___` →
- * `b___ h__` → `bi__ h__` → … → `biàn huà`.
+ * e.g. 变化 (biàn huà): `____ ___` → `b___ ___` → `b___ h__` → `bi__ h__` →
+ * `bi__ hu_` → `biàn hu_` → `biàn huà`.
+ *
+ * WHY THE SKELETON IS ONE PRESS (2026-08-29). The ladder has been re-cut three
+ * times around one question: how much of the word's SHAPE a single charge buys.
+ * It has been (a) the whole skeleton, (b) one character's letter count per
+ * press with unbought characters not drawn at all — which meant the first press
+ * on a two-character word printed `____`, selling the character count and the
+ * first syllable's length together — and (c) a dedicated count-only rung
+ * (`— —`) ahead of the per-character lengths. This is (a) again, chosen
+ * deliberately: the skeleton is scaffolding, not an answer. It tells the player
+ * where to put their attention and keeps the mask's width fixed from the first
+ * press, and the reveals that actually cost the puzzle something are the
+ * SOUNDS. Spending three or four charges before the mask says a single letter
+ * made the early rungs feel like a tax. `HINT_REMAINDER_MARK` is consequently
+ * unused on the pinyin board again, and lives on as the No-Pinyin board's
+ * `COMPONENT_BLANK` (§5a-ii), where there is no letter count to show.
  */
 function buildMask(syllableUnits: string[][], revealCount: number): string {
-    // Stage 1 consumes one press per character before any phonetic unit is sold.
-    const lengthsShown = Math.min(revealCount, syllableUnits.length);
-    const unitReveals = Math.max(0, revealCount - syllableUnits.length);
-    const revealedPerSyllable = distributeRevealTiers(syllableUnits, unitReveals);
+    // Nothing is drawn until the first press — the row is blank at rest.
+    if (revealCount <= 0) return "";
+    // Press 1 is the skeleton, so only the presses AFTER it buy phonetic units.
+    const revealedPerSyllable = distributeRevealTiers(syllableUnits, revealCount - 1);
     return syllableUnits
-        .slice(0, lengthsShown)
         .map((units, i) => {
             const revealed = revealedPerSyllable[i];
             if (revealed >= units.length) return units.join("");
@@ -107,10 +116,8 @@ function buildMask(syllableUnits: string[][], revealCount: number): string {
  *
  * BLANK by default — nothing is shown until the player spends a hint. Pressing
  * the hint button (`WordSearchPage.tsx`'s `useHint`) picks a random still-unfound
- * word and then walks the two-stage ladder in `buildMask` above: first one
- * press per character to buy that character's LETTER COUNT (an unbought
- * character isn't drawn at all, so even the word's character count is paid
- * for one character at a time; a bought one appears as one
+ * word and then walks the two-stage ladder in `buildMask` above: the first
+ * press buys the word's whole SKELETON (every character's island at once, one
  * `HINT_LETTER_BLANK` "_" per hidden letter), then one press per **phonetic
  * unit** (initial / medial
  * glide / final — see `pinyinUnits.ts`), hangman-style. Phonetic units are

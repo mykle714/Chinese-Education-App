@@ -8,8 +8,15 @@ import { CARD_NOTE_MAX_LENGTH } from "../../../types";
 import type { VocabEntry } from "../types";
 
 /**
+ * Right-hand berth reserved for the `•••` card-ops dot (`CardOpsRail`: `top/right: 11`,
+ * a 30px puck). The note strip stops here so the two never overlap — this is the "spans
+ * the area to the left of the triple dot menu" rule, as one number.
+ */
+const CARD_OPS_DOT_GUTTER = 49;
+
+/**
  * `CardNote` — the learner's own note about ONE card (vet.note, migration 155), pinned to
- * the BOTTOM EDGE of the card's answer face.
+ * the TOP EDGE of the card's answer face, in the band left of the `•••` card-ops dot.
  *
  * ── Why it lives on the answer face only ──────────────────────────────────────
  * A note is the learner's private commentary on the ANSWER ("my landlord says this one",
@@ -18,12 +25,20 @@ import type { VocabEntry } from "../types";
  * component is mounted from `CardFace`'s side 2 and nowhere else — but the rule is the
  * reason the component exists as a slot rather than as part of the text blocks.
  *
- * ── Why the bottom EDGE and not a text block ──────────────────────────────────
+ * ── Why the top EDGE and not a text block ─────────────────────────────────────
  * The two text blocks (foreign / english) are MOVABLE — the fie can drag, scale and rotate
  * them anywhere on the card (docs/CARD_ICON_LAYOUT.md). The note is deliberately NOT part
- * of that system: it is chrome, not card design, so it keeps a fixed berth along the bottom
+ * of that system: it is chrome, not card design, so it keeps a fixed berth along one edge
  * where it can never be dragged over the word it annotates. It renders in `CardFaceSide`'s
  * outer box (like `topRail`) so it paints above the icon layer.
+ *
+ * It sits along the TOP edge rather than the bottom because the card's own content grows
+ * DOWNWARD: the english block (and its definition, which can run several lines) is
+ * centred-to-low on the face, so a bottom strip collided with a long definition exactly
+ * when the note was also long — the two things most worth reading landed on top of each
+ * other. The top band is the one strip of the face nothing else claims. It stops short of
+ * the `•••` (`CARD_OPS_DOT_GUTTER`) so the note and the card-ops dot share the edge instead
+ * of overlapping.
  *
  * ── Read mode is INERT ────────────────────────────────────────────────────────
  * The displayed note is `pointerEvents: none`. It is a label sitting on the card, not a
@@ -32,7 +47,8 @@ import type { VocabEntry } from "../types";
  * there. The learner never has to aim around their own note.
  *
  * ── Edit mode is the exception ────────────────────────────────────────────────
- * Editing is INLINE (no dialog): the same strip becomes a textarea in place, so the learner
+ * Editing is INLINE (no dialog): the same strip becomes a textarea in place — keeping the
+ * leading sticky-note icon so it reads as the same element gaining a caret — and the learner
  * sees the note in its real position, at its real width, while typing it. That, and only
  * that, puts an interactive surface on top of the card's flip/drag target — which costs
  * two guards, both of them scoped to the open editor:
@@ -104,8 +120,9 @@ export const CardNote: React.FC<CardNoteProps> = ({ entry, editing = false, onSa
                 sx={{
                     position: "absolute",
                     left: 10,
-                    right: 10,
-                    bottom: 10,
+                    // Stops short of the `•••`; the note owns the rest of the top edge.
+                    right: CARD_OPS_DOT_GUTTER,
+                    top: 10,
                     zIndex: 2,
                     // COMPLETELY INERT in read mode. The note is a label, not a control:
                     // every gesture that starts on it — a tap to flip, a swipe to mark —
@@ -143,8 +160,8 @@ export const CardNote: React.FC<CardNoteProps> = ({ entry, editing = false, onSa
                         color: COLORS.onSurface,
                         // A note can run to CARD_NOTE_MAX_LENGTH, which is taller than the
                         // berth reserved here. Clamp to three lines rather than growing the
-                        // strip up over the definition — the full text is always reachable
-                        // by opening the editor.
+                        // strip down over the word and its definition — the full text is
+                        // always reachable by opening the editor.
                         display: "-webkit-box",
                         WebkitLineClamp: 3,
                         WebkitBoxOrient: "vertical",
@@ -166,6 +183,29 @@ export const CardNote: React.FC<CardNoteProps> = ({ entry, editing = false, onSa
         onSave?.(trimmed === "" ? null : trimmed);
     };
 
+    // ENTER COMMITS. On a phone the only obvious "I'm done" affordance is the keyboard's own
+    // confirm key, so it saves rather than inserting a newline — `enterKeyHint="done"` below
+    // labels it accordingly. A note is a one-line aside, not prose, so giving up the newline
+    // costs nothing; Shift+Enter still inserts one for the desktop learner who wants two lines.
+    const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            commit();
+        }
+    };
+
+    // Same rule, second door. Android IMEs frequently report composing keystrokes as
+    // `keyCode 229`/`key "Unidentified"`, so the keydown above never sees the Enter — but the
+    // resulting input event is still typed `insertLineBreak`. Catching it here is what makes
+    // the confirm key work on those keyboards.
+    const onBeforeInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
+        const inputType = (e.nativeEvent as InputEvent).inputType;
+        if (inputType === "insertLineBreak" || inputType === "insertParagraph") {
+            e.preventDefault();
+            commit();
+        }
+    };
+
     return (
         <Box
             className={className ? `card-note card-note--editing ${className}` : "card-note card-note--editing"}
@@ -177,8 +217,10 @@ export const CardNote: React.FC<CardNoteProps> = ({ entry, editing = false, onSa
             sx={{
                 position: "absolute",
                 left: 10,
-                right: 10,
-                bottom: 10,
+                // Same berth as read mode: the editor must occupy the strip the note will
+                // occupy, or the learner types it at a width it is never displayed at.
+                right: CARD_OPS_DOT_GUTTER,
+                top: 10,
                 zIndex: 5,
                 borderRadius: "10px",
                 backgroundColor: "rgba(255,255,255,0.97)",
@@ -188,38 +230,60 @@ export const CardNote: React.FC<CardNoteProps> = ({ entry, editing = false, onSa
                 gap: "6px",
             }}
         >
-            <Box
-                component="textarea"
-                ref={inputRef}
-                className="card-note__input"
-                aria-label="Card note"
-                placeholder="Add a note about this card…"
-                value={draft}
-                // Hard cap at the shared constant. maxLength stops the keystroke, so the
-                // learner never types text the server would silently truncate.
-                maxLength={CARD_NOTE_MAX_LENGTH}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDraft(e.target.value)}
-                sx={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    resize: "none",
-                    border: "none",
-                    outline: "none",
-                    backgroundColor: "transparent",
-                    fontFamily: FC_FONT,
-                    fontSize: SIZE.caption,
-                    lineHeight: LEADING.normal,
-                    color: COLORS.onSurface,
-                    // Text is app-wide user-select:none (CLAUDE.md "Touch & Scroll"); an
-                    // input the learner is typing into is an explicit exception, or they
-                    // cannot place a caret or select what they wrote.
-                    userSelect: "text",
-                    WebkitUserSelect: "text",
-                    minHeight: "3.4em",
-                    maxHeight: "5.2em",
-                    overflowY: "auto",
-                }}
-            />
+            {/* Same leading icon as read mode, at the same offset — the strip must read as
+                the SAME element gaining a caret, not as a different panel appearing over the
+                card. Aligned to the first text line and inert, so a press on it goes to the
+                textarea rather than stealing focus away from it. */}
+            <Box sx={{ display: "flex", alignItems: "flex-start", gap: "6px" }}>
+                <Box
+                    className="card-note__icon"
+                    // Height of one line of the textarea's text, so the icon sits on the
+                    // first line rather than on the box's vertical center.
+                    sx={{ flexShrink: 0, display: "flex", alignItems: "center", height: "1.35em", pointerEvents: "none" }}
+                >
+                    <Icon name="sticky_note_2" size={14} color={COLORS.textSecondary} />
+                </Box>
+                <Box
+                    component="textarea"
+                    ref={inputRef}
+                    className="card-note__input"
+                    aria-label="Card note"
+                    placeholder="Add a note about this card…"
+                    value={draft}
+                    // Hard cap at the shared constant. maxLength stops the keystroke, so the
+                    // learner never types text the server would silently truncate.
+                    maxLength={CARD_NOTE_MAX_LENGTH}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDraft(e.target.value)}
+                    onKeyDown={onKeyDown}
+                    onBeforeInput={onBeforeInput}
+                    // Relabels the phone keyboard's confirm key from "return" to "Done", so the
+                    // key that now saves the note looks like the key that saves the note.
+                    enterKeyHint="done"
+                    sx={{
+                        // Flex child next to the icon: grow into the remaining width, and
+                        // minWidth:0 so long unbroken text cannot push the box wider.
+                        flex: 1,
+                        minWidth: 0,
+                        boxSizing: "border-box",
+                        resize: "none",
+                        border: "none",
+                        outline: "none",
+                        backgroundColor: "transparent",
+                        fontFamily: FC_FONT,
+                        fontSize: SIZE.caption,
+                        lineHeight: LEADING.normal,
+                        color: COLORS.onSurface,
+                        // Text is app-wide user-select:none (CLAUDE.md "Touch & Scroll"); an
+                        // input the learner is typing into is an explicit exception, or they
+                        // cannot place a caret or select what they wrote.
+                        userSelect: "text",
+                        WebkitUserSelect: "text",
+                        minHeight: "3.4em",
+                        maxHeight: "5.2em",
+                        overflowY: "auto",
+                    }}
+                />
+            </Box>
             <Box sx={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 <Box
                     component="span"

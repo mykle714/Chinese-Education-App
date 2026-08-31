@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 // localStorage key for the user's narration preferences. Single JSON blob so
 // adding new knobs later doesn't require new keys.
@@ -121,29 +121,86 @@ function loadSettings(): TTSSettings {
 }
 
 /**
- * useTTSSettings — persists the unified narration preference in localStorage.
+ * ── The store ───────────────────────────────────────────────────────────────
+ *
+ * ONE module-level value, not per-hook state. This matters: `useTTS` (and through
+ * it `useTTSSettings`) is called by ~13 components, and several of them are on
+ * screen at the same time — the flp renders `AudioModeChip` in its header AND
+ * reads `autoplay` in its card-flip narration effect, from two different
+ * instances of the hook.
+ *
+ * While each instance owned its own `useState`, those two copies DIVERGED the
+ * moment the chip was tapped: the chip wrote 'off' to its own state and to
+ * localStorage, but the page's instance never heard about it and kept narrating
+ * (and kept lighting the speaker spinner) with a stale `autoplay: true` until the
+ * page remounted. A setting with one on-screen control has to be one value.
+ *
+ * `subscribe`/`getSnapshot` back a `useSyncExternalStore`, so every instance
+ * re-renders off the same object identity. The `storage` event keeps OTHER tabs
+ * in step too — it does not fire in the tab that wrote, which is exactly why the
+ * writer publishes to its own listeners directly.
+ */
+let currentSettings: TTSSettings | null = null;
+const listeners = new Set<() => void>();
+
+/** Lazily read localStorage once, then serve the in-memory copy forever. */
+function getSnapshot(): TTSSettings {
+    if (currentSettings === null) currentSettings = loadSettings();
+    return currentSettings;
+}
+
+/** Server render / prerender has no localStorage — hand back the defaults. */
+function getServerSnapshot(): TTSSettings {
+    return DEFAULT_SETTINGS;
+}
+
+function subscribe(listener: () => void): () => void {
+    listeners.add(listener);
+    return () => {
+        listeners.delete(listener);
+    };
+}
+
+/** Replace the store value, persist it, and wake every mounted instance. */
+function setSettings(next: TTSSettings): void {
+    currentSettings = next;
+    try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+        // Storage full or disabled — the setting still works in-memory.
+    }
+    listeners.forEach(l => l());
+}
+
+// Another tab changed the setting: adopt it. Re-parsed through loadSettings so a
+// foreign write gets the same validation/migration as our own.
+if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (e) => {
+        if (e.key !== null && e.key !== STORAGE_KEY) return;
+        currentSettings = loadSettings();
+        listeners.forEach(l => l());
+    });
+}
+
+/**
+ * useTTSSettings — reads/writes the app-wide narration preference.
  *
  * Exposes the stored two-field model AND the 3-state `mode` the settings UI
  * shows. Two fields internally so that turning audio off and back on restores
  * the route the user picked; one control on screen so there is a single answer
  * to "what does audio do".
  *
+ * Every caller shares ONE value (see the store note above), so the header chip,
+ * the /settings picker and the narration effects can never disagree.
+ *
  * Future: migrate to a server-backed user preferences column when we want
- * cross-device sync. The shape can stay the same.
+ * cross-device sync. The shape — and the store — can stay the same.
  */
 export function useTTSSettings() {
-    const [settings, setSettings] = useState<TTSSettings>(loadSettings);
-
-    useEffect(() => {
-        try {
-            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-        } catch {
-            // Storage full or disabled — silent, settings still work in-memory.
-        }
-    }, [settings]);
+    const settings = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
     const update = useCallback((patch: Partial<TTSSettings>) => {
-        setSettings(prev => ({ ...prev, ...patch }));
+        setSettings({ ...getSnapshot(), ...patch });
     }, []);
 
     // The 3-state projection the UI binds to.
@@ -152,7 +209,8 @@ export function useTTSSettings() {
     // Selecting 'off' preserves `route` so the previous choice returns when the
     // user switches back on; selecting a route implies autoplay on.
     const setMode = useCallback((next: AudioMode) => {
-        setSettings(prev => next === 'off'
+        const prev = getSnapshot();
+        setSettings(next === 'off'
             ? { ...prev, autoplay: false }
             : { autoplay: true, route: next });
     }, []);
@@ -161,13 +219,12 @@ export function useTTSSettings() {
     // which has room for a single control but must reach all three states — so the
     // full picker on /settings and the chip stay the same setting, not two.
     const cycleMode = useCallback(() => {
-        setSettings((prev) => {
-            const current: AudioMode = prev.autoplay ? prev.route : 'off';
-            const next = AUDIO_MODE_ORDER[(AUDIO_MODE_ORDER.indexOf(current) + 1) % AUDIO_MODE_ORDER.length];
-            return next === 'off'
-                ? { ...prev, autoplay: false }
-                : { autoplay: true, route: next };
-        });
+        const prev = getSnapshot();
+        const current: AudioMode = prev.autoplay ? prev.route : 'off';
+        const next = AUDIO_MODE_ORDER[(AUDIO_MODE_ORDER.indexOf(current) + 1) % AUDIO_MODE_ORDER.length];
+        setSettings(next === 'off'
+            ? { ...prev, autoplay: false }
+            : { autoplay: true, route: next });
     }, []);
 
     return { settings, update, mode, setMode, cycleMode };

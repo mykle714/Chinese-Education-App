@@ -298,10 +298,10 @@ deck would make the deck itself the answer key.
 | `src/games/GamesCollectionSelector.tsx` | The hub-header "Playing with …" pill + menu (see [GAMES_FEATURE.md](./GAMES_FEATURE.md)) |
 | `src/features/flashcards/CollectionViewPage.tsx` | The generalized page (all three collection kinds) |
 | `src/features/flashcards/MasteredRedirect.tsx` | `/flashcards/mastered` → `/flashcards/collection/mastered` |
-| `src/features/flashcards/FlashcardsDecksPage.tsx` | `/decks` — the study buttons (Review / Challenge / Study Mix / the two Center buttons), the Sets & Cards pill and the modal sheet's mounting. **Lens `core`.** |
+| `src/features/flashcards/FlashcardsDecksPage.tsx` | `/decks` — the study buttons (Review / Challenge / Study Mix / the two Center buttons), the **two** sheet pills (Cards / Decks) and the modal sheet's mounting. **Lens `core`.** |
 | `src/features/flashcards/MasteryCenterPage.tsx` | `/flashcards/reading` + `/flashcards/writing` — the same panel as a **page**, lens `reading` / `writing` |
 | `src/features/flashcards/useDecksPanel.ts` | **All of the panel's data, for one lens** — the count hooks, the deck fetch, the card-library fetch, the search/sort state and the tile figures. Shared verbatim by the fdp and both Centers. |
-| `src/features/flashcards/DecksPanelBody.tsx` | Body of the panel (`variant: "sheet" \| "page"`): the library duo, the Challenges / Decks shelf rows and the inline Cards grid (`LibraryDuo`, `ShelfRow`, `SectionLabel`) |
+| `src/features/flashcards/DecksPanelBody.tsx` | Body of the panel (`variant: "sheet" \| "page"`, `section: "all" \| "cards" \| "decks"`): the library duo, the Challenges / Decks shelf rows and the inline Cards grid (`LibraryDuo`, `ShelfRow`, `SectionLabel`) |
 | `src/features/flashcards/LibraryDuo.tsx` | The panel's two library constants (`.duo`) — Learn Now + Mastered, with their figures. The one place the sheet is not spines; see § "Your library" |
 | `src/features/flashcards/StudyHand.tsx` | The three study modes as a fanned hand of cards, on the page behind the sheet (`.fanw`) |
 | `src/features/flashcards/useHandSwipe.ts` | The omnidirectional throw gesture on the hand's front card — slop classifier, radial commit threshold, the flp's drag constants, click suppression |
@@ -467,15 +467,20 @@ deck inside the Reading Center would silently drop the learner into a core view 
 `DecksPanelBody` owns every pixel; the three pages differ only in the lens they pass
 and the frame they mount. The Center page is ~110 lines, almost all of it comment.
 
-### `/decks` = a study area + a button-raised pull-up sheet
+### `/decks` = a study area + two button-raised pull-up sheets
 
-The page is split across **two surfaces**:
+The page is split across **three surfaces**:
 
 * **Page (behind)** — section 1 only, the library line, the Center rail and the card hand.
-  `MobileTabScreen` is mounted with **`scrollable={false}`**: nothing behind the sheet
+  `MobileTabScreen` is mounted with **`scrollable={false}`**: nothing behind the sheets
   scrolls any more.
-* **Sheet (front)** — sections 2–4, every *set* of cards, in `DecksPanelBody`
-  (`variant="sheet"`).
+* **Cards sheet** — **Your library** (the `LibraryDuo`) over the inline **Cards** grid,
+  in `DecksPanelBody` (`variant="sheet"`, `section="cards"`).
+* **Decks sheet** — **Challenges** then **Decks**, same component (`section="decks"`).
+
+Only the fdp splits them. A Mastery Center is a whole page with room for the lot, so it
+passes `section="all"` and renders every section in its original order (Your library →
+Challenges → Decks → Cards).
 
 The sheet is the **same component as the eip bottom sheet**, `SheetPanel`, used the
 **same way** since 2026-08-24: a **modal** sheet (`minHeight` unset, scrim on, `onClose`
@@ -485,22 +490,45 @@ wired), so it has the eip's three stops and the eip's default 0.5 collapse rule.
 |---|---|---|
 | **0** | — | dismissed; the page unmounts the panel |
 | **default** | `parentHeight × 0.6` | the open height, and the dismiss floor |
-| **max** | `parentHeight × 0.92` | the full list |
+| **max** | `parentHeight × 1` | the full list — the sheet merges into the page header (docs/EIP_SHEET_GESTURES.md) |
 
 It **used to be persistent** (`minHeight = FOOTER_HEIGHT + FOOTER_EXTRA_GAP + SHEET_LIP`,
 `showScrim={false}`, `collapseThresholdRatio` 0.3): a 44px lip above the footer that had
 to be dragged up, with stops `{resting, max}` and no way to dismiss it. Both the lip and
 that stop set are gone.
 
-**How it opens.** The `.flashcards-decks__sets-pill` — a "↑ Sets & Cards" capsule
-anchored `FOOTER_CLEARANCE` above the bottom of the frame, centred, `zIndex: 2`. It is
-the exact counterpart of the flp's More Info pill (`MoreInfoPill` → `openEicSheet`) and
-the cdp's, all three built from the shared `SheetPill` body (`src/components/SheetPill.tsx`;
-the flp keeps its own copy because it MEASURES the pill to size the card slot),
-including the part that matters: the panel is **mounted only while open**
-(`sheetOpen`), so every open replays the `0 → default` animation, and the pill sits
-*under* the sheet's scrim (`zIndex: 10`), so it dims and stops taking taps while the
-sheet is up. Dismiss is the eip's: drag below the default height, or tap the scrim.
+**How it opens — two pills, two sheets.** The fdp raises **two** sheets, from
+`.flashcards-decks__cards-pill` ("↑ Cards", left) and `.flashcards-decks__decks-pill`
+("↑ Decks", right), both anchored `FOOTER_CLEARANCE` above the bottom of the frame at
+`zIndex: 2`. They are placed by `SheetPill`'s `align` prop (`"left"` / `"right"`), which
+offsets each one half of `PILL_PAIR_GAP` off the frame's midline — the **pair** is
+centred whatever the labels measure, and neither pill needs the other's width.
+
+Each pill names the section its sheet renders (`DecksPanelBody`'s `section` prop, below):
+
+| Pill | `section` | What the sheet holds |
+|---|---|---|
+| **Cards** | `"cards"` | the library duo (Learn Now / Mastered) + the Cards section: search, sort, grid |
+| **Decks** | `"decks"` | Challenges, then the user's own Decks (with the `AddSpine`) |
+
+> **Was one pill, "Sets & Cards".** A single panel stacked all four captioned sections
+> into one scroller, so the two errands it serves — *where is that word?* and *which set
+> do I open?* — were separated by a scroll rather than by a name, and no one caption
+> could name the sheet. The split is a **host** choice only: the Mastery Center pages
+> still pass `section="all"` and render the whole stack in its original order, and both
+> fdp sheets read the **same** `useDecksPanel` instance on the page, so opening one does
+> not refetch the other.
+
+The pills are the exact counterpart of the flp's More Info pill (`MoreInfoPill` →
+`openEicSheet`) and the cdp's, all built from the shared `SheetPill` body
+(`src/components/SheetPill.tsx`; the flp keeps its own copy because it MEASURES the pill
+to size the card slot), including the part that matters: the panel is **mounted only
+while open** (`openSheet`, a `"cards" | "decks" | null` — one state, because the sheets
+are modal and mutually exclusive), so every open replays the `0 → default` animation, and
+the pills sit *under* the sheet's scrim (`zIndex: 10`), so they dim and stop taking taps
+while a sheet is up. The single `SheetPanel` is **keyed on the section**, so switching
+sheets remounts rather than swapping content under a held height. Dismiss is the eip's:
+drag below the default height, or tap the scrim.
 
 The floating footer (frame-level, `zIndex: 100`)
 hovers *over* the sheet at every height, so the sheet's scroller both reserves
@@ -575,8 +603,13 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    are a different KIND of destination: a place to look at your library by skill, not a
    session to start. Filled with the ramp's **pastels** (reading `red`, writing the new
    `yel`) rather than the saturated `MARK_TYPE_COLORS` — a tile is a surface, and only
-   marks and mastery cells take the saturated hues (SHELF_REDESIGN.md D2b). See
-   § "Mastery Centers".
+   marks and mastery cells take the saturated hues (SHELF_REDESIGN.md D2b). They also
+   carry the hand's hairline (`COLORS.border`) and its RESTING elevation
+   (`HAND_CARD_RESTING_SHADOW`, exported from `StudyHand.tsx`) — never the front card's
+   lifted shadow, since a tile is not the played card. Without those the rail read as a
+   flat patch of colour sitting beside three real cards; with them it is the same object
+   family, one row up. Its radius stays 15px against the hand's 22px because the tile is
+   about half the size. See § "Mastery Centers".
 
    **(c) The card hand** (`StudyHand`, `.fanw`) — Study Mix, Review and Challenge as a
    fanned hand of three cards with **one played forward**.
@@ -774,8 +807,8 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
 
    **The hand's bottom padding is derived**, not typed:
    `SETS_PILL_HEIGHT + STUDY_AREA_GAP` — the scroll area already reserves
-   `FOOTER_CLEARANCE`, which is exactly where the Sets & Cards pill is anchored, so only
-   the pill's own band is missing. Change the pill's height and `Study now` still stops
+   `FOOTER_CLEARANCE`, which is exactly where the two sheet pills are anchored, so only
+   the pills' own band is missing. Change `SETS_PILL_HEIGHT` and `Study now` still stops
    just above it instead of sliding under it.
 
    > **Renamed (was Easy / Mix / Hard).** The rename went all the way down — the
@@ -820,10 +853,12 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    > live in their own Center, where every other number is about the same skill — that
    > is the split the Centers exist for. The `Mastered` group value still exists for
    > the Games hub's menu, which renders the goal-driven list.
-3. **Decks** — the user's sets, wrapping at **three per row**, plus a `+` to create
-   one. **Collapsible**: the whole caption row is the toggle (a wide target beats a
-   24px chevron on a phone) and the `+` button `stopPropagation`s so creating a deck
-   never folds the section it is about to land in. The chevron **rotates** rather than
+3. **Decks** — the user's sets as `Spine`s on one **horizontally scrolling** `ShelfRow`
+   (not a wrapping grid: a wrapped second line would stand on nothing), with the
+   design's own `AddSpine` riding at the end of the row as the "new deck" affordance —
+   which is why the caption no longer carries a `+` button. **Collapsible**: the whole
+   caption row is the toggle (a wide target beats a
+   24px chevron on a phone). The chevron **rotates** rather than
    swapping glyphs. The open/closed state is remembered **on the device**
    (`localStorage`, key `decksSheet.decksOpen`, default **open**) rather than on the
    account: it is a way of looking at the sheet, not data about the learner, and the
@@ -1126,13 +1161,15 @@ The Learn Now card grid and its search bar moved to
 bottom. Its trigger has two shapes — a bare icon button, or a labelled outlined button
 when a `label` prop is given. Mounted in:
 
-* `VocabCardDetailPage.tsx` — the cdp header actions, beside Edit and Delete (icon)
 * `FlashcardsLearnPage/CardOpsRail.tsx` — the `add to deck` cell on the card's own `•••`
   rail (`AddToDeckMenu` in its `rail` appearance), which is where filing a card lives
   since 2026-08-24. It replaced the "Add to Deck…" button in the action bar at the end of
   the **eip definition tab** (labelled). It used to live in the eip *header*'s action
   grid as a bare icon; it moved so the action reads as a named button rather than a
-  guessed-at glyph.
+  guessed-at glyph. Since **2026-08-28** this is the ONLY host: the cdp mounts the same
+  rail on its hero card, so its header copy (a bare icon beside Edit and Delete) was
+  removed along with Edit — the header keeps `delete` alone. See
+  [CARD_NOTES.md](./CARD_NOTES.md).
 
 Two behaviours worth knowing:
 

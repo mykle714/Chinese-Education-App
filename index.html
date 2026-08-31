@@ -7,6 +7,13 @@
          Android/Chrome/Firefox. iOS Safari IGNORES user-scalable=no, so page-level
          pinch on iOS is blocked separately in JS via the useBlockZoom hook. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- The colour iOS/Android paint BEHIND the status bar (and Chrome's toolbar).
+         This is only the DEFAULT — the app's paper ground. Screens that flood the
+         page with their own ground (every game, via GameSurfaceProvider) rewrite
+         this tag while they are mounted through the useThemeColor hook, so the
+         strip above the header always matches the header. See
+         src/hooks/useThemeColor.ts. Value mirrors COLORS.background. -->
+    <meta name="theme-color" content="#FBFAF8" />
     <title>Cow</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

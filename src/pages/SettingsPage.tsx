@@ -15,21 +15,31 @@ import { useFlashcardLearnSettings } from '../hooks/useFlashcardLearnSettings';
 import { COLORS } from '../theme/colors';
 import { FONTS } from '../theme/fonts';
 
-// The narration control's three states, in the order they appear. Copy is
-// deliberately concrete about the COST of each route rather than naming the
-// mechanism: a learner cannot act on "media element vs Web Audio", but can act on
-// "pauses your music" and "follows the silent switch". See docs/AUDIO_PLAYBACK.md.
+// The narration control's three states, in the order they appear.
+//
+// The TITLE is the mode's own name — the same word the header chip shows and the
+// same word `AudioMode` uses — so the picker and the chip cannot be read as two
+// different controls. The SUBTITLE does the explaining, and stays concrete about
+// the COST of each route rather than naming the mechanism: a learner cannot act on
+// "media element vs Web Audio", but can act on "pauses your music" and "follows the
+// silent switch". See docs/AUDIO_PLAYBACK.md.
 const AUDIO_MODE_COPY: Record<AudioMode, { title: string; subtitle: string }> = {
+    // 'Mute' rather than 'Off' — the only title that is not the mode's literal value.
+    // 'Off' names the setting's state; 'Mute' names what it does to the phone in the
+    // learner's hand. The header chip says 'mute' too, so the two still agree.
     off: {
-        title: 'Off',
+        title: 'Mute',
         subtitle: 'Nothing plays on its own. Tap a speaker button to hear a word.',
     },
+    // 'Default' rather than 'Passthrough': it IS the default route, and "passthrough"
+    // names the iOS audio-session mechanism, which no learner can act on. The subtitle
+    // does the explaining. Matches the header chip's label.
     passthrough: {
-        title: 'Play over everything',
+        title: 'Default',
         subtitle: 'Plays even when your phone is on silent. Pauses music, and adds playback controls to your lock screen.',
     },
     media: {
-        title: 'Play alongside media',
+        title: 'Media',
         subtitle: "Mixes with music and video without interrupting them, but stays silent when your phone's silent switch is on.",
     },
 };

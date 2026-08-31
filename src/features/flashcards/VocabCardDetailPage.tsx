@@ -3,13 +3,13 @@ import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveD
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { lensFromSearch } from "./collectionRef";
 import {
-    Box, IconButton, Alert, useTheme,
+    Box, IconButton, Alert,
     Slide, Snackbar, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
 } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import NodePage from "../../components/NodePage";
-import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
+import { FOOTER_CLEARANCE, ScrollPastSpacer } from "../../components/MobileFooter";
 import { API_BASE_URL } from "../../constants";
 import type { VocabEntry } from "../../types";
 import IconPickerDialog from "../../components/IconPickerDialog";
@@ -18,7 +18,8 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useTTS } from "../../hooks/useTTS";
 import { COLORS } from "../../theme/colors";
-import AddToDeckMenu from "./AddToDeckMenu";
+import CardNote from "./card/CardNote";
+import CardOpsRail from "./FlashcardsLearnPage/CardOpsRail";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "./FlashcardsLearnPage/FlashCardSection";
 import { measureDefaultEnglishCenterY } from "../../cardIcons/cardTextLayout";
 import { isAdvancedLayout } from "../../cardIcons/cardIconLayout";
@@ -71,8 +72,6 @@ const VocabCardDetailPage: React.FC = () => {
     // section shows recognition + production alone. Exactly one bar either way — this
     // page answers the question the surface that opened it was asking.
     const lens = lensFromSearch(searchParams);
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
     const { settings } = useFlashcardLearnSettings();
     const { showPinyinColor } = settings;
     // cdp always shows pinyin regardless of the flp pinyin toggle — pinyin is
@@ -110,6 +109,12 @@ const VocabCardDetailPage: React.FC = () => {
     // panel and has no entry-tab strip to keep state for. Deliberately NOT reset on close
     // — reopening the panel on the same card returns to the tab you were reading.
     const [infoTab, setInfoTab] = useState(0);
+    // NOTE: the footer bar is no longer suppressed here — SheetPanel holds it down for
+    // the lifetime of every modal sheet (see useHideFooter there). The bar is rendered
+    // at FRAME level (FooterPresenter, z-index 100) and is outside this page's DOM, so
+    // no z-index here could ever have got the sheet above it; it hovered over the
+    // sheet's bottom ~90px, hiding the end of the definition tab and making the pane
+    // look like it refused to scroll.
     // Which definitionClusters sense EnglishBlock currently shows on the hero card.
     // Mirrors CardFace: seeds from this saved card's PERSISTED choice (`selectedSense` label →
     // sorted index, migration 99), falling back to the top/starred sense. Persisted on pick.
@@ -202,6 +207,7 @@ const VocabCardDetailPage: React.FC = () => {
         handleSaveLayout,
         handleResetConfirmed,
         persistSelectedSense,
+        persistNote,
         undoAdv,
         redoAdv,
         pushAdvHistory,
@@ -215,6 +221,28 @@ const VocabCardDetailPage: React.FC = () => {
         if (!entry) return;
         persistSelectedSense(entry, senseLabelForIndex(entry, index));
     }, [entry, persistSelectedSense]);
+
+    // ── The card's own note (vet.note, migration 155) ─────────────────────────────
+    // The cdp shows and edits the SAME note as the flp, through the same components:
+    // `CardNote` in the hero face's `noteSlot` slot, opened from the `note` cell of the
+    // card's `•••` rail (`CardOpsRail`) in the face's top-right corner. Only "is the editor
+    // open" lives here — the draft text is CardNote's own, so a keystroke does not re-render
+    // the page. See docs/CARD_NOTES.md.
+    //
+    // Unlike the flp there is nothing to detach: the hero card does not flip or drag, so the
+    // open editor's own event-stopping is the whole guard.
+    const [noteEditing, setNoteEditing] = useState(false);
+    // Close an open editor if the card underneath changes (a drill-in navigates this same
+    // page to another word), so the next card is never handed an editor seeded from the
+    // previous one's note.
+    useEffect(() => { setNoteEditing(false); }, [entry?.id]);
+    const handleSaveNote = useCallback((note: string | null) => {
+        setNoteEditing(false);
+        if (!entry) return;
+        // Optimistic + background PATCH with rollback + the existing save-error toast —
+        // the same machinery the sense pick uses (useCardIconEditor.persistNote).
+        persistNote(entry, note);
+    }, [entry, persistNote]);
 
     // Outside-tap deselect: a tap on the page outside the canvas/toolbar (and
     // outside a portaled toolbar dropdown) clears the active icon/text selection.
@@ -282,10 +310,15 @@ const VocabCardDetailPage: React.FC = () => {
         <NodePage
             title="Card Detail"
             onBack={() => navigate(-1)}
-            // Four things share this header line (add-to-deck, edit, delete, and the
-            // title): 21px collides, so the Card Detail artboard drops to 18px.
+            // The Card Detail artboard draws this title at 18px. It stays dense now that
+            // the header is down to `delete` + the title (add-to-deck and edit moved onto
+            // the card's own rail), because the read-only dictionary cdp is the SAME
+            // surface and the two must not disagree on their title size.
             headerSize="dense"
-            surfaceColor={COLORS.yellowAccent}
+            // No `surfaceColor`: the cdp sits on the app's standard ground
+            // (COLORS.background / --paper, MobileTabScreen's default) like every other
+            // page. It used to paint itself yellowAccent, which made the one surface a
+            // learner reaches most often the only one with its own ground.
             // No top edge-fade: the hero card shouldn't dissolve at the top.
             topFade={false}
             // Frame-level furniture, rendered OUTSIDE the scroll area (see NodePage's
@@ -358,28 +391,21 @@ const VocabCardDetailPage: React.FC = () => {
             )}
             headerExtraActions={entry && (
                 <Box sx={{ display: "flex", alignItems: "center" }}>
-                    {/* File this card into any of the user's decks (docs/DECKS_FEATURE.md).
-                        First in the row because it is additive, unlike Edit and Delete. */}
-                    <AddToDeckMenu
-                        vocabEntryId={entry.id}
-                        className="vocab-card-detail__add-to-deck"
-                        color={fc.textSecondary}
-                    />
-                    {/* Opens the same fie (flashcard icon editor) toolbar/canvas flp uses,
-                        decorating this card's icon layout/text placement/colors — not a
-                        navigation to a separate edit form.
+                    {/* DELETE ONLY. `add to deck` and `customize` used to sit here as well,
+                        and they now live on the hero card's own `•••` rail (CardOpsRail) —
+                        the rule artboard 21 states: a CARD operation lives ON the card. Two
+                        doors to the same room is worse than one, and the flp already has
+                        exactly one.
 
-                        Both glyphs are Material Symbols via `Icon` (D3), not
-                        `@mui/icons-material` components: the artboard's header names
-                        `edit` and `delete`, and the ligature face is where every other
-                        converted surface takes its icons from. */}
-                    <IconButton
-                        className="vocab-card-detail__edit-button"
-                        aria-label="Edit card"
-                        onClick={() => (editMode ? exitEdit() : enterEdit(() => heroCardRef.current ? measureDefaultEnglishCenterY(heroCardRef.current) : null))}
-                    >
-                        <Icon name="edit" size={20} color={editMode ? theme.palette.primary.main : COLORS.iconColor} />
-                    </IconButton>
+                        Delete stays here, and deliberately never joins the rail: it is rare,
+                        irreversible and takes the card's whole review history with it, so it
+                        belongs on a surface the learner has navigated TO. See
+                        docs/CARD_NOTES.md and docs/SHELF_REDESIGN.md (artboard 21).
+
+                        The glyph is a Material Symbol via `Icon` (D3), not an
+                        `@mui/icons-material` component: the artboard's header names
+                        `delete`, and the ligature face is where every other converted
+                        surface takes its icons from. */}
                     <IconButton
                         className="vocab-card-detail__delete-button"
                         aria-label="Delete card"
@@ -550,6 +576,33 @@ const VocabCardDetailPage: React.FC = () => {
                                             />
                                         ),
                                     }}
+                                    // CARD OPERATIONS — the SAME `•••` rail the flp mounts on
+                                    // its answer face (artboard 21), in the face's top-right
+                                    // corner. It is the only affordance that opens the note
+                                    // editor (read-mode notes are inert by design), so the note
+                                    // cannot ship to this page without it. Suppressed while the
+                                    // fie is open: that toolbar already owns the card.
+                                    topRail={(
+                                        <CardOpsRail
+                                            entry={editingCurrentEntry!}
+                                            onCustomize={() => enterEdit(() => heroCardRef.current ? measureDefaultEnglishCenterY(heroCardRef.current) : null)}
+                                            onEditNote={() => setNoteEditing(true)}
+                                            disabled={editMode}
+                                        />
+                                    )}
+                                    // The learner's note, pinned to the top edge — the same
+                                    // component, slot and rules as the flp's answer face. The
+                                    // hero IS the answer face, so the face gate is satisfied.
+                                    // Suppressed while the fie canvas owns the face: the canvas
+                                    // edits a DESIGN, and the note is not part of that design.
+                                    noteSlot={editMode && advMode ? undefined : (
+                                        <CardNote
+                                            entry={editingCurrentEntry!}
+                                            editing={noteEditing}
+                                            onSave={handleSaveNote}
+                                            onCancel={() => setNoteEditing(false)}
+                                        />
+                                    )}
                                     // Gesture canvas only in advanced mode; basic mode renders the
                                     // draft through the static icon layer (via editingCurrentEntry).
                                     editCanvas={editMode && advMode ? (
@@ -602,6 +655,12 @@ const VocabCardDetailPage: React.FC = () => {
                                 it the mastery cooldowns end up behind the pill on a short
                                 card. */}
                             <Box className="vocab-card-detail__info-pill-clearance" sx={{ height: `${INFO_PILL_CLEARANCE}px`, flexShrink: 0 }} />
+                            {/* The app-wide bottom give (`ScrollPastSpacer`, 96px), so the last
+                                section can be dragged up off the bottom edge instead of stopping
+                                dead on the footer. Distinct from the pill clearance above it:
+                                that one buys back a band something COVERS, this one is reach.
+                                Same element the three hubs render. */}
+                            <ScrollPastSpacer />
                         </>
                     ) : null}
                 </ContentArea>

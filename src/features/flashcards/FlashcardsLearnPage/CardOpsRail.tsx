@@ -45,8 +45,11 @@ import { SHADOW } from "../../../theme/shadows";
  * particular: the note renders on that same face, so opening its editor from the question
  * face would put a text box on a side that never shows it.
  *
- * The cdp does NOT use this: artboard 18 keeps its three card operations in the page
- * header, which that page has and the flp does not.
+ * The cdp mounts it too, on its hero card (`VocabCardDetailPage`), because the rail's
+ * `note` cell is the ONLY affordance that opens the note editor — read-mode notes are
+ * inert by design — so the note cannot exist on a surface without the rail. Its
+ * `customize` and `add to deck` cells therefore duplicate two of that page's header
+ * actions; the header keeps `delete`, which is deliberately not on the rail.
  *
  * Referenced by docs/SHELF_REDESIGN.md (artboard 21), docs/CARD_ICON_LAYOUT.md
  * (customize), docs/DECKS_FEATURE.md (add to deck) and docs/CARD_NOTES.md (note).

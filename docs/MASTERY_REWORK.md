@@ -108,7 +108,8 @@ The two Word Search modes already exist and are chosen at launch from the hub
 
 > STATUS: **IMPLEMENTED** (2026-08-22). Code: `foreignPromptTrack` (the rule) /
 > `flpMarkTypes` / `FlpForeignTrack` / `parseFlpForeignTrack` (`server/contracts/wire.ts`), `markTypeForSideOne` +
-> `sideOneForCard` (`src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`),
+> `sideOneForCard` (`src/utils/flpFaceSteering.ts`, called from
+> `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`),
 > the `foreignTrack` computed in
 > `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx`,
 > `OnDeckVocabService.DEFAULT_FOREIGN_TRACK` + the threaded `foreignTrack` parameter,
@@ -582,8 +583,10 @@ rendered at 0 width.
 
 > STATUS: **IMPLEMENTED**. Code: `server/services/OnDeckVocabService.ts`
 > (cooldown helpers + both selection paths), `server/services/FlashcardMarkService.ts`
-> (the hard mark-time gate), `server/routes/flashcardRoutes.ts` (refill call site), `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`
-> (`sideOneForCard` face-steering). Types: `readyMarkTypes` on `VocabEntry`
+> (the hard mark-time gate), `server/routes/flashcardRoutes.ts` (refill call site),
+> `src/utils/flpFaceSteering.ts` (`sideOneForCard` face-steering, called from
+> `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`; tests in
+> `src/__tests__/flpFaceSteering.test.ts`). Types: `readyMarkTypes` on `VocabEntry`
 > (`server/types/index.ts`, `src/types.ts`).
 
 After a **correct** mark, a card is put on a **cooldown** so it doesn't
@@ -625,9 +628,53 @@ service computes the subset of the session's two tracks (`flpMarkTypes(foreignTr
 - **≥1 ready** ⇒ the card is eligible; it's stamped with `readyMarkTypes` and the
   client's `sideOneForCard` **steers the shown face** to a ready type (only
   production ready → English-first; only the foreign track ready → foreign-first;
-  both ready → the historical coin flip). The client maps its faces through the same
-  `foreignTrack` it sent, so the stamp and the mark can never name different tracks.
+  both ready → the **weakness-biased flip** below). The client maps its faces through
+  the same `foreignTrack` it sent, so the stamp and the mark can never name different
+  tracks.
 - **both cooling** ⇒ the card is **skipped**.
+
+#### The tie-break: bias toward the track with less progress
+
+> STATUS: **IMPLEMENTED** (2026-08-29). Code: `englishFirstProbability` +
+> `FACE_BIAS_PER_MARK` / `FACE_BIAS_MAX` (`src/utils/flpFaceSteering.ts`).
+
+When **both** tracks are ready the face used to be an even coin flip. It is now a
+**weighted** flip favouring whichever of the two tracks the learner has less progress
+in:
+
+```
+gap   = positives(foreignTrack) − positives(production)      // tie-break: attempts
+p(en) = 0.5 ± min(FACE_BIAS_MAX, 0.5 + FACE_BIAS_PER_MARK · |gap|)
+```
+
+with `FACE_BIAS_PER_MARK = 0.05` and `FACE_BIAS_MAX = 0.9`. Both counts come from the
+rolling ≤8 `typedMarkHistory` window, so the widest real gap (8 vs 0) lands exactly on
+the cap and the cap is defensive rather than a clamp the normal range hits: a gap of 1
+is a 55/45 nudge, a card drilled to 8 recognition and never produced shows the English
+face 90% of the time.
+
+Notes on the design:
+
+- **Why the weaker track.** For the core bar it is arithmetic: pbh is
+  `min(6, max(rec, pro)) + min(rec, pro)/3` (§ 3), whose first term is **capped at 6**
+  — past that the stronger track contributes literally nothing and a mark on the weaker
+  one is the only mark that can still move the bar. Below the cap the terms are
+  equal-valued, so the bias costs nothing there.
+- **Why a bias and not a rule.** Always dealing the weaker face makes a session
+  perfectly predictable (mark production → next card is recognition → …), which rewards
+  anticipating the prompt rather than knowing the word. The disfavoured face stays
+  reachable at every gap.
+- **`positives` first, `attempts` as the tie-break.** `positives` is the pbh input, so
+  it is what the bars actually move on; `attempts` separates two tracks holding equal
+  progress from unequal work (3/3 vs 3/8 — the 3/3 track is the less practiced one).
+- **Precedence.** Cooldown is a hard gate and the bias only breaks a genuine tie —
+  dealing a cooling face would produce a mark `POST /api/flashcards/mark` silently
+  drops. The session-opener `preferEnglishFirst` (first card of the first fetch) also
+  outranks the bias.
+- A `reading`-track session compares **across two bars** (production feeds core,
+  reading feeds the reading bar). Intentional: both counts sit on the same 0..8 scale
+  and the question the bias answers is the plainer "which of these have you done less
+  of?".
 
 ### Ordering: a queue, longest-waiting first
 
@@ -1272,8 +1319,9 @@ Settled since:
   now optional), `src/components/bento/Bento.tsx` (`BentoStripProps.control`).
 - `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx` (computes the
   session `foreignTrack` from `useFlashcardLearnSettings().showPinyin` + the account
-  language) and `useWorkingLoop.ts` (`markTypeForSideOne`, `sideOneForCard`, the
-  `?foreignTrack=` fetch param and the mark body field);
+  language), `src/utils/flpFaceSteering.ts` (`markTypeForSideOne`, `sideOneForCard`,
+  `englishFirstProbability`) and `useWorkingLoop.ts` (the `?foreignTrack=` fetch param
+  and the mark body field);
   `src/api/flashcards.ts` — `MarkFlashcardRequest.foreignTrack`.
 - `server/dal/shared/vetTable.ts` — `coreCategoryExpr`, `barCategoryExpr`,
   `masteredBarClause`, `typeCategoryExpr`.

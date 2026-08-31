@@ -295,16 +295,15 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     // real det word (see `bonusWords`):
     //   - length >= 2: the flash turns blue instead of red, shakes the same as
     //     a miss, and the word's definition appears in the review-popup style.
-    //   - length === 1: no color change and no shake (a single character is a
-    //     much smaller "find" than a whole word) — just the definition popup.
+    //   - length === 1: the same blue fill, but no shake (a single character is a
+    //     much smaller "find" than a whole word) — blue plus the definition popup.
     // Either way a bonus match has NO auto-dismiss timer (unlike a true miss,
     // which auto-clears after MISS_FLASH_MS): it stays up until the player
     // taps elsewhere, handled by `onPointerDown`/`clearSelection` below.
     const [invalid, setInvalid] = useState<{ nonce: number; bonus: BonusWord | null } | null>(null);
     const invalidTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Whether the current bonus match is 2+ characters — the only case that
-    // gets the blue/shake "miss-flash" treatment (a single character just
-    // shows its popup with no highlight change).
+    // SHAKES. Both lengths paint blue; a single character just does it quietly.
     const isMultiCharBonus = (bonus: BonusWord | null): boolean => !!bonus && [...bonus.entryKey].length > 1;
 
     // Let the page clear an in-progress selection on a background tap. Also closes
@@ -368,6 +367,17 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         }
         return set;
     }, [review]);
+
+    // Cells covered by the open single-character definition popup (see `charPopup`).
+    // Painted the same blue as a bonus-word match: both mean "you uncovered a real
+    // meaning that isn't a target word", so they must not read as two different
+    // states. Always exactly one cell today, but kept as a set so the paint rule
+    // matches `reviewedCells`/`foundCells` and survives a multi-cell rung later.
+    const charPopupCells = useMemo(() => {
+        const set = new Set<string>();
+        if (charPopup) for (const [r, c] of charPopup.cells) set.add(key(r, c));
+        return set;
+    }, [charPopup]);
 
     // DOM refs for each cell, keyed the same as `key()`, so bridge geometry can be
     // measured from actual layout (cell size varies with pinyin/font — see
@@ -614,7 +624,11 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                 const cell = grid[r]?.[c];
                 if (cell?.definition) {
                     setInvalid(null);
-                    setPathBoth([]); // a definition tap leaves no highlight (like the single-char bonus)
+                    // The tapped cell KEEPS its highlight and turns blue (see
+                    // `charPopupCells`) — it used to be cleared, which left a
+                    // popup floating with nothing on the board pointing at it.
+                    // The path is already this one cell (set by `onPointerDown`),
+                    // and the next pointer-down replaces it.
                     setCharPopup({ char: cell.char, pinyin: cell.pinyin, definition: cell.definition, cells: [selection[0]] });
                     return;
                 }
@@ -859,10 +873,19 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                         // Only the cells of the CURRENT rung carry the reviewing ring, so
                         // drilling visibly shrinks the ring from the whole word down to one tile.
                         const isPopup = reviewedCells.has(key(r, c));
-                        // A single-character bonus match is deliberately excluded
-                        // (see `invalid` above): no shake and no color change, just
-                        // its definition popup.
+                        // The RED miss flash + shake. A single-character bonus match is
+                        // deliberately excluded (see `invalid` above): no shake, just its
+                        // definition popup. A MULTI-character bonus is included, because it
+                        // shakes like a miss — but it paints blue, not red: `isBonusCell`
+                        // below outranks this in the fill chain.
                         const isInvalidCell = selected && !!invalid && (!invalid.bonus || isMultiCharBonus(invalid.bonus));
+                        // The BLUE "you found a real word/character that isn't a target"
+                        // fill. Three paths reach it and they must look identical, since
+                        // they mean the same thing to the player: a traced multi-character
+                        // det word, a traced single-character headword, and a tap on one
+                        // character of an unfound target word (its contextual gloss popup —
+                        // `charPopupCells`).
+                        const isBonusCell = (selected && !!invalid?.bonus) || charPopupCells.has(key(r, c));
                         // Nonce-keyed keyframe name so back-to-back wrong guesses restart
                         // the shake cleanly (same trick as fie/flp's shake — see
                         // CardIconCanvas.tsx / FlashCardSection.tsx cardShake) — but at a
@@ -883,7 +906,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                 data-cell="1"
                                 data-row={r}
                                 data-col={c}
-                                className={`word-search__cell${selected ? " word-search__cell--selected" : ""}${isFound ? " word-search__cell--found" : ""}${isPopup ? " word-search__cell--reviewing" : ""}${isInvalidCell ? " word-search__cell--invalid" : ""}${isHintCell ? " word-search__cell--hint-reveal" : ""}`}
+                                className={`word-search__cell${selected ? " word-search__cell--selected" : ""}${isFound ? " word-search__cell--found" : ""}${isPopup ? " word-search__cell--reviewing" : ""}${isInvalidCell ? " word-search__cell--invalid" : ""}${isBonusCell ? " word-search__cell--bonus" : ""}${isHintCell ? " word-search__cell--hint-reveal" : ""}`}
                                 sx={{
                                     position: "relative",
                                     zIndex: 1,
@@ -918,10 +941,10 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     //
                                     // Order matters: a miss is transient and outranks the
                                     // found/hint fills underneath it.
-                                    backgroundColor: isInvalidCell
+                                    backgroundColor: isBonusCell
+                                        ? COLORS.blu                  // a real word/character that wasn't a target
+                                        : isInvalidCell
                                         ? COLORS.red                  // wrong trace — flashes, then clears
-                                        : selected && invalid?.bonus
-                                        ? COLORS.blu                  // traced a real word that wasn't a target
                                         : selected
                                         ? COLORS.org                  // `.now` — tracing right now
                                         : isFound

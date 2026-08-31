@@ -214,6 +214,11 @@ The flp and scp deliberately do **not** pass `showSynonymsRelated`: on those sur
 panel is the reading view for a word mid-drill, while the cdp is the reference page those
 two lists belong to.
 
+Because the extra section is what pushes the definition tab past one screen, that tab gets
+the same bottom run-out the examples tab has (`PANE_SCROLL_SPACER_PX` /
+`PaneScrollSpacer` in `InfoCardTabContent`) — but only when the section is actually
+rendered, so the flp/scp definition tab is not made scrollable for nothing.
+
 ## Testing
 
 ### Verify Database Schema

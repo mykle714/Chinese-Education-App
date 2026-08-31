@@ -24,6 +24,14 @@ import { COLORS } from "../theme/colors";
  * `local_fire_department`). They are Google's canonical Material Symbols names, so a
  * name that renders in the artboard renders here.
  *
+ * MATERIAL SYMBOLS is NOT MATERIAL ICONS. The older Material *Icons* set carries names
+ * that Symbols dropped or renamed, and a name missing from the face fails silently in
+ * code and very loudly on screen: the ligature never substitutes, so the control renders
+ * the raw string "MULTITRACK_AUDIO" in the header. That shipped in AudioModeChip on
+ * 2026-08-28 (`multitrack_audio` is Icons-only; the Symbols equivalent is `graphic_eq`).
+ * A glyph name recalled from memory is not evidence — check it against the `name` fields
+ * of https://fonts.google.com/metadata/icons before using it, and look at what rendered.
+ *
  * Depended on by: every page converted to the shelf system.
  * See docs/SHELF_REDESIGN.md § A1 and the `.ms` rule in src/index.css.
  */

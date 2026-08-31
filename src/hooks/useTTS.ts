@@ -158,6 +158,27 @@ export function useTTS() {
         await speakText(entry.entryKey, resolveDisplayPronunciation(entry, senseIndexOverride));
     }, [speakText]);
 
+    /**
+     * Changing the audio MODE must never itself make a sound.
+     *
+     * Every automatic-narration effect on every surface is gated on `autoplay`, so
+     * putting `tts.autoplay` in such an effect's dep list looked harmless — but it
+     * makes the effect RE-RUN on the off → on edge and narrate the card the learner
+     * is already looking at, purely because they tapped the header chip. Tapping a
+     * settings control is not a request to hear a word; the speaker button is.
+     * So the surfaces key their narration effects on CONTENT identity only.
+     *
+     * The other half of that rule lives here rather than in each of them: turning
+     * audio off DOES have to stop whatever is currently speaking, or "mute" leaves
+     * a word playing. Edge-triggered on the on → off transition, so a deliberate
+     * speaker-button press while muted is not cancelled out from under the user.
+     */
+    const wasAutoplayOnRef = useRef(settings.autoplay);
+    useEffect(() => {
+        if (wasAutoplayOnRef.current && !settings.autoplay) cancel();
+        wasAutoplayOnRef.current = settings.autoplay;
+    }, [settings.autoplay, cancel]);
+
     // Automatic variant of speak() — for narration the user did not ask for by
     // pressing something (a card flip revealing the Chinese face, a game
     // revealing a word). Gated on the autoplay setting and subject to the

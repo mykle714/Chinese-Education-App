@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useRef } from "react";
 import { Box } from "@mui/material";
 import MiniVocabCard from "./MiniVocabCard";
+import { useScrollStretch } from "../hooks/useScrollStretch";
 import type { VocabEntry } from "../types";
 
 /**
@@ -65,6 +66,14 @@ export interface ProvisionalCardGridProps {
 }
 
 const ProvisionalCardGrid: React.FC<ProvisionalCardGridProps> = ({ entries, maxHeight = 210 }) => {
+    // Rows spread apart while the set is scrolled and close back up when it stops
+    // (docs/UX_AND_NAVIGATION.md § "Scroll stretch"). The ref goes on the TRACK, not
+    // the scroll container: the track holds the cards, and the hook finds the scroller
+    // by walking up. Declared before the empty-set early return — hooks are
+    // unconditional, and with no track mounted the effect simply does nothing.
+    const trackRef = useRef<HTMLDivElement | null>(null);
+    useScrollStretch(trackRef, { axis: "y" });
+
     if (entries.length === 0) return null;
 
     // TWO elements, deliberately: the outer one scrolls, the inner one is the fixed
@@ -90,6 +99,7 @@ const ProvisionalCardGrid: React.FC<ProvisionalCardGridProps> = ({ entries, maxH
             }}
         >
             <Box
+                ref={trackRef}
                 className="provisional-card-grid__track"
                 sx={{
                     width: GRID_WIDTH,
@@ -112,7 +122,7 @@ const ProvisionalCardGrid: React.FC<ProvisionalCardGridProps> = ({ entries, maxH
                         key={entry.entryKey}
                         entry={entry}
                         // No onClick: the preview is read-only. The card renders with a
-                        // default cursor and no hover lift when the handler is omitted,
+                        // default cursor and no hover highlight when the handler is omitted,
                         // which is exactly right here — tapping a lent card does nothing;
                         // the dialog's own buttons are the decision.
                         //

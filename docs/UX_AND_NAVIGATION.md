@@ -101,11 +101,165 @@ implementation: `src/games/bubble-match/BubbleMatchPage.tsx`.
 
 ---
 
+## Scroll stretch (elastic card spacing)
+
+Every list of **preview cards** behaves as though it were laid on a sheet of **elastic
+fabric** being dragged by the scroll. The sheet is **pinned at the trailing edge** of
+travel (the edge cards are leaving by) and the scroll draws the rest of it away from
+that pin, further the further from it a card sits — so the visible cards lag behind the
+scroll rather than running ahead of it, every neighbouring pair moves apart, and the gaps
+**open out** while the list moves and close again when it stops. Card sizes never change;
+only the space between them does.
+
+The shape is two independent pieces, and keeping them independent is what makes scrolling
+up behave identically to scrolling down: `rubberBand(|drag|)` gives **how much** the sheet
+is open in total, and `spreadProfile(distance from the pin)` gives **how that spreads**
+along it. The magnitude is direction-free; the profile carries the sign. The profile must
+be strictly *increasing* in distance — a gap is the difference between two neighbouring
+shifts, so an increasing profile opens gaps and a decreasing one closes them. Taking an
+absolute value anywhere in the profile turns one side of the pin back into a squeeze —
+which is exactly the bug that shipped for a day.
+
+The model is **UIScrollView's**, deliberately, and three of its properties are what make
+it read as native rather than as an animation:
+
+| Property | What it means here |
+|---|---|
+| **Displacement-driven, never velocity-driven** | The stretch is a function of how far the content has actually been dragged (`drag`, integrated from real per-frame scroll deltas), not of an estimated speed. The fabric tracks the finger instead of reacting to it — and there is no velocity estimate, so there is nothing spiky to filter. |
+| **Resistance saturates, never clamps** | Apple's rubber band `b(x) = (1 − 1/(x·c/d + 1))·d/c` reduces to `A·x/(x + A)` for asymptote `A = d/c`, easing onto a ceiling it never reaches. A hard cap instead puts a visible crease in the fabric — every card past the cap moving as one rigid block — and the crease travels through the list as you scroll. We split Apple's single `A` into `A·x/(x + half)`, because the original form makes the asymptote double as the curve's half-way point — raising it also pushes the curve out, the two cancel, and the knob does almost nothing. |
+| **The return never overshoots** | `drag` decays exponentially, which is monotone by construction, so the spacing eases shut and stops. Nothing in iOS scroll physics springs back past its resting value. |
+
+**To put more air between two cards**, `maxStretchPx` is the whole sheet's opening, not a
+per-gap distance. The widest a single gap gets is `maxStretchPx / (SPREAD_ROWS + 1)`, so
+raise the first or lower the second — measured at a firm fling (drag ≈ 60px):
+
+| `maxStretchPx` | widest gap | | `SPREAD_ROWS` (at 200) | widest gap |
+|---|---|---|---|---|
+| 80 | 9.7px | | 1 | 60.5px |
+| 120 | 14.5px | | 2 | 40.3px |
+| 200 | 24.2px | | 3 | 30.2px |
+| 300 | 36.3px | | 4 | 24.2px |
+
+Lowering `SPREAD_ROWS` concentrates the same total into the gaps nearest the pin, so it
+buys distance at the cost of the gradient — at 1 the sheet reads as one tear with a rigid
+block behind it rather than as fabric.
+
+**Speed and depth are coupled**: the equilibrium stretch at a given scroll speed is
+`DRAG_GAIN · r/(1−r)`, where `r` is `DRAG_RELAX_PER_STEP`. Changing the relax alone
+changes how far the sheet opens as well as how fast it shuts — hold that product fixed
+(≈1.5) to move one without the other. `DRAG_AT_HALF_STRETCH_PX` should stay near the drag
+a firm fling produces (≈60), so a real fling lands mid-curve rather than on a flat end.
+
+A card's lag is computed from its distance to the anchor **in pixels**, not from its
+index in the track array. That is what keeps the relax smooth: an index is an integer,
+so the anchor advancing by one row — or the windowed grid rebuilding its rows so index
+`i` means a different row — moved every card by a whole step in a single frame. A pixel
+distance slides continuously and survives a rebuild. The anchor sits at the top edge
+of the viewport scrolling forward and the bottom edge scrolling back; it still jumps by a
+whole viewport when travel reverses, which is safe only because that switch is keyed on
+`sign(drag)`, and `drag` can only change sign by passing through zero — where every
+shift is zero regardless of where the anchor is.
+
+One hook owns it: `src/hooks/useScrollStretch.ts`.
+
+```ts
+useScrollStretch(listRef, { axis: "y" });          // wrapping grid on a scrolling page
+useScrollStretch(rowRef,  { axis: "x", enabled }); // horizontal strip
+```
+
+### Where it is applied
+
+| Surface | Component | Axis |
+|---|---|---|
+| Card preview grids (decks Learn Now, collection view, mastered, skipped, Quick Mark, challenge detail/review) | `MiniVocabCardGrid` | y |
+| Lent-card previews (pre-round notice, end-of-round sort offer) | `ProvisionalCardGrid` | y |
+| The `/entries` card grid | `VocabEntryCards` | y |
+| Scrollable shelf rows (Decks, Discover, Reader, Card Detail) | `shelf/Shelf.tsx` → `ShelfRow scrollable` | x |
+| Community design strip | `community/CommunityFeedRow` | x |
+
+A **non**-scrollable `ShelfRow` opts out (`enabled: scrollable`) — a wrapping row never
+scrolls, so the listener could never fire.
+
+### Why it moves transforms and not `gap`
+
+Animating the container's `gap` is the obvious implementation and is wrong here on
+three counts, all of which the hook's header comment states in full:
+
+1. `MiniVocabCardGrid` is **windowed** (`useWindowedRows`), and the window's spacer
+   arithmetic is done against a **constant** `rowGap`. A live gap would make the spacers
+   lie by (rows above × stretch) px and the scroll would jump.
+2. A changing gap on a wrapping grid changes the container's height, moving every
+   sibling below it mid-scroll.
+3. `gap` is a layout property — every frame would cost a relayout of the list, during a
+   scroll.
+
+Opening the gaps is exactly "translate each card along by its lag", so a
+compositor-only `translate3d` is visually identical and the only affordable one.
+**Do not "simplify" this into a `gap` animation.**
+
+### Cards must not move on hover
+
+A card in one of these lists highlights on hover by **elevation only** — `SHADOW.raised`
+→ `SHADOW.float`, no `translateY`. This is a hard rule, not a taste call: these cards are
+the hook's own track elements, so a hover `transform` and the hook's per-frame inline
+`transform` are the same property on the same node and simply overwrite each other.
+
+For the same reason **`transform` must never appear in a card's CSS `transition`**. A
+transition on transform re-filters every frame the hook writes through a 200ms ease,
+which turns the elastic stretch into lag. Transition `box-shadow` alone. The entrance
+`cardPopIn` is a keyframe *animation* rather than a transition and is unaffected — it
+runs at mount, when the list is not scrolling and the hook writes nothing.
+
+Applies to `MiniVocabCard` and `VocabEntryCards`. `QuickMarkCard` opts out of hover
+feedback entirely (deliberate — see its own note).
+
+### Contract for new card lists
+
+- The hook groups the container's children into **tracks** by their cross-axis offset
+  (a grid row moves as one; a horizontal strip is one card per track), measured from
+  the DOM — a caller never declares its column count.
+- Children marked `aria-hidden` are skipped, which is what keeps the windowing spacers
+  from counting as tracks. Mark any decorative filler child `aria-hidden`.
+- It writes `style.transform` on children **directly** (a fling costs zero re-renders)
+  and removes it the moment the fabric settles. While active it overrides a child's own
+  transform, which in practice only overlaps a card's entrance pop-in — and that runs at
+  mount, when the list is not moving and the hook writes nothing.
+- Offsets are cached per scroll burst and invalidated by a childList mutation or a
+  resize, since transforms never move a layout box.
+- `prefers-reduced-motion: reduce` disables it.
+
+### The frame budget (why the hook reads almost nothing)
+
+The effect runs **during** a scroll, so any forced synchronous layout it causes is a
+dropped frame the user feels as scroll lag. Four rules keep it compositor-only. They
+are the answer to "the stretch makes scrolling stutter" — do not relax one without
+re-measuring:
+
+| Rule | What it means | What breaking it cost |
+|---|---|---|
+| **A. No DOM reads in the rAF loop** | Scroll position comes from the scroll event (`lastPos`); the viewport size is cached and refreshed only on resize / scroller re-resolve | Reading `scrollTop`/`clientHeight` *after* the previous frame wrote transforms forces a full layout flush, once per frame, for the whole list |
+| **B. Write only the visible band** | Tracks within `BAND_OVERSCAN_PX` of the viewport are transformed; the rest are left alone and evicted when the band moves | Writing every track made the per-frame paint scale with the **library size** instead of the screen — the 470-card account paid for ~150 off-screen rows per frame |
+| **C. Skip unchanged writes** | A track whose shift moved less than `WRITE_EPS_PX` is not written, and a frame in which the spring moved less than that is skipped entirely | Every capped track (`SPAN_CAP`) re-wrote an identical transform each frame |
+| **D. Re-measure at most once per frame, never in an observer** | `MutationObserver`/`ResizeObserver` only set a `tracksDirty` flag; `buildTracks` runs in the frame's read phase, before any write | A **windowed** grid mutates its children on nearly every scroll frame, so measuring (and `getComputedStyle`-walking for the scroller) from the observer put a forced style+layout flush directly in the browser's scroll path |
+
+Two supporting details: the anchor and band edges are found by **binary search** over the
+sorted track offsets (recomputed only when the scroll actually moved, not per frame), and
+`will-change: transform` is set only while an element is inside the band and removed on
+eviction/settle — a bounded handful of layers rather than one per card.
+
+`findScroller` is the one expensive call (a `getComputedStyle` walk). It runs at mount, on
+a window `resize`, and once **after** the spring settles — which is also where a list that
+was re-parented between scrollers (the decks body renders as both a page and a sheet)
+picks up its new one.
+
+---
+
 ## Referenced code
 
 - `src/index.css` — shell `overflow: hidden`, global `user-select: none`, cpcd desktop-selectable exception
 - `src/App.css` — `#root` shell scroller
 - `src/hooks/useBlockEdgeSwipe.ts` — edge-swipe-back blocker
+- `src/hooks/useScrollStretch.ts` — displacement-driven elastic card spacing (see above)
 - `src/games/bubble-match/BubbleMatchPage.tsx` — edge-swipe reference implementation
 - `MobileTabScreen`, `LeafPage`, `NodePage` components — see the sub-docs above
 

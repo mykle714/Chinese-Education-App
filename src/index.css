@@ -185,7 +185,8 @@ textarea,
    /decks page). Callers apply it via `animation: cardPopIn ...` with a per-card
    animation-delay to stagger the cascade. Use fill-mode `backwards` so each card
    holds the 0% (scaled-down, invisible) state during its delay and returns to its
-   own declared transform afterward — important so card hover-lift still works. */
+   own declared transform afterward — important because useScrollStretch writes its
+   own transform on these same cards once the entrance animation is done. */
 @keyframes cardPopIn {
   0% {
     transform: scale(0.3);

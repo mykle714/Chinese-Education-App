@@ -137,7 +137,13 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 borderRadius: '12px',
                 boxShadow: SHADOW.raised,   // `.mcd` — the design's mini-card elevation
                 cursor: onClick ? 'pointer' : 'default',
-                transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                // ⚠️ box-shadow ONLY — never add `transform` to this transition. The
+                // card is a track element of useScrollStretch, which writes an inline
+                // transform every frame during a scroll; a CSS transition on transform
+                // re-filters each of those writes through a 200ms ease and turns the
+                // elastic stretch into lag. Hover is a shadow change, so it does not
+                // need transform transitioned anyway.
+                transition: 'box-shadow 0.2s ease-in-out',
                 // CSS containment: let the browser skip layout/paint for cards
                 // scrolled out of view (the /decks previews can hold hundreds of
                 // cards on real accounts). They stay in the DOM and tappable;
@@ -146,18 +152,21 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 contentVisibility: 'auto',
                 containIntrinsicSize: '92px 132px',
                 // Optional staggered entrance. `backwards` fill holds the scaled-down
-                // start state during the delay; ending at scale(1) lets the hover-lift
-                // transform take over cleanly once the animation finishes.
+                // start state during the delay. This is a keyframe animation, not a
+                // transition, so it is unaffected by the transform note above; it runs
+                // at mount, when the list is not scrolling and the stretch hook writes
+                // nothing.
                 ...(typeof animationDelayMs === "number" && {
                     animation: `cardPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) ${animationDelayMs}ms backwards`,
                 }),
                 position: 'relative',
                 overflow: 'hidden',
                 '&:hover': {
-                    ...(onClick ? {
-                        transform: 'translateY(-4px)',
-                        boxShadow: SHADOW.float,    // one step up on hover-lift
-                    } : {}),
+                    // Highlight in place: one step up in elevation, NO movement. The
+                    // card must not translate on hover — it would fight the inline
+                    // transform useScrollStretch writes on this same element, and the
+                    // two would trample each other mid-scroll.
+                    ...(onClick ? { boxShadow: SHADOW.float } : {}),
                     '& .action-buttons': {
                         opacity: 1,
                     },

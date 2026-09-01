@@ -12,6 +12,8 @@ import {
   Divider
 } from '@mui/material';
 import DelayedCircularProgress from './DelayedCircularProgress';
+import { useScrollStretch } from '../hooks/useScrollStretch';
+import { SHADOW } from '../theme/shadows';
 import { API_BASE_URL, VOCAB_SEARCH_CONFIG } from '../constants';
 import type { VocabEntry } from '../types';
 
@@ -34,6 +36,12 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [offset, setOffset] = useState<number>(0);
   const [, setTotal] = useState<number>(0);
+
+  // Card rows spread apart while the page is scrolled and close back up when it stops
+  // (docs/UX_AND_NAVIGATION.md § "Scroll stretch"). Declared
+  // above the loading/error/empty early returns so the hook order is unconditional.
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  useScrollStretch(gridRef, { axis: 'y' });
 
   const observer = useRef<IntersectionObserver | null>(null);
   const lastEntryElementRef = useCallback((node: HTMLDivElement | null) => {
@@ -189,7 +197,7 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
   );
 
   return (
-    <Box className="vocab-entries-grid" sx={{
+    <Box ref={gridRef} className="vocab-entries-grid" sx={{
       display: 'grid',
       gridTemplateColumns: {
         xs: '1fr',
@@ -211,10 +219,13 @@ const VocabEntryCards = ({ refreshTrigger, searchTerm = '' }: VocabEntryCardsPro
               display: 'flex',
               flexDirection: 'column',
               position: 'relative',
-              transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+              // Shadow only — hover highlights in place and never moves the card.
+              transition: 'box-shadow 0.2s ease',
               '&:hover': {
-                transform: 'translateY(-5px)',
-                boxShadow: 6
+                // SHADOW.float, matching MiniVocabCard's hover, rather than MUI's
+                // elevation 6: the two card grids sit on the same surfaces and were
+                // reaching for the same effect through two different systems.
+                boxShadow: SHADOW.float
               }
             }}
           >

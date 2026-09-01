@@ -1,7 +1,8 @@
-import { type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import Icon from "../Icon";
+import { useScrollStretch } from "../../hooks/useScrollStretch";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SHADOW } from "../../theme/shadows";
@@ -96,14 +97,23 @@ export const ShelfRow: React.FC<ShelfRowProps> = ({
     scrollable = false,
     board = true,
     className,
-}) => (
-    <ShelfRowRoot className={`shelf-row${className ? ` ${className}` : ""}`}>
-        <Spines className="shelf-row__spines" scrollable={scrollable}>
-            {children}
-        </Spines>
-        {board && <Board className="shelf-row__board" />}
-    </ShelfRowRoot>
-);
+}) => {
+    // Spines spread apart while the row is flung sideways and close back up when it
+    // stops (docs/UX_AND_NAVIGATION.md § "Scroll stretch"). Only a scrolling row can
+    // move, so a wrapping row opts out rather than paying for a listener that can
+    // never fire.
+    const spinesRef = useRef<HTMLDivElement | null>(null);
+    useScrollStretch(spinesRef, { axis: "x", enabled: scrollable });
+
+    return (
+        <ShelfRowRoot className={`shelf-row${className ? ` ${className}` : ""}`}>
+            <Spines ref={spinesRef} className="shelf-row__spines" scrollable={scrollable}>
+                {children}
+            </Spines>
+            {board && <Board className="shelf-row__board" />}
+        </ShelfRowRoot>
+    );
+};
 
 export interface ShelfHeaderProps {
     children: ReactNode;

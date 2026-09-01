@@ -7,6 +7,7 @@ import type { CommunityDesign, Language } from "../../types";
 import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { useDragScroll } from "../../hooks/useDragScroll";
+import { useScrollStretch } from "../../hooks/useScrollStretch";
 
 const PAGE_SIZE = 10;
 
@@ -37,6 +38,10 @@ const CommunityFeedRow: React.FC<{
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false);
+
+  // Design cards spread apart while the strip is scrolled and close back up when it
+  // stops (docs/UX_AND_NAVIGATION.md § "Scroll stretch").
+  useScrollStretch(scrollRef, { axis: "x" });
 
   // Desktop mouse click-and-drag panning (touch/trackpad already scroll natively via touchAction).
   useDragScroll(scrollRef);

@@ -5,6 +5,7 @@ import MiniVocabCard from "./MiniVocabCard";
 import type { MasteryBarId } from "../utils/masteryCompute";
 import DelayedCircularProgress from "./DelayedCircularProgress";
 import { useIncrementalList } from "../hooks/useIncrementalList";
+import { useScrollStretch } from "../hooks/useScrollStretch";
 import { useWindowedRows } from "../hooks/useWindowedRows";
 import type { VocabEntry } from "../types";
 
@@ -178,6 +179,12 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
         enabled: windowingEnabled,
     });
     const windowedEntries = visibleEntries.slice(rowWindow.start, rowWindow.end);
+
+    // Rows spread apart while the page is being scrolled and close back up when it
+    // stops (docs/UX_AND_NAVIGATION.md § "Scroll stretch"). The
+    // hook moves rows with a transform only — it must never touch the container's `gap`,
+    // which useWindowedRows above does spacer arithmetic against.
+    useScrollStretch(gridRef, { axis: "y" });
 
     // Reserve the final height while cards are being revealed so growing rows
     // don't push sibling sections below the grid downward (see reservedGridHeight).

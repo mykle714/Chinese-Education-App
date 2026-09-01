@@ -451,7 +451,7 @@ is deliberately **no container box** behind the cards — the beige panel the or
 table sat in read as a mis-drawn frame on the notice's equally-beige card.
 
 The preview is READ-ONLY: no `onClick` is passed, so the card renders with a default
-cursor and no hover lift. Tapping a lent card does nothing; the dialog's own buttons are
+cursor and no hover highlight. Tapping a lent card does nothing; the dialog's own buttons are
 the decision.
 
 **Known gap.** A card previewed from the fetched path (below) is adapted from a

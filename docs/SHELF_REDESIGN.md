@@ -648,7 +648,7 @@ related shelves). Built once; no page invents a copy.
 |---|---|---|
 | `Shelf` | `.shelf` | The padded container; owns the 22px page gutter. |
 | `ShelfHeader` | `.shelfhd` | A row's caption + an optional right-hand affordance icon. Carries its own gutter, so it is a SIBLING of `Shelf`, not a child. |
-| `ShelfRow` | `.shrow` + `.spines` + `.board` | One row. |
+| `ShelfRow` | `.shrow` + `.spines` + `.board` | One row. A `scrollable` row also gets the scroll stretch — spines spread apart under a fling and close back up when it stops ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § "Scroll stretch"); a wrapping row opts out, never scrolling. |
 | `ShelfNote` | `.shnote` | A sentence under a row. |
 | `Spine` | `.sp` and all its modifiers | The set-of-cards atom. |
 | `AddSpine` | `.sp.add` | The "make a new one" affordance. |

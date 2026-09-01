@@ -189,6 +189,18 @@ export interface DecksPanelBodyProps {
     headerDragBind?: () => Record<string, unknown>;
 }
 
+// ── Sheet bottom edge ─────────────────────────────────────────────────────────
+// A modal sheet hides the floating footer for its lifetime (SheetPanel's
+// `useHideFooter`), so the sheet's scroller has nothing to clear at the bottom —
+// only its own breathing room, so the last row is not flush against the sheet's
+// edge. The matching fade runs out AT that edge (no reserved footer band), keeping
+// the "content dissolves rather than being sliced" look without spending 164px of
+// the sheet on emptiness.
+const SHEET_BOTTOM_PAD = 12;
+const SHEET_EDGE_FADE_BAND = 24;
+const SHEET_EDGE_FADE_MASK =
+    `linear-gradient(to bottom, #000 0, #000 calc(100% - ${SHEET_EDGE_FADE_BAND}px), transparent 100%)`;
+
 const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(function DecksPanelBody({
     panel,
     variant = "sheet",
@@ -272,20 +284,28 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                     // child to its natural height makes the column's height the honest
                     // sum of its sections, which is what the scroller wants anyway.
                     "& > *": { flexShrink: 0 },
-                    // The footer bar sits OVER the sheet (it is
-                    // rendered at frame level, above the sheet's z-index), so the
-                    // last tile row has to clear it exactly as a page's scroll
-                    // area does.
-                    paddingBottom: `${FOOTER_CLEARANCE}px`,
-                    // …and fade out over that same band, so tiles dissolve as they
-                    // pass behind the pill instead of being sliced by it. The SAME
-                    // mask MobileTabScreen's ScrollArea uses (imported, not
-                    // re-derived), minus its top band — the sheet's top edge is its
-                    // own grabber, which must stay solid. The mask is anchored to
-                    // this element's box, not to the scrolled content, so the fade
-                    // stays parked at the bottom edge while the content moves.
-                    maskImage: EDGE_FADE_MASK_NO_TOP,
-                    WebkitMaskImage: EDGE_FADE_MASK_NO_TOP,
+                    // Bottom clearance differs by host, because what sits over the
+                    // last row differs:
+                    //
+                    //   PAGE  — the floating footer bar is over the scroll area, so the
+                    //           last row has to clear it exactly as any page's scroll
+                    //           area does (FOOTER_CLEARANCE), and dissolve across the
+                    //           band just above it. That is MobileTabScreen's own mask,
+                    //           imported rather than re-derived, minus its top band.
+                    //   SHEET — the footer is GONE. A modal sheet holds `useHideFooter`
+                    //           for its whole lifetime (SheetPanel), so reserving the
+                    //           footer's band here left ~90px of blank paper under the
+                    //           last row plus a further 74px of fully-masked-out box —
+                    //           dead space in the one surface whose whole job is showing
+                    //           cards. The sheet owes only its own breathing room, and
+                    //           its fade belongs ON its bottom edge.
+                    //
+                    // The mask is anchored to this element's box, not to the scrolled
+                    // content, so the fade stays parked at the bottom edge while the
+                    // content moves.
+                    paddingBottom: isSheet ? `${SHEET_BOTTOM_PAD}px` : `${FOOTER_CLEARANCE}px`,
+                    maskImage: isSheet ? SHEET_EDGE_FADE_MASK : EDGE_FADE_MASK_NO_TOP,
+                    WebkitMaskImage: isSheet ? SHEET_EDGE_FADE_MASK : EDGE_FADE_MASK_NO_TOP,
                 }}
             >
                 {showCards && (<>

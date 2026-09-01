@@ -530,13 +530,21 @@ while a sheet is up. The single `SheetPanel` is **keyed on the section**, so swi
 sheets remounts rather than swapping content under a held height. Dismiss is the eip's:
 drag below the default height, or tap the scrim.
 
-The floating footer (frame-level, `zIndex: 100`)
-hovers *over* the sheet at every height, so the sheet's scroller both reserves
-`FOOTER_CLEARANCE` at its bottom **and wears the same bottom edge-fade mask**
-(`EDGE_FADE_MASK_NO_TOP`, exported from `MobileTabScreen` rather than re-derived) —
-tiles dissolve as they pass behind the pill instead of being sliced by it. The top
-band of that mask is dropped: the sheet's top edge is its own grabber, which stays
-solid.
+**Bottom edge — the sheet owes the footer nothing.** A *modal* sheet holds
+`useHideFooter` for its whole lifetime (`SheetPanel`), so the floating footer is off
+screen while either fdp sheet is up. `DecksPanelBody`'s scroller therefore reserves
+only its own breathing room in the `"sheet"` variant (`SHEET_BOTTOM_PAD`, 12px) and
+fades out over a 24px band ending **at** the sheet's bottom edge
+(`SHEET_EDGE_FADE_MASK`). It used to reserve `FOOTER_CLEARANCE` and wear
+`EDGE_FADE_MASK_NO_TOP` — written when the sheet was persistent and the pill really
+did hover over it — which after the modal conversion left ~90px of blank paper under
+the last row plus a further `FOOTER_HEIGHT` of fully-masked-out box: ~164px of the one
+surface whose whole job is showing cards (fixed 2026-08-31).
+
+The `"page"` variant (the Mastery Centers) keeps both: there the footer *is* over the
+scroll area, so it still reserves `FOOTER_CLEARANCE` and wears
+`EDGE_FADE_MASK_NO_TOP` (exported from `MobileTabScreen` rather than re-derived), whose
+top band is dropped because the sheet's top edge is its own grabber and stays solid.
 `FlashcardsDecksPage` wraps both surfaces in one `position: relative` box, because
 that box — not the viewport — is what caps the sheet's height.
 
@@ -965,6 +973,12 @@ supplies the separation on its inner side — which is why each spacer's height 
 totalRows × cardHeight + (totalRows − 1) × gap`) is unit-tested over a band swept down the
 whole list in `src/__tests__/windowedRows.test.ts`. Get it wrong and the scroll position
 jumps as rows enter the window; that is the failure this arithmetic is guarding against.
+
+**The gap must stay constant.** The spacer arithmetic above is done against a fixed
+`ROW_GAP_PX`, so nothing may animate the grid container's `gap` — the spacers would lie
+by (rows above × delta) px and the scroll would jump. This is why the grid's scroll
+stretch (`useScrollStretch`, [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § "Scroll
+stretch") moves rows with a `translate3d` instead of with `gap`.
 
 **Two deliberate limits:**
 

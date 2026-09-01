@@ -89,12 +89,53 @@ The highest `version` is where prod stands. Pending = any migration file in `dat
 
 ### Inferring pending migrations from the last deployed commit (preferred, no DB query)
 
-Prod runs on the **same machine as dev** and its checkout lives at `~/vocabulary-app`,
-so the commit prod is currently serving is simply that repo's `HEAD` **before** the
-`git pull`. Diffing that commit against what you're about to deploy tells you exactly
-which migration files this deploy introduces — without needing to read the prod DB.
+Prod is a **separate machine** (see Environment above), and its checkout lives at
+`~/vocabulary-app` on that box — so every command in this section runs **over SSH on
+prod**, not against the dev repo. The commit prod is currently serving is that
+checkout's `HEAD` **before** the `git pull`. Diffing that commit against what you're
+about to deploy tells you exactly which migration files this deploy introduces —
+without needing to read the prod DB.
 
-Run this **before** the deploy block to compute the pending set:
+#### ⚠️ First check that prod has not DIVERGED from `origin/main`
+
+The inference below is only valid when prod's `HEAD` is an **ancestor** of
+`origin/main`. It is not always: work sometimes gets committed **directly on prod**
+(the hourly oracle cron runs there, so its failures get fixed there), and such commits
+are easy to leave unpushed. On 2026-08-31 prod was found 1 ahead / 3 behind. A diverged
+prod breaks this step **silently** — `HEAD..origin/main` returns an empty file list, so
+a deploy with pending migrations reports "no migrations" and the block omits them.
+
+Run this FIRST, on prod:
+
+```bash
+cd ~/vocabulary-app
+git fetch origin main
+# "<behind>\t<ahead>" — left = commits on origin/main that prod lacks,
+# right = commits on prod that origin/main lacks.
+git rev-list --left-right --count origin/main...HEAD
+```
+
+- **right column `0`** — prod is a clean ancestor. Proceed to the inference below.
+- **right column non-zero** — prod has local commits. **Do not `git pull` and do not
+  `reset --hard`**: the first creates a merge, the second destroys real work. Inspect
+  them (`git log --oneline origin/main..HEAD`, `git show <sha>`), then converge with:
+
+  ```bash
+  git pull --rebase origin main
+  git push origin main
+  ```
+
+  Only then compute the pending set, and use the **post-rebase** `HEAD` of the commit
+  prod was serving (capture `PROD_SHA` *before* the rebase) — or just fall back to the
+  authoritative `schema_migrations` query, which is unaffected by any of this.
+
+Also worth checking in the same pass: `git status --short` on prod. Untracked files
+there (e.g. `docs/oracle-runs/*`) are normal cron output and need no action, but a
+**modified tracked file** means someone hand-edited prod and the pull will conflict.
+
+#### Computing the pending set
+
+Run this **before** the deploy block:
 
 ```bash
 # Commit prod is currently on (read its checkout's HEAD before pulling):
@@ -112,9 +153,8 @@ git -C ~/vocabulary-app log --name-only --diff-filter=A --pretty=format: \
 Each line is a migration to run, already in `sort -V` order. Use this list to fill in
 the inline migration commands in the deploy block (Step 3). Cross-check against the
 `schema_migrations` query above if anything looks off — the DB table is authoritative,
-the git diff is the fast path. (If the local repo is what's deployed rather than a
-separate `~/vocabulary-app` checkout, substitute the appropriate path / use the
-`schema_migrations` query instead.)
+the git diff is the fast path, and an **empty** diff should be trusted only once the
+divergence check above has come back clean.
 
 **The canonical runner is `database/deploy/migrate.sh`.** It reads `MAX(version)`, applies every file numbered higher (in `sort -V` order), and **records each one into `schema_migrations`**. It is idempotent — already-applied files are skipped, so re-running is safe.
 
@@ -146,8 +186,8 @@ If it fails:
 Stage and commit all relevant changes, then push to `origin main`.
 
 Determine which migrations are pending using the **"Inferring pending migrations from
-the last deployed commit"** method above (diff `prodSHA..origin/main` over
-`database/migrations/`). This is what drives the inline migration commands in Step 3 —
+the last deployed commit"** method above — **its divergence check first**, then the
+diff of `prodSHA..origin/main` over `database/migrations/`. This is what drives the inline migration commands in Step 3 —
 note the exact filenames + version numbers so they can be dropped into the command
 block verbatim. The `schema_migrations` query is the authoritative fallback if the
 git diff is ambiguous.

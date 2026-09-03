@@ -1,6 +1,7 @@
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
+import { MINI_CARD_HEIGHT, MINI_CARD_WIDTH } from "../../components/miniCardFace";
 
 /**
  * Shared `sx` fragments for the Study Challenge screens
@@ -86,14 +87,44 @@ export const challengeMessageSx = {
 //
 // The 92×132 thumbnail is the app-wide mini preview footprint — MiniVocabCard and
 // QuickMarkCard use the identical box, which is why all three drop into the same grid.
-export const CHALLENGE_WORD_CARD_WIDTH = 92;
-export const CHALLENGE_WORD_THUMBNAIL_HEIGHT = 132;
-/** The strike button block below the thumbnail; absent on the read-only card. */
-export const CHALLENGE_WORD_BUTTON_HEIGHT = 32;
+// The word card IS the app's mini preview card, so its footprint is not a challenge
+// decision — it is taken from the shared face (src/components/miniCardFace.ts). These
+// aliases stay because the grid-height helper below and the panel's layout read them by
+// their local names; they must never be given their own values.
+export const CHALLENGE_WORD_CARD_WIDTH = MINI_CARD_WIDTH;
+export const CHALLENGE_WORD_THUMBNAIL_HEIGHT = MINI_CARD_HEIGHT;
+/**
+ * The gutter under the thumbnail that the "Mark as known" pill hangs into.
+ *
+ * The pill is absolutely positioned and straddles the card's bottom edge, so it costs
+ * no layout of its own — but two grid rows would collide without a little breathing
+ * room beneath the upper one. Smaller than the 32px the old always-visible strike
+ * button reserved, because half the pill overlaps the card it belongs to.
+ */
+export const CHALLENGE_WORD_PILL_GUTTER = 18;
 
-/** Row height to reserve in MiniVocabCardGrid, with or without the strike button. */
+/**
+ * Row height to reserve in MiniVocabCardGrid.
+ *
+ * `strikeable` is the EDITABLE set (issue / incoming), which raises a pill on the
+ * selected card. A settled set (the `waiting` sheet, and every read-only word grid on
+ * the detail page) reserves nothing extra.
+ */
 export const challengeWordCardHeight = (strikeable: boolean): number =>
-    CHALLENGE_WORD_THUMBNAIL_HEIGHT + (strikeable ? CHALLENGE_WORD_BUTTON_HEIGHT : 0);
+    CHALLENGE_WORD_THUMBNAIL_HEIGHT + (strikeable ? CHALLENGE_WORD_PILL_GUTTER : 0);
+
+/**
+ * How long a struck card fades out for before its replacement is swapped in.
+ *
+ * ⚠️ IT IS A FLOOR ON THE ROUND TRIP, NOT A DELAY ADDED TO IT. `handleStrike` starts
+ * the fade and the request together and waits for BOTH, so a slow server costs nothing
+ * extra and a fast one still gets the full fade — the swap never happens mid-animation,
+ * which is what made the replacement look like a flicker rather than an exchange.
+ *
+ * Shared with ChallengeWordCard, which owns the matching CSS transition; the two must
+ * agree, so the number lives here rather than in either of them.
+ */
+export const CHALLENGE_STRIKE_FADE_MS = 200;
 
 // (`wordTileSx` — the old full-width review/detail word row — was removed when both
 // surfaces moved to the mini preview card grid.)

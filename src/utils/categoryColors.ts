@@ -3,6 +3,7 @@
 // Extracted here so MiniVocabCard, VocabCardDetailPage, and the flashcard
 // learn-page chip all draw from one source instead of duplicating the map.
 import type { MasteryBarId } from "../../server/contracts/wire";
+import { COLORS, RAMP, type RampHue } from "../theme/colors";
 // ⚠️ VALUES REWRITTEN for the shelf redesign (docs/SHELF_REDESIGN.md, decision D2).
 // The four categories are now the design's OKLCH PASTELS at the hue each already
 // owned. The names, the shape and every consumer are unchanged — only the values moved:
@@ -70,15 +71,28 @@ export const BAND_COLORS = {
 
 /**
  * "Learn Now" — the cards still being learned (every sorted card whose core bar is
- * unfinished). It is a COLLECTION, not a band, so it takes a hue no band owns:
- * purple. Green (Comfortable) would have been free on the fdp now that the band
+ * unfinished). It is a COLLECTION, not a band, so it takes a hue no band owns: the
+ * gold `--yel`. Green (Comfortable) would have been free on the fdp now that the band
  * tiles are gone, but Comfortable green still paints mini-card chips and the Account
  * page's bucket row, and a learner should not meet the same color meaning two things.
+ *
+ * It was purple until 2026-09-01. Gold is the hue the fdp's **Study Mix** card already
+ * carries (`HAND_HUES.mix`, FlashcardsDecksPage), and Study Mix draws from exactly this
+ * set of cards — the same material shown as a hand and as a filter — so painting the
+ * two the same colour makes that relationship visible on one screen. Purple was a hue
+ * with no other referent, which is why nothing else had to move with it.
  *
  * Shared by the fdp tile and the Games hub selector dot via `builtinCollections.ts`.
  * Same two-tone shape as BAND_COLORS / MASTERY_BAR_COLORS: saturated body + light fill.
  */
-export const LEARN_NOW_COLORS = { main: "#ECE2FF", accent: "#F8F4FF" } as const;
+/**
+ * The HUE, not the hexes. A collection tile now needs a third tier of its colour — the
+ * saturated `ink` — for its ACTIVE (filtering) state, and the redesign's rule is that a
+ * component takes a hue KEY when it needs more than one tier (theme/colors § RAMP), so
+ * a fill can never be paired with another hue's ink. The pair below is derived from it.
+ */
+export const LEARN_NOW_HUE: RampHue = "yel";
+export const LEARN_NOW_COLORS = { main: RAMP[LEARN_NOW_HUE].fill, accent: RAMP[LEARN_NOW_HUE].tint } as const;
 
 /**
  * The two-tone tile palette for each mastery bar's Mastered collection (the fdp's
@@ -109,17 +123,66 @@ export const LEARN_NOW_COLORS = { main: "#ECE2FF", accent: "#F8F4FF" } as const;
  * only "reading" and "writing". They still carry the band meaning on the Account
  * page's bucket row and on mini-card chips, where no Mastered tile appears.
  */
-export const MASTERY_BAR_COLORS: Record<MasteryBarId, { main: string; accent: string }> = {
+export const MASTERY_BAR_HUES: Record<MasteryBarId, RampHue> = {
     // No mark hue to borrow — recognition + production — so it keeps Mastered blue.
-    core: { main: BAND_COLORS.Mastered.main, accent: BAND_COLORS.Mastered.accent },
-    // Read from BAND_COLORS rather than restated, so the Mastered spines and the band
-    // spines above them on the same shelf cannot drift onto different reds/oranges.
-    reading: { main: BAND_COLORS.Unfamiliar.main, accent: BAND_COLORS.Unfamiliar.accent },
-    writing: { main: BAND_COLORS.Target.main, accent: BAND_COLORS.Target.accent },
+    core: "blu",
+    // The same hues the Unfamiliar / Target BANDS use, by construction rather than by
+    // two hand-copied hexes: reading's red and writing's orange are the hues those
+    // marks already own.
+    reading: "red",
+    writing: "org",
 };
+
+export const MASTERY_BAR_COLORS: Record<MasteryBarId, { main: string; accent: string }> =
+    Object.fromEntries(
+        (Object.keys(MASTERY_BAR_HUES) as MasteryBarId[]).map((bar) => {
+            const hue = RAMP[MASTERY_BAR_HUES[bar]];
+            return [bar, { main: hue.fill, accent: hue.tint }];
+        })
+    ) as Record<MasteryBarId, { main: string; accent: string }>;
 
 /** Maps a card's progress category to its display color, falling back to a
  *  neutral gray for unknown/undefined categories. */
+/**
+ * The band's SATURATED INK, for a band-colored shape too small to carry the pastel's
+ * required outline ring.
+ *
+ * `CATEGORY_COLORS` above are ~1.15:1 pastels that are only legible when the shape draws
+ * `COLORS.markOutline` around them. A 3px hairline has no room for a 1px inset ring — it
+ * would eat two thirds of the fill — so such a shape needs a color that stands on its own.
+ * These are the ramp's dark `*A` members at each band's existing hue, so the band keeps
+ * the hue it owns everywhere else and only the tier changes.
+ *
+ * ⚠️ Deliberately NOT the pre-redesign saturated band values
+ * (#EF476F / #FF9E5A / #05C793 / #779BE7). Those are byte-for-byte the same hexes as
+ * `MARK_TYPE_COLORS` (masteryCompute.ts): Comfortable green IS Production green and
+ * Mastered blue IS Recognition blue. Since the mini-card strip is band-colored while the
+ * cdp's mark cells beside it stay mark-type-colored, reusing those values would put the
+ * same blue on two surfaces meaning two different things. The `*A` tier is darker than
+ * any mark color and so reads as its own register.
+ *
+ * Consumers: `MiniVocabCard`'s mastery pip strip.
+ */
+// These were literal because this module used to sit BELOW the theme (`theme/colors.ts`
+// imported `CATEGORY_COLORS` from here), so importing `COLORS` back formed a cycle whose
+// load order could evaluate `COLORS.redA` as undefined at startup. That back-edge was cut
+// on 2026-08-31 — the theme now imports nothing — so these read the ramp directly and can
+// no longer drift from it. (`MARK_TYPE_COLORS` in masteryCompute.ts is still literal, and
+// is deliberately a DIFFERENT register: see the warning above.)
+export const BAND_INK: Record<string, string> = {
+    Unfamiliar: COLORS.redA,
+    Target: COLORS.orgA,
+    Comfortable: COLORS.grnA,
+    Mastered: COLORS.bluA,
+};
+
+/**
+ * The band's ink, falling back to `--muted` for an unknown/absent category — a neutral
+ * grey rather than a fifth hue, so "no band yet" never reads as a band of its own.
+ */
+export const getBandInk = (category?: string): string =>
+    (category && BAND_INK[category]) || COLORS.textSecondary;   // --muted
+
 export const getCategoryColor = (category?: string): string => {
     switch (category) {
         case "Unfamiliar": return CATEGORY_COLORS.Unfamiliar;

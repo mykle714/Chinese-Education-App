@@ -286,7 +286,37 @@ export class StudyChallengeController {
     }
   };
 
-  /** POST /api/studyChallenges/:id/rounds — body { roundIndex, score, breakdown } */
+  /**
+   * POST /api/studyChallenges/:id/taunt — body { tauntId }
+   *
+   * Returns the refreshed challenge rather than 204, because the results screen has to
+   * repaint the taunt onto the opponent's card the instant it lands, and re-fetching
+   * the whole challenge to learn one string is a round trip for nothing.
+   */
+  sendTaunt = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const tauntId = String((req.body ?? {}).tauntId ?? '');
+      res.json(await this.studyChallengeService.sendTaunt(
+        userId,
+        String(req.params.id),
+        tauntId,
+        StudyChallengeController.anytime(req)
+      ));
+    } catch (error) {
+      handleControllerError(error, res, 'StudyChallengeController.sendTaunt');
+    }
+  };
+
+  /**
+   * POST /api/studyChallenges/:id/rounds — body { roundIndex, score, breakdown, final }
+   *
+   * The same endpoint writes all three kinds of round write (§ 5.1a): the CLAIM at
+   * the player's first mark, the per-mark progress updates, and the FINAL score.
+   * `final` defaults to true so an older client — or a curl — that omits it still
+   * submits a finished round rather than silently leaving one open forever.
+   */
   submitRound = async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = requireUserId(req, res);
@@ -305,6 +335,7 @@ export class StudyChallengeController {
         // does not validate the breakdown's internals either — it is an open shape a
         // game may enrich without a migration.
         body.breakdown as any,
+        body.final !== false,
         StudyChallengeController.anytime(req)
       ));
     } catch (error) {

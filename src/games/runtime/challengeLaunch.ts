@@ -1,4 +1,5 @@
 import type { ChallengeGameRef } from "../../types";
+import { GAME_REGISTRY } from "../registry";
 
 /**
  * How a Study Challenge round LAUNCHES a game (docs/STUDY_CHALLENGE.md § 5).
@@ -33,6 +34,13 @@ export interface ChallengeLaunch {
     state: Record<string, unknown>;
     /** Human label for the round row ("Bubble Match", "Word Search (Pinyin)"). */
     title: string;
+    /**
+     * The game's Material Symbols glyph, read off GAME_REGISTRY rather than restated
+     * here — the round row on View Challenge shows the same mark the Games hub does,
+     * and two copies of that mapping would drift the first time a game is repainted.
+     * Falls back to a generic one for a game this build no longer knows.
+     */
+    glyph: string;
 }
 
 /**
@@ -106,5 +114,6 @@ export function challengeLaunchFor(
         to: `${base.route}?${params.toString()}`,
         state: game.mode ? { ...base.state, mode: game.mode } : base.state,
         title: game.mode ? `${base.title} (${game.mode})` : base.title,
+        glyph: GAME_REGISTRY.find((def) => def.gameId === game.gameId)?.glyph ?? "sports_esports",
     };
 }

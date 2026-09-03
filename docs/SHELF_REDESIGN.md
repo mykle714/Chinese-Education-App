@@ -194,10 +194,11 @@ both clean.
   23% may now be too faint even with the ring. Flagged in the file; needs a device.
 - **Unverified, and wanting eyes on a real screen rather than a typecheck:** the
   mark cells at 8px, the flp's tone-colored pinyin, and the three category chips
-  that flipped from white-on-saturated to ink-on-pastel (MiniVocabCard's corner
-  badge, VocabCardDetailBody's chip, and CardFace's `CategoryChip` — the last of
-  which was **deleted on 2026-08-28** with the card-back category, so only two
-  remain to verify).
+  that flipped from white-on-saturated to ink-on-pastel. Two of the three are now
+  **gone**: CardFace's `CategoryChip` was deleted on 2026-08-28 with the card-back
+  category, and MiniVocabCard's corner badge was replaced by the eight-mark mastery
+  window (see [MASTERY_REWORK.md](./MASTERY_REWORK.md) § "Mini cards — the eight-mark window").
+  Only VocabCardDetailBody's chip remains to verify.
 
 <details><summary>oklch → sRGB hex, for re-deriving a value</summary>
 
@@ -2746,10 +2747,16 @@ slot — both budgeted into **entry 4**.
 > neighbours to be compared against; "612" and "208" are the figures, and a 74px spine
 > cannot print a figure at a size worth reading.
 >
-> So they keep the shelf's MATERIAL and drop its geometry: same single pastel, same inset
-> white highlight, same dark strap down the left edge, same bottom-heavy corner radius —
-> a spine laid on its side and opened up far enough to hold a number. Do not read this as
-> licence to bring tiles back anywhere else.
+> They now take the **fdp Centers rail's material** rather than the shelf's: the hand's
+> hairline border and resting elevation, a 15px radius, `13px 13px 14px` padding, a 19px
+> glyph on its own line, 9px between the pair — the same object as
+> `flashcards-decks__center-tile`, because a Center tile and a library tile are the same
+> KIND of destination (a place to go look at a set of cards) and sat a thumb's width apart
+> in two different idioms. Each keeps its own pastel, and the FIGURE is **right-adjusted**
+> on the label's line so both tiles' counts land on one vertical rule. (Superseded: the
+> earlier "spine laid on its side" treatment — single pastel, inset white highlight, dark
+> left strap, bottom-heavy radius.) Do not read this as licence to bring tiles back
+> anywhere else.
 
 ### D9 · `DeckTile` is deleted
 The app switches to the new design entirely: the **spine replaces the stacked-card
@@ -2838,8 +2845,9 @@ re-derived (D4).
 - **`StudyHand`'s front card** — a two-shadow stack (one ABOVE it, one below) so it reads as
   lifted off the two cards behind. No single token expresses that, and its ink is already
   the design's.
-- **`LibraryDuo`** — the spine shape at a different inset alpha (.35 vs .5), authored that
-  way in entry 2 on purpose. `SHADOW.spine` would silently change it.
+- **`LibraryDuo`** — no longer shelf material at all: it shares `HAND_CARD_RESTING_SHADOW`
+  with the fdp's Centers rail and the hand's resting cards (see D9's narrowing), so
+  `SHADOW.spine` would break that pairing rather than tidy it.
 - **The scp's LOCKED card** — the artboards never draw a pressed-in card, so there is no
   design value for "recessed". Left hand-authored, but re-inked to the shadow hue so it is
   not the one pure-black shadow left on the page.

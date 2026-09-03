@@ -427,7 +427,7 @@ list was the first version and was not enough: a learner handed words they never
 cannot judge them without the meaning, and cannot recognise them later if the preview
 looks nothing like the card they end up with. Because the card resolves everything from
 the entry it is given (sense-aware dd + pinyin, icon or icon layout, per-card color and
-text-color overrides, the utcm badge), the preview agrees with the card face the learner
+text-color overrides), the preview agrees with the card face the learner
 is about to meet by construction rather than by re-implementing it.
 
 The **mastery strip is suppressed** here (`showMasteryStrip={false}`, a prop added to
@@ -454,12 +454,13 @@ The preview is READ-ONLY: no `onClick` is passed, so the card renders with a def
 cursor and no hover highlight. Tapping a lent card does nothing; the dialog's own buttons are
 the decision.
 
-**Known gap.** A card previewed from the fetched path (below) is adapted from a
-`DiscoverCard` by `discoverCardToProvisionalEntry`, which cannot supply `category` — so
-those previews carry no utcm badge where the surfaces holding real vet rows (Bubble
-Match, Speed Reading) do. Closing it means serving vet rows from `GET /provisionalSet`.
-The matching `typedMarkHistory` gap no longer shows, since the strip is off on both
-paths.
+**Known gap — CLOSED.** A card previewed from the fetched path (below) is adapted from a
+`DiscoverCard` by `discoverCardToProvisionalEntry`, which cannot supply `category`, so
+those previews used to carry no utcm badge where the surfaces holding real vet rows
+(Bubble Match, Speed Reading) did. The **corner badge no longer exists** on any mini card
+(see [MASTERY_REWORK.md](./MASTERY_REWORK.md) § "Mini cards — the eight-mark window"), so the two
+paths now agree by construction. The matching `typedMarkHistory` gap likewise does not
+show, since the strip is off on both paths.
 
 There is no way to decline. Declining would mean not playing, which is the outcome this
 whole rework removed.

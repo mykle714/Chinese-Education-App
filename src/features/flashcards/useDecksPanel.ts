@@ -8,10 +8,29 @@ import { ALL_COLLECTION_ID, type MasteryBarId } from "../../../server/contracts/
 import type { VocabEntry } from "../../types";
 import type { MasteryGoals } from "../../utils/masteryCompute";
 import { filterVocabEntries } from "../../utils/vocabSearch";
-import { sortVocabEntries, defaultSortKey, type VocabSortKey } from "../../utils/vocabSort";
+import { barCategory } from "../../utils/masteryCompute";
+import { sortVocabEntries, masteryLowestKey, type VocabSortKey } from "../../utils/vocabSort";
 import {
     builtinCollectionCount, lensCollectionEntries, type BuiltinCollectionEntry,
 } from "./builtinCollections";
+
+/**
+ * Which of the lens's two constants the inline card grid is narrowed to, if either.
+ *
+ * The duo's tiles USED to navigate to a collection page that showed this same grid
+ * over a server-filtered set. They are filters on the panel's own grid instead: the
+ * whole library is already in memory here, the panel already owns a search box and a
+ * sort menu over it, and a page that re-fetched a subset of what the caller was
+ * already holding was a navigation spent on an `Array.filter`.
+ *
+ * `"all"` is the neutral state — no tile active, the whole library on screen — and it
+ * is what tapping the ACTIVE tile returns to, so the pair behaves as a two-button
+ * toggle group rather than a mode the learner can get stuck in.
+ *
+ * The two values match the `CollectionRef.kind`s of `lensCollectionEntries`, which is
+ * what lets the body map a tile to a filter without a second vocabulary.
+ */
+export type CardsFilter = "all" | "learn-now" | "mastered";
 
 /**
  * useDecksPanel — everything the decks PANEL needs, for one mastery lens.
@@ -37,7 +56,7 @@ import {
  * One `MasteryBarId`, threaded into four places, and everything else follows:
  *   • the collection list — that bar's Learn Now and Mastered (`lensCollectionEntries`)
  *   • the tile figures — band counts read off that bar (`?bar=` on categoryCounts)
- *   • the card grid's ordering — that bar's mastery / cooldown keys (`defaultSortKey`)
+ *   • the card grid's ordering — that bar's mastery / cooldown keys (`masteryLowestKey`)
  *   • every card's strip and badge — that bar alone (DecksPanelBody passes `lens` down)
  * See docs/DECKS_FEATURE.md § "Mastery Centers" and docs/MASTERY_REWORK.md.
  *
@@ -75,9 +94,17 @@ export interface DecksPanelState {
      * hidden from every deck/search read (docs/PROVISIONAL_CARDS.md).
      */
     allCards: VocabEntry[];
-    /** The whole sorted library, filtered by `cardsSearch` and ordered by `cardsSortKey`. */
+    /**
+     * The library narrowed by `cardsFilter`, then by `cardsSearch`, then ordered by
+     * `cardsSortKey`.
+     */
     visibleCards: VocabEntry[];
-    /** Size of the library BEFORE the search filter — the figure on the section caption. */
+    /**
+     * Size of the set the grid is showing BEFORE the search filter — the figure on the
+     * section caption. It follows `cardsFilter` (so an active Learn Now tile makes the
+     * caption name that set's size) but never the search box, because a number that
+     * shrank as you typed would be reporting the search rather than the set.
+     */
     cardsTotal: number;
     cardsLoading: boolean;
     cardsError: string | null;
@@ -85,6 +112,9 @@ export interface DecksPanelState {
     setCardsSearch: (value: string) => void;
     cardsSortKey: VocabSortKey;
     setCardsSortKey: (key: VocabSortKey) => void;
+    /** Which library constant the grid is narrowed to, or `"all"`. */
+    cardsFilter: CardsFilter;
+    setCardsFilter: (filter: CardsFilter) => void;
 }
 
 export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
@@ -135,8 +165,15 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
     const [cardsSearch, setCardsSearch] = useState("");
     // Ordering of that grid. Held per-visit rather than persisted, the same rule the
     // collection page follows: it is a way of LOOKING at the set, not a property of it.
-    // `false` = not a deck, so core opens on card age and a Center on its own mastery.
-    const [cardsSortKey, setCardsSortKey] = useState<VocabSortKey>(() => defaultSortKey(false, lens));
+    //
+    // Opens on the LENS BAR's mastery, lowest first, in all three panels (fdp, Reading
+    // Center, Writing Center) — the panel lists the whole library and is opened to answer
+    // "what should I work on". See `masteryLowestKey` for why this is not `defaultSortKey`.
+    const [cardsSortKey, setCardsSortKey] = useState<VocabSortKey>(() => masteryLowestKey(lens));
+    // Which library constant the grid is narrowed to. Per-visit like the sort key and
+    // for the same reason: it is a way of LOOKING at the library, not a property of it.
+    // Opens on "all" — the panel's job is to show the whole library until asked otherwise.
+    const [cardsFilter, setCardsFilter] = useState<CardsFilter>("all");
 
     const loadDecks = useCallback(async () => {
         try {
@@ -206,10 +243,26 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
     // keystroke lands. Without it every character committed a full re-filter, a
     // re-sort and a grid remount before the caret could move — the cost the windowed
     // grid reduced but did not remove, since the filter still walks the whole library.
+    //
+    // The COLLECTION filter runs first and separately, because its result is also the
+    // caption's figure (the size of the set being searched, not of the search's hits).
+    // It bands each card on THIS LENS's bar with the same `barCategory` the mini-card
+    // strips and the server's collection SQL use, so the grid's membership and the
+    // tile's figure are two statements of one rule rather than two implementations —
+    // "Learn Now" is exactly `category <> 'Mastered'`, which is the collection's own
+    // definition (docs/DECKS_FEATURE.md § "Which collections exist").
+    const collectionCards = useMemo(() => {
+        if (cardsFilter === "all") return cards;
+        const wantMastered = cardsFilter === "mastered";
+        return cards.filter(
+            (card) => (barCategory(card.typedMarkHistory, lens) === "Mastered") === wantMastered
+        );
+    }, [cards, cardsFilter, lens]);
+
     const deferredSearch = useDeferredValue(cardsSearch);
     const filteredCards = useMemo(
-        () => filterVocabEntries(cards, deferredSearch),
-        [cards, deferredSearch]
+        () => filterVocabEntries(collectionCards, deferredSearch),
+        [collectionCards, deferredSearch]
     );
     const visibleCards = useMemo(
         () => sortVocabEntries(filteredCards, cardsSortKey),
@@ -241,12 +294,14 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
         addDeck,
         allCards: cards,
         visibleCards,
-        cardsTotal: cards.length,
+        cardsTotal: collectionCards.length,
         cardsLoading,
         cardsError,
         cardsSearch,
         setCardsSearch,
         cardsSortKey,
         setCardsSortKey,
+        cardsFilter,
+        setCardsFilter,
     };
 }

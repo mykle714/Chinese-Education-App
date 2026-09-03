@@ -30,10 +30,13 @@ import type { CollectionRef } from "./collectionRef";
  * The glyph for one collection.
  *
  *   all              — a card stack: the whole library.
- *   learn-now        — a graduation cap: the part still being studied.
- *   mastered (core)  — a trophy; the reading and writing bars get the glyph of the
- *                      SKILL they mastered (an open book / a pencil) rather than three
- *                      identical trophies, which would defeat the point of the glyph.
+ *   learn-now        — `autorenew`: the set in rotation, still coming back around.
+ *   mastered (core)  — `check_circle`, a check in a circle: the set that is DONE. It and
+ *                      learn-now read as a matched pair of STATUS glyphs (in rotation vs
+ *                      finished) rather than two unrelated objects. The reading and
+ *                      writing bars still get the glyph of the SKILL they mastered (an
+ *                      open book / a pencil) rather than three identical checks, which
+ *                      would defeat the point of the glyph.
  *   deck             — a folder: a set the user assembled themselves.
  */
 export function collectionGlyph(ref: CollectionRef): string {
@@ -41,7 +44,7 @@ export function collectionGlyph(ref: CollectionRef): string {
         case "all":
             return "style";
         case "learn-now":
-            return "school";
+            return "autorenew";
         case "mastered":
             switch (ref.bar) {
                 case "reading":
@@ -49,7 +52,7 @@ export function collectionGlyph(ref: CollectionRef): string {
                 case "writing":
                     return "edit";
                 default:
-                    return "trophy";
+                    return "check_circle";
             }
         case "deck":
             return "folder";

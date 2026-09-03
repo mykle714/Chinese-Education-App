@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
-import { Box, Button, Menu, Typography, ToggleButtonGroup, ToggleButton } from "@mui/material";
-import type { SxProps, Theme } from "@mui/material/styles";
+import { Box, IconButton, Menu, Tooltip, Typography, ToggleButtonGroup, ToggleButton } from "@mui/material";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { sortBundles, sortLabel, type VocabSortKey } from "../../utils/vocabSort";
 import type { MasteryGoals, MasteryBarId } from "../../utils/masteryCompute";
@@ -9,8 +8,15 @@ import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 
 /**
- * CollectionSortControl — the "Sort by" button and its dimension menu, for any
+ * CollectionSortControl — the sort/filter icon and its dimension menu, for any
  * surface that lists a set of cards.
+ *
+ * It renders a BARE ICON with no wrapper row, because every host mounts it inside a
+ * SearchField's `endAction` slot — the filter belongs on the search row, not on a row
+ * of its own beneath it. The active ordering is deliberately NOT shown on the trigger:
+ * the menu is the place that answers "which sort is on", and a permanent label cost a
+ * full row on the two most card-dense screens in the app. It survives in the trigger's
+ * `aria-label`, so a screen reader still announces it.
  *
  * ── Why it is a component ─────────────────────────────────────────────────────
  * Two surfaces order the same `VocabEntry[]` with the same keys: the collection page
@@ -55,7 +61,7 @@ export interface CollectionSortControlProps {
      */
     allowDeckOnly?: boolean;
     /**
-     * Offer the PER-SKILL mastery rows (Mastery / Date mastered for the reading and
+     * Offer the PER-SKILL rows (the Mastery and Cooldown rows for the reading and
      * writing bars). False keeps the menu to the orderings that apply to every card —
      * what the /decks sheet's whole-library Cards section wants, where a per-skill
      * ordering is a niche view of a list the learner opened to find one word in.
@@ -67,8 +73,6 @@ export interface CollectionSortControlProps {
      * (e.g. "collection-view" → `collection-view__sort-button`).
      */
     classPrefix: string;
-    /** Layout of the button's ROW — the host owns its width and padding. */
-    sx?: SxProps<Theme>;
 }
 
 const CollectionSortControl: React.FC<CollectionSortControlProps> = ({
@@ -80,7 +84,6 @@ const CollectionSortControl: React.FC<CollectionSortControlProps> = ({
     allowDeckOnly = false,
     allowPerSkillBars = true,
     classPrefix,
-    sx,
 }) => {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
 
@@ -103,30 +106,20 @@ const CollectionSortControl: React.FC<CollectionSortControlProps> = ({
 
     return (
         <>
-            {/* Sort row. A text button rather than a bare icon: the ACTIVE ordering is
-                the thing worth showing — a learner who sorted by "Least mastered" and
-                then scrolled needs to see why the order looks the way it does. */}
-            <Box
-                className={`${classPrefix}__sort`}
-                sx={{ display: "flex", justifyContent: "flex-end", ...sx }}
-            >
-                <Button
+            {/* Bare icon trigger. Sized `small` to sit inside a SearchField's trailing
+                adornment alongside the clear button without stretching the input. */}
+            <Tooltip title={`Sort: ${sortLabel(sortKey, language, goals, lens)}`}>
+                <IconButton
                     className={`${classPrefix}__sort-button`}
-                    startIcon={<SwapVertIcon />}
+                    aria-label={`Sort: ${sortLabel(sortKey, language, goals, lens)}`}
+                    size="small"
+                    edge="end"
                     onClick={(e) => setAnchor(e.currentTarget)}
-                    sx={{
-                        textTransform: "none",
-                        fontFamily: FONTS.sans,
-                        fontSize: SIZE.body,
-                        fontWeight: WEIGHT.medium,
-                        color: COLORS.textSecondary,
-                        padding: "2px 8px",
-                        minWidth: 0,
-                    }}
+                    sx={{ color: COLORS.textSecondary }}
                 >
-                    {sortLabel(sortKey, language, goals, lens)}
-                </Button>
-            </Box>
+                    <SwapVertIcon fontSize="small" />
+                </IconButton>
+            </Tooltip>
 
             <Menu
                 className={`${classPrefix}__sort-menu`}

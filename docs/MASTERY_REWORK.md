@@ -327,7 +327,7 @@ users join**:
 | flp working-loop quotas + cooldown window | `OnDeckVocabService`, Section 6 |
 | Level estimate | `StarterPacksService.estimateLevel` |
 | Night Market community **Learning** feed (a word drops out when core is Mastered) | `CommunityLayoutDAL.ts`, [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md) |
-| The mini-card badge and the `category` field on the wire | `VocabEntryBase.category` |
+| The `category` field on the wire | `VocabEntryBase.category` |
 
 The per-bar reads are the exceptions, and each one is a *display* of that bar:
 the Mastered collections (`masteredBarClause(bar)`), the per-bar Learn Now collections
@@ -337,9 +337,12 @@ the Mastered collections (`masteredBarClause(bar)`), the per-bar Learn Now colle
 `MasteryBarId` a page is read through: the fdp, its collections, its decks and search
 are `core`; the Reading and Writing Centers are their own skill
 (docs/DECKS_FEATURE.md § "Mastery Centers"). The band counts, the collection
-membership, the sort keys, the mini-card strip, the mini-card badge and the cdp's
-Mastery section all come from the lens bar — the badge is the notable one, because it
-is the only place the whole-card answer is *replaced* rather than joined.
+membership, the sort keys, the mini-card strip and the cdp's Mastery section all come
+from the lens bar.
+
+(There used to be a mini-card *badge* here too — a corner U/T/C/M letter disc — and it
+was the notable case, because it was the only place the whole-card answer was *replaced*
+rather than joined. It is **gone**; see "Mini cards — the eight-mark window" below.)
 
 ⚠️ **A surface never shows a bar it is not about.** `core` is not "no lens", it is the
 recognition/production lens, and it draws ONE bar. Drawing a track per *goal* — which
@@ -370,7 +373,7 @@ writing left empty.**
 
 **So "mark as mastered" does NOT fill every bar.** A learner with the writing goal who
 sorts a card as known still sees an empty Write bar on it, and the card appears in
-*Mastered Cards* but not in *Writing Mastered*. That is the intended reading of the
+*Mastered* but not in *Mastered Writing*. That is the intended reading of the
 three bars: only the flp and the games can fill the reading and writing ones.
 
 ### One mark moves exactly one bar
@@ -428,13 +431,15 @@ Four rules govern each key:
   when the LEARNER carried the bar over the line, and that moment was not observed.
   **Do not "fix" this** by sweeping the vet tables on goal change.
 
-Its only consumer today is the collection **Sort by → Date mastered**
-(`src/utils/vocabSort.ts`, [DECKS_FEATURE.md](./DECKS_FEATURE.md) § "Sort by"), which
-gets **one row per active bar**, each reading `masteredAtForBar(masteredAt, bar)` —
-that bar's OWN stamp. Deliberately not the newest across bars: the three are three
-separate achievements, and collapsing them to a max would let a reading crossing
-silently reorder the list a learner is reading as their core progress. No query
-orders or filters on it, so it carries no index.
+⚠️ **It no longer has a sort consumer.** It used to drive the collection **Sort by →
+Date mastered** (one row per active bar, each reading `masteredAtForBar(masteredAt, bar)`
+— that bar's OWN stamp, deliberately not the newest across bars). That row was
+**removed** from `src/utils/vocabSort.ts`: the column was never backfilled, so for every
+card mastered before migration 142 the key is missing, and the ordering sank most of the
+library to the bottom in both directions. See
+[DECKS_FEATURE.md](./DECKS_FEATURE.md) § "Sort by". `masteredAtForBar` survives and is
+still read by the cdp's mastery window. No query orders or filters on `masteredAt`, so
+it carries no index.
 
 ## 5. The progress bars on screen
 
@@ -529,36 +534,109 @@ page's pull-up sheet (entry 18). The component lives in `src/components/mastery/
 than in `VocabCardDetailBody` because the read-only **dictionary** cdp has no marks to
 draw and must not import it.
 
-### Mini cards — a hairline strip
+### Mini cards — the eight-mark window, at hairline scale
 
-`src/components/MiniVocabCard.tsx` draws **one** 3px-tall, 30px-wide track bottom-left
-with a margin (`BAR_STRIP`), filled to `heightFraction`: the surface's lens bar, from
-the `lens` prop (default `core`, forwarded by `MiniVocabCardGrid`). The **badge** is
-colored by that same bar's band — under `core` that is `entry.category` by definition,
-and inside a Center it is the skill's band, computed on the client from
-`typedMarkHistory`. A grid of cards badged by their recognition progress, on a page
-whose every other figure is about reading, would answer a question the learner had just
-navigated away from; the mirror of that — reading and writing tracks on a card sitting
-in a recognition/production deck — is why the strip is no longer per-goal.
+`src/components/MiniVocabCard.tsx` draws the **cdp's eight-mark window** along the bottom
+of the 92×132 thumbnail (`BAR_STRIP`: 3px tall, inset 8px each side, 1.5px cell gap) for
+the surface's lens bar, from the `lens` prop (default `core`, forwarded by
+`MiniVocabCardGrid`).
 
-The geometry is still written for `n` tracks (`barStripHeight(n)`, a `.map`), which is
-also how the strip disappears entirely when `showMasteryStrip` is false: one array
-drives both the rendering and the definition's bottom offset, so they cannot disagree
-about how much room the strip takes. The definition therefore now sits at the same
-height on every card of every surface.
+It is the **same shape and the same geometry** as `MasteryWindow`: `PBH_FULL` discrete
+cells, one per mark, with the trailing cell left **partial** when the core blend gives a
+fractional pbh. Both surfaces call `masteryWindowCells` (`src/utils/masteryCompute.ts`),
+so they cannot drift on where that partial cell falls. Cells rather than a continuous fill
+for the reason `MasteryWindow` gives at length: pbh **is** a count, not a percentage — one
+bad mark turns a cell off, it does not drain a fraction of a tank — and a thumbnail should
+not invite the estimate the detail page spent a whole component refusing to invite.
 
-The fill carries the **same per-type segment breakdown as the cdp bar** — the core
-strip splits between recognition blue and production green in proportion to their
-positive counts, so a card strong one way and weak the other reads that way at
-thumbnail size too. It runs left-to-right where the cdp runs bottom-up, so the first
-type sits at the track's origin in both. Zero-count segments are dropped rather than
-rendered at 0 width.
+**Where it differs from the cdp: colour.** The cdp paints each cell by the **mark type**
+that owns it (`MARK_TYPE_COLORS`). The mini card paints every filled cell with the lens
+bar's utcm **band** (`getBandInk`), one hue for the whole window. Two reasons: at ~8px a
+cell cannot legibly carry a two-hue split, and the band is the question a thumbnail is
+actually asked — *"how well do I know this?"* — which is precisely what the deleted corner
+letter badge answered.
 
-- **Colors** — one hue per **mark type**, shared by both surfaces and the Games hub
-  chip (`MARK_TYPE_COLORS`, `src/utils/masteryCompute.ts`). There is deliberately
-  **no per-bar color**: every surface paints a bar by its segments, so a bar has no
-  single color of its own to name. From the app light palette
-  (`src/theme/colors.ts`):
+`masteryWindowCells` therefore returns the owning mark **type**, not a colour, and each
+surface maps it through its own palette. (The mini card ignores `cell.type` entirely; it
+is still returned because the cdp needs it.)
+
+**What this costs.** The per-mark-type split is no longer visible on the thumbnail — an
+earlier version drew one pip per mark type, which let a card say *"you recognise this but
+cannot produce it"* at a glance. The 8-cell window cannot. The split survives in the
+strip's `title` (`"Know 4.3/8 · Comfortable · Recognition 5, Production 2"`), which costs
+nothing visually, but it is hover-only and therefore absent on touch. If that read matters
+on the grid, it needs a different device than colour or length — both channels are spoken
+for.
+
+**Lineage.** Frame 17 of the shelf design draws this strip as one pip per mark type in
+Recognition blue / Production green, and its `.mcd .mk` is a two-pip row. Two later
+decisions moved off it — colour onto the band, then the row onto the cdp's eight cells —
+so only the strip's **placement** (full width, 8px inset, 3px tall, bottom of the card) is
+still the frame's. The artboard has not been re-rendered to match.
+
+**Empty cells.** The cdp's empty cell is a 6% fill plus a 12% inset ring; at 3px tall that
+ring would be most of the cell, so the mini card uses frame 17's single flat
+`rgba(23,22,26,.13)` tint instead.
+
+⚠️ **The band colour is `getBandInk`, not `getCategoryColor`.** `CATEGORY_COLORS` are
+~1.15:1 pastels that are legible only behind a 1px `COLORS.markOutline` ring, and a 3px
+pip cannot carry one — the ring would consume two thirds of the fill.
+`BAND_INK` (`src/utils/categoryColors.ts`) is the ramp's dark `*A` tier at each band's own
+hue: `#B54249` / `#A46400` / `#387D3D` / `#1F6CB0`, falling back to `--muted` for an absent
+band so "no band yet" never reads as a fifth band.
+
+⚠️ **And it is deliberately not the pre-redesign saturated band palette.** Those values
+(`#EF476F` / `#FF9E5A` / `#05C793` / `#779BE7`) are byte-for-byte `MARK_TYPE_COLORS` —
+Comfortable green **is** Production green, Mastered blue **is** Recognition blue. Because
+the mini-card strip is band-coloured while the cdp's mark cells beside it stay
+mark-type-coloured, reusing them would put one blue on two surfaces meaning two different
+things. The `*A` tier is darker than any mark colour and reads as its own register. This
+is what the old "these currently collide with the utcm category colors; to be rectified
+later" note in `masteryCompute.ts` was pointing at; the collision is now *contained* at the
+one surface that could have suffered it.
+
+**Layering note — REVERSED 2026-08-31.** The cycle this warned about is gone:
+`theme/colors.ts` now imports **nothing** (its four `*Main` aliases read hoisted local
+constants instead of `CATEGORY_COLORS`), so the theme is the palette's root and
+`categoryColors.ts` sits *above* it. `LEARN_NOW_COLORS` / `MASTERY_BAR_COLORS` are
+derived from `RAMP` hue keys there, and `BAND_INK` may now be re-pointed at
+`COLORS.redA` etc. too — it just has not been yet.
+
+> The old cycle was harmless only while neither module needed the other's VALUES at
+> module-evaluation time. The moment `categoryColors.ts` did, whichever module loaded
+> second saw `undefined` and every importer of it threw at import — which is exactly
+> what five test suites did before the back-edge was cut.
+
+**The corner badge is gone.** The card used to carry an 18px U/T/C/M letter disc in its
+top-left, colored by the lens bar's band. Two reasons it went:
+
+1. **A letter names the band but hides the shape.** `T` says nothing about whether the
+   card is one mark into Target or one mark from leaving it — the eight-cell window shows
+   exactly that, by being countable.
+2. **It leaked past `showMasteryStrip`.** The badge was never gated by that prop, so the
+   provisional lent-card notice and the sort offer — dialogs whose only question is
+   *"do you want this word?"* — still stamped a borrowed card with a discouraging `U`.
+   Removing the badge makes the suppression complete.
+
+The geometry helper (`barStripHeight`) returns a **single** hairline whenever the strip is
+shown, since the eight cells sit in one row. One value (`bar`) drives both the rendering
+and the definition's bottom offset, so they cannot disagree about how much room the strip
+takes, and the definition sits at the same height on every card of every surface.
+
+**A note on what the fill no longer does.** Before the window, the strip drew ONE track
+whose length was split between recognition and production by the *ratio* of their
+positives — so 1/8 and 8/8 drew the same half-and-half shape as 4/8 and 4/8. The window
+does not have that failure mode: its length is pbh, an absolute position in an eight-mark
+window, and its colour is the band.
+
+- **Colors** — one hue per **mark type** (`MARK_TYPE_COLORS`,
+  `src/utils/masteryCompute.ts`), used by the **cdp** mark cells and the Games hub chip.
+  There is deliberately **no per-bar color**: the cdp paints a bar by its segments, so a
+  bar has no single color of its own to name.
+  ⚠️ This is **no longer "both surfaces"** — the mini-card window colors every filled cell
+  by the utcm **band** (`BAND_INK`) and does not use these hues at all, though it still
+  receives the owning mark type from the shared `masteryWindowCells`. See § "Mini cards —
+  the eight-mark window" above. From the app light palette (`src/theme/colors.ts`):
   - Recognition → **Blue** `#779BE7` (`MARK_TYPE_COLORS.recognition`)
   - Production → **Green** `#05C793` (`MARK_TYPE_COLORS.production`)
   - Reading → **Red** `#EF476F` (`MARK_TYPE_COLORS.reading`)
@@ -1084,7 +1162,9 @@ the bar has hysteresis instead of a knife edge.
   in-query. Hysteresis is *state* and needs somewhere to live. `masteredAt` is the
   obvious candidate — already per-bar, already stored — but it is deliberately
   **sticky** (never cleared on regression), so using it as the latch changes what it
-  means, and its one reader (the "Date mastered" sort) depends on the current meaning.
+  means. *(The "Date mastered" sort, which used to be the reader this argument leaned
+  on, has since been removed — so the objection is now weaker: what remains is the cdp's
+  mastery window and the meaning of the column itself.)*
 * **(F) Asymmetric thresholds, no state.** Mastered at ≥7/8, drop out below 6 — a
   one-slot buffer that stays a pure function of the row. Cheaper and safer than (E),
   but it is a *wider band*, not true hysteresis: it still flips on whichever line it
@@ -1130,8 +1210,9 @@ even though the buffer work does not.
 4. **Does the buffer apply to core too?** Core already has slack, so probably not — but
    then the three bars stop sharing one `categoryForPbh`, which is exactly what lets one
    set of benchmark lines serve all three (§ 4). ❓
-5. **May `masteredAt` become the hysteresis latch**, given it is sticky today and read
-   by the "Date mastered" sort? ❓
+5. **May `masteredAt` become the hysteresis latch**, given it is sticky today? ❓
+   *(The "Date mastered" sort that used to read it is gone, so the only cost left is
+   changing what the column means.)*
 6. **Retroactivity.** Both changes re-band every existing card on deploy with no
    migration, because bands are derived. Acceptable, given Memory Map membership and
    180-day cooldowns move with them? ❓
@@ -1239,9 +1320,11 @@ Implications to work through:
 - ✅ **Sort options are per bar**, and a bar's rows appear only when its goal is set.
   The menu is BUNDLED — one row per dimension, both directions as toggles — so every
   ordering is readable in reverse without doubling the menu.
-- ✅ **`masteredAt` is jsonb keyed by bar**; "Date mastered" gets one row per active
-  bar, each reading that bar's OWN stamp. *(Revised from "latest across the active
-  bars": three bars are three achievements, and a max let one reorder another's list.)*
+- ✅ **`masteredAt` is jsonb keyed by bar.** It briefly drove a "Date mastered" sort row
+  per active bar, each reading that bar's OWN stamp *(revised from "latest across the
+  active bars": three bars are three achievements, and a max let one reorder another's
+  list)*. **That row has since been removed** — the column was never backfilled, so the
+  key was missing for most of the library. The per-bar shape stands on its own merits.
 - ✅ **Velocity sums band-steps across bars, but only the GOAL bars.** Every bar's
   promotion is logged (`category_promotions.bar`); the filter is applied at read, so
   switching a goal on retroactively enriches the number instead of restarting it.

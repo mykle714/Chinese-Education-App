@@ -1,10 +1,10 @@
 import { Box, Typography } from "@mui/material";
 import Icon from "../../components/Icon";
-import { COLORS } from "../../theme/colors";
+import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
+import { HAND_CARD_RESTING_SHADOW } from "./StudyHand";
 import { collectionGlyph } from "./collectionGlyph";
-import { collectionPath } from "./collectionRef";
 import type { BuiltinCollectionEntry } from "./builtinCollections";
 
 /**
@@ -22,10 +22,42 @@ import type { BuiltinCollectionEntry } from "./builtinCollections";
  *   of six decks. These two have no neighbours to be compared against; "612" and "208"
  *   are the figures, and a 74px spine cannot print a figure at a size worth reading.
  *
- * So they keep the shelf's MATERIAL and drop its geometry: same single pastel, same
- * inset white highlight, same dark strap down the left edge, same bottom-heavy corner
- * radius — a spine laid on its side and opened up far enough to hold a number. The
- * sheet still reads as one system; it just does not pretend a stat block is a spine.
+ * ── Why they are the CENTERS RAIL's object, not their own ─────────────────────
+ * They are now built from exactly the material the fdp's Reading / Writing tiles use
+ * (`flashcards-decks__center-tile`, FlashcardsDecksPage): the hand's hairline border
+ * and RESTING elevation, a 15px radius, `13px 13px 14px` of padding, a 19px glyph at
+ * 0.72 opacity on its own line, and the same 9px gap between the pair. The two rails
+ * sit a thumb's width apart on the same screen — the duo at the top of the sheet, the
+ * Centers just above it — so two different pastel-rectangle idioms read as two
+ * different KINDS of destination when they are in fact the same kind: a place to go
+ * look at a set of cards. One object, one material.
+ *
+ * The one thing the duo adds is the FIGURE, which is the reason above. It is
+ * RIGHT-ADJUSTED on the label's line: the label grows leftward from a fixed edge and
+ * the number ends at the tile's right margin, so both counts land on one vertical
+ * rule and can be compared at a glance without the eye hunting for where each one
+ * starts. (A figure under a left-aligned label put the two numbers at different x
+ * positions the moment the labels differed in length.)
+ *
+ * ── They are FILTERS, not links ───────────────────────────────────────────────
+ * A tile narrows the panel's own card grid to that set; it does not navigate. The
+ * collection PAGES still exist and their routes still work — the Games hub links to
+ * them — but reaching one from here cost a navigation to see a grid the panel was
+ * already holding in memory, under a search box and a sort menu it also already had.
+ *
+ * The pair therefore behaves as a two-button toggle group over `CardsFilter`:
+ * tapping the active tile returns to `"all"`, so there is no state the learner can be
+ * stuck in and no third "clear" control to find. `aria-pressed` says so to a screen
+ * reader, which is why these stayed `<button>`s rather than becoming links.
+ *
+ * ── Saying which one is on ────────────────────────────────────────────────────
+ * A 93% pastel cannot carry "active" on its own — the four fills are ~1.15:1 against
+ * the paper and the difference between two of them is not a state change anyone will
+ * notice. So the active tile takes its hue's SATURATED INK (`RAMP[entry.hue].ink`, the
+ * reason an entry carries a hue key at all): a 2px ring of it, its glyph and its
+ * figure in it. And the OTHER tile drops from the 93% fill to the 97.5% tint, so the
+ * pair separates on two channels at once — the on tile gains ink, the off tile loses
+ * colour — rather than asking the eye to compare two near-white rectangles.
  *
  * Rendered by `DecksPanelBody`, so all three of its hosts get it: the fdp sheet (lens
  * `core`) and the two Mastery Centers (lens `reading` / `writing`). The pair is
@@ -33,29 +65,23 @@ import type { BuiltinCollectionEntry } from "./builtinCollections";
  * skill's two sets rather than the core ones.
  *
  * ⚠️ The artboard prints "+17 this week" under Mastered. The app has no such figure —
- * `masteredAt` (migration 142) makes it derivable but no endpoint exposes it — so the
- * caption says what the set IS instead of how it moved. Tracked in
- * docs/DEFERRED_WORK.md; do not fake the delta from the client's own counts.
+ * `masteredAt` (migration 142) makes it derivable but no endpoint exposes it — and the
+ * tile now carries NO sub-caption at all (label + figure only), so there is no line to
+ * put it on. Tracked in docs/DEFERRED_WORK.md; do not fake the delta from the client's
+ * own counts.
  *
  * Referenced by docs/SHELF_REDESIGN.md (entry 2, artboard 2) and docs/DECKS_FEATURE.md.
  */
-
-/**
- * Sub-caption per collection kind. Says what the set is, in the artboard's own words
- * where it had them. Keyed on the ref's `kind`, not on the label, so a Center's
- * "Mastered Reading" tile picks up the same line as the core one.
- */
-const SUBTITLES: Record<string, string> = {
-    "learn-now": "Everything in rotation",
-    mastered: "Finished — resting",
-};
 
 export interface LibraryDuoProps {
     /** The lens's two built-in collections, in display order (`lensCollectionEntries`). */
     entries: BuiltinCollectionEntry[];
     /** Figure for one tile; undefined while its count is still loading. */
     count: (entry: BuiltinCollectionEntry) => number | undefined;
-    onOpenPath: (path: string) => void;
+    /** `key` of the entry currently filtering the grid, or null when none is. */
+    activeKey?: string | null;
+    /** Turn a tile's filter on, or off again when it is the active one. */
+    onToggle: (entry: BuiltinCollectionEntry) => void;
     /**
      * The sheet's grabber-drag binder. Spread onto the block so a vertical drag started
      * on a tile resizes the sheet like the grabber does — the duo is the first thing
@@ -68,65 +94,104 @@ export interface LibraryDuoProps {
 export const LibraryDuo: React.FC<LibraryDuoProps> = ({
     entries,
     count,
-    onOpenPath,
+    activeKey = null,
+    onToggle,
     headerDragBind,
     className,
 }) => (
     <Box
         className={className ? `library-duo ${className}` : "library-duo"}
         {...(headerDragBind?.() ?? {})}
-        sx={{ display: "flex", gap: "10px", padding: "11px 22px 0", width: "100%" }}
+        // 9px between the pair — the Centers rail's gap, not a second one.
+        sx={{ display: "flex", gap: "9px", padding: "11px 22px 0", width: "100%" }}
     >
         {entries.map((entry) => {
             const figure = count(entry);
+            const hue = RAMP[entry.hue];
+            const isActive = activeKey === entry.key;
+            // "Some OTHER tile is on." The off tile is only muted while a filter is
+            // actually running; with no filter both tiles sit at their normal fill.
+            const isMuted = activeKey !== null && !isActive;
             return (
                 <Box
                     key={entry.key}
                     component="button"
                     type="button"
-                    className={`library-duo__tile library-duo__tile--${entry.key}`}
-                    onClick={() => onOpenPath(collectionPath(entry.ref))}
+                    className={[
+                        "library-duo__tile",
+                        `library-duo__tile--${entry.key}`,
+                        isActive ? "library-duo__tile--active" : "",
+                    ].filter(Boolean).join(" ")}
+                    aria-pressed={isActive}
+                    onClick={() => onToggle(entry)}
                     sx={{
-                        position: "relative",
                         flex: 1,
                         minWidth: 0,
-                        textAlign: "left",
-                        border: "none",
-                        cursor: "pointer",
-                        backgroundColor: entry.colors.main,
-                        // Bottom-heavy radius + the strap below: the spine's silhouette,
-                        // turned on its side. See the header comment.
-                        borderRadius: "14px 14px 5px 5px",
-                        padding: "12px 13px 11px",
                         display: "flex",
                         flexDirection: "column",
-                        gap: "2px",
-                        overflow: "hidden",
-                        boxShadow: [
-                            "2px 3px 9px rgba(20,18,26,0.14)",
-                            "inset -6px 0 12px rgba(255,255,255,0.35)",
-                            "inset 0 0 0 1px rgba(23,22,26,0.05)",
-                        ].join(", "),
-                        // The strap — the shelf's own darkened spine edge.
-                        "&::after": {
-                            content: '""',
-                            position: "absolute",
-                            left: 0,
-                            top: 0,
-                            bottom: 0,
-                            width: "4px",
-                            borderRadius: "14px 0 0 5px",
-                            backgroundColor: "rgba(23,22,26,0.14)",
-                        },
+                        gap: "9px",
+                        alignItems: "stretch",
+                        textAlign: "left",
+                        // ── The Centers rail's tile, verbatim ──────────────────────
+                        // hairline + resting elevation + 15px radius + 13/13/14
+                        // padding. Kept in sync with `flashcards-decks__center-tile`
+                        // in FlashcardsDecksPage: these are the same kind of object
+                        // (a place to go look at a set), so they are the same object.
+                        cursor: "pointer",
+                        borderRadius: "15px",
+                        // The ACTIVE ring is 2px of the hue's ink; the resting border
+                        // is the hand's 1px hairline. The padding drops by 1px to
+                        // match, so a tile does not grow by 2px when it is switched on
+                        // and shove its neighbour's label into an ellipsis.
+                        border: isActive ? `2px solid ${hue.ink}` : `1px solid ${COLORS.border}`,
+                        padding: isActive ? "12px 12px 13px" : "13px 13px 14px",
+                        // Fill: the hue's 93% pastel normally, its 97.5% tint while the
+                        // OTHER tile is the one filtering. See the header.
+                        backgroundColor: isMuted ? hue.tint : entry.colors.main,
+                        // Active tiles also sit UP: the resting elevation plus a soft
+                        // halo in the hue's own ink, so "on" is legible at a glance
+                        // from across the sheet and not only by reading the border.
+                        boxShadow: isActive
+                            ? `${HAND_CARD_RESTING_SHADOW}, 0 0 0 4px ${hue.fill}`
+                            : HAND_CARD_RESTING_SHADOW,
+                        // The state change is a filter being applied, so it should read
+                        // as one movement rather than four properties landing at once.
+                        transition: "background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease",
                     }}
                 >
-                    <Box className="library-duo__head" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
-                        <Typography
+                    <Icon
+                        name={collectionGlyph(entry.ref)}
+                        size={19}
+                        sx={{
+                            // Ink at full strength when active — the glyph is the tile's
+                            // one non-text mark, so it is the cheapest place to spend a
+                            // second signal. Otherwise the Centers rail's 0.72 grey.
+                            color: isActive ? hue.ink : undefined,
+                            opacity: isActive ? 1 : 0.72,
+                            flexShrink: 0,
+                        }}
+                    />
+                    {/* Label and figure share one line, the figure pinned to the tile's
+                        right margin so both tiles' counts line up on one rule.
+                        `alignItems: baseline` sits the two type sizes on the same
+                        baseline rather than centring a 22px figure against a 14.5px
+                        label. */}
+                    <Box
+                        className="library-duo__line"
+                        sx={{
+                            display: "flex",
+                            alignItems: "baseline",
+                            justifyContent: "space-between",
+                            gap: "8px",
+                            minWidth: 0,
+                        }}
+                    >
+                        <Box
                             component="b"
                             className="library-duo__label"
                             sx={{
                                 fontFamily: FONTS.sans,
-                                fontSize: 15,
+                                fontSize: 14.5,
                                 fontWeight: WEIGHT.bold,
                                 letterSpacing: "-0.022em",
                                 color: COLORS.onSurface,
@@ -137,35 +202,33 @@ export const LibraryDuo: React.FC<LibraryDuoProps> = ({
                             }}
                         >
                             {entry.label}
+                        </Box>
+                        <Typography
+                            component="span"
+                            className="library-duo__figure"
+                            sx={{
+                                fontFamily: FONTS.sans,
+                                fontSize: 22,
+                                fontWeight: 800,
+                                letterSpacing: "-0.035em",
+                                lineHeight: 1,
+                                // The figure carries the hue's ink while active: it is
+                                // the number the filter is about.
+                                color: isActive ? hue.ink : COLORS.onSurface,
+                                flexShrink: 0,
+                                // Tabular figures so a count changing from 99 to 100
+                                // does not re-space the ones already on screen.
+                                fontVariantNumeric: "tabular-nums",
+                            }}
+                        >
+                            {/* An em dash while the count is in flight, not a 0 and not
+                                a spinner: 0 is a real answer this tile could legitimately
+                                give, so showing it before the fetch lands is a lie that
+                                corrects itself, and a spinner in this slot reflows the
+                                line when it resolves. */}
+                            {figure === undefined ? "\u2014" : figure.toLocaleString()}
                         </Typography>
-                        <Icon name={collectionGlyph(entry.ref)} size={17} sx={{ opacity: 0.65, flexShrink: 0 }} />
                     </Box>
-                    <Typography
-                        className="library-duo__figure"
-                        sx={{
-                            fontFamily: FONTS.sans,
-                            fontSize: 31,
-                            fontWeight: 800,
-                            letterSpacing: "-0.04em",
-                            lineHeight: 1.05,
-                            marginTop: "5px",
-                            color: COLORS.onSurface,
-                            // An em dash while the count is in flight, not a 0 and not a
-                            // spinner: 0 is a real answer this tile could legitimately
-                            // give, so showing it before the fetch lands is a lie that
-                            // corrects itself, and a spinner in a 31px slot reflows the
-                            // whole tile when it resolves.
-                            fontVariantNumeric: "tabular-nums",
-                        }}
-                    >
-                        {figure === undefined ? "—" : figure.toLocaleString()}
-                    </Typography>
-                    <Typography
-                        className="library-duo__sub"
-                        sx={{ fontSize: 11, lineHeight: 1.35, color: COLORS.iconColor }}
-                    >
-                        {SUBTITLES[entry.ref.kind] ?? ""}
-                    </Typography>
                 </Box>
             );
         })}

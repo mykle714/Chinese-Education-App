@@ -47,40 +47,10 @@ describe("sortVocabEntries — dates", () => {
 });
 
 describe("sortVocabEntries — missing timestamps", () => {
-  it("sinks cards with no masteredAt to the bottom, not the top", () => {
-    // The common case, not an edge case: every card mastered before migration 142
-    // has a NULL masteredAt, since the crossing moment was not backfillable.
-    const never = card({ id: 1, masteredAt: null });
-    const old = card({ id: 2, masteredAt: { core: "2026-02-01T00:00:00.000Z" } });
-    const recent = card({ id: 3, masteredAt: { core: "2026-05-01T00:00:00.000Z" } });
-    const absent = card({ id: 4 });
-
-    expect(ids(sortVocabEntries([never, old, recent, absent], "masteredRecent")))
-      .toEqual([3, 2, 1, 4]);
-  });
-
-  it("sinks dateless cards to the bottom in the ASCENDING direction too", () => {
-    // The bundled menu made every date readable both ways, which is where this bites:
-    // 0 means "no stamp", not "the epoch", so "Oldest" must not open with every card
-    // that has never been mastered.
-    const never = card({ id: 1, masteredAt: null });
-    const old = card({ id: 2, masteredAt: { core: "2026-02-01T00:00:00.000Z" } });
-    const recent = card({ id: 3, masteredAt: { core: "2026-05-01T00:00:00.000Z" } });
-
-    expect(ids(sortVocabEntries([never, recent, old], "masteredOldest"))).toEqual([2, 3, 1]);
-  });
-
-  it("reads each bar's OWN stamp, not the latest across bars", () => {
-    // Three bars are three separate achievements: a reading crossing must not reorder
-    // the list a learner is reading as their core progress.
-    const writingOnly = card({ id: 1, masteredAt: { writing: "2026-05-01T00:00:00.000Z" } });
-    const core = card({ id: 2, masteredAt: { core: "2026-02-01T00:00:00.000Z" } });
-
-    // Core ordering ignores the (newer) writing stamp and sinks the card with none.
-    expect(ids(sortVocabEntries([writingOnly, core], "masteredRecent"))).toEqual([2, 1]);
-    // The writing ordering is the mirror image.
-    expect(ids(sortVocabEntries([core, writingOnly], "masteredRecentWriting"))).toEqual([1, 2]);
-  });
+  // The "date mastered" orderings were removed with the dimension itself (no bar's
+  // masteredAt was backfillable, so the key was missing for most of the library). The
+  // dateless-sink rule they exercised still applies to the two surviving DATE keys and
+  // is covered by the deckAddedAt case below.
 
   it("sinks cards with no deckAddedAt to the bottom too", () => {
     const inDeck = card({ id: 1, deckAddedAt: "2026-04-01T00:00:00.000Z" });
@@ -217,7 +187,7 @@ describe("sortVocabEntries — cooldown", () => {
       .toEqual([1, 2]);
   });
 
-  it("puts a never-studied card at the TOP of 'Ready first', not the bottom", () => {
+  it("puts a never-studied card at the TOP of 'Shortest', not the bottom", () => {
     // 0 here means "ready", not "no date" — so cooldown must NOT get the
     // missing-timestamp sinking that the date keys have.
     const untouched = card({ id: 1 });
@@ -260,22 +230,29 @@ describe("sort menu", () => {
     expect(sortBundles("zh", GOALS).filter((b) => b.deckOnly)).toHaveLength(1);
   });
 
-  it("offers a mastery AND a date-mastered row per ACTIVE bar only", () => {
+  it("offers a mastery row per ACTIVE bar only", () => {
     const noGoals = keysOf(GOALS);
     expect(noGoals).toContain("masteryDesc");
-    expect(noGoals).toContain("masteredRecent");
     expect(noGoals).not.toContain("masteryReadingDesc");
-    expect(noGoals).not.toContain("masteredRecentWriting");
 
     // Turning on reading adds its rows — and only its rows.
     const reading = keysOf({ reading: true, writing: false });
     expect(reading).toContain("masteryReadingDesc");
-    expect(reading).toContain("masteredRecentReading");
     expect(reading).not.toContain("masteryWritingDesc");
 
     const both = keysOf({ reading: true, writing: true });
     expect(both).toContain("masteryWritingAsc");
-    expect(both).toContain("masteredOldestWriting");
+  });
+
+  it("offers NO date-mastered ordering", () => {
+    // Removed with the dimension: `masteredAt` is unbackfilled (migration 142), so for
+    // most of the library the key is missing and the row sank those cards in BOTH
+    // directions. The stamp is still stored and still read by the cdp; only the
+    // ordering is gone.
+    const both = keysOf({ reading: true, writing: true });
+    expect(both.filter((k) => k.startsWith("mastered"))).toEqual([]);
+    expect(sortBundles("zh", { reading: true, writing: true }).map((b) => b.label))
+      .not.toContain("Date mastered");
   });
 
   it("names only the PER-SKILL bars in a row label; the core row stays unqualified", () => {
@@ -283,7 +260,7 @@ describe("sort menu", () => {
     // no learner should ever read "Mastery (Know)", with or without other goals set.
     const single = sortBundles("zh", GOALS).map((b) => b.label);
     expect(single).toContain("Mastery");
-    expect(single).toContain("Date mastered");
+    expect(single).toContain("Cooldown");
 
     const multi = sortBundles("zh", { reading: true, writing: false }).map((b) => b.label);
     expect(multi).toContain("Mastery");
@@ -309,9 +286,9 @@ describe("sort menu", () => {
     const bundles = sortBundles("zh", { reading: true, writing: true });
     expect(bundles.find((b) => b.id === "mastery:core")?.bar).toBe("core");
     expect(bundles.find((b) => b.id === "mastery:reading")?.bar).toBe("reading");
-    expect(bundles.find((b) => b.id === "masteredAt:writing")?.bar).toBe("writing");
-    // Three dimensions (mastery / cooldown / date-mastered) x two skill bars.
-    expect(bundles.filter((b) => b.bar && b.bar !== "core")).toHaveLength(6);
+    expect(bundles.find((b) => b.id === "cooldown:writing")?.bar).toBe("writing");
+    // Two dimensions (mastery / cooldown) x two skill bars.
+    expect(bundles.filter((b) => b.bar && b.bar !== "core")).toHaveLength(4);
   });
 
   it("shows ONE bar's rows under a skill lens, whatever the goals say", () => {

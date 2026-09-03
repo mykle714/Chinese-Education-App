@@ -27,6 +27,7 @@ import { anytimeParams } from '../features/studyChallenge/challengeAnytime';
 import type {
   ChallengeGameRef,
   ChallengeRound,
+  ChallengeTaunt,
   ChallengeScoreBreakdown,
   ChallengeStatus,
   ChallengeVariant,
@@ -73,8 +74,14 @@ export interface ChallengeSummary {
   rounds: Record<string, ChallengeRound>;
   /** Progress only — never a score. */
   opponentFinished: boolean;
-  /** Present only once both players have finished. See the module warning. */
-  opponentRounds?: Record<string, ChallengeRound>;
+  /**
+   * The opponent's SUBMITTED rounds, revealed one at a time as each lands
+   * (docs/STUDY_CHALLENGE.md § 6). Always present; empty until their first.
+   * A round in progress is never here — only submitted rounds are stored.
+   */
+  opponentRounds: Record<string, ChallengeRound>;
+  /** Both players' taunts, keyed by SENDER's user id. Absent key = not sent (§ 6a). */
+  taunts: Record<string, ChallengeTaunt>;
   presetDeckId: number | null;
   /** Present only once the viewer's window is open. See the module warning. */
   gameSequence?: ChallengeGameRef[];
@@ -320,17 +327,52 @@ export function withdrawChallenge(challengeId: string): Promise<void> {
  * A submitted round is FINAL. Resubmitting rejects rather than overwriting, so treat
  * a failure here as "already recorded", not as "retry with a different score".
  */
+/**
+ * Send this player's ONE canned taunt (§ 6a). Returns the refreshed challenge, so the
+ * results screen repaints from the server's copy rather than from an optimistic guess.
+ *
+ * `tauntId` is a CHALLENGE_TAUNTS key — the app never sends user-authored text here,
+ * and there is no endpoint that would accept it.
+ */
+export function sendChallengeTaunt(
+  challengeId: string,
+  tauntId: string
+): Promise<ChallengeSummary> {
+  return withFallback(
+    apiPost<ChallengeSummary>(
+      `/api/studyChallenges/${encodeURIComponent(challengeId)}/taunt`,
+      { tauntId },
+      { params: anytimeParams() }
+    ),
+    'Could not send that taunt'
+  );
+}
+
+/**
+ * Write a round — the CLAIM at the first mark, each per-mark progress update, and
+ * the FINAL score, all through the one endpoint (docs/STUDY_CHALLENGE.md § 5.1a).
+ *
+ * `final: false` leaves the round open (`completedAt: null`): the attempt is spent
+ * server-side, so the board is never re-issued, but the score can still move. The
+ * score sent is always the CUMULATIVE snapshot, never a delta, which is what lets
+ * the caller coalesce or drop intermediate writes for free.
+ *
+ * `keepalive` is for the write fired from `pagehide` — the request has to outlive
+ * the document or a tab close banks whatever the last mark had earned instead of
+ * the real final score.
+ */
 export function submitChallengeRound(
   challengeId: string,
   roundIndex: number,
   score: number,
-  breakdown: ChallengeScoreBreakdown
+  breakdown: ChallengeScoreBreakdown,
+  opts: { final?: boolean; keepalive?: boolean } = {}
 ): Promise<ChallengeSummary> {
   return withFallback(
     apiPost<ChallengeSummary>(
       `/api/studyChallenges/${encodeURIComponent(challengeId)}/rounds`,
-      { roundIndex, score, breakdown },
-      { params: anytimeParams() }
+      { roundIndex, score, breakdown, final: opts.final !== false },
+      { params: anytimeParams(), keepalive: opts.keepalive }
     ),
     'Could not save your round'
   );

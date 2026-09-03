@@ -44,6 +44,11 @@ interface NodePageProps {
     scrollable?: boolean;
     // Drop the soft fade at the TOP edge (keeps the bottom fade). See MobileTabScreen.
     topFade?: boolean;
+    // This page owns a horizontal scroller (a pager, a sideways shelf) that must be
+    // pannable by touch. Required, not cosmetic: the scroll area's own `touch-action`
+    // is a ceiling on its descendants, so without this a sideways swipe inside the page
+    // does nothing at all. See the note on MobileTabScreen's ScrollArea.
+    horizontalPan?: boolean;
     /**
      * Frame-level furniture rendered as a SIBLING of the scroll area, not inside it:
      * a pull-up `SheetPanel`, a peek lip, a floating overlay.
@@ -71,6 +76,7 @@ const NodePage: React.FC<NodePageProps> = ({
     contentClassName,
     scrollable,
     topFade,
+    horizontalPan,
     overlay,
     children,
 }) => {
@@ -95,6 +101,7 @@ const NodePage: React.FC<NodePageProps> = ({
                 contentClassName={contentClassName}
                 scrollable={scrollable}
                 topFade={topFade}
+                horizontalPan={horizontalPan}
             >
                 {children}
             </MobileTabScreen>

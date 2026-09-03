@@ -77,8 +77,6 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   // server's route file, where ordering IS the guarantee.
   "/friends/challenges": lazy(() => import("../features/studyChallenge/ChallengesPage")),
   "/friends/challenges/history": lazy(() => import("../features/studyChallenge/ChallengeHistoryPage")),
-  "/friends/challenges/new/:friendUserId": lazy(() => import("../features/studyChallenge/ChallengeReviewPage")),
-  "/friends/challenges/review/:challengeId": lazy(() => import("../features/studyChallenge/ChallengeReviewPage")),
   "/friends/challenges/:challengeId": lazy(() => import("../features/studyChallenge/ChallengeDetailPage")),
   "/users/:userId": lazy(() => import("../features/profile/UserProfilePage")),
   "/dictionary": lazy(() => import("../features/dictionary/DictionaryPage")),

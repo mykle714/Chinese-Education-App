@@ -36,6 +36,13 @@ export interface RequestOptions {
   headers?: Record<string, string>;
   /** Forwarded to fetch — e.g. an AbortController signal. */
   signal?: AbortSignal;
+  /**
+   * Forwarded to fetch. Lets a small POST outlive the page that started it, which
+   * is the only way a write fired from `pagehide`/`visibilitychange` survives a tab
+   * close or a reload. Bodies are capped by the browser (~64KB across all keepalive
+   * requests), so use it only for short payloads.
+   */
+  keepalive?: boolean;
 }
 
 /**
@@ -101,6 +108,7 @@ async function request<T>(
     },
     body: !hasBody ? undefined : isFormData ? (body as FormData) : JSON.stringify(body),
     signal: options.signal,
+    keepalive: options.keepalive,
   });
 
   const data = await parseBody(res);

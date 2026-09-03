@@ -53,6 +53,7 @@ function row(overrides: Partial<StudyChallengeRow> = {}): StudyChallengeRow {
         },
         rounds: {},
         presetDeckIds: {},
+        taunts: {},
         issuedAt: '2026-08-17T12:00:00.000Z',
         weekIndex: WEEK_INDEX,
         acceptedAt: '2026-08-18T12:00:00.000Z',
@@ -227,5 +228,125 @@ describe('StudyChallengeService.getRoundContext', () => {
         await expect(
             service.getRoundContext('44444444-4444-4444-8444-444444444444', CHALLENGE_ID, null)
         ).rejects.toThrow(/not found/i);
+    });
+});
+
+/**
+ * The CLAIM model (docs/STUDY_CHALLENGE.md § 5.1a).
+ *
+ * A round is written at the player's FIRST MARK, not when the run ends, so that
+ * quitting cannot be a free re-roll. These tests pin the three consequences that are
+ * easy to regress and silent when they break: a claimed round's board is never
+ * re-issued, a claimed round does not finish the test, and the opponent cannot see
+ * a score that is still moving.
+ */
+describe('StudyChallengeService — claimed (in-progress) rounds', () => {
+    afterEach(() => { vi.useRealTimers(); });
+
+    /** A round claimed at its first mark: spent, scored so far, not yet final. */
+    function claimed(gameId: string, score = 20): ChallengeRound {
+        return {
+            gameId,
+            mode: null,
+            score,
+            breakdown: { lines: [], total: score },
+            startedAt: '2026-08-21T12:00:00.000Z',
+            completedAt: null,
+        };
+    }
+
+    /** `serviceFor`, plus the writes `submitRound` needs. Records what was stored. */
+    function writableServiceFor(challenge: StudyChallengeRow) {
+        const written: { roundIndex: number; round: ChallengeRound }[] = [];
+        const challengeDAL = {
+            findById: async () => challenge,
+            findDisplayFieldsByWords: async () => ({}),
+            recordRound: async (_id: string, _userId: string, roundIndex: number, round: ChallengeRound) => {
+                written.push({ roundIndex, round });
+                return true;
+            },
+        } as unknown as IStudyChallengeDAL;
+        const userDAL = {
+            findById: async (id: string) => ({
+                id, name: id, email: '', avatarIconId: null, timezone: TZ, selectedLanguage: 'zh', isValidator: false,
+            }),
+        };
+        const unused = {} as never;
+        const service = new StudyChallengeService(
+            challengeDAL, unused, userDAL as never, unused, unused, unused, unused
+        );
+        return { service, written };
+    }
+
+    it('never re-issues the board of a CLAIMED round — quitting is not a re-roll', async () => {
+        // Round 1 was claimed and abandoned. The attempt is spent: the next board the
+        // player may be served is round 2's, not another copy of round 1's.
+        const { service } = serviceFor(row({ rounds: { [BOB]: { '1': claimed('bubble-match') } } }));
+        vi.useFakeTimers();
+        vi.setSystemTime(duringWindow());
+
+        await expect(
+            service.getRoundContext(BOB, CHALLENGE_ID, { gameId: 'bubble-match', mode: null })
+        ).rejects.toThrow(/not that game/);
+
+        const context = await service.getRoundContext(BOB, CHALLENGE_ID, { gameId: 'word-search', mode: 'pinyin' });
+        expect(context.roundIndex).toBe(2);
+    });
+
+    it('writes a claim with a null completedAt when final is false', async () => {
+        const { service, written } = writableServiceFor(row());
+        vi.useFakeTimers();
+        vi.setSystemTime(duringWindow());
+
+        await service.submitRound(BOB, CHALLENGE_ID, 1, 20, { lines: [], total: 20 }, false);
+
+        expect(written).toHaveLength(1);
+        expect(written[0].round.completedAt).toBeNull();
+        expect(written[0].round.startedAt).toEqual(expect.any(String));
+        expect(written[0].round.score).toBe(20);
+    });
+
+    it('lets round n+1 start after round n was CLAIMED and abandoned', async () => {
+        // The sequential guard tests PRESENCE, not completion. A round whose app was
+        // killed mid-run stays claimed forever — its board can never be re-issued, so
+        // nothing can finalise it — and requiring completion would lock the player out
+        // of the rest of their test because of a crash.
+        const { service, written } = writableServiceFor(row({
+            rounds: { [BOB]: { '1': claimed('bubble-match') } },
+        }));
+        vi.useFakeTimers();
+        vi.setSystemTime(duringWindow());
+
+        await service.submitRound(BOB, CHALLENGE_ID, 2, 5, { lines: [], total: 5 }, false);
+
+        expect(written[0].roundIndex).toBe(2);
+    });
+
+    it('still refuses a round whose predecessor was never started', async () => {
+        const { service } = writableServiceFor(row());
+        vi.useFakeTimers();
+        vi.setSystemTime(duringWindow());
+
+        await expect(
+            service.submitRound(BOB, CHALLENGE_ID, 3, 5, { lines: [], total: 5 }, false)
+        ).rejects.toThrow(/has not been submitted yet/);
+    });
+
+    it('hides a round that is still in progress from the OPPONENT', async () => {
+        // Rounds are revealed as they COMPLETE (§ 6). A claim is not a completion, or
+        // the opponent would watch a live score climb mark by mark.
+        const { service } = writableServiceFor(row({
+            rounds: {
+                [ALICE]: { '1': round('bubble-match'), '2': claimed('word-search') },
+                [BOB]: {},
+            },
+        }));
+        vi.useFakeTimers();
+        vi.setSystemTime(duringWindow());
+
+        const summary = await service.getChallenge(BOB, CHALLENGE_ID);
+
+        expect(Object.keys(summary.opponentRounds)).toEqual(['1']);
+        expect(summary.opponentFinished).toBe(false);
     });
 });

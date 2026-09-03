@@ -6,15 +6,11 @@ import {
     DialogActions,
     Button,
     Box,
-    TextField,
     Typography,
     CircularProgress,
     Alert,
-    InputAdornment,
-    IconButton,
 } from "@mui/material";
-import SearchIcon from "@mui/icons-material/Search";
-import ClearIcon from "@mui/icons-material/Clear";
+import SearchField from "./SearchField";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT } from "../theme/scale";
@@ -269,45 +265,16 @@ function IconPickerDialog({
             </DialogTitle>
 
             <DialogContent className="icon-picker-dialog__content" dividers sx={{ p: 1.5 }}>
-                <TextField
+                <SearchField
                     className="icon-picker-dialog__search"
-                    fullWidth
-                    size="small"
                     placeholder="Search icons (e.g. cat, house, star)"
                     value={term}
                     inputRef={searchInputRef}
-                    onChange={(e) => {
-                        setTerm(e.target.value);
-                        onTermChange?.(e.target.value);
+                    onChange={(next: string) => {
+                        setTerm(next);
+                        onTermChange?.(next);
                     }}
                     sx={{ mb: 1.5 }}
-                    InputProps={{
-                        startAdornment: (
-                            <InputAdornment position="start">
-                                <SearchIcon fontSize="small" />
-                            </InputAdornment>
-                        ),
-                        // Clear button — only shown while there is text to clear.
-                        endAdornment: term ? (
-                            <InputAdornment position="end">
-                                <IconButton
-                                    className="icon-picker-dialog__clear"
-                                    size="small"
-                                    aria-label="Clear search"
-                                    onClick={() => {
-                                        setTerm("");
-                                        onTermChange?.("");
-                                        // Keep the cursor in the search box so the user can
-                                        // immediately retype without re-tapping the field.
-                                        searchInputRef.current?.focus();
-                                    }}
-                                    edge="end"
-                                >
-                                    <ClearIcon fontSize="small" />
-                                </IconButton>
-                            </InputAdornment>
-                        ) : undefined,
-                    }}
                 />
 
                 {error && (

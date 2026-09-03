@@ -50,8 +50,13 @@ const BUCKET_LABELS: Record<(typeof BUCKETS)[number], string> = {
 /**
  * The glyph each band's spine carries, as one ascending progression: a question mark
  * (don't know it) → a target (working on it) → a check (comfortable) → a trophy
- * (done). The trophy is deliberately the SAME glyph the fdp gives its Mastered
- * collection, so "mastered" looks like one idea across both pages.
+ * (done).
+ *
+ * ⚠️ The trophy USED to be the same glyph the fdp gave its Mastered collection, so
+ * "mastered" read as one idea across both pages. The fdp moved to `check_circle` on
+ * 2026-08-31 (`features/flashcards/collectionGlyph.ts`), which is the glyph this row
+ * already spends on *Comfortable* — so the two pages now disagree and this row cannot
+ * simply follow without colliding with itself. See docs/DECKS_FEATURE.md § glyphs.
  *
  * Material Symbols names rather than icon elements (decision D3) — the spine sizes
  * the glyph in `cqw` against its own width, which it cannot do to an opaque
@@ -60,7 +65,7 @@ const BUCKET_LABELS: Record<(typeof BUCKETS)[number], string> = {
  * Kept local rather than shared with `features/flashcards/collectionGlyph.ts`:
  * components/ must not import from features/ (docs/FRONTEND_LAYERING.md), and these
  * are utcm BANDS — a property of one card's progress — not the collections that
- * module maps. Only the trophy is deliberately common to both.
+ * module maps.
  */
 const BUCKET_GLYPHS: Record<(typeof BUCKETS)[number], string> = {
     Unfamiliar: "help",

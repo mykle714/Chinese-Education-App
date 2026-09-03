@@ -21,7 +21,7 @@ pages don't re-implement (or drift from) them.
      consistent. Today that is `/` (Home hub), `/flashcards/decks` (Decks),
      `/discover` (Discover hub), `/games` (Games hub), and `/account` (Account).
      The four footer tabs are Flashcards / Discover / Home / Account; Games is a
-     drill-in from the Home menu. Games (and Mastered Cards) are **node pages** —
+     drill-in from the Home menu. Games (and the Mastered page) are **node pages** —
      they wrap `MobileTabScreen` in `NodePage`, which sets `showBack` +
      `arrowDirection="left"` and adds the horizontal slide. See
      [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
@@ -118,6 +118,50 @@ soften/lighten out as they scroll past the screen edges (NYT-Games style).
   content actually scrolls. A fixed, non-scrolling page (e.g. the drag-to-sort
   screen) passes `edgeFade={false}` — through `NodePage` → `MobileTabScreen` — so the
   mask is dropped and its top/bottom rows (buckets, card tray) aren't clipped.
+
+### ⚠️ The mask clips `position: fixed` descendants — overlays must portal out
+
+A CSS mask applies to the element's **whole rendered subtree**, and `position: fixed`
+does not escape it the way it escapes the scrolling. So an overlay written inside a
+page's content — a modal sheet, a scrim + panel, a stepped popup — is masked by
+`ScrollArea` like everything else, and the bottom band of that mask is **fully
+transparent for the footer's height**. The overlay's pinned action bar is then simply
+not painted: the panel looks correct and its buttons are missing, with no error and
+nothing in the DOM to suggest a problem. This is what hid the Study Challenge sheet's
+**Send** button (found 2026-09-01).
+
+The fix is not to weaken the mask. An overlay portals to
+`nearestOverlayHost(el)` (`src/components/overlayHost.ts`) — the nearest ancestor that
+both covers the frame and can host it without inverting paint order, which is
+`NodePage`'s transformed `Surface` on a node page and `.mobile-demo-frame` otherwise —
+and, because the footer bar paints above any such host, also calls
+`useHideFooter(open)` for its lifetime. Callers: `SheetPanel`, `ChallengeSheet`,
+`ChallengeHelpPopup`, `ChallengeRoundScoreboard` (the last needs no `useHideFooter` —
+it lives on a leaf page, which has no footer).
+
+### ⚠️ `touch-action: pan-y` is a CEILING on every scroller inside the page
+
+`ScrollArea` sets `touch-action: pan-y` on scrollable pages. That is not only a
+statement about itself: when a touch lands, the browser resolves the permitted pan
+directions by walking **up** the ancestor chain and taking the narrower value at each
+step. So a descendant that sets `touch-action: pan-x` on its own horizontal scroller
+**still cannot be panned by touch** — the ancestor has already ruled that direction
+out.
+
+The failure is silent and looks like nothing at all: the scroller is in the DOM, it
+has real overflow, `scrollLeft` can be set from JS and a trackpad still works — only
+the finger does nothing. This is what made View Challenge's two-page pager inert
+(found 2026-09-01) despite the pager carrying the correct `touch-action` itself.
+
+**A page that owns a horizontal scroller must say so at the shell**:
+`<NodePage horizontalPan>` / `<MobileTabScreen horizontalPan>`, which widens the
+scroll area to `pan-x pan-y`. It is opt-in rather than the default because permitting
+a pan the page has no scroller for changes how cancelable a horizontal `touchmove` is,
+and some pages cancel exactly those with a non-passive listener (`useBlockEdgeSwipe`).
+
+⚠️ **Every sideways scroller under this shell needs the flag**, not just pagers — a
+`ShelfRow scrollable`, a horizontally-scrolling toolbar, a filmstrip. Current opt-in:
+`ChallengeDetailPage`.
 
 ## Footer geometry (single source of truth)
 

@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Box, TextField, InputAdornment, IconButton, Typography, CircularProgress, useTheme } from "@mui/material";
-import { Search, Clear, Add, Close } from "@mui/icons-material";
+import { Box, IconButton, Typography, CircularProgress, useTheme } from "@mui/material";
+import { Add, Close } from "@mui/icons-material";
+import SearchField from "./SearchField";
 import ForeignText from "./ForeignText";
 import PinyinKeypad from "./PinyinKeypad";
 import DictionaryEntryRow from "./DictionaryEntryRow";
@@ -273,28 +274,13 @@ const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProp
                         value={search.searchInput}
                         onChange={search.setSearchInput}
                     />
-                    <TextField
+                    <SearchField
                         className="compare-workspace__search-input"
-                        fullWidth
-                        size="small"
                         placeholder="Search dictionary..."
                         value={search.searchInput}
-                        onChange={(e) => search.setSearchInput(e.target.value)}
+                        onChange={search.setSearchInput}
+                        onClear={() => search.clearSearch()}
                         inputRef={searchInputRef}
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <Search fontSize="small" />
-                                </InputAdornment>
-                            ),
-                            endAdornment: search.searchInput ? (
-                                <InputAdornment position="end">
-                                    <IconButton size="small" aria-label="clear search" onClick={() => search.clearSearch()}>
-                                        <Clear fontSize="small" />
-                                    </IconButton>
-                                </InputAdornment>
-                            ) : undefined,
-                        }}
                     />
                     {/* No gap between rows: `.dr` separates with its own bottom hairline
                         (docs/SHELF_REDESIGN.md § entry 7), and a gap would leave the

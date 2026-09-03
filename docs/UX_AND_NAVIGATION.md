@@ -171,7 +171,7 @@ useScrollStretch(rowRef,  { axis: "x", enabled }); // horizontal strip
 
 | Surface | Component | Axis |
 |---|---|---|
-| Card preview grids (decks Learn Now, collection view, mastered, skipped, Quick Mark, challenge detail/review) | `MiniVocabCardGrid` | y |
+| Card preview grids (decks Learn Now, collection view, mastered, skipped, Quick Mark, challenge review) | `MiniVocabCardGrid` | y |
 | Lent-card previews (pre-round notice, end-of-round sort offer) | `ProvisionalCardGrid` | y |
 | The `/entries` card grid | `VocabEntryCards` | y |
 | Scrollable shelf rows (Decks, Discover, Reader, Card Detail) | `shelf/Shelf.tsx` → `ShelfRow scrollable` | x |
@@ -179,6 +179,13 @@ useScrollStretch(rowRef,  { axis: "x", enabled }); // horizontal strip
 
 A **non**-scrollable `ShelfRow` opts out (`enabled: scrollable`) — a wrapping row never
 scrolls, so the listener could never fire.
+
+`MiniVocabCardGrid` carries a `scrollStretch` prop (default `true`) for the other kind of
+opt-out: a grid that is not the thing the reader is travelling through. **View Challenge
+passes `scrollStretch={false}`** — its nine word cards are a settled reference list under
+a horizontally-swipeable test (§ 5.4b of [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)), so
+rows springing apart there read as the page coming loose rather than as the list having
+weight. The rule: stretch the list the scroll is ABOUT, not every list the scroll passes.
 
 ### Why it moves transforms and not `gap`
 

@@ -4,7 +4,6 @@ import { tonedToNumberedPinyin } from "./textUtils";
 import {
   activeBars,
   barProgressBarHeight,
-  masteredAtForBar,
   cooldownRemainingMs,
   computeTypeCategory,
   BAR_LABELS,
@@ -76,14 +75,15 @@ export type VocabSortKey =
   | "cooldownReadyReading"
   | "cooldownLongestReading"
   | "cooldownReadyWriting"
-  | "cooldownLongestWriting"
-  // date that bar crossed into Mastered, per bar
-  | "masteredRecent"
-  | "masteredOldest"
-  | "masteredRecentReading"
-  | "masteredOldestReading"
-  | "masteredRecentWriting"
-  | "masteredOldestWriting";
+  | "cooldownLongestWriting";
+
+// There is deliberately NO "date mastered" ordering. It shipped with the three-bar
+// rework and was removed once the menu was folded into the search field: no bar's
+// `masteredAt` was backfillable (migration 142), so for every card mastered before that
+// migration the key is missing — the row's own comment called this "the common case,
+// not an edge one", and a dimension that sinks most of the library to the bottom in
+// BOTH directions is not one to reorder by. The stamp itself is still stored and still
+// read (`masteredAtForBar`, the cdp's mastery window); only the ordering is gone.
 
 /**
  * The bar each mastery-HEIGHT key sorts on. Absent from the map = not a height key.
@@ -97,16 +97,6 @@ const MASTERY_KEY_BAR: Partial<Record<VocabSortKey, MasteryBarId>> = {
   masteryReadingDesc: "reading",
   masteryWritingAsc: "writing",
   masteryWritingDesc: "writing",
-};
-
-/** The bar each mastery-DATE key reads its crossing stamp from. */
-const MASTERED_AT_KEY_BAR: Partial<Record<VocabSortKey, MasteryBarId>> = {
-  masteredRecent: "core",
-  masteredOldest: "core",
-  masteredRecentReading: "reading",
-  masteredOldestReading: "reading",
-  masteredRecentWriting: "writing",
-  masteredOldestWriting: "writing",
 };
 
 /**
@@ -143,9 +133,6 @@ const ASCENDING_KEYS: readonly VocabSortKey[] = [
   "masteryAsc",
   "masteryReadingAsc",
   "masteryWritingAsc",
-  "masteredOldest",
-  "masteredOldestReading",
-  "masteredOldestWriting",
 ];
 
 /**
@@ -157,7 +144,6 @@ const DATE_KEYS: readonly VocabSortKey[] = [
   "oldest",
   "deckAdded",
   "deckAddedOldest",
-  ...(Object.keys(MASTERED_AT_KEY_BAR) as VocabSortKey[]),
 ];
 
 /** Per-bar key lookups, so a bar's four keys are named in exactly one place. */
@@ -167,12 +153,6 @@ const MASTERY_KEYS: Record<MasteryBarId, { asc: VocabSortKey; desc: VocabSortKey
   writing: { asc: "masteryWritingAsc", desc: "masteryWritingDesc" },
 };
 
-const MASTERED_AT_KEYS: Record<MasteryBarId, { asc: VocabSortKey; desc: VocabSortKey }> = {
-  core: { asc: "masteredOldest", desc: "masteredRecent" },
-  reading: { asc: "masteredOldestReading", desc: "masteredRecentReading" },
-  writing: { asc: "masteredOldestWriting", desc: "masteredRecentWriting" },
-};
-
 const COOLDOWN_KEYS: Record<MasteryBarId, { asc: VocabSortKey; desc: VocabSortKey }> = {
   core: { asc: "cooldownReady", desc: "cooldownLongest" },
   reading: { asc: "cooldownReadyReading", desc: "cooldownLongestReading" },
@@ -180,7 +160,7 @@ const COOLDOWN_KEYS: Record<MasteryBarId, { asc: VocabSortKey; desc: VocabSortKe
 };
 
 /**
- * The default ordering a collection opens in.
+ * The default ordering a COLLECTION opens in (CollectionViewPage).
  *
  * Under the CORE lens: a deck orders by when you put cards IN it, everything else by
  * card age — a collection opens in its natural order, and nothing is being asked of
@@ -190,9 +170,30 @@ const COOLDOWN_KEYS: Record<MasteryBarId, { asc: VocabSortKey; desc: VocabSortKe
  * A Center is opened with one question — "what still needs reading / writing work?" —
  * and card age does not answer it. The lens overrides the deck rule too: inside the
  * Reading Center a deck is being read through that same question.
+ *
+ * ⚠️ The DECKS PANEL does not use this — see `masteryLowestKey`.
  */
 export const defaultSortKey = (isDeck: boolean, lens: MasteryBarId = "core"): VocabSortKey =>
   lens !== "core" ? MASTERY_KEYS[lens].asc : isDeck ? "deckAdded" : "recent";
+
+/**
+ * A bar's Mastery · Lowest key — the ordering the DECKS PANEL's Cards section opens in,
+ * under every lens (`useDecksPanel`).
+ *
+ * The panel is not a collection you chose to look at; it is the whole library, and the
+ * errand that opens it is "what should I work on". Card age answers that only by
+ * accident, and the core-lens panel used to open on `recent` purely because it inherited
+ * the collection rule. Both Mastery Centers already opened on their bar's mastery
+ * (`defaultSortKey`'s skill-lens branch) — this makes the fdp consistent with them
+ * rather than a third behaviour, so ALL THREE panels open on the same question.
+ *
+ * Deliberately NOT folded into `defaultSortKey`: the collection page still wants a
+ * collection to open in its natural order (a deck by when you filled it, Learn Now and
+ * Mastered by card age). The two surfaces genuinely differ, so they call different
+ * functions rather than sharing one with a flag.
+ */
+export const masteryLowestKey = (bar: MasteryBarId = "core"): VocabSortKey =>
+  MASTERY_KEYS[bar].asc;
 
 /** One end of a bundle: the ordering itself, captioned by its direction alone. */
 interface SortDirection {
@@ -211,7 +212,7 @@ interface SortDirection {
  */
 export interface SortBundle {
   id: string;
-  /** The dimension, direction-neutral ("Pinyin", "Mastery", "Date mastered"). */
+  /** The dimension, direction-neutral ("Pinyin", "Mastery", "Cooldown"). */
   label: string;
   directions: SortDirection[];
   /** Deck-only rows are hidden on Learn Now / Mastered, where the key is absent. */
@@ -277,18 +278,8 @@ export const sortBundles = (
     label: qualify("Cooldown", bar),
     bar,
     directions: [
-      { key: COOLDOWN_KEYS[bar].asc, label: "Ready first" },
+      { key: COOLDOWN_KEYS[bar].asc, label: "Shortest" },
       { key: COOLDOWN_KEYS[bar].desc, label: "Longest" },
-    ],
-  });
-
-  const masteredAtRow = (bar: MasteryBarId): SortBundle => ({
-    id: `masteredAt:${bar}`,
-    label: qualify("Date mastered", bar),
-    bar,
-    directions: [
-      { key: MASTERED_AT_KEYS[bar].desc, label: "Newest" },
-      { key: MASTERED_AT_KEYS[bar].asc, label: "Oldest" },
     ],
   });
 
@@ -328,7 +319,6 @@ export const sortBundles = (
     },
     ...bars.map(cooldownRow),
     ...bars.map(masteryRow),
-    ...bars.map(masteredAtRow),
   ];
 };
 
@@ -403,7 +393,7 @@ const pronunciationKey = (entry: VocabEntry): string => {
  * it moves whenever ANY of the bar's tracks is marked.
  *
  * What it means to a learner:
- *   Ready first — the cards nothing is holding back: never studied, or fully rested.
+ *   Shortest    — the cards nothing is holding back: never studied, or fully rested.
  *                 This is the "what have I been neglecting" ordering.
  *   Longest     — the cards deepest into their rest, which is roughly the ones most
  *                 recently and most strongly marked (a Mastered track rests 6 months,
@@ -419,7 +409,7 @@ const pronunciationKey = (entry: VocabEntry): string => {
  * whose reading track is genuinely the stalest thing on the page.
  *
  * ⚠️ **0 is a real value, not a missing one**, so cooldown is NOT a DATE_KEY: a
- * never-studied card is genuinely ready and belongs at the TOP of "Ready first", not
+ * never-studied card is genuinely ready and belongs at the TOP of "Shortest", not
  * sunk to the bottom with the dateless cards.
  *
  * WINDOW CATEGORY: the card's PER-TYPE category, which is what the games enforce and
@@ -474,7 +464,6 @@ export function sortVocabEntries(
   const isPronunciation = key === "alphaPronunciation" || key === "alphaPronunciationDesc";
   const cooldownBar = COOLDOWN_KEY_BAR[key];
   const heightBar = MASTERY_KEY_BAR[key];
-  const stampBar = MASTERED_AT_KEY_BAR[key];
   const ascending = ASCENDING_KEYS.includes(key);
   const reversedAlpha = REVERSED_ALPHA_KEYS.includes(key);
   const isDate = DATE_KEYS.includes(key);
@@ -485,10 +474,9 @@ export function sortVocabEntries(
     text: !isAlpha ? "" : isPronunciation ? pronunciationKey(entry) : definitionKey(entry),
     num:
       heightBar ? barProgressBarHeight(entry.typedMarkHistory, heightBar)
-        : stampBar ? masteredAtForBar(entry.masteredAt, stampBar)
-          : cooldownBar ? cooldownKey(entry, cooldownBar, now)
-            : key === "deckAdded" || key === "deckAddedOldest" ? timeOrZero(entry.deckAddedAt)
-              : timeOrZero(entry.createdAt),
+        : cooldownBar ? cooldownKey(entry, cooldownBar, now)
+          : key === "deckAdded" || key === "deckAddedOldest" ? timeOrZero(entry.deckAddedAt)
+            : timeOrZero(entry.createdAt),
   }));
 
   // Ties break on the ORIGINAL position, which is the server's ordering — so equal
@@ -505,9 +493,10 @@ export function sortVocabEntries(
 
     // A DATE key's 0 means "no date", not "the epoch" — so a dateless card sinks to the
     // bottom in BOTH directions rather than leading the ascending half of the bundle.
-    // This is the common case, not an edge one: no bar's masteredAt was backfillable
-    // (migration 142), so every card mastered before it has no stamp at all. A mastery
-    // HEIGHT of 0 is a real value and gets no such treatment — "Lowest" starts there.
+    // Now only the two "date added" dimensions: a card whose `createdAt` or
+    // `deckAddedAt` did not come back sinks rather than leading the ascending half.
+    // A mastery HEIGHT of 0 is a real value and gets no such treatment — "Lowest"
+    // starts there.
     if (isDate) {
       const aMissing = a.num === 0;
       const bMissing = b.num === 0;

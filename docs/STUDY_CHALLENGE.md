@@ -3,11 +3,25 @@
 A weekly head-to-head between two friends: agree on a set of words on Monday, study
 them all week, then play the same three games against that set and compare scores.
 
-**Status: PHASE 1 (ASYNC) IS BUILT, 2026-08-22.** The schema, the server stack, the
-client surfaces, the maintenance job and — as of 2026-08-22 — **the scored round
-runner in all four eligible games** are done. Migrations 148 and 150 are on prod; the
-round runner is code-only and needs no migration. What remains is phase 2 (live mode,
-§ 7), a separate design: [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md).
+**Status: PHASE 1 (ASYNC) IS BUILT, 2026-08-22. THE SHELF-SYSTEM REDESIGN LANDED
+2026-09-01.** The schema, the server stack, the client surfaces, the maintenance job and
+the scored round runner in all four eligible games are done. Migrations 148 and 150 are
+on prod; **migration 156 (taunts) is NOT yet on prod.** What remains is phase 2 (live
+mode, § 7), a separate design: [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md).
+
+⚠️ **The 2026-09-01 redesign changed behaviour, not only appearance.** Four things a
+reader of an older revision of this doc will find contradicted:
+
+| Change | Where |
+|---|---|
+| The opponent's rounds are revealed **as each is submitted**, not withheld until both finish. Reverses the old anti-anchoring rule | § 6 |
+| Issuing / waiting / incoming became a **sheet over the list**, not routed pages. `ChallengeReviewPage` and its two routes are deleted | § 3.2 |
+| View Challenge swipes **the test card only** between two pages (yours, then theirs) under a fixed, re-inking masthead; both collapse to one on resolution | § 5.4b |
+| **Taunts** — one canned line per player on the results screen, cycled by tapping | § 6a |
+
+Plus, visual only: the seven-state pill lexicon was relabelled and recoloured (§ 1),
+striking a word became two taps on the card itself (§ 3.2), and the round scoreboard
+became a full-bleed dark board (§ 5.5).
 
 | Step | State |
 |---|---|
@@ -25,6 +39,8 @@ on-screen consequences, and `ChallengeDetailPage`'s per-round Play buttons), the
 | **Maintenance job** — `database/cron/expire-study-challenges.sql` and its `ExecStart` step | ✅ written; all four passes exercised on dev with backdated fixtures, and idempotent on re-run. ⚠️ **Inert on prod until `install-timers.sh` re-renders the unit** — a git pull does not roll out a unit-template change, and until it does nothing expires |
 | **Runbook** | ✅ Retired 2026-08-17 — **shipped to prod**. Migration 148 was applied before the container rebuild (the deck read selects `decks."editMode"`), and the systemd unit was **re-rendered** by `database/cron/install-timers.sh`, without which the whole time-triggered half stays inert |
 | **Week-counter follow-up (150)** | ✅ On prod since 2026-08-17. `"weekStart"` → `"weekIndex"`; the rename was applied before the container rebuild (its temporary runbook has been deleted) |
+| **Migration 156** — `study_challenges.taunts jsonb NOT NULL DEFAULT '{}'` | ⚠️ **written, not yet applied anywhere.** Additive and defaulted, so old code tolerates it — but the shipped `toSummary` selects `taunts` by name, so **it must be applied BEFORE the container rebuild** or every challenge read 500s. See § 6a |
+| **Shelf-system redesign** | ✅ built 2026-09-01 — `ChallengeSheet` + `ChallengePanel` (§ 3.2), the two-page View Challenge with `ChallengeTestCard` (§ 5.4b), `ChallengeResults` (§ 6/6a), `ChallengeHelpPopup` (§ 5.4c), the dark round scoreboard (§ 5.5), the relabelled pill lexicon (§ 1) and the tinted history log (§ 1) |
 
 ⚠️ **Migration 148, not 147.** 147 was claimed by the `compute_utcm_category` drop and
 had already been applied to dev, so this one moved (CLAUDE.md § Migration number
@@ -138,16 +154,86 @@ each row carries everything about your standing with that person:
  ┌─────────────────────────────────────────────┐
  │ [History ▸]                                 │   ← full log, top of page
  ├─────────────────────────────────────────────┤
- │ Bob            👑            Play test  ▸   │   ← accepted, Friday open
- │ Carol                     Review words  ▸   │   ← she challenged you, pending
+ │ Bob            👑             Take Test  ▸  │   ← accepted, Friday open
+ │ Carol               Incoming Challenge  ▸   │   ← she challenged you, pending
  │ Dan            👑              Challenge    │   ← nothing active
- │ Erin                       Waiting on her   │   ← you challenged, pending
+ │ Erin                           Withdraw     │   ← you challenged, pending
  └─────────────────────────────────────────────┘
 ```
 
 * **One row per friend**, always present, whether or not a challenge is active. The row
-  is the challenge's whole lifecycle: *Challenge* → *Waiting on them* / *Review words* →
-  *Play test* → *See results*. There is never a second place to look.
+  is the challenge's whole lifecycle: *Challenge* → *Withdraw* / *Incoming Challenge* →
+  *See Cards* → *Take Test* → *See results*. There is never a second place to look.
+
+### The pill lexicon — seven states, one control
+
+`challengeAction` (`src/features/studyChallenge/challengeLabels.ts`) maps a challenge to
+exactly ONE of these, so no two screens can disagree about where a pair is:
+
+| state | pill | fill | what the tap does |
+|---|---|---|---|
+| `issue` | **Challenge** | purple | opens the issue sheet |
+| `incoming` | **Incoming Challenge** | green | opens the invitation sheet (accept *and* decline live inside it) |
+| `waiting` | **Withdraw** | red | opens the sent-challenge sheet |
+| `study` | **See Cards** | orange | opens View Challenge |
+| `test` | **Take Test** | blue | opens View Challenge |
+| `results` | **See results** | blue | opens View Challenge |
+| `none` | **—** | grey | nothing — the row has no handler at all |
+
+**`results` OUTLIVES THE CHALLENGE'S LIVE WINDOW, by a week.** A challenge stops being
+live (`pending`/`accepted`) the moment it resolves, but the friend row keeps showing
+*See results* **until the next challenge period opens** — i.e. until the viewer's own
+`weekIndex` ticks over at 04:00 local on Monday. `getChallengesPage`
+(`server/services/StudyChallengeService.ts`) therefore fetches TWO sets and merges them
+by opponent: `listLiveForUser` plus `listResolvedForUserInWeek(userId, weekIndex)`
+(`complete` and `no_contest` only — `declined`/`expired` had nothing played, so there is
+no result to open). A live row wins the merge over a resolved one, which can only happen
+under the tester hatch (§ 2a) where a new challenge is parked in a future week while
+this week's is already finished; there the live row is the real next step.
+
+Without this the row dropped straight back to **Challenge** the instant a challenge
+resolved, and that button was refused anyway — a resolved row still occupies the pair's
+week, so `challengeability` would have answered `declined-this-week`. The week's own
+result was then reachable only through History. Note this is why `challengeability`'s
+early "not a blocked state" return takes `currentRow` (live **or** resolved-this-week)
+rather than a live row: it is what suppresses that misleading `declined-this-week`
+reason in favour of the results pill.
+
+**THE CHALLENGES PAGE OFFERS THIS WEEK'S RESULT ONLY; HISTORY OFFERS EVERY RESULT.**
+That asymmetry is the design, not a gap. The challenges page is about *this* week (it is
+why the History log lives behind its own screen at all), so once the period rolls over
+the pill goes back to **Challenge** and the finished challenge leaves the page. The
+results screen itself is NOT time-limited — `/friends/challenges/:challengeId` serves any
+challenge the viewer is a party to, forever, and the History log is the way back to it
+(§ "Challenge history"). So there are exactly two doors to an old result, one of which
+closes: the row closes at the period boundary, the log never does.
+
+**Every label names the TAP, not the situation.** `waiting` reads *Withdraw* rather than
+*Waiting on them* because the row is a button and the status line above it has already
+said what is being waited on; a button captioned with a situation invites a reader to tap
+it expecting a report. Same rule turned *Review words* into *Incoming Challenge* and
+*Study deck* into *See Cards* (the tap does not start a study session — it opens the
+word set).
+
+**The colour names the KIND of tap, not whose turn it is.** An earlier rule painted
+everything green when the ball was in the viewer's court, which gave *Take Test* and
+*Incoming Challenge* the same fill despite being a routine step and a decision. Now:
+green is a decision that arrives unasked (`incoming` only), red is the page's one
+destructive control (`waiting`), orange is the state whose job is the deck rather than
+the challenge (`study`, matching the Challenges shelf spines on `/decks`), **purple is
+the one control that STARTS something** (`issue`), blue is the routine taps on a
+challenge that already exists (`test`, `results`), grey is inert.
+
+`issue` was blue alongside those routine taps until 2026-09-01. Two reasons it moved:
+it is the page's **main verb** — on a list of friends you have no live challenge with,
+it is the only control most rows carry — and sharing a fill with *See results* made the
+row that offers a new challenge look like the row that reports an old one. Purple
+(`COLORS.pur`) is the ramp hue this lexicon had not already spent, so the split costs no
+new colour. ⚠️ Note it is also Learn Now's fill on `/decks`; the two never appear on the
+same surface, but a third purple would break that, so check here before spending it.
+
+**Accept and decline are not competing pills in a list.** One *Incoming Challenge* pill
+opens the sheet that holds both, next to the words they are about.
 * **Reigning champion** (👑) marks whoever won the pair's **most recent resolved**
   challenge. It sits on the row as a standing claim, and the next challenge is framed as
   taking it. A `no_contest` or a draw leaves the previous champion in place — the crown
@@ -194,7 +280,7 @@ the Chinese challenges page. See Q39.
 There is **no notification of any kind** — no push, no email, no native badge. A pending
 challenge is announced by a **badge chain the user has to walk into**: a dot on the hp
 **Friends** row → a dot on the **Challenges** row inside the friends drill-in → the
-friend's row itself showing *Review words*. Every one of those counts rides the payload
+friend's row itself showing *Incoming Challenge*. Every one of those counts rides the payload
 the surface already fetches; no new endpoint and no delivery infrastructure.
 
 The accepted cost, stated plainly rather than designed around: **a player who does not
@@ -294,8 +380,18 @@ friends yet.
 
 A **History** button at the top of the challenges page opens the full, **paginated** log
 of every challenge the user has played — the durable record § 6 promises, made
-browsable. Each entry shows the opponent, the week, the word set, both totals with
-breakdowns, and the outcome.
+browsable. Each entry shows the opponent, the date, the word set, both totals, and the
+outcome — which tints the whole card, not just its label. The **per-round breakdown is
+deliberately not here**: it lives on the challenge's own results screen, and printing it
+in the log made every row several times taller for detail nobody scans a log for.
+
+**Tapping an entry opens that challenge** (`/friends/challenges/:challengeId`,
+`ChallengeDetailPage`). Every logged challenge is resolved, so that page renders its
+results screen. The whole card is the target — a log row is scanned as one object, so a
+chevron-sized target reads as "not tappable" — and the navigation carries
+`state.from = "/friends/challenges/history"` so Back returns to the log rather than to
+the challenges list. `ChallengeDetailPage` falls back to `/friends/challenges` when that
+state is absent (a refresh or a shared link).
 
 Controls:
 
@@ -445,6 +541,7 @@ Two consequences, stated plainly:
   east of UTC.
 * **Every deadline stays per-player local.** They are derived from the index's Monday
   DATE plus each player's own zone: `weekBoundary` in `server/shared/challengeWeek.ts`,
+`server/dal/implementations/UserDAL.ts` → `findById` (must select `timezone` — § 2),
   and the identical `DATE '2026-01-05' + 7 * "weekIndex" + N` at 04:00 in
   `database/cron/expire-study-challenges.sql`. The two are cross-checked instant-for-
   instant in `server/__tests__/challengeWeek.test.ts` — if they ever drift, a player is
@@ -475,6 +572,39 @@ login/restore, every ~15-minute token rotation, and a foregrounded tab whose zon
 changed); the full contract lives in
 [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) under "Refresh path for
 `users.timezone`", and the client half is documented in `src/utils/authSync.ts`.
+
+#### ⚠️ …and the column being fresh is not enough — the DAL has to SELECT it (fixed 2026-09-01)
+
+The same "9 PM Thursday" symptom came back on 2026-09-01 with a **correct** column: the
+account's `users.timezone` read `America/Los_Angeles`, and the server still computed
+every boundary at 04:00 **UTC**.
+
+The cause was one column missing from one SELECT list. `StudyChallengeService.timezoneOf`
+resolves the zone through `UserDAL.findById`, whose query enumerates its columns by
+name — and `timezone` was not among them. `resolveTimezone(undefined)` **falls back to
+`'UTC'` rather than throwing**, by design (the column is client-set and must never be
+able to 500 a request), so the omission produced no error anywhere: it silently moved
+every accept deadline and test window seven hours, and `isTestWindowOpen` agreed with the
+wrong answer, so the window really did open early rather than merely being labelled early.
+
+Two things kept it hidden:
+
+* **Only Study Challenge was affected.** The arena, the streak cron and the minute-point
+  week all read `users.timezone` in SQL (`server/dal/shared/weekBoundary.ts`,
+  `ArenaService`), so they were correct on the same accounts at the same moment — which
+  made the challenge look like it had its own week arithmetic wrong.
+* **The 2026-08-28 investigation above found a real, different bug** (accounts stuck on
+  the `'UTC'` default) with the identical symptom, and fixing it made the symptom go away
+  for the accounts it applied to.
+
+`UserDAL.findById` now selects `timezone`, and both it and the server-side `User` type
+carry a note saying why the column is not decoration. **Rule: any DAL read that feeds a
+04:00-local boundary computed in TypeScript must select `timezone`** — the fallback means
+a missing column is a wrong answer, never a failure.
+
+Code: `server/dal/implementations/UserDAL.ts` → `findById`; `server/types/index.ts` →
+`User.timezone`; `server/services/StudyChallengeService.ts` → `timezoneOf`;
+`server/shared/zonedTime.ts` → `resolveTimezone`.
 
 ⚠️ **Any account created outside the app** — a seed script, `POST /api/users`, a
 fixture — starts on `'UTC'` and stays there until its owner logs in. On a dev box that
@@ -526,7 +656,7 @@ the kind of state that gets left on and then misread as a bug.
 |---|---|
 | the accept deadline (Wed 04:00 local) | you must be **friends** |
 | the test window (Fri 04:00 → Mon 04:00 local), including the rule that hides `gameSequence` until it opens (Q63) | the **per-pair block** — a person's decision about another person is not a clock |
-| **one challenge per pair per week** — the gate that actually blocks repeat testing | rounds are **strictly sequential, one attempt each**, insert-only (§ 5.1a) |
+| **one challenge per pair per week** — the gate that actually blocks repeat testing | rounds are **strictly sequential, one attempt each** — claimed at the first mark, immutable once final (§ 5.1a) |
 | `MAX_ACTIVE_CHALLENGES` (6) | scoring, storage, deck creation and winner resolution are **identical** to a real week |
 
 The second column is the point: a hatch that also relaxed the block or the round rules
@@ -537,6 +667,16 @@ would be testing a game nobody plays.
 whether to honour it by checking `isValidator`
 (`StudyChallengeService.resolveAnytime` — the one place that check exists). Two
 consequences, both deliberate:
+
+**The client is gated on `isValidator` too**, and fails closed. `challengeAnytime.ts`
+holds a module latch (`allowed`, fed by `useChallengeAnytime()` from the auth user);
+until a mounted hook says the account is a validator, `challengeAnytime()`,
+`anytimeParams()` and `anytimeQuerySuffix()` all read false regardless of what is in
+`localStorage`. The hook also **clears a stored request** when the current account is
+not a validator, so a flag left behind by a revoked account (or by a different user on
+a shared browser) cannot linger. Without this the server would correctly ignore the
+flag while the client still drew anytime-flavoured labels and lifted deadlines — the
+worst of the two states.
 
 * **There is no column, on purpose.** A stored account flag would eventually be left
   switched on and would silently turn a real week into a free-for-all for that
@@ -577,18 +717,33 @@ tester would otherwise meet as a bug report against themselves:
 | "you're in 6 challenges" in a normal session | parked challenges still count toward the cap when the hatch is off |
 | a challenge quietly becoming `no_contest` | on prod the hourly job resolves it once the parked week actually passes. Not installed on dev |
 
-The detail page carries a one-line version of the same warning, because it is the page
-that renders the parked deadlines.
+The **detail page carries no anytime banner** (removed 2026-09-01). It is only ever
+reached from `/friends/challenges`, where the switch and the full notice above it are
+the last thing the tester saw, so a second line restating "anytime is on" was noise on
+the page that has the least room for it. The detail page still *behaves* differently
+under the hatch — it re-fetches when the switch flips, because the flag changes what the
+SERVER sends (`gameSequence` outside the window), which is what turns the round rows into
+playable Play buttons. It no longer *renders* anything from `anytime`: the masthead's
+status line, the page's only other reader of the flag, is gone (see § 5.4).
 
 **Which calls carry it.** `src/api/studyChallenges.ts` appends it to every request in
 one place, so no page has to remember. The one exception is the game-pool read, which
 builds its own URL — `useChallengeRound` adds `anytimeQuerySuffix()` to `poolParams`,
 without which a tester could open a round from the challenge page and then be refused
-its board.
+its board. That hook also mounts `useChallengeAnytime()` purely to keep the validator
+latch current, so a game reached by direct URL still carries the flag.
+
+⚠️ **A game must append `poolParams`, never re-spell `challengeId`/`gameId` itself.**
+`poolParams` is the whole round identity *plus* the hatch, and a page that rebuilds the
+first two by hand silently drops the third. Hydra Bubbles did exactly that in its
+contested-word fetch (`HydraBubblesPage` → `fetchChallengeCards`) and 400'd
+(`ValidationError: Your test window is not open`) on every out-of-window tester launch,
+while the round itself resolved fine — fixed 2026-09-02 by adopting the same
+`challengeParamsRef` pattern Bubble Match, Match Speed and Word Search use.
 
 **The client mirrors the same rule in its labels.** `challengeAction`,
 `challengeStatusLine` and `acceptLapsed` all take an `anytime` argument, so a row reads
-*Play test* rather than *Study your deck* on a Tuesday. Both the list and the detail
+*Take Test* rather than *See Cards* on a Tuesday. Both the list and the detail
 page **re-fetch when the switch flips**, because it changes what the server sends —
 which rows are expired, whether `gameSequence` is present at all — and not merely how
 the client labels it.
@@ -669,14 +824,60 @@ The visible consequence is that a rematch can legitimately re-offer a word from 
 week if neither player learned it. That reads as the system noticing, not repeating
 itself.
 
-### 3.2 Confirmation flow
+### 3.2 Confirmation flow — a SHEET, not a page (changed 2026-09-01)
 
-Both players run the **same** screen, at different times:
+Both players run the **same** surface, at different times:
 
 ```
-challenger:  [see 9 words] → mark any "I already know this" → replaced → confirm → PENDING
-challengee:  [see the 12]   → mark any "I already know this" → replaced → accept  → ACCEPTED
+challenger:  [see 9 words] → mark any "I already know this" → replaced → Send    → PENDING
+challengee:  [see their 9] → mark any "I already know this" → replaced → Accept  → ACCEPTED
 ```
+
+**These states are not pages.** Issuing, waiting and answering are all decisions *about
+a row* on the challenges list, so all three open the app's sheet over that list rather
+than navigating away — `ChallengeSheet` + `ChallengePanel`, in three modes:
+
+| mode | header | action bar |
+|---|---|---|
+| `issue` | Create Challenge · `not sent` | **Send challenge** |
+| `waiting` | Waiting for Response · `waiting` | **Withdraw challenge** |
+| `incoming` | Incoming Challenge · `incoming` | **Accept** / **Decline** |
+
+Three things follow, none of which survived the routed page this replaced
+(`ChallengeReviewPage`, and the routes `/friends/challenges/new/:friendUserId` and
+`/friends/challenges/review/:challengeId` — all three deleted):
+
+* **The list stays visible behind the scrim**, so the decision keeps its context.
+* **Dismissing costs one tap with nothing to come back from.** The routed page needed a
+  history `replace` on every terminal action to stop Back returning to a *Send* button
+  for a challenge that was already sent; a sheet that unmounts has no such problem.
+* **The header is persistent** — the pair's name, the state line and the state chip stay
+  pinned while the words scroll, so a scrolled sheet never stops saying whose nine these
+  are. The action is at the BOTTOM so the words can sit last, as the reference they are.
+
+**`waiting` draws the identical grid with no strike affordance** — the set has been sent
+and the other player may already be looking at it. That is the only difference in the
+body, and it is expressed as "pass no `onStrike`", not as a second layout.
+
+**Dismissing an invitation is not declining it.** Closing leaves it exactly `pending`
+until its deadline; only the Decline button ends it (and keeps the pair's week, so the
+next challenge is Monday). Withdraw, by contrast, deletes the row and frees the week
+immediately.
+
+**The sheet portals out of the page it is written in.** `ChallengeSheet` is rendered
+inside `ChallengesPage`, which is inside `MobileTabScreen`'s scroll area — and that area
+carries the edge-fade **mask**, which clips fixed-position descendants. Its bottom band
+is transparent for the footer's height, so the sheet's pinned action bar was masked away
+entirely: the sheet looked right and had no **Send** button (fixed 2026-09-01). It now
+portals to `nearestOverlayHost` and holds `useHideFooter` while open, since the footer
+bar paints above that host and covers the same strip. The same applies to
+`ChallengeHelpPopup` (§ 5.4c).
+Full rule: docs/MOBILE_TAB_SCREEN_LAYOUT.md § "Edge fade".
+
+Code: `src/features/studyChallenge/ChallengeSheet.tsx` (the frame — local to this
+feature; promote to `src/components/` if a second surface needs it),
+`ChallengePanel.tsx` (the three modes), hosted by `ChallengesPage` → `panelTarget`;
+`src/components/overlayHost.ts` → `nearestOverlayHost`.
 
 * Marking a word **already learned** removes it and pulls the next word from the same
   ranked candidate list — the replacement runs through the identical logic, with every
@@ -692,26 +893,57 @@ challengee:  [see the 12]   → mark any "I already know this" → replaced → 
   `exclude` — every word on screen plus every word struck this session. A `null`
   replacement means the supply is exhausted; the slot is dropped and the set ships
   short (§ 3.1), never refused.
+
+  **The struck card fades out before the replacement lands** (added 2026-09-01). The
+  fade starts on the confirming tap — not on the response — and the swap waits on BOTH
+  the fade and the round trip (`CHALLENGE_STRIKE_FADE_MS`, started before the request
+  and awaited after it), so a slow server adds nothing to the animation and a fast one
+  never cuts it short. Without it the tile changed identity in a single frame, which
+  read as a glitch rather than as one word being exchanged for another. The replacement
+  carries a new `word1`, so it mounts as a fresh card and takes the grid's ordinary
+  pop-in. A failed strike clears the fade and the original card returns.
   Code: `StudyChallengeService.strikeWord` → `drawReplacement`;
   `src/api/studyChallenges.ts` → `strikeChallengeWord`;
-  `src/features/studyChallenge/ChallengeReviewPage.tsx` → `handleStrike`.
+  `src/features/studyChallenge/ChallengePanel.tsx` → `handleStrike` (owns `fadingWord`);
+  `ChallengeWordCard.tsx` → the `fading` prop; `challengeStyles.ts` →
+  `CHALLENGE_STRIKE_FADE_MS`.
 * **The words are drawn as the app's mini preview cards, not as text rows.** Both the
-  review screen and the detail page's word set render each word through
-  `ChallengeWordCard` inside the shared `MiniVocabCardGrid` — the same 92×132 thumbnail
-  `MiniVocabCard` (decks) and `QuickMarkCard` (Quick Mark) use, carrying the word +
+  confirmation sheet and the detail page's word set render each word through
+  `ChallengeWordCard` inside the shared `MiniVocabCardGrid` — literally the same tile
+  `MiniVocabCard` (decks) and `QuickMarkCard` (Quick Mark) draw, since all three take
+  their face from `miniCardFaceSx` (`src/components/miniCardFace.ts`, extracted
+  2026-09-01 after the three copies drifted apart), carrying the word +
   pinyin (always via `ForeignText`), the **English lead gloss**, the
   conversation-frequency badge and the icons8 icon. The English is not decoration: "do
   I already know this word" cannot be answered from the characters alone, because a
   learner may know a different sense of a word they recognise.
 
-  The strike button sits **below** the card, and the card itself is inert. Quick Mark
-  cycles its mark by tapping the thumbnail, but that mark is provisional until Save;
-  a strike here writes Mastered immediately and permanently, so it gets an explicit
-  labelled control that a mis-aimed tap on the word cannot trigger. On the detail page
-  the card is drawn with no button at all — after accept the set is settled (§ 3.3).
+  **Striking is TWO TAPS on the card itself** (changed 2026-09-01). The first tap only
+  SELECTS: the card fills with the mastered blue — the same ink the app uses for a
+  mastered card everywhere else, which is exactly the claim about to be made — and
+  raises one *Mark as known* pill over its bottom edge. The second tap, on that pill,
+  commits. A strike writes Mastered immediately and permanently, so it must not be
+  reachable by a single mis-aimed tap on a 92px thumbnail; two taps gives that
+  protection without the permanently-visible *I know it* button this replaced, which
+  printed the strike affordance nine times on a screen whose subject is the words and
+  made every grid row reserve 32px it needed only while the set was editable. The pill
+  is absolutely positioned and costs no layout. On the detail page the card takes
+  neither handler and is inert — after accept the set is settled (§ 3.3).
+
+  **The sheet carries no footnote about what a strike costs** (changed 2026-09-01). The
+  small print under the grid — *"Marking a word known makes it Mastered on your own
+  cards, permanently…"* — was removed: it sat below nine cards, so it was read after
+  the decision it was warning about, if at all. What remains is the banner above the
+  grid (*Tap a card to mark it as known*) and the two-tap gesture itself.
+  ⚠️ **This is the one place the permanence was stated in words.** § 8.1 leans on the
+  Mastered write being understood, and the honor-system argument assumes a player knows
+  the cost of a false strike. If mastery data starts looking inflated, restating the
+  consequence — on the confirm pill or in the banner, where it is read *before* the
+  tap — is the first thing to try, ahead of a cap.
   Code: `src/features/studyChallenge/ChallengeWordCard.tsx`;
   `reviewWord.ts` (`ChallengeReviewWord`, the one shape a candidate and a stored word
-  both collapse into); geometry in `challengeStyles.ts` → `challengeWordCardHeight`.
+  both collapse into); geometry in `challengeStyles.ts` → `challengeWordCardHeight` /
+  `CHALLENGE_WORD_PILL_GUTTER`.
 
 * **A rejection writes to that user's own card.** "I already know this" is a real
   statement about the learner's knowledge, so it does not stay inside the challenge: the
@@ -989,10 +1221,11 @@ count.
 
 ### 5.1a Rounds are strictly sequential, one attempt each
 
-Round *n+1* unlocks only when round *n* is submitted, and **a submitted round is final** —
+Round *n+1* unlocks only when round *n* is finished, and **a finished round is final** —
 no replay, no restarting the test. The player may leave between rounds and come back
 (the test is a three-day window, not a sitting), and may pause mid-round (§ 5.8), but
-they cannot re-roll a score.
+they cannot re-roll a score — and since the claim model below, **they cannot re-roll one
+by walking out of it either**.
 
 This is what makes the running total in the between-games scoreboard (§ 5.5) mean
 something: it is the real, committed score, not a provisional best-so-far. It also keeps
@@ -1005,10 +1238,75 @@ The cost is accepted: a player who has one bad round carries it. That is what "a
 means, and the three-day window plus the pre-study days (§ 4) are the compensating
 generosity.
 
-Server-side this is one invariant: a round row is **insert-only**. `POST` of a round that
-already exists is rejected, not upserted, and the server refuses a submission for round
-*n+1* until *n* is present — which also means a tampered client cannot skip straight to
-the last round.
+#### The attempt is spent at the FIRST MARK (claim model, 2026-09-02)
+
+An unplayed round used to exist nowhere: it was written only when the run ended, so
+**leaving a game mid-round left no trace and the round could simply be played again**.
+Backing out of a bad start, or reloading the tab, was a free re-roll of a round that is
+supposed to be one attempt.
+
+It is now claimed the moment the player answers:
+
+| Slot state | Meaning | Board issued? | Writable? |
+|---|---|---|---|
+| absent | not started | ✅ yes | — |
+| present, `completedAt: null` | **CLAIMED** — spent, still being played | ❌ never again | ✅ score may still move |
+| present, `completedAt` set | **FINAL** | ❌ | ❌ rejected (Q40) |
+
+* **What arms it:** the first `hit` or `miss` — i.e. the first real flashcard mark the
+  game writes. Word Search's hint (`use`) and the elapsed-time clock do not, on their
+  own: opening a board, looking at it and backing out is not an attempt.
+* **What it writes:** a full round row with `completedAt: null`. Every later mark posts
+  the **cumulative** snapshot to the same slot, so the banked score tracks the run even
+  if the app is killed without warning. Writes are coalesced (one in flight, ≥1.2 s
+  apart) — lossless precisely because each is cumulative, and necessary because a round
+  already writes one mark per answer against the global `writeLimiter`.
+* **What ends it:** the run ending as usual, *or* the player leaving the game — Back, a
+  footer tab, any route change, a tab close. Leaving finalises the round where it
+  stands, scored as a loss (so an all-or-nothing survival bonus is forfeited, § 5.4).
+* **Backgrounding is still just a pause** (§ 5.8). The round ends when the player walks
+  out of it, not when the phone rings: the client listens for `pagehide` with
+  `persisted === false`, never `visibilitychange`.
+* **The Back arrow confirms first.** An irreversible scored exit on one silent tap is a
+  trap, so an armed round asks ("Leaving now ends this round and banks the score you
+  have"). The confirm is a courtesy on the deliberate exit, **not a lock** — a footer
+  tab or a tab close cannot be intercepted and still finalise correctly.
+
+Because the claim is a database row, none of this depends on the client behaving: the
+server walks *presence*, not completion, when deciding which board to hand out.
+
+Code: `src/games/runtime/useChallengeRound.ts` (arming, coalesced writes, exit
+finalisation), `src/games/runtime/useGameBack.ts` (the confirm), `StudyChallengeService`
+→ `submitRound` / `nextRoundIndex` / `hasFinished` / `completedRounds`,
+`StudyChallengeDAL.recordRound`, `ChallengeRound` in `server/contracts/wire.ts`.
+
+#### Server-side invariants
+
+1. A round slot is writable only while it is **absent or claimed**. A `POST` naming a
+   round that is already final is rejected, not upserted — one statement, one path
+   guard (`StudyChallengeDAL.recordRound`).
+2. Round *n+1* is refused until *n* is **present** — claimed or final. That stops a
+   tampered client skipping to the last round. It deliberately does **not** require *n*
+   to be finished: a round whose app was killed mid-run stays claimed forever (its board
+   can never be re-issued, so nothing can finalise it), and demanding completion would
+   lock a player out of the rest of their test because of a crash. Presence is also the
+   test `nextRoundIndex` and the round list on the challenge card use, so all three
+   agree on which round is next.
+3. `startedAt` is preserved across writes by the DAL, so a later write cannot backdate a
+   claim.
+4. A claimed round does **not** finish the test (`hasFinished` requires `completedAt`),
+   or the challenge would resolve out from under a live game. It **does** count toward
+   the player's total, so abandoning is never cheaper than finishing.
+5. A claimed round is **withheld from the opponent** (`completedRounds`), or the reveal-
+   per-round rule (§ 6) would let one player watch the other's score climb mark by mark.
+6. **The window-close cron is deliberately looser.** `expire-study-challenges.sql`
+   pass 2 counts round KEYS and sums every stored score, so an abandoned claim counts as
+   a played round and its points count. That asymmetry is the point: mid-test a live
+   round must not resolve the challenge, but once the window has closed nothing is live
+   and every spent attempt should be scored. The cron needed no change for this feature.
+
+No migration: `rounds` is jsonb, and every row written before this shape has a non-null
+`completedAt`, so they all read as final.
 
 ### 5.2 Provisional mode: `mastered-first`
 
@@ -1050,7 +1348,9 @@ sight-unseen.
 meant to measure the 12 contested words, and padding the board with words the player
 has never seen would add noise (and, worse, would reward whoever got luckier filler).
 Filler the player already owns is near-free points for both sides — which is why filler
-is worth **20 points instead of 100** (§ 5.4).
+is worth **20 points instead of 100** (§ 5.4). **Hydra Bubbles is the exception at both
+ends**: its filler is not `mastered-first` (§ 5.2's own exception, below) and pays **0**
+rather than 20, because there it was farmable rather than near-free.
 
 The mode is a parameter on `ProvisionalCardService.ensureBaseline` / `lendCards` and
 travels on the pool request as `?provisionMode=`. Every step degrades silently to the
@@ -1159,7 +1459,7 @@ games cannot drift into four readings of the same spec.
 | **Bubble Match** | Nothing but the pool params and the events — plus one new stage signal, `onCeilingDrop`, because the survival bonus starts the instant the ceiling begins descending and only the stage knows when the launcher drained |
 | **Match Speed** | The alternation rule (§ 5.3), extracted as the pure `challengeDeal.ts`. Mid-run buffer top-ups send `&contested=exclude` — the nine are dealt once and never recycled |
 | **Word Search** | **The same board as a casual run** since 2026-08-28 — 7×6, 9 words, template mode when it applies (the separate 8×8 challenge grid was deleted; see § 5.2). Its target list is still `CHALLENGE_WORD_COUNT`, not `TOTAL_WORDS`, because the actual set is the specific contested word ids, not a band distribution. Filler is queued at **twice** the board so the substring de-dup pass has something to substitute WITH — otherwise a set that shares characters fails as `insufficient-distinct`, i.e. a round the player cannot play at all. Challenge boards are never saved to the resume slot |
-| **Hydra Bubbles** | Contested words ride the **bloom** slot, drawn ahead of that buffer's stock; the run ends on the last contested clear (`shouldEndRun` → outcome `challengeComplete`). **Its filler is deliberately NOT `mastered-first`** — see below |
+| **Hydra Bubbles** | Contested words ride the **bloom** slot, drawn ahead of that buffer's stock; the run ends on the last contested clear (`shouldEndRun` → outcome `challengeComplete`), which is also the `won` that decides its clear bonus. It arms that bonus with a `survivalStart` event at t=0 rather than on a board signal. **Its filler is deliberately NOT `mastered-first`, and pays 0** — see below |
 
 ⚠️ **Hydra is the one exception to § 5.2's filler rule, on purpose.** Its filler comes
 from its own colour buffers, whose bands ARE the payout ladder
@@ -1254,6 +1554,47 @@ Per-game rules as specified:
 > survived would be scoring a different game than the one they played. The cliff is also
 > what makes the last thirty seconds tense, which is the reason to draw this game at all.
 
+**Hydra Bubbles**
+
+| Event | Points |
+|---|---|
+| contested match | **+100** |
+| contested mistake | **−100** (ends the run, so at most one is ever charged) |
+| filler match | **0** — the one game where filler pays nothing |
+| filler mistake | **−20** (also ends the run) |
+| **clear bonus** | **+300** for clearing all nine, held flat for the first **1:00** of active time, then decaying **−25 every 15 s** to a floor of 0 at **4:00** |
+| clear bonus if the set is **not** cleared | **0** — forfeited entirely |
+| survival bonus | **none** — an endless run's survival time is unbounded and would swamp every other term |
+
+> **Why the clear bonus is gated on completion (O2, resolved 2026-09-02).** § 7.5 has
+> always said a Hydra round is scored on *time to clear*, and until now nothing scored
+> time at all. It could not be done naively: a run ends either because the player
+> finished or because they erred, so a per-second penalty charged to every run pays
+> players to **fail fast** — a wrong match at 0:30 posts a better clock than a clean
+> 9-of-9 at 4:00, and finishing takes longer than quitting *by definition*, so no choice
+> of rate fixes the sign. Gating the term on completion means it only ever compares runs
+> that are actually comparable: everyone holding it cleared the same nine words. It also
+> cannot invert the word ranking — a complete run is `900 + bonus ≥ 900` and the best
+> possible partial is `800 − 100 = 700` — so the pot's size is purely a statement about
+> how much speed should separate two finishers. 300 against 900 puts it in the same
+> register as Bubble Match's 500.
+>
+> **The numbers are a first guess and the grace is why that is safe.** Nothing stores a
+> round's duration (only `completedAt`), so there is no telemetry on real clear times. A
+> flat first minute means a decay rate guessed too aggressively cannot *punish* a fast
+> run, only fail to separate it. Revisit once real rounds exist.
+
+> **Why filler is zero here and 20 everywhere else (changed 2026-09-02).** Filler is
+> meant to be near-free points that cannot decide the match. In Hydra it could: the run
+> ends on the LAST contested clear and nothing charges for time, so a player who cleared
+> eight of nine and then farmed filler bubbles outscored one who finished cleanly and
+> fast — and overflow forfeits nothing, so the farm risked only a wrong match. The
+> mistake value deliberately stays negative, because a filler clear is not optional
+> (draining is how the board is kept off the ceiling): filler is now pure risk rather
+> than inert. The consequence is that a Hydra round total **is** its contested ledger —
+> always a multiple of 100 minus any miss — and that two clean 9-of-9 runs now tie at
+> exactly 900, which is O2 (`docs/HYDRA_BUBBLES.md` § 11) with nothing left to hide it.
+
 **Word Search (Pinyin)**
 
 | Event | Points |
@@ -1287,6 +1628,199 @@ Notes and open items:
   ([GAMES_FEATURE.md](./GAMES_FEATURE.md) § Popups pause the clock) — otherwise reading
   a provisional notice costs you 100 points.
 
+### 5.4b View Challenge is TWO pages — once there are two sides to read (built 2026-09-01)
+
+A challenge has two players, so `/friends/challenges/:id` makes **the test** two
+horizontally-swipeable pages, with dots under them saying which you are on:
+
+| page | whose | ink |
+|---|---|---|
+| 1 | yours — the test card with Play buttons and per-round scores | blue |
+| 2 | theirs — the same card, read-only (a banked round's score, else `not done`) | red |
+
+⚠️ **Only the per-side blocks are inside the pager** (narrowed 2026-09-01, narrowed
+again 2026-09-02). The pager now holds `yourTest` / `theirTest` — **`ChallengeTestCard`
+alone**. (Two other blocks sat here and no longer do: `ChallengeTotalCard`, deleted
+2026-09-02 — see the removal note below — and the masthead, hoisted above the pager
+2026-09-02, next paragraph.) `sharedFooter` — the **"How to study this deck" button and
+the nine word cards** — is identical on both sides, so it renders ONCE, below the dots,
+outside the scroller. Swiping used to move two identical columns of word cards past the
+reader, which made the gesture read as though it had done nothing. The rule to keep:
+**a block goes in the pager only if it differs by side** — and, since 2026-09-02, only if
+it differs by side *enough to be worth animating*; anything shared belongs above the
+masthead line or under the dots.
+
+⚠️ **The masthead does NOT swipe, and no longer says whose side you are on**
+(2026-09-02). One `ChallengeDetailHeader` sits above the pager as `masthead` in
+`ChallengeDetailPage`. Both copies said "vs <name>" and differed only in the eyebrow's
+rule and kicker, so sliding one out and a near-identical one in read as a stutter, not a
+page turn — it was first hoisted out of the pager and re-inked in place from `page`, then
+the eyebrow was **removed outright**. `ChallengeDetailHeader` takes no `side` prop any
+more: the component is the title alone, identical on every state of the page (the two
+pager pages, the one-page study state and the resolved results screen), and the ownership
+ink now lives only where it is attached to content — the test card and the pager dots.
+
+* **Same layout on both pages**, which is what lets a reader compare them without translating
+  between two designs. **The colour is the whole ownership mark** — red here is NOT a
+  warning and must never acquire warning semantics on this page.
+* **Page 2 fills in round by round** — see the § 6 reveal rule. Their unplayed rounds are
+  simply *not done*; a round in progress is never visible.
+* ⚠️ **During the STUDY days it is ONE page, with no pager and no dots** (2026-09-01).
+  Before a window opens neither player has a `gameSequence`, let alone a submitted round,
+  so page 2 would hold a header, an empty test card and nothing else — and the dots would
+  advertise it. The gate is `showOpponentPage` in `ChallengeDetailPage`:
+  `!studying || Object.keys(opponentRounds).length > 0`. It asks whether **their side has
+  anything on it**, not what day it is, because the two players' windows are their own
+  (§ 2) — an opponent far enough east can be submitting rounds while this viewer is still
+  studying, and their page appears for that viewer the moment one lands.
+* **Once the challenge resolves the two pages collapse into one.** `complete` and
+  `no_contest` render the results screen (§ 6) as a single scroll: verdict on top, then
+  both players' cards. Keeping the swipe would ask the reader to page back and forth to
+  make a comparison the verdict has already made.
+* ⚠️ **The dots are BUTTONS** (2026-09-01). A native scroll-snap container is pannable
+  by finger and by trackpad and by nothing else — a mouse drag does not scroll an
+  overflow container in any browser — so a pager whose only control is the gesture is
+  unreachable with a mouse, and page 2 simply does not exist for that reader. Tapping a
+  dot calls `goToPage`, which scrolls the pager; the dots still do not OWN the position
+  (see below), so a tap and a swipe cannot disagree. They remain the keyboard and
+  assistive path, which a gesture can never be.
+* ⚠️ **Mouse drag on the pager is wired up by hand** (2026-09-02). Reported as "card
+  swiping doesn't work on desktop": the dots worked, but grabbing a test card and pulling
+  it sideways — the thing the page's whole shape invites — did nothing. `ChallengeDetailPage`
+  now calls the shared `useDragScroll(pagerRef, { paged: true })` (`src/hooks/useDragScroll.ts`),
+  which adds mouse panning to a scroller. Two things are specific to a PAGER and are what
+  the `paged` option buys: mandatory scroll-snap has to be **parked** (inline
+  `scrollSnapType: none`) for the length of the drag, or the browser re-snaps mid-gesture
+  and the card never follows the cursor; and with snap off nothing settles the release, so
+  the drag commits itself — past `PAGE_COMMIT_RATIO` (25%) of a page it turns, otherwise it
+  springs back — then re-arms snap after the smooth scroll has landed (`SNAP_RESTORE_MS`).
+  The hook's capture-phase click swallow keeps a drag that ends over a Play button from
+  also launching a round. Position is still read only by `handlePagerScroll`.
+* The pager is a native `scroll-snap` container and the dots **follow** it (reading
+  `scrollLeft` on scroll) rather than driving it — the platform already owns the physics,
+  and a `currentPage` state would have to be kept honest against a gesture in flight.
+  `touchAction: "pan-x pan-y"` is the required opt-in (CLAUDE.md "Touch & Scroll") —
+  ⚠️ **and it is not sufficient on its own**. `touch-action` is intersected down the
+  ancestor chain, so `MobileTabScreen`'s `pan-y` overruled the pager's `pan-x` and the
+  swipe did nothing at all (found 2026-09-01, in the test state where the second page
+  first has content). The page therefore also passes `horizontalPan` to `NodePage`,
+  which widens the scroll area. See MOBILE_TAB_SCREEN_LAYOUT.md.
+* ⚠️ **The dots sit BETWEEN the pager and the shared blocks** (2026-09-01). They are
+  directly under the thing they page and directly above the first block that does NOT
+  move, so their position states where the swipe's reach ends — as the masthead above
+  the pager now states where it begins. This only works because
+  the pager is now the test alone: an earlier version had the study button and the nine
+  word cards inside page 1 — ~1100px — and dots placed after it were permanently below
+  the fold, the only affordance for a page nothing else hints at, itself hidden. (They
+  were briefly moved *above* the pager for that reason; narrowing the pager fixed the
+  cause instead.) The active dot also **stretches** as well as changing ink, because at
+  7px a colour change alone is easy to miss.
+
+⚠️ **The word grid has no heading** (2026-09-01). Every state ends with the nine words
+as the confirmation sheet's mini cards, minus the strike — but the "The 9 words" caption
+above them is gone. The cards ARE the caption: nine word cards under a challenge cannot
+be anything else, and the label spent a line of the first screen restating them while
+counting a number the reader cannot act on. The grid keeps its class names
+(`challenge-detail-page__words`, `__word-grid`), so the section is still addressable.
+
+**The page masthead** (`ChallengeDetailHeader`, 2026-09-01; hoisted out of the pager
+and stripped to the title 2026-09-02). `NodePage`'s own header
+names the SCREEN ("View Challenge") and has no subtitle slot, so the challenge names
+itself in the body: "vs <name>" at `SIZE.heading`, and nothing else. It replaced a
+body-sized line that read as a caption for the card beneath it. It used to carry a
+coloured rule + mono kicker (YOUR CHALLENGE / THEIR SIDE) above the name; that side
+indicator was removed because the test card directly beneath it already carries the same
+blue/red ownership ink and names the player, and the pager dots already say which page
+you are on.
+
+⚠️ **The masthead is a NAME, with no subtitle at all** (2026-09-01). `ChallengeDetailHeader`
+has no `statusLine` prop any more — and, since 2026-09-02, no `side` prop either:
+"vs <name>" is the whole component.
+It printed two lines, and each restated the test card immediately beneath it:
+
+| side | the line that was there | what already says it |
+|---|---|---|
+| yours | `challengeStatusLine` — "Round 2 of 3 · closes 4 AM Sunday" (or "· anytime") | the numerals down the card's left edge draw the round count; the card's head carries the close date |
+| theirs | "<name> is still playing — their rounds appear as they submit them" | every unplayed round on their card already reads **not done** |
+
+`challengeStatusLine` itself is **not** deleted: the challenges LIST row still calls it,
+and there it is the row's only description. This is the second removal in the same
+direction — the study-days line went first, for the same reason — so take it as the page's
+rule: **the masthead names the side, the card states the state.**
+
+**The two cards these pages are built from**, both reused by the results screen:
+
+* `ChallengeTestCard` — one component, two inks. The **absence of `gameSequence` is the
+  gate** (§ 5.1b), so it renders nothing playable before Friday with no date check of its
+  own; do not add one. Round badges are **Roman** numerals because every other number on
+  the card is a score. A banked round's score **replaces** its Play button, which is what
+  makes "submitted is final" legible without a word of copy.
+  ⚠️ **No "on deck" tag** (removed 2026-09-01). The row's mono sub-line carries the game
+  MODE and, for a banked round, `submitted` — nothing else. The playable round used to add
+  "· on deck", but it is already the only fully-lit, shadowed row on the card AND the only
+  one carrying a Play button, so the words were a third telling of a state that cannot be
+  missed. `submitted` stays: a banked round has lost its button, so its filled numeral
+  would otherwise be the only signal.
+  The heading is a fixed label — **"Test"** on your side, "Their Test" on theirs
+  (2026-09-01). It used to swing "Test Time" → "Test Done", and before the window
+  opened it read "Test Time" over a body saying the test opens Friday. The state is
+  already told by the page chip, the numerals filling in down the left edge, and each
+  row's own Play / score / lock; a fourth telling could only add a way to disagree.
+  **Before the window opens it shows exactly one date and no count** (2026-09-01): the
+  body reads "Your test opens 4 AM Friday." and the head's "closes …" is withheld until
+  there is a sequence. It used to add "· 3 games, the same ones for both of you", which
+  invited the one question the card exists to withhold (*which* three) and put a second,
+  later date on a card its reader cannot act on — and the later of two dates is the one
+  that reads as the deadline.
+  ⚠️ **Both sides print a round's score** (2026-09-02). Their side used to read
+  `submitted` / `not done` in the slot yours puts a score in, because their figures were
+  itemised on the total card below. With that card gone the slot carries the subtotal on
+  both sides — which is also what makes the two pages comparable at a glance, since the
+  banked figure sits in the same place on each. `not done` still stands in for a round
+  they have not played.
+
+#### ⛔ `ChallengeTotalCard` is DELETED (2026-09-02)
+
+The charcoal card that sat under the test card — a grand total over every round with each
+scoring RULE itemised beneath it — **no longer exists**, on View Challenge or anywhere
+else. Do not re-add it. The reasoning, so it is not rediscovered as a gap:
+
+* **The rule-by-rule breakdown belongs to the moment it was earned.** It is still
+  rendered, once, by `ChallengeScoreTable` on the game-finish screen (§ 5.5), where the
+  reader has just played the round the lines describe. Re-showing it days later on a page
+  whose job is "where does this challenge stand" is a level of detail nobody re-reads.
+* **What a returning player wants is the per-round subtotal**, and `ChallengeTestCard`
+  already had a slot for it on every row.
+* **The grand total was never the page's only copy** — the results crest (§ 6) states both
+  totals and draws the ratio bars.
+
+The stored `breakdown` jsonb is UNCHANGED and still shipped on every round (§ 5.6); only
+the second surface reading it went away. `roundsTotal` / `signedPoints` in
+`challengeLabels.ts` both remain in use (the crest and `ChallengeScoreTable`).
+
+### 5.4c The two stepped explainers (F20/F21)
+
+Two overlays, ONE component (`ChallengeHelpPopup`), so they read as one system:
+
+* **"How to study this deck"** — the orange button during the study days. It does NOT
+  launch play; it teaches a **filter**. Every surface it names already exists and the
+  learner has used them — what they do not know is how to point one at exactly these nine
+  cards. Hence an overlay, not a page.
+* **"How the test works"** — behind the test card's info button. These three rules used
+  to sit as fine print under the round list; they moved because they are read once and
+  then never again, while the round list is read every time.
+
+Neither remembers being read: no "seen" flag, no auto-open. Both are behind an explicit
+control, so a learner who wants them twice gets them twice.
+
+Each step pairs a screenshot with its instruction — the image is part of the
+instruction, since a sentence naming a surface the reader has never opened teaches
+nothing. Steps and their shot filenames live in `challengeHelpSteps.ts`; the files go in
+`src/assets/challengeHelp/` (see the README there) and are picked up by
+`import.meta.glob`, so adding a step is a data change plus a dropped file. **A step whose
+file does not exist yet renders a labelled placeholder frame**, which is why the
+explainers are usable before the screenshots are captured.
+
 ### 5.5 The between-games scoreboard
 
 After **every** game in the test, the player sees a breakdown card:
@@ -1308,15 +1842,40 @@ Every line item is derived from the same `ChallengeScoringSpec` the game scored 
 the breakdown can never disagree with the number. In **live** mode this card also shows
 the opponent's breakdown side by side and both players must confirm to advance (§ 7).
 
-In **async** mode this card shows only the player's own numbers. The opponent's score —
-per round or total — is not revealed until **both** players have finished all three
-rounds (§ 6).
+In **async** mode this card shows only the player's own numbers — still true after the
+§ 6 reveal change, and now a deliberate choice rather than a consequence: the opponent's
+submitted rounds ARE available, but the moment a round is banked, mid-test, is the wrong
+moment to hand someone a comparison they cannot act on. Their figures live on page 2 of
+View Challenge (§ 5.4b).
 
 **Built as `src/games/runtime/ChallengeRoundScoreboard.tsx`** (2026-08-22), rendered by
-each game in place of its own end-of-run popup. It is deliberately **not minimizable**,
-unlike a game's own card: the board behind it belongs to a round that is now final, so
-there is nothing to uncover and the only exits are forward — *Next round · <game>*, or
-back to the challenge. The Next button stays disabled until the POST lands, because the
+each game in place of its own end-of-run popup.
+
+**It is a FULL-BLEED DARK BOARD, not a popup card** (changed 2026-09-01). It used to
+render through `GameEndPopup`, which put a light card over a still-visible board. That
+was wrong twice: the board behind it belongs to a round that is now scored and final, so
+showing it invites a player to look for something to do with it; and a card sized for a
+two-line "you won" cannot give a six-line itemisation room to read as a scoreboard.
+Being its own surface is also what lets the TOTAL be the largest thing on screen, which
+is the one number the round was played for. Negative lines are **not** painted red here
+(unlike the same lines on the paper ground) — red on near-black reads as an error state,
+and a round that scored fewer points is not an error. The two figures that are not
+breakdown lines take the dark-ground highlights: `COLORS.hlYellow` for *this round*,
+`COLORS.hlBlue` for *total*.
+
+**It covers the WHOLE screen, the game's header included** (changed 2026-09-01). It is
+written inside the game's content box, next to the game's own end-of-run popup, but
+**portaled to `nearestOverlayHost`** (`src/components/overlayHost.ts`) — the leaf page
+`Surface`, or the phone frame — and painted `position: absolute; inset: 0` there at
+`zIndex: 1200`. Pinned to the game's content box instead, it stopped short of the leaf
+header, leaving the round's title bar and its game controls lit above the blackout,
+which reads as "the board up there is still playable". `absolute`-on-the-host rather
+than `fixed` for the same reason `GamePausedOverlay` avoids `fixed`: inside the desktop
+phone frame, `fixed` covers the browser window rather than the phone card. No
+`useHideFooter` is needed — a leaf page has no footer.
+
+It is deliberately **not minimizable**: there is nothing to uncover and the only exits
+are forward — *Next round · <game>*, or back to the challenge. The Next button stays disabled until the POST lands, because the
 server refuses round n+1's board until n is stored (§ 5.1a), and a submit failure is
 stated on the card rather than retried silently — a round cannot be replayed, so the
 player needs to know.
@@ -1390,10 +1949,16 @@ Design consequences, stated so nobody is surprised by them later:
 ### 5.8 Leaving the app pauses the game — everywhere
 
 A player who backgrounds the app mid-round must find the round exactly as they left it
-when they return. This is **not** a challenge-specific rule: it is a **new global
-requirement on every game in the app**, and it removes async abandonment as a scoring
-question entirely — there is no "abandoned round" to score, because rounds do not run
-while nobody is watching.
+when they return. This is **not** a challenge-specific rule: it is a **global
+requirement on every game in the app**.
+
+> ⚠️ **This is BACKGROUNDING only, and the distinction now has teeth.** It used to
+> dissolve the abandonment question entirely ("there is no abandoned round to score").
+> Since the claim model (§ 5.1a) it does not: leaving the game — Back, a route change,
+> a tab close — finalises the round at whatever score stands. Only *backgrounding* is
+> free. The client draws the line with the event it listens to: `pagehide` with
+> `persisted === false` is a teardown and scores the round; `visibilitychange` and a
+> bfcache freeze (`persisted === true`) are a pause and score nothing.
 
 What it requires:
 
@@ -1440,16 +2005,46 @@ which is a much smaller job than this section originally implied.
 
 ## 6. Results, winner, and no contest
 
-* Async: once **both** players have completed all three games, the results page opens
-  for both. **Nothing of the opponent's performance is visible until then** — not the
-  total, not a per-round score, not "Alice is winning". Whoever plays second must play
-  against the game, never against a number, or the mode quietly rewards playing late.
-  The only opponent state a player may see beforehand is **progress**: "Bob hasn't
-  played yet" / "Bob has finished", which is needed to know whether the challenge is
-  waiting on you.
-* The results page declares a **winner** at the top (higher total), then shows both
-  players' per-game breakdowns side by side. **That is all it shows (Q64)** — totals and
-  per-game scores, with **no per-word comparison**. A word-by-word table would be a nice
+### ⚠️ A round is revealed as soon as it is complete (changed 2026-09-01)
+
+**This reverses the rule this section used to state.** The opponent's SUBMITTED rounds
+are now serialized as they land — `opponentRounds` is always present and simply grows —
+rather than being withheld until both players finish.
+
+* **What changed and why.** View Challenge became two swipeable pages (§ 5.4b): page 1
+  is yours, page 2 is theirs. Under the old rule page 2 was blank for four days, and a
+  page that stays blank is not a page — it is a promise. Revealing per round makes both
+  sides fill in at the same cadence and keeps the two readable against each other.
+* **The cost, stated plainly.** Whoever plays second can see the total they are chasing.
+  The old rule existed to prevent exactly that ("play against the game, not against a
+  number"), and dropping it is a deliberate trade, not an oversight.
+* **What is still protected.** A round IN PROGRESS is invisible on both sides. Since
+  the claim model (§ 5.1a) this is no longer free: `rounds` DOES hold unfinished rounds,
+  so the serializer filters the opponent's side to completed ones
+  (`StudyChallengeService` → `completedRounds`). Without that filter a player could
+  watch their opponent's score climb mark by mark. The between-round scoreboard (§ 5.5) also
+  still shows only your own figures: the moment a round is banked, mid-test, is the
+  wrong moment to hand someone a comparison they cannot act on.
+* **The narrow fix, if anchoring turns out to matter.** Gate each round on the VIEWER
+  having submitted the same index — not a return to the all-or-nothing gate, which is
+  what made the page empty.
+
+Implemented in `StudyChallengeService` → `toSummary`; `opponentRounds` changed from
+optional to required on both `ChallengeSummary` types (server and the
+`src/api/studyChallenges.ts` mirror).
+
+* The only opponent state available before their first round is **progress**
+  (`opponentFinished`), which the challenges-list row reads to say which side the app is
+  waiting on. The detail page's masthead used to read it too and no longer does (§ 5.4).
+* The results page declares a **winner** at the top (higher total, plus the two ratio
+  bars), then shows both players' cards. **Each card IS a read-only `ChallengeTestCard`**
+  (2026-09-02) — same rows, same Roman numerals, same score slot as the mid-test page,
+  with the player's NAME as the heading, no "closes …" stamp, no rules button and no Play
+  buttons. That reuse is what keeps results and the mid-test page one screen rather than
+  two kept in step by hand; a round the player never sat still draws, carrying `not done`
+  / a lock, because a player who never played has a real record of not having played
+  (design F18). It shows **no rule-by-rule breakdown** — that lives only on the
+  game-finish screen (§ 5.5) — and **no per-word comparison (Q64)**. A word-by-word table would be a nice
   study artifact, but it requires per-word outcomes in every game's stored breakdown
   (§ 5.6), which means every game must emit them and keep emitting them forever — a
   large permanent tax on the `challengeScoring` contract for a screen nobody has asked
@@ -1464,6 +2059,67 @@ which is a much smaller job than this section originally implied.
 * **Every challenge is recorded permanently**, including the words and the outcome, so
   a pair's history is browsable. That is what makes the word set worth storing on the
   challenge row rather than only in the temp decks (which are cleaned up — Q9/Q36).
+
+### 6a. Taunts — one canned line per player (built 2026-09-01, migration 156)
+
+Once a challenge resolves, each player owns **one taunt slot** aimed at the other. It
+renders in a hand-written serif italic over the top edge of the target's card on the
+results screen (design F17/F17b).
+
+* **A CLOSED LIST, NOT FREE TEXT.** The lines live in `CHALLENGE_TAUNTS`
+  (`server/contracts/wire.ts`) and only the **key** is stored. A free-text message box
+  between two named accounts is a harassment surface that needs moderation, a report path
+  and a review queue — for one joke after a game. A fixed list gets the rivalry with none
+  of that, and the wording can be revised in a deploy with no data migration. An id that a
+  newer build no longer knows degrades to *no taunt*, never to a blank bubble — which is
+  why an id is permanent even though its text is not.
+* **The button IS the picker; every tap cycles (changed 2026-09-02).** The
+  `ChallengeTauntPicker` sheet that used to present all eight lines was **deleted**: a
+  second screen for a one-bit decision, when the lines are app-authored and
+  interchangeable. In its place the first tap lands on a uniformly random line and each
+  further tap steps to the **next** line in `CHALLENGE_TAUNTS`, wrapping — so a sender who
+  dislikes their roll keeps tapping until they like one, and the whole list is reachable
+  without a sheet. The safety property that actually matters — never user-authored text —
+  is unchanged, because the list is still closed. The roll happens on the CLIENT
+  (`ChallengeResults` → `handleTaunt`); the server accepts any known `tauntId`, so moving
+  it server-side later needs no wire change.
+* **Tap cadence is not network cadence.** The line on the card changes synchronously on
+  every tap (a throttled UI would read as a broken button) while the POST is throttled to
+  `TAUNT_SEND_INTERVAL_MS` (2 s, `ChallengeResults.tsx`): leading edge immediate, then one
+  **trailing** send carrying the latest rolled id. The trailing send is what makes the
+  throttle safe — without it the final tap of a burst never reaches the server and the
+  opponent reads a line the sender did not settle on. Unmounting mid-window fires the
+  pending send fire-and-forget rather than dropping it. The throttle is a **courtesy, not
+  a defence**: a hand-rolled client ignores it, and the real bound is the global per-user
+  `writeLimiter` (600 writes / 5 min, `server/middleware/rateLimits.ts`) that already
+  covers every write route.
+* **The viewer's own line renders from LOCAL state, not from the server's copy**
+  (`rolledId` in `ChallengeResults`). Taps outrun the throttled round-trips, so painting
+  the server's answer would make the line stutter backwards between taps.
+* **Stored by SENDER, rendered on the TARGET's card.** `study_challenges.taunts` is
+  `{ "<userId>": { tauntId, sentAt } }` — the same keyed-by-user shape as `words`,
+  `rounds` and `presetDeckIds`, so the results screen reads either side with no
+  `isChallenger` branch. Keying by sender (rather than by target, which would match the
+  rendering more directly) makes "one per player, ever" a property of the object's shape.
+* **NOT write-once (rule dropped 2026-09-02).** `StudyChallengeDAL.setTaunt` used to
+  carry a `NOT (taunts ? $2)` guard so a sender's slot could never be rewritten; cycling
+  makes that guard the thing standing in the way, so it is gone and the UPDATE now
+  overwrites the sender's slot. `sentAt` accordingly means **last changed at**. The one
+  rule still held in SQL rather than in the service is the resolved status, so it cannot
+  be lost to a read-then-write race; no match means "not resolved yet", not an error.
+  ⚠️ The consequence to keep in mind: a taunt the opponent has already read can change
+  under them. That is accepted — both lines are from the same closed list, so nothing a
+  sender can swap to is worse than what they could have sent first.
+* The button sits on the **opponent's** card, which is where the taunt it sends will
+  appear. **Its label is always *Taunt*, in every state** — nobody has taunted, they got
+  there first, or a line of yours is already on the card. The button does the same thing
+  on every tap, so it says the same thing; the two cards are what show the state. It is
+  never disabled. (Earlier drafts varied it — *Taunt back*, *Taunt sent*, *Reroll* — and
+  the variants only ever restated what the cards already showed.)
+
+`POST /api/studyChallenges/:id/taunt` → the refreshed challenge. The screen keeps
+rendering its own `rolledId` for the sender's line regardless (see above); the response
+matters for the rest of the payload and for the opponent's side.
 
 ### Winning pays nothing (Q51)
 
@@ -1653,7 +2309,7 @@ Back from the friend list therefore goes out to `/friends`, and there is no way 
 return to a confirmed word set and tap its Send button against a challenge that already
 exists. (`replace` is an option on `useSlideNavigate`,
 `src/hooks/useSlideNavigate.ts`; the calls are `handleConfirm` / `handleDecline` in
-`src/features/studyChallenge/ChallengeReviewPage.tsx`.) Abandoning the picker *without*
+`src/features/studyChallenge/ChallengePanel.tsx`.) Abandoning the sheet *without*
 confirming still uses the ordinary back arrow, which leaves the challenge `pending` as
 described above.
 
@@ -1817,12 +2473,27 @@ userId, roundIndex, payload)` — and it is a single statement:
 UPDATE study_challenges
    SET rounds = rounds || jsonb_build_object(
          $2::text,
-         COALESCE(rounds -> $2, '{}'::jsonb) || jsonb_build_object($3::text, $4::jsonb)
+         COALESCE(rounds -> $2, '{}'::jsonb) || jsonb_build_object(
+           $3::text,
+           -- the stored startedAt wins, so a later write cannot backdate the claim
+           $4::jsonb || jsonb_strip_nulls(jsonb_build_object(
+             'startedAt', rounds #> ARRAY[$2, $3, 'startedAt']
+           ))
+         )
        )
  WHERE id = $1
-   AND rounds #> ARRAY[$2, $3] IS NULL   -- insert-only: no replays (Q40)
+   AND (
+     rounds #> ARRAY[$2, $3] IS NULL                      -- the claim
+     OR rounds #> ARRAY[$2, $3, 'completedAt'] = 'null'::jsonb  -- still in progress
+   )                                                      -- a FINAL round: no replays (Q40)
 RETURNING id;
 ```
+
+The guard used to be a bare `rounds #> ARRAY[$2,$3] IS NULL` — insert-only. It widened
+to "absent **or** still in progress" when the claim model (§ 5.1a) made the first mark
+write the row: the round now exists for the whole run and has to stay writable until it
+is finalised. A malformed slot with no `completedAt` key at all makes the comparison
+SQL-NULL, so it fails **closed** — refused rather than overwritten.
 
 > ⚠️ **IT WAS `jsonb_set(rounds, ARRAY[$2,$3], …, true)` AND THAT SILENTLY ATE EVERY
 > FIRST ROUND** (found and fixed 2026-08-22, the first time a round was submitted end
@@ -1916,9 +2587,9 @@ The one rule, in the one place a row becomes a payload
 > `status: 'expired'`, whoever is asking.
 
 This was a live defect before 2026-08-22: the stored status was shipped verbatim, so
-after the deadline the challengee's friend row still offered a green **Review words**
+after the deadline the challengee's friend row still offered a green **Incoming Challenge**
 control whose only possible outcome was `acceptChallenge` throwing "The time to accept
-this challenge has passed", and the challenger's row still read *Waiting on them*.
+this challenge has passed", and the challenger's row still offered *Withdraw*.
 `countBadge` had always applied `isAcceptWindowOpen`, so the badge and the row it
 pointed at disagreed — the badge was right.
 
@@ -2063,7 +2734,7 @@ incoming requests.
 | Q8 | Bucket for materialised contested words | **`library`** — accepting the set *is* the sorting decision; see § 3.3 |
 | Q31 | Do challenge rounds write marks / earn minute points | **yes, both** — a challenge round is normal play (§ 5.7). No suppression flag |
 | Q32 | Challenges in flight per week | **one per friend pair, unlimited friends** — cap the pair, not the user (§ 1) |
-| Q33 | Async mid-round abandonment | **the question is dissolved** — backgrounding the app **pauses** the round, and this is a **global games requirement**, not a challenge rule (§ 5.8) |
+| Q33 | Async mid-round abandonment | **revised 2026-09-02.** Backgrounding still **pauses** (a global games requirement, § 5.8), but WALKING OUT of the game is now a scored, spent attempt: the round is claimed at the first mark and finalised on exit (§ 5.1a). The earlier "there is no abandoned round to score" is no longer true |
 | Q34 | Seeing the opponent's score before you play | **hidden until both finish**; progress ("has played") is visible, scores are not (§ 6) |
 | Q35 | Entry point / how a challenge is discovered | a **Challenges NodePage reached from the Friends page**; badge rides the friends payload (§ 1) |
 | Q36 | Study the challenge deck before Friday | **yes, that is the point** — and this *revised Q9*: the deck drops **when that player finishes the test**, else at their window close (§ 4) |
@@ -2090,7 +2761,7 @@ incoming requests.
 | Q68 | Bubble Match's ±500 survival bonus dominating a round | **kept as specified** — Bubble Match is a survival game and the all-or-nothing cliff is the format (§ 5.4) |
 | Q64 | Results-page detail | **totals and per-game scores only**; no per-word comparison — it would tax every game's scoring contract permanently (§ 6) |
 | Q47 | Cold-start players | **no gate** — never block on card count; different-word mode is the answer to a level mismatch (§ 3.1) |
-| Q40 | Round order / replays | **strictly sequential, one attempt each**; round rows are insert-only (§ 5.1a) |
+| Q40 | Round order / replays | **strictly sequential, one attempt each**; a round row is written at the first mark and is immutable once final (§ 5.1a). No longer literally insert-only — the claim is written before the score is known — but a completed round is still never rewritten |
 | Q41 | Unfriending mid-challenge | **challenge becomes `no_contest`**, decks dropped, unfriend never blocked; resolved history survives (§ 6) |
 | Q42 | Excluding previously contested words | **no exclusion** — the core-band filter is the memory (§ 3.1) |
 | Q43 | Post-challenge history surface | challenges page is a **list of friends** with the **reigning-champion crown** on the row and **no lifetime record**; a **History** button opens the paginated log with sort-by-time and friend/game filters (§ 1) |
@@ -2125,7 +2796,9 @@ prerequisite doc work listed in § 12, not a decision.
 
 This document describes (phase 1 is fully built — see the status table at the top;
 § 7 live mode is not):
-`database/migrations/148` + `150`, `database/cron/expire-study-challenges.sql`,
+`database/migrations/148` + `150` + `156` (taunts, § 6a),
+`docs/CHALLENGE_REDESIGN_DEPLOY_RUNBOOK.md` (TEMPORARY — the 156-before-rebuild ordering),
+`database/cron/expire-study-challenges.sql`,
 `server/shared/challengeWeek.ts`,
 `server/__tests__/challengeWeek.test.ts`,
 `server/__tests__/studyChallengeStatus.test.ts` (the lapsed-accept derivation),
@@ -2139,8 +2812,18 @@ This document describes (phase 1 is fully built — see the status table at the 
 `server/controllers/StudyChallengeController.ts`,
 `server/routes/studyChallengeRoutes.ts`,
 `src/api/studyChallenges.ts`,
-`src/features/studyChallenge/*`,
-`src/games/types.ts` + `src/games/registry.ts` (`challengeScoring`),
+`src/features/studyChallenge/*` — specifically
+  `challengeLabels.ts` (the seven-state lexicon — § 1),
+  `ChallengeSheet.tsx` + `ChallengePanel.tsx` (issue / waiting / incoming — § 3.2),
+  `ChallengeWordCard.tsx` (the two-tap strike — § 3.2),
+  `ChallengeDetailPage.tsx` + `ChallengeDetailHeader.tsx` + `ChallengeTestCard.tsx` (the two pages — § 5.4b),
+  `ChallengeHelpPopup.tsx` + `challengeHelpSteps.ts` + `src/assets/challengeHelp/` (the explainers — § 5.4c),
+  `ChallengeResults.tsx` (results and taunts — § 6/§ 6a),
+  `ChallengeHistoryPage.tsx` (the tinted log — § 1),
+`src/games/types.ts` + `src/games/registry.ts` (`challengeScoring`, and `glyph`, which
+`challengeLaunch.ts` reads so the round row shows the same mark the Games hub does),
+`src/theme/colors.ts` → `hlRed`/`hlYellow`/`hlGreen`/`hlBlue` (the dark-ground
+highlights, used ONLY by the round scoreboard),
 `src/games/runtime/{challengeScoring,useChallengeRound,challengeLaunch}.ts` +
 `ChallengeRoundScoreboard.tsx` (the round runner — § 5.2a),
 `src/games/match-speed/challengeDeal.ts` (the alternation rule — § 5.3),

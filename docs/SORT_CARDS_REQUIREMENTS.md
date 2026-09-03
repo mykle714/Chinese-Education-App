@@ -262,8 +262,8 @@ only by the resulting utcm category.
 **It masters the CORE bar only** — recognition and production at 8/8, reading and
 writing left at **0**. Sorting a card as known is a claim about knowing the word, not
 about reading or writing it, and those are separate bars since migration 143. So a
-learner with the writing goal sees such a card in *Mastered Cards* with an empty Write
-bar, and it does **not** appear in *Writing Mastered*. See
+learner with the writing goal sees such a card in *Mastered* with an empty Write
+bar, and it does **not** appear in *Mastered Writing*. See
 [MASTERY_REWORK.md § "Declaring a card already known"](./MASTERY_REWORK.md).
 
 **A third bucket value exists but is never a sort destination:** `'provisional'`

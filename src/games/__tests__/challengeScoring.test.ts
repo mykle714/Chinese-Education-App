@@ -15,6 +15,19 @@ describe("challenge scoring runner", () => {
     const bubbleMatch = challengeScoringFor("bubble-match") as ChallengeScoringSpec;
     const matchSpeed = challengeScoringFor("match-speed") as ChallengeScoringSpec;
     const wordSearch = challengeScoringFor("word-search", "pinyin") as ChallengeScoringSpec;
+    const hydra = challengeScoringFor("hydra-bubbles") as ChallengeScoringSpec;
+
+    /** Clear all nine and stop the clock at `activeMs` — one whole Hydra round. */
+    const hydraClearRun = (activeMs: number) => {
+        const scorer = createChallengeScorer(hydra);
+        scorer.apply({ kind: "survivalStart", ruleId: "clearBonus" });
+        for (let i = 0; i < 9; i += 1) {
+            scorer.apply({ kind: "hit", word: `w${i}`, contested: true });
+        }
+        scorer.apply({ kind: "tick", activeMs });
+        scorer.apply({ kind: "end", won: true });
+        return scorer;
+    };
 
     it("pays contested 100 and filler 20", () => {
         const scorer = createChallengeScorer(matchSpeed);
@@ -118,6 +131,70 @@ describe("challenge scoring runner", () => {
         const after = scorer.snapshot().total;
         scorer.apply({ kind: "tick", activeMs: 10_000 });
         expect(scorer.snapshot().total).toBe(after);
+    });
+
+    it("pays Hydra nothing for a filler match, but still charges a filler mistake", () => {
+        // Hydra is the ONE game where filler is worth 0. The run ends on the last
+        // contested clear and nothing else caps its length, so paid filler was
+        // farmable: clear eight of nine, then harvest bubbles. Mistakes stay charged
+        // because a filler clear is not optional — draining is how the board is kept
+        // off the ceiling — so filler must be pure risk rather than inert.
+        const scorer = createChallengeScorer(hydra);
+        scorer.apply({ kind: "hit", word: "水", contested: false });
+        expect(scorer.snapshot().total).toBe(0);
+        expect(scorer.snapshot().lines).toHaveLength(0);
+
+        scorer.apply({ kind: "miss", word: "火", contested: false });
+        expect(scorer.snapshot().total).toBe(-20);
+    });
+
+    it("holds Hydra's clear bonus flat through its grace, then decays it to a floor of 0", () => {
+        // Full pot inside the first minute...
+        expect(hydraClearRun(45_000).snapshot().total).toBe(900 + 300);
+        expect(hydraClearRun(60_000).snapshot().total).toBe(900 + 300);
+        // ...then −25 per 15s of ACTIVE time past it.
+        expect(hydraClearRun(75_000).snapshot().total).toBe(900 + 275);
+        expect(hydraClearRun(120_000).snapshot().total).toBe(900 + 200);
+        // Floors at 0 at 4:00 and never goes negative, so a slow finisher still keeps
+        // the whole contested ledger.
+        expect(hydraClearRun(240_000).snapshot().total).toBe(900);
+        expect(hydraClearRun(600_000).snapshot().total).toBe(900);
+    });
+
+    it("forfeits Hydra's clear bonus on a run that did not clear the set", () => {
+        // THE RULE THAT MAKES SCORING TIME SAFE AT ALL. A per-second term charged to
+        // every run would pay players to fail fast, because finishing takes longer
+        // than quitting by definition.
+        const scorer = createChallengeScorer(hydra);
+        scorer.apply({ kind: "survivalStart", ruleId: "clearBonus" });
+        scorer.apply({ kind: "hit", word: "一", contested: true });
+        scorer.apply({ kind: "miss", word: "二", contested: true });
+        scorer.apply({ kind: "tick", activeMs: 20_000 });
+        scorer.apply({ kind: "end", won: false });
+
+        const { total, lines } = scorer.snapshot();
+        expect(total).toBe(0); // +100 − 100, and no bonus at all
+        expect(lines.find((l) => l.ruleId === "clearBonus")).toMatchObject({ points: 0 });
+    });
+
+    it("never lets Hydra's clear bonus outrank clearing more words", () => {
+        // The invariant the pot's SIZE rests on: a complete run is 900 + bonus >= 900,
+        // and the best possible partial run is eight clears plus the miss that ended
+        // it (800 − 100 = 700). So a fast partial can never beat a slow complete one,
+        // whatever the pot is tuned to.
+        const slowestComplete = hydraClearRun(10 * 60_000).snapshot().total;
+
+        const bestPartial = createChallengeScorer(hydra);
+        bestPartial.apply({ kind: "survivalStart", ruleId: "clearBonus" });
+        for (let i = 0; i < 8; i += 1) {
+            bestPartial.apply({ kind: "hit", word: `w${i}`, contested: true });
+        }
+        bestPartial.apply({ kind: "miss", word: "w8", contested: true });
+        bestPartial.apply({ kind: "tick", activeMs: 5_000 });
+        bestPartial.apply({ kind: "end", won: false });
+
+        expect(bestPartial.snapshot().total).toBe(700);
+        expect(slowestComplete).toBeGreaterThan(bestPartial.snapshot().total);
     });
 
     it("charges Word Search's hints per use", () => {

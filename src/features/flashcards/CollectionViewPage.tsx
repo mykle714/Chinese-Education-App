@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
-    Box, TextField, InputAdornment, IconButton, Typography, Button, Menu, MenuItem,
+    Box, TextField, IconButton, Typography, Button, Menu, MenuItem,
     Dialog, DialogTitle, DialogContent, DialogActions, ListItemIcon,
 } from "@mui/material";
-import { Search, Clear } from "@mui/icons-material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import StyleOutlinedIcon from "@mui/icons-material/StyleOutlined";
@@ -13,6 +12,7 @@ import { FooterSpacer } from "../../components/MobileFooter";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import CollectionSortControl from "./CollectionSortControl";
+import SearchField from "../../components/SearchField";
 import { useAuth } from "../../AuthContext";
 import type { VocabEntry } from "../../types";
 import { filterVocabEntries } from "../../utils/vocabSearch";
@@ -315,50 +315,31 @@ const CollectionViewPage: React.FC = () => {
 
             {/* Client-side search, sized to the 364px card grid so the input lines
                 up over the cards below it. Moved here from /decks, which now lists
-                decks rather than cards. */}
+                decks rather than cards.
+
+                The sort picker rides INSIDE the field (SearchField's `endAction`)
+                rather than on its own row underneath: search and filter are one
+                control, and the reclaimed row is a row of cards. */}
             <Box className="collection-view__search" sx={{ width: 364, maxWidth: "100%", px: 3.5, pt: 1.5 }}>
-                <TextField
+                <SearchField
                     className="collection-view__search-input"
-                    fullWidth
-                    size="small"
                     placeholder={`Search ${title}...`}
                     value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    InputProps={{
-                        startAdornment: (
-                            <InputAdornment position="start">
-                                <Search />
-                            </InputAdornment>
-                        ),
-                        endAdornment: searchInput && (
-                            <InputAdornment position="end">
-                                <IconButton
-                                    aria-label="clear search"
-                                    onClick={() => setSearchInput("")}
-                                    edge="end"
-                                    size="small"
-                                >
-                                    <Clear />
-                                </IconButton>
-                            </InputAdornment>
-                        ),
-                    }}
+                    onChange={setSearchInput}
+                    endAction={
+                        <CollectionSortControl
+                            classPrefix="collection-view"
+                            sortKey={sortKey}
+                            onSortKeyChange={setSortKey}
+                            language={user?.selectedLanguage}
+                            goals={goals}
+                            lens={lens}
+                            // "Date added" reads `deckAddedAt`, which only the deck read selects.
+                            allowDeckOnly={isDeck}
+                        />
+                    }
                 />
             </Box>
-
-            <CollectionSortControl
-                classPrefix="collection-view"
-                sortKey={sortKey}
-                onSortKeyChange={setSortKey}
-                language={user?.selectedLanguage}
-                goals={goals}
-                lens={lens}
-                // "Date added" reads `deckAddedAt`, which only the deck read selects.
-                allowDeckOnly={isDeck}
-                // Right-aligned under the search field, on the same 364px column as
-                // the grid.
-                sx={{ width: 364, maxWidth: "100%", px: 3.5, pt: 1 }}
-            />
 
             {actionError && (
                 <Typography

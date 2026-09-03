@@ -80,7 +80,12 @@ Each card carries **two** corner badges:
 frequency badge, and Quick Mark cards are det rows (not saved `VocabEntry`s). So the
 grid renders a dedicated **`QuickMarkCard`** (`src/components/QuickMarkCard.tsx`) — same
 92×132 thumbnail geometry, but driven by a `DiscoverCard` and carrying the two corner
-badges. It is plugged in via a new **`renderCard`** prop on `MiniVocabCardGrid` (which
+badges. ⚠️ **It does not re-declare that geometry** (2026-09-01): the size, radius,
+hairline ring, elevation, containment and pop-in all come from the shared
+`miniCardFaceSx` (`src/components/miniCardFace.ts`), which `MiniVocabCard` and the
+challenge word card also draw. They ARE the same tile and had already drifted — only
+the fdp card carried the design's 1px inset ring — so anything about the tile itself
+belongs in that file, never here. It is plugged in via a new **`renderCard`** prop on `MiniVocabCardGrid` (which
 otherwise still owns the loading/error/empty states + the cascade-15 reveal). The
 3-state value + cycle helper live in `src/components/quickMarkState.ts` (kept out of the
 `.tsx` so the card file stays a component-only module for fast-refresh).

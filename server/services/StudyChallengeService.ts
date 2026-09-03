@@ -11,6 +11,7 @@ import {
   CHALLENGE_ROUND_COUNT,
   MAX_ACTIVE_CHALLENGES,
   challengeGamesForLanguages,
+  challengeTauntText,
 } from '../contracts/wire.js';
 import type {
   ChallengeGameRef,
@@ -56,6 +57,25 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * is the correct answer, not a refusal.
  */
 const MAX_BAND_WIDENINGS = 6;
+
+/**
+ * Only the rounds a player has FINISHED (§ 5.1a).
+ *
+ * A round is claimed at its first mark and stays in `rounds` with a null
+ * `completedAt` while it is being played, so any payload that shows one player's
+ * rounds to the OTHER has to filter — otherwise the opponent watches a live score
+ * climb mark by mark, which is exactly what the reveal-per-round rule (§ 6) does
+ * not permit.
+ */
+function completedRounds(
+  rounds: Record<string, ChallengeRound> | undefined
+): Record<string, ChallengeRound> {
+  const out: Record<string, ChallengeRound> = {};
+  for (const [index, round] of Object.entries(rounds ?? {})) {
+    if (round?.completedAt) out[index] = round;
+  }
+  return out;
+}
 
 /**
  * The narrow slice of the user table this feature reads — the CURRENT timezone (for
@@ -106,7 +126,8 @@ export interface ChallengeUserLookup {
  * them would test a game nobody plays:
  *
  *   * you must still be FRIENDS, and the per-pair block still suppresses challenges
- *   * rounds are still strictly sequential, still one attempt each, still insert-only
+ *   * rounds are still strictly sequential, still one attempt each, still claimed at
+ *     the first mark and immutable once final
  *   * a round is still scored, stored and resolved exactly as it is in a real week
  *
  * ⚠️ IT IS A REQUEST, NOT A STATE. The client asks per call (`?anytime=1`, held in
@@ -148,9 +169,15 @@ export interface ChallengeUserLookup {
  *     other as friends, and the mode is already on the honor system for "I already
  *     know this word". The upgrade path is to post the round's EVENTS and score them
  *     here; the stored round shape does not have to change for that.
- *   • A SUBMITTED ROUND IS FINAL and rounds are strictly sequential (Q40). Both are
- *     enforced server-side: the DAL's write is insert-only, and round n+1 is refused
- *     until n is present, so a tampered client cannot skip to the last round.
+ *   • A COMPLETED ROUND IS FINAL and rounds are strictly sequential (Q40). Both are
+ *     enforced server-side: the DAL's path guard refuses a finalised slot, and round
+ *     n+1 is refused until n is final, so a tampered client cannot skip to the last
+ *     round nor run two rounds at once.
+ *   • A ROUND IS CLAIMED AT THE PLAYER'S FIRST MARK, not when the run ends (§ 5.1a).
+ *     The row exists with `completedAt: null` for the whole run, which is what makes
+ *     the one-attempt rule survive a client that quits: `nextRoundIndex` walks past a
+ *     claimed round, so its board is never issued again. Leaving the game finalises
+ *     it where it stands.
  *
  * Depends on: StudyChallengeDAL (the table), FriendshipDAL (the friend graph and
  * the two block booleans), UserDAL (timezones + public identity), DeckService and
@@ -194,35 +221,47 @@ export class StudyChallengeService {
   ): Promise<ChallengesPageResponse> {
     if (!userId) throw new ValidationError('User ID is required');
 
-    const [friends, live, activeCount] = await Promise.all([
-      this.friendshipDAL.listFriends(userId),
-      this.studyChallengeDAL.listLiveForUser(userId),
-      this.studyChallengeDAL.countActiveForUser(userId, language),
-    ]);
-
     const now = new Date();
     const viewerTz = await this.timezoneOf(userId);
-    // Resolved ONCE for the whole page, not per row: it is one account-level question
-    // and asking it per friend would be one user lookup per row.
-    const anytimeOn = await this.resolveAnytime(userId, anytime);
     // THE VIEWER'S OWN week, not the UTC counter's: "have we already had our turn
     // this week" is a question about this player's Monday, and their week opens at
     // 04:00 local like every other boundary in the app (shared/challengeWeek.ts).
+    // Needed before the fetch below, because the resolved-rows query is scoped to it.
     const weekIndex = localChallengeWeekIndex(viewerTz, now);
 
-    // Index the live challenges by the OTHER player, so each friend row is a map
-    // lookup rather than a scan of every challenge per friend.
-    const liveByOpponent = new Map<string, StudyChallengeRow>();
-    for (const row of live) {
+    const [friends, live, resolvedThisWeek, activeCount] = await Promise.all([
+      this.friendshipDAL.listFriends(userId),
+      this.studyChallengeDAL.listLiveForUser(userId),
+      // This week's already-finished challenges. They are not live, but their
+      // results stay on the row until the next challenge period opens (§ 1).
+      this.studyChallengeDAL.listResolvedForUserInWeek(userId, weekIndex),
+      this.studyChallengeDAL.countActiveForUser(userId, language),
+    ]);
+
+    // Resolved ONCE for the whole page, not per row: it is one account-level question
+    // and asking it per friend would be one user lookup per row.
+    const anytimeOn = await this.resolveAnytime(userId, anytime);
+
+    // Index the challenges by the OTHER player, so each friend row is a map lookup
+    // rather than a scan of every challenge per friend.
+    //
+    // ORDER MATTERS: this week's RESOLVED rows go in first and a live row overwrites
+    // one. The two can coexist only under the tester hatch, which parks a new
+    // challenge in a future week while this week's is already finished (§ 2a) — and
+    // when they do, the live one is the row's real lifecycle step; last week's
+    // scoreboard is not.
+    const rowByOpponent = new Map<string, StudyChallengeRow>();
+    for (const row of [...resolvedThisWeek, ...live]) {
       const other = row.challengerId === userId ? row.challengeeId : row.challengerId;
-      // A pair can hold at most one live challenge (the unique index), so a second
-      // hit would be a data bug rather than a case to merge.
-      liveByOpponent.set(other, row);
+      // A pair can hold at most one live challenge and at most one row per week (the
+      // unique index), so a second hit within either list would be a data bug rather
+      // than a case to merge.
+      rowByOpponent.set(other, row);
     }
 
     const rows: ChallengeFriendRow[] = [];
     for (const friend of friends) {
-      const row = liveByOpponent.get(friend.userId);
+      const row = rowByOpponent.get(friend.userId);
       const opponent: ChallengeOpponent = {
         userId: friend.userId,
         name: friend.name,
@@ -796,6 +835,40 @@ export class StudyChallengeService {
    * immediately, which makes this the only repair for a challenge issued to the
    * wrong friend or into a language the challengee does not study (Q39).
    */
+  /**
+   * Set this player's taunt on a resolved challenge (§ 6a, design F17).
+   *
+   * ⚠️ REPEATABLE since 2026-09-02: the results screen's Taunt button cycles the line
+   * on every tap and posts the latest one (throttled client-side), so this overwrites
+   * rather than refusing. "One taunt per player" survives only as a shape — the
+   * sender owns exactly one slot — not as a write-once rule.
+   *
+   * Two rules, and only the first is enforced here:
+   *   1. the id must be one this build knows — a client that sends anything else is
+   *      either stale or hand-rolled, and storing an unresolvable key would put a
+   *      permanently blank speech bubble on someone's results screen;
+   *   2. only on a `complete` or `no_contest` challenge.
+   *
+   * Rule 2 lives in the DAL's WHERE clause rather than in a read-then-write here, so
+   * two taps in flight at once cannot race past it. A no-op therefore means "not
+   * resolved yet" and is NOT an error — there is nothing the caller can do about it
+   * and nothing was lost.
+   */
+  async sendTaunt(
+    userId: string,
+    challengeId: string,
+    tauntId: string,
+    anytime = false
+  ): Promise<ChallengeSummary> {
+    const row = await this.requireParty(userId, challengeId);
+    if (!challengeTauntText(tauntId)) {
+      throw new ValidationError('Unknown taunt');
+    }
+    const updated = await this.studyChallengeDAL.setTaunt(challengeId, userId, tauntId);
+    const anytimeOn = await this.resolveAnytime(userId, anytime);
+    return this.toSummary(updated ?? row, userId, new Date(), anytimeOn);
+  }
+
   async withdrawChallenge(userId: string, challengeId: string): Promise<void> {
     const row = await this.requireParty(userId, challengeId);
     if (row.challengerId !== userId) {
@@ -806,20 +879,36 @@ export class StudyChallengeService {
   }
 
   /**
-   * Submit one round's score. The client reports, the server stores verbatim
-   * (§ 5.6) — nothing is recomputed here.
+   * Write one round — the CLAIM at the player's first mark, each subsequent
+   * progress write, and the FINAL score, all through this one call (§ 5.1a). The
+   * client reports, the server stores verbatim (§ 5.6) — nothing is recomputed here.
    *
-   * Three invariants enforced server-side, because a client cannot be trusted with
+   * `final` is what separates the three: false leaves `completedAt` null, which
+   * marks the attempt as SPENT BUT STILL WRITABLE; true stamps it and closes the
+   * round forever.
+   *
+   * ⚠️ WHY THE FIRST MARK WRITES A ROW AT ALL. The attempt has to exist in the
+   * database before the run ends, or quitting the app is a free re-roll: the round
+   * would still be missing, `nextRoundIndex` would still point at it, and the board
+   * would be issued again. Claiming on the first mark moves the one-attempt rule out
+   * of the client entirely — reloading, force-quitting or clearing local state all
+   * leave the claim standing.
+   *
+   * Four invariants enforced server-side, because a client cannot be trusted with
    * any of them:
    *   1. the player's own test window must be open;
-   *   2. rounds are STRICTLY SEQUENTIAL — round n+1 is refused until n exists, so a
-   *      tampered client cannot skip straight to the last round;
-   *   3. a submitted round is FINAL — the DAL's write is insert-only, and a repeat
-   *      is a rejection rather than an overwrite (Q40).
+   *   2. rounds are STRICTLY SEQUENTIAL — round n+1 is refused until n is FINAL, so
+   *      a tampered client cannot skip straight to the last round, nor run two
+   *      rounds at once;
+   *   3. a completed round is FINAL — the DAL's path guard refuses it, and a repeat
+   *      is a rejection rather than an overwrite (Q40);
+   *   4. `startedAt` is preserved by the DAL, so a later write cannot backdate the
+   *      claim.
    *
    * On the player's LAST round the deck is dropped immediately and the challenge is
    * resolved if the opponent has also finished. Both happen here rather than in the
-   * hourly job because both should be immediate rather than up to an hour late.
+   * hourly job because both should be immediate rather than up to an hour late —
+   * and both only on a FINAL write, since a claimed round is still being played.
    */
   async submitRound(
     userId: string,
@@ -827,6 +916,7 @@ export class StudyChallengeService {
     roundIndex: number,
     score: number,
     breakdown: ChallengeScoreBreakdown,
+    final = true,
     anytime = false
   ): Promise<ChallengeSummary> {
     const row = await this.requireParty(userId, challengeId);
@@ -855,6 +945,15 @@ export class StudyChallengeService {
       throw new ValidationError(`roundIndex must be between 1 and ${roundCount}`);
     }
 
+    // PRESENCE, not completion — the same test `nextRoundIndex` and the round list on
+    // the challenge card apply, so all three agree on which round is next.
+    //
+    // Requiring the previous round to be FINAL was tried and is wrong: a round whose
+    // app was killed mid-run stays claimed forever (its board can never be re-issued,
+    // so nothing can ever finalise it), and the player would be locked out of the rest
+    // of their test by a crash. Two rounds being open at once is the lesser problem —
+    // each writes its own slot, the order they finish in does not affect scoring, and
+    // it takes a second tab to arrange.
     const mine = row.rounds[userId] ?? {};
     if (roundIndex > 1 && !mine[String(roundIndex - 1)]) {
       throw new ValidationError(`Round ${roundIndex - 1} has not been submitted yet`);
@@ -866,13 +965,16 @@ export class StudyChallengeService {
       mode: game.mode,
       score,
       breakdown,
-      completedAt: now.toISOString(),
+      // Overridden by the stored value when the slot already exists, so this is only
+      // ever the CLAIM's timestamp (see StudyChallengeDAL.recordRound).
+      startedAt: now.toISOString(),
+      completedAt: final ? now.toISOString() : null,
     };
 
     const written = await this.studyChallengeDAL.recordRound(challengeId, userId, roundIndex, round);
-    // False means the slot was already filled. A rejection, never an overwrite —
-    // this is what makes the running total in the between-games scoreboard mean
-    // something rather than being a provisional best-so-far.
+    // False means the slot holds a round that is already final. A rejection, never
+    // an overwrite — this is what makes the running total in the between-games
+    // scoreboard mean something rather than being a provisional best-so-far.
     if (!written) throw new DuplicateError('That round has already been submitted');
 
     // Re-read: the row we hold predates our own write, and the opponent may have
@@ -880,7 +982,9 @@ export class StudyChallengeService {
     const fresh = await this.studyChallengeDAL.findById(challengeId);
     if (!fresh) throw new NotFoundError('Challenge not found');
 
-    if (this.hasFinished(fresh, userId)) {
+    // A claim/progress write ends here: the player is mid-round, so there is no deck
+    // to drop and nothing to resolve.
+    if (final && this.hasFinished(fresh, userId)) {
       // The deck's job is done the moment this player finishes; leaving it on the
       // decks list is clutter. Per PLAYER, not per challenge — the opponent's deck
       // may well still be live (§ 4).
@@ -891,8 +995,8 @@ export class StudyChallengeService {
       }
     }
 
-    const final = await this.studyChallengeDAL.findById(challengeId);
-    return this.toSummary(final ?? fresh, userId, now, anytimeOn);
+    const latest = await this.studyChallengeDAL.findById(challengeId);
+    return this.toSummary(latest ?? fresh, userId, now, anytimeOn);
   }
 
   /**
@@ -1132,7 +1236,6 @@ export class StudyChallengeService {
     // downstream — `gameSequence` visibility included — follows from one boolean.
     const windowOpen = anytime || isTestWindowOpen(row.weekIndex, myTz, now);
     const opponentFinished = this.hasFinished(row, opponentId);
-    const bothFinished = opponentFinished && this.hasFinished(row, userId);
     const sequence = row.gameSequence ?? [];
 
     return {
@@ -1151,12 +1254,31 @@ export class StudyChallengeService {
       })),
       rounds: row.rounds?.[userId] ?? {},
       opponentFinished,
-      // Rule 2. Present only once the comparison is legitimate — which includes
-      // every resolved challenge, since a resolved one is either complete (both
-      // played) or over (nothing left to protect).
-      opponentRounds: bothFinished || row.completedAt
-        ? row.rounds?.[opponentId] ?? {}
-        : undefined,
+      /**
+       * ⚠️ RULE 2 WAS REVERSED (design F15b/F15d). A round is now revealed AS SOON AS
+       * IT IS COMPLETE, rather than being withheld until both players finished.
+       *
+       * The old rule existed to stop the second player anchoring on a target score.
+       * It was dropped because View Challenge is now two pages — yours, then theirs —
+       * and a page that stayed blank for four days is not a page, it is a promise. The
+       * cost is real and accepted: whoever plays second can see what they are chasing.
+       * What is still protected is a round IN PROGRESS. Since the claim model (§ 5.1a)
+       * `rounds` DOES hold unfinished rounds, so this is no longer free: the opponent's
+       * side is filtered to COMPLETED rounds only (`completedRounds`), or a player
+       * could watch their opponent's score climb mark by mark.
+       *
+       * If anchoring turns out to matter, the narrow fix is to gate each round on the
+       * viewer having submitted the same index — not to restore the all-or-nothing
+       * gate, which is what made the page empty.
+       */
+      opponentRounds: completedRounds(row.rounds?.[opponentId]),
+      /**
+       * Both taunts, keyed by user id — the same shape as `words` and `rounds`, so the
+       * results screen reads either side without an `isChallenger` branch (§ 6a).
+       * Always present: a taunt is only renderable once the challenge is complete, and
+       * the client is what enforces that, since there is nothing here to protect.
+       */
+      taunts: row.taunts ?? {},
       presetDeckId: row.presetDeckIds?.[userId] ?? null,
       // Rule 1. `undefined`, not an empty array: an empty array would read as "this
       // challenge has no games" and a client could not tell the two apart.
@@ -1308,6 +1430,11 @@ export class StudyChallengeService {
    * holding {1,3} — a shape the server refuses to create but which a future replay
    * or repair path could. Walking finds the first hole, which is the only safe
    * answer.
+   *
+   * ⚠️ PRESENCE, NOT COMPLETION — and that is the anti-manipulation rule. A round
+   * CLAIMED at its first mark is present, so this walks past it and its board is
+   * never issued again. Reloading the tab mid-round therefore does not hand the
+   * player a fresh board; the attempt is spent where it stands (§ 5.1a).
    */
   private nextRoundIndex(row: StudyChallengeRow, userId: string): number {
     const mine = row.rounds?.[userId] ?? {};
@@ -1316,19 +1443,32 @@ export class StudyChallengeService {
     return index;
   }
 
-  /** Has this player submitted every round of the test? */
+  /**
+   * Has this player FINISHED every round of the test?
+   *
+   * A claimed-but-unfinished round does not count. It is a spent attempt, but the
+   * player is still in it, and treating it as finished would drop their deck and
+   * resolve the whole challenge out from under a live game.
+   */
   private hasFinished(row: StudyChallengeRow, userId: string): boolean {
     const sequence = row.gameSequence ?? [];
     const roundCount = Math.min(sequence.length, CHALLENGE_ROUND_COUNT);
     if (roundCount === 0) return false;
     const mine = row.rounds?.[userId] ?? {};
     for (let i = 1; i <= roundCount; i += 1) {
-      if (!mine[String(i)]) return false;
+      if (!mine[String(i)]?.completedAt) return false;
     }
     return true;
   }
 
-  /** A player's total across their submitted rounds. May be negative — scores are unclamped (Q15). */
+  /**
+   * A player's total across their rounds. May be negative — scores are unclamped (Q15).
+   *
+   * Counts a CLAIMED round's banked score too. The points are real — they were
+   * earned by marks the player actually made — and a player who walked away from
+   * their last round must still be scored on it when the window-close pass resolves
+   * the challenge, or abandoning would be cheaper than finishing.
+   */
   private totalFor(row: StudyChallengeRow, userId: string): number {
     return Object.values(row.rounds?.[userId] ?? {}).reduce((sum, r) => sum + (r.score ?? 0), 0);
   }
@@ -1372,7 +1512,11 @@ export class StudyChallengeService {
     language: Language,
     weekIndex: number,
     activeCount: number,
-    liveRow: StudyChallengeRow | undefined,
+    /**
+     * The pair's current row, if any — live (`pending`/`accepted`) OR resolved this
+     * week. Either way it means "this row already has its own lifecycle control".
+     */
+    currentRow: StudyChallengeRow | undefined,
     /** Tester escape hatch, ALREADY RESOLVED — lifts the cap and the pair-week rule. */
     anytime = false
   ): Promise<Pick<ChallengeFriendRow, 'canChallenge' | 'blockedReason' | 'viewerBlocked'>> {
@@ -1386,10 +1530,12 @@ export class StudyChallengeService {
       ? !!friendship.requesterChallengesBlocked || !!friendship.addresseeChallengesBlocked
       : false;
 
-    // A live challenge is not a "blocked" state — the row already shows its own
-    // lifecycle control (Review words / Play test / Waiting on them), so there is
-    // nothing to explain.
-    if (liveRow) return { canChallenge: false, blockedReason: null, viewerBlocked };
+    // A current challenge is not a "blocked" state — the row already shows its own
+    // lifecycle control (Review words / Play test / Waiting on them / See results),
+    // so there is nothing to explain. This covers a challenge that has already
+    // RESOLVED this week: it cannot be re-issued either, but "See results" is a far
+    // better answer than the 'declined-this-week' reason below.
+    if (currentRow) return { canChallenge: false, blockedReason: null, viewerBlocked };
     // The block is NOT lifted by `anytime` — it is a person's decision about another
     // person, not a clock, and a tester flag must never override it.
     if (eitherBlocked) return { canChallenge: false, blockedReason: 'unavailable', viewerBlocked };

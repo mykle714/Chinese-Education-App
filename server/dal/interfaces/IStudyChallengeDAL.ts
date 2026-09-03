@@ -19,8 +19,9 @@ import type {
  * jsonb column on the same row, possibly in the same instant, and the safety comes
  * entirely from the fact that `recordRound` is a SINGLE STATEMENT: one statement
  * takes the row lock and performs the read-modify-write inside it, so concurrent
- * submissions serialise and neither can be lost. Its `IS NULL` path guard makes it
- * idempotent and enforces the one-attempt-per-round rule in the same breath.
+ * submissions serialise and neither can be lost. Its path guard — the slot is
+ * absent, or present and still `completedAt: null` — enforces the one-attempt rule
+ * in the same breath: a FINALISED round can never be written again.
  *
  * The danger is therefore NOT concurrency — it is somebody later adding a
  * convenient read-modify-write helper ("fetch the challenge, splice a round in,
@@ -63,6 +64,28 @@ export interface IStudyChallengeDAL {
    * a language the user is not currently studying. Callers scope it themselves.
    */
   listLiveForUser(userId: string, client?: PoolClient): Promise<StudyChallengeRow[]>;
+
+  /**
+   * Every challenge the user is a party to that RESOLVED (`complete` or
+   * `no_contest`) inside the given challenge week, in either role and in any
+   * language.
+   *
+   * Why the challenges page needs this alongside `listLiveForUser`: a challenge
+   * stops being live the moment it resolves, but its results stay the answer to
+   * "what happened with Bob this week" until the next challenge period opens
+   * (docs/STUDY_CHALLENGE.md § 1). Without this the friend row would drop straight
+   * back to "Challenge" — a button that is refused anyway, because a resolved row
+   * still occupies the pair's week — and the results would be reachable only
+   * through History.
+   *
+   * `declined` and `expired` are NOT included: nothing was played, so there is no
+   * result to open.
+   */
+  listResolvedForUserInWeek(
+    userId: string,
+    weekIndex: number,
+    client?: PoolClient
+  ): Promise<StudyChallengeRow[]>;
 
   /**
    * Take transaction-scoped advisory locks on a set of users, so that any two
@@ -181,8 +204,13 @@ export interface IStudyChallengeDAL {
   /**
    * ⚠️ THE ONLY WRITER OF `rounds`. See the interface header.
    *
-   * Returns false when the round slot was already filled — which the service turns
-   * into a rejection, not an overwrite (Q40: a submitted round is final).
+   * Writes a round CLAIM (`completedAt: null`, at the player's first mark), a
+   * progress update to a claim, or the FINAL row — all three are the same
+   * statement, differing only in the `completedAt` the service stamps.
+   *
+   * Returns false when the slot holds a round that is already FINAL — which the
+   * service turns into a rejection, not an overwrite (Q40: a completed round is
+   * final, there are no replays).
    */
   recordRound(
     id: string,
@@ -266,6 +294,28 @@ export interface IStudyChallengeDAL {
     language: string,
     client?: PoolClient
   ): Promise<Record<string, ChallengeWordDisplayFields>>;
+
+  /**
+   * Record one player's taunt on a RESOLVED challenge (§ 6a, migration 156).
+   *
+   * ⚠️ REPLACES the sender's slot; it is NOT write-once (that rule was dropped on
+   * 2026-09-02 when the Taunt button became a cycler — see § 6a). Callers may write
+   * as often as they like and the last write is what the opponent reads.
+   *
+   * The one rule still enforced in SQL is that the challenge must be `complete` or
+   * `no_contest`, so "not before it is over" cannot be lost to a service that forgets
+   * to check. Returns the updated row, or NULL when nothing matched — which the caller
+   * must read as "not resolved yet", never as a failure to write.
+   *
+   * `tauntId` is a CHALLENGE_TAUNTS key; this layer does not validate it, the service
+   * does, because the list is a contract and not a database concern.
+   */
+  setTaunt(
+    id: string,
+    userId: string,
+    tauntId: string,
+    client?: PoolClient
+  ): Promise<StudyChallengeRow | null>;
 
   /**
    * Every `pending` challenge, for the maintenance job's accept-deadline pass.

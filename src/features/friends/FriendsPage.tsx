@@ -265,9 +265,13 @@ function FriendsPage() {
                     <BentoTile
                         className="friends-page__challenges-tile"
                         title="Challenges"
-                        subtitle="The only place a challenge is announced"
+                        // The subtitle says what the feature IS, not what this tile is for.
+                        // A learner who has never tapped it cannot act on "the only place a
+                        // challenge is announced" — that is a fact about the badge, and the
+                        // badge is already doing the announcing.
+                        subtitle="A nine-word head-to-head, issued Monday, played Friday"
                         hue="org"
-                        icon="emoji_events"
+                        icon="swords"
                         variant="low"
                         fullWidth
                         pin={challengeCount > 0 ? challengeCount : undefined}

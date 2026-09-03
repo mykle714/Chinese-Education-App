@@ -30,6 +30,7 @@ import HydraLendNotice from "./HydraLendNotice";
 import { API_BASE_URL } from "../../constants";
 import { authHeader } from "../../utils/authHeader";
 import { useChallengeRound } from "../runtime/useChallengeRound";
+import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
@@ -94,6 +95,9 @@ const HydraBubblesPage: React.FC = () => {
         paused: lendNoticeOpen || backgroundPaused,
         running: phase === "playing",
     });
+    // Back: the challenge mid-test, or the Games hub — and, on a claimed challenge
+    // round, the confirm that says leaving ends it (docs/STUDY_CHALLENGE.md § 5.1a).
+    const onBack = useGameBack(challengeRound);
     /**
      * The contested words as CARDS, fetched once before the run starts.
      *
@@ -104,6 +108,11 @@ const HydraBubblesPage: React.FC = () => {
      * contested set is drawn from the challenge, and the economy is untouched.
      */
     const [challengeCards, setChallengeCards] = useState<VocabEntry[] | null>(null);
+    // Read through a ref inside `fetchChallengeCards`, whose identity is deliberately
+    // stable across a silent token refresh (CLAUDE.md ⛔) and therefore cannot list the
+    // params as a dependency. Same pattern as Bubble Match / Match Speed / Word Search.
+    const challengeParamsRef = useRef("");
+    challengeParamsRef.current = challengeRound.poolParams;
     const buffers = useColorBuffers(collectionSuffix, restricted, challengeCards);
     /** Contested words still unmatched — the run ends when this empties (§ 7.5). */
     const remainingContestedRef = useRef<Set<string>>(new Set());
@@ -120,10 +129,14 @@ const HydraBubblesPage: React.FC = () => {
                 `markType=${MARK_TYPE}`,
                 `surface=${SURFACE}`,
                 `need=${CHALLENGE_WORD_COUNT}`,
-                `challengeId=${encodeURIComponent(searchParams.get("challengeId") ?? "")}`,
-                `gameId=hydra-bubbles`,
             ];
-            const res = await fetch(`${API_BASE_URL}/api/onDeck/gamePool?${params.join("&")}`, {
+            // The round's identity comes from `poolParams` (already `&`-prefixed) rather
+            // than being rebuilt here: it carries the tester `?anytime=1` hatch as well as
+            // `challengeId`/`gameId`, and hand-building the pair dropped the hatch — a
+            // validator could open the round from the challenge page and then be 400'd
+            // ("Your test window is not open") on its cards (docs/STUDY_CHALLENGE.md § 2a).
+            const res = await fetch(
+                `${API_BASE_URL}/api/onDeck/gamePool?${params.join("&")}${challengeParamsRef.current}`, {
                 credentials: "include",
                 headers: authHeader(),
             });
@@ -202,8 +215,31 @@ const HydraBubblesPage: React.FC = () => {
                     setPhase("blocked");
                     return;
                 }
-                remainingContestedRef.current = new Set(cards.map((card) => card.entryKey));
-                setChallengeCards(cards);
+                // THE ENDING SET IS THE CHALLENGE'S, NOT THE POOL'S (§ 7.5).
+                // `gamePool` tops a short contested set up with FILLER
+                // (`getChallengeGamePool` fills `need - contested.length`), so the
+                // returned cards are not all contested. Seeding the ending set from
+                // the whole response made the run demand those filler clears too,
+                // while `challengeRound.isContested` — which decides how the same
+                // clear SCORES — disagreed: the player cleared all nine challenge
+                // words and the board kept spawning. One source of truth for both:
+                // the challenge's own word list.
+                const contested = cards.filter((card) => challengeRound.isContested(card.entryKey));
+                if (!contested.length) {
+                    // Nothing to score and, worse, no ending: an endless run with a
+                    // scoreboard that would read zero. Refuse it rather than start it,
+                    // the same way a missing pool is refused above.
+                    setBlockMessage("Couldn't load your challenge words. Please try again.");
+                    setPhase("blocked");
+                    return;
+                }
+                remainingContestedRef.current = new Set(contested.map((card) => card.entryKey));
+                // Only the CONTESTED cards ride the bloom queue. The pool's filler is
+                // redundant here — Hydra's filler is its own colour economy (the § 7.5
+                // exception), and queueing it ahead of a contested word would spend
+                // bloom slots on cards the ending does not care about, stretching the
+                // run out for no reason.
+                setChallengeCards(contested);
             }
             // Prime all four color buffers before the first bubble is placed. This is
             // the ONLY blocking fetch in a run — every later top-up is async and the
@@ -228,6 +264,26 @@ const HydraBubblesPage: React.FC = () => {
         // See CLAUDE.md "Never reload on token refresh".
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, challengeRound.active, challengeRound.ready]);
+
+    /**
+     * ARM THE CLEAR BONUS the moment the board goes live (§ 7.5).
+     *
+     * The shared runner measures a decaying pot from when it is ARMED, and Hydra arms
+     * it at t=0 rather than on a board event, which is what turns the decay into
+     * plain time-to-clear. `finish(won)` then forfeits it for any run that did not
+     * clear the set — the reason this can score time at all without paying players to
+     * fail fast (`CHALLENGE_GAMES`, server/contracts/wire.ts).
+     *
+     * `survivalStart` is idempotent by construction (first one wins), so a re-render
+     * that re-runs this effect cannot hand the player back time they have spent.
+     */
+    useEffect(() => {
+        if (!challengeRound.active || phase !== "playing") return;
+        challengeRound.emit({ kind: "survivalStart", ruleId: "clearBonus" });
+        // `emit` is stable once the round has loaded; `active`/`phase` are the facts
+        // that decide whether the pot exists at all.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [challengeRound.active, phase]);
 
     // A challenge round that cannot be played says so rather than starting an
     // endless free-play run that scores nothing.
@@ -409,11 +465,8 @@ const HydraBubblesPage: React.FC = () => {
             <GameLeafPage
             hue={GAME_HUE}
                 title="Hydra Bubbles"
-                // Back lands where the player came FROM — the challenge mid-test, or
-                // the Games hub for an ordinary run.
-                onBack={() => navigate(challengeRound.challengeId
-                    ? `/friends/challenges/${challengeRound.challengeId}`
-                    : "/games")}
+                // Destination + the "leaving ends this round" confirm (useGameBack).
+                onBack={onBack}
                 rightContent={
                     <BubbleMatchHeaderControls
                         language={language}

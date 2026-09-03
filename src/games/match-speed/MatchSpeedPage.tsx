@@ -52,6 +52,7 @@ import { provisionalWords } from "../../utils/provisionalCards";
 import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useChallengeRound } from "../runtime/useChallengeRound";
+import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
@@ -214,6 +215,9 @@ const MatchSpeedPage: React.FC = () => {
         paused: noticeOpen || backgroundPaused,
         running: phase === "playing",
     });
+    // Back: the challenge mid-test, or the Games hub — and, on a claimed challenge
+    // round, the confirm that says leaving ends it (docs/STUDY_CHALLENGE.md § 5.1a).
+    const onBack = useGameBack(challengeRound);
     // Read from a ref inside `fetchPool`, whose identity is stable by design.
     const challengeParamsRef = useRef("");
     challengeParamsRef.current = challengeRound.poolParams;
@@ -609,11 +613,8 @@ const MatchSpeedPage: React.FC = () => {
         <GameLeafPage
             hue={GAME_HUE}
             title="Match Speed"
-            // Back lands where the player came FROM — the challenge mid-test, or the
-            // Games hub for an ordinary run.
-            onBack={() => navigate(challengeRound.challengeId
-                ? `/friends/challenges/${challengeRound.challengeId}`
-                : "/games")}
+            // Destination + the "leaving ends this round" confirm (useGameBack).
+            onBack={onBack}
             rightContent={
                 <MatchSpeedHeaderControls
                     language={language}

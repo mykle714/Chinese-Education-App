@@ -5,7 +5,7 @@ import type { ChallengeSummary } from "../../api/studyChallenges";
 import type { ChallengeScoreBreakdown } from "../../types";
 import { challengeScoringFor } from "../registry";
 import { createChallengeScorer, type ChallengeEvent, type ChallengeScorer } from "./challengeScoring";
-import { anytimeQuerySuffix } from "../../features/studyChallenge/challengeAnytime";
+import { anytimeQuerySuffix, useChallengeAnytime } from "../../features/studyChallenge/challengeAnytime";
 
 /**
  * ONE STUDY CHALLENGE ROUND, from a game page's point of view
@@ -21,7 +21,8 @@ import { anytimeQuerySuffix } from "../../features/studyChallenge/challengeAnyti
  *   2. it calls `emit` where it already calls its mark function, tagging each event
  *      `contested` via `isContested`;
  *   3. it calls `finish(won)` where its run ends, and renders
- *      `<ChallengeRoundScoreboard>` from the returned `result`.
+ *      `<ChallengeRoundScoreboard>` from the returned `result`;
+ *   4. it guards its own Back control with `armed` — see below.
  *
  * `active` is false for an ordinary launch, and then every method here is a no-op —
  * so a game needs no `if (challenge)` branches around its own logic.
@@ -48,6 +49,29 @@ import { anytimeQuerySuffix } from "../../features/studyChallenge/challengeAnyti
  *
  * The split is invisible on the board (Q74) — no glow, no ordering, nothing. The
  * server even shuffles the board so the deal order cannot leak it.
+ *
+ * ── THE ROUND IS SPENT AT THE FIRST MARK, NOT AT THE END ──────────────────────
+ * (§ 5.1a.) The first `hit`/`miss` ARMS the round: it POSTs a claim, which the
+ * server stores as a round with `completedAt: null`. From that instant:
+ *
+ *   • the attempt is used up — `nextRoundIndex` walks past a claimed round, so the
+ *     board is never issued again. Quitting the app, reloading the tab or clearing
+ *     local storage no longer buys a fresh run at the same round;
+ *   • every later mark posts the CUMULATIVE score to the same slot, so the banked
+ *     score tracks the run even if the app is killed without warning;
+ *   • leaving the page — Back, a route change, a tab close — FINALISES the round
+ *     where it stands, exactly as if the run had ended in a loss.
+ *
+ * This deliberately reverses the old "there is no abandoned round to score" rule
+ * (Q33): backgrounding still merely pauses (§ 5.8), but actually walking out of the
+ * game is now a completed, scored attempt. Because that is irreversible, a game
+ * page must not let Back fire silently — it reads `armed` and confirms first.
+ *
+ * Progress writes are COALESCED (one in flight, ~1.2s apart minimum) rather than
+ * one-per-mark on the wire. That is free precisely because each write carries the
+ * whole snapshot rather than a delta: a dropped intermediate write loses nothing,
+ * and it keeps a fast Bubble Match run from doubling every player's write rate
+ * against the global `writeLimiter`.
  */
 
 /** What a game page gets back. Every field is inert when `active` is false. */
@@ -68,6 +92,15 @@ export interface ChallengeRoundState {
     poolParams: string;
     /** Is this board card one of the contested set? Always false outside a challenge. */
     isContested: (entryKey: string) => boolean;
+    /**
+     * The round has been CLAIMED — a mark has been made, the attempt is spent, and
+     * leaving now banks the score as it stands (§ 5.1a).
+     *
+     * A game page must use this to guard its Back control: an irreversible, scored
+     * exit that happens on a single silent tap is a trap. False outside a challenge,
+     * and false again once the run has ended (there is then nothing left to lose).
+     */
+    armed: boolean;
     /** Feed the scorer. Ignored outside a challenge, and after the run has ended. */
     emit: (event: ChallengeEvent) => void;
     /** End the run and submit it. Idempotent — a second call is ignored. */
@@ -99,6 +132,18 @@ export interface ChallengeRoundResult {
 /** How often active time is pushed into the scorer. */
 const TICK_MS = 250;
 
+/**
+ * Floor on the gap between two PROGRESS writes.
+ *
+ * Not a fidelity setting — every write carries the cumulative snapshot, so the only
+ * thing a longer gap costs is how much of the run a hard kill would lose. It exists
+ * because a challenge round already writes one mark per answer, and a second write
+ * beside it would double every player's write rate against the global 600-per-5-min
+ * `writeLimiter` (server/middleware/rateLimits.ts). The claim and the final write
+ * ignore it.
+ */
+const PROGRESS_MIN_INTERVAL_MS = 1200;
+
 export function useChallengeRound(opts: {
     /** This page's game id, as it appears in the challenge's drawn sequence. */
     gameId: string;
@@ -120,6 +165,12 @@ export function useChallengeRound(opts: {
     // what it is running.
     const active = !!challengeId && (!urlGameId || urlGameId === opts.gameId);
 
+    // Mounted for its side effect, not its value: `useChallengeAnytime` is what feeds
+    // the validator latch that `anytimeQuerySuffix()` reads (docs/STUDY_CHALLENGE.md
+    // § 2a). Without it a game opened by direct URL — rather than by walking through
+    // the challenge list — would drop the hatch and be refused its board.
+    const [anytime] = useChallengeAnytime();
+
     const [challenge, setChallenge] = useState<ChallengeSummary | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [result, setResult] = useState<ChallengeRoundResult | null>(null);
@@ -129,6 +180,25 @@ export function useChallengeRound(opts: {
     const scorerRef = useRef<ChallengeScorer | null>(null);
     const endedRef = useRef(false);
     const activeMsRef = useRef(0);
+
+    // ── The claim, and the write pipeline that follows it (§ 5.1a) ────────────
+    // `armedRef` is the ref twin of the `armed` flag a page renders off; the ref is
+    // what the unmount/pagehide handlers read, since they must see the value at the
+    // instant they fire rather than the one captured when they were installed.
+    const [armed, setArmed] = useState(false);
+    const armedRef = useRef(false);
+    /**
+     * The round index FROZEN at the claim. Every later write for this run must name
+     * the same slot: the submit response advances the derived index, and a write that
+     * followed it would try to open the NEXT round from inside this one.
+     */
+    const claimedIndexRef = useRef<number | null>(null);
+    /** A progress write is on the wire. */
+    const writingRef = useRef(false);
+    /** The score moved since the last write went out. */
+    const dirtyRef = useRef(false);
+    const lastWriteAtRef = useRef(0);
+    const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const spec = useMemo(
         () => (active ? challengeScoringFor(opts.gameId, mode) : undefined),
@@ -198,10 +268,89 @@ export function useChallengeRound(opts: {
         return scorerRef.current;
     }, [active, spec]);
 
+    /**
+     * The slot this run owns. Tracks the derived index until the round is claimed,
+     * then freezes: the final write's response advances `roundIndex` to the NEXT
+     * round, and a late progress write reading it live would try to open that one
+     * from inside this game.
+     */
+    const roundIndexRef = useRef(roundIndex);
+    if (claimedIndexRef.current === null) roundIndexRef.current = roundIndex;
+
+    /** One write of the current snapshot to this run's round slot. Never throws. */
+    const send = useCallback(
+        (breakdown: ChallengeScoreBreakdown, final: boolean, keepalive: boolean) => {
+            const index = claimedIndexRef.current ?? roundIndexRef.current;
+            if (!challengeId) return Promise.reject(new Error("No challenge round is open"));
+            lastWriteAtRef.current = Date.now();
+            return submitChallengeRound(challengeId, index, breakdown.total, breakdown, {
+                final,
+                keepalive,
+            });
+        },
+        [challengeId]
+    );
+
+    /**
+     * Push the running score to the server, at most one write in flight and no more
+     * often than PROGRESS_MIN_INTERVAL_MS.
+     *
+     * Coalescing is lossless here BECAUSE EVERY WRITE IS A CUMULATIVE SNAPSHOT: a
+     * dropped intermediate write is simply superseded by the next one. `dirtyRef`
+     * exists so the last mark of a burst is not the one that gets dropped — when a
+     * write lands with the score already moved on, another goes out behind it.
+     */
+    const flushProgress = useCallback(() => {
+        if (endedRef.current || claimedIndexRef.current === null) return;
+        if (writingRef.current) { dirtyRef.current = true; return; }
+
+        const wait = PROGRESS_MIN_INTERVAL_MS - (Date.now() - lastWriteAtRef.current);
+        if (wait > 0) {
+            dirtyRef.current = true;
+            // One timer, rearmed rather than stacked: several marks inside the window
+            // must produce ONE write at the end of it, not one each.
+            if (flushTimerRef.current === null) {
+                flushTimerRef.current = setTimeout(() => {
+                    flushTimerRef.current = null;
+                    flushProgress();
+                }, wait);
+            }
+            return;
+        }
+
+        const breakdown = scorerRef.current?.snapshot();
+        if (!breakdown) return;
+        dirtyRef.current = false;
+        writingRef.current = true;
+        send(breakdown, false, false)
+            // A progress write is best-effort by design: the round is already claimed,
+            // so failing one costs at most the points earned since the last success,
+            // and the finalising write re-sends the whole snapshot anyway. Logged, not
+            // surfaced — there is nothing the player could do about it mid-run.
+            .catch((err: unknown) => console.error("[challenge] round progress write failed:", err))
+            .finally(() => {
+                writingRef.current = false;
+                if (dirtyRef.current) flushProgress();
+            });
+    }, [send]);
+
     const emit = useCallback((event: ChallengeEvent) => {
         if (endedRef.current) return;
         scorer()?.apply(event);
-    }, [scorer]);
+
+        // ── THE CLAIM (§ 5.1a) ────────────────────────────────────────────────
+        // A hit or a miss is a real flashcard mark, and the first one spends the
+        // attempt. Deliberately NOT armed by a `use` (Word Search's hint) or a
+        // `tick`: opening a board, reading it and backing out is not an attempt, and
+        // a player who has answered nothing has nothing to be scored on.
+        if (event.kind !== "hit" && event.kind !== "miss") return;
+        if (claimedIndexRef.current === null) {
+            claimedIndexRef.current = roundIndexRef.current;
+            armedRef.current = true;
+            setArmed(true);
+        }
+        flushProgress();
+    }, [scorer, flushProgress]);
 
     // The active-time clock. Ticks only while the run is genuinely playing and not
     // paused, so backgrounding and modal popups cost the player nothing (§ 5.8).
@@ -214,28 +363,48 @@ export function useChallengeRound(opts: {
         return () => clearInterval(id);
     }, [active, opts.running, opts.paused, scorer]);
 
-    const finish = useCallback((won: boolean) => {
+    /**
+     * End the run and write the round as FINAL.
+     *
+     * `keepalive` is the unload path: the request has to outlive the document, or a
+     * tab closed mid-round banks whatever the last progress write had rather than
+     * the real end-of-run score (survival bonuses and elapsed penalties in
+     * particular are only correct once `end` has been applied).
+     */
+    const endRound = useCallback((won: boolean, keepalive: boolean) => {
         if (!active || !challengeId || endedRef.current) return;
         const current = scorer();
         if (!current) return;
         endedRef.current = true;
+        // Nothing may follow the final write into this slot — the server would refuse
+        // it, but a queued flush would also report a spurious failure.
+        if (flushTimerRef.current !== null) {
+            clearTimeout(flushTimerRef.current);
+            flushTimerRef.current = null;
+        }
+        dirtyRef.current = false;
 
         current.apply({ kind: "end", won });
         // ONE ACCUMULATOR (§ 5.6): the number posted and the lines drawn are the same
         // snapshot object, so the card on screen can never disagree with the score
         // stored — there would be nothing to arbitrate between them if it did.
         const breakdown = current.snapshot();
-        const previousTotal = Object.values(challenge?.rounds ?? {})
-            .reduce((sum, round) => sum + (round.score ?? 0), 0);
+        const index = claimedIndexRef.current ?? roundIndexRef.current;
+        // EARLIER rounds only. Keyed comparison rather than "everything in `rounds`"
+        // because this run's own round is now one of them — the claim put it there —
+        // and counting it would add the round's score to itself.
+        const previousTotal = Object.entries(challenge?.rounds ?? {})
+            .filter(([key]) => Number(key) < index)
+            .reduce((sum, [, round]) => sum + (round.score ?? 0), 0);
 
-        setResult({ roundIndex, breakdown, previousTotal, submitted: false, error: null });
-        submitChallengeRound(challengeId, roundIndex, breakdown.total, breakdown)
+        setResult({ roundIndex: index, breakdown, previousTotal, submitted: false, error: null });
+        send(breakdown, true, keepalive)
             .then((updated) => {
                 setChallenge(updated);
                 setResult((prev) => (prev ? { ...prev, submitted: true } : prev));
             })
             .catch((err: unknown) => {
-                // A submitted round is FINAL and there is no replay, so a failure here
+                // A completed round is FINAL and there is no replay, so a failure here
                 // is stated on the card rather than retried silently — the player needs
                 // to know their score may not have been recorded.
                 setResult((prev) => prev ? {
@@ -243,7 +412,47 @@ export function useChallengeRound(opts: {
                     error: err instanceof Error ? err.message : "Could not save your round",
                 } : prev);
             });
-    }, [active, challengeId, challenge?.rounds, roundIndex, scorer]);
+    }, [active, challengeId, challenge?.rounds, scorer, send]);
+
+    const finish = useCallback((won: boolean) => endRound(won, false), [endRound]);
+
+    /**
+     * LEAVING A CLAIMED ROUND FINALISES IT (§ 5.1a).
+     *
+     * Read through a ref because both triggers fire outside React's control flow and
+     * must see the CURRENT closure: the unmount cleanup runs after the last render,
+     * and `pagehide` fires whenever the browser feels like it.
+     */
+    const endRoundRef = useRef(endRound);
+    endRoundRef.current = endRound;
+
+    useEffect(() => {
+        if (!active) return;
+        /**
+         * `pagehide`, not `beforeunload` or `visibilitychange`:
+         *  — `visibilitychange` is BACKGROUNDING, which pauses the round and must not
+         *    score it (§ 5.8). Ending the round there would punish taking a phone call.
+         *  — `beforeunload` does not fire reliably on mobile Safari, which is where a
+         *    tab is most likely to disappear.
+         * `persisted` distinguishes a real teardown from a bfcache freeze; a frozen
+         * page can still come back, so it is treated as backgrounding.
+         */
+        const onPageHide = (event: PageTransitionEvent) => {
+            if (event.persisted) return;
+            if (!armedRef.current || endedRef.current) return;
+            endRoundRef.current(false, true);
+        };
+        window.addEventListener("pagehide", onPageHide);
+        return () => {
+            window.removeEventListener("pagehide", onPageHide);
+            if (flushTimerRef.current !== null) clearTimeout(flushTimerRef.current);
+            // Unmount = the player navigated out of the game (Back, a footer tab, any
+            // route change). The attempt was already spent at the first mark, so the
+            // only question is what score it banks — and it banks the run as it stood,
+            // scored as a loss, exactly like an abandoned live round would be.
+            if (armedRef.current && !endedRef.current) endRoundRef.current(false, true);
+        };
+    }, [active]);
 
     const poolParams = useMemo(() => {
         if (!active || !challengeId) return "";
@@ -254,18 +463,27 @@ export function useChallengeRound(opts: {
         // (docs/STUDY_CHALLENGE.md § 2a). Read at build time rather than captured, so
         // toggling it between rounds takes effect on the next board.
         return `&${query.toString()}${anytimeQuerySuffix()}`;
-    }, [active, challengeId, opts.gameId, mode]);
+        // `anytime` is a dependency, not decoration: it is the effective (validator-
+        // gated) value, and it changing is what makes the suffix change.
+    }, [active, challengeId, opts.gameId, mode, anytime]);
 
     return {
         active,
         ready: active && !!challenge && !!challenge.gameSequence && !error,
         error,
         challengeId,
-        roundIndex,
+        // Frozen once claimed, for the same reason the result card freezes it: the
+        // final write's response advances the derived index, and the header must not
+        // relabel itself to "Round 2" over round 1's board. `armed` is what makes this
+        // re-render, so the ref read is never stale.
+        roundIndex: claimedIndexRef.current ?? roundIndex,
         roundCount: challenge?.roundCount ?? 0,
         challenge,
         poolParams,
         isContested: active ? isContested : NEVER_CONTESTED,
+        // Nothing left to warn about once the run has ended — the round is written and
+        // the player is looking at the scoreboard.
+        armed: armed && !result,
         emit,
         finish,
         result,

@@ -30,7 +30,7 @@ import type {
 const ROW_COLUMNS = [
   'id', '"challengerId"', '"challengeeId"', 'variant',
   '"challengerLanguage"', '"challengeeLanguage"', 'status',
-  '"gameSequence"', 'words', 'rounds', '"presetDeckIds"',
+  '"gameSequence"', 'words', 'rounds', '"presetDeckIds"', 'taunts',
   '"issuedAt"', '"weekIndex"', '"acceptedAt"', '"completedAt"', '"winnerUserId"',
 ] as const;
 
@@ -47,6 +47,12 @@ const PG_UNIQUE_VIOLATION = '23505';
 
 /** The statuses a challenge is still live in. Kept here so both list queries agree. */
 const LIVE_STATUSES = ['pending', 'accepted'];
+
+/**
+ * The statuses that have a RESULTS screen to show. `declined` and `expired` are
+ * deliberately absent: nothing was played, so there is no result to look back at.
+ */
+const RESOLVED_STATUSES = ['complete', 'no_contest'];
 
 /**
  * The bands that mean "this player already knows the word" for candidate exclusion
@@ -153,6 +159,25 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
             AND $1 IN ("challengerId", "challengeeId")
           ORDER BY "issuedAt" DESC`,
         [userId, LIVE_STATUSES]
+      )
+    );
+    return rows;
+  }
+
+  async listResolvedForUserInWeek(
+    userId: string,
+    weekIndex: number,
+    client?: PoolClient
+  ): Promise<StudyChallengeRow[]> {
+    this.requireId(userId, 'userId');
+    const { rows } = await this.run<StudyChallengeRow>(client, (c) =>
+      c.query(
+        `SELECT ${ROW} FROM study_challenges
+          WHERE status = ANY($2::text[])
+            AND "weekIndex" = $3
+            AND $1 IN ("challengerId", "challengeeId")
+          ORDER BY "issuedAt" DESC`,
+        [userId, RESOLVED_STATUSES, weekIndex]
       )
     );
     return rows;
@@ -368,6 +393,43 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
     return rowCount > 0;
   }
 
+  async setTaunt(
+    id: string,
+    userId: string,
+    tauntId: string,
+    client?: PoolClient
+  ): Promise<StudyChallengeRow | null> {
+    this.requireId(id, 'id');
+    this.requireId(userId, 'userId');
+
+    // ONE STATEMENT, and it is an UPSERT of the sender's slot. The taunt used to be
+    // write-once (a `NOT (taunts ? $2)` guard lived in this WHERE); that guard was
+    // DROPPED on 2026-09-02 when the button became a cycler — every tap rolls the next
+    // line and overwrites the sender's slot, so the last line they land on is the one
+    // the opponent reads. `sentAt` therefore means "last changed at".
+    //
+    // The remaining guard — a resolved status — still lives here rather than in the
+    // service, so it cannot be lost to a read-then-write race. No match returns null,
+    // which the service reads as "not resolved yet", not as an error.
+    //
+    // Write volume is bounded by the global per-user `writeLimiter`
+    // (middleware/rateLimits.ts); the client's throttle is a courtesy, not a defence.
+    const { rows } = await this.run<StudyChallengeRow>(client, (c) =>
+      c.query(
+        `UPDATE study_challenges
+            SET taunts = jsonb_set(
+                  taunts, ARRAY[$2::text],
+                  jsonb_build_object('tauntId', $3::text, 'sentAt', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')),
+                  true)
+          WHERE id = $1
+            AND status IN ('complete', 'no_contest')
+          RETURNING ${ROW}`,
+        [id, userId, tauntId]
+      )
+    );
+    return rows[0] ?? null;
+  }
+
   /**
    * ⚠️ THE ONLY WRITER OF `rounds` — see the header of IStudyChallengeDAL.
    *
@@ -376,10 +438,19 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
    * players submitting in the same instant serialise and neither write is lost.
    * There is no read-modify-write across a round trip here and there must never be.
    *
-   * `rounds #> path IS NULL` makes it INSERT-ONLY: a resubmission of a round that
-   * exists matches nothing and returns false, which the service turns into a
-   * rejection (Q40 — a submitted round is final, no replays). The same guard makes
-   * a retried request idempotent.
+   * THE PATH GUARD IS THE ONE-ATTEMPT RULE. The slot is writable while it is absent
+   * (the claim) or while it holds `completedAt: null` (the in-progress round being
+   * updated by each mark). A slot whose `completedAt` is a timestamp matches
+   * nothing and returns false, which the service turns into a rejection (Q40 — a
+   * completed round is final, no replays). Rows written before the claim model had
+   * a non-null `completedAt` by construction, so they are final under this guard
+   * with no backfill.
+   *
+   * `startedAt` IS PRESERVED ACROSS UPDATES by letting the stored value override the
+   * incoming one (`$4 || {startedAt: <stored>}`, null-stripped so a first write
+   * keeps its own). The service therefore never has to read the row to find out
+   * whether it is claiming or updating — which is what keeps this a single
+   * statement with no read-modify-write across a round trip.
    *
    * An ETag/version column would be strictly worse: optimistic concurrency exists
    * to protect a read-modify-write across a round trip, and this shape does not
@@ -416,10 +487,18 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
         `UPDATE study_challenges
             SET rounds = rounds || jsonb_build_object(
                   $2::text,
-                  COALESCE(rounds -> $2, '{}'::jsonb) || jsonb_build_object($3::text, $4::jsonb)
+                  COALESCE(rounds -> $2, '{}'::jsonb) || jsonb_build_object(
+                    $3::text,
+                    $4::jsonb || jsonb_strip_nulls(jsonb_build_object(
+                      'startedAt', rounds #> ARRAY[$2, $3, 'startedAt']
+                    ))
+                  )
                 )
           WHERE id = $1
-            AND rounds #> ARRAY[$2, $3] IS NULL
+            AND (
+              rounds #> ARRAY[$2, $3] IS NULL
+              OR rounds #> ARRAY[$2, $3, 'completedAt'] = 'null'::jsonb
+            )
           RETURNING id`,
         [id, userId, String(roundIndex), JSON.stringify(round)]
       )

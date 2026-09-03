@@ -140,6 +140,17 @@ export interface User extends UserProfile {
    * whichever board the account is racing in.
    */
   arenaMessage?: string | null;
+  /**
+   * The account's IANA timezone (NOT NULL DEFAULT 'UTC' in the database).
+   *
+   * Server-side only — it is deliberately absent from the wire `UserProfile`,
+   * because the client already knows its own zone and the server's copy is only
+   * ever the LAST one a client reported. Read by every 04:00-local boundary that is
+   * computed in TypeScript rather than SQL (shared/challengeWeek.ts via
+   * StudyChallengeService.timezoneOf). Any DAL read that feeds those boundaries
+   * must select the column — see the note on `UserDAL.findById`.
+   */
+  timezone?: string;
   /** Last successful minute-point increment (for rate limiting). */
   lastMinutePointIncrement?: Date;
   createdAt?: Date;

@@ -40,6 +40,11 @@ router.post('/api/studyChallenges/:id/decline', authenticateToken, handle(studyC
 // there is nothing to record (§ 1). Decline, by contrast, KEEPS the row so it holds
 // the pair's week as the cooldown.
 router.delete('/api/studyChallenges/:id', authenticateToken, handle(studyChallengeController.withdrawChallenge, studyChallengeController));
+// One canned taunt slot per player, only once the challenge is resolved. Repeatable:
+// the results screen's button cycles lines and posts the latest, so a second call
+// REPLACES the sender's taunt (§ 6a). Rate-limited by the global per-user
+// `writeLimiter` in server.ts, like every other write.
+router.post('/api/studyChallenges/:id/taunt', authenticateToken, handle(studyChallengeController.sendTaunt, studyChallengeController));
 router.post('/api/studyChallenges/:id/rounds', authenticateToken, handle(studyChallengeController.submitRound, studyChallengeController));
 
 export default router;

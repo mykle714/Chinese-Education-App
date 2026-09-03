@@ -138,6 +138,12 @@ interface MiniVocabCardGridProps {
     // (docs/DECKS_FEATURE.md § "Mastery Centers"). Ignored when `renderCard` is set —
     // a custom card owns its own readout.
     lens?: MasteryBarId;
+    // Whether the rows spread apart while the page scrolls (docs/UX_AND_NAVIGATION.md
+    // § "Scroll stretch"). On by default. Turn it OFF for a grid that is not the thing
+    // the reader is scrolling through — on View Challenge the nine words are a static
+    // footnote under a swipeable test, and elastic rows there read as the page coming
+    // loose rather than as the list having weight.
+    scrollStretch?: boolean;
 }
 
 const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
@@ -153,6 +159,7 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
     staggerReveal = false,
     cardHeightPx = CARD_HEIGHT_PX,
     lens,
+    scrollStretch = true,
 }) => {
     // Progressively reveal the deck so a large list never mounts in one blocking
     // render (keeps taps on surrounding buttons responsive). In staggerReveal mode the
@@ -184,7 +191,7 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
     // stops (docs/UX_AND_NAVIGATION.md § "Scroll stretch"). The
     // hook moves rows with a transform only — it must never touch the container's `gap`,
     // which useWindowedRows above does spacer arithmetic against.
-    useScrollStretch(gridRef, { axis: "y" });
+    useScrollStretch(gridRef, { axis: "y", enabled: scrollStretch });
 
     // Reserve the final height while cards are being revealed so growing rows
     // don't push sibling sections below the grid downward (see reservedGridHeight).

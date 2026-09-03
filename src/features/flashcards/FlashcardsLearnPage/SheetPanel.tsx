@@ -5,6 +5,7 @@ import { useDrag } from "@use-gesture/react";
 import { EicScrim, InfoSheetContainer, InfoSheetGrabber, SheetMergeHeaderSlot } from "./styled";
 import PageHeader from "../../../components/PageHeader";
 import { useHideFooter } from "../../../hooks/useHideFooter";
+import { nearestOverlayHost } from "../../../components/overlayHost";
 
 // Imperative handle exposing the gesture-root wrapper and the inner scrollable
 // container of whatever body a SheetPanel renders. SheetPanel attaches its
@@ -198,53 +199,6 @@ function computeSnapTarget(h: number, defaultH: number, maxH: number, minH: numb
 // reacts to a given gesture (touch is already top-only via DOM hit-testing).
 const mountedDepths = new Set<number>();
 
-// Where a portaled scrim can live without inverting the paint order.
-//
-// The scrim (z-index 10) must paint BELOW the sheet (z-index 11). Two elements only
-// compare z-indexes when they sit in the SAME stacking context, so the scrim has to be
-// portaled into an ancestor that the sheet also lives inside — and one that fills the
-// screen, or the dim covers only part of it.
-//
-// The phone frame (`.mobile-demo-frame`) satisfies both on a plain page. It does NOT on a
-// page that creates its own stacking context in between: `NodePage`'s `Surface` carries
-// the page-slide `transform` (usePageSlide), and a transformed element both creates a
-// stacking context and becomes the containing block for absolutely positioned
-// descendants. The sheet's z-index 11 is then sealed inside Surface, Surface itself
-// competes at `auto`, and a frame-hosted scrim at z-index 10 paints over the WHOLE page —
-// including the sheet. That is the cdp bug: the eip looked greyed out while it was open.
-//
-// So: walk up from the sheet and stop at the first ancestor that creates a stacking
-// context AND is a containing block for absolute children (`transform`, `filter`,
-// `perspective`, `will-change: transform`, `contain`, `backdrop-filter` — all of which
-// establish both) AND covers the frame, or at the frame itself, whichever comes first —
-// so `inset: 0` always dims the whole screen.
-function nearestScrimHost(el: HTMLElement): HTMLElement {
-    const frame = el.closest(".mobile-demo-frame") as HTMLElement | null;
-    const frameRect = frame?.getBoundingClientRect();
-    for (let node = el.parentElement; node && node !== frame; node = node.parentElement) {
-        const cs = getComputedStyle(node);
-        const createsContext =
-            cs.transform !== "none" ||
-            cs.filter !== "none" ||
-            cs.perspective !== "none" ||
-            cs.backdropFilter !== "none" ||
-            (cs.contain !== "none" && cs.contain !== "normal") ||
-            /transform|filter|perspective/.test(cs.willChange);
-        if (!createsContext) continue;
-        // Only host here if this ancestor actually COVERS the frame. A page surface does
-        // (`position: absolute; inset: 0`); an animated inner box would not, and dimming
-        // just that box is worse than the paint-order bug it would be dodging — fall back
-        // to the frame in that case, which is what every page did before this helper.
-        if (!frameRect) return node;
-        const r = node.getBoundingClientRect();
-        if (r.top <= frameRect.top + 1 && r.left <= frameRect.left + 1 &&
-            r.bottom >= frameRect.bottom - 1 && r.right >= frameRect.right - 1) {
-            return node;
-        }
-    }
-    return frame ?? document.body;
-}
-
 const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     onClose,
     initialHeight,
@@ -279,7 +233,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // the content area) undimmed, so a modal sheet only darkened part of the screen.
     //
     // So it is PORTALED out — but NOT unconditionally to the phone frame. It goes to
-    // `nearestScrimHost` (above): the nearest ancestor that both fills the screen and
+    // `nearestOverlayHost` (src/components/overlayHost.ts): the nearest ancestor that both fills the screen and
     // shares the SHEET's stacking context. Getting that wrong inverts the paint order,
     // and the scrim ends up dimming the sheet it is supposed to be behind — which is
     // exactly what happened on the cdp, whose `NodePage` `Surface` carries the page-slide
@@ -311,7 +265,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         if (!el) return;
         // A state write in a LAYOUT effect is flushed before paint, so the sheet still
         // mounts in the same frame the host does — no flash of an unportaled sheet.
-        setScrimHost(nearestScrimHost(el));
+        setScrimHost(nearestOverlayHost(el));
     }, []);
 
     // A modal sheet owns the screen for its lifetime, so the floating footer pill —

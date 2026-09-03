@@ -1,19 +1,17 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NodePage from '../../components/NodePage';
+import SearchField from '../../components/SearchField';
 import {
     Container,
     Typography,
     Box,
-    TextField,
-    InputAdornment,
-    IconButton,
     Alert,
     Pagination,
     Chip,
     CircularProgress,
 } from '@mui/material';
-import { Search, Clear, AutoAwesome } from '@mui/icons-material';
+import { AutoAwesome } from '@mui/icons-material';
 import DelayedCircularProgress from '../../components/DelayedCircularProgress';
 import AiDictionaryEntryCard from '../../components/AiDictionaryEntryCard';
 import { SIZE } from '../../theme/scale';
@@ -115,14 +113,6 @@ function DictionaryPage() {
         requestAnimationFrame(attempt);
     }, [loading, entries.length, segmentGroups.length]);
 
-    const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        setSearchInput(event.target.value);
-    };
-
-    const handleClearSearch = () => {
-        clearSearch();
-    };
-
     // Tapping a result-card opens the read-only dictionary card-detail page (cdp)
     // for that word — a NODE-page slide (in from the right), replacing the old EIP
     // popup. The cdp fetches the full det row itself (breakdown, examples, usedIn,
@@ -172,32 +162,14 @@ function DictionaryPage() {
                         value={searchInput}
                         onChange={setSearchInput}
                     />
-                    <TextField
+                    <SearchField
                         className="dictionary-page__search-input"
-                        fullWidth
+                        size="medium"
                         placeholder={searchPlaceholderFor(userLanguage)}
                         value={searchInput}
-                        onChange={handleSearchChange}
+                        onChange={setSearchInput}
+                        onClear={clearSearch}
                         inputRef={searchInputRef}
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <Search />
-                                </InputAdornment>
-                            ),
-                            endAdornment: searchInput && (
-                                <InputAdornment position="end">
-                                    <IconButton
-                                        aria-label="clear search"
-                                        onClick={handleClearSearch}
-                                        edge="end"
-                                        size="small"
-                                    >
-                                        <Clear />
-                                    </IconButton>
-                                </InputAdornment>
-                            ),
-                        }}
                         sx={{ mt: 2 }}
                     />
                 </Box>

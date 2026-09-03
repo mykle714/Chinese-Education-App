@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { Box, TextField, InputAdornment, IconButton, Typography, Divider, CircularProgress } from "@mui/material";
-import { Search, Clear } from "@mui/icons-material";
+import { Box, Typography, Divider, CircularProgress } from "@mui/material";
+import SearchField from "../../components/SearchField";
 import CommunityFeedRow from "./CommunityFeedRow";
 import { fetchEntryFeed } from "./communityApi";
 import { useDictionarySearch } from "../../hooks/useDictionarySearch";
@@ -72,27 +72,14 @@ const CommunitySearchBar: React.FC<{
   return (
     <Box className="community-search-bar">
       <Box sx={{ px: 2, mt: 2, mb: 2 }}>
-        <TextField
+        <SearchField
           className="community-search-bar__input"
-          fullWidth
+          size="medium"
           placeholder={`Search ${language.toUpperCase()} dictionary for designs...`}
           value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
+          onChange={setSearchInput}
+          onClear={clearSearch}
           inputRef={searchInputRef}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <Search />
-              </InputAdornment>
-            ),
-            endAdornment: searchInput && (
-              <InputAdornment position="end">
-                <IconButton aria-label="clear search" onClick={clearSearch} edge="end" size="small">
-                  <Clear />
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
         />
       </Box>
 

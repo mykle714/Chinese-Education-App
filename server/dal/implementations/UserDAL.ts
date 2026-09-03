@@ -87,8 +87,17 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       throw new ValidationError('User ID is required');
     }
 
+    // ⚠️ "timezone" MUST stay in this list. It is not a display field: it is the
+    // input to every 04:00-local boundary computed in TypeScript rather than SQL —
+    // StudyChallengeService.timezoneOf reads it from here, and `resolveTimezone`
+    // silently falls back to 'UTC' for an undefined value. Omitting the column
+    // therefore does not fail, it just moves every accept deadline and test window
+    // to 04:00 UTC (measured 2026-09-01: a Los Angeles player was told their Friday
+    // test opened "9 PM Thursday", and `isTestWindowOpen` agreed with the wrong
+    // answer). The arena and the streak read the column in SQL and were unaffected,
+    // which is why the bug was confined to Study Challenge.
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "isPublic", "isValidator", "isTemplateAuthor", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "showSegmentSpaces", "arenaMessage", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "isPublic", "isValidator", "isTemplateAuthor", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "showSegmentSpaces", "arenaMessage", "timezone", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     return result.recordset[0] || null;

@@ -19,6 +19,7 @@
 import type {
   ChallengeGameRef,
   ChallengeRound,
+  ChallengeTaunt,
   ChallengeStatus,
   ChallengeVariant,
   ChallengeWord,
@@ -48,6 +49,15 @@ export interface StudyChallengeRow {
   rounds: Record<string, Record<string, ChallengeRound>>;
   /** userId → the generated deck created for them on accept. */
   presetDeckIds: Record<string, number>;
+  /**
+   * userId → the one taunt that player sent, or absent (migration 156).
+   *
+   * Keyed by SENDER, not by target. The results screen shows a taunt on the card of
+   * whoever it is AIMED at, but "who sent it" is the durable fact and the target is
+   * derivable from it — storing it by target would make the one-per-player rule an
+   * invariant nothing enforces.
+   */
+  taunts: Record<string, ChallengeTaunt>;
   issuedAt: string;
   /**
    * Whole weeks since Monday 2026-01-05 00:00 UTC — the challenge's WEEK IDENTITY,
@@ -104,14 +114,24 @@ export interface ChallengeSummary {
   words: ChallengeWord[];
   /** This player's submitted rounds, keyed by round index. */
   rounds: Record<string, ChallengeRound>;
-  /**
-   * Whether the OPPONENT has finished — progress only, never a score (§ 6). A
-   * player who plays second must play against the game, not against a number, so
-   * no opponent score is serialized until both players are done.
-   */
+  /** Whether the OPPONENT has finished all their rounds. */
   opponentFinished: boolean;
-  /** The opponent's rounds and totals, present ONLY once both players have finished. */
-  opponentRounds?: Record<string, ChallengeRound>;
+  /**
+   * The opponent's SUBMITTED rounds — revealed one at a time, as each is completed
+   * (§ 6, design F15b/F15d). Always present; empty until they submit their first.
+   *
+   * ⚠️ THIS USED TO BE WITHHELD until both players finished, to stop the second
+   * player anchoring on a target score. That gate was dropped when View Challenge
+   * became two pages: a page that stays blank for four days is not a page. A round
+   * IN PROGRESS is still invisible, because `rounds` only ever holds submitted ones.
+   */
+  opponentRounds: Record<string, ChallengeRound>;
+  /**
+   * Both players' taunts, keyed by SENDER's user id (§ 6a, migration 156). Absent
+   * key = not sent. Only renderable on a completed challenge — the client enforces
+   * that, since there is nothing here worth protecting.
+   */
+  taunts: Record<string, ChallengeTaunt>;
   /** This player's generated study deck, or null once it has been dropped. */
   presetDeckId: number | null;
   /** See the warning above: absent until this player's window opens. */
@@ -248,6 +268,11 @@ export interface SubmitRoundBody {
   roundIndex: number;
   score: number;
   breakdown: unknown;
+  /**
+   * false = a claim/progress write, leaving the round open (`completedAt: null`);
+   * true (the default when omitted) = finish the round and close it forever.
+   */
+  final?: boolean;
 }
 
 /**

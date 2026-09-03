@@ -236,7 +236,7 @@ so the progress survives.
 → See [docs/ARENA_FEATURE.md](./docs/ARENA_FEATURE.md) — **BUILT ON DEV, not on prod**: the hp Arena row and `/arena`, a weekly cluster of 25 players ranked by minutes earned while the arena is live. Covers the Tue 04:00 → **Sun 16:00** cycle and its 36-hour break/opt-in period (the app's only non-04:00 boundary, and why), 12 divisions held **per (user, language)** on `user_languages`, clustering as a **sort-and-chunk over a geohash cell** (a space-filling curve, so the stored location format *is* the sort key) inside a hard (timezone, division) partition, synthetic padding that lives in `arena_members` rather than `users`, ±5 promotion/relegation, and the opt-in location flow for `users."geoCell"` (a ~5 km cell truncated **on the device**; coordinates never reach the server).
 
 ### Study Challenge (weekly head-to-head between friends)
-→ See [docs/STUDY_CHALLENGE.md](./docs/STUDY_CHALLENGE.md) — **DESIGN/DRAFT**: a Monday-issued, Friday-played challenge between two friends over a 10-word set — the same-word vs different-word variants, the 04:00-local week boundaries, generated (non-editable) challenge decks that don't count against the 100-deck cap, the `mastered-first` provisioning mode, the per-game contested/filler scoring contract every recognition/production game must now implement, and results/no-contest. Live (synchronous) mode is deferred to phase 2.
+→ See [docs/STUDY_CHALLENGE.md](./docs/STUDY_CHALLENGE.md) — **PHASE 1 BUILT** (async; the "DESIGN/DRAFT" this line used to claim was stale, and the set is **9** words, not 10 — `CHALLENGE_WORD_COUNT`): a Monday-issued, Friday-played challenge between two friends — the same-word vs different-word variants, the 04:00-local week boundaries, generated (non-editable) challenge decks that don't count against the 100-deck cap, the `mastered-first` provisioning mode, the per-game contested/filler scoring contract, and results/no-contest. The **2026-09-01 shelf-system redesign** changed behaviour as well as looks: the opponent's rounds are now revealed per submitted round (reversing the anti-anchoring rule), issue/withdraw/accept became a sheet over the list (two routes deleted), View Challenge became two swipeable pages, and taunts arrived (migration 156). Live (synchronous) mode is deferred to phase 2.
 
 ### Practice Writing (character writing-practice drill)
 → See [docs/PRACTICE_WRITING.md](./docs/PRACTICE_WRITING.md) — the "Practice Writing Me" drill: four assistance levels (Trace / Step Through / Memorize / Test), the 2×2 grid for multi-char words, the generalized modal lockout + greyed-background step-back, Memorize's study-first lock (no-writing badge + Start-Writing pulse), top-1 grading, and completion stars.
@@ -297,7 +297,11 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **[docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md)**
+Current open runbooks: **[docs/CHALLENGE_REDESIGN_DEPLOY_RUNBOOK.md](./docs/CHALLENGE_REDESIGN_DEPLOY_RUNBOOK.md)**
+(migration **156**, taunts — **not yet applied anywhere**; it must run BEFORE the container
+rebuild, because the shipped `StudyChallengeDAL` selects `study_challenges.taunts` by name
+and old schema + new code 500s every challenge read, exactly as 152 did for
+`users."arenaMessage"`). And **[docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md)**
 (gloss phase-2 half B, the runtime guard — **no migration**). **Deployed 2026-08-24** and
 verified on the infrastructure checks; it stays open only until someone opens a real game
 board and confirms it fills rather than coming back short, which is the one over-blocking

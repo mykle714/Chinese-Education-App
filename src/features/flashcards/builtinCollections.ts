@@ -58,7 +58,10 @@
  * See docs/DECKS_FEATURE.md § "Which collections exist" and docs/GAMES_FEATURE.md.
  */
 import { activeBars, type MasteryGoals, type MasteryBarId } from '../../utils/masteryCompute';
-import { BAND_COLORS, LEARN_NOW_COLORS, MASTERY_BAR_COLORS } from '../../utils/categoryColors';
+import {
+    BAND_COLORS, LEARN_NOW_COLORS, LEARN_NOW_HUE, MASTERY_BAR_COLORS, MASTERY_BAR_HUES,
+} from '../../utils/categoryColors';
+import type { RampHue } from '../../theme/colors';
 import { collectionTitle, type CollectionRef } from './collectionRef';
 
 /**
@@ -79,6 +82,15 @@ export interface BuiltinCollectionEntry {
     label: string;
     /** The tile's two-tone palette; the selector uses `main` alone for its dot. */
     colors: { main: string; accent: string };
+    /**
+     * The same colour as a RAMP hue KEY, for surfaces that need a third tier of it —
+     * the saturated `ink`. `LibraryDuo`'s ACTIVE (filtering) tile is the caller: a
+     * pastel fill cannot say "this filter is on" on its own, so the active tile takes
+     * this hue's ink for its ring, its glyph and its figure. Carried beside `colors`
+     * rather than replacing it because the two are derived from the same hue anyway
+     * (categoryColors.ts) and the menu surfaces only ever want the fill.
+     */
+    hue: RampHue;
     group: CollectionGroup;
 }
 
@@ -109,6 +121,7 @@ export function lensCollectionEntries(lens: MasteryBarId): BuiltinCollectionEntr
             ref: learnNow,
             label: collectionTitle(learnNow),
             colors: LEARN_NOW_COLORS,
+            hue: LEARN_NOW_HUE,
             group: 'Collections',
         },
         {
@@ -116,6 +129,7 @@ export function lensCollectionEntries(lens: MasteryBarId): BuiltinCollectionEntr
             ref: mastered,
             label: collectionTitle(mastered),
             colors: MASTERY_BAR_COLORS[lens],
+            hue: MASTERY_BAR_HUES[lens],
             group: 'Collections',
         },
     ];
@@ -147,6 +161,7 @@ export function builtinCollectionEntries(goals: MasteryGoals): BuiltinCollection
             ref: { kind: 'all' },
             label: collectionTitle({ kind: 'all' }),
             colors: BAND_COLORS.All,
+            hue: 'grey',
             group: 'Collections',
         },
         {
@@ -154,6 +169,7 @@ export function builtinCollectionEntries(goals: MasteryGoals): BuiltinCollection
             ref: { kind: 'learn-now', bar: 'core' },
             label: collectionTitle({ kind: 'learn-now', bar: 'core' }),
             colors: LEARN_NOW_COLORS,
+            hue: LEARN_NOW_HUE,
             group: 'Collections',
         },
     ];
@@ -165,6 +181,7 @@ export function builtinCollectionEntries(goals: MasteryGoals): BuiltinCollection
             ref,
             label: collectionTitle(ref),
             colors: MASTERY_BAR_COLORS[bar],
+            hue: MASTERY_BAR_HUES[bar],
             // core beside All/Learn Now; the per-skill bars in their own section.
             group: bar === 'core' ? 'Collections' : 'Mastered',
         };

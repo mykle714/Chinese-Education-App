@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, Button, MenuItem, Select, Typography } from "@mui/material";
+import { Box, Button, ButtonBase, MenuItem, Select, Typography } from "@mui/material";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
-import ChallengeScoreTable from "./ChallengeScoreTable";
 import { fetchChallengeHistory } from "../../api/studyChallenges";
 import type { ChallengeSummary } from "../../api/studyChallenges";
 import { useAuth } from "../../AuthContext";
@@ -12,7 +11,7 @@ import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { challengeErrorMessage, roundsTotal } from "./challengeLabels";
-import { challengeCardSx, challengeMessageSx, challengeMutedSx } from "./challengeStyles";
+import { challengeMessageSx, challengeMutedSx } from "./challengeStyles";
 
 /** How many entries a page of the log holds. */
 const PAGE_SIZE = 20;
@@ -167,28 +166,56 @@ function ChallengeHistoryPage() {
                                     ? "Draw"
                                     : entry.winnerUserId === user?.id ? "Won" : "Lost";
 
+                            // The outcome tints the WHOLE card, not just its label. A log
+                            // is read by scanning, and a scanner reads fills before words —
+                            // a one-word label in the corner makes every row look alike
+                            // until you stop and read it.
+                            const tint = outcome === "Won"
+                                ? { bg: "color-mix(in oklch, #0B6B4F 6%, #fff)", border: "color-mix(in oklch, #0B6B4F 24%, rgba(23,22,26,.10))", ink: "#0B6B4F" }
+                                : outcome === "Lost"
+                                    ? { bg: "color-mix(in oklch, #B4213C 5%, #fff)", border: "color-mix(in oklch, #B4213C 20%, rgba(23,22,26,.10))", ink: "#B4213C" }
+                                    : { bg: COLORS.iconBg, border: COLORS.rowBorder, ink: COLORS.textFaint };
+
                             return (
-                                <Box key={entry.id} className="challenge-history-page__entry" sx={challengeCardSx}>
-                                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 1 }}>
-                                        <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: COLORS.onSurface }}>
+                                // The whole row is the target, not a chevron in its corner:
+                                // a log row is scanned as one object, so anything less than
+                                // the whole card reads as "not tappable". It opens the
+                                // challenge's own page, which for a resolved challenge IS
+                                // the results screen (ChallengeDetailPage collapses its two
+                                // pages once the challenge is `complete`/`no_contest`), and
+                                // carries `from` so Back returns here rather than to the
+                                // challenges list.
+                                <ButtonBase
+                                    key={entry.id}
+                                    component="div"
+                                    className={`challenge-history-page__entry challenge-history-page__entry--${outcome.toLowerCase().replace(" ", "-")}`}
+                                    onClick={() => slideNavigate(`/friends/challenges/${entry.id}`, {
+                                        state: { from: "/friends/challenges/history" },
+                                    })}
+                                    sx={{
+                                        display: "block",
+                                        width: "100%",
+                                        textAlign: "left",
+                                        px: 1.9,
+                                        py: 1.6,
+                                        borderRadius: "16px",
+                                        backgroundColor: tint.bg,
+                                        border: `1px solid ${tint.border}`,
+                                    }}
+                                >
+                                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 1.25 }}>
+                                        <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: COLORS.onSurface }}>
                                             vs {entry.opponent.name || entry.opponent.email}
                                         </Typography>
                                         <Typography
-                                            className={`challenge-history-page__outcome challenge-history-page__outcome--${outcome.toLowerCase().replace(" ", "-")}`}
-                                            sx={{
-                                                fontFamily: FONTS.sans,
-                                                fontSize: SIZE.caption,
-                                                fontWeight: WEIGHT.bold,
-                                                color: outcome === "Won" ? COLORS.successInk
-                                                    : outcome === "Lost" ? COLORS.dangerInk
-                                                        : COLORS.textSecondary,
-                                            }}
+                                            className="challenge-history-page__outcome"
+                                            sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, fontWeight: WEIGHT.bold, color: tint.ink }}
                                         >
                                             {outcome}
                                         </Typography>
                                     </Box>
 
-                                    <Typography sx={{ ...challengeMutedSx, fontSize: SIZE.micro }}>
+                                    <Typography sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, color: COLORS.textFaint, mt: 0.6 }}>
                                         {/* Both totals, which is what the log is for. A
                                             no-contest may legitimately show one side at 0 —
                                             a player who never played still has a real record
@@ -199,12 +226,31 @@ function ChallengeHistoryPage() {
                                             : ""}
                                     </Typography>
 
-                                    <Typography sx={{ ...challengeMutedSx, fontSize: SIZE.micro, mt: 0.5 }}>
-                                        {entry.words.map((w) => w.word1).join("  ")}
-                                    </Typography>
-
-                                    <ChallengeScoreTable rounds={entry.rounds} />
-                                </Box>
+                                    {/* The word set, dot-separated. It is the one thing that
+                                        makes an old row recognisable — "the week we did the
+                                        weather words" — which is why it is here and the
+                                        per-round breakdown is not: that lives on the
+                                        challenge's own results screen, one tap away, and
+                                        printing it here made every row four times taller
+                                        for detail nobody scans a log for. */}
+                                    <Box
+                                        className="challenge-history-page__words"
+                                        sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "2px 7px", mt: 0.8 }}
+                                    >
+                                        {entry.words.map((word, wordIndex) => (
+                                            <Box
+                                                key={`${word.word1}-${wordIndex}`}
+                                                component="span"
+                                                sx={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: FONTS.cjk, fontSize: SIZE.caption, color: COLORS.textSecondary, lineHeight: 1.5 }}
+                                            >
+                                                {wordIndex > 0 && (
+                                                    <Box component="span" sx={{ fontFamily: FONTS.mono, color: COLORS.textFaint }}>·</Box>
+                                                )}
+                                                {word.word1}
+                                            </Box>
+                                        ))}
+                                    </Box>
+                                </ButtonBase>
                             );
                         })}
                     </Box>

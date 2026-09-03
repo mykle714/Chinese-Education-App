@@ -20,7 +20,19 @@
 // utils/categoryColors.ts — use getCategoryColor() when the color is chosen
 // *by a card's category*. The main/accent aliases below are for static UI
 // (bucket headers, the discover-page buckets) that name a color directly.
-import { CATEGORY_COLORS } from "../utils/categoryColors";
+//
+// ⚠️ THIS FILE IMPORTS NOTHING. It is the palette's root: `utils/categoryColors.ts`
+// derives its category and collection pairs FROM the ramp below, so the dependency
+// runs one way. It used to import `CATEGORY_COLORS` back for the four `*Main` aliases,
+// which made the two modules a CYCLE — harmless only while neither needed the other's
+// values at module-evaluation time. The moment categoryColors did (deriving a pair
+// from `RAMP`), whichever module loaded second saw `undefined` and every importer of
+// it died at import time. The four pastels are hoisted out of the object literal
+// instead, so an alias and its ramp member are one constant rather than an import.
+const RED_PASTEL = "#FFDDDB";    // oklch(93% 0.045  20) — --red  — Unfamiliar
+const ORG_PASTEL = "#FFE6C8";    // oklch(94% 0.05   70) — --org  — Target
+const GRN_PASTEL = "#D9F4D9";    // oklch(94% 0.045 145) — --grn  — Comfortable
+const BLU_PASTEL = "#D2EBFF";    // oklch(93% 0.045 250) — --blu  — Mastered
 
 export const COLORS = {
     // ── The raw ramp ──────────────────────────────────────────────
@@ -32,13 +44,13 @@ export const COLORS = {
     greyA: "#A4A4A9",    // oklch(72% 0.008 285)
     pur: "#ECE2FF",      // oklch(93% 0.045 300)
     purA: "#7652AC",     // oklch(52% 0.14  300)
-    blu: "#D2EBFF",      // oklch(93% 0.045 250)
+    blu: BLU_PASTEL,     // oklch(93% 0.045 250)
     bluA: "#1F6CB0",     // oklch(52% 0.13  250)
-    red: "#FFDDDB",      // oklch(93% 0.045  20)
+    red: RED_PASTEL,     // oklch(93% 0.045  20)
     redA: "#B54249",     // oklch(54% 0.15   20)
-    org: "#FFE6C8",      // oklch(94% 0.05   70)
+    org: ORG_PASTEL,     // oklch(94% 0.05   70)
     orgA: "#A46400",     // oklch(56% 0.13   70)
-    grn: "#D9F4D9",      // oklch(94% 0.045 145)
+    grn: GRN_PASTEL,     // oklch(94% 0.045 145)
     grnA: "#387D3D",     // oklch(53% 0.12  145)
     tea: "#C6F2F1",      // oklch(93% 0.045 195)
     teaA: "#007C7C",     // oklch(52% 0.11  195)
@@ -127,15 +139,15 @@ export const COLORS = {
     // `*Main` is the pastel BODY and `*Accent` the near-white INNER FILL at the same
     // hue. They are a PAIR — never mix a main from one hue with an accent from another.
     // For ink sitting ON one of these, use the `*A` ramp member (redA/orgA/grnA/bluA).
-    redMain: CATEGORY_COLORS.Unfamiliar,    // #FFDDDB — --red     — Unfamiliar
+    redMain: RED_PASTEL,                    // #FFDDDB — --red     — Unfamiliar
     redAccent: "#FFF2F2",                   // --redTint
-    yellowMain: CATEGORY_COLORS.Target,     // #FFE6C8 — --org     — Target
+    yellowMain: ORG_PASTEL,                 // #FFE6C8 — --org     — Target
     yellowAccent: "#FFF5EA",                // --orgTint
-    greenMain: CATEGORY_COLORS.Comfortable, // #D9F4D9 — --grn     — Comfortable
+    greenMain: GRN_PASTEL,                  // #D9F4D9 — --grn     — Comfortable
     greenAccent: "#F0FAF0",                 // --grnTint
-    blueMain: CATEGORY_COLORS.Mastered,     // #D2EBFF — --blu     — Mastered
+    blueMain: BLU_PASTEL,                   // #D2EBFF — --blu     — Mastered
     blueAccent: "#EEF8FF",                  // --bluTint
-    purpleAccent: "#F8F4FF",                // --purTint — Learn Now's inner fill
+    purpleAccent: "#F8F4FF",                // --purTint
     // --tea. Claimed by the SIXTH game's hub row: the five accents above were each
     // already taken by a game (`GameDef.bgColor` is a persistent per-game color, not a
     // random one), so Hydra Bubbles needed a hue no other row was using.
@@ -151,6 +163,21 @@ export const COLORS = {
      * the warning on the category block above.
      */
     markOutline: "rgba(23, 22, 26, 0.12)",
+
+    // ── Highlights on a DARK ground (the design's --hlR / --hlY / --hlG / --hlB) ──
+    // The pastel ramp above is tuned for the paper ground and disappears on charcoal.
+    // These four are its counterpart: saturated, mid-lightness values whose only job
+    // is to make a NUMBER read as a value rather than as body text when the surface
+    // behind it is near-black.
+    //
+    // The only dark surfaces in the app are the challenge round scoreboard and the
+    // running-total card on View Challenge (docs/STUDY_CHALLENGE.md § 5.5, § 6), so
+    // that is where these are used — do NOT reach for them on the paper ground, where
+    // they are loud and fail against the pastel ramp they are not part of.
+    hlRed: "oklch(66% 0.24 25)",            // --hlR
+    hlYellow: "oklch(84% 0.19 92)",         // --hlY — a per-round figure
+    hlGreen: "oklch(78% 0.22 148)",         // --hlG
+    hlBlue: "oklch(70% 0.19 252)",          // --hlB — the total
 
     // ── Semantic ink ──────────────────────────────────────────────
     // TEXT, ICONS, BORDERS and SOLID BUTTON GROUNDS that carry a meaning — danger,

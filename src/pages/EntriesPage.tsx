@@ -1,5 +1,6 @@
-import { Container, Typography, Box, Button, CircularProgress, Alert, LinearProgress, TextField, InputAdornment, IconButton } from "@mui/material";
-import { Upload, Add, Search, Clear } from "@mui/icons-material";
+import { Container, Typography, Box, Button, CircularProgress, Alert, LinearProgress } from "@mui/material";
+import { Upload, Add } from "@mui/icons-material";
+import SearchField from "../components/SearchField";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "../AuthContext";
 import VocabEntryCards from "../components/VocabEntryCards";
@@ -32,10 +33,6 @@ function EntriesPage() {
 
     const handleImportClick = () => {
         fileInputRef.current?.click();
-    };
-
-    const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        setSearchInput(event.target.value);
     };
 
     const handleClearSearch = () => {
@@ -265,30 +262,15 @@ function EntriesPage() {
             )}
 
             <Box className="entries-page-search" sx={{ mb: 3 }}>
-                <TextField
-                    fullWidth
+                <SearchField
+                    className="entries-page-search__input"
+                    size="medium"
                     placeholder="Search vocabulary cards..."
                     value={searchInput}
-                    onChange={handleSearchChange}
-                    InputProps={{
-                        startAdornment: (
-                            <InputAdornment position="start">
-                                <Search />
-                            </InputAdornment>
-                        ),
-                        endAdornment: searchInput && (
-                            <InputAdornment position="end">
-                                <IconButton
-                                    aria-label="clear search"
-                                    onClick={handleClearSearch}
-                                    edge="end"
-                                    size="small"
-                                >
-                                    <Clear />
-                                </IconButton>
-                            </InputAdornment>
-                        ),
-                    }}
+                    onChange={setSearchInput}
+                    // Clearing drops the DEBOUNCED term too, so the card list empties on
+                    // the tap rather than one debounce interval later.
+                    onClear={handleClearSearch}
                 />
             </Box>
 

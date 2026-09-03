@@ -15,6 +15,7 @@ import {
     MASTERY_READY_COLOR,
     MARK_TYPE_LABELS,
     BAR_LABELS,
+    masteryWindowCells,
     PBH_THRESHOLDS,
     PBH_FULL,
     type MasteryBar,
@@ -104,39 +105,6 @@ function formatPbh(pbh: number): string {
     return Number.isInteger(pbh) ? String(pbh) : pbh.toFixed(1);
 }
 
-/**
- * Per-cell fill for one window: how much of each cell is filled (0..1) and which mark
- * type colours it.
- *
- * Cell `i` covers the pbh interval [i, i+1), so its fill is `clamp(pbh - i, 0, 1)`.
- * Its colour is the segment covering the MIDPOINT of the filled part — the midpoint
- * rather than the left edge so a partial cell straddling a segment boundary takes the
- * colour of the half that is actually painted.
- */
-function windowCells(bar: MasteryBar): Array<{ fill: number; color: string | null }> {
-    // Segment extents in pbh units. `fraction` is each type's share of the FILLED
-    // length, so scaling by pbh turns shares into positions on the 0..PBH_FULL axis.
-    let cursor = 0;
-    const extents = bar.segments.map((seg) => {
-        const start = cursor;
-        cursor += seg.fraction * bar.pbh;
-        return { type: seg.type, start, end: cursor };
-    });
-
-    return Array.from({ length: PBH_FULL }, (_, i) => {
-        const fill = Math.min(1, Math.max(0, bar.pbh - i));
-        if (fill <= 0) return { fill: 0, color: null };
-        const midpoint = i + fill / 2;
-        // `end` is exclusive except on the last segment, where the midpoint of the
-        // final partial cell can land exactly on the boundary — hence the fallback to
-        // the last extent rather than returning null on a filled cell.
-        const owner =
-            extents.find((e) => midpoint >= e.start && midpoint < e.end) ??
-            extents[extents.length - 1];
-        return { fill, color: owner ? MARK_TYPE_COLORS[owner.type] : null };
-    });
-}
-
 /** Remaining cooldown per mark type of one track, in COOLDOWN_ROW_ORDER. */
 function cooldownRows(
     bar: MasteryBar,
@@ -171,7 +139,7 @@ const WindowCells: React.FC<{ bar: MasteryBar }> = ({ bar }) => (
         // the positioning context and needs the top margin their captions sit in.
         sx={{ display: "flex", gap: "3px", position: "relative", marginTop: "17px" }}
     >
-        {windowCells(bar).map((cell, i) => (
+        {masteryWindowCells(bar).map((cell, i) => (
             <Box
                 key={i}
                 className={`mastery-window__cell${cell.fill > 0 ? " mastery-window__cell--filled" : ""}`}
@@ -186,13 +154,13 @@ const WindowCells: React.FC<{ bar: MasteryBar }> = ({ bar }) => (
                     overflow: "hidden",
                 }}
             >
-                {cell.fill > 0 && cell.color && (
+                {cell.fill > 0 && cell.type && (
                     <Box
                         className="mastery-window__cell-fill"
                         sx={{
                             width: `${cell.fill * 100}%`,
                             height: "100%",
-                            backgroundColor: cell.color,
+                            backgroundColor: MARK_TYPE_COLORS[cell.type],
                             transition: "width 240ms ease",
                         }}
                     />

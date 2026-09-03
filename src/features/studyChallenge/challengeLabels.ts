@@ -138,13 +138,22 @@ export function challengeStatusLine(
     }
 }
 
-/** What the friend row's one control does next. */
+/**
+ * What the friend row's one control does next — the seven states of the pill
+ * lexicon (docs/STUDY_CHALLENGE.md § 1, design F3).
+ *
+ * The names ARE the design's names. `incoming` and `test` were called `review` and
+ * `play` while both were their own routed page; they were renamed when the pre-play
+ * states moved into a sheet, because "review" no longer described what the control
+ * does (it opens the invitation, which holds accept AND decline) and "play" named
+ * a verb the pill no longer uses.
+ */
 export type ChallengeAction =
     | "issue"          // no challenge — offer one
-    | "review"         // an invitation awaiting the viewer's answer
-    | "waiting"        // the viewer issued it; nothing to do but it may be withdrawn
+    | "incoming"       // an invitation awaiting the viewer's answer
+    | "waiting"        // the viewer issued it; withdrawable until they answer
     | "study"          // accepted, test not open yet
-    | "play"           // the viewer's window is open and they have rounds left
+    | "test"           // the viewer's window is open and they have rounds left
     | "results"        // resolved, or both finished
     | "none";          // nothing actionable (window closed, declined, expired)
 
@@ -164,7 +173,7 @@ export function challengeAction(
 
     switch (challenge.status) {
         case "pending":
-            return challenge.isChallenger ? "waiting" : "review";
+            return challenge.isChallenger ? "waiting" : "incoming";
         case "accepted": {
             const opens = asDate(challenge.deadlines.testOpensAt);
             const closes = asDate(challenge.deadlines.testClosesAt);
@@ -177,7 +186,7 @@ export function challengeAction(
             const played = Object.keys(challenge.rounds).length;
             // `roundCount` comes from the server's drawn sequence, which may be fewer
             // than three for a cross-language pair — never hard-code 3 here.
-            return played >= challenge.roundCount ? "results" : "play";
+            return played >= challenge.roundCount ? "results" : "test";
         }
         case "complete":
         case "no_contest":
@@ -187,32 +196,65 @@ export function challengeAction(
     }
 }
 
-/** The control's label. */
+/**
+ * The control's label. The label IS the state — there is no second place on the row
+ * that names it.
+ *
+ * ⚠️ EVERY LABEL NAMES THE TAP, NOT THE SITUATION. `waiting` reads "Withdraw" rather
+ * than "Waiting on them" because the row is a button and the status line above it has
+ * already said what is being waited on; a button captioned with a situation invites the
+ * reader to tap it expecting a report. The same rule turned "Review words" into
+ * "Incoming Challenge" (the tap opens the invitation) and "Study deck" into
+ * "See Cards" (the tap does not start a study session — it opens the word set).
+ */
 export function challengeActionLabel(action: ChallengeAction): string {
     switch (action) {
         case "issue": return "Challenge";
-        case "review": return "Review words";
-        case "waiting": return "Waiting on them";
-        case "study": return "Study deck";
-        case "play": return "Play test";
+        case "incoming": return "Incoming Challenge";
+        case "waiting": return "Withdraw";
+        case "study": return "See Cards";
+        case "test": return "Take Test";
         case "results": return "See results";
         default: return "—";
     }
 }
 
 /**
- * The control's fill colour. Green when the ball is in the VIEWER's court, neutral
- * blue when it is not — the same valence-carries-colour rule the friend screens use.
+ * The control's fill colour (design F2/F3).
+ *
+ * ⚠️ THE COLOUR NAMES THE KIND OF TAP, NOT WHOSE TURN IT IS. An earlier rule painted
+ * everything green when the ball was in the viewer's court, which made "Take Test" and
+ * "Incoming Challenge" the same colour despite being a routine step and a decision.
+ * The lexicon now separates them:
+ *   * GREEN — a decision that only arrives unasked. `incoming` alone.
+ *   * RED   — the one destructive control on the page (`waiting` → Withdraw), which
+ *             must not read as the neutral "nothing to do here" it replaced.
+ *   * ORANGE — `study`, the one state where the row's job is the deck rather than the
+ *             challenge, matching the Challenges shelf spines on /decks (§ 4).
+ *   * PURPLE — `issue`, the one control that STARTS something. It was blue with the
+ *             two routine taps below until 2026-09-01, which made the row that offers
+ *             a new challenge look like the row that reports an old one — and it is the
+ *             only control most of this list carries, so it is the page's main verb.
+ *             Purple is the ramp's remaining hue here (`incoming` holds green,
+ *             `waiting` red, `study` orange), so it separates without inventing an
+ *             eighth colour.
+ *   * BLUE  — the routine taps on a challenge that already exists: take the test,
+ *             read the result.
+ *   * GREY  — inert.
  */
 export function challengeActionColor(action: ChallengeAction): string {
     switch (action) {
-        case "review":
-        case "play":
-            return COLORS.greenAccent;
-        case "issue":
-        case "results":
+        case "incoming":
+            return COLORS.grn;
+        case "waiting":
+            return COLORS.red;
         case "study":
-            return COLORS.blueAccent;
+            return COLORS.org;
+        case "issue":
+            return COLORS.pur;
+        case "test":
+        case "results":
+            return COLORS.blu;
         default:
             return COLORS.iconBg;
     }

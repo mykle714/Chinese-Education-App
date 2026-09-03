@@ -95,7 +95,7 @@ flip animation runs there, and hiding would pop the freshly promoted card's cont
 
 Beyond the flp flashcard, the saved arrangement also renders on the **mini card
 thumbnails** (`src/components/MiniVocabCard.tsx`, used by both the `/decks` card
-previews and the Mastered Cards page via `MiniVocabCardGrid`). It reuses the same
+previews and the Mastered page via `MiniVocabCardGrid`). It reuses the same
 read-only `CardIconLayer`, which is fully percentage-based and therefore scales to
 the 92×132 thumbnail with no extra math.
 

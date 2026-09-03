@@ -73,8 +73,9 @@ const ScreenRoot = styled(Box)(() => ({
 // flex children keep their intrinsic size and overflow under the floating footer).
 // Non-scrolling pages also drop the edge-fade mask (it would clip their edge rows).
 const ScrollArea = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "scrollable" && prop !== "topFade",
-})<{ scrollable: boolean; topFade: boolean }>(({ scrollable, topFade }) => ({
+    shouldForwardProp: (prop) =>
+        prop !== "scrollable" && prop !== "topFade" && prop !== "horizontalPan",
+})<{ scrollable: boolean; topFade: boolean; horizontalPan: boolean }>(({ scrollable, topFade, horizontalPan }) => ({
     flex: 1,
     minHeight: 0,
     overflowY: scrollable ? "auto" : "hidden",
@@ -83,7 +84,22 @@ const ScrollArea = styled(Box, {
     flexDirection: "column",
     // Scrollable pages allow vertical pan but contain the scroll so it never chains to
     // the phone frame / browser (no rubber-banding); fixed pages take no scroll.
-    touchAction: scrollable ? "pan-y" : "none",
+    //
+    // ⚠️ `touch-action` IS INTERSECTED DOWN THE ANCESTOR CHAIN, so this value is not
+    // just this element's own behaviour — it is a CEILING on every scroller inside the
+    // page. A descendant that sets `touch-action: pan-x` on its own horizontal scroller
+    // still cannot be panned by touch while an ancestor says `pan-y`: the browser
+    // resolves the permitted directions by walking UP from the touched element, and the
+    // narrower value wins. That is why a horizontal pager inside a page has to be
+    // announced HERE (`horizontalPan`) rather than solved locally, and why one looked
+    // correct in the DOM while being completely inert to a swipe (View Challenge's
+    // two-page pager, found 2026-09-01).
+    //
+    // It stays OPT-IN rather than becoming the default because permitting a pan the
+    // page has no scroller for changes how cancelable a horizontal touchmove is, and
+    // some pages block horizontal drags with a non-passive listener
+    // (`useBlockEdgeSwipe`). Pages that own a sideways scroller ask for it.
+    touchAction: scrollable ? (horizontalPan ? "pan-x pan-y" : "pan-y") : "none",
     overscrollBehavior: "contain",
     WebkitOverflowScrolling: "touch",
     paddingBottom: FOOTER_CLEARANCE,
@@ -139,6 +155,11 @@ interface MobileTabScreenProps {
     // Drop the soft fade at the TOP edge (keeps the bottom fade). Pages whose first
     // element shouldn't dissolve as it scrolls (e.g. the card detail cdp) set false.
     topFade?: boolean;
+    // The page contains a horizontal scroller (a pager, a sideways shelf) that must be
+    // pannable by touch. See the touch-action note on ScrollArea: without this the
+    // scroller's own `touch-action` is overruled by this ancestor and the swipe does
+    // nothing at all, silently.
+    horizontalPan?: boolean;
     children: ReactNode;
 }
 
@@ -155,10 +176,16 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     className,
     scrollable = true,
     topFade = true,
+    horizontalPan = false,
     children,
 }) => (
     <ScreenRoot className={className ?? "mobile-tab-screen"} sx={{ backgroundColor: surfaceColor }}>
-        <ScrollArea className="mobile-tab-screen__scroll" scrollable={scrollable} topFade={topFade}>
+        <ScrollArea
+            className="mobile-tab-screen__scroll"
+            scrollable={scrollable}
+            topFade={topFade}
+            horizontalPan={horizontalPan}
+        >
             <MobileDemoHeader
                 title={title}
                 showBack={showBack}

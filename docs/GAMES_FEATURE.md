@@ -172,7 +172,7 @@ Every game is played with **the collection selected in the Games hub header**.
 `src/games/GamesCollectionSelector.tsx`, rendered into `HubMenu`'s `header` slot
 above the TipBox: a full-width pill reading **"Playing with: &lt;collection&gt;"** that
 opens a menu of every set the fdp offers — *Collections* (All Cards, Learn Now and
-Mastered Cards), *Mastered* (the per-skill bars), and the learner's *Decks*
+Mastered), *Mastered* (the per-skill bars), and the learner's *Decks*
 (`fetchDecks`).
 
 ⚠️ **All Cards has a row here but no tile on the fdp**, which now renders those cards
@@ -184,7 +184,7 @@ offering it; only the fdp filters it out. See
 `builtinCollectionEntries` (`src/features/flashcards/builtinCollections.ts`), the same
 function the fdp renders as tiles, so the two surfaces cannot drift on which
 collections exist, their order, their grouping or their colors — including the rule
-that core *Mastered Cards* is always a *Collections* row while the *Mastered* group
+that core *Mastered* is always a *Collections* row while the *Mastered* group
 holds the per-skill bars alone and appears only when a reading or writing goal is set.
 This component decides only how a
 row LOOKS. Each row carries the same identifying color its fdp tile does; a deck's dot
@@ -331,7 +331,7 @@ Rules of thumb:
   header's tab badge, its only reader.)
 - Back-arrow drill-ins → use the `LeafPage` (down arrow, no footer) or `NodePage`
   (left arrow, keeps footer) wrapper instead of composing the header by hand.
-  Games + Mastered Cards are node pages; Sort Cards, Dictionary, and Card Detail
+  Games + the Mastered page are node pages; Sort Cards, Dictionary, and Card Detail
   are leaf pages.
 - Specialty in-page headers (`FlashcardsLearnHeader` with fire icon + seconds
   counter) → compose `PageHeader` directly and own their own `rightContent`. Build
@@ -395,15 +395,25 @@ inherits a shell from it.
 - **`gameSounds.ts`** — shared sound effects for game events.
 - **`useBackgroundPause.ts` + `GamePausedOverlay.tsx`** — the app-wide
   backgrounding pause and its tap-to-resume overlay (§ Backgrounding pauses the clock).
-- **The Study Challenge round runner** — four files, and the largest thing in here:
+- **The Study Challenge round runner** — five files, and the largest thing in here:
   - **`challengeScoring.ts`** — the pure, React-free spec runner (events → score +
     itemised breakdown). Written so the server can adopt it verbatim for live mode.
   - **`useChallengeRound.ts`** — what a game page actually mounts. Owns the round's
-    scorer, its ACTIVE-TIME clock, the contested word set, the pool params and the
-    round POST. Inert for an ordinary launch, which is why no game needed an
-    `if (challenge)` branch (§ Challenge-eligible games).
-  - **`ChallengeRoundScoreboard.tsx`** — the between-games card, rendered in place of a
-    game's own end-of-run popup during a challenge round.
+    scorer, its ACTIVE-TIME clock, the contested word set, the pool params and every
+    round write. Inert for an ordinary launch, which is why no game needed an
+    `if (challenge)` branch (§ Challenge-eligible games). Since the claim model
+    ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.1a) it also owns the round's
+    LIFECYCLE: the first hit/miss claims the round server-side, each later mark pushes
+    the cumulative score, and unmount or `pagehide` finalises it — so leaving a game
+    mid-round is a scored, spent attempt rather than a free restart.
+  - **`useGameBack.ts`** — a game page's Back handler: where it goes (the challenge
+    mid-test, else `/games`), plus the confirm an armed challenge round puts in front
+    of it. Used by all four challenge-eligible pages; the destination ternary used to
+    be inlined in each.
+  - **`ChallengeRoundScoreboard.tsx`** — the between-games board, rendered in place of a
+    game's own end-of-run popup during a challenge round. It PORTALS itself to
+    `nearestOverlayHost` so it blacks out the whole screen including the leaf header —
+    a game page writes it as an ordinary sibling of its popup and does nothing else.
   - **`challengeLaunch.ts`** — gameId → route + the nav state that page requires, plus
     the round's query params. The one place that knows Bubble Match needs a level and
     Word Search needs a mode.
@@ -865,7 +875,7 @@ Three rules the spec must respect:
 
 #### What an eligible game actually has to DO (built 2026-08-22)
 
-Four things, and no more — everything else is shared. The hook
+Five things, and no more — everything else is shared. The hook
 `src/games/runtime/useChallengeRound.ts` is inert for an ordinary launch (every method a
 no-op, `isContested` always false), so **a game needs no `if (challenge)` branch around
 its own logic**:
@@ -888,7 +898,12 @@ const challengeRound = useChallengeRound({
 3. **Call `challengeRound.finish(won)`** where your run ends. `won` decides an
    all-or-nothing survival bonus if your spec has one (Bubble Match's does).
 4. **Render `<ChallengeRoundScoreboard round={challengeRound} classPrefix="…" />`** in
-   place of your own end-of-run popup while `challengeRound.active`.
+   place of your own end-of-run popup while `challengeRound.active`. Put it wherever the
+   popup went; it portals out to a full-screen host itself, so it does not matter which
+   of your boxes it is written inside.
+5. **Take your Back handler from `useGameBack(challengeRound)`.** It routes to the
+   challenge mid-test and to `/games` otherwise, and — once the round is armed — it
+   confirms before leaving, because leaving ENDS the round (below).
 
 Plus three guards that are easy to forget and silent when wrong:
 
@@ -898,7 +913,16 @@ Plus three guards that are easy to forget and silent when wrong:
   with nothing afterwards to reveal that it went wrong.
 * **No restart, no Play Again.** Rounds are one attempt each; hide both controls while a
   challenge round is active.
-* **Back goes to the challenge**, not to `/games`, when `challengeRound.challengeId` is set.
+* **Back comes from `useGameBack`**, never an inline `navigate` — otherwise the exit
+  confirm is missing on exactly the page where the exit costs something.
+
+**⚠️ The first mark SPENDS the round.** `emit`ing the first `hit`/`miss` claims the round
+on the server, and from then on leaving the page — Back, a footer tab, a route change, a
+tab close — finalises it at the score that stands, scored as a loss. Backgrounding still
+merely pauses (§ Backgrounding pauses the clock); only actually leaving ends the round.
+Two consequences for a game page: `challengeRound.armed` is what the Back confirm reads,
+and a game must not navigate away from itself mid-run for its own reasons. The whole rule
+is [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.1a.
 
 The hook owns the scorer AND the active-time clock, which is what keeps four games from
 drifting into four readings of one spec. See

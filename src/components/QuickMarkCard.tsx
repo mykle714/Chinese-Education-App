@@ -9,6 +9,7 @@ import type { QuickMarkState } from "./quickMarkState";
 import { COLORS } from "../theme/colors";
 import { SIZE, WEIGHT } from "../theme/scale";
 import { SHADOW } from "../theme/shadows";
+import { miniCardFaceSx } from "./miniCardFace";
 
 interface QuickMarkCardProps {
     card: DiscoverCard;
@@ -75,23 +76,15 @@ const QuickMarkCardComponent: React.FC<QuickMarkCardProps> = ({ card, state, onC
             className="quick-mark-card"
             onClick={() => onCycle(card.id)}
             sx={{
-                width: 92,
-                height: 132,
-                backgroundColor: fc.flashCard,
-                borderRadius: "12px",
-                boxShadow: SHADOW.raised,
+                // The shared face (src/components/miniCardFace.ts) — this card and
+                // MiniVocabCard draw the SAME tile, so its size, radius, ring,
+                // elevation, containment and pop-in all come from one place. It used to
+                // re-declare them and had already lost the hairline ring.
+                //
+                // NO `hoverLift`, on purpose: tapping a Quick Mark card cycles its mark
+                // in place, so it must not read as a tile that will take you somewhere.
+                ...miniCardFaceSx({ background: fc.flashCard, animationDelayMs }),
                 cursor: "pointer",
-                // Same offscreen-skipping containment MiniVocabCard uses — a level can
-                // hold hundreds of cards once pages accumulate.
-                contentVisibility: "auto",
-                containIntrinsicSize: "92px 132px",
-                ...(typeof animationDelayMs === "number" && {
-                    animation: `cardPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) ${animationDelayMs}ms backwards`,
-                }),
-                position: "relative",
-                overflow: "hidden",
-                // Intentionally NO hover lift/shadow change: tapping a Quick Mark card
-                // cycles its mark, so it should not read as a "raised" interactive tile.
             }}
         >
             {/* Conversation-frequency badge — top-left circular tag (1 = almost never spoken … 5 =

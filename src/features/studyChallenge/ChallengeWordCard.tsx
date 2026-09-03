@@ -1,39 +1,57 @@
 import { memo } from "react";
-import { Box, Button, Typography, useTheme } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
+import { Box, ButtonBase, Typography, useTheme } from "@mui/material";
+import CheckIcon from "@mui/icons-material/Check";
 import ForeignText from "../../components/ForeignText";
 import { iconImageUrl } from "../../cardIcons/cardIconLayout";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import {
+    CHALLENGE_STRIKE_FADE_MS,
     CHALLENGE_WORD_CARD_WIDTH,
-    CHALLENGE_WORD_THUMBNAIL_HEIGHT as THUMBNAIL_HEIGHT,
 } from "./challengeStyles";
 import type { ChallengeReviewWord } from "./reviewWord";
 import { SHADOW } from "../../theme/shadows";
+import { miniCardFaceSx, MINI_CARD_RING } from "../../components/miniCardFace";
 
 interface ChallengeWordCardProps {
     word: ChallengeReviewWord;
     /**
-     * Omit to draw the card with NO button — the read-only use (the detail page's
-     * word set, where the ten are settled and nothing about them can change).
+     * Omit to draw the card with NO strike affordance — the read-only use (the detail
+     * page's word set, where the nine are settled and nothing about them can change).
      */
     onStrike?: (word: ChallengeReviewWord) => void;
+    /** Is this the card the user has tapped? The panel owns the selection, not the card. */
+    selected?: boolean;
+    /** Tapping the thumbnail — selects, it does not strike. */
+    onSelect?: (word: ChallengeReviewWord) => void;
+    /**
+     * This card has been struck and is on its way out — fade and shrink it, then the
+     * panel swaps the replacement into the slot once the fade has run
+     * (CHALLENGE_STRIKE_FADE_MS). The card only ANIMATES; it never decides when it is
+     * replaced, because the swap also waits on the server's answer.
+     */
+    fading?: boolean;
     disabled?: boolean;
     /** Staggered pop-in on mount — the grid passes index * step; see MiniVocabCard. */
     animationDelayMs?: number;
 }
 
 /**
- * One word in the challenge review flow (docs/STUDY_CHALLENGE.md § 3.2), drawn as
- * the app's mini preview card with its strike button BELOW it.
+ * One word in the challenge word set (docs/STUDY_CHALLENGE.md § 3.2), drawn as the
+ * app's mini preview card.
  *
- * ⚠️ THE BUTTON IS DELIBERATELY NOT ON THE CARD, and the card itself is deliberately
- * not tappable. Quick Mark's card cycles a mark by tapping the thumbnail because
- * that mark is provisional until Save; a strike here writes Mastered to the user's
- * own card IMMEDIATELY and permanently, so it gets an explicit labelled control that
- * cannot be hit by a mis-aimed tap on the word.
+ * ⚠️ STRIKING IS TWO TAPS, AND THAT IS THE WHOLE POINT. A strike writes Mastered to
+ * the user's own card IMMEDIATELY and permanently, so it must not be reachable by a
+ * single mis-aimed tap on a 92px thumbnail. The first tap only SELECTS: the card fills
+ * with the mastered blue and raises one labelled pill over its bottom edge. The second
+ * tap, on that pill, is the one that commits.
+ *
+ * This replaced a permanently-visible "I know it" button under every card. The button
+ * was safe for the same reason, but it printed the strike affordance nine times on a
+ * screen whose subject is the words, and it forced every grid row to reserve 32px it
+ * only needed while the set was still editable. The pill costs no layout at all —
+ * it is absolutely positioned over the card it belongs to.
  *
  * The 92×132 thumbnail matches MiniVocabCard and QuickMarkCard exactly, so all three
  * drop into the shared MiniVocabCardGrid and read as one family. It is driven by a
@@ -43,10 +61,16 @@ interface ChallengeWordCardProps {
 const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
     word,
     onStrike,
+    selected = false,
+    onSelect,
+    fading = false,
     disabled = false,
     animationDelayMs,
 }) => {
     const fc = useTheme().palette.flashcard;
+    // Selectable only while the set is still editable — the read-only use passes no
+    // `onStrike`, and then the card is inert rather than tappable-but-pointless.
+    const strikeable = !!onStrike && !!onSelect;
     return (
         <Box
             className="challenge-word-card"
@@ -56,28 +80,50 @@ const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
                 flexDirection: "column",
                 alignItems: "center",
                 gap: 0.5,
+                // The confirm pill hangs over the card's bottom edge, so the card must
+                // not clip it. The grid reserves no space for it (see
+                // `challengeWordCardHeight`) — a pill is transient, a gap is not.
+                position: "relative",
+                // Exit animation. It sits on the OUTER box so the confirm pill leaves
+                // with the card it belongs to rather than hanging over the empty slot.
+                opacity: fading ? 0 : 1,
+                transform: fading ? "scale(0.86)" : "scale(1)",
+                transition: `opacity ${CHALLENGE_STRIKE_FADE_MS}ms ease, transform ${CHALLENGE_STRIKE_FADE_MS}ms ease`,
+                // A fading card is mid-commit: nothing on it should still be tappable.
+                pointerEvents: fading ? "none" : "auto",
                 ...(typeof animationDelayMs === "number" && {
                     animation: `cardPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) ${animationDelayMs}ms backwards`,
                 }),
             }}
         >
             <Box
-                className="challenge-word-card__thumbnail"
+                component={strikeable ? ButtonBase : "div"}
+                className={`challenge-word-card__thumbnail${selected ? " challenge-word-card__thumbnail--selected" : ""}`}
+                onClick={strikeable && !disabled ? () => onSelect!(word) : undefined}
+                disabled={strikeable ? disabled : undefined}
+                aria-pressed={strikeable ? selected : undefined}
                 sx={{
-                    width: CHALLENGE_WORD_CARD_WIDTH,
-                    height: THUMBNAIL_HEIGHT,
-                    // The theme's card face, like every other mini card (MiniVocabCard,
-                    // QuickMarkCard) — this one already promises "the geometry identical
-                    // to the other two mini cards", and the fill is part of that.
-                    backgroundColor: fc.flashCard,
-                    borderRadius: "12px",
-                    boxShadow: SHADOW.raised,
-                    position: "relative",
-                    overflow: "hidden",
-                    // Ten cards at most, but the containment costs nothing and keeps
-                    // the geometry identical to the other two mini cards.
-                    contentVisibility: "auto",
-                    containIntrinsicSize: `${CHALLENGE_WORD_CARD_WIDTH}px ${THUMBNAIL_HEIGHT}px`,
+                    // The shared face (src/components/miniCardFace.ts) — the SAME tile
+                    // MiniVocabCard draws on the fdp and QuickMarkCard draws in triage.
+                    // It used to re-declare the geometry with a comment promising it
+                    // matched them, and had already lost the hairline ring.
+                    //
+                    // Selected fills with the mastered blue — the same ink the app uses
+                    // for a comfortable/mastered card everywhere else, which is exactly
+                    // the claim the strike is about to make.
+                    ...miniCardFaceSx({ background: selected ? COLORS.blu : fc.flashCard }),
+                    // A ButtonBase defaults to centred flow content; everything inside
+                    // this card is absolutely positioned, so the display must stay block
+                    // or the icon slot and the gloss both drift.
+                    display: "block",
+                    textAlign: "initial",
+                    // Selection adds an OUTER 2px ring on top of the face's hairline —
+                    // composed rather than replacing it, so a selected card is still the
+                    // same tile with a mark on it.
+                    ...(selected && {
+                        boxShadow: `0 0 0 2px ${COLORS.bluA}, ${MINI_CARD_RING}, ${SHADOW.raised}`,
+                    }),
+                    transition: "background-color 140ms ease, box-shadow 140ms ease",
                 }}
             >
                 {/* Conversation-frequency badge — top-left, the same 18px circular tag
@@ -173,27 +219,37 @@ const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
                 </Typography>
             </Box>
 
-            {onStrike && (
-                <Button
-                    className="challenge-word-card__strike"
-                    onClick={() => onStrike(word)}
+            {/* The confirm pill — the SECOND tap, and the only one that writes anything.
+                It straddles the card's bottom edge so it reads as belonging to this card
+                and to no other, and it exists only while this card is selected. */}
+            {strikeable && selected && (
+                <ButtonBase
+                    className="challenge-word-card__confirm-strike"
+                    onClick={() => onStrike!(word)}
                     disabled={disabled}
-                    startIcon={<CloseIcon sx={{ fontSize: 12 }} />}
                     sx={{
-                        minWidth: 0,
-                        width: "100%",
-                        height: 26,
-                        p: 0,
-                        textTransform: "none",
-                        fontFamily: "inherit",
+                        position: "absolute",
+                        left: "50%",
+                        bottom: 0,
+                        transform: "translate(-50%, 50%)",
+                        zIndex: 3,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 0.5,
+                        whiteSpace: "nowrap",
+                        backgroundColor: COLORS.bluA,
+                        color: "#fff",
+                        borderRadius: "999px",
+                        px: 1.4,
+                        py: 0.75,
                         fontSize: SIZE.micro,
-                        color: COLORS.textSecondary,
-                        // The icon's default 8px right margin eats a third of a 92px button.
-                        "& .MuiButton-startIcon": { mr: 0.25, ml: 0 },
+                        fontWeight: WEIGHT.semibold,
+                        boxShadow: SHADOW.raised,
                     }}
                 >
-                    I know it
-                </Button>
+                    <CheckIcon sx={{ fontSize: 12 }} />
+                    Mark as known
+                </ButtonBase>
             )}
         </Box>
     );

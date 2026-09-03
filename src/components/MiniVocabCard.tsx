@@ -9,11 +9,12 @@ import { resolveCardColor } from "../utils/cardColor";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import type { VocabEntry } from "../types";
-import { getCategoryColor } from "../utils/categoryColors";
-import { masteryBar, BAR_LABELS, MARK_TYPE_COLORS, type MasteryBarId } from "../utils/masteryCompute";
+import { masteryBar, masteryWindowCells, PBH_FULL, BAR_LABELS, MARK_TYPE_LABELS, type MasteryBarId } from "../utils/masteryCompute";
+import { getBandInk } from "../utils/categoryColors";
 import { COLORS } from "../theme/colors";
-import { SIZE, WEIGHT } from "../theme/scale";
+import { SIZE } from "../theme/scale";
 import { SHADOW } from "../theme/shadows";
+import { miniCardFaceSx, MINI_CARD_RING } from "./miniCardFace";
 
 interface MiniVocabCardProps {
     entry: VocabEntry;
@@ -21,7 +22,7 @@ interface MiniVocabCardProps {
     onDelete?: (entry: VocabEntry) => void;
     onCycle?: (entry: VocabEntry) => void;
     /**
-     * Draw the bottom-left mastery strip. Default true — every deck/collection surface
+     * Draw the bottom mastery window strip. Default true — every deck/collection surface
      * wants it, because there the card's job is partly to report progress.
      *
      * Set false where the card is a PREVIEW of a word rather than a readout of the
@@ -30,16 +31,20 @@ interface MiniVocabCardProps {
      * strip is noise at best and a discouraging "you know nothing" mark at worst, in a
      * dialog whose only question is "do you want this word?". Suppressing it also drops
      * the strip's reserved height, so the definition sits lower and the card breathes.
+     *
+     * This prop is now the ONLY mastery switch on the card. It used to leak: the corner
+     * utcm letter badge was never gated by it, so a suppressed card still got stamped
+     * with a `U`. The badge is gone (frame 17), so "false" now means what it says.
      */
     showMasteryStrip?: boolean;
     /**
      * The surface's mastery LENS (docs/DECKS_FEATURE.md § "Mastery Centers").
      *
-     * ALWAYS exactly one bar — the card carries a single hairline track and a band
-     * badge for the lens it is shown under, and nothing else. Defaults to `core`, so a
-     * card on any recognition/production surface (the fdp, search, the sort offer)
-     * reports recognition and production only; a Reading Center card passes `reading`
-     * and reports that instead.
+     * ALWAYS exactly one bar — the card carries a single eight-cell window for the lens
+     * it is shown under, and nothing else. Defaults to `core`, so a card on any
+     * recognition/production surface (the fdp, search, the sort offer) reports
+     * recognition and production only; a Reading Center card passes `reading` and
+     * reports that instead.
      *
      * The strip used to draw one track per goal the account pursued, which put reading
      * and writing progress onto pages that were not asking about them — the whole
@@ -53,46 +58,60 @@ interface MiniVocabCardProps {
     animationDelayMs?: number;
 }
 
-// Category color mapping lives in src/utils/categoryColors (shared with the
-// card detail page and the flashcard-learn back-of-card chip).
-
-// ── Mastery bar strip (docs/MASTERY_REWORK.md § "Three bars") ────────────────────
-// ONE hairline bar in the card's bottom-left corner: the surface's lens bar (core on
-// every recognition/production surface, the skill's inside a Mastery Center — see the
-// `lens` prop). Deliberately tiny and unlabelled: at 92x132 there is no room for a
-// legend, and the strip is meant to be read as a glanceable shape across a grid of
-// cards. The cdp is where a learner goes for the detail.
+// ── Mastery window strip (docs/MASTERY_REWORK.md § "Mini cards") ────────────────
+// The cdp's eight-mark window (`MasteryWindow`, the design's `.msb .cells`) shrunk to a
+// hairline along the bottom of the card: **`PBH_FULL` discrete cells, one per mark**, for
+// the surface's lens bar. Same shape, same `masteryWindowCells` geometry, same partial
+// trailing cell — so a learner who has read the cdp already knows how to read this.
 //
-// The geometry below is still written for `n` bars. Kept general on purpose: the strip
-// stacked up to three before the lens rule, and nothing here needs to know it is now
-// always one.
+// Cells rather than a continuous fill because pbh IS a count, not a percentage. One bad
+// mark turns a cell off; it does not drain a fraction of a tank. The thumbnail should not
+// invite an estimate the detail page spent a whole component refusing to invite.
+//
+// COLOR is the lens bar's utcm band (`getBandInk`), one hue for every filled cell —
+// unlike the cdp, which colors each cell by the mark type that owns it. At this size a
+// two-hue fill inside 8 cells of ~8px is mush, and the band is the question a thumbnail
+// is actually asked ("how well do I know this?"). The per-type split survives in the
+// tooltip.
+//
+// ⚠️ `getBandInk`, NOT `getCategoryColor`. The band's normal value is a ~1.15:1 PASTEL
+// legible only behind a 1px `COLORS.markOutline` ring, and a 3px cell cannot carry one —
+// the ring would eat two thirds of it. See the BAND_INK note in `utils/categoryColors.ts`,
+// which also explains why this is not the pre-redesign saturated band palette (those
+// hexes ARE the mark-type colors).
+//
+// LINEAGE. Frame 17 draws this strip as one pip per mark type painted Recognition blue /
+// Production green. Two later decisions moved off it — color onto the band, then the row
+// onto the cdp's 8 cells — so only the strip's PLACEMENT (full width, 8px inset, 3px tall,
+// bottom of the card) is still the frame's.
 const BAR_STRIP = {
-    height: 3,        // hairline — three of these still read as one small block
-    width: 30,        // ~1/3 of the card width, so the strip stays a corner mark
-    gap: 2,
-    left: 10,         // the "margin" the strip is left-justified against
-    bottom: 6,
+    height: 3,        // frame 17's hairline
+    cellGap: 1.5,     // the cdp's 3px gap does not survive the scale down; half of it does
+    inset: 8,         // left AND right — the window spans the card
+    bottom: 8,
 };
 
-/** Total vertical space the strip occupies, for `n` bars (0 when there are none). */
-const barStripHeight = (n: number): number =>
-    n === 0 ? 0 : n * BAR_STRIP.height + (n - 1) * BAR_STRIP.gap;
+/** Vertical space the strip occupies — one hairline row, or nothing when suppressed. */
+const barStripHeight = (visible: boolean): number => (visible ? BAR_STRIP.height : 0);
 
 const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs, showMasteryStrip = true, lens = "core" }) => {
     const fc = useTheme().palette.flashcard;
-    // An empty list when the strip is suppressed, so the ONE array drives both the
-    // rendering below and the definition's bottom offset — there is no second way for
-    // the two to disagree about how much room the strip takes. Otherwise exactly one
-    // bar: the lens's. The strip's height is therefore the same on every card of every
-    // surface, and the definition sits at one fixed offset.
-    const bars = !showMasteryStrip ? [] : [masteryBar(entry.typedMarkHistory, lens)];
-    // Which band the corner badge reports: the lens's band, computed here from
-    // `typedMarkHistory` rather than fetched. `entry.category` is the CORE band by
-    // definition (CORE_CATEGORY_SELECT) and every bar is derivable from the history
-    // already on the row, so under core the two agree and under a skill lens only this
-    // one is right. See docs/MASTERY_REWORK.md § "Which bar does a whole-card question
-    // mean".
-    const badgeCategory = bars[0]?.category ?? entry.category;
+    // The lens bar, or null when the strip is suppressed. Its `category` is the band the
+    // window is painted with, and its `pbh` drives the cells — both computed here from
+    // `typedMarkHistory` rather than read off `entry.category`, because that column is the
+    // CORE band by definition and would be the wrong answer inside a Reading/Writing Center.
+    const bar = showMasteryStrip ? masteryBar(entry.typedMarkHistory, lens) : null;
+    // The same eight-cell geometry the cdp window draws, from the same helper — the two
+    // surfaces must not drift on where the partial cell falls.
+    const cells = bar ? masteryWindowCells(bar) : [];
+    const bandInk = getBandInk(bar?.category);
+    // The per-mark-type split the cells no longer show, kept on hover: "Know 4.3/8 ·
+    // Comfortable · Recognition 5, Production 2". Costs nothing visually and means the
+    // detail is still reachable without opening the cdp.
+    const stripTitle = bar
+        ? `${BAR_LABELS[bar.id]} ${Number.isInteger(bar.pbh) ? bar.pbh : bar.pbh.toFixed(1)}/${PBH_FULL} · ${bar.category}` +
+          ` · ${bar.segments.map((seg) => `${MARK_TYPE_LABELS[seg.type]} ${seg.positive}`).join(", ")}`
+        : "";
     // Render a custom icon arrangement behind the text only for ADVANCED layouts:
     // multiple icons, OR a single icon that has been moved/resized/rotated off its
     // default placement. Plain default-icon cards keep the icon-free thumbnail. Uses
@@ -131,45 +150,17 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
             className="mini-vocab-card"
             onClick={() => onClick?.(entry)}
             sx={{
-                width: 92,
-                height: 132,
-                backgroundColor: faceBg,
-                borderRadius: '12px',
-                boxShadow: SHADOW.raised,   // `.mcd` — the design's mini-card elevation
+                // The shared face — size, radius, hairline ring, elevation, containment
+                // and the pop-in (src/components/miniCardFace.ts). This card, the Quick
+                // Mark card and the challenge word card all draw the SAME tile; only
+                // what fills it differs.
+                ...miniCardFaceSx({ background: faceBg, hoverLift: !!onClick, animationDelayMs }),
                 cursor: onClick ? 'pointer' : 'default',
-                // ⚠️ box-shadow ONLY — never add `transform` to this transition. The
-                // card is a track element of useScrollStretch, which writes an inline
-                // transform every frame during a scroll; a CSS transition on transform
-                // re-filters each of those writes through a 200ms ease and turns the
-                // elastic stretch into lag. Hover is a shadow change, so it does not
-                // need transform transitioned anyway.
-                transition: 'box-shadow 0.2s ease-in-out',
-                // CSS containment: let the browser skip layout/paint for cards
-                // scrolled out of view (the /decks previews can hold hundreds of
-                // cards on real accounts). They stay in the DOM and tappable;
-                // `containIntrinsicSize` reserves the fixed 92×132 footprint so
-                // scroll height stays stable while offscreen cards are skipped.
-                contentVisibility: 'auto',
-                containIntrinsicSize: '92px 132px',
-                // Optional staggered entrance. `backwards` fill holds the scaled-down
-                // start state during the delay. This is a keyframe animation, not a
-                // transition, so it is unaffected by the transform note above; it runs
-                // at mount, when the list is not scrolling and the stretch hook writes
-                // nothing.
-                ...(typeof animationDelayMs === "number" && {
-                    animation: `cardPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) ${animationDelayMs}ms backwards`,
-                }),
-                position: 'relative',
-                overflow: 'hidden',
+                // The hover state additionally reveals the corner action buttons, which
+                // is this card's alone — the shared face only steps the elevation.
                 '&:hover': {
-                    // Highlight in place: one step up in elevation, NO movement. The
-                    // card must not translate on hover — it would fight the inline
-                    // transform useScrollStretch writes on this same element, and the
-                    // two would trample each other mid-scroll.
-                    ...(onClick ? { boxShadow: SHADOW.float } : {}),
-                    '& .action-buttons': {
-                        opacity: 1,
-                    },
+                    ...(onClick ? { boxShadow: `${MINI_CARD_RING}, ${SHADOW.float}` } : {}),
+                    '& .action-buttons': { opacity: 1 },
                 },
             }}
         >
@@ -245,46 +236,6 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                     </IconButton>
                 )}
             </Box>
-            {/* UTCM Badge - top left. Shrunk to a single-letter dot (Unfamiliar/Target/
-                Comfortable/Mastered) so the freed-up top space can hold the basic-layout
-                icon instead.
-
-                Colored by the surface's bar: the CORE band by default (`entry.category`
-                since migration 143, the same thing every other whole-card readout —
-                deck counts, the Review gate — reports), or the LENS bar's band inside a
-                Mastery Center. The bands the badge is not showing are in the strip at
-                the bottom. */}
-            {badgeCategory && (
-                <Box
-                    className="mini-vocab-card__category-badge"
-                    sx={{
-                        position: 'absolute',
-                        top: 8,
-                        left: 8,
-                        zIndex: 1,
-                        width: 18,
-                        height: 18,
-                        borderRadius: '50%',
-                        backgroundColor: getCategoryColor(badgeCategory),
-                        // Ink, not white: the category colors are PASTELS post-redesign
-                        // (docs/SHELF_REDESIGN.md, D2) and white on one is ~1.1:1.
-                        color: COLORS.onSurface,
-                        fontSize: SIZE.micro,
-                        fontWeight: WEIGHT.bold,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        // The drop shadow separated a SATURATED disc from the card. A
-                        // pastel one needs the ramp's inset ring instead, or it dissolves
-                        // into the card behind it. Both, here: the ring defines the edge,
-                        // the shadow keeps it reading as a raised badge.
-                        boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}, ${SHADOW.rest}`,
-                    }}
-                >
-                    {badgeCategory.charAt(0)}
-                </Box>
-            )}
-
             {/* Icon slot - fixed position/height, always rendered (empty when the card has
                 no basic icon) so every mini card reserves identical space here regardless
                 of icon presence. Positioned absolutely (independent of the word/definition
@@ -364,7 +315,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 className="mini-vocab-card__entry-value"
                 sx={{
                     position: 'absolute',
-                    bottom: BAR_STRIP.bottom + barStripHeight(bars.length) + 5,
+                    bottom: BAR_STRIP.bottom + barStripHeight(!!bar) + 5,
                     left: 8,
                     right: 8,
                     fontSize: SIZE.caption,
@@ -385,72 +336,61 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                 {resolveDisplayDefinition(entry)}
             </Typography>
 
-            {/* Mastery strip: one hairline track for the lens bar, filled to that bar's
-                pbh. Left-justified against BAR_STRIP.left rather than centered, so the
-                strip reads as a margin annotation and does not compete with the
-                centered word and definition above it. */}
-            {bars.length > 0 && <Box
-                className="mini-vocab-card__mastery-strip"
+            {/* Mastery window: the cdp's eight-mark window at thumbnail scale, spanning
+                the card's width. One shared `title` rather than one per cell — eight
+                native tooltips along a 3px strip would fight each other, and the useful
+                reading is the whole window anyway. */}
+            {cells.length > 0 && <Box
+                className="mini-vocab-card__mastery-window"
+                title={stripTitle}
                 sx={{
                     position: 'absolute',
                     bottom: BAR_STRIP.bottom,
-                    left: BAR_STRIP.left,
+                    left: BAR_STRIP.inset,
+                    right: BAR_STRIP.inset,
                     display: 'flex',
-                    flexDirection: 'column',
-                    gap: `${BAR_STRIP.gap}px`,
+                    gap: `${BAR_STRIP.cellGap}px`,
                     zIndex: 1,
                 }}
             >
-                {bars.map((bar) => (
+                {cells.map((cell, i) => (
                     <Box
-                        key={bar.id}
-                        className={`mini-vocab-card__mastery-bar mini-vocab-card__mastery-bar--${bar.id}`}
-                        // Native title rather than a MUI Tooltip: these are decorative
-                        // at this size, and three tooltip wrappers per card across a
-                        // long grid is real render cost for a hover affordance that
-                        // does not exist on touch anyway.
-                        title={`${BAR_LABELS[bar.id]}: ${bar.category}`}
+                        key={i}
+                        className={`mini-vocab-card__mastery-cell${cell.fill > 0 ? " mini-vocab-card__mastery-cell--filled" : ""}`}
                         sx={{
-                            width: BAR_STRIP.width,
+                            // Equal share of the row, so the eight cells always span the
+                            // card whatever its width — no pixel math to keep in step
+                            // with the 92px face.
+                            flex: 1,
                             height: BAR_STRIP.height,
                             borderRadius: BAR_STRIP.height / 2,
-                            backgroundColor: 'rgba(0, 0, 0, 0.13)',
+                            // Frame 17's empty-track tint. Deliberately NOT the cdp's
+                            // 6% fill + 12% inset ring: at 3px tall that ring would be
+                            // most of the cell, so the empty state is carried by a single
+                            // slightly stronger flat tint instead.
+                            backgroundColor: 'rgba(23, 22, 26, 0.13)',
                             overflow: 'hidden',
                         }}
                     >
-                        {/* The fill carries the SAME per-type breakdown as the cdp bar
-                            (MasteryWindow's cells): the core bar splits its
-                            length between recognition blue and production green in
-                            proportion to their positive counts, so a card that is
-                            strong one way and weak the other reads that way at
-                            thumbnail size too. Laid out left-to-right here rather than
-                            the cdp's bottom-up column, so the first type sits at the
-                            track's origin in both. */}
-                        <Box
-                            className="mini-vocab-card__mastery-bar-fill"
-                            sx={{
-                                width: `${bar.heightFraction * 100}%`,
-                                height: '100%',
-                                borderRadius: BAR_STRIP.height / 2,
-                                display: 'flex',
-                                overflow: 'hidden',
-                                transition: 'width 240ms ease',
-                            }}
-                        >
-                            {bar.segments
-                                .filter((seg) => seg.positive > 0)
-                                .map((seg) => (
-                                    <Box
-                                        key={seg.type}
-                                        className={`mini-vocab-card__mastery-segment mini-vocab-card__mastery-segment--${seg.type}`}
-                                        sx={{
-                                            width: `${seg.fraction * 100}%`,
-                                            height: '100%',
-                                            backgroundColor: MARK_TYPE_COLORS[seg.type],
-                                        }}
-                                    />
-                                ))}
-                        </Box>
+                        {/* A partial trailing cell is rendered partial, not rounded —
+                            rounding would make two genuinely different cards read the
+                            same. Every filled cell takes the band ink; the mark type
+                            that owns it (`cell.type`) is what the CDP colors by, and is
+                            deliberately unused here. */}
+                        {cell.fill > 0 && (
+                            <Box
+                                className="mini-vocab-card__mastery-cell-fill"
+                                sx={{
+                                    width: `${cell.fill * 100}%`,
+                                    height: '100%',
+                                    backgroundColor: bandInk,
+                                    // Color transitions too: crossing a band boundary
+                                    // should read as the strip changing state, not just
+                                    // one more cell lighting up.
+                                    transition: 'width 240ms ease, background-color 240ms ease',
+                                }}
+                            />
+                        )}
                     </Box>
                 ))}
             </Box>}

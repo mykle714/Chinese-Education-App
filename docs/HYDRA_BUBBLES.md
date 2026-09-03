@@ -218,7 +218,7 @@ the same structure and a one-token swap — **not** to split the tiers across tw
 again.
 
 **Drain used to stay achromatic on purpose** — being the one property no mastery
-surface could collide with, since the four bands, Learn Now's purple and the
+surface could collide with, since the four bands, Learn Now's gold (purple until 2026-09-01) and the
 mastered-bar hues are all chromatic. Both ladders since have given that up knowingly: the
 blue one bought ~3.7x the tier separation with it, and the current yellow keeps drain
 chromatic while at least moving it OFF the "mastered" hue the blue drain wore.
@@ -1102,7 +1102,7 @@ comparable length.
 
 | Aspect | Free play | Challenge |
 |---|---|---|
-| Score | bubbles cleared | contested/filler points over the **9** challenge words (`CHALLENGE_WORD_COUNT`) |
+| Score | bubbles cleared | **±100 per contested word only** (filler pays 0) over the **9** challenge words (`CHALLENGE_WORD_COUNT`), **plus a clear bonus of up to +300 that decays with time and is forfeited unless the set is cleared** |
 | Run ends | wrong match, or overflow | **the last challenge word is matched** |
 | Spawn table | § 3.1 | § 3.1, unchanged |
 
@@ -1120,6 +1120,59 @@ Rules:
 * **Only a bloom roll can place a challenge word.** When the table rolls bloom and an
   unspawned challenge word remains, that word takes the slot; otherwise the slot takes
   a filler bloom. A drain roll never places a challenge word.
+* **The clear bonus is how the round finally scores TIME (O2, resolved 2026-09-02).**
+  **+300** for clearing all nine, held flat through the first **1:00** of *active* time,
+  then decaying **−25 every 15 s** to a floor of **0** at **4:00**. Forfeited entirely by
+  any run that did not clear the set, and drawn on the scoreboard as an explicit
+  `clear bonus (lost) · 0` line so the player can see what the wrong match cost.
+
+  **Why it must be gated on completion, rather than being a plain per-second penalty.**
+  A Hydra run stops for one of two unrelated reasons — you finished, or you erred — so a
+  penalty charged to *every* run pays players to **fail fast**. A wrong match at 0:30
+  posts a better clock than a clean 9-of-9 at 4:00, and the finisher played longer *by
+  definition*, so lowering the rate shrinks the subsidy without ever fixing its sign.
+  Gating on completion means the term only compares runs that are comparable: every
+  player holding it cleared the same nine words.
+
+  **It cannot invert the word ranking**, which is what lets the pot be large. A complete
+  run scores `900 + bonus ≥ 900`; the best possible partial run is eight clears plus the
+  miss that ended it, `800 − 100 = 700`. So a fast partial can never beat a slow complete
+  one at any tuning, and 300-against-900 simply says how much speed separates two
+  finishers — the same register as Bubble Match's 500.
+
+  **The numbers are a first guess, and the grace is what makes that safe.** Nothing
+  stores a round's duration (only `completedAt`), so there is no telemetry on real clear
+  times, and the deal rate is partly out of the player's hands anyway: contested words
+  arrive one per bloom roll, filler clears are what buy those rolls, and the squeeze
+  (§ 3.1) locks contested spawns out entirely. A flat first minute means a rate guessed
+  too aggressively cannot *punish* a genuinely fast run, only fail to separate it.
+  Revisit once real rounds exist.
+
+  Implemented with the existing `survival` bonus kind — `trigger: 'runStart'`,
+  `forfeitOnLoss: true` — plus one addition to the shared runner: the `survival` branch
+  now honours `graceMs` (Bubble Match sets none and is unchanged). `HydraBubblesPage`
+  arms it by emitting `{kind: "survivalStart", ruleId: "clearBonus"}` when `phase`
+  becomes `playing`. ⚠️ The KIND is named for its first user, not for what it does: what
+  it expresses is a decaying pot armed by an event and forfeited on a loss. `decayingPot`
+  would be the honest name.
+
+* **Filler pays NOTHING (`fillerHit: 0`, changed 2026-09-02), and Hydra is the only
+  game where that is true.** Everywhere else filler is near-free points that cannot
+  decide the match; here it could, because the run ends on the LAST contested clear and
+  nothing charges for time. A player who cleared eight of nine and then farmed filler
+  bubbles outscored one who finished cleanly and fast — and overflow forfeits nothing
+  (there is no survival bonus to lose), so the farm's only downside was the risk of a
+  wrong match. **`fillerMiss` deliberately stays at −20**: a filler clear is not
+  optional — draining is how the board is kept off the ceiling — so filler is now pure
+  risk rather than inert. Right earns nothing, wrong still costs.
+
+  The consequence for the round is that **the contested ledger is the whole score bar
+  the clear bonus**: the word half of a Hydra total is always a multiple of 100 minus
+  any miss, so reading it tells you exactly how many challenge words the player cleared.
+  Zeroing filler is also what forced the clear bonus above — it removed the last
+  (accidental, farmable) separator between two players who both clear all nine, who
+  would otherwise have tied at exactly 900.
+
 * **Bloom is 55% of the growth zone and 100% of the opening**, so challenge words
   surface far more readily than they did on the old 30% yellow slot — and the § 3.1
   table needs no per-mode reweighting to deliver the whole set. The one place they cannot
@@ -1142,10 +1195,23 @@ reads from the constant and never hard-codes.
 
 | Piece | Where |
 |---|---|
-| The contested cards | fetched once before the run by `HydraBubblesPage` (`GET /api/onDeck/gamePool?challengeId=…&need=CHALLENGE_WORD_COUNT`), then handed to `useColorBuffers` as its third argument |
+| The contested cards | fetched once before the run by `HydraBubblesPage` (`GET /api/onDeck/gamePool?challengeId=…&need=CHALLENGE_WORD_COUNT`), then **filtered through `challengeRound.isContested`** and handed to `useColorBuffers` as its third argument |
 | The bloom slot | `useColorBuffers`'s `take()` serves the challenge queue first **for bloom only**; the cards are also hard-excluded from every refill so one cannot arrive twice |
 | The ending | `HydraStage`'s new `shouldEndRun(entry)` prop, asked after every correct match, fires `finishRun("challengeComplete")` once the last contested word is cleared — after the pop animation, so the board does not freeze mid-pop |
 | The score | the shared runner (`useChallengeRound`), same as every other eligible game |
+
+⚠️ **THE POOL RESPONSE IS NOT THE CONTESTED SET** (fixed 2026-09-02). `getChallengeGamePool`
+tops a short contested set up with **filler** (`need − contested.length`), so a
+`need = CHALLENGE_WORD_COUNT` response can contain cards the challenge never named.
+`HydraBubblesPage` used to seed both the bloom queue and `remainingContestedRef` from the
+whole response, which put the ending out of step with `challengeRound.isContested` — the
+same clear that scored as filler was still being counted as a word the run was waiting on,
+so a player who had cleared all nine challenge words watched the board keep spawning.
+Both now come from the filtered set: the ending set is the challenge's word list, and the
+bloom queue holds contested words ONLY, so every bloom slot advances the ending rather than
+dealing filler the board's own colour economy would have supplied anyway. A round whose
+pool contains no contested card at all is now **blocked** rather than started — it has
+nothing to score and no ending.
 
 ⚠️ **HYDRA'S FILLER IS NOT `mastered-first`, and that is the one deliberate exception to
 [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.2.** Everywhere else, a challenge board is
@@ -1161,10 +1227,10 @@ argued.
 a challenge run is timed, so it gets `useBackgroundPause` + `GamePausedOverlay`, while
 free play stays exempt.
 
-Still open in the `ChallengeScoringSpec` itself (`CHALLENGE_GAMES`,
-`server/contracts/wire.ts`): how a partial run's TIME is compared against a complete one
-— today the numbers rank a partial run below a complete one on contested hits alone and
-time is not scored at all (O2). See docs/STUDY_CHALLENGE.md § 5.4.
+**O2 is now closed** (2026-09-02). Zeroing filler had left two clean 9-of-9 runs tied at
+exactly 900 with nothing to separate them; the clear bonus above is the separator, and it
+is gated on completion rather than charged per second for the reason set out in its
+bullet. See docs/STUDY_CHALLENGE.md § 5.4.
 
 ---
 
@@ -1362,14 +1428,30 @@ token change and no structural work. Also unchecked on a phone in daylight: tone
 > a bubble palette has to be checked against **every** bubble on the field, not just
 > against the other member of its own pair.
 
-**O2 — `ChallengeScoringSpec` numbers. HALF RESOLVED.** The contested/filler values are
-written and shipping: **±100 / ±20, no bonus** (`CHALLENGE_GAMES`,
-`server/contracts/wire.ts`), and the round runner has been live since 2026-08-22. What is
-STILL open is the second half — **how a partial run's TIME compares against a complete
-one.** Today time is not scored at all, so the numbers rank a partial run below a
-complete one on contested hits alone: a player who cleared 8 of 12 outranks one who
-cleared 3, but two players who both cleared all nine are separated only by their
-filler, not by speed. That is a defensible floor and not the final design — the honest
+**O2 — `ChallengeScoringSpec` numbers. RESOLVED 2026-09-02.** Settled in two moves on the
+same day, and the second only became necessary because of the first.
+
+* **Filler went to 0** (`fillerHit`, was 20). The run ends on the LAST contested clear
+  and nothing charged for time, so paid filler was farmable: clear eight of nine, then
+  harvest bubbles for as long as you dared — with overflow forfeiting nothing, the only
+  downside was the risk of a wrong match. `fillerMiss` stays at −20 so filler is pure
+  risk rather than inert.
+* **A clear bonus** now scores time: **+300**, flat for the first 1:00 of active time,
+  −25 per 15 s thereafter, floor 0 at 4:00, and **forfeited unless the set is cleared**.
+
+The forfeit is the whole design, not a detail. A naive per-second penalty charged to
+every run pays players to fail fast, because a run that ends on a wrong match at 0:30
+posts a better clock than a clean 9-of-9 at 4:00 — the finisher played longer *by
+definition*, so no rate fixes the sign. Gating on completion means the term only ever
+compares runs that are comparable. It also cannot invert the word ranking (complete =
+`900 + bonus ≥ 900`, best partial = `800 − 100 = 700`), which is what allows a pot as
+large as a third of the round.
+
+The numbers are a **first guess** — nothing stores a round's duration, so there is no
+telemetry on real clear times, and the deal rate is partly RNG (contested words arrive
+one per bloom roll; the squeeze locks them out entirely). The 1:00 grace is the hedge: a
+rate guessed too aggressively can fail to separate a fast run but cannot punish one.
+Revisit once real rounds exist. Full rationale in § 7.5. That is a defensible floor and not the final design — the honest
 fix is a completion bonus that decays with elapsed active time, which the existing
 `survival`/`elapsedPenalty` bonus kinds can already express without new machinery.
 

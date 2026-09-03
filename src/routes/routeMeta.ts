@@ -130,8 +130,6 @@ const PAGE_ROUTES: RouteMeta[] = [
   // that return to /friends/challenges rather than to Home (docs/STUDY_CHALLENGE.md § 1).
   { path: "/friends/challenges", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/friends/challenges/history", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/friends/challenges/new/:friendUserId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/friends/challenges/review/:challengeId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/friends/challenges/:challengeId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   // User profile — the one screen for looking at somebody who is not you. A Node drill-in
   // reachable from the friends list, the leaderboard and the challenges page, so its back

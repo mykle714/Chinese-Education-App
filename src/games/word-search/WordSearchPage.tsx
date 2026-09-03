@@ -34,6 +34,7 @@ import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { formatTimeMs } from "../../utils/timeUtils";
 import { useChallengeRound } from "../runtime/useChallengeRound";
+import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 import { countPinyinRevealSteps } from "./pinyinUnits";
 import { countComponentUnits } from "./componentUnits";
@@ -275,6 +276,9 @@ const WordSearchPage: React.FC = () => {
         paused: noticeOpen || settingsOpen || backgrounded,
         running: phase === "playing",
     });
+    // Back: the challenge mid-test, or the Games hub — and, on a claimed challenge
+    // round, the confirm that says leaving ends it (docs/STUDY_CHALLENGE.md § 5.1a).
+    const onBack = useGameBack(challengeRound);
     const challengeParamsRef = useRef("");
     challengeParamsRef.current = challengeRound.poolParams;
     // Read inside `persistSnapshot`, whose deps are deliberately minimal.
@@ -967,11 +971,8 @@ const WordSearchPage: React.FC = () => {
             <GameLeafPage
             hue={GAME_HUE}
                 title="Word Search"
-                // Back lands where the player came FROM — the challenge mid-test, or
-                // the Games hub for an ordinary run.
-                onBack={() => navigate(challengeRound.challengeId
-                    ? `/friends/challenges/${challengeRound.challengeId}`
-                    : "/games")}
+                // Destination + the "leaving ends this round" confirm (useGameBack).
+                onBack={onBack}
                 rightContent={
                     <WordSearchHeaderControls onSettingsClick={() => setSettingsOpen(true)} />
                 }

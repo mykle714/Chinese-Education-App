@@ -1,19 +1,20 @@
 import { forwardRef, useImperativeHandle, useRef, useState, useCallback } from "react";
-import { Box, Typography, IconButton, TextField, InputAdornment, Collapse } from "@mui/material";
+import { Box, Typography, Collapse } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import { Search, Clear } from "@mui/icons-material";
 import { styled } from "@mui/material/styles";
 import { Shelf, ShelfRow, Spine, AddSpine, spineHeight } from "../../components/shelf";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import LibraryDuo from "./LibraryDuo";
 import CollectionSortControl from "./CollectionSortControl";
+import SearchField from "../../components/SearchField";
 import type { VocabEntry } from "../../types";
-import type { DecksPanelState } from "./useDecksPanel";
+import type { CardsFilter, DecksPanelState } from "./useDecksPanel";
 import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
 import { EDGE_FADE_MASK_NO_TOP } from "../../components/MobileTabScreen";
 import type { SheetPanelBodyHandle } from "./FlashcardsLearnPage/SheetPanel";
 import { deckTileColors } from "./collectionRef";
 import { collectionGlyph } from "./collectionGlyph";
+import type { BuiltinCollectionEntry } from "./builtinCollections";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
@@ -215,6 +216,7 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
         challengeDecks, authoredDecks, decksLoading, decksError,
         visibleCards, cardsTotal, cardsLoading, cardsError,
         cardsSearch, setCardsSearch, cardsSortKey, setCardsSortKey,
+        cardsFilter, setCardsFilter,
     } = panel;
     const isSheet = variant === "sheet";
     // Which halves of the stack this host asked for. Two booleans rather than a chain
@@ -238,6 +240,19 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
             return next;
         });
     }, []);
+    // The duo's two tiles are a toggle group over the card grid's filter: tapping the
+    // ACTIVE one clears back to the whole library, so there is no separate "clear"
+    // control and no state the learner can be stuck in. The tile's `CollectionRef.kind`
+    // IS the filter value (see `CardsFilter`), so there is no mapping table to drift.
+    const toggleCardsFilter = useCallback((entry: BuiltinCollectionEntry) => {
+        const next = entry.ref.kind as CardsFilter;
+        setCardsFilter(cardsFilter === next ? "all" : next);
+    }, [cardsFilter, setCardsFilter]);
+
+    // The entry currently filtering, if any — the duo needs its `key`, and the Cards
+    // caption below borrows its label so the section names the set it is showing.
+    const activeCollection = collections.find((entry) => entry.ref.kind === cardsFilter) ?? null;
+
     // Getters rather than captured values: SheetPanel reads the handle inside an
     // effect that may run before these refs are attached on a later re-render.
     useImperativeHandle(ref, () => ({
@@ -311,28 +326,31 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                 {showCards && (<>
                     {/* ── YOUR LIBRARY ── this LENS's two constants: what is still to be
                         learned in this bar, and what is finished in it. (All Cards has no
-                        tile — its grid is the Cards section at the bottom.)
+                        tile — the unfiltered grid below IS it.)
 
                         These two are the one place the sheet does NOT use a spine, and the
                         reason is in LibraryDuo's header: their SIZE is what the learner came
                         to read, and a 74px spine cannot print a figure worth reading. Every
-                        other section below is spines, unchanged (D9). */}
+                        other section below is spines, unchanged (D9).
+
+                        They FILTER the Cards grid below rather than navigating to a
+                        collection page — the grid, its search box and its sort menu are all
+                        right there, so a navigation bought nothing. See LibraryDuo's header
+                        for the toggle contract and how "active" is painted. */}
                     <Box
                         className="decks-panel-body__library-header"
                         {...(headerDragBind?.() ?? {})}
-                        sx={{ width: "100%", px: 3.5, pt: 0.5, pb: 0.5, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.5 }}
+                        sx={{ width: "100%", px: 3.5, pt: 0.5, pb: 0.5, display: "flex", alignItems: "center", gap: 1.5 }}
                     >
                         <SectionLabel className="decks-panel-body__library-label">Your library</SectionLabel>
-                        <SectionLabel className="decks-panel-body__library-note" sx={{ color: COLORS.textFaint }}>
-                            the two constants
-                        </SectionLabel>
                     </Box>
 
                     <LibraryDuo
                         className="decks-panel-body__library-duo"
                         entries={collections}
                         count={tileCount}
-                        onOpenPath={onOpenPath}
+                        activeKey={activeCollection?.key ?? null}
+                        onToggle={toggleCardsFilter}
                         headerDragBind={headerDragBind}
                     />
                 </>)}
@@ -474,67 +492,50 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                         filter, via the same filterVocabEntries the collection page uses), so
                         typing costs no round trip.
 
-                        The caption shows the UNFILTERED total: it names the size of the set,
-                        and a number that shrank as you typed would be reporting the search
-                        rather than the library. */}
+                        The CAPTION names whichever set is on screen — "Cards" unfiltered,
+                        the collection's own name while a duo tile is active — so the grid is
+                        never an unexplained subset. Its figure is the size of that set
+                        BEFORE the search box: a number that shrank as you typed would be
+                        reporting the search rather than the set. */}
                     <Box
                         className="decks-panel-body__cards-header"
                         {...(headerDragBind?.() ?? {})}
                         sx={{ width: "100%", px: 3.5, pt: 2, pb: 1 }}
                     >
                         <SectionLabel className="decks-panel-body__cards-label">
-                            Cards{cardsTotal > 0 ? ` (${cardsTotal})` : ""}
+                            {activeCollection?.label ?? "Cards"}
+                            {cardsTotal > 0 ? ` (${cardsTotal})` : ""}
                         </SectionLabel>
                     </Box>
 
                     {/* Sized to the 364px card grid below so the input lines up over the
-                        cards, exactly as it does on the collection page. */}
+                        cards, exactly as it does on the collection page. The sort picker
+                        (the same CollectionSortControl the collection page uses) rides
+                        INSIDE the field via SearchField's `endAction`, so search + filter
+                        occupy one row rather than two. */}
                     <Box className="decks-panel-body__cards-search" sx={{ width: 364, maxWidth: "100%", px: 3.5 }}>
-                        <TextField
+                        <SearchField
                             className="decks-panel-body__cards-search-input"
-                            fullWidth
-                            size="small"
                             placeholder="Search your cards..."
                             value={cardsSearch}
-                            onChange={(e) => setCardsSearch(e.target.value)}
-                            InputProps={{
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <Search sx={{ color: COLORS.textSecondary }} />
-                                    </InputAdornment>
-                                ),
-                                endAdornment: cardsSearch ? (
-                                    <InputAdornment position="end">
-                                        <IconButton
-                                            className="decks-panel-body__cards-search-clear"
-                                            aria-label="Clear search"
-                                            size="small"
-                                            onClick={() => setCardsSearch("")}
-                                        >
-                                            <Clear fontSize="small" />
-                                        </IconButton>
-                                    </InputAdornment>
-                                ) : undefined,
-                            }}
+                            onChange={setCardsSearch}
                             sx={{ backgroundColor: COLORS.background, borderRadius: "8px" }}
+                            endAction={
+                                <CollectionSortControl
+                                    classPrefix="decks-panel-body__cards"
+                                    sortKey={cardsSortKey}
+                                    onSortKeyChange={setCardsSortKey}
+                                    language={language}
+                                    goals={goals}
+                                    lens={lens}
+                                    // Common orderings only: this is the whole library, opened to FIND
+                                    // a card, so the per-skill (reading / writing) mastery rows are
+                                    // left to the collection pages that are about those bars.
+                                    allowPerSkillBars={false}
+                                />
+                            }
                         />
                     </Box>
-
-                    {/* Same picker as the collection page (CollectionSortControl), on the
-                        same 364px column as the search box and the grid. */}
-                    <CollectionSortControl
-                        classPrefix="decks-panel-body__cards"
-                        sortKey={cardsSortKey}
-                        onSortKeyChange={setCardsSortKey}
-                        language={language}
-                        goals={goals}
-                        lens={lens}
-                        // Common orderings only: this is the whole library, opened to FIND
-                        // a card, so the per-skill (reading / writing) mastery rows are
-                        // left to the collection pages that are about those bars.
-                        allowPerSkillBars={false}
-                        sx={{ width: 364, maxWidth: "100%", px: 3.5, pt: 1 }}
-                    />
 
                     <MiniVocabCardGrid
                         entries={visibleCards}
@@ -545,7 +546,13 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                         emptyMessage={
                             cardsSearch.trim()
                                 ? "No cards match your search."
-                                : "Please go to the Discover tab to select cards you would like to learn"
+                                // An empty FILTERED set is not an empty library, so it must
+                                // not send the learner to Discover: they have cards, just
+                                // none in this set yet (a new learner's Mastered is the
+                                // ordinary case).
+                                : activeCollection
+                                    ? `No cards in ${activeCollection.label} yet.`
+                                    : "Please go to the Discover tab to select cards you would like to learn"
                         }
                         onCardClick={onOpenCard}
                         containerClassName="decks-panel-body__cards-grid"

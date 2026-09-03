@@ -101,13 +101,18 @@ export function builtinCollectionRef(id: BuiltinCollection): CollectionRef {
  *
  * All three lead with the word "Mastered" and end with what was mastered. The
  * reading/writing names used to read the other way round ("Reading Mastered"),
- * which sorted badly next to core's "Mastered Cards" and — now that the fdp tile
- * wraps a long name onto a second line — put the qualifier first. One word order
- * for all three, so every Mastered tile wraps to the same shape: "MASTERED" then
- * what was mastered.
+ * which sorted badly next to the core name and put the qualifier first. One word
+ * order for all three, so every Mastered tile wraps to the same shape: "MASTERED"
+ * then what was mastered.
+ *
+ * CORE names the skill-less set, so it has nothing to append: it is plain
+ * **"Mastered"**, not "Mastered Cards". The old suffix said only that a card is a
+ * card — every collection here is cards — and it made the shortest of the three
+ * names the longest one on the tile, which is exactly backwards for the set that
+ * needs no qualifier.
  */
 const MASTERED_TITLES: Record<MasteryBarId, string> = {
-    core: 'Mastered Cards',
+    core: 'Mastered',
     reading: 'Mastered Reading',
     writing: 'Mastered Writing',
 };

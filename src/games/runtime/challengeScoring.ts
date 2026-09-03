@@ -166,10 +166,16 @@ export function createChallengeScorer(spec: ChallengeScoringSpec): ChallengeScor
                         points: 0,
                     };
                 }
+                // A HEAD START BEFORE THE DECAY BEGINS. Bubble Match sets no grace and
+                // is unaffected (`?? 0`); Hydra's clear bonus holds the full pot for
+                // its first minute, which is what stops a first-guess decay rate from
+                // punishing a run that was actually fast. Measured from when the pot
+                // was ARMED, not from the start of the run — the two coincide only for
+                // a `runStart` trigger.
+                const grace = bonus.graceMs ?? 0;
                 const interval = bonus.decayIntervalMs ?? 0;
-                const steps = interval > 0
-                    ? Math.floor((activeMs - survivalStartedAtMs) / interval)
-                    : 0;
+                const elapsedSinceArmed = Math.max(0, activeMs - survivalStartedAtMs - grace);
+                const steps = interval > 0 ? Math.floor(elapsedSinceArmed / interval) : 0;
                 const decayed = bonus.points + steps * (bonus.decayPoints ?? 0);
                 const floor = bonus.floor ?? 0;
                 return {

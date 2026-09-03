@@ -1572,8 +1572,8 @@ export const ARENA_GEOCELL_LENGTH = 5;
  * other, they simply landed on the same number again on 2026-08-28. A challenge
  * round now plays on the SAME 7×6 grid as an ordinary board (the old roomier 8×8
  * challenge grid was removed): one size, one density, one tuning. § 5.2 still
- * requires every contested word to appear in every round. The round runner is not
- * built yet, so that remains a spec obligation on that build.
+ * requires every contested word to appear in every round — an obligation on the
+ * round runner (src/games/runtime/useChallengeRound.ts), which IS built.
  */
 export const CHALLENGE_WORD_COUNT = 9;
 
@@ -1702,8 +1702,26 @@ export interface ChallengeWord {
 }
 
 /**
- * A submitted round. Insert-only: a submitted round is final, there is no replay,
- * and the server refuses round n+1 until n is present (Q40, § 5.1a).
+ * A round of a test — CLAIMED at the player's first mark, FINALISED when the run
+ * ends or they walk away from it (§ 5.1a).
+ *
+ * ⚠️ `completedAt === null` IS THE IN-PROGRESS FLAG. There is deliberately no
+ * separate `status`: two fields that encode the same fact are two fields that can
+ * disagree, and every row written before this shape existed carries a
+ * `completedAt`, so they all read as completed with no backfill.
+ *
+ * The lifecycle the rest of the feature is built on:
+ *
+ *   absent            → the round has not been started; its board may be issued
+ *   completedAt null  → CLAIMED. The attempt is spent. The board is never issued
+ *                       again, `score`/`breakdown` hold the run so far, and the
+ *                       row is still writable.
+ *   completedAt set   → FINAL. Nothing may write it again (Q40, no replays).
+ *
+ * Claiming on the first mark rather than on submit is what makes the one-attempt
+ * rule survive the client: quitting the app, reloading the tab or clearing local
+ * state all leave the claim standing, so there is nothing to re-roll. The score
+ * banked by a player who never comes back is whatever their last mark had earned.
  *
  * `gameId`/`mode` are stored per round even though they are derivable from the
  * challenge's `gameSequence`, so the history page's game filter does not have to
@@ -1720,7 +1738,49 @@ export interface ChallengeRound {
   mode: string | null;
   score: number;
   breakdown: ChallengeScoreBreakdown;
-  completedAt: string;
+  /** When the first mark of this round was made. Absent on rows written before this shape. */
+  startedAt?: string;
+  /** null while the round is in progress; the stamp makes it final. */
+  completedAt: string | null;
+}
+
+/**
+ * The canned taunts (§ 6a, design F17). A player who has finished a completed
+ * challenge may send exactly ONE of these to their opponent; it renders on that
+ * opponent's card on the results screen.
+ *
+ * ⚠️ A CLOSED LIST, NOT FREE TEXT, and that is the whole design. A message box
+ * between two named accounts is a harassment surface that would need moderation, a
+ * report path and a review queue — for a feature whose entire job is one joke after
+ * a game. A fixed list gets the rivalry with none of that, and it can be reworded in
+ * a deploy because the stored value is the KEY, never the line.
+ *
+ * ⚠️ IDS ARE PERMANENT. `tauntId` is stored on `study_challenges.taunts`
+ * (migration 156), so renaming a key orphans every taunt already sent. Rewording a
+ * `text` is free; changing an `id` is not. To retire a line, delete it — an unknown
+ * id degrades to "no taunt", which is why the client must tolerate one.
+ */
+export const CHALLENGE_TAUNTS: readonly { id: string; text: string }[] = [
+  { id: 'eight-of-nine', text: "Nine words. I only needed eight of them." },
+  { id: 'stay-honest', text: "I'd say good game, but let's stay honest." },
+  { id: 'deck-called', text: "Your deck called. It wants a rematch without you." },
+  { id: 'hopes-popped', text: "Bubbles popped, hopes too." },
+  { id: 'posterity', text: "Screenshot saved. For posterity." },
+  { id: 'studied-browsed', text: "I studied. You browsed." },
+  { id: 'rounding-error', text: "Rounding error, sure. In your favour." },
+  { id: 'same-nine', text: "Same nine words. Different outcomes." },
+] as const;
+
+/** Look up a taunt's line. `null` for an id this build no longer knows. */
+export function challengeTauntText(tauntId: string): string | null {
+  return CHALLENGE_TAUNTS.find((taunt) => taunt.id === tauntId)?.text ?? null;
+}
+
+/** One player's sent taunt, as stored under their own user id. */
+export interface ChallengeTaunt {
+  /** A `CHALLENGE_TAUNTS` id. Never a user-authored string. */
+  tauntId: string;
+  sentAt: string;
 }
 
 /**
@@ -1787,11 +1847,17 @@ export interface ChallengeScoringSpec {
 /**
  * A per-game scoring extra, expressed as data so the server can evaluate it too.
  *
- * `survival` — awarded `points` at `trigger`, decaying `decayPoints` every
- *   `decayIntervalMs` down to `floor`, and forfeited entirely if the run is LOST.
- *   Bubble Match's +500 is deliberately large and all-or-nothing (Q68): Bubble
- *   Match *is* a survival game, so a challenge score that ignored survival would
- *   be scoring a different game than the one played.
+ * `survival` — awarded `points` at `trigger`, held flat for `graceMs`, then decaying
+ *   `decayPoints` every `decayIntervalMs` down to `floor`, and forfeited entirely if
+ *   the run is LOST. Bubble Match's +500 is deliberately large and all-or-nothing
+ *   (Q68): Bubble Match *is* a survival game, so a challenge score that ignored
+ *   survival would be scoring a different game than the one played.
+ *
+ *   ⚠️ THE KIND IS NAMED FOR ITS FIRST USER, NOT FOR WHAT IT DOES. What it actually
+ *   expresses is "a decaying pot, armed by an event and forfeited on a loss", which
+ *   is why Hydra's CLEAR BONUS (`trigger: 'runStart'`) also uses it: there the pot is
+ *   armed at t=0 and the loss condition is "did not clear the challenge set", so the
+ *   decay is simply time-to-clear. `decayingPot` would be the honest name.
  * `elapsedPenalty` — `points` (negative) per `decayIntervalMs` after
  *   `graceMs` of ACCUMULATED ACTIVE time. Word Search's −10/s after 1:00.
  * `perUse` — `points` each time the player uses something. Word Search's −20 hint.
@@ -1806,12 +1872,20 @@ export interface ChallengeScoringBonus {
   label: string;
   kind: 'survival' | 'elapsedPenalty' | 'perUse';
   points: number;
-  /** `survival` only: what starts the decay, e.g. Bubble Match's dropping ceiling. */
-  trigger?: 'ceilingDrop';
+  /**
+   * `survival` only: what arms the pot. `ceilingDrop` is Bubble Match's dropping
+   * ceiling; `runStart` arms it at t=0, which is what turns the decay into a
+   * time-to-finish measure (Hydra's clear bonus).
+   */
+  trigger?: 'ceilingDrop' | 'runStart';
   decayPoints?: number;
   decayIntervalMs?: number;
   floor?: number;
-  /** `elapsedPenalty` only: free time before the penalty starts accruing. */
+  /**
+   * Free time before the decay/penalty starts accruing, in ACTIVE ms. On
+   * `elapsedPenalty` it is measured from the start of the run; on `survival` it is
+   * measured from the moment the pot was armed.
+   */
   graceMs?: number;
   /** `survival` only: forfeit the whole bonus when the run is lost. */
   forfeitOnLoss?: boolean;
@@ -1916,27 +1990,74 @@ export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
     scoring: {
       contestedHit: 100,
       contestedMiss: -100,
-      fillerHit: 20,
+      // FILLER PAYS NOTHING HERE — the one game where it does not (2026-09-02).
+      // Everywhere else filler is near-free points that cannot decide the match. In
+      // Hydra it could: the run ends on the LAST contested clear and nothing charges
+      // for time, so a player who cleared eight of nine and then farmed filler bubbles
+      // outscored one who finished cleanly and fast. Overflow forfeits nothing either
+      // (there is no survival bonus to lose), so the farm had no downside beyond the
+      // risk of a wrong match. Zeroing the reward removes the incentive at the source;
+      // the clear bonus below then makes dawdling actively expensive rather than
+      // merely unprofitable.
+      //
+      // `fillerMiss` deliberately STAYS negative: filler clears are not optional — a
+      // drain clear is how the board is kept off the ceiling — so filler must remain
+      // pure risk rather than becoming inert. Right earns nothing, wrong still costs.
+      fillerHit: 0,
       fillerMiss: -20,
       missChargedOncePerWord: true,
-      // NO BONUS, and no survival bonus in particular — which is the opposite call
-      // from Bubble Match's, on purpose. Bubble Match's run has a fixed length (its
-      // 20 pairs), so "how long did you last" is a comparable number. Hydra is
-      // ENDLESS: a free-play run ends only when the player errs, so survival time is
-      // unbounded and would swamp every other term.
+      bonuses: [
+        {
+          ruleId: 'clearBonus',
+          label: 'clear bonus',
+          // The `survival` KIND, not a survival bonus — see the kind's own note. Here
+          // it is a decaying pot armed at t=0 and forfeited unless the set is cleared,
+          // which is how Hydra finally scores TIME (O2, docs/HYDRA_BUBBLES.md § 11).
+          kind: 'survival',
+          trigger: 'runStart',
+          points: 300,
+          // Full pot for the first minute, then −25 every 15 s, reaching 0 at 4:00 of
+          // ACTIVE time. The grace exists because we have no telemetry on real clear
+          // times (nothing stores a round's duration), so the numbers are a first
+          // guess: a flat head start means a guess that is too aggressive cannot
+          // punish a genuinely fast run, only fail to separate it.
+          graceMs: 60_000,
+          decayPoints: -25,
+          decayIntervalMs: 15_000,
+          floor: 0,
+          // THE WHOLE REASON THIS IS SAFE. A naive per-second penalty charged every
+          // run would pay players to fail fast: a run that ends on a wrong match at
+          // 0:30 has a better clock than one that clears all nine in 4:00, because
+          // finishing takes longer than quitting BY DEFINITION. Forfeiting on a loss
+          // means the term exists only for runs that are actually comparable — every
+          // player holding it cleared the same nine words — so it can separate
+          // finishers from each other without ever inverting the contested ranking.
+          forfeitOnLoss: true,
+        },
+      ],
+      // NO SURVIVAL BONUS in the Bubble Match sense, which is the opposite call from
+      // Bubble Match's, on purpose. Bubble Match's run has a fixed length (its 20
+      // pairs), so "how long did you last" is a comparable number. Hydra is ENDLESS: a
+      // free-play run ends only when the player errs, so survival time is unbounded
+      // and would swamp every other term. The clear bonus above measures the opposite
+      // thing — how fast the run was FINISHED — and only for runs that were.
       //
       // Instead the challenge SHAPE carries the difficulty, exactly as Match Speed's
       // alternation rule does (docs/HYDRA_BUBBLES.md § 7.5): challenge words ride the
-      // yellow slot, the run ends the moment the tenth is cleared, and a wrong match
-      // ends it early with the unmatched words scoring zero. That makes CLEARING THE
-      // SET the goal — a player who cleared 8 of 10 outranks one who cleared 3, which
-      // speed alone could not express — and gives the contested score a hard ceiling
-      // of CHALLENGE_WORD_COUNT × contestedHit.
+      // BLOOM slot (yellow was removed in the 2026-08-21 two-colour rework), the run
+      // ends the moment the LAST of them is cleared, and a wrong match ends it early
+      // with the unmatched words scoring zero. That makes CLEARING THE SET the goal —
+      // a player who cleared 8 of 9 outranks one who cleared 3, which speed alone
+      // could not express — and with filler at 0 the round's score IS the contested
+      // ledger: a hard ceiling of CHALLENGE_WORD_COUNT × contestedHit, in steps of 100.
       //
-      // ⚠️ OPEN (docs/HYDRA_BUBBLES.md § 11 O2): how a PARTIAL run's time is compared
-      // against a complete one is not yet decided. Until it is, these numbers rank a
-      // partial run below a complete one on contested hits alone, and time is not
-      // scored at all. That is a defensible floor, not the final design.
+      // ⚠️ THE BONUS CANNOT INVERT THE WORD RANKING, and this is worth checking rather
+      // than assuming. A complete run scores 900 + bonus ≥ 900. The best possible
+      // PARTIAL run is eight contested clears and the miss that ended it: 800 − 100 =
+      // 700. So every complete run outranks every partial one no matter how the pot is
+      // tuned, and the pot's size is purely a statement about how much speed should
+      // separate two players who both cleared the set. 300 against 900 puts it in the
+      // same register as Bubble Match's 500 against 900 (O2, resolved 2026-09-02).
     },
   },
   {

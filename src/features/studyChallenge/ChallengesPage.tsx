@@ -22,6 +22,8 @@ import {
 } from "./challengeLabels";
 import { useChallengeAnytime } from "./challengeAnytime";
 import ChallengeAnytimeNotice from "./ChallengeAnytimeNotice";
+import ChallengePanel from "./ChallengePanel";
+import type { ChallengePanelTarget } from "./ChallengePanel";
 import {
     challengeActionPillMutedSx,
     challengeActionPillSx,
@@ -80,6 +82,14 @@ function ChallengesPage() {
     // `anytime` IS a dependency: it changes what the server sends (which rows are
     // expired, whether a friend can be challenged again this week), so flipping the
     // switch has to re-ask rather than just relabel what is on screen.
+    /**
+     * Bumped by the panel after any mutation. It is a COUNTER rather than a boolean
+     * flag or a direct `load()` call because the effect below owns the cancellation
+     * token: a second refresh arriving while the first is in flight has to supersede
+     * it, and re-running the effect is what does that.
+     */
+    const [reloadToken, setReloadToken] = useState(0);
+
     useEffect(() => {
         let cancelled = false;
         setLoading(true);
@@ -90,29 +100,41 @@ function ChallengesPage() {
             })
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
-    }, [isAuthenticated, anytime]);
+    }, [isAuthenticated, anytime, reloadToken]);
 
     /**
-     * What tapping a row does — it is bound to the ROW, not to the pill (`onRowPress`).
+     * The open pre-play sheet, or null. The PAGE owns this rather than the row,
+     * because only one sheet may be open at a time and the scrim belongs to the page.
+     */
+    const [panelTarget, setPanelTarget] = useState<ChallengePanelTarget | null>(null);
+
+    /**
+     * What tapping a row does — bound to the ROW, not to the pill (`onRowPress`).
      *
-     * Every action here is a NAVIGATION, not a mutation. Issuing and accepting
-     * both go through the review flow, because both are "look at ten words and confirm
-     * them" — the challengee's Accept button opening a picker is exactly the friendlier
-     * reading § 8.2 allows, with the transition to `accepted` happening on the picker's
-     * final confirm rather than on this tap.
+     * TWO KINDS OF DESTINATION, and the split is the design's (F6–F9 vs F11–F17):
+     *   * the three PRE-PLAY states are decisions about this row, so they open a sheet
+     *     OVER this list and never navigate — see ChallengeSheet for why;
+     *   * study / test / results are the challenge itself, so they navigate to it.
+     *
+     * Neither branch mutates anything. Issuing, accepting, declining and withdrawing
+     * all happen on the sheet's own action bar, so this handler stays a pure "open the
+     * thing" and the list never has to reason about a half-finished write.
      */
     const handleAction = useCallback((row: ChallengeFriendRow) => {
         const action = challengeAction(row.challenge, anytime);
         switch (action) {
             case "issue":
-                slideNavigate(`/friends/challenges/new/${row.friend.userId}`);
-                break;
-            case "review":
-                slideNavigate(`/friends/challenges/review/${row.challenge!.id}`);
-                break;
             case "waiting":
+            case "incoming":
+                setPanelTarget({
+                    mode: action,
+                    friendUserId: row.friend.userId,
+                    friendName: row.friend.name || row.friend.email,
+                    challengeId: row.challenge?.id,
+                });
+                break;
             case "study":
-            case "play":
+            case "test":
             case "results":
                 slideNavigate(`/friends/challenges/${row.challenge!.id}`);
                 break;
@@ -322,6 +344,15 @@ function ChallengesPage() {
 
                 <FooterSpacer />
             </Box>
+
+            {/* The pre-play sheet (F6-F9). Rendered as a sibling of the page content so
+                its scrim covers the whole list including the header — the sheet is a
+                layer over this page, not a section of it. */}
+            <ChallengePanel
+                target={panelTarget}
+                onClose={() => setPanelTarget(null)}
+                onChanged={() => setReloadToken((n) => n + 1)}
+            />
         </NodePage>
     );
 }

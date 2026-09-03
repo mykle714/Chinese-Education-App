@@ -2797,7 +2797,6 @@ prerequisite doc work listed in § 12, not a decision.
 This document describes (phase 1 is fully built — see the status table at the top;
 § 7 live mode is not):
 `database/migrations/148` + `150` + `156` (taunts, § 6a),
-`docs/CHALLENGE_REDESIGN_DEPLOY_RUNBOOK.md` (TEMPORARY — the 156-before-rebuild ordering),
 `database/cron/expire-study-challenges.sql`,
 `server/shared/challengeWeek.ts`,
 `server/__tests__/challengeWeek.test.ts`,

@@ -297,15 +297,22 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **[docs/CHALLENGE_REDESIGN_DEPLOY_RUNBOOK.md](./docs/CHALLENGE_REDESIGN_DEPLOY_RUNBOOK.md)**
-(migration **156**, taunts — **not yet applied anywhere**; it must run BEFORE the container
-rebuild, because the shipped `StudyChallengeDAL` selects `study_challenges.taunts` by name
-and old schema + new code 500s every challenge read, exactly as 152 did for
-`users."arenaMessage"`). And **[docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md)**
+Current open runbooks: **[docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md)**
 (gloss phase-2 half B, the runtime guard — **no migration**). **Deployed 2026-08-24** and
 verified on the infrastructure checks; it stays open only until someone opens a real game
 board and confirms it fills rather than coming back short, which is the one over-blocking
-symptom those checks cannot see. Prod is current through migration **155**.
+symptom those checks cannot see. Prod is current through migration **156**.
+
+Deployed and retired on 2026-09-02 (runbook deleted): the Study Challenge shelf-system
+redesign (**156**, `study_challenges.taunts`). Applied BEFORE the container rebuild as its
+runbook required — the shipped `StudyChallengeDAL` selects `taunts` by name, so old schema
++ new code 500s every challenge read (the same shape as 152's `users."arenaMessage"`). The
+deploy also surfaced a second habit worth keeping: **prod's checkout had four uncommitted
+tracked files** (oracle cron `ORACLE_LANGS`, the es backfill `--stale`/`--words=` fixes),
+authored on prod because the hourly oracle cron runs there. They were committed and pushed
+from prod *before* the dev branch was pushed, so the pull was a fast-forward rather than a
+conflict. Always run `git status --short` on prod during the divergence check — the
+ancestor/descendant counts alone report `0 0` for a prod that has real uncommitted work.
 
 > **A rubric/prompt change does NOT need a runbook.** Bumping a backfill's
 > `SCRIPT_VERSION` (+ its `requiredScripts.js` entry) makes every already-enriched row a

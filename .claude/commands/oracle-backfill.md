@@ -282,6 +282,19 @@ Four es-specific things to know:
   is punctuation and abbreviations (`&`, `&c.`, `'tamo'`). §B1 requires confirming the
   word list with the user anyway; do that before authoring a single prompt.
 
+**Language restriction for a round:** an invocation may arrive with an instruction like
+"Restrict this round to language(s): zh only" (`oracle-cron.sh`'s `ORACLE_LANGS` env var
+wires this into the solo worker's prompt — see its header comment). When present, treat
+it exactly like the shard instruction: work only the named language's scope in §3/§3b/§4
+for the whole round, and do not fall through to another language's backlog even if the
+restricted language's own backlog runs dry mid-round — park or end the round instead of
+picking up the excluded language.
+
+> As of 2026-09-01 the solo cron worker (crontab line `17 * * * *`) runs with
+> `ORACLE_LANGS=zh` — es is paused there **temporarily**, at the user's request, until
+> further notice. Sharded (`SHARD=k/N`) workers are unaffected (none currently
+> scheduled). Remove the env var from that crontab line to resume es on solo.
+
 **es target selection (no planner):** the goal is to backfill the *whole* table, so
 **any incomplete entry is a suitable target** — there is no curated batch to wait on.
 Work in this priority order, falling through as each drains:

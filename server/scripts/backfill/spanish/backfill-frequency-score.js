@@ -83,7 +83,7 @@ const validatedFilter = `AND ${validatedClause(['frequencyScore', 'difficulty'],
 const senseValidated = validatedClause(['senseFrequencyScore'], 'dictionaryentries_es');
 
 
-const { isSpotCheck, isBatch } = parseBackfillArgs();
+const { isSpotCheck, isBatch, targetWords } = parseBackfillArgs();
 const isRandom = process.argv.includes('--random');
 // --stale: also (re)process rows already scored but stamped below SCRIPT_VERSION
 // (or never stamped) — the zh scorer's flag, mirrored here so a rubric change can
@@ -227,16 +227,22 @@ async function run() {
   const client = await db.getClient();
 
   try {
+    const params = targetWords?.length ? [targetWords] : [];
+    const wordsFilter = targetWords?.length ? 'AND word1 = ANY($1::text[])' : '';
+    // --words= is an explicit instruction (mirrors chinese/backfill-frequency-score.js):
+    // skip the discoverable gate so a not-yet-shipped word can still be scoped directly.
+    const discoverableGate = targetWords?.length ? '' : 'AND discoverable = TRUE';
     const { rows: entries } = await client.query(`
       SELECT id, word1, pronunciation, definitions, "definitionClusters"
       FROM dictionaryentries_es
       WHERE language = 'es'
-        AND discoverable = TRUE
+        ${discoverableGate}
+        ${wordsFilter}
         ${validatedFilter}
         AND (("frequencyScore" IS NULL OR "difficulty" IS NULL)${isStale ? ` OR ${staleClause()}` : ''})
       ORDER BY ${isRandom ? 'RANDOM()' : 'id ASC'}
       ${isSpotCheck ? `LIMIT ${spotCheckLimit}` : ''}
-    `);
+    `, params);
 
     console.log(`Found ${entries.length} entries needing frequencyScore/difficulty backfill\n`);
 

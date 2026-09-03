@@ -27,6 +27,7 @@
 # USAGE
 #   oracle-cron.sh                 # single worker, whole candidate pool
 #   SHARD=0/3 oracle-cron.sh       # worker 0 of 3
+#   ORACLE_LANGS=zh oracle-cron.sh # restrict the round to one language (default: both)
 #   DRY_RUN=1 SHARD=0/3 oracle-cron.sh   # verify wiring; no session, no prod writes
 #
 # BUDGET
@@ -115,6 +116,17 @@ else
   export ORACLE_RESUME_FILE="$LOG_DIR/oracle-resume.md"
   export ORACLE_NOTES_FILE="$LOG_DIR/oracle-run-notes.md"
   SHARD_INSTRUCTION="This is an unsharded run; do not pass --shard."
+fi
+
+# ── language restriction (optional) ─────────────────────────────────────────
+# ORACLE_LANGS, if set, is a comma-separated subset of {zh,es} — e.g. "zh" to pause
+# es on this worker without touching the skill's default (both languages) or any
+# other worker's crontab line. Empty/unset = unrestricted, the historical behavior.
+ORACLE_LANGS="${ORACLE_LANGS:-}"
+if [[ -n "$ORACLE_LANGS" ]]; then
+  LANG_INSTRUCTION="Restrict this round to language(s): $ORACLE_LANGS only — do not select or work any other language's scope (§3/§3b/§4), even if that language's backlog is nonempty."
+else
+  LANG_INSTRUCTION=""
 fi
 
 LOCK="/tmp/oracle-backfill.$SLUG.lock"
@@ -363,6 +375,7 @@ fi
 if [[ -n "${DRY_RUN:-}" ]]; then
   echo "DRY_RUN $SLUG: preflight passed; would start a round with"
   echo "  shard      : ${SHARD:-<none>}"
+  echo "  langs      : ${ORACLE_LANGS:-<unrestricted>}"
   echo "  prompts    : ${BACKFILL_ORACLE_PROMPTS:-<default>}"
   echo "  answers    : ${BACKFILL_ORACLE_ANSWERS:-<default>}"
   echo "  resume     : $ORACLE_RESUME_FILE"
@@ -391,7 +404,8 @@ cd "$REPO_ROOT"
 claude -p "/oracle-backfill
 
 Autonomous cron round ($SLUG). $SHARD_INSTRUCTION
-Write any parked-run state to $ORACLE_RESUME_FILE and run notes to $ORACLE_NOTES_FILE
+${LANG_INSTRUCTION:+$LANG_INSTRUCTION
+}Write any parked-run state to $ORACLE_RESUME_FILE and run notes to $ORACLE_NOTES_FILE
 instead of the skill's default paths — a parallel worker owns those.
 Stop cleanly at the end of one round; do not start a second." \
   --permission-mode bypassPermissions \

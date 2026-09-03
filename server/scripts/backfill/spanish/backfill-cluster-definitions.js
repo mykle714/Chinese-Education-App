@@ -71,7 +71,7 @@ import { reconcileFrequencyScore } from '../shared/lib/senseClusters.js';
 const SCRIPT_VERSION = 3; // bump when this script's logic/prompt changes (v3: rule 7 — clusters must now be EMITTED most- to least-common, with same-score ties ordered by the marginal difference the 1-5 scale cannot record; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. zh does the same job in a separate Stage C.5 pass (shared/lib/tiebreakOrder.js) because its scorer never sees a cluster's siblings; here one call already sees them all. v2: Stage-C scoring now receives the FULL rubric from lib/frequencyRubric.js — it previously had only the five band names — and that rubric's axis changed to conversational commonality; pre-2026-08-28 cluster scores are stale)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const { stampEntries, validatedClause } = initRunLog({
+const { stampEntries, staleClause, validatedClause } = initRunLog({
   script: 'spanish/backfill-cluster-definitions',
   version: SCRIPT_VERSION,
   anthropic,
@@ -81,6 +81,11 @@ const isSpotCheck = process.argv.includes('--spot-check');
 // --spot-check implies --dry-run: it is a "show me what this would do" mode.
 const isDryRun = process.argv.includes('--dry-run') || isSpotCheck;
 const isForce = process.argv.includes('--force');
+// --stale: also (re)process rows this script already touched but stamped below
+// SCRIPT_VERSION. Without this the doneGate below is a one-shot "never touched"
+// check with no version awareness, so a SCRIPT_VERSION bump could never actually
+// reach an already-clustered row short of --force re-clustering the whole table.
+const isStale = process.argv.includes('--stale');
 
 const wordsArg = process.argv.find(a => a.startsWith('--words='));
 const targetWords = wordsArg
@@ -468,7 +473,9 @@ async function run() {
     // this script has never touched, however many clusters it already carries.
     const clusteredFilter = isForce
       ? ''
-      : `AND NOT ("enrichmentLog" ? 'spanish/backfill-cluster-definitions')`;
+      : isStale
+        ? `AND ${staleClause()}`
+        : `AND NOT ("enrichmentLog" ? 'spanish/backfill-cluster-definitions')`;
 
     // Never rewrite a word a validator has reviewed. Two fields protect a row here:
     //   - 'definitions', because re-clustering changes how those definitions are

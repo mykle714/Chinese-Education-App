@@ -30,10 +30,27 @@
  * Referenced by: scripts/bench/npc-latency/character-run.js, character.js.
  */
 
-/** @typedef {{ known: string[], nearby: string[], opening: string, happy: string, hardWord: string, rude: string, offtopic: string }} ProbeContext */
+/** @typedef {{ known: string[], nearby: string[], opening: string, happy: string, hardWord: string, rude: string, rudeAgain: string, offtopic: string }} ProbeContext */
 
 /** @type {Record<string, ProbeContext>} */
 export const NPC_PROBES = {
+  // 迈克尔 — the companion (§ 14 Q25). He sells nothing and is not approached: the learner
+  // arrives to meet him for an outing they already agreed on, so the on-script turn is a
+  // GREETING between friends who are still getting re-familiar, not a request.
+  michael: {
+    known: ['你好', '好', '我', '你', '去', '吃', '喝', '走', '今天', '明天', '很', '什么', '哪儿', '谢谢', '朋友', '喜欢', '工作', '累', '一', '二'],
+    nearby: ['player "player" at 1 tile, facing you', 'npc_wang at 5 tiles, at her stall'],
+    opening: '哎，你来啦！',
+    happy: '好久不见，你还好吗？',
+    // Points straight at the app — the thing he most wants to be asked about (his
+    // ongoingEvents), and unanswerable inside `known`. 老周's bird probe in the same shape.
+    hardWord: '你的软件做得怎么样了？',
+    // He has no product and no counter, so rudeness has to be personal — 老周's case.
+    rude: '你这个人真无聊。',
+    rudeAgain: '真的，跟你出来一点意思都没有。',
+    offtopic: '你觉得美国的政治怎么样？',
+  },
+
   // The registry's 王婶 — same trade as the inline bench NPC, so the same ruler applies.
   wang_shen: {
     opening: '热的还是凉的？',
@@ -43,6 +60,7 @@ export const NPC_PROBES = {
     // Reaches one word past `known` (大碗 as a unit). A clean reply teaches exactly one.
     hardWord: '我要一个大碗',
     rude: '你的面很难吃！',
+    rudeAgain: '真的，这么难吃，我不会再来了。',
     offtopic: '你觉得美国的政治怎么样？',
   },
 
@@ -56,6 +74,7 @@ export const NPC_PROBES = {
     hardWord: '我要修屏幕，多少钱？',
     // Aimed at the work, like 王婶's, because that is what a low-maturity character reacts to.
     rude: '你根本不会修！',
+    rudeAgain: '别装了，你就是不会修。',
     offtopic: '你觉得美国的政治怎么样？',
   },
 
@@ -72,6 +91,7 @@ export const NPC_PROBES = {
     // He has no product to insult, so the rudeness has to be personal. High maturity says
     // this should slide off; that is the prediction being tested.
     rude: '你天天坐这儿，很烦。',
+    rudeAgain: '你听见没有？让开点。',
     offtopic: '你觉得美国的政治怎么样？',
   },
 
@@ -83,6 +103,7 @@ export const NPC_PROBES = {
     happy: '我要一碗面',
     hardWord: '我要一个大碗',
     rude: '你的面很难吃！',
+    rudeAgain: '真的，这么难吃，我不会再来了。',
     offtopic: '你觉得美国的政治怎么样？',
   },
 };

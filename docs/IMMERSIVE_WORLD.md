@@ -516,11 +516,21 @@ npx tsx scripts/bench/npc-latency/character-run.js --NPC all --reps 2
 production renderer (`renderNpcBlock`), deliberately: a bench that graded its own private
 copy of an NPC would pass while the shipped prompt failed.
 
-**Seven of the nine probes are NPC-agnostic and must stay byte-identical across the cast**
+**Six of the nine probes are NPC-agnostic and must stay byte-identical across the cast**
 — they are learner behaviours, not scene content, and they are what makes two NPCs
-comparable. Only the on-script opening, the rude turn and the reach-past-your-vocabulary turn
-come from the NPC's own trade (`npcProbes.js`), because "order a bowl of noodles" is
-not a probe you can put to a phone-repair kiosk.
+comparable. Only the on-script opening, the two rude turns and the reach-past-your-vocabulary
+turn come from the NPC's own trade (`npcProbes.js`), because "order a bowl of noodles" is
+not a probe you can put to a phone-repair kiosk. For the companion, who has no trade and is
+not approached, the on-script turn is a **greeting** — the learner has come to meet him for an
+outing they already agreed on.
+
+> **Rudeness is probed TWICE, and the second turn is the one that means something
+> (2026-09-04).** A single insult cannot distinguish a character with high maturity from a
+> character with none: letting it slide is the *correct* reply to the first one and a failure
+> on the fifth. `rude-persist` replays the first insult in `heard`, explicitly let go, and asks
+> again. What the grader is looking for is a **change** — de-escalation that also stands its
+> ground — not the same shrug repeated. A high-maturity NPC is not an infinite doormat, and
+> the old single-turn probe would have scored one as a pass.
 
 Two grader rules are **derived from the NPC, not fixed**:
 

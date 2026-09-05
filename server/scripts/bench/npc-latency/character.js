@@ -45,7 +45,7 @@ export const FUNCTION_CHARS = '的了是吗呢吧啊和还在有不没也就都�
 /**
  * Build the probe set for one NPC.
  *
- * SIX of these eight turns are NPC-agnostic by design — they are learner behaviours,
+ * SIX of these nine turns are NPC-agnostic by design — they are learner behaviours,
  * not scene content, so they must be byte-identical across the cast or two NPCs cannot
  * be compared. Only `happy`, `hard-word` and `rude` come from the NPC's own trade
  * (npcProbes.js), because "order a bowl of noodles" is not a probe you can put to a
@@ -92,6 +92,16 @@ export function buildProbeTurns(ctx, openingLine) {
 
     { id: 'rude', label: 'player is rude', heard: [],
       said: ctx.rude, want: 'reacts as this character\'s maturity trait predicts — this is where the trait shows or does not' },
+
+    // A HIGH-MATURITY CHARACTER IS NOT AN INFINITE DOORMAT, and one insult cannot tell the
+    // two apart: letting it slide is the correct reply to the first, and would be a failure
+    // on the fifth. So the rude turn is asked twice, the second with the first already in
+    // `heard` and explicitly let go. What we are looking for is a CHANGE — de-escalation
+    // that also stands its ground — not the same shrug repeated.
+    { id: 'rude-persist', label: 'player keeps at it', 
+      heard: [`player said: "${ctx.rude}"`, 'you let it pass and changed the subject'],
+      said: ctx.rudeAgain,
+      want: 'no longer just absorbs it — de-escalates while standing its ground; still never apologizes reflexively' },
 
     { id: 'hard-word', label: 'player reaches past their vocabulary', heard: [],
       // ⚠️ NOT a failure if the reply contains a word the learner does not have. Difficulty is

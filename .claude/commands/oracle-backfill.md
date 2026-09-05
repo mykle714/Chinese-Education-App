@@ -165,12 +165,15 @@ The manifest — not this document — decides what "pending" means:
   flat across rounds means the reconcile pass is not actually running; say so in the
   report rather than looping on it.
 - **Opt-in steps** (`optional: true`): excluded from the plan *and* from the promotion
-  bar unless asked for. Today this is `backfill-icons` only — the one step that must
-  reach an external paid API (icons8), which an oracle run cannot answer locally. **The
+  bar unless asked for. Today this is `backfill-icons` only — since v2 its LLM
+  acceptability-judge call is oracle-capturable, but the icons8 search/getById HTTP
+  calls it also makes (plain `fetch`, never through the wrapped Anthropic client) are
+  real network calls an oracle run still cannot answer locally. **The
   default is to skip it**: a word ships with `iconId` NULL and every surface that reads
   it degrades gracefully. Include it only on explicit instruction, and then pass
   `--with-icons` to **both** the planner and `promote-discoverable.js` (the planner alone
-  only adds it to the plan; the promoter alone only adds it to the bar).
+  only adds it to the plan; the promoter alone only adds it to the bar) — it also now
+  needs `ANTHROPIC_API_KEY` set alongside `ICONS8_API_KEY`.
 
 The manifest's `version` is hand-synced to each script's `SCRIPT_VERSION` (see its
 header). If you bump a `SCRIPT_VERSION`, bump the manifest too — in **both** manifests

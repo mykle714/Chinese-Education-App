@@ -21,11 +21,13 @@
  *     the caller explicitly asks for it (`scriptsForLanguage(lang, {includeOptional:true})`
  *     / the `includeOptional` option on the helpers below). An optional step is
  *     therefore neither planned nor a promotion blocker by default — a row ships
- *     without ever running it. Today this is `backfill-icons` only: it is the one
- *     manifest step that must reach an external paid API (icons8) and so cannot be
- *     answered locally by an oracle run, and a missing `iconId` degrades gracefully
- *     everywhere it is read. Opt in with `--with-icons` on oracle-plan.js /
- *     promote-discoverable.js.
+ *     without ever running it. Today this is `backfill-icons` only: its acceptability
+ *     JUDGE is an oracle-capturable LLM call (v2+), but the step ALSO makes real,
+ *     live icons8 HTTP calls (search + getById, via plain `fetch` in
+ *     Icons8FetchService.ts, never through the wrapped Anthropic client) that an
+ *     oracle round cannot answer locally — so the step as a whole still cannot be
+ *     fully answered offline, and a missing `iconId` degrades gracefully everywhere
+ *     it is read. Opt in with `--with-icons` on oracle-plan.js / promote-discoverable.js.
  *   - driftProbe (optional): names a CROSS-ROW staleness check in DRIFT_PROBES. The
  *     other two axes (`when`, `version`) are per-row and compile into
  *     buildIncompletePredicate; a drift probe cannot, because "is this row stale?"
@@ -86,8 +88,10 @@ export const REQUIRED_SCRIPTS_ZH = [
   // can still rewrite/reorder `definitions`. Shared across languages (--lang defaults to
   // zh), hence the un-prefixed id — it lives at scripts/backfill/backfill-icons.js.
   // OPTIONAL (opt-in): needs the external icons8 API, so it is skipped by default and
-  // never blocks promotion — see the `optional` bullet in the header.
-  { id: 'backfill-icons',                             when: 'always',    version: 1, deterministic: true, optional: true },
+  // never blocks promotion — see the `optional` bullet in the header. NOT
+  // deterministic (v2+): the search→judge→reformulate loop makes an LLM acceptability
+  // call per candidate icon.
+  { id: 'backfill-icons',                             when: 'always',    version: 2, optional: true },
   { id: 'chinese/backfill-word-forms',                when: 'always',    version: 3 },
   { id: 'chinese/backfill-hsk-level',                 when: 'always',    version: 2, validationFields: ['difficulty'] },
   { id: 'chinese/backfill-frequency-score',           when: 'always',    version: 4, validationFields: ['frequencyScore'] },
@@ -171,7 +175,8 @@ export const REQUIRED_SCRIPTS_ES = [
   // Language-shared script at scripts/backfill/backfill-icons.js — pass --lang=es.
   // Un-prefixed id because it stamps the same key for every language.
   // OPTIONAL (opt-in) for the same reason as in the zh manifest — external icons8 API.
-  { id: 'backfill-icons',                               when: 'always',         version: 1, deterministic: true, optional: true },
+  // NOT deterministic (v2+) — see the zh entry's comment above.
+  { id: 'backfill-icons',                               when: 'always',         version: 2, optional: true },
   // Writes BOTH `frequencyScore` and `difficulty` in one pass, so a review of either
   // chip protects the row — mirrors the script's own validatedClause.
   { id: 'spanish/backfill-frequency-score',             when: 'always',         version: 5, validationFields: ['frequencyScore', 'difficulty'] },

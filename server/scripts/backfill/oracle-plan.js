@@ -52,12 +52,14 @@
  *                   will interleave prompts: set BACKFILL_ORACLE_PROMPTS and
  *                   BACKFILL_ORACLE_ANSWERS per worker (run-log.js honors both).
  *   --with-icons    also plan the OPT-IN `backfill-icons` step. It is excluded by
- *                   default because it is the one manifest step that must reach an
- *                   external paid API (icons8) — an oracle round cannot answer it
- *                   locally, and a NULL `iconId` degrades gracefully. Pass this only
- *                   when ICONS8_API_KEY is set and you intend to run it (and then pass
- *                   --with-icons to promote-discoverable.js too, or the rows it
- *                   enriched will still promote without it).
+ *                   default because, even though its acceptability JUDGE is an
+ *                   oracle-capturable LLM call (v2+), the step ALSO makes real, live
+ *                   icons8 HTTP calls (search + getById) that an oracle round cannot
+ *                   answer locally — and a NULL `iconId` degrades gracefully. Pass
+ *                   this only when ICONS8_API_KEY (and ANTHROPIC_API_KEY) is set and
+ *                   you intend to run it (and then pass --with-icons to
+ *                   promote-discoverable.js too, or the rows it enriched will still
+ *                   promote without it).
  *   --json          emit machine-readable JSON instead of the table
  *
  * Referenced by: .claude/commands/oracle-backfill.md §3-§4.
@@ -377,7 +379,7 @@ async function main() {
     // Say so out loud: a silently-omitted step would read as "nothing to do" rather
     // than "deliberately skipped", which is exactly the confusion `optional` invites.
     console.log(WITH_ICONS
-      ? '  (--with-icons: the opt-in icons8 step IS planned — needs ICONS8_API_KEY)\n'
+      ? '  (--with-icons: the opt-in icons8 step IS planned — needs ICONS8_API_KEY + ANTHROPIC_API_KEY)\n'
       : '  (opt-in step backfill-icons skipped; pass --with-icons to include it)\n');
     console.log('  Run these in this order (manifest order encodes the dependencies):\n');
     let total = 0;

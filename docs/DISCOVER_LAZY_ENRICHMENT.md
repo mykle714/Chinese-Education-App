@@ -427,10 +427,13 @@ both the runtime trigger and the manual CLI):
    > `scriptPathFor` therefore resolves the id **as given** (`path.join(__dirname, id)`)
    > rather than forcing `basename(id)` into `chinese/`. `backfill-icons` runs after
    > `parts-of-speech` (its icons8 search-term cascade keys off the finalized
-   > `definitions[0]`), is `deterministic: true` — no LLM — but is the one step that makes
-   > outbound HTTP calls, so an oracle run cannot answer it locally. It stamps even when
-   > icons8 returns no match (`iconId` stays NULL), so an unmatchable word still completes
-   > and can be promoted.
+   > `definitions[0]`). Since v2 it is no longer `deterministic: true`: each candidate icon
+   > is judged for acceptability by an LLM call (text metadata only, never the image),
+   > which reformulates the search term and retries up to 4 candidates before falling back
+   > to the least-bad one seen. The judge calls are oracle-capturable, but the icons8
+   > search/getById HTTP calls are not, so an oracle run still cannot answer this step
+   > locally. It stamps even when icons8 returns no match at all (`iconId` stays NULL), so
+   > an unmatchable word still completes and can be promoted.
    >
    > **It is also the manifest's only `optional: true` step, i.e. OPT-IN**: because it
    > needs an external paid API and a NULL `iconId` degrades gracefully everywhere it is

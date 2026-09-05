@@ -1012,7 +1012,7 @@ do something, and you leave with a rating and a label.
 | **Objective** | A real-world errand stated in one line: *eat a meal at this restaurant*, *check into the hotel and get to your room*, *take a cab across town*, *go to the mall*. The objective is a **social** task, not a puzzle — there is no hidden solution, only a conversation that has to go well enough. |
 | **Companion** | Every scene is played **with a companion NPC** who accompanies the learner throughout. The companion is the scene's safety net and its second voice: it can be spoken to freely, it reacts to what the learner says to others, and it is the reason a beginner is never standing mute in front of a stranger. |
 | **Cast** | The other NPCs the objective forces you through — waitress, hotel clerk, cab driver, shop assistant. Each is an NPC (§ 5.5) with its own hearing history. |
-| **Complication** | Optional, per scene: the cab takes a wrong turn, the order arrives wrong, the room is double-booked. A complication exists to force the learner past the memorised opening exchange. |
+| **Complication** | Per scene, environmental (Q31): the cab takes a wrong turn, the order arrives wrong, the room is double-booked. It belongs to the world, not to an NPC — everyone present reacts to it in character. A complication exists to force the learner past the memorised opening exchange. ⚠️ "Optional" here means a scene *may* be authored without one, not that the learner may skip it. |
 
 Worked examples given by the product owner:
 
@@ -1348,14 +1348,30 @@ learner-facing.
 editor is missing a capability that every scene turns out to need, or the three NPCs are
 too few to cast one.
 
-**1a — Schema.** The full normalized set in one migration pass (Q2): `iw_scenes` +
-`iw_scene_cast` / `_complications` / `_words` / `_conversations`, and the runtime tables
-`iw_scene_runs`, `iw_scene_ratings`, `iw_npc_memories`. **No `iw_personas`** — NPCs are
-code. NPC references are **text**, so add the startup validation pass that asserts every
-stored id still resolves via `npcById`.
+**1a — Schema** ✅ **DONE (2026-09-04) — `database/migrations/158-create-immersive-world-schema.sql`.**
+Four tables, not the nine originally specified (Q2, reversed): `iw_scenes` with its five
+authored blobs, `iw_scene_runs`, `iw_scene_ratings`, `iw_npc_memories`. **No `iw_npcs`** —
+NPCs are code. NPC references are **text** everywhere.
 
-**1b — The cast** ✅ **DONE.** `server/config/iwNpcs.ts` — 王婶 (default, forgiving),
-小陈 (the difficulty setting: low agreeableness, high energy), 老周 (the listening-practice NPC).
+> ⚠️ **Still owed from 1a: the startup validation pass** that asserts every stored npc id
+> still resolves via `npcById`. The database cannot enforce a reference into a code constant,
+> so deleting an NPC orphans rows silently. Numbered 158 rather than 157 because 157 (the
+> Chinese typeface column) is committed with an open runbook and must reach prod first;
+> nothing in iw depends on it.
+
+**1b — The cast** ✅ **DONE.** `server/config/iwNpcs.ts` — 迈克尔 (the companion, Q25),
+王婶 (default, forgiving), 小陈 (the difficulty setting: low agreeableness, high energy),
+老周 (the listening-practice NPC).
+
+> **A new scene TYPE generally needs a new NPC.** Completion rules are written in the
+> character's own terms (Q27), so 王婶's is written around food and she cannot complete a
+> hotel scene. Budget an NPC — and a sweep — per scene type, not per scene.
+
+> **The companion is a code constant, not scene data.** `COMPANION_NPC_ID_BY_LANGUAGE`
+> resolves it; `iw_scenes` has no companion column, because the same person walks into every
+> scene. When learners choose their own companion this becomes a setting on `users` — and no
+> migration is needed to prepare for that, since `iw_npc_memories` is already keyed
+> `(userId, npcId)`.
 Type in `server/types/iwNpc.ts`. Adding a character is a code change plus a
 `character-run.js` sweep, not an authoring task.
 
@@ -1656,12 +1672,34 @@ pick an NPC should populate the list from the code constant rather than acceptin
 — which turns Q2's runtime-lookup risk into a UI affordance and removes the class of bug
 entirely.
 
-**✅ Schema shape: fully normalized.** Every scene field is a real column, and the repeating
-structures get **child tables** rather than jsonb arrays. The DB validates scene content, and
-malformed scenes are caught by constraints rather than at runtime — which matters more than
-usual here, because scenes will be written by an editor rather than reviewed in a diff.
+**⚠️ REVERSED 2026-09-04 — the schema is FOUR TABLES, and the child tables were never
+built.** Shipped as **migration 158**. The reasoning below is kept because the argument for
+normalizing was real; what defeated it was migration 107's own rule, which this design had
+not applied: **blob what is authored and read whole; keep as columns only what is looked up
+individually or pointed at by a foreign key.** A scene is loaded in its entirety exactly once,
+at scene start, and nothing in the feature asks "which scenes contain this complication". So
+the four child tables became four jsonb columns (`npcCast`, `complications`, `words`,
+`conversations`) plus `layout`, and with them went four join paths and four editor write
+paths. The accepted cost below inverts too: a scene-shape change is now an editor change, not
+a migration.
 
-Proposed shape, to be enumerated in one pass before the migration is written:
+Two more corrections from the same pass:
+- **`iw_scene_cast` rows carry no `role`.** An NPC's part in a scene is baked into who they
+  are, and they act accordingly. The companion gets a cast entry only if a scene wants him
+  placed deliberately.
+- **`cast` is `"npcCast"`** — CAST is a reserved SQL word, and it would have been the one
+  column in the database that breaks in an unquoted ad-hoc query.
+
+What was actually built:
+
+| Table | Holds |
+|---|---|
+| `iw_scenes` | scene identity, `language` (Q8), objective, published, the completion `(npcId, action)` pair, board geometry (`playerStart*` / `companionStart*` / width / height in template cells), and five jsonb blobs: `layout`, `npcCast`, `complications`, `words`, `conversations` |
+| `iw_scene_runs` | one playthrough — durable and resumable within the day (Q30), with the `transcript` jsonb (Q21) |
+| `iw_scene_ratings` | per-run, per-NPC 1–5 on vocabulary / grammar / politeness (Q21) |
+| `iw_npc_memories` | `(userId, npcId)` → one rolling summary (Q3) |
+
+The superseded proposal, for the record:
 
 | Table | Holds |
 |---|---|
@@ -1679,7 +1717,7 @@ than accreting a column per realization.
 
 ⚠️ **`iw_sessions` and `iw_utterances` do NOT exist.** Q21 put the transcript in a `jsonb`
 column on `iw_scene_runs`, and Q3 uses a small `iw_npc_memories` table. The full table list
-for iw is therefore: `iw_scenes` + its four child tables, `iw_scene_runs`, `iw_scene_ratings`,
+for iw is therefore exactly four: `iw_scenes`, `iw_scene_runs`, `iw_scene_ratings`,
 `iw_npc_memories`.
 
 ⚠️ **NPC ids are TEXT, not foreign keys**, everywhere they appear (`iw_scenes`,
@@ -2386,6 +2424,17 @@ and it will often **turn the resolution back to the learner as a choice**.
 
 The worked example given: the order comes out wrong, and the waitress offers to take the
 dish off the bill, replace it, or asks whether the learner minds waiting longer.
+
+> ⚠️ **A COMPLICATION IS ENVIRONMENTAL, NOT AN NPC'S (clarified 2026-09-04).** It belongs to
+> the world and every NPC present reacts to it out of their own character — the rain starts,
+> the power cuts, a queue forms, the order is wrong. It is **not** attached to one NPC and not
+> injected into one NPC's turn context, and `iw_scenes.complications` accordingly has no owner
+> field. This matters for authoring: a complication written as "王婶 is flustered" is a
+> character note misfiled as a world event, and it would produce a scene where nobody else
+> notices what is happening in the room.
+>
+> It also inherits § 14 Q29: **a complication waits indefinitely** for the learner, exactly as
+> NPCs do. Nothing escalates because the learner was slow to compose a sentence.
 
 This is the strongest pedagogical idea in the feature so far, and it is worth naming why:
 

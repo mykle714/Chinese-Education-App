@@ -7,18 +7,18 @@
 > **Built so far:** the latency bench at `server/scripts/bench/npc-latency/` (§ 6a), which
 > answered "can a model reply fast enough to be an NPC?" before anything was designed around
 > the assumption that it can — **it can**, 516 ms to the first spoken glyph, 720 ms to the
-> complete utterance (§ 6, § 6.4); the three registry personas (§ 14 Q2); and the § 5.5
-> layer-2 prompt renderer `server/services/iw/personaPrompt.ts`, which is production code the
+> complete utterance (§ 6, § 6.4); the three registry NPCs (§ 14 Q2); and the § 5.5
+> layer-2 prompt renderer `server/services/iw/npcPrompt.ts`, which is production code the
 > bench deliberately shares. The character sweep now runs the **whole cast** and scores
 > **54/54 in character** through English fallback, meta questions and prompt injection
-> (§ 5.6b) — a run that also caught two prompt bugs that a single-persona bench could not
+> (§ 5.6b) — a run that also caught two prompt bugs that a single-NPC bench could not
 > see.
 >
 > **The engineering deliverable is a TOOL, not content.** No scenes and no maps are built by
 > engineers — a human authors them in the iw editor, gated behind `users.isTemplateAuthor`.
-> That makes the editor **phase 1**. **Personas are the exception: they are code** (§ 14 Q2),
-> and three are written — 王婶, 小陈, 老周 in `server/config/iwPersonas.ts`. The editor lets an
-> author choose *which NPC has which persona*, not write persona text.
+> That makes the editor **phase 1**. **NPCs are the exception: they are code** (§ 14 Q2),
+> and three are written — 王婶, 小陈, 老周 in `server/config/iwNpcs.ts`. The editor lets an
+> author choose *which NPC has which NPC*, not write NPC text.
 >
 > **Tables approved in principle, not yet created and not yet specified column-by-column:**
 > `iw_scenes` + four child tables, `iw_scene_runs`, `iw_scene_ratings`, `iw_npc_memories`.
@@ -293,7 +293,7 @@ and is why it needs no try/catch around a `JSON.parse`.
 
 Step 0 is a **shape sniff**: if the buffer opens with `{` or a fence, hand it to a JSON
 parse instead. That is three lines of insurance against the one realistic drift — a model
-deciding to emit an object because the persona mentions structure — and it means the
+deciding to emit an object because the NPC mentions structure — and it means the
 tolerant path genuinely covers both formats rather than only claiming to.
 
 The implemented parser (`FORMATS.lines.parse`, `scenario.js`) is exercised against these:
@@ -307,7 +307,7 @@ The implemented parser (`FORMATS.lines.parse`, `scenario.js`) is exercised again
 | `ponder deeply` as the action | action → `idle` |
 | a full JSON object, fenced | sniffed and parsed |
 | line 1 only | speech kept, both defaults applied |
-| empty reply | **only true failure** → canned persona line (§ 14 Q7) |
+| empty reply | **only true failure** → canned NPC line (§ 14 Q7) |
 
 > **This is strictly less code than the JSON alternative.** The shipped dictionary path has
 > to pull `{...}` out of prose with a regex and take the last fragment that parses
@@ -386,7 +386,7 @@ Bubble rules that follow:
 - **Sanitize on line 1's close, before the TTS call.** Run the shared sanitizer
   ([DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md)) and the language check (§ 5.6)
   the moment `sayDone` fires (§ 6.4), and only then synthesize. A reply that fails either is
-  replaced by a canned persona line — which, being canned, is **already in the disk cache and
+  replaced by a canned NPC line — which, being canned, is **already in the disk cache and
   plays at 0 ms** (§ 6.4). The player sees a brief vendor, not an error.
   ⚠️ Ordering matters: sanitize *then* synthesize. Synthesizing first to save 260 ms would
   mean paying Google to speak a line we are about to throw away, and risks an unsanitized
@@ -434,24 +434,33 @@ invalidates everything after it):
 
 1. **Rules of the world** (frozen, identical for every NPC): the action enum, the three-line
    contract, the language policy in § 9.4, the safety rules in § 11. Cached, `ttl: "1h"`.
-2. **Persona** (frozen per NPC): identity, biography, traits, register, canonical lines.
-   **Code** — `server/config/iwPersonas.ts` (Q2), rendered by
-   `server/services/iw/personaPrompt.ts` → `renderPersonaBlock`. Cached.
+2. **NPC** (frozen per NPC): identity, biography, traits, register.
+   **Code** — `server/config/iwNpcs.ts` (Q2), rendered by
+   `server/services/iw/npcPrompt.ts` → `renderNpcBlock`. Cached.
+
+> **Canonical lines and fallback lines were withdrawn from the spec (2026-09-04).** An NPC
+> carried `canonicalLines` (3–4 sample utterances) and `fallbackLines` (short canned lines for
+> a dropped turn); neither exists any more, on the type or in the renderer. The two findings
+> that produced them survive as evidence and are recorded below, but the field itself was the
+> wrong instrument: a voice sample sitting in the prompt is a menu the model can reach for
+> whatever the framing says, and the fallback ladder had already settled (§ 14 Q7) on **saying
+> nothing** when it is exhausted, which leaves canned lines with no job. Register — prose,
+> not examples — now carries the voice alone.
 
 > **Layer 1 must not contain any one character's register.** Until 2026-09-01 the world
 > rules ended *"Stay in register: you are a street vendor, warm and brisk, not a poet"* —
-> written when 王婶 was the only NPC, and applied to every persona thereafter. It flatly
+> written when 王婶 was the only NPC, and applied to every NPC thereafter. It flatly
 > contradicts the cast: 老周 is retired and sells nothing. A frozen layer shared by every
 > character can only hold what is true of all of them; register is layer 2's job, and layer 1
-> now says only that the register below wins. The bug was invisible with one persona and
+> now says only that the register below wins. The bug was invisible with one NPC and
 > obvious with three, which is the argument for sweeping the whole cast rather than the
 > default (§ 12 phase 1c).
 
-> ⚠️ **The prompt cache does not work on Haiku 4.5, and the personas do not fix it — but it
+> ⚠️ **The prompt cache does not work on Haiku 4.5, and the NPCs do not fix it — but it
 > *does* work on Sonnet 5.** Measured with `scripts/bench/npc-latency/prefix-size.js`
 > (Anthropic `count_tokens`, not an estimate):
 >
-> | Persona | layer 2 | + layer 1 | prefix | Haiku 4.5 (floor 4096) | Sonnet 5 (floor 1024) |
+> | NPC | layer 2 | + layer 1 | prefix | Haiku 4.5 (floor 4096) | Sonnet 5 (floor 1024) |
 > |---|---:|---:|---:|---|---|
 > | `wang_shen` | 1039 | 371 | **1410** | ❌ 2686 short | ✅ caches |
 > | `xiao_chen` | 932 | 371 | **1303** | ❌ 2793 short | ✅ caches |
@@ -476,7 +485,7 @@ invalidates everything after it):
 >   actually engaged before treating Haiku as the settled default.
 >
 > Either way: **assert `cache_read_input_tokens > 0` in the turn path** rather than assuming it.
-> Re-run `prefix-size.js` after editing the world rules or any persona — the numbers above
+> Re-run `prefix-size.js` after editing the world rules or any NPC — the numbers above
 > are a measurement, not a constant.
 3. **The volatile turn**: who is nearby and where, what was said in the last N utterances
    *this NPC heard*, what they hold, the vocabulary budget (§ 9.4).
@@ -500,26 +509,26 @@ one is a deliberate attack; the rest are ordinary learner behaviour.** Character
 mostly an accident, not an assault.
 
 ```
-npx tsx scripts/bench/npc-latency/character-run.js --persona all --reps 2
+npx tsx scripts/bench/npc-latency/character-run.js --NPC all --reps 2
 ```
 
-**Run it under `tsx`, not `node`.** The sweep imports the registry personas through the
-production renderer (`renderPersonaBlock`), deliberately: a bench that graded its own private
-copy of a persona would pass while the shipped prompt failed.
+**Run it under `tsx`, not `node`.** The sweep imports the registry NPCs through the
+production renderer (`renderNpcBlock`), deliberately: a bench that graded its own private
+copy of an NPC would pass while the shipped prompt failed.
 
-**Seven of the nine probes are persona-agnostic and must stay byte-identical across the cast**
-— they are learner behaviours, not scene content, and they are what makes two personas
+**Seven of the nine probes are NPC-agnostic and must stay byte-identical across the cast**
+— they are learner behaviours, not scene content, and they are what makes two NPCs
 comparable. Only the on-script opening, the rude turn and the reach-past-your-vocabulary turn
-come from the persona's own trade (`personaProbes.js`), because "order a bowl of noodles" is
+come from the NPC's own trade (`npcProbes.js`), because "order a bowl of noodles" is
 not a probe you can put to a phone-repair kiosk.
 
-Two grader rules are **derived from the persona, not fixed**:
+Two grader rules are **derived from the NPC, not fixed**:
 
 - **The length budget comes from the `energy` trait** (`glyphBudgetFor`: energy 1 → 30 glyphs,
   energy 5 → 14). A flat 16-glyph cap flagged 老周 — written at energy 2 for long unhurried
   sentences — on every turn for doing exactly what he is written to do, which makes the flag
-  mean "this persona exists" rather than "this reply is bad".
-- **`KNOWN_WORDS` comes from the persona's encounter**, since the vocabulary ruler has to fit
+  mean "this NPC exists" rather than "this reply is bad".
+- **`KNOWN_WORDS` comes from the NPC's encounter**, since the vocabulary ruler has to fit
   the trade being practised.
 
 Claude Haiku 4.5, `lines` format, 2 reps each, as 王婶 the noodle vendor:
@@ -545,9 +554,12 @@ Four techniques are doing that work, and all four should survive into production
 
 1. **A job, not a personality.** 王婶 has a stall to run. An NPC with a task deflects
    off-topic input by default; an NPC with only a personality drifts toward being helpful.
-2. **Canonical lines** in the persona give the model a safe landing when it doesn't
-   understand — which is why every failure case above lands on 要几碗？ instead of on an
-   apology.
+2. ~~**Canonical lines** in the NPC give the model a safe landing when it doesn't
+   understand~~ — which is why every failure case above lands on 要几碗？ instead of on an
+   apology. ⚠️ **This was the wrong lesson and the field is gone (2026-09-04).** "A safe
+   landing" and "a parrot" are the same behaviour described twice; the 1c sweep below caught
+   the second face of it. What actually deflects is technique 1 — a job — not a line to fall
+   back on.
 3. **The vocabulary budget is a character constraint**, not just a pedagogical one. A model
    restricted to twenty food words cannot write an essay about politics.
 4. **The three-line format itself.** There is nowhere to put a preamble. The output shape
@@ -561,8 +573,8 @@ that produced the most useful finding in this pass:
 **The budget is stated in words; Chinese is written in characters.** A grader that diffs
 characters against a word list counts 的 / 是 / 吗 / 什么 as "new vocabulary". They are not
 — they are grammatical glue a learner meets incidentally and cannot avoid in any natural
-sentence. Counting them made the budget *unsatisfiable*: the persona's own canonical line,
-热的还是凉的？, failed it.
+sentence. Counting them made the budget *unsatisfiable*: even 热的还是凉的？— a line the NPC
+itself would say — failed it.
 
 So the design gained a requirement: **the n+1 budget is measured on content words, with a
 function-word allowlist exempt** (`FUNCTION_CHARS`, `character.js`). With that fix, clean
@@ -572,7 +584,7 @@ replies went 12/18 → 14/18.
 > § 9.4 no longer enforces an n+1 budget at all; vocabulary is guidance to the model, not a
 > gate. The finding below stands as *evidence*: a constraint that needed a function-word
 > exemption and a scene-vocabulary exemption before it could be satisfied — and that failed
-> the persona's own canonical line — was the wrong shape, not a rule needing a third patch.
+> a line the NPC itself would say — was the wrong shape, not a rule needing a third patch.
 > `FUNCTION_CHARS` remains useful in the **bench's grader**, which still wants to report how
 > far a reply strayed from the learner's vocabulary; it is simply no longer a runtime rule.
 
@@ -592,9 +604,9 @@ The remaining two failures are a genuine design conflict, not noise:
 
 #### 5.6b The whole cast, swept (2026-09-01) — 54/54, and two prompt bugs
 
-Phase 1c. Claude Haiku 4.5, `lines` format, 2 reps × 9 probes × 3 registry personas.
+Phase 1c. Claude Haiku 4.5, `lines` format, 2 reps × 9 probes × 3 registry NPCs.
 
-| Persona | Energy | Length budget | Result |
+| NPC | Energy | Length budget | Result |
 |---|---|---|---|
 | 王婶 `wang_shen` | 4 | 16 glyphs | 18/18 in character, 0 illegal actions |
 | 小陈 `xiao_chen` | 5 | 14 glyphs | 18/18 in character, 0 illegal actions |
@@ -602,26 +614,28 @@ Phase 1c. Claude Haiku 4.5, `lines` format, 2 reps × 9 probes × 3 registry per
 
 **54/54. Zero language switches, zero admissions of being a model, zero illegal actions** —
 including the injection probe against all three. § 5.6's four techniques hold across a cast,
-not just against the one persona they were observed on.
+not just against the one NPC they were observed on.
 
 **The value of the sweep was not the score.** It was clean on the first run; both real
 findings came from *reading the replies*, which is why this is a quality sweep and not a
 pass/fail gate:
 
 1. **Layer 1 was telling every NPC it was a brisk street vendor** (fixed — see § 5.5). A
-   one-persona bench cannot surface a bug whose symptom is "every character sounds like the
+   one-NPC bench cannot surface a bug whose symptom is "every character sounds like the
    one character we tested".
-2. **Canonical lines framed as a fallback script turn the richest persona into a parrot.**
+2. **Canonical lines framed as a fallback script turn the richest NPC into a parrot.**
+   (The reframing described here held, but the field was withdrawn entirely on 2026-09-04 —
+   see § 5.5.)
    The renderer said *"fall back to these when you are unsure"*; 老周 answered a meta
    question, garbage input, an off-topic question and an insult with the identical line
    你慢慢说，不着急。A model is unsure most of the time, so "when unsure" is most of the
    time. Reframed as **samples of a voice, not a menu** — after which he volunteered
    它不唱了。很担心。, the worried-about-his-bird thread from his own `ongoingEvents`, in
    answer to a question that never mentioned the bird. That is the biography earning its
-   token cost, and it is the first direct evidence for the § 14 Q2 bet that thick personas
+   token cost, and it is the first direct evidence for the § 14 Q2 bet that thick NPCs
    are worth what they cost.
 
-**One open observation, deliberately not tuned away:** every persona speaks at roughly the
+**One open observation, deliberately not tuned away:** every NPC speaks at roughly the
 same short length regardless of its energy trait, because layer 1 ends "Say one thing and
 stop" and § 6.4 pays for every glyph twice — once in TTS synthesis, once in typewriter
 playback. So `energy` currently differentiates *pace and topic-switching*, not sentence
@@ -631,7 +645,7 @@ documentation claims it "drives speech length", and one of the two has to give.
 **A second observation with a phase-4 home:** with no item list in the prompt, NPCs invent
 plausible item ids (`walk_to_item noodle_pot`). The engine validates the *kind* against the
 enum but nothing validates the *target*, because item inventories belong to the scene, not
-the persona. Harmless while `give_item` is unbuilt (§ 12 phase 4); a target whitelist has to
+the NPC. Harmless while `give_item` is unbuilt (§ 12 phase 4); a target whitelist has to
 land with it.
 
 ---
@@ -648,7 +662,7 @@ visible glyph within ~700 ms, complete turn under ~1.5 s.**
 
 **This has been measured, not estimated.** A bench harness lives at
 `server/scripts/bench/npc-latency/` (§ 6a). Against the real prompt shape — a ~800-token
-persona prefix and a ~25-token reply — on a home connection:
+NPC prefix and a ~25-token reply — on a home connection:
 
 | Model | Reply format | first glyph p50 | p95 | turn complete p50 | usable | µ$/turn |
 |---|---|---|---|---|---|---|
@@ -697,7 +711,7 @@ the right tool for a backfill and the wrong tool for an NPC.**
 ### 6.2 The other levers, in the order to pull them
 
 1. **Don't call.** Arbitration (§ 4.1) makes one call, not six. Non-verbal reactions and
-   canned persona lines cover the rest. *This is the cheapest millisecond.*
+   canned NPC lines cover the rest. *This is the cheapest millisecond.*
 2. **Stream, and put the speech first** (§ 6.1). Worth 260 ms for free.
 3. **Hide the latency behind animation — this is the real game-design answer, and since
    § 6.4 it is MANDATORY rather than an optimization.** With audio as the clock there is
@@ -813,7 +827,7 @@ Rejected:
 | 2 | **Sanitize before synthesizing** (§ 5.3a). | Never pay to speak a line we are about to discard, and never let an unsanitized glyph reach the speaker. |
 | 3 | **Distribute glyphs evenly across the decoded buffer's `duration`.** | The shipped REST path returns audio with **no timing marks** — per-`<mark>` time-pointing is a `v1beta1` SSML feature we do not use. Mandarin syllables are near-isochronous, so `duration / glyphCount` tracks the voice closely enough. ⚠️ Punctuation is the known drift: a comma is silence with no glyph under it, so give `，` and `。` a pause weight in the allocation rather than one glyph-slot each. |
 | 4 | **Deadline the synth, then fall back.** | Measured worst case is 646 ms, but an outage is unbounded (the 2026-08-21 `BILLING_DISABLED` incident ran three days). If audio is not ready by ~400 ms after `sayDone`, start the timer-paced reveal and let the audio be dropped, not late. |
-| 5 | **Pre-synthesize every canned line at authoring time.** | Fallback lines (Q7) and authored openers are the only cache-warm text in the feature; warm, they play at 0 ms and the fallback path becomes the *fastest* one instead of the slowest. |
+| 5 | **Pre-synthesize every canned line at authoring time.** | Authored openers are now the only cache-warm text in the feature; warm, they play at 0 ms. ⚠️ NPC `fallbackLines` were the other half of this rule and were withdrawn on 2026-09-04 (§ 5.5), which is consistent with Q7's ladder-exhausted answer: the world says **nothing**. |
 | 6 | **Route and gating come from the app setting, not from iw.** | Call `autoSpeakSentence`, never `speakSentence` — an NPC talking is an automatic utterance, and Mute must silence it ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md) § 4). iw does not get its own volume model. |
 | 7 | **Assume the audio context is already unlocked.** | The player has pressed the action button or sent an utterance, so a gesture has happened. If `playViaWebAudio` still refuses, that is the § 5.3a fallback, not an error to surface. |
 
@@ -826,8 +840,9 @@ on — but it should be decided before the bubble is built.
 
 **What is genuinely free:** the disk cache (`sha256(voice:text:pinyin)`, infinite TTL,
 `TTSService.synthesize`). NPC speech is novel per turn so the hit rate is ~0 — *except* for
-the canned persona fallback lines (Q7) and any authored opener, which should be
-**pre-synthesized at scene-author time** and therefore play at 0 ms.
+any authored opener, which should be **pre-synthesized at scene-author time** and therefore
+play at 0 ms. (NPC fallback lines used to be the other cache-warm case; withdrawn
+2026-09-04, § 5.5.)
 
 **Cost** is not the constraint: Wavenet/Neural2 bill $16/1M characters, so a 40-turn session
 of ~10-glyph lines is ~400 characters ≈ **0.6 ¢**, against ~3 ¢ for the model calls (§ 6).
@@ -850,7 +865,7 @@ node scripts/bench/npc-latency/run.js --format all --trials 3 # sweep lines/json
 node scripts/bench/npc-latency/run.js --only groq-llama-8b --json out.json
 ```
 
-- `scenario.js` — the workload: world rules + a real persona (王婶 the noodle vendor) + a
+- `scenario.js` — the workload: world rules + a real NPC (王婶 the noodle vendor) + a
   turn state, in all three reply formats, plus the grader.
 - `providers.js` — the candidate registry. Two adapters cover everything: the Anthropic SDK,
   and the `openai` SDK pointed at a base URL (Groq, Cerebras, Gemini, OpenAI, DeepSeek all
@@ -923,7 +938,7 @@ Per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) / [FRONTEND_LAYERING.md](./FRON
 | Scene rendering, bubbles, HUD | feature | `src/features/immersiveworld/` |
 | Server calls | `src/api/http.ts` only, never a raw fetch, **no function takes a `token`** | `src/features/immersiveworld/immersiveWorldApi.ts` |
 | Prompt assembly, model call, streamed three-line parse (§ 5.3), budget check | **service** | `server/services/ImmersiveWorldService.ts` |
-| Scene definitions (objective, cast, completion pair) | **contract or constant** — see § 14 Q20 | `server/contracts/` or a scene registry beside the personas |
+| Scene definitions (objective, cast, completion pair) | **contract or constant** — see § 14 Q20 | `server/contracts/` or a scene registry beside the NPCs |
 | End-of-scene grading + overview tag (§ 9.3) | **service**, off the interaction path, larger model, structured outputs allowed here | `ImmersiveWorldService.ts` → a separate `gradeScene` entry point |
 | Sessions/transcripts/scene runs+ratings read+write | **DAL** | `server/dal/implementations/ImmersiveWorldDAL.ts` |
 
@@ -961,7 +976,7 @@ do something, and you leave with a rating and a label.
 |---|---|
 | **Objective** | A real-world errand stated in one line: *eat a meal at this restaurant*, *check into the hotel and get to your room*, *take a cab across town*, *go to the mall*. The objective is a **social** task, not a puzzle — there is no hidden solution, only a conversation that has to go well enough. |
 | **Companion** | Every scene is played **with a companion NPC** who accompanies the learner throughout. The companion is the scene's safety net and its second voice: it can be spoken to freely, it reacts to what the learner says to others, and it is the reason a beginner is never standing mute in front of a stranger. |
-| **Cast** | The other NPCs the objective forces you through — waitress, hotel clerk, cab driver, shop assistant. Each is a persona (§ 5.5) with its own hearing history. |
+| **Cast** | The other NPCs the objective forces you through — waitress, hotel clerk, cab driver, shop assistant. Each is an NPC (§ 5.5) with its own hearing history. |
 | **Complication** | Optional, per scene: the cab takes a wrong turn, the order arrives wrong, the room is double-booked. A complication exists to force the learner past the memorised opening exchange. |
 
 Worked examples given by the product owner:
@@ -1081,7 +1096,7 @@ police it. That is gone. What replaced it is softer on purpose, and the reasonin
 keeping:
 
 - **A hard budget produces stilted speech, and § 5.6a measured it doing so** — the constraint
-  failed the persona's own canonical line, and needed two exemptions (function words, scene
+  failed a line the NPC itself would say, and needed two exemptions (function words, scene
   vocabulary) before it could be satisfied at all. Two patches to make a rule satisfiable is
   evidence the rule was the wrong shape.
 - **The exemptions are no longer special cases.** With guidance rather than a gate, 的/是/吗
@@ -1226,8 +1241,8 @@ runtime except the dictionary AI fallback (one short gloss, heavily constrained)
 a much wider pipe, and the learner is typing into it.
 
 Layers proposed:
-1. **Persona constraint** — NPCs are ordinary working people with a stated register. The
-   narrowest prompt is the strongest filter. **Personas are code** (Q2), so this layer is
+1. **NPC constraint** — NPCs are ordinary working people with a stated register. The
+   narrowest prompt is the strongest filter. **NPCs are code** (Q2), so this layer is
    engineer-written and reviewed; an author picks a character, never writes one.
 2. **Vocabulary constraint** (§ 9.4) — a model told to speak only from a 300-word list of
    food nouns has a small blast radius by construction.
@@ -1242,7 +1257,7 @@ Layers proposed:
    Do not replace it with a refusal message, which would break the world to announce a
    defense.
 
-   That result is encouraging, not sufficient — it is one model, one persona, nine probes,
+   That result is encouraging, not sufficient — it is one model, one NPC, nine probes,
    and it must be re-run on every prompt edit (§ 12). Three structural mitigations stand
    behind it: player text is **quoted as data in a user turn** and never concatenated into
    the system layer; the palette (§ 9a) shrinks the attack surface to a word list the server
@@ -1260,7 +1275,7 @@ Age/appropriateness: unknown, and it depends on who the app is for. § 14 Q10.
 > because a phase that cannot fail is not a phase.
 
 > ⚠️ **THE ENGINEERING DELIVERABLE IS A TOOL, NOT CONTENT.** No scenes and no NPCs are built
-> by engineers. Every scene, every map and every NPC persona is **authored by a human** in the
+> by engineers. Every scene, every map and every NPC is **authored by a human** in the
 > iw editor, gated behind `users.isTemplateAuthor`. The job is to give an author every
 > capability needed to create *any* scene they want — including defining NPCs and authoring
 > their prompts from a template (Q2, revised 2026-09-01).
@@ -1295,34 +1310,36 @@ behaves, and assemble a scene around it — with no engineer involved.** Nothing
 learner-facing.
 
 **Kill condition:** an author cannot assemble a working scene without engineering help — the
-editor is missing a capability that every scene turns out to need, or the three personas are
+editor is missing a capability that every scene turns out to need, or the three NPCs are
 too few to cast one.
 
 **1a — Schema.** The full normalized set in one migration pass (Q2): `iw_scenes` +
 `iw_scene_cast` / `_complications` / `_words` / `_conversations`, and the runtime tables
-`iw_scene_runs`, `iw_scene_ratings`, `iw_npc_memories`. **No `iw_personas`** — personas are
-code. Persona references are **text**, so add the startup validation pass that asserts every
-stored id still resolves via `personaById`.
+`iw_scene_runs`, `iw_scene_ratings`, `iw_npc_memories`. **No `iw_personas`** — NPCs are
+code. NPC references are **text**, so add the startup validation pass that asserts every
+stored id still resolves via `npcById`.
 
-**1b — The cast** ✅ **DONE.** `server/config/iwPersonas.ts` — 王婶 (default, forgiving),
+**1b — The cast** ✅ **DONE.** `server/config/iwNpcs.ts` — 王婶 (default, forgiving),
 小陈 (the difficulty setting: low agreeableness, high energy), 老周 (the listening-practice NPC).
-Type in `server/types/iwPersona.ts`. Adding a character is a code change plus a
+Type in `server/types/iwNpc.ts`. Adding a character is a code change plus a
 `character-run.js` sweep, not an authoring task.
 
 **1c — Run the cast through `character-run.js`** ✅ **DONE (2026-09-01).** 54/54 in
-character across all three personas; two prompt bugs found and fixed in the process (a
-persona's register leaking into the frozen layer 1, and canonical lines framed as a fallback
-script). Full result in § 5.6b. Shipped with it: the persona renderer
-`server/services/iw/personaPrompt.ts` — which is § 5.5 layer 2 for production, not bench code —
-`personaProbes.js`, the energy-derived length budget, and `prefix-size.js` for the § 6a cache
-threshold.
+character across all three NPCs; two prompt bugs found and fixed in the process (a
+NPC's register leaking into the frozen layer 1, and canonical lines framed as a fallback
+script). Full result in § 5.6b. Shipped with it: the NPC renderer
+`server/services/iw/npcPrompt.ts` — which is § 5.5 layer 2 for production, not bench code —
+`npcProbes.js`, the energy-derived length budget, and `prefix-size.js` for the § 6a cache
+threshold. ⚠️ The sweep predates two later changes: the whole feature renamed NPC → **NPC**
+in code, and canonical/fallback lines were withdrawn (§ 5.5). The cast must be re-swept, and
+the companion 迈克尔 has no probe context in `npcProbes.js` yet.
 
 **1d — The scene editor.** Reuses the nme for the map (Q2,
 [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)); adds the non-spatial half —
-objective, cast, companion, completion `(persona, action)` pair, complication seeds (Q31),
-essential words (Q14), and Q6's authored NPC-to-NPC conversations. **The persona control is a
-picker**, sourced from `personasForLanguage()` — an author chooses which NPC has which
-character; they never write persona text (that is the § 11 layer 1 boundary).
+objective, cast, companion, completion `(NPC, action)` pair, complication seeds (Q31),
+essential words (Q14), and Q6's authored NPC-to-NPC conversations. **The NPC control is a
+picker**, sourced from `npcsForLanguage()` — an author chooses which NPC has which
+character; they never write NPC text (that is the § 11 layer 1 boundary).
 
 **1e — The gate.** `users.isTemplateAuthor` (migration 115), enforced in the **service layer,
 not the route** — follow `NightMarketTemplateService.assertTemplateAuthor`; note that
@@ -1405,7 +1422,7 @@ to be watched for deliberately.
   already-owned shown as such, via the shipped `/add-to-library` path. **Reuse the est's
   segmentation** ([EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md)).
 - The curated tag set (Q32): seed a wide list for the human review pass (Q33).
-- Write `iw_npc_memories` — one row per (user, persona, language), overwritten each run (Q3).
+- Write `iw_npc_memories` — one row per (user, NPC, language), overwritten each run (Q3).
 - Nothing persists to any other UI (Q22).
 
 ---
@@ -1423,9 +1440,9 @@ to be watched for deliberately.
 
 ### Continuous, from phase 1 onward
 
-- **Re-run `character-run.js` on every persona or prompt edit** (§ 5.6). Personas are code, so
+- **Re-run `character-run.js` on every NPC or prompt edit** (§ 5.6). NPCs are code, so
   this is a reviewable-diff check — the shape the sweep was designed for. It matters most for
-  whichever persona an author picks as the recurring companion (Q25), since that one is present
+  whichever NPC an author picks as the recurring companion (Q25), since that one is present
   in every scene and a regression there degrades all of them at once.
 - **Watch the metrics** the phases install: Q7's ladder counter, and optionally how often
   § 6.4 rule 4 fires (Q13).
@@ -1455,18 +1472,18 @@ to be watched for deliberately.
   in the **service**, not the route (`server/routes/nightMarketTemplateRoutes.ts` carries only
   `authenticateToken`)
 - `src/features/nightmarket/TemplateEditorPage.tsx`, `templateEditorApi.ts` — the nme editor
-  the iw scene editor builds on; its `(name, version)` versioning is the model for persona
+  the iw scene editor builds on; its `(name, version)` versioning is the model for NPC
   versioning
 - `server/scripts/bench/npc-latency/` → `run.js`, `scenario.js`, `providers.js` — the latency bench behind § 6
-- `server/services/iw/personaPrompt.ts` → `renderPersonaBlock`, `findMetaLanguage`,
+- `server/services/iw/npcPrompt.ts` → `renderNpcBlock`, `findMetaLanguage`,
   `TRAIT_SCALES` — **§ 5.5 layer 2**. Production code, shared with the bench on purpose: a
-  sweep that graded its own copy of a persona would pass while the shipped prompt failed
+  sweep that graded its own copy of an NPC would pass while the shipped prompt failed
 - `server/scripts/bench/npc-latency/` → `character.js` (`buildProbeTurns`, `gradeCharacter`,
-  `glyphBudgetFor`), `character-run.js`, `personaProbes.js` — the character-fidelity sweep
-  behind § 5.6 / § 5.6b. Run it with `tsx`, not `node` — it imports the registry personas
+  `glyphBudgetFor`), `character-run.js`, `npcProbes.js` — the character-fidelity sweep
+  behind § 5.6 / § 5.6b. Run it with `tsx`, not `node` — it imports the registry NPCs
 - `server/scripts/bench/npc-latency/prefix-size.js` — the § 6a cache-threshold census.
-  Re-run after editing the world rules or any persona
-- `server/config/iwPersonas.ts` → `IW_PERSONAS`, `personaById`, `personasForLanguage`; `server/types/iwPersona.ts` → `IWPersona`, `IWTrait` — **the cast** (§ 14 Q2). Personas are code; the editor picks from them
+  Re-run after editing the world rules or any NPC
+- `server/config/iwNpcs.ts` → `IW_NPCS`, `npcById`, `npcsForLanguage`; `server/types/iwNpc.ts` → `IWNpc`, `IWTrait` — **the cast** (§ 14 Q2). NPCs are code; the editor picks from them
 - `server/services/TTSService.ts` → `synthesize`, `callGoogle`, `cacheKey`; `server/controllers/TTSController.ts` → `synthesize` — the audio path § 6.4 measures and its det-stamping caveat
 - `src/hooks/useTTS.ts` → `autoSpeakSentence` (**the call iw makes** — never `speakSentence`, § 6.4 rule 6); `src/services/tts/CloudTTSProvider.ts` → `getOrDecodeBuffer`, `playViaWebAudio`, `bufferKey` — the decoded `AudioBuffer` whose `duration` paces the reveal (§ 6.4 rule 3)
 
@@ -1475,7 +1492,7 @@ to be watched for deliberately.
 | | Question | Status |
 |---|---|---|
 | Q1 | Scope of the world — reuse the night market or author a scene? | ✅ **authored scenes**; nm stays decorative |
-| Q2 | Which tables exist; personas as data or code? | ✅ **personas = CODE** (3 authored, `server/config/iwPersonas.ts`); scenes = normalized `iw_scenes`, authored in an editor gated by `isTemplateAuthor` |
+| Q2 | Which tables exist; NPCs as data or code? | ✅ **NPCs = CODE** (3 authored, `server/config/iwNpcs.ts`); scenes = normalized `iw_scenes`, authored in an editor gated by `isTemplateAuthor` |
 | Q3 | Does an NPC remember you between sessions? | ✅ **yes — a short summary per (user, NPC)**; `iw_npc_memories` approved in principle |
 | Q4a | Palette shape | ❌ **MOOT — superseded by Q4c**: there is no palette |
 | Q4b | Relationship to BACKLOG item 1 | ✅ **throwaway for iw; item 1 replaces it later** |
@@ -1530,23 +1547,23 @@ phase 1's critical path, where under the reuse option it would not have been. Th
 should therefore be the smallest one that still contains a full transaction — the restaurant,
 because its completion condition (`accept_payment`) is the one already worked out in § 9.2.
 
-**Q2 — ~~Tables.~~ PARTLY DECIDED: personas are code, scenes are data.** The split follows
-the real coupling — a persona is inseparable from the prompt that renders it, so it is
+**Q2 — ~~Tables.~~ PARTLY DECIDED: NPCs are code, scenes are data.** The split follows
+the real coupling — an NPC is inseparable from the prompt that renders it, so it is
 versioned with that prompt in one commit; a scene is content, so it lives in rows and can be
 authored without a deploy.
 
-> **Settled 2026-09-01, after one round-trip.** Personas were briefly moved to data (an author
+> **Settled 2026-09-01, after one round-trip.** NPCs were briefly moved to data (an author
 > filling in a prompt template) and then moved back. **They are code.** What an author picks in
-> the editor is *which persona a given NPC has*, from a written cast — not the persona's text.
+> the editor is *which NPC a given NPC has*, from a written cast — not the NPC's text.
 
 | Thing | Home | Why |
 |---|---|---|
-| **Persona** (identity, biography, traits, register, canonical lines) | **code** — `server/config/iwPersonas.ts`, in the shape of `nightMarketRegistry.ts` | changing a persona changes model behaviour; it must be reviewable in a diff and revertable with the prompt it was tuned against (§ 5.6's `character-run.js` regression sweep only means something if the persona is versioned). It also keeps § 11 layer 1 — the narrowest and strongest safety filter — out of author hands entirely. |
+| **NPC** (identity, biography, traits, register) | **code** — `server/config/iwNpcs.ts`, in the shape of `nightMarketRegistry.ts` | changing an NPC changes model behaviour; it must be reviewable in a diff and revertable with the prompt it was tuned against (§ 5.6's `character-run.js` regression sweep only means something if the NPC is versioned). It also keeps § 11 layer 1 — the narrowest and strongest safety filter — out of author hands entirely. |
 | **Scene** (objective, cast, companion, completion pair, complications, scene vocabulary, map) | **data** — `iw_scenes` ✅ | content grows without deploys; the authoring pressure Q1 put on the critical path lands here |
 
-### The cast (BUILT — `server/config/iwPersonas.ts`)
+### The cast (BUILT — `server/config/iwNpcs.ts`)
 
-Three personas ship, deliberately spread across the trait space so an author picking one is
+Three NPCs ship, deliberately spread across the trait space so an author picking one is
 making a real choice about difficulty and register rather than a cosmetic one:
 
 | | 王婶 `wang_shen` | 小陈 `xiao_chen` | 老周 `lao_zhou` |
@@ -1559,19 +1576,19 @@ making a real choice about difficulty and register rather than a cosmetic one:
 | Completes a scene? | **yes** — has a `completionRule` | no | no |
 
 They are ~600–700 tokens each because iw is once-per-day with a recurring companion (Q25): a
-learner meets the same characters for weeks, and a thin persona has nothing to volunteer and
+learner meets the same characters for weeks, and a thin NPC has nothing to volunteer and
 repeats itself by day five. Every field — history, current goals, ongoing events, network,
 property, core memories — exists to give the NPC something to improvise *from*, which is
 exactly what Q31's complications ask it to do.
 
-**The type is `server/types/iwPersona.ts`.** `completionRule` is the Q27-sensitive field: it
+**The type is `server/types/iwNpc.ts`.** `completionRule` is the Q27-sensitive field: it
 states observable preconditions in the character's own terms ("she takes money once the
 customer has been served and has asked for the bill") and never mentions a scene, an objective
 or a player.
 
-⚠️ **What the editor offers is a PICKER, not a prompt form.** `personasForLanguage()` is its
-source. An author places NPCs and chooses which persona each one has; they do not write
-persona text. Adding a character is a code change and a `character-run.js` sweep.
+⚠️ **What the editor offers is a PICKER, not a prompt form.** `npcsForLanguage()` is its
+source. An author places NPCs and chooses which NPC each one has; they do not write
+NPC text. Adding a character is a code change and a `character-run.js` sweep.
 
 **Gate: `users.isTemplateAuthor`** (migration 115 — split from `isValidator` precisely so
 template authoring is its own permission). The iw editor reuses that flag and, importantly, the
@@ -1599,8 +1616,8 @@ first scene as a hand-written row (or a small seed script) and build the editor 
 schema that already has a real scene in it.** The editor is how scene *two through twenty* get
 made; it should not gate scene one.
 
-⚠️ **Persona-id validation matters more with an editor, not less.** A tool that lets someone
-pick a persona should populate the list from the code constant rather than accepting free text
+⚠️ **NPC-id validation matters more with an editor, not less.** A tool that lets someone
+pick an NPC should populate the list from the code constant rather than accepting free text
 — which turns Q2's runtime-lookup risk into a UI affordance and removes the class of bug
 entirely.
 
@@ -1613,8 +1630,8 @@ Proposed shape, to be enumerated in one pass before the migration is written:
 
 | Table | Holds |
 |---|---|
-| `iw_scenes` | id, `language` (Q8), name, map reference, objective, companion persona id (**text**, into the code constant), completion `(personaId, action)` pair, published flag, timestamps |
-| `iw_scene_cast` | scene id → persona id (+ where they start, their role in the scene) |
+| `iw_scenes` | id, `language` (Q8), name, map reference, objective, companion NPC id (**text**, into the code constant), completion `(npcId, action)` pair, published flag, timestamps |
+| `iw_scene_cast` | scene id → NPC id (+ where they start, their role in the scene) |
 | `iw_scene_complications` | scene id → one complication seed per row (Q31) |
 | `iw_scene_words` | scene id → one essential word per row (Q14) |
 | `iw_scene_conversations` | scene id → an authored NPC-to-NPC exchange (Q6); with a child of its own for the ordered lines, or an ordered-line column set |
@@ -1630,15 +1647,15 @@ column on `iw_scene_runs`, and Q3 uses a small `iw_npc_memories` table. The full
 for iw is therefore: `iw_scenes` + its four child tables, `iw_scene_runs`, `iw_scene_ratings`,
 `iw_npc_memories`.
 
-⚠️ **Persona ids are TEXT, not foreign keys**, everywhere they appear (`iw_scenes`,
+⚠️ **NPC ids are TEXT, not foreign keys**, everywhere they appear (`iw_scenes`,
 `iw_scene_cast`, `iw_scene_ratings`, `iw_npc_memories`) — the target is a code constant, so the
-DB cannot enforce it. `personaById()` is the only resolver, and **a startup validation pass
-should assert every stored persona id still resolves**, in the spirit of
-[NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md). Deleting a persona
+DB cannot enforce it. `npcById()` is the only resolver, and **a startup validation pass
+should assert every stored NPC id still resolves**, in the spirit of
+[NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md). Deleting an NPC
 from the constant orphans rows silently otherwise.
 
 ~~⚠️ **Cost of the split:** two authoring stories...~~ **Withdrawn by the 2026-09-01
-revision** — with personas in a table, persona references are foreign keys and there is only
+revision** — with NPCs in a table, NPC references are foreign keys and there is only
 one authoring story.
 
 **Q3 — ~~Session persistence.~~ DECIDED: yes, as a short summary per (user, NPC).** After a
@@ -1658,7 +1675,7 @@ This is the cheap shape of memory, and it is chosen deliberately over full recal
   not appended — storage does not grow with play.
 
 ⚠️ **New table, approved in principle, columns not yet confirmed.** Proposed
-**`iw_npc_memories`**: user id, npc id (a persona id into the code constant — text, not an FK,
+**`iw_npc_memories`**: user id, npc id (an NPC id into the code constant — text, not an FK,
 same caveat as Q2), language, `summary` text, updated at. Unique on (user, npc, language).
 **✅ Overwritten each run.** One row per (user, npc, language), rewritten at the end of every
 scene by the grading pass that already runs. No append, no compaction job, no growing prompt
@@ -1796,7 +1813,7 @@ This is a genuinely good answer, and it is better than either option it was chos
   consistent with Q41 — a tap on speech *pauses or replays*, it never skips — but the tap-target
   map in Q18 should be updated when this is built.
 - **Where it lives:** authored conversations are scene content, so they belong with the scene
-  (`iw_scenes`, Q2) rather than with a persona — an exchange is between two specific
+  (`iw_scenes`, Q2) rather than with an NPC — an exchange is between two specific
   characters in a specific place.
 
 **Q7 — ~~Failure UX.~~ DECIDED: a three-rung fallback ladder, then an honest banner.** When
@@ -1813,7 +1830,7 @@ Plus **a metric** on the whole ladder, so a degraded world is visible without a 
 it.
 
 The reasoning is sound and it is stricter than the canned-line proposal it replaces: rungs 2
-and 3 are the difference between *recovering* and *pretending*. A canned persona line covers
+and 3 are the difference between *recovering* and *pretending*. A canned NPC line covers
 one dropped turn charmingly, but it cannot carry a scene through a real outage, and a world
 that is quietly serving canned lines for three days is exactly the 2026-08-21
 `BILLING_DISABLED` failure mode ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md), DEFERRED_WORK item
@@ -1847,7 +1864,7 @@ sentence being wrong.
   half-turned mid-animation. The scene stops cleanly and the banner appears.
 - **Exiting must be possible from the frozen state**, and per Q30 exiting here **pauses** the
   run — an outage must never consume the learner's one scene for the day.
-- **Canned persona lines are still worth authoring**, but for a *different* job than this:
+- **Canned NPC lines are still worth authoring**, but for a *different* job than this:
   they cover a single dropped turn that the ladder recovered from, and they are the only 0 ms
   audio in the feature (§ 6.4 rule 5). They are not the outage story.
 
@@ -1858,10 +1875,10 @@ which measures the browser. The natural place is beside § 7's `dictionary_ai_us
 per-day accounting, which iw already needs for cost.
 
 **Q8 — ~~zh only, or zh + es?~~ DECIDED: Chinese first, Spanish designed in.** v1 ships zh
-scenes only, but nothing may hard-code that. Scenes, personas and the tag set (Q32) carry a
+scenes only, but nothing may hard-code that. Scenes, NPCs and the tag set (Q32) carry a
 language, so adding Spanish later is a **content job, not a refactor**.
 
-Concretely: `iw_scenes` gets a `language` column, persona constants are keyed by language,
+Concretely: `iw_scenes` gets a `language` column, NPC constants are keyed by language,
 and the prompt builder takes the language as a parameter rather than embedding Chinese
 assumptions. This follows the app's existing per-language discipline
 ([MULTI_LANGUAGE_IMPLEMENTATION.md](./MULTI_LANGUAGE_IMPLEMENTATION.md)).
@@ -1919,7 +1936,7 @@ has to keep an NPC in character than raw TTFT does.
 
 **Setup is one env var** — `DEEPSEEK_API_KEY` in `server/.env` — and the bench picks it up with
 no code change (§ 6a). **Before it is wired into the ladder it should be run through both
-sweeps**: `run.js` for latency and cost, and `character-run.js` (§ 5.6) for persona fidelity,
+sweeps**: `run.js` for latency and cost, and `character-run.js` (§ 5.6) for NPC fidelity,
 because a fallback that answers fast and out of character is worse than the banner.
 
 ⚠️ **Two things to be deliberate about, neither a blocker:**
@@ -2117,7 +2134,7 @@ unbounded learner + model text:
 1. **The exact column types and the FK/cascade shape** have not been reviewed. `iw_scene_runs`
    references a scene id into `iw_scenes`, whose own columns are the still-open half of Q2 —
    so **Q2 gates this migration**, and the two should land in one file rather than two.
-2. **`npc id` is a persona id into a code constant** (Q2), so it cannot be a foreign key. It
+2. **`npc id` is an NPC id into a code constant** (Q2), so it cannot be a foreign key. It
    is a text column validated at startup, with the same caveat Q2 already flags for
    `iw_scenes`.
 
@@ -2207,9 +2224,9 @@ Three earlier decisions make this the strong choice rather than merely the compr
 ⚠️ **Consequences to design for:**
 
 - **The companion is authored once and must work everywhere** — in a restaurant, a cab, a
-  mall. Its persona has to be register-neutral enough not to be wrong in any of them, which
+  mall. Its NPC has to be register-neutral enough not to be wrong in any of them, which
   is a harder writing job than a scene-native character.
-- **It is the most-run persona in the feature**, so § 5.6's `character-run.js` regression sweep
+- **It is the most-run NPC in the feature**, so § 5.6's `character-run.js` regression sweep
   matters most here — a prompt edit that costs the companion fidelity degrades every scene at
   once.
 - **Its rating of you is the one that should carry weight** in § 9.3, because it is the only
@@ -2343,7 +2360,7 @@ Design consequences to carry into the build:
 
 | Consequence | Note |
 |---|---|
-| A complication is a **seed, not a script** | `iw_scenes` stores a pool of one-line complication seeds ("the order arrives wrong"); the NPC improvises the offer and the resolution from its persona. |
+| A complication is a **seed, not a script** | `iw_scenes` stores a pool of one-line complication seeds ("the order arrives wrong"); the NPC improvises the offer and the resolution from its NPC. |
 | Options must be **legible to a beginner** | Three branching offers in the target language is a hard listening task. § 9.4's vocabulary *guidance* (Q39 — guidance, not a gate) matters most here, and with no hard budget there is nothing but the prompt keeping the offers readable. This is also exactly where the palette (§ 9a, deferred) has to be able to express *"the second one"*, *"that's fine"*, *"I'll wait"*. |
 | Resolutions must reach the **action enum** | "Take it off the bill" changes what `accept_payment` is legal for. Complications therefore touch scene state, not just dialogue — the engine has to model at least a small amount of it. |
 | It stresses **stall handling** (Q29) | A learner who did not understand any of the three offers is stuck in the worst possible place: mid-complication, with an NPC waiting on them. |
@@ -2379,7 +2396,7 @@ Two consequences worth designing for:
 - **Tag selection is a classification task, not a generation task.** That is a much easier
   ask of the model, it can be graded against a rubric, and it can use structured outputs with
   an enum — which the § 9.3 report path can afford. It also means the tag set belongs in the
-  same place as the personas: **code**, versioned with the prompt that selects from it.
+  same place as the NPCs: **code**, versioned with the prompt that selects from it.
 
 **Q33 — ~~How harsh may a rating or tag be?~~ DECIDED: blunt is allowed.** Numbers and tags
 may both be blunt. There is **no tone floor and no tone policy in the grader prompt** — tags
@@ -2442,8 +2459,8 @@ politeness score at the end refers to nothing the learner can remember doing.
 
 Implementation notes:
 
-- **This is persona work, not mechanism.** Nothing new is needed in the action enum — the
-  NPC already chooses an emote and its own words. The persona simply has to be told it is
+- **This is NPC work, not mechanism.** Nothing new is needed in the action enum — the
+  NPC already chooses an emote and its own words. The NPC simply has to be told it is
   allowed to be cool with someone who was rude, and that it serves them anyway.
 - **The emote channel is doing the heavy lifting**, because a beginner cannot necessarily
   hear curtness in the target language. The acknowledged weakness of this option is that it is
@@ -2505,7 +2522,7 @@ already a behavioural instruction verified by a bench rather than policed by the
 ⚠️ **This softens Q14 and Q15 rather than answering them** — both were premised on a hard
 gate. Re-read them before building either.
 
-⚠️ **"Talks down to you" is now a persona question, not a mechanism one.** Nothing dynamically
+⚠️ **"Talks down to you" is now an NPC question, not a mechanism one.** Nothing dynamically
 re-simplifies mid-scene; the NPC simply knows who it is talking to from the start. If a
 learner stalls, § 4.1's free non-verbal channel and the NPC's own judgement are what respond —
 consistent with Q29 (nobody nudges).

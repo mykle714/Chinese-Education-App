@@ -14,7 +14,7 @@
  *     behaviours, not scene content, and they must be identical across the cast or the
  *     NPCs are not comparable.
  *   - this file holds the FOUR things that cannot be shared: what the learner is assumed to
- *     know, who is standing nearby, the on-script opening, and the one request that reaches
+ *     know, who is standing nearby, the on-script opening (`opening`), and the one request that reaches
  *     just past the learner's vocabulary.
  *
  * `known` IS THE GRADER'S RULER, not decoration. character.js measures the vocabulary budget
@@ -30,12 +30,13 @@
  * Referenced by: scripts/bench/npc-latency/character-run.js, character.js.
  */
 
-/** @typedef {{ known: string[], nearby: string[], happy: string, hardWord: string, rude: string, offtopic: string }} ProbeContext */
+/** @typedef {{ known: string[], nearby: string[], opening: string, happy: string, hardWord: string, rude: string, offtopic: string }} ProbeContext */
 
 /** @type {Record<string, ProbeContext>} */
 export const NPC_PROBES = {
   // The registry's 王婶 — same trade as the inline bench NPC, so the same ruler applies.
   wang_shen: {
+    opening: '热的还是凉的？',
     known: ['面', '碗', '要', '热', '凉', '好', '谢谢', '多少', '钱', '一', '二', '三', '我', '你', '吃', '来', '这个', '那个', '大', '小'],
     nearby: ['player "player" at 2 tiles, facing you', 'npc_li at 7 tiles, behind a stall (muffled)'],
     happy: '我要一碗面',
@@ -47,6 +48,7 @@ export const NPC_PROBES = {
 
   // 小陈 — the trade is repair, so the vocabulary is objects and faults, not food.
   xiao_chen: {
+    opening: '行，多少钱的？',
     known: ['手机', '坏', '钱', '多少', '好', '谢谢', '一', '二', '三', '我', '你', '要', '看', '这个', '那个', '大', '小', '快', '今天'],
     nearby: ['player "player" at 2 tiles, facing you', 'npc_stallkeeper at 6 tiles, across the aisle'],
     happy: '我的手机坏了',
@@ -60,6 +62,7 @@ export const NPC_PROBES = {
   // 老周 — he sells nothing, so there is no transaction vocabulary at all. This is the
   // NPC most likely to blow the budget, because small talk has no fixed nouns.
   lao_zhou: {
+    opening: '你慢慢说，不着急。',
     known: ['好', '你好', '谢谢', '我', '你', '要', '来', '坐', '吃', '这个', '那个', '大', '小', '今天', '很', '老', '家', '人', '一', '二'],
     nearby: ['player "player" at 2 tiles, facing you', 'npc_wang at 3 tiles, at her stall'],
     happy: '你好，我可以坐这儿吗？',
@@ -74,6 +77,7 @@ export const NPC_PROBES = {
 
   // The pre-registry inline NPC from scenario.js. Same probes the 18/18 run used.
   bench: {
+    opening: '要几碗？',
     known: ['面', '碗', '要', '热', '凉', '好', '谢谢', '多少', '钱', '一', '二', '三', '我', '你', '吃', '来', '这个', '那个', '大', '小'],
     nearby: ['player "player" at 2 tiles, facing you', 'npc_li at 7 tiles, behind a stall (muffled)'],
     happy: '我要一碗面',

@@ -25,7 +25,7 @@
  * a grader that diffs characters against a word list counts 的 / 是 / 吗 / 什么 as "new
  * vocabulary". They are not: they are grammatical glue a learner absorbs incidentally and
  * cannot avoid meeting in any natural sentence. Counting them made the budget
- * unsatisfiable — the NPC's OWN canonical line, 热的还是凉的？, "failed" it.
+ * unsatisfiable — even 热的还是凉的？, a line the NPC itself would say, "failed" it.
  *
  * ⚠️ THE BUDGET ITSELF WAS WITHDRAWN (§ 9.4, superseded § 5.6a): the shipped prompt gives
  * the model guidance about the learner's level rather than a hard n+1 rule. The count is
@@ -43,8 +43,10 @@ export const FUNCTION_CHARS = '的了是吗呢吧啊和还在有不没也就都�
  * (npcProbes.js), because "order a bowl of noodles" is not a probe you can put to a
  * phone-repair kiosk.
  *
- * `openingLine` is the NPC's own first canonical line, replayed as something it already
- * said. The `english` probe needs the NPC to have spoken first — the failure being tested
+ * `openingLine` comes from the probe fixture (`ctx.opening`), replayed as something the NPC
+ * already said. It is bench scaffolding, NOT character data: NPCs used to carry
+ * `canonicalLines` and this was the first of them, but that field was withdrawn from the
+ * spec (2026-09-04) and the opener now lives with the other per-NPC probe material. The `english` probe needs the NPC to have spoken first — the failure being tested
  * is switching to English to RESCUE a learner who did not understand, which requires
  * something to have not been understood.
  *

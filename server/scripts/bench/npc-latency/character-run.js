@@ -89,14 +89,13 @@ function resolveSubjects(arg) {
       block: renderNpcBlock(npc),
       ctx,
       maxGlyphs: glyphBudgetFor(npc),
-      openingLine: npc.canonicalLines[0],
       npc,
     };
   });
 }
 
 async function sweepOne(subject) {
-  const openingLine = subject.openingLine ?? '要几碗？';
+  const openingLine = subject.ctx.opening;
   const turns = buildProbeTurns(subject.ctx, openingLine);
   const scenarioCtx = { npc: subject.block, known: subject.ctx.known, nearby: subject.ctx.nearby };
 

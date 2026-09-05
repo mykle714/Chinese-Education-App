@@ -137,16 +137,6 @@ export function renderNpcBlock(npc: IWNpc): string {
     renderTrait('motivation', p.motivation),
     ``,
     `HOW YOU TALK: ${p.register}`,
-    // ⚠️ FRAMED AS SAMPLES, NOT AS A FALLBACK SCRIPT. The first wording was "fall back to
-    // these when you are unsure", and the 2026-09-01 sweep showed exactly what that buys:
-    // 老周 answered four different probes — a meta question, garbage input, an off-topic
-    // question and an insult — with the identical canonical line 你慢慢说，不着急。A model
-    // is unsure often, so "when unsure" is most of the time, and the richest NPC in the
-    // cast collapsed into a parrot. Canonical lines exist so a HUMAN can hear the voice, and
-    // so the model can calibrate register; they are not a menu.
-    `EXAMPLES OF HOW YOU SOUND — these are samples of your voice, not a script. Do not reuse
-them when the moment calls for something else; say the new thing in this voice instead.
-${bullets(p.canonicalLines)}`,
   ];
 
   // Rendered last so it sits closest to the turn — it is the only conditional field, and

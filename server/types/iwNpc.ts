@@ -97,25 +97,6 @@ export interface IWNpc {
 
   /** How they speak: register, sentence length, verbal tics. Shapes every line. */
   register: string;
-  /**
-   * 3–4 lines this character would actually say, in the target language.
-   * The bench (§ 5.6) uses the first as the NPC's opening line, and they are the
-   * fastest way for a human to tell whether the NPC reads right.
-   *
-   * ⚠️ THESE ARE SAMPLES OF A VOICE, NOT A FALLBACK SCRIPT, and the prompt says so
-   * explicitly. An earlier renderer framed them as "fall back to these when you are
-   * unsure"; the 2026-09-01 sweep found 老周 answering four unrelated probes — a meta
-   * question, garbage input, an off-topic question and an insult — with the same
-   * canonical line. A model is unsure most of the time, so "when unsure" made the
-   * richest NPC in the cast a parrot.
-   */
-  canonicalLines: string[];
-  /**
-   * Lines used when the model call is recovered but one turn was dropped (§ 14 Q7).
-   * Pre-synthesized at author time, so they play at 0 ms (§ 6.4 rule 5).
-   * NOT the outage story — an exhausted ladder freezes the world instead.
-   */
-  fallbackLines: string[];
 
   /**
    * A completion NPC's rule, stated as OBSERVABLE PRECONDITIONS IN THEIR OWN TERMS.

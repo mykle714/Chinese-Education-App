@@ -1,23 +1,39 @@
 /**
- * Character-fidelity sweep — "does the NPC stay 王婶?" (docs/IMMERSIVE_WORLD.md § 5.4)
+ * Character-fidelity sweep — "does the NPC stay in character?" (IMMERSIVE_WORLD.md § 5.6)
  *
- *   node scripts/bench/npc-latency/character-run.js [--model claude-haiku-4-5] [--reps 2]
+ *   npx tsx scripts/bench/npc-latency/character-run.js [--NPC wang_shen]
+ *                                                     [--model claude-haiku-4-5] [--reps 2]
+ *   npx tsx scripts/bench/npc-latency/character-run.js --NPC all
  *
- * Runs every probe turn in character.js and prints what the NPC actually said, with
+ * ⚠️ RUN IT UNDER `tsx`, not bare `node`. This file is JS but imports the REGISTRY NPCs
+ * (config/iwNpcs.ts) through the production renderer (services/iw/npcPrompt.ts), so
+ * the loader has to understand TypeScript. That indirection is deliberate: a sweep that
+ * graded its own private copy of an NPC would pass while the shipped prompt failed.
+ *
+ * `--NPC bench` selects the pre-registry inline 王婶 from scenario.js, kept so the
+ * historical 18/18 baseline stays reproducible.
+ *
+ * Runs every probe turn from character.js and prints what the NPC actually said, with
  * mechanical failure flags. Unlike run.js this is a QUALITY sweep, not a latency one —
- * read the replies, do not just read the flag column.
+ * read the replies, do not just read the flag column. The flags catch the four failures a
+ * machine can judge; whether a line sounds like a 68-year-old retired mechanic is a
+ * question only the reader can answer.
  */
 
 import 'dotenv/config';
-import { buildScenario, gradeReply } from './scenario.js';
-import { PROBE_TURNS, gradeCharacter } from './character.js';
+import { buildScenario, gradeReply, NPC as INLINE_NPC } from './scenario.js';
+import { buildProbeTurns, gradeCharacter, glyphBudgetFor } from './character.js';
+import { NPC_PROBES } from './npcProbes.js';
 import { CANDIDATES, resolveKey } from './providers.js';
+import { IW_NPCS, npcById } from '../../../config/iwNpcs.js';
+import { renderNpcBlock, findMetaLanguage } from '../../../services/iw/npcPrompt.js';
 
 const args = process.argv.slice(2);
 const flag = (n, d) => { const i = args.indexOf(`--${n}`); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
 const MODEL_ID = flag('model', 'claude-haiku-4-5');
 const REPS = parseInt(flag('reps', '2'), 10);
 const FORMAT = flag('format', 'lines');
+const NPC_ARG = flag('npc', 'all');
 
 const candidate = CANDIDATES.find(c => c.id === MODEL_ID);
 if (!candidate) { console.error(`unknown candidate ${MODEL_ID}`); process.exit(1); }
@@ -48,28 +64,86 @@ async function ask(scenario) {
 
 const pad = (s, n) => { const w = [...String(s)].reduce((a, c) => a + (/[一-鿿，。！？]/.test(c) ? 2 : 1), 0); return String(s) + ' '.repeat(Math.max(0, n - w)); };
 
-async function main() {
-  console.log(`\ncharacter sweep — ${candidate.label}, format "${FORMAT}", ${REPS} reps/turn\n`);
-  console.log(pad('probe', 22) + pad('said', 24) + pad('action', 18) + 'flags');
+/**
+ * Resolve `--NPC` to the things the sweep needs: the layer-2 prompt text, the probe
+ * context, and the per-character length budget.
+ *
+ * `bench` is the odd one out — it has no registry entry, so its glyph budget is the old
+ * flat 16 and its NPC text is scenario.js's string. Everything else goes through the
+ * production renderer.
+ */
+function resolveSubjects(arg) {
+  if (arg === 'bench') {
+    return [{ id: 'bench', label: '王婶 (inline bench npc)', block: INLINE_NPC,
+              ctx: NPC_PROBES.bench, maxGlyphs: 16 }];
+  }
+  const ids = arg === 'all' ? IW_NPCS.map(p => p.id) : arg.split(',');
+  return ids.map(id => {
+    const npc = npcById(id);
+    if (!npc) throw new Error(`unknown npc "${id}" (have: ${IW_NPCS.map(p => p.id).join(', ')}, bench)`);
+    const ctx = NPC_PROBES[id];
+    if (!ctx) throw new Error(`npc "${id}" has no probe context in npcProbes.js — add one before sweeping it`);
+    return {
+      id,
+      label: `${npc.name} (${npc.romanization})`,
+      block: renderNpcBlock(npc),
+      ctx,
+      maxGlyphs: glyphBudgetFor(npc),
+      openingLine: npc.canonicalLines[0],
+      npc,
+    };
+  });
+}
+
+async function sweepOne(subject) {
+  const openingLine = subject.openingLine ?? '要几碗？';
+  const turns = buildProbeTurns(subject.ctx, openingLine);
+  const scenarioCtx = { npc: subject.block, known: subject.ctx.known, nearby: subject.ctx.nearby };
+
+  console.log(`\n${'═'.repeat(96)}`);
+  console.log(`${subject.label}  ·  id "${subject.id}"  ·  length budget ${subject.maxGlyphs} glyphs`);
+  // The meta-language lint is cheap and catches the § 14 Q27 failure BEFORE it costs a call.
+  if (subject.npc) {
+    const meta = findMetaLanguage(subject.block);
+    console.log(`npc block: ${subject.block.length} chars · meta-language: ${meta.length ? '⚠ ' + meta.join(', ') : 'clean'}`);
+  }
+  console.log('═'.repeat(96));
+  console.log(pad('probe', 22) + pad('said', 30) + pad('action', 18) + 'flags');
   console.log('─'.repeat(96));
-  let fails = 0, total = 0;
-  const rows = [];
-  for (const turn of PROBE_TURNS) {
+
+  let fails = 0, total = 0, illegal = 0;
+  for (const turn of turns) {
     for (let i = 0; i < REPS; i++) {
-      const raw = await ask(buildScenario(FORMAT, turn));
+      const raw = await ask(buildScenario(FORMAT, turn, scenarioCtx));
       const g = gradeReply(FORMAT, raw);
-      const c = gradeCharacter(g.say);
+      const c = gradeCharacter(g.say, { known: subject.ctx.known, maxGlyphs: subject.maxGlyphs });
       total++;
-      const bad = c.flags.filter(f => f === 'ENGLISH' || f === 'BROKE-CHARACTER' || f.startsWith('VOCAB') || f.startsWith('LONG'));
+      // VOCAB is deliberately NOT a failure any more — the hard n+1 budget was withdrawn
+      // (§ 9.4), so reaching past the learner is an observation, not a defect.
+      const bad = c.flags.filter(f => f === 'ENGLISH' || f === 'BROKE-CHARACTER' || f.startsWith('LONG'));
       if (bad.length) fails++;
-      const actionCell = g.legalAction ? '' : '⚠ ';
-      rows.push({ turn: turn.id, say: g.say, action: raw.trim().split('\n')[1] ?? '?', flags: c.flags, bad: bad.length > 0, legal: g.legalAction });
-      console.log(pad(i === 0 ? turn.id : '', 22) + pad(g.say || '(silent)', 24) + pad(actionCell + (raw.trim().split('\n')[1] ?? '?'), 18) + (c.flags.join(' ') || 'ok'));
+      if (!g.legalAction) illegal++;
+      const actionLine = raw.trim().split('\n')[1] ?? '?';
+      console.log(pad(i === 0 ? turn.id : '', 22) + pad(g.say || '(silent)', 30)
+        + pad((g.legalAction ? '' : '⚠ ') + actionLine, 18) + (c.flags.join(' ') || 'ok'));
     }
   }
-  console.log('\n' + `${total - fails}/${total} replies clean · ${rows.filter(r => !r.legal).length} illegal actions`);
-  console.log('Flags: ENGLISH = switched language · BROKE-CHARACTER = admitted to being a model');
-  console.log('       LONG(n) = over 16 glyphs · VOCAB(+n) = more than one new word');
+  console.log(`\n${total - fails}/${total} replies clean · ${illegal} illegal actions`);
+  return { id: subject.id, total, fails, illegal };
+}
+
+async function main() {
+  const subjects = resolveSubjects(NPC_ARG);
+  console.log(`\ncharacter sweep — ${candidate.label}, format "${FORMAT}", ${REPS} reps/turn, ${subjects.length} npc(s)`);
+
+  const results = [];
+  for (const s of subjects) results.push(await sweepOne(s));
+
+  console.log(`\n${'═'.repeat(96)}\nSUMMARY`);
+  for (const r of results) console.log(`  ${pad(r.id, 16)} ${r.total - r.fails}/${r.total} clean · ${r.illegal} illegal actions`);
+  console.log('\nFlags: ENGLISH = switched language · BROKE-CHARACTER = admitted to being a model');
+  console.log('       LONG(n>m) = over this npc\'s energy-derived budget');
+  console.log('       VOCAB(+n) = reached n content characters past KNOWN_WORDS — an observation, not a failure');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

@@ -12,6 +12,11 @@
  *               NUMBER: it is the moment a speech bubble can start painting Chinese. A model
  *               that emits {"emote":...,"action":...} before "say" pays its whole decode time
  *               before the player sees anything, however good its ttft looks.
+ *   sayDone   — ms to the moment the SPOKEN LINE is complete (the newline that closes line 1
+ *               in `lines`, the closing quote of "say" in the JSON formats). Nothing to do
+ *               with the bubble — this is when the utterance could be handed to a TTS call,
+ *               and it lands well before `total` because the action and emote lines are
+ *               still decoding behind it (§ 6.4).
  *   total     — ms to the last token. When the NPC's BODY can start moving (the action is
  *               only known at the end), which § 6 spends deliberately.
  *
@@ -48,7 +53,7 @@ async function runAnthropic(candidate, apiKey, scenario) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey });
   const t0 = performance.now();
-  let ttft = NaN, ttfSay = NaN, text = '';
+  let ttft = NaN, ttfSay = NaN, ttfSayDone = NaN, text = '';
   const params = {
     model: candidate.model,
     max_tokens: scenario.maxTokens,
@@ -69,11 +74,16 @@ async function runAnthropic(candidate, apiKey, scenario) {
       if (Number.isNaN(ttft)) ttft = performance.now() - t0;
       text += event.delta.text;
       if (Number.isNaN(ttfSay) && scenario.format.sayIndex(text) >= 0) ttfSay = performance.now() - t0;
+      if (Number.isNaN(ttfSayDone) && scenario.format.sayEndIndex(text) >= 0) ttfSayDone = performance.now() - t0;
     }
   }
   const final = await stream.finalMessage();
   return {
-    ttft, ttfSay, total: performance.now() - t0, text,
+    ttft, ttfSay,
+    // A reply with no newline at all (single-line drift) never closes line 1 mid-stream;
+    // fall back to the end of the turn, which is when we would in fact know the utterance.
+    ttfSayDone: Number.isNaN(ttfSayDone) ? performance.now() - t0 : ttfSayDone,
+    total: performance.now() - t0, text,
     inTokens: final.usage.input_tokens + (final.usage.cache_read_input_tokens ?? 0),
     outTokens: final.usage.output_tokens,
     cacheRead: final.usage.cache_read_input_tokens ?? 0,
@@ -84,7 +94,7 @@ async function runOpenAICompatible(candidate, apiKey, scenario) {
   const { default: OpenAI } = await import('openai');
   const client = new OpenAI({ apiKey, baseURL: candidate.baseURL });
   const t0 = performance.now();
-  let ttft = NaN, ttfSay = NaN, text = '', usage = null;
+  let ttft = NaN, ttfSay = NaN, ttfSayDone = NaN, text = '', usage = null;
   const stream = await client.chat.completions.create({
     model: candidate.model,
     max_completion_tokens: scenario.maxTokens,
@@ -108,9 +118,14 @@ async function runOpenAICompatible(candidate, apiKey, scenario) {
     if (Number.isNaN(ttft)) ttft = performance.now() - t0;
     text += delta;
     if (Number.isNaN(ttfSay) && scenario.format.sayIndex(text) >= 0) ttfSay = performance.now() - t0;
+    if (Number.isNaN(ttfSayDone) && scenario.format.sayEndIndex(text) >= 0) ttfSayDone = performance.now() - t0;
   }
   return {
-    ttft, ttfSay, total: performance.now() - t0, text,
+    ttft, ttfSay,
+    // A reply with no newline at all (single-line drift) never closes line 1 mid-stream;
+    // fall back to the end of the turn, which is when we would in fact know the utterance.
+    ttfSayDone: Number.isNaN(ttfSayDone) ? performance.now() - t0 : ttfSayDone,
+    total: performance.now() - t0, text,
     inTokens: usage?.prompt_tokens ?? NaN, outTokens: usage?.completion_tokens ?? NaN, cacheRead: 0,
   };
 }
@@ -136,7 +151,7 @@ function summarize(result) {
   const label = `${candidate.label}${formatKey ? ` [${formatKey}]` : ''}`;
   if (!trials.length) return { id: candidate.id, label, error: firstError ?? 'no trials' };
   const by = (k) => trials.map(t => t[k]).filter(v => !Number.isNaN(v)).sort((a, b) => a - b);
-  const ttft = by('ttft'), ttfSay = by('ttfSay'), total = by('total');
+  const ttft = by('ttft'), ttfSay = by('ttfSay'), sayDone = by('ttfSayDone'), total = by('total');
   // "usable" means the MODEL got it right, not that the parser rescued it (see gradeReply).
   const ok = trials.filter(t => t.grade.parsed && t.grade.cleanAction).length;
   const rescued = trials.filter(t => t.grade.rescued).length;
@@ -149,6 +164,7 @@ function summarize(result) {
     id: candidate.id, label, format: formatKey, n: trials.length,
     ttftP50: Math.round(pct(ttft, 0.5)), ttftP95: Math.round(pct(ttft, 0.95)),
     saySayP50: Math.round(pct(ttfSay, 0.5)), sayP95: Math.round(pct(ttfSay, 0.95)),
+    sayDoneP50: Math.round(pct(sayDone, 0.5)), sayDoneP95: Math.round(pct(sayDone, 0.95)),
     totalP50: Math.round(pct(total, 0.5)),
     usable: `${ok}/${trials.length}`, rescued, sayFirst: `${sayFirst}/${trials.length}`, chinese: `${chinese}/${trials.length}`,
     // Cost of one NPC turn, in millionths of a dollar — the readable unit at this scale.
@@ -184,11 +200,11 @@ async function main() {
     }
   }
 
-  console.log('\n' + pad('model', 34) + lpad('ttft p50', 10) + lpad('SAY p50', 10) + lpad('SAY p95', 10) + lpad('done p50', 10) + lpad('usable', 8) + lpad('say1st', 8) + lpad('µ$/turn', 9) + '  sample');
+  console.log('\n' + pad('model', 34) + lpad('ttft p50', 10) + lpad('SAY p50', 10) + lpad('SAY p95', 10) + lpad('sayDone', 10) + lpad('done p50', 10) + lpad('usable', 8) + lpad('say1st', 8) + lpad('µ$/turn', 9) + '  sample');
   console.log('─'.repeat(120));
   for (const s of summaries.sort((a, b) => (a.saySayP50 ?? 1e9) - (b.saySayP50 ?? 1e9))) {
     if (s.error) { console.log(pad(s.label, 34) + '  ERROR: ' + s.error.slice(0, 80)); continue; }
-    console.log(pad(s.label, 34) + lpad(s.ttftP50, 10) + lpad(s.saySayP50, 10) + lpad(s.sayP95, 10) + lpad(s.totalP50, 10) + lpad(s.usable, 8) + lpad(s.sayFirst, 8) + lpad(s.microUsd, 9) + '  ' + s.sample);
+    console.log(pad(s.label, 34) + lpad(s.ttftP50, 10) + lpad(s.saySayP50, 10) + lpad(s.sayP95, 10) + lpad(s.sayDoneP50, 10) + lpad(s.totalP50, 10) + lpad(s.usable, 8) + lpad(s.sayFirst, 8) + lpad(s.microUsd, 9) + '  ' + s.sample);
   }
   console.log('\nSAY p50 = ms until the first Chinese glyph can be painted in the bubble. Target: < 700ms.');
   if (JSON_OUT) {

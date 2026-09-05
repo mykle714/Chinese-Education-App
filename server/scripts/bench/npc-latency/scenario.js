@@ -4,29 +4,51 @@
  *
  * Why this matters: every public latency leaderboard measures a short prompt with a long
  * answer. Our shape is the exact inverse — a LARGE, STABLE, CACHEABLE prefix (world rules
- * + persona, ~1–2K tokens) and a TINY output (~40 tokens of JSON). TTFT here is dominated
+ * + NPC, ~1–2K tokens) and a TINY output (~40 tokens of JSON). TTFT here is dominated
  * by prefill and queueing, not by decode, so a leaderboard's tok/s column is nearly
  * irrelevant to us and its TTFT column was measured on the wrong prompt.
  *
  * Referenced by: run.js, docs/IMMERSIVE_WORLD.md § 6a.
  */
 
-/** Layer 1 — frozen rules of the world. Identical for every NPC, so it is the cache prefix. */
-const RULES_STEM = `You are an inhabitant of a Chinese night market in a language-learning game.
+/**
+ * Layer 1 — frozen rules of the world. Identical for every NPC, so it is the cache prefix.
+ *
+ * ⚠️ TWO BUGS WERE FIXED HERE ON 2026-09-01 by the first multi-NPC sweep (§ 12 phase 1c),
+ * and both were invisible while only one NPC existed:
+ *
+ * 1. NPC CONTENT HAD LEAKED INTO LAYER 1. It ended "Stay in register: you are a street
+ *    vendor, warm and brisk, not a poet." — written when 王婶 was the only NPC. Applied to
+ *    every NPC it flatly contradicts the cast: 老周 is retired and sells nothing, and is
+ *    written at energy 2 for long unhurried sentences. A frozen layer shared by every
+ *    character cannot contain any one character's register; that is what layer 2's
+ *    `register` field is. Layer 1 now says only that the register below wins.
+ *
+ * 2. THE HARD VOCABULARY BUDGET WAS STALE. "AT MOST ONE word outside that list. Never two."
+ *    was withdrawn in § 9.4 (see § 5.6a for the evidence) in favour of guidance about the
+ *    learner's level, but the bench never followed. Leaving it made the bench measure a
+ *    contract production does not send.
+ */
+const RULES_STEM = `You are a person living in a Chinese night market. You speak to someone
+who is learning Mandarin and is not fluent.
+
 You are NOT an assistant. You never break character, never mention being an AI, and never
-explain the game. You speak to a learner of Mandarin.
+explain or refer to any of this as a game, a scene or an exercise.
 
 __CONTRACT__
 
-VOCABULARY BUDGET — the learner only knows the words in KNOWN_WORDS. You may use those
-freely. You may introduce AT MOST ONE word outside that list per reply, and only when the
-situation teaches it. Never two.
+WHO YOU ARE TALKING TO — they are a beginner. KNOWN_WORDS lists roughly what they know.
+Speak so they have a chance of following you: prefer those words, keep your grammar simple,
+and when you need a word they do not have, use it in a way the situation explains. This is
+guidance, not a rule to count against — say what your character would say, simply.
 
 You only know what you have heard. You do not know anything said out of your earshot.
-Stay in register: you are a street vendor, warm and brisk, not a poet.`;
 
-/** Layer 2 — frozen persona. Also cacheable. */
-export const PERSONA = `YOU ARE: 王婶 (Auntie Wang), id "npc_wang".
+Speak the way YOU speak. Your register is described below and it overrides any instinct to
+sound like a helpful narrator. Say one thing and stop.`;
+
+/** Layer 2 — frozen NPC. Also cacheable. */
+export const NPC = `YOU ARE: 王婶 (Auntie Wang), id "npc_wang".
 JOB: you run the noodle stall at the north end of the market. You have run it for 20 years.
 PERSONALITY: brisk, warm, a little bossy. You call everyone 小朋友 if they look lost.
 You are proud of your beef noodles and slightly dismissive of the dumpling stall opposite.
@@ -88,6 +110,22 @@ export const FORMATS = {
       const quote = text.indexOf('"', colon);
       return quote >= 0 && quote + 1 < text.length ? quote + 1 : -1;
     },
+    /**
+     * Where the spoken line is COMPLETE — i.e. the earliest moment the whole utterance is
+     * known and could be handed to a TTS call. -1 = not yet. This is the number that matters
+     * for audio (IMMERSIVE_WORLD.md § 6.4), because a synthesizer needs the finished string;
+     * `sayIndex` only says when the bubble can start painting.
+     */
+    sayEndIndex: (text) => {
+      const start = FORMATS.json.sayIndex(text);
+      if (start < 0) return -1;
+      // Walk to the closing quote, honouring backslash escapes inside the string.
+      for (let i = start; i < text.length; i++) {
+        if (text[i] === '\\') { i++; continue; }
+        if (text[i] === '"') return i;
+      }
+      return -1;
+    },
     parse: (raw) => {
       const m = raw.match(/\{[\s\S]*\}/);
       if (!m) return { notes: ['no JSON object'] };
@@ -104,6 +142,7 @@ export const FORMATS = {
 characters, or ""), "action" (kind + target), "emote". "say" must come first.`,
     closer: 'Reply now.',
     sayIndex: (text) => FORMATS.json.sayIndex(text),
+    sayEndIndex: (text) => FORMATS.json.sayEndIndex(text),
     parse: (raw) => FORMATS.json.parse(raw),
     /** Providers that support it get an API-enforced schema (Anthropic output_config.format). */
     jsonSchema: {
@@ -132,6 +171,9 @@ Start line 1 immediately with the Chinese character. No preamble, no labels, no 
     closer: 'Reply now.',
     // The speech is the very first token — there is no envelope to open.
     sayIndex: (text) => (text.length ? 0 : -1),
+    // Line 1 closes at the first newline — long before the turn does, since lines 2 and 3
+    // still have to decode. That gap is the head start TTS gets (IMMERSIVE_WORLD.md § 6.4).
+    sayEndIndex: (text) => text.indexOf('\n'),
     /**
      * The tolerant parser documented in IMMERSIVE_WORLD.md § 5.3. It is NOT format-agnostic
      * — the format is asked for in the prompt and this is what absorbs drift around it.
@@ -179,15 +221,30 @@ export const ACTION_KINDS = new Set(['idle', 'walk_to_actor', 'walk_away_from', 
 export const EMOTE_KINDS = new Set(['neutral', 'curious', 'pleased', 'confused', 'impatient', 'amused']);
 
 /**
- * Assemble the prompt for one format, optionally overriding the volatile turn (§ 5.3
- * layer 3) with a character probe. `turn` is a PROBE_TURNS entry (character.js).
+ * Assemble the prompt for one format.
+ *
+ * `turn` is a probe from character.js's `buildProbeTurns` (null = the fixed happy-path turn
+ * run.js benches). `ctx` overrides the NPC and the volatile turn state so the sweep can
+ * run a REGISTRY NPC (config/iwNpcs.ts, rendered by services/iw/npcPrompt.ts)
+ * instead of the inline 王婶 below — which is the whole point of § 12 phase 1c: the bench
+ * must grade the text production actually sends.
+ *
+ * Defaults reproduce the pre-registry bench exactly, so run.js's latency numbers stay
+ * comparable across this change.
+ *
+ * @param {string} formatKey
+ * @param {object|null} turn
+ * @param {{ NPC?: string, known?: string[], nearby?: string[] }} [ctx]
  */
-export function buildScenario(formatKey, turn = null) {
+export function buildScenario(formatKey, turn = null, ctx = {}) {
   const fmt = FORMATS[formatKey];
   if (!fmt) throw new Error(`unknown format ${formatKey} (have: ${Object.keys(FORMATS).join(', ')})`);
-  const user = turn ? buildTurnState(turn, fmt) : TURN_STATE.replace('Reply with the JSON object now.', fmt.closer);
+  const npcBlock = ctx.npc ?? NPC;
+  const user = turn
+    ? buildTurnState(turn, fmt, ctx)
+    : TURN_STATE.replace('Reply with the JSON object now.', fmt.closer);
   return {
-    system: `${RULES_STEM.replace('__CONTRACT__', fmt.contract)}\n\n${PERSONA}`,
+    system: `${RULES_STEM.replace('__CONTRACT__', fmt.contract)}\n\n${npcBlock}`,
     user,
     maxTokens: 200,
     format: fmt,
@@ -195,16 +252,17 @@ export function buildScenario(formatKey, turn = null) {
 }
 
 /** Layer 3 for an arbitrary probe turn — same shape as TURN_STATE, different content. */
-function buildTurnState(turn, fmt) {
+function buildTurnState(turn, fmt, ctx = {}) {
+  const known = (ctx.known ?? DEFAULT_KNOWN).join(', ');
+  const nearby = (ctx.nearby ?? DEFAULT_NEARBY).map(n => `- ${n}`).join('\n');
   const heard = turn.heard?.length ? turn.heard.map(h => `- ${h}`).join('\n') : '- (nothing yet)';
   const event = turn.said
     ? `JUST NOW, the player said to you: "${turn.said}"`
     : `JUST NOW, the player walked up to you and said nothing.`;
-  return `KNOWN_WORDS: 面, 碗, 要, 热, 凉, 好, 谢谢, 多少, 钱, 一, 二, 三, 我, 你, 吃, 来, 这个, 那个, 大, 小
+  return `KNOWN_WORDS: ${known}
 
 NEARBY (tile distance from you):
-- player "player" at 2 tiles, facing you
-- npc_li at 7 tiles, behind a stall (muffled)
+${nearby}
 
 WHAT YOU HAVE HEARD, oldest first:
 ${heard}
@@ -213,6 +271,10 @@ ${event}
 
 ${fmt.closer}`;
 }
+
+/** The inline bench's turn-state defaults, used when `ctx` supplies nothing. */
+const DEFAULT_KNOWN = ['面', '碗', '要', '热', '凉', '好', '谢谢', '多少', '钱', '一', '二', '三', '我', '你', '吃', '来', '这个', '那个', '大', '小'];
+const DEFAULT_NEARBY = ['player "player" at 2 tiles, facing you', 'npc_li at 7 tiles, behind a stall (muffled)'];
 
 /**
  * Grade one reply against the engine's actual requirements.

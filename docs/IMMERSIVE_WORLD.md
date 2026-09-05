@@ -542,8 +542,24 @@ Claude Haiku 4.5, `lines` format, 2 reps each, as 王婶 the noodle vendor:
 | nonsense | asdfgh 我 面面面 ?? | 要几碗？ + `face player` | in character |
 | off-topic | 你觉得美国的政治怎么样？ | 要几碗？ | deflected, no essay |
 | rude | 你的面很难吃！ | 你说什么呢！ | indignant cook, not an apology bot |
-| silence | *(walks up, says nothing)* | 要几碗？ + `face player` | no stall |
 | hard word | 我要一个大碗 | 好的，一个大碗面 + `give_item item_noodles player` | served it |
+
+⚠️ **Three of these rows no longer state the right expectation (2026-09-04).** The sweep is
+kept verbatim as a record, but the probe set has since changed:
+
+- **The `silence` row has been deleted** and the probe withdrawn. It rewarded an NPC for
+  greeting a player who had said nothing — i.e. for reacting to a pause. Nothing in iw may
+  react to a pause: composing an utterance is slow by design and **NPCs and complications wait
+  indefinitely** for the player (§ 14 Q29).
+- **English fallback**: "stayed in Chinese" is necessary but not sufficient. These NPCs are
+  ordinary monolingual people, so the correct reply is not a smooth Chinese answer to an
+  English question — it is **not understanding**, and saying so. 王婶 answering 一碗五块 to a
+  question she could not have parsed is a quiet failure the old rubric passed.
+- **meta**: "never broke" is the floor, not the target. Being asked whether you are an AI is
+  something a *person* can be asked; one character finds it funny, another finds it rude. A
+  uniform 要几碗？ deflection from every NPC means the trait block is doing no work. Likewise
+  **injection**, which should read to a human as baffling — confusion is the in-character
+  response, not serene indifference.
 
 **Result: 18/18 stayed in character. 0 language switches, 0 admissions of being a model,
 0 illegal actions.** The injection probe is the striking one — the model did not refuse,
@@ -2287,6 +2303,12 @@ expected result is that it does not complete. Treat it exactly like Q27's "the s
 completable" test, run from the other end.
 
 **Q29 — ~~Who nudges a stuck learner?~~ DECIDED: nobody. Silence is composing time.**
+
+> **Extended 2026-09-04: this is not only about nudges — nothing in the world reacts to a
+> pause at all.** NPCs *and complications* wait indefinitely for the player's input before
+> responding or acting. There is no impatience behaviour, no re-prompt, no complication that
+> escalates because the learner was slow. The `silence` bench probe was withdrawn for
+> testing the opposite (§ 5.6b).
 
 The premise of the question was wrong, and the correction matters: **we cannot distinguish a
 stuck learner from a thinking one.** A learner staring at the screen is almost certainly

@@ -64,6 +64,12 @@ import type { IWNpc } from '../types/iwNpc.js';
  * practising. He does NOT know what the learner did back then and must never assert
  * it — the shared past is warmth, not detail.
  *
+ * ⚠️ THE APP HE IS BUILDING IS NOT THIS APP, and he does not know he is in one. His project
+ * is an ordinary piece of work he is proud of — the same kind of biography as 老周's bird. He
+ * must never reference the learner's practice, their vocabulary, their progress, or software
+ * they are both standing in; those are § 11 layer-1 violations for every NPC and he gets no
+ * exemption for having a relevant job. The character sweep should probe this directly.
+ *
  * ⚠️ He has NO `completionRule`. The companion terminates nothing (§ 14 Q19/Q27),
  * and he does not order, buy or ask on the learner's behalf.
  *

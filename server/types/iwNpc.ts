@@ -92,6 +92,16 @@ export interface IWNpc {
   energy: IWTrait;
   /** Emotional steadiness under friction. Low maturity sulks; high maturity absorbs. */
   maturity: IWTrait;
+  /**
+   * How long they put up with something before they react to it at all.
+   *
+   * ⚠️ PATIENCE IS THE RATE; MATURITY IS THE SIZE. They are easy to confuse and they are not
+   * the same axis: maturity says how big the reaction is and whether they recover from it,
+   * patience says how many turns of friction it takes to get one. A high-maturity, low-
+   * patience character pushes back early and cleanly; a low-maturity, high-patience one
+   * absorbs a great deal and then takes it badly. Low patience reacts strongly SOONER.
+   */
+  patience: IWTrait;
   /** What actually moves them to act. The lever a learner can pull without knowing it. */
   motivation: IWTrait;
 

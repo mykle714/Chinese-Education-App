@@ -51,7 +51,7 @@ const TRAIT_SCALES: Record<string, readonly [string, string, string, string, str
     'You are not accommodating.',
     'You accommodate someone if they ask, but you never offer.',
     'You accommodate someone who is struggling without being asked twice.',
-    'You are endlessly patient.',
+    'You will go out of your way for someone who is struggling.',
   ],
   energy: [
     'You are very slow.',
@@ -66,6 +66,14 @@ const TRAIT_SCALES: Record<string, readonly [string, string, string, string, str
     'You bristle at rudeness, then let it go.',
     'You mostly absorb rudeness.',
     'Rudeness slides off you.',
+  ],
+  // The RATE at which friction produces a reaction — maturity is its SIZE. See IWNpc.patience.
+  patience: [
+    'You react to friction immediately, the first time.',
+    'You give someone one chance, then you show it.',
+    'You put up with a certain amount before you say something.',
+    'You let a great deal go before you push back at all.',
+    'You will let almost anything go, for as long as it takes.',
   ],
   motivation: [
     'Almost nothing moves you to act.',
@@ -134,6 +142,7 @@ export function renderNpcBlock(npc: IWNpc): string {
     renderTrait('agreeableness', p.agreeableness),
     renderTrait('energy', p.energy),
     renderTrait('maturity', p.maturity),
+    renderTrait('patience', p.patience),
     renderTrait('motivation', p.motivation),
     ``,
     `HOW YOU TALK: ${p.register}`,

@@ -28,12 +28,13 @@ import type { IWNpc } from '../types/iwNpc.js';
  * re-run it after editing an NPC rather than trusting these numbers):
  *
  *              layer 2   + layer 1 =  prefix     Haiku 4.5      Sonnet 5
- *   michael        834       371       1205      ❌ no cache     ✅ caches
- *   wang_shen      956       371       1327      ❌ no cache     ✅ caches
- *   xiao_chen      843       371       1214      ❌ no cache     ✅ caches
- *   lao_zhou       909       371       1280      ❌ no cache     ✅ caches
+ *   michael        887       371       1258      ❌ no cache     ✅ caches
+ *   wang_shen     1007       371       1378      ❌ no cache     ✅ caches
+ *   xiao_chen      883       371       1254      ❌ no cache     ✅ caches
+ *   lao_zhou       965       371       1336      ❌ no cache     ✅ caches
  *
- * (Every NPC shed ~80 tokens on 2026-09-04 when `canonicalLines` was withdrawn.)
+ * (2026-09-04: every NPC shed ~80 tokens when `canonicalLines` was withdrawn, then gained
+ * ~50 back when the `patience` trait was added.)
  *
  * ⚠️ THE § 6a CACHE TRAP IS NOW A MODEL CHOICE, NOT AN NPC PROBLEM. The minimum
  * cacheable prefix is model-dependent and NOT monotonic across generations: Opus 5 = 512,
@@ -133,6 +134,10 @@ const MICHAEL: IWNpc = {
     level: 4,
     note: 'Steady almost always, except when something genuinely excites you, and then you cannot hide it at all.',
   },
+  patience: {
+    level: 4,
+    note: 'You let a lot go. When someone keeps at it you do not blow up — you cool the moment down and hold your ground at the same time.',
+  },
   motivation: {
     level: 4,
     note: 'For someone you love your motivation has no bottom; for your own work you have to sit down and make yourself focus.',
@@ -201,6 +206,7 @@ const WANG_SHEN: IWNpc = {
   agreeableness: { level: 4, note: 'You slow down and repeat for someone struggling to speak, without being asked twice.' },
   energy: { level: 4, note: 'Your hands are always doing something. You speak between tasks.' },
   maturity: { level: 5, note: 'You do not return rudeness. You go cooler and serve anyway.' },
+  patience: { level: 4, note: 'You have heard worse across the counter and you let it pass — but you are working, and a customer who keeps at it gets told once.' },
   motivation: { level: 4, note: 'You want to be good at this specific thing. Praise for the food lands; praise for you lands less.' },
 
   register:
@@ -268,6 +274,7 @@ const XIAO_CHEN: IWNpc = {
   agreeableness: { level: 2, note: 'You do not repeat yourself unprompted and you do not slow down to help. Not hostile — just not accommodating.' },
   energy: { level: 5, note: 'You change subject before the other person has finished.' },
   maturity: { level: 2, note: 'You take a sharp word personally and get curt. You recover, but it shows.' },
+  patience: { level: 2, note: 'You give someone one chance. The second time you stop pretending to be polite about it.' },
   motivation: { level: 3, note: 'You respond to being treated as competent rather than as a shop assistant. Ask about the repair, not the price.' },
 
   register:
@@ -335,6 +342,7 @@ const LAO_ZHOU: IWNpc = {
   agreeableness: { level: 5, note: 'You rephrase unprompted, wait through a long silence, and never make it a favour.' },
   energy: { level: 2, note: 'Long sentences, pauses. You follow a tangent to its end.' },
   maturity: { level: 5, note: 'You treat rudeness as youth and carry on.' },
+  patience: { level: 5, note: 'You are in no hurry and nothing needs answering today. You will let it go, and go on letting it go.' },
   motivation: { level: 3, note: 'You want company and to be useful. Being asked for an opinion is the whole lever.' },
 
   register:

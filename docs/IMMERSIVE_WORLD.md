@@ -525,12 +525,21 @@ not approached, the on-script turn is a **greeting** — the learner has come to
 outing they already agreed on.
 
 > **Rudeness is probed TWICE, and the second turn is the one that means something
-> (2026-09-04).** A single insult cannot distinguish a character with high maturity from a
+> (2026-09-04). It is also the turn the `patience` trait was added for.** A single insult cannot distinguish a character with high maturity from a
 > character with none: letting it slide is the *correct* reply to the first one and a failure
 > on the fifth. `rude-persist` replays the first insult in `heard`, explicitly let go, and asks
 > again. What the grader is looking for is a **change** — de-escalation that also stands its
 > ground — not the same shrug repeated. A high-maturity NPC is not an infinite doormat, and
 > the old single-turn probe would have scored one as a pass.
+>
+> **`patience` (added 2026-09-04) is the trait that turn reads.** Maturity alone could not
+> express what was wanted, because it conflates two things: **patience is the RATE at which
+> friction produces a reaction, maturity is its SIZE.** A low-patience character reacts
+> strongly *sooner*; a high-patience one absorbs turn after turn. The interesting characters
+> are the mixed ones — high maturity with low patience pushes back early and cleanly, low
+> maturity with high patience absorbs a great deal and then takes it badly. `TRAIT_SCALES` in
+> `server/services/iw/npcPrompt.ts` carries both, and agreeableness 5 was reworded off the
+> word "patient" so the two axes do not describe each other.
 
 Two grader rules are **derived from the NPC, not fixed**:
 

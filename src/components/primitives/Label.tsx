@@ -36,7 +36,15 @@ export interface LabelProps {
     sx?: SxProps<Theme>;
 }
 
-/** `.lab` — mono 10px uppercase overline. The atom the other two are built from. */
+/**
+ * `.lab` — 10px uppercase tracked overline. The atom the other two are built from.
+ *
+ * Set in `FONTS.label`, NOT `FONTS.mono`: this is the app's "info type" voice (prose set
+ * small), which was split off from the data/numeric mono on 2026-09-04 so it can be
+ * re-faced in one place. `FONTS.label` resolves through `--label-font`, which is what
+ * /font-lab's Info-type mode swaps per column — so every `Label` on the page re-faces
+ * live, through the real component. See docs/INFO_TYPE_LAB.md.
+ */
 export const Label: React.FC<LabelProps> = ({ children, color = COLORS.textFaint, className, sx }) => (
     <Typography
         component="span"
@@ -45,7 +53,7 @@ export const Label: React.FC<LabelProps> = ({ children, color = COLORS.textFaint
         // array or a theme callback, so it is APPENDED rather than object-spread.
         sx={[
             {
-                fontFamily: FONTS.mono,
+                fontFamily: FONTS.label,
                 fontSize: 10,
                 letterSpacing: "0.14em",
                 textTransform: "uppercase",

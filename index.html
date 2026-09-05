@@ -5,14 +5,35 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <!-- maximum-scale=1 + user-scalable=no disable double-tap / pinch zoom on
          Android/Chrome/Firefox. iOS Safari IGNORES user-scalable=no, so page-level
-         pinch on iOS is blocked separately in JS via the useBlockZoom hook. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <!-- The colour iOS/Android paint BEHIND the status bar (and Chrome's toolbar).
-         This is only the DEFAULT — the app's paper ground. Screens that flood the
-         page with their own ground (every game, via GameSurfaceProvider) rewrite
-         this tag while they are mounted through the useThemeColor hook, so the
-         strip above the header always matches the header. See
-         src/hooks/useThemeColor.ts. Value mirrors COLORS.background. -->
+         pinch on iOS is blocked separately in JS via the useBlockZoom hook.
+
+         viewport-fit=cover makes the web view paint EDGE TO EDGE — under the status
+         bar and the home indicator — instead of being letterboxed inside the safe
+         area. This is what lets a page own the colour of the band behind the clock:
+         while the app was letterboxed, iOS filled that band itself from the document
+         background it captured at LAUNCH, so neither `theme-color` nor any runtime
+         style could change it (that is the bug src/hooks/useThemeColor.ts could not
+         reach). The other half of the trade — keeping content out from under those
+         two strips — is `SAFE_TOP` / `SAFE_BOTTOM` in src/theme/safeArea.ts. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- Home-screen ("Add to Home Screen") behaviour. `capable` asks iOS for the
+         standalone window with no Safari chrome; `status-bar-style: default` keeps
+         the system glyphs DARK, which is what the app's light palette needs. Do NOT
+         switch this to `black-translucent` — that forces light glyphs, which vanish
+         on every paper-white page.
+
+         ⚠️ iOS SNAPSHOTS THESE TAGS WHEN THE ICON IS ADDED. Changing them does not
+         affect an already-installed icon: delete it from the Home Screen and re-add
+         it, or the old behaviour persists no matter what ships. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- The colour Android Chrome (toolbar) and iOS SAFARI-TAB browsing paint behind
+         the status bar. This is only the DEFAULT — the app's paper ground; screens
+         that flood the page with their own ground (every game, via
+         GameSurfaceProvider) rewrite this tag while mounted through the
+         useThemeColor hook. It does NOT reach the iOS home-screen web app's status
+         bar — that band is page pixels now, painted by whatever surface is on screen
+         thanks to viewport-fit=cover above. Value mirrors COLORS.background. -->
     <meta name="theme-color" content="#FBFAF8" />
     <title>Cow</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,10 +42,14 @@
          in src/theme/fonts.ts:
            Instrument Sans  - primary Latin UI
            Instrument Serif - Latin display / hero (CJK falls through to Noto Serif SC)
-           JetBrains Mono   - overlines, counts, metadata (load-bearing in this design)
+           Azeret Mono      - DATA: counts, scores, user ids, timers, numbered-tone
+                              pinyin. Replaced JetBrains Mono on 2026-09-04.
+           Public Sans      - INFO TYPE: the overline/caption voice (FONTS.label). Split
+                              off the mono token on 2026-09-04 because that one token was
+                              setting both prose and data; see docs/INFO_TYPE_LAB.md.
            Noto Sans/Serif SC - CJK glyphs + hero character
          `display=swap` on all of them: text must stay readable while faces load. -->
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Azeret+Mono:wght@400;500;700&family=Public+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
     <!-- Material Symbols Rounded — the icon face (D3), replacing per-icon
          @mui/icons-material imports. Separate <link> because it is a variable font on
          four axes (optical size, weight, fill, grade) that the other families do not

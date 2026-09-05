@@ -27,10 +27,11 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
 
 2. **Home menu** (`/`, `HomePage`) — a `HubMenu` (the shared row component, also
    used by Discover + Games hubs) of secondary destinations:
-   **Night Market**, **Games**, **Community**, **Reader**, **Dictionary**,
-   **Compare Words** (`/compare` — see
-   [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md))
+   **Night Market**, **Games**, **Community**, **Reader**, **Dictionary**
    (plus a validator-only **Tester Dashboard** row and two template-author-only rows).
+   There is deliberately **no Compare Words row**: Compare is a sheet raised over the
+   word you are already looking at, not a destination — see
+   [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md).
 
 3. **Back-arrow drill-ins** — every page reached from a hub has a common header
    with a back button. These come in two archetypes (see

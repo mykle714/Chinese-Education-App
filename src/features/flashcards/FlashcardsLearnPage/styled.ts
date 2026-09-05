@@ -23,63 +23,6 @@ export const InfoCard = styled(Card)(({ theme }) => ({
     flexDirection: "column",
 }));
 
-// Scrim overlay behind the modal info sheet — tap to close.
-export const EicScrim = styled(Box)(({ theme }) => ({
-    position: "absolute",
-    inset: 0,
-    background: theme.palette.flashcard.scrim,
-    animation: "eicScrimIn 0.18s ease-out both",
-    zIndex: 10,
-    "@keyframes eicScrimIn": {
-        from: { opacity: 0 },
-        to: { opacity: 1 },
-    },
-}));
-
-// Modal bottom sheet for the EIP. Height is set inline by InfoCardSection
-// (measured natural height on mount, adjustable via grabber drag) and
-// position is fixed to the bottom of the parent.
-export const InfoSheetContainer = styled(Box)(({ theme }) => ({
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    // WHITE, not the page ground: a sheet is a surface that sits ON the page, and the
-    // design paints all three of them (`.sheet`, `.eic`, `.pnl`) `var(--white)` over
-    // `--paper`. It used to take `flashcard.background` — the same value as the page
-    // behind it — which only read as a sheet because of its shadow.
-    background: COLORS.white,
-    borderRadius: "20px 20px 0 0",
-    padding: "10px 0 18px",
-    display: "flex",
-    flexDirection: "column",
-    zIndex: 11,
-    boxShadow: theme.palette.flashcard.sheetShadow,
-}));
-
-// Clipping slot for the sheet's MERGE HEADER (see SheetPanel's writeMergeChrome).
-// It holds a real PageHeader but starts at zero height with `overflow: hidden`, so the
-// header is fully laid out — and therefore measurable — from the first paint while
-// showing nothing. SheetPanel interpolates its height/opacity as the sheet grows into
-// the top of the screen, which is what turns the sheet into a page.
-export const SheetMergeHeaderSlot = styled(Box)({
-    height: 0,
-    opacity: 0,
-    overflow: "hidden",
-    flexShrink: 0,
-    // Off until the header is fully merged in; SheetPanel flips it (see writeMergeChrome).
-    pointerEvents: "none",
-});
-
-// Centered grabber pill at the top of the info sheet.
-export const InfoSheetGrabber = styled(Box)(({ theme }) => ({
-    width: 44,
-    height: 5,
-    borderRadius: 5,
-    background: theme.palette.flashcard.grabber,
-    flexShrink: 0,
-}));
-
 // Headword + translation + audio row below the grabber, separated from tabs by a rule.
 export const InfoSheetEntryHeader = styled(Box)(({ theme }) => ({
     display: "flex",

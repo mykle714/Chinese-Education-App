@@ -335,7 +335,11 @@ export function useChallengeRound(opts: {
     }, [send]);
 
     const emit = useCallback((event: ChallengeEvent) => {
-        if (endedRef.current) return;
+        // An ordinary run emits the same events a challenge run does — the games do
+        // not branch on mode. Nothing here applies to it: there is no round to claim,
+        // no progress to write, and above all no leave-confirm to arm (a free-play
+        // player who taps Back must just go back).
+        if (!active || endedRef.current) return;
         scorer()?.apply(event);
 
         // ── THE CLAIM (§ 5.1a) ────────────────────────────────────────────────
@@ -350,7 +354,7 @@ export function useChallengeRound(opts: {
             setArmed(true);
         }
         flushProgress();
-    }, [scorer, flushProgress]);
+    }, [active, scorer, flushProgress]);
 
     // The active-time clock. Ticks only while the run is genuinely playing and not
     // paused, so backgrounding and modal popups cost the player nothing (§ 5.8).
@@ -483,7 +487,7 @@ export function useChallengeRound(opts: {
         isContested: active ? isContested : NEVER_CONTESTED,
         // Nothing left to warn about once the run has ended — the round is written and
         // the player is looking at the scoreboard.
-        armed: armed && !result,
+        armed: active && armed && !result,
         emit,
         finish,
         result,

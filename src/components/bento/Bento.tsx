@@ -380,7 +380,7 @@ export const BentoStrip: React.FC<BentoStripProps> = ({
                 <Box
                     className="bento-strip__meta"
                     sx={{
-                        fontFamily: FONTS.mono,
+                        fontFamily: FONTS.label,
                         fontSize: 10,
                         letterSpacing: "0.14em",
                         textTransform: "uppercase",

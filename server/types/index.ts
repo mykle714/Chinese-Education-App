@@ -192,6 +192,8 @@ export interface UserUpdateData {
   writingGoal?: boolean;
   /** Toggled in account settings (migration 129). */
   showSegmentSpaces?: boolean;
+  /** Chosen in account settings (migration 157). One of CHINESE_FONT_IDS. */
+  chineseFont?: string;
   /**
    * The arena message (migration 152). Written through
    * ArenaService.setMessage, which trims, caps and sanitises it — do not set it

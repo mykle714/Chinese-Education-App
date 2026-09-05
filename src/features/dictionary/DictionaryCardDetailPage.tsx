@@ -15,10 +15,12 @@ import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings
 import { useTTS } from "../../hooks/useTTS";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "../../features/flashcards/FlashcardsLearnPage/FlashCardSection";
 import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT } from "../../features/flashcards/constants";
+import { CARD_SURFACE } from "../../theme/surfaces";
 import { dictionaryEntryToVocabEntry } from "../../utils/dictEntryAdapter";
 import { resolveSelectedSenseIndex } from "../../utils/definitionUtils";
 import { VocabCardBadges, VocabCardSections } from "../../features/flashcards/VocabCardDetailBody";
 import WordToolsRail from "../../components/WordToolsRail";
+import { useCompareSheet } from "../../components/CompareSheet";
 
 // READ-ONLY dictionary card detail (cdp) — the page a dictionary result opens into
 // (instead of the eip popup). It's a NODE page (keeps the footer; see
@@ -101,6 +103,15 @@ const DictionaryCardDetailPage: React.FC = () => {
         slideNavigate(`/dictionary/card/${encodeURIComponent(target)}`);
     }, [slideNavigate]);
 
+    // Compare — raises the compare SHEET over this page with the word in slot A, rather
+    // than navigating anywhere: the card you are comparing FROM stays on screen behind the
+    // panel, and dragging the sheet to full height is the "maximize" (SheetPanel's merge
+    // chrome). This page has no eip, so the sheet sits at depth 0 and its comparison
+    // paragraph keeps passive definition popups (no onSegmentOpen — there is nothing here
+    // to drill into; a segment tap would have to navigate, which is the thing the sheet
+    // exists to avoid). See docs/WORD_COMPARE_FEATURE.md.
+    const { openCompare, compareSheet } = useCompareSheet();
+
     // "+ to Learn Now" — the only write action on this read-only page. Mirrors the
     // former dictionary-eip header button; shown only for discoverable entries.
     const [addToLibSnack, setAddToLibSnack] = useState<string | null>(null);
@@ -151,18 +162,20 @@ const DictionaryCardDetailPage: React.FC = () => {
                     <>
                         <VocabCardBadges entry={entry} />
 
-                        {/* WORD TOOLS — `Write it`, on its own rail above the card and
-                            outside its boundary; the sole Practice Writing entry point for
-                            this page now that the on-card button is gone (see
-                            docs/PRACTICE_WRITING.md). `onCompare` is omitted because this
-                            read-only page has nowhere to load a comparison into, so the
-                            rail self-hides the Compare pill — and hides itself entirely for
-                            a non-zh / >4-character word, which has no writing drill. The
-                            adapted det entry has no vet row, so the rail passes no
-                            vocabEntryId and the drill records no writing mark. */}
+                        {/* WORD TOOLS — `Write it` and `Compare`, on their own rail above
+                            the card and outside its boundary; this rail is the sole
+                            Practice Writing entry point for the page now that the on-card
+                            button is gone (see docs/PRACTICE_WRITING.md). Both tools act on
+                            the WORD rather than on a card, so this page being read-only is
+                            no obstacle to either: Compare just hands the word to the
+                            compare sheet, raised over this page. The rail still hides itself
+                            when neither tool can act — a non-zh / >4-character word has no
+                            writing drill. The adapted det entry has no vet row, so the rail
+                            passes no vocabEntryId and the drill records no writing mark. */}
                         <WordToolsRail
                             className="dictionary-card-detail__word-tools"
                             entry={entry}
+                            onCompare={openCompare}
                         />
 
                         {/* Hero card — read-only: always the det's representative icon in
@@ -177,6 +190,12 @@ const DictionaryCardDetailPage: React.FC = () => {
                                 mt: "16px",
                                 mb: "40px",
                                 position: "relative",
+                                // Same card object as the saved-card cdp: the face draws the
+                                // hairline + radius (CARD_SURFACE via CardFaceSide), the
+                                // wrapper casts the resting shadow and repeats the radius so
+                                // the shadow takes the card's shape.
+                                borderRadius: CARD_SURFACE.borderRadius,
+                                boxShadow: CARD_SURFACE.boxShadow,
                             }}
                         >
                             <CardFaceSide
@@ -230,6 +249,11 @@ const DictionaryCardDetailPage: React.FC = () => {
                     </>
                 ) : null}
             </Box>
+
+            {/* COMPARE SHEET — portals to the overlay host (nearestOverlayHost), so where
+                it sits in this tree does not affect where it paints; it is here, outside
+                the scrolling content Box, purely so it reads as page-level furniture. */}
+            {compareSheet}
 
             <Snackbar
                 className="dictionary-card-detail__add-to-library-snackbar"

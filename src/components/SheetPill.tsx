@@ -16,7 +16,7 @@ import { WEIGHT, TRACKING } from "../theme/scale";
  * Positioning contract: it is `position: absolute` and expects to be rendered
  * inside a positioned FRAME (not inside a scroll area), so the sheet's scrim can
  * cover it — the pill dims and stops taking taps exactly when it has nothing left
- * to do. `bottom` is measured from that frame; pass `FOOTER_CLEARANCE` on a page
+ * to do. `bottom` is measured from that frame; pass `FOOTER_TOTAL_CLEARANCE` on a page
  * that keeps the footer bar and `0`-ish on a footerless one.
  *
  * ── One frame, two pills (`align`) ────────────────────────────────────────────
@@ -45,8 +45,13 @@ export interface SheetPillProps {
     /** Text on the pill, e.g. "More Info" / "Sets & Cards". */
     label: string;
     onClick: () => void;
-    /** Distance from the bottom of the positioned frame, in px. */
-    bottom: number;
+    /**
+     * Distance from the bottom of the positioned frame. A CSS length STRING rather
+     * than a number because every caller offsets by the footer bar, whose height now
+     * carries the home-indicator inset as an `env()` term the browser must resolve —
+     * see FOOTER_TOTAL_CLEARANCE in MobileFooter and src/theme/safeArea.ts.
+     */
+    bottom: string;
     /** Fixed pill height, in px — pages reserve this much space in their own flow. */
     height?: number;
     /** Drawn but inert and greyed: the surface is busy (e.g. the icon editor is open). */
@@ -108,7 +113,7 @@ export const SheetPill: React.FC<SheetPillProps> = ({
         aria-expanded={ariaExpanded}
         sx={{
             position: "absolute",
-            bottom: `${bottom}px`,
+            bottom,
             left: "50%",
             transform: alignTransform,
             zIndex: 2,

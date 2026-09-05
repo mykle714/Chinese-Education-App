@@ -3,7 +3,7 @@ import Icon from "../../components/Icon";
 import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
-import { HAND_CARD_RESTING_SHADOW } from "./StudyHand";
+import { SHADOW } from "../../theme/shadows";
 import { collectionGlyph } from "./collectionGlyph";
 import type { BuiltinCollectionEntry } from "./builtinCollections";
 
@@ -152,8 +152,8 @@ export const LibraryDuo: React.FC<LibraryDuoProps> = ({
                         // halo in the hue's own ink, so "on" is legible at a glance
                         // from across the sheet and not only by reading the border.
                         boxShadow: isActive
-                            ? `${HAND_CARD_RESTING_SHADOW}, 0 0 0 4px ${hue.fill}`
-                            : HAND_CARD_RESTING_SHADOW,
+                            ? `${SHADOW.cardRest}, 0 0 0 4px ${hue.fill}`
+                            : SHADOW.cardRest,
                         // The state change is a filter being applied, so it should read
                         // as one movement rather than four properties landing at once.
                         transition: "background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease",

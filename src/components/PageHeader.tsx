@@ -7,6 +7,7 @@ import Icon from "./Icon";
 import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import { FONTS } from "../theme/fonts";
 import { LEADING, WEIGHT } from "../theme/scale";
+import { SAFE_TOP } from "../theme/safeArea";
 
 // The app's one page header (shelf redesign A2b, docs/SHELF_REDESIGN.md).
 //
@@ -36,8 +37,10 @@ import { LEADING, WEIGHT } from "../theme/scale";
 export type PageHeaderSize = "hub" | "node" | "dense" | "leaf";
 
 interface SizeSpec {
-    /** Container padding, `.hd` = 23/22/0, `.lhd` = 21/18/0. */
-    padding: string;
+    /** Container top padding in px, `.hd` = 23, `.lhd` = 21. */
+    padTop: number;
+    /** Container horizontal padding in px, `.hd` = 22, `.lhd` = 18. */
+    padX: number;
     /** Title font-size in px. */
     titleSize: number;
     /** Title tracking — tightens as the title grows, per the design. */
@@ -47,21 +50,39 @@ interface SizeSpec {
 }
 
 const SIZE_SPEC: Record<PageHeaderSize, SizeSpec> = {
-    hub: { padding: "23px 22px 0", titleSize: 24, titleTracking: "-0.025em", rightGap: 11 },
-    node: { padding: "23px 22px 0", titleSize: 21, titleTracking: "-0.02em", rightGap: 11 },
+    hub: { padTop: 23, padX: 22, titleSize: 24, titleTracking: "-0.025em", rightGap: 11 },
+    node: { padTop: 23, padX: 22, titleSize: 21, titleTracking: "-0.02em", rightGap: 11 },
     // Tighter right gap too: the whole point of `dense` is that the line is full.
-    dense: { padding: "23px 22px 0", titleSize: 18, titleTracking: "-0.018em", rightGap: 10 },
-    leaf: { padding: "21px 18px 0", titleSize: 17, titleTracking: "-0.015em", rightGap: 9 },
+    dense: { padTop: 23, padX: 22, titleSize: 18, titleTracking: "-0.018em", rightGap: 10 },
+    leaf: { padTop: 21, padX: 18, titleSize: 17, titleTracking: "-0.015em", rightGap: 9 },
 };
 
+// THE SAFE-AREA TOP INSET LIVES HERE, once, for every header in the app.
+//
+// `index.html` ships `viewport-fit=cover`, so the page now paints under the iPhone's
+// status bar — that is what makes the band behind the clock match the page instead of
+// staying paper-white (see src/theme/safeArea.ts for the full why). The cost is that
+// the top of the page is now UNDER the clock, and the header is the app's first row on
+// every screen, so it is the one element that has to absorb the inset. Adding it to the
+// header's own top padding (rather than padding the frame) keeps the surface itself
+// full-bleed: the ground still runs edge to edge behind the strip, and only the TEXT
+// moves down. On a device with no inset `SAFE_TOP` is `0px` and the geometry is exactly
+// the design's.
+//
+// `safeAreaTop: false` is for a header that is NOT at the top of the screen — today only
+// the flp merge sheet's header (SheetPanel), which would otherwise gain 47px of dead
+// space in the middle of the page.
 const Header = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "size",
-})<{ size: PageHeaderSize }>(({ size }) => ({
+    shouldForwardProp: (prop) => prop !== "size" && prop !== "safeAreaTop",
+})<{ size: PageHeaderSize; safeAreaTop: boolean }>(({ size, safeAreaTop }) => ({
     display: "flex",
     alignItems: "center",
     gap: 12,
     flexShrink: 0,
-    padding: SIZE_SPEC[size].padding,
+    paddingTop: safeAreaTop ? `calc(${SIZE_SPEC[size].padTop}px + ${SAFE_TOP})` : `${SIZE_SPEC[size].padTop}px`,
+    paddingLeft: SIZE_SPEC[size].padX,
+    paddingRight: SIZE_SPEC[size].padX,
+    paddingBottom: 0,
     // Block native pan/scroll: dragging from the header must not scroll/bounce
     // the page (it sits above drag-to-sort/game surfaces). Mark a child scrollable
     // explicitly if one ever needs it.
@@ -96,6 +117,10 @@ interface PageHeaderProps {
     // drill-in chevron -> "leaf". Pass it explicitly for "dense" — a header whose
     // right slot carries three or more actions, which no other prop can tell.
     size?: PageHeaderSize;
+    // Whether this header sits at the TOP OF THE SCREEN and must therefore clear the
+    // status bar (see the Header styled-component). True for every page header; pass
+    // false only for a header rendered inside a panel/sheet that has content above it.
+    safeAreaTop?: boolean;
     // Single ReactNode slot rendered flush-right (e.g. a settings gear, an undo
     // button, a toggle chip). Compose it from the Header* exports below rather than
     // hand-rolling chips and buttons per page. Do NOT put the minute-points flame
@@ -110,6 +135,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
     rightContent,
     arrowDirection = "down",
     size,
+    safeAreaTop = true,
 }) => {
     const navigate = useNavigate();
     const resolvedSize: PageHeaderSize = size ?? (showBack ? (arrowDirection === "left" ? "node" : "leaf") : "hub");
@@ -135,7 +161,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
     );
 
     return (
-        <Header className="page-header" size={resolvedSize}>
+        <Header className="page-header" size={resolvedSize} safeAreaTop={safeAreaTop}>
             {showBack ? (
                 <BackGroup
                     className="page-header__back"
@@ -216,7 +242,7 @@ export const HeaderMetaLabel: React.FC<{ children: React.ReactNode; color?: stri
     <Typography
         className={className ? `page-header__meta ${className}` : "page-header__meta"}
         sx={{
-            fontFamily: FONTS.mono,
+            fontFamily: FONTS.label,
             fontSize: 10.5,
             letterSpacing: "0.1em",
             textTransform: "uppercase",

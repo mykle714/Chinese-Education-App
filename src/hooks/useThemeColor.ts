@@ -2,16 +2,26 @@ import { useEffect } from "react";
 import { COLORS } from "../theme/colors";
 
 /**
- * THEME COLOR — keeps the phone's status-bar strip the same colour as whatever the
- * app is painting under it.
+ * THEME COLOR — keeps the BROWSER CHROME the same colour as whatever the app is
+ * painting under it.
  *
- * WHY THIS EXISTS: on iOS the band behind the clock/battery is drawn by the BROWSER,
- * not by the page, and it takes its colour from `<meta name="theme-color">` (falling
- * back to the document background). Nothing in the React tree can paint it. So a game
- * that floods its `LeafPage` with a saturated accent used to sit under a paper-white
- * strip — the ground stopped at the top of the app and the phone finished the screen
- * in a different colour. This hook is the bridge: a component says what colour the
- * ground under the status bar is, and the meta tag follows it.
+ * WHY THIS EXISTS: in a browser TAB the band around the page — Android Chrome's
+ * toolbar, and the strip behind the clock/battery on iOS Safari — is drawn by the
+ * browser, not by the page, and it takes its colour from `<meta name="theme-color">`
+ * (falling back to the document background). Nothing in the React tree can paint it.
+ * So a game that floods its `LeafPage` with a saturated accent used to sit under a
+ * paper-white strip. This hook is the bridge: a component says what colour the ground
+ * is, and the meta tag follows it.
+ *
+ * ⚠️ WHAT THIS HOOK DOES **NOT** FIX: the iOS HOME-SCREEN web app. There the status
+ * bar was never a `theme-color` surface at all — while the web view was letterboxed
+ * inside the safe area, iOS filled the band itself using the document background it
+ * captured at LAUNCH, so every runtime write here (meta tag or documentElement) was
+ * ignored and the strip stayed paper-white on games and pages alike. That is fixed
+ * OUTSIDE this hook, by `viewport-fit=cover` in index.html + the safe-area insets in
+ * src/theme/safeArea.ts, which make the band page pixels painted by the surface
+ * itself. This hook remains correct and useful for Safari tabs and Android Chrome —
+ * it is simply not the mechanism the standalone app uses.
  *
  * WHY A STACK, NOT A PLAIN SET/RESET: mounts and unmounts interleave. During a
  * `usePageSlide` exit the outgoing game page is still mounted while the destination

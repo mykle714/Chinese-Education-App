@@ -585,7 +585,27 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             forceRender();
 
             // Autoplay: narrate the Chinese the moment a word bubble is picked up.
-            if (body.kind === "word" && onSpeak) onSpeak(body.entry);
+            //
+            // DEFERRED PAST THE PAINT, on purpose. `onSpeak` is useTTS.autoSpeak,
+            // which synchronously cancels both providers (including
+            // `speechSynthesis.cancel()`) and pushes two `speakingKey` state updates
+            // through the OWNING PAGE — i.e. a full BubbleMatchPage re-render — before
+            // it ever awaits. Running that inside the gesture put it in front of the
+            // frame that shows the bubble as picked up, which is what made a grab feel
+            // late. rAF-then-timeout is the "after the browser has painted" idiom: rAF
+            // alone still runs pre-paint.
+            //
+            // Safe for audio autoplay policy: CloudTTSProvider installs a
+            // capture-phase window `pointerdown` listener that unlocks BOTH sinks on
+            // every tap (see its `ensureUnlockListener`/`unlock`), so this very
+            // pointerdown has already primed playback regardless of when speak() runs.
+            if (body.kind === "word" && onSpeak) {
+                const entry = body.entry;
+                requestAnimationFrame(() => {
+                    const to = setTimeout(() => onSpeak(entry), 0);
+                    pendingTimeoutsRef.current.push(to);
+                });
+            }
         },
         [forceRender, onSpeak, setStatus, revealPartner]
     );

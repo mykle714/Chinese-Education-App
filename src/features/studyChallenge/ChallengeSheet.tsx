@@ -176,7 +176,7 @@ function ChallengeSheet({
                                 className={`challenge-sheet__state challenge-sheet__state--${tone}`}
                                 sx={{
                                     flexShrink: 0,
-                                    fontFamily: FONTS.mono,
+                                    fontFamily: FONTS.label,
                                     fontSize: SIZE.micro,
                                     letterSpacing: "0.1em",
                                     textTransform: "uppercase",

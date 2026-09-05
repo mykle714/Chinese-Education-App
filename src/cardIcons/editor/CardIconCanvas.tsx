@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Box } from "@mui/material";
 import { useGesture } from "@use-gesture/react";
+import { CARD_SURFACE_RADIUS } from "../../theme/surfaces";
 import OpenWithIcon from "@mui/icons-material/OpenWith";
 import LockIcon from "@mui/icons-material/Lock";
 import type { IconLayoutItem, SnapConfig, TextBlock, TextLayoutItem } from "../../types";
@@ -719,7 +720,10 @@ const CardIconCanvas: React.FC<{
                     position: "absolute",
                     inset: 0,
                     overflow: "hidden",
-                    borderRadius: "12px",
+                    // The card's own inner-clip curve (CardFaceSide / CardIconLayer),
+                    // so an icon dragged into a corner is cut off exactly where it
+                    // would be once the layout is saved and rendered read-only.
+                    borderRadius: `${CARD_SURFACE_RADIUS - 1}px`,
                     zIndex: 0,
                 }}
             >
@@ -820,7 +824,10 @@ const CardIconCanvas: React.FC<{
                     position: "absolute",
                     inset: 0,
                     overflow: "hidden",
-                    borderRadius: "12px",
+                    // The card's own inner-clip curve (CardFaceSide / CardIconLayer),
+                    // so an icon dragged into a corner is cut off exactly where it
+                    // would be once the layout is saved and rendered read-only.
+                    borderRadius: `${CARD_SURFACE_RADIUS - 1}px`,
                     zIndex: 1,
                     // The layer spans the whole canvas (above the icon clip layer), but only the
                     // two text blocks should be interactive — make the layer itself transparent

@@ -92,7 +92,7 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
   const FRAME = [
     "/", "/flashcards/decks", "/flashcards/mastered", "/account", "/flashcards/learn",
     "/discover", "/games", "/community", "/night-market", "/reader", "/dictionary",
-    "/compare", "/tester-dashboard", "/settings",
+    "/tester-dashboard", "/settings",
     "/discover/sort/zh", "/discover/quick-mark/es", "/discover/skipped/zh",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc-123",
     ...GAME_REGISTRY.map((g) => g.route),
@@ -126,7 +126,6 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
     ["/flashcards/mastered", "flashcards"],
     ["/dictionary", "home"],
     ["/reader", "home"],
-    ["/compare", "home"],
     // Prefix-matched node pages.
     ["/discover/sort/zh", "discover"],
     ["/discover/quick-mark/zh", "discover"],
@@ -149,7 +148,7 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
 
 describe("page transitions match the old NODE/LEAF tables", () => {
   const NODE = [
-    "/games", "/flashcards/mastered", "/dictionary", "/reader", "/compare",
+    "/games", "/flashcards/mastered", "/dictionary", "/reader",
     "/discover/skipped/zh", "/discover/sort/zh", "/discover/quick-mark/zh",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc",
   ];

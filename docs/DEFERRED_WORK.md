@@ -172,6 +172,14 @@ carries `suppressed: true`, and **no client reads it today**.
 
 ### 11. A drilled-in eip word lost its Add-to-Deck and Compare
 
+> **Compare half: fixed and then REVERTED, both on 2026-09-04.** The eip entry header briefly
+> carried a `compare_arrows` button (`InfoCardPanelBody`'s `onCompare`) acting on the word the
+> header was showing; it was removed at the user's request, along with the `onCompare` prop on
+> `InfoCardPanelBody`/`InfoCardSection` and its four call sites. Compare is once again reachable
+> only from `WordToolsRail` above the card, so both halves of this item are deferred: a
+> drilled-into word must be opened as its own page before it can be filed OR compared. See
+> [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md).
+
 | | |
 |---|---|
 | **What** | `InfoCardActionBar` (Add to Deck… / Compare To… / Practice Writing Me) rode at the end of the eip's definition tab and is **deleted**: artboards 20–25 make the panel information-only, so its three actions moved to the surfaces that own them — `CardOpsRail` on the card (add to deck) and `WordToolsRail` above it (compare, write it). Those rails act on the **card's** word. A word the learner has DRILLED INTO from the breakdown rows or an example segment therefore has no in-panel way to be filed or compared |

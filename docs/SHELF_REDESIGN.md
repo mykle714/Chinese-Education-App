@@ -161,6 +161,16 @@ both clean.
 - **`FONTS.serif` carries TWO faces on purpose** — `"Instrument Serif", "Noto Serif SC"`.
   Instrument Serif has no CJK coverage, so a Chinese headword falls through per glyph
   and stays a serif. Dropping the second face silently un-serifs every CJK hero.
+- **`FONTS.cjk` is no longer a fixed stack — the Chinese face is an ACCOUNT SETTING.**
+  It resolves to `var(--cjk-font, <the same default stack>)`, and
+  `users."chineseFont"` (migration 157) decides what writes that property. Six
+  selectable faces; new accounts default to 975 Maru SC, accounts predating the
+  migration stay on Noto Sans SC. The var's fallback is still the original stack, so
+  anything rendered before the preference loads (and every signed-out screen) looks
+  exactly as it did. Setting `--cjk-font` on any element re-faces every Chinese glyph
+  beneath it without touching the token or its 11 call sites.
+  → [CJK_TYPEFACE_LAB.md](./CJK_TYPEFACE_LAB.md) (the setting's full path, the
+  `/font-lab` compare page, and the 1em han-advance constraint cpcd imposes).
 - **Material Symbols loads with `display=block`, not `swap`** — it renders ligatures,
   so a swap period would flash the literal string `nights_stay`.
 - **Hydra's Target-yellow deviation survives, and is now better justified.** Its file
@@ -220,6 +230,11 @@ def oklch_to_hex(L, C, H):           # L as 0..1, C as authored, H in degrees
 ```
 </details>
 
+> ⚠️ **The mono half of this decision was revisited on 2026-09-04.** JetBrains Mono is
+> gone: overlines moved to `FONTS.label` (**Public Sans**) and data to `FONTS.mono`
+> (**Azeret Mono**). See [INFO_TYPE_LAB.md](./INFO_TYPE_LAB.md). D1's Instrument
+> Sans / Instrument Serif choices are unchanged.
+
 **Type.** Design wants Instrument Sans (UI), Instrument Serif (display), JetBrains
 Mono (labels/metadata/numerics), Noto Sans SC (CJK). The app ships Inter + Noto
 Sans SC + Noto Serif SC, declared in `index.html` and stacked in
@@ -267,9 +282,13 @@ geometry matched the artboards. The design's shadow system now lives in
 `FONTS`, `SIZE`. The three rules it encodes and the roles it names are in **D13**; read
 that before authoring a new `boxShadow`.
 
-**Code:** `src/theme/shadows.ts` → `SHADOW`; `src/theme/index.ts`;
-`src/contexts/ThemeContext.tsx` → `flashcard.cardShadow` / `.cardShadowSubtle` /
-`.sheetShadow`.
+Where a shadow only makes sense alongside a border and a radius — a CARD — take the whole
+recipe from `src/theme/surfaces.ts` (`CARD_SURFACE`) instead of authoring the three
+separately; see **D14**.
+
+**Code:** `src/theme/shadows.ts` → `SHADOW`; `src/theme/surfaces.ts` → `CARD_SURFACE`,
+`CARD_SURFACE_RADIUS`; `src/theme/index.ts`; `src/contexts/ThemeContext.tsx` →
+`flashcard.cardShadow` / `.cardShadowSubtle` / `.sheetShadow`.
 
 ## A2 · App chrome — footer, headers, shell
 
@@ -347,7 +366,7 @@ and the decisions taken are recorded at the end of this sub-entry.
   design's `.clear` spacer. The ~8 downstream call sites
   (`FlashcardsDecksPage`'s `SHEET_CLOSED_HEIGHT` / `STUDY_AREA_BOTTOM_PAD` — the
   former is gone since the sets sheet became modal, see DECKS_FEATURE.md,
-  `SortCardsPage`, `DecksPanelBody`, `ComparePage`, `CompareWorkspace`) all compose
+  `SortCardsPage`, `DecksPanelBody`, `CompareWorkspace`) all compose
   the named constants, so they re-derived themselves with no edit.
 - `src/components/FooterPresenter.tsx` — `HIDDEN_OFFSET` is now just
   `FOOTER_HEIGHT`. The old `INSET + HEIGHT + 16` added a pill inset and a
@@ -908,6 +927,14 @@ tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
 
 ### The primitives
 
+> ⚠️ **The `.lab` face is under review (2026-09-04).** `Label` now reads `FONTS.label`
+> rather than `FONTS.mono` — a new token whose default stack is byte-identical to the old
+> one, so nothing moved. The split exists because that one token was setting both PROSE
+> (`sense 1 · to be located at`) and DATA (`×12 wins`), and mono is only right for the
+> second. `/font-lab` → Info type is where the replacement face is being chosen; ~19
+> hand-rolled copies of this flavour still sit on `FONTS.mono` and are listed for
+> conversion in [INFO_TYPE_LAB.md](./INFO_TYPE_LAB.md) § 5.
+
 **`src/components/primitives/Label.tsx`** → `Label`, `SectionRule`, `SectionHeader`.
 
 All three exist for one reason: in this design a section is announced by a **mono
@@ -1183,8 +1210,10 @@ the hub row and the ground read one constant.
 one `hue` and does the ground, the flips and the provider together, so "this game is teal"
 is stated once per page and cannot be stated inconsistently.
 
-There is a THIRD surface the ground has to reach and neither mechanism above can touch: the
-phone's status-bar strip. The browser paints that band from `<meta name="theme-color">`, so
+There is a THIRD surface the ground has to reach: the phone's status-bar strip. In the iOS
+home-screen app it is page pixels and the ground simply covers it (`viewport-fit=cover` —
+see [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § Safe areas and the iOS status bar). In
+a browser TAB it is chrome the page cannot paint, drawn from `<meta name="theme-color">`, so
 `GameSurfaceProvider` also calls `useThemeColor(RAMP[hue].ink)`
 (`src/hooks/useThemeColor.ts`) — a LIFO stack of claims, because a `usePageSlide` exit keeps
 the outgoing page mounted while the incoming one mounts beneath it and a plain set/reset
@@ -2371,8 +2400,10 @@ Hydra's pinyin display genuinely is a live toggle.
   PARTIAL last cell rather than rounding, because rounding makes two genuinely different
   cards read the same. Per-track cooldowns survive as the `.cd3` legend.
 - **A `Know / Read / Write` switcher.** See the **D6 amendment** below.
-- **`WordToolsRail` (`.wtl.top`)** above the card — Write it / Compare. Compare hands the
-  word to `/compare` through route state (the cdp has no tab strip to host it in).
+- **`WordToolsRail` (`.wtl.top`)** above the card — Write it / Compare. Compare raises the
+  compare SHEET over the page (the cdp has no tab strip to host a Compare tab in).
+  **Amended 2026-09-04:** it used to navigate to a standalone `/compare` page through route
+  state; that page is deleted — see WORD_COMPARE_FEATURE.md.
 - **A "More Info" pill + a pull-up sheet.** The definition / breakdown / examples boxes
   no longer run down the page under the card; they are raised from a capsule floating over
   the bottom of the page, so the cdp and the flp now handle "more about this word"
@@ -2406,7 +2437,8 @@ greys out while it is open, because the sheet would cover the canvas being edite
 `src/features/flashcards/VocabCardDetailBody.tsx`;
 `src/components/NodePage.tsx` (the `overlay` slot);
 `src/components/primitives/Label.tsx` (`SectionRule`'s `right` slot);
-`src/features/dictionary/ComparePage.tsx` (seeds slot A from route state).
+`src/components/CompareSheet.tsx` (seeds slot A from the calling word; replaced
+`src/features/dictionary/ComparePage.tsx`, deleted 2026-09-04).
 **Deleted:** `src/features/flashcards/MasteryProgressBar.tsx` (368 lines).
 **Docs:** `docs/MASTERY_REWORK.md`, `docs/CARD_ICON_LAYOUT.md`,
 `docs/WORD_COMPARE_FEATURE.md`.
@@ -2805,6 +2837,48 @@ Where a surface has real design weight and the primitives don't obviously answer
 chosen back into this entry so the next agent inherits the decision instead of
 re-deriving it.
 
+### D14 · "A card lying on the page" is ONE recipe — `CARD_SURFACE`
+**Decided 2026-09-04, on the user's ruling:** the cdp and flp cards should be styled the
+same way as the fdp's menu card items, with the same border.
+
+Three surfaces were drawing the same physical object three ways: the fdp's Mastery Center
+tiles had a `COLORS.border` hairline + a resting shadow at 15px, the flp flashcard had a
+shadow and **no border** at 12px, and the cdp hero card had **neither** — a pale cream face
+on the warm paper ground with nothing marking its edge. `src/theme/surfaces.ts` now holds
+the recipe:
+
+```ts
+CARD_SURFACE = { border: `1px solid ${COLORS.border}`, borderRadius: "15px", boxShadow: SHADOW.cardRest }
+CARD_SURFACE_RADIUS = 15
+```
+
+**It is a recipe, not three tokens, because the three only work as a set** — the hairline
+gives the card an EDGE, the shadow a height, the radius a size class. Drop the hairline and
+a cream card on cream paper has no boundary at all; that was the cdp hero's bug.
+
+**`HAND_CARD_RESTING_SHADOW` is gone.** It was a hand-authored constant in `StudyHand.tsx`
+whose own comment asked to be folded into the token set "the next time the elevation scale
+is revisited"; it is now `SHADOW.cardRest` (`0 5px 16px` @ .14 — between `raised` and
+`float`), and `LibraryDuo` / `FlashcardsDecksPage` read it from there.
+
+**Who draws which half.** A flashcard FLIPS, so the hairline and radius live on each FACE
+(`CardFaceSide`, `card/CardFace.tsx`) — a border on the transparent flip wrapper would stay
+put while the faces rotate. The shadow lives on the WRAPPER (`FlashCardSection`'s `Card`,
+the cdp's `*__hero-card` box), which is what the page lays out; those wrappers repeat
+`borderRadius` so the cast shadow takes the card's shape. Applying both halves in both
+places would double the shadow.
+
+**The held card is still higher.** `isProminent` (the flp's front + flying-out card) keeps
+`fc.cardShadow` (`SHADOW.lifted`); only the card behind it rests. This is the same two-tier
+reading the hand already has, and the reason `CARD_SURFACE` carries the RESTING elevation
+only.
+
+**Radius fanout.** 15px is the face's outer curve; everything that clips content to the
+card uses `CARD_SURFACE_RADIUS - 1` so nothing shows a sliver of square corner outside the
+hairline — the face's inner clip box, `CardIconLayer`, and the fie's two canvas layers
+(`CardIconCanvas`). Surfaces that are NOT cards keep their own radii: the hand's cards stay
+22px (twice the size), the eip `InfoCard` and the cdp's `SectionCard` stay 12/16px.
+
 ### D13 · Elevation is the design's shadow system, and it lives in one token file
 **Decided 2026-08-24, on the user's ruling.** The design has a shadow system; the app had
 a habit. `src/theme/shadows.ts` (`SHADOW`) is now the only place a shadow is authored.
@@ -2845,9 +2919,9 @@ re-derived (D4).
 - **`StudyHand`'s front card** — a two-shadow stack (one ABOVE it, one below) so it reads as
   lifted off the two cards behind. No single token expresses that, and its ink is already
   the design's.
-- **`LibraryDuo`** — no longer shelf material at all: it shares `HAND_CARD_RESTING_SHADOW`
-  with the fdp's Centers rail and the hand's resting cards (see D9's narrowing), so
-  `SHADOW.spine` would break that pairing rather than tidy it.
+- **`LibraryDuo`** — no longer shelf material at all: it shares `SHADOW.cardRest` with the
+  fdp's Centers rail and the hand's resting cards (see D9's narrowing), so `SHADOW.spine`
+  would break that pairing rather than tidy it.
 - **The scp's LOCKED card** — the artboards never draw a pressed-in card, so there is no
   design value for "recessed". Left hand-authored, but re-inked to the shadow hue so it is
   not the one pure-black shadow left on the page.

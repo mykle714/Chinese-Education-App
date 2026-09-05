@@ -455,8 +455,8 @@ const FlashcardsLearnPage: React.FC = () => {
     }, [currentEntry, persistNote]);
 
     // "Compare" on the word-tools rail above the card. The flp has a tab strip of its
-    // own, so it opens Compare AS AN EIP TAB beside the word rather than navigating to
-    // the standalone page (which is what the cdp, having no strip, does).
+    // own, so it opens Compare AS AN EIP TAB beside the word — the one surface that does
+    // not use the compare SHEET (both cdps do, having no strip to put a tab in).
     const handleCompare = (target: VocabEntry) => {
         openEicSheet();
         eip.openCompareTab(target);

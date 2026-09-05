@@ -29,7 +29,7 @@ export const CARD_OPS_CELL_SX = {
 /** The label under a cell's glyph. */
 export const CARD_OPS_CELL_LABEL_SX = {
     fontStyle: "normal",
-    fontFamily: FONTS.mono,
+    fontFamily: FONTS.label,
     fontSize: 8,
     letterSpacing: "0.07em",
     textTransform: "uppercase",

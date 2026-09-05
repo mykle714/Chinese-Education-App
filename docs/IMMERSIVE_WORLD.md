@@ -1,8 +1,8 @@
 # Immersive World (AI-driven NPCs in a walkable scene)
 
-> STATUS: **PHASE 1 IN PROGRESS — 1b and 1c done, 1a (schema) is the next step and needs
-> table sign-off.** The question log (§ 14) is closed — every question is answered or
-> explicitly parked — and § 12 is a phased build plan.
+> STATUS: **PHASE 1 IN PROGRESS — 1a, 1b and 1c done; the editor (§ 12) is the next step.**
+> The question log (§ 14) is closed — every question is answered or explicitly parked — and
+> § 12 is a phased build plan.
 >
 > **Built so far:** the latency bench at `server/scripts/bench/npc-latency/` (§ 6a), which
 > answered "can a model reply fast enough to be an NPC?" before anything was designed around
@@ -20,9 +20,11 @@
 > and three are written — 王婶, 小陈, 老周 in `server/config/iwNpcs.ts`. The editor lets an
 > author choose *which NPC has which NPC*, not write NPC text.
 >
-> **Tables approved in principle, not yet created and not yet specified column-by-column:**
-> `iw_scenes` + four child tables, `iw_scene_runs`, `iw_scene_ratings`, `iw_npc_memories`.
-> No migration has been written. This is the one thing blocking phase 1a.
+> **Tables created by migration 158** (`database/migrations/158-create-immersive-world-schema.sql`):
+> `iw_scenes`, `iw_scene_runs`, `iw_scene_ratings`, `iw_npc_memories` — **four tables, not nine.**
+> The originally-approved child tables were collapsed into jsonb columns on `iw_scenes`
+> (see § 12 phase 1a and the migration header). Still owed from 1a: the startup pass that
+> asserts every stored npc id still resolves in `iwNpcs.ts`.
 >
 > **The three decisions that shape everything else:** the reply wire format is three lines of
 > plain text, speech first (§ 5.1, measured); **NPC lines are spoken aloud and the audio paces

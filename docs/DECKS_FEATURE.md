@@ -612,12 +612,13 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    session to start. Filled with the ramp's **pastels** (reading `red`, writing the new
    `yel`) rather than the saturated `MARK_TYPE_COLORS` — a tile is a surface, and only
    marks and mastery cells take the saturated hues (SHELF_REDESIGN.md D2b). They also
-   carry the hand's hairline (`COLORS.border`) and its RESTING elevation
-   (`HAND_CARD_RESTING_SHADOW`, exported from `StudyHand.tsx`) — never the front card's
-   lifted shadow, since a tile is not the played card. Without those the rail read as a
-   flat patch of colour sitting beside three real cards; with them it is the same object
-   family, one row up. Its radius stays 15px against the hand's 22px because the tile is
-   about half the size. See § "Mastery Centers".
+   carry the hand's hairline and its RESTING elevation — both, with the 15px radius, taken
+   from `CARD_SURFACE` (`src/theme/surfaces.ts`), the app's one recipe for "this box is a
+   card". Never the front card's lifted shadow, since a tile is not the played card.
+   Without those the rail read as a flat patch of colour sitting beside three real cards;
+   with them it is the same object family, one row up — the same family the flp card and
+   the cdp hero card now join. Its radius stays 15px against the hand's 22px because the
+   tile is about half the size. See § "Mastery Centers".
 
    **(c) The card hand** (`StudyHand`, `.fanw`) — Study Mix, Review and Challenge as a
    fanned hand of three cards with **one played forward**.

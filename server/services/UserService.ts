@@ -6,6 +6,7 @@ import { IRefreshTokenDAL } from '../dal/interfaces/IRefreshTokenDAL.js';
 import { User, UserCreateData, UserLoginData, AuthResponse, Language } from '../types/index.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 import { resolveTimezone } from '../utils/streakDate.js';
+import { CHINESE_FONT_IDS } from '../contracts/wire.js';
 
 // JWT secret key - should be in environment variables in production
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -427,18 +428,36 @@ export class UserService {
   /**
    * Update the account's display preferences. Deliberately separate from
    * updateGoals: goals change what "mastered" means, these only change how
-   * things are drawn. Currently one flag; new display knobs (pinyin visibility,
-   * pinyin color, …) migrate here from localStorage as they become
-   * account-level. See docs/EXAMPLE_SENTENCES.md.
+   * things are drawn. New display knobs (pinyin visibility, pinyin color, …)
+   * migrate here from localStorage as they become account-level.
+   * See docs/EXAMPLE_SENTENCES.md and docs/CJK_TYPEFACE_LAB.md.
+   *
+   * Every setting is OPTIONAL and only applied when present, so a client that knows
+   * about one knob can send it without clobbering the others. At least one must be
+   * present, or the call is a no-op worth rejecting.
    */
-  async updateDisplaySettings(userId: string, settings: { showSegmentSpaces?: boolean }): Promise<User> {
+  async updateDisplaySettings(
+    userId: string,
+    settings: { showSegmentSpaces?: boolean; chineseFont?: string },
+  ): Promise<User> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
-    const updateData: { showSegmentSpaces?: boolean } = {};
+    const updateData: { showSegmentSpaces?: boolean; chineseFont?: string } = {};
     if (typeof settings.showSegmentSpaces === 'boolean') updateData.showSegmentSpaces = settings.showSegmentSpaces;
+    if (settings.chineseFont !== undefined) {
+      // Allow-listed here as well as in the controller: the column is a bare text
+      // column, so this is the last place an unknown id can be stopped before it
+      // reaches a row that the client would then have to fall back on.
+      if (!CHINESE_FONT_IDS.includes(settings.chineseFont)) {
+        throw new ValidationError(`chineseFont must be one of: ${CHINESE_FONT_IDS.join(', ')}`);
+      }
+      updateData.chineseFont = settings.chineseFont;
+    }
     if (Object.keys(updateData).length === 0) {
-      throw new ValidationError('At least one display setting (showSegmentSpaces: boolean) is required');
+      throw new ValidationError(
+        'At least one display setting (showSegmentSpaces: boolean, chineseFont: string) is required',
+      );
     }
     const updatedUser = await this.userDAL.update(userId, updateData);
     delete updatedUser.password;

@@ -231,7 +231,7 @@ function ChallengeTestCard({ challenge, side, rounds, heading: headingOverride, 
                                 telling of a state that cannot be missed. "submitted"
                                 stays, because a banked round's Play button is gone and
                                 the filled numeral alone is a weaker signal. */}
-                            <Typography sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, fontWeight: WEIGHT.semibold, letterSpacing: "0.1em", textTransform: "uppercase", color: COLORS.textFaint }}>
+                            <Typography sx={{ fontFamily: FONTS.label, fontSize: SIZE.micro, fontWeight: WEIGHT.semibold, letterSpacing: "0.1em", textTransform: "uppercase", color: COLORS.textFaint }}>
                                 {[game.mode, played ? "submitted" : null]
                                     .filter(Boolean)
                                     .join(" · ")}
@@ -248,7 +248,7 @@ function ChallengeTestCard({ challenge, side, rounds, heading: headingOverride, 
                                 className="challenge-test-card__opponent-state"
                                 sx={{
                                     flexShrink: 0,
-                                    fontFamily: FONTS.mono,
+                                    fontFamily: FONTS.label,
                                     fontSize: SIZE.micro,
                                     letterSpacing: "0.09em",
                                     textTransform: "uppercase",

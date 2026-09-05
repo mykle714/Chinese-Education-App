@@ -12,6 +12,7 @@ import {
     FC_FONT,
 } from "../constants";
 import { SIZE, WEIGHT } from "../../../theme/scale";
+import { CARD_SURFACE } from "../../../theme/surfaces";
 import type { VocabEntry, SideOneLanguage } from "../types";
 import { isAdvancedLayout } from "../../../cardIcons/cardIconLayout";
 import { SpeakerButton } from "../../../components/SpeakerButton";
@@ -219,9 +220,15 @@ const CardFace: React.FC<{
             sx={{
                 backgroundColor: 'transparent',
                 background: 'none',
-                borderRadius: "12px",
-                // Prominent cards (front + flying-out) get full shadow; back card gets a softer one for depth.
-                boxShadow: isProminent ? fc.cardShadow : fc.cardShadowSubtle,
+                // The card object — hairline, radius and RESTING elevation from
+                // `CARD_SURFACE` (theme/surfaces.ts), shared with the cdp hero card and the
+                // Decks page's Mastery Center tiles. The hairline itself is drawn by each
+                // FACE (CardFaceSide), not here: this wrapper is transparent and carries the
+                // 3D flip, so a border on it would stay put while the faces rotate.
+                borderRadius: CARD_SURFACE.borderRadius,
+                // The card being HELD (front + flying-out) is lifted off the one behind it;
+                // the card behind rests. Same two-tier reading as the Decks page's hand.
+                boxShadow: isProminent ? fc.cardShadow : CARD_SURFACE.boxShadow,
                 cursor: "pointer",
                 position: "absolute",
                 inset: 0,
@@ -323,7 +330,7 @@ const CardFace: React.FC<{
                     top: 0, left: 0, right: 0, bottom: 0,
                     backgroundColor: dragPosition.x > dismissThreshold ? CORRECT_COLOR : dragPosition.x < -dismissThreshold ? INCORRECT_COLOR : 'transparent',
                     opacity: Math.min(Math.abs(dragPosition.x) / (dismissThreshold * 3), 0.3),
-                    borderRadius: "12px",
+                    borderRadius: CARD_SURFACE.borderRadius,
                     pointerEvents: 'none',
                     zIndex: 3,
                 }} />
@@ -603,8 +610,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                             className="mobile-demo-flashcard-empty"
                             sx={{
                                 backgroundColor: fc.flashCard,
-                                borderRadius: "12px",
-                                boxShadow: fc.cardShadow,
+                                borderRadius: CARD_SURFACE.borderRadius,
+                                border: CARD_SURFACE.border,
+                                boxShadow: CARD_SURFACE.boxShadow,
                                 position: "absolute",
                                 inset: 0,
                                 display: 'flex',

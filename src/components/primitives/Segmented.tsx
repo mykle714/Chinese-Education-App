@@ -84,7 +84,7 @@ export function Segmented<T extends string>({
                         className={`segmented__option segmented__option--${option.value}${active ? " segmented__option--active" : ""}`}
                         onClick={() => onChange(option.value)}
                         sx={{
-                            fontFamily: FONTS.mono,
+                            fontFamily: FONTS.label,
                             fontSize: 8.5,
                             fontWeight: 500,
                             letterSpacing: "0.08em",

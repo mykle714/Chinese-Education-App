@@ -21,7 +21,7 @@ import { authLog, authError, tokenPreview, readBodySafely, rateLimitInfo } from 
  * it into local user state.
  */
 type ProfilePatch = Partial<
-    Pick<User, 'selectedLanguage' | 'avatarIconId' | 'readingGoal' | 'writingGoal' | 'showSegmentSpaces'>
+    Pick<User, 'selectedLanguage' | 'avatarIconId' | 'readingGoal' | 'writingGoal' | 'showSegmentSpaces' | 'chineseFont'>
 >;
 
 /**
@@ -49,7 +49,7 @@ interface AuthContextType {
     updateLanguage: (language: Language) => Promise<void>;
     updateAvatar: (avatarIconId: string | null) => Promise<void>;
     updateGoals: (goals: { readingGoal?: boolean; writingGoal?: boolean }) => Promise<void>;
-    updateDisplaySettings: (settings: { showSegmentSpaces?: boolean }) => Promise<void>;
+    updateDisplaySettings: (settings: { showSegmentSpaces?: boolean; chineseFont?: string }) => Promise<void>;
     error: string | null;
 }
 
@@ -421,11 +421,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
         updateProfile('goals', 'update your goals', goals);
 
     /**
-     * Toggle the account's display preferences (currently just word spacing in
-     * segmented sentences — docs/EXAMPLE_SENTENCES.md). Purely cosmetic, so unlike
-     * updateGoals it has no downstream effect on mastery data.
+     * Toggle the account's display preferences — word spacing in segmented sentences
+     * (docs/EXAMPLE_SENTENCES.md) and the Chinese typeface (docs/CJK_TYPEFACE_LAB.md).
+     * Purely cosmetic, so unlike updateGoals they have no downstream effect on mastery
+     * data. Every field is optional; send only what changed.
      */
-    const updateDisplaySettings = (settings: { showSegmentSpaces?: boolean }) =>
+    const updateDisplaySettings = (settings: { showSegmentSpaces?: boolean; chineseFont?: string }) =>
         updateProfile('displaySettings', 'update your display settings', settings);
 
     const value = {

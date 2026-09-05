@@ -162,7 +162,7 @@ function ChallengeHelpPopup({ open, steps, deckName, onClose }: ChallengeHelpPop
                                     <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.bodyLg, fontWeight: WEIGHT.semibold, letterSpacing: "-0.015em", color: "#fff" }}>
                                         {step.heading}
                                     </Typography>
-                                    <Typography sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, letterSpacing: "0.11em", textTransform: "uppercase", color: "rgba(255,255,255,.88)", mt: 0.5 }}>
+                                    <Typography sx={{ fontFamily: FONTS.label, fontSize: SIZE.micro, letterSpacing: "0.11em", textTransform: "uppercase", color: "rgba(255,255,255,.88)", mt: 0.5 }}>
                                         step {Math.min(index, steps.length - 1) + 1} of {steps.length}
                                     </Typography>
                                 </Box>

@@ -5,6 +5,7 @@ import { useDiscoverNavigation } from "../hooks/useDiscoverNavigation";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { LEADING } from "../theme/scale";
+import { SAFE_BOTTOM } from "../theme/safeArea";
 
 // Footer bar geometry (shelf redesign `.fbar`, docs/SHELF_REDESIGN.md A2a). Exported
 // so scroll containers (see MobileTabScreen) can reserve matching bottom padding and
@@ -26,6 +27,18 @@ export const FOOTER_EXTRA_GAP = 16;
 // scroll area's paddingBottom so the last row clears the bar. = the design's `.clear`.
 export const FOOTER_CLEARANCE = FOOTER_HEIGHT + FOOTER_EXTRA_GAP;
 
+// The bar's REAL on-screen footprint, as a CSS string.
+//
+// Since `viewport-fit=cover` (index.html) the page paints under the home indicator, so
+// `bottom: 0` is the physical bottom edge of the screen rather than the bottom of the
+// safe area. The bar therefore GROWS by the bottom inset and pads its labels off it —
+// otherwise the tab row sits under the indicator. Everything measured off the bar (its
+// hide travel, the scroll clearance, the bottom edge-fade) must use this, not the bare
+// 74px. See src/theme/safeArea.ts. On a device with no inset it is exactly 74px.
+export const FOOTER_TOTAL_HEIGHT = `calc(${FOOTER_HEIGHT}px + ${SAFE_BOTTOM})`;
+// Same, for the scroll reservation: the design's 90px clearance plus the inset.
+export const FOOTER_TOTAL_CLEARANCE = `calc(${FOOTER_CLEARANCE}px + ${SAFE_BOTTOM})`;
+
 // The single, app-wide bottom spacer. Render it as the LAST child of any
 // footer-bearing scroll surface (hubs, decks, dictionary, card details, mastered
 // cards) so the final row clears the footer bar. We rely on this explicit block —
@@ -36,7 +49,7 @@ export const FOOTER_CLEARANCE = FOOTER_HEIGHT + FOOTER_EXTRA_GAP;
 export const FooterSpacer: React.FC = () => (
     <Box
         className="footer-spacer"
-        sx={{ width: "100%", height: FOOTER_CLEARANCE, flexShrink: 0 }}
+        sx={{ width: "100%", height: FOOTER_TOTAL_CLEARANCE, flexShrink: 0 }}
     />
 );
 
@@ -80,7 +93,12 @@ const Footer = styled(Box)(() => ({
     left: 0,
     right: 0,
     bottom: 0,
-    height: FOOTER_HEIGHT,
+    // Grown by the home-indicator inset, with matching bottom padding so the four tab
+    // labels keep their designed position relative to the bar's TOP edge and the extra
+    // height is dead space under the indicator. See FOOTER_TOTAL_HEIGHT.
+    height: FOOTER_TOTAL_HEIGHT,
+    paddingBottom: SAFE_BOTTOM,
+    boxSizing: "border-box",
     zIndex: 10,
 }));
 

@@ -346,7 +346,7 @@ export const BoardZone: React.FC<BoardZoneProps> = ({ label, tone = "hold", clas
                 <Typography
                     className="board__zone-label"
                     sx={{
-                        fontFamily: FONTS.mono,
+                        fontFamily: FONTS.label,
                         fontSize: 9.5,
                         letterSpacing: "0.12em",
                         textTransform: "uppercase",

@@ -11,6 +11,8 @@ import App from './App.tsx'
 import AppErrorBoundary from './components/AppErrorBoundary.tsx'
 import { initPerfDiagnostics } from './utils/perfDiagnostics'
 import { initErrorReporting } from './utils/errorReporting'
+import { restoreCjkFontOverride } from './theme/cjkFontOverride'
+import { restoreLabelFontOverride } from './pages/fontLab/labelFontOverride'
 
 // Interaction-latency telemetry. The footer/decks tap-lag only reproduces in
 // prod, so we instrument real users there. `localStorage.perfDiag = "1"` opts a
@@ -24,6 +26,15 @@ if (import.meta.env.MODE === 'production' || localStorage.getItem('perfDiag') ==
 // previously invisible (no boundary, no reporting), so we capture them in every
 // session rather than prod-sampling like the perf telemetry above.
 initErrorReporting()
+
+// Font lab (src/pages/fontLab/FontLabPage.tsx): re-apply a pinned typeface so a
+// candidate can be judged on the real pages, not just the lab's specimens. One per lab
+// mode — the Chinese face (`--cjk-font`) and the overline face (`--label-font`) are
+// independent decisions. Dev-only, and each is a no-op unless that lab has set one.
+if (import.meta.env.DEV) {
+  restoreCjkFontOverride()
+  restoreLabelFontOverride()
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

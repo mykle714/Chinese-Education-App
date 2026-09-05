@@ -14,15 +14,15 @@ import { SIZE, WEIGHT, TRACKING } from "../theme/scale";
 import { FONTS } from "../theme/fonts";
 
 // Latin UI text (labels, hint copy) — matches the eip's FC_FONT so the workspace
-// looks identical whether it renders inside the eip or on the standalone page.
+// looks identical whether it renders inside the eip tab or in the compare sheet.
 const UI_FONT = FONTS.sans;
 
 /**
  * The two words being compared plus the result of comparing them. This is the ENTIRE state the
  * workspace renders from; the owning surface decides where it lives:
- *  - eip: inside the Compare tab object (`CompareEipTab extends CompareState`, useEipTabs), so it
- *    survives switching to a word tab and back.
- *  - standalone /compare page: a plain `useState` in ComparePage.
+ *  - eip Compare tab: inside the tab object (`CompareEipTab extends CompareState`, useEipTabs), so
+ *    it survives switching to a word tab and back.
+ *  - compare sheet: a plain `useState` in `CompareSheet`, discarded when the sheet closes.
  */
 export interface CompareState {
     slotA: VocabEntry | null;
@@ -34,8 +34,8 @@ export interface CompareState {
 }
 
 // {root, scroll} — structurally the same handle InfoCardPanelBody exposes, so SheetPanel can bind
-// its drag-to-resize/scroll coupling to whichever body InfoCardSection renders. The standalone
-// page ignores the ref.
+// its drag-to-resize/scroll coupling to whichever body it is given (the eip's, or this one when
+// the Compare tab is active / the compare sheet is up).
 export interface CompareWorkspaceHandle {
     root: HTMLDivElement | null;
     scroll: HTMLDivElement | null;
@@ -51,16 +51,6 @@ export interface CompareWorkspaceProps {
     // eip for that word (same gesture as the Definition tab's longDefinition — see
     // LongDefinitionDisplay's onSegmentOpen). Omit to keep it a passive tooltip.
     onSegmentOpen?: (segment: string) => void;
-    // Who owns scrolling.
-    //  • "sheet" (default, the eip): the workspace fills the sheet body and scrolls ITSELF
-    //    (flex:1 + overflow:auto), with touchAction "none" because SheetPanel drives
-    //    scrolling/resizing from its own gesture handlers and native panning would fight them.
-    //  • "page" (ComparePage): the workspace is a natural-height block and the HOST scroll area
-    //    scrolls (MobileTabScreen's ScrollArea). It must NOT scroll itself there — a nested
-    //    scroller ends at its own box, so content would stop ABOVE the floating footer pill
-    //    instead of running behind it, and the ScrollArea's own FOOTER_CLEARANCE
-    //    bottom padding (which is what lets the last line clear the pill) would be bypassed.
-    layout?: "sheet" | "page";
 }
 
 /**
@@ -70,9 +60,10 @@ export interface CompareWorkspaceProps {
  *
  * Shared by BOTH compare surfaces — it is presentational + request-driving only, and owns no slot
  * state of its own:
- *  - the eip Compare tab (flp), where the state lives in the tab object (useEipTabs) and slot A is
- *    pre-filled with the word the user came from;
- *  - the standalone `/compare` node page (Home hub → Compare), where both slots start empty.
+ *  - the eip Compare TAB (flp and scp, which have an entry-tab strip), where the state lives in the
+ *    tab object (useEipTabs) and slot A is pre-filled with the word the user came from;
+ *  - the compare SHEET (`CompareSheet`, both cdps — no strip to put a tab in), where the state
+ *    lives in that component and resets on every open.
  *
  * Deleting a slot is a tap-to-arm / tap-to-confirm gesture: tapping a filled slot outlines it red
  * (armed); tapping that SAME slot again clears it back to the "+" placeholder. Tapping elsewhere
@@ -101,7 +92,6 @@ export interface CompareWorkspaceProps {
  */
 const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProps>(function CompareWorkspace({
     state, onSetSlot, onResult, showPinyin, showPinyinColor = true, onSegmentOpen,
-    layout = "sheet",
 }, ref) {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -244,10 +234,18 @@ const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProp
                 flexDirection: 'column',
                 padding: '16px 18px 8px',
                 gap: '16px',
-                // See the `layout` prop: the sheet scrolls itself, the page defers to its host.
-                ...(layout === "sheet"
-                    ? { flex: 1, minHeight: 0, overflow: 'auto', touchAction: 'none' }
-                    : { flex: '0 0 auto' }),
+                // The workspace fills its sheet body and scrolls ITSELF. (There used to be a
+                // `layout` prop with a "page" mode that deferred scrolling to a host
+                // ScrollArea; its only user was the deleted /compare page.)
+                flex: 1,
+                minHeight: 0,
+                overflow: 'auto',
+                // `pan-y`, NOT `none` — the same correction InfoCardPanelBody carries.
+                // SheetPanel picks resize-vs-scroll on the gesture's first committed move and
+                // expresses "scroll" by NOT calling preventDefault, leaving the browser to pan
+                // natively; `none` makes the browser refuse that pan, so a long comparison
+                // paragraph cannot be scrolled once the sheet has been dragged to full height.
+                touchAction: 'pan-y',
             }}
         >
             {/* Two xl-cpcd slots */}

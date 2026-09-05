@@ -7,9 +7,11 @@
 // ⚠️ Webfonts must be loaded in index.html for these to render as intended:
 //   - "Instrument Sans"  → primary Latin UI font (Google Fonts)
 //   - "Instrument Serif" → Latin display / hero text
-//   - "JetBrains Mono"   → labels, metadata, numerics — a LOAD-BEARING role in this
-//                          design, not just code. Mono uppercase is how every overline,
-//                          count and timestamp is set (`.lab`, `.k`, `.meta`).
+//   - "Azeret Mono"      → DATA only: counts, scores, user ids, timers, numbered-tone
+//                          pinyin. Replaced JetBrains Mono 2026-09-04; the token also
+//                          used to carry the overlines, which are now `label`.
+//   - "Public Sans"      → INFO TYPE: every overline, caption and section label
+//                          (`.lab`, `.sec2`, `.shelfhd`). Added 2026-09-04.
 //   - "Noto Sans SC"     → Simplified-Chinese glyphs
 //   - "Noto Serif SC"    → CJK fallback under `serif`, for the hero character
 //   - "Material Symbols Rounded" → the icon face (D3); see `.ms` in src/index.css and
@@ -19,9 +21,22 @@ export const FONTS = {
     // Primary UI font for all Latin text (labels, body, headings, buttons).
     sans: '"Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
 
-    // CJK text — characters, foreign words, mixed-script blocks. Unchanged by the
-    // redesign: the design's --cjk is this same stack.
-    cjk: '"Noto Sans SC", "Noto Sans JP", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+    // CJK text — characters, foreign words, mixed-script blocks.
+    //
+    // Routed through the `--cjk-font` custom property so the face can be swapped at
+    // runtime by any ancestor element (or `:root`) without touching this token or the
+    // 11 call sites that read it. The var()'s FALLBACK is the real default stack, so
+    // when nothing defines `--cjk-font` — which is the case everywhere in the shipping
+    // app — this resolves to exactly the string it always was. There is no way for an
+    // undefined variable to blank the family.
+    //
+    // The override is INHERITED, so setting `--cjk-font` on a container re-faces every
+    // descendant, and CPCDRow's pinyin-shift measurement (a Range over its own in-DOM
+    // nodes) measures the candidate face correctly. The one path it does NOT reach is
+    // off-DOM measurement appended to document.body — `measureTabWidth` in
+    // features/flashcards/FlashcardsLearnPage/useEipTabs.ts — which sees only a
+    // `:root`-level override. src/pages/FontLabPage.tsx is the consumer of all this.
+    cjk: 'var(--cjk-font, "Noto Sans SC", "Noto Sans JP", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif)',
 
     // Sub-character component glyphs (word search No Pinyin hint row). "HanziComponents"
     // is a self-hosted subset of Noto Sans SC covering the component glyphs Google's
@@ -43,9 +58,43 @@ export const FONTS = {
     // CJK hero character.
     serif: '"Instrument Serif", "Noto Serif SC", Georgia, serif',
 
-    // Numeric / code / numbered-tone pinyin — and, in this design, every mono overline,
-    // count, badge and timestamp. Carries far more of the UI than the name suggests.
-    mono: '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+    // Numeric / code / numbered-tone pinyin — real DATA: scores, counts, user ids,
+    // timestamps, numbered-tone pinyin. Things where a fixed advance earns its keep.
+    //
+    // ⚠️ This token used to carry the UI's overlines too. Those moved to `label` below;
+    // see that comment for why. The 18 hand-rolled overline sites were converted with the
+    // split (2026-09-04). The test is about MEANING, not casing: is the string a WORD the
+    // UI is saying (info type) or a FIGURE the user reads off (data)? Deliberate stays,
+    // beyond the obvious counts and timers: USER IDS (`FriendsPage`, `SentRequestsPage`),
+    // where 0/O and 1/l/I must not be confusable because people transcribe them by hand,
+    // and the two `PageHeader` chips that size themselves in `ch` — one character advance
+    // only against a FIXED-ADVANCE face.
+    //
+    // THE FACE IS AZERET MONO (chosen 2026-09-04, replacing JetBrains Mono). Squarish and
+    // very even in colour, which is what a column of figures wants. Picked for the DATA
+    // job specifically: with the overlines gone to `label`, this token no longer has to
+    // compromise between setting prose and setting numbers.
+    mono: '"Azeret Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+
+    // INFO TYPE — the app's overline/caption flavour: uppercase, tracked, micro-size,
+    // faint. `.lab` / `.sec2` / `.shelfhd` (src/components/primitives/Label.tsx) and the
+    // eip tab captions are all this one voice.
+    //
+    // Split out of `mono` on 2026-09-04 because the two were doing unrelated jobs under
+    // one name: "sense 1 · to be located at" is PROSE that happens to be set small, while
+    // "×12 wins" is DATA. Giving them one token is what let the flavour drift across ~19
+    // hand-rolled call sites, and what made a retune impossible to do in one place.
+    //
+    // THE FACE IS PUBLIC SANS (chosen 2026-09-04 in /font-lab → Info type). A plain,
+    // wide-aperture grotesque: very legible at 10px and with almost no voice of its own,
+    // which is what an overline you see thirty times a screen should have. Overlines are
+    // now the UI font set small rather than a second face — `Instrument Sans` is the tail
+    // fallback for exactly that reason.
+    //
+    // Routed through `--label-font` (same trick as `cjk` above: the var()'s FALLBACK is
+    // the real stack, so an undefined variable can never blank the family) so /font-lab's
+    // Info-type mode can still re-face it per column and app-wide while the lab lives.
+    label: 'var(--label-font, "Public Sans", "Instrument Sans", system-ui, -apple-system, sans-serif)',
 
     // The icon face (D3). Not used directly in `sx` — go through <Icon name="..." />,
     // which owns the ligature settings that make `nights_stay` render as a glyph

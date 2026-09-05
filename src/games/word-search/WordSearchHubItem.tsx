@@ -215,12 +215,42 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, className }
                             {confirmingErase ? (
                                 // Delete-confirmation FACE — the ✕ flips the tile to
                                 // this in-place prompt instead of erasing immediately.
-                                <>
+                                //
+                                // ABSOLUTELY INSET, and that is load-bearing rather than
+                                // cosmetic: a flex row sizes its cross axis to its
+                                // tallest item, so anything this face measures becomes
+                                // the height of the two mode tiles beside it. In flow,
+                                // "Delete saved game?" wrapped to two lines in a
+                                // third-width tile (~93px > the 80px sub-tile floor),
+                                // so arming the ✕ grew the whole strip — and confirming
+                                // it re-wrapped the title tighter and tighter as the
+                                // tile collapsed, so the mode tiles visibly changed
+                                // height all the way through the slide-back. Out of
+                                // flow the face contributes nothing, the row's height
+                                // is owned by the mode tiles alone, and only width
+                                // animates. (The pre-bento version inset its content
+                                // layer for the same class of reason — see
+                                // docs/WORD_SEARCH_GAME.md § "Resume card".)
+                                <Box
+                                    className="word-search-hub__delete-face"
+                                    sx={{
+                                        position: "absolute",
+                                        inset: "11px",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        justifyContent: "center",
+                                    }}
+                                >
                                     <Typography
                                         className="word-search-hub__delete-title"
-                                        sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.normal }}
+                                        // Caption/tight, and "Delete save?" rather than
+                                        // "Delete saved game?": the copy has to hold ONE
+                                        // line at a third of the strip's width, since
+                                        // the inset face is clipped rather than able to
+                                        // push the tile taller.
+                                        sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: COLORS.onSurface, fontFamily: FONTS.sans, lineHeight: LEADING.tight, whiteSpace: "nowrap" }}
                                     >
-                                        Delete saved game?
+                                        Delete save?
                                     </Typography>
                                     <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
                                         <Button
@@ -242,7 +272,7 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, className }
                                             Delete
                                         </Button>
                                     </Box>
-                                </>
+                                </Box>
                             ) : (
                                 // Normal resume FACE. Laid out like a sub-tile: content
                                 // at the foot, so it sits on the same baseline as the

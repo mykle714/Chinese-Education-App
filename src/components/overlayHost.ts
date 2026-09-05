@@ -33,8 +33,9 @@
  * hold (`useHideFooter`) for as long as it is up, or the bar sits on top of its action
  * bar — the same 74px of missing buttons, by a different route.
  *
- * Callers: `SheetPanel` (flp/decks/scp/cdp modal sheet), `ChallengeSheet` and
- * `ChallengeHelpPopup` (Study Challenge). Documented in docs/UX_AND_NAVIGATION.md.
+ * Callers: `SheetPanel` (the flp eip, the decks sheet, scp, both cdps and the compare
+ * sheet — `src/components/sheet/SheetPanel.tsx`), `ChallengeSheet` and `ChallengeHelpPopup`
+ * (Study Challenge). Documented in docs/UX_AND_NAVIGATION.md.
  *
  * LAYER: shared UI utility. It knows about the phone frame and about stacking
  * contexts, and nothing about any feature.

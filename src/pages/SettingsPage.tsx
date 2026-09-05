@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Snackbar, Switch } from '@mui/material';
 import LeafPage from '../components/LeafPage';
@@ -14,6 +14,8 @@ import { useTTSSettings, AUDIO_MODE_ORDER, type AudioMode } from '../hooks/useTT
 import { useFlashcardLearnSettings } from '../hooks/useFlashcardLearnSettings';
 import { COLORS } from '../theme/colors';
 import { FONTS } from '../theme/fonts';
+import { CJK_FONT_OPTIONS, cjkFontStack, ensureCjkFontLoaded } from '../theme/cjkFontOptions';
+import { DEFAULT_CHINESE_FONT_ID } from '../types';
 
 // The narration control's three states, in the order they appear.
 //
@@ -131,6 +133,32 @@ function SettingsPage() {
     // default in the DB, so treat "unset" as Chinese.
     const [displaySaving, setDisplaySaving] = useState(false);
     const showDisplaySettings = (user?.selectedLanguage ?? 'zh') === 'zh';
+
+    // Preload every selectable face so each row previews in its OWN typeface rather
+    // than all rendering in the current one. Costs five extra sliced stylesheets, and
+    // only the slices covering the short preview string are actually fetched — but it
+    // is still real network, so it is gated on the section being shown at all.
+    useEffect(() => {
+        if (!showDisplaySettings) return;
+        CJK_FONT_OPTIONS.forEach(ensureCjkFontLoaded);
+    }, [showDisplaySettings]);
+    // Chinese typeface (users."chineseFont", migration 157). Account-level rather than
+    // device-local because it changes how the language itself LOOKS — a learner who
+    // picks a kai face is choosing which stroke forms they study against, and that must
+    // not differ between their phone and their laptop. Applied app-wide by
+    // useChineseFont() in src/App.tsx; see docs/CJK_TYPEFACE_LAB.md.
+    const handleSelectChineseFont = async (fontId: string) => {
+        if (fontId === (user?.chineseFont ?? '')) return; // no-op tap on the current face
+        setDisplaySaving(true);
+        try {
+            await updateDisplaySettings({ chineseFont: fontId });
+        } catch {
+            /* AuthContext surfaces the error; the selection reverts with the user state */
+        } finally {
+            setDisplaySaving(false);
+        }
+    };
+
     const handleToggleSegmentSpaces = async (next: boolean) => {
         setDisplaySaving(true);
         try {
@@ -359,6 +387,116 @@ function SettingsPage() {
                                 />
                             }
                         />
+
+                        {/* ── Chinese typeface ────────────────────────────────────
+                            A list rather than the four-swatch row the colour theme
+                            uses: a typeface cannot be shown by a swatch, so each row
+                            IS its own preview, set in the face it offers. The
+                            character sample leads, because the sample is the thing
+                            being chosen and the name is only a label for it.
+                            users."chineseFont", migration 157 — docs/CJK_TYPEFACE_LAB.md */}
+                        <Box
+                            className="settings-page__typeface-block"
+                            role="radiogroup"
+                            aria-label="Chinese typeface"
+                            sx={{ marginTop: '14px' }}
+                        >
+                            <Typography
+                                className="settings-page__typeface-title"
+                                sx={{ fontFamily: FONTS.sans, fontSize: 14, fontWeight: 600, color: COLORS.onSurface }}
+                            >
+                                Chinese typeface
+                            </Typography>
+                            <Typography
+                                className="settings-page__typeface-subtitle"
+                                sx={{ fontFamily: FONTS.sans, fontSize: 12, color: COLORS.textSecondary, marginBottom: '9px' }}
+                            >
+                                Changes every Chinese character in the app — cards, games, the reader.
+                            </Typography>
+
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                                {CJK_FONT_OPTIONS.map((option) => {
+                                    const selected = (user?.chineseFont ?? '') === option.id;
+                                    return (
+                                        <Box
+                                            key={option.id}
+                                            component="button"
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={selected}
+                                            disabled={displaySaving}
+                                            className={`settings-page__typeface-option settings-page__typeface-option--${option.id}`}
+                                            onClick={() => handleSelectChineseFont(option.id)}
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '12px',
+                                                width: '100%',
+                                                padding: '10px 12px',
+                                                borderRadius: '13px',
+                                                textAlign: 'left',
+                                                cursor: displaySaving ? 'wait' : 'pointer',
+                                                backgroundColor: selected ? COLORS.cardFace : COLORS.white,
+                                                border: `1px solid ${selected ? COLORS.onSurface : COLORS.rowBorder}`,
+                                            }}
+                                        >
+                                            {/* The preview. Set in THIS option's face — the one
+                                                place in the app that deliberately names a family
+                                                instead of reading FONTS.cjk, because it must show
+                                                a face that is not the one currently applied. */}
+                                            <Typography
+                                                className="settings-page__typeface-sample"
+                                                style={{ fontFamily: cjkFontStack(option) }}
+                                                sx={{ fontSize: 26, lineHeight: 1.2, color: COLORS.onSurface, whiteSpace: 'nowrap' }}
+                                            >
+                                                学习中文
+                                            </Typography>
+                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <Typography
+                                                        sx={{ fontFamily: FONTS.sans, fontSize: 13, fontWeight: 600, color: COLORS.onSurface }}
+                                                    >
+                                                        {option.label}
+                                                    </Typography>
+                                                    {/* Derived from the shared constant, never hardcoded, so the
+                                                        badge follows DEFAULT_CHINESE_FONT_ID if the default ever
+                                                        moves. It marks what a NEW account starts on — which is
+                                                        not what most existing accounts are using, since those
+                                                        were backfilled to Noto Sans SC by migration 157. */}
+                                                    {option.id === DEFAULT_CHINESE_FONT_ID && (
+                                                        <Typography
+                                                            component="span"
+                                                            className="settings-page__typeface-default-badge"
+                                                            sx={{
+                                                                fontFamily: FONTS.label,
+                                                                fontSize: 9,
+                                                                letterSpacing: '0.08em',
+                                                                textTransform: 'uppercase',
+                                                                color: COLORS.iconColor,
+                                                                backgroundColor: COLORS.card,
+                                                                borderRadius: '5px',
+                                                                padding: '2px 5px',
+                                                                lineHeight: 1.3,
+                                                            }}
+                                                        >
+                                                            Default
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                                <Typography
+                                                    className="settings-page__typeface-native"
+                                                    style={{ fontFamily: cjkFontStack(option) }}
+                                                    sx={{ fontSize: 12, color: COLORS.textSecondary }}
+                                                >
+                                                    {option.nativeLabel}
+                                                </Typography>
+                                            </Box>
+                                            {selected && <Icon name="check" size={18} color={COLORS.onSurface} />}
+                                        </Box>
+                                    );
+                                })}
+                            </Box>
+                        </Box>
                     </SettingsSection>
                 )}
 

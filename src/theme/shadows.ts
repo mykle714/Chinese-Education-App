@@ -42,6 +42,18 @@ export const SHADOW = {
     raised: `0 3px 10px ${INK(0.1)}`,
 
     /**
+     * A full-size CARD LYING ON THE PAGE at rest — the flp/cdp card face, the Decks
+     * page's hand cards behind the front one, and the Mastery Center tiles beside them.
+     * Sits between `raised` and `float`: higher than a thumbnail, lower than a control
+     * that floats over content. Always paired with the `COLORS.border` hairline — see
+     * `CARD_SURFACE` in theme/surfaces.ts, which is how call sites should consume it.
+     *
+     * (Formerly `HAND_CARD_RESTING_SHADOW`, a local constant in StudyHand.tsx that asked
+     * to be folded into this set the next time the elevation scale was revisited.)
+     */
+    cardRest: `0 5px 16px ${INK(0.14)}`,
+
+    /**
      * `.crail`, `.fan .fb i` — a small control FLOATING over content: the card-ops rail,
      * a floating action puck, a chip that sits on top of a card.
      */

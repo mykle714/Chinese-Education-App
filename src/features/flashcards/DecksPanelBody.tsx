@@ -9,9 +9,10 @@ import CollectionSortControl from "./CollectionSortControl";
 import SearchField from "../../components/SearchField";
 import type { VocabEntry } from "../../types";
 import type { CardsFilter, DecksPanelState } from "./useDecksPanel";
-import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
+import { FOOTER_TOTAL_CLEARANCE } from "../../components/MobileFooter";
+import { SAFE_BOTTOM } from "../../theme/safeArea";
 import { EDGE_FADE_MASK_NO_TOP } from "../../components/MobileTabScreen";
-import type { SheetPanelBodyHandle } from "./FlashcardsLearnPage/SheetPanel";
+import type { SheetPanelBodyHandle } from "../../components/sheet/SheetPanel";
 import { deckTileColors } from "./collectionRef";
 import { collectionGlyph } from "./collectionGlyph";
 import type { BuiltinCollectionEntry } from "./builtinCollections";
@@ -304,7 +305,7 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                     //
                     //   PAGE  — the floating footer bar is over the scroll area, so the
                     //           last row has to clear it exactly as any page's scroll
-                    //           area does (FOOTER_CLEARANCE), and dissolve across the
+                    //           area does (FOOTER_TOTAL_CLEARANCE), and dissolve across the
                     //           band just above it. That is MobileTabScreen's own mask,
                     //           imported rather than re-derived, minus its top band.
                     //   SHEET — the footer is GONE. A modal sheet holds `useHideFooter`
@@ -318,7 +319,12 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                     // The mask is anchored to this element's box, not to the scrolled
                     // content, so the fade stays parked at the bottom edge while the
                     // content moves.
-                    paddingBottom: isSheet ? `${SHEET_BOTTOM_PAD}px` : `${FOOTER_CLEARANCE}px`,
+                    // Both branches carry the home-indicator inset: since
+                    // `viewport-fit=cover` the sheet and the page both reach the
+                    // physical bottom edge of the screen (src/theme/safeArea.ts).
+                    paddingBottom: isSheet
+                        ? `calc(${SHEET_BOTTOM_PAD}px + ${SAFE_BOTTOM})`
+                        : FOOTER_TOTAL_CLEARANCE,
                     maskImage: isSheet ? SHEET_EDGE_FADE_MASK : EDGE_FADE_MASK_NO_TOP,
                     WebkitMaskImage: isSheet ? SHEET_EDGE_FADE_MASK : EDGE_FADE_MASK_NO_TOP,
                 }}

@@ -80,7 +80,6 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/friends/challenges/:challengeId": lazy(() => import("../features/studyChallenge/ChallengeDetailPage")),
   "/users/:userId": lazy(() => import("../features/profile/UserProfilePage")),
   "/dictionary": lazy(() => import("../features/dictionary/DictionaryPage")),
-  "/compare": lazy(() => import("../features/dictionary/ComparePage")),
   "/reader": lazy(() => import("../features/reader/ReaderPage")),
   // Two routes, one component — see the routeMeta.ts note on collection paths.
   "/flashcards/collection/:builtin": lazy(() => import("../features/flashcards/CollectionViewPage")),
@@ -104,6 +103,7 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/flashcards/learn": lazy(() => import("../features/flashcards/FlashcardsLearnPage")),
   "/night-market/template-editor": lazy(() => import("../features/nightmarket/TemplateEditorPage")),
   "/night-market/template-sandbox": lazy(() => import("../features/nightmarket/TemplateSandboxPage")),
+  "/font-lab": lazy(() => import("../pages/fontLab/FontLabPage")),
   "/entries": lazy(() => import("../pages/EntriesPage")),
   "/entries/:id": lazy(() => import("../pages/EntryDetailPage")),
   "/edit/:id": lazy(() => import("../pages/EditEntryPage")),

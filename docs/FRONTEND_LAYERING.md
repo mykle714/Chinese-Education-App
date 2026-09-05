@@ -90,6 +90,16 @@ importers, and the correct home is determined.
 (flp and the cdp). One page's folder therefore owned code the other page depended on, so
 neither could change it safely. It now lives in `src/cardIcons/editor/`.
 
+**Applied again, 2026-09-04.** `SheetPanel` — the modal/persistent bottom-sheet chrome —
+sat in the same folder while the /decks sheet and the scp already used it. That was still
+*within* the flashcards feature, so it was legal; it stopped being legal the moment
+`src/components/CompareSheet.tsx` (mounted by the dictionary cdp) needed it. It moved to
+`src/components/sheet/`, taking the four styled surfaces it renders
+(`EicScrim`, `InfoSheetContainer`, `InfoSheetGrabber`, `SheetMergeHeaderSlot`) out of
+`FlashcardsLearnPage/styled.ts` and into `src/components/sheet/sheetStyled.ts` — they had
+exactly one importer, so nothing else had to change. Note the trigger: the file did not
+become shared when a second *page* used it, but when a second *feature* did.
+
 ### Dependency direction
 
 `features/` → `components/`, `hooks/`, `utils/`, `engine/`, `api/` — and never the

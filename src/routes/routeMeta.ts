@@ -136,7 +136,6 @@ const PAGE_ROUTES: RouteMeta[] = [
   // arrow goes to actual history rather than a fixed parent (docs/USER_PROFILE_PAGE.md).
   { path: "/users/:userId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/dictionary", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/compare", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/reader", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   // Collection pages (docs/DECKS_FEATURE.md). Two routes, one component: a deck is
   // addressed by NUMERIC id under its own segment, so a deck named "mastered" can
@@ -224,6 +223,13 @@ const PAGE_ROUTES: RouteMeta[] = [
     shell: "plain",
     chrome: "none",
     note: "Same gate as the editor above.",
+  },
+  {
+    path: "/font-lab",
+    access: "any",
+    shell: "plain",
+    chrome: "none",
+    note: "Dev-only type labs (src/pages/fontLab/FontLabPage.tsx) — a shell over two modes: Chinese (FONTS.cjk) and Info type (FONTS.label, the overline voice). Not linked from any menu; reachable by typing the URL. Plain shell because each lab owns its own scroll container and needs the width for the compare grid.",
   },
 
   // ── Full-account-only pages ──

@@ -1,25 +1,27 @@
-# Word Compare Feature — eip "Compare" tab + the `/compare` page
+# Word Compare Feature — the eip "Compare" tab + the compare sheet
 
-> Status: **DESIGN — decided, not yet implemented.** All open questions below were resolved with
-> the user on 2026-07-07; see [Resolved decisions](#resolved-decisions).
+> Status: **BUILT.** Design questions were resolved with the user on 2026-07-07 and
+> 2026-07-26 (see [Resolved decisions](#resolved-decisions-2026-07-07)); the surface split was
+> reworked on **2026-09-04**, when the standalone `/compare` page was deleted in favour of a
+> sheet (see [Two surfaces, one component](#two-surfaces-one-component)).
 
 A learner viewing a word in the eip (Extra Info Panel) often wants to know how it differs from a
-near-synonym (高兴 vs 开心, ser vs estar). This feature adds a **Compare** surface to the eip:
-pick a second word, and an AI-generated explanation of the difference between the two words is
-fetched (server-cached, so each distinct pair is billed at most once) and displayed.
+near-synonym (高兴 vs 开心, ser vs estar). This feature adds a **Compare** surface: pick a second
+word, and an AI-generated explanation of the difference between the two words is fetched
+(server-cached, so each distinct pair is billed at most once) and displayed.
 
 ---
 
 ## Two surfaces, one component
 
-Compare is reachable from **two** places, and both render the exact same component —
-`src/components/CompareWorkspace.tsx` (shared, NOT under `features/`, because two surfaces
-consume it):
+Compare is reachable from **two** kinds of surface, and both render the exact same component —
+`src/components/CompareWorkspace.tsx` (shared, NOT under `features/`, because more than one
+feature consumes it):
 
-| Surface | Entry point | Where the state lives | Slot A on open |
-|---|---|---|---|
-| **eip Compare tab** (flp) | "Compare To…" button in the action bar at the end of the eip definition tab | the singleton Compare tab object in `useEipTabs` | pre-filled with the word the user came from |
-| **`/compare` page** (hp) | "Compare Words" row in the Home hub menu | `useState` in `src/features/dictionary/ComparePage.tsx` | empty (the user arrives without a source word) |
+| Surface | Hosts | Entry points | Where the state lives | Slot A on open |
+|---|---|---|---|---|
+| **eip Compare tab** | flp, scp — the two pages with an entry-tab strip | the `Compare` pill on `WordToolsRail`; the **Compare button in the eip entry header** | the singleton Compare tab object in `useEipTabs` | the rail's pill fills it with the card's word; the header button fills it with the word the **panel** is showing, drilled-into words included |
+| **compare sheet** (`src/components/CompareSheet.tsx`) | both cdps — `VocabCardDetailPage`, `DictionaryCardDetailPage`, neither of which has a strip | the same two: the rail's `Compare` pill, and the eip header button on the fc cdp | `useState` inside `CompareSheet`, **discarded on close** | the calling word |
 
 The contract between them is the `CompareState` interface exported by `CompareWorkspace`
 (`{ slotA, slotB, comparison, comparisonParts }`). `CompareEipTab extends CompareState`, so the
@@ -27,39 +29,72 @@ tab object IS a valid workspace state and there is one shape, not two. The works
 no slot state — it is presentational plus the in-flight request (`useWordComparison`), and hands
 every result back through `onResult` for the owner to persist.
 
-Surface differences are exactly three props:
-- `onSegmentOpen` — the eip passes its drill-in handler so tapping embedded Chinese opens a word
-  tab; the page **omits it** (passive definition popup only — decided 2026-07-26), since it has no
-  eip mounted.
-- `scrollTouchAction` — `"none"` in the eip (SheetPanel drives scrolling/resizing from its own
-  gesture handlers), `"pan-y"` on the page so the region scrolls natively. See the app-wide
-  touch rule in [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).
-- the forwarded `{root, scroll}` ref — used by SheetPanel in the eip, ignored by the page.
+Surface differences are now exactly one prop: **`onSegmentOpen`**. The eip tab passes its drill-in
+handler so tapping embedded Chinese opens a word tab; the sheet **omits it** (passive definition
+popup only — decided 2026-07-26), because a cdp has no eip to drill into and a segment tap would
+have to navigate, which is the thing the sheet exists to avoid.
 
-### The `/compare` page
+### Why a sheet and not a page (2026-09-04)
 
-A **node** page (keeps the footer, left arrow, slides in from the right — see
-[LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)), matching the other Home-hub destinations
-(Dictionary, Reader, Games). A new node page must be registered in **four** places — miss one and
-the page half-works rather than erroring:
+The standalone `/compare` **node page is deleted**, along with `ComparePage.tsx`, its
+`routeMeta`/`registry` rows and the Home hub's "Compare Words" tile.
 
-| File | Registry | Symptom if missed |
-|---|---|---|
-| `src/App.tsx` | the `<Route>` | 404 |
-| `src/components/Layout.tsx` | `MOBILE_DEMO_PATHS` | renders OUTSIDE the phone frame: no footer at all, and `NodePage`'s `position:absolute` slide surface has nothing to be clipped by |
-| `src/utils/pageTransition.ts` | `NODE_ROUTES` | no slide-in-from-right; falls back to a plain route swap |
-| `src/components/FooterPresenter.tsx` | `FOOTER_ROUTES` | footer bar slides away on arrival (route reads as footerless) |
+Comparing is something you do *while looking at a word*, so it is modal to the word rather than a
+destination. As a page it took the card being compared FROM off the screen and made returning a
+history pop. As a sheet it rises over whatever you were reading, drags to full height — where
+`SheetPanel`'s merge chrome grows a real `PageHeader` in and flattens the corners, which is the
+"maximize" — and drags away leaving the page beneath untouched.
 
-`ProtectedRoute` uses **`allowPublic`**, like every other Home-hub page. Without it, public/demo
-accounts are bounced to `/` by the `user?.isPublic && !allowPublic` branch, so the hub button
-silently does nothing for them (every seeded local test user is public). The compare request is
-still auth-gated and rate-limited server-side.
+Three consequences worth knowing:
 
-Like the cdp it forces `showPinyin` on regardless of the flp toggle
-(the two slots are the reference material), and reads `showPinyinColor` from
-`useFlashcardLearnSettings`.
+| | |
+|---|---|
+| **Cold open is gone** | With the hub tile removed there is no way to open Compare with *both* slots empty; every entry point starts from a word. The empty-slot-B search is unchanged, so comparing an arbitrary pair still works — it just starts from one of the two words. |
+| **State resets on every open** | Decided 2026-09-04. `useCompareSheet` keys the mounted sheet on a session id, so each open mounts a fresh component and the seed does the resetting — there is no clear-on-close effect. Re-comparing a pair costs no extra AI call: `word_comparison_cache` serves it. |
+| **The eip tab was NOT replaced** | flp and scp keep the Compare TAB (decided 2026-09-04). Where a tab strip exists, a tab keeps the comparison *beside* the word trail it came from instead of on top of it — and the sheet would have to stack on the eip that is already up. So there are two Compare hosts by design, but only one Compare body. |
 
----
+### Compare earns minute points
+
+Both hosts of the compare sheet — the saved-card cdp and the dictionary cdp (the latter as
+part of the whole `/dictionary` prefix, search page included) — became **study surfaces** on
+2026-09-04 (`MINUTE_POINTS_ELIGIBLE_PAGES`, `src/constants.ts`), and the eip tab's hosts
+(flp, scp) already were. Since the sheet has no route of its own, that
+host eligibility IS how Compare accrues: the learner reading a comparison is on an earning
+page for as long as they keep interacting (the 15-second activity window still applies).
+⚠️ A future surface that raises the compare sheet from a non-earning page would silently
+stop Compare earning there — see
+[MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md) § "Both cdps earn, and so does Compare".
+
+### The header: permanent, not merge chrome
+
+The sheet passes `headerMode="always"` to `SheetPanel`, so the page-style `PageHeader`
+(title + chevron-down dismiss) that other sheets only grow **at** full height is there from
+the moment it opens; maximizing then changes only the corners, the shadow and the top
+padding. The compare body's first row is two word slots — nothing in it says what the
+surface is or offers a close other than a downward drag — whereas the eip can leave its
+header to the merge because its body opens with the headword. The grabber still sits above
+the header, so the resize affordance is unchanged.
+
+> ⚠️ A sheet header is a **real `PageHeader`**, and `PageHeader` renders the minute-points
+> flame unconditionally, calling `useMinutePoints` (a 1-second tick) internally. So an open
+> sheet with a title mounts a SECOND accrual tick on top of its page's own header. This is
+> pre-existing — every titled sheet has done it since the merge header landed — and it does
+> not over-credit: `UserMinutePointsService.incrementMinutePoints` claims a 59-second
+> cooldown atomically (`UserDAL.claimMinutePointIncrement`), so the loser's POST is
+> rejected. It does mean two independent client-side timers on an earning page. See
+> `PageHeader`'s "exactly one PageHeader" warning.
+
+### The shared sheet primitive
+
+`SheetPanel` moved from `src/features/flashcards/FlashcardsLearnPage/` to
+`src/components/sheet/SheetPanel.tsx` in the same pass, taking its four styled surfaces
+(`EicScrim`, `InfoSheetContainer`, `InfoSheetGrabber`, `SheetMergeHeaderSlot`) with it into
+`src/components/sheet/sheetStyled.ts`. It had to: a shared `CompareSheet` consumed by the
+dictionary feature may not reach into the flashcards feature's folder
+([FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) — "a feature folder owns what only it uses").
+Its consumers are now the flp eip, the /decks sheet, the scp, both cdps and the compare sheet.
+The `Eic`/`InfoSheet` names were kept verbatim — renaming them is a separate pass from moving
+them.
 
 ## Where Compare lives: a singleton **entry tab** (decided)
 
@@ -71,27 +106,30 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
 - **Entry point (2026-08-24)**: the **`Compare` pill on `WordToolsRail`**, the rail that sits
   on the PAGE above the card and outside its boundary (`src/components/WordToolsRail.tsx`,
   artboards 18–25). Comparing is something you do with the WORD, not an operation on the
-  card, which is the whole split that rail encodes. Two hosts, two destinations:
-  - **flp** — has a tab strip, so it opens Compare as an eip TAB beside the word
+  card, which is the whole split that rail encodes. Two kinds of host, two destinations:
+  - **flp / scp** — have a tab strip, so the pill opens Compare as an eip TAB beside the word
     (`openEicSheet()` then `eip.openCompareTab(entry)`).
-  - **cdp** — has no strip, so it hands the word to the standalone `/compare` page,
-    pre-filling slot A through **route state** (`navigate("/compare", { state: { slotA } })`;
-    `ComparePage` seeds it as the INITIAL value of its state hook, never in an effect — an
-    effect would re-seed on every identity change and silently undo a clear the learner had
-    just made). Route state rather than a URL param because what is handed over is a whole
-    `VocabEntry` the caller already fetched; putting the word in the path would mean
-    re-looking it up and letting the two copies disagree about the selected sense.
+  - **cdp — both of them** (the saved-card `VocabCardDetailPage` and the read-only
+    `DictionaryCardDetailPage`) — neither has a strip, so each raises the compare SHEET
+    (`useCompareSheet().openCompare(entry)`), seeding slot A as the INITIAL value of the
+    sheet's state hook, never in an effect — an effect would re-seed on every identity change
+    and silently undo a clear the learner had just made.
 
   Tapping it pushes the Compare tab (or focuses the existing one) and **auto-populates
   slot A** with the word the user navigated from.
 
-  > Two earlier homes, both gone: a bare icon in the eip header's action grid (which now
-  > keeps only the entry-level actions, `SpeakerButton` and "+ Add to Learn Now"), and
-  > then a labelled "Compare To…" button in `InfoCardActionBar` at the end of the eip
-  > definition tab. That bar is **deleted** — artboards 20–25 make the panel
-  > information-only. ⚠️ One consequence: a word DRILLED INTO inside the panel can no
-  > longer be compared from there, because the rail acts on the card's word. The path is
-  > to open that word's own page. Tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 11.
+- **The eip entry header is NOT an entry point.** A `compare_arrows` button briefly lived
+  there (2026-09-04) beside `SpeakerButton` and "+ Add to Learn Now", acting on the word the
+  header was showing; it was **removed the same day**. `WordToolsRail` is the only Compare
+  affordance, so a word the learner has DRILLED INTO (a breakdown row, an example segment)
+  must be opened as its own page before it can be compared — that is the Compare half of
+  [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 11, deferred again. `InfoCardPanelBody` /
+  `InfoCardSection` no longer take an `onCompare` prop at all; do not re-add one without
+  re-opening that decision.
+
+  > One earlier home, also gone: a labelled "Compare To…" button in `InfoCardActionBar` at
+  > the end of the eip definition tab. That bar is **deleted** — artboards 20–25 make the
+  > panel body information-only.
 - **Re-entry from a different word** (Compare tab already open): focus it, **refill slot A**
   with the new source word, and **clear slot B** back to the `+` placeholder (decided — the old
   pair is no longer what the user asked about).
@@ -104,8 +142,8 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
 
 References: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` (`EipTab`,
 `measureTabWidth`, overflow fitting — the "Compare" label goes through the same width
-measurement), `EipTabStrip.tsx`, `src/components/WordToolsRail.tsx` (the
-`mobile-demo-definition-action-bar` Box), `FlashcardsLearnPage.tsx` (mounts the eip wrapper).
+measurement), `EipTabStrip.tsx`, `src/components/WordToolsRail.tsx` (the `Compare` pill — the sole entry
+point), `FlashcardsLearnPage.tsx` (mounts the eip wrapper).
 
 The eip has a single wrapper — the bottom-sheet `InfoCardSection` (`SheetPanel` +
 `InfoCardPanelBody`). The centered `InfoCardPopup` variant that used to sit alongside
@@ -281,11 +319,13 @@ CREATE TABLE word_comparison_cache (
 | Client hook | `src/hooks/useWordComparison.ts` (**new**) | fires the compare request; loading / error / `limitReached` states |
 | Client state | `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` | `EipTab` discriminated union (`kind: 'entry' \| 'compare'`); `CompareEipTab extends CompareState`; singleton push/focus/refill semantics |
 | Client UI | `src/components/CompareWorkspace.tsx` (**shared**) | the whole compare surface — slots + search mode (keypad + bar + result cards) + comparison display; exports `CompareState` / `CompareWorkspaceHandle`. Owns no slot state; both surfaces drive it. |
-| Client page | `src/features/dictionary/ComparePage.tsx` (**new**) | `/compare` node page: owns a `CompareState` `useState` and renders `CompareWorkspace` |
-| Route / nav | `src/App.tsx`, `src/components/Layout.tsx` (`MOBILE_DEMO_PATHS`), `src/utils/pageTransition.ts` (`NODE_ROUTES`), `src/components/FooterPresenter.tsx` (`FOOTER_ROUTES`), `src/pages/HomePage.tsx` | the `/compare` route, its phone-frame membership, its right-slide direction, its footer (Home tab), and the "Compare Words" hub row |
+| Client UI | `src/components/CompareSheet.tsx` (**new** 2026-09-04) | `CompareSheet` (SheetPanel + CompareWorkspace, owns a `CompareState` that resets per open) and `useCompareSheet` (`openCompare` / `compareSheet` wiring for a host page) |
+| Client UI | `src/components/sheet/SheetPanel.tsx`, `src/components/sheet/sheetStyled.ts` (**moved** 2026-09-04 out of `features/flashcards/FlashcardsLearnPage/`) | the maximizable bottom-sheet primitive the compare sheet and the eip share |
+| Route / nav | — | **Nothing.** `/compare`, `ComparePage.tsx`, the `routeMeta`/`registry` rows and the Home hub's "Compare Words" tile were all deleted 2026-09-04; Compare has no route |
 | Shared util | `src/utils/dictEntryAdapter.ts` (**moved** out of `features/flashcards/FlashcardsLearnPage/`) | `dictionaryEntryToVocabEntry` — now consumed by the shared workspace, the eip, and the dictionary cdp |
 | Client UI | `src/components/LongDefinitionDisplay.tsx`, `src/components/SegmentedSentenceDisplay.tsx` | shared renderer; `runTranslation` puts a translated run into whole-run (passive) mode |
-| Client UI | `src/components/WordToolsRail.tsx` | The `Compare` pill above the card, on both the flp and the cdp (2026-08-24; replaced the deleted `InfoCardActionBar`) |
+| Client UI | `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`, `InfoCardSection.tsx` | Hosts the Compare TAB body only. The entry-header Compare button and its `onCompare` prop were **removed 2026-09-04**; the header's action grid is Speaker · Add-to-Learn-Now |
+| Client UI | `src/components/WordToolsRail.tsx` | The `Compare` pill above the card, on the flp and **both** cdps — `VocabCardDetailPage` and `DictionaryCardDetailPage` (2026-08-24; replaced the deleted `InfoCardActionBar`). The pill self-hides on any surface that omits `onCompare`. |
 | Client UI | `src/components/PinyinKeypad.tsx` (**new**, extracted) | shared tone-vowel / accent keypad; replaces DictionaryPage's two inline copies |
 | Client UI | `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx` | new `"xl"` `CPCDSize` |
 | Reused | `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx` | slot-B search + result rows (`.dr`) |
@@ -321,16 +361,35 @@ English-query space. Cache hits are always free and don't consume a slot.
    `DICT_AI_API_KEY` with the dictionary AI fallback.
 9. **CLAUDE.md** — one-line link added under 📚 Features.
 
-### Added 2026-07-26 — the standalone `/compare` page
+### Added 2026-07-26 — the standalone `/compare` page (superseded 2026-09-04)
 
-10. **Second entry point** — a "Compare Words" row in the **Home hub** (`/`), not Discover.
+10. ~~**Second entry point** — a "Compare Words" row in the **Home hub** (`/`), not Discover.~~
+    Reverted: the tile and the page are deleted, and Compare always starts from a word.
 11. **Shared, not copied** — `CompareTabBody` was moved out of
     `features/flashcards/FlashcardsLearnPage/` to `src/components/CompareWorkspace.tsx` and
     decoupled from `CompareEipTab` (it now takes a plain `CompareState`, which the eip tab
     extends). Two surfaces consume it ⇒ it is shared code, per the shared-vs-feature rule.
-    `dictEntryAdapter.ts` moved to `src/utils/` for the same reason.
-12. **Word taps on the page** — passive definition popup only; the page does not mount the eip
-    and does not navigate away.
+    `dictEntryAdapter.ts` moved to `src/utils/` for the same reason. **This one held** — the
+    sheet inherited the page's role as the second consumer, and `SheetPanel` moved up for the
+    same reason in 2026-09-04.
+12. **Word taps outside the eip** — passive definition popup only; the sheet (like the deleted
+    page) does not mount the eip and does not navigate away.
+
+### Added 2026-09-04 — page → sheet
+
+13. **Compare is a sheet, not a destination** — `/compare`, `ComparePage.tsx` and the Home hub
+    tile are deleted; both cdps raise `CompareSheet` instead. Maximizing is SheetPanel's
+    existing drag-to-full-height merge chrome, so no new UI was built for it.
+14. **The flp/scp keep the eip TAB** — a strip-bearing host puts Compare beside the word trail.
+15. **State resets on every open** — keyed remount in `useCompareSheet`, no cross-navigation
+    persistence, no clear-on-close effect.
+16. **The eip header gets a Compare button** — so a drilled-into word can be compared without
+    leaving the panel (DEFERRED_WORK § 11, Compare half).
+17. **`CompareWorkspace.layout` is deleted** — the `"page"` mode had exactly one user. While
+    removing it, the sheet branch's `touchAction` was corrected from `none` to `pan-y`, the
+    same correction `InfoCardPanelBody` carries: with `none` the browser refuses the native
+    pan SheetPanel hands it, so a long comparison paragraph could not be scrolled once the
+    sheet was dragged to full height.
 
 ## Dependencies / cross-references
 

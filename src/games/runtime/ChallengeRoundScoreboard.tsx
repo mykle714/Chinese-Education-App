@@ -205,7 +205,7 @@ const ChallengeRoundScoreboard: React.FC<{
                 <Typography
                     className={`${classPrefix}__challenge-round`}
                     sx={{
-                        fontFamily: FONTS.mono,
+                        fontFamily: FONTS.label,
                         fontSize: SIZE.caption,
                         letterSpacing: "0.14em",
                         textTransform: "uppercase",

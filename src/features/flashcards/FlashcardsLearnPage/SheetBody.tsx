@@ -1,8 +1,8 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
-import { FOOTER_CLEARANCE } from "../../../components/MobileFooter";
-import type { SheetPanelBodyHandle } from "./SheetPanel";
+import { FOOTER_TOTAL_CLEARANCE } from "../../../components/MobileFooter";
+import type { SheetPanelBodyHandle } from "../../../components/sheet/SheetPanel";
 
 /**
  * `SheetBody` — the plumbing every `SheetPanel` body needs, with none of the content.
@@ -76,7 +76,7 @@ const SheetBody = forwardRef<SheetPanelBodyHandle, SheetBodyProps>(function Shee
                         // The footer bar is rendered at frame level, OVER the sheet, so
                         // the last row has to clear it exactly as a page's scroll area
                         // does.
-                        paddingBottom: `${FOOTER_CLEARANCE}px`,
+                        paddingBottom: FOOTER_TOTAL_CLEARANCE,
                     },
                     ...(Array.isArray(sx) ? sx : [sx]),
                 ]}

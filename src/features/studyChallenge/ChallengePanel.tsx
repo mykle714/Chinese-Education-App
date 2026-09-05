@@ -433,7 +433,7 @@ function ChallengePanel({ target, onClose, onChanged }: ChallengePanelProps) {
                     <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, fontWeight: WEIGHT.semibold, color: COLORS.onSurface }}>
                         The {words.length} words
                     </Typography>
-                    <Typography sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, letterSpacing: "0.12em", textTransform: "uppercase", color: COLORS.textFaint }}>
+                    <Typography sx={{ fontFamily: FONTS.label, fontSize: SIZE.micro, letterSpacing: "0.12em", textTransform: "uppercase", color: COLORS.textFaint }}>
                         final
                     </Typography>
                 </Box>

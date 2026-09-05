@@ -177,7 +177,8 @@ is global except the two rollups listed above.
 - `MinutePointsFireBadge` — the app's earning indicator. Rendered by `PageHeader` itself,
   last in the right slot, on **every** header; pages do not pass it. `null` when signed
   out. It draws in one of two **modes**, keyed on `isEligiblePage` (not on `isActive`):
-  - **Off-study** (any page that cannot accrue — the hubs, the cdp, the browsers): one
+  - **Off-study** (any page that cannot accrue — the hubs, the deck/collection browsers,
+    the mastery centers; **not** the cdps or the dictionary, which earn since 2026-09-04): one
     flat, solid `fireActive` flame beside the count. No ghost layer, no fill, no pulse —
     a gauge on a page that cannot move it only invites the learner to watch a frozen
     level.
@@ -197,19 +198,46 @@ Accrual is decided by path, not by what a page does:
 
 | List | Match | Members |
 | --- | --- | --- |
-| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | `/flashcards/learn`, `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,speed-reading,memory-map,hydra-bubbles}` |
+| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | `/flashcards/learn`, **`/flashcards/card`**, **`/dictionary`** (search page + the cdp under it), `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,speed-reading,memory-map,hydra-bubbles}` |
 | `MINUTE_POINTS_ELIGIBLE_EXACT_PAGES` | exact path only | `/flashcards` (the legacy desktop page) |
 | `MINUTE_POINTS_AUTO_ACTIVE_PAGES` | prefix; subset that starts accruing on mount | `/games` |
 
 Only **study** surfaces earn. Menus and browse screens deliberately do not: the hubs
-(Home, Discover, Games, Decks & Cards), the cdp (`/flashcards/card/:id`), the
-deck/collection browsers and the mastery centers. They still show the flame — solid
-orange with the count, in the badge's off-study mode (it was grey with a frozen fill
-level until 2026-08-28).
+(Home, Discover, Games, Decks & Cards), the deck/collection browsers and the mastery
+centers. They still show the flame — solid orange with the count, in the badge's
+off-study mode (it was grey with a frozen fill level until 2026-08-28).
+
+### The cdps, the dictionary, and Compare all earn (2026-09-04)
+
+`/flashcards/card` (saved-card cdp) and the whole of `/dictionary` — the search page **and**
+the read-only dictionary cdp beneath it — are **study surfaces**. A cdp is where a learner
+reads the definition, the breakdown, the example sentences and a word comparison: the same
+reading the eip does on the flp, which has always earned. Looking a word up and reading what
+comes back is the same activity, so the dictionary earns as a whole. The line this list
+draws is study vs. **navigation**, and none of these is a place you merely pick from a list.
+
+`/dictionary` is a **prefix** covering both its routes, unlike `/flashcards`, whose
+descendants are browse screens — which is why that one lives in the EXACT list. Adding a
+browse-shaped route under `/dictionary` would silently make it earn.
+
+This is also how the **compare sheet** earns. Compare has no route since 2026-09-04
+([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) — it is a panel raised over the page
+you are already on — so it cannot appear in any of these lists. It accrues because every
+surface that can open it does: the flp, the scp and both cdps. **Keep the two in step:** a
+future host that raises the compare sheet from a non-earning page would silently make
+Compare stop earning there, and nothing would report it.
+
+Accrual on these still requires **interaction** (`useActivityDetection`'s 15-second window).
+None of them is in `MINUTE_POINTS_AUTO_ACTIVE_PAGES`: a detail or search page is easy to
+leave open, and auto-active exists for game boards that are read for a few seconds before
+the first tap, not for pages a learner might walk away from.
 
 ⚠️ `/flashcards` is in the EXACT list for a reason — as a prefix it re-admits every
-browse screen under it. It was a prefix until 2026-08-24, which is why the cdp and the
-Decks & Cards tab used to accrue minutes.
+browse screen under it (`/flashcards/decks`, `/flashcards/deck/:id`,
+`/flashcards/collection/*`, `/flashcards/reading|writing`). It was a prefix until
+2026-08-24, which is why the cdp and the Decks & Cards tab used to accrue minutes; the cdp
+is now back, but named explicitly (`/flashcards/card`), which is the difference that
+matters — the Decks & Cards tab did not come back with it.
 
 ## Day boundary
 

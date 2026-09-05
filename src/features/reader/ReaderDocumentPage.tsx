@@ -31,11 +31,20 @@ import { useTextSelection } from "./useTextSelection";
 import { useReaderSettings } from "./useReaderSettings";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useLockBodyScroll } from "../../hooks/useLockBodyScroll";
+import { SAFE_TOP } from "../../theme/safeArea";
 
 // Drop-in/collapse timing for ReaderEditToolbar, matching the fie toolbar's
 // CARD_EDIT_ANIM_MS/EASING (CardEditToolbar.tsx) so both editors' toolbars
 // animate with the same feel. Kept as a local constant rather than importing
 // across the flashcards/reader feature boundary (docs/PROJECT structure).
+// Where the page's three top-anchored snackbars sit. They clear the surface's own
+// fixed header (the reader draws its NodePageHeader over the text) so an alert never
+// covers the back arrow / edit / delete buttons — plus the status-bar inset, because
+// the header itself is offset by it since `viewport-fit=cover` (src/theme/safeArea.ts).
+// One constant rather than the three byte-identical `top: '68px !important'` overrides
+// that used to sit inline on each Snackbar.
+const SNACKBAR_TOP = `calc(68px + ${SAFE_TOP}) !important`;
+
 const EDIT_TOOLBAR_ANIM_MS = 300;
 const EDIT_TOOLBAR_ANIM_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
@@ -470,9 +479,7 @@ function ReaderDocumentPage() {
                 autoHideDuration={5000}
                 onClose={() => setTapHintOpen(false)}
                 anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-                // Clears the surface's own fixed header (PageHeader is 60px) instead
-                // of overlapping the back arrow / edit / delete buttons.
-                sx={{ top: '68px !important' }}
+                sx={{ top: SNACKBAR_TOP }}
             >
                 <Alert
                     className="reader-page-tap-hint-alert"
@@ -493,9 +500,7 @@ function ReaderDocumentPage() {
                 autoHideDuration={validationSeverity === 'error' ? 8000 : 4000}
                 onClose={() => setValidationMsg(null)}
                 anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-                // Clears the surface's own fixed header (PageHeader is 60px) instead
-                // of overlapping the back arrow / edit / delete buttons.
-                sx={{ top: '68px !important' }}
+                sx={{ top: SNACKBAR_TOP }}
             >
                 <Alert
                     className="reader-page-validation-alert"
@@ -513,9 +518,7 @@ function ReaderDocumentPage() {
                 autoHideDuration={4000}
                 onClose={() => setEditSaveError(null)}
                 anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-                // Clears the surface's own fixed header (PageHeader is 60px) instead
-                // of overlapping the back arrow / edit / delete buttons.
-                sx={{ top: '68px !important' }}
+                sx={{ top: SNACKBAR_TOP }}
             >
                 <Alert
                     className="reader-page-edit-save-error-alert"

@@ -105,7 +105,7 @@ soften/lighten out as they scroll past the screen edges (NYT-Games style).
 - `EDGE_FADE_TOP` (28px) dissolves the header / first rows as they scroll up.
 - The bottom band is the design's `.fade`: `EDGE_FADE_BOTTOM_BAND` (34px) of
   gradient sitting **on the footer bar's top edge**, starting
-  `EDGE_FADE_BOTTOM_START` (`FOOTER_HEIGHT + 34`) up from the bottom and
+  `EDGE_FADE_BOTTOM_START` (`FOOTER_HEIGHT + 34 + SAFE_BOTTOM`) up from the bottom and
   reaching transparent exactly at the bar. Content is fully opaque until 34px above
   the bar. (Before A2a this was one band running all the way to the frame's bottom,
   sized to the whole floating-footer zone.)
@@ -172,6 +172,16 @@ and some pages cancel exactly those with a non-passive listener (`useBlockEdgeSw
 | `FOOTER_HEIGHT`    | 74    | Bar height (px).                              |
 | `FOOTER_EXTRA_GAP` | 16    | Breathing gap above the bar. Tune bottom room here, not via HEIGHT/INSET. |
 | `FOOTER_CLEARANCE` | 90    | Vertical space to reserve below scrollable content. Equals the design's `.clear`. |
+| `FOOTER_TOTAL_HEIGHT` | `calc(74px + SAFE_BOTTOM)` | The bar's REAL footprint. A CSS **string**, because the home-indicator inset is an `env()` only the browser can resolve. |
+| `FOOTER_TOTAL_CLEARANCE` | `calc(90px + SAFE_BOTTOM)` | The reservation, likewise. |
+
+**Use the `_TOTAL_` pair for anything measured against the bar on screen** — its hide
+travel, scroll clearance, the bottom fade, a `SheetPill`'s `bottom`. Since
+`viewport-fit=cover` the page paints under the home indicator, so `bottom: 0` is the
+physical bottom edge and the bar grows by `SAFE_BOTTOM` (`src/theme/safeArea.ts`); the
+bare 74/90 numbers are the design's geometry, not the on-screen one. Both fall back to
+the bare numbers where there is no inset. See
+[UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § Safe areas and the iOS status bar.
 
 **The flat bar is the only footer style** — there is no pill or in-flow variant.
 `MobileFooter` always renders the bar and anchors it to the nearest positioned
@@ -188,7 +198,7 @@ copy-pasted JSX blocks.
 route's `chrome` in `src/routes/routeMeta.ts` plus any active `useHideFooter` hold.
 Pages that import `MobileFooter` import only its geometry constants. So the
 clearance contract is: **a scrollable surface reserves
-`FOOTER_CLEARANCE` at the bottom** — `MobileTabScreen` does this for every
+`FOOTER_TOTAL_CLEARANCE` at the bottom** — `MobileTabScreen` does this for every
 node page automatically, and a page laying out its own scroller must do it by hand.
 
 > Related: the Mastered page was generalized into `CollectionViewPage` (node page;

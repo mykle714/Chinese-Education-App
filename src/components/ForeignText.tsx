@@ -4,6 +4,7 @@ import CPCDRow, { type CPCDRowItem, type CPCDSize } from "./CPCDRow";
 import CPCDBlock, { type CPCDBlockItem } from "./CPCDBlock";
 import { useAuth } from "../AuthContext";
 import { useFirstTwoAreSegment } from "../hooks/useFirstTwoAreSegment";
+import { applyYiBuSandhi } from "../utils/toneSandhi";
 import type { Language } from "../types";
 import { FONTS } from "../theme/fonts";
 import { WEIGHT } from "../theme/scale";
@@ -60,6 +61,13 @@ interface ForeignTextBaseProps {
     // Latin-script languages, neither of which renders the per-column pinyin
     // overlay this scales.
     bigPinyin?: boolean;
+    // Apply 一/不 tone sandhi to the pronunciation before rendering (default true), so the
+    // overlay shows what a speaker SAYS rather than the dictionary's citation form
+    // (一流 → yì liú, not yī liú). Set false on surfaces that must show the citation
+    // reading verbatim — anything quizzing or matching against the stored pinyin, and any
+    // display of a character in ISOLATION where no sandhi context exists.
+    // Ignored for Latin-script languages. See src/utils/toneSandhi.ts.
+    sandhi?: boolean;
 }
 
 interface ForeignTextProps extends ForeignTextBaseProps {
@@ -109,8 +117,15 @@ function buildCharItems(
     pronunciation: string | null | undefined,
     showPinyin: boolean,
     useToneColor: boolean,
+    sandhi: boolean,
 ): CPCDRowItem[] {
-    const syllables = pronunciation ? pronunciation.trim().split(/\s+/) : [];
+    const raw = pronunciation ? pronunciation.trim().split(/\s+/) : [];
+    // Correct the stored CITATION reading to the spoken one before it reaches CPCDRow.
+    // This has to happen here rather than in the data layer: the det tables are a
+    // dictionary and should keep the citation form, and CPCDRow derives each syllable's
+    // tone COLOR from the pinyin string it is handed — so rewriting the string is what
+    // makes the diacritic and the hue agree. See src/utils/toneSandhi.ts.
+    const syllables = sandhi ? applyYiBuSandhi(text, raw) : raw;
     return [...text].map((character, i) => ({
         character,
         pinyin: syllables[i] ?? "",
@@ -150,6 +165,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     firstTwoAreSegment,
     plainFontSize,
     bigPinyin = false,
+    sandhi = true,
 }) => {
     // Resolve language: explicit prop wins, otherwise the user's selection.
     const { user } = useAuth();
@@ -195,7 +211,11 @@ const ForeignText: React.FC<ForeignTextProps> = ({
 
     // Character-based languages: defer to the cpcd implementation. Build items
     // from text/pronunciation unless the caller supplied them directly.
-    const resolvedItems = items ?? buildCharItems(text ?? "", pronunciation, showPinyin, useToneColor);
+    // The low-level `items` API is passed through untouched: its only caller
+    // (SegmentedSentenceDisplay) already applies the sandhi at SENTENCE level, which it
+    // must do because a trigger and its target can straddle a segment boundary
+    // (我 / 不 / 去) that this per-segment call site cannot see.
+    const resolvedItems = items ?? buildCharItems(text ?? "", pronunciation, showPinyin, useToneColor, sandhi);
 
     // CPCDBlock only lays out up to 4 characters; a longer word (idioms, etc.)
     // falls back to the row layout rather than being silently truncated.

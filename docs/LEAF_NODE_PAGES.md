@@ -260,7 +260,6 @@ own-animation pages) are neither archetype.
 | `/discover/skipped/:language` | `SkippedCardsPage` | Node |
 | `/dictionary` | `DictionaryPage` | Node (footer added; tapping a result opens the dictionary cdp) |
 | `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word) |
-| `/compare` | `ComparePage` | Node (word-compare surface reached from the Home hub; auth-required — see [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) |
 | `/reader` | `ReaderPage` | Node (document list; footer kept, Home tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |
 | `/reader/:id` | `ReaderDocumentPage` | Node-style (footerless) — the open-document cdp-style page, see § below |
 | `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; footer added) |

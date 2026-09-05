@@ -7,6 +7,7 @@ import { FONTS } from "../theme/fonts";
 import { SIZE } from "../theme/scale";
 import { claimSegmentSelection, registerSegmentSelectionOwner } from "../utils/segmentSelectionOwner";
 import { pickDrillRung } from "../utils/segmentDrill";
+import { applyYiBuSandhi } from "../utils/toneSandhi";
 import type { SegmentDrillRung } from "../types";
 
 type Size = "xs" | "sm" | "md";
@@ -349,7 +350,18 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       }
     }
 
-    return data as CharRenderData[];
+    const resolved = data as CharRenderData[];
+
+    // 一/不 sandhi, applied ACROSS the whole sentence rather than per segment. The trigger
+    // and its target routinely straddle a segment boundary — 我 / 不 / 去 segments 不 and 去
+    // apart, and each segment's pronunciation is enriched independently — so a per-segment
+    // pass (which is all the downstream ForeignText calls could do) would miss exactly the
+    // sentence-level cases this display exists to show. See src/utils/toneSandhi.ts.
+    //
+    // Punctuation cells carry pinyin "" and parse to null, which the pass reads as
+    // "phrase-final" and correctly leaves the preceding 一/不 in its citation tone.
+    const sandhied = applyYiBuSandhi(chars.join(""), resolved.map((d) => d.pinyin));
+    return resolved.map((d, i) => (sandhied[i] === d.pinyin ? d : { ...d, pinyin: sandhied[i] }));
   }, [chars, sentence._segments, sentence.segmentMetadata, isLatin]);
 
   // Groups consecutive characters that share the same segment (same `start` index).

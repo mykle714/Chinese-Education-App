@@ -50,7 +50,7 @@ const TrackSegment: React.FC<{ track: MarkType; active: boolean }> = ({ track, a
             display: "flex",
             alignItems: "center",
             gap: "4px",
-            fontFamily: FONTS.mono,
+            fontFamily: FONTS.label,
             fontSize: 9,
             letterSpacing: "0.1em",
             textTransform: "uppercase",

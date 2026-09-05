@@ -492,13 +492,15 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                 {/* Header action buttons laid out as a 2-column grid (reading order:
                     Speaker · Add-to-library). Either cell may be absent — Speaker needs
                     onSpeak and Add needs onAddToLibrary on a discoverable entry — so the
-                    grid auto-packs whatever renders.
+                    grid auto-packs whatever renders and an unused column collapses to
+                    zero width.
                     The header keeps ONLY the actions that are about the ENTRY ITSELF —
-                    hear it, save it. Everything else has left the panel: the artboards
-                    make it information-only, so add-to-deck went onto the card's own
-                    `•••` rail and Compare + Practice Writing onto the word-tools rail
-                    above the card. `InfoCardActionBar`, which used to carry all three at
-                    the end of the definition tab, is deleted.
+                    hear it, save it. CARD operations have left the panel for good: the
+                    artboards make it information-only, so add-to-deck went onto the card's
+                    own `•••` rail and Practice Writing onto the word-tools rail above the
+                    card. `InfoCardActionBar`, which used to carry all three at the end of
+                    the definition tab, is deleted. Compare lives ONLY on `WordToolsRail`
+                    above the card (removed from this header 2026-09-04).
 
                     Sits immediately after the headword rather than at the far right,
                     because the far right now belongs to the sense chip — reading order
@@ -572,7 +574,10 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             flex: 1,
                             minWidth: 0,
                             textAlign: "right",
-                            fontSize: 12.5,
+                            // Bumped 12.5 → 14.5 (2026-09-04): the gloss is the header's
+                            // payload and was reading as a caption. The header row has the
+                            // width for it now that the Compare button left the action grid.
+                            fontSize: 14.5,
                             letterSpacing: "-0.008em",
                             fontWeight: WEIGHT.regular,
                             // Matches the flp card face via the shared dd color helper: zh

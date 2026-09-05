@@ -43,9 +43,11 @@ function HomePage() {
         // from their names in a way "Night Market" is not.
         { key: "community", to: "/community", title: "Community", hue: "grn", icon: "groups", variant: "low" },
         { key: "friends", to: "/friends", title: "Friends", hue: "red", icon: "people", variant: "low" },
-        // Standalone home for the eip's Compare surface (docs/WORD_COMPARE_FEATURE.md) —
-        // same CompareWorkspace component, reached without going through a flashcard.
-        { key: "compare", to: "/compare", title: "Compare Words", hue: "grn", icon: "compare_arrows", variant: "low" },
+        // NOTE: there is no "Compare Words" tile. Compare is not a destination — it is a
+        // sheet raised over the word you are already looking at, from the `Compare` pill on
+        // WordToolsRail (docs/WORD_COMPARE_FEATURE.md). The tile and its /compare page were
+        // deleted 2026-09-04; a cold open with two empty slots was the rarer half of the
+        // feature and cost a hub slot to reach.
 
         // ── Role-gated tiles ──────────────────────────────────────────────────────
         // Not drawn in the artboard. They APPEND as further `low` tiles, which is why

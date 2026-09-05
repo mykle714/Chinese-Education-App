@@ -672,6 +672,11 @@ export interface UserProfile {
   writingGoal?: boolean;
   /** Display pref: gap between word segments in segmented sentences (migration 129). */
   showSegmentSpaces?: boolean;
+  /**
+   * Display pref: which typeface renders Chinese characters, one of
+   * CHINESE_FONT_IDS (migration 157). See docs/CJK_TYPEFACE_LAB.md.
+   */
+  chineseFont?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1152,6 +1157,47 @@ export interface TextLayout {
  *   grey #E7E7EA · beige #F5EBE0 · white #FFFFFF · black #000000 · red #FFF2F2 ·
  *   green #F0FAF0 · blue #EEF8FF · yellow #FFF5EA · purple #F8F4FF
  */
+/**
+ * Every selectable Chinese typeface id — the allow-list for `users."chineseFont"`
+ * (migration 157) and the validator behind PUT /api/users/displaySettings.
+ *
+ * IDS, NOT FAMILY NAMES, are stored. A stored CSS family name would strand every row
+ * the day a face is renamed or re-sourced; an id is a stable key the client maps to a
+ * family + stylesheet URL.
+ *
+ * The client's `src/theme/cjkFontOptions.ts` builds the OPTION LIST (labels, native
+ * names, stylesheet hrefs, blurbs) separately, because the UI needs presentation the
+ * server has no business knowing. The two are not hand-synced on trust:
+ * `src/__tests__/chineseFont.test.ts` asserts the catalog's selectable ids are exactly
+ * this set — the same guard `cardColor.test.ts` provides for CARD_COLOR_VALUES.
+ *
+ * Every face here is OFL. `FZKai-Z03` (方正楷体) was evaluated and REMOVED from the
+ * catalog entirely on 2026-09-04 — Founder's grant is non-commercial only, so it could
+ * never ship, and keeping it as a lab benchmark was a standing temptation with no
+ * payoff. `lxgw-wenkai` is the free kai that replaced it.
+ *
+ * ORDER MATTERS: DEFAULT_CHINESE_FONT_ID leads the list, because Settings shows the
+ * default first and badges it. See docs/CJK_TYPEFACE_LAB.md.
+ */
+export const CHINESE_FONT_IDS: readonly string[] = [
+  '975-maru',
+  'noto-sans-sc',
+  'lxgw-wenkai',
+  'xiaolai-sc',
+  'yozai',
+  'maoken-zhuyuan',
+];
+
+/**
+ * The face new accounts get, and the fallback whenever a stored id is unrecognised
+ * (a row written before a face was retired, say). Mirrors the DEFAULT on
+ * `users."chineseFont"` in migration 157 — keep the two in lock-step.
+ *
+ * NOT the historical face: accounts that existed before migration 157 were explicitly
+ * backfilled to 'noto-sans-sc' so nobody's app changed typeface under them.
+ */
+export const DEFAULT_CHINESE_FONT_ID = '975-maru';
+
 export const CARD_COLOR_VALUES: readonly string[] = [
   '#E7E7EA',
   '#F5EBE0',

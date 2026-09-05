@@ -297,7 +297,11 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **[docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md)**
+Current open runbooks: **[docs/CHINESE_FONT_DEPLOY_RUNBOOK.md](./docs/CHINESE_FONT_DEPLOY_RUNBOOK.md)**
+(the Chinese typeface account setting, migration **157**) — **NOT yet on prod**; 157
+must be applied BEFORE the container rebuild, because the shipped `UserDAL.findById`
+selects `users."chineseFont"` by name (the same shape as 152 and 156).
+**[docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md)**
 (gloss phase-2 half B, the runtime guard — **no migration**). **Deployed 2026-08-24** and
 verified on the infrastructure checks; it stays open only until someone opens a real game
 board and confirms it fills rather than coming back short, which is the one over-blocking

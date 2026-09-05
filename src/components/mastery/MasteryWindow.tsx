@@ -194,7 +194,11 @@ const WindowCells: React.FC<{ bar: MasteryBar }> = ({ bar }) => (
                         width: "62px",
                         textAlign: "center",
                         whiteSpace: "nowrap",
-                        fontFamily: FONTS.mono,
+                        // Info type, not data: these are the four track NAMES
+                        // ("recognition", "production", …). Lowercase rather than the
+                        // usual overline caps only because the tick sits under a 62px
+                        // slot — the voice is the same one.
+                        fontFamily: FONTS.label,
                         fontSize: 8,
                         letterSpacing: "0.06em",
                         color: COLORS.textSecondary,
@@ -352,7 +356,7 @@ export const MasteryWindow: React.FC<MasteryWindowProps> = ({
                         component="span"
                         className={`mastery-window__band mastery-window__band--${bar.category.toLowerCase()}`}
                         sx={{
-                            fontFamily: FONTS.mono,
+                            fontFamily: FONTS.label,
                             fontSize: 9.5,
                             letterSpacing: "0.08em",
                             textTransform: "uppercase",

@@ -1,6 +1,6 @@
 import { useRef, useEffect, forwardRef } from "react";
 import { Box } from "@mui/material";
-import SheetPanel, { type SheetPanelHandle } from "./SheetPanel";
+import SheetPanel, { type SheetPanelHandle } from "../../../components/sheet/SheetPanel";
 import InfoCardPanelBody, { type InfoCardPanelBodyHandle } from "./InfoCardPanelBody";
 import CompareWorkspace from "../../../components/CompareWorkspace";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";

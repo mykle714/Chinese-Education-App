@@ -46,6 +46,16 @@ footer) scroll. For footer-tab hub pages this container is `MobileTabScreen`'s
 `html`/`body` — that lets the entire app scroll and drags the scroll-away header
 and the footer bar with it.
 
+> ⚠️ **A scroll container needs a DEFINITE height, and on the `plain` shell that means
+> `100dvh`, not `100%`.** `Layout`'s non-frame branch (`src/components/Layout.tsx`)
+> wraps the page in a column flex box with **`minHeight: 100dvh` and an auto height**,
+> so a child's percentage height has no definite parent to resolve against: the box
+> silently grows to its content, `overflowY: auto` never engages, and the pinned
+> `html`/`body` clip the overflow instead. The symptom is a page that renders correctly
+> but simply will not scroll. Frame-shell pages don't hit this — `MobileTabScreen` /
+> `LeafPage` already bound the height, so their scroll areas use `flex: 1`. Worked
+> example: `src/pages/fontLab/FontLabPage.tsx`.
+
 Text is **non-selectable by default app-wide** — `src/index.css` sets `user-select:
 none` on `body` (it cascades to everything). Form fields (`input`/`textarea`/
 `contenteditable`) are re-enabled there. The **only** selectable content exception is
@@ -261,9 +271,74 @@ picks up its new one.
 
 ---
 
+## Safe areas and the iOS status bar
+
+**The band behind the clock is PAGE PIXELS.** `index.html` ships
+`viewport-fit=cover`, so the web view paints edge to edge — under the status bar at
+the top and under the home indicator at the bottom — and whatever surface is on
+screen colours those strips. A game's accent ground runs all the way up behind the
+clock; a paper page keeps the strip paper.
+
+### Why it had to work this way
+
+It is tempting to think `<meta name="theme-color">` covers this. It does not, in the
+one place that matters:
+
+| Context | Who paints the strip | Does `useThemeColor` reach it? |
+|---|---|---|
+| Android Chrome | The browser toolbar, from `theme-color` | ✅ |
+| iOS Safari tab | The browser, from `theme-color` | ✅ |
+| **iOS home-screen web app** | **Nobody, now — it is page pixels** | ❌ and never did |
+
+Before `viewport-fit=cover` the standalone web view was **letterboxed inside the safe
+area**, and iOS filled the letterbox itself using the document background it captured
+**when the app launched**. Every runtime write — the meta tag, `documentElement`'s
+background — was ignored, so the strip stayed paper-white forever, on games and on
+ordinary pages alike. `src/hooks/useThemeColor.ts` is not wrong; it was aimed at a
+surface the standalone app does not have.
+
+Two consequences worth knowing:
+
+- **iOS snapshots `index.html`'s `apple-mobile-web-app-*` tags when the icon is
+  added to the Home Screen.** Changing them does nothing to an already-installed
+  icon — it has to be deleted and re-added. A fix here that "didn't work" is usually
+  this.
+- `apple-mobile-web-app-status-bar-style` stays **`default`** (dark system glyphs).
+  `black-translucent` forces light glyphs, which disappear on every paper-white page
+  — the app has one light palette (shelf redesign D4), so there is no style that
+  suits both a dark game ground and paper. Dark glyphs are the safe half.
+
+### Who absorbs the insets
+
+`SAFE_TOP` / `SAFE_BOTTOM` (`src/theme/safeArea.ts`) are CSS **strings**
+(`env(safe-area-inset-*, 0px)`), not numbers — `env()` is resolvable only by the
+browser, so any geometry that mixes them with the design's px is a `calc()`. Both
+fall back to `0px`, so desktop, the phone-card frame and every non-notched device
+compute exactly the design's original geometry.
+
+| Surface | What it does | Where |
+|---|---|---|
+| Page header | Adds `SAFE_TOP` to its own top padding | `PageHeader` (`Header`) — every hub / node / dense / leaf header funnels through it, so this is stated once for the whole app |
+| Footer bar | Grows by `SAFE_BOTTOM` and pads its labels off the home indicator | `MobileFooter` → `FOOTER_TOTAL_HEIGHT` |
+| Footer hide travel | Translates by the bar's **total** height, or the inset's worth of bar peeks back | `FooterPresenter` |
+| Scroll clearance + bottom edge-fade | Reserve and fade against the bar's total height | `MobileTabScreen`, `FOOTER_TOTAL_CLEARANCE` |
+| Sheet pills, the scp platform, sheet bodies | Offset by `FOOTER_TOTAL_CLEARANCE` instead of the bare 90px | `SheetPill` (its `bottom` prop is a CSS string now), `FlashcardsDecksPage`, `VocabCardDetailPage`, `SortCardsPage`, `DecksPanelBody`, `SheetBody` |
+| flp merge sheet | Its own top padding ramps to `SAFE_TOP` as the sheet merges into a full-screen page, so its header passes `safeAreaTop={false}` and does not add the inset twice | `SheetPanel` → `writeMergeChrome` |
+
+**The header, not the frame, carries the top inset.** Padding the frame would stop the
+ground short of the top of the screen again — which is the whole bug. The surface stays
+full-bleed and only the header's *text* moves down.
+
+**A header that is not at the top of the screen must pass `safeAreaTop={false}`.**
+Today that is only the flp merge sheet's header.
+
+---
+
 ## Referenced code
 
 - `src/index.css` — shell `overflow: hidden`, global `user-select: none`, cpcd desktop-selectable exception
+- `src/theme/safeArea.ts` — `SAFE_TOP` / `SAFE_BOTTOM`, and `index.html`'s `viewport-fit=cover` + `apple-mobile-web-app-*` tags (see above)
+- `src/hooks/useThemeColor.ts` — `theme-color` claims for Safari tabs / Android Chrome only
 - `src/App.css` — `#root` shell scroller
 - `src/hooks/useBlockEdgeSwipe.ts` — edge-swipe-back blocker
 - `src/hooks/useScrollStretch.ts` — displacement-driven elastic card spacing (see above)

@@ -7,6 +7,7 @@ import {
     FC_FONT_CJK,
 } from "../constants";
 import { WEIGHT } from "../../../theme/scale";
+import { CARD_SURFACE, CARD_SURFACE_RADIUS } from "../../../theme/surfaces";
 import type { VocabEntry } from "../types";
 import type { IconLayoutItem, TextLayout } from "../../../types";
 import CardIconLayer from "../../../cardIcons/CardIconLayer";
@@ -380,7 +381,16 @@ export const CardFaceSide: React.FC<{
             WebkitBackfaceVisibility: "hidden",
             ...(rotated && { transform: "rotateY(180deg)" }),
             backgroundColor: faceBg,
-            borderRadius: "12px",
+            // The card's EDGE. Border + radius come from `CARD_SURFACE` (theme/surfaces.ts)
+            // so a flashcard face, the cdp hero card and the Decks page's Mastery Center
+            // tiles are one object family; the elevation half of that recipe is NOT taken
+            // here, because the face is inset inside a wrapper that already casts the
+            // shadow (FlashCardSection's Card, the cdp's `*__hero-card` box) — applying it
+            // on both would double it. `border-box` so the hairline eats into the face
+            // rather than pushing it past the wrapper's 100% width.
+            border: CARD_SURFACE.border,
+            borderRadius: CARD_SURFACE.borderRadius,
+            boxSizing: "border-box",
             // NOT clipped here — see the inner clip box. The edit canvas (a child of this
             // outer box) needs overflow:visible so its selection indicators can poke past
             // the card edge into the surrounding padding.
@@ -419,7 +429,10 @@ export const CardFaceSide: React.FC<{
                 position: "absolute",
                 inset: 0,
                 overflow: "hidden",
-                borderRadius: "12px",
+                // Clips content to the SAME curve the face draws, minus the hairline it
+                // sits inside — one less pixel of radius, or the icon layer shows a sliver
+                // of square corner outside the border.
+                borderRadius: `${CARD_SURFACE_RADIUS - 1}px`,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: CARD_FACE_JUSTIFY,

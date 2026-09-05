@@ -354,7 +354,7 @@ function ChallengeDetailPage() {
                     className={`challenge-detail-page__state challenge-detail-page__state--${chip.text.replace(" ", "-")}`}
                     sx={{
                         flexShrink: 0,
-                        fontFamily: FONTS.mono,
+                        fontFamily: FONTS.label,
                         fontSize: SIZE.micro,
                         letterSpacing: "0.1em",
                         textTransform: "uppercase",

@@ -2,6 +2,7 @@ import React from "react";
 import { Box } from "@mui/material";
 import type { IconLayoutItem } from "../types";
 import { iconImageUrl, iconItemStyle } from "./cardIconLayout";
+import { CARD_SURFACE_RADIUS } from "../theme/surfaces";
 
 /**
  * CardIconLayer — read-only renderer for a saved custom icon arrangement on a
@@ -26,7 +27,9 @@ const CardIconLayer: React.FC<{ layout: IconLayoutItem[] }> = ({ layout }) => {
                 // text. With it, the whole layer sits at z0, always behind the content.
                 zIndex: 0,
                 overflow: "hidden",
-                borderRadius: "12px",
+                // Clipped to the same curve as the card face's inner clip box
+                // (CardFaceSide) — one pixel inside the face hairline.
+                borderRadius: `${CARD_SURFACE_RADIUS - 1}px`,
                 pointerEvents: "none",
             }}
         >

@@ -449,15 +449,26 @@ top-right corner.
   resume: true }`; `WordSearchPage` restores the saved board instead of fetching
   a fresh one. No warning (nothing is lost).
 - **✕ arms an in-place delete confirmation** (`confirmingErase` state): the
-  square flips to a **"Delete saved game?" face** with **Cancel** / **Delete**
+  tile flips to a **"Delete save?" face** with **Cancel** / **Delete**
   buttons — it does NOT erase on the first tap. Cancel returns to the normal
   face; only **Delete** clears the save (`clearGameState`) and animates the
-  square's width to zero (react-spring `useTransition` `leave`), so the mode
-  buttons slide left to fill the gap. While the confirm face is showing, a tap on
-  the card body does not resume.
-- To let the width collapse fully to 0 the card uses `minWidth/minHeight: 0`,
-  `boxSizing: border-box`, and an **absolutely-inset content layer** (in-flow
-  text would otherwise floor the width at its min-content size).
+  tile's `flexGrow` to zero (react-spring `useTransition` `leave`), so the mode
+  sub-tiles slide left to fill the gap. While the confirm face is showing, a tap on
+  the tile body does not resume.
+- To let the width collapse fully to 0 the tile uses `minWidth: 0` (the flex
+  default `auto` would floor it at min-content) and `leave.marginRight: -9` to
+  cancel the strip row's 9px flex gap, which otherwise survives its item
+  shrinking to zero and leaves a stump until unmount.
+- **The delete face is absolutely inset (`inset: 11px`) and must stay that way**,
+  and so must its one-line copy. A flex row takes its height from its tallest
+  item, so anything that face measures becomes the height of the two mode tiles
+  next to it: in flow, "Delete saved game?" wrapped to two lines at a third of the
+  strip's width (~93px against the 80px sub-tile floor), so arming the ✕ grew the
+  strip, and confirming it re-wrapped the title tighter as the tile collapsed —
+  the mode tiles changed height throughout the slide-back. Out of flow the face
+  contributes nothing and only width animates. The normal resume face may stay in
+  flow because every one of its lines is `whiteSpace: nowrap` and its three lines
+  total ~72px, under the 80px floor.
 - Word Search has **no difficulty** concept, so the card intentionally shows the
   **mode** as its only categorical line (no separate difficulty row).
 

@@ -90,6 +90,18 @@ interface SheetPanelProps {
     // Omitting it is allowed but discouraged for a modal sheet — the sheet still grows
     // to full height, it just does so with no way out but a downward drag.
     title?: string;
+    // How the `title` header behaves.
+    //  • "merge" (default) — it is MERGE chrome: clipped to zero and interpolated in over
+    //    the last MERGE_ZONE_PX, so it appears only as the sheet becomes the whole screen.
+    //    Right for a sheet whose body carries its own identity (the eip's entry header
+    //    names the word; the /decks sheet's body names the set).
+    //  • "always" — the header is ordinary sheet furniture, at full height from the moment
+    //    the sheet opens, and the merge stops touching it (only the corners, shadow and top
+    //    padding still interpolate). Right for a sheet whose body has NO title row of its
+    //    own — the compare sheet, whose first row is two word slots — because the sheet then
+    //    says what it is and offers a labelled close at every height, not just at the top of
+    //    its travel. The grabber stays above it, so the resize affordance is unchanged.
+    headerMode?: "merge" | "always";
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +224,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     children,
     tabStrip,
     title,
+    headerMode = "merge",
 }, ref) => {
     const sheetContainerRef = useRef<HTMLDivElement | null>(null);
     const scrimRef = useRef<HTMLDivElement | null>(null);
@@ -319,6 +332,11 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // Read from settle() without re-binding it when the prop changes.
     const collapseRatioRef = useRef(collapseThresholdRatio);
     collapseRatioRef.current = collapseThresholdRatio;
+    // Read through a ref for the same reason as collapseThresholdRatio: writeMergeChrome is
+    // a stable callback called from touchmove/momentum frames, so it must not be rebuilt
+    // (and its listeners re-bound) just because a prop identity changed.
+    const headerModeRef = useRef(headerMode);
+    headerModeRef.current = headerMode;
 
     // Paint the "merging into the page" chrome for a given sheet height. `t` runs 0 → 1
     // across the last MERGE_ZONE_PX below the cap: 0 is a sheet (rounded, shadowed, no
@@ -354,7 +372,10 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         // the mix is expressed as a calc the browser evaluates: `SAFE_TOP * t`. On a
         // device with no inset it is 0px and this is exactly the old ramp to 0.
         el.style.paddingTop = `calc(${SHEET_TOP_PADDING_PX * (1 - t)}px + ${SAFE_TOP} * ${t})`;
-        const header = mergeHeaderRef.current;
+        // In "always" mode the header is not merge chrome — it is at full height from the
+        // start and the merge must not touch it. Only the container's own corners/shadow/
+        // padding above still interpolate.
+        const header = headerModeRef.current === "always" ? null : mergeHeaderRef.current;
         if (header) {
             header.style.transition = animate
                 ? `height ${SNAP_DURATION_MS}ms ease-out, opacity ${SNAP_DURATION_MS}ms ease-out`
@@ -806,11 +827,30 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
 
                     Chevron DOWN, not a back arrow: this dismisses the sheet in the
                     direction a drag would, and it is the only close affordance left
-                    once the sheet covers the scrim. */}
+                    once the sheet covers the scrim.
+
+                    `headerMode="always"` opts out of the clipping entirely (see the prop):
+                    the header is then ordinary sheet furniture at every height.
+
+                    ⚠️ This is a REAL PageHeader, and PageHeader renders the minute-points
+                    flame unconditionally — which runs a 1-second accrual tick. An open
+                    titled sheet therefore adds a second tick on top of its page's own
+                    header. It cannot over-credit (the server claims a 59-second cooldown
+                    atomically, UserDAL.claimMinutePointIncrement), but see PageHeader's
+                    "exactly one PageHeader on an earning page" note before adding more. */}
                 {title && (
                     <SheetMergeHeaderSlot
                         ref={mergeHeaderRef}
                         className="mobile-demo-eic-merge-header"
+                        // "always": undo the slot's clipped-to-zero resting state right here
+                        // rather than by writing styles after mount — the header must be
+                        // there on the FIRST paint, and writeMergeChrome's early-out (`t`
+                        // unchanged) means the first write at t=0 does nothing at all.
+                        style={
+                            headerMode === "always"
+                                ? { height: "auto", opacity: 1, pointerEvents: "auto" }
+                                : undefined
+                        }
                     >
                         <PageHeader
                             title={title}

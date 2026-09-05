@@ -15,12 +15,13 @@ import { useThemeColor } from "../../hooks/useThemeColor";
  * Wrap the WHOLE page, not just the frame: the end-of-run popups and the paused
  * overlay are siblings of the panel, and they are on the accent ground too.
  *
- * It also claims the phone's STATUS-BAR strip for the same hue. That strip is painted
- * by the browser from `<meta name="theme-color">`, so no amount of CSS inside the tree
- * can reach it — without this, a red game header sat under a paper-white band and the
- * accent ground visibly stopped short of the top of the screen. Doing it here rather
- * than in each game means the two colours are read from ONE `hue` and cannot drift.
- * See src/hooks/useThemeColor.ts.
+ * It also claims the BROWSER CHROME for the same hue — Android Chrome's toolbar and
+ * the Safari-tab status strip, both painted from `<meta name="theme-color">`, which no
+ * CSS inside the tree can reach. Doing it here rather than in each game means the two
+ * colours are read from ONE `hue` and cannot drift. See src/hooks/useThemeColor.ts.
+ *
+ * In the iOS HOME-SCREEN app the status bar is not that surface: it is page pixels, so
+ * the accent ground below paints it directly (`viewport-fit=cover`, src/theme/safeArea.ts).
  */
 export const GameSurfaceProvider: React.FC<{ hue: RampHue; children: React.ReactNode }> = ({ hue, children }) => {
     useThemeColor(RAMP[hue].ink);

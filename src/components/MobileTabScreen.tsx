@@ -4,8 +4,9 @@ import { styled } from "@mui/material/styles";
 import type { SxProps, Theme } from "@mui/material/styles";
 import MobileDemoHeader from "./MobileDemoHeader";
 import { type PageHeaderSize } from "./PageHeader";
-import { FOOTER_CLEARANCE, FOOTER_HEIGHT } from "./MobileFooter";
+import { FOOTER_HEIGHT, FOOTER_TOTAL_HEIGHT, FOOTER_TOTAL_CLEARANCE } from "./MobileFooter";
 import { COLORS } from "../theme/colors";
+import { SAFE_BOTTOM } from "../theme/safeArea";
 
 // Shared layout shell for every SCROLLABLE footer-tab hub page (Flashcards/Decks,
 // Discover, Home, Account). It encodes two design rules so individual pages don't
@@ -47,14 +48,19 @@ const EDGE_FADE_TOP = 28;
 // to be added per surface. Do not ship both (docs/SHELF_REDESIGN.md A2a).
 const EDGE_FADE_BOTTOM_BAND = 34;
 // Where the fade STARTS, measured up from the bottom of the viewport.
-const EDGE_FADE_BOTTOM_START = FOOTER_HEIGHT + EDGE_FADE_BOTTOM_BAND;
+// Measured off the bar's TOTAL height (74px + the home-indicator inset), not the bare
+// 74: since `viewport-fit=cover` the bar is taller than nominal, and a fade anchored to
+// 74 would finish the inset's worth of pixels ABOVE the bar's real top edge, leaving a
+// visible sliver of un-faded content there. A CSS string, so the masks below are
+// template calcs rather than arithmetic. See src/theme/safeArea.ts.
+const EDGE_FADE_BOTTOM_START = `calc(${FOOTER_HEIGHT + EDGE_FADE_BOTTOM_BAND}px + ${SAFE_BOTTOM})`;
 // Full mask fades both edges; when a page opts out of the top fade (topFade=false)
 // the top band is dropped so the first rows stay fully opaque (only the bottom
 // fades out behind the floating footer).
-const EDGE_FADE_MASK = `linear-gradient(to bottom, transparent 0, #000 ${EDGE_FADE_TOP}px, #000 calc(100% - ${EDGE_FADE_BOTTOM_START}px), transparent calc(100% - ${FOOTER_HEIGHT}px))`;
+const EDGE_FADE_MASK = `linear-gradient(to bottom, transparent 0, #000 ${EDGE_FADE_TOP}px, #000 calc(100% - ${EDGE_FADE_BOTTOM_START}), transparent calc(100% - ${FOOTER_TOTAL_HEIGHT}))`;
 // Bottom band only — no top fade. Also used by the /decks sheet, whose top edge is
 // its own grabber (nothing there should dissolve).
-export const EDGE_FADE_MASK_NO_TOP = `linear-gradient(to bottom, #000 0, #000 calc(100% - ${EDGE_FADE_BOTTOM_START}px), transparent calc(100% - ${FOOTER_HEIGHT}px))`;
+export const EDGE_FADE_MASK_NO_TOP = `linear-gradient(to bottom, #000 0, #000 calc(100% - ${EDGE_FADE_BOTTOM_START}), transparent calc(100% - ${FOOTER_TOTAL_HEIGHT}))`;
 
 // Positioning context for the footer bar + full-height flex column.
 const ScreenRoot = styled(Box)(() => ({
@@ -102,7 +108,7 @@ const ScrollArea = styled(Box, {
     touchAction: scrollable ? (horizontalPan ? "pan-x pan-y" : "pan-y") : "none",
     overscrollBehavior: "contain",
     WebkitOverflowScrolling: "touch",
-    paddingBottom: FOOTER_CLEARANCE,
+    paddingBottom: FOOTER_TOTAL_CLEARANCE,
     // Soft fade at the top/bottom edges (see EDGE_FADE_MASK above), scrollable pages only.
     // Pages that opt out of the top fade (topFade=false) drop the top band.
     ...(scrollable

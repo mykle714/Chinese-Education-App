@@ -135,6 +135,30 @@ the solver left alone (any comfortable natural gap) get **no apostrophe**.
   only if its pair qualifies. Pairs that straddle a wrapped line are never adjacent
   within a visual row, so no apostrophe is drawn across the wrap.
 
+## Upstream: the string this operates on is sandhi-corrected
+
+Everything above is layout math over whatever pinyin string the row is handed. That string
+is **not** the dictionary's citation reading: `ForeignText` applies 一/不 tone sandhi in
+`buildCharItems` before building `CPCDRowItem`s, so 一流 arrives as `yì liú` rather than
+`yī liú` (`src/utils/toneSandhi.ts`; full rationale in
+[DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) § "The last step: 一/不 tone sandhi").
+
+Two consequences land inside this document's scope:
+
+- **Tone color.** `getToneColor` reads the diacritic off the same string, so the correction
+  repaints the syllable as well as re-spelling it — that is the whole reason the transform
+  rewrites the string rather than annotating it.
+- **Same-tone separator apostrophes.** The apostrophe rule below keys on
+  `getToneColor(left) === getToneColor(right)`, so sandhi can add or remove one: 不是
+  citation `bù shì` is tone 4 + tone 4 (same color → apostrophe eligible if crowded), while
+  the surface form `bú shì` is tone 2 + tone 4 (different colors → never eligible). Nothing
+  here needs to special-case it; the rule simply evaluates the string it is given.
+
+Sentences are handled one level up — `SegmentedSentenceDisplay` applies the pass across the
+whole sentence in its `charData` memo, because a trigger and its target routinely straddle a
+segment boundary (我 / 不 / 去) that a per-segment `ForeignText` cannot see. Those call sites
+use the low-level `items` API, which `ForeignText` passes through untouched.
+
 ## Where it runs
 
 - `positionPinyins()` in `src/components/CPCDRow.tsx` runs in a
@@ -206,3 +230,17 @@ share rule, which turned out to overlap a narrow syllable into a wide neighbor
 whenever it was sandwiched between two wide ones (see *Why even splitting* above).
 It was simplified to an **unconditional even split**, which resolves those
 sandwiches and drops the per-pair `overflows[]` branching.
+
+## Typeface dependency: the 1em han advance
+
+The whole model assumes **each character cell is one full em wide** — pinyin is
+centered over its character, and the solver pushes neighbours outward from that
+column grid. That holds for every full-width CJK face (`FONTS.cjk`'s default
+`Noto Sans SC` included) and does **not** hold for a condensed design, whose narrower
+han advance walks every syllable progressively out of register across a row.
+
+`FONTS.cjk` is swappable at runtime via the `--cjk-font` custom property
+(`src/theme/fonts.ts`), so this is a live constraint on any typeface change, not a
+frozen property of the app. The `/font-lab` page measures and reports each candidate's
+han advance for exactly this reason —
+→ [CJK_TYPEFACE_LAB.md](./CJK_TYPEFACE_LAB.md) § 2.

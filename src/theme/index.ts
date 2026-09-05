@@ -5,3 +5,5 @@ export { SIZE, WEIGHT, LEADING, TRACKING, type SizeToken } from "./scale";
 export { COLORS, type ColorToken } from "./colors";
 export { TEXT, type TextRole } from "./typography";
 export { SHADOW, type ShadowToken } from "./shadows";
+export { SAFE_TOP, SAFE_BOTTOM } from "./safeArea";
+export { CARD_SURFACE, CARD_SURFACE_RADIUS } from "./surfaces";

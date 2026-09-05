@@ -35,7 +35,7 @@ export interface EntryEipTab {
 // entry tab and back doesn't lose it; it's cleared whenever either slot changes (a new pair).
 //
 // The slot/comparison half of this tab IS `CompareState` — the exact shape the shared
-// CompareWorkspace renders from — so the eip tab and the standalone /compare page drive one
+// CompareWorkspace renders from — so the eip tab and the compare sheet (CompareSheet) drive one
 // component from one contract instead of two parallel shapes.
 export interface CompareEipTab extends CompareState {
     kind: "compare";

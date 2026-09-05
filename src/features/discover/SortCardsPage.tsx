@@ -9,7 +9,8 @@ import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
 import NodePage from "../../components/NodePage";
-import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
+import { FOOTER_CLEARANCE, FOOTER_TOTAL_CLEARANCE } from "../../components/MobileFooter";
+import { SAFE_BOTTOM } from "../../theme/safeArea";
 import ForeignText from "../../components/ForeignText";
 import FrequencyScoreDots from "../../components/FrequencyScoreDots";
 import SpeakerButton from "../../components/SpeakerButton";
@@ -151,7 +152,10 @@ const EipHost = styled(Box)({
     left: 0,
     right: 0,
     top: 0,
-    bottom: -FOOTER_CLEARANCE,
+    // Negated clearance, INCLUDING the home-indicator inset the reservation now
+    // carries (FOOTER_TOTAL_CLEARANCE) — a bare -90px would stop short of the real
+    // bottom edge by the inset. `env()` cannot be negated in JS, so it is a calc.
+    bottom: `calc(-${FOOTER_CLEARANCE}px - ${SAFE_BOTTOM})`,
     zIndex: EIP_HOST_Z_INDEX,
 });
 
@@ -249,8 +253,8 @@ const OnDeckSection = styled(Box)({
     // so the floating footer hovers over the on-deck white rather than a seam of
     // page background. The negative margin cancels the padding in layout, keeping
     // the platform's vertical footprint unchanged — it only paints the spacer.
-    paddingBottom: FOOTER_CLEARANCE,
-    marginBottom: -FOOTER_CLEARANCE,
+    paddingBottom: FOOTER_TOTAL_CLEARANCE,
+    marginBottom: `calc(-${FOOTER_CLEARANCE}px - ${SAFE_BOTTOM})`,
     // Rounded top corners on a plain white slab.
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,

@@ -8,6 +8,7 @@ import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { APP_ROUTES, type AppRoute } from "./routes/registry";
 import { useBlockZoom } from "./hooks/useBlockZoom";
+import { useChineseFont } from "./hooks/useChineseFont";
 
 /**
  * Render one registry row as a <Route>.
@@ -37,6 +38,16 @@ function renderRoute(route: AppRoute) {
   return <Route key={route.path} path={route.path} element={element} />;
 }
 
+/**
+ * Applies the signed-in account's Chinese typeface preference to :root. Renders
+ * nothing — it exists only because the hook needs `useAuth()`, so it must sit INSIDE
+ * AuthProvider, where `App` itself is not. See src/hooks/useChineseFont.ts.
+ */
+function ChineseFontApplier() {
+  useChineseFont();
+  return null;
+}
+
 function App() {
   // App-wide: disable pinch / double-tap zoom (mobile-first UI, zoom is never
   // wanted). Complements the viewport meta in index.html, which iOS ignores.
@@ -45,6 +56,7 @@ function App() {
   return (
     <ThemeContextProvider>
       <AuthProvider>
+        <ChineseFontApplier />
         <VocabularyUpdateProvider>
           <ConfirmationProvider>
             <Layout>

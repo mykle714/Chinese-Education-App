@@ -94,9 +94,18 @@ const wordContentScale = (charCount: number, radius: number): number => {
  * Two layers by design:
  *  - The outer node carries the physics transform (translate + scale) written
  *    every frame by the rAF loop — React never touches it per-frame.
- *  - The inner node carries status-driven CSS feedback (green pop / red shake),
- *    remounted via `key={body.status}` so each animation restarts cleanly. Using
- *    a separate element keeps these transforms from fighting the loop's.
+ *  - The inner node carries status-driven CSS feedback (green pop / red shake).
+ *    Using a separate element keeps these transforms from fighting the loop's.
+ *
+ * ⚠️ The inner node's `key` is deliberately NOT `status`. It only distinguishes the
+ * two ANIMATED statuses (`correct`/`wrong`) from everything else, because a key
+ * change remounts the whole subtree — and that subtree contains a CPCDRow, whose
+ * `useLayoutEffect` runs a forced-layout pinyin measuring pass on mount, plus (on a
+ * definition bubble) an `<img>` that has to be re-fetched and re-decoded. Keying on
+ * the raw status paid that cost on every *pickup*, every hover change and every
+ * release, which is exactly the grab lag it caused. The pop/shake animations still
+ * start correctly without a remount: they are reached from `idle`, so the animation
+ * property goes absent → present and the browser starts them fresh.
  */
 const Bubble: React.FC<BubbleProps> = ({
     body,
@@ -177,7 +186,8 @@ const Bubble: React.FC<BubbleProps> = ({
             }}
         >
             <Box
-                key={status}
+                // See the ⚠️ note in the component doc: only correct/wrong remount.
+                key={status === "correct" || status === "wrong" ? status : "base"}
                 className="bubble__inner"
                 sx={{
                     width: "100%",

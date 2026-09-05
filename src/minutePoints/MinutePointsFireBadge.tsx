@@ -79,8 +79,9 @@ const SMOOTH_STEP_LIMIT_PCT = ((INK_TOP_PCT - INK_BOTTOM_PCT) / 60) * 1.6;
  * The badge draws in one of two MODES, chosen by whether the current page can earn at all
  * (`isEligiblePage`). The gauge only exists where the number it reports can move.
  *
- *   OFF-STUDY MODE (every menu, hub and browse surface — the cdp, the deck browsers, the
- *   hubs). One flat, solid `fireActive` flame beside the count. No ghost, no clipped fill
+ *   OFF-STUDY MODE (every menu, hub and browse surface — the deck browsers, the hubs, the
+ *   mastery centers; the cdps and the dictionary left this group on 2026-09-04, when they
+ *   became study surfaces). One flat, solid `fireActive` flame beside the count. No ghost, no clipped fill
  *   layer, no pulse. A part-full gauge on a page that cannot fill it is a lie the eye has
  *   to re-check every time it lands there: it invites the learner to watch a level that
  *   is frozen by construction. The count is still the real balance, so the flame here is

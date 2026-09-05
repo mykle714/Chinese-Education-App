@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { useLocation } from "react-router-dom";
 import MobileFooter, {
-    FOOTER_HEIGHT,
+    FOOTER_TOTAL_HEIGHT,
     type FooterTab,
 } from "./MobileFooter";
 import { routeFooterTab } from "../routes/routeMeta";
@@ -33,7 +33,13 @@ const EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 // that edge and casts no shadow (shelf redesign A2a), so its own height is exactly the
 // travel needed — the old formula added the pill's 16px inset plus 16px of shadow
 // allowance, neither of which exists any more.
-const HIDDEN_OFFSET = FOOTER_HEIGHT;
+//
+// It must be the bar's TOTAL height (74px + the home-indicator inset, a CSS string),
+// not the bare 74: since `viewport-fit=cover` the bar is taller than its nominal
+// height, and translating by 74px alone would leave the inset's worth of bar peeking
+// above the bottom edge on every footerless page. `translateY()` takes a calc(), so
+// the string goes straight in.
+const HIDDEN_OFFSET = FOOTER_TOTAL_HEIGHT;
 
 const FooterPresenter: React.FC = () => {
     const { pathname } = useLocation();
@@ -54,7 +60,7 @@ const FooterPresenter: React.FC = () => {
         <MobileFooter
             activePage={lastActive.current}
             style={{
-                transform: visible ? "translateY(0)" : `translateY(${HIDDEN_OFFSET}px)`,
+                transform: visible ? "translateY(0)" : `translateY(${HIDDEN_OFFSET})`,
                 transition: `transform ${DURATION_MS}ms ${EASING}`,
                 // Above the page surfaces and the exit clone (z-index 50) so the
                 // bar is always visible while it (and the pages) animate.

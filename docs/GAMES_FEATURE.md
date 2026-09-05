@@ -297,7 +297,7 @@ applied for you.
 Today's `MOBILE_DEMO_PATHS` (`src/components/Layout.tsx`): `/`,
 `/flashcards/decks`, `/flashcards/mastered`, `/account`, `/flashcards/learn`,
 `/discover`, `/games`, `/community`, `/night-market`, `/reader`, `/dictionary`,
-`/compare`, `/tester-dashboard`, `/settings`, `...GAME_ROUTES`, plus any path
+`/tester-dashboard`, `/settings`, `...GAME_ROUTES`, plus any path
 under `/discover/sort/`, `/discover/quick-mark/`, `/discover/skipped/`,
 `/flashcards/card/`, `/dictionary/card/`, or `/reader/`.
 
@@ -482,14 +482,22 @@ hue's near-white tint on the HUD strip.
 | `gameSurfaceSx(hue)` | The ground colour plus the descendant rules it forces (title, chevron, right-slot icons, `HeaderMetaLabel`, the streak badge, both toggle-chip states). |
 | `ON_ACCENT_INK` / `ON_ACCENT_LINE` | White, and a 50% white hairline. Anything drawn straight onto the ground needs the first; `COLORS.rowBorder` is an ink alpha and vanishes on a 52%-lightness ground, hence the second. |
 
-**The status-bar strip follows the ground too (2026-08-28).** `GameSurfaceProvider` calls
-`useThemeColor(RAMP[hue].ink)` (`src/hooks/useThemeColor.ts`), which rewrites
-`<meta name="theme-color">` for as long as the game is mounted. That band above the header
-is painted by the BROWSER, not by the page, so nothing in the React tree can reach it —
-before this, an accent game screen sat under a paper-white strip on iOS and the ground
-visibly stopped short of the top of the phone. It lives on the provider rather than in each
-game so both colours come from the one `hue`. Default (every non-game screen) is
-`COLORS.background`, declared in `index.html`.
+**The status-bar strip follows the ground too — by two different mechanisms.**
+
+- **iOS home-screen app (the one that matters):** the strip is PAGE PIXELS. Since
+  `viewport-fit=cover` the accent ground itself runs up behind the clock, and the leaf
+  header clears it with `SAFE_TOP`. Nothing game-specific is involved.
+- **Safari tabs / Android Chrome:** the browser paints its own chrome from
+  `<meta name="theme-color">`, so `GameSurfaceProvider` also calls
+  `useThemeColor(RAMP[hue].ink)` (`src/hooks/useThemeColor.ts`) for as long as the game
+  is mounted — on the provider rather than in each game, so both colours come from the
+  one `hue`. Default (every non-game screen) is `COLORS.background`, declared in
+  `index.html`.
+
+The 2026-08-28 `theme-color` work did NOT fix the standalone app: a letterboxed web view's
+strip is filled by iOS from the background it captured at launch, and no runtime write
+reaches it. See [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § Safe areas and the iOS
+status bar.
 
 **Which hue a game gets is `GameDef.hue`, NOT the artboard's.** The artboards paint Match
 Speed blue, Speed Reading yellow and Hydra green; the shipped hub rows call those three
@@ -1318,6 +1326,42 @@ with it ([HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md)). Neither has shipped.
   (`src/constants.ts`, alongside `/games/word-search`) and in the
   start-on-entry subset, so time accrues from mount rather than from the first
   tap; the header's `MinutePointsFireBadge` works as on flp.
+
+### Grab latency — what may NOT run inside the pointerdown handler
+
+Applies to both bubble games (they share `src/games/bubbles/Bubble.tsx` and the drag
+handlers are the same shape). Picking a bubble up must show the pickup on the very next
+frame, so the pointerdown handler is allowed to mutate physics state, force one layout
+read (the stage rect) and re-render the stage — and nothing else. Two things were doing
+more than that and made a grab feel a beat late:
+
+- **Subtree remounts.** `Bubble`'s inner node used `key={status}`, so *every* status
+  transition — pickup, each hover change, release — destroyed and rebuilt the bubble's
+  content. That content is a `CPCDRow`, whose `useLayoutEffect` runs a forced-layout
+  pinyin measuring pass (`Range.getBoundingClientRect`, `offsetLeft/Top/Width`) on
+  mount, and on a definition bubble an icons8 `<img>` that has to be re-fetched and
+  re-decoded. The key now only separates the two ANIMATED statuses
+  (`correct`/`wrong`) from everything else; the pop/shake still start correctly because
+  both are reached from `idle`, so the CSS `animation` property goes absent → present.
+  Side effect, and an improvement: the inner node's `background-color`/`border-color`
+  transition now actually runs on a pickup instead of being thrown away with the node.
+- **Narration.** `useTTS.autoSpeak` is synchronous up to its first `await`: it cancels
+  both providers (including `speechSynthesis.cancel()`) and pushes two `speakingKey`
+  state updates through the *owning page*, i.e. a full `BubbleMatchPage` re-render.
+  `BubbleStage.onPointerDown` now defers the call past the paint
+  (`requestAnimationFrame` → `setTimeout 0`; rAF alone is still pre-paint). This is safe
+  for autoplay policy because `CloudTTSProvider.ensureUnlockListener` installs a
+  capture-phase window `pointerdown` listener that primes both sinks on *every* tap, so
+  the same gesture has already unlocked playback whenever `speak()` gets to run.
+
+The pre-existing `willChange: animating ? "transform" : "auto"` rule in `Bubble` is part
+of the same budget — see its comment for why a permanent `willChange` on ~40 bubbles
+reads as input lag.
+
+Referenced code: `src/games/bubbles/Bubble.tsx`,
+`src/games/bubble-match/BubbleStage.tsx` → `onPointerDown`,
+`src/components/CPCDRow.tsx` → `positionPinyins`,
+`src/services/tts/CloudTTSProvider.ts` → `ensureUnlockListener`/`unlock`.
 
 ### Files
 

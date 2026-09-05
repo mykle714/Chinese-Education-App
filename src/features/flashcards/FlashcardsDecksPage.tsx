@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { Box, Alert, Snackbar } from "@mui/material";
 import MobileTabScreen from "../../components/MobileTabScreen";
-import SheetPanel, { type SheetPanelBodyHandle } from "./FlashcardsLearnPage/SheetPanel";
+import SheetPanel, { type SheetPanelBodyHandle } from "../../components/sheet/SheetPanel";
 import DecksPanelBody from "./DecksPanelBody";
 import NewDeckDialog from "./NewDeckDialog";
 import { useDecksPanel } from "./useDecksPanel";
@@ -14,9 +14,9 @@ import {
 import type { MasteryBarId } from "../../utils/masteryCompute";
 import Icon from "../../components/Icon";
 import { Label } from "../../components/primitives";
-import StudyHand, { HAND_CARD_RESTING_SHADOW, type StudyHandCard, type StudyModeId } from "./StudyHand";
+import StudyHand, { type StudyHandCard, type StudyModeId } from "./StudyHand";
 import SheetPill from "../../components/SheetPill";
-import { FOOTER_CLEARANCE } from "../../components/MobileFooter";
+import { FOOTER_TOTAL_CLEARANCE } from "../../components/MobileFooter";
 import type { VocabEntry } from "../../types";
 import { flpReadyCountsByBand, nextFlpReadyMs } from "../../utils/flpReadiness";
 import { formatCooldownRemaining } from "../../utils/formatDuration";
@@ -25,6 +25,7 @@ import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
+import { CARD_SURFACE } from "../../theme/surfaces";
 
 // ── What this page is now ─────────────────────────────────────────────────────
 //
@@ -116,7 +117,10 @@ import { WEIGHT } from "../../theme/scale";
 // They are offset by the FULL footer clearance rather than by FOOTER_HEIGHT, so they
 // clear the floating pill bar with the same gap every other page's last row gets.
 const SETS_PILL_HEIGHT = 34;
-const SETS_PILL_BOTTOM = FOOTER_CLEARANCE;
+// A CSS string, not a number: the clearance carries the home-indicator inset now
+// (FOOTER_TOTAL_CLEARANCE), so the pills sit the same gap above the bar on a notched
+// phone as on one without.
+const SETS_PILL_BOTTOM = FOOTER_TOTAL_CLEARANCE;
 
 // Breathing room between the study area's three rows (figure line / Centers rail /
 // the card hand), and — via STUDY_AREA_BOTTOM_PAD — between the hand and the pill.
@@ -445,20 +449,17 @@ const FlashcardsDecksPage: React.FC = () => {
                                             alignItems: "flex-start",
                                             textAlign: "left",
                                             // Same object family as the hand below: a
-                                            // pastel card lying on the page. It carries
-                                            // the hand's hairline and its RESTING
-                                            // elevation (never the front card's lifted
-                                            // one — a tile is not the played card), so
-                                            // the rail no longer reads as a flat patch
-                                            // of colour beside three real cards. The
-                                            // radius stays smaller than the hand's 22px
-                                            // because the tile is roughly half its size.
-                                            border: `1px solid ${COLORS.border}`,
+                                            // pastel card lying on the page. `CARD_SURFACE`
+                                            // (theme/surfaces.ts) is that object — hairline +
+                                            // RESTING elevation (never the front card's lifted
+                                            // one; a tile is not the played card) + the 15px
+                                            // card radius, which the flp card and the cdp hero
+                                            // now share. The hand keeps its own larger 22px
+                                            // radius because those cards are twice the size.
+                                            ...CARD_SURFACE,
                                             cursor: "pointer",
-                                            borderRadius: "15px",
                                             padding: "13px 13px 14px",
                                             backgroundColor: RAMP[CENTER_HUES[bar]].fill,
-                                            boxShadow: HAND_CARD_RESTING_SHADOW,
                                         }}
                                     >
                                         <Icon name={CENTER_GLYPHS[bar]} size={19} sx={{ opacity: 0.72 }} />

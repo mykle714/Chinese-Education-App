@@ -9,7 +9,7 @@ import {
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import NodePage from "../../components/NodePage";
-import { FOOTER_CLEARANCE, ScrollPastSpacer } from "../../components/MobileFooter";
+import { FOOTER_TOTAL_CLEARANCE, ScrollPastSpacer } from "../../components/MobileFooter";
 import { API_BASE_URL } from "../../constants";
 import type { VocabEntry } from "../../types";
 import IconPickerDialog from "../../components/IconPickerDialog";
@@ -18,6 +18,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useTTS } from "../../hooks/useTTS";
 import { COLORS } from "../../theme/colors";
+import { CARD_SURFACE } from "../../theme/surfaces";
 import CardNote from "./card/CardNote";
 import CardOpsRail from "./FlashcardsLearnPage/CardOpsRail";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "./FlashcardsLearnPage/FlashCardSection";
@@ -31,6 +32,7 @@ import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { useOpenWordCard } from "../../hooks/useOpenWordCard";
 import MasteryWindow from "../../components/mastery/MasteryWindow";
 import WordToolsRail from "../../components/WordToolsRail";
+import { useCompareSheet } from "../../components/CompareSheet";
 import Icon from "../../components/Icon";
 import SheetPill from "../../components/SheetPill";
 import InfoCardSection from "./FlashcardsLearnPage/InfoCardSection";
@@ -58,7 +60,9 @@ const ContentArea = styled(Box)(() => ({
 // already pads FOOTER_CLEARANCE for that bar, so the column only owes the pill's own
 // height plus a breathing gap.
 const INFO_PILL_HEIGHT = 34;
-const INFO_PILL_BOTTOM = FOOTER_CLEARANCE;
+// A CSS string — see FOOTER_TOTAL_CLEARANCE: the footer bar grew by the
+// home-indicator inset, and the pill has to clear the bar's real top edge.
+const INFO_PILL_BOTTOM = FOOTER_TOTAL_CLEARANCE;
 const INFO_PILL_CLEARANCE = INFO_PILL_HEIGHT + 12;
 
 const VocabCardDetailPage: React.FC = () => {
@@ -139,14 +143,17 @@ const VocabCardDetailPage: React.FC = () => {
     // takes it as a prop and the panel re-renders on every sheet-resize frame.
     const infoBreakdownItems = useMemo(() => getBreakdownItems(entry), [entry]);
 
-    // "Compare" on the word-tools rail. The flp can open Compare as an eip TAB beside
-    // the word it is comparing; the cdp has no tab strip, so it hands the word to the
-    // standalone Compare page instead, pre-filling slot A through route state (see
-    // ComparePage). Same feature, same component underneath — only the host differs.
-    const handleCompare = useCallback(
-        (target: VocabEntry) => navigate("/compare", { state: { slotA: target } }),
-        [navigate]
-    );
+    // "Compare", from the word-tools rail above the card and from the eip entry header —
+    // raises the compare SHEET over this page with the word in slot A (see
+    // docs/WORD_COMPARE_FEATURE.md). It used to navigate to a standalone /compare page,
+    // which took the card being compared FROM off the screen; the sheet leaves it behind
+    // the panel and drags to full height when the learner wants the whole screen.
+    //
+    // Depth 1 while the eip is up, so the compare sheet and its scrim paint ABOVE the
+    // info sheet rather than behind it — this is the app's first stacked SheetPanel.
+    // The flp is the one surface that does NOT mount this: it has an entry-tab strip, so
+    // Compare is a tab there (useEipTabs).
+    const { openCompare, compareSheet } = useCompareSheet({ depth: infoOpen ? 1 : 0 });
 
     // The flashcard icon editor (fie) — the same toolbar/canvas flp opens on its
     // back face. There's no "next card" here (single-card page), so nextEntry is
@@ -515,7 +522,7 @@ const VocabCardDetailPage: React.FC = () => {
                             <WordToolsRail
                                 className="vocab-card-detail__word-tools"
                                 entry={entry}
-                                onCompare={handleCompare}
+                                onCompare={openCompare}
                             />
 
                             {/* Hero card — the same size/style as the flp (learn page)
@@ -543,6 +550,15 @@ const VocabCardDetailPage: React.FC = () => {
                                     // one. So the card starts right under the tools rail.
                                     mb: "8px",
                                     position: "relative",
+                                    // Elevation for the hero: the face itself draws the
+                                    // hairline + radius (CARD_SURFACE, via CardFaceSide),
+                                    // but the shadow has to sit on this wrapper — the face
+                                    // is absolutely positioned inside it, and the wrapper is
+                                    // what the page lays out. The radius is repeated here so
+                                    // the cast shadow takes the card's rounded shape rather
+                                    // than a rectangle's.
+                                    borderRadius: CARD_SURFACE.borderRadius,
+                                    boxShadow: CARD_SURFACE.boxShadow,
                                 }}
                             >
                                 <CardFaceSide
@@ -664,6 +680,10 @@ const VocabCardDetailPage: React.FC = () => {
                         </>
                     ) : null}
                 </ContentArea>
+
+                {/* COMPARE SHEET — portals to the overlay host, so its position in this
+                    tree does not affect where it paints. */}
+                {compareSheet}
 
                 {/* Icon-layout save/reset failure toast (e.g. backend PATCH error) — keeps
                     the editor open and tells the user the write didn't land. */}

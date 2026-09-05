@@ -499,9 +499,78 @@ indexed here rather than in a doc of its own:
 | `pronunciation` | `"zhòng diǎn"` | det column, tone-marked. Derived from `numberedPinyin`; **unreviewed, and partly corrupt** — 2,414 zh rows carry a misplaced tone mark (`hoù` for `hòu`) from a bug in `numberedToTonedSyllable` fixed 2026-08-19. |
 | `cluster.reading` | `"zhong4 dian3"` | Numbered, **per sense** — the reviewed value. A heteronym's reading belongs to its sense, not the word. |
 | **display pinyin** | `"zhòng diǎn"` | `resolveDisplayPronunciation` — the ONLY form a surface may render. Resolves `cluster.reading` through `numberedToTonedPinyin`, falling back to the `pronunciation` column only when no cluster reading exists. |
+| **surface pinyin** | `"yì liú"` | The display pinyin after 一/不 tone sandhi. Applied by `ForeignText`, not by the resolver — see below. |
 
 **The rule mirrors dd's:** never render `entry.pronunciation` directly. The resolver's call
 sites are exactly the dd call sites above — the two must resolve the same sense or a card
 prints one sense's English over another's tones. Full rationale, including why pinyin does
 **not** share dd's `< 2` displayable-cluster gate, is in
 [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md).
+
+#### The last step: 一/不 tone sandhi (`src/utils/toneSandhi.ts`)
+
+Every form above is a **citation** reading — what the word is pronounced in isolation.
+That is the correct thing for a dictionary to store, and the wrong thing to print: 一流 is
+said **yì liú**, not *yī liú*. The correction is a display transform applied at the very
+end of the chain, by `ForeignText` → `buildCharItems` (and, for sentences, by
+`SegmentedSentenceDisplay`'s `charData` memo).
+
+```
+cluster.reading ─► numberedToTonedPinyin ─► resolveDisplayPronunciation ─┬─► ForeignText ─► applyYiBuSandhi ─► rendered
+                                                                         │
+                                                                         └─► useTTS (NO sandhi — see below)
+```
+
+Why it lives in the component and not in the resolver or the data:
+
+- **`CPCDRow` derives the tone COLOR from the pinyin string it is handed**
+  (`getToneColor(item.pinyin)`). Rewriting the string is therefore the whole fix — the
+  diacritic and the hue move together, and the same-tone separator apostrophe rule in
+  [CPCD_PINYIN_SHIFT.md](./CPCD_PINYIN_SHIFT.md) re-evaluates for free.
+- **TTS must not receive it.** `useTTS` calls `resolveDisplayPronunciation` directly and
+  the speech engine applies its own sandhi; feeding it a corrected reading risks
+  double-application. Branching at `ForeignText` keeps the audio path on the citation form
+  by construction.
+- **No migration.** The det tables keep the citation reading a dictionary should hold.
+
+The rule, and why 一 and 不 are one function rather than two:
+
+```
+surface tone = (tone of the following syllable === 4) ? 2 : 4
+```
+
+不's citation tone already *is* 4, so its non-T4 branch is a no-op and one expression
+covers both characters. The pass runs **right to left**, because 一/不 read the *surface*
+tone of what follows and can stack: 不一定 resolves 一 against 定 (T4) → `yí`, and only then
+does 不 read that T2 and stay `bù` → **bù yí dìng**.
+
+Eligibility is checked against the **stored reading**, not the character: only a syllable
+that is already a sandhi alternant (一 = `yī/yí/yì`, 不 = `bù/bú`) is rewritten. That
+protects 一's documented `yao1` digit-spelling reading, the neutral-tone 不 of potential
+complements (看不见 *kànbujiàn*, lexical rather than sandhi), and two discoverable entries
+that store off-citation tones (不儿 `bú r`, 不儿道 `bū r dào`).
+
+Blocked cases: word-/phrase-final 一/不 (统一, 第一, 三不 — nothing follows to trigger it),
+the ordinal prefix 第 (第一次 *dì yī cì*), and the enumeration readings 一一 / 一二. A neutral
+following syllable is read as an underlying T4, which is what yields 一个 → **yí ge**.
+
+Scope: ~180 discoverable zh entries (97 containing 一, 111 containing 不). The transform is
+idempotent by construction — the surface tone is recomputed from the follower rather than
+mutated relative to self — which is what lets a segmented sentence run the pass at sentence
+level and again per segment without drift.
+
+**Not applied to matching surfaces.** `vocabSearch`, `PinyinKeypad` and
+`word-search/pinyinUnits` all compare against the stored citation form and must keep doing
+so; `ForeignText`'s `sandhi` prop (default `true`) is the opt-out if one of them ever routes
+through it. It is also the right escape hatch for any display of a character in **isolation**,
+where no sandhi context exists.
+
+**Deliberately not handled:** T3+T3 sandhi (你好 → *ní hǎo*) — deterministic only inside a
+2-syllable word, since at 3+ syllables the prosodic grouping decides and is not recoverable
+from the tone string (海马体 → *hái mǎ tǐ* but 打手语 → *dǎ shóu yǔ*, both stored `333`);
+七/八 sandhi (optional and largely obsolete); and the half-third tone (allophonic — changes
+the sound, not the notation).
+
+Code: `src/utils/toneSandhi.ts` (`applyYiBuSandhi`, `applyYiBuSandhiToReading`),
+`src/components/ForeignText.tsx` (`buildCharItems`), `src/components/SegmentedSentenceDisplay.tsx`
+(`charData`). Tests: `src/__tests__/toneSandhi.test.ts`.

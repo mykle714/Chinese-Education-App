@@ -1,7 +1,10 @@
 # EIP Sheet Gestures (SheetPanel)
 
 How the eip bottom sheet is sized, dragged, flung, and dismissed. One component owns
-all of it: `src/features/flashcards/FlashcardsLearnPage/SheetPanel.tsx`.
+all of it: `src/components/sheet/SheetPanel.tsx` (**moved** 2026-09-04 out of
+`src/features/flashcards/FlashcardsLearnPage/`, with its four styled surfaces, when the
+compare sheet made it a cross-feature dependency — see
+[FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md)).
 
 `SheetPanel` is the generic sheet chrome (scrim + rounded container + grabber +
 optional tab strip). It hosts a *body* that exposes `{root, scroll}` through a
@@ -9,16 +12,19 @@ optional tab strip). It hosts a *body* that exposes `{root, scroll}` through a
 `scroll` is the element whose `scrollTop` decides resize-vs-scroll, and which the
 browser pans natively in `scroll` mode (so it needs `touch-action: pan-y` +
 `overscroll-behavior: contain` — see "Gesture mode lock"). Current bodies:
-`InfoCardPanelBody` (eip), `CompareWorkspace` (compare tab) and `DecksPanelBody`
+`InfoCardPanelBody` (eip), `CompareWorkspace` (the eip Compare tab AND the standalone
+compare sheet, `src/components/CompareSheet.tsx`) and `DecksPanelBody`
 (the /decks sets sheet — see **Persistent mode** below). A fourth,
 `SettingsPanelBody` (the flp settings sheet), was deleted on 2026-08-28 when the
 last of its rows moved out — see [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md).
 
-**Mount sites.** Despite living under `FlashcardsLearnPage/`, the eip sheet is no longer
-flp-private: the sort cards page (scp) mounts the same `InfoCardSection` + `EipTabStrip`
-+ `useEipTabs` trio from each on-deck card's info button
+**Mount sites.** The eip sheet is not flp-private: the sort cards page (scp) and the
+saved-card cdp mount the same `InfoCardSection`, and scp brings the `EipTabStrip` +
+`useEipTabs` trio with it from each on-deck card's info button
 ([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)). Everything on this
-page applies to both.
+page applies to all of them, and to the compare sheet, which is a plain `SheetPanel`
+host of its own ([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) — the first one
+to use `depth` for real, stacking over the cdp's eip.
 
 **A host no longer supplies a positioned parent (2026-08-30).** Both the scrim *and* the
 sheet are portaled to the frame-level host (see "The scrim covers the screen"), so
@@ -422,7 +428,7 @@ Now:
 
 ## Referenced code
 
-- `src/features/flashcards/FlashcardsLearnPage/SheetPanel.tsx` — everything above
+- `src/components/sheet/SheetPanel.tsx` — everything above
   (the scrim portal host, constants block, `computeSnapTarget`, `writeHeight`/`freezeHeight`/`applyResize`,
   `settle`/`dismiss`, `bindHeaderDrag`, the wheel + touch effect, `startMomentum`)
 - `src/features/flashcards/FlashcardsLearnPage/InfoCardSection.tsx` — eip wiring,
@@ -435,7 +441,8 @@ Now:
   `eipPillIn` entrance keyframes
 - `src/features/flashcards/constants.ts` — `TAB_SWIPE_*` gesture constants
   (axis lock, commit ratio, transition, edge rubber-band)
-- `src/components/CompareWorkspace.tsx` — the other sheet body
+- `src/components/CompareWorkspace.tsx` — the other sheet body;
+  `src/components/CompareSheet.tsx` — the host that pairs it with a `SheetPanel` off the flp
 - `src/features/flashcards/DecksPanelBody.tsx` + `FlashcardsDecksPage.tsx` — a second
   MODAL host (`openSheet`, the `.flashcards-decks__cards-pill` /
   `.flashcards-decks__decks-pill` pair). It was persistent mode's only caller until

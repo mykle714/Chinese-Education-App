@@ -116,7 +116,7 @@ const DivisionBanner: React.FC<DivisionBannerProps> = ({ division, meta, classNa
                 <Typography
                     className="division-banner__meta"
                     sx={{
-                        fontFamily: FONTS.mono,
+                        fontFamily: FONTS.label,
                         fontSize: 10,
                         letterSpacing: "0.1em",
                         textTransform: "uppercase",
@@ -137,7 +137,7 @@ const DivisionBanner: React.FC<DivisionBannerProps> = ({ division, meta, classNa
                 <Typography
                     className="division-banner__next"
                     sx={{
-                        fontFamily: FONTS.mono,
+                        fontFamily: FONTS.label,
                         fontSize: 10,
                         letterSpacing: "0.1em",
                         textTransform: "uppercase",

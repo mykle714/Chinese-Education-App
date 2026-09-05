@@ -3,6 +3,7 @@ import { UserService, IssuedRefreshToken } from '../services/UserService.js';
 import { IIcons8DAL } from '../dal/interfaces/IIcons8DAL.js';
 import { NightMarketWorldService } from '../services/NightMarketWorldService.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
+import { CHINESE_FONT_IDS } from '../contracts/wire.js';
 
 // The access-token cookie lives at root (sent with every API request); the
 // refresh-token cookie is scoped to /api/auth so it is only ever sent to the
@@ -301,8 +302,9 @@ export class UserController {
 
   /**
    * Update the account's display preferences.
-   * PUT /api/users/displaySettings — Body: { showSegmentSpaces?: boolean }
-   * See docs/EXAMPLE_SENTENCES.md.
+   * PUT /api/users/displaySettings — Body: { showSegmentSpaces?: boolean, chineseFont?: string }
+   * Both optional; at least one required. See docs/EXAMPLE_SENTENCES.md and
+   * docs/CJK_TYPEFACE_LAB.md.
    */
   async updateDisplaySettings(req: Request, res: Response): Promise<void> {
     try {
@@ -312,13 +314,22 @@ export class UserController {
         return;
       }
 
-      const { showSegmentSpaces } = req.body ?? {};
+      const { showSegmentSpaces, chineseFont } = req.body ?? {};
       if (showSegmentSpaces !== undefined && typeof showSegmentSpaces !== 'boolean') {
         res.status(400).json({ error: 'showSegmentSpaces must be a boolean', code: 'ERR_INVALID_REQUEST' });
         return;
       }
+      // Allow-listed rather than free text: the column is bare `text`, and an unknown
+      // id would silently render as the fallback face on every client forever.
+      if (chineseFont !== undefined && (typeof chineseFont !== 'string' || !CHINESE_FONT_IDS.includes(chineseFont))) {
+        res.status(400).json({
+          error: `chineseFont must be one of: ${CHINESE_FONT_IDS.join(', ')}`,
+          code: 'ERR_INVALID_REQUEST',
+        });
+        return;
+      }
 
-      const updatedUser = await this.userService.updateDisplaySettings(userId, { showSegmentSpaces });
+      const updatedUser = await this.userService.updateDisplaySettings(userId, { showSegmentSpaces, chineseFont });
       res.json(updatedUser);
     } catch (error) {
       this.handleError(error, res);

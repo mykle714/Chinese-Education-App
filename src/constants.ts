@@ -13,18 +13,43 @@ export const DEFAULT_TEST_USER_ID = 'test-user-id';
 // Pages that accrue minute points, matched as PATH PREFIXES (the page itself and
 // everything under it). Only STUDY surfaces belong here — a screen where the learner
 // is working through cards, text or a game board. Browsing and menu screens
-// deliberately do not accrue: the hubs (Home, Discover, Games, Decks & Cards), the
-// card detail page, deck/collection lists and the mastery centers. They still show
-// the header flame, in its grey idle state, which is the honest answer to "am I
-// earning right now?" — see MinutePointsFireBadge / PageHeader.
+// deliberately do not accrue: the hubs (Home, Discover, Games, Decks & Cards),
+// deck/collection lists and the mastery centers. They still show the header flame, in
+// its grey idle state, which is the honest answer to "am I earning right now?" — see
+// MinutePointsFireBadge / PageHeader.
+//
+// ── The card detail pages and the whole dictionary ARE study surfaces (2026-09-04) ──
+// `/flashcards/card` (the saved-card cdp) and `/dictionary` (the search page AND the
+// read-only dictionary cdp under it) accrue. A cdp is where a learner reads the
+// definition, the breakdown, the example sentences and the comparison of a word — the
+// same reading the eip does on the flp, which has always earned. Looking a word up and
+// reading what comes back is studying; the line this list draws is study vs. NAVIGATION,
+// and neither is a place you merely pick from a list.
+//
+// `/dictionary` is deliberately a PREFIX covering both of its routes (`/dictionary` and
+// `/dictionary/card/:word`) — unlike `/flashcards`, whose descendants are browse screens
+// and which therefore sits in the EXACT list below. Add a browse-shaped route under
+// `/dictionary` and this prefix would wrongly admit it.
+//
+// This is also what makes the COMPARE sheet earn. Compare has no route of its own
+// (docs/WORD_COMPARE_FEATURE.md — it is a panel raised over the page you are on), so it
+// cannot be listed here; it earns because every surface that can open it now accrues —
+// the flp, the scp, and both cdps. Anything that later hosts the compare sheet from a
+// non-earning page would break that, so keep the two lists in step.
+//
+// Accrual still requires INTERACTION (`useActivityDetection`, 15s window): a cdp or a
+// search page is easy to leave open, so neither is in MINUTE_POINTS_AUTO_ACTIVE_PAGES.
 //
 // ⚠️ NOT '/flashcards' — that prefix would re-admit every browsing screen under it
-// (/flashcards/decks, /flashcards/card/:id, /flashcards/deck/:id,
-// /flashcards/collection/*, /flashcards/reading|writing). The legacy desktop
+// (/flashcards/decks, /flashcards/deck/:id, /flashcards/collection/*,
+// /flashcards/reading|writing). `/flashcards/card` is now listed on its own, which is
+// the point of naming the study surfaces one at a time rather than the parent. The legacy desktop
 // flashcards page at exactly '/flashcards' IS a study surface and is listed in
 // MINUTE_POINTS_ELIGIBLE_EXACT_PAGES below instead.
 export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/flashcards/learn',
+  '/flashcards/card',
+  '/dictionary',
   '/reader',
   '/discover/sort',
   '/games/bubble-match',

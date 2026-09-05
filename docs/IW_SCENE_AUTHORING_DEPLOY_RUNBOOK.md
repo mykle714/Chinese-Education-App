@@ -1,6 +1,36 @@
 # ⚠️ TEMPORARY — Immersive World scene-authoring deploy runbook
 
-**Delete this file once prod is verified.** Status: **NOT YET DEPLOYED** (written 2026-09-05).
+**Delete this file once the one remaining check below is done.**
+Status: **DEPLOYED TO PROD 2026-09-05** — migration 159 applied and recorded, containers
+rebuilt, every schema check in § 5 passed.
+
+### What was verified on prod
+
+| Check | Result |
+|---|---|
+| Pre-check (§ 3) | `scenes = 0`, `runs = 0`, `MAX(version) = 158` — the single-pass assumption held |
+| Prod divergence | 1 behind / **0 ahead**, no modified tracked files (only oracle-run output). Fast-forward pull |
+| `migrate.sh` | `APPLY: 159 … applied and recorded`. `MAX(version) = 159` |
+| § 5 (a)–(f) | all six matched: both dead columns gone, both facings NOT NULL default `'s'`, CHECK installed, `complicationIds` is `ARRAY`/`_text`, singular column gone |
+| Containers | backend + frontend healthy, postgres up; `/api/health` 200, `https://mren.me/api/health` 200 |
+| iw boot sweep | `[iw] NPC-id validation passed — 0 stored reference(s) all resolve.` |
+| iw route gating | `GET /api/immersiveWorld/scenes` unauthenticated → **401** |
+| DAL ↔ schema | the DAL's exact `SCENE_COLUMNS` SELECT resolves against live `iw_scenes` — this is the mismatch that would have shown up as a 500 on save rather than as a schema error |
+
+### ⏳ The one check still owed
+
+**Nobody has opened the editor as a template author.** Log in as an `isTemplateAuthor`
+account and confirm: the **Scene Editor** tile appears on the Home hub, the NPC picker lists
+**six** NPCs (迈克尔 · 王婶 · 小陈 · 老周 · 周敏 · 马师傅), and a scene **saves and re-loads**.
+That last one is the real test — everything above proves the schema and the column list agree,
+but only a save proves the whole authoring path does.
+
+**Delete this file once that passes.** Nothing here is blocking; the feature is
+author-gated and invisible to learners either way.
+
+---
+
+*Original pre-deploy contents follow, kept until the check above is done.*
 
 Covers **migration 159** (`159-iw-scene-authoring-corrections.sql`) and the code that ships
 with it: the iw scene editor's first end-to-end-authorable state.

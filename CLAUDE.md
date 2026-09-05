@@ -302,16 +302,20 @@ Current open runbooks:
 (gloss phase-2 half B, the runtime guard — **no migration**). **Deployed 2026-08-24** and
 verified on the infrastructure checks; it stays open only until someone opens a real game
 board and confirms it fills rather than coming back short, which is the one over-blocking
-symptom those checks cannot see. Prod is current through migration **158**.
+symptom those checks cannot see. Prod is current through migration **159**.
 
 **[docs/IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md](./docs/IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md)**
-(Immersive World scene authoring — migration **159**, **NOT YET ON PROD**). A contract
-migration that is nevertheless a **single-pass** deploy, which is the exception worth reading
-the runbook for: it drops `iw_scenes.words` / `.objective`, reshapes
-`iw_scene_runs."complicationId"` into a `TEXT[]`, and adds start facings — but **no shipped
-code reads either table** (the whole iw feature is unreleased) and both are empty, so there is
-no old-code window to split around. The runbook's pre-check exists to verify exactly that; if
-it finds rows, the single-pass assumption has broken.
+(Immersive World scene authoring — migration **159**). **DEPLOYED 2026-09-05**; every schema
+check passed. It stays open only until someone opens the editor as a template author and saves
+a scene — the one path the infrastructure checks cannot see.
+
+Worth keeping from it: a contract migration that was nevertheless a **single-pass** deploy. It
+drops `iw_scenes.words` / `.objective`, reshapes `iw_scene_runs."complicationId"` into a
+`TEXT[]`, and adds start facings — normally that ordering must land *after* the rebuild (the
+2026-08-17 lesson), but **no shipped code read either table** (the feature is unreleased) and
+both were empty, so there was no old-code window to split around. The runbook made that
+assumption a **pre-check** rather than a claim, which is the part to copy: `scenes = 0`,
+`runs = 0` was verified on prod before `migrate.sh` ran.
 
 Deployed and retired on 2026-09-04 (runbook deleted): the Chinese typeface account setting
 (**157**, `users."chineseFont"`) shipped alongside the immersive-world schema (**158**).

@@ -297,15 +297,26 @@ yourself as part of the deploy prep** — do not stop to ask which number wins. 
    runbook, the CLAUDE.md runbook line, and all code comments/doc mentions. Leave a short
    note in the runbook saying it was renumbered and why.
 
-Current open runbooks: **[docs/CHINESE_FONT_DEPLOY_RUNBOOK.md](./docs/CHINESE_FONT_DEPLOY_RUNBOOK.md)**
-(the Chinese typeface account setting, migration **157**) — **NOT yet on prod**; 157
-must be applied BEFORE the container rebuild, because the shipped `UserDAL.findById`
-selects `users."chineseFont"` by name (the same shape as 152 and 156).
+Current open runbooks:
 **[docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./docs/GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md)**
 (gloss phase-2 half B, the runtime guard — **no migration**). **Deployed 2026-08-24** and
 verified on the infrastructure checks; it stays open only until someone opens a real game
 board and confirms it fills rather than coming back short, which is the one over-blocking
-symptom those checks cannot see. Prod is current through migration **156**.
+symptom those checks cannot see. Prod is current through migration **158**.
+
+Deployed and retired on 2026-09-04 (runbook deleted): the Chinese typeface account setting
+(**157**, `users."chineseFont"`) shipped alongside the immersive-world schema (**158**).
+Both are expand-only, so a single `migrate.sh` pass before the container rebuild covered
+them — 157 had to go first for the usual reason (the shipped `UserDAL.findById` selects
+`users."chineseFont"` by name, so old schema + new code 500s *every* authenticated
+request), and 158 creates four brand-new `iw_*` tables no shipped code reads yet, which no
+ordering can break. Verification matched the runbook exactly: the column landed NOT NULL
+defaulting to `975-maru`, and all 71 pre-existing accounts backfilled to `noto-sans-sc` in
+a single row. **The 2026-09-02 lesson repeated verbatim** — prod again held uncommitted
+tracked work (the `backfill-icons` v2 LLM acceptability judge, authored on prod because the
+hourly oracle cron runs there), and it was again committed and pushed **from prod** before
+the dev branch, keeping the pull a fast-forward. Treat this as the norm, not the exception:
+prod always has local work, and `git status --short` on prod is the only thing that shows it.
 
 Deployed and retired on 2026-09-02 (runbook deleted): the Study Challenge shelf-system
 redesign (**156**, `study_challenges.taunts`). Applied BEFORE the container rebuild as its

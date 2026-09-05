@@ -58,10 +58,16 @@ function HomePage() {
         ...(user?.isValidator
             ? [{ key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", hue: "blu", icon: "dashboard", variant: "low" } as HomeTile]
             : []),
+        // All three ride the SAME grant (users.isTemplateAuthor, migration 115) — the two
+        // night-market tools and the immersive-world scene editor are one authoring
+        // permission, not three (docs/IMMERSIVE_WORLD.md § 12 phase 1e). The scene editor
+        // wears `tea` rather than the night market's `pur` because it authors a different
+        // feature; sharing a hue would imply it edits night-market templates.
         ...(user?.isTemplateAuthor
             ? [
                   { key: "template-editor", to: "/night-market/template-editor", title: "Template Editor", hue: "pur", icon: "grid_view", variant: "low" } as HomeTile,
                   { key: "template-sandbox", to: "/night-market/template-sandbox", title: "Template Sandbox", hue: "pur", icon: "dashboard_customize", variant: "low" } as HomeTile,
+                  { key: "scene-editor", to: "/immersive-world/scene-editor", title: "Scene Editor", hue: "tea", icon: "theater_comedy", variant: "low" } as HomeTile,
               ]
             : []),
     ];

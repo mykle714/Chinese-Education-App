@@ -76,6 +76,9 @@ import { StudyChallengeService } from '../services/StudyChallengeService.js';
 import { UserProfileService } from '../services/UserProfileService.js';
 import { UserProfileController } from '../controllers/UserProfileController.js';
 import { StudyChallengeController } from '../controllers/StudyChallengeController.js';
+import { ImmersiveWorldDAL } from './implementations/ImmersiveWorldDAL.js';
+import { ImmersiveWorldSceneService } from '../services/ImmersiveWorldSceneService.js';
+import { ImmersiveWorldSceneController } from '../controllers/ImmersiveWorldSceneController.js';
 
 // DAL instances
 const userDAL = new UserDAL();
@@ -119,6 +122,10 @@ const deckDAL = new DeckDAL();
 // The weekly head-to-head between two friends — one table, everything about a
 // challenge on it (migration 148, docs/STUDY_CHALLENGE.md).
 const studyChallengeDAL = new StudyChallengeDAL();
+// The Immersive World scene catalog (migration 158, docs/IMMERSIVE_WORLD.md). Scenes only
+// for now — the run/rating/memory tables get their methods when phase 2 has a runtime to
+// call them.
+const immersiveWorldDAL = new ImmersiveWorldDAL();
 
 // Service instances (with DI)
 const userService = new UserService(userDAL, refreshTokenDAL);
@@ -247,6 +254,10 @@ const friendsController = new FriendsController(friendsService);
 const arenaController = new ArenaController(arenaService);
 const decksController = new DecksController(deckService);
 const studyChallengeController = new StudyChallengeController(studyChallengeService);
+// The iw scene editor's service. Takes userDAL only for the `isTemplateAuthor` gate
+// (phase 1e) — the same grant the night market template editor uses.
+const immersiveWorldSceneService = new ImmersiveWorldSceneService(immersiveWorldDAL, userDAL);
+const immersiveWorldSceneController = new ImmersiveWorldSceneController(immersiveWorldSceneService);
 
 export {
   userDAL,
@@ -325,4 +336,7 @@ export {
   studyChallengeController,
   userProfileService,
   userProfileController,
+  immersiveWorldDAL,
+  immersiveWorldSceneService,
+  immersiveWorldSceneController,
 };

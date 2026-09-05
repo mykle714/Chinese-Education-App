@@ -4,7 +4,6 @@ import { SPECIMENS } from "./specimens";
 import { CJK_FONT_CATALOG, loadCandidate, measureHanAdvance, type CjkFontOption } from "./candidates";
 import { cjkFontStack } from "../../theme/cjkFontOptions";
 import { readPinned, writePinned } from "./pinned";
-import { getCjkFontOverride, setCjkFontOverride } from "../../theme/cjkFontOverride";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
@@ -26,15 +25,17 @@ import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
  * than the phone frame, and overflows into a horizontal scroll rather than crushing
  * columns below MIN_COL.
  *
- * TWO THINGS THAT ARE NOT THE SAME, and used to share the word "pin":
- *   • PIN (many)          — a shortlist. Marks candidates still in the running, persists
- *                           in localStorage, and "Show pinned" recalls them all as
- *                           columns. Affects nothing outside this page. See ./pinned.ts.
- *   • USE APP-WIDE (one)  — sets `--cjk-font` on :root so every Chinese glyph in the app
- *                           changes, surviving navigation and reload, so a candidate can
- *                           be judged on flp, the games and the reader. Single by
- *                           necessity — the app has one CJK face.
- *                           See src/theme/cjkFontOverride.ts. Dev-only; see src/main.tsx.
+ * PIN (many) — a shortlist. Marks candidates still in the running, persists in
+ * localStorage, and "Show pinned" recalls them all as columns. Affects nothing outside
+ * this page. See ./pinned.ts.
+ *
+ * THIS PAGE CANNOT RE-FACE THE APP. It used to: a "Use app-wide" control wrote
+ * `--cjk-font` on :root and outranked the signed-in account's own typeface preference,
+ * which meant one forgotten override made the settings picker look broken with no
+ * signal anywhere (removed 2026-09-05). The app-wide face is now chosen ONLY in account
+ * settings; the sole writer of `--cjk-font` is src/hooks/useChineseFont.ts. To judge a
+ * candidate on the real pages, pick it in settings — which also means only `selectable`
+ * faces can be seen that way, and a lab-only face is judged on these specimens.
  *
  * ONE OF TWO MODES on /font-lab. This one chooses the CHINESE face; the other
  * (./InfoTypeLab.tsx) chooses the Latin overline/caption face. They share the route, the
@@ -91,10 +92,6 @@ const CjkLab: React.FC<{ tabs: React.ReactNode }> = ({ tabs }) => {
         return pinned.length > 0 ? pinned : DEFAULT_SELECTION;
     });
     const [faceState, setFaceState] = useState<Record<string, FaceState>>({});
-    // The ONE face driving :root via the dev override, or null. Unrelated to
-    // `pinnedIds` above, and it OUTRANKS the signed-in account's own preference while
-    // set — see src/theme/cjkFontOverride.ts.
-    const [appWideId, setAppWideId] = useState<string | null>(() => getCjkFontOverride());
 
     const selected = useMemo(
         () =>
@@ -145,15 +142,6 @@ const CjkLab: React.FC<{ tabs: React.ReactNode }> = ({ tabs }) => {
 
     /** Open every pinned face as a column, in the shortlist's own order. */
     const showPinned = useCallback(() => setSelectedIds(readPinned()), []);
-
-    /** Set (or clear) the single face that drives `--cjk-font` on :root. */
-    const toggleAppWide = useCallback((id: string) => {
-        setAppWideId((prev) => {
-            const isActive = prev === id;
-            setCjkFontOverride(isActive ? null : id);
-            return isActive ? null : id;
-        });
-    }, []);
 
     // `1fr` only ever GROWS a column past MIN_COL; once the columns stop fitting, the
     // track floor wins and the grid overflows into the root's horizontal scroll.
@@ -327,9 +315,7 @@ const CjkLab: React.FC<{ tabs: React.ReactNode }> = ({ tabs }) => {
                                     candidate={candidate}
                                     state={faceState[candidate.id]}
                                     pinned={pinnedIds.includes(candidate.id)}
-                                    appWide={appWideId === candidate.id}
                                     onPin={() => togglePin(candidate.id)}
-                                    onAppWide={() => toggleAppWide(candidate.id)}
                                     onRemove={() => toggle(candidate.id)}
                                 />
                             </HeaderCell>
@@ -436,12 +422,9 @@ const ColumnHead: React.FC<{
     state: FaceState | undefined;
     /** In the persisted shortlist (page-local bookkeeping). */
     pinned: boolean;
-    /** Currently driving `--cjk-font` on :root (at most one column can be). */
-    appWide: boolean;
     onPin: () => void;
-    onAppWide: () => void;
     onRemove: () => void;
-}> = ({ candidate, state, pinned, appWide, onPin, onAppWide, onRemove }) => {
+}> = ({ candidate, state, pinned, onPin, onRemove }) => {
     const advance = state?.advance ?? null;
     // ~1.00 means one full em per han glyph, which is what cpcd's column layout
     // assumes (docs/CPCD_PINYIN_SHIFT.md). Anything else puts pinyin out of register.
@@ -494,53 +477,29 @@ const ColumnHead: React.FC<{
                 {!state?.ready && <Tag>loading…</Tag>}
             </Box>
 
-            {/* Two controls, deliberately separate — see the header block's note.
-                PIN is page-local bookkeeping; USE APP-WIDE actually re-faces the app. */}
-            <Box sx={{ display: "flex", gap: "6px" }}>
-                <Box
-                    component="button"
-                    className="font-lab__pin"
-                    onClick={onPin}
-                    aria-pressed={pinned}
-                    title="Keep this face on the shortlist (page-local; recalled by 'Show pinned')"
-                    sx={{
-                        cursor: "pointer",
-                        flex: 1,
-                        border: `1px solid ${COLORS.border}`,
-                        background: pinned ? COLORS.yel : COLORS.white,
-                        color: COLORS.onSurface,
-                        borderRadius: "9px",
-                        padding: "7px",
-                        fontFamily: FONTS.sans,
-                        fontSize: SIZE.caption,
-                        fontWeight: WEIGHT.medium,
-                        whiteSpace: "nowrap",
-                    }}
-                >
-                    {pinned ? "📌 Pinned" : "Pin"}
-                </Box>
-                <Box
-                    component="button"
-                    className="font-lab__app-wide"
-                    onClick={onAppWide}
-                    aria-pressed={appWide}
-                    title="Set this as the app's CJK face so you can view flp, the games and the reader in it"
-                    sx={{
-                        cursor: "pointer",
-                        flex: 2,
-                        border: `1px solid ${COLORS.border}`,
-                        background: appWide ? COLORS.onSurface : COLORS.white,
-                        color: appWide ? COLORS.white : COLORS.onSurface,
-                        borderRadius: "9px",
-                        padding: "7px",
-                        fontFamily: FONTS.sans,
-                        fontSize: SIZE.caption,
-                        fontWeight: WEIGHT.medium,
-                        whiteSpace: "nowrap",
-                    }}
-                >
-                    {appWide ? "Using app-wide ✓" : "Use app-wide"}
-                </Box>
+            {/* The column's only control. Page-local bookkeeping — it keeps the face on
+                the shortlist, and cannot change what the app itself renders in. */}
+            <Box
+                component="button"
+                className="font-lab__pin"
+                onClick={onPin}
+                aria-pressed={pinned}
+                title="Keep this face on the shortlist (page-local; recalled by 'Show pinned')"
+                sx={{
+                    cursor: "pointer",
+                    width: "100%",
+                    border: `1px solid ${COLORS.border}`,
+                    background: pinned ? COLORS.yel : COLORS.white,
+                    color: COLORS.onSurface,
+                    borderRadius: "9px",
+                    padding: "7px",
+                    fontFamily: FONTS.sans,
+                    fontSize: SIZE.caption,
+                    fontWeight: WEIGHT.medium,
+                    whiteSpace: "nowrap",
+                }}
+            >
+                {pinned ? "📌 Pinned" : "Pin"}
             </Box>
         </Box>
     );

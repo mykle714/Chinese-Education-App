@@ -46,12 +46,14 @@ export const InfoSheetEntryHeader = styled(Box)(({ theme }) => ({
 // That distinction is why the trail's pills are ROUNDED and FILLED while the content
 // tabs are underlined — the two strips answer different questions ("which word?" vs
 // "what about it?"), so they are deliberately different shapes.
-export const EipTabStripContainer = styled(Box)(({ theme }) => ({
+// No bottom rule: the trail's filled pills already read as their own band, and a hairline
+// under them stacked with the content tabs' own rule directly below, which made the two
+// strips read as one boxed two-row control.
+export const EipTabStripContainer = styled(Box)(() => ({
     display: "flex",
     alignItems: "center",
     gap: 7,
     padding: "11px 16px 12px",
-    borderBottom: `1px solid ${theme.palette.flashcard.border}`,
     flexShrink: 0,
     overflow: "hidden",
 }));
@@ -243,9 +245,9 @@ export const ContentArea = styled(Box)(() => ({
 // Centered pill button at the bottom of ContentArea that opens the EIC sheet.
 // Ghosted (opacity 0.32) before the card is flipped; full opacity after.
 // `hintActive` drives a gentle bounce animation to signal discoverability after the first flip.
-// While the icon editor is open the pill stays DRAWN but greyed + inert (`isDisabled`); in
-// advanced mode the card slides down and paints over it (the card slot is raised above the
-// pill — see FlashCardSection), so it ends up covered rather than removed.
+// While the icon editor is open the pill stays DRAWN but greyed + inert (`isDisabled`). It stays
+// VISIBLE in advanced mode too: the card no longer travels down over it (the slot reserves the
+// toolbar's band at its TOP instead — see DraggableCardContainer's toolbarInset).
 export const MoreInfoPill = styled(Box, {
     shouldForwardProp: (prop) => prop !== "isFlipped" && prop !== "hintActive" && prop !== "isDisabled",
 })<{ isFlipped: boolean; hintActive?: boolean; isDisabled?: boolean }>(({ isFlipped, hintActive, isDisabled, theme }) => ({
@@ -295,7 +297,8 @@ export const MoreInfoPill = styled(Box, {
 //      (it is a hard reservation), so the TOP pad is the elastic one: it scales with
 //      the slot height and only reaches its 48px resting value on a roomy slot.
 //
-// `sum` is what the push-down redistributes — see DraggableCardContainer.
+// `sum` is the card's total vertical reservation; advanced edit mode adds a measured
+// toolbar inset on top of `top` — see DraggableCardContainer.
 
 /** Resting (roomy-slot) top padding. The top pad shrinks below this on short slots. */
 export const CARD_SLOT_TOP_PAD_MAX = 48;
@@ -313,11 +316,11 @@ export const CARD_SLOT_BOTTOM_GAP = 8;
 export const CARD_SLOT_BOTTOM_INSET_FALLBACK = 56;
 
 export interface CardSlotPadding {
-    /** Top padding in the centered layout. */
+    /** Top padding in the resting layout (advanced edit mode adds a measured toolbar inset). */
     top: number;
     /** Bottom padding — the bottom-affordance reservation. */
     bottom: number;
-    /** top + bottom. INVARIANT across push states, so the push never resizes the card. */
+    /** top + bottom. */
     sum: number;
 }
 
@@ -325,7 +328,7 @@ export interface CardSlotPadding {
  * cardSlotPadding — the card slot's vertical padding for a given slot height + bottom inset.
  *
  * Single source of truth: the page styles the slot with it (via useCardSlotPadding) and
- * useToolbarOverlap uses it to derive where a centered card's top edge lands, so the two
+ * useToolbarInset uses it to derive where the slot's content box starts, so the two
  * can't drift.
  *
  * @param slotHeight px height of the card slot (0 before it has been measured)
@@ -354,41 +357,33 @@ export function cardSlotPadding(
 // containerType: "size" makes this the @container query target for CardAspectWrapper:
 // the wrapper switches which axis it fills based on this element's aspect ratio.
 export const DraggableCardContainer = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "pushDown" && prop !== "pad",
-})<{ pushDown?: boolean; pad: CardSlotPadding }>(({ pushDown, pad }) => ({
+    shouldForwardProp: (prop) => prop !== "toolbarInset" && prop !== "pad",
+})<{ toolbarInset?: number; pad: CardSlotPadding }>(({ toolbarInset = 0, pad }) => ({
     position: "absolute",
     inset: 0,
-    // Normally the card is centered inside the slot's padding. In ADVANCED edit mode the
-    // toolbar grows to three rows and overlays the top of the content area, so we push
-    // the card DOWN to clear as much of it as possible.
+    // The card is always CENTERED inside this element's padded content box. In ADVANCED edit
+    // mode the toolbar grows to three rows and overlays the top of the content area; rather
+    // than moving the card by a fixed amount, the page measures how far the toolbar intrudes
+    // past `pad.top` (useToolbarInset) and passes it here as EXTRA top padding. The container
+    // therefore just gets SHORTER, and the ordinary centering decides where the card sits:
     //
-    // CRITICAL — the push-down must NOT resize the card (the fie must show the card at its
-    // exact flp size). Because this element is the `@container` sizing target
-    // (containerType:"size") and the CardAspectWrapper fills its padded content box, the
-    // card's height-bound size is `containerHeight − pad.sum`. So the push keeps the vertical
-    // SUM constant and only REDISTRIBUTES it upward (top/bottom → sum/0) instead of growing
-    // it. Because the sum is unchanged the card keeps the identical size it has on flp on
-    // every viewport.
+    //  - toolbar clears the padded top  → inset 0 → nothing moves at all;
+    //  - toolbar intrudes               → the box shrinks from the top and the card settles
+    //                                     lower, by no more than the intrusion requires.
     //
-    // The card is also BOTTOM-ANCHORED while pushed (alignItems flex-end), so it sits flush
-    // with the bottom of the slot and therefore covers the greyed More Info pill completely
-    // (the pill's band is exactly what `pad.bottom` reserves) and no further. Centering alone
-    // was not enough: on a width-bound viewport with vertical slack a centered card floats
-    // with a large bottom margin and never reaches the pill. flex-end only moves the card
-    // (never resizes it), so the flp-size guarantee holds. The unpushed state keeps
-    // `pad.top` / `pad.bottom` + center, where `pad.bottom` reserves the pill's band so a
-    // height-bound card stops just above the pill instead of clipping into it (see
-    // cardSlotPadding above). The padding change is TRANSITIONED so the card glides down/up
-    // rather than snapping.
-    padding: pushDown ? `${pad.sum}px 40px 0` : `${pad.top}px 40px ${pad.bottom}px`,
+    // This element is the `@container` sizing target (containerType:"size") and
+    // CardAspectWrapper fills its padded content box, so a HEIGHT-BOUND card shrinks with the
+    // box. That is intended: clearing the toolbar wins over holding the exact flp size, and a
+    // width-bound card (vertical slack) keeps its size and merely re-centers. The padding is
+    // TRANSITIONED so the card glides rather than snapping.
+    padding: `${pad.top + toolbarInset}px 40px ${pad.bottom}px`,
     // Keep this in lockstep with the toolbar's drop / adv-rows reveal (CardEditToolbar)
     // so the card and toolbar move together — same duration + easing curve.
     transition: "padding 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
     boxSizing: "border-box",
     perspective: "1200px",
     display: "flex",
-    // Bottom-anchor when pushed (covers the More Info pill on all viewports); center otherwise.
-    alignItems: pushDown ? "flex-end" : "center",
+    alignItems: "center",
     justifyContent: "center",
     touchAction: "none",
     userSelect: "none",

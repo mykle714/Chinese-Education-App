@@ -32,6 +32,9 @@ import mediaRoutes from './routes/mediaRoutes.js';
 import handwritingRoutes from './routes/handwritingRoutes.js';
 import diagnosticsRoutes from './routes/diagnosticsRoutes.js';
 import metaRoutes from './routes/metaRoutes.js';
+import immersiveWorldRoutes from './routes/immersiveWorldRoutes.js';
+import { immersiveWorldDAL } from './dal/setup.js';
+import { validateStoredNpcIds } from './services/iw/validateStoredNpcIds.js';
 import { writeLimiter } from './middleware/rateLimits.js';
 
 // Load environment variables
@@ -131,6 +134,16 @@ app.use(mediaRoutes);
 app.use(handwritingRoutes);
 app.use(diagnosticsRoutes);
 app.use(metaRoutes);
+app.use(immersiveWorldRoutes);
+
+// iw's startup validation pass (docs/IMMERSIVE_WORLD.md § 12 phase 1a): every NPC id
+// stored in the iw_* tables is TEXT pointing at a code constant, so the database cannot
+// enforce it and only a boot-time sweep can find a reference an NPC deletion orphaned.
+// Fire-and-forget with a .catch(): it must never delay or block the listen, and it
+// warns rather than throwing (see the function's header for why).
+void validateStoredNpcIds(immersiveWorldDAL).catch((err) =>
+  console.error('[iw] NPC-id validation pass crashed:', err),
+);
 
 // Start the server - bind to 0.0.0.0 to accept connections from all interfaces (required for Docker networking)
 app.listen(PORT, '0.0.0.0', () => {

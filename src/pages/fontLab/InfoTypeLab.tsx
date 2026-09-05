@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, Typography } from "@mui/material";
 import { INFO_SPECIMENS } from "./infoTypeSpecimens";
 import { INFO_FACE_CATALOG, infoFaceStack, loadInfoFace, type InfoFaceOption } from "./infoTypeCandidates";
-import { getLabelFontOverride, setLabelFontOverride } from "./labelFontOverride";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
@@ -29,9 +28,17 @@ import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
  *
  * WHAT IT DOES NOT COVER: the ~19 hand-rolled `FONTS.mono` overlines listed in
  * WHAT IT COVERS: everything. The 18 hand-rolled overline sites were migrated to
- * `FONTS.label` on 2026-09-04 (docs/INFO_TYPE_LAB.md § 5), so "Use app-wide" now re-faces
- * the whole app rather than only the `Label` primitive. Deliberate hold-outs are user ids
- * and the `ch`-sized PageHeader chips, which are data and stay on `FONTS.mono`.
+ * `FONTS.label` on 2026-09-04 (docs/INFO_TYPE_LAB.md § 5), so a change to that token
+ * re-faces the whole app rather than only the `Label` primitive. Deliberate hold-outs
+ * are user ids and the `ch`-sized PageHeader chips, which are data and stay on
+ * `FONTS.mono`.
+ *
+ * THIS PAGE CANNOT RE-FACE THE APP. It used to, via a "Use app-wide" control writing
+ * `--label-font` on :root (removed 2026-09-05 alongside the CJK lab's equivalent, which
+ * was silently outranking a real account setting — see src/hooks/useChineseFont.ts).
+ * The info type is a single design decision with no user-facing setting behind it, so
+ * the way to see a winner on the real pages is to change `FONTS.label`'s stack in
+ * src/theme/fonts.ts, which is the endpoint of this experiment anyway.
  *
  * Route: /font-lab, "Info type" mode (./FontLabPage.tsx). Docs: docs/INFO_TYPE_LAB.md.
  */
@@ -55,7 +62,6 @@ const MIN_COL = "300px";
 const InfoTypeLab: React.FC<{ tabs: React.ReactNode }> = ({ tabs }) => {
     const [selectedIds, setSelectedIds] = useState<string[]>(DEFAULT_SELECTION);
     const [ready, setReady] = useState<Record<string, boolean>>({});
-    const [appWideId, setAppWideId] = useState<string | null>(() => getLabelFontOverride());
 
     // The four numbers, tunable. See the "WHY IT IS NOT JUST A FACE PICKER" note above.
     const [size, setSize] = useState<number>(SHIPPED.size);
@@ -91,15 +97,6 @@ const InfoTypeLab: React.FC<{ tabs: React.ReactNode }> = ({ tabs }) => {
 
     const toggle = useCallback((id: string) => {
         setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-    }, []);
-
-    /** Set (or clear) the single face driving `--label-font` on :root. */
-    const toggleAppWide = useCallback((id: string) => {
-        setAppWideId((prev) => {
-            const isActive = prev === id;
-            setLabelFontOverride(isActive ? null : id);
-            return isActive ? null : id;
-        });
     }, []);
 
     const resetTuning = useCallback(() => {
@@ -311,8 +308,6 @@ const InfoTypeLab: React.FC<{ tabs: React.ReactNode }> = ({ tabs }) => {
                                     face={face}
                                     ready={Boolean(ready[face.id])}
                                     weight={weight}
-                                    appWide={appWideId === face.id}
-                                    onAppWide={() => toggleAppWide(face.id)}
                                     onRemove={() => toggle(face.id)}
                                 />
                             </HeaderCell>
@@ -476,10 +471,8 @@ const ColumnHead: React.FC<{
     ready: boolean;
     /** The tuning's current weight, so the head can warn when this face lacks it. */
     weight: number;
-    appWide: boolean;
-    onAppWide: () => void;
     onRemove: () => void;
-}> = ({ face, ready, weight, appWide, onAppWide, onRemove }) => {
+}> = ({ face, ready, weight, onRemove }) => {
     // Google Fonts CLAMPS a weight it does not have to the nearest one it does, and still
     // answers 200 — so a column can silently render at 500 while the control says 700.
     // Saying so is the whole reason `weights` is a verified list rather than a guess.
@@ -512,29 +505,6 @@ const ColumnHead: React.FC<{
                     {hasWeight ? `weights: ${face.weights.length}` : `⚠ no ${weight} — clamped`}
                 </Tag>
                 {!ready && <Tag>loading…</Tag>}
-            </Box>
-
-            <Box
-                component="button"
-                className="info-type-lab__app-wide"
-                onClick={onAppWide}
-                aria-pressed={appWide}
-                title="Set this as the app's overline face so you can view flp, the decks page and settings in it. Leaves the ~19 hand-rolled FONTS.mono overlines behind — see docs/INFO_TYPE_LAB.md."
-                sx={{
-                    cursor: "pointer",
-                    width: "100%",
-                    border: `1px solid ${COLORS.border}`,
-                    background: appWide ? COLORS.onSurface : COLORS.white,
-                    color: appWide ? COLORS.white : COLORS.onSurface,
-                    borderRadius: "9px",
-                    padding: "7px",
-                    fontFamily: FONTS.sans,
-                    fontSize: SIZE.caption,
-                    fontWeight: WEIGHT.medium,
-                    whiteSpace: "nowrap",
-                }}
-            >
-                {appWide ? "Using app-wide ✓" : "Use app-wide"}
             </Box>
         </Box>
     );

@@ -148,6 +148,40 @@ export interface TemplateEditorViewerProps {
    * handlers instead, so the viewer does not fire this for them.
    */
   onEditBegin?: () => void;
+  /**
+   * Optional labelled pins drawn over the board — a read-only annotation layer, painted
+   * above the masks and below the hover diamond.
+   *
+   * ADDED FOR THE IW SCENE EDITOR (docs/IMMERSIVE_WORLD.md § 12 phase 1d), which authors
+   * WHO STANDS WHERE on top of the same painted map: the player start, the companion start
+   * and each cast NPC. The night market editor passes nothing and is unaffected.
+   *
+   * The viewer stays placement-agnostic exactly as it is tool-agnostic — it draws what it
+   * is given at the cells it is given, and the parent decides what a click means.
+   */
+  markers?: readonly EditorMarker[];
+}
+
+/** One labelled pin on the board. `color` is a Pixi hex literal (0xrrggbb). */
+export interface EditorMarker {
+  col: number;
+  row: number;
+  /** Short caption drawn above the pin — an NPC's name, "Player", "Companion". */
+  label: string;
+  color: number;
+  /**
+   * A sprite URL to draw AT the cell instead of tinting its diamond — the body that stands
+   * there (docs/IMMERSIVE_WORLD.md § 12 phase 1d).
+   *
+   * WHY A BODY BEATS A SQUARE: a coloured diamond tells an author that *something* is on a
+   * cell; the actual avatar tells them **who**, at a glance, in a cast of eight, and it is
+   * the same picture the learner will see. It also makes the facing legible — a wrong
+   * facing is invisible on a square and obvious on a person.
+   *
+   * A marker WITHOUT a sprite keeps the diamond: named places are not bodies, and drawing
+   * one as a person would be a lie about what is there.
+   */
+  sprite?: string;
 }
 
 // Whole-number zoom ladder — the camera settles onto it between gestures (continuous while the
@@ -232,6 +266,94 @@ function GridOverlay({ width, height }: { width: number; height: number }) {
     g.stroke({ color: 0xff2020, width: 1, alpha: 0.8 });
   }, [width, height]);
   return <pixiGraphics draw={draw} zIndex={GRID_Z} />;
+}
+
+// ─── Marker pins (iw scene editor: who stands where) ─────────────────────────────
+// Below the hover diamond (HOVER_Z) so the cursor always reads on top, above every mask
+// tint so a pin is never buried under a painted street.
+const MARKER_Z = 9_400;
+const MARKER_LABEL_STYLE = { fontFamily: 'monospace', fontSize: 10, fill: 0xffffff } as const;
+
+/**
+ * The tinted diamond under a BODY marker. Kept, but faint: the sprite carries the identity,
+ * and a full-strength tint under a person reads as an error state. A marker with no sprite
+ * keeps the original strength, because there the diamond IS the marker.
+ */
+const MARKER_SPRITE_FILL_ALPHA = 0.18;
+
+function MarkerOverlay({ markers }: { markers: readonly EditorMarker[] }) {
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    for (const marker of markers) {
+      traceCellDiamond(g, marker.col, marker.row);
+      g.fill({ color: marker.color, alpha: marker.sprite ? MARKER_SPRITE_FILL_ALPHA : 0.5 });
+      g.stroke({ color: marker.color, width: 1.5, alpha: 1 });
+    }
+  }, [markers]);
+  return (
+    <>
+      <pixiGraphics draw={draw} zIndex={MARKER_Z} />
+      {markers.map((marker) => (marker.sprite ? (
+        <MarkerSprite
+          key={`sprite:${marker.col},${marker.row}:${marker.label}`}
+          col={marker.col}
+          row={marker.row}
+          url={marker.sprite}
+        />
+      ) : null))}
+      {markers.map((marker) => {
+        const { screenX, screenY } = isoToScreen(marker.col, marker.row);
+        return (
+          <pixiText
+            key={`${marker.col},${marker.row}:${marker.label}`}
+            text={marker.label}
+            anchor={0.5}
+            // One tile-height above the diamond centre, so the caption clears the pin.
+            x={screenX}
+            y={screenY - TILE_HEIGHT * 1.5}
+            style={MARKER_LABEL_STYLE}
+            zIndex={MARKER_Z}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * One avatar drawn standing on a cell. Loads its own texture, exactly as the decor ghost
+ * does — `Assets` caches, so eight markers sharing two body sprites cost two loads.
+ *
+ * Anchored `{x: 0.5, y: 1}` at the tile's screen origin: a body's FEET sit on the cell, so
+ * it is bottom-anchored like every other standing sprite in the pack, and a tall sprite
+ * overhangs upward into the cell behind it rather than being centred in a diamond it does
+ * not fit.
+ */
+function MarkerSprite({ col, row, url }: { col: number; row: number; url: string }) {
+  const [texture, setTexture] = useState<Texture | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    Assets.load<Texture>(url).then((tex) => {
+      // `nearest` for the same reason the whole board uses it: this is pixel art, and
+      // Pixi's default smoothing turns a 32px body into a smudge at zoom 3+.
+      tex.source.scaleMode = 'nearest';
+      if (!cancelled) setTexture(tex);
+    }).catch(() => { /* a missing body must not take the board down */ });
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (!texture) return null;
+  const { screenX, screenY } = isoToScreen(col, row);
+  return (
+    <pixiSprite
+      texture={texture}
+      x={screenX}
+      y={screenY}
+      anchor={{ x: 0.5, y: 1 }}
+      zIndex={MARKER_Z}
+      eventMode="none"
+    />
+  );
 }
 
 // ─── Hover highlight ────────────────────────────────────────────────────────────
@@ -788,12 +910,14 @@ interface SceneProps {
   eraseMode?: boolean;
   onPaintCell: (col: number, row: number) => void;
   onEditBegin?: () => void;
+  /** Read-only annotation pins (iw scene editor). Empty/absent for the night market. */
+  markers?: readonly EditorMarker[];
   pan: { x: number; y: number };
   zoom: number;
   onPanChange: (pan: { x: number; y: number }) => void;
 }
 
-function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, pan, zoom, onPanChange }: SceneProps) {
+function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, markers, pan, zoom, onPanChange }: SceneProps) {
   const { app, isInitialised } = useApplication();
   const [hover, setHover] = useState<Cell | null>(null);
   // Latest hovered cell for the stable pointer handlers — lets the rectangle-drag release
@@ -984,6 +1108,8 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
         showCondition={showCondition}
       />
       {showGrid && <GridOverlay width={width} height={height} />}
+      {/* Who stands where (iw). Purely presentational — placement is the parent's business. */}
+      {markers && markers.length > 0 && <MarkerOverlay markers={markers} />}
       {/* Preview priority: an anchored rectangle selection → its live preview; the paste
           tool → a clipboard-sized footprint stamp; the placeholder tool → its current drop
           footprint; every other tool (and any erase) → single-cell hover, tinted red under the
@@ -1005,7 +1131,7 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
 }
 
 // ─── Outer component: pan/zoom state + wheel zoom + Application mount ─────────────
-function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin }: TemplateEditorViewerProps) {
+function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, markers }: TemplateEditorViewerProps) {
   // The board is a fixed authored size, so unlike nmp/nms there is no fit-derived sub-floor here:
   // MIN_ZOOM is both the ladder's bottom rung and the hard floor.
   const { containerRef, pan, zoom, setPan, ready } = useCameraControls({
@@ -1064,6 +1190,7 @@ function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, show
             eraseMode={eraseMode}
             onPaintCell={onPaintCell}
             onEditBegin={onEditBegin}
+            markers={markers}
             pan={pan}
             zoom={zoom}
             onPanChange={setPan}

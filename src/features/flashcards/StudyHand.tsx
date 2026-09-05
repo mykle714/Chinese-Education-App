@@ -48,21 +48,28 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * why the fan is stored rather than derived (see `afterTap` / `afterSwipe`).
  *
  * ── The quantity tag ─────────────────────────────────────────────────────────
- * Every card carries its own figure as a small "N Cards" tag in its TOP-RIGHT corner,
- * with its name at the top-left — on the front card and on the card queued directly
- * behind it (`backRight`) alike. The tag is what lets a figure survive the trip to the
- * back of the fan and home again without ever appearing or moving: the number behind the
- * front card is already readable the moment a throw clears it, and it is already in its
- * final position when the promotion lands. The front card consequently states its figure
- * twice — once as the tag, once as the big numeral below — which is the cost of the tag
- * being continuous.
+ * A small tag in the card's TOP-RIGHT corner, and WHICH card wears it is the rule:
  *
- * `backLeft`, the bottom of the stack, is the exception and keeps its head right-clustered:
- * it is two promotions from the front, and its left edge is the part the fan overlaps.
+ *   BACK cards (`backLeft`, `backRight`) — always, as "N Cards". A card in the fan has no
+ *     big numeral showing, so the tag is the only place its figure can be read, and it is
+ *     already legible the instant a throw clears the card in front of it.
+ *   FRONT card — ONLY when its figure is 0, and then it says the host's `zeroMessage`
+ *     rather than a count. The front card's big numeral already states every other figure,
+ *     so a tag there would just print the same number twice; a landed `0`, though, reads
+ *     as a shortfall on its own, and the sentence says which state it actually is.
+ *
+ * The consequence is that the tag DISAPPEARS as a card is promoted (or appears, on a
+ * promotion into a zero). That is deliberate: the promotion is a hard content switch
+ * anyway, and the alternative — carrying the tag through the cycle — bought continuity at
+ * the price of the front card stating its figure twice.
+ *
+ * `backLeft`, the bottom of the stack, keeps its head right-clustered: it is two
+ * promotions from the front, and its left edge is the part the fan overlaps.
  *
  * ── The full face is pre-rendered on the card behind ─────────────────────────
  * `backRight` — the card the next swipe promotes — renders the WHOLE front face while
- * still in the fan: tag, big numeral, hairline and commit button. At rest none of it
+ * still in the fan: big numeral, hairline and commit button (plus the back card's own
+ * quantity tag, which the promotion then drops). At rest none of it
  * shows (the played card covers it), so it costs the fan nothing; it earns its keep the
  * moment a throw begins, because the number the learner is deciding on is uncovered
  * already drawn rather than appearing after the gesture resolves.
@@ -76,10 +83,8 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  *
  * ── Waiting for the counts ───────────────────────────────────────────────────
  * A figure in flight spins as a blurred slot-machine reel (`SlotNumber`) and lands when
- * its count arrives. The card's corner tag stays BLANK meanwhile and fades in behind it:
- * one thing moving on a card reads as "fetching", two read as noise, and four cramped mono
- * characters in a corner are too small for a placeholder to read as anything but a wrong
- * number.
+ * its count arrives. That reel is the card's ENTIRE loading state — one thing moving on a
+ * card reads as "fetching", two read as noise.
  *
  * A promotion is a HARD content switch at commit time: the card's geometry animates over
  * `SLOT_TRANSITION_MS`, but its front/back layout swaps at t=0 rather than crossfading.
@@ -99,8 +104,8 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * It is NOT greyed for it. A count of 0 is the ordinary end of a session — every card
  * marked, everything resting — and draining a card's colour turns that into a failure
  * state the learner reads as "something is wrong with this mode". The card keeps its
- * hue and swaps its corner tag for a plain-language `zeroMessage` ("All caught up!"),
- * which says the same thing in words the number cannot.
+ * hue, prints the `0`, and adds the corner tag's `zeroMessage` ("All caught up!") beside
+ * its name — which says in words what the number cannot.
  *
  * Referenced by docs/SHELF_REDESIGN.md (entry 2) and docs/DECKS_FEATURE.md.
  */
@@ -127,18 +132,18 @@ export interface StudyHandCard {
     label: string;
     /**
      * The mode's own figure: how many cards it can draw from. `undefined` while its count
-     * is in flight — the big numeral then spins as a `SlotNumber` reel and the corner tag
-     * stays blank. Never a provisional 0: 0 is a real answer this figure can give, so it
+     * is in flight — the big numeral then spins as a `SlotNumber` reel. Never a provisional 0: 0 is a real answer this figure can give, so it
      * must not appear before it is known.
      */
     figure: number | undefined;
     /** What the figure IS, in a word or two — it follows the number in the tag ("Cards"). */
     figureCaption: string;
     /**
-     * What the corner tag says INSTEAD of "0 Cards" when the figure lands on zero.
-     * Display copy the host owns, because the right sentence is per-mode: an empty
-     * Review pool means "All caught up!", an empty Challenge/Mix pool means the learner
-     * needs more cards. Omit to keep the plain "0 Cards".
+     * What the FRONT card's tag says when its figure lands on zero — the only case in
+     * which the front card wears a tag at all. Display copy the host owns, because the
+     * right sentence is per-mode: an empty Review pool means "All caught up!", an empty
+     * Challenge/Mix pool means the learner needs more cards. Omit to leave a zeroed front
+     * card untagged.
      */
     zeroMessage?: string;
     /** Ramp hue for the card's fill. */
@@ -257,18 +262,20 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                 // put: a zero count is a normal, frequent outcome and must not read as a
                 // broken card (see "a zero is not a fault" in the docblock).
                 const greyed = card.eligible === false;
-                // A landed zero speaks in words rather than printing "0 Cards" — the
-                // number alone reads as a shortfall, the sentence reads as a state.
-                const isZero = card.figure === 0;
-                // The corner tag has nothing to say until the count lands, so it says
-                // nothing — see the tag's own comment below.
-                const figureKnown = card.figure !== undefined;
                 // `backRight` is the card the next swipe promotes — the one uncovered as
                 // the played card is thrown clear. It therefore renders the FULL front
-                // face (quantity tag, big numeral, commit button) while still in the fan,
+                // face (big numeral, commit button) while still in the fan,
                 // so the number is already legible mid-drag and already in its final
                 // position when the promotion lands. See "The full face is pre-rendered"
                 // in the docblock.
+                // WHO WEARS THE TAG. A back card always states its count — it has no big
+                // numeral of its own. The front card wears one only on a landed zero, and
+                // then it is a sentence, not a count (see "The quantity tag").
+                const figureKnown = card.figure !== undefined;
+                const isZero = card.figure === 0;
+                const tagText = isFront
+                    ? (isZero ? card.zeroMessage ?? "" : "")
+                    : (figureKnown ? `${card.figure!.toLocaleString()} ${card.figureCaption}` : "");
                 const isNextUp = slot === "backRight";
                 const showsFace = isFront || isNextUp;
                 // Only the played card is draggable, so it alone carries the ref the
@@ -333,11 +340,11 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                             sx={{
                                 display: "flex",
                                 alignItems: "center",
-                                // Name LEFT, quantity RIGHT — on the front card and on the
-                                // one queued directly behind it. `backLeft` keeps the old
-                                // right-clustered head: it is two promotions away, and its
-                                // left side is the part the fan's overlap eats first, so a
-                                // name pinned there would slide under another card.
+                                // Name LEFT, tag RIGHT — on the front card and on the one
+                                // queued directly behind it. `backLeft` clusters its head
+                                // right: it is two promotions away, and its left side is
+                                // the part the fan's overlap eats first, so a name pinned
+                                // there would slide under another card.
                                 justifyContent: showsFace ? "space-between" : "flex-end",
                                 gap: "9px",
                             }}
@@ -362,28 +369,13 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                             >
                                 {card.label}
                             </Typography>
-                            {/* The QUANTITY TAG, and it reads the same on every card in the
-                                fan: "N Cards", top-right.
-
-                                Constant placement is the whole point. A card keeps this tag
-                                as it is thrown to the back and cycled home again, so its
-                                size is legible in every slot — including the instant the
-                                front card clears the one behind it, which is the moment the
-                                learner is deciding whether to keep swiping.
-
-                                It also means the front card prints its figure TWICE: small
-                                here and large below. That repetition is deliberate — a tag
-                                that appeared only on back cards would have to materialise
-                                out of nothing on the way down, and the promotion is a hard
-                                content switch (no crossfade), so anything that moves or
-                                appears between the two layouts moves visibly.
-
-                                UNTIL THE COUNT ARRIVES THE TAG IS BLANK. It is four cramped
-                                mono characters in a corner; a placeholder that small cannot
-                                read as "loading" — it just reads as a wrong number. The big
-                                numeral below is doing that job for the card already, so the
-                                tag stays empty and fades in behind it. The element stays
-                                mounted throughout so the fade has something to run on. */}
+                            {/* The QUANTITY TAG. Always mounted so its copy can cross-fade
+                                rather than pop: it is empty on a front card with a count to
+                                show (the big numeral has that job), empty on a back card
+                                whose count has not landed yet — four cramped mono characters
+                                in a corner are too small for a placeholder to read as
+                                anything but a wrong number — and otherwise carries the
+                                count, or the zero sentence on the front card. */}
                             <Typography
                                 component="em"
                                 className="study-hand__meta"
@@ -393,15 +385,11 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                     fontSize: 10,
                                     color: COLORS.iconColor,
                                     whiteSpace: "nowrap",
-                                    opacity: figureKnown ? 1 : 0,
+                                    opacity: tagText ? 1 : 0,
                                     transition: "opacity 320ms ease",
                                 }}
                             >
-                                {!figureKnown
-                                    ? ""
-                                    : isZero && card.zeroMessage
-                                        ? card.zeroMessage
-                                        : `${card.figure!.toLocaleString()} ${card.figureCaption}`}
+                                {tagText}
                             </Typography>
                         </Box>
 
@@ -448,10 +436,8 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                     >
                                         {/* The figure spins as a slot-machine reel until
                                             its count arrives, then lands on it. This is the
-                                            card's whole loading state: the corner tag stays
-                                            blank and lets the big numeral carry it, because
-                                            one thing moving reads as "fetching" and two
-                                            read as noise. */}
+                                            card's whole loading state — one thing moving on
+                                            a card reads as "fetching", two read as noise. */}
                                         <SlotNumber value={card.figure} className="study-hand__figure-value" />
                                     </Typography>
                                     {/* The gold hairline under the figure — `.bignum:after`.

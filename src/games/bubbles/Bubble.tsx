@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Typography } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
+import { LentCardBadge } from "../../components/LentCardBadge";
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../utils/definitionUtils";
 import { FONTS } from "../../theme/fonts";
 import { API_BASE_URL } from "../../constants";
@@ -27,6 +28,22 @@ interface BubbleProps {
     fill: BubbleFill;
     showPinyin: boolean;
     showPinyinColor: boolean;
+    /**
+     * True when this bubble's card was LENT to the learner (a `provisional` vet row —
+     * docs/PROVISIONAL_CARDS.md). Draws the shared hourglass corner badge, the app's
+     * one mark for "borrowed".
+     *
+     * Opt-in per game rather than derived from `entry.starterPackBucket` here, for two
+     * reasons. First, a game that itemizes its lent cards in a pre-round notice (Bubble
+     * Match) has already said which words are borrowed and does not want a second,
+     * quieter telling on every bubble; Hydra streams its cards and cannot itemize, so
+     * the badge IS its telling (docs/HYDRA_BUBBLES.md § 6.4). Second, and load-bearing:
+     * the FOREIGN-SIDE-ONLY rule (docs/PROVISIONAL_CARDS.md § 5). Both bubbles of a pair
+     * share one entry, so badging on `entry` alone would mark a word bubble and its
+     * definition bubble identically and let a player match by badge instead of by
+     * reading. The caller must pass `false` for the definition side.
+     */
+    lent?: boolean;
     /** Registers the outer node so the rAF loop can write its transform. */
     registerNode: (id: string, el: HTMLDivElement | null) => void;
     onPointerDown: (id: string, e: React.PointerEvent) => void;
@@ -113,6 +130,7 @@ const Bubble: React.FC<BubbleProps> = ({
     fill,
     showPinyin,
     showPinyinColor,
+    lent = false,
     registerNode,
     onPointerDown,
 }) => {
@@ -327,6 +345,14 @@ const Bubble: React.FC<BubbleProps> = ({
                     </Box>
                 )}
 
+                {/* The borrowed-card mark (see the `lent` prop). Placed in PERCENTAGES,
+                    not the px corner Match Speed's rectangular card uses: the bubble is a
+                    40%-radius squircle whose top-right corner is cut away, and its size
+                    varies with `targetRadius`, so a fixed px inset would hang off the
+                    curve on a small bubble. 10% keeps the badge's box inside the arc at
+                    every radius the field spawns. */}
+                {lent && <LentCardBadge className="bubble__lent-badge" size={12} top="10%" right="10%" />}
+
                 {/* Pickup / drop-target cue: a grey wash, shared by every bubble
                     game. It is a pure overlay — it does not change the bubble's own
                     colors, so a tier-colored bubble still reads as its tier while it
@@ -368,6 +394,7 @@ export default React.memo(Bubble, (prev, next) => {
         prev.fill.bg === next.fill.bg &&
         prev.fill.border === next.fill.border &&
         prev.showPinyin === next.showPinyin &&
-        prev.showPinyinColor === next.showPinyinColor
+        prev.showPinyinColor === next.showPinyinColor &&
+        prev.lent === next.lent
     );
 });

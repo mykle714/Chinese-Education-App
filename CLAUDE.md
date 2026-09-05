@@ -304,6 +304,15 @@ verified on the infrastructure checks; it stays open only until someone opens a 
 board and confirms it fills rather than coming back short, which is the one over-blocking
 symptom those checks cannot see. Prod is current through migration **158**.
 
+**[docs/IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md](./docs/IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md)**
+(Immersive World scene authoring — migration **159**, **NOT YET ON PROD**). A contract
+migration that is nevertheless a **single-pass** deploy, which is the exception worth reading
+the runbook for: it drops `iw_scenes.words` / `.objective`, reshapes
+`iw_scene_runs."complicationId"` into a `TEXT[]`, and adds start facings — but **no shipped
+code reads either table** (the whole iw feature is unreleased) and both are empty, so there is
+no old-code window to split around. The runbook's pre-check exists to verify exactly that; if
+it finds rows, the single-pass assumption has broken.
+
 Deployed and retired on 2026-09-04 (runbook deleted): the Chinese typeface account setting
 (**157**, `users."chineseFont"`) shipped alongside the immersive-world schema (**158**).
 Both are expand-only, so a single `migrate.sh` pass before the container rebuild covered

@@ -45,7 +45,7 @@ import CardIconOrderList from "./CardIconOrderList";
 import { useToolbarMenus } from "./useToolbarMenus";
 
 // Shared transition timing for the editor's open/close motions (toolbar Slide, adv-rows
-// Collapse, and the card push-down). Kept in one place so they animate in lockstep — same
+// Collapse, and the card slot's toolbar inset). Kept in one place so they animate in lockstep — same
 // duration AND easing in BOTH directions. See docs/CARD_ICON_LAYOUT.md.
 export const CARD_EDIT_ANIM_MS = 300;
 export const CARD_EDIT_ANIM_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
@@ -235,7 +235,11 @@ const CardEditToolbar: React.FC<{
 
         const smallBtnSx = {
             minWidth: "unset",
-            px: 0.5,
+            // 2px of horizontal padding, not the usual 4-8: the advanced menu carries ELEVEN
+            // labelled tools, and at 4px+ the row wrapped onto a THIRD line on a phone-width
+            // viewport. The buttons still have a 30px tap height, so the tightening costs
+            // legibility, not reachability. Keep any future tool cheap for the same reason.
+            px: 0.25,
             py: 0.25,
             height: "30px",
             fontSize: SIZE.micro,
@@ -250,7 +254,7 @@ const CardEditToolbar: React.FC<{
             touchAction: "manipulation",
             // Tighten the gap between the startIcon and the label (MUI defaults to an 8px margin
             // between them); pull them closer so each button hugs its content.
-            "& .MuiButton-startIcon": { marginRight: "2px" },
+            "& .MuiButton-startIcon": { marginRight: "1px", marginLeft: 0 },
             // The explicit `color` above out-specifies MUI's default `.Mui-disabled` grey, so a
             // disabled button (e.g. redo at the top of the redo stack, undo with an empty stack)
             // would otherwise still look fully active. Re-assert the greyed-out look here so the
@@ -474,7 +478,13 @@ const CardEditToolbar: React.FC<{
             // owned by the <Slide> wrapper in FlashcardsLearnPage so it animates in BOTH
             // directions; this root is just the static container.
             <Box className="card-edit-toolbar">
-                {/* Primary toolbar row. */}
+                {/* Primary toolbar row. Painted in the PAGE's own ground (COLORS.background,
+                --paper) rather than a toggle-grey, so the bar reads as part of the surface it
+                drops onto instead of a slab floating over it. Both fie surfaces sit on that
+                ground — the flp via MobileDemoFrame, the cdp via MobileTabScreen's default
+                surfaceColor — so one token covers both; if a third surface ever runs a
+                different ground, this becomes a prop rather than a second hard-coded color.
+                The hairline under each row is what keeps the bar legible against the page. */}
                 <Box
                     className="card-edit-toolbar__row"
                     sx={{
@@ -483,7 +493,7 @@ const CardEditToolbar: React.FC<{
                         gap: 1,
                         px: 1.5,
                         py: 0.75,
-                        backgroundColor: fc.toggleInactiveBg,
+                        backgroundColor: COLORS.background,
                         borderBottom: "1px solid rgba(0,0,0,0.08)",
                     }}
                 >
@@ -549,7 +559,10 @@ const CardEditToolbar: React.FC<{
                         variant="text"
                         onClick={onCancel}
                         disabled={saving}
-                        sx={smallBtnSx}
+                        // The basic row is never crowded (four buttons and a spacer), so the
+                        // two commit actions keep normal padding — smallBtnSx's 2px is a
+                        // concession to the eleven-tool advanced row, not a house style.
+                        sx={{ ...smallBtnSx, px: 1 }}
                     >
                         cancel
                     </Button>
@@ -561,6 +574,7 @@ const CardEditToolbar: React.FC<{
                         disabled={saving}
                         sx={{
                             ...smallBtnSx,
+                            px: 1,
                             fontWeight: WEIGHT.semibold,
                             backgroundColor: fc.toggleActiveBg,
                             "&:hover": { backgroundColor: fc.toggleActiveBg },
@@ -586,7 +600,7 @@ const CardEditToolbar: React.FC<{
                 row while advanced mode is on. Replaces the earlier pair of separate flex rows. */}
                 {/* Reveal / collapse the menu via MUI <Collapse> (height transition) so it
                 animates in BOTH directions — drop down on adv-on, collapse up on adv-off —
-                at the same timing as the toolbar Slide and the card push-down. unmountOnExit
+                at the same timing as the toolbar Slide and the card slot's toolbar inset. unmountOnExit
                 keeps it out of the DOM in basic mode. The align/order dropdowns are portaled,
                 so Collapse's height clipping doesn't affect them. */}
                 <Collapse
@@ -605,10 +619,15 @@ const CardEditToolbar: React.FC<{
                             display: "flex",
                             flexWrap: "wrap",
                             alignItems: "center",
-                            gap: "3px",
-                            px: 1.5,
+                            // Deliberately tight (2px between tools, 6px at the row ends): the
+                            // eleven tools have to collect onto TWO lines at phone width, and
+                            // the earlier 3px/12px spacing spilled them onto a third.
+                            gap: "2px",
+                            px: 0.75,
                             py: 0.75,
-                            backgroundColor: fc.toggleInactiveBg,
+                            // Same page ground as the primary row above — the two rows are one
+                            // bar, and a second tone would split them visually.
+                            backgroundColor: COLORS.background,
                             borderBottom: "1px solid rgba(0,0,0,0.08)",
                         }}
                     >
@@ -624,7 +643,7 @@ const CardEditToolbar: React.FC<{
                                 // Reserve enough width for the widest readout ("12/12") and use
                                 // tabular figures so the count never changes width as digits roll
                                 // over (1→12) — otherwise the whole tool row would shift right.
-                                minWidth: "6ch",
+                                minWidth: "5ch",
                                 textAlign: "center",
                                 fontVariantNumeric: "tabular-nums",
                             }}

@@ -649,8 +649,9 @@ docs/PROVISIONAL_CARDS.md § 5.
 of `setNoticeOpen`; the mid-run `topUpBuffer` path records lent words but deliberately
 opens nothing. This is a rule for a reaction-time game, not an accident of the code: a
 modal mid-run costs the player clock and lands over a board they are mid-tap on. Hydra
-Bubbles can afford its mid-run `HydraLendNotice` because it has no clock; Match Speed
-cannot, and a top-up that lends mid-run must stay silent.
+Bubbles used to afford a mid-run popup (`HydraLendNotice`) because it has no clock, but
+**as of 2026-09-05 it does not show one either** — it adopted this surface's badge
+instead (HYDRA_BUBBLES.md § 6.4). No game now interrupts a run to announce lending.
 
 What replaces it is the **lent badge** — the icons8 hourglass in the top-right corner of
 every borrowed card (`LentCardBadge`, docs/PROVISIONAL_CARDS.md § 5). Mid-run lending is

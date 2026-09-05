@@ -178,6 +178,70 @@ makes its top face coincide with the surface and drops its 16px wall below to fo
 visible slab rim. **Single elevation:** grass sits FLUSH on the dirt surface (no height
 step), so the grass↔dirt transition is drawn purely by the flat boundary overlays.
 
+### Board floor (dirt vs wood)
+
+`BoardFloor` (`src/engine/market/farmTerrain.ts`) is the board-wide default surface — what a
+cell shows where **no terrain mask covers it**. It rides on `EditorMasks.floor` (optional;
+absent ⇒ `DIRT_FLOOR`) so it reaches `buildEditorField` through the object every painted layer
+already travels in, needing no new prop on the shared viewer.
+
+- **`dirt`** — the bare tallDirt top face shows. The night market's only floor, and what every
+  board authored before this existed still renders.
+- **`wood`** — every bare cell decks over with a plank (`woodFloorPlankUrl`). The **only**
+  consumer today is the iw scene editor's Floor row
+  ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 12 phase 1d); the template editor does not offer
+  it and its boards are always dirt.
+
+**The plank gets its OWN downward offset, by the same rule as the slab.** Every ground sprite is
+drawn down by its **skirt** — the px of art hanging below its top-face diamond — so that top face
+lands on the one shared surface plane (`TALL_DIRT_SKIRT_PX` / `PLANK_SKIRT_PX`, measured from the
+pack's alpha in `freeFarmTileset.ts`):
+
+| sprite | ink rows (of 32) | top-face diamond | skirt | drawn at |
+|---|---|---|---|---|
+| grass cap | 16–31 | rows 16–31 | 0 | `screenY` |
+| `tallDirt_*` | 0–31 | rows 0–15 | 16 (cliff body) | `screenY + TILE_HEIGHT` |
+| `plank_*` | 13–31 | rows 13–28 | **3** (board thickness) | `screenY + WOOD_FLOOR_Y_OFFSET` |
+
+skirt = `FARM_TILE_PX − (bottom-vertex row + 1)`. Drawn at the bare anchor instead, a plank floats
+its own 3px above the plane and reads as a board lying ON the ground rather than as the floor.
+
+⚠️ **The deleted `WalkwayLayer` (removed in 70dc441) got this wrong** — it drew planks at
+`y + TILE_HEIGHT`, borrowing the DIRT slab's offset on the assumption that a plank is shaped like
+one. It is not (the plank's top face starts 13 rows down), so that sank the walkway 13px below the
+ground plane, and its header comment claiming the top face "lands on the SAME shared surface plane"
+was never true of this art. Do not copy that number back.
+
+**The deck REPLACES the slab; it is not laid on top of one.** A cell with a `floorUrl` draws no
+`tallDirt` at all (`terrainDraws.buildDraws` — the skip is deliberately NOT behind
+`HIDE_OCCLUDED_SLABS`, which is only a diagnostic for the occlusion cull). Interior cells would
+have culled their slab anyway; the visible consequence is at the board RIM, where a deck shows its
+own 3px board edge instead of a 16px dirt wall, since the pack ships no wooden cliff body. A wood
+board therefore reads as a plank platform rather than as a wooden floor laid on a dirt plateau.
+
+Details that follow from that:
+- **`EditorTile.floorUrl`** carries the resolved plank (null ⇒ dirt floor), and `TileDraw` gives
+  it its own sprite slot at `z = layerZ` (the surface slot) — the two views that consume the draw
+  list (`EditorTerrainLayer`, `TerrainChunkLayer`) both offset it by `WOOD_FLOOR_Y_OFFSET`, beside
+  where they offset the slab by `TILE_HEIGHT`. It **replaces** the cell's surface stack rather than
+  stacking on it: a decked cell draws no grass-boundary overlay, since grass spilling onto a deck
+  reads as a mistake — the deck's own edge cap is what should meet the grass.
+- **Only BARE cells deck** — no terrain 1 *and* no terrain 2 (apron counts as terrain 1, so a
+  runtime apron never decks).
+- **The grain is seeded, not sequential.** `hashCell(seed, col, row)` picks each cell's board
+  *variation*, so the deck is identical across reloads, camera moves and window culling. One
+  **direction** (`woodFloorDirection`) board-wide: a deck alternating `ns`/`ew` per cell reads as
+  debris and would cap on nearly every cell.
+- **Edge caps** reuse `plankRenderUrl`, so a run caps against grass, another surface and the
+  board edge alike.
+- **`slabHidden` also holds on decked cells** — every plank sprite (cap variants included) has
+  exactly the grass cap's silhouette, so it occludes the slab top face identically. It is
+  belt-and-braces now that the deck skips the slab outright, but it keeps the occlusion model
+  honest for anything else that reads the flag.
+- ⚠️ **No rim-clipped plank art.** Planks ship one silhouette, unlike the grass caps' full
+  `LandmassEdge` set, so a plank on a board-EDGE cell keeps its full diamond over a rounded slab
+  rim and overhangs it by a few pixels. Fixing that needs art, not code.
+
 **Pixel-art rendering:** terrain textures use nearest-neighbour filtering, and the camera comes to
 rest on its **zoom ladder** (see "Camera (pan / zoom)" below) so upscaling stays crisp with no
 fractional resampling. The Pixi `<Application>` sets `antialias={false}`.

@@ -1,13 +1,17 @@
 // SAFE-AREA TOKENS — the strips of screen the OS owns.
 //
-// WHY THIS EXISTS: `index.html` ships `viewport-fit=cover`, so the web view now paints
+// WHY THIS EXISTS: `index.html` ships `viewport-fit=cover` AND
+// `apple-mobile-web-app-status-bar-style: black-translucent`, so the web view now paints
 // EDGE TO EDGE — under the iPhone's status bar (clock/battery) at the top and under the
 // home indicator at the bottom. That is the only way the app can control the colour of
-// the band behind the clock: before `cover`, the web view was letterboxed inside the
-// safe area and iOS painted the letterbox itself, from the document background it
-// captured when the home-screen web app LAUNCHED. Nothing the page did afterwards —
-// including `<meta name="theme-color">`, see src/hooks/useThemeColor.ts — could reach
-// it, which is why a saturated game ground sat under a paper-white strip forever.
+// the band behind the clock. It takes BOTH tags: with the status-bar style left at
+// `default`, iOS letterboxes the home-screen web app below an opaque OS-painted bar
+// whatever `viewport-fit` says, these two `env()` values resolve to 0px, and the band
+// is filled from the document background captured at LAUNCH. Nothing the page did
+// afterwards — including `<meta name="theme-color">`, see src/hooks/useThemeColor.ts —
+// could reach it, which is why a saturated game ground sat under a paper-white strip.
+// (2026-09-05: `cover` alone shipped first and did NOT fix it; the style tag was the
+// missing half.)
 //
 // The trade this makes: painting the strip is now the page's job, and so is keeping
 // content out from under it. These two constants are that second half. They are CSS

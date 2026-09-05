@@ -1581,7 +1581,12 @@ export const ARENA_SIZE = 25;
 /** Rungs on the ladder, 1 (bottom) through 12 (top). */
 export const ARENA_DIVISION_COUNT = 12;
 
-/** Top N promote, bottom N relegate (§ 7). Synthetic members occupy real ranks. */
+/**
+ * The BOUNDARY RANKS of the two zones (§ 7): rank N is the last promotion rank and
+ * rank ARENA_SIZE - N the last safe rank. They are read as the SCORE at those ranks,
+ * not as rank tests — a tie grows the promotion zone and shrinks the relegation zone
+ * (`server/services/arenaZones.ts`). Synthetic members occupy real ranks.
+ */
 export const ARENA_PROMOTE_COUNT = 5;
 export const ARENA_RELEGATE_COUNT = 5;
 

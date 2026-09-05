@@ -91,6 +91,13 @@ the sheet at every height; a persistent sheet's body must therefore reserve
 and wear its bottom edge-fade (`EDGE_FADE_MASK_NO_TOP` from `MobileTabScreen`) so the
 content dissolves under the pill rather than being cut by it.
 
+A **modal** panel is the other case, and it is the common one: the footer is gone, so the
+scroller wears the short sheet band (`sheetEdgeFadeSx`, `src/components/sheet/sheetStyled.ts`)
+ending at its own bottom edge. The eip's tab panes take it per pane — each pane in
+`InfoCardPanelBody` is its own scroller — as does the generic `SheetBody`. The same mask
+fades the scroller's TOP edge over 20px, so a pane's first rows dissolve under the tab
+strip as they scroll up. See docs/UX_AND_NAVIGATION.md § Edge fade.
+
 ---
 
 ## Height model — three stops, one floor
@@ -131,8 +138,11 @@ direct style writes on the sheet element:
 |---|---|
 | `border-radius: 20px 20px 0 0` | square corners |
 | `flashcard.sheetShadow` | no shadow — a merged sheet is not a surface *on* anything |
-| `padding-top: 10px` above the grabber | `0`, so the header sits flush with the top edge |
-| merge header clipped to zero height | full-height `PageHeader`, opacity 1, taking taps |
+| `padding-top: 10px` above the grabber | the status-bar inset, so the grabber clears the clock |
+
+The header is **not** in that table: it is permanent chrome, identical at both ends of the
+ramp. It was the fourth row until 2026-09-05 (clipped to zero at `t = 0`, full-height and
+opaque at `t = 1`).
 
 Because it is a linear function of the sheet's height, the merge is continuous under the
 finger — there is no state flip at a threshold to pop mid-drag — and on an *animated*
@@ -142,24 +152,93 @@ nothing on a frame where `t` has not moved, which is every frame of a drag below
 merge zone. Like the height, **none of it is React state** — same reason (see "Height is
 imperative").
 
-### The merge header
+### The panel header
 
-The **`title`** prop supplies it; it is a real `PageHeader` (`size="node"`,
-`arrowDirection="down"`), not a lookalike, so the header a merged sheet wears is the
-app's one header. It lives in `SheetMergeHeaderSlot` (`styled.ts`) — a `height: 0;
-overflow: hidden` box that is the sheet's **first flex child**, so whatever height the
-merge has faded in pushes the grabber and everything below it down, and nothing has to
-reserve space for it. The slot is clipped from the first paint but its child still lays
-out at natural size inside it, which is how `SheetPanel` **measures** the header once on
-mount instead of hard-coding a height that `PageHeader`'s design tokens could invalidate.
+The **`title`** prop supplies it; it is a real `PageHeader` (`size="node"`), not a
+lookalike, so the header a panel wears is the app's one header. It lives in
+`SheetHeaderSlot` (`sheetStyled.ts`) as the sheet's **second flex child**, directly under
+the grabber row.
 
-The chevron points **down** and calls `dismiss` — the direction a drag would close it,
-and the only close affordance left once the sheet covers the scrim.
+**The slot re-pads it.** `PageHeader`'s node spec is 23px above the row and **0 below**
+(`SIZE_SPEC.node`) — right on a page, where that padding is the gap under the status bar
+and nothing sits below the header but the page itself. A panel header is a *band*, with the
+grabber above it and the body below, so the same asymmetry reads as the title and the ✕
+shoved against the band's bottom edge. `SheetHeaderSlot` overrides both to
+`SHEET_HEADER_PAD_Y` (12px), which centres the row at about the height the 23/0 version
+had.
+
+**It is present at every height (2026-09-05).** It used to be *merge* chrome — clipped to
+zero by the slot and interpolated in over the last `MERGE_ZONE_PX`, so a panel only said
+what it was once it had become the whole screen — with a `headerMode="always"` opt-out for
+sheets whose body had no title row of its own (the compare sheet). Every call site wanted
+the header at every height in the end, so the opt-out became the only mode and the prop is
+gone. What this bought, beyond a panel that names itself at 60% height: the ✕ **stops
+moving**. Three things went with the change —
+
+- `SheetHeaderSlot` is a plain `flex-shrink: 0` wrapper (it was `height: 0;
+  overflow: hidden; opacity: 0`), renamed from `SheetMergeHeaderSlot`;
+- the mount-time measurement of the header's natural height is gone, along with
+  `MERGE_HEADER_FALLBACK_PX` — nothing interpolates that height any more;
+- `writeCloseOffset` is gone entirely (see the close cluster below).
+
+**It carries the close cluster, not a chevron or a flame of its own.** `showBack={false}`
+and `showFlame={false}`; the ✕ and, on study surfaces, `MinutePointsFireBadge` are passed
+as `rightContent` instead. A chevron beside a permanent ✕ would be a second close button
+doing the same thing, and `PageHeader` puts its own flame *last* — outboard of
+`rightContent` — which would leave the flame in the corner rather than the ✕. `showFlame`
+now has no caller at all in the sheet path; pages must never pass it.
+
+**The whole header resizes the panel.** It is wrapped in `bindHeaderDrag` like the grabber
+and the tab strip: the top edge is where a hand reaches to pull a sheet back down, and
+before that binding only the 44px pill above it responded. `useDrag`'s `filterTaps` is
+what keeps the ✕ inside it tappable.
 
 Titles, one per host: `InfoCardSection` passes **"More Info"** (or **"Compare"** on the
 compare tab) and thereby covers flp, scp and cdp at once; `FlashcardsDecksPage` passes
-**"Cards"** / **"Decks"**, matching the pill that opened the sheet. A sheet with no
-`title` still grows to full height — it just has no way out but a downward drag.
+**"Cards"** / **"Decks"**, matching the pill that opened the sheet; `CompareSheet` passes
+**"Compare"**. A panel with no `title` has no header and therefore no ✕ — it still grows to
+full height, it just has no way out but a downward drag. Nothing ships in that state.
+
+### The close cluster (✕ + flame)
+
+One cluster per panel, in the header's right slot: `MinutePointsFireBadge` (study surfaces
+only) then `SheetCloseX`, so the **✕ is the corner control** on every panel. `showClose`
+overrides its presence; the default is "every modal panel has one, a persistent one does
+not".
+
+**Why study surfaces get the flame.** A panel covers its page's header, flame included,
+and it does that precisely while the learner is reading a definition — which *is* study
+time. So flp, scp, the cdp and the compare sheet pass `showMinutePoints`, and the
+indicator survives at every panel height. Only the **root** panel draws it (`depth === 0`):
+a stacked child covers its parent completely, so a second flame would be one indicator
+behind another, and a third `useMinutePoints` tick.
+
+**It does not move (2026-09-05).** The cluster used to live in the grabber row and slide
+between rows as the panel grew — down into the tab strip's row when the word trail
+appeared, and (briefly) onto the merge header's title line once there was one.
+`writeCloseOffset` measured the target row's centre against the chrome row's on every
+frame of a drag, `EipTabStrip` reserved a 41px `CLOSE_COLUMN_PX` for the cluster to land
+in, and `writeMergeChrome` re-ran the measurement whenever the merge ratio moved. All of
+that is deleted. The header is permanent, so the cluster simply lives in it, and the panel's
+one always-available control is in the same place at every height — which is the property a
+thumb actually needs. The trail gets its reserved column back as usable width.
+
+What the ✕ *does* on the eip is still the trail's rule (close the showing word; the last
+one closes the panel), passed in by the host as `onCloseX`; returning `true` from it means
+"handled, stay open".
+
+### The sheet grows for its tab strip — it does not squeeze
+
+When the word trail appears, the strip is ~40px of new chrome. Laid out normally it takes
+that space from the **body**: every line the learner is reading shifts down by a row,
+which reads as the content jumping away from the tap that opened it. So `SheetPanel`
+watches its tab-strip wrapper with a `ResizeObserver` and grows the sheet by exactly the
+strip's height instead, taking the row from the screen. The **resting stop**
+(`defaultHeightRef`) grows with it, or the next drag-release would snap back to a height
+that no longer has room for the strip. The first measurement is a baseline only.
+
+At the cap there is nothing left to take: a sheet already at full height cannot grow, and
+the body does shift down by a row. That is the only case where it does.
 
 ### Height is imperative, not React state
 
@@ -430,7 +509,12 @@ Now:
 
 - `src/components/sheet/SheetPanel.tsx` — everything above
   (the scrim portal host, constants block, `computeSnapTarget`, `writeHeight`/`freezeHeight`/`applyResize`,
-  `settle`/`dismiss`, `bindHeaderDrag`, the wheel + touch effect, `startMomentum`)
+  `settle`/`dismiss`, `bindHeaderDrag`, the wheel + touch effect, `startMomentum`,
+  the tab-strip `ResizeObserver`)
+- `src/components/sheet/SheetCloseX.tsx` — the shared ✕, also worn by the challenge
+  sheet (`src/features/studyChallenge/ChallengeSheet.tsx`, docs/STUDY_CHALLENGE.md § 3.2)
+- `src/components/PageHeader.tsx` — `rightContent`, which is how the panel header carries
+  the close cluster
 - `src/features/flashcards/FlashcardsLearnPage/InfoCardSection.tsx` — eip wiring,
   `bodyKey` (re-binds the coupling when the active tab's scroller changes), the entry
   pager slide (`entryTabId` / `entryTabIndex`)
@@ -439,6 +523,8 @@ Now:
   entry-jump layout effect (`entryJumpRef`)
 - `src/features/flashcards/FlashcardsLearnPage/styled.ts` — `EipEntryTab` + the
   `eipPillIn` entrance keyframes
+- `src/features/flashcards/FlashcardsLearnPage/EipTabStrip.tsx` — the trail pills (it no
+  longer reserves a column for the ✕; see § The close cluster)
 - `src/features/flashcards/constants.ts` — `TAB_SWIPE_*` gesture constants
   (axis lock, commit ratio, transition, edge rubber-band)
 - `src/components/CompareWorkspace.tsx` — the other sheet body;

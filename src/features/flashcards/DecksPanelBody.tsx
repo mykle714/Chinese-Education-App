@@ -12,6 +12,7 @@ import type { CardsFilter, DecksPanelState } from "./useDecksPanel";
 import { FOOTER_TOTAL_CLEARANCE } from "../../components/MobileFooter";
 import { SAFE_BOTTOM } from "../../theme/safeArea";
 import { EDGE_FADE_MASK_NO_TOP } from "../../components/MobileTabScreen";
+import { SHEET_EDGE_FADE_MASK } from "../../components/sheet/sheetStyled";
 import type { SheetPanelBodyHandle } from "../../components/sheet/SheetPanel";
 import { deckTileColors } from "./collectionRef";
 import { collectionGlyph } from "./collectionGlyph";
@@ -198,10 +199,10 @@ export interface DecksPanelBodyProps {
 // edge. The matching fade runs out AT that edge (no reserved footer band), keeping
 // the "content dissolves rather than being sliced" look without spending 164px of
 // the sheet on emptiness.
+// The fade band itself is shared (SHEET_EDGE_FADE_MASK, components/sheet/sheetStyled) —
+// every scrollable panel in the app wears the same one. Only the padding under the last
+// row is this body's own.
 const SHEET_BOTTOM_PAD = 12;
-const SHEET_EDGE_FADE_BAND = 24;
-const SHEET_EDGE_FADE_MASK =
-    `linear-gradient(to bottom, #000 0, #000 calc(100% - ${SHEET_EDGE_FADE_BAND}px), transparent 100%)`;
 
 const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(function DecksPanelBody({
     panel,
@@ -330,9 +331,14 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                 }}
             >
                 {showCards && (<>
-                    {/* ── YOUR LIBRARY ── this LENS's two constants: what is still to be
-                        learned in this bar, and what is finished in it. (All Cards has no
-                        tile — the unfiltered grid below IS it.)
+                    {/* ── THE LENS'S TWO CONSTANTS ── what is still to be learned in this
+                        bar, and what is finished in it. (All Cards has no tile — the
+                        unfiltered grid below IS it.)
+
+                        NO SECTION LABEL. This pair used to sit under a "Your library"
+                        caption; the panel's own header says "Cards" at every height now
+                        (SheetPanel's permanent header, 2026-09-05), so the caption was a
+                        second name for the same surface one row below the first.
 
                         These two are the one place the sheet does NOT use a spine, and the
                         reason is in LibraryDuo's header: their SIZE is what the learner came
@@ -343,14 +349,6 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                         collection page — the grid, its search box and its sort menu are all
                         right there, so a navigation bought nothing. See LibraryDuo's header
                         for the toggle contract and how "active" is painted. */}
-                    <Box
-                        className="decks-panel-body__library-header"
-                        {...(headerDragBind?.() ?? {})}
-                        sx={{ width: "100%", px: 3.5, pt: 0.5, pb: 0.5, display: "flex", alignItems: "center", gap: 1.5 }}
-                    >
-                        <SectionLabel className="decks-panel-body__library-label">Your library</SectionLabel>
-                    </Box>
-
                     <LibraryDuo
                         className="decks-panel-body__library-duo"
                         entries={collections}
@@ -544,6 +542,16 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                     </Box>
 
                     <MiniVocabCardGrid
+                        // Remount the whole grid when the collection filter changes, so the
+                        // entrance cascade replays for EVERY card. Without this the cards a
+                        // filter keeps in place (a card that is in both "Cards" and "Learn
+                        // Now", at the same position) keep their React identity across the
+                        // switch, and a CSS entrance animation only runs on mount — so the
+                        // first row would sit still while the rows below it, whose entries
+                        // did change, popped in. Keyed on the filter alone and NOT on the
+                        // search text: re-animating the grid on every keystroke would be a
+                        // flicker, and search narrowing is not a change of set.
+                        key={cardsFilter}
                         entries={visibleCards}
                         // One strip per card, on the panel's own bar (core in the fdp).
                         lens={lens}

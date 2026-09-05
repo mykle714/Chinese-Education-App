@@ -271,8 +271,6 @@ interface HydraStageProps {
      * wrong drop shakes without ending anything (the run has already ended).
      */
     cleanupMode: boolean;
-    /** Fires the first time a lent card reaches the board, at most once per run. */
-    onFirstLend?: () => void;
     /**
      * Asked after every CORRECT match: does this clear end the run?
      *
@@ -300,7 +298,6 @@ const HydraStage: React.FC<HydraStageProps> = ({
     onMark,
     paused,
     cleanupMode,
-    onFirstLend,
     shouldEndRun,
 }) => {
     const stageRef = useRef<HTMLDivElement>(null);
@@ -337,7 +334,6 @@ const HydraStage: React.FC<HydraStageProps> = ({
     const loopRunningRef = useRef(false);
     const lastFrameRef = useRef(0);
     const doneSinceRef = useRef(0);
-    const lendNoticedRef = useRef(false);
     // Cleanup mode (mirrors the prop, read from the ref-only pointer handlers and the
     // frame callback) plus the bubble currently green-revealed as a drop hint.
     const cleanupModeRef = useRef(cleanupMode);
@@ -430,13 +426,8 @@ const HydraStage: React.FC<HydraStageProps> = ({
         const [word, definition] = makePair(pairId, card.entry);
         const pair: HydraPair = { pairId, card, word, definition, strayRounds: 0 };
         pairsRef.current.set(pairId, pair);
-        // The first lent card to reach the board triggers the one-shot notice (§ 6.4).
-        if (!lendNoticedRef.current && card.entry.starterPackBucket === "provisional") {
-            lendNoticedRef.current = true;
-            onFirstLend?.();
-        }
         return pair;
-    }, [buffers, onFirstLend]);
+    }, [buffers]);
 
     /**
      * Execute a planned batch (§ 4). Actions are applied IN ORDER, and cards planned
@@ -603,7 +594,6 @@ const HydraStage: React.FC<HydraStageProps> = ({
         nodeMapRef.current.clear();
         heldIdRef.current = null;
         hoveredIdRef.current = null;
-        lendNoticedRef.current = false;
 
         const measure = () => {
             const rect = stageRef.current?.getBoundingClientRect();
@@ -1093,6 +1083,15 @@ const HydraStage: React.FC<HydraStageProps> = ({
                     fill={fillForBody(body, colorOf(body.pairId))}
                     showPinyin={showPinyin && language === "zh"}
                     showPinyinColor={showPinyinColor}
+                    // The borrowed-card mark. Hydra streams its cards, so it can never
+                    // name the lent ones up front the way an itemized pre-round notice
+                    // does — the badge on the bubble is the whole telling (§ 6.4).
+                    //
+                    // WORD BUBBLE ONLY, and that is correctness, not taste: both bubbles
+                    // of a pair carry the same entry, so badging the definition side too
+                    // would let a player pair them by badge instead of by reading — the
+                    // foreign-side-only rule from docs/PROVISIONAL_CARDS.md § 5.
+                    lent={body.kind === "word" && body.entry.starterPackBucket === "provisional"}
                     registerNode={registerNode}
                     onPointerDown={onPointerDown}
                 />

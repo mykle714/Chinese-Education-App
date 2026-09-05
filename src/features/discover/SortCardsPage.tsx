@@ -1554,14 +1554,23 @@ const SortCardsPage: React.FC = () => {
                                         tabs={eip.tabs}
                                         activeIndex={eip.activeIndex}
                                         onSelect={eip.setActive}
-                                        onCloseActiveTab={() => {
-                                            // Closing the LAST tab closes the whole panel.
-                                            if (eip.closeActiveTab()) handleCloseEip();
-                                        }}
                                         isTabbedMode={eip.isTabbedMode}
                                         stripRef={eipStripRef}
                                     />
                                 }
+                                // ✕ = close the showing word; false means "that was the
+                                // last one" and SheetPanel dismisses (see the flp's copy).
+                                onCloseX={() => {
+                                    // The LAST word does not close its tab — it returns false and
+                                    // lets SheetPanel play the dismiss, and the host's onClose
+                                    // clears the trail once the sheet is gone. Closing the tab here
+                                    // instead would empty the panel's body for the whole 220ms
+                                    // slide-out, so the sheet would leave showing nothing.
+                                    if (eip.tabs.length <= 1) return false;
+                                    eip.closeActiveTab();
+                                    return true;
+                                }}
+                                showMinutePoints
                             />
                         </EipHost>
                     );

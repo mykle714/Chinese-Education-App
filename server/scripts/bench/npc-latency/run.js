@@ -137,7 +137,8 @@ async function benchOne(candidate, apiKey, formatKey, scenario) {
   for (let i = 0; i < TRIALS; i++) {
     try {
       const r = await runner(candidate, apiKey, scenario);
-      trials.push({ ...r, grade: gradeReply(formatKey, r.text) });
+      // Grade against the list this scenario actually offered (§ 14 Q42).
+      trials.push({ ...r, grade: gradeReply(formatKey, r.text, scenario.actions) });
     } catch (err) {
       // Record and keep going — one provider being down must not abort the whole sweep.
       if (!firstError) firstError = err?.message ?? String(err);

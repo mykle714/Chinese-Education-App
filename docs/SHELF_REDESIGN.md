@@ -422,7 +422,7 @@ the design's two header classes. Keep the composition hierarchy; change the skin
 | | App | Design | Notes |
 |---|---|---|---|
 | Hub / node header | `PageHeader` — fixed 60px bar, `COLORS.header` background, `ExpandMoreIcon` rotated per `arrowDirection` | `.hd` — **no bar**, sits on the paper ground, `padding: 23px 22px 0`, title 24px/600/-0.025em, `.back` is an inline chevron + title | The background bar disappears entirely |
-| Leaf / game header | same `PageHeader`, `arrowDirection="down"` | `.lhd` — `padding: 21px 18px 0`, title **17px**, down chevron, plus a `.tg` toggle-chip slot and a `.fire` streak slot | Two title sizes, one component |
+| Leaf / game header | same `PageHeader`, `arrowDirection="down"` | `.lhd` — design says `padding: 21px 18px 0`; **shipped as `27px 18px 8px`** (2026-09-05 — the design's padding read as a short header under the 17px title; see docs/LEAF_NODE_PAGES.md), title **17px**, down chevron, plus a `.tg` toggle-chip slot and a `.fire` streak slot | Two title sizes, one component |
 
 Right-hand slots the design uses in `.hd`, all of which land in `PageHeader`'s
 existing `rightContent` prop: `.meta` (mono uppercase metadata), `.btn` (32×32
@@ -531,6 +531,12 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   Two consequences worth keeping in mind: exactly ONE `PageHeader` may be mounted at a
   time on an earning page (`useMinutePoints` runs a 1s accrual tick per instance), and
   the badge renders `null` when signed out.
+  **One header may opt out (2026-09-05): `showFlame={false}`.** Its only caller is
+  `SheetPanel`'s panel header, because a sheet now carries the flame in its own chrome
+  row beside the ✕ at every height — better placed than the merged header's copy, which
+  only appeared once the sheet had covered the page. Pages must not pass it; a sheet that
+  wants the flame passes `showMinutePoints` to `SheetPanel` instead. See
+  [EIP_SHEET_GESTURES.md § The close cluster](./EIP_SHEET_GESTURES.md).
 - **Eligibility was narrowed in the same pass** so "grey on a menu" is actually true:
   `MINUTE_POINTS_ELIGIBLE_PAGES` had the bare prefix `/flashcards`, which made the cdp,
   Decks & Cards, the deck/collection browsers and the mastery centers all accrue minutes.
@@ -921,7 +927,8 @@ this control?*
 | **Already existed** | `.tip`, `.dots` | `TipBox.tsx` was restyled during A4. `FrequencyScoreDots.tsx` already matched `.dots` exactly (8px, 1.5px border, 4px gap) — verified, not touched. |
 
 Not built, deliberately: `.modal`, `.sheet`, `.scrim`. Each has a live bespoke
-implementation (`HydraLendNotice`, the decks panel from entry 2, MUI `Backdrop`) and
+implementation (`HydraLendNotice` — since deleted, see § 17 — the decks panel from
+entry 2, MUI `Backdrop`) and
 none of the three is repeated often enough to have drifted yet. They are A5's leftovers,
 tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
 
@@ -1486,8 +1493,11 @@ AREA behind it plus one change inside the sheet.
   (b): the sheet now opens on the learner's two CONSTANTS — Learn Now and Mastered — as
   two wide tiles carrying their figures. **This narrows D9** (see the amendment there).
   No per-skill Mastered spine returns; the header comment's rule is intact.
-- **The `.duebar`** prints the library size and the scope. ⚠️ Its artboard reads
-  "24 due today", which the app cannot answer — see DEFERRED_WORK.md item 9.
+- **The `.duebar` is gone** (2026-09-05). Its artboard reads "24 due today", which the
+  app cannot answer, and its one shipped slot printed the library SIZE under that
+  caption; the hand's three ready counts directly beneath it already carry the signal.
+  The study area is now two rows — Centers rail, then the hand. See DEFERRED_WORK.md
+  § "Recently closed".
 
 **Figures.** Each mode's number is how many cards it could deal RIGHT NOW — its bands
 minus everything on cooldown: Challenge = Unfamiliar + Target, Review = Comfortable +
@@ -1497,8 +1507,9 @@ provisional `0` — `0` is a real answer every one of these figures can give, an
 one on a cooldown count. Review's gate reads that ready count and its toast branches on
 whether cards are merely resting; an ineligible card still fires `onStudy` so the host
 can explain rather than leaving a dead card. An ineligible or zeroed card **keeps its
-ramp fill** (only the commit button dims) and swaps its corner tag for a `zeroMessage` —
-"All caught up!" on Review, "Ready for more cards!" on Challenge/Mix.
+ramp fill** — only the commit button dims. The top-right corner tag is worn by the BACK
+cards (always, as `N Cards`) and by the front card only at zero, where it prints a
+`zeroMessage` — "All caught up!" on Review, "Add more cards!" on Challenge/Mix.
 
 ⚠️ This entry originally shipped **band totals** with per-card captions (`in rotation` /
 `ready` / `waiting`), and Mix's total omitted Mastered even though its loop deals one
@@ -1515,7 +1526,7 @@ its resting lip, which is the sheet's default state.
 `src/theme/colors.ts` (`yel`/`yelA`/`yelTint` + the `RAMP` entry).
 **Deleted:** the page's `MixButton` / `ReviewButton` / `ChallengeButton` / `CenterButton`
 styled components and `studyButtonBase`.
-**Docs:** `docs/DECKS_FEATURE.md`, `docs/MASTERY_REWORK.md`, `docs/DEFERRED_WORK.md` § 9.
+**Docs:** `docs/DECKS_FEATURE.md`, `docs/MASTERY_REWORK.md`, `docs/DEFERRED_WORK.md` (`.duebar`, recently closed).
 
 ## 3 · Discover — `/discover` — **Size: TBD**
 
@@ -2364,9 +2375,11 @@ Hydra-local treatments were retired to get there, and both had a real reason at 
   properly dark tier possible at all, and it is a rule rather than a per-game knob so a
   future palette change cannot strand dark text on a dark bubble.
 
-**The lend notice was already right.** `HydraLendNotice` is full-screen, input-blocking,
-and has a single "Got it" with deliberately no table of words. The artboard was
-describing what ships.
+~~**The lend notice was already right.** `HydraLendNotice` is full-screen,
+input-blocking, and has a single "Got it" with deliberately no table of words. The
+artboard was describing what ships.~~ **Superseded 2026-09-05:** the notice was deleted
+outright. Lending is now announced by the shared hourglass badge on each lent word
+bubble, so there is no mid-run modal to style (HYDRA_BUBBLES.md § 6.4).
 
 **The header keeps its `pinyin` chip**, matching the artboard — unlike Word Search (13),
 Hydra's pinyin display genuinely is a live toggle.
@@ -2378,7 +2391,7 @@ Hydra's pinyin display genuinely is a live toggle.
   (`inkOnFill`) so that a palette change cannot strand dark text on a dark bubble. A
   hand-set gloss colour would put back the per-game knob that rule replaced.
 
-**Code:** `src/games/hydra-bubbles/HydraStage.tsx`, `HydraLendNotice.tsx`.
+**Code:** `src/games/hydra-bubbles/HydraStage.tsx`, `src/games/bubbles/Bubble.tsx`.
 **Docs:** `docs/HYDRA_BUBBLES.md`, `docs/PROVISIONAL_CARDS.md`.
 
 ## 18 · Card Detail — `/flashcards/card/:id` — **Size: L**
@@ -2559,7 +2572,7 @@ that card's rail).
 `docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md`, `docs/EXAMPLE_SENTENCES.md`,
 `docs/CARD_ICON_LAYOUT.md`, `docs/PRACTICE_WRITING.md`,
 `docs/HANDWRITING_RECOGNITION.md`, `docs/WORD_COMPARE_FEATURE.md`,
-`docs/DECKS_FEATURE.md`, `docs/DEFERRED_WORK.md` §§ 9–11.
+`docs/DECKS_FEATURE.md`, `docs/DEFERRED_WORK.md` §§ 10–11.
 
 ## Not designed
 
@@ -2678,7 +2691,7 @@ paper ground, and both are now marked LITERAL ON PURPOSE in code:
 
 | Set | Values | Design evidence |
 |---|---|---|
-| `TONE_COLORS` (`src/utils/toneColors.ts`) | 1 `#EF476F` · 2 `#05C793` · 3 `#779BE7` · 4 `#FF8E47` · neutral `#9E9E9E` | `Tone Color Explorations.html` lists exactly this array as the `current` set, and no exploration was adopted; the dictionary rows, card faces, cpcd and flp sense rail in the spec all spell these inline. |
+| `TONE_COLORS` (`src/utils/toneColors.ts`) | 1 `#EF476F` · 2 `#05C793` · 3 `#779BE7` · 4 `#EB9721` (was `#FF8E47`; warmed orange → gold 2026-09-05, see the file's header comment) · neutral `#9E9E9E` | `Tone Color Explorations.html` lists exactly this array as the `current` set, and no exploration was adopted; the dictionary rows, card faces, cpcd and flp sense rail in the spec all spell these inline. |
 | `MARK_TYPE_COLORS` (`src/utils/masteryCompute.ts`) | recognition `#779BE7` · production `#05C793` · reading `#EF476F` · writing `#FF8E47` | Artboard 18's `.msb` mark cells and cooldown legend, and artboard 17's mini-card two-mark strip, spell blue/green/red inline. |
 | `MASTERY_READY_COLOR`, `CORRECT_COLOR` / `INCORRECT_COLOR` | `#05C793` · `#05C793` / `#EF476F` | `shelf-system.css` → `.msb .cd3 .ms`, `.mst .cdr .ms`, `.shint.r`, `.shint.l`. |
 
@@ -2911,7 +2924,8 @@ re-derived (D4).
 
 **Converted directly:** `MiniVocabCard`, `QuickMarkCard`, `ChallengeWordCard`, the scp's
 `CardShell` + bucket tile + platform, `CollectionViewPage`, `CommunityCardView`, `Shelf`,
-`Spine`, `SensePicker`, `CardOpsRail`, `Bento`, `MinimizablePopup`, `HydraLendNotice`,
+`Spine`, `SensePicker`, `CardOpsRail`, `Bento`, `MinimizablePopup`, `HydraLendNotice`
+(deleted 2026-09-05),
 `ProvisionalCardsNotice`, `CommunityDesignZoom`, `CardIconOrderList`,
 `PracticeWritingPopup`.
 

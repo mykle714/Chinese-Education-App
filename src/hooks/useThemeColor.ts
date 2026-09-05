@@ -18,9 +18,11 @@ import { COLORS } from "../theme/colors";
  * inside the safe area, iOS filled the band itself using the document background it
  * captured at LAUNCH, so every runtime write here (meta tag or documentElement) was
  * ignored and the strip stayed paper-white on games and pages alike. That is fixed
- * OUTSIDE this hook, by `viewport-fit=cover` in index.html + the safe-area insets in
- * src/theme/safeArea.ts, which make the band page pixels painted by the surface
- * itself. This hook remains correct and useful for Safari tabs and Android Chrome —
+ * OUTSIDE this hook, by `viewport-fit=cover` PLUS
+ * `apple-mobile-web-app-status-bar-style: black-translucent` in index.html (it takes
+ * both — `cover` alone leaves the app letterboxed and the insets at 0px) + the
+ * safe-area insets in src/theme/safeArea.ts, which make the band page pixels painted
+ * by the surface itself. This hook remains correct and useful for Safari tabs and Android Chrome —
  * it is simply not the mechanism the standalone app uses.
  *
  * WHY A STACK, NOT A PLAIN SET/RESET: mounts and unmounts interleave. During a

@@ -13,7 +13,6 @@ import {
 } from "./masteryCenters";
 import type { MasteryBarId } from "../../utils/masteryCompute";
 import Icon from "../../components/Icon";
-import { Label } from "../../components/primitives";
 import StudyHand, { type StudyHandCard, type StudyModeId } from "./StudyHand";
 import SheetPill from "../../components/SheetPill";
 import { FOOTER_TOTAL_CLEARANCE } from "../../components/MobileFooter";
@@ -37,8 +36,8 @@ import { CARD_SURFACE } from "../../theme/surfaces";
 //
 // The page is now split across TWO surfaces:
 //
-//   PAGE (behind)  — the STUDY AREA: a library figure, the Reading/Writing Center
-//                    rail (when the account pursues those goals), and the three ways
+//   PAGE (behind)  — the STUDY AREA: the Reading/Writing Center rail (when the
+//                    account pursues those goals), and the three ways
 //                    into a session held as a fanned HAND of cards — Study Mix played
 //                    forward, Review and Challenge peeking behind it (`StudyHand`,
 //                    artboards 2 / 2b). Always reachable without moving anything.
@@ -116,14 +115,20 @@ import { CARD_SURFACE } from "../../theme/surfaces";
 //
 // They are offset by the FULL footer clearance rather than by FOOTER_HEIGHT, so they
 // clear the floating pill bar with the same gap every other page's last row gets.
+/**
+ * Corner-tag copy for a mode whose zero means "there is nothing ready to draw" rather
+ * than "you finished". Shared by Challenge and Study Mix, which empty for the same
+ * reason; Review's zero gets its own sentence at the call site.
+ */
+const ZERO_MESSAGE_MORE_CARDS = "Add more cards!";
+
 const SETS_PILL_HEIGHT = 34;
 // A CSS string, not a number: the clearance carries the home-indicator inset now
 // (FOOTER_TOTAL_CLEARANCE), so the pills sit the same gap above the bar on a notched
 // phone as on one without.
 const SETS_PILL_BOTTOM = FOOTER_TOTAL_CLEARANCE;
 
-// Breathing room between the study area's three rows (figure line / Centers rail /
-// the card hand), and — via STUDY_AREA_BOTTOM_PAD — between the hand and the pill.
+// Breathing room between the study area's two rows (Centers rail / the card hand), and — via STUDY_AREA_BOTTOM_PAD — between the hand and the pill.
 //
 // The bottom pad reserves ONLY the pill's own band: `MobileTabScreen`'s content area
 // already pads FOOTER_CLEARANCE for the footer bar, which is exactly where the pill
@@ -157,13 +162,6 @@ const HAND_HUES: Record<StudyModeId, RampHue> = {
     review: "blu",
     mix: "yel",
 };
-
-/**
- * Corner-tag copy for a mode whose pool has landed on 0 and whose zero means "there is
- * nothing ready to draw" rather than "you finished". Shared by Challenge and Study Mix,
- * which empty for the same reason; Review's zero gets its own sentence at the call site.
- */
-const ZERO_MESSAGE_MORE_CARDS = "Ready for more cards!";
 
 /**
  * The two bands each mode draws from. They PARTITION the four utcm bands, which is what
@@ -259,13 +257,6 @@ const FlashcardsDecksPage: React.FC = () => {
     const reviewPool = figuresLoaded ? ready("Comfortable") + ready("Mastered") : undefined;
     const inRotation = figuresLoaded ? (challengePool ?? 0) + (reviewPool ?? 0) : undefined;
 
-    // The LIBRARY figure is a different question ("how many cards do I own") and stays a
-    // band total, not a ready count — it must not shrink because cards are resting.
-    const libraryTotal = Object.keys(panel.categoryCounts).length > 0
-        ? panel.categoryCounts["Unfamiliar"] + panel.categoryCounts["Target"]
-            + panel.categoryCounts["Comfortable"] + panel.categoryCounts["Mastered"]
-        : undefined;
-
     // REVIEW is gated on its READY count: with every Comfortable/Mastered card resting
     // there is nothing to review, and the flp cannot lend its way out of that — a lent
     // card has an empty mark history, so it bands Unfamiliar and can never satisfy a
@@ -308,11 +299,12 @@ const FlashcardsDecksPage: React.FC = () => {
         // and the server's own `MODE_CONFIGS` keys. Same split the "Learn Now" rename
         // made (CLAUDE.md § Terminology): rename what the learner reads, never the wire.
         //
-        // `zeroMessage` is what the corner tag says instead of "0 Cards", and it differs
-        // by mode because the two zeroes mean opposite things. Review's pool empties
-        // because the learner CLEARED it — every Comfortable/Mastered card is resting —
-        // so that zero is an achievement. Challenge/Mix empty because there is nothing
-        // ready to draw at all, which is a prompt to go get more.
+        // `zeroMessage` is what the FRONT card's corner tag says in place of nothing when
+        // its pool lands on 0 — the only case in which the front card is tagged at all. It
+        // differs by mode because the two zeroes mean opposite things. Review's pool
+        // empties because the learner CLEARED it — every Comfortable/Mastered card is
+        // resting — so that zero is an achievement. Challenge/Mix empty because there is
+        // nothing ready to draw at all, which is a prompt to go get more.
         { id: "challenge", label: "Challenge Mix", figure: challengePool, figureCaption: "Cards", zeroMessage: ZERO_MESSAGE_MORE_CARDS, hue: HAND_HUES.challenge },
         { id: "review", label: "Review Mix", figure: reviewPool, figureCaption: "Cards", zeroMessage: "All caught up!", hue: HAND_HUES.review, eligible: reviewEligible },
         { id: "mix", label: "Study Mix", figure: inRotation, figureCaption: "Cards", zeroMessage: ZERO_MESSAGE_MORE_CARDS, hue: HAND_HUES.mix },
@@ -376,47 +368,6 @@ const FlashcardsDecksPage: React.FC = () => {
                             padding: `14px 18px ${STUDY_AREA_BOTTOM_PAD}px`,
                         }}
                     >
-                        {/* `.duebar` — ONE mono overline: the library's size.
-
-                            The artboard's right slot carried a second overline naming the
-                            set the hand draws from ("all cards"). It is gone: the hand only
-                            ever draws from the whole library, so the label was a constant
-                            dressed up as a scope, and a constant on screen is a question the
-                            reader has to rule out. Bring it back only if the hand ever gains
-                            a scope that can actually change.
-
-                            ⚠️ The artboard's left slot reads "24 due today". A ready
-                            count now EXISTS (`flpReadyCountsByBand` — it is what the
-                            three hand cards below print), but "due today" is a stronger
-                            claim than "ready now": it implies a deadline the app does
-                            not model, and nothing expires at midnight. So this slot
-                            keeps the library SIZE, which is a different and honest
-                            question. If it should carry readiness instead, change the
-                            LABEL with it — do not print a ready count under a due
-                            caption. See docs/DEFERRED_WORK.md § 9. */}
-                        <Box
-                            className="flashcards-decks__library-line"
-                            sx={{ display: "flex", alignItems: "center", gap: 1.5, flexShrink: 0 }}
-                        >
-                            {/* Blank until the count lands, then a fade — the same contract
-                                the hand's corner tags keep, so the page has ONE way of
-                                saying "not yet" rather than a mono ellipsis here and empty
-                                tags an inch below. It used to read "counting…", which is a
-                                second loading vocabulary for a line that is only ever a
-                                figure. The element stays mounted throughout so the fade has
-                                something to run on, and `\u00A0` holds the line box open so
-                                the hand beneath does not shift up and settle back. */}
-                            <Label
-                                className="flashcards-decks__library-total"
-                                sx={{
-                                    opacity: libraryTotal === undefined ? 0 : 1,
-                                    transition: "opacity 320ms ease",
-                                }}
-                            >
-                                {libraryTotal === undefined ? "\u00A0" : `${libraryTotal.toLocaleString()} cards`}
-                            </Label>
-                        </Box>
-
                         {/* Mastery Centers. The rail is omitted ENTIRELY when the account
                             pursues neither skill (and always for Spanish, which cannot
                             accrue those marks) — an empty row would leave the hand short

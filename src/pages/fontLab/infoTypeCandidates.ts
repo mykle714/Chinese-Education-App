@@ -12,7 +12,8 @@
 // for the second. So the list spans both answers: "a mono that survives 10px" and "stop
 // using mono for prose". `kind` is the axis to compare along, not a cosmetic tag.
 //
-// Consumed by src/pages/fontLab/InfoTypeLab.tsx and src/theme/labelFontOverride.ts.
+// Consumed by src/pages/fontLab/InfoTypeLab.tsx. (It also fed labelFontOverride.ts, the
+// dev :root override, deleted 2026-09-05 — see docs/INFO_TYPE_LAB.md § 4.)
 
 export type InfoFaceKind = "mono" | "sans";
 

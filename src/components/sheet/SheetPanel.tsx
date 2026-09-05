@@ -2,8 +2,10 @@ import React, { useCallback, useRef, useState, useLayoutEffect, useEffect, useIm
 import { createPortal } from "react-dom";
 import { Box } from "@mui/material";
 import { useDrag } from "@use-gesture/react";
-import { EicScrim, InfoSheetContainer, InfoSheetGrabber, SheetMergeHeaderSlot } from "./sheetStyled";
+import { EicScrim, InfoSheetContainer, InfoSheetGrabber, SheetHeaderSlot } from "./sheetStyled";
 import PageHeader from "../PageHeader";
+import SheetCloseX from "./SheetCloseX";
+import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { SAFE_TOP } from "../../theme/safeArea";
 import { useHideFooter } from "../../hooks/useHideFooter";
 import { nearestOverlayHost } from "../overlayHost";
@@ -73,6 +75,31 @@ interface SheetPanelProps {
     // {lower stop, max} choice is affected; a modal panel's dismiss floor (its
     // default height) is untouched.
     collapseThresholdRatio?: number;
+    // Tap handler for the sheet's ✕ (SheetCloseX, top-right of the chrome). Optional:
+    // with nothing passed the ✕ simply dismisses the sheet.
+    //
+    // Return TRUE to say "handled — keep the sheet open". That is the eip's case: its ✕
+    // closes the SHOWING WORD, and only the last word's close ends the panel, so the flp
+    // passes `() => !eip.closeActiveTab()` and SheetPanel dismisses exactly when the trail
+    // ran out. Returning true/void from a handler that did nothing would strand the user
+    // in a panel whose only close affordance no longer closes.
+    onCloseX?: () => boolean | void;
+    // Whether to draw the ✕ at all. Defaults to "yes, unless the panel is PERSISTENT" —
+    // a panel with a floor (the /decks sheet) has no closed state to offer, and a ✕ that
+    // collapses a sheet to its floor is not a close.
+    showClose?: boolean;
+    // Draw the minute-points flame to the LEFT of the ✕. Passed by the STUDY SURFACES
+    // (flp, scp, cdp — the minute-eligible pages of src/constants.ts), because a sheet
+    // covers its page's header and takes the page's own flame with it: without this the
+    // one indicator that says "your time is counting" disappears exactly while the
+    // learner is reading a definition, which IS study time.
+    //
+    // ⚠️ It mounts a second `useMinutePoints` (one accrual tick per instance) alongside
+    // the host page's header. That is the same cost the merge header used to pay for its
+    // own flame — which is now off (PageHeader `showFlame={false}` below), so the count of
+    // live flames on a study surface is unchanged. It cannot over-credit: the server
+    // claims each increment atomically under a 59s cooldown (UserDAL.claimMinutePointIncrement).
+    showMinutePoints?: boolean;
     // Optional row rendered above the grabber (e.g. entry-tabs strip). Rendered
     // inside a drag-to-resize zone bound to bindHeaderDrag so a vertical drag
     // started on the entry tabs resizes the sheet just like the grabber/header
@@ -80,28 +107,23 @@ interface SheetPanelProps {
     // it — useDrag is the only path). useDrag's filterTaps keeps tab-selection
     // and the close-tab taps working.
     tabStrip?: React.ReactNode;
-    // Title for the MERGE HEADER — the page-style header that grows in over the last
-    // MERGE_ZONE_PX of travel, once the sheet is tall enough to have covered the host
-    // page's own header. It is a real PageHeader (size "node", chevron-down), so a
-    // merged sheet wears the app's one header rather than a lookalike, and its chevron
-    // dismisses the sheet: at full height the scrim is completely covered, so the
-    // tap-to-close target that used to live in the 8% gap has to come back somewhere.
+    // Title for the panel's HEADER — a real `PageHeader` (size "node"), present at every
+    // height from the moment the sheet opens, so a panel says what it is whether it is a
+    // 60% sheet or the whole screen. It also OWNS THE CLOSE CLUSTER (the ✕ and, on study
+    // surfaces, the minute-points flame), which used to live in the grabber row above and
+    // slide between rows as the sheet grew.
     //
-    // Omitting it is allowed but discouraged for a modal sheet — the sheet still grows
-    // to full height, it just does so with no way out but a downward drag.
+    // It used to be MERGE chrome — clipped to zero and interpolated in over the last
+    // MERGE_ZONE_PX, so it appeared only as the sheet became the whole screen, with a
+    // `headerMode="always"` opt-out for panels whose body had no title row of their own.
+    // Every call site ended up wanting it at every height, and a control that moves as you
+    // drag is harder to hit than one that does not, so the opt-out became the only mode
+    // (2026-09-05). The merge now touches only the container's corners, shadow and top
+    // padding.
+    //
+    // Omitting it is allowed but discouraged for a modal sheet: with no header there is no
+    // ✕ either, so the only way out is a downward drag.
     title?: string;
-    // How the `title` header behaves.
-    //  • "merge" (default) — it is MERGE chrome: clipped to zero and interpolated in over
-    //    the last MERGE_ZONE_PX, so it appears only as the sheet becomes the whole screen.
-    //    Right for a sheet whose body carries its own identity (the eip's entry header
-    //    names the word; the /decks sheet's body names the set).
-    //  • "always" — the header is ordinary sheet furniture, at full height from the moment
-    //    the sheet opens, and the merge stops touching it (only the corners, shadow and top
-    //    padding still interpolate). Right for a sheet whose body has NO title row of its
-    //    own — the compare sheet, whose first row is two word slots — because the sheet then
-    //    says what it is and offers a labelled close at every height, not just at the top of
-    //    its travel. The grabber stays above it, so the resize affordance is unchanged.
-    headerMode?: "merge" | "always";
 }
 
 // ---------------------------------------------------------------------------
@@ -130,8 +152,13 @@ const MERGE_ZONE_PX = 64;
 // styled.ts — they are the "unmerged" end of the interpolation.
 const SHEET_CORNER_RADIUS_PX = 20;
 const SHEET_TOP_PADDING_PX = 10;
-// Fallback for the merge header's height, used only if it cannot be measured on mount.
-const MERGE_HEADER_FALLBACK_PX = 52;
+
+
+// Right inset of the close cluster. Matches the tab strip's own 16px side padding, so
+// the ✕ lands in exactly the same column whichever row it is currently sitting in —
+// that is what makes the move between them read as ONE button descending rather than
+// two buttons swapping.
+const CLOSE_CLUSTER_RIGHT_PX = 16;
 
 // Base stacking for the portaled scrim + sheet. Both are hosted at FRAME level now
 // (see the portal note), so they no longer compete with their page's content area —
@@ -224,7 +251,9 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     children,
     tabStrip,
     title,
-    headerMode = "merge",
+    onCloseX,
+    showClose,
+    showMinutePoints = false,
 }, ref) => {
     const sheetContainerRef = useRef<HTMLDivElement | null>(null);
     const scrimRef = useRef<HTMLDivElement | null>(null);
@@ -232,13 +261,16 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // start from: both the scrim and the sheet are portaled away, so without it there
     // would be nothing of this component left in the page's DOM to locate.
     const anchorRef = useRef<HTMLDivElement | null>(null);
-    // Wrapper around the merge header. Its height/opacity are written imperatively for
-    // the same reason the sheet's height is (see the height-model note) — one style
-    // write per frame instead of a re-render of the whole body.
-    const mergeHeaderRef = useRef<HTMLDivElement | null>(null);
-    const mergeHeaderHeightRef = useRef(MERGE_HEADER_FALLBACK_PX);
+    // Wrapper around the panel header. Nothing is written to it imperatively any more —
+    // it is permanent chrome — but SheetPanel still holds it for the drag binding.
+    const headerRef = useRef<HTMLDivElement | null>(null);
     // Last merge ratio written, so a frame that does not change it writes no styles.
     const lastMergeRef = useRef(-1);
+    // Wrapper around the optional tab strip — what the strip ResizeObserver watches.
+    const tabStripWrapRef = useRef<HTMLDivElement | null>(null);
+    // Last tab-strip height the panel has already made room for. Seeded at -1 so the
+    // FIRST measurement only records the baseline and never grows the sheet.
+    const tabStripHeightRef = useRef(-1);
 
     // ---- Where the scrim mounts -------------------------------------------
     // The scrim is `position: absolute; inset: 0`, so it dims exactly its nearest
@@ -335,8 +367,21 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // Read through a ref for the same reason as collapseThresholdRatio: writeMergeChrome is
     // a stable callback called from touchmove/momentum frames, so it must not be rebuilt
     // (and its listeners re-bound) just because a prop identity changed.
-    const headerModeRef = useRef(headerMode);
-    headerModeRef.current = headerMode;
+
+    // Put the close cluster (flame + ✕) on the right row.
+    //
+    // ⚠️ THE ✕ IS ONE ELEMENT THAT MOVES, not two that swap. It lives in the chrome row
+    // (top-right, beside the grabber) and slides DOWN into the tab strip's row the moment
+    // a strip appears — which is the row the eip's word-trail ✕ used to occupy, and the
+    // strip therefore reserves the column for it rather than drawing its own (EipTabStrip).
+    // Rendering a second ✕ in the strip and hiding the first would have been the easy
+    // version and it reads as a flicker: the button vanishes from one row and materialises
+    // in another, with nothing connecting them.
+    //
+    // The offset is MEASURED rather than derived from the strip's height, because the
+    // merge header grows in BETWEEN the two rows: at full height the strip sits a header
+    // lower than it does at rest, and any formula would have to re-derive the header's
+    // live interpolated height anyway.
 
     // Paint the "merging into the page" chrome for a given sheet height. `t` runs 0 → 1
     // across the last MERGE_ZONE_PX below the cap: 0 is a sheet (rounded, shadowed, no
@@ -372,20 +417,12 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         // the mix is expressed as a calc the browser evaluates: `SAFE_TOP * t`. On a
         // device with no inset it is 0px and this is exactly the old ramp to 0.
         el.style.paddingTop = `calc(${SHEET_TOP_PADDING_PX * (1 - t)}px + ${SAFE_TOP} * ${t})`;
-        // In "always" mode the header is not merge chrome — it is at full height from the
-        // start and the merge must not touch it. Only the container's own corners/shadow/
-        // padding above still interpolate.
-        const header = headerModeRef.current === "always" ? null : mergeHeaderRef.current;
-        if (header) {
-            header.style.transition = animate
-                ? `height ${SNAP_DURATION_MS}ms ease-out, opacity ${SNAP_DURATION_MS}ms ease-out`
-                : "none";
-            header.style.height = `${mergeHeaderHeightRef.current * t}px`;
-            header.style.opacity = `${t}`;
-            // Only takes taps once it is fully there: a half-faded close chevron that
-            // already swallows taps is worse than one that is not there yet.
-            header.style.pointerEvents = t >= 1 ? "auto" : "none";
-        }
+        // THE HEADER IS NOT MERGE CHROME. It is at full height from the moment the panel
+        // opens and the merge must not touch it — only the container's own corners,
+        // shadow and top padding interpolate. Until 2026-09-05 the header's height and
+        // opacity were interpolated here too (with a `headerMode="always"` opt-out), and
+        // the close cluster was re-measured against the moving row on every frame of the
+        // ramp; both are gone with the header now fixed.
         return transition;
     }, []);
 
@@ -499,14 +536,6 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         if (!sheetContainerRef.current) return;
         const parentH = sheetContainerRef.current.parentElement?.clientHeight ?? window.innerHeight;
         parentHeightRef.current = parentH;
-        // Measure the merge header's NATURAL height once, from the header element
-        // itself rather than its wrapper: the wrapper is clipped to 0 from the first
-        // paint, but its child still lays out at full size inside it. Measured rather
-        // than hard-coded so the header can change size (PageHeader's title scales,
-        // and its padding is a design token) without the merge clipping it.
-        const headerEl = mergeHeaderRef.current?.firstElementChild as HTMLElement | null;
-        const measured = headerEl?.getBoundingClientRect().height ?? 0;
-        if (measured > 0) mergeHeaderHeightRef.current = measured;
         // Resting height on mount, in priority order:
         //   1. explicit initialHeight (a child panel matching its parent's extent)
         //   2. the floor, for a persistent panel — it is already "closed", so
@@ -543,6 +572,42 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     useImperativeHandle(ref, () => ({
         getCurrentHeight: () => heightRef.current,
     }), []);
+
+    // ---- The sheet GROWS for its tab strip, it does not squeeze -------------
+    // When the eip's word trail appears (a second word opened), the strip is a new row of
+    // chrome ~40px tall. Laid out normally it takes that space from the BODY: every line
+    // of the definition the learner is reading shifts down by a row, which reads as the
+    // content jumping away from the tap that opened it. So the panel takes the row from
+    // the SCREEN instead — it grows by exactly the strip's height, leaving the body where
+    // it was.
+    //
+    // The resting stop grows with it (`defaultHeightRef`), or the next drag-release would
+    // snap the panel back to a height that no longer has room for the strip and undo this.
+    //
+    // At the cap there is nothing left to take: a sheet already at full height cannot
+    // grow, and the body does shift down by a row. That is the only case where it does.
+    useEffect(() => {
+        const el = tabStripWrapRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver(() => {
+            // Never while the sheet is leaving: its own shrink is what changed the strip,
+            // and growing back for it would fight the dismiss.
+            if (dismissingRef.current) return;
+            const h = el.getBoundingClientRect().height;
+            const prev = tabStripHeightRef.current;
+            tabStripHeightRef.current = h;
+            // First measurement is the baseline (the strip mounts at whatever height it
+            // opens with) — growing for it would double-count the space it already has.
+            if (prev < 0) return;
+            const delta = h - prev;
+            if (Math.abs(delta) > 0.5) {
+                defaultHeightRef.current = clamp(defaultHeightRef.current + delta, 0, maxHeight());
+                writeHeight(clamp(heightRef.current + delta, minHeightRef.current, maxHeight()), true);
+            }
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [maxHeight, writeHeight]);
 
     // Drag the grabber / tab strip / entry header to resize the sheet.
     const bindHeaderDrag = useDrag(
@@ -781,6 +846,28 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // (border radius, top padding, shadow) — writeMergeChrome owns those.
     const sheetStyle: React.CSSProperties = { zIndex: SHEET_BASE_Z_INDEX + stackZ };
 
+    // A persistent panel has no closed state, so it gets no ✕ unless a caller insists.
+    const closeVisible = showClose ?? !persistent;
+
+    // The panel's permanent controls, in the order they read from the left: the flame
+    // (study surfaces only) then the ✕, so the ✕ is the corner control on every panel.
+    // Only the ROOT panel carries the flame — a stacked child (the compare sheet raised
+    // from the eip) covers its parent completely, so a second flame would be one
+    // indicator behind another, and a third `useMinutePoints` tick.
+    const closeCluster = (
+        <>
+            {showMinutePoints && depth === 0 && <MinutePointsFireBadge />}
+            <SheetCloseX
+                onClick={() => {
+                    // TRUE means the handler dealt with it (the eip dropped a word off the
+                    // trail) and the panel stays.
+                    if (onCloseX?.() === true) return;
+                    dismiss();
+                }}
+            />
+        </>
+    );
+
     return (
         <>
             {/* Never painted — see anchorRef. */}
@@ -803,68 +890,96 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 className="mobile-demo-eic-sheet"
                 style={sheetStyle}
             >
-                {/* Draggable zone: grabber pill only. Header/tabs are outside
-                    this zone so taps on header icons aren't captured by useDrag.
+                {/* Draggable zone: the grabber pill, alone. The header below carries the
+                    ✕ and the flame now, so this row is back to being exactly what it
+                    looks like — the resize affordance, and nothing else.
 
-                    FIRST flex child, above the merge header: while the sheet is
-                    unmerged the header slot is clipped to zero height, so the pill
-                    reads as the sheet's top edge either way — but once the sheet
-                    merges, the grabber stays above the page header instead of being
-                    pushed under it, keeping the resize affordance at the very top of
-                    a maximized panel. */}
+                    FIRST flex child, above the header: the grabber stays at the very top
+                    of the panel at every height, including a maximized one, rather than
+                    being pushed under the page header. */}
                 <Box
                     className="mobile-demo-eic-drag-zone"
                     {...bindHeaderDrag()}
-                    sx={{ touchAction: "none", userSelect: "none", display: "flex", justifyContent: "center", padding: "4px 0 8px" }}
+                    sx={{
+                        // Positioning context for the untitled-panel fallback cluster below.
+                        position: "relative",
+                        touchAction: "none",
+                        userSelect: "none",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                        // Sized for the pill it holds. It used to reserve
+                        // CHROME_ROW_HEIGHT_PX for the ✕ that lived here.
+                        padding: "4px 0 8px",
+                    }}
                 >
                     <InfoSheetGrabber className="mobile-demo-drag-handle" />
+                    {/* No title = no header = nowhere for the close cluster to live, so it
+                        falls back into this row. Discouraged (see the `title` prop) and
+                        used by nothing today; it exists so an untitled panel degrades to
+                        the old layout rather than losing its ✕ entirely. */}
+                    {closeVisible && !title && (
+                        <Box
+                            className="mobile-demo-eic-close-cluster"
+                            sx={{
+                                position: "absolute",
+                                top: 0,
+                                bottom: 0,
+                                right: `${CLOSE_CLUSTER_RIGHT_PX}px`,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "10px",
+                            }}
+                        >
+                            {closeCluster}
+                        </Box>
+                    )}
                 </Box>
-                {/* MERGE HEADER — the app's real PageHeader, clipped to zero height
-                    until the sheet grows into the merge zone and then interpolated in
-                    by writeMergeChrome. It sits under the grabber, so everything below
-                    it is pushed down by exactly as much header as is currently showing;
-                    nothing has to reserve space for it.
+                {/* PANEL HEADER — the app's real PageHeader, at full height from the
+                    moment the panel opens (it was merge chrome until 2026-09-05; see the
+                    `title` prop for why that changed). It sits under the grabber, so the
+                    body below is pushed down by exactly one header, and the header holds
+                    still while the panel is dragged.
 
-                    Chevron DOWN, not a back arrow: this dismisses the sheet in the
-                    direction a drag would, and it is the only close affordance left
-                    once the sheet covers the scrim.
+                    IT CARRIES THE CLOSE CLUSTER in its right slot — the ✕ and, on study
+                    surfaces, the minute-points flame. They used to sit in the grabber row
+                    and slide down into whichever row was below as the panel grew, which
+                    made the panel's one permanent control a moving target.
 
-                    `headerMode="always"` opts out of the clipping entirely (see the prop):
-                    the header is then ordinary sheet furniture at every height.
-
-                    ⚠️ This is a REAL PageHeader, and PageHeader renders the minute-points
-                    flame unconditionally — which runs a 1-second accrual tick. An open
-                    titled sheet therefore adds a second tick on top of its page's own
-                    header. It cannot over-credit (the server claims a 59-second cooldown
-                    atomically, UserDAL.claimMinutePointIncrement), but see PageHeader's
-                    "exactly one PageHeader on an earning page" note before adding more. */}
+                    ⚠️ This is a REAL PageHeader, and an open titled panel therefore adds a
+                    second minute-points tick on top of its host page's own header IF the
+                    flame is on. It cannot over-credit (the server claims a 59-second
+                    cooldown atomically, UserDAL.claimMinutePointIncrement), but see
+                    PageHeader's "exactly one PageHeader on an earning page" note. */}
                 {title && (
-                    <SheetMergeHeaderSlot
-                        ref={mergeHeaderRef}
-                        className="mobile-demo-eic-merge-header"
-                        // "always": undo the slot's clipped-to-zero resting state right here
-                        // rather than by writing styles after mount — the header must be
-                        // there on the FIRST paint, and writeMergeChrome's early-out (`t`
-                        // unchanged) means the first write at t=0 does nothing at all.
-                        style={
-                            headerMode === "always"
-                                ? { height: "auto", opacity: 1, pointerEvents: "auto" }
-                                : undefined
-                        }
+                    <SheetHeaderSlot
+                        ref={headerRef}
+                        className="mobile-demo-eic-header"
+                        // THE WHOLE HEADER RESIZES THE PANEL. The top edge is where a hand
+                        // reaches to pull a sheet back down; before this only the 44px pill
+                        // above it did anything, so a drag on the header title simply did
+                        // nothing. filterTaps keeps the ✕ inside it tappable.
+                        {...bindHeaderDrag()}
                     >
                         <PageHeader
                             title={title}
                             size="node"
-                            arrowDirection="down"
-                            onBack={dismiss}
-                            // The status-bar clearance is carried by the SHEET's own
-                            // top padding (writeMergeChrome), which ramps it in with
-                            // the merge — the header must not add it a second time.
-                            // It also keeps the measured `mergeHeaderHeightRef` a
-                            // plain px number, free of any `env()` term.
+                            // NO CHEVRON — the ✕ in the right slot is the close, and a
+                            // chevron beside it would be a second close button one row away
+                            // doing the same thing.
+                            showBack={false}
+                            // NO PageHeader FLAME — the cluster below supplies its own, so
+                            // that PageHeader's flame-last rule does not put the flame
+                            // outboard of the ✕ (the ✕ is the corner control here).
+                            showFlame={false}
+                            rightContent={closeVisible ? closeCluster : undefined}
+                            // The status-bar clearance is carried by the PANEL's own top
+                            // padding (writeMergeChrome), which ramps it in with the merge —
+                            // the header must not add it a second time.
                             safeAreaTop={false}
                         />
-                    </SheetMergeHeaderSlot>
+                    </SheetHeaderSlot>
                 )}
                 {/* Entry-tabs strip (optional) sits between the grabber and the
                     entry header so it reads as part of the panel chrome. Wrapped
@@ -872,9 +987,16 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                     resize the sheet; filterTaps keeps tab taps working. */}
                 {tabStrip && (
                     <Box
+                        ref={tabStripWrapRef}
                         className="mobile-demo-eic-tabstrip-drag-zone"
                         {...bindHeaderDrag()}
-                        sx={{ touchAction: "none" }}
+                        // flexShrink 0 — CHROME MUST NOT SQUEEZE. Without it a drag that
+                        // shrinks the sheet compresses the strip, the ResizeObserver above
+                        // reads that as "the strip got shorter" and shrinks the sheet by the
+                        // same amount, which shrinks the strip again: a feedback loop that
+                        // collapses the panel. The body (flex: 1, minHeight: 0) is what
+                        // absorbs a shrinking sheet, exactly as before.
+                        sx={{ touchAction: "none", flexShrink: 0 }}
                     >
                         {tabStrip}
                     </Box>

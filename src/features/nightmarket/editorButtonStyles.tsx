@@ -4,10 +4,9 @@ import type { SxProps, Theme } from '@mui/material';
 import { WEIGHT } from '../../theme/scale';
 
 /**
- * Shared chrome for the two night-market authoring tools (Template Editor + Template Sandbox)
- * so their toolbars read as one system: the square icon "palette" button, its corner hotkey
- * badge, the accent-tinted group box, and the outlined header-button styling used over the
- * dark scene.
+ * Shared chrome for the authoring tools, so their toolbars read as one system: the square
+ * icon "palette" button, its corner hotkey badge, the accent-tinted group box, and the
+ * outlined header-button styling used over the dark scene.
  *
  * SIZING CONTRACT — every button here is a FIXED size that never reflows:
  *  - palette buttons are locked to exactly 40×40 (`flex: '0 0 auto'` + min/max width & height),
@@ -19,8 +18,13 @@ import { WEIGHT } from '../../theme/scale';
  *    toggling `variant` on an active state shifted the icon by 1px and changed the button's
  *    visual weight. Active/idle is expressed purely through `paletteBtnSx` colours instead.
  *
- * Referenced by TemplateEditorPage.tsx and TemplateSandboxPage.tsx.
- * Docs: docs/NIGHT_MARKET_TEMPLATE_EDITOR.md, docs/NIGHT_MARKET_TEMPLATE_SANDBOX.md.
+ * Referenced by TemplateEditorPage.tsx, TemplateSandboxPage.tsx and — for the PALETTE half
+ * only — the immersive world's IWSceneMapPanel.tsx, which reuses `PaletteButton` /
+ * `toolGroupSx` / `HotkeyBadge` so an author who has learned one board has learned both.
+ * It deliberately does NOT reuse `headerBtnSx` and friends: those are drawn to float over
+ * a dark Pixi canvas, and the iw editor's toolbar sits on the app's ordinary paper ground.
+ * Docs: docs/NIGHT_MARKET_TEMPLATE_EDITOR.md, docs/NIGHT_MARKET_TEMPLATE_SANDBOX.md,
+ * docs/IMMERSIVE_WORLD.md § 12 phase 1d.
  */
 
 /** Default palette accent (yellow) for ungrouped toggles. */

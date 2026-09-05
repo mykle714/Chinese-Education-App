@@ -1,14 +1,13 @@
 // The font lab's PINNED SHORTLIST — the candidates you are still considering.
 //
-// Deliberately distinct from the app-wide override in src/theme/cjkFontOverride.ts,
-// which the two used to share the word "pin" for. They are different in kind:
+// Pure bookkeeping: it marks candidates as still in the running and restores them as
+// compare columns on reload. It affects nothing outside /font-lab.
 //
-//   • Pinned (HERE, many)  — bookkeeping. Marks candidates as still in the running and
-//                            restores them as compare columns on reload. Affects nothing
-//                            outside /font-lab.
-//   • Use app-wide (there, ONE) — actually sets `--cjk-font` on :root, re-facing every
-//                            Chinese glyph in the app. Single by necessity: the app has
-//                            one CJK face.
+// There used to be a second, confusingly adjacent concept the two shared the word "pin"
+// for — "Use app-wide", which set `--cjk-font` on :root and re-faced the whole app. It
+// was removed on 2026-09-05 because it silently outranked the account's own typeface
+// preference; see src/hooks/useChineseFont.ts. Pinning is now the lab's only persisted
+// state, so the two can no longer be confused for each other.
 //
 // Stored as candidate ids (not family names) so a renamed or re-sourced face in
 // candidates.ts invalidates cleanly rather than pinning a family that no longer loads.

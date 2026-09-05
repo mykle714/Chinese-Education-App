@@ -1,13 +1,14 @@
 # Immersive World (AI-driven NPCs in a walkable scene)
 
-> STATUS: **PHASE 1 IN PROGRESS — 1a, 1b and 1c done; the editor (§ 12) is the next step.**
+> STATUS: **PHASE 1 COMPLETE ON DEV — 1a–1e are built; phase 2 (one stall you can talk to)
+> is the next step.**
 > The question log (§ 14) is closed — every question is answered or explicitly parked — and
 > § 12 is a phased build plan.
 >
 > **Built so far:** the latency bench at `server/scripts/bench/npc-latency/` (§ 6a), which
 > answered "can a model reply fast enough to be an NPC?" before anything was designed around
 > the assumption that it can — **it can**, 516 ms to the first spoken glyph, 720 ms to the
-> complete utterance (§ 6, § 6.4); the three registry NPCs (§ 14 Q2); and the § 5.5
+> complete utterance (§ 6, § 6.4); the registry cast (§ 14 Q2); and the § 5.5
 > layer-2 prompt renderer `server/services/iw/npcPrompt.ts`, which is production code the
 > bench deliberately shares. The character sweep now runs the **whole cast** and scores
 > **54/54 in character** through English fallback, meta questions and prompt injection
@@ -17,14 +18,28 @@
 > **The engineering deliverable is a TOOL, not content.** No scenes and no maps are built by
 > engineers — a human authors them in the iw editor, gated behind `users.isTemplateAuthor`.
 > That makes the editor **phase 1**. **NPCs are the exception: they are code** (§ 14 Q2),
-> and three are written — 王婶, 小陈, 老周 in `server/config/iwNpcs.ts`. The editor lets an
-> author choose *which NPC has which NPC*, not write NPC text.
+> and six are written — the companion 迈克尔 plus 王婶, 小陈, 老周, 周敏, 马师傅 in
+> `server/config/iwNpcs.ts`. The editor lets an author choose *which NPC stands in which
+> stall*, not write NPC text.
 >
-> **Tables created by migration 158** (`database/migrations/158-create-immersive-world-schema.sql`):
+> **Tables created by migration 158** (`database/migrations/158-create-immersive-world-schema.sql`),
+> corrected by **159** (`159-iw-scene-authoring-corrections.sql`, not yet on prod —
+> [runbook](./IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md)):
 > `iw_scenes`, `iw_scene_runs`, `iw_scene_ratings`, `iw_npc_memories` — **four tables, not nine.**
 > The originally-approved child tables were collapsed into jsonb columns on `iw_scenes`
-> (see § 12 phase 1a and the migration header). Still owed from 1a: the startup pass that
-> asserts every stored npc id still resolves in `iwNpcs.ts`.
+> (see § 12 phase 1a and the migration header). The startup pass 1a owed —
+> `server/services/iw/validateStoredNpcIds.ts`, called from `server/server.ts` at boot —
+> **is built**: it asserts every stored npc id still resolves via `npcById`, and warns
+> rather than crashing (an orphaned id breaks iw and nothing else, and iw has no
+> learner-facing surface yet).
+>
+> **The scene editor is built** (§ 12 phase 1d/1e) at `/immersive-world/scene-editor`:
+> `server/contracts/iw.ts` (the shared scene contract + the § 5.4 action vocabulary),
+> `ImmersiveWorldDAL` → `ImmersiveWorldSceneService` → `ImmersiveWorldSceneController` →
+> `immersiveWorldRoutes.ts` on the server, and `src/features/immersiveworld/` on the
+> client. It reuses the night market's `TemplateEditorViewer` for the map (via a new
+> `markers` prop) and adds the non-spatial half. **No scene has been authored in it yet** —
+> that is the first thing phase 2 needs.
 >
 > **The three decisions that shape everything else:** the reply wire format is three lines of
 > plain text, speech first (§ 5.1, measured); **NPC lines are spoken aloud and the audio paces
@@ -86,7 +101,7 @@ The expensive half of this feature is already built and running for the Night Ma
 |---|---|---|
 | Isometric walkable world, tiles, terrain, camera | nm engine | `src/engine/market/` (`isometric.ts`, `marketWorld.ts`, `tileGraph.ts`), `src/features/nightmarket/MarketEngineViewer.tsx` |
 | Characters that walk tile-by-tile, avoid each other, recover from deadlock | `pedestrianAgent.ts` FSM | [PEDESTRIAN_WALKING_ALGORITHM.md](./PEDESTRIAN_WALKING_ALGORITHM.md) |
-| Pathfinding across a street graph | `streetGraph.ts` → `planPath`, the **dormant** `VisitStand` / `Traveling` path | same doc's runtime note |
+| Pathfinding across a tile graph | `tileGraph.ts` / `streetGraph.ts` → `planPath`, the **dormant** `VisitStand` / `Traveling` path | same doc's runtime note. ⚠️ iw builds its graph from a **different cell set** — see § 3a |
 | Camera that follows a moving character | `cameraFollow.ts` → `approachPan` | [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md) § Pedestrian camera lock |
 | Hand-authored scenes to set a game in | template system | [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) |
 | A vocabulary pool pitched at the learner | `GET /api/onDeck/gamePool` | `OnDeckVocabService` → `getGameVocabPool` |
@@ -115,7 +130,8 @@ same occupancy grid* NPCs read, so an NPC pathing to the player can't walk throu
 and "walk away from the player" is expressible in the same coordinates.
 
 Controls (mobile-first, per [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md)): **tap-to-move**
-(Q18, decided — a tap on a walkable tile plans a path with the existing `streetGraph.planPath`),
+(Q18, decided — a tap on a walkable tile plans a path with the existing `planPath`, over the
+§ 3a cell set),
 the action button bottom-right, the input docked above it. No virtual stick: the engine moves
 between tiles, not in continuous space, and a stick buys nothing that layout does not.
 `useBlockEdgeSwipe(true)` is mandatory, as on every game page.
@@ -123,6 +139,45 @@ between tiles, not in continuous space, and a stick buys nothing that layout doe
 Because tap now means four things (Q18's table), the world surface is the **only** one that
 hit-tests: the input region and the speech bubble consume their own taps, and within the world
 an NPC or object hit wins over the tile beneath it.
+
+## 3a. Walkability — there are no walkable masks
+
+**Every in-bounds cell of a scene is walkable. The only thing that makes a cell impassable is
+a BLOCKING asset standing on it** — a tree or a common prop (`farmTerrain.isBlockingDecorUrl`).
+Flush family decor and planks lie on the ground and stay walkable.
+
+```
+walkable(scene) = { every cell in width × height } − { cells whose decor is blocking }
+```
+
+This is the **inverse of the night market's model**, and the inversion is deliberate
+(2026-09-05). The night market paints two mutually-exclusive walkable classes — `street` and
+`communal` — and everything unpainted is solid. That is the cheap description *there*,
+because a market is mostly stalls and terrain with narrow paths carved through it. A scene is
+the opposite shape: a small enclosed place a learner walks around in — a shop floor, a
+courtyard, a stretch of pavement — where the walkable set is nearly the whole board. Painting
+it would be busywork whose only possible outcomes are "correct" and "an NPC is stranded on a
+cell the author forgot to paint".
+
+**What this changes, concretely:**
+
+| Where | Consequence |
+|---|---|
+| `IWSceneLayout` (`server/contracts/iw.ts`) | `street` and `communal` are **gone**. `layout` is jsonb, so no migration; a row written before this carries the dead keys and they are dropped on its next save |
+| Scene editor (`IWSceneMapPanel`) | no street/communal tools (**Q/W unbound**) and no tints to toggle (**1/2 freed**, and now cast keys) |
+| `sceneValidation.validateLayout` | checks two cell lists, `terrain1` and `terrain2` |
+| Every movement step | `walk_to_tag`, `walk_to_actor`, `walk_away_from` and tap-to-move all path over the set above |
+| Authoring a blocked cell | is an act of **decoration**: drop a tree or a prop and the cell stops being walkable. There is no separate "wall" concept |
+
+⚠️ **Not yet built:** the graph builder that turns a scene layout into the `TileGraph`
+`planPath` consumes. The night market's `buildMarketWorld` assembles its graph from street
+and communal `TileDef`s, which is precisely the input iw no longer has, so iw needs its own
+assembler over the formula above rather than a call into that one.
+
+Referenced by: `server/contracts/iw.ts` → `IWSceneLayout`;
+`src/features/immersiveworld/useIWSceneDraft.ts` → `IWPaintTool`, `paintCell`;
+`src/features/immersiveworld/immersiveWorldSceneApi.ts` → `masksToSceneLayout`,
+`sceneLayoutToMasks`; `src/engine/market/farmTerrain.ts` → `isBlockingDecorUrl`.
 
 ## 4. The hearing model — a mechanical, non-AI gate
 
@@ -205,20 +260,25 @@ first:
 
 ```
 热的还是凉的？        line 1 — what they say. Painted into the bubble.
-face player           line 2 — a verb from the closed enum in § 5.4, plus its arguments
+face player           line 2 — an ACTION NAME the scene authored for this NPC (§ 5.4)
 pleased               line 3 — an emote; drives a sprite, never text
 ```
 
-Line 1 may be the literal `NOTHING` (an NPC may act without speaking). Line 2 may carry
-more than one argument — `give_item item_noodles player` — which is why it is a
-space-separated verb line and not a single token.
+Line 1 may be the literal `NOTHING` (an NPC may act without speaking). Line 2 is one of the
+authored action names offered to this NPC this turn, or `none`.
+
+⚠️ The transcript above is the ORIGINAL shape, kept because § 6's whole latency argument was
+measured on it. Line 2 used to be a verb from a closed engine enum plus arguments
+(`give_item item_noodles player`) — hence "space-separated verb line, not a single token".
+Q42 replaced that with an authored action name, and the parser matches the WHOLE line against
+the names offered. The latency conclusions are unaffected: it is still one short line.
 
 **Why not JSON, and why not API-enforced structured outputs:** they are measurably slower,
 by 260 ms and 410 ms respectively on the same model answering the same question (§ 6.1).
 The speech must be the *first token the model emits*; any envelope — `{"say": "`, or a
 ```` ```json ```` fence the model volunteers unprompted — is dead air the player sits
 through. Validity is not lost, because § 5.4 requires the engine to check every action
-against the enum before executing it *regardless of how it arrived*.
+against the offered action names before executing it *regardless of how it arrived*.
 
 This is a deliberate divergence from the rest of the app's model calls, and the reason is
 worth stating plainly: **an enrichment backfill should use structured outputs, because
@@ -394,47 +454,96 @@ Bubble rules that follow:
   mean paying Google to speak a line we are about to throw away, and risks an unsanitized
   glyph reaching the speaker even if it never reaches the screen.
 
-### 5.4 The action vocabulary (closed set)
+### 5.4 The action vocabulary — AUTHORED, not enumerated
 
-> **Pending addition (Q6):** `start_conversation <npcId>` — an NPC choosing to strike up an
-> **authored, canned** exchange with another NPC. The engine validates the target is present,
-> audible and not already conversing, then plays the scripted exchange itself; no model calls
-> are made for its turns. See Q6 for the full contract, including tap-to-pause and yielding to
-> the player.
+⚠️ **REWRITTEN 2026-09-05. `IW_ACTIONS` is deleted.** There is no longer a global closed set
+of verbs the model emits per turn. Every behaviour an NPC can perform is a **named script an
+author wrote for that NPC in that scene** (§ 14 Q42), and the model's only movement decision
+is *which named action fits this moment*. It never composes one.
 
-Actions are an **enum the engine can execute**, never free text. Proposed v1:
+The rationale, in the author's words: **"I don't trust the AI to get them right."** And the
+bench had already caught the model doing exactly what that distrusts — § 5.6c's 老周 invented
+`sit_to_actor` on both reps, a verb no enum contained, which the tolerant parser silently
+degraded to `idle`. An author picking *"walk to the water station"* from a list of tagged
+cells cannot invent anything.
 
-| Action line | Engine mapping |
+**What the model emits on its turn is now:**
+
+| Line | Content |
 |---|---|
-| `idle` | stay on the current agenda |
-| `walk_to_actor <id>` | `VisitStand`-style goal with an actor target; re-targets as the actor moves |
-| `walk_away_from <id>` | pick the reachable tile maximizing distance within N tiles |
-| `walk_to_item <id>` | goal with a fixed tile target — the already-built case |
-| `give_item <itemId> <actorId>` | requires adjacency; the engine walks first, then transfers |
-| `face <id>` | free, instant |
-| `follow <id>` | a standing goal until cancelled |
-| `hand_over <itemId>` | requires adjacency; transfers an item the NPC actually holds |
-| `accept_payment` | **transactional** — legal only for the NPC the scene declares its completer, and only after the learner has offered. Firing it ends the scene (§ 9.2) |
-| `refuse` | the transactional *no*: the vendor declines, the scene continues. Without it, getting the sentence right has no stakes |
+| 1 | the speech, as before |
+| 2 | **the NAME of one authored action**, exactly as written, or `none` |
+| 3 | the emote, as before |
 
-The last three are the **transactional** family. They are the only actions with
-consequences outside the NPC's own body, so they carry the strictest legality checks — see
-§ 9.2 for why scene completion is expressed as an action rather than a counter.
+The offered names are per NPC and per scene, so there is nothing global left to enumerate.
+Two consequences follow, and both have landed: the bench takes its offered list from the
+probe context rather than from a constant (`npcProbes.js`), and `gradeReply` must be handed
+the same list it offered or it grades a fiction.
 
-The model **proposes**; the engine **validates and executes**. An action naming a
-nonexistent NPC, an unreachable tile, or an item the NPC doesn't hold is dropped to `idle`
-and the NPC just speaks. Never let a model's output move a body without a legality check —
-the same rule as "the model proposes a word, the DAL decides whether the row exists."
+**The primitives did not disappear — they became STEP KINDS** an author sequences inside an
+action (`IW_ACTION_STEP_KINDS`, `server/contracts/iw.ts`):
 
-This check is also the backstop for prompt injection (§ 11.4): the worst a successful
-injection can achieve is an off-character sentence, never an illegal world state.
+| Step | Engine mapping |
+|---|---|
+| `comment` | **the one step that costs a model call, by design** — see below |
+| `walk_to_tag` | path to the nearest cell adjacent to a cell carrying that tag, then face it — over the walkable set defined in § 3a |
+| `walk_to_actor` / `walk_away_from` / `face` | as the old verbs, but with an author-chosen target rather than a model-invented one |
+| `wait` | hold for 1–60 whole seconds — the beat that makes a script read as behaviour |
+| `wait_for_response` | hand the floor back; last step only (§ 14 Q29 forbids anything running while the learner composes) |
+| `start_conversation` | play one of the scene's authored exchanges (Q6), chosen by the author rather than targeted by the model |
+
+That is the whole list — **eight steps**. The test for membership: *can the engine execute it
+without knowing what the scene is about?* Walking, facing, waiting, saying and playing a
+canned conversation all pass.
+
+**The transactional family is NOT here, and that is the second correction of the day.**
+`accept_payment` / `hand_over` / `give_item` / `refuse` were briefly step kinds; they lasted
+hours. They fail the test above — the engine cannot animate "accepting payment" without
+knowing what a payment is in this scene — and, more usefully, they were **already** what an
+authored action is: walk to the learner, say a line, take the money, thank them. Promoting a
+little scene to a primitive gains nothing and forces the engine to model commerce. So an
+author programs one and nominates it (see *Completion* below), and `refuse` becomes what it
+always was in practice: a `comment` and a `walk_away_from`.
+
+Two of the old model verbs were not carried over either: `idle` (an action that does nothing
+is a `wait`, or no chosen action at all) and `walk_to_item` / `follow` — the first is subsumed
+by `walk_to_tag`, since items were never modelled and a tagged cell is the thing that actually
+exists; the second is a persistent MODE rather than a step, and nothing has asked for it.
+
+**`comment` costs a model call, and that is the point.** Every other step executes verbatim.
+`comment` carries the CONTENT — what is said stays more or less what the author wrote — and
+the model's job is to **embellish**: the NPC's current mood, its personality, how many times
+this has already come up, its opinion of the learner, and plain variance so a scene replayed
+on day 12 does not read like day 11. This is the first thing in the feature that breaks § 6's
+one-model-call-per-turn budget, and the mitigation is structural: an action's comments should
+be generated **together, once, when the action is chosen**, so a three-comment script is one
+call whose latency hides behind the first walk.
+
+**Completion became checkable — and then became an authored action too.**
+`IW_COMPLETION_ACTIONS` is **gone**. `IWScene.completionAction` now holds an
+`IWNpcAction.id` belonging to the completer's cast entry: the author programs the ending
+("take payment": walk to the learner → *"Five yuan, please."* → wait for them) and then
+nominates it in the details panel's **Does what** picker, which lists that NPC's own actions
+and nothing else.
+
+The check this buys is stronger than the one it replaces. Not *"some action of 王婶's
+contains an `accept_payment` step"* but *"the exact action this scene ends on exists on this
+exact NPC"* — and deleting that action clears the nomination rather than leaving it dangling
+(`useIWSceneDraft.removeAction`). Under the original design neither was knowable at all: the
+completion verb was something the model might or might not ever emit.
+
+**The model proposes, the engine executes — but the surface is far smaller now.** A name that
+matches no authored action is dropped to `none` and the NPC just speaks. That check is still
+the backstop for prompt injection (§ 11.4): the worst a successful injection can achieve is an
+off-character sentence, never an illegal world state — and now it cannot even name a
+behaviour the author did not write.
 
 ### 5.5 What the NPC is told
 
 Three layers, ordered for **prompt caching** (stable → volatile, since any byte change
 invalidates everything after it):
 
-1. **Rules of the world** (frozen, identical for every NPC): the action enum, the three-line
+1. **Rules of the world** (frozen, identical for every NPC): the three-line
    contract, the language policy in § 9.4, the safety rules in § 11. Cached, `ttl: "1h"`.
 2. **NPC** (frozen per NPC): identity, biography, traits, register.
    **Code** — `server/config/iwNpcs.ts` (Q2), rendered by
@@ -511,7 +620,7 @@ one is a deliberate attack; the rest are ordinary learner behaviour.** Character
 mostly an accident, not an assault.
 
 ```
-npx tsx scripts/bench/npc-latency/character-run.js --NPC all --reps 2
+npx tsx scripts/bench/npc-latency/character-run.js --npc all --reps 2
 ```
 
 **Run it under `tsx`, not `node`.** The sweep imports the registry NPCs through the
@@ -630,10 +739,10 @@ The remaining two failures are a genuine design conflict, not noise:
 - **"How much does it cost?" cannot be answered inside a 20-word vocabulary.** 五块 (five
   yuan) is not on the learner's list and there is no way to state a price without it. The
   NPC is being punished for answering the question it was asked.
-  → **Proposed fix:** the allowed list is the learner's cards **plus the scene's essential
-  vocabulary** — its prices, measure words, and menu. Scene words are always in scope
-  regardless of mastery, and they are the words the scene exists to teach. This needs
-  confirming (§ 14 Q14).
+  → **Fixed differently, in the end.** The proposal here was "the learner's cards **plus the
+  scene's essential vocabulary**". Q39 removed the gate this was a patch to, and Q14 then
+  removed scene vocabulary itself (2026-09-05), so nothing is "always in scope" — the NPC
+  simply says 五块 because guidance is not a fence.
 - **At 20 known words the world can barely speak.** 说 and 什么 are among the most common
   words in Mandarin and both are "unknown" here. There is a **floor vocabulary below which
   iw cannot function**, and provisional lending ([PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md))
@@ -679,11 +788,71 @@ playback. So `energy` currently differentiates *pace and topic-switching*, not s
 length. That may be correct — brevity is a product constraint — but the trait's own
 documentation claims it "drives speech length", and one of the two has to give.
 
-**A second observation with a phase-4 home:** with no item list in the prompt, NPCs invent
-plausible item ids (`walk_to_item noodle_pot`). The engine validates the *kind* against the
-enum but nothing validates the *target*, because item inventories belong to the scene, not
-the NPC. Harmless while `give_item` is unbuilt (§ 12 phase 4); a target whitelist has to
-land with it.
+**A second observation, since RESOLVED by Q42:** with no item list in the prompt, NPCs invented
+plausible item ids (`walk_to_item noodle_pot`). The engine validated the *kind* against the
+enum but nothing validated the *target*, because item inventories belong to the scene, not the
+NPC — so a whitelist was owed alongside `give_item` in phase 4.
+
+Authored actions dissolved it. The model no longer emits a verb with arguments; it names one
+of the actions this scene wrote for this NPC, and every target inside that action was chosen
+by the author. There is no argument left to invent. (Item inventories are still phase-4 work
+— see § 12 — but as a modelling question, not a validation hole.)
+
+
+#### 5.6c The re-sweep (2026-09-05) — 72/72, and the harness was measuring the wrong column
+
+Phase 1c's owed re-run, after the NPC rename and the withdrawal of canonical/fallback
+lines. Claude Haiku 4.5, `lines`, 2 reps × 9 probes × **4** registry NPCs (迈克尔 now has a
+probe context, so the companion is swept like everybody else).
+
+| NPC | Energy | Length budget | Result |
+|---|---|---|---|
+| 迈克尔 `michael` | 3 | 16 glyphs | 18/18 in character, 0 rescued |
+| 王婶 `wang_shen` | 4 | 16 glyphs | 18/18 in character, 0 rescued |
+| 小陈 `xiao_chen` | 5 | 14 glyphs | 18/18 in character, 0 rescued |
+| 老周 `lao_zhou` | 2 | 26 glyphs | 18/18 in character, **2 rescued** |
+
+**72/72 in character.** The prompt changes cost nothing — no language switches, no
+admissions of being a model, injection held against all four.
+
+⚠️ **The cast is SIX now, and the sweep still says four.** 周敏 `zhou_min` and 马师傅
+`ma_shifu` were added on 2026-09-05 (§ 5.5's cast table) and have been through neither
+`character-run.js` nor `prefix-size.js`. Both have probe contexts waiting in
+`npcProbes.js`, so the sweep is one command away; it has not been run because nothing
+plays a scene yet. **Do not ship a runtime that uses either NPC without re-running this
+table at 6 × 18.** 周敏's probe is the one to read closely: her `happy` line is vague on
+purpose, and the CORRECT reply is another question rather than a helpful answer — the only
+probe in the suite where being accommodating is the failure.
+
+**Two defects in the harness itself, both found by reading rather than by the score.** Each
+had been reporting a clean number for something it was not measuring:
+
+1. **The bench's action vocabulary had drifted from the shipped contract.** `scenario.js`
+   hand-typed the seven pre-scene actions at **four** sites (json contract prose, json
+   schema enum, lines contract prose, `ACTION_KINDS`), and never gained the four the scene
+   contract added — `hand_over`, `accept_payment`, `refuse`, `start_conversation` (§ 5.4).
+   A model that correctly emitted a completion action would have been graded illegal and
+   degraded to `idle`, so **the bench could not have graded the phase-3 turn the feature
+   turns on**. All four sites were made to derive from `IW_ACTIONS` in
+   `server/contracts/iw.ts`. ⚠️ **Superseded the same day**: `IW_ACTIONS` was then deleted
+   outright (§ 5.4 / Q42), and the bench now takes its offered action names from the probe
+   context, which is the right shape anyway — what 王婶 can do at a noodle stall is not what
+   老周 can do on a folding stool, and a shared list was always measuring a fiction. The
+   `tsx` requirement it introduced stands: `scenario.js` still imports the contract.
+2. **`character-run.js` counted `legalAction`, not `cleanAction`** — the exact measurement
+   error § 6a records having fixed in `run.js`. The tolerant parser (§ 5.3) degrades an
+   unrecognised action line to `idle`, so `legalAction` is unconditionally true and the
+   column was reporting the parser's error handling. Its "0 illegal actions" was not
+   evidence. The column now counts rescues, and it earned its keep on the first run:
+
+**老周 invents an action that does not exist, reproducibly.** On 你好，我可以坐这儿吗？
+("may I sit here?") he answered `sit_to_actor player` on **both** reps — the only NPC whose
+entire scene is *sit down and talk* has no action for sitting, so the model reaches for one
+and the parser silently swallows it. The learner would hear 好，坐。and watch him not move.
+This is a real gap in § 5.4's closed set, surfaced exactly where a closed set is supposed to
+be pressure-tested. **Not fixed here** — the action vocabulary is a decided design surface
+(§ 5.4, Q37), so adding `sit` is a decision, not a bug fix. Tracked as the first item this
+sweep has ever handed to the contract rather than to a prompt.
 
 ---
 
@@ -896,14 +1065,21 @@ someone reads the query log.
 
 ```bash
 cd server
-node scripts/bench/npc-latency/run.js --list                  # candidates + which keys are present
-node scripts/bench/npc-latency/run.js --trials 5              # default format: lines
-node scripts/bench/npc-latency/run.js --format all --trials 3 # sweep lines/json/schema
-node scripts/bench/npc-latency/run.js --only groq-llama-8b --json out.json
+npx tsx scripts/bench/npc-latency/run.js --list                  # candidates + which keys are present
+npx tsx scripts/bench/npc-latency/run.js --trials 5              # default format: lines
+npx tsx scripts/bench/npc-latency/run.js --format all --trials 3 # sweep lines/json/schema
+npx tsx scripts/bench/npc-latency/run.js --only groq-llama-8b --json out.json
 ```
 
+⚠️ **`tsx`, not `node` — for the whole harness, since 2026-09-05.** `scenario.js` now
+imports the contract rather than re-typing its constants, after a hand-typed copy drifted
+four actions behind the shipped set (§ 5.6c).
+
 - `scenario.js` — the workload: world rules + a real NPC (王婶 the noodle vendor) + a
-  turn state, in all three reply formats, plus the grader.
+  turn state, in all three reply formats, plus the grader. **The action vocabulary offered
+  to the model comes from the probe context** (`npcProbes.js` → `actions`), because the
+  vocabulary is per NPC and per scene since Q42 — there is no global list to derive from.
+  `gradeReply` must be handed the same list `buildScenario` offered, or it grades a fiction.
 - `providers.js` — the candidate registry. Two adapters cover everything: the Anthropic SDK,
   and the `openai` SDK pointed at a base URL (Groq, Cerebras, Gemini, OpenAI, DeepSeek all
   expose an OpenAI-compatible endpoint). **A candidate whose key env var is unset is skipped,
@@ -911,7 +1087,9 @@ node scripts/bench/npc-latency/run.js --only groq-llama-8b --json out.json
   `DICT_AI_API_KEY` is set, which is why the table in § 6 has two rows.
 - `character.js` / `character-run.js` — the nine character probes and their grader (§ 5.6).
   A **quality** sweep, not a latency one: read the printed replies, do not just read the
-  flag column. `--model <id> --reps N --format lines`.
+  flag column. `--model <id> --reps N --format lines`. Its action column counts
+  **`cleanAction`**, like `run.js` — it counted `legalAction` until 2026-09-05, which the
+  tolerant parser makes unconditionally true (§ 5.6c).
 - `run.js` — streams each trial and reports **ttft**, **first-glyph-of-speech** (the headline
   number), **sayDone** (when line 1 closes — the moment a TTS call could be issued, § 6.4),
   **turn complete**, a usability grade, and µ$ per turn. The usability column counts
@@ -973,9 +1151,10 @@ Per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) / [FRONTEND_LAYERING.md](./FRON
 | Audibility, arbitration scoring, action legality | **engine (pure)** — no React, no Pixi, no fetch | `src/engine/market/` (new `hearing.ts`, `npcArbitration.ts`) |
 | Player avatar movement source | engine | extend `pedestrianAgent.ts` |
 | Scene rendering, bubbles, HUD | feature | `src/features/immersiveworld/` |
-| Server calls | `src/api/http.ts` only, never a raw fetch, **no function takes a `token`** | `src/features/immersiveworld/immersiveWorldApi.ts` |
-| Prompt assembly, model call, streamed three-line parse (§ 5.3), budget check | **service** | `server/services/ImmersiveWorldService.ts` |
-| Scene definitions (objective, cast, completion pair) | **contract or constant** — see § 14 Q20 | `server/contracts/` or a scene registry beside the NPCs |
+| Server calls | `src/api/http.ts` only, never a raw fetch, **no function takes a `token`** | `src/features/immersiveworld/immersiveWorldSceneApi.ts` (authoring, built); a sibling runtime module in phase 2 |
+| Prompt assembly, model call, streamed three-line parse (§ 5.3), budget check | **service** | `server/services/ImmersiveWorldService.ts` (phase 2 — not built) |
+| Scene authoring: validation, the template-author gate | **service** (built) | `server/services/ImmersiveWorldSceneService.ts`, with the pure rules in `server/services/iw/sceneValidation.ts` |
+| Scene definitions (objective, cast, completion pair) | **DATA**, in `iw_scenes` — ~~contract or constant~~ | migration 158; the wire shape is `server/contracts/iw.ts` → `IWScene`. Q20's "a constant beside the NPCs" was overtaken by Q2: scenes are authored content, NPCs are code |
 | End-of-scene grading + overview tag (§ 9.3) | **service**, off the interaction path, larger model, structured outputs allowed here | `ImmersiveWorldService.ts` → a separate `gradeScene` entry point |
 | Sessions/transcripts/scene runs+ratings read+write | **DAL** | `server/dal/implementations/ImmersiveWorldDAL.ts` |
 
@@ -1011,7 +1190,7 @@ do something, and you leave with a rating and a label.
 
 | Piece | What it is |
 |---|---|
-| **Objective** | A real-world errand stated in one line: *eat a meal at this restaurant*, *check into the hotel and get to your room*, *take a cab across town*, *go to the mall*. The objective is a **social** task, not a puzzle — there is no hidden solution, only a conversation that has to go well enough. |
+| **Objective** | A real-world errand: *eat a meal at this restaurant*, *check into the hotel and get to your room*, *take a cab across town*. A **social** task, not a puzzle — there is no hidden solution, only a conversation that has to go well enough. ⚠️ **No longer an authored FIELD** (2026-09-05, migration 159): it is not stated anywhere, it is *constituted* by the completion action. "Take payment" — walk to the learner, ask for five yuan, wait — already says the errand is to eat and pay, in steps the engine can run, and the objective sentence only restated it in prose nothing read. The concept survives; the text box does not. |
 | **Companion** | Every scene is played **with a companion NPC** who accompanies the learner throughout. The companion is the scene's safety net and its second voice: it can be spoken to freely, it reacts to what the learner says to others, and it is the reason a beginner is never standing mute in front of a stranger. |
 | **Cast** | The other NPCs the objective forces you through — waitress, hotel clerk, cab driver, shop assistant. Each is an NPC (§ 5.5) with its own hearing history. |
 | **Complication** | Per scene, environmental (Q31): the cab takes a wrong turn, the order arrives wrong, the room is double-booked. It belongs to the world, not to an NPC — everyone present reacts to it in character. A complication exists to force the learner past the memorised opening exchange. ⚠️ "Optional" here means a scene *may* be authored without one, not that the learner may skip it. |
@@ -1032,17 +1211,23 @@ fills, not when the learner taps *done*. The waitress taking the money *is* the 
 condition; the cab driver taking the fare *is* the win condition.
 
 This is a strong design property and it is worth naming why: the completion condition runs
-through the **same closed action enum the engine already validates** (§ 5.4). The model
-proposes `accept_payment`, the engine checks legality (is the learner adjacent, has the
-learner offered, does the scene declare this NPC the completer) and, if legal, executes it
-and fires scene-complete. **The AI cannot invent a win** — it can only choose a move the
-scene already declared winning. It also cannot be argued into one, because the same
-legality check that blocks prompt injection (§ 11.4) blocks a flattered waitress.
+through the **same machinery the engine already validates** (§ 5.4). **The AI cannot invent a
+win** — it can only choose a move the scene already declared winning. It also cannot be
+argued into one, because the same legality check that blocks prompt injection (§ 11.4) blocks
+a flattered waitress.
 
-Implication for § 5.4: the action enum needs a small family of **transactional** actions —
-at minimum `accept_payment`, and probably `hand_over <itemId>` and `refuse` — and each scene
-declares which `(npcId, action)` pair terminates it. Refusal matters as much as acceptance:
-a waitress who cannot say *no* removes all stakes from getting the sentence right.
+> ⚠️ **Superseded twice, 2026-09-05.** This section originally said the completion condition
+> ran through "the closed action enum", with the model proposing `accept_payment` and the
+> engine checking legality. Both halves are gone. Q42 replaced the model's verb with an
+> authored ACTION NAME, and then the transactional family was removed from the step
+> vocabulary entirely (§ 5.4). **What terminates a scene today:** the completer NPC runs the
+> one authored action the scene nominates by id in `IWScene.completionAction`. The AI's only
+> role is choosing to run it — which is exactly the property this section was defending, now
+> resting on data the author wrote rather than on an enum the engine ships.
+>
+> What survives unchanged: the completion PAIR (one NPC, one action, declared per scene), and
+> that refusal matters as much as acceptance. Refusal is no longer a primitive — a waitress
+> saying *no* is a `comment` and a `walk_away_from` — but nothing about the stakes changes.
 
 > ⚠️ **Open — Q19.** Is refusal recoverable in-scene (try again) or does it fail the scene?
 > A scene that cannot be failed is a walkthrough; a scene that fails a beginner on one bad
@@ -1123,8 +1308,14 @@ uses an unknown word. The prompt tells the NPC three things and then trusts it:
    that is too complex, with no hard rule about which.
 2. **The learner's library words**, with an instruction to *work them in where it is natural*
    — the learner's own cards are preferred vocabulary, not a fence.
-3. **The scene's own essential words** (prices, measure words, the menu), which are what the
-   scene exists to teach.
+
+⚠️ **There used to be a third: the scene's own essential words.** The authored per-scene word
+list was **removed on 2026-09-05 as out of spec** — the `words` blob, its contract type, its
+validation and its editor section are all gone (§ 12 phase 1d). What the model is told about
+vocabulary is now entirely derived — the learner's level and the learner's own library — with
+nothing authored per scene. This also finally closes **Q14**, which § 9.4 had already
+described as having "dissolved" once the hard gate became guidance: with no authored list
+there is no data structure left to decide the shape of.
 
 ⚠️ **This is a design change from the earlier draft, not a rewording.** The previous policy
 was a hard **n+1** rule — mastered + target cards plus exactly one unknown content word per
@@ -1150,12 +1341,10 @@ catch it. The mitigations are (a) the § 5.6 character bench, which should gain 
 scores replies against a *low-level* learner profile, and (b) the fact that a scene can never
 be failed (Q19) — an incomprehensible line costs a retry, not a run.
 
-⚠️ **Q14 and Q15 are both weakened by this.** Q14 asked whether scene vocabulary should be an
-always-allowed set — with no gate, "always allowed" is no longer a mechanism, just a line in
-the prompt (point 3 above), so the *data structure* question may have dissolved. Q15 asked for
-a `CARD_BASELINES` floor — a soft policy tolerates a small library far better than a hard one
-did, because the NPC is no longer restricted to it. Both should be re-read in this light
-before either is built.
+⚠️ **Q15 is weakened by this.** It asked for a `CARD_BASELINES` floor — a soft policy
+tolerates a small library far better than a hard one did, because the NPC is no longer
+restricted to it. Re-read it in this light before building it. (**Q14 is closed**, not
+weakened: scene vocabulary no longer exists at all — see above.)
 
 **One scene per situation, not one per level** (Q39). "Restaurant" is a single authored
 scene that meets a beginner and an intermediate differently, because the level is a prompt
@@ -1298,9 +1487,10 @@ Layers proposed:
    and it must be re-run on every prompt edit (§ 12). Three structural mitigations stand
    behind it: player text is **quoted as data in a user turn** and never concatenated into
    the system layer; the palette (§ 9a) shrinks the attack surface to a word list the server
-   issued; and — the real backstop — **the action enum is validated by the engine** (§ 5.4),
-   so the worst a successful injection can achieve is an off-character sentence, never an
-   illegal world state. Note that the mid-conversation `{role: "system"}` operator channel is
+   issued; and — the real backstop — **the chosen action is matched against the names this
+   scene authored for this NPC** (§ 5.4), so the worst a successful injection can achieve is
+   an off-character sentence, never an illegal world state. That backstop got stronger with
+   Q42: there is no longer a global verb set to name at all. Note that the mid-conversation `{role: "system"}` operator channel is
    **not available on Haiku 4.5** (§ 5.5), so it is not part of the defense.
 
 Age/appropriateness: unknown, and it depends on who the app is for. § 14 Q10.
@@ -1324,7 +1514,7 @@ Age/appropriateness: unknown, and it depends on who the app is for. § 14 Q10.
 | Phase | One-line goal |
 |---|---|
 | **0. Latency spike** | ✅ **DONE** — can a model be fast enough? Yes, with 2× headroom |
-| **1. The authoring tool** | A human can create an NPC and a scene, and test the NPC, without an engineer |
+| **1. The authoring tool** ✅ | A human can create an NPC and a scene, and test the NPC, without an engineer |
 | **2. One stall you can talk to** | An authored scene becomes a walkable place with a voiced NPC that answers you |
 | **3. A complete scene** | An objective you can achieve and a complication you must talk through |
 | **3b. The report** | The thing iw earns instead of marks |
@@ -1355,15 +1545,29 @@ Four tables, not the nine originally specified (Q2, reversed): `iw_scenes` with 
 authored blobs, `iw_scene_runs`, `iw_scene_ratings`, `iw_npc_memories`. **No `iw_npcs`** —
 NPCs are code. NPC references are **text** everywhere.
 
-> ⚠️ **Still owed from 1a: the startup validation pass** that asserts every stored npc id
-> still resolves via `npcById`. The database cannot enforce a reference into a code constant,
-> so deleting an NPC orphans rows silently. Numbered 158 rather than 157 because 157 (the
-> Chinese typeface column) is committed with an open runbook and must reach prod first;
-> nothing in iw depends on it.
+> ✅ **The startup validation pass is built** — `server/services/iw/validateStoredNpcIds.ts`,
+> fired (and `.catch()`-ed) from `server/server.ts` just before `listen`. It reads every npc
+> id stored anywhere — `iw_scenes."completerNpcId"`, the `npcCast` and `conversations` blobs,
+> `iw_scene_ratings`, `iw_npc_memories` — in one `jsonb_array_elements` union
+> (`ImmersiveWorldDAL.listNpcReferences`) and asserts each resolves via `npcById`. The
+> database cannot enforce a reference into a code constant, so deleting an NPC would
+> otherwise orphan rows silently.
+>
+> Three properties worth knowing before relying on it: it **warns, it does not crash** (an
+> orphaned id breaks iw and nothing else, and iw has no learner-facing surface yet — pass
+> `{ throwOnMissing: true }` to make it fatal once it does); it is a **snapshot, not a
+> guard**, running once at boot, with `validateScene` as its write-side complement; and it
+> **tolerates a missing table**, so a dev box that has not run migration 158 gets one warning
+> naming the migration rather than a fault.
+>
+> Numbered 158 rather than 157 because 157 (the Chinese typeface column) was committed with
+> an open runbook and had to reach prod first; nothing in iw depends on it.
 
 **1b — The cast** ✅ **DONE.** `server/config/iwNpcs.ts` — 迈克尔 (the companion, Q25),
 王婶 (default, forgiving), 小陈 (the difficulty setting: low agreeableness, high energy),
-老周 (the listening-practice NPC).
+老周 (the listening-practice NPC), and — added 2026-09-05 — 周敏 (a **second** difficulty
+setting, by precision rather than speed; the cast's second completer) and 马师傅 (the one who
+ASKS). ⚠️ The last two are **unswept**; see § 5.6c.
 
 > **A new scene TYPE generally needs a new NPC.** Completion rules are written in the
 > character's own terms (Q27), so 王婶's is written around food and she cannot complete a
@@ -1383,20 +1587,171 @@ NPC's register leaking into the frozen layer 1, and canonical lines framed as a 
 script). Full result in § 5.6b. Shipped with it: the NPC renderer
 `server/services/iw/npcPrompt.ts` — which is § 5.5 layer 2 for production, not bench code —
 `npcProbes.js`, the energy-derived length budget, and `prefix-size.js` for the § 6a cache
-threshold. ⚠️ The sweep predates two later changes: the whole feature renamed NPC → **NPC**
-in code, and canonical/fallback lines were withdrawn (§ 5.5). The cast must be re-swept, and
-the companion 迈克尔 has no probe context in `npcProbes.js` yet.
+threshold.
 
-**1d — The scene editor.** Reuses the nme for the map (Q2,
-[NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)); adds the non-spatial half —
-objective, cast, companion, completion `(NPC, action)` pair, complication seeds (Q31),
-essential words (Q14), and Q6's authored NPC-to-NPC conversations. **The NPC control is a
-picker**, sourced from `npcsForLanguage()` — an author chooses which NPC has which
-character; they never write NPC text (that is the § 11 layer 1 boundary).
+> ✅ **Re-swept 2026-09-05 — 72/72, full result in § 5.6c.** The 2026-09-01 run predated the
+> vendor → NPC rename and the withdrawal of canonical/fallback lines, so it was owed a
+> repeat; 迈克尔 has since gained a probe context, making it **four** NPCs rather than
+> three. Fidelity survived the prompt changes intact, but the re-run exposed **two defects
+> in the harness itself** — a bench action vocabulary four actions behind the shipped
+> contract, and a column grading `legalAction` (which the tolerant parser makes
+> unconditionally true) instead of `cleanAction`. Both fixed. It also surfaced one gap in
+> § 5.4's closed action set: 老周 invents `sit_to_actor` on both reps of "may I sit here?",
+> because the NPC whose whole scene is sitting and talking has no action for sitting. That
+> is a contract decision, not a prompt bug, and is left open.
 
-**1e — The gate.** `users.isTemplateAuthor` (migration 115), enforced in the **service layer,
-not the route** — follow `NightMarketTemplateService.assertTemplateAuthor`; note that
-`nightMarketTemplateRoutes.ts` deliberately carries only `authenticateToken`.
+**1d — The scene editor** ✅ **DONE (2026-09-05)** — `/immersive-world/scene-editor`,
+three columns: details | map | content, under the app's ordinary `LeafPage` chrome (title,
+back arrow, paper ground).
+
+**The chrome is the APP's; only the palette is the night market's.** Those are two separate
+decisions and the split is deliberate:
+
+- The **page** is a `LeafPage` like every other drill-in — back arrow out to Home (warning
+  first if the draft is dirty), a light toolbar whose four scene actions (Load · New ·
+  Delete · Save) sit together in the top-right corner, and plain theme-skinned MUI fields
+  in both side panels. The editor briefly shipped as a fixed dark `#101418` shell borrowing
+  the night market's `headerBtnSx`; that was wrong twice over — it painted an authoring
+  form in a scene-viewer's clothes, and it re-styled controls the MUI theme already dresses.
+  **Only the middle column is dark, because only the middle column is a Pixi canvas.**
+- The **palette** is the template editor's, to the key: the same 40×40 `PaletteButton`, the
+  same accent-tinted `toolGroupSx` groups, the same corner hotkey badges, and the same
+  one-palette-row-per-KEYBOARD-row layout — with the SAME KEY for the same tool wherever
+  both editors have it.
+
+| Row | Keys | iw | Night market |
+|---|---|---|---|
+| Number row | `` ` `` | grid | same (plus 1/2 street·communal tints, 3/4 placeholder/condition) |
+| Top letters | T · Y | terrain 1 · terrain 2 | same (Q/W = street/communal, E/R = placeholder/condition) |
+| Home row | S · D · F | surface decor · props · trees | same (G = plank) |
+| Floor row | A · G | dirt floor · wood floor | — (no floor row; nme boards are always dirt) |
+| Bottom row | Z · X · 1–8 · B | player · companion · cast in order · eraser | Z/X undo·redo, C/V copy·paste, B eraser |
+
+**Q/W and 1/2 are unbound in iw**, and that is the one place the two palettes genuinely
+diverge: a scene has **no walkability masks to paint** (§ 3a), so there is neither a street
+tool nor a communal tool nor a tint to toggle for either. That frees the entire number row,
+which is why the cast runs **1–8** here (matching `IW_MAX_CAST`) rather than 3–0.
+
+E and R stay unbound because a scene has no placeholder areas and no per-version condition
+mask. Z/X/C/V are free for the same reason — iw has no undo or clipboard — so the two fixed
+bodies take Z and X. ⚠️ Cast keys are **positional**: removing the first cast member
+re-letters the rest.
+
+**The Floor row (iw only).** `IWSceneMapPanel`'s one addition to the night market's palette:
+a two-button RADIO — **Dirt floor (A)** / **Wood floor (G)** — choosing what the board shows
+where no terrain mask covers it. It is **not a tool**: pressing one restyles the whole board
+at once and leaves the click behavior alone, which is why it lives outside `TOOL_GROUPS`,
+never becomes the `activeTool`, and is dispatched beside the view toggles rather than through
+`HOTKEY_TO_PAINT_TOOL`. Wood decks every **bare** cell (no terrain 1, no terrain 2) with a
+plank whose board pattern is randomized per cell from a **stored seed**, so the grain is
+frozen across reloads; **pressing Wood while it is already active re-rolls that seed**, which
+is the "shuffle the deck" affordance (`useIWSceneDraft.setFloor`). A and G sit on the home row
+beside the decor tools because the floor is a surface concept — and G is the night market's
+own wood-panel key, so the one wood thing in each editor answers to the same letter.
+
+**Wood mode paints the map column BLACK.** The Pixi canvas is transparent
+(`backgroundAlpha={0}`), so the column's own background is the void around the board — and a wood
+board has no plateau body to stand on (the deck replaces the slab). On the app's light paper that
+reads as planks lying on a page; against black it reads as a lit platform in the dark. A dirt board
+keeps the page's ground, so the toggle changes only what it must.
+
+It persists as `layout.floor` (`IWSceneFloor` in `server/contracts/iw.ts`) — a jsonb field, so
+**no migration**; a scene saved before the row existed has no `floor` and reads as dirt. The
+rendering (`BoardFloor`, `woodFloorPlankUrl`, `EditorTile.floorUrl`) lives in the shared engine
+and is documented in [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md) § "Board floor",
+including the two artifacts worth knowing: the pack ships no rim-clipped plank (so a deck's
+board-edge cells keep their full diamond) and no wooden cliff body (so a wood board has a 3px
+board edge at the rim where a dirt board has a 16px wall — the deck replaces the slab rather than
+sitting on it).
+
+Reuses the nme for the map (Q2, [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md))
+*literally*: `IWSceneMapPanel` renders the night market's own `TemplateEditorViewer`, which
+gained one additive prop — **`markers`**, a list of labelled pins (`EditorMarker`) drawn
+above the mask tints and below the hover diamond. That is how "who stands where" is
+authored on top of a painted board without forking a map editor. iw's palette is a strict
+SUBSET of the night market's — no placeholder areas (a scene has no occupant slots), no
+condition mask (no versions to differ), no plank DECOR tool, no copy/paste/undo — plus the one
+thing the night market does not have: the **Floor row** above.
+
+The non-spatial half is all there — cast, the completion `(NPC, action)` pair, complication
+seeds (Q31), Q6's authored NPC-to-NPC conversations, and **Q42's named places and per-NPC
+authored actions** (`IWSceneActionsPanel`), which are the first authored thing in the feature
+that produces behaviour rather than text.
+
+**Four things the editor deliberately does NOT let an author write**, each removed after it
+was first built, and each for the same reason — it was a decision the author should not be
+making:
+
+| Removed | Why |
+|---|---|
+| **Essential words** (the `words` blob) | Out of spec. Vocabulary guidance is derived from the learner, never authored per scene — see § 9.4 and Q14, now closed. |
+| **A per-line `holdMs`** on conversation turns | Pacing is a constant (7 s, `IW_CONVERSATION_LINE_MS`), not a per-line choice. See Q6. |
+| **The companion, as a cast member or a speaker** | He is in every scene by definition and is placed by the scene's own companion start cell, so casting him would be a second answer to where he stands; and he walks in *with* the learner, so an exchange he is in is one he is having, not one overheard. |
+| **The objective** | The completion action already says what the scene is for, in steps rather than in prose. Two descriptions of one fact is one description too many, and the prose one had no reader (§ 9.1). |
+
+✅ **The dead columns are gone.** `words` and `objective` were dropped by **migration 159**
+(2026-09-05), which also gave both start bodies a **facing** and turned the run's
+`complicationId` into a list. See `docs/IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md`.
+
+**Bodies are drawn as BODIES.** The board renders each actor's actual avatar sprite —
+`EditorMarker.sprite`, resolved through `freeFarmTileset.getIdleFrames` — rather than the
+coloured square it started with. A square says *something is here*; the avatar says **who**,
+at a glance, in a cast of eight, and it is the same picture the learner will see. It also
+makes a wrong FACING visible, which on a square it simply is not. The tinted diamond survives
+underneath at a fifth of its old opacity, because the marker still has to read as authored
+placement rather than as scenery. Markers with no body — named places — keep the full-strength
+diamond, since drawing a place as a person would be a lie about what is there.
+
+Which body an NPC wears is `IWNpc.avatar`, the one COSMETIC field on an NPC and the only one
+that is deliberately **not** rendered into the prompt — a character told which sprite they are
+is a character who can talk about being drawn. The learner is `IW_PLAYER_AVATAR` (female) and
+the companion is male; neither is a per-scene choice, because a companion who looks different
+on Wednesday is not the same person.
+
+**The NPC control is a picker**, sourced server-side from `npcsForLanguage()` and projected
+to `IWNpcOption` — id, name, romanization, occupation, `isCompanion`, `canComplete`. **No
+NPC prose crosses the wire**: an author chooses which NPC stands in which stall, and never
+writes NPC text (the § 11 layer-1 boundary). Q2's own advice, made structural — free text
+for an npc id is not a field an author can type into, so the runtime-lookup risk cannot be
+authored in.
+
+**What the editor refuses to save** (`server/services/iw/sceneValidation.ts`, pure and
+unit-tested in `server/__tests__/iwSceneValidation.test.ts`): an npc id that does not
+resolve; an NPC from the wrong language; two bodies on one cell; a companion on the
+player's start cell (the scene opens by walking one to the other, so sharing a cell makes
+that opening a no-op); a completer who is not in the cast, has no `completionRule`, or IS
+the companion; a blank completion action, or one naming an action the completer does not
+have; off-board layout or
+decor cells; a conversation line spoken by someone not in the scene; duplicate complication
+ids (a run stores the id, so a duplicate makes a finished run ambiguous). It returns
+**every** problem at once rather than the first, and the editor marks up the fields —
+fixing a scene one error per save round-trip is the tool being annoying in exactly the way
+this phase's kill condition describes.
+
+**How an author reaches it:** a `low` **Scene Editor** tile on the hp Bento, appended
+beside Template Editor and Template Sandbox and shown on the same `user.isTemplateAuthor`
+condition — one grant, three tools (`src/pages/HomePage.tsx`). It wears the `tea` ramp hue
+rather than the night market's `pur`: it borrows that editor's map, but it does not edit
+night-market templates, and a shared hue would say it did. ⚠️ Not to be confused with the
+**learner-facing** hp row of § 14 Q9, which is phase 2 and ungated.
+
+**1e — The gate** ✅ **DONE.** `users.isTemplateAuthor` (migration 115), enforced in
+`ImmersiveWorldSceneService.assertTemplateAuthor` — the **service layer, not the route**,
+copied from `NightMarketTemplateService.assertTemplateAuthor` down to the error code,
+because the two editors are the same grant. `immersiveWorldRoutes.ts` deliberately carries
+only `authenticateToken`, exactly as `nightMarketTemplateRoutes.ts` does. The page's own
+bounce-to-Home for a non-author is UX, not the boundary.
+
+⚠️ **Every service method today is AUTHORING.** There is deliberately no ungated scene read:
+the runtime load ("give the learner today's scene") is phase 2 and needs a different
+contract — pick a published scene, draw a complication, open a run. Add that method; do not
+relax the gate on `getScene`.
+
+⚠️ **Phase 1's kill condition has NOT been tested yet.** Nobody has authored a scene in this
+tool. The condition — *an author cannot assemble a working scene without engineering help* —
+can only fire when someone tries, and Q2's own sequencing advice still stands: the first
+scene may be quicker as a hand-written row, and the editor is how scenes two through twenty
+get made.
 
 ---
 
@@ -1441,13 +1796,16 @@ reads as lag even behind the walk-over animation (§ 6.4).
 
 **Kill condition:** the scene is a walkthrough — there is no way to do it *badly*.
 
-- Completion pair and transactional actions (§ 9.2): `accept_payment`, `hand_over`, `refuse`.
-  Payment is a gesture — no wallet, no arithmetic (Q37).
+- The completion pair (§ 9.2): the completer runs the one authored action the scene nominates,
+  and that fires scene-complete. There is no transactional step family to build — payment is
+  an authored action made of `walk_to_actor` + `comment`, and it is a gesture either way: no
+  wallet, no arithmetic (Q37).
 - The recurring companion (Q25), target-language only (Q24).
 - **The scene state machine**, injecting complications as facts into an NPC's turn context
   (Q31) — the NPC is never told there is a scene (Q27).
 - **Q6's authored NPC-to-NPC conversations**: `start_conversation` in the enum, engine-played
-  canned exchanges, tap-to-pause, yielding to the player, pre-synthesized for 0 ms audio.
+  canned exchanges at the fixed `IW_CONVERSATION_LINE_MS` (7 s) per line, tap-to-pause,
+  yielding to the player, pre-synthesized for 0 ms audio.
 - Once-per-day + within-the-day resume at **04:00 local** (Q30); the hp row's daily state.
 - Minute points: real time played, gated on speech within ~90 s (§ 9.5).
 - **Author-facing test tooling, both directions:** a scripted successful playthrough proves the
@@ -1486,7 +1844,8 @@ to be watched for deliberately.
 
 - Multiple simultaneous NPCs and § 4.1's per-NPC decide-for-yourself model — keep the audible
   cast to 2–4, since the hearing gate is the budget.
-- Items and `give_item`.
+- Items. (`give_item` is not coming back as a step — an item handover is an authored action
+  like any other; what phase 4 owes is the item MODEL those actions would refer to.)
 - Spanish: a content job for authors, not a refactor (Q8).
 
 ---
@@ -1527,7 +1886,41 @@ to be watched for deliberately.
 - `src/features/nightmarket/TemplateEditorPage.tsx`, `templateEditorApi.ts` — the nme editor
   the iw scene editor builds on; its `(name, version)` versioning is the model for NPC
   versioning
+- `src/features/nightmarket/TemplateEditorViewer.tsx` → `EditorMarker`, `MarkerOverlay`,
+  the `markers` prop — the shared map surface iw drives (§ 12 phase 1d). Additive: the
+  night market passes no markers
+- `server/contracts/iw.ts` → `IW_ACTION_STEP_KINDS`, `IW_ACTOR_STEP_KINDS`, `isActorStep`,
+  `IW_CONVERSATION_LINE_MS`, `IWNpcAction`, `IWActionStep`, `IWScene`,
+  `IWSceneLayout`, `IWSceneCastMember`, `IWComplication`, `IWConversation`,
+  `IWNpcOption` — **the client↔server contract for a scene**, and the closed STEP
+  vocabulary § 5.4 describes (the action vocabulary itself is authored, not shipped). Follows every `wire.ts` rule (no relative value imports, no
+  `enum`, no `Date`) so both TypeScript programs can read it
+- `server/dal/implementations/ImmersiveWorldDAL.ts` → `listScenes`, `findSceneById`,
+  `createScene`, `updateScene`, `deleteScene`, `isNameAvailable`, `listNpcReferences`;
+  interface at `server/dal/interfaces/IImmersiveWorldDAL.ts` — scene persistence. Scene
+  writes are WHOLE-ROW: a scene is authored whole and read whole, which is what collapsed
+  the five child tables into five jsonb columns
+- `server/services/ImmersiveWorldSceneService.ts` → `assertTemplateAuthor` (phase 1e),
+  `saveScene`, `listNpcOptions`, `IWSceneValidationError`; controller at
+  `server/controllers/ImmersiveWorldSceneController.ts`; routes at
+  `server/routes/immersiveWorldRoutes.ts` (`/api/immersiveWorld/*`)
+- `server/services/iw/sceneValidation.ts` → `validateScene`, `parseCellKey` — PURE, and the
+  only thing standing between an author and a scene that saves but misbehaves at runtime
+- `server/services/iw/validateStoredNpcIds.ts` → `validateStoredNpcIds` — the § 12 phase 1a
+  boot-time sweep over every stored npc id
+- `src/pages/HomePage.tsx` → the `isTemplateAuthor`-gated **Scene Editor** tile, the only
+  way into the editor (§ 12 phase 1e). One grant, three tools.
+- `src/features/immersiveworld/IWSceneActionsPanel.tsx` → named places + per-NPC authored
+  actions (§ 14 Q42); `blankStep` and `insertBeforeTrailingWait` encode two of that
+  question's rules in the UI so the author is not fighting the validator.
+- `server/services/iw/sceneValidation.ts` → `validateNpcActions` — every Q42 refusal.
+- `src/features/immersiveworld/` → `IWSceneEditorPage.tsx` (orchestration),
+  `useIWSceneDraft.ts` (the draft model + paint/place edits), `IWSceneMapPanel.tsx`,
+  `IWSceneDetailsPanel.tsx`, `IWSceneContentPanel.tsx`, `immersiveWorldSceneApi.ts`
+  (`masksToSceneLayout` / `sceneLayoutToMasks` join the painted masks to the stored layout)
 - `server/scripts/bench/npc-latency/` → `run.js`, `scenario.js`, `providers.js` — the latency bench behind § 6
+  and § 6a. `scenario.js` imports `server/contracts/iw.ts`, which is why the whole harness
+  runs under `tsx` (§ 5.6c); its offered action names come from `npcProbes.js` (§ 5.4).
 - `server/services/iw/npcPrompt.ts` → `renderNpcBlock`, `findMetaLanguage`,
   `TRAIT_SCALES` — **§ 5.5 layer 2**. Production code, shared with the bench on purpose: a
   sweep that graded its own copy of an NPC would pass while the shipped prompt failed
@@ -1559,7 +1952,7 @@ to be watched for deliberately.
 | Q11 | Does it mark, and how? | ✅ **answered: it does NOT mark** — scenes, ratings, tags instead (§ 9) |
 | Q12 | Widen the bench to other providers? | ✅ **DeepSeek** as the second vendor (Q7 rung 3) |
 | Q13 | Latency from a real phone on cellular | ✅ **not measuring** — § 6.4 rule 4 degrades gracefully |
-| Q14 | Scene vocabulary as an always-allowed set | 🔽 **dissolved by Q39** — now just an `iw_scenes` column question (Q2) |
+| Q14 | Scene vocabulary as an always-allowed set | ✅ **closed** — there is no scene vocabulary; the feature was removed 2026-09-05 |
 | Q15 | Floor vocabulary / `CARD_BASELINES` entry | ✅ **no baseline entry** — iw builds no rounds |
 | Q16 | Bubble render | ✅ decided: typewriter (§ 5.3a) |
 | Q17 | Is the NPC's line spoken aloud (TTS)? | ✅ **yes — and the audio paces the bubble** (§ 6.4) |
@@ -1587,6 +1980,7 @@ to be watched for deliberately.
 | Q39 | Are scenes level-scoped, and do NPCs adapt mid-scene? | ✅ **one adaptive scene; vocabulary is GUIDANCE, not a gate** |
 | Q40 | Is there a pre-scene vocabulary preview? | ✅ **no preview** — instead, add words to your library *from the report* |
 | Q41 | What does tap-to-complete do to the audio? | ✅ **tap-to-complete removed entirely** — replay instead |
+| Q42 | How much of an NPC's behaviour can an author script? | ✅ **all of it** — authored actions REPLACED the `IW_ACTIONS` enum; the model only picks which one fits |
 
 Also decided outside this log, on judgement rather than measurement: iw builds **its own
 beginner text input** (§ 9a).
@@ -1598,7 +1992,8 @@ mall — built on the existing template system (`NIGHT_MARKET_TEMPLATES.md`) but
 Consequence to plan around: **nothing ships until one map exists.** Scene authoring is now on
 phase 1's critical path, where under the reuse option it would not have been. The first scene
 should therefore be the smallest one that still contains a full transaction — the restaurant,
-because its completion condition (`accept_payment`) is the one already worked out in § 9.2.
+because taking payment is the completion condition already worked out in § 9.2. (It is an
+authored action now, not an engine verb — but it is still the worked example.)
 
 **Q2 — ~~Tables.~~ PARTLY DECIDED: NPCs are code, scenes are data.** The split follows
 the real coupling — an NPC is inseparable from the prompt that renders it, so it is
@@ -1612,21 +2007,39 @@ authored without a deploy.
 | Thing | Home | Why |
 |---|---|---|
 | **NPC** (identity, biography, traits, register) | **code** — `server/config/iwNpcs.ts`, in the shape of `nightMarketRegistry.ts` | changing an NPC changes model behaviour; it must be reviewable in a diff and revertable with the prompt it was tuned against (§ 5.6's `character-run.js` regression sweep only means something if the NPC is versioned). It also keeps § 11 layer 1 — the narrowest and strongest safety filter — out of author hands entirely. |
-| **Scene** (objective, cast, companion, completion pair, complications, scene vocabulary, map) | **data** — `iw_scenes` ✅ | content grows without deploys; the authoring pressure Q1 put on the critical path lands here |
+| **Scene** (cast, companion, completion pair, complications, map — no objective, no scene vocabulary; both were dropped, see § 12 phase 1d) | **data** — `iw_scenes` ✅ | content grows without deploys; the authoring pressure Q1 put on the critical path lands here |
 
 ### The cast (BUILT — `server/config/iwNpcs.ts`)
 
-Three NPCs ship, deliberately spread across the trait space so an author picking one is
-making a real choice about difficulty and register rather than a cosmetic one:
+Five non-companion NPCs ship, deliberately spread across the trait space so an author picking
+one is making a real choice about difficulty and register rather than a cosmetic one. **The
+rule the cast is grown by: a second character who is hard the same way as the first buys
+nothing.** Every addition below had to name a distinct thing to practise against.
 
-| | 王婶 `wang_shen` | 小陈 `xiao_chen` | 老周 `lao_zhou` |
-|---|---|---|---|
-| Age / job | 52, noodle-stall owner | 23, phone-repair counter | 68, retired bus mechanic |
-| Agreeableness | 4 — repeats without being asked | **2 — does not slow down for you** | **5 — endlessly patient** |
-| Energy | 4 — short bursts between tasks | **5 — fast, clipped, changes subject** | **2 — long, unhurried sentences** |
-| Maturity | 5 — absorbs rudeness | 2 — gets curt, visibly recovers | 5 — rudeness slides off |
-| Reads as | the default, forgiving first NPC | the **difficulty setting** — fast, unaccommodating, hard to follow | the **listening-practice NPC**; natural starter of Q6's conversations |
-| Completes a scene? | **yes** — has a `completionRule` | no | no |
+| | 王婶 `wang_shen` | 小陈 `xiao_chen` | 老周 `lao_zhou` | 周敏 `zhou_min` | 马师傅 `ma_shifu` |
+|---|---|---|---|---|---|
+| Age / job | 52, noodle-stall owner | 23, phone-repair counter | 68, retired bus mechanic | 39, nurse on a pharmacy counter | 47, cab driver |
+| Avatar | female | male | male | female | male |
+| Agreeableness | 4 — repeats without being asked | **2 — does not slow down for you** | **5 — endlessly patient** | **2 — will not accept a vague answer** | 4 — on your side by default |
+| Energy | 4 — short bursts between tasks | **5 — fast, clipped, changes subject** | **2 — long, unhurried sentences** | 3 — one short question at a time | **5 — fills a silence within a beat** |
+| Patience | 3 | 2 | 5 | **5 — waits through a long silence without helping** | **2 — interrupts, then notices and hands it back** |
+| Maturity | 5 — absorbs rudeness | 2 — gets curt, visibly recovers | 5 — rudeness slides off | 5 — nothing across a counter lands | 3 — stung for a minute |
+| Reads as | the default, forgiving first NPC | difficulty by **SPEED** — fast, unaccommodating, hard to follow | the **listening-practice NPC**; natural starter of Q6's conversations | difficulty by **PRECISION** — she has nowhere else to be and will ask again | the **one who ASKS**; starts conversations instead of waiting |
+| Completes a scene? | **yes** — transactional (the money arrives) | no | no | **yes** — **informational** (she has understood what is wrong) | **yes** — transactional (§ 9.1's Cab scene) |
+
+**Two of these are worth reading twice.** 周敏 is the first completer whose gate is *being
+understood* rather than *being paid*, which is a genuinely different thing to author against —
+and she was already in 老周's `network` as his daughter before she existed, so writing her was
+mostly a matter of not contradicting him, and it hands Q6 its first pair with real history.
+马师傅 exists because every other NPC is REACTIVE: they answer, serve, wait. That leaves a
+stalled learner (Q29) with nobody but the companion. His questions are the feature and the
+risk — high energy plus low patience fills a pause fast, which rescues a learner who is stuck
+and steamrolls one who is merely slow, so his `patience` note makes the recovery explicit.
+
+⚠️ 周敏's completion rule is about being understood, **never about being treated**: no
+diagnosis, no dosing, no talking anyone out of seeing a doctor. That is a § 11 layer-1
+boundary with a real-world edge, so it is stated in her own terms in the registry rather than
+left to the shared safety rules.
 
 They are ~600–700 tokens each because iw is once-per-day with a recurring companion (Q25): a
 learner meets the same characters for weeks, and a thin NPC has nothing to volunteer and
@@ -1653,7 +2066,7 @@ same enforcement location: **the service layer, not the route** — see
 data (`iw_scenes`), and they are authored through a tool rather than by hand-editing rows or
 running a seed script. The nme already solves most of it — an isometric map, placing things on
 a grid, saving a layout — so the incremental work is the *non-spatial* half: objective, cast,
-companion, completion pair, complication seeds, essential words, and Q6's authored NPC
+companion, completion pair, complication seeds, and Q6's authored NPC
 conversations.
 → [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), and the nme itself.
 
@@ -1696,8 +2109,8 @@ What was actually built:
 
 | Table | Holds |
 |---|---|
-| `iw_scenes` | scene identity, `language` (Q8), objective, published, the completion `(npcId, action)` pair, board geometry (`playerStart*` / `companionStart*` / width / height in template cells), and five jsonb blobs: `layout`, `npcCast`, `complications`, `words`, `conversations` |
-| `iw_scene_runs` | one playthrough — durable and resumable within the day (Q30), with the `transcript` jsonb (Q21) |
+| `iw_scenes` | scene identity, `language` (Q8), published, the completion `(npcId, actionId)` pair, board geometry (`playerStart*` / `companionStart*` — cell **and** facing — plus width / height in template cells), and four jsonb blobs: `layout` (terrain, decor, floor, and Q42's `locations`), `npcCast` (placement **and** Q42's authored actions), `complications`, `conversations` |
+| `iw_scene_runs` | one playthrough — durable and resumable within the day (Q30), with the `transcript` jsonb (Q21) and `complicationIds` (a LIST — Q31's per-turn roll) |
 | `iw_scene_ratings` | per-run, per-NPC 1–5 on vocabulary / grammar / politeness (Q21) |
 | `iw_npc_memories` | `(userId, npcId)` → one rolling summary (Q3) |
 
@@ -1706,6 +2119,7 @@ The superseded proposal, for the record:
 | Table | Holds |
 |---|---|
 | `iw_scenes` | id, `language` (Q8), name, map reference, objective, companion NPC id (**text**, into the code constant), completion `(npcId, action)` pair, published flag, timestamps |
+| ↑ | ⚠️ Even this superseded proposal carried an `objective` column. It survived into 158 and was dropped by **159** — the last piece of the pre-Q42 model to go. |
 | `iw_scene_cast` | scene id → NPC id (+ where they start, their role in the scene) |
 | `iw_scene_complications` | scene id → one complication seed per row (Q31) |
 | `iw_scene_words` | scene id → one essential word per row (Q14) |
@@ -1857,8 +2271,17 @@ how the rest of the app calls a model.
 **Q6 — ~~NPC-to-NPC talk?~~ DECIDED: yes, but canned and authored — and it is an NPC
 *action*.** On its turn an NPC may choose to **start a conversation with another NPC**. The
 exchange that follows is **authored content, not generated**: fixed lines, fixed order, played
-back at an authored pace. The learner can **tap to pause** it, so they have time to study the
+back at a **fixed pace**. The learner can **tap to pause** it, so they have time to study the
 sentences.
+
+> **The pace is a constant, not an authored field (decided 2026-09-05).** Every line is held
+> for **7 seconds** — `IW_CONVERSATION_LINE_MS` in `server/contracts/iw.ts`. Phase 1d briefly
+> shipped a per-turn `holdMs` on each conversation turn; it was removed. Pacing is not
+> something an author should have to get right line by line, and an optional number that is
+> usually left blank produces conversations that are inconsistently paced for no deliberate
+> reason. The authoring rule that replaces it: **write a line a learner can read in seven
+> seconds.** The editor says so beside the field. If a scene ever genuinely needs a dramatic
+> beat, that argues for a pause *marker* inside a line, not a number on every line.
 
 This is a genuinely good answer, and it is better than either option it was chosen between:
 
@@ -1875,8 +2298,11 @@ This is a genuinely good answer, and it is better than either option it was chos
 
 ⚠️ **Implications to carry into the build:**
 
-- **The action enum (§ 5.4) needs a new verb** — `start_conversation <npcId>` — and the engine
-  has to validate that the target is present, audible and not already in one.
+- **A new STEP kind was needed** — `start_conversation` — and it shipped (§ 5.4). ⚠️ This bullet
+  originally asked for a model verb, `start_conversation <npcId>`; Q42 made it a step an author
+  puts inside an action, and it names a CONVERSATION rather than an NPC, since the author has
+  already decided who is in it. The engine still has to validate that the speakers are present,
+  audible and not already in one.
 - **A conversation is engine-driven once started.** The NPCs in it are not taking model turns;
   a small state machine plays the authored script. It must **yield to the player**: if the
   learner speaks or acts mid-conversation, the exchange should break off rather than talk over
@@ -2055,16 +2481,18 @@ actually experiences. Before phase 2, the same measurement should run from a pho
 § 6.2 lever 3 slack (hiding the call behind animation) is what would absorb the difference,
 and it should be verified rather than assumed.
 
-**Q14 — Scene vocabulary as an always-allowed set.** ⚠️ **Largely dissolved by Q39.** The
-question was premised on a hard n+1 gate that some questions could not be answered inside
-(a price needs 块). With vocabulary as *guidance* rather than a gate, "always allowed" is no
-longer a mechanism — it is one line in the prompt (§ 9.4 point 3), and a scene's essential
-words are simply part of the scene's own definition.
+**Q14 — ~~Scene vocabulary as an always-allowed set.~~ CLOSED 2026-09-05: there is no scene
+vocabulary.** The question died in two steps. Q39 took the first: it was premised on a hard
+n+1 gate that some questions could not be answered inside (a price needs 块), and once
+vocabulary became *guidance* rather than a gate, "always allowed" stopped being a mechanism
+at all. What survived was only the smaller question — *does a scene's essential word list
+need to be a separate authored field, or is it implicit in the objective and cast?*
 
-What survives is a much smaller question: **does a scene's essential word list need to be a
-separate authored field at all**, or is it implicit in the scene's objective and cast? If it
-is a field, it is a column on `iw_scenes` (Q2) rather than a new data structure — which means
-this no longer needs standalone sign-off, only inclusion in Q2's column list.
+**Answered: not a field.** The authored per-scene word list was removed as out of spec
+(§ 12 phase 1d) — contract type, validation and editor section all deleted. The model's
+vocabulary guidance is now entirely derived from the learner (their level, their library),
+so a scene contributes nothing to it. ✅ The `words` column that survived the removal was
+dropped by **migration 159** (2026-09-05).
 
 **Q15 — ~~What is the floor vocabulary?~~ DECIDED: no `CARD_BASELINES` entry.** Provisional
 lending exists to guarantee a game can assemble a *round*; iw assembles no rounds. It reads the
@@ -2119,7 +2547,7 @@ elsewhere in this doc:
 Cost was never the constraint: 0.6 ¢/session against ~3 ¢ for the model calls.
 
 **Q18 — ~~Movement controls~~ DECIDED: tap-to-move.** Tap a tile and the avatar walks there
-on the existing tile pathing (`streetGraph.planPath`), so iw inherits the night market's
+on the existing tile pathing (`planPath` over the § 3a walkable set), so iw inherits the night market's
 movement wholesale and adds no permanent screen furniture. § 3's hedge is resolved; a virtual
 stick is rejected because it would need continuous-position movement the engine does not do
 today, in exchange for solving a collision that can be solved by layout.
@@ -2418,11 +2846,11 @@ the behaviour Q31's randomisation should not be able to be farmed for).
 ⚠️ **Interaction with Q7:** if the outage banner fires mid-scene, the run must **pause, not
 end**. A vendor outage must never consume a learner's one scene for the day.
 
-**Q31 — ~~Is a scene the same every time?~~ DECIDED: random complication, and the AI drives
-how it unfolds.** Fixed cast and objective; the complication varies per run. But the
-important half of the answer is not the randomisation — it is that **the complication is not
-an authored script.** The AI decides the complication and the course of action to handle it,
-and it will often **turn the resolution back to the learner as a choice**.
+**Q31 — ~~Is a scene the same every time?~~ DECIDED: random complications, and the AI drives
+how they unfold.** Fixed cast and objective; the complications vary per run. But the
+important half of the answer is not the randomisation — it is that **a complication is not
+an authored script.** The AI decides the course of action to handle it, and it will often
+**turn the resolution back to the learner as a choice**.
 
 The worked example given: the order comes out wrong, and the waitress offers to take the
 dish off the bill, replace it, or asks whether the learner minds waiting longer.
@@ -2454,7 +2882,7 @@ Design consequences to carry into the build:
 |---|---|
 | A complication is a **seed, not a script** | `iw_scenes` stores a pool of one-line complication seeds ("the order arrives wrong"); the NPC improvises the offer and the resolution from its NPC. |
 | Options must be **legible to a beginner** | Three branching offers in the target language is a hard listening task. § 9.4's vocabulary *guidance* (Q39 — guidance, not a gate) matters most here, and with no hard budget there is nothing but the prompt keeping the offers readable. This is also exactly where the palette (§ 9a, deferred) has to be able to express *"the second one"*, *"that's fine"*, *"I'll wait"*. |
-| Resolutions must reach the **action enum** | "Take it off the bill" changes what `accept_payment` is legal for. Complications therefore touch scene state, not just dialogue — the engine has to model at least a small amount of it. |
+| Resolutions must reach the **authored actions** | "Take it off the bill" changes which of the NPC's actions should be offered — including, possibly, the one the scene ends on. Complications therefore touch scene state, not just dialogue — the engine has to model at least a small amount of it. (Written when this said "the action enum"; the point survives the enum's deletion, and gets sharper: an author can write the alternative ending themselves.) |
 | It stresses **stall handling** (Q29) | A learner who did not understand any of the three offers is stuck in the worst possible place: mid-complication, with an NPC waiting on them. |
 
 **✅ Sub-question decided: the scene state machine injects the fact.** The engine chooses when
@@ -2467,10 +2895,33 @@ This preserves Q27 exactly — **an NPC is told who it is, never what it is for*
 the one thing that makes complications work: the *reaction* is improvised even though the
 *event* is scheduled. The engine owns the beat; the character owns the moment.
 
-⚠️ **Still to settle when it is built:** what the engine keys the injection on. Scene progress
-(after the order is placed) is dramatically sensible but becomes predictable for a daily player;
-a timer is simplest but can land before anything has happened worth complicating. This is a
-tuning question inside the state machine, not another design decision.
+**✅ Sub-question decided (2026-09-05): the engine keys the injection on a PER-TURN ROLL.**
+Each turn carries a **20% chance** that a complication occurs; when it fires, one is drawn
+from the scene's pool. Neither of the two candidates this question used to weigh was taken:
+not scene progress (dramatically sensible, but a daily player learns the beat and it stops
+being a surprise) and not a timer (simplest, but it can land before anything has happened
+worth complicating).
+
+Four consequences follow, and the first is the one that costs something:
+
+1. **A RUN CAN HAVE MORE THAN ONE COMPLICATION.** A per-turn roll is not a per-run draw. Over
+   a twelve-turn scene at p=0.20 the expected count is ~2.4, and the chance of a completely
+   smooth run is only ~7%. Everything downstream that says "the complication" in the singular
+   is now wrong — including **`iw_scene_runs."complicationId"`, a single TEXT column** shipped
+   in migration 158. ✅ **FIXED by migration 159** (2026-09-05): it is now `"complicationIds"`,
+   an ordered `TEXT[]` of the ids that fired, in the order they fired. TEXT[] rather than
+   jsonb because it is a list of scalars, not an authored document — every other iw jsonb
+   column holds a structure the editor writes whole. It was cheap precisely because nothing
+   read it yet.
+2. **The pool wants to be several, not one.** With one seed the roll just re-runs the same
+   event; the authoring guidance is now "write a handful", and the editor says so.
+3. **Whether a fired complication can repeat within a run is unsettled.** Drawing with
+   replacement is simpler; drawing without it is almost certainly what an author expects, and
+   it is what makes a pool of several feel authored rather than random. Leaning: **without
+   replacement**, falling back to no complication once the pool is exhausted.
+4. **The roll must not fire on turn one.** A complication before the learner has said
+   anything has nothing to complicate, which was the timer option's whole defect and is not
+   avoided by moving to a roll. Suppress it until the scene has had at least one exchange.
 
 **Q32 — ~~Free-form or curated tag?~~ DECIDED: a curated set only.** The overview model
 *chooses* a tag from a fixed list; it never writes one. This makes every persisted tag
@@ -2551,19 +3002,26 @@ politeness score at the end refers to nothing the learner can remember doing.
 
 Implementation notes:
 
-- **This is NPC work, not mechanism.** Nothing new is needed in the action enum — the
+- **This is NPC work, not mechanism.** Nothing new is needed in the step vocabulary — the
   NPC already chooses an emote and its own words. The NPC simply has to be told it is
   allowed to be cool with someone who was rude, and that it serves them anyway.
 - **The emote channel is doing the heavy lifting**, because a beginner cannot necessarily
   hear curtness in the target language. The acknowledged weakness of this option is that it is
   subtle; the emote is what makes it legible.
-- **`refuse` is now reserved for the transactional case** (§ 5.4) — declining a payment that
-  makes no sense, not punishing bad manners.
+- **Refusal is not the channel for rudeness.** ⚠️ This bullet used to read *"`refuse` is now
+  reserved for the transactional case"*, when `refuse` was a step kind; it is not one any more
+  (§ 5.4, 2026-09-05). Refusing is an authored action like any other — a `comment` and a
+  `walk_away_from` — and the point stands unchanged: an author writes one for a request that
+  makes no sense, never to punish bad manners.
 
 **Q37 — ~~Is money a real resource?~~ DECIDED: no. Payment is a gesture, with no
-arithmetic.** There is no balance, no wallet, no prices as data. `accept_payment` (§ 9.2) is
-a completion action, not a transaction — the learner cannot be short, cannot be overcharged,
-and never counts.
+arithmetic.** There is no balance, no wallet, no prices as data. Taking payment (§ 9.2) is an
+authored action the scene nominates as its ending, not a transaction — the learner cannot be
+short, cannot be overcharged, and never counts.
+
+⚠️ 2026-09-05: this used to cite `accept_payment`, an engine step kind. There is no such step.
+The decision is *strengthened* by that, not weakened — with no transactional primitive in the
+vocabulary at all, there is nowhere for arithmetic to accrete even by accident.
 
 This keeps the scene about language rather than bookkeeping, and it avoids inventing an
 economy system the app does not have. **What it gives up** is worth acknowledging: numbers
@@ -2678,3 +3136,106 @@ word you reached for and got wrong is among the most memorable things in the run
   gsa's job, and the est already does exactly this — tappable cpcd segments with definition
   popups ([EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md)). **The report's labelled transcript
   should reuse that machinery rather than inventing a second segmentation path.**
+
+
+---
+
+**Q42 — ~~How much of an NPC's behaviour can an author script?~~ DECIDED: ALL of it. Named
+actions the model CHOOSES and the engine PLAYS — and they REPLACED the action enum
+entirely.** Authoring half **BUILT 2026-09-05**, `IW_ACTIONS` deleted the same day; the
+runtime is phase 2/3.
+
+An NPC placed in a scene may be given a set of **actions** — each a name the model can pick
+("bring water"), optional guidance on when it fits, and an ordered **script** the engine
+executes. The division of labour is the whole idea, and it is worth stating as a rule:
+
+> **The model decides *whether* the moment calls for "bring water". The author decides
+> exactly what bringing water looks like.** The model never improvises movement; the author
+> never has to anticipate when water is wanted.
+
+This is a genuinely different lever from everything else in § 5.4. Those are primitive verbs
+the model emits per turn. An action is a *composite* the author defines per scene — the first
+authored thing in the feature that produces behaviour rather than text.
+
+**The eight step kinds** (`IW_ACTION_STEP_KINDS`, `server/contracts/iw.ts`):
+
+| Step | What it does |
+|---|---|
+| **Say** (`comment`) | The NPC says a **variation** of the given text, in its own register. ⚠️ The one step that is not mechanical — a brief, not a script, so the same step sounds like 王婶 or like 小陈. |
+| **Walk to place** (`walk_to_tag`) | Path to the nearest cell adjacent to a cell tagged with that name, and face it. |
+| **Walk to person** (`walk_to_actor`) | The same, targeting the learner, the companion, or another cast NPC. |
+| **Walk away from** (`walk_away_from`) / **Turn to face** (`face`) | The other two actor-aimed steps; one control in the editor, since all three ask *who*. |
+| **Start a conversation** (`start_conversation`) | Play one of the scene's authored overheard exchanges. |
+| **Wait** (`wait`) | Hold still for 1–60 whole seconds. The beat that makes a script read as behaviour rather than as teleporting. |
+| **Wait for the learner** (`wait_for_response`) | Hand the floor back. At most one, and **only as the final step** — anything after it would run while the learner is composing, which is the one thing § 14 Q29 forbids. |
+
+⚠️ **`accept_payment` / `hand_over` / `give_item` / `refuse` are NOT steps** — see sub-answer 4.
+
+**Named places are a new map layer.** A cell can be tagged ("water station", "counter"),
+stored as `layout.locations`: `"col,row" → tag`. It lives inside the existing `layout` blob
+because a tagged cell **is** board data, in the same sense a decor cell is — so it needed no
+migration. Keyed by cell, so one cell carries at most one tag; the reverse is deliberately
+open, and **several cells may share a tag**, with `walk_to_tag` heading for the nearest. In
+the editor a place is **named first and placed second**: naming it grows a button on the map
+palette, and clicking cells tags them.
+
+**Where actions are stored: on the cast member** (`IWSceneCastMember.actions`), not beside the
+NPC in code. "Bring water" belongs to the tea house, not to 王婶 everywhere she appears — and
+storing it per (scene, NPC) is also what keeps NPCs code and scenes data (§ 8).
+
+**What the editor refuses to save**, all of them ways to write a script that would fail
+*silently* at playback — an NPC standing still while the learner waits for a turn:
+
+- a walk to a place no cell is tagged with, or to somebody not in the scene;
+- an NPC walking to **itself** (trivially authored from a dropdown; it would deadlock);
+- two actions on one NPC **sharing a name** — the model chooses by name, so a duplicate is
+  an ambiguous choice rather than an untidy one;
+- a step after `wait_for_response`;
+- an empty script, a blank `comment`, a wait outside 1–60s, a place tagged off the board, or
+  a place that was named and never placed (its sentinel key cannot parse as a cell, which is
+  what makes "named but nowhere" a save error rather than a walk to nowhere).
+
+**✅ All three sub-questions answered 2026-09-05, by the author:**
+
+1. **Authored actions REPLACE `IW_ACTIONS`, they do not extend it.** *"I want to be able to
+   program all these actions. I don't trust the AI to get them right."* The global verb enum
+   is deleted; the model's turn emits an authored action NAME or `none`, and every primitive
+   became a step kind so it can be programmed explicitly. § 5.4 is rewritten around this, and
+   the bench moved with it. **The unexpected dividend:** completion became checkable at
+   authoring time at all — a thing the old design could not do, because the completion verb
+   was something the model might or might not ever emit. (Sub-answer 4 then sharpened *how*
+   it is checked.)
+2. **`comment` costs a model call, and that is what it is for.** The dialogue's CONTENT stays
+   more or less what the author wrote; the model embellishes it with the NPC's **current
+   mood, personality, iteration count, opinion of the learner, and general variance**, so a
+   scene replayed on day 12 does not read like day 11. Consequence to carry into phase 2:
+   this is the first thing that breaks § 6's one-call-per-turn budget, and the fix is
+   structural — generate an action's comments **together, once, when the action is chosen**,
+   so a three-comment script is one call whose latency hides behind the first walk.
+   ⚠️ Two of those five inputs do not exist yet. `iw_npc_memories` supplies opinion (§ 5.5
+   layer 3), and personality is layer 2 — but **mood** and **iteration count** are per-run
+   state nothing currently tracks. They want a home before `comment` is built.
+3. **Authoring traps are the author's problem — do not build reachability checking.** The
+   editor validates that a tag EXISTS, not that a path to it exists across the § 3a walkable
+   set. That was raised as a trap and explicitly waved off: *"ignore authoring traps, the
+   author will handle it."* Recorded so nobody re-derives it as a missing feature.
+4. **The transactional four are not steps either — the COMPLETION is an authored action.**
+   *"I will program something like accept payment as an action. Then I can select this action
+   as a completion action."* So `accept_payment` / `hand_over` / `give_item` / `refuse` came
+   straight back out of the step vocabulary, hours after going in, and
+   `IW_COMPLETION_ACTIONS` was deleted with them. `IWScene.completionAction` holds an
+   `IWNpcAction.id` on the completer's cast entry, and the details panel's **Does what**
+   picker lists that NPC's own actions.
+
+   The principle this settled, and the one to apply to the next candidate step: **a step is
+   something the engine can execute without knowing what the scene is about.** Walking,
+   facing, waiting, saying, playing a canned exchange — all pass. A payment does not; it is a
+   little scene (walk over, say a line, take the money), which is precisely what an authored
+   action already is. Keeping it as a primitive would have forced the engine to model commerce
+   in order to animate a gesture it could not define.
+
+   Two consequences worth carrying: refusing is now a `comment` plus a `walk_away_from`, which
+   is what it always was in practice (§ 14 Q36's bullet updated); and the completion check
+   got *stronger*, from "some action contains a payment step" to "this exact action exists on
+   this exact NPC", with deletion of that action clearing the nomination
+   (`useIWSceneDraft.removeAction`).

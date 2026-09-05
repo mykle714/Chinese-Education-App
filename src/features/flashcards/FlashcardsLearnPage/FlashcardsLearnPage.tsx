@@ -16,7 +16,7 @@ import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
 import { useWorkingLoop, type CardDragControls, type StudyMode } from "./useWorkingLoop";
 import { useCardIconEditor } from "../../../cardIcons/editor/useCardIconEditor";
-import { useToolbarOverlap } from "./useToolbarOverlap";
+import { useToolbarInset } from "../../../cardIcons/editor/useToolbarInset";
 import { useCardSlotPadding } from "./useCardSlotPadding";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
 import InfoCardSection from "./InfoCardSection";
@@ -26,7 +26,7 @@ import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection, { ChineseBlock, EnglishBlock } from "./FlashCardSection";
 import CardIconCanvas from "../../../cardIcons/editor/CardIconCanvas";
-import { measureDefaultEnglishCenterY } from "../../../cardIcons/cardTextLayout";
+import { measureDefaultTextCenters } from "../../../cardIcons/cardTextLayout";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../../cardIcons/editor/CardEditToolbar";
 import IconPickerDialog from "../../../components/IconPickerDialog";
 import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveDisplayDefinition } from "../../../utils/definitionUtils";
@@ -248,11 +248,11 @@ const FlashcardsLearnPage: React.FC = () => {
         leaveSession();
     }, [provisionalReviewed.length, exitOfferShown, leaveSession]);
 
-    // ── Toolbar-overlap push-down gate ────────────────────────────────────────
-    // The advanced-edit push-down slides the card down to clear the three-row toolbar, but we
-    // only want it when the toolbar would ACTUALLY overlap the card (on roomy viewports the
-    // card is small enough that the toolbar clears it with no shift needed). These refs feed
-    // useToolbarOverlap, which compares the toolbar's bottom edge to the card's centered top.
+    // ── Advanced-toolbar reservation ──────────────────────────────────────────
+    // The three-row advanced toolbar is an absolute overlay, so it takes no flow height. These
+    // refs feed useToolbarInset, which measures how far it intrudes past the card slot's top
+    // padding; the slot reserves that much extra and the card re-centers in what's left. On a
+    // roomy viewport the intrusion is 0 and nothing moves.
     const contentAreaRef = useRef<HTMLDivElement | null>(null);
     const toolbarRef = useRef<HTMLDivElement | null>(null);
 
@@ -266,9 +266,7 @@ const FlashcardsLearnPage: React.FC = () => {
     const moreInfoPillRef = useRef<HTMLDivElement | null>(null);
     const cardSlotPad = useCardSlotPadding(cardSlotRef, contentAreaRef, moreInfoPillRef);
 
-    const toolbarOverlaps = useToolbarOverlap(editMode && advMode, cardSlotRef, toolbarRef, cardRef, cardSlotPad);
-    // Push (and lift the card over the More Info pill) only when the toolbar would overlap.
-    const pushCardDown = editMode && advMode && toolbarOverlaps;
+    const toolbarInset = useToolbarInset(editMode && advMode, cardSlotRef, toolbarRef, cardSlotPad.top);
 
     // Hard-clear the preserved writing-practice draft when a card is marked (which
     // advances currentIndex) and when leaving the flp (cleanup on unmount).
@@ -595,7 +593,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 {/* Floating edit toolbar — overlays the top of the content area while
                     editing so it does NOT push the card down (docs/CARD_ICON_LAYOUT.md).
                     Wrapped in <Slide> so it drops in on enter AND slides back up on exit
-                    (both directions), matched to the card push-down + adv-rows Collapse. */}
+                    (both directions), matched to the card slot's toolbar inset + adv-rows Collapse. */}
                 <Slide
                     in={editMode}
                     direction="down"
@@ -754,9 +752,9 @@ const FlashcardsLearnPage: React.FC = () => {
                         />
                     ) : undefined}
                     editMode={editMode}
-                    // Push down (and lift over the More Info pill) only when the advanced toolbar
-                    // would actually overlap the card — see useToolbarOverlap.
-                    pushDown={pushCardDown}
+                    // Shrink the card slot from the top by however much the advanced toolbar
+                    // intrudes (0 when it clears) — see useToolbarInset.
+                    toolbarInset={toolbarInset}
                     // CARD OPERATIONS — customize / add to deck / delete, behind the `•••`
                     // on the card's own top edge (artboard 21). Mounted on the ACTIVE FRONT
                     // card's answer face by FlashCardSection. Suppressed while the fie is
@@ -765,7 +763,7 @@ const FlashcardsLearnPage: React.FC = () => {
                     topRail={displayCurrentEntry ? (
                         <CardOpsRail
                             entry={displayCurrentEntry}
-                            onCustomize={() => enterEdit(() => cardRef.current ? measureDefaultEnglishCenterY(cardRef.current) : null)}
+                            onCustomize={() => enterEdit(() => cardRef.current ? measureDefaultTextCenters(cardRef.current) : null)}
                             onEditNote={() => setNoteEditing(true)}
                             disabled={editMode || isAnimating}
                         />
@@ -773,8 +771,8 @@ const FlashcardsLearnPage: React.FC = () => {
                 />
                 {/* Centered pill button — ghosted before flip, full opacity after. While
                     the icon editor is open it stays DRAWN but greyed + inert (isDisabled);
-                    in advanced mode the card slides down and paints over it (the card slot
-                    is raised above the pill in FlashCardSection).
+                    it stays visible below the card in advanced mode too — the slot's bottom
+                    pad reserves its band, so the card never reaches it.
 
                     Still TAPPABLE before the flip (only `isDisabled` swallows taps), because
                     a tap in that state is how the learner gets the "flip it first" tooltip
@@ -860,13 +858,29 @@ const FlashcardsLearnPage: React.FC = () => {
                                     tabs={eip.tabs}
                                     activeIndex={eip.activeIndex}
                                     onSelect={eip.setActive}
-                                    onCloseActiveTab={() => {
-                                        if (eip.closeActiveTab()) closeEip();
-                                    }}
                                     isTabbedMode={eip.isTabbedMode}
                                     stripRef={eipStripRef}
                                 />
                             }
+                            // The sheet's ✕ closes the SHOWING WORD, which is the word
+                            // trail's rule and used to live on the strip's own button.
+                            // `closeActiveTab` returns true when that was the last word,
+                            // and returning false from here is how SheetPanel is told to
+                            // play its dismiss — the panel then unmounts through `onClose`
+                            // (closeEip) at the end of the animation rather than instantly.
+                            onCloseX={() => {
+                                // The LAST word does not close its tab — it returns false and
+                                // lets SheetPanel play the dismiss, and the host's onClose
+                                // clears the trail once the sheet is gone. Closing the tab here
+                                // instead would empty the panel's body for the whole 220ms
+                                // slide-out, so the sheet would leave showing nothing.
+                                if (eip.tabs.length <= 1) return false;
+                                eip.closeActiveTab();
+                                return true;
+                            }}
+                            // A study surface: the panel covers the page header, so it
+                            // carries the minute-points flame itself.
+                            showMinutePoints
                         />
                     );
                 })()}

@@ -275,17 +275,6 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
         // tabIndex === 2: Breakdown (multi-char) or Used In (single-char)
         return breakdownTabHasContent ? (
             <Box className="mobile-demo-breakdown-wrapper" sx={{ display: "flex", flexDirection: "column" }}>
-                {/* What this tab is answering, and that the rows go somewhere (artboard
-                    25). "tap to open" rather than a bare chevron caption: the rows drill
-                    into their own entries, and the word trail above is how you come back
-                    — both worth saying once, at the top, instead of per row. */}
-                <TabCaption
-                    className="mobile-demo-breakdown-caption"
-                    left={isSingleChar
-                        ? `${currentEntry?.entryKey ?? ""} · used in`
-                        : `${currentEntry?.entryKey ?? ""} · ${breakdownItems.length} characters`}
-                    right="tap to open"
-                />
                 {isSingleChar ? (
                     // Infinite-scroll list: seeds from the card's ≤4 preview (usedInItems),
                     // pages the rest via /api/dictionary/usedIn.

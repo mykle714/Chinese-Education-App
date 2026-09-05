@@ -104,7 +104,16 @@ it**: it defaults from the props you are already passing.
 | `hub` | 24px / 600 / -0.025em | `23px 22px 0` | `showBack` is false | `.hd` |
 | `node` | 21px / 600 / -0.02em | `23px 22px 0` | `arrowDirection="left"` | `.hd` + back |
 | `dense` | 18px / 600 / -0.018em | `23px 22px 0` | **never — ask for it** | `.hd` (Card Detail, Learn) |
-| `leaf` | 17px / 600 / -0.015em | `21px 18px 0` | `arrowDirection="down"` | `.lhd` |
+| `leaf` | 17px / 600 / -0.015em | `27px 18px 8px` | `arrowDirection="down"` | `.lhd` |
+
+⚠️ **`leaf` is the one size whose padding is not the design's.** The design writes
+`.lhd { padding: 21px 18px 0 }`; the app ships `27px 18px 8px` (2026-09-05). The leaf
+title is the app's smallest at 17px, so the design's padding — tuned under a 24px hub
+title — read as a cramped, short header, and the bottom padding is additive to whatever
+top gutter the body brings (on Settings the first `SettingsSection` contributes only
+14px). Deepening the band was preferred over enlarging the title, which would collide
+with the crowded right slots leaf/game pages carry. Source of truth: `SIZE_SPEC.leaf`
+in `src/components/PageHeader.tsx`.
 
 **`dense` is the one you have to ask for.** The other three follow from the navigation
 shape, which the props already describe. `dense` follows from what the *page* put in

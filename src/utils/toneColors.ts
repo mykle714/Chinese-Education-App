@@ -18,6 +18,14 @@ const TONE_MARK_MAP: Record<string, number> = {
  * (`['#EF476F','#05C793','#779BE7','#FF8E47']`) and every artboard that renders pinyin
  * spells these values inline (dictionary rows, card faces, the cpcd, the flp sense
  * rail). The redesign moved SURFACES to the pastel ramp; it did not move the tones.
+ *
+ * One deliberate departure from that board (2026-09-05): tone 4 was warmed from the
+ * board's orange `#FF8E47` to gold `#EB9721` at the user's request — same OKLCH
+ * lightness band, hue rotated 50° → 68° toward yellow, chroma held. Darkening the
+ * lightness slightly (0.757 → 0.745) pays for the hue move, so contrast against the
+ * warm `--paper` ground actually IMPROVES (2.19:1 → 2.24:1; 2.13 → 2.18 on `cardFace`).
+ * Pure yellow is not available here: at this chroma, hues past ~80° cannot hold that
+ * contrast without going muddy.
  * A previous pass aliased these to `COLORS.redA/grnA/bluA/orgA` and that was wrong —
  * those inks are a different, darker hue set and pinyin stopped matching the design.
  *
@@ -27,7 +35,7 @@ export const TONE_COLORS: Record<number, string> = {
   1: '#EF476F', // red    — tone 1
   2: '#05C793', // green  — tone 2
   3: '#779BE7', // blue   — tone 3
-  4: '#FF8E47', // orange — tone 4
+  4: '#EB9721', // gold   — tone 4
   0: '#9E9E9E', // grey   — neutral tone
 };
 

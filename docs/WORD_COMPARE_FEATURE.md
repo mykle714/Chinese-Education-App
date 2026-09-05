@@ -67,18 +67,20 @@ stop Compare earning there — see
 
 ### The header: permanent, not merge chrome
 
-The sheet passes `headerMode="always"` to `SheetPanel`, so the page-style `PageHeader`
-(title + chevron-down dismiss) that other sheets only grow **at** full height is there from
-the moment it opens; maximizing then changes only the corners, the shadow and the top
-padding. The compare body's first row is two word slots — nothing in it says what the
-surface is or offers a close other than a downward drag — whereas the eip can leave its
-header to the merge because its body opens with the headword. The grabber still sits above
-the header, so the resize affordance is unchanged.
+The page-style `PageHeader` (title + the ✕ in its right slot) is there from the moment the
+sheet opens; maximizing changes only the corners, the shadow and the top padding. The
+grabber still sits above the header, so the resize affordance is unchanged.
+
+This sheet is where that behaviour started: its body's first row is two word slots, so
+nothing in it said what the surface was or offered a close other than a downward drag, and
+it opted in with `headerMode="always"` while every other panel grew its header only at full
+height. **Every `SheetPanel` behaves this way now** and the prop is gone (2026-09-05) — see
+[EIP_SHEET_GESTURES.md § The panel header](./EIP_SHEET_GESTURES.md).
 
 > ⚠️ A sheet header is a **real `PageHeader`**, and `PageHeader` renders the minute-points
 > flame unconditionally, calling `useMinutePoints` (a 1-second tick) internally. So an open
 > sheet with a title mounts a SECOND accrual tick on top of its page's own header. This is
-> pre-existing — every titled sheet has done it since the merge header landed — and it does
+> pre-existing — every titled sheet has done it since the header landed — and it does
 > not over-credit: `UserMinutePointsService.incrementMinutePoints` claims a 59-second
 > cooldown atomically (`UserDAL.claimMinutePointIncrement`), so the loser's POST is
 > rejected. It does mean two independent client-side timers on an earning page. See
@@ -88,7 +90,7 @@ the header, so the resize affordance is unchanged.
 
 `SheetPanel` moved from `src/features/flashcards/FlashcardsLearnPage/` to
 `src/components/sheet/SheetPanel.tsx` in the same pass, taking its four styled surfaces
-(`EicScrim`, `InfoSheetContainer`, `InfoSheetGrabber`, `SheetMergeHeaderSlot`) with it into
+(`EicScrim`, `InfoSheetContainer`, `InfoSheetGrabber`, `SheetHeaderSlot`) with it into
 `src/components/sheet/sheetStyled.ts`. It had to: a shared `CompareSheet` consumed by the
 dictionary feature may not reach into the flashcards feature's folder
 ([FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) — "a feature folder owns what only it uses").

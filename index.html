@@ -7,33 +7,48 @@
          Android/Chrome/Firefox. iOS Safari IGNORES user-scalable=no, so page-level
          pinch on iOS is blocked separately in JS via the useBlockZoom hook.
 
-         viewport-fit=cover makes the web view paint EDGE TO EDGE — under the status
-         bar and the home indicator — instead of being letterboxed inside the safe
-         area. This is what lets a page own the colour of the band behind the clock:
-         while the app was letterboxed, iOS filled that band itself from the document
-         background it captured at LAUNCH, so neither `theme-color` nor any runtime
-         style could change it (that is the bug src/hooks/useThemeColor.ts could not
-         reach). The other half of the trade — keeping content out from under those
-         two strips — is `SAFE_TOP` / `SAFE_BOTTOM` in src/theme/safeArea.ts. -->
+         viewport-fit=cover asks for the web view to paint EDGE TO EDGE — under the
+         status bar and the home indicator — instead of being letterboxed inside the
+         safe area. It is NECESSARY but NOT SUFFICIENT on iOS: in a home-screen web
+         app it does nothing unless `apple-mobile-web-app-status-bar-style` is
+         `black-translucent` (see the next comment). The other half of the trade —
+         keeping content out from under those two strips — is `SAFE_TOP` /
+         `SAFE_BOTTOM` in src/theme/safeArea.ts. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <!-- Home-screen ("Add to Home Screen") behaviour. `capable` asks iOS for the
-         standalone window with no Safari chrome; `status-bar-style: default` keeps
-         the system glyphs DARK, which is what the app's light palette needs. Do NOT
-         switch this to `black-translucent` — that forces light glyphs, which vanish
-         on every paper-white page.
+         standalone window with no Safari chrome.
+
+         `status-bar-style` MUST be `black-translucent` for the app to paint the band
+         behind the clock. This is the ONE tag that decides it, and the reason the
+         2026-09 attempt failed: with `default` (or `black`) iOS keeps the web view
+         LETTERBOXED below an opaque, OS-painted status bar no matter what
+         `viewport-fit` says, `env(safe-area-inset-top)` resolves to 0px, and the band
+         is filled by iOS from the document background it captured at LAUNCH. No
+         runtime write — `theme-color`, `documentElement.style` — can reach it.
+         `black-translucent` is what makes the web view actually extend under the bar,
+         which is what turns SAFE_TOP (src/theme/safeArea.ts) non-zero and hands the
+         band's colour to whatever surface is on screen.
+
+         The trade: with `black-translucent` the app no longer chooses the GLYPH
+         colour. On iOS 13+ the clock/battery follow the SYSTEM appearance (dark
+         glyphs in light mode, light glyphs in dark mode), so a device in dark mode
+         will show light glyphs over the app's paper-white pages. If that turns out to
+         be unreadable in practice, the fix is a dark top band on light pages, not a
+         return to `default` — `default` cannot colour the band at all.
 
          ⚠️ iOS SNAPSHOTS THESE TAGS WHEN THE ICON IS ADDED. Changing them does not
          affect an already-installed icon: delete it from the Home Screen and re-add
          it, or the old behaviour persists no matter what ships. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <!-- The colour Android Chrome (toolbar) and iOS SAFARI-TAB browsing paint behind
          the status bar. This is only the DEFAULT — the app's paper ground; screens
          that flood the page with their own ground (every game, via
          GameSurfaceProvider) rewrite this tag while mounted through the
          useThemeColor hook. It does NOT reach the iOS home-screen web app's status
          bar — that band is page pixels now, painted by whatever surface is on screen
-         thanks to viewport-fit=cover above. Value mirrors COLORS.background. -->
+         thanks to viewport-fit=cover + black-translucent above. Value mirrors
+         COLORS.background. -->
     <meta name="theme-color" content="#FBFAF8" />
     <title>Cow</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">

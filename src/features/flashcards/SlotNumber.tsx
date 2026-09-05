@@ -36,7 +36,7 @@ import { Box } from "@mui/material";
  * is on screen at the end of one short animation, not after a fabricated wind-down.
  *
  * Reduced motion skips the reels entirely: nothing shows until the value arrives. That is
- * the same contract the corner tags keep, and it is honest — blank means "not yet".
+ * honest — blank means "not yet".
  *
  * Layer: presentational component (src/features/flashcards). Referenced by
  * docs/DECKS_FEATURE.md § "The card hand".
@@ -138,7 +138,7 @@ export const SlotNumber: React.FC<SlotNumberProps> = ({ value, className }) => {
 
     // Reduced motion, or waiting with the reels suppressed: hold the line box open with a
     // non-breaking space so the hairline beneath the figure does not creep upward, and show
-    // nothing. Blank means "not yet", the same as the corner tags.
+    // nothing. Blank means "not yet".
     if (reducedMotion) {
         return (
             <Box component="span" className="slot-number slot-number--blank">{"\u00A0"}</Box>

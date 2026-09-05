@@ -7,12 +7,7 @@ import type {
   ArenaState,
 } from '../types/arena.js';
 import { ValidationError } from '../types/dal.js';
-import {
-  ARENA_SIZE,
-  ARENA_DIVISION_COUNT,
-  ARENA_PROMOTE_COUNT,
-  ARENA_RELEGATE_COUNT,
-} from '../contracts/wire.js';
+import { ARENA_SIZE } from '../contracts/wire.js';
 import {
   arenaWeekStart,
   arenaCloseFor,
@@ -23,6 +18,11 @@ import {
   resolveTimezone,
 } from '../shared/arenaWeek.js';
 import { bucketCandidates, clusterBucket, commonGeoPrefix } from './arenaClustering.js';
+import {
+  computeZoneCutoffs,
+  zoneForScore,
+  divisionChangeForScore,
+} from './arenaZones.js';
 import {
   pickSyntheticTarget,
   pickSyntheticName,
@@ -211,6 +211,10 @@ export class ArenaService {
       return a.member.updatedAt.getTime() - b.member.updatedAt.getTime();
     });
 
+    // Zones are score cutoffs, not rank cutoffs, so that a tie spanning either
+    // line resolves the same way for everyone holding the score (arenaZones.ts).
+    const cutoffs = computeZoneCutoffs(named.map((row) => row.score));
+
     return named.map((row, i) => {
       const rank = row.member.finalRank ?? i + 1;
       return {
@@ -222,21 +226,9 @@ export class ArenaService {
         language: row.member.language,
         score: row.score,
         isViewer: row.member.userId === viewerId,
-        zone: this.zoneForRank(rank, arena.division),
+        zone: zoneForScore(row.score, arena.division, cutoffs),
       };
     });
-  }
-
-  /**
-   * Which side of the promotion/relegation line a rank sits on.
-   *
-   * Computed server-side so the client never re-derives the cutoffs and drifts
-   * out of agreement with what resolution actually does.
-   */
-  private zoneForRank(rank: number, division: number): ArenaEntry['zone'] {
-    if (division < ARENA_DIVISION_COUNT && rank <= ARENA_PROMOTE_COUNT) return 'promote';
-    if (division > 1 && rank > ARENA_SIZE - ARENA_RELEGATE_COUNT) return 'relegate';
-    return 'hold';
   }
 
   // ── Opt-in ─────────────────────────────────────────────────────────────────
@@ -674,10 +666,14 @@ export class ArenaService {
             : a.m.updatedAt.getTime() - b.m.updatedAt.getTime(),
         );
 
+      // Same score cutoffs the live board displayed, so the zone a member
+      // watched all week is the ladder move they actually get (arenaZones.ts).
+      const cutoffs = computeZoneCutoffs(ranked.map((row) => row.score));
+
       const rows = ranked.map((row, i) => ({
         memberId: row.m.id,
         finalRank: i + 1,
-        divisionChange: this.divisionChangeFor(i + 1, arena.division),
+        divisionChange: divisionChangeForScore(row.score, arena.division, cutoffs),
       }));
 
       // Ladder moves first: if resolveArena succeeds and this failed, the board
@@ -687,10 +683,7 @@ export class ArenaService {
       // idempotent because it is an absolute value, not an increment.
       for (const row of ranked) {
         if (!row.m.userId) continue; // bots never promote or demote
-        const change = this.divisionChangeFor(
-          rows.find((r) => r.memberId === row.m.id)!.finalRank,
-          arena.division,
-        );
+        const change = divisionChangeForScore(row.score, arena.division, cutoffs);
         if (change === 0) continue;
         await this.arenaDAL.setDivision(
           row.m.userId,
@@ -706,18 +699,4 @@ export class ArenaService {
     return resolved;
   }
 
-  /**
-   * -1 / 0 / +1 for a final rank (§ 7).
-   *
-   * Synthetic members OCCUPY REAL RANKS, so a bot in the top 5 consumes a
-   * promotion slot (§ 6.3, Q5). Promoting "the top 5 humans" instead was
-   * rejected: it makes the displayed rank a lie, and it turns a bot-heavy board
-   * into a free ride — which is exactly the board a struggling player is most
-   * likely to be in.
-   */
-  private divisionChangeFor(rank: number, division: number): number {
-    if (rank <= ARENA_PROMOTE_COUNT && division < ARENA_DIVISION_COUNT) return 1;
-    if (rank > ARENA_SIZE - ARENA_RELEGATE_COUNT && division > 1) return -1;
-    return 0;
-  }
 }

@@ -3,6 +3,7 @@ import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import { FOOTER_TOTAL_CLEARANCE } from "../../../components/MobileFooter";
 import type { SheetPanelBodyHandle } from "../../../components/sheet/SheetPanel";
+import { sheetEdgeFadeSx } from "../../../components/sheet/sheetStyled";
 
 /**
  * `SheetBody` — the plumbing every `SheetPanel` body needs, with none of the content.
@@ -77,6 +78,10 @@ const SheetBody = forwardRef<SheetPanelBodyHandle, SheetBodyProps>(function Shee
                         // the last row has to clear it exactly as a page's scroll area
                         // does.
                         paddingBottom: FOOTER_TOTAL_CLEARANCE,
+                        // Content dissolves at the scroller's bottom edge rather than
+                        // being sliced by it — the same band every scrollable panel
+                        // wears (sheetStyled § Sheet bottom edge fade).
+                        ...sheetEdgeFadeSx,
                     },
                     ...(Array.isArray(sx) ? sx : [sx]),
                 ]}

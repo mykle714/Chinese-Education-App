@@ -1,16 +1,16 @@
 /**
  * Character-fidelity sweep — "does the NPC stay in character?" (IMMERSIVE_WORLD.md § 5.6)
  *
- *   npx tsx scripts/bench/npc-latency/character-run.js [--NPC wang_shen]
+ *   npx tsx scripts/bench/npc-latency/character-run.js [--npc wang_shen]
  *                                                     [--model claude-haiku-4-5] [--reps 2]
- *   npx tsx scripts/bench/npc-latency/character-run.js --NPC all
+ *   npx tsx scripts/bench/npc-latency/character-run.js --npc all
  *
  * ⚠️ RUN IT UNDER `tsx`, not bare `node`. This file is JS but imports the REGISTRY NPCs
  * (config/iwNpcs.ts) through the production renderer (services/iw/npcPrompt.ts), so
  * the loader has to understand TypeScript. That indirection is deliberate: a sweep that
  * graded its own private copy of an NPC would pass while the shipped prompt failed.
  *
- * `--NPC bench` selects the pre-registry inline 王婶 from scenario.js, kept so the
+ * `--npc bench` selects the pre-registry inline 王婶 from scenario.js, kept so the
  * historical 18/18 baseline stays reproducible.
  *
  * Runs every probe turn from character.js and prints what the NPC actually said, with
@@ -97,7 +97,7 @@ function resolveSubjects(arg) {
 async function sweepOne(subject) {
   const openingLine = subject.ctx.opening;
   const turns = buildProbeTurns(subject.ctx, openingLine);
-  const scenarioCtx = { npc: subject.block, known: subject.ctx.known, nearby: subject.ctx.nearby };
+  const scenarioCtx = { npc: subject.block, known: subject.ctx.known, nearby: subject.ctx.nearby, actions: subject.ctx.actions };
 
   console.log(`\n${'═'.repeat(96)}`);
   console.log(`${subject.label}  ·  id "${subject.id}"  ·  length budget ${subject.maxGlyphs} glyphs`);
@@ -110,25 +110,32 @@ async function sweepOne(subject) {
   console.log(pad('probe', 22) + pad('said', 30) + pad('action', 18) + 'flags');
   console.log('─'.repeat(96));
 
-  let fails = 0, total = 0, illegal = 0;
+  // ⚠️ Count `cleanAction`, NOT `legalAction` (scenario.js § "legalAction vs cleanAction").
+  // The parser DEGRADES an unrecognised action line to `idle`, so `legalAction` is
+  // unconditionally true and a column built on it measures the parser's error handling
+  // rather than the model. Fixed 2026-09-05, after a sweep reported "0 illegal actions"
+  // while 老周 had invented `sit_to_actor` and been silently rescued.
+  let fails = 0, total = 0, dirty = 0;
   for (const turn of turns) {
     for (let i = 0; i < REPS; i++) {
-      const raw = await ask(buildScenario(FORMAT, turn, scenarioCtx));
-      const g = gradeReply(FORMAT, raw);
+      const scenario = buildScenario(FORMAT, turn, scenarioCtx);
+      const raw = await ask(scenario);
+      // Grade against the SAME list that was offered — the vocabulary is per NPC now.
+      const g = gradeReply(FORMAT, raw, scenario.actions);
       const c = gradeCharacter(g.say, { known: subject.ctx.known, maxGlyphs: subject.maxGlyphs });
       total++;
       // VOCAB is deliberately NOT a failure any more — the hard n+1 budget was withdrawn
       // (§ 9.4), so reaching past the learner is an observation, not a defect.
       const bad = c.flags.filter(f => f === 'ENGLISH' || f === 'BROKE-CHARACTER' || f.startsWith('LONG'));
       if (bad.length) fails++;
-      if (!g.legalAction) illegal++;
+      if (!g.cleanAction) dirty++;
       const actionLine = raw.trim().split('\n')[1] ?? '?';
       console.log(pad(i === 0 ? turn.id : '', 22) + pad(g.say || '(silent)', 30)
-        + pad((g.legalAction ? '' : '⚠ ') + actionLine, 18) + (c.flags.join(' ') || 'ok'));
+        + pad((g.cleanAction ? '' : '⚠ ') + actionLine, 18) + (c.flags.join(' ') || 'ok'));
     }
   }
-  console.log(`\n${total - fails}/${total} replies clean · ${illegal} illegal actions`);
-  return { id: subject.id, total, fails, illegal };
+  console.log(`\n${total - fails}/${total} replies clean · ${dirty} rescued action/emote lines`);
+  return { id: subject.id, total, fails, dirty };
 }
 
 async function main() {
@@ -139,7 +146,7 @@ async function main() {
   for (const s of subjects) results.push(await sweepOne(s));
 
   console.log(`\n${'═'.repeat(96)}\nSUMMARY`);
-  for (const r of results) console.log(`  ${pad(r.id, 16)} ${r.total - r.fails}/${r.total} clean · ${r.illegal} illegal actions`);
+  for (const r of results) console.log(`  ${pad(r.id, 16)} ${r.total - r.fails}/${r.total} clean · ${r.dirty} rescued`);
   console.log('\nFlags: ENGLISH = switched language · BROKE-CHARACTER = admitted to being a model');
   console.log('       LONG(n>m) = over this npc\'s energy-derived budget');
   console.log('       VOCAB(+n) = reached n content characters past KNOWN_WORDS — an observation, not a failure');

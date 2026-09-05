@@ -22,6 +22,13 @@
  */
 
 /**
+ * The two bodies the sprite pack authors. Mirrors `PlayerGender` in
+ * `src/engine/market/freeFarmTileset.ts` — deliberately re-declared rather than imported,
+ * because a server type may not reach into the client engine.
+ */
+export type IWAvatar = 'male' | 'female';
+
+/**
  * A 1–5 trait scale. Deliberately numeric AND glossed: the number lets the prompt
  * builder render a consistent phrase for every NPC, the gloss is what a human
  * reads when deciding whether the character is written the way they intended.
@@ -62,6 +69,21 @@ export interface IWNpc {
   /** Romanization for the author's benefit; never shown to the learner in-scene. */
   romanization: string;
   age: number;
+  /**
+   * WHICH SPRITE STANDS FOR THIS PERSON. The pack ships exactly two bodies — `male` and
+   * `female` (`freeFarmTileset`, four facings × four idle/walk frames each) — so an NPC's
+   * avatar is a choice between two, not a portrait.
+   *
+   * ⚠️ THIS IS THE ONE COSMETIC FIELD ON AN NPC, and unlike every other field here it is
+   * NOT rendered into the prompt: it decides what the learner SEES, never what the model
+   * reads. `renderNpcBlock` must keep ignoring it — a character who is told which sprite
+   * they are is a character who can talk about being drawn.
+   *
+   * The learner's own avatar is `female` and the companion's is `male`; those two are not
+   * choices an author makes, so they are not stored on a scene (see `IW_PLAYER_AVATAR` in
+   * server/contracts/iw.ts).
+   */
+  avatar: IWAvatar;
   /** Their job in the world. The single strongest constraint on what they talk about (§ 11 layer 1). */
   occupation: string;
 

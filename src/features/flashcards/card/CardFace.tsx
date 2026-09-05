@@ -213,22 +213,27 @@ export const EnglishBlock: React.FC<{
             {/* Inner wrapper shrinks to the whole assembly's width — same role as
                 ChineseBlock's inner wrapper (see its comment for the centering rationale).
 
-                `maxWidth: 100%` + `flexWrap` are what keep the sense chip ON the card. The
-                trigger used to hang off the text's right edge absolutely (left: 100%), which
-                is invisible to layout: once the gloss grew wide enough to fill the card, the
-                chip sat past the card's — and on the large card view the viewport's — right
-                edge and could not be tapped. In flow it instead squeezes the text (which
-                wraps), and when even the gloss's longest word leaves no room beside it, the
-                whole chip wraps onto its own line under the text. */}
+                `maxWidth: 100%` is what keeps the sense chip ON the card. The trigger used to
+                hang off the text's right edge absolutely (left: 100%), which is invisible to
+                layout: once the gloss grew wide enough to fill the card, the chip sat past the
+                card's — and on the large card view the viewport's — right edge and could not be
+                tapped. In flow it instead squeezes the text, which wraps internally (see the
+                text row's `overflowWrap`).
+
+                The row is deliberately `nowrap`. It used to wrap, which put the chip on its own
+                line under a wide gloss — but only the CHIP wrapped: its hidden balancing twin
+                (below) stayed on the text's line, so the gloss was left visibly pushed to the
+                RIGHT by half the twin's width. Since flex wrapping follows DOM order, there is
+                no CSS way to make the twin wrap along with the chip it balances, so the row
+                never wraps at all and the two always share the text's line. */}
             <Box
                 sx={{
                     position: 'relative',
                     display: 'inline-flex',
-                    flexWrap: 'wrap',
+                    flexWrap: 'nowrap',
                     alignItems: 'center',
                     justifyContent: 'center',
                     maxWidth: '100%',
-                    rowGap: 0.5,
                 }}
                 className="mobile-demo-flashcard-english-inner"
             >
@@ -247,7 +252,10 @@ export const EnglishBlock: React.FC<{
                     group.
 
                     `minWidth: 0` overrides the flex default (min-content), so a long gloss
-                    shrinks and wraps here rather than pushing the chip out of the wrapper. */}
+                    shrinks and wraps here rather than pushing the chip out of the wrapper, and
+                    `overflowWrap: break-word` on the text is what catches the remaining case —
+                    a single word longer than the space left beside the chip breaks instead of
+                    spilling over the card's edge (the row itself never wraps; see above). */}
                 <Box className="mobile-demo-flashcard-english-row" sx={{ position: 'relative', minWidth: 0 }}>
                     <Typography sx={{
                         fontSize: englishFontSize(text),
@@ -256,6 +264,7 @@ export const EnglishBlock: React.FC<{
                         fontFamily: FC_FONT_CJK,
                         textAlign: 'center',
                         lineHeight: 1.25,
+                        overflowWrap: 'break-word',
                     }}>
                         {text}
                     </Typography>

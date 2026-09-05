@@ -37,8 +37,14 @@ import { SAFE_TOP } from "../theme/safeArea";
 export type PageHeaderSize = "hub" | "node" | "dense" | "leaf";
 
 interface SizeSpec {
-    /** Container top padding in px, `.hd` = 23, `.lhd` = 21. */
+    /** Container top padding in px, `.hd` = 23, `.lhd` = 27. */
     padTop: number;
+    /**
+     * Container bottom padding in px. Zero for the three `.hd` sizes — those headers
+     * sit above content that brings its own top gutter, so the design leaves the
+     * header itself flush. `leaf` is the exception: see the note on SIZE_SPEC.leaf.
+     */
+    padBottom: number;
     /** Container horizontal padding in px, `.hd` = 22, `.lhd` = 18. */
     padX: number;
     /** Title font-size in px. */
@@ -50,16 +56,26 @@ interface SizeSpec {
 }
 
 const SIZE_SPEC: Record<PageHeaderSize, SizeSpec> = {
-    hub: { padTop: 23, padX: 22, titleSize: 24, titleTracking: "-0.025em", rightGap: 11 },
-    node: { padTop: 23, padX: 22, titleSize: 21, titleTracking: "-0.02em", rightGap: 11 },
+    hub: { padTop: 23, padBottom: 0, padX: 22, titleSize: 24, titleTracking: "-0.025em", rightGap: 11 },
+    node: { padTop: 23, padBottom: 0, padX: 22, titleSize: 21, titleTracking: "-0.02em", rightGap: 11 },
     // Tighter right gap too: the whole point of `dense` is that the line is full.
-    dense: { padTop: 23, padX: 22, titleSize: 18, titleTracking: "-0.018em", rightGap: 10 },
-    leaf: { padTop: 21, padX: 18, titleSize: 17, titleTracking: "-0.015em", rightGap: 9 },
+    dense: { padTop: 23, padBottom: 0, padX: 22, titleSize: 18, titleTracking: "-0.018em", rightGap: 10 },
+    // ⚠️ The leaf band is DELIBERATELY deeper than the design's `21px 18px 0`
+    // (2026-09-05). At 17px the leaf title is the smallest in the app, so the same
+    // padding that reads as generous under a 24px hub title read as cramped here —
+    // the header looked short. The extra 6px above and 8px below buy the small title
+    // the same optical breathing room the large ones already had, WITHOUT growing the
+    // title itself (which would collide with the crowded right slots leaf/game pages
+    // carry). The bottom padding matters most: it is additive to whatever top gutter
+    // the body brings (Settings' first `.set` contributes only 14px), so before this
+    // the title sat almost against the first card.
+    leaf: { padTop: 27, padBottom: 8, padX: 18, titleSize: 17, titleTracking: "-0.015em", rightGap: 9 },
 };
 
 // THE SAFE-AREA TOP INSET LIVES HERE, once, for every header in the app.
 //
-// `index.html` ships `viewport-fit=cover`, so the page now paints under the iPhone's
+// `index.html` ships `viewport-fit=cover` + `apple-mobile-web-app-status-bar-style:
+// black-translucent` (it takes both), so the page now paints under the iPhone's
 // status bar — that is what makes the band behind the clock match the page instead of
 // staying paper-white (see src/theme/safeArea.ts for the full why). The cost is that
 // the top of the page is now UNDER the clock, and the header is the app's first row on
@@ -82,7 +98,7 @@ const Header = styled(Box, {
     paddingTop: safeAreaTop ? `calc(${SIZE_SPEC[size].padTop}px + ${SAFE_TOP})` : `${SIZE_SPEC[size].padTop}px`,
     paddingLeft: SIZE_SPEC[size].padX,
     paddingRight: SIZE_SPEC[size].padX,
-    paddingBottom: 0,
+    paddingBottom: SIZE_SPEC[size].padBottom,
     // Block native pan/scroll: dragging from the header must not scroll/bounce
     // the page (it sits above drag-to-sort/game surfaces). Mark a child scrollable
     // explicitly if one ever needs it.
@@ -126,6 +142,16 @@ interface PageHeaderProps {
     // hand-rolling chips and buttons per page. Do NOT put the minute-points flame
     // here — the header renders it for every page already (see the right slot).
     rightContent?: React.ReactNode;
+    // Suppress the minute-points flame. Default true, and PAGES MUST NOT PASS IT — the
+    // flame is ambient and every page gets it (see the right slot).
+    //
+    // The one caller is SheetPanel's MERGE HEADER. A sheet now carries the flame in its
+    // own chrome row, beside the ✕, at every height (see SheetPanel's `showMinutePoints`),
+    // which is strictly better than the merged header's copy: it answers "am I earning?"
+    // while the sheet is half-open too, not only once the sheet has covered the page.
+    // Leaving the header's copy in as well would put two flames one row apart AND mount a
+    // second `useMinutePoints` accrual tick — see the ⚠️ on the right slot.
+    showFlame?: boolean;
 }
 
 const PageHeader: React.FC<PageHeaderProps> = ({
@@ -136,6 +162,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
     arrowDirection = "down",
     size,
     safeAreaTop = true,
+    showFlame = true,
 }) => {
     const navigate = useNavigate();
     const resolvedSize: PageHeaderSize = size ?? (showBack ? (arrowDirection === "left" ? "node" : "leaf") : "hub");
@@ -211,7 +238,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
                 sx={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: `${spec.rightGap}px` }}
             >
                 {rightContent}
-                <MinutePointsFireBadge />
+                {showFlame && <MinutePointsFireBadge />}
             </Box>
         </Header>
     );

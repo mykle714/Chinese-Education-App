@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Button, Typography } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import UndoIcon from "@mui/icons-material/Undo";
@@ -23,7 +23,7 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 import { challengeErrorMessage, deadlineLabel } from "./challengeLabels";
 import { CHALLENGE_STRIKE_FADE_MS, challengeMessageSx, challengeWordCardHeight } from "./challengeStyles";
 import ChallengeSheet from "./ChallengeSheet";
-import type { ChallengeSheetTone } from "./ChallengeSheet";
+import type { ChallengeSheetHandle, ChallengeSheetTone } from "./ChallengeSheet";
 import ChallengeWordCard from "./ChallengeWordCard";
 import { candidateToReviewWord, storedWordToReviewWord } from "./reviewWord";
 import type { ChallengeReviewWord } from "./reviewWord";
@@ -86,6 +86,10 @@ const MODE_CHROME: Record<ChallengePanelMode, { title: string; state: string; to
  */
 function ChallengePanel({ target, onClose, onChanged }: ChallengePanelProps) {
     const { isAuthenticated } = useAuth();
+    // The sheet's own animated close. Every terminal action below leaves through it
+    // rather than calling `onClose` directly, so Send/Accept/Decline/Withdraw dismiss
+    // with the same slide the ✕ and the scrim play (see ChallengeSheetHandle).
+    const sheetRef = useRef<ChallengeSheetHandle | null>(null);
 
     const [challenge, setChallenge] = useState<ChallengeSummary | null>(null);
     /**
@@ -249,13 +253,13 @@ function ChallengePanel({ target, onClose, onChanged }: ChallengePanelProps) {
         try {
             await action();
             onChanged();
-            onClose();
+            sheetRef.current?.close();
         } catch (err: unknown) {
             setError(challengeErrorMessage(err, failureMessage));
         } finally {
             setBusy(false);
         }
-    }, [busy, onChanged, onClose]);
+    }, [busy, onChanged]);
 
     /**
      * Send (issue) / Accept (incoming).
@@ -350,6 +354,7 @@ function ChallengePanel({ target, onClose, onChanged }: ChallengePanelProps) {
 
     return (
         <ChallengeSheet
+            ref={sheetRef}
             open
             title={chrome.title}
             subtitle={`vs ${target.friendName}`}

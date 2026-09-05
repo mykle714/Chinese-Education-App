@@ -82,7 +82,7 @@ carries `suppressed: true`, and **no client reads it today**.
 | | |
 |---|---|
 | **What** | Three of the fifteen shelf-system generic atoms have no shared implementation: `.modal` (scrim + centred grey card + one dark CTA), `.sheet` (pull-up panel, `top:176px`, radius 26, grab handle) and `.scrim` (a flat 28% ink overlay). Spec: [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A5 |
-| **Why deferred** | Each already has ONE live bespoke implementation — `HydraLendNotice` for the modal, the decks preview panel (entry 2) for the sheet, MUI `Backdrop` for the scrim — and none is repeated often enough to have drifted. Extracting a primitive from a single caller invents an API from one data point; the second caller is what tells you which parts are actually shared |
+| **Why deferred** | Each already has ONE live bespoke implementation — the decks preview panel (entry 2) for the sheet, MUI `Backdrop` for the scrim, and for the modal whichever blocking dialog survives (`HydraLendNotice`, the reference cited here, was **deleted 2026-09-05** when Hydra's lend popup became a per-bubble badge) — and none is repeated often enough to have drifted. Extracting a primitive from a single caller invents an API from one data point; the second caller is what tells you which parts are actually shared |
 | **Cost of leaving it** | Low for now, rising. The moment a second sheet or a second blocking modal is written, the two will disagree on radius, top offset, grab-handle size and scrim opacity, and the fix becomes a reconciliation rather than an extraction |
 | **Trigger** | The second caller. Whichever entry next needs a pull-up panel or a blocking modal extracts the primitive as part of its own work rather than inlining a third copy |
 | **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A5, `src/components/primitives/` |
@@ -143,18 +143,6 @@ carries `suppressed: true`, and **no client reads it today**.
 | **Cost of leaving it** | A page that needs both a shelf caption and a section caption uses two components that look identical, which is how the next divergence gets introduced. Entry 5 (Account) hit exactly this and picked `SectionHeader` for both, so its library header is a shelf caption drawn by the non-shelf component |
 | **Trigger** | The next entry to touch A3 or A5. Merge into `SectionHeader` (the richer API), keep `ShelfHeader` as a re-export or delete it, and fix the `DecksPanelBody` / Reader / Account call sites |
 | **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A3, § A5, entry 5; `src/components/shelf/Shelf.tsx`, `src/components/primitives/Label.tsx` |
-
----
-
-### 9. The decks page `.duebar` has no "due today" figure (the card hand now does)
-
-| | |
-|---|---|
-| **What** | **RESOLVED for the card hand.** All three `StudyHand` figures are now cooldown-aware ready counts (`src/utils/flpReadiness.ts`), so Challenge + Review == Study Mix and each card says how many cards a session could deal right now. What remains is the `.duebar`'s LEFT slot, which artboard 2 reads as **"24 due today"** and which still prints the library SIZE |
-| **Why deferred** | The original deferral — "it is server work: a DAL count, a service method, a controller route and a wire type" — turned out to be **wrong about the cost**. No server work was needed: the fdp already loads every sorted card (`useDecksPanel` → `fetchCollectionCards(ALL_COLLECTION_ID)`), those rows carry `typedMarkHistory`, and the cooldown arithmetic is a client-importable contract (`server/contracts/cooldown.ts`) that `vocabSort` was already using on the same page. Restating `rankFlpEligible`'s predicate on the client cost one pure util. The remaining `.duebar` slot is a **copy** decision, not a data one: "due today" is a different claim from "ready now" (it implies a deadline the app does not model), so the slot was left alone rather than filled with a number whose label would be a lie |
-| **Cost of leaving it** | Small and shrinking. The headline still reads as a library size where the artboard wanted urgency — but the three figures directly beneath it now carry exactly that signal, so the page no longer leaves a learner unable to tell whether a session will serve them anything |
-| **Trigger** | A copy pass on the `.duebar`. If it should show readiness, `flpReadyCountsByBand` already returns it — the work is deciding what the slot SAYS, not computing it |
-| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entry 2; [DECKS_FEATURE.md](./DECKS_FEATURE.md) § "The card hand"; `src/utils/flpReadiness.ts`; `src/features/flashcards/FlashcardsDecksPage.tsx` → the `.duebar`; `server/services/OnDeckVocabService.ts` → `rankFlpEligible` |
 
 ---
 
@@ -262,6 +250,17 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 | **References** | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 2 "`users.timezone` must be fresh", `server/services/StudyChallengeService.ts` → `toSummary`, `src/features/studyChallenge/challengeLabels.ts` → `deadlineLabel`, `src/api/arena.ts` → `ArenaBoundaries` |
 
 ## Recently closed
+
+### The decks page `.duebar` (closed 2026-09-05 — line deleted)
+
+Resolved by **removing the line**, not by answering it. The `.duebar`'s only remaining
+slot printed the library SIZE under a caption the artboard wanted to read "24 due
+today" — a claim the app does not model. The three `StudyHand` cards directly beneath
+it already print cooldown-aware ready counts (`src/utils/flpReadiness.ts` →
+`flpReadyCountsByBand`), which is the signal the slot was standing in for, so the row
+(`.flashcards-decks__library-line`) and its `libraryTotal` derivation were deleted from
+`FlashcardsDecksPage` and the study area is now two rows: the Centers rail and the hand.
+Bring a headline figure back only with a caption that matches what it counts.
 
 ### Build Study Challenge, phase 1 async (closed 2026-08-22 — DONE)
 

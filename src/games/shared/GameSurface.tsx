@@ -21,7 +21,8 @@ import { useThemeColor } from "../../hooks/useThemeColor";
  * colours are read from ONE `hue` and cannot drift. See src/hooks/useThemeColor.ts.
  *
  * In the iOS HOME-SCREEN app the status bar is not that surface: it is page pixels, so
- * the accent ground below paints it directly (`viewport-fit=cover`, src/theme/safeArea.ts).
+ * the accent ground below paints it directly (`viewport-fit=cover` +
+ * `apple-mobile-web-app-status-bar-style: black-translucent`, src/theme/safeArea.ts).
  */
 export const GameSurfaceProvider: React.FC<{ hue: RampHue; children: React.ReactNode }> = ({ hue, children }) => {
     useThemeColor(RAMP[hue].ink);

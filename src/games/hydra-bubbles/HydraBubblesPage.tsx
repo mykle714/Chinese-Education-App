@@ -26,7 +26,6 @@ import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { useMarkedLentWords } from "../../hooks/useMarkedLentWords";
 import { useColorBuffers } from "./useColorBuffers";
-import HydraLendNotice from "./HydraLendNotice";
 import { API_BASE_URL } from "../../constants";
 import { authHeader } from "../../utils/authHeader";
 import { useChallengeRound } from "../runtime/useChallengeRound";
@@ -71,7 +70,6 @@ const HydraBubblesPage: React.FC = () => {
     const [score, setScore] = useState(0);
     const [outcome, setOutcome] = useState<HydraOutcome | null>(null);
     const [popupMinimized, setPopupMinimized] = useState(false);
-    const [lendNoticeOpen, setLendNoticeOpen] = useState(false);
     // Bumped per run so HydraStage remounts with a clean field.
     const [runId, setRunId] = useState(0);
     const runIdRef = useRef(0);
@@ -92,7 +90,7 @@ const HydraBubblesPage: React.FC = () => {
         useBackgroundPause(phase === "playing" && isChallengeLaunch);
     const challengeRound = useChallengeRound({
         gameId: "hydra-bubbles",
-        paused: lendNoticeOpen || backgroundPaused,
+        paused: backgroundPaused,
         running: phase === "playing",
     });
     // Back: the challenge mid-test, or the Games hub — and, on a claimed challenge
@@ -179,7 +177,6 @@ const HydraBubblesPage: React.FC = () => {
         setScore(0);
         setOutcome(null);
         setPopupMinimized(false);
-        setLendNoticeOpen(false);
         // A replay is judged on its own borrowed words, not the previous run's.
         resetMarkedLent();
         runIdRef.current += 1;
@@ -362,11 +359,11 @@ const HydraBubblesPage: React.FC = () => {
     // ACCUMULATED ACTIVE time (the shared hook ticks only while unpaused), never
     // `now − startedAt`. A free-play run is unchanged: nothing in it advances on its
     // own, so pausing it would be friction over a board that has not moved.
-    const framePaused = lendNoticeOpen || backgroundPaused;
+    const framePaused = backgroundPaused;
 
     // End-of-run offer to keep the lent cards, a beat after the score card. `buffers`
-    // still tracks what was DEALT (`hasLent` arms the one-shot mid-run notice); the offer
-    // asks only about the cards the player actually matched against.
+    // still tracks what was DEALT; the offer asks only about the cards the player
+    // actually matched against.
     const lentWords = markedLentWords;
     const sortOffer = useProvisionalSortOffer(phase === "over", lentWords);
 
@@ -458,10 +455,6 @@ const HydraBubblesPage: React.FC = () => {
 
     return (
         <>
-            {/* One-shot mid-run notice the first time a lent card reaches the board.
-                A notification, not a review step: no word table, one dismissal, and
-                the field is frozen behind it (§ 6.4). */}
-            <HydraLendNotice open={lendNoticeOpen} onDismiss={() => setLendNoticeOpen(false)} />
             <GameLeafPage
             hue={GAME_HUE}
                 title="Hydra Bubbles"
@@ -521,7 +514,6 @@ const HydraBubblesPage: React.FC = () => {
                                     // loss — docs/HYDRA_BUBBLES.md § 7.6.
                                     cleanupMode={phase === "over" && popupMinimized}
                                     paused={framePaused}
-                                    onFirstLend={() => setLendNoticeOpen(true)}
                                     // Ends a challenge round on its last contested
                                     // clear; undefined-safe for a free-play run,
                                     // which is endless.

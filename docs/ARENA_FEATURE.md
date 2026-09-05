@@ -3,7 +3,8 @@
 A weekly, division-based leaderboard against **25 strangers** instead of against your
 friends. Each week you are placed into an **arena** — a cluster of 25 players sharing a
 division, a timezone and (where known) a rough geographic neighbourhood — and ranked by
-the **minutes you earn while that arena is live**. Top 5 promote, bottom 5 demote.
+the **minutes you earn while that arena is live**. Top 5 promote, bottom 5 demote — with
+the lines moved by ties (§ 7).
 
 **Status: LIVE ON PROD** since 2026-08-16 (migration 146; the `cow-arena` hourly timer is
 installed and armed). Every design question in § 11 was answered before implementation began.
@@ -421,6 +422,10 @@ Ties break on **earliest `updatedAt`** — whoever reached that total first is a
 makes the ordering total and stable, so a promotion never hinges on the order the
 database happened to return rows in. Two members on 0 minutes tie-break on member id.
 
+⚠️ **The tiebreak orders the board; it does not decide the ladder.** Promotion and demotion
+are score cutoffs, so two tied members always share an outcome even though they show
+different rank numbers (§ 7, "Ties move the lines").
+
 ---
 
 ## 5. Clustering — how the 25 are chosen
@@ -832,8 +837,9 @@ the observed-distribution path is nerfed too.
 
 ### 6.3 They occupy real ranks
 
-A synthetic member in the top 5 **consumes a promotion slot**. Promotion is "the top 5
-rows of the board", full stop.
+A synthetic member in the promotion zone **consumes a promotion slot**. Promotion is "the
+top rows of the board", full stop — a bot tied on the boundary score grows the zone
+exactly as a human would (§ 7).
 
 The alternative — promote the top 5 *humans* — was considered and rejected: it makes the
 displayed rank a lie (you are 6th but you promoted), and it means a bot-heavy arena is a
@@ -857,6 +863,9 @@ next division" = `division + 1`.
 | ranks 6–20 | unchanged |
 | ranks 21–25 | `division = GREATEST(division - 1, 1)` |
 
+…where "ranks 1–5" and "ranks 21–25" are the **no-tie** case. The real boundaries are
+score cutoffs, and a tie spanning either line moves it — see below.
+
 The write targets the **(user, language)** row the membership belongs to, so a Spanish
 arena result never moves a Chinese division.
 
@@ -877,6 +886,43 @@ arena result never moves a Chinese division.
   points, a night-market unlock) is farmable by players who agree to sit out and hand each
   other a cluster, and status is the one prize collusion cannot manufacture.
 * **A new (user, language) pair starts at division 1.**
+
+### Ties move the lines — promotion grows, demotion shrinks
+
+Ranks are total (§ 4.2): a score tie is broken by who reached the score first. That
+tiebreak is right for **display order** and wrong for **consequence** — it would promote
+one of two identical weeks and hold the other on the timestamp of a mark. So the ladder
+reads the **score** at each boundary rank, not the rank number, and treats everyone
+holding that score alike:
+
+| Line | Cutoff | Effect of a tie across it |
+|---|---|---|
+| **Promotion** | the score at rank 5 | **grows** — everyone at or above it promotes, so the zone can hold more than 5 |
+| **Demotion** | the score at rank 20 (the last safe rank) | **shrinks** — only a *strictly lower* score goes down, so the zone can hold fewer than 5, including none |
+
+Both directions resolve a tie **in the member's favour**. That is the only defensible way
+to split people whose weeks were literally identical, and it costs only the conservation
+of a division's population week to week — which is not a property the ladder ever had
+(divisions are not fixed-size pools).
+
+* **A collision is won by promotion.** On a flat enough board the grown promotion zone can
+  reach into the shrunk demotion zone — every member on the same score is the limit case.
+  The promote test runs first, so such a member promotes.
+* **A score of 0 never promotes.** Every member sits at 0 at the top of the week, so
+  without this the tie rule would paint the whole opening board green and, on a dead
+  board, actually promote it. A zero-score tie **holds**. Demotion needs no matching
+  guard: nothing is strictly below 0.
+* The zones stay **contiguous** in rank order, which is what keeps the board's two
+  dividers (§ 2.1) drawable as a single cut each.
+* Synthetic members are inside this rule like any other row (§ 6.3): a bot tied on the
+  boundary score is promoted alongside the humans, rather than being skipped.
+
+* **Code**: `server/services/arenaZones.ts` → `computeZoneCutoffs`, `zoneForScore`,
+  `divisionChangeForScore` — pure, and the single source for both the live board's per-row
+  `zone` (`ArenaService.renderEntries`) and the ladder writes at close
+  (`ArenaService.resolveDue`). Tested in `server/__tests__/arenaZones.test.ts`.
+  `ARENA_PROMOTE_COUNT` / `ARENA_RELEGATE_COUNT` (`server/contracts/wire.ts`) now name the
+  boundary **rank**, from which the cutoff score is read.
 
 ### 7.0 Division names
 

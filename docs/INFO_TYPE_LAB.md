@@ -82,10 +82,21 @@ ancestor and break both grids' sticky headers.
 
 | File | Role |
 |---|---|
-| `src/pages/fontLab/InfoTypeLab.tsx` | the compare grid, the tuning controls, "Use app-wide" |
+| `src/pages/fontLab/InfoTypeLab.tsx` | the compare grid and the tuning controls |
 | `src/pages/fontLab/infoTypeCandidates.ts` | the throwaway face catalog + loader |
 | `src/pages/fontLab/infoTypeSpecimens.tsx` | 8 specimen surfaces, all real app copy |
-| `src/pages/fontLab/labelFontOverride.ts` | dev-only `:root` `--label-font` override. In `pages/`, not `theme/`, because it reads the throwaway catalog and `theme/` may not import from `pages/`. |
+
+> ⚠️ **`labelFontOverride.ts` and the "Use app-wide" control were deleted on 2026-09-05.**
+> They set `--label-font` on `:root` so a candidate could be judged on the real pages.
+> They went out with their CJK counterpart, which had the same shape but a worse
+> consequence — it silently outranked the `users."chineseFont"` account setting and made
+> the settings picker look broken (see
+> [CJK_TYPEFACE_LAB.md](./CJK_TYPEFACE_LAB.md) § "the `--cjk-font` token"). The info-type
+> override had no setting to shadow, so it was only ever a stale-state trap, but the two
+> were the same mechanism and were removed together rather than leaving one half standing
+> as a template to copy. **To see a candidate app-wide now, change `FONTS.label`'s stack
+> in `src/theme/fonts.ts`** — which is the endpoint of this experiment anyway (§ 7), and a
+> one-line edit that a dev server hot-reloads.
 
 **Specimens render the real primitives.** `infoTypeSpecimens.tsx` imports `Label`,
 `SectionRule` and `SectionHeader` from `src/components/primitives` — nothing is mocked and
@@ -173,9 +184,9 @@ The face is chosen and the § 5 migration is done. What remains before the lab c
 1. Settle the size/tracking/weight numbers in `Label` (§ 6) — Public Sans at the shipped
    10px / 0.14em / 400 is lighter than the mono it replaced, and probably wants 11px /
    ~0.09em / 500–600. Use the lab's tuning sliders to pick them.
-2. Delete `src/pages/fontLab/infoTypeCandidates.ts`, `infoTypeSpecimens.tsx`,
-   `InfoTypeLab.tsx` and `labelFontOverride.ts`, and drop the mode switch from
-   `FontLabPage.tsx`.
+2. Delete `src/pages/fontLab/infoTypeCandidates.ts`, `infoTypeSpecimens.tsx` and
+   `InfoTypeLab.tsx`, and drop the mode switch from `FontLabPage.tsx`.
+   (`labelFontOverride.ts` is already gone — deleted 2026-09-05, see § 4.)
 3. Delete this file.
 
 Keep `--label-font` itself — it costs nothing and is what made the experiment cheap.

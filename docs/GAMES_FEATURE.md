@@ -520,7 +520,7 @@ lifecycle, and hiding it inside a layout wrapper would make "why can I still swi
 this game" invisible to whoever reads the page.
 
 **Every popup stays OUTSIDE the frame** — `GameEndPopup`, `ProvisionalSortOffer`,
-`GamePausedOverlay`, `HydraLendNotice`. Each covers the whole content area and must not be
+`GamePausedOverlay`. Each covers the whole content area and must not be
 clipped by the panel's radius.
 
 All six games are framed, and four of them (Bubble Match, Word Search, Match Speed, Hydra
@@ -1591,8 +1591,9 @@ pool of 20 pairs; Hydra's is a board that **grows on its own**.
   `Bubble.tsx`. Bubble Match was converted to import from it with no behavior change.
 - `src/games/hydra-bubbles/` — `HydraBubblesPage.tsx` (loading → playing → over →
   playing), `HydraStage.tsx` (rAF loop, drag/hover/match, payout, HUD, danger glow),
-  `spawnTable.ts`, `spawnPlanner.ts`, `useColorBuffers.ts`, `HydraLendNotice.tsx`,
-  `constants.ts`, `types.ts`.
+  `spawnTable.ts`, `spawnPlanner.ts`, `useColorBuffers.ts`, `constants.ts`, `types.ts`.
+  (`HydraLendNotice.tsx` was deleted 2026-09-05 — the mid-run lend popup became a
+  per-bubble hourglass badge; see HYDRA_BUBBLES.md § 6.4.)
 - Reuses Bubble Match's `BubbleMatchHeader` and `BubbleMatchEndPopup` unchanged.
 
 ### Backend

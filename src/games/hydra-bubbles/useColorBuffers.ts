@@ -78,15 +78,6 @@ export interface ColorBuffers {
     /** Mark a card as in-play (hard exclude) or retired (soft avoid). */
     hold: (id: number) => void;
     release: (id: number) => void;
-    /**
-     * True once a lent card has been DEALT — drives the one-shot mid-run notice.
-     *
-     * Dealt, not reviewed, and that is the right trigger for a notice whose message is
-     * "borrowed words are now in play". The end-of-run sort offer asks a different
-     * question ("which of these do you want to keep?") and is built from what the player
-     * actually matched against — `useMarkedLentWords`, owned by the page, not from here.
-     */
-    hasLent: () => boolean;
 }
 
 /**
@@ -120,13 +111,6 @@ export function useColorBuffers(
     // (and over-lending three times over), and it gives `draw` something to await
     // when it finds a buffer dry. A boolean could do only the first.
     const inFlightRef = useRef<Map<HydraColor, Promise<void>>>(new Map());
-    // Has this run PUT a lent card on the board yet? Only ever read as a boolean — it
-    // arms the one-shot mid-run notice, which says "borrowed words are now in play" and
-    // therefore fires on the deal. It used to hold the drawn cards themselves so the
-    // end-of-run offer could list them; that offer now lists what the player actually
-    // matched against instead (`useMarkedLentWords`), so nothing needs the set.
-    const hasLentRef = useRef(false);
-
     /**
      * THE CHALLENGE QUEUE (docs/HYDRA_BUBBLES.md § 7.5, docs/STUDY_CHALLENGE.md § 5).
      *
@@ -288,9 +272,6 @@ export function useColorBuffers(
         }
         const entry = buffersRef.current[color].shift();
         if (!entry) return null;
-        if (entry.starterPackBucket === "provisional") {
-            hasLentRef.current = true;
-        }
         return { entry, color };
     }, []);
 
@@ -346,15 +327,13 @@ export function useColorBuffers(
         retiredIdsRef.current.add(id);
     }, []);
 
-    const hasLent = useCallback(() => hasLentRef.current, []);
-
     // MEMOIZED, and it matters. HydraStage takes this object as a prop and threads it
     // through several useCallbacks, one of which the window pointer listeners depend
     // on — a fresh object identity every render would tear down and re-attach those
     // listeners on every score update, mid-drag. Every member is already a stable
     // useCallback, so the object is the only thing that could churn.
     return useMemo(
-        () => ({ draw, size, topUp, prime, hold, release, hasLent }),
-        [draw, size, topUp, prime, hold, release, hasLent]
+        () => ({ draw, size, topUp, prime, hold, release }),
+        [draw, size, topUp, prime, hold, release]
     );
 }

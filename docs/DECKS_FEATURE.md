@@ -302,7 +302,7 @@ deck would make the deck itself the answer key.
 | `src/features/flashcards/MasteryCenterPage.tsx` | `/flashcards/reading` + `/flashcards/writing` — the same panel as a **page**, lens `reading` / `writing` |
 | `src/features/flashcards/useDecksPanel.ts` | **All of the panel's data, for one lens** — the count hooks, the deck fetch, the card-library fetch, the search/sort state and the tile figures. Shared verbatim by the fdp and both Centers. |
 | `src/features/flashcards/DecksPanelBody.tsx` | Body of the panel (`variant: "sheet" \| "page"`, `section: "all" \| "cards" \| "decks"`): the library duo, the Challenges / Decks shelf rows and the inline Cards grid (`LibraryDuo`, `ShelfRow`, `SectionLabel`) |
-| `src/features/flashcards/LibraryDuo.tsx` | The panel's two library constants (`.duo`) — Learn Now + Mastered, with their figures. A two-button **filter toggle** over the Cards grid, and the one place the sheet is not spines; see § "Your library" |
+| `src/features/flashcards/LibraryDuo.tsx` | The panel's two library constants (`.duo`) — Learn Now + Mastered, with their figures. A two-button **filter toggle** over the Cards grid, and the one place the sheet is not spines; see § "The lens's two CONSTANTS" |
 | `src/features/flashcards/StudyHand.tsx` | The three study modes as a fanned hand of cards, on the page behind the sheet (`.fanw`) |
 | `src/features/flashcards/useHandSwipe.ts` | The omnidirectional throw gesture on the hand's front card — slop classifier, radial commit threshold, the flp's drag constants, click suppression |
 | `src/features/flashcards/SlotNumber.tsx` | The slot-machine reel a figure spins as while its count is in flight, and the landing that settles it |
@@ -474,12 +474,12 @@ The page is split across **three surfaces**:
 * **Page (behind)** — section 1 only, the library line, the Center rail and the card hand.
   `MobileTabScreen` is mounted with **`scrollable={false}`**: nothing behind the sheets
   scrolls any more.
-* **Cards sheet** — **Your library** (the `LibraryDuo`) over the inline **Cards** grid,
+* **Cards sheet** — the uncaptioned `LibraryDuo` over the inline **Cards** grid,
   in `DecksPanelBody` (`variant="sheet"`, `section="cards"`).
 * **Decks sheet** — **Challenges** then **Decks**, same component (`section="decks"`).
 
 Only the fdp splits them. A Mastery Center is a whole page with room for the lot, so it
-passes `section="all"` and renders every section in its original order (Your library →
+passes `section="all"` and renders every section in its original order (the library duo →
 Challenges → Decks → Cards).
 
 The sheet is the **same component as the eip bottom sheet**, `SheetPanel`, used the
@@ -535,7 +535,9 @@ drag below the default height, or tap the scrim.
 screen while either fdp sheet is up. `DecksPanelBody`'s scroller therefore reserves
 only its own breathing room in the `"sheet"` variant (`SHEET_BOTTOM_PAD`, 12px) and
 fades out over a 24px band ending **at** the sheet's bottom edge
-(`SHEET_EDGE_FADE_MASK`). It used to reserve `FOOTER_CLEARANCE` and wear
+(`SHEET_EDGE_FADE_MASK`, now shared from `src/components/sheet/sheetStyled.ts` — every
+scrollable panel in the app wears the same mask, which also carries a 20px band at the
+TOP so rows dissolve on the way up too; see docs/UX_AND_NAVIGATION.md § Edge fade). It used to reserve `FOOTER_CLEARANCE` and wear
 `EDGE_FADE_MASK_NO_TOP` — written when the sheet was persistent and the pill really
 did hover over it — which after the modal conversion left ~90px of blank paper under
 the last row plus a further `FOOTER_HEIGHT` of fully-masked-out box: ~164px of the one
@@ -579,31 +581,9 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
 > the main thread finishes each frame.
 
 1. **The study area** — the only thing left on the page itself, and one choice: *which
-   session am I starting*. Three rows, top to bottom (`FlashcardsDecksPage`,
+   session am I starting*. Two rows, top to bottom (`FlashcardsDecksPage`,
    `src/features/flashcards/StudyHand.tsx`). To study one collection instead, open it
    from the sheet and use its launch button.
-
-   **(a) The library line** (`.duebar`) — ONE mono overline: the library's size. It is
-   **blank until the count lands**, then fades in over 320ms — the same contract the hand's
-   corner tags keep, so the page has one way of saying "not yet" instead of a mono ellipsis
-   here and empty tags an inch below. It used to read "counting…"; a line that is only ever
-   a figure does not need a second loading vocabulary. The element stays mounted (the fade
-   needs something to run on) and holds `\u00A0` while empty, so the hand beneath does not
-   shift up and settle back.
-
-   The artboard's right slot carried a second overline naming the scope the modes draw
-   from ("all cards"). It is **gone**. The hand only ever draws from the whole library, so
-   that label was a constant dressed as a scope, and a constant on screen is a question the
-   reader has to rule out. Bring it back only if the hand gains a scope that can change.
-
-   > ⚠️ The artboard's left slot reads **"24 due today"**. A ready count now *exists* —
-   > `flpReadyCountsByBand` is what the three hand cards below print — but "due today" is a
-   > stronger claim than "ready now": it implies a deadline the app does not model, and
-   > nothing expires at midnight. Band totals are a third question again (a Target card
-   > marked ten minutes ago is in the band and is not ready), and this slot prints the
-   > library SIZE, which is honest on its own terms. If it should carry readiness instead,
-   > change the LABEL with it — never print a ready count under a due caption. See
-   > [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 9.
 
    **(b) The Centers rail** (`.ctr2`) — one tile per goal the account pursues, omitted
    entirely when it pursues neither (and always for Spanish, which cannot accrue those
@@ -685,19 +665,19 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
      place on arrival. On the queued card that button is `disabled`, `aria-hidden`, out of
      the tab order and `pointer-events: none`, so it can neither commit a mode that is not
      forward nor swallow the tap that brings the card forward.
-   - **Every card wears its figure as a top-right quantity tag** (`N Cards`), with its
-     name at the top-left — on the front card and on the card queued directly behind it
-     (`backRight`) alike. The tag is what carries a number through the whole cycle: it is
-     already legible the instant a throw clears the card behind, and it is already in its
-     final position when that card lands forward, which matters because the promotion is a
-     hard switch and anything that *moves* between the two layouts moves visibly. The cost
-     is that the front card states its figure twice — small in the tag, large in the
-     numeral below — and that repetition is the point rather than an oversight.
-   - **A landed `0` swaps the tag for a sentence** (`StudyHandCard.zeroMessage`). "0 Cards"
-     reads as a shortfall; the state it actually describes is either "you finished" or
-     "go get more", so the tag says which: Review prints **"All caught up!"**, Challenge
-     and Study Mix print **"Ready for more cards!"** (`ZERO_MESSAGE_MORE_CARDS`). The big
-     numeral still shows the `0` — the tag is the gloss on it, not a replacement.
+   - **The quantity tag rides the BACK cards, and the front card only at zero.** A card
+     in the fan wears its figure top-right as `N Cards` (`StudyHandCard.figureCaption`) —
+     it has no big numeral showing, so the tag is the only place its number can be read,
+     and it is already legible the instant a throw clears the card in front of it. The
+     **front** card is untagged, because its numeral already states the figure and a tag
+     would print it twice — *unless* the figure is `0`, where it prints
+     `StudyHandCard.zeroMessage` instead: "0 Cards" reads as a shortfall, and the state it
+     describes is either "you finished" or "go get more", so the sentence says which.
+     Review prints **"All caught up!"**; Challenge and Study Mix print
+     **"Add more cards!"** (`ZERO_MESSAGE_MORE_CARDS`). The big numeral still shows the
+     `0` — the tag is the gloss on it, not a replacement. The tag consequently appears and
+     disappears across a promotion, which is fine: the promotion is a hard content switch
+     already.
    - **`backLeft` keeps the old right-clustered head.** The bottom card is two promotions
      from the front and its left edge is the part the fan overlaps first, so a name pinned
      there would slide under another card, which is worse than no name at all.
@@ -742,12 +722,11 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    because a strobing numeral sits exactly where the reader is waiting and cannot be looked
    away from.
 
-   **The corner tags start blank and fade in.** They are four cramped mono characters in a
-   corner — too small for any placeholder to read as "loading" rather than as a wrong
-   number — so they render empty and cross to `N Cards` over a 320ms opacity transition
+   **A back card's tag starts blank and fades in.** It is four cramped mono characters in
+   a corner — too small for any placeholder to read as "loading" rather than as a wrong
+   number — so it renders empty and crosses to `N Cards` over a 320ms opacity transition
    once the count lands. The element stays mounted throughout so the fade has something to
-   run on. One thing moving on a card reads as *fetching*; two read as noise, and the big
-   numeral is already doing that job.
+   run on.
 
    ⚠️ **"Challenge Mix" / "Review Mix" are display names only.** The `StudyModeId` values
    stay `challenge` / `review`: they are the `?mode=` query param the flp parses
@@ -783,8 +762,8 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    client-importable contract. A count endpoint would have added a round trip and a
    second definition of "rested" that could drift from the pool it predicts. `now` is
    read **once** per computation — a clock advancing mid-count could break the partition
-   by a card. See DEFERRED_WORK.md § 9, whose original "this needs server work" reasoning
-   this disproved.
+   by a card. See DEFERRED_WORK.md § "Recently closed" → the decks page
+   `.duebar`, whose original "this needs server work" reasoning this disproved.
 
    All three are `undefined` until the library lands, and the numeral spins as a
    `SlotNumber` reel rather than printing a provisional `0` — `0` is a real answer every
@@ -829,9 +808,15 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    > session rather than dead-ending; Match Speed's `modeConfigFor` does the same
    > with an old nav-state value.
 
-2. **Your library** — the **lens's** two CONSTANTS, *Learn Now* and *Mastered*, as the
-   two wide tiles of `LibraryDuo` (`.duo`). **No *All Cards* tile** — those cards are the
-   panel's last section instead.
+2. **The lens's two CONSTANTS** — *Learn Now* and *Mastered*, as the two wide tiles of
+   `LibraryDuo` (`.duo`). **No *All Cards* tile** — those cards are the panel's last
+   section instead.
+
+   > **The section has no caption (2026-09-05).** It used to open with a "Your library"
+   > `SectionLabel`. `SheetPanel`'s header is permanent now — the panel says **Cards** at
+   > every height, not only when maximized — so the caption was a second name for the same
+   > surface one row below the first. The `decks-panel-body__library-header` row went with
+   > it; the tiles are the section's first element.
 
    > **The one place the sheet is not spines**, and the reason is what the surface is for
    > rather than an exception for its own sake. Every other shelf here answers "which
@@ -1060,6 +1045,17 @@ which React discards and redoes when the next character arrives. Note that a new
 result is a new array identity, which **restarts the reveal cascade** — the results
 visibly pop in on each settled keystroke. That is currently accepted as reading like
 "results arriving" rather than as a defect.
+
+**The filter's cascade is a remount, not a re-render.** Restarting the reveal is not by
+itself enough to replay the entrance animation: the cascade only controls *when* a card
+is mounted, and the pop-in is a CSS animation that runs on mount. A card the filter keeps
+— one present in both sets at the same position, which is the ordinary case switching
+between **Cards** and **Learn Now**, since the top of the library is usually unmastered —
+keeps its React identity across the switch and therefore sits still while the rows below
+it pop in. `DecksPanelBody` fixes that by keying the grid on `cardsFilter`
+(`MiniVocabCardGrid key={cardsFilter}`), so a filter press remounts every card. The key
+deliberately does **not** include the search text: re-animating on each keystroke would
+be a flicker, and narrowing a set is not switching to another one.
 
 ### Every set on the page is the same object
 

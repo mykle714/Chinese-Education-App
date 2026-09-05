@@ -72,8 +72,12 @@ export interface ArenaEntry {
   /** True for the requesting user's own row, so the client can highlight it. */
   isViewer: boolean;
   /**
-   * Which side of the promotion/relegation line this rank sits on, computed
+   * Which side of the promotion/relegation line this row sits on, computed
    * server-side so the client never re-derives the cutoffs and drifts.
+   *
+   * Derived from the row's SCORE, not its rank: a tie grows the promotion zone
+   * and shrinks the relegation zone (`server/services/arenaZones.ts`), so the
+   * band boundaries do not always fall at ranks 5 and 21.
    */
   zone: 'promote' | 'hold' | 'relegate';
 }

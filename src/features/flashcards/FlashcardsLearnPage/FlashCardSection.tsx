@@ -80,16 +80,16 @@ interface FlashCardSectionProps {
     // True while the icon-layout editor is open. Locks the card: drag/flip handlers
     // are not attached so the card can't be swiped away or flipped mid-edit.
     editMode?: boolean;
-    // True when the card should be pushed down (and lifted over the More Info pill): advanced
-    // edit mode AND the toolbar would actually overlap the card. Computed by the page via
-    // useToolbarOverlap so a roomy viewport (toolbar clears the card) leaves it centered.
-    pushDown?: boolean;
+    // Extra top padding (px) the slot reserves for the advanced-edit toolbar — 0 unless the
+    // toolbar would actually intrude past the slot's normal top pad. Measured by the page
+    // (useToolbarInset); the container just gets shorter and centering re-places the card.
+    toolbarInset?: number;
     // The slot's vertical padding — where the card sits, and (when height-bound) how big it
     // is. Computed by the page from the measured slot + More Info pill (useCardSlotPadding)
     // rather than fixed here, because the bottom pad has to reserve the pill's band. Optional
     // so the surfaces that render a card slot without a pill keep the default reservation.
     pad?: CardSlotPadding;
-    // Lets the page measure the slot (useCardSlotPadding / useToolbarOverlap both need its
+    // Lets the page measure the slot (useCardSlotPadding / useToolbarInset both need its
     // height, and neither can reach it from ContentArea once the word-tools rail is above it).
     slotRef?: React.Ref<HTMLDivElement>;
     // The card-operations rail (`CardOpsRail`, artboard 21), composed by the page and
@@ -364,7 +364,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     editCanvas,
     onPersistSense,
     editMode,
-    pushDown,
+    toolbarInset,
     pad,
     slotRef,
     topRail,
@@ -423,11 +423,6 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                 overflow: "hidden",
                 position: "relative",
                 width: "100%",
-                // When pushed down the card slides over the greyed More Info pill (zIndex 2).
-                // Lift the whole slot above it so the card paints over the pill (kept below the
-                // edit toolbar's zIndex 20). Only when pushed — a centered card doesn't reach
-                // the pill, so it must not steal the pill's stacking. Otherwise pill floats on top.
-                ...(pushDown ? { zIndex: 3 } : {}),
             }}
         >
             {/* Swipe-direction tutorial labels — sit above the card in the
@@ -459,7 +454,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
             {/* Fills the slot. DraggableCardContainer has definite px dimensions because
                 it is absolutely positioned — this is what makes height:100% on
                 CardAspectWrapper resolve correctly (flex-grown heights are not definite). */}
-            <DraggableCardContainer className="mobile-demo-draggable-container" pushDown={pushDown} pad={pad ?? DEFAULT_CARD_SLOT_PADDING}>
+            <DraggableCardContainer className="mobile-demo-draggable-container" toolbarInset={toolbarInset} pad={pad ?? DEFAULT_CARD_SLOT_PADDING}>
                 {/* CardAspectWrapper: fills the larger of the two axes while preserving
                     aspect-ratio. Default = height-bound (container is wider than card ratio).
                     The @container rule flips to width-bound when the container is narrower

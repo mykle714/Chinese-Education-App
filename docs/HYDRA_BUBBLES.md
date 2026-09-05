@@ -909,16 +909,22 @@ those cooled cards do not count — see § 8.
 
 ### 6.4 What the learner sees
 
-* **First time lending fires mid-run:** one popup saying we have started lending
-  words, with a single "Got it" dismissal. **No table of words** — this is a
-  notification, not a review step. It fires **once per run**, and it **freezes the
-  board** while it is up (Q6, resolved) — not to protect a clock, which Hydra does
-  not have, but because a modal over a live drag either eats the pointer or strands a
-  half-finished match underneath it. Freezing also lets Hydra reuse the same notice
-  component as every other game. It heads with the shared **lent mark** — the icons8
-  hourglass every other surface uses for a borrowed card (`LentCardIcon`,
-  docs/PROVISIONAL_CARDS.md § 5). Hydra shows the icon only here: a bubble is far too
-  small to carry a corner badge the way a Match Speed card does.
+* **While lending is in play:** every lent bubble wears the shared **lent mark** in
+  its top-right corner — the icons8 hourglass every other surface uses for a borrowed
+  card (`LentCardBadge`, docs/PROVISIONAL_CARDS.md § 5). It is passed in by `HydraStage` as the shared `Bubble`'s `lent` prop rather than derived
+  inside `Bubble`, so Bubble Match — which itemizes its lent cards before the round —
+  is unaffected. The badge is on the **word (foreign) bubble only** — both bubbles of a
+  pair carry the same entry, so badging the definition side as well would let a player
+  pair them by badge instead of by reading (the foreign-side-only rule,
+  docs/PROVISIONAL_CARDS.md § 5).
+  > **This replaced a one-shot mid-run popup** (2026-09-05). That popup said lending
+  > had started, froze the board, and named no words; the badge says the same thing
+  > continuously, on the exact bubbles it is true of, and costs no interruption. The
+  > earlier claim that "a bubble is far too small to carry a corner badge" did not
+  > survive contact — at 12px on a 40%-radius squircle, inset 10% from the corner so it
+  > stays on the curve at every spawn radius, it reads fine. Q6 (does the popup freeze
+  > the board?) is therefore moot for lending; the freezing rule itself still stands for
+  > any input-blocking modal Hydra does show.
 * **End of run:** the standard `ProvisionalSortOffer`
   (`src/components/ProvisionalSortOffer.tsx`, sequenced by
   `useProvisionalSortOffer`), opening over the score card as soon as the run ends (no
@@ -1015,7 +1021,8 @@ pointer and a half-finished drag, not about time.
 > ✅ **AND IT DOES REVERSE IN CHALLENGE MODE — done 2026-08-22, as this note asked.**
 > A challenge round is timed (§ 7.5), so `HydraBubblesPage` arms
 > `useBackgroundPause(phase === "playing" && isChallengeLaunch)`, feeds it into
-> `framePaused` alongside the lend notice, and renders `GamePausedOverlay`. The round's
+> `framePaused` (which the lend notice used to share, before it was replaced by the
+> per-bubble badge in § 6.4), and renders `GamePausedOverlay`. The round's
 > elapsed time is accumulated ACTIVE time — the shared `useChallengeRound` clock ticks
 > only while unpaused — so the pause is real rather than cosmetic. Free play is
 > unchanged and still exempt.
@@ -1348,7 +1355,6 @@ src/games/bubble-match/     <- converted to import from bubbles/; keeps its leve
 src/games/hydra-bubbles/    <- imports from bubbles/
     HydraBubblesPage.tsx    (run state machine)
     HydraStage.tsx          (the field)
-    HydraLendNotice.tsx     (§ 6.4)
     useColorBuffers.ts      (§ 6.2b)
     spawnTable.ts           (§ 3.1 fill-ratio anchors + interpolation + the step)
     spawnPlanner.ts         (§ 4 algorithm + invariants)
@@ -1477,7 +1483,7 @@ nothing.
 | Q9d | Is "off the mastery *tokens*" enough? | **No** (same day). The first replacement was an ember/ocean pair, which is off the tokens but still reads as the ramp's red/blue — a learner decodes it as hard/known, which a lent bubble makes false. Repainted **charcoal/gold**, and `HydraColor` renamed off hue names to `"drain" \| "bloom"` so the next palette pass touches no identifier — which paid off on 2026-08-22, when the ladder became two shades of blue and **no identifier moved**. Note that answer has now been partly walked back: the blue ladder IS on the mastery hue, accepted for the reasons in § 2.2 | § 2.2, types.ts |
 | Q4 | `CARD_BASELINES` value | **0** — no minimum, lend from the first bubble | § 6.5 |
 | Q5 | Grey English bubbles vs the grey held/hovered state | ~~Hydra's held cue becomes an outline ring + scale, no grey~~ — **reversed 2026-08-22**, and the original tension is BACK: the English bubble is grey again (§ 2.2), so grey once more means both "English" and "held". Accepted, because the wash is not a tint of the same value — `rgba(90,90,90,0.32)` over `#E7E7EA` lands near `#BABABA`, ~1.5:1 against the resting body — and the cue also scales the bubble up. Revisit if a held English bubble proves hard to spot mid-drag | § 5.1 |
-| Q6 | Does the mid-run lend popup freeze the board? | Yes — a modal over a live drag is the hazard, not the clock | § 6.4 |
+| Q6 | Does the mid-run lend popup freeze the board? | Yes — a modal over a live drag is the hazard, not the clock. **MOOT since 2026-09-05:** the popup was replaced by a per-bubble hourglass badge, so lending no longer opens a modal at all. The freeze rule still applies to any modal Hydra does show | § 6.4 |
 | Q7 | Anti-zero: reactive or a floor count? | Purely reactive; no floor, because a floor re-stabilizes the economy | § 4.3 |
 | Q8 | Spanish, or zh-only? | Both — no `languages` gate | § 9 |
 | Q9 | Per-color match guarantee: may it spend a slot the payout did not buy? | **No — within budget only.** That makes it best-effort rather than absolute, since a drain clear buys one slot | § 4.3 |
@@ -1520,8 +1526,8 @@ nothing.
 | the field + palette (§ 2.2) | `src/games/hydra-bubbles/HydraStage.tsx` → `FILL_BY_COLOR`, `BLUE_DARK`, `BLUE_LIGHT`; text ink is derived in `src/games/bubbles/Bubble.tsx` → `inkOnFill` |
 | page shell | `src/games/hydra-bubbles/HydraBubblesPage.tsx` |
 | post-run review board (§ 7.3b) | `HydraStage.tsx` → the `cleanupMode` prop, `cleanupModeRef`, `revealPartner`, `clearRevealedPartner`, `dangerDismissed`; `HydraBubblesPage.tsx` → `popupMinimized`. Reference implementation: `src/games/bubble-match/BubbleStage.tsx` → `cleanupMode` |
-| mid-run notice (§ 6.4) | `src/games/hydra-bubbles/HydraLendNotice.tsx` |
-| lent mark shown on it | `src/components/LentCardBadge.tsx` (`LentCardIcon`) |
+| per-bubble lent mark (§ 6.4) | `src/games/bubbles/Bubble.tsx` → the `lent` prop; `src/games/hydra-bubbles/HydraStage.tsx` passes it |
+| the mark itself | `src/components/LentCardBadge.tsx` (`LentCardBadge` / `LentCardIcon`) |
 | lent words the run reviewed | `src/hooks/useMarkedLentWords.ts` |
 | registry + hub row | `src/games/registry.ts` → `GAME_REGISTRY`; `COLORS.tealAccent` (`src/theme/colors.ts`) |
 | minute points (§ 9) | `src/constants.ts` → `MINUTE_POINTS_ELIGIBLE_PAGES` |

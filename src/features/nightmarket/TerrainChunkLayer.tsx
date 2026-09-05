@@ -16,7 +16,7 @@ import {
   type ScreenRect,
 } from '../../engine/market/chunkGrid';
 import { buildEditorField, type CompiledMasks, type TerrainField } from '../../engine/market/farmTerrain';
-import { buildDraws } from './terrainDraws';
+import { buildDraws, WOOD_FLOOR_Y_OFFSET } from './terrainDraws';
 import nmpPerf from './nmpPerf';
 
 /**
@@ -171,6 +171,8 @@ function TerrainChunkLayer({
     const ordered: Array<{ z: number; url: string; x: number; y: number }> = [];
     for (const d of draws) {
       if (d.dirtUrl) ordered.push({ z: d.dirtZ, url: d.dirtUrl, x: d.x, y: d.y + TILE_HEIGHT });
+      // The wood floor rides its own skirt, not the slab's — see WOOD_FLOOR_Y_OFFSET.
+      if (d.floorUrl) ordered.push({ z: d.floorZ, url: d.floorUrl, x: d.x, y: d.y + WOOD_FLOOR_Y_OFFSET });
       for (const u of d.surfaceUrls) ordered.push({ z: d.surfaceZ, url: u, x: d.x, y: d.y });
       for (const u of d.darkSurfaceUrls) ordered.push({ z: d.darkSurfaceZ, url: u, x: d.x, y: d.y });
       // Decor is deliberately absent — see the header, note 1.

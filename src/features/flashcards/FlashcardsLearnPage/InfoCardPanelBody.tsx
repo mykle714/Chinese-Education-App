@@ -3,6 +3,7 @@ import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
+import { sheetEdgeFadeSx } from "../../../components/sheet/sheetStyled";
 import SensePicker from "../card/SensePicker";
 import { ddTextColor } from "../../../utils/cardTextColor";
 import InfoCardTabContent from "./InfoCardTabContent";
@@ -702,6 +703,13 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 padding: "16px 18px 8px",
                                 overscrollBehavior: "contain",
                                 touchAction: scrollTouchAction,
+                                // Each pane fades out at its own bottom edge, so a
+                                // long definition dissolves into the panel's edge
+                                // rather than being sliced by it. The mask is anchored
+                                // to the pane's box, so the band stays parked at the
+                                // bottom while the content scrolls under it.
+                                // (sheetStyled § Sheet bottom edge fade.)
+                                ...sheetEdgeFadeSx,
                             }}
                         >
                             <InfoCardTabContent

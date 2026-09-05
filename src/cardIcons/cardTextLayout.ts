@@ -149,26 +149,57 @@ export function defaultEnglishTopAnchorTransform(item: TextLayoutItem): string {
   return `translate(-50%, 0%) rotate(${item.rotation}deg) scale(${item.scale})`;
 }
 
+/** A measured on-screen placement for one or both text blocks, as card-normalized centers. */
+export type MeasuredTextCenters = Partial<Record<TextBlock, { x: number; y: number }>>;
+
 /**
- * Measure the CURRENT on-screen center-y (as a fraction of the card's own height) of the
- * basic/default English block, given the card face's container element. Used ONLY when
- * entering the advanced fie editor with no saved custom textLayout.english: without this, the
- * editor would seed its (center-anchored) draft from the fixed DEFAULT_TEXT_CENTER.english,
- * and the block would visibly jump the instant advanced mode opens, since the basic renderer
- * now top-anchors it instead (defaultEnglishTopAnchorTransform) at a height that depends on
- * the definition's actual line count. Computing this requires a real DOM measurement — there's
- * no way to derive rendered text height from data alone.
- *
- * Returns null if the row isn't found (e.g. no English content mounted at the container), so
- * the caller can fall back to the plain center default.
+ * How close a measured center has to be to the default before we treat it AS the default
+ * (≈1.7px on a 426px-tall card). Without this a measurement that rounds a hair off the
+ * default would make an untouched block count as "custom" (isDefaultTextItem is an exact
+ * comparison), so merely opening and saving the editor would persist a textLayout for a card
+ * that has none.
  */
-export function measureDefaultEnglishCenterY(cardContainer: HTMLElement): number | null {
-  const rowEl = cardContainer.querySelector<HTMLElement>(".mobile-demo-flashcard-english-row");
-  if (!rowEl) return null;
+const MEASURED_CENTER_EPSILON = 0.004;
+
+/**
+ * Measure where each text block is ACTUALLY drawn on the basic (non-editing) card, as a
+ * center normalized to the card's own box — the exact coordinate space the fie canvas
+ * positions blocks in. Used when entering the advanced editor to seed any block that has no
+ * saved placement, so opening the canvas never makes the text jump.
+ *
+ * Why measure instead of reusing DEFAULT_TEXT_CENTER: the basic renderer's box for a block is
+ * not always centered on that constant. The English block is TOP-anchored while it is at its
+ * default (defaultEnglishTopAnchorTransform), so its real center depends on the definition's
+ * line count; and either block's box can differ from the canvas's idea of it whenever the two
+ * renderers wrap or pad the same content differently. Neither is derivable from data — it
+ * takes a real DOM read. Measuring BOTH blocks (rather than special-casing English) means the
+ * editor opens on whatever the learner was just looking at, whatever caused the difference.
+ *
+ * Measures the block WRAPPER (`.mobile-demo-flashcard-text-block--<block>`), which is the same
+ * element the canvas re-creates, so the correspondence is 1:1.
+ *
+ * @param cardContainer the element whose box IS the card face (the flp card, the cdp hero)
+ * @returns a center per block that could be measured; blocks that aren't mounted are omitted,
+ *          so the caller falls back to the plain default.
+ */
+export function measureDefaultTextCenters(cardContainer: HTMLElement): MeasuredTextCenters {
   const cardRect = cardContainer.getBoundingClientRect();
-  const rowRect = rowEl.getBoundingClientRect();
-  if (cardRect.height <= 0) return null;
-  return ((rowRect.top - cardRect.top) + rowRect.height / 2) / cardRect.height;
+  if (cardRect.width <= 0 || cardRect.height <= 0) return {};
+  const out: MeasuredTextCenters = {};
+  for (const block of TEXT_BLOCKS) {
+    const el = cardContainer.querySelector<HTMLElement>(`.mobile-demo-flashcard-text-block--${block}`);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    const def = DEFAULT_TEXT_CENTER[block];
+    const x = (r.left - cardRect.left + r.width / 2) / cardRect.width;
+    const y = (r.top - cardRect.top + r.height / 2) / cardRect.height;
+    out[block] = {
+      x: Math.abs(x - def.x) < MEASURED_CENTER_EPSILON ? def.x : x,
+      y: Math.abs(y - def.y) < MEASURED_CENTER_EPSILON ? def.y : y,
+    };
+  }
+  return out;
 }
 
 /** Whether a text block sits at its untouched default placement (default center, scale 1,

@@ -22,7 +22,8 @@ import { CARD_SURFACE } from "../../theme/surfaces";
 import CardNote from "./card/CardNote";
 import CardOpsRail from "./FlashcardsLearnPage/CardOpsRail";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "./FlashcardsLearnPage/FlashCardSection";
-import { measureDefaultEnglishCenterY } from "../../cardIcons/cardTextLayout";
+import { measureDefaultTextCenters } from "../../cardIcons/cardTextLayout";
+import { useToolbarInset } from "../../cardIcons/editor/useToolbarInset";
 import { isAdvancedLayout } from "../../cardIcons/cardIconLayout";
 import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT, FC_FONT } from "./constants";
 import { useCardIconEditor } from "../../cardIcons/editor/useCardIconEditor";
@@ -43,10 +44,13 @@ import { apiGet } from '../../api/http';
 // stacks the hero + info boxes and stays the positioning context (position:
 // relative) for the absolute edit-toolbar overlay (top: 0), which sits flush under
 // the header instead of pushing content down.
+// The column's own padding. Exported as a number because the page ADDS to the top of it while
+// the advanced edit toolbar is open (see toolbarInset), and the two must not drift apart.
+const CONTENT_PADDING = 16;
 const ContentArea = styled(Box)(() => ({
     display: "flex",
     flexDirection: "column",
-    padding: "16px",
+    padding: `${CONTENT_PADDING}px`,
     gap: "12px",
     position: "relative",
 }));
@@ -256,9 +260,32 @@ const VocabCardDetailPage: React.FC = () => {
     // Mirrors ContentArea's onPointerDown handler on flp. See docs/CARD_ICON_LAYOUT.md.
     const contentAreaRef = useRef<HTMLDivElement | null>(null);
     const toolbarRef = useRef<HTMLDivElement | null>(null);
-    // Measured on enterEdit to seed the advanced text draft's English position without a
-    // visual jump — see measureDefaultEnglishCenterY's doc comment.
+    // Measured on enterEdit to seed the advanced text draft's block positions from where the
+    // basic card actually drew them (no visual jump) — see measureDefaultTextCenters.
     const heroCardRef = useRef<HTMLDivElement | null>(null);
+
+    // ── Edit-toolbar reservation ──────────────────────────────────────────────
+    // The edit toolbar is an absolute overlay at the top of ContentArea, so it takes no flow
+    // height and would otherwise paint over the top of the column. The column reserves exactly
+    // what the toolbar's PRIMARY ROW intrudes past the top of its content — the same hook, and
+    // the same "only as much as it actually intrudes" rule, the flp gives its card slot.
+    //
+    // Two deliberate choices make the cdp behave the way the surface is designed:
+    //  - **The BASIC row is what gets cleared, and it is cleared always** (`enabled` is plain
+    //    `editMode`): opening the editor pushes the column down so the single row sits above
+    //    the word-tools rail rather than on it.
+    //  - **The ADVANCED rows are NOT cleared.** They are sized to land on the word-tools rail
+    //    (`Write it` / `Compare`) — covering it is the intent, so advanced mode must not push
+    //    the page down a second time. The primary row's bottom edge doesn't move when the
+    //    advanced menu opens (the toolbar is anchored at its top), so the reservation is
+    //    identical in both modes and nothing shifts on the adv toggle.
+    //
+    // The measured target is ContentArea itself plus its top padding — i.e. where the column's
+    // first row starts — and NOT the hero card: the card is below the rail, so clearing it
+    // would leave the rail underneath the toolbar in basic mode. ContentArea's own top edge
+    // never moves (the reservation is padding INSIDE it), so the measurement never sees the
+    // shift it caused.
+    const toolbarInset = useToolbarInset(editMode, contentAreaRef, toolbarRef, CONTENT_PADDING, ".card-edit-toolbar__row");
 
     useEffect(() => {
         const fetchEntry = async () => {
@@ -392,6 +419,11 @@ const VocabCardDetailPage: React.FC = () => {
                             selectedSenseIndex={selectedSenseIndex}
                             onSelectSense={handleSelectSense}
                             showSynonymsRelated
+                            // A study surface (/flashcards/card is minute-eligible), and the
+                            // panel covers this page's header — so the sheet carries the
+                            // flame beside its ✕. No `onCloseX`: with no word trail here,
+                            // the ✕ falls through to SheetPanel's own dismiss.
+                            showMinutePoints
                         />
                     )}
                 </>
@@ -427,6 +459,15 @@ const VocabCardDetailPage: React.FC = () => {
                 <ContentArea
                     ref={contentAreaRef}
                     className="vocab-card-detail__content"
+                    // Reserve the band the advanced toolbar intrudes into (see toolbarInset).
+                    // Padding, not a transform: the toolbar itself is absolutely positioned
+                    // against this box's padding-box top edge, so it stays flush under the
+                    // header while the column below it slides. Transitioned in lockstep with
+                    // the toolbar's own drop/collapse.
+                    sx={{
+                        paddingTop: `${CONTENT_PADDING + toolbarInset}px`,
+                        transition: `padding-top ${CARD_EDIT_ANIM_MS}ms ${CARD_EDIT_ANIM_EASING}`,
+                    }}
                     // While the icon editor is open (advanced mode, something selected), a tap
                     // outside the canvas/toolbar (and outside a portaled toolbar dropdown)
                     // deselects — mirrors flp's ContentArea handler. See docs/CARD_ICON_LAYOUT.md.
@@ -601,7 +642,7 @@ const VocabCardDetailPage: React.FC = () => {
                                     topRail={(
                                         <CardOpsRail
                                             entry={editingCurrentEntry!}
-                                            onCustomize={() => enterEdit(() => heroCardRef.current ? measureDefaultEnglishCenterY(heroCardRef.current) : null)}
+                                            onCustomize={() => enterEdit(() => heroCardRef.current ? measureDefaultTextCenters(heroCardRef.current) : null)}
                                             onEditNote={() => setNoteEditing(true)}
                                             disabled={editMode}
                                         />

@@ -98,13 +98,12 @@ export const CompareSheet: React.FC<CompareSheetProps> = ({ slotA, onClose, dept
             bodyKey="compare"
             // Title for the header — the same word the pill that opened it says.
             title="Compare"
-            // PERMANENT header, not merge chrome. The compare body's first row is two word
-            // slots and nothing above them says what the surface is or offers a close other
-            // than a downward drag; the eip can leave its header to the merge because its
-            // body opens with the headword. So the sheet wears the same page-style header at
-            // every height, and maximizing it changes only the corners, shadow and top
-            // padding. See SheetPanel's `headerMode`.
-            headerMode="always"
+            // (This sheet used to opt into a permanent header with `headerMode="always"`,
+            // because its body's first row is two word slots and nothing above them said
+            // what the surface was. Every SheetPanel does that now, so the prop is gone.)
+            // The compare sheet is raised from study surfaces (flp/scp eip, dictionary cdp),
+            // all of which it covers header and all.
+            showMinutePoints
         >
             <CompareWorkspace
                 ref={bodyRef}

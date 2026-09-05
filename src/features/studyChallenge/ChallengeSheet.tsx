@@ -1,7 +1,8 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Box, IconButton, Typography } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
+import { Box, Typography } from "@mui/material";
+import SheetCloseX from "../../components/sheet/SheetCloseX";
+import { sheetEdgeFadeSx } from "../../components/sheet/sheetStyled";
 import { nearestOverlayHost } from "../../components/overlayHost";
 import { useHideFooter } from "../../hooks/useHideFooter";
 import { COLORS } from "../../theme/colors";
@@ -12,6 +13,11 @@ import { SHADOW } from "../../theme/shadows";
 /** The state chip's ink — one of the lexicon's five fills, or the inert grey. */
 export type ChallengeSheetTone = "neutral" | "green" | "blue" | "orange" | "red";
 
+// How long the sheet takes to arrive and to leave. Matches SheetPanel's SNAP_DURATION_MS
+// so the app's two sheet families move at the same speed — a learner who has dismissed
+// the eip has already learned how long a sheet takes to go away.
+const EXIT_MS = 220;
+
 const TONE_FILL: Record<ChallengeSheetTone, string> = {
     neutral: COLORS.iconBg,
     green: COLORS.grn,
@@ -19,6 +25,18 @@ const TONE_FILL: Record<ChallengeSheetTone, string> = {
     orange: COLORS.org,
     red: COLORS.red,
 };
+
+/**
+ * Imperative close, for the sheet's own OWNER. Every terminal action in the panel
+ * (Send / Accept / Decline / Withdraw) consumes the sheet, and those buttons live in
+ * `actions` — outside this component — so they need a way to leave the same way the ✕
+ * does. Without it they would call `onClose` directly and the sheet would vanish in one
+ * frame while the ✕ beside them slid away politely.
+ */
+export interface ChallengeSheetHandle {
+    /** Play the exit, then call `onClose`. Idempotent. */
+    close: () => void;
+}
 
 interface ChallengeSheetProps {
     open: boolean;
@@ -29,6 +47,11 @@ interface ChallengeSheetProps {
     /** The lowercase state word in the chip: `not sent`, `waiting`, `incoming`. */
     state: string;
     tone?: ChallengeSheetTone;
+    /**
+     * Called once the sheet has finished LEAVING — the host unmounts it here. Every
+     * close path (✕, scrim, the action bar via the ref handle) runs the exit animation
+     * first, so this is a teardown callback, not a "dismiss now" one.
+     */
     onClose: () => void;
     /** The pinned action bar. Sits below the scroller, never scrolls with it. */
     actions: ReactNode;
@@ -67,7 +90,7 @@ interface ChallengeSheetProps {
  * (CLAUDE.md "Touch & Scroll"). If a second feature ever needs the same frame, this is
  * the file to promote to `src/components/`.
  */
-function ChallengeSheet({
+const ChallengeSheet = forwardRef<ChallengeSheetHandle, ChallengeSheetProps>(({
     open,
     title,
     subtitle,
@@ -76,7 +99,7 @@ function ChallengeSheet({
     onClose,
     actions,
     children,
-}: ChallengeSheetProps) {
+}, ref) => {
     /**
      * Where the sheet is WRITTEN, so the host can be found by walking up from it, and
      * where the sheet is PAINTED are two different places — see the portal note above.
@@ -98,6 +121,42 @@ function ChallengeSheet({
     // action bar. Released automatically when the sheet unmounts.
     useHideFooter(open);
 
+    // ---- Leaving ----------------------------------------------------------
+    // The sheet SLIDES OUT the way it came in; it does not blink out of existence.
+    // Closing used to call the host's `onClose` straight from the ✕ and the scrim, which
+    // unmounted the portal in the same frame — the one motion in the whole interaction
+    // that had no motion. So the close is now a two-step: paint the exit, then tell the
+    // host to unmount at the end of it.
+    //
+    // A STATE FLAG IS THE RIGHT TOOL HERE, unlike in SheetPanel, whose height is written
+    // imperatively because it tracks a finger at 60fps. Nothing about this sheet is
+    // gesture-driven — it is a fixed-height panel with no drag — so one re-render on the
+    // way out costs nothing.
+    const [closing, setClosing] = useState(false);
+    const closeTimerRef = useRef<number | null>(null);
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
+
+    const requestClose = useCallback(() => {
+        // Idempotent: a second tap on the ✕ (or a scrim tap during the slide) must not
+        // queue a second unmount.
+        if (closeTimerRef.current !== null) return;
+        setClosing(true);
+        closeTimerRef.current = window.setTimeout(() => {
+            closeTimerRef.current = null;
+            onCloseRef.current();
+        }, EXIT_MS);
+    }, []);
+
+    // The action bar's buttons live outside this component and consume the sheet too.
+    useImperativeHandle(ref, () => ({ close: requestClose }), [requestClose]);
+
+    // A host that drops `open` mid-flight (or unmounts the page) must not leave a timer
+    // holding a stale `onClose`.
+    useEffect(() => () => {
+        if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
+    }, []);
+
     if (!open) return null;
 
     return (
@@ -110,12 +169,18 @@ function ChallengeSheet({
                         its deadline (§ 3.2). Only the Decline button ends one. */}
                     <Box
                         className="challenge-sheet__scrim"
-                        onClick={onClose}
+                        onClick={requestClose}
                         sx={{
                             position: "fixed",
                             inset: 0,
                             zIndex: 1200,
                             backgroundColor: COLORS.scrim,
+                            // Fades in with the sheet's rise and out with its fall, so the
+                            // dim and the panel arrive and leave as one object.
+                            opacity: closing ? 0 : 1,
+                            transition: `opacity ${EXIT_MS}ms ease-out`,
+                            "@keyframes challengeSheetScrimIn": { from: { opacity: 0 }, to: { opacity: 1 } },
+                            animation: closing ? "none" : `challengeSheetScrimIn ${EXIT_MS}ms ease-out both`,
                         }}
                     />
 
@@ -128,7 +193,14 @@ function ChallengeSheet({
                             bottom: 0,
                             // Never full height: the rows behind it are the context, so a strip
                             // of the list has to stay visible or the sheet reads as a page.
-                            top: "18%",
+                            // The strip is the shared sheet system's OLD panel cap — 0.92 of the
+                            // screen, i.e. an 8% band of scrim (docs/EIP_SHEET_GESTURES.md, the
+                            // pre-merge `MAX_HEIGHT_RATIO`). SheetPanel itself now grows to 1
+                            // and dissolves its chrome into a page header at the top of its
+                            // travel; this sheet has no such merge (it is fixed-height and
+                            // undraggable), so it keeps the older cap, which is also the one
+                            // that leaves a tap-to-dismiss target.
+                            top: "8%",
                             zIndex: 1201,
                             display: "flex",
                             flexDirection: "column",
@@ -136,6 +208,18 @@ function ChallengeSheet({
                             borderRadius: "26px 26px 0 0",
                             boxShadow: SHADOW.panelUp,
                             overflow: "hidden",
+                            // ENTER and LEAVE are one movement in two directions: the sheet
+                            // rises from the bottom edge on open and returns to it on close.
+                            // The exit is a transition (it is driven by a state change we
+                            // make); the entrance is a keyframe (there is no "before" state
+                            // to transition from on the first paint).
+                            transform: closing ? "translateY(100%)" : "translateY(0)",
+                            transition: `transform ${EXIT_MS}ms ease-out`,
+                            "@keyframes challengeSheetIn": {
+                                from: { transform: "translateY(100%)" },
+                                to: { transform: "translateY(0)" },
+                            },
+                            animation: closing ? "none" : `challengeSheetIn ${EXIT_MS}ms ease-out both`,
                         }}
                     >
                         {/* Grab handle — affordance only. The sheet is dismissed by the close
@@ -190,21 +274,27 @@ function ChallengeSheet({
                                 {state}
                             </Box>
 
-                            <IconButton
-                                className="challenge-sheet__close"
-                                onClick={onClose}
-                                aria-label="Close"
-                                sx={{ flexShrink: 0, color: COLORS.onSurface, backgroundColor: COLORS.background }}
-                            >
-                                <CloseIcon sx={{ fontSize: 18 }} />
-                            </IconButton>
+                            {/* The app's one panel ✕ (SheetCloseX), the same button every
+                                SheetPanel wears — this sheet used to draw a larger, grounded
+                                close of its own. */}
+                            <SheetCloseX className="challenge-sheet__close" onClick={requestClose} />
                         </Box>
 
                         {/* The one scrolling region. `touchAction: pan-y` is the opt-in the app
                             shell's global `none` requires (CLAUDE.md "Touch & Scroll"). */}
                         <Box
                             className="challenge-sheet__body"
-                            sx={{ flex: 1, minHeight: 0, overflowY: "auto", touchAction: "pan-y", overscrollBehavior: "contain" }}
+                            sx={{
+                                flex: 1,
+                                minHeight: 0,
+                                overflowY: "auto",
+                                touchAction: "pan-y",
+                                overscrollBehavior: "contain",
+                                // The words dissolve into the pinned action bar below
+                                // instead of being cut off at the scroller's edge — the
+                                // shared panel fade (sheetStyled § Sheet bottom edge fade).
+                                ...sheetEdgeFadeSx,
+                            }}
                         >
                             {children}
                         </Box>
@@ -233,6 +323,8 @@ function ChallengeSheet({
             )}
         </>
     );
-}
+});
+
+ChallengeSheet.displayName = "ChallengeSheet";
 
 export default ChallengeSheet;

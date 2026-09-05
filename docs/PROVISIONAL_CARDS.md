@@ -495,8 +495,8 @@ module rather than naming an id each.
 |---|---|
 | `ProvisionalCardsNotice` heading | 30px icon beside the title |
 | `ProvisionalCardsNotice` footnote | 15px inline, only when the caller passes `badgedInRound` — the surfaces that show no badge must not promise one |
-| `HydraLendNotice` | 30px icon above the title (Hydra's bubbles are too small to badge) |
 | `MatchSpeedCard` | 13px on a translucent disc, top-right corner |
+| Hydra Bubbles word bubble | 12px on the same disc, inset 10% from the top-right so it stays on the squircle's curve at every spawn radius (`Bubble`'s `lent` prop, passed by `HydraStage`). Replaced Hydra's mid-run `HydraLendNotice` popup on 2026-09-05 — the earlier claim that a bubble was too small to badge did not survive being tried |
 
 **The badge goes on the FOREIGN side only, and that is correctness rather than layout.**
 Badging both faces of a lent pair would mark two board cards as belonging together, so a

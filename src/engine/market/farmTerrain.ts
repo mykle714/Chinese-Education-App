@@ -511,6 +511,106 @@ export interface EditorMasks {
   condition: Set<string>;
   /** cell "col,row" → the chosen decor sprite URL for that cell. */
   decor: Map<string, string>;
+  /**
+   * The board-wide default FLOOR — what a cell shows when no terrain mask covers it.
+   * NOT a cell mask: it is one setting for the whole board, carried here so it reaches
+   * {@link buildEditorField} through the same object every painted layer travels in
+   * (and therefore needs no new prop on the shared viewer).
+   *
+   * OMITTED ⇒ {@link DIRT_FLOOR} — bare dirt, the night market's only floor and the
+   * behavior every pre-existing board keeps. The iw scene editor is the one surface that
+   * sets it today (docs/IMMERSIVE_WORLD.md § 12 phase 1d).
+   */
+  floor?: BoardFloor;
+}
+
+/**
+ * The board-wide default floor: what an UNPAINTED cell (no terrain 1, no terrain 2)
+ * renders as.
+ *
+ *   `dirt` — the bare tallDirt plateau top face shows, as it always has.
+ *   `wood` — a wooden plank deck covers every bare cell instead (see
+ *            {@link woodFloorPlankUrl}). The dirt slab is still drawn beneath it: the
+ *            plank pack ships a flat 3px-thick board with no cliff body, so the slab
+ *            remains the thing that gives the plateau its height.
+ *
+ * `seed` FREEZES the random grain. Every wood cell picks its board-pattern variation
+ * from a hash of (seed, col, row), so the deck is stable across reloads, camera moves
+ * and board resizes — and re-rolling the seed is what "shuffle the planks" means. It is
+ * meaningless when `kind` is `dirt` and is kept only so a toggle back to wood restores
+ * the same deck.
+ */
+export interface BoardFloor {
+  kind: 'dirt' | 'wood';
+  /** 32-bit seed frozen when the author chose this floor. */
+  seed: number;
+}
+
+/** The default floor of every board that does not say otherwise. */
+export const DIRT_FLOOR: BoardFloor = { kind: 'dirt', seed: 0 };
+
+/** A fresh 32-bit floor seed — a new random plank grain. */
+export function rollFloorSeed(): number {
+  return Math.floor(Math.random() * 0x7fffffff);
+}
+
+/**
+ * Mix a seed with a cell into a 32-bit hash. A plain multiplicative mix (xorshift +
+ * `Math.imul` rounds, the mulberry32 family) rather than a PRNG SEQUENCE, because the
+ * render walks cells in whatever order the window culls to — a sequence would give the
+ * same cell a different plank depending on where the camera started.
+ */
+function hashCell(seed: number, col: number, row: number): number {
+  let h = (seed ^ 0x9e3779b9) >>> 0;
+  h = Math.imul(h ^ (col * 0x85ebca6b), 0xcc9e2d51) >>> 0;
+  h = Math.imul(h ^ (row * 0xc2b2ae35), 0x1b873593) >>> 0;
+  h ^= h >>> 15;
+  return h >>> 0;
+}
+
+/**
+ * The single iso direction every plank on a wood floor runs in, derived from the seed.
+ *
+ * ONE DIRECTION PER BOARD, deliberately: a deck whose boards alternate `ns`/`ew` cell by
+ * cell reads as debris rather than as floor, and it would also fire the far-end edge cap
+ * on almost every cell (a `ns` neighbour does not continue an `ew` run — see
+ * {@link plankRenderUrl}). Only the board PATTERN varies per cell.
+ */
+export function woodFloorDirection(seed: number): WalkwayDirection {
+  return hashCell(seed, 0, 0) & 1 ? 'ns' : 'ew';
+}
+
+/**
+ * The plank CENTER a wood-floor cell draws, before the far-end cap autotile. Returns
+ * undefined only if the pack is missing that stem, in which case the caller falls back
+ * to the bare dirt top face.
+ */
+function woodFloorCenterUrl(seed: number, col: number, row: number): string | undefined {
+  const dir = woodFloorDirection(seed);
+  const variation = PLANK_VARIATIONS[hashCell(seed, col, row) % PLANK_VARIATIONS.length];
+  return freeFarmTileset.getPlank(dir, variation, 'center');
+}
+
+/**
+ * The plank sprite a wood-floor cell renders: its seeded center, swapped for the far-end
+ * EDGE cap wherever the deck stops ({@link plankRenderUrl}). `isWoodAt` reports whether a
+ * neighbouring cell is also wood floor, so a deck caps against grass, against another
+ * surface and against the board edge alike. Null ⇒ no plank art; show dirt.
+ *
+ * ⚠️ The pack ships NO rim-clipped plank variants (planks have one silhouette, unlike the
+ * grass caps' full `LandmassEdge` set), so a plank on a board-EDGE cell keeps its full
+ * diamond over a rounded slab rim. A few pixels of board overhang the rim there. Fixing it
+ * needs art, not code.
+ */
+export function woodFloorPlankUrl(
+  seed: number,
+  col: number,
+  row: number,
+  isWoodAt: (x: number, y: number) => boolean,
+): string | null {
+  const center = woodFloorCenterUrl(seed, col, row);
+  if (!center) return null;
+  return plankRenderUrl(center, isWoodAt, col, row);
 }
 
 /**
@@ -535,6 +635,8 @@ export interface CompiledMasks {
   terrain1: Set<CellId>;
   terrain2: Set<CellId>;
   decor: Map<CellId, string>;
+  /** Copied through verbatim — a board-wide setting has nothing to re-key. */
+  floor: BoardFloor;
 }
 
 /**
@@ -548,7 +650,7 @@ export function compileMasks(masks: EditorMasks): CompiledMasks {
   for (const cell of masks.terrain1) terrain1.add(packCellKey(cell));
   for (const cell of masks.terrain2) terrain2.add(packCellKey(cell));
   for (const [cell, url] of masks.decor) decor.set(packCellKey(cell), url);
-  return { terrain1, terrain2, decor };
+  return { terrain1, terrain2, decor, floor: masks.floor ?? DIRT_FLOOR };
 }
 
 /**
@@ -720,11 +822,25 @@ export interface EditorTile extends FarmTile {
    */
   decorUrl: string | null;
   /**
+   * The wooden-deck plank this cell draws INSTEAD of the bare dirt top face, or null for the
+   * ordinary dirt floor. Only ever set on cells no terrain mask covers, and only when the
+   * board's {@link BoardFloor} is `wood` — see {@link woodFloorPlankUrl}.
+   *
+   * It REPLACES this cell's ground, it does not stack on it — `terrainDraws.buildDraws` skips
+   * both the tallDirt slab and the surface sprites on a decked cell. (No grass-boundary overlay
+   * either: grass spilling onto a plank deck reads as a mistake, and the deck's own far-end edge
+   * cap is what should meet the grass.) At the board RIM that means a 3px board edge where a
+   * dirt cell would show a 16px wall — the pack has no wooden cliff body.
+   */
+  floorUrl: string | null;
+  /**
    * True when this cell's tallDirt slab is FULLY HIDDEN and can be skipped — halving the sprite
    * count over a field of ordinary grass.
    *
    * The slab covers its own diamond plus a `TILE_HEIGHT` cliff band below it. Both are occluded when:
-   *   (a) the cell has a grass cap of its own (`kind === 'grass'`), which covers the diamond, AND
+   *   (a) the cell has a cap of its own that covers the diamond — a grass cap (`kind === 'grass'`)
+   *       or a wood-floor plank ({@link floorUrl}; every plank sprite, cap variants included,
+   *       has exactly the grass cap's silhouette plus 3px of board thickness above it) — AND
    *   (b) its S, W and SW neighbours are in-field, whose tiles between them cover the band and all
    *       sort ABOVE this slab (`z = −(col + row)`, so a nearer cell always wins).
    *
@@ -862,6 +978,21 @@ export function buildEditorField(
     return u;
   };
 
+  // ── Wood floor ────────────────────────────────────────────────────────────────────
+  // The board-wide floor (see BoardFloor). A cell decks over only when it is BARE — no
+  // terrain 1 AND no terrain 2 — since a plank under a grass cap is invisible work, and
+  // grass is the thing the deck is meant to contrast with. Apron counts as light grass,
+  // so a runtime apron never decks. `isWoodCell` doubles as the far-neighbour test that
+  // decides where a run caps, which is why it consults `inField` too: the deck must cap
+  // at the board edge exactly as it caps against grass.
+  const woodSeed = masks.floor.kind === 'wood' ? masks.floor.seed : null;
+  const isWoodCell = (x: number, y: number) =>
+    woodSeed !== null && inField(x, y) && !isLightGrass(x, y) && !isTerrain2(x, y);
+  const floorUrlAt = (x: number, y: number) =>
+    (woodSeed !== null && isWoodCell(x, y)
+      ? woodFloorPlankUrl(woodSeed, x, y, isWoodCell)
+      : null);
+
   const tiles: EditorTile[] = [];
   // Iterate the GLOBAL window [origin, origin+span); skip cells outside the field silhouette so a
   // non-rectangular continent (or the empty corner of an L-shaped layout) gets no phantom ground.
@@ -894,6 +1025,9 @@ export function buildEditorField(
     );
     for (let isoY = rowLo; isoY <= rowHi; isoY++) {
       if (!inField(isoX, isoY)) continue;
+      // Resolved once: it is both the tile's sprite and (when non-null) the proof that this
+      // cell's slab top face is covered, which `slabHidden` below relies on.
+      const floorUrl = floorUrlAt(isoX, isoY);
       const fieldEdge = freeFarmTileset.pickLandmassEdge({
         n: inField(isoX, isoY + 1),
         e: inField(isoX + 1, isoY),
@@ -909,9 +1043,11 @@ export function buildEditorField(
         grassNeighbours: neighbourOccupancy(isoX, isoY, isLightGrass),
         darkGrassNeighbours: neighbourOccupancy(isoX, isoY, isTerrain2),
         decorUrl: decorAt(isoX, isoY),
-        // See EditorTile.slabHidden. S = isoY−1, W = isoX−1, SW = both.
+        floorUrl,
+        // See EditorTile.slabHidden. S = isoY−1, W = isoX−1, SW = both. A wood-floor plank
+        // covers the diamond just as a grass cap does, so a decked cell hides its slab too.
         slabHidden:
-          isLightGrass(isoX, isoY) &&
+          (isLightGrass(isoX, isoY) || floorUrl !== null) &&
           inField(isoX, isoY - 1) &&
           inField(isoX - 1, isoY) &&
           inField(isoX - 1, isoY - 1),

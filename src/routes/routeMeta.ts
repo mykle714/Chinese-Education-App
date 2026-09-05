@@ -225,6 +225,13 @@ const PAGE_ROUTES: RouteMeta[] = [
     note: "Same gate as the editor above.",
   },
   {
+    path: "/immersive-world/scene-editor",
+    access: "any",
+    shell: "plain",
+    chrome: "none",
+    note: "The iw scene editor (docs/IMMERSIVE_WORLD.md § 12 phase 1d). Template-author-only (migration 115), enforced in ImmersiveWorldSceneService and mirrored as UX on the page. Desktop-only three-column authoring surface — plain shell for the width, no page transition.",
+  },
+  {
     path: "/font-lab",
     access: "any",
     shell: "plain",

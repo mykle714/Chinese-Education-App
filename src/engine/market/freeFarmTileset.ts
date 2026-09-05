@@ -100,6 +100,29 @@ export type LandmassEdge =
 
 /** Source cell size of every Environment tile (32×32 grid). */
 export const FARM_TILE_PX = 32;
+/**
+ * SKIRT — how many px of a tile's art hang BELOW its top-face diamond, and therefore how
+ * far DOWN the sprite must be drawn (bottom-anchored) for that top face to land on the
+ * shared surface plane every tile's diamond shares.
+ *
+ * Measured from the pack's own alpha, not guessed:
+ *
+ * | sprite | ink rows (of 32) | top-face diamond | skirt |
+ * |---|---|---|---|
+ * | `lightGrass_*` / `darkGrass_*` cap | 16–31 | rows 16–31 | **0** — drawn at the bare anchor |
+ * | `tallDirt_*` | 0–31 | rows 0–15 | **16** = the cliff body (`TILE_HEIGHT`) |
+ * | `plank_*` | 13–31 | rows 13–28 | **3** = the board's thickness |
+ *
+ * skirt = `FARM_TILE_PX − (bottom-vertex row + 1)`. It is why the dirt slab is drawn at
+ * `screenY + TILE_HEIGHT` and a plank FLOOR at `screenY + PLANK_SKIRT_PX`: same rule, two
+ * different pieces of art. See docs/NIGHT_MARKET_FEATURE.md § "Board floor".
+ *
+ * ⚠️ These are ART FACTS. Re-crop or replace a sprite and the constant must be re-measured,
+ * or that surface silently sits off-plane.
+ */
+export const TALL_DIRT_SKIRT_PX = 16;
+export const PLANK_SKIRT_PX = 3;
+
 /** Source frame size of every Player sprite (48×48 grid). */
 export const PLAYER_FRAME_PX = 48;
 /** Frames per direction in every player animation (idle & walking both use 4). */

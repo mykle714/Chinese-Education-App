@@ -5,10 +5,13 @@ import { useEffect, type RefObject } from "react";
  *
  * ── The behaviour ─────────────────────────────────────────────────────────────
  * The sheet is PINNED at the trailing edge of travel — the edge cards are leaving by —
- * and the scroll draws the rest of it away from that pin, further the further from it a
- * card sits, so the visible cards lag behind the scroll rather than running ahead of it. Every neighbouring pair therefore moves APART: the gaps open out while the
- * list is moving, by more the faster it moves, and close back to their resting spacing
- * when it stops. Nothing about the cards' own size changes, only the space between them.
+ * and the scroll draws the rest of it away from that pin, INTO the viewport, further the
+ * further from it a card sits, so the visible cards lag behind the scroll rather than
+ * running ahead of it. Tracks on the off-screen side of the pin are held still. Every
+ * neighbouring pair on screen therefore moves APART, and no pair anywhere closes: the
+ * gaps open out while the list is moving, by more the faster it moves, and close back to
+ * their resting spacing when it stops. Nothing about the cards' own size changes, only
+ * the space between them.
  *
  * The shape is two independent pieces, and keeping them independent is what makes it
  * behave the same scrolling up as scrolling down: `rubberBand(|drag|)` says HOW MUCH the
@@ -198,7 +201,11 @@ const FALLBACK_TRACK_SPACING_PX = 120;
 
 /**
  * How the stretch is DISTRIBUTED along the sheet: 0 at the anchor, easing onto 1 far
- * from it, odd-symmetric so both sides of the anchor spread AWAY from it.
+ * from it, odd-symmetric so it can serve both travel directions from one expression.
+ *
+ * Only ONE side of it is ever used per frame: the anchor is a viewport edge, and `apply`
+ * clamps `along` to the side of it that is on screen (see there). The odd half that is
+ * left over is what makes scrolling back the mirror of scrolling forward.
  *
  * ⚠️ The one property that must not be broken: this is strictly INCREASING in `u`. The
  * gap between two neighbours is `spacing + (shift of the further − shift of the nearer)`,
@@ -474,10 +481,21 @@ export function useScrollStretch(
                 // Signed distance from the anchor, in cards. Continuous in the track's own
                 // layout offset, so it slides rather than stepping and is unchanged by a
                 // rebuild that renumbers the array.
-                const along = (track.offset - anchorPos) / trackSpacing;
-                // Monotone in `along` by construction, so EVERY neighbouring pair moves
-                // apart: the sheet is pinned at the anchor and spreads away from it on
-                // both sides. No fold, no direction case.
+                const rawAlong = (track.offset - anchorPos) / trackSpacing;
+                // The anchor is a VIEWPORT EDGE, so one side of it is off-screen: going
+                // forward the anchor is the top edge and everything above it has already
+                // left, going back it is the bottom edge and everything below it has not
+                // arrived yet. `spreadProfile` is odd, so without this clamp those
+                // off-screen tracks are pushed the OPPOSITE way from the visible ones —
+                // and the row straddling the edge is half visible, so you see it lag
+                // upward while every row under it lags downward. Flattening the outside
+                // side to zero keeps the profile monotone (the invariant that forbids a
+                // squeeze: flat means a constant gap, never a closing one) while making
+                // every card that can be seen lag in the SAME direction.
+                const along = drag >= 0 ? Math.max(rawAlong, 0) : Math.min(rawAlong, 0);
+                // Monotone in `along` by construction, so NO neighbouring pair ever
+                // closes: the sheet is pinned at the anchor and spreads away from it into
+                // the viewport. No fold, no direction case.
                 const shift = amount * spreadProfile(along);
                 // Rule C — an invisible delta is not worth a style write.
                 if (Math.abs(shift - track.written) < WRITE_EPS_PX) continue;

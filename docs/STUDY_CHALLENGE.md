@@ -864,6 +864,32 @@ until its deadline; only the Decline button ends it (and keeps the pair's week, 
 next challenge is Monday). Withdraw, by contrast, deletes the row and frees the week
 immediately.
 
+**The sheet leaves the way it arrived (2026-09-05).** Every close path — the ✕, the
+scrim, and each terminal action in the bar (Send / Accept / Decline / Withdraw) — plays a
+220ms slide back down to the bottom edge with the scrim fading alongside it, and only
+*then* unmounts. Closing used to call the host's `onClose` directly, which tore the portal
+down in the same frame: the one moment in the interaction that had no motion. The exit is
+a CSS transition on a `closing` state flag, and the entrance is the mirrored keyframe
+(there is no "before" state to transition from on a first paint). 220ms is
+`SheetPanel`'s `SNAP_DURATION_MS`, so the app's two sheet families leave at the same
+speed.
+
+The action-bar buttons live *outside* `ChallengeSheet` (they are its `actions` prop), so
+they reach the animation through a small imperative handle — `ChallengeSheetHandle.close()`
+— which `ChallengePanel` calls from `runAndClose`, its single chokepoint for every
+terminal mutation. `onClose` is now a *teardown* callback ("the sheet has finished
+leaving"), not a "dismiss now" one.
+
+**Its ✕ is the app's shared panel close** (`src/components/sheet/SheetCloseX.tsx`) — the
+same 17px faint glyph every `SheetPanel` wears, in place of the larger grounded
+`CloseIcon` button this sheet used to draw. See
+[EIP_SHEET_GESTURES.md § The close cluster](./EIP_SHEET_GESTURES.md).
+
+**The sheet is capped at 92% of the screen, not 82%** (2026-09-05): `top: 8%`, the
+value `SheetPanel`'s `MAX_HEIGHT_RATIO` held before the merge rework. The band of scrim
+left above it is deliberate — it is the tap-to-dismiss target, and this sheet has no
+merge chrome to turn a full-height panel into a page.
+
 **The sheet portals out of the page it is written in.** `ChallengeSheet` is rendered
 inside `ChallengesPage`, which is inside `MobileTabScreen`'s scroll area — and that area
 carries the edge-fade **mask**, which clips fixed-position descendants. Its bottom band
@@ -873,6 +899,14 @@ portals to `nearestOverlayHost` and holds `useHideFooter` while open, since the 
 bar paints above that host and covers the same strip. The same applies to
 `ChallengeHelpPopup` (§ 5.4c).
 Full rule: docs/MOBILE_TAB_SCREEN_LAYOUT.md § "Edge fade".
+
+**Its own scroller wears the sheet fade.** The word list dissolves into the pinned action
+bar over a 24px band (`sheetEdgeFadeSx`, `src/components/sheet/sheetStyled.ts`) instead of
+stopping dead against it, and over a 20px band at the top as rows scroll up under the
+pinned header — the same mask every scrollable panel wears
+(docs/UX_AND_NAVIGATION.md § Edge fade). This mask sits on the **scroller only**,
+never on the sheet frame, precisely because of the clipping trap described just above:
+the action bar is a sibling of the scroller, outside the mask.
 
 Code: `src/features/studyChallenge/ChallengeSheet.tsx` (the frame — local to this
 feature; promote to `src/components/` if a second surface needs it),

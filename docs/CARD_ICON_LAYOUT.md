@@ -12,10 +12,11 @@
 > count, flowing onto the next line when a row overflows). The **card** tool (internal key
 > `contrast`) opens a per-card appearance menu — a background-fill swatch row plus the two
 > text-color rows. In
-> **advanced** mode the card is pushed (animated) down toward the bottom of the screen so
-> the three-row toolbar clears it (basic mode keeps its single static row, card stays
-> centered). While editing the **More Info pill stays drawn but greyed + inert**; in
-> advanced mode the card slides over and covers it. The toolbar drops in on enter and the
+> **advanced** mode the three-row toolbar shrinks the card slot from the top by exactly the
+> amount it intrudes (animated), and the slot's ordinary centering re-places the card in
+> what's left — so the card only moves when the toolbar would actually reach it (basic mode
+> keeps its single static row, inset 0, nothing moves). While editing the **More Info pill
+> stays drawn but greyed + inert**; it stays visible below the card. The toolbar drops in on enter and the
 > advanced menu reveal-expands on the adv toggle.
 >
 > The white text-backdrop affordance (migration 83 `iconTextBackdrop`) has been
@@ -323,52 +324,68 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
 2. **Floating edit toolbar** (`CardEditToolbar.tsx`) — rendered as an **absolute
    overlay inside `ContentArea`** (which is `position: relative`), so the toolbar itself
    does NOT change the card-slot's flow height. Instead, in **advanced** mode (when the
-   toolbar grows to three rows) the **card is pushed down** toward the bottom of the
-   screen to clear as much of the toolbar as possible: `DraggableCardContainer` takes a
-   `pushDown` prop that **redistributes** its `pad.top / pad.bottom` padding downward to
-   `pad.sum / 0`, **transitioned** so the card glides down/up. Basic mode keeps the single
-   static row, so the card stays centered.
+   toolbar grows to three rows) the card slot **reserves the band the toolbar intrudes into**:
+   `DraggableCardContainer` takes a `toolbarInset` prop (px) that is added to its `pad.top`,
+   **transitioned** so the card glides. Basic mode keeps the single static row, so the inset is
+   0 and the card stays exactly where it was.
 
-   **The push-down is gated on ACTUAL overlap** — it fires only when
-   `editMode && advMode && toolbarOverlaps`, not merely whenever advanced mode is on. On roomy
-   viewports the card is small enough that the toolbar clears it with space to spare, so no
-   shift is needed and the card stays centered (the greyed More Info pill simply remains
-   visible below it). `toolbarOverlaps` is computed by **`useToolbarOverlap`**
-   (`useToolbarOverlap.ts`): it compares the toolbar's measured bottom edge against where the
-   card's TOP would sit in its **centered (non-pushed)** layout. That centered top is derived
-   from the **card slot's** box + the card's height and the slot padding the page passes in
-   (`cardSlotPadding` in `styled.ts`, measured by `useCardSlotPadding` — see the slot-padding
-   section below). It measures the slot rather than `ContentArea` because the word-tools rail
-   sits above the slot, so the two boxes no longer share a top edge. Crucially the card's on-screen
-   height is **invariant to the push** (the size guarantee below), so the decision is computed
-   from a value the push never changes — pushing the card can't feed back and un-trigger
-   itself (no oscillation). The same `pushDown` gates the card slot's zIndex lift over the pill
-   (`FlashCardSection.tsx`): a centered card doesn't reach the pill, so it must not steal the
-   pill's stacking. The hook re-measures on slot/toolbar/card resize, on window resize,
-   and once after the `CARD_EDIT_ANIM_MS` entry animation settles (the toolbar's `<Slide>`
-   transform isn't caught by `ResizeObserver`).
+   **The toolbar shrinks the container; the container's own centering places the card.**
+   The card is ALWAYS centered in `DraggableCardContainer`'s padded content box (`alignItems:
+   center`, in every mode) — there is no separate "pushed" placement and no bottom anchoring.
+   `toolbarInset` is computed by **`useToolbarInset`** (`src/cardIcons/editor/useToolbarInset.ts`
+   — it lives with the fie, not in a page folder, because **both** fie surfaces use it) as
+   `max(0, toolbarBottom + 8 − (slotTop + pad.top))`: purely how far the toolbar's measured
+   bottom edge reaches past the top of the slot's content box. Consequences:
 
-   **The push-down must NOT resize the card** — the fie shows the card at its exact flp
-   size. `DraggableCardContainer` is the `@container` sizing target (`containerType:"size"`)
-   and `CardAspectWrapper` fills its padded content box, so a height-bound card's size is
-   `containerHeight − (topPad + botPad)`. The push-down therefore keeps the **vertical
-   padding SUM constant** (`pad.sum`) and only shifts the distribution downward
-   (`pad.top`/`pad.bottom` → `pad.sum`/`0`), keeping the identical size on every viewport.
-   (Growing the sum — the old `148/28` = 176px
-   — shrank any height-bound card by 80px, the "canvas shrinks on certain screen sizes" bug;
-   width-bound narrow viewports were unaffected because vertical padding isn't their size
-   constraint.) On tight (height-bound) viewports a full-size card can't fully clear the
-   3-row toolbar, so the toolbar simply overlays the top of the card — size preservation
-   wins over clearance.
+   - **Nothing moves unless the toolbar would actually intrude.** On a roomy viewport the
+     toolbar sits inside whitespace the card was never using, the inset is 0, and the card
+     does not shift by a pixel.
+   - **The card moves by no more than the intrusion requires** — it settles wherever centering
+     in the reduced box puts it, instead of being slammed to the bottom of the slot.
+   - **A height-bound card SHRINKS with the box.** `DraggableCardContainer` is the `@container`
+     sizing target (`containerType: "size"`) and `CardAspectWrapper` fills its padded content
+     box, so a card whose size is height-bound is `containerHeight − (pad.top + toolbarInset +
+     pad.bottom)`. This is a deliberate reversal of the old "the push must never resize the
+     card" rule: clearing the toolbar wins over holding the exact flp size. A width-bound card
+     (one with vertical slack) keeps its size and merely re-centers.
 
-   **The pushed card is BOTTOM-ANCHORED** (`alignItems: flex-end` when `pushDown`) with a
-   `0` bottom pad, so it sits flush with the bottom of the slot on **every** viewport and
-   therefore covers the greyed More Info pill completely — the pill's band is exactly what
-   `pad.bottom` reserves in the unpushed layout — and slides down **no further**. Centering
-   alone was not enough: on a width-bound viewport with vertical slack a centered card floats
-   with a large bottom margin and never reaches the pill. `flex-end` only repositions the card
-   (never resizes it), so the flp-size guarantee above still holds. Basic mode keeps `center`
-   + the measured `pad.top` / `pad.bottom`.
+   The inset depends only on the slot's top edge, the toolbar's bottom edge and `pad.top` —
+   never on the card — so applying it cannot feed back and re-trigger a different inset (no
+   oscillation) even though the card may resize. The hook accordingly observes the slot and the
+   toolbar but **not** the card; it also re-measures on window resize and once after the
+   `CARD_EDIT_ANIM_MS` entry animation settles (the toolbar's `<Slide>` transform isn't caught
+   by `ResizeObserver`).
+
+   **The cdp reserves the BASIC row, and only that** (`VocabCardDetailPage.tsx`). There the
+   card is not centered in a slot but sits under the word-tools rail at the top of a content
+   column, so the reservation is the column's `paddingTop` (`CONTENT_PADDING + toolbarInset`,
+   transitioned in lockstep) and the hook is given `.card-edit-toolbar__row` — the toolbar's
+   primary row — as the band to clear (`clearSelector`), measured against ContentArea's top
+   plus its own padding:
+
+   - **Basic mode pushes.** Opening the editor slides the column down so the single row sits
+     ABOVE the word-tools rail instead of on it. (`enabled` is plain `editMode`, not
+     `editMode && advMode`.)
+   - **Advanced mode pushes no further.** The advanced rows are sized to land on the rail
+     (`Write it` / `Compare`) — covering it is the intent. The primary row's bottom edge does
+     not move when the menu opens (the toolbar is anchored at its top), so the reservation is
+     identical in both modes and nothing shifts on the adv toggle.
+
+   Padding is safe for the toolbar itself: an absolutely positioned child is placed against the
+   **padding box**, so `top: 0` keeps it flush under the header while the column slides. On the
+   flp the rail is likewise unprotected — the toolbar overlays it in both modes there.
+
+   **Measurements discount the entry slide.** Rects include transforms and the toolbar enters
+   under `<Slide>`, so a first measurement taken mid-animation would read a too-high bottom
+   edge and under-reserve, then lurch when the settle timer corrected it. `slideOffsetY` reads
+   the wrapper's live `translateY` off its computed transform and subtracts it, so every
+   measurement describes the toolbar AT REST. Both callers also measure a box whose own top
+   edge is fixed (the reservation is padding INSIDE it), so no measurement can see the shift it
+   caused — that, plus not observing the card, is what keeps the hook from chasing its output.
+
+   The card no longer travels far enough to cover the greyed **More Info pill** (`pad.bottom`
+   still reserves the pill's band), so the card slot no longer lifts its `zIndex` over it — the
+   pill simply stays visible below the card throughout the edit.
 
    **Slot padding is MEASURED, and the top pad is the elastic one** (`cardSlotPadding` in
    `styled.ts`; `useCardSlotPadding.ts` feeds it). Two constraints meet in this one number:
@@ -390,7 +407,7 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    the pill is absolutely positioned, so neither moves when the padding changes.
 
    **Animations (all share one timing — both directions).** The toolbar drop, the
-   advanced-rows reveal, and the card push-down all run at `CARD_EDIT_ANIM_MS = 300` with
+   advanced-rows reveal, and the card slot's toolbar inset all run at `CARD_EDIT_ANIM_MS = 300` with
    easing `CARD_EDIT_ANIM_EASING = cubic-bezier(0.22, 1, 0.36, 1)` (exported from
    `CardEditToolbar.tsx`), so they move in lockstep on **open AND close**:
    - **Toolbar** — wrapped in MUI **`<Slide direction="down">`** in
@@ -443,7 +460,23 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    flex list** (`display: flex; flexWrap: wrap`): each tool hugs its own content (`smallBtnSx`)
    and items flow left-to-right, collecting onto the next line when a row overflows (no fixed
    columns / table widths). The align/order dropdowns are children of the list but portal /
-   return null, so they take no slot. The tools, in order:
+   return null, so they take no slot.
+
+   **Both rows are painted in the page's own ground** (`COLORS.background` / `--paper`), not a
+   toggle-grey slab: the bar reads as part of the surface it drops onto, and the hairline under
+   each row is what keeps it legible against the page. Both fie surfaces sit on that ground
+   (the flp via `MobileDemoFrame`, the cdp via `MobileTabScreen`'s default `surfaceColor`), so
+   one token covers both — a third surface with a different ground would turn this into a prop.
+
+   **The spacing is deliberately tight** — `2px` between tools, `6px` at the row ends
+   (`px: 0.75` on the container), `2px` of horizontal button padding (`smallBtnSx.px: 0.25`)
+   and a `1px` icon→label gap. Eleven labelled tools plus the count readout have to collect
+   onto **two** lines at phone width; the earlier `3px` / `12px` / `4px` values spilled them
+   onto a third. Tap targets are unaffected (buttons keep their `30px` height). Adding a
+   twelfth tool means re-checking that the two-line fit still holds. The basic row is never
+   crowded, so **save**/**cancel** override the tightening back to `px: 1`.
+
+   The tools, in order:
 
    - **undo** (`Undo`) — reverts the last edit action (between **mirror** and **lock** in the
      menu). Disabled with an empty undo stack.
@@ -1041,9 +1074,31 @@ size; `rotation` in degrees. Types `TextBlock` / `TextLayoutItem` / `TextLayout`
 (card center); foreign `y = 18` steps (≈0.623), english `y = 22` steps (≈0.762). So the
 default text sits **exactly on the move-snap grid** (`snapCenterToGrid` is a verified no-op on
 both) — toggling snap-move never nudges default text (`scale:1`/`rotation:0` are likewise on
-the size/rotate grids). The same default is used by the **flp display AND the fie seed**, so
-they match 1:1. The wide separation is deliberate: these centers are FIXED (unlike the old
+the size/rotate grids). The default is what the **static renderer** draws; the **fie seed** is
+MEASURED from that render rather than copied from the constant (see "Opening the editor never
+moves the text" below), so the two match 1:1 even where the static renderer anchors a block
+differently. The wide separation is deliberate: these centers are FIXED (unlike the old
 flex column they can't grow), so the gap clears a multi-line English definition.
+
+**Opening the editor never moves the text.** When `enterEdit` seeds the draft, any block with
+**no saved placement** is seeded from **where the basic card was actually drawing it** —
+`measureDefaultTextCenters(cardElement)` (`cardTextLayout.ts`) reads each block wrapper's
+(`.mobile-demo-flashcard-text-block--<block>`) rect against the card's own rect and converts it
+to a normalized center. The page supplies the measurement as a callback to `enterEdit`
+(flp: `cardRef`; cdp: `heroCardRef`), because only the page knows which element is the card.
+A block that HAS a saved placement is left alone — that coordinate is authoritative and both
+renderers already honour it.
+
+Why a DOM read is needed at all: the static renderer and the canvas do not always put the same
+default block in the same place. The clearest case is the **English block, which is TOP-anchored
+while it is at its default** (`defaultEnglishTopAnchorTransform` — a multi-line definition must
+grow DOWNWARD, not up into the foreign word above it), so its true center depends on the
+definition's line count, which is not derivable from data. Measuring **both** blocks rather
+than special-casing English means the editor opens on exactly what the learner was looking at
+whatever the cause of a difference — a differently-padded wrapper, a wrapped gloss, an actions
+column that changes a box's height. A measured center within `MEASURED_CENTER_EPSILON`
+(≈1.7px) of the default snaps back TO the default, so an untouched block still saves as `null`
+(`isDefaultTextItem` is an exact comparison).
 
 **Rendering split (the same edit-vs-saved pattern as icons):**
 - **Static / saved** (`FlashCardSection.tsx` `CardFaceSide`): the back face receives its two
@@ -1071,10 +1126,14 @@ flex column they can't grow), so the gap clears a multi-line English definition.
   `inlineActions` too (default and custom), so it matches the fie 1:1; only the **front face /
   Side 1** keeps the absolute-button flex column (its text stays centered). The ENGLISH block's
   sense trigger (`CardFace.EnglishBlock` → `SensePicker`) has no such switch any more — it is
-  **always in-flow, in a wrapping row**, on every face: the absolute variant occupied no layout,
+  **always in-flow, in a `nowrap` row**, on every face: the absolute variant occupied no layout,
   so a wide gloss pushed the trigger past the card's (and on the large card view the viewport's)
   right edge. A hidden twin of the trigger balances it on the text's other side, so the gloss
-  itself stays centered. A **separate,
+  itself stays centered. The row must **not wrap**: flex wrapping follows DOM order, so a
+  wrapping row drops the trigger onto its own line while its hidden twin stays up on the text's
+  line, leaving the gloss pushed right by half the twin's width (the "dd shifted right on some
+  cards" bug). Overflow is absorbed inside the text instead — `minWidth: 0` on the text row plus
+  `overflowWrap: break-word` on the gloss. A **separate,
   simpler gesture path** (`bindText` / `bindTextHandle`, with `beginText*`/`runText*`
   handlers) drives them — tap selects, drag translates, pinch + a corner handle resize/rotate,
   lock freezes + shakes. It's separate from the icon path (only two fixed blocks: no
@@ -1092,7 +1151,8 @@ is unchanged (it already recolors text). The **snap** tool is now available even
 with no icons (the two text blocks are always present in advanced mode).
 
 **State** (`useCardIconEditor.ts`): a `textDraft` (both blocks, seeded via
-`resolveTextLayout(entry.textLayout)` on enter — a card with custom text auto-opens
+`resolveTextLayout(entry.textLayout)` on enter, then overlaid with the measured on-screen
+centers for any block that has no saved placement — a card with custom text auto-opens
 advanced), folded into the **undo/redo snapshot** (`AdvSnapshot.text`, so text edits are
 undoable; text lock IS part of the snapshot, unlike the orthogonal icon lock), a
 `textLayoutOverrides` session map, and Save/Reset. Save persists `textLayoutForSave(textDraft)`

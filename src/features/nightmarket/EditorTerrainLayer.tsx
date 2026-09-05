@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useState } from 'react';
 import { Assets, Texture } from 'pixi.js';
 import { TILE_HEIGHT, ORIGIN_ZERO, type CellOrigin } from '../../engine/market/isometric';
-import { buildDraws } from './terrainDraws';
+import { buildDraws, WOOD_FLOOR_Y_OFFSET } from './terrainDraws';
 import type { EditorTile } from '../../engine/market/farmTerrain';
 
 /**
@@ -95,6 +95,20 @@ function EditorTerrainLayer(
                 y={d.y + TILE_HEIGHT}
                 anchor={{ x: 0.5, y: 1 }}
                 zIndex={d.dirtZ}
+                eventMode="none"
+              />
+            )}
+            {/* WOOD FLOOR — the plank that replaces this cell's dirt top face. Drawn at its
+                own skirt below the anchor (see WOOD_FLOOR_Y_OFFSET), exactly as the slab
+                above is drawn at TILE_HEIGHT, so its walking surface is flush with the
+                grass plane instead of floating a board's thickness over it. */}
+            {wantGround && d.floorUrl && textures.get(d.floorUrl) && (
+              <pixiSprite
+                texture={textures.get(d.floorUrl)!}
+                x={d.x}
+                y={d.y + WOOD_FLOOR_Y_OFFSET}
+                anchor={{ x: 0.5, y: 1 }}
+                zIndex={d.floorZ}
                 eventMode="none"
               />
             )}

@@ -103,6 +103,7 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/flashcards/learn": lazy(() => import("../features/flashcards/FlashcardsLearnPage")),
   "/night-market/template-editor": lazy(() => import("../features/nightmarket/TemplateEditorPage")),
   "/night-market/template-sandbox": lazy(() => import("../features/nightmarket/TemplateSandboxPage")),
+  "/immersive-world/scene-editor": lazy(() => import("../features/immersiveworld/IWSceneEditorPage")),
   "/font-lab": lazy(() => import("../pages/fontLab/FontLabPage")),
   "/entries": lazy(() => import("../pages/EntriesPage")),
   "/entries/:id": lazy(() => import("../pages/EntryDetailPage")),

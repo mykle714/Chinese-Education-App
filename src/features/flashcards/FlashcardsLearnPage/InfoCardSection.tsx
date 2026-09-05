@@ -48,6 +48,13 @@ interface InfoCardSectionProps {
     // Optional content slot rendered above the grabber. Used by the entry-tabs
     // feature (see EipTabStrip + useEipTabs) — undefined renders nothing extra.
     tabStrip?: React.ReactNode;
+    // What the sheet's ✕ does. Hosts WITH a word trail pass the trail's rule (close the
+    // showing word; return false on the last one so SheetPanel dismisses); the cdp, which
+    // has no trail, passes nothing and the ✕ just closes the panel. See SheetPanel.
+    onCloseX?: () => boolean | void;
+    // Draw the minute-points flame beside the ✕. True on every STUDY surface that mounts
+    // this panel (flp, scp, cdp) — the panel covers the page header, flame included.
+    showMinutePoints?: boolean;
     // Identity + strip position of the ACTIVE entry tab (useEipTabs: `activeTab.id` /
     // `activeIndex`). Only used to drive the pager slide below — a change of id means the
     // panel is now showing a DIFFERENT word, and the sign of the index delta says which
@@ -94,6 +101,8 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     selectedSenseIndex,
     onSelectSense,
     tabStrip,
+    onCloseX,
+    showMinutePoints,
     entryTabId,
     entryTabIndex,
     showSynonymsRelated,
@@ -161,8 +170,10 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             // every tab change must re-bind the scroll/resize coupling.
             bodyKey={compareTab ? "compare" : `info-${selectedTab}`}
             tabStrip={tabStrip}
-            // Title for the merge header the sheet grows once it covers the host page's
-            // own header (SheetPanel). Named for the ENTRY POINT rather than the word on
+            onCloseX={onCloseX}
+            showMinutePoints={showMinutePoints}
+            // Title for the panel header, which is up at every height (SheetPanel) and
+            // carries the ✕. Named for the ENTRY POINT rather than the word on
             // screen — the pill that opens it says "More Info", and the entry header
             // right below already carries the headword, so repeating it would be the
             // only thing on screen twice.

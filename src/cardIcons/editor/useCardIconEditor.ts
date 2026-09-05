@@ -23,6 +23,7 @@ import {
     snapTextScale,
     nudgeTextScale,
     TEXT_BLOCKS,
+    type MeasuredTextCenters,
 } from "../cardTextLayout";
 import { saveIconLayout, fetchDefaultIconResults, type IconSearchItem } from "../cardIconApi";
 import { iconSearchTerm, resolveDisplayDefinition } from "../../utils/definitionUtils";
@@ -423,7 +424,7 @@ export function useCardIconEditor({ currentEntry, nextEntry }: UseCardIconEditor
         setAdvFuture([]);
     }, []);
 
-    const enterEdit = useCallback((measureDefaultEnglishCenter?: () => number | null) => {
+    const enterEdit = useCallback((measureTextCenters?: () => MeasuredTextCenters | null) => {
         if (!displayCurrentEntry) return;
         const existing = displayCurrentEntry.iconLayout;
         const clone = (l: IconLayoutItem[]) => l.map((it) => ({ ...it }));
@@ -434,15 +435,19 @@ export function useCardIconEditor({ currentEntry, nextEntry }: UseCardIconEditor
         // (basic mode has no canvas to show/move it). migration 91.
         const customText = hasCustomTextLayout(displayCurrentEntry.textLayout);
         const seededText = resolveTextLayout(displayCurrentEntry.textLayout);
-        // English specifically (independent of `customText`, which is true if EITHER block is
-        // custom): with no saved/temp textLayout.english, the basic renderer just showed it
-        // TOP-anchored (defaultEnglishTopAnchorTransform) at a height depending on the
-        // definition's line count — not the fixed center DEFAULT_TEXT_CENTER.english. Measure
-        // the actual on-screen position so opening the canvas doesn't jump the block.
-        if (!displayCurrentEntry.textLayout?.english) {
-            const measuredY = measureDefaultEnglishCenter?.();
-            if (measuredY != null) {
-                seededText.english = { ...seededText.english, y: measuredY };
+        // Any block WITHOUT a saved placement is seeded from where the basic card was actually
+        // drawing it, not from the fixed DEFAULT_TEXT_CENTER, so the canvas opens on exactly
+        // what the learner was looking at. The two renderers can legitimately disagree about a
+        // default block's center — English is TOP-anchored while default, so its center depends
+        // on the definition's line count — and only a DOM read can tell us which. A block whose
+        // position IS saved is left alone: that coordinate is authoritative and both renderers
+        // already honour it. See measureDefaultTextCenters. (migration 91)
+        const measured = measureTextCenters?.();
+        if (measured) {
+            for (const block of TEXT_BLOCKS) {
+                if (displayCurrentEntry.textLayout?.[block]) continue;
+                const c = measured[block];
+                if (c) seededText[block] = { ...seededText[block], x: c.x, y: c.y };
             }
         }
         setTextDraftBoth(seededText);

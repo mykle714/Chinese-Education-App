@@ -28,7 +28,7 @@ import { iconImageUrl } from "../cardIcons/cardIconLayout";
  * icon degrades to NO badge rather than a broken-image glyph on every card.
  *
  * Referenced by: src/components/ProvisionalCardsNotice.tsx,
- * src/games/match-speed/MatchSpeedCard.tsx, src/games/hydra-bubbles/HydraLendNotice.tsx.
+ * src/games/match-speed/MatchSpeedCard.tsx, src/games/bubbles/Bubble.tsx.
  * Documented in docs/PROVISIONAL_CARDS.md § 5.
  */
 
@@ -81,6 +81,13 @@ export interface LentCardBadgeProps {
     /** Icon size in px; the badge's own box is this plus its padding. */
     size?: number;
     className?: string;
+    /**
+     * Where the badge's box sits relative to the host's padding box. Numbers are px,
+     * strings are passed through (so a round host can use a percentage and keep the
+     * badge on the curve at any size). Defaults suit a rectangular card corner.
+     */
+    top?: number | string;
+    right?: number | string;
 }
 
 /**
@@ -91,13 +98,13 @@ export interface LentCardBadgeProps {
  * card's own tap target, and a badge that swallowed a pointerdown would read to the
  * player as a tap that did not register.
  */
-export const LentCardBadge: React.FC<LentCardBadgeProps> = ({ size = 13, className }) => (
+export const LentCardBadge: React.FC<LentCardBadgeProps> = ({ size = 13, className, top = 3, right = 3 }) => (
     <span
         className={className ? `lent-card-badge ${className}` : "lent-card-badge"}
         style={{
             position: "absolute",
-            top: 3,
-            right: 3,
+            top,
+            right,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",

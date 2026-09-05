@@ -305,7 +305,13 @@ validator explicitly paints shows. Changing the **width or height** in Propertie
   **no plank** — the street mask is a spriteless tint the viewer draws separately). Driven
   by a `tiles` prop only (the house layer was removed — filled-slot occupant houses are drawn
   by `TemplateMaskOverlays`, not here).
-- `TemplateEditorViewer.tsx` — the Pixi host (copied from `MarketEngineViewer`).
+- `TemplateEditorViewer.tsx` — the Pixi host (copied from `MarketEngineViewer`). **Shared
+  with the Immersive World scene editor** (`src/features/immersiveworld/IWSceneMapPanel.tsx`,
+  [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 12 phase 1d), which drives it with the same
+  masks plus an optional **`markers`** prop — labelled pins (`EditorMarker`, drawn by
+  `MarkerOverlay` at `MARKER_Z`, below the hover diamond and above every mask tint) marking
+  who stands where in a scene. The night market passes none and is unaffected; the viewer
+  stays placement-agnostic exactly as it is tool-agnostic.
   Cell picking (`localToCell`) inverts the 2:1 iso projection against each tile's
   surface-diamond **centre**. Left-drag paints (idempotent per cell), middle/right
   drag pans, wheel zooms; a `HoverOverlay` diamond tracks the cursor. Rebuilds the
@@ -374,8 +380,19 @@ every header text button is `headerBtnSx` / `headerBtnDangerSx` (Delete Version,
 Template) / `headerBtnPrimarySx` (Save) inside a `headerActionsSx` row. The header version
 `Select` is hand-styled to the same 32px height as those buttons.
 
-The same module dresses the Template Sandbox, so the two tools stay one visual system. Its
-sizing contract — why palette buttons can never shrink, why every one of them carries a `<span>`
+The same module dresses the Template Sandbox, so the two tools stay one visual system.
+
+**A third consumer, and it takes only half:** the immersive world's scene editor
+(`src/features/immersiveworld/IWSceneMapPanel.tsx`,
+[IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 12 phase 1d) imports `PaletteButton`,
+`toolGroupSx` and the hotkey badge — and reuses this editor's KEY ASSIGNMENTS too, so
+`Q`/`W` still paint street/communal and `S`/`D`/`F` still paint decor over there. It
+deliberately does **not** import `headerBtnSx` and friends: those exist to float a button
+over a dark Pixi scene, and the iw editor's toolbar sits on the app's ordinary paper ground
+under a normal `LeafPage` header. **Palette chrome is shared; page chrome is not** — that is
+the line to hold if a fourth tool appears.
+
+Its sizing contract — why palette buttons can never shrink, why every one of them carries a `<span>`
 wrapper, and why nothing here uses MUI's `contained` variant — is documented once in
 [NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md) § Shared toolbar chrome.
 

@@ -8,8 +8,40 @@
  * by prefill and queueing, not by decode, so a leaderboard's tok/s column is nearly
  * irrelevant to us and its TTFT column was measured on the wrong prompt.
  *
- * Referenced by: run.js, docs/IMMERSIVE_WORLD.md § 6a.
+ * Referenced by: run.js, character-run.js, docs/IMMERSIVE_WORLD.md § 6a.
+ *
+ * ⚠️ THIS FILE IMPORTS TYPESCRIPT (`contracts/iw.ts`), so every entry point that pulls it
+ * in must run under `tsx`, not bare `node`. That is the price of the 2026-09-05 fix below,
+ * and it is worth paying.
  */
+
+/**
+ * The action vocabulary the bench offers the model.
+ *
+ * ⚠️ REWRITTEN 2026-09-05, twice in one day, and the second rewrite is the interesting one.
+ *
+ * First it was fixed to derive from `IW_ACTIONS` instead of a hand-typed list that had
+ * drifted four verbs behind the contract. Then `IW_ACTIONS` was DELETED outright (§ 14 Q42):
+ * an NPC no longer picks a primitive verb, it picks one of the **authored actions** written
+ * for it in that scene, by name. There is no global list to derive from any more — the
+ * vocabulary is per NPC and per scene.
+ *
+ * So the bench now takes the offered names from the probe context (`npcProbes.js`), which is
+ * the right shape anyway: what 王婶 can do at a noodle stall is not what 老周 can do on a
+ * folding stool, and a shared list was always measuring a fiction.
+ *
+ * `none` is always offered and is not authored — an NPC must be able to decline to act, and
+ * under the old design that was `idle`.
+ */
+export const NO_ACTION = 'none';
+
+/** Offered when a probe context names no actions of its own. */
+export const DEFAULT_BENCH_ACTIONS = [NO_ACTION];
+
+const actionsFor = (ctx) => {
+  const authored = Array.isArray(ctx?.actions) ? ctx.actions : [];
+  return [NO_ACTION, ...authored.filter((a) => a && a !== NO_ACTION)];
+};
 
 /**
  * Layer 1 — frozen rules of the world. Identical for every NPC, so it is the cache prefix.
@@ -91,13 +123,13 @@ Reply with the JSON object now.`;
  */
 export const FORMATS = {
   json: {
-    contract: `REPLY CONTRACT — you always reply with exactly one JSON object and nothing else:
-{"say": string, "action": {"kind": string, "target": string|null}, "emote": string}
+    contract: (actions) => `REPLY CONTRACT — you always reply with exactly one JSON object and nothing else:
+{"say": string, "action": string, "emote": string}
 
 - "say" is what you speak aloud, in Simplified Chinese. It MUST come first in the object.
   Keep it under 12 characters. It may be "" if you choose to act without speaking.
-- "action".kind is one of exactly: "idle", "walk_to_actor", "walk_away_from",
-  "walk_to_item", "give_item", "face", "follow". "target" is the id it applies to, or null.
+- "action" is the NAME of one thing you can do, exactly as written here, or "${NO_ACTION}":
+  ${actions.map(a => `"${a}"`).join(', ')}.
 - "emote" is one of: "neutral", "curious", "pleased", "confused", "impatient", "amused".
 - Output raw JSON. Do NOT wrap it in a markdown code fence.`,
     closer: 'Reply with the JSON object now.',
@@ -132,40 +164,39 @@ export const FORMATS = {
       const fenced = m[0].length !== raw.trim().length;
       try {
         const o = JSON.parse(m[0]);
-        return { say: o.say, actionKind: o.action?.kind, emote: o.emote, sayFirst: Object.keys(o)[0] === 'say', notes: fenced ? ['fenced'] : [] };
+        // `action` is a NAME now, not a {kind,target} pair — an authored action already
+        // knows its own targets, so the model never supplies one. The `?.kind` fallback
+        // reads a model that emitted the old shape anyway.
+        const action = typeof o.action === 'string' ? o.action : o.action?.kind;
+        return { say: o.say, actionKind: action, emote: o.emote, sayFirst: Object.keys(o)[0] === 'say', notes: fenced ? ['fenced'] : [] };
       } catch { return { notes: ['parse failed'] }; }
     },
   },
 
   schema: {
-    contract: `REPLY CONTRACT — reply with one object: "say" (the Chinese you speak, under 12
-characters, or ""), "action" (kind + target), "emote". "say" must come first.`,
+    contract: () => `REPLY CONTRACT — reply with one object: "say" (the Chinese you speak, under 12
+characters, or ""), "action" (the name of one thing you can do, or "${NO_ACTION}"), "emote".
+"say" must come first.`,
     closer: 'Reply now.',
     sayIndex: (text) => FORMATS.json.sayIndex(text),
     sayEndIndex: (text) => FORMATS.json.sayEndIndex(text),
-    parse: (raw) => FORMATS.json.parse(raw),
+    parse: (raw, actions = DEFAULT_BENCH_ACTIONS) => FORMATS.json.parse(raw, actions),
     /** Providers that support it get an API-enforced schema (Anthropic output_config.format). */
     jsonSchema: {
       type: 'object', additionalProperties: false, required: ['say', 'action', 'emote'],
       properties: {
         say: { type: 'string' },
-        action: {
-          type: 'object', additionalProperties: false, required: ['kind', 'target'],
-          properties: {
-            kind: { type: 'string', enum: ['idle', 'walk_to_actor', 'walk_away_from', 'walk_to_item', 'give_item', 'face', 'follow'] },
-            target: { type: ['string', 'null'] },
-          },
-        },
+        action: { type: 'string' },
         emote: { type: 'string', enum: ['neutral', 'curious', 'pleased', 'confused', 'impatient', 'amused'] },
       },
     },
   },
 
   lines: {
-    contract: `REPLY CONTRACT — reply with exactly three lines, nothing else, no markdown:
+    contract: (actions) => `REPLY CONTRACT — reply with exactly three lines, nothing else, no markdown:
 Line 1: the Chinese you speak aloud, under 12 characters (or the single word NOTHING).
-Line 2: one action — one of: idle | walk_to_actor <id> | walk_away_from <id> |
-        walk_to_item <id> | give_item <itemId> <actorId> | face <id> | follow <id>
+Line 2: the NAME of one thing you can do, exactly as written, or ${NO_ACTION}:
+        ${actions.join(' | ')}
 Line 3: one emote — one of: neutral | curious | pleased | confused | impatient | amused
 Start line 1 immediately with the Chinese character. No preamble, no labels, no quotes.`,
     closer: 'Reply now.',
@@ -184,7 +215,7 @@ Start line 1 immediately with the Chinese character. No preamble, no labels, no 
      * a line that is a legal emote. Scanning rather than indexing is what survives an
      * inserted blank line or a stray label. Every step has a default, so this cannot throw.
      */
-    parse: (raw) => {
+    parse: (raw, actions = DEFAULT_BENCH_ACTIONS) => {
       const trimmed = raw.trim();
       // Shape sniff: a model that decided to emit JSON anyway is still usable, and this is
       // ~3 lines of insurance against the one realistic drift.
@@ -201,14 +232,16 @@ Start line 1 immediately with the Chinese character. No preamble, no labels, no 
       if (say !== lines[0]) notes.push('stripped label/quotes');
       if (say === 'NOTHING') say = '';
       const rest = lines.slice(1);
-      const actionLine = rest.find(l => ACTION_KINDS.has(l.split(/\s+/)[0]));
+      // An action is now a NAME, and a name may contain spaces ("bring water"), so the
+      // whole line is matched rather than its first token.
+      const actionLine = rest.find(l => actions.includes(l));
       const emoteLine = rest.find(l => EMOTE_KINDS.has(l));
-      if (!actionLine) notes.push('no legal action line → idle');
+      if (!actionLine) notes.push(`no legal action line → ${NO_ACTION}`);
       if (!emoteLine) notes.push('no legal emote line → neutral');
       if (rest.length > 2) notes.push('extra lines');
       return {
         say,
-        actionKind: actionLine ? actionLine.split(/\s+/)[0] : 'idle',
+        actionKind: actionLine ?? NO_ACTION,
         emote: emoteLine ?? 'neutral',
         sayFirst: true, // structurally guaranteed by the format
         notes,
@@ -217,7 +250,6 @@ Start line 1 immediately with the Chinese character. No preamble, no labels, no 
   },
 };
 
-export const ACTION_KINDS = new Set(['idle', 'walk_to_actor', 'walk_away_from', 'walk_to_item', 'give_item', 'face', 'follow']);
 export const EMOTE_KINDS = new Set(['neutral', 'curious', 'pleased', 'confused', 'impatient', 'amused']);
 
 /**
@@ -240,14 +272,17 @@ export function buildScenario(formatKey, turn = null, ctx = {}) {
   const fmt = FORMATS[formatKey];
   if (!fmt) throw new Error(`unknown format ${formatKey} (have: ${Object.keys(FORMATS).join(', ')})`);
   const npcBlock = ctx.npc ?? NPC;
+  const actions = actionsFor(ctx);
   const user = turn
     ? buildTurnState(turn, fmt, ctx)
     : TURN_STATE.replace('Reply with the JSON object now.', fmt.closer);
   return {
-    system: `${RULES_STEM.replace('__CONTRACT__', fmt.contract)}\n\n${npcBlock}`,
+    system: `${RULES_STEM.replace('__CONTRACT__', fmt.contract(actions))}\n\n${npcBlock}`,
     user,
     maxTokens: 200,
     format: fmt,
+    /** What was offered — `gradeReply` must be given the same list or it grades a fiction. */
+    actions,
   };
 }
 
@@ -286,8 +321,8 @@ const DEFAULT_NEARBY = ['player "player" at 2 tiles, facing you', 'npc_li at 7 t
  * asks the question the bench actually cares about: did the model supply a legal action, or
  * did we paper over it? Report the second, not the first.
  */
-export function gradeReply(formatKey, raw) {
-  const parsed = FORMATS[formatKey].parse(raw);
+export function gradeReply(formatKey, raw, actions = DEFAULT_BENCH_ACTIONS) {
+  const parsed = FORMATS[formatKey].parse(raw, actions);
   const say = typeof parsed.say === 'string' ? parsed.say : '';
   const notes = parsed.notes ?? [];
   const defaulted = notes.some(n => n.startsWith('no legal action') || n.startsWith('no legal emote'));
@@ -295,10 +330,10 @@ export function gradeReply(formatKey, raw) {
     parsed: parsed.actionKind !== undefined,
     say,
     sayFirst: !!parsed.sayFirst,
-    legalAction: ACTION_KINDS.has(parsed.actionKind),
+    legalAction: actions.includes(parsed.actionKind),
     legalEmote: EMOTE_KINDS.has(parsed.emote),
     /** True only when the MODEL produced both lines legally — no parser rescue involved. */
-    cleanAction: ACTION_KINDS.has(parsed.actionKind) && EMOTE_KINDS.has(parsed.emote) && !defaulted,
+    cleanAction: actions.includes(parsed.actionKind) && EMOTE_KINDS.has(parsed.emote) && !defaulted,
     rescued: defaulted || notes.some(n => n.includes('JSON, not lines') || n.startsWith('stripped')),
     // An empty utterance is legal (an NPC may act without speaking); a non-empty one must be Chinese.
     chinese: say === '' || /[一-鿿]/.test(say),

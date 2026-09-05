@@ -111,6 +111,42 @@ implementation: `src/games/bubble-match/BubbleMatchPage.tsx`.
 
 ---
 
+## Edge fade (every scrollable surface)
+
+Nothing in the app is allowed to be *sliced* by the edge of its scroll area — content
+dissolves into that edge instead, at **both** the top and the bottom. The mechanism is
+always a CSS **mask** anchored to the scroller's own box (not to the scrolled content),
+so the bands stay parked at the edges while the content moves between them. There are two
+mask families, and which one a surface wears depends on whether the floating footer bar is
+over it:
+
+| Surface | Top band | Bottom band | Constant |
+|---|---|---|---|
+| A **page** (footer bar floats over the scroll area) | 28px | 34px ending on the bar's top edge, plus a fully-transparent run for the bar's own height | `EDGE_FADE_MASK` / `EDGE_FADE_MASK_NO_TOP` — `src/components/MobileTabScreen.tsx` |
+| A **sheet or panel** (no footer: a modal sheet holds `useHideFooter` for its lifetime) | 20px | 24px ending at the surface's own bottom edge | `SHEET_EDGE_FADE_MASK` / `sheetEdgeFadeSx` — `src/components/sheet/sheetStyled.ts` |
+
+Only the **bottom** differs in kind. A page reserving the footer's height makes sense; a
+*panel* doing it spends ~164px of the surface on emptiness, which is why the two families
+exist (see docs/DECKS_FEATURE.md for the case that forced the split). The panel's bands are
+the page's 28/34 scaled down, keeping the same top-is-slightly-shorter proportion.
+
+A surface may drop its top band deliberately — `MobileTabScreen`'s `topFade={false}` /
+`EDGE_FADE_MASK_NO_TOP`, and the panel-side `SHEET_EDGE_FADE_MASK_NO_TOP` — when its first
+row must stay solid. No panel does today.
+
+Panels wearing the sheet band: `DecksPanelBody` (its `"sheet"` variant — the `"page"`
+variant is a page and takes the page band), `SheetBody` (so any future `SheetPanel` body
+gets it for free), `InfoCardPanelBody` (per tab pane — each eip pane is its own scroller,
+so each fades independently), and `ChallengeSheet`'s scroller (its words dissolve into
+the pinned action bar below rather than stopping dead against it).
+
+⚠️ **A mask clips its whole rendered subtree, `position: fixed` descendants included.**
+Never put one of these on a box that hosts an overlay — that is the bug documented in
+`src/components/overlayHost.ts` (the challenge sheet's vanished Send button). Portal the
+overlay out with `nearestOverlayHost` first.
+
+---
+
 ## Scroll stretch (elastic card spacing)
 
 Every list of **preview cards** behaves as though it were laid on a sheet of **elastic
@@ -274,10 +310,19 @@ picks up its new one.
 ## Safe areas and the iOS status bar
 
 **The band behind the clock is PAGE PIXELS.** `index.html` ships
-`viewport-fit=cover`, so the web view paints edge to edge — under the status bar at
+`viewport-fit=cover` **and** `apple-mobile-web-app-status-bar-style:
+black-translucent`, so the web view paints edge to edge — under the status bar at
 the top and under the home indicator at the bottom — and whatever surface is on
 screen colours those strips. A game's accent ground runs all the way up behind the
 clock; a paper page keeps the strip paper.
+
+⚠️ **It takes BOTH tags, and the second one is the load-bearing half.** A first
+attempt (2026-09) shipped `viewport-fit=cover` alone with the style left at
+`default` and did **not** work: in a home-screen web app, `default` (and `black`)
+keep the view letterboxed below an opaque OS-painted bar no matter what
+`viewport-fit` says, `env(safe-area-inset-top)` resolves to `0px`, and every
+`SAFE_TOP` consumer below silently contributes nothing. `black-translucent` is the
+only value that actually extends the view under the bar.
 
 ### Why it had to work this way
 
@@ -290,7 +335,7 @@ one place that matters:
 | iOS Safari tab | The browser, from `theme-color` | ✅ |
 | **iOS home-screen web app** | **Nobody, now — it is page pixels** | ❌ and never did |
 
-Before `viewport-fit=cover` the standalone web view was **letterboxed inside the safe
+Before `black-translucent` the standalone web view was **letterboxed inside the safe
 area**, and iOS filled the letterbox itself using the document background it captured
 **when the app launched**. Every runtime write — the meta tag, `documentElement`'s
 background — was ignored, so the strip stayed paper-white forever, on games and on
@@ -303,10 +348,13 @@ Two consequences worth knowing:
   added to the Home Screen.** Changing them does nothing to an already-installed
   icon — it has to be deleted and re-added. A fix here that "didn't work" is usually
   this.
-- `apple-mobile-web-app-status-bar-style` stays **`default`** (dark system glyphs).
-  `black-translucent` forces light glyphs, which disappear on every paper-white page
-  — the app has one light palette (shelf redesign D4), so there is no style that
-  suits both a dark game ground and paper. Dark glyphs are the safe half.
+- `apple-mobile-web-app-status-bar-style` is **`black-translucent`**, which is the
+  price of controlling the band at all: the app no longer picks the GLYPH colour. On
+  iOS 13+ the clock/battery follow the **system appearance**, so a device in dark mode
+  draws light glyphs over the app's paper-white pages (the app has one light palette —
+  shelf redesign D4 — so it cannot follow along). If that reads badly in practice the
+  answer is a dark top band on light pages, **not** a return to `default`, which
+  cannot colour the band at all.
 
 ### Who absorbs the insets
 

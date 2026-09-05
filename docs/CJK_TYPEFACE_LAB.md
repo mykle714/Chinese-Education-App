@@ -87,17 +87,30 @@ before the preference has loaded.
 Setting `--cjk-font` on any element re-faces every Chinese glyph beneath it, because
 all 11 `FONTS.cjk` call sites read the same token. No component takes a font prop.
 
-**Three writers, in precedence order:**
+**One writer, and one fallback:**
 
-1. `src/theme/cjkFontOverride.ts` — the dev lab's "Use app-wide". **Wins while set**;
-   `useChineseFont` checks `hasCjkFontOverride()` and stands down rather than trading
-   writes to the same property. Dev-only.
-2. `src/hooks/useChineseFont.ts` — the signed-in account's preference. The real one.
-3. Nothing — the `var()` fallback. Signed out, or before the user loads.
+1. `src/hooks/useChineseFont.ts` — the signed-in account's preference. The only code
+   anywhere that sets `--cjk-font` on `:root`.
+2. Nothing — the `var()` fallback. Signed out, or before the user loads.
+
+> ⚠️ **There used to be a second writer, and it was a bug.** `src/theme/cjkFontOverride.ts`
+> backed the lab's dev-only "Use app-wide" control and **outranked** the account
+> preference: `useChineseFont` called `hasCjkFontOverride()` and stood down whenever the
+> `cjkFontOverride` localStorage key was set. One forgotten override therefore pinned the
+> app's face forever, and the settings picker saved correctly while appearing to do
+> nothing — with no signal at either end. Both the module and the control were **deleted
+> on 2026-09-05**. Any stale `cjkFontOverride` / `labelFontOverride` key is now inert:
+> nothing reads it, and it clears itself on the next reload because the property was only
+> ever an inline style. **Do not reintroduce a second writer of `--cjk-font`.** A future
+> preview mechanism should either go through the account setting or announce itself in
+> settings, rather than winning silently.
 
 **Code:** `src/theme/fonts.ts` → `FONTS.cjk`.
 
-### What the override does and does not reach
+### What a scoped `--cjk-font` does and does not reach
+
+Still relevant: the lab sets `--cjk-font` per COLUMN, and the account preference sets it
+at `:root`. This is what each reaches.
 
 | Path | Reached by a scoped override? | Why |
 |---|---|---|
@@ -185,18 +198,23 @@ In each column head: the face's typographic class, source, licence, and a measur
 > The number is advisory: canvas `measureText` silently falls back to another family
 > when the requested one has not loaded, which shows up as a suspiciously exact 1.000.
 
-### Two controls that are NOT the same thing
+### Pin — the lab's only persisted state
 
-They used to share the word "pin", which was the source of a real misunderstanding.
-They differ in kind:
+| | **Pin** (many) |
+|---|---|
+| What it does | Marks a face as still in the running |
+| Scope | `/font-lab` only — pure bookkeeping |
+| How many | Any number |
+| Storage | `fontLabPinned` (a JSON id array) |
+| Code | `src/pages/fontLab/pinned.ts` |
 
-| | **Pin** (many) | **Use app-wide** (one) |
-|---|---|---|
-| What it does | Marks a face as still in the running | Sets `--cjk-font` on `:root` |
-| Scope | `/font-lab` only — pure bookkeeping | The whole app: flp, games, reader |
-| How many | Any number | Exactly one, or none |
-| Storage | `fontLabPinned` (a JSON id array) | `cjkFontOverride` + `cjkFontOverrideHref` |
-| Code | `src/pages/fontLab/pinned.ts` | `src/theme/cjkFontOverride.ts` |
+This section used to describe a second control, **Use app-wide**, which set `--cjk-font`
+on `:root` and re-faced the whole app. The two shared the word "pin" and were a standing
+source of misunderstanding; the app-wide half was deleted on 2026-09-05 (see the callout
+in § "the `--cjk-font` token" above). **The lab can no longer change what the app renders
+in** — the face is chosen only in account settings. The practical consequence is that a
+`selectable: false` face can be judged only on these specimens, never on flp or a game,
+which is an acceptable trade for a control that could silently break the real setting.
 
 **Pin** persists a shortlist. The toolbar's **📌 Show pinned (n)** opens every pinned
 face as a column in the shortlist's own order, and the page seeds its columns from the
@@ -205,11 +223,6 @@ that the two diverge freely: opening a column does not pin it, and unpinning doe
 close it; "Show pinned" is the explicit way to re-sync them. Pinned ids, not family
 names, are stored, so a renamed or re-sourced face in `candidates.ts` invalidates
 cleanly rather than pinning a family that no longer loads.
-
-**Use app-wide** is single by necessity — the app has one CJK face. It also injects the
-stylesheet the face needs, and `restoreCjkFontOverride()` re-applies it on boot from
-`src/main.tsx` behind `import.meta.env.DEV`, the same shape as the existing `perfDiag`
-opt-in. Turning it off clears both keys and the injected `<link>`.
 
 ### Height note (why `100dvh`, not `100%`)
 

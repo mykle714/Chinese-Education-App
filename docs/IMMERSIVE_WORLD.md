@@ -2257,11 +2257,21 @@ feature is worth building.
 > § 14 Q7 deadline (first glyph, not `sayDone`) and the rung-1 model question (§ 5.5). Both
 > are written up where they were decided.
 
-**Kill condition:** the ~1.2 s to first glyph reads as lag even behind the walk-over
-animation (§ 6.4).
+**Performance target:** the ~1.2 s to first glyph must not read as lag behind the walk-over
+animation (§ 6.4). Missing it is a **bug with a fix**, not a reason to stop — § 6.2 lists the
+levers in the order to pull them, and lever 3 (hide it behind animation) is already mandatory.
 
-> **The "isn't fun for 60 seconds" clause was removed (2026-09-06, by the author.)** It used
-> to lead this line. Phase 2's kill condition is now the objective one only.
+**Kill condition: none.** Both halves of the original line were removed on 2026-09-06 — the
+subjective one ("talking to it isn't fun for 60 seconds") by the author, and the latency one
+because it never was a kill condition: it names something you engineer your way out of, which
+is the opposite of the test.
+
+> ⚠️ **So phase 2 is the one phase that cannot fail**, against § 12's own header rule. That is
+> a deliberate state, not an oversight — but it does mean nothing in this plan now asks whether
+> the core idea is worth continuing, and phase 2's goal statement still claims to be "the phase
+> that decides whether the feature is worth building". If a real kill condition is wanted, it
+> has to be something no lever fixes; latency, cost and character fidelity all have levers, and
+> the only untunable question phase 2 actually answers is whether the thing is worth playing.
 
 - **The world:** player avatar as a `PedestrianAgent` with `PlayerControlled` movement (§ 3);
   **tap-to-move** on `streetGraph.planPath` with padded hit areas and near-miss tolerance

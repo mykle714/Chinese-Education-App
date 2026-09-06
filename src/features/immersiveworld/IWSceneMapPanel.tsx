@@ -389,10 +389,24 @@ export default function IWSceneMapPanel({
         markers={markers}
       />
 
-      {/* Left tool palette — same position, spacing and row order as the template editor. */}
+      {/* Left tool palette — same position, spacing and row order as the template editor.
+          `pointerEvents: 'none'` on the FRAME, re-enabled on each button group: the palette is
+          a DOM overlay ON TOP of the Pixi canvas, and Pixi binds `pointerdown` to the canvas
+          element while it hears `pointermove` from the document. So any part of this box that
+          covers the board — the gaps between rows, the empty space beside a short row —
+          swallowed the press that starts an edit while still letting a drag that began
+          elsewhere paint straight through it. That asymmetry is exactly what it looked like
+          from the author's chair: bodies and places could only be PLACED in the part of the
+          board the palette does not cover, and reaching the rest meant clicking there and
+          dragging across (2026-09-05). */}
       <Box
         className="iw-scene-map-panel__palette"
-        sx={{ position: 'absolute', top: 16, left: 16, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}
+        sx={{
+          position: 'absolute', top: 16, left: 16, zIndex: 10,
+          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1,
+          pointerEvents: 'none',
+          '& .iw-scene-tool-group': { pointerEvents: 'auto' },
+        }}
       >
         {/* Row 1 — PLACES, one button per named place, spanning the top of the board.
             First because a place is what an authored action points at: the tags are the
@@ -527,12 +541,14 @@ export default function IWSceneMapPanel({
 
       <Typography
         className="iw-scene-map-panel__hint"
-        sx={{ position: 'absolute', bottom: 8, left: 16, color: 'rgba(255,255,255,0.6)', fontSize: 12 }}
+        // Same reason as the palette above: a caption must never eat the click that would
+        // place a body on the cells behind it.
+        sx={{ position: 'absolute', bottom: 8, left: 16, color: 'rgba(255,255,255,0.6)', fontSize: 12, pointerEvents: 'none' }}
       >
         {isPlaceTool(activeTool)
           ? 'Click a cell to stand this body there.'
           : decorCategoryFor(activeTool)
-          ? 'Drag to paint. Space cycles the prop under the cursor. The eraser removes the active tool’s own layer.'
+          ? 'Drag to paint. Space cycles which prop the cursor’s ghost will place. The eraser removes the active tool’s own layer.'
           : 'Drag to paint. The eraser removes the active tool’s own layer.'}
       </Typography>
     </Box>

@@ -25,6 +25,7 @@
  * See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md finding 3.
  */
 import { apiPost } from './http';
+import { playMarkArpeggio } from '../services/audio/markArpeggio';
 import type { MarkType, ReviewMark, VocabEntry } from '../types';
 
 /**
@@ -129,8 +130,20 @@ export interface MarkFlashcardResponse {
  * every caller picks it up.
  */
 export async function markFlashcard(
-    request: MarkFlashcardRequest
+    request: MarkFlashcardRequest,
+    options?: MarkFlashcardOptions
 ): Promise<MarkFlashcardResponse> {
+    // Fired HERE, at the app's one mark chokepoint, so every current and future
+    // mark surface sounds the same without wiring anything up — and fired BEFORE
+    // the request, for two reasons that both matter on a phone: the learner hears
+    // the note with no network round-trip in the way, and the call is still inside
+    // the tap's user-gesture stack, which is the only place iOS will start audio.
+    //
+    // Consequence: the sound follows the ANSWER, not the stored mark. A mark the
+    // server drops for cooldown (`suppressed`) still sounds correct, which is
+    // right — the learner did get it right. See docs/AUDIO_PLAYBACK.md § 6.
+    if (!options?.silent) playMarkArpeggio(request.isCorrect);
+
     const data = await apiPost<Partial<MarkFlashcardResponse>>('/api/flashcards/mark', {
         cardId: request.cardId,
         isCorrect: request.isCorrect,
@@ -163,6 +176,29 @@ export async function markFlashcard(
         markType: data.markType ?? request.type,
         displacedMark: data.displacedMark ?? null,
     };
+}
+
+/**
+ * Client-only knobs. Deliberately a SECOND parameter rather than a field on
+ * `MarkFlashcardRequest`, so it is obvious at a glance that none of this reaches
+ * the server — the request interface above is the wire contract, this is not.
+ */
+export interface MarkFlashcardOptions {
+    /**
+     * Suppress the answer-feedback arpeggio for this call.
+     *
+     * Set it whenever a call does NOT correspond to a fresh answer the learner is
+     * waiting to hear about, because the sound is one-per-answer and the ladder
+     * advances on every note it plays. Two such cases exist today:
+     *
+     *   - the flp working loop RETRIES a failed mark up to three times with
+     *     backoff; the learner swiped once and must hear one note, not four,
+     *   - Word Search's "No Pinyin" board posts the same find on two mastery
+     *     tracks (see `WordSearchPage` -> `markWordFound`); one find, one note.
+     *
+     * A batching caller that forgets this plays a chord and skips up the ladder.
+     */
+    silent?: boolean;
 }
 
 /** Payload for reverting the most recent mark on a card. */

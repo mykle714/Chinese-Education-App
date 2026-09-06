@@ -33,6 +33,7 @@ import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
+import { useMarkArpeggio } from "../../hooks/useMarkArpeggio";
 
 /**
  * Hydra Bubbles — page shell + run state machine (docs/HYDRA_BUBBLES.md).
@@ -64,6 +65,9 @@ const HydraBubblesPage: React.FC = () => {
     // An edge swipe mid-drag would navigate away; CSS touch-action cannot stop the
     // history gesture, so it is blocked at the touch-event layer.
     useBlockEdgeSwipe(true);
+    // Start (and leave) this screen on the low C: the answer-feedback arpeggio
+    // describes a streak within one surface (src/services/audio/markArpeggio.ts).
+    useMarkArpeggio();
 
     const [phase, setPhase] = useState<HydraPhase>("loading");
     const [blockMessage, setBlockMessage] = useState("");

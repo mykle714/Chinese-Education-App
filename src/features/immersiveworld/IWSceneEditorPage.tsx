@@ -60,8 +60,11 @@ export default function IWSceneEditorPage() {
   const [npcs, setNpcs] = useState<IWNpcOption[]>([]);
   const [activeTool, setActiveTool] = useState<IWEditorTool>('terrain1');
   const [eraseMode, setEraseMode] = useState(false);
+  // What the validator last said about the open scene. Usually WARNINGS from a save that
+  // SUCCEEDED (2026-09-05) — the editor no longer refuses a half-built scene — and only in
+  // the structural cases the complaints that refused one.
   const [problems, setProblems] = useState<IWSceneProblem[]>([]);
-  const [status, setStatus] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const [status, setStatus] = useState<{ kind: 'error' | 'warning' | 'success'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   /** Field path → the first complaint about it, for inline marking in the panels. */
@@ -125,20 +128,28 @@ export default function IWSceneEditorPage() {
   const handleSave = useCallback(async () => {
     setBusy(true);
     try {
-      const saved = await saveScene(draft.toPayload());
+      // The save SUCCEEDS with an unfinished scene and hands back what is still wrong with
+      // it. Authoring happens over several sittings, so "saved" and "ready to play" are two
+      // different states and the editor reports them as such.
+      const { scene: saved, warnings } = await saveScene(draft.toPayload());
       draft.markSaved(saved);
-      setProblems([]);
-      setStatus({ kind: 'success', text: `Saved “${saved.name}”.` });
+      setProblems(warnings);
+      setStatus(warnings.length > 0
+        ? {
+          kind: 'warning',
+          text: `Saved “${saved.name}” with ${warnings.length} warning${warnings.length === 1 ? '' : 's'} — fix ${warnings.length === 1 ? 'it' : 'them'} before publishing.`,
+        }
+        : { kind: 'success', text: `Saved “${saved.name}”.` });
       void refreshScenes();
     } catch (error) {
-      // A refused save carries EVERY field complaint, so the author fixes them in one pass
-      // rather than one save round-trip per error.
+      // Only a STRUCTURAL fault gets here (a blank name, a broken board) — and it still
+      // carries EVERY such complaint at once, so the author fixes them in one pass.
       const found = problemsFromError(error);
       setProblems(found);
       setStatus({
         kind: 'error',
         text: found.length > 0
-          ? `${found.length} problem${found.length === 1 ? '' : 's'} to fix before this scene can be saved.`
+          ? `This scene cannot be saved in this shape — ${found.length} thing${found.length === 1 ? '' : 's'} to fix first.`
           : errorMessage(error, 'Failed to save scene'),
       });
     } finally {
@@ -262,7 +273,7 @@ export default function IWSceneEditorPage() {
       {status && (
         <Alert
           className="iw-scene-editor-page__status"
-          severity={status.kind === 'error' ? 'error' : 'success'}
+          severity={status.kind}
           onClose={() => setStatus(null)}
           sx={{ borderRadius: 0, flex: '0 0 auto' }}
         >

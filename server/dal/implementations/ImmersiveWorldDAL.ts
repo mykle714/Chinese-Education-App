@@ -19,12 +19,12 @@ import { ValidationError } from '../../types/dal.js';
  */
 
 /** Every column of an `iw_scenes` row, in the order the row type expects. */
-const SCENE_COLUMNS = `id, language, name, published,
+const SCENE_COLUMNS = `id, language, name, published, "sceneNotes",
   "completerNpcId", "completionAction",
   "playerStartCol", "playerStartRow", "playerStartFacing",
   "companionStartCol", "companionStartRow", "companionStartFacing",
   width, height,
-  layout, "npcCast", complications, conversations,
+  layout, "npcCast", complications, events, conversations,
   "createdAt", "updatedAt"`;
 
 /** The scene as Postgres hands it back — jsonb arrives parsed, timestamps as Date. */
@@ -33,6 +33,7 @@ interface SceneRow {
   language: 'zh' | 'es';
   name: string;
   published: boolean;
+  sceneNotes: string;
   completerNpcId: string;
   completionAction: string;
   playerStartCol: number;
@@ -46,6 +47,7 @@ interface SceneRow {
   layout: unknown;
   npcCast: unknown;
   complications: unknown;
+  events: unknown;
   conversations: unknown;
   createdAt: Date;
   updatedAt: Date;
@@ -85,6 +87,9 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
       language: row.language,
       name: row.name,
       published: row.published,
+      // Defaulted like the jsonb blobs, and for the same reason: a row written before the
+      // column existed (migration 160) must not hand the editor an `undefined` text field.
+      sceneNotes: row.sceneNotes ?? '',
       completerNpcId: row.completerNpcId,
       completionAction: row.completionAction as IWScene['completionAction'],
       playerStartCol: row.playerStartCol,
@@ -100,6 +105,8 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
       },
       npcCast: (row.npcCast as IWScene['npcCast']) ?? [],
       complications: (row.complications as IWScene['complications']) ?? [],
+      // Defaulted like every other blob: a scene authored before migration 161 has no events.
+      events: (row.events as IWScene['events']) ?? [],
       conversations: (row.conversations as IWScene['conversations']) ?? [],
       createdAt: row.createdAt?.toISOString(),
       updatedAt: row.updatedAt?.toISOString(),
@@ -112,6 +119,7 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
       scene.language,
       scene.name.trim(),
       scene.published === true,
+      typeof scene.sceneNotes === 'string' ? scene.sceneNotes : '',
       scene.completerNpcId,
       scene.completionAction,
       scene.playerStartCol,
@@ -125,6 +133,7 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
       JSON.stringify(scene.layout ?? {}),
       JSON.stringify(scene.npcCast ?? []),
       JSON.stringify(scene.complications ?? []),
+      JSON.stringify(scene.events ?? []),
       JSON.stringify(scene.conversations ?? []),
     ];
   }
@@ -170,13 +179,13 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
     const { rows } = await this.run<SceneRow>(client, (c) =>
       c.query(
         `INSERT INTO iw_scenes (
-           language, name, published,
+           language, name, published, "sceneNotes",
            "completerNpcId", "completionAction",
            "playerStartCol", "playerStartRow", "playerStartFacing",
            "companionStartCol", "companionStartRow", "companionStartFacing",
            width, height,
-           layout, "npcCast", complications, conversations
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+           layout, "npcCast", complications, events, conversations
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
          RETURNING ${SCENE_COLUMNS}`,
         this.sceneParams(scene)
       )
@@ -189,12 +198,13 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
     const { rows } = await this.run<SceneRow>(client, (c) =>
       c.query(
         `UPDATE iw_scenes SET
-           language = $2, name = $3, published = $4,
-           "completerNpcId" = $5, "completionAction" = $6,
-           "playerStartCol" = $7, "playerStartRow" = $8, "playerStartFacing" = $9,
-           "companionStartCol" = $10, "companionStartRow" = $11, "companionStartFacing" = $12,
-           width = $13, height = $14,
-           layout = $15, "npcCast" = $16, complications = $17, conversations = $18,
+           language = $2, name = $3, published = $4, "sceneNotes" = $5,
+           "completerNpcId" = $6, "completionAction" = $7,
+           "playerStartCol" = $8, "playerStartRow" = $9, "playerStartFacing" = $10,
+           "companionStartCol" = $11, "companionStartRow" = $12, "companionStartFacing" = $13,
+           width = $14, height = $15,
+           layout = $16, "npcCast" = $17, complications = $18, events = $19,
+           conversations = $20,
            "updatedAt" = NOW()
          WHERE id = $1
          RETURNING ${SCENE_COLUMNS}`,

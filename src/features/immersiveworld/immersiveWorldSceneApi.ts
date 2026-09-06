@@ -27,10 +27,18 @@ import type {
 
 export type { IWNpcOption, IWScene, IWSceneFloor, IWSceneLayout, IWSceneSummary };
 
-/** One field-level problem from a refused save, so the editor can mark up the field. */
+/**
+ * One field-level complaint from the server's scene validator, so the editor can mark up the
+ * field. Mirrors `IWSceneProblem` in `server/services/iw/sceneValidation.ts`.
+ *
+ * It arrives on either of two paths, and the `severity` says which: `'error'` means the save
+ * was REFUSED (a structural fault the row cannot hold — a blank name, a broken board), and
+ * anything else is a WARNING that came back with a scene that saved fine.
+ */
 export interface IWSceneProblem {
   field: string;
   message: string;
+  severity?: 'error' | 'warning';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,16 +166,18 @@ export async function checkSceneNameAvailable(
 /**
  * Create (no `id`) or overwrite (`id` present) one scene.
  *
- * A refused save throws an ApiError whose body carries `problems` — every field-level
- * complaint at once, because fixing a scene one error per round trip is the tool being
- * annoying in exactly the way phase 1's kill condition describes.
+ * Resolves with the stored scene AND the validator's `warnings` — a save SUCCEEDS with a
+ * half-built scene (2026-09-05), so "saved" and "finished" are two different answers and the
+ * caller gets both. Only a structural fault throws, and that ApiError's body carries
+ * `problems` — every field-level complaint at once, because fixing a scene one error per
+ * round trip is the tool being annoying in exactly the way phase 1's kill condition describes.
  */
-export async function saveScene(scene: IWScene): Promise<IWScene> {
+export async function saveScene(scene: IWScene): Promise<{ scene: IWScene; warnings: IWSceneProblem[] }> {
   const data = await withFallback(
-    apiPost<{ scene: IWScene }>('/api/immersiveWorld/scenes', { scene }),
+    apiPost<{ scene: IWScene; warnings?: IWSceneProblem[] }>('/api/immersiveWorld/scenes', { scene }),
     'Failed to save scene',
   );
-  return data.scene;
+  return { scene: data.scene, warnings: Array.isArray(data.warnings) ? data.warnings : [] };
 }
 
 /** Delete a scene. Refused with 409 once the scene has been played — unpublish instead. */

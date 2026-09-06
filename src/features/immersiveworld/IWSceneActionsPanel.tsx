@@ -9,11 +9,12 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import {
   IW_ACTION_STEP_KINDS, IW_ACTION_STEP_LABELS, IW_ACTOR_COMPANION, IW_ACTOR_PLAYER,
-  IW_MAX_ACTION_STEPS, IW_MAX_WAIT_SECONDS, isActorStep, isActorStepKind,
+  IW_MAX_ACTION_STEPS, IW_MAX_EVENT_DELAY_SECONDS, IW_MAX_WAIT_SECONDS, isActorStep, isActorStepKind,
   type IWActionStep, type IWActionStepKind,
   type IWNpcAction, type IWNpcOption, type IWScene,
 } from '../../../server/contracts/iw';
 import { isPlacedLocation } from './useIWSceneDraft';
+import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
 
 /**
  * IWSceneActionsPanel — named PLACES and per-NPC authored ACTIONS
@@ -62,6 +63,8 @@ function blankStep(kind: IWActionStepKind): IWActionStep {
     case 'walk_to_tag': return { kind, tag: '' };
     case 'start_conversation': return { kind, conversationId: '' };
     case 'wait': return { kind, seconds: 2 };
+    // 20s, and no event pre-picked: the delay has a sensible default, the referent never does.
+    case 'schedule_event': return { kind, eventId: '', seconds: 20 };
     case 'wait_for_response': return { kind };
   }
 }
@@ -72,6 +75,9 @@ export default function IWSceneActionsPanel({
   onAddAction, onUpdateAction, onRemoveAction,
 }: IWSceneActionsPanelProps) {
   const problem = (field: string) => problemsByField.get(field);
+  /** Amber marking props for one field. Warnings do not refuse a save, so they do not
+   *  paint like errors — see `iwSceneWarnings.ts`. */
+  const warn = (field: string) => warningFieldProps(problemsByField, field);
   const npcName = (npcId: string) => npcs.find((n) => n.id === npcId)?.name ?? npcId;
   const [newTag, setNewTag] = useState('');
 
@@ -135,7 +141,7 @@ export default function IWSceneActionsPanel({
           </Button>
         </Stack>
         {problem('layout.locations') && (
-          <Typography color="error" sx={{ fontSize: 12, mb: 1 }}>{problem('layout.locations')}</Typography>
+          <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 12, mb: 1 }}>{problem('layout.locations')}</Typography>
         )}
 
         <Stack spacing={1}>
@@ -211,8 +217,7 @@ export default function IWSceneActionsPanel({
                         <TextField
                           size="small" label="The model chooses this by name" fullWidth
                           value={action.name}
-                          error={!!problem(`${at}.name`)}
-                          helperText={problem(`${at}.name`)}
+                          {...warn(`${at}.name`)}
                           onChange={(e) => onUpdateAction(member.npcId, action.id, { name: e.target.value })}
                         />
                         <IconButton
@@ -225,12 +230,12 @@ export default function IWSceneActionsPanel({
                       <TextField
                         size="small" label="When it fits (optional)" fullWidth sx={{ mt: 1 }}
                         value={action.when ?? ''}
-                        error={!!problem(`${at}.when`)}
+                        {...warn(`${at}.when`)}
                         onChange={(e) => onUpdateAction(member.npcId, action.id, { when: e.target.value })}
                       />
 
                       {problem(`${at}.steps`) && (
-                        <Typography color="error" sx={{ fontSize: 12, mt: 0.5 }}>
+                        <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 12, mt: 0.5 }}>
                           {problem(`${at}.steps`)}
                         </Typography>
                       )}
@@ -248,7 +253,7 @@ export default function IWSceneActionsPanel({
                             <TextField
                               size="small" select sx={{ width: 130 }}
                               value={step.kind}
-                              error={!!problem(`${at}.steps[${si}].kind`)}
+                              {...warn(`${at}.steps[${si}].kind`)}
                               onChange={(e) => patchStep(
                                 member.npcId, action, si, blankStep(e.target.value as IWActionStepKind),
                               )}
@@ -262,8 +267,7 @@ export default function IWSceneActionsPanel({
                               <TextField
                                 size="small" fullWidth placeholder="Roughly what they say"
                                 value={step.text}
-                                error={!!problem(`${at}.steps[${si}].text`)}
-                                helperText={problem(`${at}.steps[${si}].text`)}
+                                {...warn(`${at}.steps[${si}].text`)}
                                 onChange={(e) => patchStep(member.npcId, action, si, { kind: 'comment', text: e.target.value })}
                               />
                             )}
@@ -272,8 +276,7 @@ export default function IWSceneActionsPanel({
                               <TextField
                                 size="small" select fullWidth
                                 value={tags.some((t) => t.tag === step.tag) ? step.tag : ''}
-                                error={!!problem(`${at}.steps[${si}].tag`)}
-                                helperText={problem(`${at}.steps[${si}].tag`)}
+                                {...warn(`${at}.steps[${si}].tag`)}
                                 onChange={(e) => patchStep(member.npcId, action, si, { kind: 'walk_to_tag', tag: e.target.value })}
                               >
                                 {tags.map(({ tag }) => <MenuItem key={tag} value={tag}>{tag}</MenuItem>)}
@@ -288,8 +291,7 @@ export default function IWSceneActionsPanel({
                               <TextField
                                 size="small" select fullWidth
                                 value={actorOptions.some((o) => o.id === step.actor) ? step.actor : ''}
-                                error={!!problem(`${at}.steps[${si}].actor`)}
-                                helperText={problem(`${at}.steps[${si}].actor`)}
+                                {...warn(`${at}.steps[${si}].actor`)}
                                 onChange={(e) => patchStep(member.npcId, action, si, {
                                   kind: step.kind, actor: e.target.value,
                                 })}
@@ -306,7 +308,7 @@ export default function IWSceneActionsPanel({
                               <TextField
                                 size="small" select fullWidth
                                 value={scene.conversations.some((c) => c.id === step.conversationId) ? step.conversationId : ''}
-                                error={!!problem(`${at}.steps[${si}].conversationId`)}
+                                {...warn(`${at}.steps[${si}].conversationId`)}
                                 helperText={problem(`${at}.steps[${si}].conversationId`)
                                   ?? (scene.conversations.length === 0 ? 'Author a conversation first.' : undefined)}
                                 onChange={(e) => patchStep(member.npcId, action, si, {
@@ -319,12 +321,46 @@ export default function IWSceneActionsPanel({
                               </TextField>
                             )}
 
+                            {/* Schedule event (migration 161): the one step that sets
+                                something in motion the NPC does not perform. It does NOT
+                                hold them — use Wait for that — so the two controls read
+                                "which fact" and "how long from now, at the earliest". */}
+                            {step.kind === 'schedule_event' && (
+                              <>
+                                <TextField
+                                  size="small" select fullWidth
+                                  value={scene.events.some((ev) => ev.id === step.eventId) ? step.eventId : ''}
+                                  {...warn(`${at}.steps[${si}].eventId`)}
+                                  helperText={problem(`${at}.steps[${si}].eventId`)
+                                    ?? (scene.events.length === 0 ? 'Author an event first.' : undefined)}
+                                  onChange={(e) => patchStep(member.npcId, action, si, {
+                                    kind: 'schedule_event', eventId: e.target.value, seconds: step.seconds,
+                                  })}
+                                >
+                                  {scene.events.map((ev) => (
+                                    <MenuItem key={ev.id} value={ev.id}>
+                                      {ev.description.trim() || ev.id}
+                                    </MenuItem>
+                                  ))}
+                                </TextField>
+                                <TextField
+                                  size="small" type="number" sx={{ width: 110 }} label="in seconds"
+                                  inputProps={{ min: 0, max: IW_MAX_EVENT_DELAY_SECONDS }}
+                                  value={step.seconds}
+                                  {...warn(`${at}.steps[${si}].seconds`)}
+                                  onChange={(e) => patchStep(member.npcId, action, si, {
+                                    kind: 'schedule_event', eventId: step.eventId, seconds: Number(e.target.value),
+                                  })}
+                                />
+                              </>
+                            )}
+
                             {step.kind === 'wait' && (
                               <TextField
                                 size="small" type="number" sx={{ width: 110 }} label="seconds"
                                 inputProps={{ min: 1, max: IW_MAX_WAIT_SECONDS }}
                                 value={step.seconds}
-                                error={!!problem(`${at}.steps[${si}].seconds`)}
+                                {...warn(`${at}.steps[${si}].seconds`)}
                                 onChange={(e) => patchStep(member.npcId, action, si, { kind: 'wait', seconds: Number(e.target.value) })}
                               />
                             )}

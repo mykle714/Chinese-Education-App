@@ -13,10 +13,11 @@ import {
  * statusCode. The template-author gate lives in the SERVICE (phase 1e) — nothing here
  * checks a permission, exactly as `NightMarketTemplateController` does not.
  *
- * ONE ADDITION over that controller's shape: `IWSceneValidationError` carries a list of
- * per-field problems, and this is where that list becomes JSON. It is sent as `problems`
- * alongside the usual `error`/`code`, so an editor can mark up every offending field while
- * a dumb client still has a sentence to show.
+ * ONE ADDITION over that controller's shape: per-field validator complaints become JSON
+ * here, on BOTH paths. A refused save (structural faults only) sends them as `problems`
+ * alongside the usual `error`/`code`; a successful save sends the non-blocking ones as
+ * `warnings` beside the stored scene. Same shape, so an editor can mark up every offending
+ * field either way while a dumb client still has a sentence to show.
  */
 export class ImmersiveWorldSceneController {
   constructor(private readonly service: ImmersiveWorldSceneService) {}
@@ -85,15 +86,19 @@ export class ImmersiveWorldSceneController {
   }
 
   /**
-   * POST /api/immersiveWorld/scenes  { scene: IWScene } → { scene }
+   * POST /api/immersiveWorld/scenes  { scene: IWScene } → { scene, warnings }
    * Create when `scene.id` is absent, overwrite when present.
+   *
+   * `warnings` is the non-blocking half of the validator (2026-09-05): the save SUCCEEDED
+   * and these are the things still wrong with the scene, in the same per-field shape as the
+   * `problems` a refusal carries, so the editor marks fields up identically either way.
    */
   async saveScene(req: Request, res: Response): Promise<void> {
     try {
       const userId = this.userIdOr401(req, res);
       if (!userId) return;
-      const scene = await this.service.saveScene(userId, req.body?.scene);
-      res.json({ scene });
+      const { scene, warnings } = await this.service.saveScene(userId, req.body?.scene);
+      res.json({ scene, warnings });
     } catch (error: any) {
       this.handleError(res, error, 'Failed to save scene', 'ERR_IW_SCENE_SAVE_FAILED');
     }

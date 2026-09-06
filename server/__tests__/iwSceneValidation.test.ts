@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateScene, parseCellKey } from '../services/iw/sceneValidation.js';
+import { validateScene, parseCellKey, isBlocking } from '../services/iw/sceneValidation.js';
 import type { IWScene } from '../contracts/iw.js';
 
 /**
@@ -21,6 +21,7 @@ function validScene(): IWScene {
     language: 'zh',
     name: 'Noodle stall',
     published: false,
+    sceneNotes: '王婶’s noodle stall at closing time. “counter” is where she takes payment.',
     completerNpcId: 'wang_shen',
     completionAction: 'pay',
     playerStartCol: 0,
@@ -52,6 +53,9 @@ function validScene(): IWScene {
       },
     ],
     complications: [{ id: 'rain', description: 'It starts raining and the stall’s awning leaks.' }],
+    // An authored EVENT (migration 161): scheduled, never drawn. This one is armed by the
+    // scene itself 20s in; a `schedule_event` step could arm it too.
+    events: [{ id: 'food_ready', description: 'The kitchen sends out the noodles.', atStartSeconds: 20 }],
     conversations: [
       { id: 'chat', title: 'Weather', turns: [{ npcId: 'wang_shen', text: '下雨了。' }] },
     ],
@@ -298,5 +302,104 @@ describe('validateScene', () => {
     scene.completionAction = '';
     scene.completerNpcId = 'nobody';
     expect(validateScene(scene).length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('validateScene events (migration 161)', () => {
+  it('accepts a scene whose action schedules one of its own events', () => {
+    const scene = validScene();
+    scene.npcCast[0].actions![0].steps.splice(1, 0, {
+      kind: 'schedule_event', eventId: 'food_ready', seconds: 20,
+    });
+    expect(validateScene(scene)).toEqual([]);
+  });
+
+  it('rejects scheduling an event the scene does not have', () => {
+    // The silent-failure case the whole step-validation exists for: the script would run to
+    // the end and the world would simply never do the thing the author was counting on.
+    const scene = validScene();
+    scene.npcCast[0].actions![0].steps.push({
+      kind: 'schedule_event', eventId: 'fire_alarm', seconds: 10,
+    });
+    const messages = validateScene(scene).map((p) => p.message);
+    expect(messages.some((m) => m.includes('no event "fire_alarm"'))).toBe(true);
+  });
+
+  it('rejects a delay that is not whole seconds in range', () => {
+    const scene = validScene();
+    scene.npcCast[0].actions![0].steps.push({
+      kind: 'schedule_event', eventId: 'food_ready', seconds: 10_000,
+    });
+    const fields = validateScene(scene).map((p) => p.field);
+    expect(fields.some((f) => f.endsWith('.seconds'))).toBe(true);
+  });
+
+  it('rejects duplicate event ids (a step names an event by id)', () => {
+    const scene = validScene();
+    scene.events.push({ id: 'food_ready', description: 'The kitchen sends out a second bowl.' });
+    const messages = validateScene(scene).map((p) => p.message);
+    expect(messages.some((m) => m.includes('Duplicate event id'))).toBe(true);
+  });
+
+  it('treats an omitted atStartSeconds as script-armed, and 0 as valid', () => {
+    const scene = validScene();
+    delete scene.events[0].atStartSeconds;
+    expect(validateScene(scene)).toEqual([]);
+    scene.events[0].atStartSeconds = 0;
+    expect(validateScene(scene)).toEqual([]);
+  });
+});
+
+/**
+ * SEVERITY (2026-09-05). A half-built scene must SAVE — authoring happens over several
+ * sittings — so only what the row physically cannot hold blocks the write. These tests pin
+ * that line, because the temptation when adding a rule is to make it blocking "just in case",
+ * which is how the editor becomes the thing that stops an author finishing a scene.
+ */
+describe('validateScene severity', () => {
+  const blocking = (scene: IWScene) => validateScene(scene).filter(isBlocking).map((p) => p.field);
+
+  it('never blocks over an unfinished scene', () => {
+    const scene = validScene();
+    scene.npcCast[0].npcId = 'nobody';          // an id that does not resolve
+    scene.completerNpcId = '';                  // no completer chosen yet
+    scene.completionAction = '';                // nor an ending action
+    scene.npcCast[0].actions![0].steps = [{ kind: 'walk_to_tag', tag: 'nowhere' }];
+    scene.conversations[0].turns[0].text = '';
+    expect(validateScene(scene).length).toBeGreaterThan(0);
+    expect(blocking(scene)).toEqual([]);
+  });
+
+  it('blocks only on what the row cannot hold', () => {
+    const scene = validScene();
+    scene.name = '';
+    expect(blocking(scene)).toEqual(['name']);
+
+    const badLanguage = validScene();
+    (badLanguage as { language: string }).language = 'fr';
+    expect(blocking(badLanguage)).toEqual(['language']);
+
+    const badBoard = validScene();
+    badBoard.width = 0;
+    expect(blocking(badBoard)).toEqual(['width']);
+
+    const fractionalStart = validScene();
+    fractionalStart.playerStartCol = 1.5;
+    expect(blocking(fractionalStart)).toEqual(['playerStartCol']);
+
+    const noLayout = validScene();
+    (noLayout as { layout: unknown }).layout = 'nope';
+    expect(blocking(noLayout)).toEqual(['layout']);
+  });
+
+  it('warns — but does not block — when a start cell falls off a shrunken board', () => {
+    // The author narrowed the board before re-placing the bodies. Mid-task, not wrong.
+    const scene = validScene();
+    scene.playerStartCol = 5;
+    scene.width = 4;
+    scene.height = 4;
+    const problems = validateScene(scene);
+    expect(problems.some((p) => p.field === 'playerStartCol' && !isBlocking(p))).toBe(true);
+    expect(blocking(scene)).toEqual([]);
   });
 });

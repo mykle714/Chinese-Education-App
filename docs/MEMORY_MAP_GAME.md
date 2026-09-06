@@ -429,7 +429,9 @@ silent — sound is the reward for deciding, not for pointing.
   an answer the player still has tries to find.
 * **Every committed tap speaks**, including the failed prompt's single lock-in tap
   (§ 3.3a), which is where hearing the word you could not find is worth the most.
-* It plays *after* the correct/wrong sfx (`playCorrectSound` / `playWrongSound`), and is
+* It plays *after* the answer-feedback arpeggio (`src/services/audio/markArpeggio.ts` —
+  fired by `markFlashcard` on a target tap, and called directly by `MemoryMapPage` on a
+  wrong tap, which emits no mark; docs/AUDIO_PLAYBACK.md § 6), and is
   fire-and-forget: narration failing must never break an answer. `useTTS` handles the
   cloud → browser fallback itself, and no-ops when the learner has TTS off.
 * `word.pronunciation` is passed straight through as the pinyin hint. The server already

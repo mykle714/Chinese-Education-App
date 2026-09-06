@@ -411,7 +411,7 @@ A pick fires **two** cues at once, then the round advances after
 
 | Cue | Where it comes from | Why |
 |---|---|---|
-| **Sound** | `playCorrectSound()` / `playWrongSound()` in `src/games/runtime/gameSounds.ts` | Reaches the player fastest and needs no eye movement at all. This is what lets the reveal be as short as it is; the old 600ms was sized for a colour-only reveal. |
+| **Sound** | The app-wide marimba arpeggio, fired for free by the round's `markFlashcard` call (`src/services/audio/markArpeggio.ts`, docs/AUDIO_PLAYBACK.md § 6) | Reaches the player fastest and needs no eye movement at all. This is what lets the reveal be as short as it is; the old 600ms was sized for a colour-only reveal. |
 | **Half tint** | `SpeedReadingTapZone.tsx` (`OptionFeedback`), driven by `SpeedReadingPage.feedbackFor` | The tapped half fills green or red under the thumb that just tapped it — no saccade needed. |
 
 ### Only the tapped half is painted
@@ -458,11 +458,16 @@ still draining out while the next word was already on screen. It is now applied
 tap zones today, on the option cards back then; the reset to neutral is
 instant.
 
-### The sounds are synthesized, not audio files
+### The sound is the app-wide arpeggio, and this page does not call it
 
-`gameSounds.ts` builds both blips from WebAudio oscillators — no `.mp3` assets.
-Two reasons: no binary files in the repo, and no fetch/decode, so the **first**
-answer of a run is not the silent one.
+Until 2026-09-05 this game owned two synthesized WebAudio blips
+(`src/games/runtime/gameSounds.ts`, deleted). They are now the shared marimba
+arpeggio that every mark surface plays — rising in pitch over a streak of correct
+answers, resetting on a wrong one. See docs/AUDIO_PLAYBACK.md § 6.
+
+`onPick` makes **no sound call**: it plays out of `markFlashcard`, which `mark()`
+already calls, synchronously and before the request goes out. Every pick marks, so
+the two are exactly 1:1 and nothing here has to stay in step.
 
 - **Correct** — rising two-note chirp, E6 → A6, sine.
 - **Wrong** — falling two-note buzz, A3 → E3, square. Lower and duller on
@@ -1004,7 +1009,7 @@ guarded by a ref so it fires once per run. The hub shows the lifetime `×N`.
 
 | File | Role |
 |---|---|
-| `src/games/runtime/gameSounds.ts` | synthesized correct/wrong blips (WebAudio, no assets) |
+| `src/services/audio/markArpeggio.ts` | the app-wide marimba answer-feedback arpeggio (fired from `markFlashcard`, not from this page) |
 | `src/games/runtime/useSidewaysStage.ts` | container-shape-driven 90° rotation + tap-coordinate inverse |
 | `src/components/LeafPage.tsx` | `hideHeader` + render-prop children (added for this game) |
 | `src/components/LeafPageHeader.tsx` | rendered by the page itself, inside the stage |
@@ -1057,7 +1062,7 @@ one-character invariant, the ladder, and the sentence-round builder).
 | Sideways rendering | `src/games/runtime/useSidewaysStage.ts`, `SpeedReadingPage.tsx` (`stage`, `speed-reading__frame`), `src/components/LeafPage.tsx` (`hideHeader`) |
 | Screen layout, tap zones, option text | `SpeedReadingPage.tsx` (`speed-reading__play`, `speed-reading__zones`, `speed-reading__stack`), `SpeedReadingTapZone.tsx`, `SpeedReadingOptionText.tsx`, `SpeedReadingPrompt.tsx` (`speed-reading__prompt-speaker`), `constants.ts` (`OPTION_GLYPH_SIZE`, `OPTION_SENTENCE_GLYPH_SIZE`, `ZONE_TINT_*`, `ZONE_DIVIDER`), `types.ts` (`OptionFeedback`), `src/components/ForeignText.tsx`, `src/components/CPCDRow.tsx` |
 | Round state machine | `SpeedReadingPage.tsx` (`Phase`, `playAgain`), `useSpeedReadingQueue.ts` (`runId`) |
-| Answer feedback: sound + half tint | `src/games/runtime/gameSounds.ts`, `SpeedReadingPage.tsx` (`onPick`, `feedbackFor`), `SpeedReadingTapZone.tsx`, `constants.ts` (`FEEDBACK_MS`, `ZONE_TINT_CORRECT`, `ZONE_TINT_WRONG`) |
+| Answer feedback: sound + half tint | `src/services/audio/markArpeggio.ts`, `SpeedReadingPage.tsx` (`onPick`, `feedbackFor`), `SpeedReadingTapZone.tsx`, `constants.ts` (`FEEDBACK_MS`, `ZONE_TINT_CORRECT`, `ZONE_TINT_WRONG`) |
 | One-character invariant, ladder | `buildRound.ts`, `src/__tests__/speedReadingBuildRound.test.ts` |
 | The last two rounds are sentences | `buildRound.ts` (`buildSentenceRound`, `usableSentences`, `hasSentenceRound`, `findWordStart`), `roundPrompt.ts`, `useSpeedReadingQueue.ts` (`reserveFinaleCards`, `finaleRef`, `dequeueSentenceCard`), `SpeedReadingPage.tsx` (`nextRound` ordinals, `pendingRoundRef`, `armedRunRef`, `takeRound`), `constants.ts` (`SENTENCE_ROUNDS`, `OPTION_SENTENCE_GLYPH_SIZE`), `types.ts` (`SentenceRound`), `src/utils/sentencePronunciation.ts`; [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) |
 | Selection query, Endpoint | `SpeedReadingDAL.ts`, `SpeedReadingService.ts`, `SpeedReadingController.ts`, `speedReadingRoutes.ts` |

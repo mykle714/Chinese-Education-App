@@ -100,6 +100,13 @@ export default function PracticeWritingButton({
   // Record a Writing mastery mark on each Verify attempt (positive iff the whole
   // word was written correctly). Fire-and-forget, only when we know the vet card.
   // See docs/MASTERY_REWORK.md.
+  //
+  // NOTE — no `useMarkArpeggio()` here, deliberately. Every other mark surface
+  // resets the answer-feedback ladder on mount, but this is a BUTTON, not a page:
+  // it re-mounts for every word card the flp renders, so resetting on its mount
+  // would drop the learner back to the low C on each swipe. The drill's marks
+  // still sound the arpeggio (markFlashcard does that); the ladder is simply
+  // owned by whichever page the button is sitting on.
   const handleWritingMark = useCallback((isCorrect: boolean) => {
     // Gated on isAuthenticated rather than on the token string: the mark is only
     // meaningful for a signed-in user, and `isAuthenticated` is the stable identity

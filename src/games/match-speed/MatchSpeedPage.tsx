@@ -54,6 +54,7 @@ import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
+import { useMarkArpeggio } from "../../hooks/useMarkArpeggio";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
 interface GamePoolResponse {
@@ -161,6 +162,9 @@ const MatchSpeedPage: React.FC = () => {
     // Mandatory on every game page (CLAUDE.md): an edge swipe would otherwise
     // navigate away mid-run. CSS touch-action can't stop the history gesture.
     useBlockEdgeSwipe(true);
+    // Start (and leave) this screen on the low C: the answer-feedback arpeggio
+    // describes a streak within one surface (src/services/audio/markArpeggio.ts).
+    useMarkArpeggio();
 
     const language = (user?.selectedLanguage ?? "zh") as Language;
 

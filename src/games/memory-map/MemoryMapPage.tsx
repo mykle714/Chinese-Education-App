@@ -19,12 +19,13 @@ import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useTTS } from "../../hooks/useTTS";
-import { playCorrectSound, playWrongSound } from "../runtime/gameSounds";
+import { playMarkArpeggio } from "../../services/audio/markArpeggio";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { GROWTH_TOAST_MS, MAX_TRIES } from "./constants";
 import type { MemoryMapWord as MemoryMapWordData } from "../../api/memoryMap";
+import { useMarkArpeggio } from "../../hooks/useMarkArpeggio";
 
 /**
  * Memory Map — a persistent map of everything you are learning to READ.
@@ -56,6 +57,9 @@ const MemoryMapPage: React.FC = () => {
     // Mandatory on every game page: stops the OS back-swipe stealing a pan that
     // starts near the screen edge (CLAUDE.md § Touch & Scroll).
     useBlockEdgeSwipe(true);
+    // Start (and leave) this screen on the low C: the answer-feedback arpeggio
+    // describes a streak within one surface (src/services/audio/markArpeggio.ts).
+    useMarkArpeggio();
 
     const language = user?.selectedLanguage ?? "zh";
     const run = useMemoryMapRun(user?.id, language);
@@ -135,8 +139,16 @@ const MemoryMapPage: React.FC = () => {
         setSelectedId(null);
         const result = run.tapWord(word);
         if (result === "ignored") return;
-        if (result === "correct") playCorrectSound();
-        else playWrongSound();
+        // Memory Map is the ONE surface whose taps and marks are not 1:1, so it is the
+        // one that still calls the sound itself. A tap on the TARGET resolves the prompt
+        // and marks it, so `markFlashcard` sounds that note for us — including the red
+        // lock-in, which `tapWord` calls "correct" (the right word was found) while the
+        // mark it writes is negative. The note now follows the MARK there, so a lock-in
+        // sounds wrong rather than, as before, congratulating a failed prompt.
+        //
+        // A tap on any OTHER word emits no mark at all (§ 3.5: one prompt, one mark), so
+        // without this call a wrong tap would be silent.
+        if (result === "wrong") playMarkArpeggio(false);
         speakWord(word);
     };
 

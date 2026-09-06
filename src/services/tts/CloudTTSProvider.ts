@@ -204,7 +204,7 @@ export class CloudTTSProvider implements TTSProvider {
      * a gesture. A one-shot listener spends the session's single recovery on the
      * user's first tap — typically long before anything has gone wrong — and
      * leaves nothing for the interruption that actually breaks audio. This is
-     * the same pattern gameSounds.getContext() uses, and the reason game blips
+     * the same pattern markArpeggio.getContext() uses, and the reason those effects
      * kept working through interruptions that silenced narration.
      *
      * The per-tap cost is one `ctx.state` read (see unlock → unlockContext).

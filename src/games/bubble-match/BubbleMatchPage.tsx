@@ -34,6 +34,7 @@ import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
+import { useMarkArpeggio } from "../../hooks/useMarkArpeggio";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
 interface GamePoolResponse {
@@ -146,6 +147,9 @@ const BubbleMatchPage: React.FC = () => {
     // touch-action can't stop the history gesture, so this is handled at the
     // touch-event layer (see the hook).
     useBlockEdgeSwipe(true);
+    // Start (and leave) this screen on the low C: the answer-feedback arpeggio
+    // describes a streak within one surface (src/services/audio/markArpeggio.ts).
+    useMarkArpeggio();
 
     // The level tapped on the Games hub, via nav `state` (HubMenuArrayItem /
     // HubMenuRow's `state` prop). There's no in-game picker to fall back to, so

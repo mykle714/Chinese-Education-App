@@ -82,12 +82,23 @@ export const IW_MAX_SCENE_NAME_LENGTH = 120;
  * objective restated in prose exactly what that action already says in steps. Two
  * descriptions of one fact, one of them with no reader.
  */
+/**
+ * The scene brief (migration 160) — what the scene is, and what its place tags mean. Generous
+ * because it is the ONLY prose an author writes about a scene, and because it is read by a
+ * model rather than rendered in a fixed-width row; a cap exists only so a runaway paste
+ * cannot dominate every NPC's prompt.
+ */
+export const IW_MAX_SCENE_NOTES_LENGTH = 2000;
 export const IW_MAX_COMPLICATION_LENGTH = 400;
+/** An event seed is the same kind of one-liner as a complication, so it gets the same cap. */
+export const IW_MAX_EVENT_LENGTH = 400;
 export const IW_MAX_CONVERSATION_LINE_LENGTH = 200;
 
 /** Per-scene collection caps — authoring guard-rails, not engine limits. */
 export const IW_MAX_CAST = 8;
 export const IW_MAX_COMPLICATIONS = 12;
+/** Authored events a scene may hold (migration 161) — the pool `schedule_event` picks from. */
+export const IW_MAX_EVENTS = 12;
 /** Named places on the board an authored action can send somebody to (§ 14 Q42). */
 export const IW_MAX_LOCATIONS = 24;
 export const IW_MAX_LOCATION_TAG_LENGTH = 40;
@@ -99,6 +110,12 @@ export const IW_MAX_ACTION_WHEN_LENGTH = 200;
 export const IW_MAX_ACTION_COMMENT_LENGTH = 200;
 /** A single `wait` step, in whole seconds. A minute is already a very long beat. */
 export const IW_MAX_WAIT_SECONDS = 60;
+/**
+ * The longest delay a `schedule_event` step (or an event's own `atStartSeconds`) may ask for.
+ * Wider than `IW_MAX_WAIT_SECONDS` because nobody is standing still for it: the NPC walks on
+ * and the timer runs in the background, so a five-minute slow burn is a legitimate beat.
+ */
+export const IW_MAX_EVENT_DELAY_SECONDS = 600;
 export const IW_MAX_CONVERSATIONS = 8;
 export const IW_MAX_CONVERSATION_TURNS = 12;
 
@@ -261,6 +278,7 @@ export const IW_ACTION_STEP_KINDS = [
   'wait',
   'wait_for_response',
   'start_conversation',
+  'schedule_event',
 ] as const;
 
 export type IWActionStepKind = (typeof IW_ACTION_STEP_KINDS)[number];
@@ -275,6 +293,7 @@ export const IW_ACTION_STEP_LABELS: Record<IWActionStepKind, string> = {
   wait: 'Wait',
   wait_for_response: 'Wait for the learner',
   start_conversation: 'Start a conversation',
+  schedule_event: 'Schedule event',
 };
 
 /** The step kinds whose only parameter is WHO they are aimed at. */
@@ -315,6 +334,20 @@ export type IWActionStep =
   | { kind: 'start_conversation'; conversationId: string }
   /** Hold still for `seconds`. The beat that makes a script read as behaviour. */
   | { kind: 'wait'; seconds: number }
+  /**
+   * Arm one of the scene's authored EVENTS to happen `seconds` from now (migration 161).
+   *
+   * ⚠️ It does NOT pause the action, and it does not fire the event itself. The step arms a
+   * timer and moves on; the engine then injects the event at the next legal moment — the same
+   * opportunity a complication uses (§ 14 Q31), never mid-turn and never while the learner is
+   * composing (§ 14 Q29). So `seconds` is an EARLIEST, not an exactly-when: "no sooner than
+   * this, at the next beat that can carry it".
+   *
+   * This is what lets a script set something in motion it does not itself perform — 王婶 calls
+   * the order through to the kitchen, and the food arrives twenty seconds later without her
+   * standing there waiting for it. Use `wait` when the NPC really should stand still.
+   */
+  | { kind: 'schedule_event'; eventId: string; seconds: number }
   /** Hand the floor back to the learner. At most one, and only as the final step. */
   | { kind: 'wait_for_response' }
   /**
@@ -358,6 +391,41 @@ export interface IWComplication {
   /** Author-assigned, stable within the scene. Stored on a run as `complicationId`. */
   id: string;
   description: string;
+}
+
+/**
+ * One authored EVENT, stored in `iw_scenes.events` (migration 161).
+ *
+ * SAME SHAPE AND SAME CHANNEL AS A COMPLICATION, DIFFERENT TRIGGER — and that is the whole
+ * distinction. Both are one-line world facts the engine writes into the turn context of
+ * everyone present, and both are reacted to in character rather than scripted. A complication
+ * is DRAWN, by the per-turn roll; an event is SCHEDULED, by a `schedule_event` step in an
+ * authored action. They are two lists rather than one flagged list so that neither trigger can
+ * reach the other's pool: the roll must never spring an authored beat before its cue, and a
+ * script must never be able to arm the thing whose whole job is to be a surprise.
+ *
+ * ENVIRONMENTAL, with no owner field, for the same reason `IWComplication` has none (§ 14 Q31,
+ * 2026-09-04): "the kitchen sends out the noodles" is a fact about the room, and an event
+ * written as "王婶 is flustered" is a character note misfiled as a world event.
+ */
+export interface IWSceneEvent {
+  /** Author-assigned, stable within the scene. Referenced by `schedule_event.eventId`. */
+  id: string;
+  description: string;
+  /**
+   * Arm this event when the SCENE OPENS, this many seconds in (2026-09-05). Omitted means the
+   * event only ever happens when an authored action schedules it.
+   *
+   * It is a field on the event rather than a second scene-level list because "when does this
+   * happen" is a property of the event, and a separate `openingSchedule` list would be a
+   * second place to look for the same answer — and a place to name an event that no longer
+   * exists. Both timers feed the same queue: earliest-legal-moment, exactly as a
+   * `schedule_event` step's does.
+   *
+   * `0` is meaningful and distinct from omitted — fire at the first legal opportunity after
+   * the scene opens (which, like a complication, is never before the first exchange).
+   */
+  atStartSeconds?: number;
 }
 
 /**
@@ -422,6 +490,17 @@ export interface IWScene {
   completionAction: string;
 
   /**
+   * The scene brief the model is given (migration 160): what this place is, and what the
+   * scene's named places MEAN — a tag is a single word chosen for the author's dropdowns
+   * (§ 14 Q42), and `counter` does not say "this is where you pay".
+   *
+   * ⚠️ It reaches NPCs VERBATIM and is not checked for meta language (§ 14 Q27) — writing it
+   * in-world is the author's job. It is NOT the old `objective` returning: that column was
+   * dropped by 159 for having no reader, and this one exists to be read.
+   */
+  sceneNotes: string;
+
+  /**
    * Board geometry, in template cells, plus the direction each body faces when the scene
    * opens. The facings are columns rather than blob fields for the same reason the cells
    * are: the learner and the companion are not cast members and have no entry to live in.
@@ -438,6 +517,12 @@ export interface IWScene {
   layout: IWSceneLayout;
   npcCast: IWSceneCastMember[];
   complications: IWComplication[];
+  /**
+   * The scheduled half of the world's behaviour (migration 161): facts an authored action can
+   * arm with a `schedule_event` step, or that the scene arms itself via `atStartSeconds`.
+   * Never drawn by the per-turn complication roll — see {@link IWSceneEvent}.
+   */
+  events: IWSceneEvent[];
   conversations: IWConversation[];
 
   createdAt?: string;

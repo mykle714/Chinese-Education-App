@@ -27,7 +27,6 @@ import SpeedReadingOptionText from "./SpeedReadingOptionText";
 import SpeedReadingTapZone from "./SpeedReadingTapZone";
 import SpeedReadingPrompt from "./SpeedReadingPrompt";
 import { useSidewaysStage } from "../runtime/useSidewaysStage";
-import { playCorrectSound, playWrongSound } from "../runtime/gameSounds";
 import { buildRound, buildSentenceRound } from "./buildRound";
 import { roundPrompt } from "./roundPrompt";
 import { useSpeedReadingQueue } from "./useSpeedReadingQueue";
@@ -49,6 +48,7 @@ import {
 import type { OptionFeedback, Phase, Round } from "./types";
 import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
+import { useMarkArpeggio } from "../../hooks/useMarkArpeggio";
 
 /**
  * Speed Reading — read the pinyin and definition, then tap the word that matches.
@@ -108,7 +108,7 @@ import { useBackgroundPause } from "../runtime/useBackgroundPause";
  *
  * ── Answer feedback: a sound and the tapped half's tint ─────────────────────
  * A pick fires two things at once: a synthesized rising/falling blip
- * (games/runtime/gameSounds) and a green/red tint over the half that was
+ * (services/audio/markArpeggio) and a green/red tint over the half that was
  * tapped. The sound is what lets FEEDBACK_MS stay as short as it is — it needs
  * no eye movement at all.
  *
@@ -137,6 +137,9 @@ const SpeedReadingPage: React.FC = () => {
     // Block the mobile browser's edge-swipe-back gesture while mounted — an edge
     // swipe would otherwise navigate away mid-round.
     useBlockEdgeSwipe(true);
+    // Start (and leave) this screen on the low C: the answer-feedback arpeggio
+    // describes a streak within one surface (src/services/audio/markArpeggio.ts).
+    useMarkArpeggio();
 
     const [phase, setPhase] = useState<Phase>("loading");
     const [round, setRound] = useState<Round | null>(null);
@@ -472,10 +475,10 @@ const SpeedReadingPage: React.FC = () => {
         // "which round is this", and writing to `results[ordinal]` would need the two to
         // agree forever. A push cannot disagree with itself.
         setResults((prev) => [...prev, option.isCorrect ? "correct" : "wrong"]);
-        // Sound first: it is the fastest cue to reach the player, and it must not
-        // wait on the mark request or the render.
-        if (option.isCorrect) playCorrectSound();
-        else playWrongSound();
+        // The feedback sound is the fastest cue to reach the player and must not wait
+        // on the render. It no longer needs its own call: `mark` -> `markFlashcard`
+        // plays the marimba arpeggio synchronously, before the request goes out
+        // (src/services/audio/markArpeggio.ts). Every pick marks, so the two are 1:1.
         mark(round.entry.id, option.isCorrect);
         advanceTimerRef.current = setTimeout(advance, FEEDBACK_MS);
     }, [phase, round, mark, advance, addPenalty]);

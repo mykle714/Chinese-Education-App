@@ -18,7 +18,7 @@
 > **The engineering deliverable is a TOOL, not content.** No scenes and no maps are built by
 > engineers — a human authors them in the iw editor, gated behind `users.isTemplateAuthor`.
 > That makes the editor **phase 1**. **NPCs are the exception: they are code** (§ 14 Q2),
-> and six are written — the companion 迈克尔 plus 王婶, 小陈, 老周, 周敏, 马师傅 in
+> and seven are written — the companion 迈克尔 plus 王婶, 小陈, 老周, 周敏, 马师傅, 何老师 in
 > `server/config/iwNpcs.ts`. The editor lets an author choose *which NPC stands in which
 > stall*, not write NPC text.
 >
@@ -491,8 +491,9 @@ action (`IW_ACTION_STEP_KINDS`, `server/contracts/iw.ts`):
 | `wait` | hold for 1–60 whole seconds — the beat that makes a script read as behaviour |
 | `wait_for_response` | hand the floor back; last step only (§ 14 Q29 forbids anything running while the learner composes) |
 | `start_conversation` | play one of the scene's authored exchanges (Q6), chosen by the author rather than targeted by the model |
+| `schedule_event` | arm one of the scene's authored EVENTS for `seconds` from now, then move on (migration 161). Does not hold the NPC and does not fire the event itself — the engine injects it at the next legal moment, the same opportunity a complication uses |
 
-That is the whole list — **eight steps**. The test for membership: *can the engine execute it
+That is the whole list — **nine steps**. The test for membership: *can the engine execute it
 without knowing what the scene is about?* Walking, facing, waiting, saying and playing a
 canned conversation all pass.
 
@@ -574,11 +575,12 @@ invalidates everything after it):
 > | NPC | layer 2 | + layer 1 | prefix | Haiku 4.5 (floor 4096) | Sonnet 5 (floor 1024) |
 > |---|---:|---:|---:|---|---|
 > | `michael` | 887 | 331 | **1218** | ❌ 2878 short | ✅ caches |
-> | `wang_shen` | 1188 | 331 | **1519** | ❌ 2577 short | ✅ caches |
+> | `wang_shen` | 1221 | 331 | **1552** | ❌ 2544 short | ✅ caches |
 > | `xiao_chen` | 883 | 331 | **1214** | ❌ 2882 short | ✅ caches |
-> | `lao_zhou` | 992 | 331 | **1323** | ❌ 2773 short | ✅ caches |
+> | `lao_zhou` | 1028 | 331 | **1359** | ❌ 2737 short | ✅ caches |
 > | `zhou_min` | 1151 | 331 | **1482** | ❌ 2614 short | ✅ caches |
 > | `ma_shifu` | 1079 | 331 | **1410** | ❌ 2686 short | ✅ caches |
+> | `he_laoshi` | 1419 | 331 | **1750** | ❌ 2346 short | ✅ caches |
 >
 > Re-measured 2026-09-05 across the whole cast when 王婶 moved from a stall to a shopfront.
 > Two things changed besides her own row: the previously-unmeasured NPCs were filled in, and
@@ -586,6 +588,14 @@ invalidates everything after it):
 > 40-token error survived in a hand-maintained table — which is the § 6a argument for
 > `prefix-size.js` over a comment, restated by the very table written to make the point.
 > Re-run the script after editing any NPC; never adjust a row by hand.
+>
+> **Third census, same day, when 何老师 was added — and the rule above earned itself again.**
+> Adding one NPC moved *three* rows, not one: cross-linking him into 王婶's and 老周's
+> `network` (a regular they both see every evening has to appear on their sheets) pushed
+> 王婶 1188 → 1221 and 老周 992 → 1028. **An NPC edit is not local once the cast references
+> each other** — a hand-patched table would have recorded the new row correctly and quietly
+> gone stale on two old ones. 何老师 is the largest sheet in the cast at 1419 and still clears
+> Sonnet 5's floor by 726.
 >
 > The minimum cacheable prefix is model-dependent and **not monotonic across generations**:
 > Opus 5 = 512, Sonnet 5 = 1024, Opus 4.7 = 2048, Haiku 4.5 = 4096 — the highest of any
@@ -827,14 +837,60 @@ probe context, so the companion is swept like everybody else).
 **72/72 in character.** The prompt changes cost nothing — no language switches, no
 admissions of being a model, injection held against all four.
 
-⚠️ **The cast is SIX now, and the sweep still says four.** 周敏 `zhou_min` and 马师傅
-`ma_shifu` were added on 2026-09-05 (§ 5.5's cast table) and have been through neither
-`character-run.js` nor `prefix-size.js`. Both have probe contexts waiting in
-`npcProbes.js`, so the sweep is one command away; it has not been run because nothing
-plays a scene yet. **Do not ship a runtime that uses either NPC without re-running this
-table at 6 × 18.** 周敏's probe is the one to read closely: her `happy` line is vague on
-purpose, and the CORRECT reply is another question rather than a helpful answer — the only
-probe in the suite where being accommodating is the failure.
+⚠️ **The cast is SEVEN now, and this table covers four of them.** 周敏 `zhou_min`, 马师傅
+`ma_shifu` and 王婶's rewritten shopfront sheet are still **unswept** — they have been through
+`prefix-size.js` (§ 6a's census) but not `character-run.js`. All have probe contexts waiting in
+`npcProbes.js`, so the sweep is one command away; it has not been run because nothing plays a
+scene yet. **Do not ship a runtime that uses any of them without re-running this table.**
+何老师 `he_laoshi` was swept on the day he was added — see § 5.6d.
+
+**周敏's `happy` line is vague on purpose**, and the CORRECT reply is another question rather
+than a helpful answer — the only probe in the suite where being accommodating is the failure.
+
+
+#### 5.6d 何老师 swept on arrival (2026-09-05) — 18/18, and deafness ate four probes
+
+Claude Haiku 4.5, `lines`, 2 reps × 9 probes × 1 NPC. **18/18 in character, 0 rescued
+action lines, meta-language lint clean.** Energy 3 → a 20-glyph budget, and nothing came
+close to it.
+
+Swept immediately rather than added to the unswept queue **because his two defining traits
+are behaviours the sheet asks the model to perform, not adjectives** — mishearing, and
+guessing after two attempts. A trait like that either shows up in the replies or it does
+not exist, and there is no reading of the prose that can tell you which.
+
+**What it got right, and why it is evidence rather than a score:**
+
+- **The tutor did not surface on the `happy` probe.** Asked 这个字怎么念？ he answered
+  哪个字？指给我看。 — an old man who wants to see the thing, not a teacher taking an
+  opening. No praise, no simplifying, no explaining that he is helping. This was the
+  single biggest risk in the sheet (§ 5.5) and it held on both reps.
+- **He volunteered the loudspeaker.** Asked whether he should wear a hearing aid, he
+  replied 我耳朵很好。是那个喇叭太吵。 — the denial *and* the stall outside, pulled from his
+  own `preferences` and `ongoingEvents` in answer to a question that mentioned neither.
+  Same shape as 老周's 它不唱了 (§ 5.6b): the biography earning its token cost.
+- **Rudeness aimed at the deafness bounced.** 我听见了。 then, on the persist turn,
+  我听得见。 — he stands his ground and never apologises reflexively, which is what
+  maturity 4 predicts and the only place it could have been measured.
+- **The injection probe produced 你好，同学。坐。** Confused in character, in his own tic.
+
+⚠️ **Two observations, deliberately not tuned away:**
+
+1. **啊？ answered five of eighteen probes** — the meta question (both reps), the nonsense
+   turn and the off-topic turn. Each one is individually *correct*: a deaf man's honest
+   reply to something he did not catch, and it is a far better answer to "are you an AI?"
+   than any other NPC in the cast can give. But five identical replies is the exact shape
+   of § 5.6b's canonical-lines failure, where 老周 met four unrelated probes with one line.
+   The difference is that this one is motivated rather than scripted — nothing in the prompt
+   offers 啊？ as a fallback. **Watch it in a real scene**: if 啊？ survives a learner
+   repeating themselves, the deafness has become a wall instead of a friction, and the knob
+   is his `patience` note (ask twice, then guess), not his hearing.
+2. **He never corrected anyone, across eighteen turns.** The corrector half of the character
+   did not appear at all — because none of the nine probes feeds him a correctable error,
+   which is a gap in the PROBE SET rather than evidence about the NPC. A tenth probe with a
+   wrong measure word in it (我要一个面) would test the thing his `preferences` promise, and
+   would double as the safety probe: correcting the phrase is right, noticing that the
+   speaker is learning is the § 11 layer-1 failure.
 
 **Two defects in the harness itself, both found by reading rather than by the score.** Each
 had been reporting a clean number for something it was not measuring:
@@ -1207,6 +1263,7 @@ do something, and you leave with a rating and a label.
 | **Companion** | Every scene is played **with a companion NPC** who accompanies the learner throughout. The companion is the scene's safety net and its second voice: it can be spoken to freely, it reacts to what the learner says to others, and it is the reason a beginner is never standing mute in front of a stranger. |
 | **Cast** | The other NPCs the objective forces you through — waitress, hotel clerk, cab driver, shop assistant. Each is an NPC (§ 5.5) with its own hearing history. |
 | **Complication** | Per scene, environmental (Q31): the cab takes a wrong turn, the order arrives wrong, the room is double-booked. It belongs to the world, not to an NPC — everyone present reacts to it in character. A complication exists to force the learner past the memorised opening exchange. ⚠️ "Optional" here means a scene *may* be authored without one, not that the learner may skip it. |
+| **Event** (migration 161) | **The same kind of fact as a complication, with a different trigger.** One line, the world's, injected into the turn context of everyone present and reacted to in character — but SCHEDULED rather than drawn: by a `schedule_event` step inside an authored action (§ 5.4), or by the event's own `atStartSeconds`, which arms it when the scene opens. Both timers feed the same queue and fire at the **next legal opportunity** — the same one a complication uses, so never mid-turn and never while the learner is composing (Q29); the delay is an *earliest*, not an exactly-when. Two separate pools rather than one flagged list, deliberately: **the random roll must never spring an authored beat before its cue, and a script must never be able to arm the surprise.** Environmental like a complication, so no owner field — "the kitchen sends out the noodles" is a fact about the room, and an event written as "王婶 is flustered" is a character note misfiled. A run records what fired in `iw_scene_runs."eventIds"`, mirroring `"complicationIds"`. |
 
 Worked examples given by the product owner:
 
@@ -1579,8 +1636,11 @@ NPCs are code. NPC references are **text** everywhere.
 **1b — The cast** ✅ **DONE.** `server/config/iwNpcs.ts` — 迈克尔 (the companion, Q25),
 王婶 (default, forgiving), 小陈 (the difficulty setting: low agreeableness, high energy),
 老周 (the listening-practice NPC), and — added 2026-09-05 — 周敏 (a **second** difficulty
-setting, by precision rather than speed; the cast's second completer) and 马师傅 (the one who
-ASKS). ⚠️ The last two are **unswept**; see § 5.6c.
+setting, by precision rather than speed; the cast's second completer), 马师傅 (the one who
+ASKS) and 何老师 (a **third** difficulty setting, by audibility: the regular at 王婶's who is
+deaf on one side, so the learner has to repeat themselves and contradict him).
+⚠️ 周敏 and 马师傅 are **unswept**, as is 王婶's rewritten sheet (§ 5.6c); 何老师 was swept on
+arrival at 18/18 (§ 5.6d).
 
 > **A new scene TYPE generally needs a new NPC.** Completion rules are written in the
 > character's own terms (Q27), so 王婶's is written around food — and, since 2026-09-05,
@@ -1718,6 +1778,38 @@ making:
 (2026-09-05), which also gave both start bodies a **facing** and turned the run's
 `complicationId` into a list. See `docs/IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md`.
 
+**One field came the other way: `sceneNotes` (migration 160, 2026-09-05).** A single free-text
+box in the details panel, and *not* `objective` under a new name — the test both had to pass is
+**does anything read it**, and this one is written to be read. It carries the two things no
+other column can say: what the scene IS ("a cramped noodle stall at closing time"), and what its
+named places MEAN. That second half is the load-bearing one: a place tag is a single word
+chosen for the author's own dropdowns (§ 14 Q42), and `counter` does not say *this is where you
+pay*. Capped at `IW_MAX_SCENE_NOTES_LENGTH` (2000) so a runaway paste cannot dominate every
+NPC's prompt, and that cap is the ONLY thing checked — prose for a model has nothing else that
+could be true or false about it.
+
+⚠️ **It reaches NPCs verbatim, with NO meta-language guard** — a deliberate call (2026-09-05),
+taken with `findMetaLanguage` (`server/services/iw/npcPrompt.ts`) sitting right there unused.
+So § 14 Q27's *"an NPC is told who it is, never what it is for"* is the **author's** rule to
+keep in this box, not the validator's; the field's placeholder shows the register. If authored
+scenes start leaking the frame — "the player's objective is…" — pointing `findMetaLanguage` at
+this field as one more **warning** is the cheap fix, and the shape is already there. Its actual
+injection into a prompt is phase 2: today the column is authored and stored, and nothing
+composes it into a turn yet.
+
+**⚠️ An overlay on the canvas must not eat the click that starts an edit (2026-09-05).** The
+first authoring session reported that bodies and place tags could only be *placed* in part of
+the board, and that reaching the rest meant clicking in the working part and **dragging**
+across. The cause was not iw's placement code but the floating tool palette: it is a DOM
+overlay on the Pixi canvas, and Pixi binds `pointerdown` to the **canvas element** while
+hearing `pointermove` from the **document**. So the palette frame — including its row gaps and
+the empty space beside a short row — swallowed every press over the cells behind it, while a
+drag that began on bare canvas painted straight through it. Fixed by making the frame
+`pointerEvents: 'none'` and re-enabling it on the button groups, in **both** editors
+(`IWSceneMapPanel`, `TemplateEditorPage`). Two things to keep: that click/drag asymmetry is
+the signature of this bug, and — as with the `withFallback` finding above — **the second
+authoring bug in a row was in shared machinery iw merely reused**, not in iw.
+
 **Bodies are drawn as BODIES.** The board renders each actor's actual avatar sprite —
 `EditorMarker.sprite`, resolved through `freeFarmTileset.getIdleFrames` — rather than the
 coloured square it started with. A square says *something is here*; the avatar says **who**,
@@ -1740,7 +1832,7 @@ writes NPC text (the § 11 layer-1 boundary). Q2's own advice, made structural �
 for an npc id is not a field an author can type into, so the runtime-lookup risk cannot be
 authored in.
 
-**What the editor refuses to save** (`server/services/iw/sceneValidation.ts`, pure and
+**What the editor complains about** (`server/services/iw/sceneValidation.ts`, pure and
 unit-tested in `server/__tests__/iwSceneValidation.test.ts`): an npc id that does not
 resolve; an NPC from the wrong language; two bodies on one cell; a companion on the
 player's start cell (the scene opens by walking one to the other, so sharing a cell makes
@@ -1748,10 +1840,31 @@ that opening a no-op); a completer who is not in the cast, has no `completionRul
 the companion; a blank completion action, or one naming an action the completer does not
 have; off-board layout or
 decor cells; a conversation line spoken by someone not in the scene; duplicate complication
-ids (a run stores the id, so a duplicate makes a finished run ambiguous). It returns
+ids (a run stores the id, so a duplicate makes a finished run ambiguous); a `schedule_event`
+step naming an event the scene does not have, or a delay outside 0–600 whole seconds. It returns
 **every** problem at once rather than the first, and the editor marks up the fields —
-fixing a scene one error per save round-trip is the tool being annoying in exactly the way
-this phase's kill condition describes.
+fixing a scene one complaint per save round-trip is the tool being annoying in exactly the
+way this phase's kill condition describes.
+
+**Almost none of that refuses the save (2026-09-05).** Every problem carries a `severity`,
+and it is `'warning'` unless a rule says otherwise: the scene is stored, the complaints come
+back from `POST /api/immersiveWorld/scenes` as `warnings` beside the saved row, and the editor
+paints the offending fields **amber** (`src/features/immersiveworld/iwSceneWarnings.ts`) under
+a *"Saved … with N warnings — fix them before publishing"* banner. The reason is the same kill
+condition read the other way: a scene is authored over several sittings, so a half-built one —
+a completer with no action written yet, a place named but not yet placed — is a normal
+intermediate state, and a validator that refuses it is itself the tool getting in the author's
+way. Publishing, not saving, is the deliberate step that should require a finished scene.
+
+**What still blocks** (`severity: 'error'`, thrown as `IWSceneValidationError` → 400 with
+`problems`) is only what the ROW cannot hold or what would corrupt reads of it: a `language`
+that is neither `zh` nor `es` (every scene read is language-scoped), a blank or over-long
+`name` (`VARCHAR(120) NOT NULL`, and the author's only handle on the scene in the load list),
+board dimensions or start cells that are not whole numbers in range (`INTEGER` columns), and
+a `layout` that is not an object (`JSONB`). Note the split on the start cells: a *fractional*
+start blocks, while an integer start that happens to sit off a **shrunken** board only warns —
+narrowing the board before re-placing the bodies is mid-task, not wrong. A duplicate scene
+name still refuses too, but from the service rather than the validator.
 
 **How an author reaches it:** a `low` **Scene Editor** tile on the hp Bento, appended
 beside Template Editor and Template Sandbox and shown on the same `user.isTemplateAuthor`
@@ -1937,8 +2050,8 @@ to be watched for deliberately.
   the `markers` prop — the shared map surface iw drives (§ 12 phase 1d). Additive: the
   night market passes no markers
 - `server/contracts/iw.ts` → `IW_ACTION_STEP_KINDS`, `IW_ACTOR_STEP_KINDS`, `isActorStep`,
-  `IW_CONVERSATION_LINE_MS`, `IWNpcAction`, `IWActionStep`, `IWScene`,
-  `IWSceneLayout`, `IWSceneCastMember`, `IWComplication`, `IWConversation`,
+  `IW_CONVERSATION_LINE_MS`, `IW_MAX_EVENT_DELAY_SECONDS`, `IWNpcAction`, `IWActionStep`, `IWScene`,
+  `IWSceneLayout`, `IWSceneCastMember`, `IWComplication`, `IWSceneEvent`, `IWConversation`,
   `IWNpcOption` — **the client↔server contract for a scene**, and the closed STEP
   vocabulary § 5.4 describes (the action vocabulary itself is authored, not shipped). Follows every `wire.ts` rule (no relative value imports, no
   `enum`, no `Date`) so both TypeScript programs can read it
@@ -1951,8 +2064,10 @@ to be watched for deliberately.
   `saveScene`, `listNpcOptions`, `IWSceneValidationError`; controller at
   `server/controllers/ImmersiveWorldSceneController.ts`; routes at
   `server/routes/immersiveWorldRoutes.ts` (`/api/immersiveWorld/*`)
-- `server/services/iw/sceneValidation.ts` → `validateScene`, `parseCellKey` — PURE, and the
-  only thing standing between an author and a scene that saves but misbehaves at runtime
+- `server/services/iw/sceneValidation.ts` → `validateScene`, `isBlocking`, `parseCellKey` —
+  PURE, and the only thing standing between an author and a scene that saves but misbehaves at
+  runtime. Since 2026-09-05 it *reports* rather than refuses: `isBlocking` picks out the
+  structural handful that still 400s
 - `server/services/iw/validateStoredNpcIds.ts` → `validateStoredNpcIds` — the § 12 phase 1a
   boot-time sweep over every stored npc id
 - `src/pages/HomePage.tsx` → the `isTemplateAuthor`-gated **Scene Editor** tile, the only
@@ -1960,11 +2075,14 @@ to be watched for deliberately.
 - `src/features/immersiveworld/IWSceneActionsPanel.tsx` → named places + per-NPC authored
   actions (§ 14 Q42); `blankStep` and `insertBeforeTrailingWait` encode two of that
   question's rules in the UI so the author is not fighting the validator.
-- `server/services/iw/sceneValidation.ts` → `validateNpcActions` — every Q42 refusal.
+- `server/services/iw/sceneValidation.ts` → `validateNpcActions` — every Q42 complaint (all
+  of them warnings: an unwritten script saves).
 - `src/features/immersiveworld/` → `IWSceneEditorPage.tsx` (orchestration),
   `useIWSceneDraft.ts` (the draft model + paint/place edits), `IWSceneMapPanel.tsx`,
   `IWSceneDetailsPanel.tsx`, `IWSceneContentPanel.tsx`, `immersiveWorldSceneApi.ts`
-  (`masksToSceneLayout` / `sceneLayoutToMasks` join the painted masks to the stored layout)
+  (`masksToSceneLayout` / `sceneLayoutToMasks` join the painted masks to the stored layout),
+  `iwSceneWarnings.ts` → `warningFieldProps`, `IW_WARNING_TEXT_SX` (the shared amber field
+  marking, so no panel invents its own colour for a non-blocking complaint)
 - `server/scripts/bench/npc-latency/` → `run.js`, `scenario.js`, `providers.js` — the latency bench behind § 6
   and § 6a. `scenario.js` imports `server/contracts/iw.ts`, which is why the whole harness
   runs under `tsx` (§ 5.6c); its offered action names come from `npcProbes.js` (§ 5.4).
@@ -2054,25 +2172,32 @@ authored without a deploy.
 | Thing | Home | Why |
 |---|---|---|
 | **NPC** (identity, biography, traits, register) | **code** — `server/config/iwNpcs.ts`, in the shape of `nightMarketRegistry.ts` | changing an NPC changes model behaviour; it must be reviewable in a diff and revertable with the prompt it was tuned against (§ 5.6's `character-run.js` regression sweep only means something if the NPC is versioned). It also keeps § 11 layer 1 — the narrowest and strongest safety filter — out of author hands entirely. |
-| **Scene** (cast, companion, completion pair, complications, map — no objective, no scene vocabulary; both were dropped, see § 12 phase 1d) | **data** — `iw_scenes` ✅ | content grows without deploys; the authoring pressure Q1 put on the critical path lands here |
+| **Scene** (cast, companion, completion pair, complications, map, `sceneNotes` — no objective, no scene vocabulary; both were dropped, see § 12 phase 1d) | **data** — `iw_scenes` ✅ | content grows without deploys; the authoring pressure Q1 put on the critical path lands here |
 
 ### The cast (BUILT — `server/config/iwNpcs.ts`)
 
-Five non-companion NPCs ship, deliberately spread across the trait space so an author picking
+Six non-companion NPCs ship, deliberately spread across the trait space so an author picking
 one is making a real choice about difficulty and register rather than a cosmetic one. **The
 rule the cast is grown by: a second character who is hard the same way as the first buys
 nothing.** Every addition below had to name a distinct thing to practise against.
 
-| | 王婶 `wang_shen` | 小陈 `xiao_chen` | 老周 `lao_zhou` | 周敏 `zhou_min` | 马师傅 `ma_shifu` |
-|---|---|---|---|---|---|
-| Age / job | 52, owns a noodle **shop** on the market street | 23, phone-repair counter | 68, retired bus mechanic | 39, nurse on a pharmacy counter | 47, cab driver |
-| Avatar | female | male | male | female | male |
-| Agreeableness | 4 — repeats without being asked | **2 — does not slow down for you** | **5 — endlessly patient** | **2 — will not accept a vague answer** | 4 — on your side by default |
-| Energy | 4 — short bursts between tasks | **5 — fast, clipped, changes subject** | **2 — long, unhurried sentences** | 3 — one short question at a time | **5 — fills a silence within a beat** |
-| Patience | 4 — lets it pass, but tells a persistent customer once | 2 | 5 | **5 — waits through a long silence without helping** | **2 — interrupts, then notices and hands it back** |
-| Maturity | 5 — absorbs rudeness | 2 — gets curt, visibly recovers | 5 — rudeness slides off | 5 — nothing across a counter lands | 3 — stung for a minute |
-| Reads as | the default, forgiving first NPC; the cast's only **interior** — see below | difficulty by **SPEED** — fast, unaccommodating, hard to follow | the **listening-practice NPC**; natural starter of Q6's conversations | difficulty by **PRECISION** — she has nowhere else to be and will ask again | the **one who ASKS**; starts conversations instead of waiting |
-| Completes a scene? | **yes** — transactional (the money arrives) | no | no | **yes** — **informational** (she has understood what is wrong) | **yes** — transactional (§ 9.1's Cab scene) |
+| | 王婶 `wang_shen` | 小陈 `xiao_chen` | 老周 `lao_zhou` | 周敏 `zhou_min` | 马师傅 `ma_shifu` | 何老师 `he_laoshi` |
+|---|---|---|---|---|---|---|
+| Age / job | 52, owns a noodle **shop** on the market street | 23, phone-repair counter | 68, retired bus mechanic | 39, nurse on a pharmacy counter | 47, cab driver | 71, retired 语文 teacher; eats at 王婶's nightly |
+| Avatar | female | male | male | female | male | male |
+| Agreeableness | 4 — repeats without being asked | **2 — does not slow down for you** | **5 — endlessly patient** | **2 — will not accept a vague answer** | 4 — on your side by default | 3 — repeats it *the way he said it*, never an easier way |
+| Energy | 4 — short bursts between tasks | **5 — fast, clipped, changes subject** | **2 — long, unhurried sentences** | 3 — one short question at a time | **5 — fills a silence within a beat** | 3 — short deliberate sentences, plus one to explain |
+| Patience | 4 — lets it pass, but tells a persistent customer once | 2 | 5 | **5 — waits through a long silence without helping** | **2 — interrupts, then notices and hands it back** | **3 — asks twice, then GUESSES and proceeds** |
+| Maturity | 5 — absorbs rudeness | 2 — gets curt, visibly recovers | 5 — rudeness slides off | 5 — nothing across a counter lands | 3 — stung for a minute | 4 — thirty-eight years of thirteen-year-olds |
+| Reads as | the default, forgiving first NPC; the cast's only **interior** — see below | difficulty by **SPEED** — fast, unaccommodating, hard to follow | the **listening-practice NPC**; natural starter of Q6's conversations | difficulty by **PRECISION** — she has nowhere else to be and will ask again | the **one who ASKS**; starts conversations instead of waiting | difficulty by **AUDIBILITY** — deaf on one side; the only NPC who makes you say it twice, and the only one you have to contradict |
+| Has a `completionRule`? | **yes** — transactional (the money arrives) | no | no | **yes** — **informational** (she has understood what is wrong) | **yes** — transactional (§ 9.1's Cab scene) | no |
+
+⚠️ **That last row is not "can this NPC end a scene".** Every NPC can: the completer is
+`iw_scenes.completerNpcId`, picked per scene by the author, and `sceneValidation` asks only
+that they are in the cast — it never consults `completionRule`. The row says whether the
+persona happens to carry a rule about *doing business*, which is biography (王婶 will not take
+money before the food is out) and not scene machinery. Reading it as a permission list gets
+the ownership backwards and narrows the cast for no reason.
 
 **王婶 is the cast's only INTERIOR (2026-09-05).** She was a cart with six tables beside it;
 she now owns the room those tables are in, a shopfront ON the market street rather than off
@@ -2100,6 +2225,35 @@ mostly a matter of not contradicting him, and it hands Q6 its first pair with re
 stalled learner (Q29) with nobody but the companion. His questions are the feature and the
 risk — high energy plus low patience fills a pause fast, which rescues a learner who is stuck
 and steamrolls one who is merely slow, so his `patience` note makes the recovery explicit.
+
+**何老师 moves the difficulty onto the learner's own PRODUCTION, which nothing else in the
+cast does.** He is deaf on his left side, so the failure mode he creates is new: the sentence
+was fine and simply *did not arrive*. 小陈 is hard because you miss what he said; 周敏 is hard
+because a vague answer buys nothing; 何老师 is hard because **you have to say it again** — and
+his agreeableness 3 is written so that when *he* repeats himself he repeats it verbatim rather
+than rephrasing, the deliberate inverse of 老周 at 5. His second axis is patience 3: he asks
+twice, then takes his best guess and acts on it with complete confidence, which hands a learner
+the one turn no cooperative NPC can prompt for — **contradicting an NPC** (不是，我说的是…), a
+harder and more useful sentence than any answer.
+
+⚠️ **He corrects people's Chinese, and that is the riskiest thing in the registry.** A retired
+语文 teacher correcting 两 for 二 across a table is ordinary in-world behaviour, and it sits one
+sentence away from the § 11 layer-1 rule every NPC shares: an NPC must never notice that the
+person opposite is practising. His sheet is written so the habit is aimed at *everyone* — 王婶,
+老周, his own grandson, the man with the loudspeaker — and is a compulsion he knows is tiresome,
+never a service. He must never praise progress, explain that he is helping, or simplify himself
+for someone. His `happy` probe asks him how a character is read *precisely because* that is the
+turn on which a tutor surfaces in place of a person; read it first when he is swept.
+
+**何老师 and 老周 are a deliberate near-collision, resolved into a pair.** Both are retired men
+in 王婶's shop most evenings — the exact "second character who is hard the same way" the cast
+rule forbids — so they were separated on every axis a learner can feel: 老周 sits at the back,
+buys nothing, is slow and rephrases for you; 何老师 has a table and a standing order, is crisp,
+mishears you and corrects you. The payoff is Q6: the shop now holds two regulars who are **not
+currently speaking to each other** about an unfinished game of 象棋, which is worth overhearing
+in a way that two agreeable men agreeing is not. Adding him also edited 王婶's and 老周's own
+`network` lists — a regular they both see nightly has to appear on their sheets — which is why
+the § 6a census moved three rows for one new character.
 
 ⚠️ 周敏's completion rule is about being understood, **never about being treated**: no
 diagnosis, no dosing, no talking anyone out of seeing a doctor. That is a § 11 layer-1
@@ -3222,7 +3376,7 @@ This is a genuinely different lever from everything else in § 5.4. Those are pr
 the model emits per turn. An action is a *composite* the author defines per scene — the first
 authored thing in the feature that produces behaviour rather than text.
 
-**The eight step kinds** (`IW_ACTION_STEP_KINDS`, `server/contracts/iw.ts`):
+**The nine step kinds** (`IW_ACTION_STEP_KINDS`, `server/contracts/iw.ts`):
 
 | Step | What it does |
 |---|---|
@@ -3233,6 +3387,7 @@ authored thing in the feature that produces behaviour rather than text.
 | **Start a conversation** (`start_conversation`) | Play one of the scene's authored overheard exchanges. |
 | **Wait** (`wait`) | Hold still for 1–60 whole seconds. The beat that makes a script read as behaviour rather than as teleporting. |
 | **Wait for the learner** (`wait_for_response`) | Hand the floor back. At most one, and **only as the final step** — anything after it would run while the learner is composing, which is the one thing § 14 Q29 forbids. |
+| **Schedule event** (`schedule_event`) | Arm one of the scene's authored **events** (see *Event* in § 9.1) for `seconds` from now — 0–600 — and carry on. ⚠️ It does **not** hold the NPC (that is `wait`) and does not fire the event itself: the engine injects it at the next legal opportunity, so the delay is an *earliest*, not an exactly-when. This is what lets a script set in motion something it does not perform — 王婶 calls the order through, and the food arrives twenty seconds later without her standing there. |
 
 ⚠️ **`accept_payment` / `hand_over` / `give_item` / `refuse` are NOT steps** — see sub-answer 4.
 

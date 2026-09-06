@@ -1367,7 +1367,20 @@ function TemplateEditorPage() {
           className="template-editor-tool-palette"
           // alignItems:flex-start so each group/row box shrinks to fit its own buttons
           // rather than stretching to the width of the widest group.
-          sx={{ position: 'absolute', top: 96, left: 16, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}
+          //
+          // pointerEvents: the FRAME is transparent to the mouse and only the button groups
+          // take clicks. This overlay sits on the Pixi canvas, and Pixi binds `pointerdown`
+          // to the canvas element while hearing `pointermove` from the document — so every
+          // part of this box that covers the board (the gaps between rows, the space beside
+          // a short row) used to swallow the press that STARTS a stroke while still letting a
+          // drag begun elsewhere paint straight through it (found in the iw scene editor,
+          // which reuses this layout, 2026-09-05).
+          sx={{
+            position: 'absolute', top: 96, left: 16, zIndex: 10,
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1,
+            pointerEvents: 'none',
+            '& .template-editor-tool-group': { pointerEvents: 'auto' },
+          }}
         >
           {/* Row 1 (top) — view controls: gridlines toggle (own group) beside the mask-view
               toggles (own group). Hotkeys read left-to-right along the number row: ` grid,

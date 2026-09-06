@@ -212,4 +212,4 @@ global write limiter, the role-gate inventory, and the open items.
 | §3 transactions | `server/dal/base/DatabaseManager.ts` (`executeQuery`, `beginTransaction`) |
 | §4 exceptions | the seven services named in the table |
 | §5 routes | `server/routes/asyncHandler.ts`, `server/routes/*.ts`, `server/server.ts`, `server/authMiddleware.ts` |
-| §6 migrations | `database/deploy/migrate.sh`, `database/deploy/migrations/` |
+| §6 migrations | `database/deploy/migrate.sh`, `database/migrations/` |

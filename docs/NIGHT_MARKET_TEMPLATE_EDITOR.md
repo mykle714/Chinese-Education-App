@@ -81,7 +81,15 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   there are no pending edits). Name is locked once a template has >1 version (a rename
   would orphan the others); dimensions are locked above version 0 (versions share a size).
 - **Left tool palette** (each color-coded group is a **horizontal row of buttons**; groups
-  stack vertically and each box shrinks to fit its own buttons). Rows mirror the keyboard,
+  stack vertically and each box shrinks to fit its own buttons). ⚠️ **The palette FRAME is
+  `pointerEvents: 'none'`; only the `.template-editor-tool-group` boxes take clicks**
+  (2026-09-05). It is a DOM overlay on the Pixi canvas, and Pixi binds `pointerdown` to the
+  canvas element while hearing `pointermove` from the **document** — so any part of the frame
+  covering the board (the gaps between rows, the space beside a short row) swallowed the press
+  that STARTS a stroke while still letting a drag begun elsewhere paint straight through it.
+  The asymmetry is the tell: *"I can only click in one region, but I can drag from there to
+  anywhere."* Found in the iw scene editor, which reuses this layout; keep the rule in any new
+  overlay put on top of this canvas. Rows mirror the keyboard,
   top→bottom: **(1)** a view-control row — the **grid toggle** (own group; the grid draws a fine
   green line per cell plus a **red major line every 4 cells**, counted **inward from the NE
   corner** — the offset anchor is **4 cells in from the north edge and 4 in from the east

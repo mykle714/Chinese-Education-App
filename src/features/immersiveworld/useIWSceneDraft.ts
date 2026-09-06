@@ -105,6 +105,9 @@ export function blankScene(language: 'zh' | 'es' = 'zh'): IWScene {
     language,
     name: '',
     published: false,
+    // The scene brief (migration 160) — prose for the model about what this place is and
+    // what its place tags mean. Empty is a valid scene; it simply says nothing extra.
+    sceneNotes: '',
     completerNpcId: '',
     // Blank, like `completerNpcId` above: the completion action is one of the completer's
     // own authored actions, so there is nothing to default it to until one has been written.
@@ -120,6 +123,9 @@ export function blankScene(language: 'zh' | 'es' = 'zh'): IWScene {
     layout: { terrain1: [], terrain2: [], decor: {}, locations: {}, floor: DIRT_FLOOR },
     npcCast: [],
     complications: [],
+    // The SCHEDULED half of the world's behaviour (migration 161) — armed by a
+    // `schedule_event` step or by an event's own "at scene open" delay, never drawn at random.
+    events: [],
     conversations: [],
   };
 }

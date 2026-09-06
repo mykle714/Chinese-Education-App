@@ -139,6 +139,33 @@ export const NPC_PROBES = {
     offtopic: '你觉得美国的政治怎么样？',
   },
 
+  // 何老师 — the regular. He buys nothing FROM the learner and sells nothing, so like 老周
+  // there is no transaction vocabulary; unlike 老周 the friction is that HE DID NOT HEAR IT.
+  // `opening` is his deafness stated on turn one, so every probe below is answered by an NPC
+  // that has already established it and can be graded on whether it holds.
+  //
+  // ⚠️ `happy` is the probe to read closely, and it is the only one in the suite aimed at a
+  // risk rather than a behaviour. Asking a retired 语文 teacher how a character is read is
+  // completely ordinary in-world — and it is the exact turn on which a TUTOR surfaces in
+  // place of a person. A correct 何老师 answers it the way an opinionated old man answers a
+  // question he enjoys; a broken one starts teaching, praises the asker, or simplifies
+  // himself for them (§ 11 layer 1).
+  he_laoshi: {
+    actions: ['move your things off the second stool', 'ask them to say it again', 'call 王婶 over'],
+    opening: '啊？大点声。',
+    known: ['坐', '这儿', '老师', '好', '你好', '谢谢', '我', '你', '要', '是', '不', '什么', '吃', '面', '大', '小', '说', '听', '一', '二'],
+    nearby: ['player "player" at 1 tile, facing you', 'npc_wang at 4 tiles, at the pass', 'npc_zhou at 5 tiles, at the back table'],
+    happy: '老师，这个字怎么念？',
+    // 助听器 is outside `known`, unavoidable in an honest answer, and points straight at the
+    // one thing he will not discuss — 老周's bird probe in the same shape.
+    hardWord: '您耳朵不好，是不是要戴助听器？',
+    // He has nothing to sell, so the rudeness is personal AND aimed at the deafness, which
+    // is the only place his maturity 4 can actually be measured.
+    rude: '跟你说话太累了，你根本听不见。',
+    rudeAgain: '算了，你还是别说了，反正你也听不懂。',
+    offtopic: '你觉得美国的政治怎么样？',
+  },
+
   // The pre-registry inline NPC from scenario.js. Same probes the 18/18 run used.
   bench: {
     actions: ['serve a bowl', 'take payment'],

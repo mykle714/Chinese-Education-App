@@ -304,6 +304,12 @@ verified on the infrastructure checks; it stays open only until someone opens a 
 board and confirms it fills rather than coming back short, which is the one over-blocking
 symptom those checks cannot see. Prod is current through migration **159**.
 
+**[docs/IW_SCENE_NOTES_DEPLOY_RUNBOOK.md](./docs/IW_SCENE_NOTES_DEPLOY_RUNBOOK.md)**
+(iw scene notes + scene events — migrations **160** and **161**, plus the advisory-validator
+and palette-click fixes). **NOT YET DEPLOYED.** Both are expand-only and go in one pass, but
+they must run BEFORE the rebuild: the shipped `ImmersiveWorldDAL` selects
+`iw_scenes."sceneNotes"` and `iw_scenes.events` by name.
+
 **[docs/IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md](./docs/IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md)**
 (Immersive World scene authoring — migration **159**). **DEPLOYED 2026-09-05**; every schema
 check passed. It stays open only until someone opens the editor as a template author and saves

@@ -8,6 +8,7 @@ import {
   IW_MAX_SCENE_DIM, IW_MIN_SCENE_DIM,
   type IWNpcOption, type IWScene, type IWSceneCastMember,
 } from '../../../server/contracts/iw';
+import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
 
 /**
  * IWSceneDetailsPanel — the scene's IDENTITY, its completion pair and its cast
@@ -45,6 +46,9 @@ export default function IWSceneDetailsPanel({
 
   /** The complaint against one field path, if the last save produced one. */
   const problem = (field: string) => problemsByField.get(field);
+  /** Amber marking props for one field. Warnings do not refuse a save, so they do not
+   *  paint like errors — see `iwSceneWarnings.ts`. */
+  const warn = (field: string) => warningFieldProps(problemsByField, field);
 
   const castIds = new Set(scene.npcCast.map((m) => m.npcId));
   // THE COMPANION IS NEVER OFFERED. He is in every scene by definition, and his position is
@@ -73,8 +77,7 @@ export default function IWSceneDetailsPanel({
             label="Name"
             size="small"
             value={scene.name}
-            error={!!problem('name')}
-            helperText={problem('name')}
+            {...warn('name')}
             onChange={(e) => onUpdate({ name: e.target.value })}
           />
           <TextField
@@ -106,6 +109,25 @@ export default function IWSceneDetailsPanel({
             }
             label="Published (learners can be given this scene)"
           />
+          {/* THE SCENE BRIEF (migration 160). The one piece of prose an author writes about a
+              scene, and the only place two things can be said at all: what this place IS, and
+              what its named places MEAN — a tag is a single word picked for the dropdowns, and
+              “counter” does not say “this is where you pay”.
+              ⚠️ It reaches NPCs VERBATIM and is not checked for meta language (§ 14 Q27), so
+              the placeholder shows the register to write in: the world, never the game. */}
+          <TextField
+            className="iw-scene-details-panel__notes"
+            label="Scene notes (the model reads this)"
+            size="small"
+            multiline
+            minRows={3}
+            value={scene.sceneNotes}
+            placeholder={'A cramped noodle stall at closing time.\n“counter” is where 王婶 takes payment; “tables” is the seating area.'}
+            {...warn('sceneNotes')}
+            helperText={problem('sceneNotes')
+              ?? 'What this place is, and what each named place means. Written in-world — the NPCs read it as it stands.'}
+            onChange={(e) => onUpdate({ sceneNotes: e.target.value })}
+          />
         </Stack>
       </Box>
 
@@ -117,8 +139,7 @@ export default function IWSceneDetailsPanel({
             label="Width" size="small" type="number"
             inputProps={{ min: IW_MIN_SCENE_DIM, max: IW_MAX_SCENE_DIM }}
             value={scene.width}
-            error={!!problem('width')}
-            helperText={problem('width')}
+            {...warn('width')}
             onChange={(e) => onUpdate({ width: Number(e.target.value) })}
           />
           <TextField
@@ -138,7 +159,7 @@ export default function IWSceneDetailsPanel({
             label={`Player faces (at ${scene.playerStartCol}, ${scene.playerStartRow})`}
             size="small" select fullWidth
             value={scene.playerStartFacing}
-            error={!!problem('playerStartFacing')}
+            {...warn('playerStartFacing')}
             onChange={(e) => onUpdate({ playerStartFacing: e.target.value as IWScene['playerStartFacing'] })}
           >
             {IW_FACINGS.map((f) => (
@@ -150,7 +171,7 @@ export default function IWSceneDetailsPanel({
             label={`Companion faces (at ${scene.companionStartCol}, ${scene.companionStartRow})`}
             size="small" select fullWidth
             value={scene.companionStartFacing}
-            error={!!problem('companionStartFacing')}
+            {...warn('companionStartFacing')}
             onChange={(e) => onUpdate({ companionStartFacing: e.target.value as IWScene['companionStartFacing'] })}
           >
             {IW_FACINGS.map((f) => (
@@ -163,7 +184,7 @@ export default function IWSceneDetailsPanel({
           scene opens by walking the player to the companion, so give them some distance.
         </Typography>
         {(problem('playerStartCol') || problem('companionStartCol')) && (
-          <Typography className="iw-scene-details-panel__start-error" color="error" sx={{ fontSize: 12 }}>
+          <Typography className="iw-scene-details-panel__start-error" sx={{ ...IW_WARNING_TEXT_SX, fontSize: 12 }}>
             {problem('playerStartCol') ?? problem('companionStartCol')}
           </Typography>
         )}
@@ -231,7 +252,7 @@ export default function IWSceneDetailsPanel({
                   <DeleteIcon fontSize="small" />
                 </IconButton>
                 {problem(`npcCast[${i}].col`) && (
-                  <Typography color="error" sx={{ fontSize: 11 }}>{problem(`npcCast[${i}].col`)}</Typography>
+                  <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 11 }}>{problem(`npcCast[${i}].col`)}</Typography>
                 )}
               </Stack>
             );
@@ -250,7 +271,7 @@ export default function IWSceneDetailsPanel({
             className="iw-scene-details-panel__completer"
             label="Who" size="small" select fullWidth
             value={completerOptions.some((n) => n.id === scene.completerNpcId) ? scene.completerNpcId : ''}
-            error={!!problem('completerNpcId')}
+            {...warn('completerNpcId')}
             helperText={problem('completerNpcId') ??
               (completerOptions.length === 0 ? 'Add an NPC who can complete a scene to the cast.' : undefined)}
             onChange={(e) => onUpdate({ completerNpcId: e.target.value })}
@@ -266,7 +287,7 @@ export default function IWSceneDetailsPanel({
             className="iw-scene-details-panel__completion-action"
             label="Does what" size="small" select fullWidth
             value={completerActions.some((a) => a.id === scene.completionAction) ? scene.completionAction : ''}
-            error={!!problem('completionAction')}
+            {...warn('completionAction')}
             helperText={problem('completionAction') ??
               (scene.completerNpcId && completerActions.length === 0
                 ? 'Program an action for this NPC first — the one that ends the scene.'

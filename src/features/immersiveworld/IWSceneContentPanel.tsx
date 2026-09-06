@@ -1,15 +1,16 @@
-import { Box, Button, IconButton, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, Checkbox, FormControlLabel, IconButton, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { COLORS } from '../../theme/colors';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
-import { IW_CONVERSATION_LINE_MS } from '../../../server/contracts/iw';
+import { IW_CONVERSATION_LINE_MS, IW_MAX_EVENT_DELAY_SECONDS } from '../../../server/contracts/iw';
 import type {
-  IWComplication, IWConversation, IWNpcOption, IWScene,
+  IWComplication, IWConversation, IWNpcOption, IWScene, IWSceneEvent,
 } from '../../../server/contracts/iw';
+import { warningFieldProps } from './iwSceneWarnings';
 
 /**
- * IWSceneContentPanel — the two authored LISTS a scene carries besides its cast:
- * complications and NPC-to-NPC conversations (docs/IMMERSIVE_WORLD.md § 12 phase 1d).
+ * IWSceneContentPanel — the three authored LISTS a scene carries besides its cast:
+ * complications, events and NPC-to-NPC conversations (docs/IMMERSIVE_WORLD.md § 12 phase 1d).
  *
  * LAYER: feature view. Stateless; every edit is a patch back to the draft.
  *
@@ -19,6 +20,12 @@ import type {
  *    one just repeats itself. Everyone present reacts in character; they belong to the
  *    world, not to an NPC, which is why nothing here asks who owns one. They are also the
  *    only thing making day 12 different from day 11 in a once-per-day feature.
+ *  - **Events** (migration 161) are the SAME KIND OF FACT as a complication — one line, the
+ *    world's, everyone present reacts in character — with a different trigger. A complication
+ *    is drawn at random; an event is SCHEDULED: by a `Schedule event` step inside an authored
+ *    action, or by the event's own "at scene open" delay. That is the whole difference, and it
+ *    is why they are two lists: the random roll must never spring an authored beat before its
+ *    cue, and a script must never be able to arm the surprise.
  *  - **Conversations** are canned, pre-reviewed exchanges the learner can OVERHEAR and tap
  *    to pause (§ 14 Q6). They cost nothing per line because no model call is made for them.
  *    Only cast members may speak in one — never the companion, who walks in with the
@@ -47,7 +54,9 @@ function makeId(prefix: string, taken: Set<string>): string {
 export default function IWSceneContentPanel({
   scene, npcs, problemsByField, onUpdate,
 }: IWSceneContentPanelProps) {
-  const problem = (field: string) => problemsByField.get(field);
+  /** Amber marking props for one field. Warnings do not refuse a save, so they do not
+   *  paint like errors — see `iwSceneWarnings.ts`. */
+  const warn = (field: string) => warningFieldProps(problemsByField, field);
   const npcName = (npcId: string) => npcs.find((n) => n.id === npcId)?.name ?? npcId;
 
   /**
@@ -70,6 +79,35 @@ export default function IWSceneContentPanel({
       { id: makeId('c', new Set(scene.complications.map((c) => c.id))), description: '' },
     ],
   });
+
+  // ── Events (migration 161) ────────────────────────────────────────────────
+  const patchEvent = (i: number, patch: Partial<IWSceneEvent>) => {
+    onUpdate({ events: scene.events.map((e, j) => (j === i ? { ...e, ...patch } : e)) });
+  };
+  const addEvent = () => onUpdate({
+    events: [
+      ...scene.events,
+      { id: makeId('e', new Set(scene.events.map((e) => e.id))), description: '' },
+    ],
+  });
+  /**
+   * Toggle "at scene open". UNDEFINED, not 0, is the off state: 0 is a meaningful value
+   * (fire at the first legal moment), so the checkbox has to add and remove the field rather
+   * than write a sentinel number into it.
+   */
+  const toggleAtStart = (i: number, on: boolean) => {
+    const next = scene.events.map((e, j) => {
+      if (j !== i) return e;
+      if (!on) {
+        // Delete the key rather than zeroing it — see the doc comment above.
+        const rest = { ...e };
+        delete rest.atStartSeconds;
+        return rest;
+      }
+      return { ...e, atStartSeconds: e.atStartSeconds ?? 10 };
+    });
+    onUpdate({ events: next });
+  };
 
   // ── Conversations ─────────────────────────────────────────────────────────
   const patchConversation = (i: number, patch: Partial<IWConversation>) => {
@@ -102,14 +140,74 @@ export default function IWSceneContentPanel({
                 size="small" fullWidth multiline
                 label={`Complication ${complication.id}`}
                 value={complication.description}
-                error={!!problem(`complications[${i}].description`)}
-                helperText={problem(`complications[${i}].description`)}
+                {...warn(`complications[${i}].description`)}
                 onChange={(e) => patchComplication(i, { description: e.target.value })}
               />
               <IconButton
                 size="small"
                 title="Remove"
                 onClick={() => onUpdate({ complications: scene.complications.filter((_, j) => j !== i) })}
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+          ))}
+        </Stack>
+      </Box>
+
+      {/* ── Events ── */}
+      <Box className="iw-scene-content-panel__events" sx={{ mb: 3 }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between">
+          <Typography variant="overline">Events</Typography>
+          <Button size="small" startIcon={<AddIcon />} onClick={addEvent}>Add</Button>
+        </Stack>
+        <Typography sx={{ fontSize: 12, opacity: 0.7, mb: 1 }}>
+          The same kind of world fact as a complication — but SCHEDULED, never drawn. An action
+          arms one with a “Schedule event” step, or tick “at scene open” to arm it as the scene
+          begins. The engine fires it at the next legal moment, never while the learner is
+          answering.
+        </Typography>
+        <Stack spacing={1}>
+          {scene.events.map((event, i) => (
+            <Stack key={event.id} direction="row" spacing={1} alignItems="flex-start">
+              <Stack spacing={0.5} sx={{ flex: 1 }}>
+                <TextField
+                  className="iw-scene-content-panel__event"
+                  size="small" fullWidth multiline
+                  label={`Event ${event.id}`}
+                  placeholder="The kitchen sends out the noodles."
+                  value={event.description}
+                  {...warn(`events[${i}].description`)}
+                  onChange={(e) => patchEvent(i, { description: e.target.value })}
+                />
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <FormControlLabel
+                    className="iw-scene-content-panel__event-at-start"
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={event.atStartSeconds !== undefined}
+                        onChange={(e) => toggleAtStart(i, e.target.checked)}
+                      />
+                    }
+                    label={<Typography sx={{ fontSize: 12 }}>at scene open</Typography>}
+                  />
+                  {event.atStartSeconds !== undefined && (
+                    <TextField
+                      className="iw-scene-content-panel__event-delay"
+                      size="small" type="number" label="seconds" sx={{ width: 110 }}
+                      inputProps={{ min: 0, max: IW_MAX_EVENT_DELAY_SECONDS }}
+                      value={event.atStartSeconds}
+                      {...warn(`events[${i}].atStartSeconds`)}
+                      onChange={(e) => patchEvent(i, { atStartSeconds: Number(e.target.value) })}
+                    />
+                  )}
+                </Stack>
+              </Stack>
+              <IconButton
+                size="small"
+                title="Remove"
+                onClick={() => onUpdate({ events: scene.events.filter((_, j) => j !== i) })}
               >
                 <DeleteIcon fontSize="small" />
               </IconButton>
@@ -169,7 +267,7 @@ export default function IWSceneContentPanel({
                     <TextField
                       size="small" select label="Who" sx={{ width: 130 }}
                       value={speakers.includes(turn.npcId) ? turn.npcId : ''}
-                      error={!!problem(`conversations[${i}].turns[${t}].npcId`)}
+                      {...warn(`conversations[${i}].turns[${t}].npcId`)}
                       onChange={(e) => patchConversation(i, {
                         turns: conv.turns.map((x, j) => (j === t ? { ...x, npcId: e.target.value } : x)),
                       })}
@@ -181,7 +279,7 @@ export default function IWSceneContentPanel({
                     <TextField
                       size="small" label="Line" fullWidth
                       value={turn.text}
-                      error={!!problem(`conversations[${i}].turns[${t}].text`)}
+                      {...warn(`conversations[${i}].turns[${t}].text`)}
                       onChange={(e) => patchConversation(i, {
                         turns: conv.turns.map((x, j) => (j === t ? { ...x, text: e.target.value } : x)),
                       })}

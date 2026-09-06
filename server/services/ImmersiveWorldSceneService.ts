@@ -2,7 +2,7 @@ import type { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import type { IImmersiveWorldDAL } from '../dal/interfaces/IImmersiveWorldDAL.js';
 import { DALError, DuplicateError, NotFoundError, ValidationError } from '../types/dal.js';
 import type { IWNpcOption, IWScene, IWSceneSummary } from '../contracts/iw.js';
-import { validateScene, type IWSceneProblem } from './iw/sceneValidation.js';
+import { isBlocking, validateScene, type IWSceneProblem } from './iw/sceneValidation.js';
 import { COMPANION_NPC_ID_BY_LANGUAGE, npcsForLanguage } from '../config/iwNpcs.js';
 
 /**
@@ -18,7 +18,10 @@ import { COMPANION_NPC_ID_BY_LANGUAGE, npcsForLanguage } from '../config/iwNpcs.
  *    in a route is one forgotten middleware away from being absent; a gate at the top of
  *    every service method cannot be routed around.
  * 2. **VALIDATION.** `validateScene` is pure and lives in `iw/sceneValidation.ts`; this
- *    service is what refuses to write when it reports a problem.
+ *    service is what decides what a problem COSTS. Since 2026-09-05 that is almost never a
+ *    refusal: only `severity: 'error'` problems (the structural handful the row cannot hold)
+ *    throw, and every other complaint rides back with the saved scene as `warnings`, so a
+ *    half-built scene saves and the editor still marks up what is missing.
  *
  * ⚠️ EVERY METHOD HERE IS AUTHORING. There is deliberately no ungated scene read yet: the
  * runtime load ("give the learner today's scene") is phase 2 and will be a different
@@ -31,12 +34,16 @@ import { COMPANION_NPC_ID_BY_LANGUAGE, npcsForLanguage } from '../config/iwNpcs.
  */
 
 /**
- * A save refused because the scene is malformed. Carries EVERY problem, not the first, so
- * the editor can mark up all the offending fields in one round trip.
+ * A save refused because the scene is STRUCTURALLY malformed — the narrow case the validator
+ * marks `severity: 'error'`. Carries every blocking problem, not the first, so the editor can
+ * mark up all the offending fields in one round trip.
+ *
+ * Ordinary authoring complaints do NOT come back this way any more: they are returned with
+ * the saved scene as `warnings` (see `saveScene`).
  */
 export class IWSceneValidationError extends DALError {
   constructor(public readonly problems: IWSceneProblem[]) {
-    super('This scene has problems that must be fixed before it can be saved',
+    super('This scene cannot be saved in this shape',
       'ERR_IW_SCENE_INVALID', 400);
     this.name = 'IWSceneValidationError';
   }
@@ -129,16 +136,22 @@ export class ImmersiveWorldSceneService {
    * Create or overwrite a scene. `scene.id` decides which: present means overwrite that
    * row, absent means insert.
    *
+   * Returns the stored scene AND the non-blocking `warnings` the validator raised against it,
+   * because a saved scene is not necessarily a finished one — the author is told what is
+   * still wrong without being stopped from keeping their work.
+   *
    * VALIDATION RUNS BEFORE THE NAME CHECK on purpose — a scene whose language is garbage
    * cannot have its name checked within that language, and reporting "name taken" for a
    * payload with eleven other problems buries the real ones.
    */
-  async saveScene(userId: string, scene: IWScene): Promise<IWScene> {
+  async saveScene(userId: string, scene: IWScene): Promise<{ scene: IWScene; warnings: IWSceneProblem[] }> {
     await this.assertTemplateAuthor(userId);
     if (!scene || typeof scene !== 'object') throw new ValidationError('A scene payload is required');
 
     const problems = validateScene(scene);
-    if (problems.length > 0) throw new IWSceneValidationError(problems);
+    const blocking = problems.filter(isBlocking);
+    if (blocking.length > 0) throw new IWSceneValidationError(blocking);
+    const warnings = problems.filter((p) => !isBlocking(p));
 
     // Names are the author's handle on a scene; a duplicate within one language would make
     // the load list ambiguous. Enforced here rather than by a unique index because it is a
@@ -151,9 +164,9 @@ export class ImmersiveWorldSceneService {
     if (scene.id) {
       const updated = await this.iwDAL.updateScene(scene.id, scene);
       if (!updated) throw new NotFoundError('Scene not found');
-      return updated;
+      return { scene: updated, warnings };
     }
-    return this.iwDAL.createScene(scene);
+    return { scene: await this.iwDAL.createScene(scene), warnings };
   }
 
   /**

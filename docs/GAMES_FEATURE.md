@@ -392,7 +392,10 @@ inherits a shell from it.
   so the popup is modal and its own buttons are the only exits. The rule is
   "minimizable iff the board is still worth uncovering" — Bubble Match, Match Speed
   and Word Search all have a post-run cleanup mode, Speed Reading has none.
-- **`gameSounds.ts`** — shared sound effects for game events.
+- **Answer-feedback sound** — no longer lives here. `gameSounds.ts` was deleted on
+  2026-09-05; every game now sounds the shared marimba arpeggio automatically via
+  `markFlashcard` (`src/services/audio/markArpeggio.ts`, docs/AUDIO_PLAYBACK.md § 6).
+  A new game gets it for free, and only needs `useMarkArpeggio()` to scope the streak.
 - **`useBackgroundPause.ts` + `GamePausedOverlay.tsx`** — the app-wide
   backgrounding pause and its tap-to-resume overlay (§ Backgrounding pauses the clock).
 - **The Study Challenge round runner** — five files, and the largest thing in here:
@@ -1080,7 +1083,8 @@ Renaming a `gameId` counts as removing one game and adding another. Don't.
 - `src/games/registry.ts` — central `GAME_REGISTRY` + `GAME_ROUTES`
 - `src/games/types.ts` — `GameDef`, `GameAsset`, `GameProgress`
 - `src/games/runtime/GameEndPopup.tsx` — shared end-of-run popup shell (all four games)
-- `src/games/runtime/gameSounds.ts` — shared game sound effects
+- `src/services/audio/markArpeggio.ts` — the shared answer-feedback arpeggio
+- `src/hooks/useMarkArpeggio.ts` — resets the arpeggio streak per game page
 - `src/games/runtime/useSidewaysStage.ts` — landscape-stage helper (Speed Reading)
 - `src/games/shared/GameFrame.tsx` — `GameFrame` / `GameHud` / `GameHudLabel` / `GameHudBar` / `GameHint` / `GameTimer`; the `.play` panel every game plays inside (§ Layer 2b)
 - `src/routes/routeMeta.ts` — `GAME_ROUTE_META` derives one `chrome: "leaf"` row per registry entry

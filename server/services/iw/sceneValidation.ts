@@ -10,6 +10,9 @@ import {
   IW_MAX_CAST,
   IW_MAX_COMPLICATIONS,
   IW_MAX_COMPLICATION_LENGTH,
+  IW_MAX_EVENTS,
+  IW_MAX_EVENT_DELAY_SECONDS,
+  IW_MAX_EVENT_LENGTH,
   IW_MAX_CONVERSATIONS,
   IW_MAX_CONVERSATION_LINE_LENGTH,
   IW_MAX_CONVERSATION_TURNS,
@@ -18,6 +21,7 @@ import {
   IW_MAX_NPC_ACTIONS,
   IW_MAX_SCENE_DIM,
   IW_MAX_SCENE_NAME_LENGTH,
+  IW_MAX_SCENE_NOTES_LENGTH,
   IW_MAX_WAIT_SECONDS,
   IW_MIN_SCENE_DIM,
   type IWActionStep,
@@ -25,6 +29,7 @@ import {
   type IWConversation,
   type IWFacing,
   type IWNpcAction,
+  type IWSceneEvent,
   type IWScene,
   type IWSceneCastMember,
   type IWSceneLayout,
@@ -40,11 +45,22 @@ import { COMPANION_NPC_ID_BY_LANGUAGE, npcById } from '../../config/iwNpcs.js';
  * NPC may speak is pure and unit-testable") applied to authoring: everything that decides
  * whether a scene is well-formed is pure.
  *
- * WHY IT IS THIS STRICT. § 12 phase 1's kill condition is "an author cannot assemble a
- * working scene without engineering help", and the failure that produces it is a scene that
- * SAVES and then misbehaves at runtime — a completer who isn't in the cast, an NPC id that
- * no longer resolves, a start cell off the board. Each of those is a silent runtime fault
- * and a loud save-time error, so they are all checked here.
+ * WARNINGS, NOT REFUSALS (2026-09-05). § 12 phase 1's kill condition is "an author cannot
+ * assemble a working scene without engineering help", and a validator that REFUSES a save is
+ * itself a way to hit it: a scene is authored over several sittings, and a half-built one —
+ * a completer with no action yet, a place named but not placed — is a normal intermediate
+ * state, not a mistake. So almost everything here is `severity: 'warning'`: it is reported
+ * against the field, shown in the editor, and the scene still saves. The author, not the
+ * validator, decides when the scene is finished.
+ *
+ * WHAT STILL BLOCKS (`severity: 'error'`) is only what would make the WRITE itself wrong —
+ * a value the row physically cannot hold or that would corrupt reads of it: a language that
+ * is neither zh nor es (every scene read is language-scoped), a blank or over-long name (the
+ * NOT NULL VARCHAR(120) the author picks the scene by), board dimensions or start cells that
+ * are not whole numbers in range (INTEGER columns), and a layout that is not an object.
+ * Everything else — an unresolvable NPC id, a completer who is not cast, a walk toward a
+ * place nobody tagged — is a scene that saves fine and misbehaves only if it is PUBLISHED
+ * and played, which is a later decision the author makes deliberately.
  *
  * NPC IDS ARE CHECKED AGAINST CODE, NOT A TABLE. `npcById` is the only resolver
  * (migration 158's header); the database cannot enforce a reference into a code constant,
@@ -52,7 +68,7 @@ import { COMPANION_NPC_ID_BY_LANGUAGE, npcById } from '../../config/iwNpcs.js';
  * startup, for rows written before an NPC was deleted).
  *
  * Referenced by: server/services/ImmersiveWorldSceneService.ts,
- * server/services/iw/__tests__/sceneValidation.test.ts.
+ * server/__tests__/iwSceneValidation.test.ts.
  * Documented in docs/IMMERSIVE_WORLD.md § 12 phase 1d.
  */
 
@@ -61,6 +77,17 @@ export interface IWSceneProblem {
   /** Dotted path into the payload ("npcCast[2].npcId"), so the editor can highlight a field. */
   field: string;
   message: string;
+  /**
+   * How hard this bites. OMITTED MEANS 'warning' — the overwhelming majority — so a rule is
+   * blocking only where it deliberately says so, and adding a new rule cannot accidentally
+   * start refusing saves.
+   */
+  severity?: 'error' | 'warning';
+}
+
+/** Does this problem refuse the save? Only structural ones do (see the header). */
+export function isBlocking(problem: IWSceneProblem): boolean {
+  return problem.severity === 'error';
 }
 
 /** A "col,row" cell key as stored in every layout mask. */
@@ -84,42 +111,72 @@ function str(v: unknown): string {
 }
 
 /**
- * Validate one scene payload end to end and return every problem found.
+ * Validate one scene payload end to end and return every problem found, each tagged with a
+ * severity — a handful of blocking `'error'`s and, for everything else, warnings the caller
+ * shows and saves through anyway (see the header).
  *
  * Returns ALL problems rather than throwing on the first, because an author fixing a scene
- * one error per save round-trip is the tool being annoying in exactly the way phase 1's
+ * one complaint per save round-trip is the tool being annoying in exactly the way phase 1's
  * kill condition describes.
  */
 export function validateScene(scene: IWScene): IWSceneProblem[] {
   const problems: IWSceneProblem[] = [];
+  /** Report against a field WITHOUT refusing the save — the default (see the header). */
   const add = (field: string, message: string) => problems.push({ field, message });
+  /** Report against a field AND refuse the save. Structural faults only. */
+  const block = (field: string, message: string) =>
+    problems.push({ field, message, severity: 'error' });
 
   // ── Identity ──────────────────────────────────────────────────────────────
+  // BLOCKING: the column is VARCHAR(10) NOT NULL and every scene read is scoped by it, so a
+  // third value would write a row nothing ever lists again.
   if (scene.language !== 'zh' && scene.language !== 'es') {
-    add('language', 'Language must be zh or es');
+    block('language', 'Language must be zh or es');
   }
+  // BLOCKING: VARCHAR(120) NOT NULL, and the name is the author's only handle on the scene
+  // in the load list — an unnamed save is a scene they cannot find their way back to.
   const name = str(scene.name);
-  if (!name) add('name', 'A scene needs a name');
+  if (!name) block('name', 'A scene needs a name');
   else if (name.length > IW_MAX_SCENE_NAME_LENGTH) {
-    add('name', `Name must be ≤ ${IW_MAX_SCENE_NAME_LENGTH} characters`);
+    block('name', `Name must be ≤ ${IW_MAX_SCENE_NAME_LENGTH} characters`);
+  }
+
+  // The scene brief (migration 160). Only its LENGTH is checked, and only as a warning: it
+  // is prose for a model, so there is nothing else here that could be true or false about it.
+  // An empty brief is fine — the scene simply tells the model nothing extra.
+  if (str(scene.sceneNotes).length > IW_MAX_SCENE_NOTES_LENGTH) {
+    add('sceneNotes', `Scene notes must be ≤ ${IW_MAX_SCENE_NOTES_LENGTH} characters`);
   }
 
   // ── Board geometry ────────────────────────────────────────────────────────
+  // BLOCKING: INTEGER columns, and the whole editor (and every cell key in the layout) is
+  // meaningless without a board to be inside.
   const dimsOk =
     isIntInRange(scene.width, IW_MIN_SCENE_DIM, IW_MAX_SCENE_DIM) &&
     isIntInRange(scene.height, IW_MIN_SCENE_DIM, IW_MAX_SCENE_DIM);
   if (!dimsOk) {
-    add('width', `Board must be between ${IW_MIN_SCENE_DIM} and ${IW_MAX_SCENE_DIM} cells on each side`);
+    block('width', `Board must be between ${IW_MIN_SCENE_DIM} and ${IW_MAX_SCENE_DIM} cells on each side`);
   }
 
   // Every later cell check needs a board to be inside, so they only run once dims are sane.
   const onBoard = (col: unknown, row: unknown): boolean =>
     dimsOk && isIntInRange(col, 0, scene.width - 1) && isIntInRange(row, 0, scene.height - 1);
 
-  if (!onBoard(scene.playerStartCol, scene.playerStartRow)) {
+  // The two starts split by severity, because the two failures are different in kind: a
+  // non-integer cannot go into an INTEGER column at all (blocking), while an integer that
+  // happens to sit off a shrunken board is an ordinary half-finished edit (warning) — an
+  // author who narrows the board before re-placing the bodies is mid-task, not wrong.
+  const wholeCell = (col: unknown, row: unknown): boolean =>
+    Number.isInteger(col as number) && Number.isInteger(row as number);
+
+  if (!wholeCell(scene.playerStartCol, scene.playerStartRow)) {
+    block('playerStartCol', 'The player start cell must be whole numbers');
+  } else if (!onBoard(scene.playerStartCol, scene.playerStartRow)) {
     add('playerStartCol', 'The player start cell is off the board');
   }
-  if (!onBoard(scene.companionStartCol, scene.companionStartRow)) {
+  if (!wholeCell(scene.companionStartCol, scene.companionStartRow)) {
+    block('companionStartCol', 'The companion start cell must be whole numbers');
+  } else if (!onBoard(scene.companionStartCol, scene.companionStartRow)) {
     add('companionStartCol', 'The companion start cell is off the board');
   }
   // Both bodies also face somewhere at scene open (migration 159). Checked exactly like a
@@ -175,6 +232,12 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
     (Array.isArray(scene.conversations) ? scene.conversations : [])
       .map((c) => str(c?.id)).filter(Boolean),
   );
+  // The third thing an authored action can point at (migration 161), gathered the same way:
+  // a `schedule_event` step names one of the scene's OWN events, never a free-text one.
+  const eventIds = new Set<string>(
+    (Array.isArray(scene.events) ? scene.events : [])
+      .map((e) => str(e?.id)).filter(Boolean),
+  );
 
   cast.forEach((member: IWSceneCastMember, i: number) => {
     const at = `npcCast[${i}]`;
@@ -213,7 +276,7 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
     }
 
     problems.push(...validateNpcActions(
-      member?.actions, at, str(member?.npcId), locationTags, actorIds, conversationIds,
+      member?.actions, at, str(member?.npcId), locationTags, actorIds, conversationIds, eventIds,
     ));
   });
 
@@ -284,6 +347,13 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
     }
   });
 
+  // ── Authored events (migration 161) ───────────────────────────────────────
+  // Checked exactly like complications — same shape, same one-line-fact role — plus the one
+  // field a complication has no equivalent of: `atStartSeconds`, the scene arming its own
+  // event. Duplicate ids matter here for two reasons, not one: a run stores what fired, AND
+  // a `schedule_event` step names an event by id, so a duplicate makes the step ambiguous.
+  problems.push(...validateEvents(scene.events));
+
   // ── Authored NPC-to-NPC conversations (§ 14 Q6) ───────────────────────────
   problems.push(...validateConversations(scene.conversations, seenNpcIds));
 
@@ -302,8 +372,9 @@ function validateLayout(
   dimsOk: boolean,
 ): IWSceneProblem[] {
   const problems: IWSceneProblem[] = [];
+  // BLOCKING: the JSONB column holds an object, and every mask read below assumes one.
   if (!layout || typeof layout !== 'object') {
-    return [{ field: 'layout', message: 'Layout must be an object' }];
+    return [{ field: 'layout', message: 'Layout must be an object', severity: 'error' }];
   }
 
   // Only the two terrain layers are cell lists now: a scene paints no walkability class
@@ -392,6 +463,7 @@ function validateNpcActions(
   tags: Set<string>,
   actorIds: Set<string>,
   conversationIds: Set<string>,
+  eventIds: Set<string>,
 ): IWSceneProblem[] {
   const problems: IWSceneProblem[] = [];
   if (actions === undefined) return problems;
@@ -472,6 +544,27 @@ function validateNpcActions(
           }
           break;
         }
+        case 'schedule_event': {
+          // Arms a timer and moves on — it does NOT hold the NPC, which is what `wait` is
+          // for. Both halves are checked: an event that exists, and a delay the engine can
+          // actually hold. A missing event is the silent failure this whole function exists
+          // to catch — the script would run to the end and the world would simply never do
+          // the thing the author was counting on.
+          const eventId = str((step as { eventId?: unknown }).eventId).trim();
+          if (!eventId) {
+            problems.push({ field: `${stepAt}.eventId`, message: 'Pick an event to schedule' });
+          } else if (!eventIds.has(eventId)) {
+            problems.push({ field: `${stepAt}.eventId`, message: `This scene has no event "${eventId}"` });
+          }
+          const delay = (step as { seconds?: unknown }).seconds;
+          if (!isIntInRange(delay, 0, IW_MAX_EVENT_DELAY_SECONDS)) {
+            problems.push({
+              field: `${stepAt}.seconds`,
+              message: `Delay must be 0–${IW_MAX_EVENT_DELAY_SECONDS} whole seconds`,
+            });
+          }
+          break;
+        }
         case 'wait': {
           const seconds = (step as { seconds?: unknown }).seconds;
           if (!isIntInRange(seconds, 1, IW_MAX_WAIT_SECONDS)) {
@@ -508,6 +601,59 @@ function validateNpcActions(
         }
       }
     });
+  });
+
+  return problems;
+}
+
+/**
+ * The scene's authored EVENT pool (migration 161).
+ *
+ * An event is a complication with a different trigger, so this is deliberately the same set of
+ * checks as the complication loop above — plus `atStartSeconds`, which a complication has no
+ * equivalent of because nothing schedules a complication.
+ *
+ * NOTE WHAT IS NOT CHECKED: whether anything ever fires the event. An event with no
+ * `atStartSeconds` and no `schedule_event` step pointing at it is dead weight, but it is also
+ * exactly what a half-written scene looks like — the pool is usually authored before the
+ * scripts that arm it. Flagging it would fire on every scene in progress.
+ */
+function validateEvents(events: IWSceneEvent[] | undefined): IWSceneProblem[] {
+  const problems: IWSceneProblem[] = [];
+  if (!Array.isArray(events)) {
+    return events === undefined ? [] : [{ field: 'events', message: 'Events must be a list' }];
+  }
+  if (events.length > IW_MAX_EVENTS) {
+    problems.push({ field: 'events', message: `At most ${IW_MAX_EVENTS} events` });
+  }
+
+  const seenIds = new Set<string>();
+  events.forEach((event, i) => {
+    const at = `events[${i}]`;
+    const id = str(event?.id);
+    if (!id) problems.push({ field: `${at}.id`, message: 'Event needs an id' });
+    else if (seenIds.has(id)) problems.push({ field: `${at}.id`, message: `Duplicate event id "${id}"` });
+    seenIds.add(id);
+
+    const description = str(event?.description);
+    if (!description) problems.push({ field: `${at}.description`, message: 'Event needs a description' });
+    else if (description.length > IW_MAX_EVENT_LENGTH) {
+      problems.push({
+        field: `${at}.description`,
+        message: `Description must be ≤ ${IW_MAX_EVENT_LENGTH} characters`,
+      });
+    }
+
+    // Omitted means "only a script arms this". Present means the scene arms it itself, and 0
+    // is a legitimate value — the first legal moment after the scene opens.
+    const atStart = event?.atStartSeconds;
+    if (atStart !== undefined && atStart !== null
+        && !isIntInRange(atStart, 0, IW_MAX_EVENT_DELAY_SECONDS)) {
+      problems.push({
+        field: `${at}.atStartSeconds`,
+        message: `Opening delay must be 0–${IW_MAX_EVENT_DELAY_SECONDS} whole seconds`,
+      });
+    }
   });
 
   return problems;

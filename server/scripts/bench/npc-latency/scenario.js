@@ -15,6 +15,9 @@
  * and it is worth paying.
  */
 
+import { IW_WORLD_RULES_STEM } from '../../../services/iw/worldRules.js';
+
+
 /**
  * The action vocabulary the bench offers the model.
  *
@@ -46,38 +49,17 @@ const actionsFor = (ctx) => {
 /**
  * Layer 1 — frozen rules of the world. Identical for every NPC, so it is the cache prefix.
  *
- * ⚠️ TWO BUGS WERE FIXED HERE ON 2026-09-01 by the first multi-NPC sweep (§ 12 phase 1c),
- * and both were invisible while only one NPC existed:
+ * ⚠️ RE-EXPORTED FROM PRODUCTION, NOT COPIED (2026-09-06). It used to be a literal here, and
+ * the two drifted: the hard vocabulary budget ("AT MOST ONE word outside that list. Never
+ * two.") was withdrawn from § 9.4 and lived on in this file, so the bench measured a contract
+ * production does not send. A bench that grades its own copy of the prompt passes while the
+ * shipped prompt fails — the same argument `character-run.js` already applies by importing
+ * `renderNpcBlock` rather than inlining an NPC.
  *
- * 1. NPC CONTENT HAD LEAKED INTO LAYER 1. It ended "Stay in register: you are a street
- *    vendor, warm and brisk, not a poet." — written when 王婶 was the only NPC. Applied to
- *    every NPC it flatly contradicts the cast: 老周 is retired and sells nothing, and is
- *    written at energy 2 for long unhurried sentences. A frozen layer shared by every
- *    character cannot contain any one character's register; that is what layer 2's
- *    `register` field is. Layer 1 now says only that the register below wins.
- *
- * 2. THE HARD VOCABULARY BUDGET WAS STALE. "AT MOST ONE word outside that list. Never two."
- *    was withdrawn in § 9.4 (see § 5.6a for the evidence) in favour of guidance about the
- *    learner's level, but the bench never followed. Leaving it made the bench measure a
- *    contract production does not send.
+ * The two bugs that fix commemorates are recorded in `services/iw/worldRules.ts`, which is
+ * now the only place this text exists.
  */
-const RULES_STEM = `You are a person living in a Chinese night market. You speak to someone
-who is learning Mandarin and is not fluent.
-
-You are NOT an assistant. You never break character, never mention being an AI, and never
-explain or refer to any of this as a game, a scene or an exercise.
-
-__CONTRACT__
-
-WHO YOU ARE TALKING TO — they are a beginner. KNOWN_WORDS lists roughly what they know.
-Speak so they have a chance of following you: prefer those words, keep your grammar simple,
-and when you need a word they do not have, use it in a way the situation explains. This is
-guidance, not a rule to count against — say what your character would say, simply.
-
-You only know what you have heard. You do not know anything said out of your earshot.
-
-Speak the way YOU speak. Your register is described below and it overrides any instinct to
-sound like a helpful narrator. Say one thing and stop.`;
+const RULES_STEM = IW_WORLD_RULES_STEM;
 
 /** Layer 2 — frozen NPC. Also cacheable. */
 export const NPC = `YOU ARE: 王婶 (Auntie Wang), id "npc_wang".

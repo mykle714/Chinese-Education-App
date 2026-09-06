@@ -32,7 +32,12 @@ function validScene(): IWScene {
     companionStartFacing: 's',
     width: 6,
     height: 6,
-    layout: { terrain1: ['0,0', '1,0'], terrain2: [], decor: { '2,2': 'tree_1' } },
+    // “counter” is a NAMED PLACE (§ 14 Q42) and it is also INTERACTIVE (migration 162) —
+    // the interaction below hangs off this tag, so the two have to stay in step.
+    layout: {
+      terrain1: ['0,0', '1,0'], terrain2: [], decor: { '2,2': 'tree_1' },
+      locations: { counter: '4,4' },
+    },
     // The companion is NOT cast — he is in every scene by definition and is positioned by
     // companionStartCol/Row above. Casting him is a refusal (see the test below).
     npcCast: [
@@ -59,6 +64,11 @@ function validScene(): IWScene {
     conversations: [
       { id: 'chat', title: 'Weather', turns: [{ npcId: 'wang_shen', text: '下雨了。' }] },
     ],
+    // Walking up to the counter makes 王婶 run her own authored script (migration 162). Note
+    // the reference rather than an inline line: the same action stays choosable by the model.
+    interactions: {
+      counter: [{ kind: 'npc_action', npcId: 'wang_shen', actionId: 'pay' }],
+    },
   };
 }
 
@@ -124,7 +134,10 @@ describe('validateScene', () => {
     /** The worked example from the design: fetch water, deliver it, offer more. */
     function withBringWater(): IWScene {
       const scene = validScene();
-      scene.layout.locations = { 'water station': '5,5' };
+      // Keeps “counter”, which the fixture's interaction hangs off — replacing the whole map
+      // would strand that script under a tag nothing names and make every assertion here
+      // fail for an unrelated reason.
+      scene.layout.locations = { ...scene.layout.locations, 'water station': '5,5' };
       scene.npcCast[0].actions = [...scene.npcCast[0].actions!, {
         id: 'a1',
         name: 'bring water',
@@ -212,6 +225,35 @@ describe('validateScene', () => {
       });
       const messages = validateScene(scene).map((p) => p.message);
       expect(messages.some((m) => m.includes('no conversation "nope"'))).toBe(true);
+    });
+
+    it('accepts an ai_walk whose destination only the model will know', () => {
+      // The one step with no authored referent to check — only the brief is checkable, and
+      // the scene must have at least one named place for the choice to be worth making.
+      const scene = withBringWater();
+      scene.npcCast[0].actions!.push({
+        id: 'go', name: 'go where needed',
+        steps: [{ kind: 'ai_walk', instruction: 'to whoever has been waiting longest' }],
+      });
+      expect(validateScene(scene)).toEqual([]);
+    });
+
+    it('rejects an ai_walk with no brief, and warns when there is nowhere to choose from', () => {
+      const scene = withBringWater();
+      scene.npcCast[0].actions!.push({
+        id: 'go', name: 'go where needed', steps: [{ kind: 'ai_walk', instruction: '  ' }],
+      });
+      expect(validateScene(scene).map((p) => p.field))
+        .toContain('npcCast[0].actions[2].steps[0].instruction');
+
+      const noPlaces = validScene();
+      noPlaces.layout.locations = {};
+      noPlaces.npcCast[0].actions!.push({
+        id: 'go', name: 'go where needed',
+        steps: [{ kind: 'ai_walk', instruction: 'to the counter' }],
+      });
+      const messages = validateScene(noPlaces).map((p) => p.message);
+      expect(messages.some((m) => m.includes('no named places'))).toBe(true);
     });
 
     it('accepts a refusal authored out of ordinary steps', () => {
@@ -401,5 +443,92 @@ describe('validateScene severity', () => {
     const problems = validateScene(scene);
     expect(problems.some((p) => p.field === 'playerStartCol' && !isBlocking(p))).toBe(true);
     expect(blocking(scene)).toEqual([]);
+  });
+});
+
+describe('validateScene interactions (migration 162)', () => {
+  /** Field paths of every complaint, so a test can assert on where a rule fired. */
+  const fields = (scene: IWScene) => validateScene(scene).map((p) => p.field);
+
+  it('accepts a place whose interaction performs an action its NPC owns', () => {
+    expect(validateScene(validScene())).toHaveLength(0);
+  });
+
+  it('rejects an interaction keyed by a tag no place defines', () => {
+    const scene = validScene();
+    scene.interactions = { nowhere: [{ kind: 'wait', seconds: 2 }] };
+    expect(fields(scene)).toContain('interactions.nowhere');
+  });
+
+  it('accepts two interactive places on one cell — a walk there runs both', () => {
+    // Several tags naming one cell has always been legal (IWSceneLayout.locations says so).
+    // Two of them carrying SCRIPTS is a composition rather than an ambiguity: both fire, in
+    // the order § 5.4a fixes. A proposed refusal here was overruled by the author, 2026-09-05.
+    const scene = validScene();
+    scene.layout.locations = { counter: '4,4', 'where the tea is': '4,4' };
+    scene.interactions = {
+      counter: [{ kind: 'wait', seconds: 2 }],
+      'where the tea is': [{ kind: 'wait', seconds: 2 }],
+    };
+    expect(validateScene(scene)).toHaveLength(0);
+  });
+
+  it('rejects an npc_action naming an action that NPC does not own', () => {
+    // The pair is checked together on purpose: an action id is unique only within an NPC,
+    // so checking the two separately would accept one NPC performing another's script.
+    const scene = validScene();
+    scene.interactions = { counter: [{ kind: 'npc_action', npcId: 'wang_shen', actionId: 'ghost' }] };
+    expect(fields(scene)).toContain('interactions.counter.steps[0].actionId');
+  });
+
+  it('rejects an npc_action naming somebody who is not in the cast', () => {
+    const scene = validScene();
+    scene.interactions = { counter: [{ kind: 'npc_action', npcId: 'nobody', actionId: 'pay' }] };
+    expect(fields(scene)).toContain('interactions.counter.steps[0].npcId');
+  });
+
+  it('rejects a popup with no picture, and one whose id is a path', () => {
+    const scene = validScene();
+    scene.interactions = { counter: [{ kind: 'popup', imageId: '' }] };
+    expect(fields(scene)).toContain('interactions.counter.steps[0].imageId');
+
+    scene.interactions = { counter: [{ kind: 'popup', imageId: '../secrets/x.png' }] };
+    expect(fields(scene)).toContain('interactions.counter.steps[0].imageId');
+  });
+
+  it('accepts a captioned popup with a plain stem', () => {
+    const scene = validScene();
+    scene.interactions = { counter: [{ kind: 'popup', imageId: 'tea_menu', caption: 'The day’s menu' }] };
+    expect(validateScene(scene)).toHaveLength(0);
+  });
+
+  it('rejects a scheduled event the scene does not have, and an out-of-range delay', () => {
+    const scene = validScene();
+    scene.interactions = { counter: [{ kind: 'schedule_event', eventId: 'nope', seconds: 9999 }] };
+    const found = fields(scene);
+    expect(found).toContain('interactions.counter.steps[0].eventId');
+    expect(found).toContain('interactions.counter.steps[0].seconds');
+  });
+
+  it('rejects a step kind borrowed from the ACTION vocabulary', () => {
+    // `walk_to_tag` is a perfectly good action step and a meaningless interaction step: an
+    // interaction has no performer to be the subject of the walk.
+    const scene = validScene();
+    scene.interactions = { counter: [{ kind: 'walk_to_tag', tag: 'counter' } as never] };
+    expect(fields(scene)).toContain('interactions.counter.steps[0].kind');
+  });
+
+  it('does not complain about an empty script', () => {
+    // Deleting the last step is how a place goes back to being an ordinary walk destination;
+    // the editor drops the entry when it happens, so an empty list is transient, not wrong.
+    const scene = validScene();
+    scene.interactions = { counter: [] };
+    expect(validateScene(scene)).toHaveLength(0);
+  });
+
+  it('never blocks a save — every interaction complaint is a warning', () => {
+    const scene = validScene();
+    scene.interactions = { nowhere: [{ kind: 'popup', imageId: '' }] };
+    expect(validateScene(scene).some(isBlocking)).toBe(false);
   });
 });

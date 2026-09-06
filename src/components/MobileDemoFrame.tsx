@@ -26,11 +26,11 @@ const FrameRoot = styled(Box)(() => ({
     display: "flex",
     flexDirection: "column",
     width: "100%",
-    // `--app-height` (src/hooks/useAppHeight.ts) is the SCREEN height in the iOS
-    // home-screen app, where `black-translucent` leaves `100dvh` short by the status
-    // bar and the missing strip goes unpainted at the BOTTOM of the screen. Unset — and
-    // therefore exactly `100dvh` — in every browser tab.
-    height: "var(--app-height, 100dvh)",
+    // ⚠️ Exactly the dynamic viewport, never `window.screen.height`. The iOS
+    // home-screen app's web view is SHORTER than the screen (see src/theme/safeArea.ts
+    // § "the bottom shortfall"); a frame sized to the screen just runs its own bottom
+    // off the end of the web view.
+    height: "100dvh",
     // Positioning context for the footer bar, which FooterPresenter renders as a
     // sibling of the page: `position: absolute; bottom: 0` resolves against THIS
     // box, so on desktop the bar stays inside the phone card instead of escaping
@@ -58,13 +58,11 @@ const MobileDemoFrame: React.FC<MobileDemoFrameProps> = ({ children, className }
               // Vertical margin breathes space above/below the phone card;
               // "auto" still centers it horizontally.
               margin: "24px auto",
-              // Override the base full-screen height. Subtracting the 48px of
+              // Override the base height: 100dvh. Subtracting the 48px of
               // top+bottom margin keeps the card strictly shorter than the
               // viewport, so the margin gap is always visible above AND below
               // instead of the full-height card pushing the bottom into scroll.
-              // (`--app-height` is never set on desktop, but the var is kept here so
-              // the two branches stay one expression.)
-              height: "calc(var(--app-height, 100dvh) - 48px)",
+              height: "calc(100dvh - 48px)",
               minHeight: "500px",
               // Capped at the design's height so a tall monitor shows the phone at
               // its true 402x874 proportions rather than an elongated version of it.

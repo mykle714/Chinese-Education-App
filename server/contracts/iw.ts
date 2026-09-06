@@ -108,6 +108,8 @@ export const IW_MAX_ACTION_STEPS = 16;
 export const IW_MAX_ACTION_NAME_LENGTH = 60;
 export const IW_MAX_ACTION_WHEN_LENGTH = 200;
 export const IW_MAX_ACTION_COMMENT_LENGTH = 200;
+/** An `ai_walk` brief. Same cap as `when` — both are one sentence of guidance to the model. */
+export const IW_MAX_ACTION_INSTRUCTION_LENGTH = 200;
 /** A single `wait` step, in whole seconds. A minute is already a very long beat. */
 export const IW_MAX_WAIT_SECONDS = 60;
 /**
@@ -118,6 +120,23 @@ export const IW_MAX_WAIT_SECONDS = 60;
 export const IW_MAX_EVENT_DELAY_SECONDS = 600;
 export const IW_MAX_CONVERSATIONS = 8;
 export const IW_MAX_CONVERSATION_TURNS = 12;
+
+/**
+ * Steps in one place's INTERACTION script (§ 14 Q43). Shorter than an NPC action's sixteen,
+ * deliberately: an interaction is a *response to a poke* — show the thing, have somebody
+ * react, set something going — and a twelve-beat set piece hung off a doorway is a scene
+ * pretending to be a prop.
+ */
+export const IW_MAX_INTERACTION_STEPS = 8;
+/** A popup's caption, in the author's own words. One line under a picture, not a paragraph. */
+export const IW_MAX_POPUP_CAPTION_LENGTH = 200;
+/**
+ * A popup image id: the FILE STEM of a picture in `src/assets/iw-popups/` (see
+ * `src/features/immersiveworld/iwPopupArt.ts`). Constrained here rather than checked against
+ * a list because the catalogue is CLIENT art the server cannot see — the pattern is what
+ * stops a hand-edited payload from putting a path or a URL in the field.
+ */
+export const IW_POPUP_IMAGE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 /** The four facings a placed body can be authored with. Mirrors the engine's `Direction`. */
 export const IW_FACINGS = ['n', 'e', 's', 'w'] as const;
@@ -268,10 +287,17 @@ export interface IWSceneCastMember {
  * The test for whether something belongs here: **can the engine execute it without knowing
  * what the scene is about?** Walking, facing, waiting, saying and playing a canned
  * conversation all pass. A payment does not.
+ *
+ * `ai_walk` (2026-09-05) passes it too, and cleanly: the engine walks the way it always
+ * walks, over the same graph, and is merely told WHERE by the model rather than by the
+ * author. The answer space is closed — the scene's own places and bodies — so the model
+ * supplies a CHOICE among authored referents, never a new capability and never a route.
+ * Anything that would need the engine to invent a referent still fails the test.
  */
 export const IW_ACTION_STEP_KINDS = [
   'comment',
   'walk_to_tag',
+  'ai_walk',
   'walk_to_actor',
   'walk_away_from',
   'face',
@@ -287,6 +313,7 @@ export type IWActionStepKind = (typeof IW_ACTION_STEP_KINDS)[number];
 export const IW_ACTION_STEP_LABELS: Record<IWActionStepKind, string> = {
   comment: 'Say',
   walk_to_tag: 'Walk to place',
+  ai_walk: 'Walk (AI picks where)',
   walk_to_actor: 'Walk to person',
   walk_away_from: 'Walk away from',
   face: 'Turn to face',
@@ -330,6 +357,27 @@ export type IWActionStep =
   | { kind: 'comment'; text: string }
   /** Path to the nearest cell adjacent to a cell tagged `tag`, then face it. */
   | { kind: 'walk_to_tag'; tag: string }
+  /**
+   * Walk somewhere the MODEL chooses, described rather than named (2026-09-05).
+   *
+   * ⚠️ **The second step that costs a model call** — the model returns a DESTINATION and
+   * nothing else. It does not move anybody: the route is computed by the same deterministic
+   * traversal every other walk step uses (`planPath` over the § 3a walkable set), so
+   * "the model never improvises movement" still holds exactly as written. What an author
+   * delegates here is the choice of WHERE, which some scenes cannot know until the moment
+   * arrives: *whichever table just called out*, *back to whoever is waiting*.
+   *
+   * THE CHOICE IS FROM A CLOSED LIST — the scene's named places plus the bodies present (the
+   * learner, the companion, the rest of the cast) — and the engine then plays the ordinary
+   * `walk_to_tag` or `walk_to_actor` for whatever came back. So a bad answer is a wrong
+   * destination, never an illegal one: the NPC cannot be sent through a wall or to a place
+   * that does not exist, and pathing has exactly the referents it always had.
+   *
+   * `instruction` is the author's brief for that choice ("to whoever has been waiting
+   * longest"), in the same register as an action's `when`. Resolution itself is phase 2 —
+   * today the step is authored, validated and stored, and nothing executes it yet.
+   */
+  | { kind: 'ai_walk'; instruction: string }
   /** Play one of the scene's authored NPC-to-NPC conversations (§ 14 Q6). */
   | { kind: 'start_conversation'; conversationId: string }
   /** Hold still for `seconds`. The beat that makes a script read as behaviour. */
@@ -461,6 +509,111 @@ export interface IWConversation {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Place INTERACTIONS — what happens when the learner pokes a cell (§ 14 Q43)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The step kinds a PLACE's interaction script is built from (§ 14 Q43).
+ *
+ * ⚠️ THIS IS A SECOND, SMALLER VOCABULARY, AND THE REASON IS SUBJECTHOOD. An
+ * `IWActionStep` is written from inside one NPC — `walk_to_tag`, `face`, `wait_for_response`
+ * all mean "the NPC performing this action does X", and the performer is implied by whose
+ * cast entry the action hangs on. An interaction has NO performer: it is the world answering
+ * a poke. So every subject-relative step is meaningless here, and the one step that needs a
+ * subject names it explicitly (`npc_action`).
+ *
+ * The same test as § 14 Q42's applies — **can the engine execute this without knowing what
+ * the scene is about?** — with one addition that is worth being explicit about: an
+ * interaction may not do anything an authored action cannot already do, EXCEPT show the
+ * learner a picture. `popup` is the one genuinely new capability the trigger brought with it,
+ * because a prop the learner examines is the first thing in the feature that has something to
+ * SHOW rather than something to say.
+ *
+ * WHY THERE IS NO `npc_comment`. Making an NPC speak is `npc_action` pointing at a one-step
+ * authored action, and that indirection is deliberate (§ 14 Q43 sub-answer 2): a line written
+ * here would be a line the model could never *choose*, so the same NPC would have two
+ * disjoint repertoires — one it reasons about and one it does not.
+ */
+export const IW_INTERACTION_STEP_KINDS = [
+  'popup',
+  'npc_action',
+  'start_conversation',
+  'schedule_event',
+  'wait',
+] as const;
+
+export type IWInteractionStepKind = (typeof IW_INTERACTION_STEP_KINDS)[number];
+
+/** Human labels for the interaction step kinds — one source of truth for the editor. */
+export const IW_INTERACTION_STEP_LABELS: Record<IWInteractionStepKind, string> = {
+  popup: 'Show a picture',
+  npc_action: 'NPC performs an action',
+  start_conversation: 'Start a conversation',
+  schedule_event: 'Schedule event',
+  wait: 'Wait',
+};
+
+/**
+ * One step of a place's interaction script.
+ *
+ * A discriminated union for the same reason `IWActionStep` is one: switching a step's kind
+ * must REPLACE it rather than leave a `seconds` clinging to a popup.
+ */
+export type IWInteractionStep =
+  /**
+   * Show the learner a picture, optionally captioned.
+   *
+   * ⚠️ **The only thing an interaction can do that an authored action cannot**, and the only
+   * art an author picks anywhere in the feature. `imageId` is the FILE STEM of a picture in
+   * `src/assets/iw-popups/` — dropping a file in that folder is the whole of adding new
+   * popup art, with no code change and no upload path (§ 14 Q43 sub-answer 1). The server
+   * therefore cannot check the id against a catalogue it cannot see; it checks the SHAPE
+   * (`IW_POPUP_IMAGE_ID`), and the editor only ever offers ids that resolved.
+   *
+   * `caption` is shown verbatim, in the author's words. It is NOT sent to a model and not
+   * paraphrased — a caption is chrome around a picture, not somebody speaking.
+   */
+  | { kind: 'popup'; imageId: string; caption?: string }
+  /**
+   * Make one of the scene's cast perform one of ITS OWN authored actions.
+   *
+   * This is how an interaction produces dialogue and behaviour, and it is a REFERENCE rather
+   * than an inline script on purpose: the action stays in the NPC's repertoire, so the same
+   * "explain the menu" is both something the model may choose mid-conversation and something
+   * the menu board triggers when poked. One behaviour, one definition, two ways in.
+   */
+  | { kind: 'npc_action'; npcId: string; actionId: string }
+  /** Play one of the scene's authored NPC-to-NPC conversations. Identical to the action step. */
+  | { kind: 'start_conversation'; conversationId: string }
+  /** Arm one of the scene's authored events, exactly as an action's `schedule_event` does. */
+  | { kind: 'schedule_event'; eventId: string; seconds: number }
+  /** A beat between steps, so a poke does not resolve all at once. */
+  | { kind: 'wait'; seconds: number };
+
+/**
+ * Every place interaction in a scene: **place tag → the script that runs when the learner
+ * walks up to it**, stored in `iw_scenes.interactions` (migration 162).
+ *
+ * KEYED BY TAG, DELIBERATELY, and this is the shape of the whole feature (§ 14 Q43): an
+ * interaction is not a new authored thing standing beside places — it is an OPTIONAL PROPERTY
+ * OF A PLACE. A place with no entry here is an ordinary walk destination; a place with one is
+ * a thing the learner can poke. That is why there is no `id` and no `tag` field: the key is
+ * the identity, one place cannot have two interactions, and every cascade a tag already has
+ * (rename moves it, delete drops it) carries the script along for free.
+ *
+ * ⚠️ IT IS A COLUMN RATHER THAN A FIELD INSIDE `layout.locations`. The tag → cell map is board
+ * GEOMETRY — where a thing is — and a script is BEHAVIOUR; folding one into the other would
+ * have turned a `Record<string,string>` into a record of objects and rewritten every reader of
+ * a shape three panels already depend on. Same relationship as `npcCast` (who is here) to the
+ * actions hanging off it.
+ *
+ * ⚠️ SEVERAL TAGS MAY NAME ONE CELL (see {@link IWSceneLayout.locations}), but **at most one
+ * of them may be interactive** — the validator refuses two, because the walk command resolves
+ * to a CELL and there would be no way to say which script it meant.
+ */
+export type IWSceneInteractions = Record<string, IWInteractionStep[]>;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // The scene, over the wire
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -524,6 +677,12 @@ export interface IWScene {
    */
   events: IWSceneEvent[];
   conversations: IWConversation[];
+  /**
+   * What happens when the learner walks up to a named place (migration 162, § 14 Q43).
+   * Keyed by place tag; a place with no entry is simply not interactive. See
+   * {@link IWSceneInteractions}.
+   */
+  interactions: IWSceneInteractions;
 
   createdAt?: string;
   updatedAt?: string;

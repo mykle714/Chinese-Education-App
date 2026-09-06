@@ -1,10 +1,8 @@
-import { useState } from 'react';
 import {
-  Box, Button, IconButton, MenuItem, Stack, TextField, Tooltip, Typography,
+  Box, Button, IconButton, MenuItem, Stack, TextField, Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
-import PlaceIcon from '@mui/icons-material/Place';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import {
@@ -33,23 +31,23 @@ import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
  * of it in its own register, so the same step sounds like 王婶 or like 小陈. Every other
  * step kind is executed exactly as written.
  *
- * PLACES ARE NAMED FIRST, PLACED SECOND. A tag exists as soon as it is named — the map
- * palette then grows a button for it, and clicking cells tags them. Several cells may share
- * a name and `walk_to_tag` heads for the nearest, which is why placing ADDS a cell rather
- * than moving the tag.
+ * ⚠️ PLACES LEFT THIS FILE (2026-09-05, migration 162). They were its bottom section while a
+ * place was only a supporting vocabulary — a name a step could walk to. Interactions made a
+ * place a thing that carries behaviour of its own, so authoring one grew a whole step editor
+ * and moved to `IWScenePlacesPanel`, which the page renders directly below this. The `walk_to
+ * _tag` dropdown here still READS `locations`; it just no longer edits them.
  */
 
 export interface IWSceneActionsPanelProps {
   scene: IWScene;
   npcs: IWNpcOption[];
-  /** tag → "col,row", or the empty string for a named-but-unplaced tag. */
+  /**
+   * tag → "col,row" (empty for a named-but-unplaced tag). Read-only here: this panel offers
+   * places to `walk_to_tag` steps but no longer authors them — that moved to
+   * `IWScenePlacesPanel` when a place grew an interaction of its own.
+   */
   locations: Record<string, string>;
   problemsByField: Map<string, string>;
-  onAddLocation: (tag: string) => void;
-  onRenameLocation: (from: string, to: string) => void;
-  onRemoveLocation: (tag: string) => void;
-  /** Arm the map's place tool for this tag. */
-  onPlaceLocation: (tag: string) => void;
   onAddAction: (npcId: string) => void;
   onUpdateAction: (npcId: string, actionId: string, patch: Partial<IWNpcAction>) => void;
   onRemoveAction: (npcId: string, actionId: string) => void;
@@ -61,6 +59,7 @@ function blankStep(kind: IWActionStepKind): IWActionStep {
   switch (kind) {
     case 'comment': return { kind, text: '' };
     case 'walk_to_tag': return { kind, tag: '' };
+    case 'ai_walk': return { kind, instruction: '' };
     case 'start_conversation': return { kind, conversationId: '' };
     case 'wait': return { kind, seconds: 2 };
     // 20s, and no event pre-picked: the delay has a sensible default, the referent never does.
@@ -71,7 +70,6 @@ function blankStep(kind: IWActionStepKind): IWActionStep {
 
 export default function IWSceneActionsPanel({
   scene, npcs, locations, problemsByField,
-  onAddLocation, onRenameLocation, onRemoveLocation, onPlaceLocation,
   onAddAction, onUpdateAction, onRemoveAction,
 }: IWSceneActionsPanelProps) {
   const problem = (field: string) => problemsByField.get(field);
@@ -79,7 +77,6 @@ export default function IWSceneActionsPanel({
    *  paint like errors — see `iwSceneWarnings.ts`. */
   const warn = (field: string) => warningFieldProps(problemsByField, field);
   const npcName = (npcId: string) => npcs.find((n) => n.id === npcId)?.name ?? npcId;
-  const [newTag, setNewTag] = useState('');
 
   /** Every place, alphabetical. `cell` is empty for one that was named but never placed. */
   const tags = Object.entries(locations)
@@ -92,13 +89,6 @@ export default function IWSceneActionsPanel({
     { id: IW_ACTOR_COMPANION, label: 'the companion' },
     ...scene.npcCast.map((m) => ({ id: m.npcId, label: npcName(m.npcId) })),
   ];
-
-  const commitTag = () => {
-    const clean = newTag.trim();
-    if (!clean) return;
-    onAddLocation(clean);
-    setNewTag('');
-  };
 
   /** Replace one step of one action, keeping every other step untouched. */
   const patchStep = (
@@ -118,76 +108,17 @@ export default function IWSceneActionsPanel({
 
   return (
     <Box className="iw-scene-actions-panel">
-      {/* ── Named places ─────────────────────────────────────────────────── */}
-      <Box className="iw-scene-actions-panel__places" sx={{ mb: 3 }}>
-        <Typography variant="overline">Places</Typography>
-        <Typography sx={{ fontSize: 12, opacity: 0.7, mb: 1 }}>
-          Name a spot on the board so an action can send somebody to it. Name it here, then
-          click its cell with the matching map tool along the top of the board — each place
-          sits on exactly one cell, and clicking again moves it. Several places may name the
-          same cell.
-        </Typography>
-
-        <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-          <TextField
-            className="iw-scene-actions-panel__new-place"
-            size="small" label="New place" fullWidth
-            value={newTag}
-            onChange={(e) => setNewTag(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitTag(); } }}
-          />
-          <Button size="small" startIcon={<AddIcon />} onClick={commitTag} disabled={!newTag.trim()}>
-            Add
-          </Button>
-        </Stack>
-        {problem('layout.locations') && (
-          <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 12, mb: 1 }}>{problem('layout.locations')}</Typography>
-        )}
-
-        <Stack spacing={1}>
-          {tags.map(({ tag, cell }) => (
-            <Stack key={tag} direction="row" spacing={1} alignItems="center" className="iw-scene-actions-panel__place">
-              <TextField
-                size="small" fullWidth
-                value={tag}
-                onChange={(e) => onRenameLocation(tag, e.target.value)}
-                // A rename rewrites every step that walked here, so an author can fix a typo
-                // without silently invalidating their own scripts. It is refused when the new
-                // name is already taken — two places may not share one name.
-                helperText={cell
-                  ? `Cell ${cell}`
-                  : 'Named but not on the board yet — click its cell with the map tool.'}
-                error={!cell}
-              />
-              <Tooltip title={`Put “${tag}” on a cell`}>
-                <IconButton size="small" onClick={() => onPlaceLocation(tag)}>
-                  <PlaceIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Delete this place and any step that walked to it">
-                <IconButton size="small" onClick={() => onRemoveLocation(tag)}>
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Stack>
-          ))}
-          {tags.length === 0 && (
-            <Typography sx={{ fontSize: 12, opacity: 0.6 }}>No places yet.</Typography>
-          )}
-        </Stack>
-      </Box>
-
       {/* ── Per-NPC actions ──────────────────────────────────────────────── */}
-      <Box className="iw-scene-actions-panel__actions">
+      <Box className="iw-scene-actions-panel__actions" sx={{ mb: 3 }}>
         <Typography variant="overline">Actions</Typography>
-        <Typography sx={{ fontSize: 12, opacity: 0.7, mb: 1 }}>
+        <Typography sx={{ fontSize: 11, opacity: 0.7, mb: 1 }}>
           What each NPC can be asked to do. The model picks one by name when the moment fits;
           the engine then plays your script exactly — except “Say”, which the NPC paraphrases
           in its own voice.
         </Typography>
 
         {scene.npcCast.length === 0 && (
-          <Typography sx={{ fontSize: 12, opacity: 0.6 }}>Add an NPC to the cast first.</Typography>
+          <Typography sx={{ fontSize: 11, opacity: 0.6 }}>Add an NPC to the cast first.</Typography>
         )}
 
         <Stack spacing={2}>
@@ -198,7 +129,7 @@ export default function IWSceneActionsPanel({
               sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 1.5 }}
             >
               <Stack direction="row" alignItems="center" justifyContent="space-between">
-                <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{npcName(member.npcId)}</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{npcName(member.npcId)}</Typography>
                 <Button size="small" startIcon={<AddIcon />} onClick={() => onAddAction(member.npcId)}>
                   Action
                 </Button>
@@ -235,7 +166,7 @@ export default function IWSceneActionsPanel({
                       />
 
                       {problem(`${at}.steps`) && (
-                        <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 12, mt: 0.5 }}>
+                        <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 11, mt: 0.5 }}>
                           {problem(`${at}.steps`)}
                         </Typography>
                       )}
@@ -247,7 +178,7 @@ export default function IWSceneActionsPanel({
                             direction="row" spacing={0.75} alignItems="flex-start"
                             className="iw-scene-actions-panel__step"
                           >
-                            <Typography sx={{ fontSize: 12, opacity: 0.5, width: 18, mt: 1.25 }}>
+                            <Typography sx={{ fontSize: 11, opacity: 0.5, width: 18, mt: 1.25 }}>
                               {si + 1}
                             </Typography>
                             <TextField
@@ -283,10 +214,28 @@ export default function IWSceneActionsPanel({
                               </TextField>
                             )}
 
-                            {/* One control for all seven actor-aimed kinds — move toward or
-                                away, turn to face, and the four transactional gestures. They
-                                differ only in what the engine animates; the author is
-                                answering the same question, *who*. */}
+                            {/* The one step whose destination the AUTHOR does not pick. The
+                                model chooses from this scene's places and people, so the
+                                field is a brief, not a name. It picks WHERE and nothing
+                                else — the walk itself is the same computed traversal as
+                                every other walk step. */}
+                            {step.kind === 'ai_walk' && (
+                              <TextField
+                                size="small" fullWidth
+                                placeholder="Where should they go? e.g. to whoever has been waiting longest"
+                                value={step.instruction}
+                                {...warn(`${at}.steps[${si}].instruction`)}
+                                helperText={problem(`${at}.steps[${si}].instruction`)
+                                  ?? 'The model picks one of this scene’s places or people.'}
+                                onChange={(e) => patchStep(member.npcId, action, si, {
+                                  kind: 'ai_walk', instruction: e.target.value,
+                                })}
+                              />
+                            )}
+
+                            {/* One control for all three actor-aimed kinds — move toward,
+                                move away, turn to face. They differ only in what the engine
+                                animates; the author is answering the same question, *who*. */}
                             {isActorStep(step) && (
                               <TextField
                                 size="small" select fullWidth
@@ -365,12 +314,6 @@ export default function IWSceneActionsPanel({
                               />
                             )}
 
-                            {step.kind === 'wait_for_response' && (
-                              <Typography sx={{ fontSize: 12, opacity: 0.6, flex: 1, mt: 1.25 }}>
-                                The NPC stops and waits — nothing runs while the learner answers.
-                              </Typography>
-                            )}
-
                             <IconButton size="small" title="Move up" onClick={() => moveStep(member.npcId, action, si, -1)}>
                               <ArrowUpwardIcon fontSize="small" />
                             </IconButton>
@@ -405,7 +348,7 @@ export default function IWSceneActionsPanel({
                   );
                 })}
                 {(member.actions ?? []).length === 0 && (
-                  <Typography sx={{ fontSize: 12, opacity: 0.6 }}>
+                  <Typography sx={{ fontSize: 11, opacity: 0.6 }}>
                     No actions — this NPC only talks.
                   </Typography>
                 )}
@@ -414,6 +357,7 @@ export default function IWSceneActionsPanel({
           ))}
         </Stack>
       </Box>
+
     </Box>
   );
 }

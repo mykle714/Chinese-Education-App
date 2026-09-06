@@ -24,7 +24,7 @@ const SCENE_COLUMNS = `id, language, name, published, "sceneNotes",
   "playerStartCol", "playerStartRow", "playerStartFacing",
   "companionStartCol", "companionStartRow", "companionStartFacing",
   width, height,
-  layout, "npcCast", complications, events, conversations,
+  layout, "npcCast", complications, events, conversations, interactions,
   "createdAt", "updatedAt"`;
 
 /** The scene as Postgres hands it back — jsonb arrives parsed, timestamps as Date. */
@@ -49,6 +49,7 @@ interface SceneRow {
   complications: unknown;
   events: unknown;
   conversations: unknown;
+  interactions: unknown;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -108,6 +109,10 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
       // Defaulted like every other blob: a scene authored before migration 161 has no events.
       events: (row.events as IWScene['events']) ?? [],
       conversations: (row.conversations as IWScene['conversations']) ?? [],
+      // Defaulted to an EMPTY OBJECT, not an empty list: interactions are keyed by place tag
+      // (migration 162), so a scene authored before the column existed has no interactive
+      // places rather than an empty list of them.
+      interactions: (row.interactions as IWScene['interactions']) ?? {},
       createdAt: row.createdAt?.toISOString(),
       updatedAt: row.updatedAt?.toISOString(),
     };
@@ -135,6 +140,7 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
       JSON.stringify(scene.complications ?? []),
       JSON.stringify(scene.events ?? []),
       JSON.stringify(scene.conversations ?? []),
+      JSON.stringify(scene.interactions ?? {}),
     ];
   }
 
@@ -184,8 +190,8 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
            "playerStartCol", "playerStartRow", "playerStartFacing",
            "companionStartCol", "companionStartRow", "companionStartFacing",
            width, height,
-           layout, "npcCast", complications, events, conversations
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+           layout, "npcCast", complications, events, conversations, interactions
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
          RETURNING ${SCENE_COLUMNS}`,
         this.sceneParams(scene)
       )
@@ -204,7 +210,7 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
            "companionStartCol" = $11, "companionStartRow" = $12, "companionStartFacing" = $13,
            width = $14, height = $15,
            layout = $16, "npcCast" = $17, complications = $18, events = $19,
-           conversations = $20,
+           conversations = $20, interactions = $21,
            "updatedAt" = NOW()
          WHERE id = $1
          RETURNING ${SCENE_COLUMNS}`,

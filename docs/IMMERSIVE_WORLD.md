@@ -487,15 +487,31 @@ action (`IW_ACTION_STEP_KINDS`, `server/contracts/iw.ts`):
 |---|---|
 | `comment` | **the one step that costs a model call, by design** — see below |
 | `walk_to_tag` | path to the nearest cell adjacent to the ONE cell that tag names, then face it — over the walkable set defined in § 3a |
+| `ai_walk` | **the second step that costs a model call** — the author writes a brief ("to whoever has been waiting longest") and the model returns a DESTINATION from a closed list: this scene's named places plus the bodies present. The engine then plays the ordinary `walk_to_tag` / `walk_to_actor` for whatever came back, over the same `planPath` traversal as every other walk |
 | `walk_to_actor` / `walk_away_from` / `face` | as the old verbs, but with an author-chosen target rather than a model-invented one |
 | `wait` | hold for 1–60 whole seconds — the beat that makes a script read as behaviour |
 | `wait_for_response` | hand the floor back; last step only (§ 14 Q29 forbids anything running while the learner composes) |
 | `start_conversation` | play one of the scene's authored exchanges (Q6), chosen by the author rather than targeted by the model |
 | `schedule_event` | arm one of the scene's authored EVENTS for `seconds` from now, then move on (migration 161). Does not hold the NPC and does not fire the event itself — the engine injects it at the next legal moment, the same opportunity a complication uses |
 
-That is the whole list — **nine steps**. The test for membership: *can the engine execute it
+That is the whole list — **ten steps**. The test for membership: *can the engine execute it
 without knowing what the scene is about?* Walking, facing, waiting, saying and playing a
 canned conversation all pass.
+
+**`ai_walk` (2026-09-05) passes that test, and does NOT weaken "the model never improvises
+movement".** The model's whole output is a **destination** — one entry from a closed list of
+the scene's named places and the bodies present. It computes no route and moves nobody: the
+walk itself is the same deterministic traversal every other walk step runs (`planPath` over
+the § 3a walkable set), so the motion on screen is exactly as authored-and-computed as it was
+before. The step exists because some destinations are genuinely not knowable until the moment
+arrives — *whichever table just called out*, *back to whoever is waiting* — and the
+alternative was an author enumerating branches they cannot foresee. Because the answer space
+is closed, a bad answer is a wrong destination, never an illegal one: no walking through
+walls, no place that does not exist, and pathing has exactly the referents it always had.
+Validation therefore checks only the brief (non-empty, ≤ `IW_MAX_ACTION_INSTRUCTION_LENGTH`)
+plus one soft warning: a scene with no named places leaves the model only people to choose
+between, which is legal but rarely what was meant. **Resolution is phase 2** — today the step
+is authored, validated and stored, and nothing executes it.
 
 **The transactional family is NOT here, and that is the second correction of the day.**
 `accept_payment` / `hand_over` / `give_item` / `refuse` were briefly step kinds; they lasted
@@ -538,6 +554,103 @@ matches no authored action is dropped to `none` and the NPC just speaks. That ch
 the backstop for prompt injection (§ 11.4): the worst a successful injection can achieve is an
 off-character sentence, never an illegal world state — and now it cannot even name a
 behaviour the author did not write.
+
+### 5.4a Place interactions — what happens when the learner pokes a cell
+
+**BUILT 2026-09-05 (authoring half), migration 162, § 14 Q43. The runtime is phase 2.**
+
+§ 5.4's actions answer *what an NPC can do*. This answers a different question the feature had
+no answer for at all: **what a THING does when the learner walks up to it.** A menu board, a
+notice on a door, a bell on a counter.
+
+**The trigger is the walk command, and that is the whole interface.** On desktop the learner
+issues a walk command on a cell; the engine paths **as close as it can get** and, on arrival,
+runs the script that cell carries. There is no examine verb, no context menu and no second
+input — approaching a thing *is* examining it.
+
+⚠️ **If the learner cannot reach it, nothing fires** (decided 2026-09-05, by the author). They
+walk as close as the board allows and then **no-op**. This matters because § 3a makes every
+in-bounds cell walkable *except* those carrying blocking decor, so a prop behind a tree is a
+real possibility — and a script that shouted across the room when the learner got stuck three
+cells away would read as a bug, not as a beat.
+
+**An interaction is a PROPERTY OF A PLACE, not a thing standing beside one.** It hangs off a
+`layout.locations` tag (§ 5.4's named places), keyed by tag in `iw_scenes.interactions`:
+
+```
+{ "menu board": [ {kind: "popup", imageId: "tea_menu", caption: "The day's menu"},
+                  {kind: "npc_action", npcId: "wang_shen", actionId: "act2"} ] }
+```
+
+That shape is doing real work. A place with no entry is an ordinary walk destination; a place
+with one is a thing the learner can poke; deleting the last step is how you go back. There is
+no interaction id, no `tag` field and no separate list to keep in sync — and every cascade a
+tag already had comes free: **renaming a place carries its script across, deleting one drops
+it** (`useIWSceneDraft.renameLocation` / `removeLocation`).
+
+**Two interactive places may share one cell, and walking there runs BOTH** (decided
+2026-09-05, by the author, over a proposed refusal). Several tags naming one cell was already
+legal and useful — a counter that is also "where the tea is" — and carrying a script on each is
+a **composition**, not an ambiguity: the author gets to build a poke out of two independently
+named pieces rather than duplicating one script under a second name.
+
+⚠️ **What that obliges the runtime to settle is ORDER, and phase 2 owes it a rule.** Two
+scripts firing at one cell is only well-defined if their sequence is. The rule to implement is
+**alphabetical by place tag, scripts run to completion in turn** — not object key order, which
+is JSON insertion order and would silently depend on the sequence an author happened to create
+their places in. Alphabetical is the one ordering an author can *see* in the panel, which is
+also sorted that way.
+
+**The five step kinds** (`IW_INTERACTION_STEP_KINDS`, `server/contracts/iw.ts`):
+
+| Step | What it does |
+|---|---|
+| **Show a picture** (`popup`) | Display an image to the learner, optionally captioned. ⚠️ **The one thing an interaction can do that an authored action cannot** — the first thing in the feature with something to SHOW rather than something to say. The caption is shown verbatim and is never sent to a model. |
+| **NPC performs an action** (`npc_action`) | Name a cast NPC and one of **its own** authored actions (§ 5.4). This is how an interaction produces dialogue and behaviour, and it is a *reference* rather than an inline script: the action stays in the NPC's repertoire, so the same "explain the menu" is both something the model may choose mid-conversation and something the board triggers when poked. |
+| **Start a conversation** (`start_conversation`) | Play one of the scene's authored overheard exchanges. Identical to the action step of the same name. |
+| **Schedule event** (`schedule_event`) | Arm one of the scene's authored events, 0–600s out, on the same earliest-legal-moment queue everything else uses (§ 9.1's *Event*). |
+| **Wait** (`wait`) | 1–60s, so a poke does not resolve all at once. |
+
+**Why this vocabulary is SHORTER than § 5.4's, and it is not an oversight: an interaction has
+no performer.** An `IWActionStep` is written from inside one NPC — `walk_to_tag`, `face`,
+`wait_for_response` all mean "*the NPC performing this action* does X", and the subject is
+implied by whose cast entry the action hangs on. An interaction is the world answering a poke,
+so every subject-relative step is meaningless here, and the one step that needs a subject names
+it explicitly. There is deliberately **no `wait_for_response`**: an interaction never takes the
+floor away from the learner, because they were the one who acted.
+
+**Popup art is a FOLDER, not a catalogue constant.** Everything in `src/assets/iw-popups/` is
+offered by the editor's picture picker; adding art is dropping a file in, with no code change
+and no upload path (Q43 sub-answer 1). The stored `imageId` is the file **stem**, so a scene
+survives asset re-fingerprinting across builds — the same reason `masksToSceneLayout` stores
+decor stems. ⚠️ **The consequence: the server cannot validate an id**, because these are client
+assets it never sees. `sceneValidation.ts` checks only that an id is *shaped* like a stem
+(`IW_POPUP_IMAGE_ID`, which is what stops a path or a URL reaching the column), and the editor
+closes the gap from the other side by only offering ids that resolved. A file deleted out from
+under a scene shows as a missing thumbnail — an authoring trap, which Q42 sub-answer 3 puts on
+the author. **The folder ships empty**, so until art lands there the step is authorable but has
+nothing to offer, and the editor says so.
+
+**What the editor warns about** (warnings, never refusals — see `sceneValidation.ts`'s header):
+
+- an interaction keyed by a tag no place defines (a script with no trigger);
+- an `npc_action` naming somebody not in the cast, **or an action that NPC does not own** —
+  checked as a pair, because an action id is unique only *within* an NPC, so checking the two
+  separately would accept 王婶 performing 小陈's script;
+- a popup with no picture or a malformed id, a missing conversation or event, a delay or wait
+  out of range.
+
+An **empty** script is not warned about: it is what a place looks like for the moment between
+deleting its last step and the editor dropping the entry.
+
+**Referenced code:** `server/contracts/iw.ts` → `IWSceneInteractions`, `IWInteractionStep`,
+`IW_INTERACTION_STEP_KINDS`, `IW_MAX_INTERACTION_STEPS`, `IW_POPUP_IMAGE_ID`;
+`server/services/iw/sceneValidation.ts` → `validateInteractions`;
+`server/dal/implementations/ImmersiveWorldDAL.ts`;
+`src/features/immersiveworld/IWScenePlacesPanel.tsx`;
+`src/features/immersiveworld/iwPopupArt.ts`;
+`src/features/immersiveworld/useIWSceneDraft.ts` → `setInteraction`;
+`database/migrations/162-add-place-interactions.sql`.
 
 ### 5.5 What the NPC is told
 
@@ -1264,6 +1377,7 @@ do something, and you leave with a rating and a label.
 | **Cast** | The other NPCs the objective forces you through — waitress, hotel clerk, cab driver, shop assistant. Each is an NPC (§ 5.5) with its own hearing history. |
 | **Complication** | Per scene, environmental (Q31): the cab takes a wrong turn, the order arrives wrong, the room is double-booked. It belongs to the world, not to an NPC — everyone present reacts to it in character. A complication exists to force the learner past the memorised opening exchange. ⚠️ "Optional" here means a scene *may* be authored without one, not that the learner may skip it. |
 | **Event** (migration 161) | **The same kind of fact as a complication, with a different trigger.** One line, the world's, injected into the turn context of everyone present and reacted to in character — but SCHEDULED rather than drawn: by a `schedule_event` step inside an authored action (§ 5.4), or by the event's own `atStartSeconds`, which arms it when the scene opens. Both timers feed the same queue and fire at the **next legal opportunity** — the same one a complication uses, so never mid-turn and never while the learner is composing (Q29); the delay is an *earliest*, not an exactly-when. Two separate pools rather than one flagged list, deliberately: **the random roll must never spring an authored beat before its cue, and a script must never be able to arm the surprise.** Environmental like a complication, so no owner field — "the kitchen sends out the noodles" is a fact about the room, and an event written as "王婶 is flustered" is a character note misfiled. A run records what fired in `iw_scene_runs."eventIds"`, mirroring `"complicationIds"`. |
+| **Interaction** (migration 162) | **What a PLACE does when the learner walks up to it** (§ 5.4a, Q43) — the only thing in the feature triggered by the learner's own body rather than by the model, the per-turn roll or a timer. It hangs off a named place as an optional property of it, and can show a picture, make a cast NPC perform one of its own authored actions, play an overheard conversation, arm an event, or wait. ⚠️ If the learner cannot reach the place they walk as close as they can and **nothing fires**. Two interactive places may share a cell, and a walk there runs **both**. |
 
 Worked examples given by the product owner:
 
@@ -1810,6 +1924,21 @@ drag that began on bare canvas painted straight through it. Fixed by making the 
 the signature of this bug, and — as with the `withFallback` finding above — **the second
 authoring bug in a row was in shared machinery iw merely reused**, not in iw.
 
+**Named places are LABELLED buttons, and the places row is the one that wraps (2026-09-05).**
+Every other palette control in either editor is a 40×40 icon, because its meaning is fixed and
+learnable. A place button's meaning is a name the author invented, and a scene is expected to
+carry many of them, so the tag is printed on the face (`PlaceChip` in `IWSceneMapPanel.tsx` —
+it borrows `paletteBtnSx`'s colours and overrides only the pinned box) and the group wraps
+down the board instead of running off its right edge. The palette frame gained a `right` edge
+for the same reason: wrapping needs a width to wrap against, and the frame is click-through
+anyway (see the overlay bug above). In the side panel the **Places** section moved BELOW
+**Actions** — places are a vocabulary referred to from the step dropdowns, not the thing the
+author came to write. ⚠️ **Updated 2026-09-05 (migration 162):** places also left
+`IWSceneActionsPanel` for a panel of their own, `IWScenePlacesPanel`, rendered in the same
+slot so the column reads unchanged. A place stopped being only a vocabulary word when it grew
+an INTERACTION of its own (§ 5.4a) — each row now carries a touch button that expands the
+script that runs when the learner walks up.
+
 **Bodies are drawn as BODIES.** The board renders each actor's actual avatar sprite —
 `EditorMarker.sprite`, resolved through `freeFarmTileset.getIdleFrames` — rather than the
 coloured square it started with. A square says *something is here*; the avatar says **who**,
@@ -1841,7 +1970,9 @@ the companion; a blank completion action, or one naming an action the completer 
 have; off-board layout or
 decor cells; a conversation line spoken by someone not in the scene; duplicate complication
 ids (a run stores the id, so a duplicate makes a finished run ambiguous); a `schedule_event`
-step naming an event the scene does not have, or a delay outside 0–600 whole seconds. It returns
+step naming an event the scene does not have, or a delay outside 0–600 whole seconds; and (migration
+162) an interaction keyed by a tag no place defines, two interactive places on one cell, or an
+`npc_action` naming somebody not in the cast or an action that NPC does not own. It returns
 **every** problem at once rather than the first, and the editor marks up the fields —
 fixing a scene one complaint per save round-trip is the tool being annoying in exactly the
 way this phase's kill condition describes.
@@ -2052,6 +2183,7 @@ to be watched for deliberately.
 - `server/contracts/iw.ts` → `IW_ACTION_STEP_KINDS`, `IW_ACTOR_STEP_KINDS`, `isActorStep`,
   `IW_CONVERSATION_LINE_MS`, `IW_MAX_EVENT_DELAY_SECONDS`, `IWNpcAction`, `IWActionStep`, `IWScene`,
   `IWSceneLayout`, `IWSceneCastMember`, `IWComplication`, `IWSceneEvent`, `IWConversation`,
+  `IW_INTERACTION_STEP_KINDS`, `IWInteractionStep`, `IWSceneInteractions`, `IW_POPUP_IMAGE_ID`,
   `IWNpcOption` — **the client↔server contract for a scene**, and the closed STEP
   vocabulary § 5.4 describes (the action vocabulary itself is authored, not shipped). Follows every `wire.ts` rule (no relative value imports, no
   `enum`, no `Date`) so both TypeScript programs can read it
@@ -2072,14 +2204,19 @@ to be watched for deliberately.
   boot-time sweep over every stored npc id
 - `src/pages/HomePage.tsx` → the `isTemplateAuthor`-gated **Scene Editor** tile, the only
   way into the editor (§ 12 phase 1e). One grant, three tools.
-- `src/features/immersiveworld/IWSceneActionsPanel.tsx` → named places + per-NPC authored
+- `src/features/immersiveworld/IWScenePlacesPanel.tsx` → named places and the INTERACTION
+  hanging off each (§ 5.4a, Q43); `src/features/immersiveworld/iwPopupArt.ts` → the
+  `src/assets/iw-popups/` glob behind the picture picker.
+- `server/services/iw/sceneValidation.ts` → `validateInteractions` — every § 5.4a complaint.
+- `src/features/immersiveworld/IWSceneActionsPanel.tsx` → per-NPC authored
   actions (§ 14 Q42); `blankStep` and `insertBeforeTrailingWait` encode two of that
   question's rules in the UI so the author is not fighting the validator.
 - `server/services/iw/sceneValidation.ts` → `validateNpcActions` — every Q42 complaint (all
   of them warnings: an unwritten script saves).
 - `src/features/immersiveworld/` → `IWSceneEditorPage.tsx` (orchestration),
   `useIWSceneDraft.ts` (the draft model + paint/place edits), `IWSceneMapPanel.tsx`,
-  `IWSceneDetailsPanel.tsx`, `IWSceneContentPanel.tsx`, `immersiveWorldSceneApi.ts`
+  `IWSceneDetailsPanel.tsx`, `IWSceneContentPanel.tsx`, `IWScenePlacesPanel.tsx`,
+  `immersiveWorldSceneApi.ts`
   (`masksToSceneLayout` / `sceneLayoutToMasks` join the painted masks to the stored layout),
   `iwSceneWarnings.ts` → `warningFieldProps`, `IW_WARNING_TEXT_SX` (the shared amber field
   marking, so no panel invents its own colour for a non-blocking complaint)
@@ -3371,18 +3508,23 @@ executes. The division of labour is the whole idea, and it is worth stating as a
 > **The model decides *whether* the moment calls for "bring water". The author decides
 > exactly what bringing water looks like.** The model never improvises movement; the author
 > never has to anticipate when water is wanted.
+>
+> **The AI walk step (2026-09-05) is not an exception to this.** It lets an author delegate
+> the *destination* — one pick from a closed list of the scene's own places and people — and
+> nothing else. The movement is still computed, not improvised: same graph, same traversal.
 
 This is a genuinely different lever from everything else in § 5.4. Those are primitive verbs
 the model emits per turn. An action is a *composite* the author defines per scene — the first
 authored thing in the feature that produces behaviour rather than text.
 
-**The nine step kinds** (`IW_ACTION_STEP_KINDS`, `server/contracts/iw.ts`):
+**The ten step kinds** (`IW_ACTION_STEP_KINDS`, `server/contracts/iw.ts`):
 
 | Step | What it does |
 |---|---|
 | **Say** (`comment`) | The NPC says a **variation** of the given text, in its own register. ⚠️ The one step that is not mechanical — a brief, not a script, so the same step sounds like 王婶 or like 小陈. |
 | **Walk to place** (`walk_to_tag`) | Path to the nearest cell adjacent to the cell that place names, and face it. |
 | **Walk to person** (`walk_to_actor`) | The same, targeting the learner, the companion, or another cast NPC. |
+| **Walk (AI picks where)** (`ai_walk`) | The author writes a **brief** — "to whoever has been waiting longest" — and the model returns a **destination**: one of this scene's named places, or one of its bodies (learner, companion, cast). The engine then plays the ordinary walk for it. ⚠️ The second step that costs a model call, but the model picks *where* and nothing more — the route is the same deterministic traversal as every other walk, and the closed answer space keeps a bad answer a *wrong* destination rather than an illegal one. Resolution is **phase 2**. |
 | **Walk away from** (`walk_away_from`) / **Turn to face** (`face`) | The other two actor-aimed steps; one control in the editor, since all three ask *who*. |
 | **Start a conversation** (`start_conversation`) | Play one of the scene's authored overheard exchanges. |
 | **Wait** (`wait`) | Hold still for 1–60 whole seconds. The beat that makes a script read as behaviour rather than as teleporting. |
@@ -3464,3 +3606,71 @@ storing it per (scene, NPC) is also what keeps NPCs code and scenes data (§ 8).
    got *stronger*, from "some action contains a payment step" to "this exact action exists on
    this exact NPC", with deletion of that action clearing the nomination
    (`useIWSceneDraft.removeAction`).
+
+---
+
+**Q43 — ~~How does a learner interact with a THING, as opposed to a person?~~ DECIDED: by
+walking at it. A named place may carry an INTERACTION — a short script the world runs when
+the learner arrives.** Authoring half **BUILT 2026-09-05** (migration 162); the runtime is
+phase 2/3, like Q42's.
+
+Everything the feature could do until now was triggered by somebody other than the learner:
+the model chooses an authored action, the per-turn roll draws a complication, a timer arms an
+event. Q43 is the first trigger that is the **learner's own body**. See § 5.4a for the shape,
+the step vocabulary and the validation rules.
+
+**The interface is the walk command, and nothing else.** The learner issues a walk command on
+a cell; the engine paths as close as it can and runs whatever that cell's place carries.
+Approaching a thing *is* examining it — there is no examine verb, no context menu and no
+second input to learn. That is worth stating as a design property rather than an
+implementation note: it means a scene can be entirely legible to somebody who only knows how
+to walk.
+
+**✅ Four sub-questions answered 2026-09-05, by the author:**
+
+1. **Popup art comes from a BUNDLED FOLDER** — `src/assets/iw-popups/`, globbed at build time,
+   the file stem stored as the id. Not uploads (new storage, a content-safety story, and a way
+   for an author to put anything at all in front of a learner) and not the icons8 pipeline
+   (icon-shaped art, and a menu board is not an icon). The cost is honest and recorded in
+   § 5.4a: the server cannot validate an id it cannot see, so it validates the id's *shape*
+   and the editor only offers what resolved.
+
+2. **Dialogue goes through `npc_action`; there is NO inline `npc_comment` step.** An
+   interaction makes an NPC speak by naming a one-step authored action of theirs. The
+   indirection is the point: **a line written inline here would be a line the model could
+   never choose**, so the same NPC would carry two disjoint repertoires — one it reasons about
+   and one it does not. Every line an NPC can say stays in one list.
+
+3. **An interaction fires EVERY TIME**, with no `once` flag and no per-run bookkeeping. The
+   alternative — a once-per-run toggle — was rejected as a field that would have to be
+   authored, stored, and reasoned about on every replay to buy something a script can express
+   anyway (a first poke that schedules an event, and a second that finds the world already
+   changed). ⚠️ **Carry into phase 2:** nothing stops a learner pacing back and forth and
+   re-triggering the same beat, and if that turns out to read badly the fix is a *runtime*
+   debounce, not an authored field.
+
+4. **It is a COLUMN, not a field inside `layout.locations`.** *"To be clear this should be a
+   feature built off locations. Locations have an option to attach an NPC action or popup etc
+   on interaction."* — which settled both halves at once: keyed by tag (so it is a property of
+   a place, and inherits every cascade a tag has), but stored in `iw_scenes.interactions`,
+   because `layout` is board GEOMETRY and a script is BEHAVIOUR. Folding one into the other
+   would have turned a `Record<string,string>` into a record of objects and rewritten every
+   reader of a shape three editor panels already depend on. Same relationship `npcCast` (who is
+   here) has to the actions hanging off it.
+
+**5. Two interactive tags on one cell BOTH fire.** *"If there are two interactions on one
+cell, then both should trigger."* — overruling a proposed refusal drafted hours earlier, and
+the author is right: § 5.4's tag→cell many-to-one was made open on purpose, and the reading
+that a shared cell is an *ambiguity* smuggles in an assumption the design never made. It is a
+**composition** — one poke assembled from two independently named pieces, which is cheaper
+than duplicating a script under a second name.
+
+⚠️ **The obligation it moves rather than removes is ORDER**, and it lands on phase 2: two
+scripts at one cell are only well-defined if their sequence is. § 5.4a records the rule to
+implement — **alphabetical by tag**, each script run to completion in turn. Not object key
+order, which is JSON insertion order and would make playback depend invisibly on the sequence
+an author happened to create their places in.
+
+**Not built, and deliberately:** walking onto an NPC does **not** count as an interaction.
+Talking to somebody is the live speech path (§ 4, § 5), and overloading the walk command would
+make "approach a person" ambiguous between two systems.

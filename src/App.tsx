@@ -7,7 +7,6 @@ import { VocabularyUpdateProvider } from "./contexts/VocabularyUpdateContext";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { APP_ROUTES, type AppRoute } from "./routes/registry";
-import { useAppHeight } from "./hooks/useAppHeight";
 import { useBlockZoom } from "./hooks/useBlockZoom";
 import { useChineseFont } from "./hooks/useChineseFont";
 
@@ -53,12 +52,6 @@ function App() {
   // App-wide: disable pinch / double-tap zoom (mobile-first UI, zoom is never
   // wanted). Complements the viewport meta in index.html, which iOS ignores.
   useBlockZoom(true);
-
-  // App-wide: publish the true full-screen height as `--app-height` when iOS hands
-  // the home-screen app a layout viewport shorter than the screen. Must be here
-  // rather than in MobileDemoFrame — the plain (non-frame) shell in Layout reads the
-  // same variable, and the frame unmounts on those routes.
-  useAppHeight();
 
   return (
     <ThemeContextProvider>

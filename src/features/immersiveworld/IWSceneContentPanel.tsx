@@ -128,7 +128,7 @@ export default function IWSceneContentPanel({
           <Typography variant="overline">Complications</Typography>
           <Button size="small" startIcon={<AddIcon />} onClick={addComplication}>Add</Button>
         </Stack>
-        <Typography sx={{ fontSize: 12, opacity: 0.7, mb: 1 }}>
+        <Typography sx={{ fontSize: 11, opacity: 0.7, mb: 1 }}>
           Something that happens to the WORLD — the rain starts, a queue forms, the order
           arrives wrong. One is drawn per run; everyone present reacts in character.
         </Typography>
@@ -161,7 +161,7 @@ export default function IWSceneContentPanel({
           <Typography variant="overline">Events</Typography>
           <Button size="small" startIcon={<AddIcon />} onClick={addEvent}>Add</Button>
         </Stack>
-        <Typography sx={{ fontSize: 12, opacity: 0.7, mb: 1 }}>
+        <Typography sx={{ fontSize: 11, opacity: 0.7, mb: 1 }}>
           The same kind of world fact as a complication — but SCHEDULED, never drawn. An action
           arms one with a “Schedule event” step, or tick “at scene open” to arm it as the scene
           begins. The engine fires it at the next legal moment, never while the learner is
@@ -190,7 +190,7 @@ export default function IWSceneContentPanel({
                         onChange={(e) => toggleAtStart(i, e.target.checked)}
                       />
                     }
-                    label={<Typography sx={{ fontSize: 12 }}>at scene open</Typography>}
+                    label={<Typography sx={{ fontSize: 11 }}>at scene open</Typography>}
                   />
                   {event.atStartSeconds !== undefined && (
                     <TextField
@@ -232,7 +232,7 @@ export default function IWSceneContentPanel({
             Add
           </Button>
         </Stack>
-        <Typography sx={{ fontSize: 12, opacity: 0.7, mb: 1 }}>
+        <Typography sx={{ fontSize: 11, opacity: 0.7, mb: 1 }}>
           Fixed lines between cast members, played back with no model calls. The learner can
           tap to pause, so this is a study surface as much as ambience. Every line is held for{' '}
           {IW_CONVERSATION_LINE_MS / 1000} seconds — pacing is not authored, so write lines a

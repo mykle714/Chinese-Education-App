@@ -69,9 +69,7 @@ function Layout({ children }: LayoutProps) {
             className="layout-main-content"
             component="main"
             sx={{
-                // See src/hooks/useAppHeight.ts — full screen in the iOS home-screen
-                // app, plain `100dvh` everywhere else.
-                minHeight: "var(--app-height, 100dvh)",
+                minHeight: "100dvh",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "stretch",

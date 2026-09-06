@@ -3,7 +3,9 @@ import {
   editorDecorRotation, editorSurfaceAt, rollFloorSeed, DIRT_FLOOR,
   type BoardFloor, type DecorCategory, type EditorMasks,
 } from '../../engine/market/farmTerrain';
-import type { IWNpcAction, IWScene, IWSceneCastMember } from '../../../server/contracts/iw';
+import type {
+  IWInteractionStep, IWNpcAction, IWScene, IWSceneCastMember, IWSceneInteractions,
+} from '../../../server/contracts/iw';
 import { masksToSceneLayout, sceneLayoutToMasks } from './immersiveWorldSceneApi';
 
 /**
@@ -99,6 +101,25 @@ const dropTagFromCast = (tag: string) => (m: IWSceneCastMember): IWSceneCastMemb
   } : m
 );
 
+/**
+ * Drop every interaction step that pointed at something that has just gone.
+ *
+ * ⚠️ WHY THIS EXISTS AT ALL, given the validator would catch a dangling reference anyway: a
+ * step that still LOOKS chosen in its dropdown is a worse failure than one that is visibly
+ * missing, and the author did not cause it — they deleted an NPC, not a poke script. Same
+ * reasoning as `removeCastMember` dropping a departed NPC's conversation turns.
+ *
+ * An interaction whose LAST step is dropped this way is left as an empty script rather than
+ * deleted: the place stays interactive-but-blank, which is visible in the panel and fixable,
+ * where a silently-removed entry would just look like the tool ate it.
+ */
+const dropInteractionSteps = (
+  interactions: IWSceneInteractions,
+  drop: (step: IWInteractionStep) => boolean,
+): IWSceneInteractions => Object.fromEntries(
+  Object.entries(interactions).map(([tag, steps]) => [tag, steps.filter((st) => !drop(st))]),
+);
+
 /** An empty scene, ready to author. `completerNpcId` is deliberately blank: it must be chosen. */
 export function blankScene(language: 'zh' | 'es' = 'zh'): IWScene {
   return {
@@ -127,6 +148,10 @@ export function blankScene(language: 'zh' | 'es' = 'zh'): IWScene {
     // `schedule_event` step or by an event's own "at scene open" delay, never drawn at random.
     events: [],
     conversations: [],
+    // Place interactions (migration 162): tag → the script that runs when the learner walks
+    // up. An OBJECT, not a list — it is keyed by place tag, because an interaction is a
+    // property of a place rather than a thing standing beside one.
+    interactions: {},
   };
 }
 
@@ -187,6 +212,14 @@ export interface IWSceneDraft {
   renameLocation: (from: string, to: string) => void;
   /** Forget a tag entirely, and any action step that walked to it. */
   removeLocation: (tag: string) => void;
+
+  /**
+   * Place INTERACTIONS (migration 162): tag → the script that runs when the learner walks up.
+   * Lives on the scene rather than beside `locations` because it is scene data, not board
+   * geometry — but every mutation of a tag above keeps the two in step.
+   */
+  /** Give a place a script (or take its last one away). An empty list makes it inert. */
+  setInteraction: (tag: string, steps: IWInteractionStep[]) => void;
 
   /** Per-NPC authored actions (§ 14 Q42). */
   addAction: (npcId: string) => void;
@@ -328,6 +361,12 @@ export function useIWSceneDraft(): IWSceneDraft {
         ...conv,
         turns: conv.turns.filter((t) => t.npcId !== npcId),
       })),
+      // …nor can a poke still ask them to perform something. Their `npc_action` steps go
+      // with them, for the same reason their conversation turns do.
+      interactions: dropInteractionSteps(
+        prev.interactions ?? {},
+        (st) => st.kind === 'npc_action' && st.npcId === npcId,
+      ),
     }));
   }, []);
 
@@ -366,8 +405,16 @@ export function useIWSceneDraft(): IWSceneDraft {
       Object.entries(prev).map(([tag, cell]) => [tag === from ? clean : tag, cell]),
     ));
     // The steps that walked there must follow the rename, or a save that was valid a
-    // moment ago becomes invalid for a reason the author did not cause.
-    setScene((prev) => ({ ...prev, npcCast: prev.npcCast.map(renameTagInCast(from, clean)) }));
+    // moment ago becomes invalid for a reason the author did not cause. The place's own
+    // interaction moves with it too — the tag IS the key, so a rename that did not carry it
+    // would silently strand the script under a name nothing points at.
+    setScene((prev) => ({
+      ...prev,
+      npcCast: prev.npcCast.map(renameTagInCast(from, clean)),
+      interactions: Object.fromEntries(
+        Object.entries(prev.interactions ?? {}).map(([tag, steps]) => [tag === from ? clean : tag, steps]),
+      ),
+    }));
   }, [locations]);
 
   const removeLocation = useCallback((tag: string) => {
@@ -377,7 +424,15 @@ export function useIWSceneDraft(): IWSceneDraft {
     ));
     // Drop the steps that pointed at it, for the same reason removeCastMember drops the
     // conversation turns of a departed NPC: a dangling reference is a silent playback stall.
-    setScene((prev) => ({ ...prev, npcCast: prev.npcCast.map(dropTagFromCast(tag)) }));
+    setScene((prev) => ({
+      ...prev,
+      npcCast: prev.npcCast.map(dropTagFromCast(tag)),
+      // The place is gone, so nothing can trigger its script any more — an interaction has
+      // no identity apart from the tag it hangs on.
+      interactions: Object.fromEntries(
+        Object.entries(prev.interactions ?? {}).filter(([t]) => t !== tag),
+      ),
+    }));
   }, []);
 
   // ── Authored actions (§ 14 Q42) ───────────────────────────────────────────
@@ -425,7 +480,30 @@ export function useIWSceneDraft(): IWSceneDraft {
         prev.completerNpcId === npcId && prev.completionAction === actionId
           ? ''
           : prev.completionAction,
+      // A poke that performed this action has lost its script. Dropped rather than left
+      // dangling, for the same reason the completion nomination is cleared just above.
+      interactions: dropInteractionSteps(
+        prev.interactions ?? {},
+        (st) => st.kind === 'npc_action' && st.npcId === npcId && st.actionId === actionId,
+      ),
     }));
+  }, []);
+
+  // ── Place interactions (migration 162, § 14 Q43) ──────────────────────────
+  // One setter for the whole script rather than add/update/remove-step triplets: a place has
+  // exactly one interaction, the panel already holds it as a list, and three mutations of one
+  // array is three chances for them to disagree about what an empty script means.
+  const setInteraction = useCallback((tag: string, steps: IWInteractionStep[]) => {
+    setDirty(true);
+    setScene((prev) => {
+      const next = { ...(prev.interactions ?? {}) };
+      // An empty script REMOVES the entry: that is how an author turns a place back into an
+      // ordinary walk destination, and leaving `tag: []` behind would persist a place that
+      // reads as interactive everywhere except when you poke it.
+      if (steps.length === 0) delete next[tag];
+      else next[tag] = steps;
+      return { ...prev, interactions: next };
+    });
   }, []);
 
   const toPayload = useCallback((): IWScene => ({
@@ -445,10 +523,10 @@ export function useIWSceneDraft(): IWSceneDraft {
     update, loadScene, paintCell, placeAt, setFloor,
     addCastMember, removeCastMember, updateCastMember,
     addLocation, renameLocation, removeLocation,
-    addAction, updateAction, removeAction,
+    addAction, updateAction, removeAction, setInteraction,
     toPayload, markSaved,
   }), [scene, masks, dirty, locations, update, loadScene, paintCell, placeAt, setFloor,
        addCastMember, removeCastMember, updateCastMember,
        addLocation, renameLocation, removeLocation,
-       addAction, updateAction, removeAction, toPayload, markSaved]);
+       addAction, updateAction, removeAction, setInteraction, toPayload, markSaved]);
 }

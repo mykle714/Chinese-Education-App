@@ -4,6 +4,7 @@ import {
   IW_ACTOR_PLAYER,
   IW_FACINGS,
   IW_MAX_ACTION_COMMENT_LENGTH,
+  IW_MAX_ACTION_INSTRUCTION_LENGTH,
   IW_MAX_ACTION_NAME_LENGTH,
   IW_MAX_ACTION_STEPS,
   IW_MAX_ACTION_WHEN_LENGTH,
@@ -13,6 +14,10 @@ import {
   IW_MAX_EVENTS,
   IW_MAX_EVENT_DELAY_SECONDS,
   IW_MAX_EVENT_LENGTH,
+  IW_MAX_INTERACTION_STEPS,
+  IW_MAX_POPUP_CAPTION_LENGTH,
+  IW_POPUP_IMAGE_ID,
+  IW_INTERACTION_STEP_KINDS,
   IW_MAX_CONVERSATIONS,
   IW_MAX_CONVERSATION_LINE_LENGTH,
   IW_MAX_CONVERSATION_TURNS,
@@ -28,6 +33,9 @@ import {
   type IWActionStepKind,
   type IWConversation,
   type IWFacing,
+  type IWInteractionStep,
+  type IWInteractionStepKind,
+  type IWSceneInteractions,
   type IWNpcAction,
   type IWSceneEvent,
   type IWScene,
@@ -357,6 +365,17 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
   // ── Authored NPC-to-NPC conversations (§ 14 Q6) ───────────────────────────
   problems.push(...validateConversations(scene.conversations, seenNpcIds));
 
+  // ── Place interactions (migration 162, § 14 Q43) ──────────────────────────
+  // Runs LAST because it is the only check that needs everything else resolved at once: a
+  // step names a place, an NPC, one of that NPC's own actions, a conversation and an event.
+  problems.push(...validateInteractions(
+    scene.interactions,
+    scene.layout?.locations ?? {},
+    cast,
+    conversationIds,
+    eventIds,
+  ));
+
   return problems;
 }
 
@@ -532,6 +551,24 @@ function validateNpcActions(
           if (!tag) problems.push({ field: `${stepAt}.tag`, message: 'Pick a place to walk to' });
           else if (!tags.has(tag)) {
             problems.push({ field: `${stepAt}.tag`, message: `This scene has no place named "${tag}"` });
+          }
+          break;
+        }
+        case 'ai_walk': {
+          // Only the BRIEF is checkable here. The destination is chosen at run time from the
+          // scene's places and bodies, so there is no authored referent to verify — which is
+          // the whole point of the step. What CAN go wrong at authoring time is an empty or
+          // runaway instruction, and a scene with nothing to choose between: with no named
+          // places the model's only options are the bodies, which is legal but almost never
+          // what the author meant by "walk to the appropriate place".
+          const instruction = str((step as { instruction?: unknown }).instruction);
+          if (!instruction.trim()) {
+            problems.push({ field: `${stepAt}.instruction`, message: 'Describe where they should go — the model picks from this scene’s places and people.' });
+          } else if (instruction.length > IW_MAX_ACTION_INSTRUCTION_LENGTH) {
+            problems.push({ field: `${stepAt}.instruction`, message: `Must be ≤ ${IW_MAX_ACTION_INSTRUCTION_LENGTH} characters` });
+          }
+          if (tags.size === 0) {
+            problems.push({ field: `${stepAt}.instruction`, message: 'This scene has no named places, so the model can only choose a person to walk to' });
           }
           break;
         }
@@ -716,6 +753,157 @@ function validateConversations(
       }
     });
   });
+
+  return problems;
+}
+
+/**
+ * Place INTERACTIONS (migration 162, § 14 Q43) — what runs when the learner walks up to a
+ * named place.
+ *
+ * THE RULES ARE THE SAME KIND AS `validateNpcActions`'s, and for the same reason: every one
+ * of them is a way to author a poke that would fail SILENTLY at playback. A learner who walks
+ * up to a thing and gets nothing cannot tell a broken script from an inert prop, so an
+ * interaction that points at a deleted action or a place nobody placed is worth saying out
+ * loud at authoring time.
+ *
+ * ONE RULE IS THIS FUNCTION'S OWN: **the tag must be a place the scene defines.** An
+ * interaction is a property OF a place (see {@link IWSceneInteractions}); keyed by a tag
+ * nothing names, it is a script with no trigger. The draft hook's cascades normally make this
+ * unreachable — deleting a place deletes its interaction — so a hit here means a hand-edited
+ * payload or an older row.
+ *
+ * ⚠️ **TWO INTERACTIVE TAGS ON ONE CELL IS LEGAL** (decided 2026-09-05, by the author, over a
+ * proposed refusal). Several tags may already name one cell, and where two of them carry
+ * scripts, **walking there runs both** — so this is a composition, not an ambiguity, and there
+ * is nothing here to complain about. What it obliges the runtime to fix is ORDER: see § 5.4a.
+ *
+ * `cast` is passed whole rather than as a set of ids, because `npc_action` has to check the
+ * pair — that the NPC is here AND that this action is one of theirs. An action id is unique
+ * only within an NPC, so checking them separately would accept 王婶 performing 小陈's script.
+ */
+function validateInteractions(
+  interactions: IWSceneInteractions | undefined,
+  locations: Record<string, string>,
+  cast: IWSceneCastMember[],
+  conversationIds: Set<string>,
+  eventIds: Set<string>,
+): IWSceneProblem[] {
+  const problems: IWSceneProblem[] = [];
+  if (interactions === undefined || interactions === null) return problems;
+  if (typeof interactions !== 'object' || Array.isArray(interactions)) {
+    return [{ field: 'interactions', message: 'Interactions must be an object keyed by place name' }];
+  }
+
+  for (const [tag, steps] of Object.entries(interactions)) {
+    const at = `interactions.${tag}`;
+    const label = tag.trim() ? `“${tag}”` : 'A place';
+
+    if (!(tag in locations)) {
+      problems.push({ field: at, message: `${label} is not a place in this scene, so nothing can trigger this` });
+    }
+    // NOTHING is checked about the tag's CELL. Two interactive tags on one cell both run
+    // (see the header), and an unplaced tag is already `layout.locations`'s complaint.
+
+    if (!Array.isArray(steps)) {
+      problems.push({ field: at, message: `${label}'s interaction must be a list of steps` });
+      continue;
+    }
+    // An EMPTY script is not an error the way an empty action is. Deleting the last step of
+    // an interaction is how an author turns a place back into an ordinary walk destination,
+    // and the editor drops the entry when they do — so an empty list here is a transient
+    // shape, not a mistake to shout about.
+    if (steps.length > IW_MAX_INTERACTION_STEPS) {
+      problems.push({ field: at, message: `At most ${IW_MAX_INTERACTION_STEPS} steps per interaction` });
+    }
+
+    steps.forEach((step: IWInteractionStep, i: number) => {
+      const stepAt = `${at}.steps[${i}]`;
+      const kind = str((step as { kind?: unknown })?.kind) as IWInteractionStepKind;
+      if (!IW_INTERACTION_STEP_KINDS.includes(kind)) {
+        problems.push({ field: `${stepAt}.kind`, message: `"${kind || '(blank)'}" is not an interaction step` });
+        return;
+      }
+
+      switch (kind) {
+        case 'popup': {
+          // The catalogue is CLIENT art (src/assets/iw-popups/) and the server cannot see it,
+          // so only the SHAPE of the id is checkable here — which is enough to stop a path or
+          // a URL reaching the column. A stem that no longer resolves is an authoring trap the
+          // editor shows as a missing picture (§ 14 Q42 sub-answer 3: traps are the author's).
+          const imageId = str((step as { imageId?: unknown }).imageId);
+          if (!imageId) {
+            problems.push({ field: `${stepAt}.imageId`, message: 'Pick a picture to show' });
+          } else if (!IW_POPUP_IMAGE_ID.test(imageId)) {
+            problems.push({ field: `${stepAt}.imageId`, message: `"${imageId}" is not a picture name` });
+          }
+          const caption = str((step as { caption?: unknown }).caption);
+          if (caption.length > IW_MAX_POPUP_CAPTION_LENGTH) {
+            problems.push({
+              field: `${stepAt}.caption`,
+              message: `Caption must be ≤ ${IW_MAX_POPUP_CAPTION_LENGTH} characters`,
+            });
+          }
+          break;
+        }
+        case 'npc_action': {
+          // Checked as a PAIR: an action id is unique only within an NPC, so verifying the two
+          // separately would accept one NPC performing another's script.
+          const npcId = str((step as { npcId?: unknown }).npcId);
+          const actionId = str((step as { actionId?: unknown }).actionId);
+          const member = cast.find((m) => str(m?.npcId) === npcId);
+          if (!npcId) {
+            problems.push({ field: `${stepAt}.npcId`, message: 'Pick who performs this' });
+          } else if (!member) {
+            problems.push({ field: `${stepAt}.npcId`, message: `"${npcId}" is not in this scene` });
+          }
+          if (!actionId) {
+            problems.push({ field: `${stepAt}.actionId`, message: 'Pick the action to perform' });
+          } else if (member && !(member.actions ?? []).some((a) => str(a?.id) === actionId)) {
+            problems.push({
+              field: `${stepAt}.actionId`,
+              message: `${npcId} has no action "${actionId}" any more`,
+            });
+          }
+          break;
+        }
+        case 'start_conversation': {
+          const convId = str((step as { conversationId?: unknown }).conversationId);
+          if (!convId) {
+            problems.push({ field: `${stepAt}.conversationId`, message: 'Pick a conversation to play' });
+          } else if (!conversationIds.has(convId)) {
+            problems.push({ field: `${stepAt}.conversationId`, message: `This scene has no conversation "${convId}"` });
+          }
+          break;
+        }
+        case 'schedule_event': {
+          // Identical to the authored-action step of the same name, down to the delay bounds:
+          // an interaction arms the same queue at the same earliest-legal-moment semantics.
+          const eventId = str((step as { eventId?: unknown }).eventId);
+          if (!eventId) {
+            problems.push({ field: `${stepAt}.eventId`, message: 'Pick an event to schedule' });
+          } else if (!eventIds.has(eventId)) {
+            problems.push({ field: `${stepAt}.eventId`, message: `This scene has no event "${eventId}"` });
+          }
+          const delay = (step as { seconds?: unknown }).seconds;
+          if (!isIntInRange(delay, 0, IW_MAX_EVENT_DELAY_SECONDS)) {
+            problems.push({
+              field: `${stepAt}.seconds`,
+              message: `Delay must be 0–${IW_MAX_EVENT_DELAY_SECONDS} whole seconds`,
+            });
+          }
+          break;
+        }
+        case 'wait': {
+          const seconds = (step as { seconds?: unknown }).seconds;
+          if (!isIntInRange(seconds, 1, IW_MAX_WAIT_SECONDS)) {
+            problems.push({ field: `${stepAt}.seconds`, message: `Wait must be 1–${IW_MAX_WAIT_SECONDS} whole seconds` });
+          }
+          break;
+        }
+      }
+    });
+  }
 
   return problems;
 }

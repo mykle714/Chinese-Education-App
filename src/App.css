@@ -1,16 +1,16 @@
 /* #root is the single SHELL scroll container, sized to the dynamic viewport.
-   On mobile the page surface (MobileDemoFrame) is exactly the app height, so #root
-   never scrolls there — each page owns its own inner scroller. On desktop the centered
+   On mobile the page surface (MobileDemoFrame) is exactly 100dvh, so #root never
+   scrolls there — each page owns its own inner scroller. On desktop the centered
    phone card is intentionally taller than the viewport, so #root scrolls just
    enough to reveal it. Horizontal scroll is always suppressed.
 
-   `--app-height` is set ONLY by src/hooks/useAppHeight.ts, and only in the iOS
-   home-screen app, where `black-translucent` leaves the layout viewport shorter than
-   the screen by the status bar's height. Everywhere else it is unset and this is
-   exactly `100dvh`. */
+   ⚠️ DO NOT size this off `window.screen.height` to chase the unpainted strip at the
+   bottom of the iOS home-screen app. That strip is OUTSIDE the web view, so a taller
+   layout cannot paint it — it only pushes the last ~60pt of every page out of sight.
+   See src/theme/safeArea.ts § "the bottom shortfall". */
 #root {
   width: 100%;
-  height: var(--app-height, 100dvh);
+  height: 100dvh;
   margin: 0;
   padding: 0;
   overflow-x: hidden;

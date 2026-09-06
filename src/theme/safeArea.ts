@@ -33,13 +33,23 @@
 //   • src/components/FooterPresenter.tsx — the bar's hide travel, which must clear the
 //     grown bar or it peeks back above the bottom edge.
 //
-// ⚠️ NOT THE ONLY THING black-translucent COSTS. It also leaves the standalone web
-// view's HEIGHT short by the status bar (the origin moves to y=0, the height does not
-// grow), so `100dvh` under-computes and an unpainted strip appears at the BOTTOM of the
-// screen on every page. That is a different problem with a different fix —
-// src/hooks/useAppHeight.ts and its `--app-height` variable — and it does NOT belong in
-// these insets: SAFE_BOTTOM is a strip the page paints and keeps content out of, the
-// shortfall is a strip the page cannot reach. They stack.
+// ⚠️ THE BOTTOM SHORTFALL — NOT THE ONLY THING black-translucent COSTS, AND NOT
+// FIXABLE FROM CSS. It also leaves the standalone WEB VIEW ITSELF short by the status
+// bar: the origin moves to y=0 but the height does not grow, so the web view is
+// `screen − status bar` tall and a strip that size at the BOTTOM of the screen belongs
+// to no one. It renders as the window's flat #FFFFFF backdrop on every page, whatever
+// the page's ground.
+//
+// ⛔ DO NOT try to fix it by growing the shell to `window.screen.height`. That was
+// tried on 2026-09-05 (`useAppHeight` / `--app-height`, reverted the same day) and it
+// makes things strictly worse: the missing pixels are OUTSIDE the web view, so a taller
+// layout cannot paint them — it only pushes the last ~60pt of every page past the web
+// view's edge, where it is clipped. Measured off a Bubble Match screenshot on a 393×852
+// device: page content ran to 791pt, the white strip was 61pt, and the game panel's
+// bottom hint was cut in half. The white strip stayed exactly where it was.
+//
+// This is distinct from SAFE_BOTTOM, which describes a strip the page DOES paint and
+// merely has to keep content out of. They stack.
 //
 // Docs: docs/UX_AND_NAVIGATION.md § Safe areas and the iOS status bar.
 

@@ -356,44 +356,50 @@ Two consequences worth knowing:
   answer is a dark top band on light pages, **not** a return to `default`, which
   cannot colour the band at all.
 
-### The bottom shortfall: `--app-height`
+### The bottom shortfall (open, and NOT fixable from CSS)
 
-`black-translucent` buys the top band at a price that is **not** an inset: iOS moves
-the standalone web view's **origin** to `y=0` but does **not** grow its **height**. The
-layout viewport stays `screen height − status bar height`, so `100dvh` computes short,
-and a strip that size at the **bottom** of the screen is never painted by the page at
-all — it shows through as black **on every page, whatever that page's ground is**. The
-symptom is diagnostic: the top band starts matching and an *identically sized* band
-appears at the base. (Found 2026-09-05, immediately after the status-bar fix landed.)
+`black-translucent` buys the top band at a price that is **not** an inset: iOS moves the
+standalone web view's **origin** to `y=0` but does **not** grow its **height**. The web
+view is therefore `screen height − status bar height` tall, and a strip that size at the
+**bottom** of the screen belongs to no one — it renders as the window's flat `#FFFFFF`
+backdrop **on every page, whatever that page's ground is**. The symptom is diagnostic:
+the top band starts matching and an *identically sized* band appears at the base. (Found
+2026-09-05, immediately after the status-bar fix landed.)
 
 This is **not** `SAFE_BOTTOM`. That inset describes a strip the page *does* paint and
-merely has to keep content out of; this is a strip the page cannot reach. They stack —
-the footer bar still grows by `SAFE_BOTTOM` *inside* the height restored here.
+merely has to keep content out of; this one is outside the web view entirely.
 
-`src/hooks/useAppHeight.ts` fixes it by **measurement, not by a constant**: in the iOS
-home-screen app only (`navigator.standalone === true`) it compares `window.innerHeight`
-to `window.screen.height` and, when the shortfall is real and under
-`MAX_SHORTFALL_PX` (100), publishes the screen height as `--app-height` on the root
-element. Adding a hard-coded status-bar height instead would need a number per
-notch/Dynamic-Island generation.
+**⛔ Do not fix it by growing the shell to `window.screen.height`.** That was tried the
+same day (`useAppHeight`, publishing a measured `--app-height` read by `#root`,
+`FrameRoot`, `PHONE_OVERLAY_SX` and `Layout`) and **reverted within hours**, because the
+missing pixels are outside the web view: a taller layout cannot paint them, it only
+pushes the last ~60pt of every page past the web view's edge, where it is clipped.
+Measured off a Bubble Match screenshot on a 393×852 device with the hook live — page
+content ran to 791pt, the white strip was still 61pt, and the play panel's bottom hint
+was cut in half. Pages that merely *shifted* looked "slightly off"; a game, which fills
+its surface exactly, lost its bottom row outright.
 
-**It is self-disabling.** In a Safari tab, on Android, on desktop, or on a future iOS
-that grows the web view, the two numbers agree, the variable is never set, and every
-consumer falls back to plain `100dvh` — so nothing outside the iOS home-screen app
-changes. Publishing a *pixel* height is safe for the same reason: it only ever fires in
-the standalone app, which has no URL bar, so the dynamic viewport is not dynamic there.
-Rotation and any other `resize` / `orientationchange` re-measure.
+The strip is currently **accepted**, unfixed. The three real options, none of them CSS:
 
-| Consumer | Reads |
+| Option | What it costs |
 |---|---|
-| `#root`, the shell scroller | `var(--app-height, 100dvh)` — `src/App.css` |
-| `FrameRoot`, the phone surface | `var(--app-height, 100dvh)` — `MobileDemoFrame` |
-| `PHONE_OVERLAY_SX`, the full-bleed sheet box | same expression as the frame — `phoneGeometry.ts` |
-| The plain (non-frame) shell | `minHeight: var(--app-height, 100dvh)` — `Layout` |
+| Revert `apple-mobile-web-app-status-bar-style` to `default` | The web view is letterboxed *below* an opaque OS bar and spans to the bottom, so the strip goes away — but the band behind the clock is OS-painted again and the app cannot colour it. That is the bug the `black-translucent` change was made to fix. |
+| Ship a **web app manifest** (`display: standalone` + `background_color`) instead of / alongside the Apple meta tags | iOS 17+ honours it; `background_color` paints the window backdrop, so the strip would at least take the app's paper instead of white. Unverified on this device, and it is one static colour, not the current page's ground. |
+| Leave it | A 61pt white band under every page in the home-screen app. |
 
-The hook is called once in `App`, beside `useBlockZoom` — not in `MobileDemoFrame`,
-because `Layout`'s non-frame branch reads the same variable and the frame is unmounted
-on those routes.
+⚠️ **Whatever ships, iOS snapshots these tags when the icon is added** — an installed
+icon has to be deleted and re-added before any of it takes effect.
+
+### The status-bar scrim (open)
+
+Also observed 2026-09-05, on the same screenshot: the band behind the clock is not the
+flat page ground it was expected to be, but a **white overlay fading out downward** —
+~68% white at `y=0`, reaching zero at ~77pt (measured; the page ground below it is
+exactly `RAMP.red.ink`). Nothing in `src/` draws it: there is no gradient in `LeafPage`,
+`GameFrame`, `gameSurfaceSx` or the shell, and the falloff is linear in all three
+channels, which is what an alpha ramp composited by the OS looks like. The working
+theory is an iOS legibility scrim drawn over `black-translucent` in light appearance.
+If so, no CSS can remove it — the page can only choose what it fades *into*.
 
 ### Who absorbs the insets
 
@@ -426,7 +432,6 @@ Today that is only the flp merge sheet's header.
 - `src/index.css` — shell `overflow: hidden`, global `user-select: none`, cpcd desktop-selectable exception
 - `src/theme/safeArea.ts` — `SAFE_TOP` / `SAFE_BOTTOM`, and `index.html`'s `viewport-fit=cover` + `apple-mobile-web-app-*` tags (see above)
 - `src/hooks/useThemeColor.ts` — `theme-color` claims for Safari tabs / Android Chrome only
-- `src/hooks/useAppHeight.ts` — `--app-height`, the measured full-screen height for the iOS home-screen app (see above)
 - `src/App.css` — `#root` shell scroller
 - `src/hooks/useBlockEdgeSwipe.ts` — edge-swipe-back blocker
 - `src/hooks/useScrollStretch.ts` — displacement-driven elastic card spacing (see above)

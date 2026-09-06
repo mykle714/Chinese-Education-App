@@ -14,6 +14,7 @@ import IWSceneMapPanel from './IWSceneMapPanel';
 import IWSceneDetailsPanel from './IWSceneDetailsPanel';
 import IWSceneContentPanel from './IWSceneContentPanel';
 import IWSceneActionsPanel from './IWSceneActionsPanel';
+import IWScenePlacesPanel from './IWScenePlacesPanel';
 import { blankScene, useIWSceneDraft, type IWEditorTool } from './useIWSceneDraft';
 import {
   deleteScene, errorMessage, listNpcs, listScenes, loadScene, problemsFromError, saveScene,
@@ -25,7 +26,7 @@ import {
  * (docs/IMMERSIVE_WORLD.md § 12 phase 1d/1e). Desktop-only, template-author-only.
  *
  * LAYER: feature page. It owns ORCHESTRATION only — load, save, delete, which scene is
- * open, which tool is active — while the draft lives in `useIWSceneDraft` and the three
+ * open, which tool is active — while the draft lives in `useIWSceneDraft` and the four
  * panels render it. Nothing here writes SQL-shaped logic or reaches past
  * `immersiveWorldSceneApi.ts` for a server call.
  *
@@ -36,10 +37,36 @@ import {
  * fix in a seed script.
  *
  * THE THREE COLUMNS (§ 12 phase 1d): the MAP (reusing the night market's editor viewer),
- * the SCENE (identity, cast, completion pair) and the CONTENT (complications, overheard
- * conversations). NPCs are never authored here — they are code, and this page only picks
- * from them.
+ * the SCENE (identity, cast, completion pair) and the CONTENT — which is two panels stacked,
+ * the per-NPC action scripts plus the named places and their interactions, over the scene's
+ * complications, events and overheard conversations. NPCs are never authored here — they are
+ * code, and this page only picks from them.
  */
+
+/**
+ * The right-hand authoring column runs out of room long before the other two do: an action
+ * is a LIST OF STEPS, and every step is a row of dropdowns that has to fit side by side. So
+ * that column is both wider than the left one and rendered a notch smaller than the rest of
+ * the app — the shrink is scoped here rather than pushed into each panel so the two panels
+ * stay ordinary MUI and there is exactly ONE place to retune the density.
+ */
+const IW_CONTENT_COLUMN_WIDTH = 560;
+
+/** Compact typography for everything inside the content column (labels, fields, buttons). */
+const IW_CONTENT_COLUMN_DENSITY_SX = {
+  // Section headers. Panel body text sets its own size explicitly, so only the shared
+  // `overline` heading is retuned here — a blanket Typography rule would beat those inline
+  // sizes on specificity and silently ENLARGE the 11px captions.
+  '& .MuiTypography-overline': { fontSize: 10 },
+  // Text fields and selects: value, floating label and helper text all step down together,
+  // otherwise a 13px label sits over a 16px value and the rows look misaligned.
+  '& .MuiInputBase-input': { fontSize: 13 },
+  '& .MuiInputLabel-root': { fontSize: 12 },
+  '& .MuiFormHelperText-root': { fontSize: 11 },
+  '& .MuiButton-root': { fontSize: 12 },
+  // NOTE: select options are NOT styled here — MUI renders them into a portal outside this
+  // column, so a descendant rule cannot reach them. They keep the app-wide menu size.
+} as const;
 
 export default function IWSceneEditorPage() {
   usePageTitle('Scene Editor');
@@ -292,7 +319,14 @@ export default function IWSceneEditorPage() {
       <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
         <Box
           className="iw-scene-editor-page__details"
-          sx={{ width: 360, p: 2, overflowY: 'auto', borderRight: `1px solid ${COLORS.border}`, backgroundColor: COLORS.white }}
+          sx={{
+            width: 360,
+            flex: '0 0 auto',
+            p: 2,
+            overflowY: 'auto',
+            borderRight: `1px solid ${COLORS.border}`,
+            backgroundColor: COLORS.white,
+          }}
         >
           <IWSceneDetailsPanel
             scene={scene}
@@ -324,9 +358,30 @@ export default function IWSceneEditorPage() {
 
         <Box
           className="iw-scene-editor-page__content"
-          sx={{ width: 420, p: 2, overflowY: 'auto', borderLeft: `1px solid ${COLORS.border}`, backgroundColor: COLORS.white }}
+          sx={{
+            width: IW_CONTENT_COLUMN_WIDTH,
+            flex: '0 0 auto',
+            p: 2,
+            overflowY: 'auto',
+            borderLeft: `1px solid ${COLORS.border}`,
+            backgroundColor: COLORS.white,
+            ...IW_CONTENT_COLUMN_DENSITY_SX,
+          }}
         >
           <IWSceneActionsPanel
+            scene={scene}
+            npcs={npcs}
+            locations={draft.locations}
+            problemsByField={problemsByField}
+            onAddAction={draft.addAction}
+            onUpdateAction={draft.updateAction}
+            onRemoveAction={draft.removeAction}
+          />
+
+          {/* Directly below the actions, where the Places section used to live inside them —
+              the column reads the same, but a place now carries its own interaction script
+              (migration 162), which is more than one panel's worth of idea. */}
+          <IWScenePlacesPanel
             scene={scene}
             npcs={npcs}
             locations={draft.locations}
@@ -335,9 +390,7 @@ export default function IWSceneEditorPage() {
             onRenameLocation={draft.renameLocation}
             onRemoveLocation={draft.removeLocation}
             onPlaceLocation={(tag) => setActiveTool(`loc:${tag}`)}
-            onAddAction={draft.addAction}
-            onUpdateAction={draft.updateAction}
-            onRemoveAction={draft.removeAction}
+            onSetInteraction={draft.setInteraction}
           />
 
           <IWSceneContentPanel

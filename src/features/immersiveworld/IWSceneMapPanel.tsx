@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, Button, Tooltip, Typography } from '@mui/material';
 import GridOnIcon from '@mui/icons-material/GridOn';
 import GrassIcon from '@mui/icons-material/Grass';
 import ParkIcon from '@mui/icons-material/Park';
@@ -14,13 +14,14 @@ import EmojiPeopleIcon from '@mui/icons-material/EmojiPeople';
 import StorefrontIcon from '@mui/icons-material/Storefront';
 import PlaceIcon from '@mui/icons-material/Place';
 import TemplateEditorViewer, { type EditorMarker } from '../nightmarket/TemplateEditorViewer';
-import { PaletteButton, toolGroupSx } from '../nightmarket/editorButtonStyles';
+import { PaletteButton, paletteBtnSx, toolGroupSx } from '../nightmarket/editorButtonStyles';
 import { DIRT_FLOOR, type BoardFloor, type EditorMasks } from '../../engine/market/farmTerrain';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 import {
   IW_PLAYER_AVATAR,
   type IWAvatar, type IWFacing, type IWNpcOption, type IWScene,
 } from '../../../server/contracts/iw';
+import { WEIGHT } from '../../theme/scale';
 import { decorCategoryFor, isPlaceTool, type IWEditorTool, type IWPaintTool, type IWPlaceTool } from './useIWSceneDraft';
 
 /**
@@ -181,6 +182,37 @@ const LOCATION_MARKER_COLOR = 0x9cff9c;
 
 /** The bodies-group accent, reused by the places group so the two read as one family. */
 const LOCATION_ACCENT = '150,255,150';
+
+/**
+ * One place button. The ONLY palette control in either editor that is not a 40×40 icon,
+ * because it is the only one whose meaning is a NAME the author invented — a pin icon
+ * cannot say "stall" from "kitchen door", and a scene is expected to carry many places, so
+ * hover-to-read a tooltip would mean hunting. It borrows `paletteBtnSx`'s colours (same
+ * idle/active/hover treatment, same accent) and overrides only the hard-pinned box, so it
+ * still reads as a member of the palette rather than a stray chip.
+ */
+const PlaceChip = ({ tag, active, onClick }: { tag: string; active: boolean; onClick: () => void }) => (
+  <Tooltip title={`Put “${tag}” on a cell — clicking again moves it`} placement="top">
+    <Button
+      className={`iw-scene-tool iw-scene-tool-loc iw-scene-tool-loc-${tag.replace(/\s+/g, '-')}`}
+      variant="outlined"
+      size="small"
+      onClick={onClick}
+      startIcon={<PlaceIcon fontSize="small" />}
+      sx={{
+        ...paletteBtnSx(active, LOCATION_ACCENT),
+        // Undo the fixed 40×40 box: a name sets the width, and the row wraps.
+        width: 'auto', minWidth: 0, maxWidth: 'none',
+        height: 32, minHeight: 32, maxHeight: 32,
+        px: 1, textTransform: 'none', whiteSpace: 'nowrap',
+        fontSize: 12, fontWeight: WEIGHT.medium,
+        '& .MuiButton-startIcon': { mr: 0.5, ml: 0 },
+      }}
+    >
+      {tag}
+    </Button>
+  </Tooltip>
+);
 
 export default function IWSceneMapPanel({
   scene, masks, locations, npcs, activeTool, onToolChange, eraseMode, onEraseModeChange,
@@ -402,7 +434,10 @@ export default function IWSceneMapPanel({
       <Box
         className="iw-scene-map-panel__palette"
         sx={{
-          position: 'absolute', top: 16, left: 16, zIndex: 10,
+          // `right` as well as `left`: the places row WRAPS, and wrapping needs a width to
+          // wrap against. The frame stays click-through (`pointerEvents: 'none'` below), so
+          // spanning the board costs nothing.
+          position: 'absolute', top: 16, left: 16, right: 16, zIndex: 10,
           display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1,
           pointerEvents: 'none',
           '& .iw-scene-tool-group': { pointerEvents: 'auto' },
@@ -417,18 +452,21 @@ export default function IWSceneMapPanel({
             the ones that exist, so the row is absent until the first one is named. */}
         {placeTags.length > 0 && (
           <Box className="iw-scene-tool-row iw-scene-tool-row-places" sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            <Box className="iw-scene-tool-group iw-scene-tool-group-places" sx={toolGroupSx(LOCATION_ACCENT)}>
+            {/* The ONE group in this palette that wraps. Every other row holds a fixed,
+                known set of tools and is sized to fit; places are authored, unbounded and
+                named, so the row has to grow down the board rather than run off its right
+                edge. `flexWrap` overrides `toolGroupSx`'s nowrap for this group only. */}
+            <Box
+              className="iw-scene-tool-group iw-scene-tool-group-places"
+              sx={{ ...toolGroupSx(LOCATION_ACCENT), flexWrap: 'wrap' }}
+            >
               {placeTags.map((tag) => (
-                <PaletteButton
+                <PlaceChip
                   key={tag}
-                  className={`iw-scene-tool iw-scene-tool-loc-${tag.replace(/\s+/g, '-')}`}
-                  title={`Put “${tag}” on a cell — clicking again moves it`}
+                  tag={tag}
                   active={activeTool === `loc:${tag}`}
-                  accent={LOCATION_ACCENT}
                   onClick={() => onToolChange(`loc:${tag}`)}
-                >
-                  <PlaceIcon fontSize="small" />
-                </PaletteButton>
+                />
               ))}
             </Box>
           </Box>

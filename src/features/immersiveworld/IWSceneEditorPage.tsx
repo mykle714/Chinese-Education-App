@@ -15,6 +15,7 @@ import IWSceneDetailsPanel from './IWSceneDetailsPanel';
 import IWSceneContentPanel from './IWSceneContentPanel';
 import IWSceneActionsPanel from './IWSceneActionsPanel';
 import IWScenePlacesPanel from './IWScenePlacesPanel';
+import { type IWCueOption } from './IWSelectableControls';
 import { blankScene, useIWSceneDraft, type IWEditorTool } from './useIWSceneDraft';
 import {
   deleteScene, errorMessage, listNpcs, listScenes, loadScene, problemsFromError, saveScene,
@@ -113,6 +114,23 @@ export default function IWSceneEditorPage() {
     for (const p of problems) if (!map.has(p.field)) map.set(p.field, p.message);
     return map;
   }, [problems]);
+
+  /**
+   * The scene's complications and events, merged into one list of CUES (2026-09-06) — what a
+   * dependent action or conversation may be gated on.
+   *
+   * Merged HERE rather than in each panel because two panels need the same pool and the
+   * server merges the same two lists to validate against it; three independent merges would
+   * be three chances to disagree about what a cue is.
+   */
+  const cues = useMemo<IWCueOption[]>(() => [
+    ...scene.complications.map((c) => ({
+      id: c.id, description: c.description, kind: 'complication' as const,
+    })),
+    ...scene.events.map((e) => ({
+      id: e.id, description: e.description, kind: 'event' as const,
+    })),
+  ], [scene.complications, scene.events]);
 
   const refreshScenes = useCallback(async () => {
     try {
@@ -357,7 +375,7 @@ export default function IWSceneEditorPage() {
           <IWSceneMapPanel
             scene={scene}
             masks={masks}
-            locations={draft.locations}
+            places={draft.places}
             npcs={npcs}
             activeTool={activeTool}
             onToolChange={setActiveTool}
@@ -384,8 +402,9 @@ export default function IWSceneEditorPage() {
           <IWSceneActionsPanel
             scene={scene}
             npcs={npcs}
-            locations={draft.locations}
+            places={draft.places}
             problemsByField={problemsByField}
+            cues={cues}
             onAddAction={draft.addAction}
             onUpdateAction={draft.updateAction}
             onRemoveAction={draft.removeAction}
@@ -397,12 +416,12 @@ export default function IWSceneEditorPage() {
           <IWScenePlacesPanel
             scene={scene}
             npcs={npcs}
-            locations={draft.locations}
+            places={draft.places}
             problemsByField={problemsByField}
-            onAddLocation={draft.addLocation}
-            onRenameLocation={draft.renameLocation}
-            onRemoveLocation={draft.removeLocation}
-            onPlaceLocation={(tag) => setActiveTool(`loc:${tag}`)}
+            onAddPlace={draft.addPlace}
+            onRenamePlace={draft.renamePlace}
+            onRemovePlace={draft.removePlace}
+            onPutOnBoard={(tag) => setActiveTool(`tag:${tag}`)}
             onSetInteraction={draft.setInteraction}
           />
 
@@ -410,6 +429,7 @@ export default function IWSceneEditorPage() {
             scene={scene}
             npcs={npcs}
             problemsByField={problemsByField}
+            cues={cues}
             onUpdate={draft.update}
           />
         </Box>

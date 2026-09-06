@@ -16,7 +16,7 @@ import {
   type IWNpcOption, type IWScene,
 } from '../../../server/contracts/iw';
 import { IW_POPUP_IMAGES, popupImageUrl } from './iwPopupArt';
-import { isPlacedLocation } from './useIWSceneDraft';
+import { isPlacedCell } from './useIWSceneDraft';
 import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
 
 /**
@@ -56,13 +56,13 @@ export interface IWScenePlacesPanelProps {
   scene: IWScene;
   npcs: IWNpcOption[];
   /** tag → "col,row", or the empty string for a named-but-unplaced tag. */
-  locations: Record<string, string>;
+  places: Record<string, string>;
   problemsByField: Map<string, string>;
-  onAddLocation: (tag: string) => void;
-  onRenameLocation: (from: string, to: string) => void;
-  onRemoveLocation: (tag: string) => void;
+  onAddPlace: (tag: string) => void;
+  onRenamePlace: (from: string, to: string) => void;
+  onRemovePlace: (tag: string) => void;
   /** Arm the map's place tool for this tag. */
-  onPlaceLocation: (tag: string) => void;
+  onPutOnBoard: (tag: string) => void;
   /** Replace one place's whole interaction script. An empty list makes the place inert. */
   onSetInteraction: (tag: string, steps: IWInteractionStep[]) => void;
 }
@@ -85,8 +85,8 @@ function blankInteractionStep(kind: IWInteractionStepKind): IWInteractionStep {
 }
 
 export default function IWScenePlacesPanel({
-  scene, npcs, locations, problemsByField,
-  onAddLocation, onRenameLocation, onRemoveLocation, onPlaceLocation, onSetInteraction,
+  scene, npcs, places, problemsByField,
+  onAddPlace, onRenamePlace, onRemovePlace, onPutOnBoard, onSetInteraction,
 }: IWScenePlacesPanelProps) {
   const problem = (field: string) => problemsByField.get(field);
   const warn = (field: string) => warningFieldProps(problemsByField, field);
@@ -99,8 +99,8 @@ export default function IWScenePlacesPanel({
   const interactions = scene.interactions ?? {};
 
   /** Every place, alphabetical. `cell` is empty for one that was named but never placed. */
-  const tags = Object.entries(locations)
-    .map(([tag, cell]) => ({ tag, cell: isPlacedLocation(cell) ? cell : '' }))
+  const tags = Object.entries(places)
+    .map(([tag, cell]) => ({ tag, cell: isPlacedCell(cell) ? cell : '' }))
     .sort((a, b) => (a.tag < b.tag ? -1 : 1));
 
   /**
@@ -130,7 +130,7 @@ export default function IWScenePlacesPanel({
   const commitTag = () => {
     const clean = newTag.trim();
     if (!clean) return;
-    onAddLocation(clean);
+    onAddPlace(clean);
     setNewTag('');
   };
 
@@ -170,8 +170,8 @@ export default function IWScenePlacesPanel({
           Add
         </Button>
       </Stack>
-      {problem('layout.locations') && (
-        <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 11, mb: 1 }}>{problem('layout.locations')}</Typography>
+      {problem('layout.places') && (
+        <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 11, mb: 1 }}>{problem('layout.places')}</Typography>
       )}
 
       <Stack spacing={1}>
@@ -189,7 +189,7 @@ export default function IWScenePlacesPanel({
                 <TextField
                   size="small" fullWidth
                   value={tag}
-                  onChange={(e) => onRenameLocation(tag, e.target.value)}
+                  onChange={(e) => onRenamePlace(tag, e.target.value)}
                   // A rename rewrites every step that walked here AND carries the place's own
                   // interaction across, so an author can fix a typo without silently
                   // invalidating their own scripts. Refused when the name is already taken.
@@ -212,12 +212,12 @@ export default function IWScenePlacesPanel({
                   </IconButton>
                 </Tooltip>
                 <Tooltip title={`Put “${tag}” on a cell`}>
-                  <IconButton size="small" onClick={() => onPlaceLocation(tag)}>
+                  <IconButton size="small" onClick={() => onPutOnBoard(tag)}>
                     <PlaceIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Delete this place, its interaction, and any step that walked to it">
-                  <IconButton size="small" onClick={() => onRemoveLocation(tag)}>
+                  <IconButton size="small" onClick={() => onRemovePlace(tag)}>
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>

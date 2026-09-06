@@ -1,5 +1,5 @@
 import {
-  Box, Button, IconButton, MenuItem, Stack, TextField, Typography,
+  Box, Button, Checkbox, FormControlLabel, IconButton, MenuItem, Stack, TextField, Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -11,7 +11,8 @@ import {
   type IWActionStep, type IWActionStepKind,
   type IWNpcAction, type IWNpcOption, type IWScene,
 } from '../../../server/contracts/iw';
-import { isPlacedLocation } from './useIWSceneDraft';
+import { isPlacedCell } from './useIWSceneDraft';
+import IWSelectableControls, { type IWCueOption } from './IWSelectableControls';
 import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
 
 /**
@@ -35,7 +36,7 @@ import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
  * place was only a supporting vocabulary — a name a step could walk to. Interactions made a
  * place a thing that carries behaviour of its own, so authoring one grew a whole step editor
  * and moved to `IWScenePlacesPanel`, which the page renders directly below this. The `walk_to
- * _tag` dropdown here still READS `locations`; it just no longer edits them.
+ * _tag` dropdown here still READS `places`; it just no longer edits them.
  */
 
 export interface IWSceneActionsPanelProps {
@@ -46,8 +47,14 @@ export interface IWSceneActionsPanelProps {
    * places to `walk_to_tag` steps but no longer authors them — that moved to
    * `IWScenePlacesPanel` when a place grew an interaction of its own.
    */
-  locations: Record<string, string>;
+  places: Record<string, string>;
   problemsByField: Map<string, string>;
+  /**
+   * The scene's complications and events, merged — what an action's `unlockedBy` gate may
+   * name. Passed in rather than derived here so the picker and the validator read the same
+   * pool (the validator merges the same two lists).
+   */
+  cues: IWCueOption[];
   onAddAction: (npcId: string) => void;
   onUpdateAction: (npcId: string, actionId: string, patch: Partial<IWNpcAction>) => void;
   onRemoveAction: (npcId: string, actionId: string) => void;
@@ -69,7 +76,7 @@ function blankStep(kind: IWActionStepKind): IWActionStep {
 }
 
 export default function IWSceneActionsPanel({
-  scene, npcs, locations, problemsByField,
+  scene, npcs, places, problemsByField, cues,
   onAddAction, onUpdateAction, onRemoveAction,
 }: IWSceneActionsPanelProps) {
   const problem = (field: string) => problemsByField.get(field);
@@ -79,8 +86,8 @@ export default function IWSceneActionsPanel({
   const npcName = (npcId: string) => npcs.find((n) => n.id === npcId)?.name ?? npcId;
 
   /** Every place, alphabetical. `cell` is empty for one that was named but never placed. */
-  const tags = Object.entries(locations)
-    .map(([tag, cell]) => ({ tag, cell: isPlacedLocation(cell) ? cell : '' }))
+  const tags = Object.entries(places)
+    .map(([tag, cell]) => ({ tag, cell: isPlacedCell(cell) ? cell : '' }))
     .sort((a, b) => (a.tag < b.tag ? -1 : 1));
 
   /** Who a `walk_to_actor` step may target: the two fixed bodies plus the cast. */
@@ -160,12 +167,50 @@ export default function IWSceneActionsPanel({
                           <DeleteIcon fontSize="small" />
                         </IconButton>
                       </Stack>
-                      <TextField
-                        size="small" label="When it fits (optional)" fullWidth sx={{ mt: 1 }}
-                        value={action.when ?? ''}
-                        {...warn(`${at}.when`)}
-                        onChange={(e) => onUpdateAction(member.npcId, action.id, { when: e.target.value })}
+                      {/* The three fields every model-choosable thing has. Greyed — not
+                          hidden — when the action is interaction-only, so an author who
+                          ticks that box can see what it just switched off. */}
+                      <IWSelectableControls
+                        value={action}
+                        at={at}
+                        problemsByField={problemsByField}
+                        cues={cues}
+                        whenLabel="When it fits (optional)"
+                        urgentHint="Urgent leans the model toward this when nothing more pressing is happening — it is never a guarantee. A beat that must happen is an event on a timer."
+                        disabled={!!action.interactionOnly}
+                        onChange={(patch) => onUpdateAction(member.npcId, action.id, patch)}
                       />
+
+                      {/* The action-only flag, drawn here rather than inside the shared
+                          controls because its polarity is the opposite of a conversation's
+                          `selectable` — see the contract. */}
+                      <FormControlLabel
+                        className="iw-scene-actions-panel__interaction-only"
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={!!action.interactionOnly}
+                            onChange={(e) => onUpdateAction(
+                              member.npcId, action.id, { interactionOnly: e.target.checked || undefined },
+                            )}
+                          />
+                        }
+                        label={(
+                          <Typography sx={{ fontSize: 11 }}>
+                            only a place interaction runs this — never offered to the model
+                          </Typography>
+                        )}
+                      />
+                      {problem(`${at}.interactionOnly`) && (
+                        <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 11 }}>
+                          {problem(`${at}.interactionOnly`)}
+                        </Typography>
+                      )}
+                      {problem(`${at}.urgent`) && (
+                        <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 11 }}>
+                          {problem(`${at}.urgent`)}
+                        </Typography>
+                      )}
 
                       {problem(`${at}.steps`) && (
                         <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 11, mt: 0.5 }}>

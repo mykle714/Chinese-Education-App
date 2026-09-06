@@ -6,7 +6,8 @@ import { IW_CONVERSATION_LINE_MS, IW_MAX_EVENT_DELAY_SECONDS } from '../../../se
 import type {
   IWComplication, IWConversation, IWNpcOption, IWScene, IWSceneEvent,
 } from '../../../server/contracts/iw';
-import { warningFieldProps } from './iwSceneWarnings';
+import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
+import IWSelectableControls, { type IWCueOption } from './IWSelectableControls';
 
 /**
  * IWSceneContentPanel — the three authored LISTS a scene carries besides its cast:
@@ -40,6 +41,8 @@ export interface IWSceneContentPanelProps {
   scene: IWScene;
   npcs: IWNpcOption[];
   problemsByField: Map<string, string>;
+  /** The scene's complications and events, merged — what a conversation's gate may name. */
+  cues: IWCueOption[];
   onUpdate: (patch: Partial<IWScene>) => void;
 }
 
@@ -52,11 +55,12 @@ function makeId(prefix: string, taken: Set<string>): string {
 }
 
 export default function IWSceneContentPanel({
-  scene, npcs, problemsByField, onUpdate,
+  scene, npcs, problemsByField, cues, onUpdate,
 }: IWSceneContentPanelProps) {
   /** Amber marking props for one field. Warnings do not refuse a save, so they do not
    *  paint like errors — see `iwSceneWarnings.ts`. */
   const warn = (field: string) => warningFieldProps(problemsByField, field);
+  const problem = (field: string) => problemsByField.get(field);
   const npcName = (npcId: string) => npcs.find((n) => n.id === npcId)?.name ?? npcId;
 
   /**
@@ -99,6 +103,15 @@ export default function IWSceneContentPanel({
    * Toggle "at scene open". UNDEFINED, not 0, is the off state: 0 is a meaningful value
    * (fire at the first legal moment), so the checkbox has to add and remove the field rather
    * than write a sentinel number into it.
+   */
+  /**
+   * ⚠️ THE CHECKBOX ARMS A TIMER, IT DOES NOT FIRE THE EVENT (label corrected 2026-09-06).
+   * It used to read "at scene open" beside a box labelled "seconds", which an author can only
+   * read as *this happens when the scene opens* — the delay then looking like a detail. What
+   * it actually means is *the scene arms this the moment it opens, and it comes due N seconds
+   * later*, which is the same earliest-legal-moment semantics a `schedule_event` step has.
+   * Hence "schedule at scene open" + "after (s)". No field changed; `atStartSeconds` already
+   * did exactly this.
    */
   const toggleAtStart = (i: number, on: boolean) => {
     const next = scene.events.map((e, j) => {
@@ -195,12 +208,12 @@ export default function IWSceneContentPanel({
                         onChange={(e) => toggleAtStart(i, e.target.checked)}
                       />
                     }
-                    label={<Typography sx={{ fontSize: 11 }}>at scene open</Typography>}
+                    label={<Typography sx={{ fontSize: 11 }}>schedule at scene open</Typography>}
                   />
                   {event.atStartSeconds !== undefined && (
                     <TextField
                       className="iw-scene-content-panel__event-delay"
-                      size="small" type="number" label="seconds" sx={{ width: 110 }}
+                      size="small" type="number" label="after (s)" sx={{ width: 110 }}
                       inputProps={{ min: 0, max: IW_MAX_EVENT_DELAY_SECONDS }}
                       value={event.atStartSeconds}
                       {...warn(`events[${i}].atStartSeconds`)}
@@ -239,7 +252,9 @@ export default function IWSceneContentPanel({
         </Stack>
         <Typography sx={{ fontSize: 11, opacity: 0.7, mb: 1 }}>
           Fixed lines between cast members, played back with no model calls. The learner can
-          tap to pause, so this is a study surface as much as ambience. Every line is held for{' '}
+          tap to pause, so this is a study surface as much as ambience. Tick the box on one and
+          its FIRST speaker may also start it unprompted, the way they pick an action. Every
+          line is held for{' '}
           {IW_CONVERSATION_LINE_MS / 1000} seconds — pacing is not authored, so write lines a
           learner can read in that time.
         </Typography>
@@ -253,8 +268,15 @@ export default function IWSceneContentPanel({
             >
               <Stack direction="row" spacing={1} alignItems="center">
                 <TextField
-                  size="small" label="Title (for you, never shown)" fullWidth
+                  size="small" fullWidth
+                  // The label changes with `selectable`, because the field's AUDIENCE does:
+                  // for a choosable conversation the title is what the NPC picks it by, so
+                  // calling it "for you, never shown" would be actively wrong.
+                  label={conv.selectable
+                    ? 'Title — the NPC chooses it by this'
+                    : 'Title (for you, never shown)'}
                   value={conv.title ?? ''}
+                  {...warn(`conversations[${i}].title`)}
                   onChange={(e) => patchConversation(i, { title: e.target.value })}
                 />
                 <IconButton
@@ -265,6 +287,48 @@ export default function IWSceneContentPanel({
                   <DeleteIcon fontSize="small" />
                 </IconButton>
               </Stack>
+
+              {/* ── Can the first speaker start this on their own? (2026-09-06) ──
+                  Opt-IN, unlike an action's opt-OUT `interactionOnly`: every conversation
+                  authored before this existed was script-only, and flipping them all to
+                  spontaneous would change what those scenes do. */}
+              <FormControlLabel
+                className="iw-scene-content-panel__conversation-selectable"
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={!!conv.selectable}
+                    onChange={(e) => patchConversation(i, { selectable: e.target.checked || undefined })}
+                  />
+                }
+                label={(
+                  <Typography sx={{ fontSize: 11 }}>
+                    {conv.turns[0]?.npcId
+                      ? `${npcName(conv.turns[0].npcId)} may start this when the moment suits`
+                      : 'whoever speaks first may start this when the moment suits'}
+                  </Typography>
+                )}
+              />
+              {problem(`conversations[${i}].selectable`) && (
+                <Typography sx={{ ...IW_WARNING_TEXT_SX, fontSize: 11 }}>
+                  {problem(`conversations[${i}].selectable`)}
+                </Typography>
+              )}
+
+              {/* The same three fields an action has — rendered only once the conversation is
+                  choosable, since `when`/urgency/gating are all about being CHOSEN and mean
+                  nothing for one a script fires. */}
+              {conv.selectable && (
+                <IWSelectableControls
+                  value={conv}
+                  at={`conversations[${i}]`}
+                  problemsByField={problemsByField}
+                  cues={cues}
+                  whenLabel="When it fits (optional)"
+                  urgentHint="Urgent leans the first speaker toward starting this when nothing more pressing is happening. It still yields to the learner."
+                  onChange={(patch) => patchConversation(i, patch)}
+                />
+              )}
 
               <Stack spacing={1} sx={{ mt: 1.5 }}>
                 {conv.turns.map((turn, t) => (

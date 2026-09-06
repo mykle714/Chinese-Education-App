@@ -99,7 +99,7 @@ export const IW_MAX_CAST = 8;
 export const IW_MAX_COMPLICATIONS = 12;
 /** Authored events a scene may hold (migration 161) — the pool `schedule_event` picks from. */
 export const IW_MAX_EVENTS = 12;
-export const IW_MAX_LOCATION_TAG_LENGTH = 40;
+export const IW_MAX_PLACE_TAG_LENGTH = 40;
 /** Authored actions per NPC, and steps per action. */
 export const IW_MAX_NPC_ACTIONS = 8;
 export const IW_MAX_ACTION_STEPS = 16;
@@ -108,6 +108,14 @@ export const IW_MAX_ACTION_WHEN_LENGTH = 200;
 export const IW_MAX_ACTION_COMMENT_LENGTH = 200;
 /** An `ai_walk` brief. Same cap as `when` — both are one sentence of guidance to the model. */
 export const IW_MAX_ACTION_INSTRUCTION_LENGTH = 200;
+/**
+ * How many cues may unlock ONE dependent action or conversation ({@link IWSelectable.unlockedBy}).
+ *
+ * Deliberately far below `IW_MAX_COMPLICATIONS + IW_MAX_EVENTS`: a gate listing every cue in
+ * the scene is not a gate, it is an action that is always available written the long way. A
+ * handful is what "this only makes sense once X has happened" ever needs.
+ */
+export const IW_MAX_UNLOCK_CUES = 8;
 /** A single `wait` step, in whole seconds. A minute is already a very long beat. */
 export const IW_MAX_WAIT_SECONDS = 60;
 /**
@@ -222,6 +230,21 @@ export interface IWSceneLayout {
    * EMPTY cell, which the validator rejects — "named but never placed" must not be saveable,
    * because an action that walks there would walk nowhere.
    */
+  places?: Record<string, string>;
+  /**
+   * ⚠️ THE OLD NAME FOR {@link places} (renamed 2026-09-06). READ-ONLY: `scenePlaces` falls
+   * back to it so a row written before the rename still opens, and nothing ever writes it
+   * again — the next save of such a scene stores `places` and drops this key.
+   *
+   * The rename was overdue rather than cosmetic. Every other surface in the feature already
+   * said PLACE — `IWScenePlacesPanel`, `PlaceChip`, the `walk_to_tag` label ("Walk to place"),
+   * `IWSceneInteractions`'s "keyed by place name", and every paragraph of § 14 Q42/Q43 — while
+   * the stored key alone said `locations`, which also collides with the night market's
+   * unrelated `nightmarkettemplatelocations`. Migration 163 renames the key in the one stored
+   * row; this fallback covers dev boxes and any draft in flight.
+   *
+   * @deprecated Read through `scenePlaces(layout)`; never write.
+   */
   locations?: Record<string, string>;
   /**
    * The board-wide default FLOOR — what a cell shows where no terrain mask covers it.
@@ -240,6 +263,23 @@ export interface IWSceneFloor {
   kind: 'dirt' | 'wood';
   /** 32-bit seed; meaningless for `dirt`, kept so toggling back to wood restores the deck. */
   seed: number;
+}
+
+/**
+ * The scene's named places, whichever key they are stored under.
+ *
+ * THE ONLY SUPPORTED READ PATH for `layout.places`. It exists because the key was renamed
+ * from `locations` on 2026-09-06 and `layout` is jsonb, so a row can legitimately carry
+ * either spelling until it is next saved. Reading the field directly is how half the codebase
+ * would quietly stop seeing the places in an un-migrated scene — the failure mode being an
+ * editor that opens a finished scene with an empty Places panel and a wall of "this scene has
+ * no place named …" warnings.
+ *
+ * Writes are NOT symmetric and must not be: `masksToSceneLayout` emits `places` only, so
+ * every save heals the row it came from.
+ */
+export function scenePlaces(layout: IWSceneLayout | undefined): Record<string, string> {
+  return layout?.places ?? layout?.locations ?? {};
 }
 
 /**
@@ -415,15 +455,83 @@ export const IW_ACTOR_COMPANION = 'companion';
  * like. The model never improvises movement, and the author never has to anticipate when
  * water is wanted.
  */
-export interface IWNpcAction {
+export interface IWNpcAction extends IWSelectable {
   /** Author-assigned, stable within the NPC. What a run would record. */
   id: string;
   /** What the model sees and chooses by, so it must read as an intention: "bring water". */
   name: string;
-  /** Optional guidance on when it fits. The model's only hint beyond the name. */
-  when?: string;
   /** The script, in order. */
   steps: IWActionStep[];
+  /**
+   * NEVER offer this to the model — it runs only when an interaction's `npc_action` step
+   * fires it (2026-09-06).
+   *
+   * The polarity is opt-OUT because an action is model-selectable today, and a new flag must
+   * not change what an already-authored scene means. Its mirror on a conversation
+   * ({@link IWConversation.selectable}) is opt-IN for exactly the same reason, since a
+   * conversation is NOT selectable today.
+   *
+   * ⚠️ THIS REPLACES A PROSE WORKAROUND, and that is the argument for it. Prod's first scene
+   * carries an action whose `when` reads *"Do not pick, triggered by interaction"* — an
+   * instruction to the model, written into the field the model chooses BY, hoping it declines
+   * an option it was nonetheless offered. That is unenforceable by construction: the whole
+   * point of `when` is to make an action more choosable. A flag removes the action from the
+   * candidate list instead of arguing with the model about it.
+   *
+   * Combining it with `urgent` or `unlockedBy` is contradictory (nothing that is never
+   * offered can be urgent, or need unlocking) and the validator says so.
+   */
+  interactionOnly?: boolean;
+}
+
+/**
+ * What every model-CHOOSABLE thing in a scene has in common (2026-09-06).
+ *
+ * Two things are chosen by a model mid-scene: an NPC's authored ACTION, and — since
+ * 2026-09-06 — an overheard CONVERSATION, which its first speaker may start when the moment
+ * suits. They are different in every other respect (one is a script one body performs, the
+ * other is a fixed exchange between two), but the question the model is answering about them
+ * is identical: *does this fit right now, and how badly does it want to happen?*
+ *
+ * So the three fields that shape that answer live here rather than being written twice. The
+ * per-type fields that do NOT generalise — an action's `interactionOnly`, a conversation's
+ * `selectable` — stay on their own types, because their polarity differs (see each).
+ */
+export interface IWSelectable {
+  /**
+   * Optional guidance on when it fits. Together with the name/title, the model's only hint.
+   */
+  when?: string;
+  /**
+   * URGE the model to pick this whenever it is available — but do NOT force it (2026-09-06).
+   *
+   * ⚠️ IT IS A PROMPT WEIGHT, NOT A SCHEDULER, and the distinction is the reason the field is
+   * worth having rather than a hazard. A hard "must fire next" would flatten exactly the thing
+   * iw exists to produce: an NPC who abandons a half-finished sentence to the learner because
+   * a flag said so is not a scene unfolding, it is a queue draining. So the model may still
+   * rank something else above it — finishing a reply, answering a question it was just asked,
+   * reacting to a complication — and `urgent` only says which way to lean when nothing else
+   * is pressing.
+   *
+   * The consequence to accept up front: an urgent thing is NOT guaranteed to happen, and a
+   * beat that genuinely must happen is an EVENT on a timer, not an urgent action.
+   */
+  urgent?: boolean;
+  /**
+   * DEPENDENT: offer this only after one of these complications or events has fired
+   * (2026-09-06). Ids are drawn from the scene's OWN `complications` and `events` — a mixed
+   * list, because "has this happened yet" is the same question about both.
+   *
+   * ⚠️ **ANY, not ALL.** Several cues mean several ways in ("once the glass breaks OR the
+   * kitchen calls, offer *fetch a broom*"), which is what a list of cues naturally reads as
+   * and what almost every scene wants. An ALL gate is expressible only by authoring the
+   * intermediate state as an event of its own — which is the honest way to say it anyway,
+   * since a conjunction of world facts IS a new world fact.
+   *
+   * Omitted or empty means *always available*, which is what every action authored before
+   * this field existed carries.
+   */
+  unlockedBy?: string[];
 }
 
 /**
@@ -498,12 +606,45 @@ export interface IWConversationTurn {
  * One authored NPC-to-NPC conversation, stored in `iw_scenes.conversations` (§ 14 Q6).
  * Played back by the engine with no model calls; the learner can tap to pause it, and it
  * yields if the learner speaks.
+ *
+ * ⚠️ **A CONVERSATION IS NOW SOMETHING ITS FIRST SPEAKER MAY CHOOSE** (2026-09-06), not only
+ * something a script fires. Mark it {@link selectable} and it joins that NPC's candidate list
+ * beside their authored actions — so 王婶, holding a lull while the learner reads the menu,
+ * may decide there is time to greet the regular at table 2; and an NPC drawn toward another
+ * body by a complication may take that as the opening for the exchange the author wrote for
+ * exactly that moment.
+ *
+ * WHO OWNS IT IS DERIVED, NOT AUTHORED: the owner is `turns[0].npcId`, because the person who
+ * speaks first is the person who started it. A separate `ownerNpcId` would be a second,
+ * desynchronizable answer to a question the script already answers — and one an author could
+ * set to somebody who never speaks in it.
  */
-export interface IWConversation {
+export interface IWConversation extends IWSelectable {
   id: string;
-  /** Author-facing only — never shown to the learner, never sent to a model. */
+  /**
+   * The conversation's handle.
+   *
+   * ⚠️ ITS AUDIENCE CHANGED WITH {@link selectable} (2026-09-06). It used to be strictly
+   * author-facing — "never shown to the learner, never sent to a model". For a SELECTABLE
+   * conversation it is what the model chooses by, exactly as an action's `name` is, so it has
+   * to read as an intention ("greet the regular") rather than as a filing label ("conv about
+   * table 2"). It is still never shown to the LEARNER either way.
+   */
   title?: string;
   turns: IWConversationTurn[];
+  /**
+   * Offer this to its first speaker as something they may start (2026-09-06).
+   *
+   * Opt-IN, and the polarity is the point: every conversation authored before this field
+   * existed was reachable only through a `start_conversation` step, and flipping them all to
+   * spontaneous would change what those scenes do. Prod's "Taking the companion's order" is
+   * the case that proves it — it is a *sub-step* of 王婶's order-taking script, and a version
+   * of it that could also fire on its own would have her taking the companion's order twice.
+   *
+   * The mirror of {@link IWNpcAction.interactionOnly}, which is opt-OUT for the same
+   * argument read the other way.
+   */
+  selectable?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -599,13 +740,13 @@ export type IWInteractionStep =
  * the identity, one place cannot have two interactions, and every cascade a tag already has
  * (rename moves it, delete drops it) carries the script along for free.
  *
- * ⚠️ IT IS A COLUMN RATHER THAN A FIELD INSIDE `layout.locations`. The tag → cell map is board
+ * ⚠️ IT IS A COLUMN RATHER THAN A FIELD INSIDE `layout.places`. The tag → cell map is board
  * GEOMETRY — where a thing is — and a script is BEHAVIOUR; folding one into the other would
  * have turned a `Record<string,string>` into a record of objects and rewritten every reader of
  * a shape three panels already depend on. Same relationship as `npcCast` (who is here) to the
  * actions hanging off it.
  *
- * ⚠️ SEVERAL TAGS MAY NAME ONE CELL (see {@link IWSceneLayout.locations}), but **at most one
+ * ⚠️ SEVERAL TAGS MAY NAME ONE CELL (see {@link IWSceneLayout.places}), but **at most one
  * of them may be interactive** — the validator refuses two, because the walk command resolves
  * to a CELL and there would be no way to say which script it meant.
  */

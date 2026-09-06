@@ -3,8 +3,10 @@ import {
   editorDecorRotation, editorSurfaceAt, rollFloorSeed, DIRT_FLOOR,
   type BoardFloor, type DecorCategory, type EditorMasks,
 } from '../../engine/market/farmTerrain';
-import type {
-  IWInteractionStep, IWNpcAction, IWScene, IWSceneCastMember, IWSceneInteractions,
+import {
+  scenePlaces,
+  type IWInteractionStep, type IWNpcAction, type IWScene, type IWSceneCastMember,
+  type IWSceneInteractions,
 } from '../../../server/contracts/iw';
 import { masksToSceneLayout, sceneLayoutToMasks } from './immersiveWorldSceneApi';
 
@@ -37,20 +39,20 @@ export type IWPaintTool =
 
 /**
  * A tool that PLACES SOMETHING AT A CELL rather than painting a layer: the player's start,
- * the companion's start, a cast NPC (`npc:<id>`), or a named place (`loc:<tag>`).
+ * the companion's start, a cast NPC (`npc:<id>`), or a named place (`tag:<tag>`).
  *
  * Placement is a click, not a drag: a body is somewhere, not spread over cells. A named
  * place is the one member that is not a body — but it behaves identically (one click, one
  * cell), and a tagged cell is the only kind of cell an authored action can name, so it
  * belongs on this side of the split rather than with the paint layers.
  */
-export type IWPlaceTool = 'player' | 'companion' | `npc:${string}` | `loc:${string}`;
+export type IWPlaceTool = 'player' | 'companion' | `npc:${string}` | `tag:${string}`;
 
 export type IWEditorTool = IWPaintTool | IWPlaceTool;
 
 export const isPlaceTool = (tool: IWEditorTool): tool is IWPlaceTool =>
   tool === 'player' || tool === 'companion'
-  || tool.startsWith('npc:') || tool.startsWith('loc:');
+  || tool.startsWith('npc:') || tool.startsWith('tag:');
 
 /** The decor category a decor tool paints, or null for a non-decor tool. */
 const DECOR_CATEGORY: Partial<Record<IWPaintTool, DecorCategory>> = {
@@ -68,7 +70,7 @@ const DEFAULT_DIM = 12;
 /**
  * The cell a named place carries before it has been put on the board.
  *
- * `layout.locations` is keyed by TAG and valued by cell, so a tag can exist with no cell at
+ * `layout.places` is keyed by TAG and valued by cell, so a tag can exist with no cell at
  * all — it is stored as the empty string, which CANNOT parse as "col,row". The validator
  * rejects any value it cannot parse, which is exactly right: an unplaced tag must not be
  * saveable, and this makes "you named a place but never put it anywhere" a save error
@@ -77,7 +79,7 @@ const DEFAULT_DIM = 12;
 export const UNPLACED_CELL = '';
 
 /** True for a tag that has been dropped on a cell (as opposed to merely named). */
-export const isPlacedLocation = (cell: string) => /^\d+,\d+$/.test(cell);
+export const isPlacedCell = (cell: string) => /^\d+,\d+$/.test(cell);
 
 /** Rewrite every `walk_to_tag` step in one cast member from one tag name to another. */
 const renameTagInCast = (from: string, to: string) => (m: IWSceneCastMember): IWSceneCastMember => (
@@ -141,7 +143,7 @@ export function blankScene(language: 'zh' | 'es' = 'zh'): IWScene {
     companionStartFacing: 's',
     width: DEFAULT_DIM,
     height: DEFAULT_DIM,
-    layout: { terrain1: [], terrain2: [], decor: {}, locations: {}, floor: DIRT_FLOOR },
+    layout: { terrain1: [], terrain2: [], decor: {}, places: {}, floor: DIRT_FLOOR },
     npcCast: [],
     complications: [],
     // The SCHEDULED half of the world's behaviour (migration 161) — armed by a
@@ -205,17 +207,17 @@ export interface IWSceneDraft {
    * market's type and knows nothing about tags — `toPayload` folds the two together into
    * `layout`.
    */
-  locations: Record<string, string>;
-  /** Create a tag with no cell yet; the author then places it with the `loc:` tool. */
-  addLocation: (tag: string) => void;
+  places: Record<string, string>;
+  /** Create a tag with no cell yet; the author then places it with the `tag:` tool. */
+  addPlace: (tag: string) => void;
   /** Rename a tag in place, keeping its cell. Also rewrites the steps that walk to it. */
-  renameLocation: (from: string, to: string) => void;
+  renamePlace: (from: string, to: string) => void;
   /** Forget a tag entirely, and any action step that walked to it. */
-  removeLocation: (tag: string) => void;
+  removePlace: (tag: string) => void;
 
   /**
    * Place INTERACTIONS (migration 162): tag → the script that runs when the learner walks up.
-   * Lives on the scene rather than beside `locations` because it is scene data, not board
+   * Lives on the scene rather than beside `places` because it is scene data, not board
    * geometry — but every mutation of a tag above keeps the two in step.
    */
   /** Give a place a script (or take its last one away). An empty list makes it inert. */
@@ -234,7 +236,7 @@ export interface IWSceneDraft {
 export function useIWSceneDraft(): IWSceneDraft {
   const [scene, setScene] = useState<IWScene>(() => blankScene());
   const [masks, setMasks] = useState<EditorMasks>(emptyMasks);
-  const [locations, setLocations] = useState<Record<string, string>>({});
+  const [places, setPlaces] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
 
   const update = useCallback((patch: Partial<IWScene>) => {
@@ -245,7 +247,7 @@ export function useIWSceneDraft(): IWSceneDraft {
   const loadScene = useCallback((next: IWScene) => {
     setScene(next);
     setMasks(sceneLayoutToMasks(next.layout));
-    setLocations({ ...(next.layout?.locations ?? {}) });
+    setPlaces({ ...scenePlaces(next.layout) });
     setDirty(false);
   }, []);
 
@@ -293,14 +295,14 @@ export function useIWSceneDraft(): IWSceneDraft {
     setDirty(true);
 
     // A place tag is map data, not scene data, so it is the one place tool that writes to
-    // `locations` instead of to the scene.
-    if (tool.startsWith('loc:')) {
-      const tag = tool.slice('loc:'.length);
+    // `places` instead of to the scene.
+    if (tool.startsWith('tag:')) {
+      const tag = tool.slice('tag:'.length);
       // Clicking with a tag MOVES it: a tag names exactly one cell, so the click replaces
       // whatever cell it named before (or the unplaced sentinel, which is what turns
       // "named" into "placed"). Nothing is cleared from the target cell — several tags may
       // legitimately name the same one.
-      setLocations((prev) => ({ ...prev, [tag]: `${col},${row}` }));
+      setPlaces((prev) => ({ ...prev, [tag]: `${col},${row}` }));
       return;
     }
 
@@ -383,25 +385,25 @@ export function useIWSceneDraft(): IWSceneDraft {
   // is deliberate — the alternative (click a cell, get prompted for a name) makes the map
   // the only place a tag can be seen, and a scene's list of places is worth reading on its
   // own, next to the actions that walk to them.
-  const addLocation = useCallback((tag: string) => {
+  const addPlace = useCallback((tag: string) => {
     const clean = tag.trim();
     if (!clean) return;
     setDirty(true);
     // Uncelled tags live in the same record under a sentinel CELL, so one structure holds
     // both "named but unplaced" and "named and placed" without a second list to keep in sync.
-    setLocations((prev) => (clean in prev ? prev : { ...prev, [clean]: UNPLACED_CELL }));
+    setPlaces((prev) => (clean in prev ? prev : { ...prev, [clean]: UNPLACED_CELL }));
   }, []);
 
-  const renameLocation = useCallback((from: string, to: string) => {
+  const renamePlace = useCallback((from: string, to: string) => {
     const clean = to.trim();
     if (!clean || clean === from) return;
     // Renaming onto a name that already exists would silently MERGE two places (one key,
     // one cell), so it is refused outright — and refused HERE, before anything is touched,
     // so the cast rewrite below can never repoint steps at somebody else's place.
-    if (clean in locations) return;
+    if (clean in places) return;
     setDirty(true);
     // The tag IS the key, so a rename moves the entry — and `fromEntries` keeps its cell.
-    setLocations((prev) => Object.fromEntries(
+    setPlaces((prev) => Object.fromEntries(
       Object.entries(prev).map(([tag, cell]) => [tag === from ? clean : tag, cell]),
     ));
     // The steps that walked there must follow the rename, or a save that was valid a
@@ -415,11 +417,11 @@ export function useIWSceneDraft(): IWSceneDraft {
         Object.entries(prev.interactions ?? {}).map(([tag, steps]) => [tag === from ? clean : tag, steps]),
       ),
     }));
-  }, [locations]);
+  }, [places]);
 
-  const removeLocation = useCallback((tag: string) => {
+  const removePlace = useCallback((tag: string) => {
     setDirty(true);
-    setLocations((prev) => Object.fromEntries(
+    setPlaces((prev) => Object.fromEntries(
       Object.entries(prev).filter(([t]) => t !== tag),
     ));
     // Drop the steps that pointed at it, for the same reason removeCastMember drops the
@@ -508,8 +510,8 @@ export function useIWSceneDraft(): IWSceneDraft {
 
   const toPayload = useCallback((): IWScene => ({
     ...scene,
-    layout: masksToSceneLayout(masks, locations),
-  }), [scene, masks, locations]);
+    layout: masksToSceneLayout(masks, places),
+  }), [scene, masks, places]);
 
   const markSaved = useCallback((saved: IWScene) => {
     // Keep the author's live map rather than the server's echo of it: they are the same
@@ -519,14 +521,14 @@ export function useIWSceneDraft(): IWSceneDraft {
   }, []);
 
   return useMemo(() => ({
-    scene, masks, dirty, locations,
+    scene, masks, dirty, places,
     update, loadScene, paintCell, placeAt, setFloor,
     addCastMember, removeCastMember, updateCastMember,
-    addLocation, renameLocation, removeLocation,
+    addPlace, renamePlace, removePlace,
     addAction, updateAction, removeAction, setInteraction,
     toPayload, markSaved,
-  }), [scene, masks, dirty, locations, update, loadScene, paintCell, placeAt, setFloor,
+  }), [scene, masks, dirty, places, update, loadScene, paintCell, placeAt, setFloor,
        addCastMember, removeCastMember, updateCastMember,
-       addLocation, renameLocation, removeLocation,
+       addPlace, renamePlace, removePlace,
        addAction, updateAction, removeAction, setInteraction, toPayload, markSaved]);
 }

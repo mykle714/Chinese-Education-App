@@ -3,9 +3,13 @@
 > **Delete this file once prod is verified.** Status: **DEPLOYED 2026-09-05**; every schema
 > check below passed on prod (both columns landed with their empty defaults, the one existing
 > scene backfilled to `''`, both versions recorded). Prod is current through migration **161**.
-> It stays open only until someone opens the editor and saves a scene carrying notes or an
-> event, and confirms a half-built scene now saves with amber warnings — the one path the
-> schema checks cannot see.
+> **The notes/events half is now CONFIRMED (2026-09-06).** Prod's one scene, "Get Dinner",
+> carries a non-empty `sceneNotes` ("This scene is Wang Shen's Restaurant. t1s1 means…") and
+> one authored event (`e1`, "The player's food is ready"), armed by a `schedule_event` step in
+> 王婶's *Submit the player's order to the kitchen*. Both columns round-tripped through the
+> editor. It stays open only for the second, weaker condition — someone confirming a
+> HALF-BUILT scene saves with amber warnings rather than being refused, which the finished
+> row cannot evidence (it re-validates with zero problems).
 
 ## What ships
 

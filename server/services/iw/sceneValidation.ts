@@ -21,7 +21,8 @@ import {
   IW_MAX_CONVERSATIONS,
   IW_MAX_CONVERSATION_LINE_LENGTH,
   IW_MAX_CONVERSATION_TURNS,
-  IW_MAX_LOCATION_TAG_LENGTH,
+  IW_MAX_PLACE_TAG_LENGTH,
+  IW_MAX_UNLOCK_CUES,
   IW_MAX_NPC_ACTIONS,
   IW_MAX_SCENE_DIM,
   IW_MAX_SCENE_NAME_LENGTH,
@@ -40,6 +41,8 @@ import {
   type IWScene,
   type IWSceneCastMember,
   type IWSceneLayout,
+  type IWSelectable,
+  scenePlaces,
 } from '../../contracts/iw.js';
 import { COMPANION_NPC_ID_BY_LANGUAGE, npcById } from '../../config/iwNpcs.js';
 
@@ -225,8 +228,8 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
   // The two things an authored action can point at (§ 14 Q42), gathered ONCE. Both are
   // computed from the draft rather than passed in, so a scene is always checked against its
   // own places and its own cast — never against a stale copy.
-  const locationTags = new Set<string>(
-    Object.keys(scene.layout?.locations ?? {})
+  const placeTags = new Set<string>(
+    Object.keys(scenePlaces(scene.layout))
       .filter((t) => !!t.trim())
       .map((t) => t.trim()),
   );
@@ -244,6 +247,53 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
   const eventIds = new Set<string>(
     (Array.isArray(scene.events) ? scene.events : [])
       .map((e) => str(e?.id)).filter(Boolean),
+  );
+  // The fourth (2026-09-06): the CUES a dependent action or conversation may be unlocked by.
+  // Complications and events are one pool here because "has this happened yet" is the same
+  // question about both — an `unlockedBy` entry does not care which list its cue came from.
+  // Gathered up front rather than in the complication loop below, because the CAST is
+  // validated first and its actions are what reference the cues.
+  const complicationIds = new Set<string>(
+    (Array.isArray(scene.complications) ? scene.complications : [])
+      .map((c) => str(c?.id)).filter(Boolean),
+  );
+  const cueIds = new Set<string>([...complicationIds, ...eventIds]);
+  // ONE POOL MEANS IDS MUST NOT COLLIDE ACROSS THE TWO LISTS. `complications` and `events`
+  // each police their own duplicates, and neither could ever see the other's — but an
+  // `unlockedBy` naming an id both lists define cannot say which one it is waiting for.
+  // Reported once, against `events`, because the event lists were authored second.
+  for (const id of eventIds) {
+    if (complicationIds.has(id)) {
+      add('events', `"${id}" is the id of both an event and a complication — a dependent action cannot say which it is waiting for`);
+    }
+  }
+
+  // What INTERACTIONS reach, gathered before the cast loop because two rules below need it
+  // and neither can wait for `validateInteractions` (which runs last, by design, since it is
+  // the only check that needs everything else resolved).
+  //
+  // A `npc_action` reference is keyed by the PAIR, not by the action id: an action id is
+  // unique only within an NPC, so a bare id set would report 王婶's interaction-only action as
+  // reachable because 小陈 happens to have an `act3` too.
+  const interactionSteps: IWInteractionStep[] = Object.values(
+    (scene.interactions && typeof scene.interactions === 'object' && !Array.isArray(scene.interactions))
+      ? scene.interactions : {},
+  ).flatMap((steps) => (Array.isArray(steps) ? steps : []));
+  // Every conversation a SCRIPT starts — from an authored action's step or an interaction's.
+  // Used to tell a conversation with no way in from one that is merely not spontaneous.
+  const startedConversationIds = new Set<string>([
+    ...cast.flatMap((m) => (Array.isArray(m?.actions) ? m.actions : []))
+      .flatMap((a) => (Array.isArray(a?.steps) ? a.steps : []))
+      .filter((st) => str(st?.kind) === 'start_conversation')
+      .map((st) => str((st as { conversationId?: unknown }).conversationId)),
+    ...interactionSteps
+      .filter((st) => str(st?.kind) === 'start_conversation')
+      .map((st) => str((st as { conversationId?: unknown }).conversationId)),
+  ].filter(Boolean));
+  const interactionTriggeredActions = new Set<string>(
+    interactionSteps
+      .filter((st) => str(st?.kind) === 'npc_action')
+      .map((st) => `${str((st as { npcId?: unknown }).npcId)}::${str((st as { actionId?: unknown }).actionId)}`),
   );
 
   cast.forEach((member: IWSceneCastMember, i: number) => {
@@ -283,7 +333,8 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
     }
 
     problems.push(...validateNpcActions(
-      member?.actions, at, str(member?.npcId), locationTags, actorIds, conversationIds, eventIds,
+      member?.actions, at, str(member?.npcId), placeTags, actorIds, conversationIds, eventIds,
+      cueIds, interactionTriggeredActions,
     ));
   });
 
@@ -367,14 +418,16 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
   // exchange between him and an NPC is one the learner can walk up on like any other.
   const speakerIds = new Set<string>(seenNpcIds);
   if (companionId) speakerIds.add(companionId);
-  problems.push(...validateConversations(scene.conversations, speakerIds));
+  problems.push(...validateConversations(
+    scene.conversations, speakerIds, cueIds, startedConversationIds,
+  ));
 
   // ── Place interactions (migration 162, § 14 Q43) ──────────────────────────
   // Runs LAST because it is the only check that needs everything else resolved at once: a
   // step names a place, an NPC, one of that NPC's own actions, a conversation and an event.
   problems.push(...validateInteractions(
     scene.interactions,
-    scene.layout?.locations ?? {},
+    scenePlaces(scene.layout),
     cast,
     conversationIds,
     eventIds,
@@ -435,31 +488,36 @@ function validateLayout(
     problems.push({ field: 'layout.decor', message: 'Decor must be an object keyed by cell' });
   }
 
-  // Named places (§ 14 Q42). Keyed by TAG, so a tag names exactly one cell; several tags
+  // Named places (§ 14 Q42). Read through `scenePlaces` rather than off `layout.places`, so
+  // a row still carrying the pre-2026-09-06 `locations` key is validated against its real
+  // places rather than against an empty set (which would flag every `walk_to_tag` in it).
+  // Reported against `layout.places` either way — that is the field the editor renders.
+  const places = layout.places ?? layout.locations;
+  // Keyed by TAG, so a tag names exactly one cell; several tags
   // may legitimately name the SAME cell. A tag whose cell does not parse is one the author
   // named but never placed — the empty-string sentinel the editor stores — and it is
   // rejected here so a `walk_to_tag` can never point at a place with no destination.
-  if (layout.locations && typeof layout.locations === 'object') {
-    const entries = Object.entries(layout.locations);
+  if (places && typeof places === 'object') {
+    const entries = Object.entries(places);
     for (const [tag, cell] of entries) {
       const label = tag.trim() ? `“${tag}”` : 'A place';
       if (!tag.trim()) {
-        problems.push({ field: 'layout.locations', message: 'A place has no name' });
-      } else if (tag.length > IW_MAX_LOCATION_TAG_LENGTH) {
+        problems.push({ field: 'layout.places', message: 'A place has no name' });
+      } else if (tag.length > IW_MAX_PLACE_TAG_LENGTH) {
         problems.push({
-          field: 'layout.locations',
-          message: `Place names must be ≤ ${IW_MAX_LOCATION_TAG_LENGTH} characters`,
+          field: 'layout.places',
+          message: `Place names must be ≤ ${IW_MAX_PLACE_TAG_LENGTH} characters`,
         });
       }
       const parsed = typeof cell === 'string' ? parseCellKey(cell) : null;
       if (!parsed) {
-        problems.push({ field: 'layout.locations', message: `${label} is not on the board yet` });
+        problems.push({ field: 'layout.places', message: `${label} is not on the board yet` });
       } else if (dimsOk && (parsed.col >= width || parsed.row >= height)) {
-        problems.push({ field: 'layout.locations', message: `${label} is off the board` });
+        problems.push({ field: 'layout.places', message: `${label} is off the board` });
       }
     }
-  } else if (layout.locations !== undefined) {
-    problems.push({ field: 'layout.locations', message: 'Places must be an object keyed by place name' });
+  } else if (places !== undefined) {
+    problems.push({ field: 'layout.places', message: 'Places must be an object keyed by place name' });
   }
 
   return problems;
@@ -484,6 +542,8 @@ function validateNpcActions(
   actorIds: Set<string>,
   conversationIds: Set<string>,
   eventIds: Set<string>,
+  cueIds: Set<string>,
+  interactionTriggeredActions: Set<string>,
 ): IWSceneProblem[] {
   const problems: IWSceneProblem[] = [];
   if (actions === undefined) return problems;
@@ -517,8 +577,35 @@ function validateNpcActions(
     }
     seenNames.add(name.toLowerCase());
 
-    if (str(action?.when).length > IW_MAX_ACTION_WHEN_LENGTH) {
-      problems.push({ field: `${actionAt}.when`, message: `Guidance must be ≤ ${IW_MAX_ACTION_WHEN_LENGTH} characters` });
+    // `when` / `urgent` / `unlockedBy` are shared with conversations — see the helper.
+    problems.push(...validateSelectable(action, actionAt, cueIds));
+
+    // ── The action-only half of selectability (2026-09-06) ──────────────────
+    if (action?.interactionOnly) {
+      // Removing an action from the model's candidate list without giving it another way in
+      // is the same silent failure every other rule in this function guards: nothing happens,
+      // and nothing says why. Checked as the PAIR, so another NPC's identically-named action
+      // cannot satisfy it.
+      if (!interactionTriggeredActions.has(`${selfNpcId}::${id}`)) {
+        problems.push({
+          field: `${actionAt}.interactionOnly`,
+          message: 'Nothing can trigger this: it is hidden from the model, and no place interaction performs it',
+        });
+      }
+      // Both combinations are contradictions rather than mere redundancies, which is why they
+      // are worth a message: they say the author believes this action is still on offer.
+      if (action?.urgent) {
+        problems.push({
+          field: `${actionAt}.urgent`,
+          message: 'Interaction-only actions are never offered to the model, so urgency has nothing to act on',
+        });
+      }
+      if (Array.isArray(action?.unlockedBy) && action.unlockedBy.length > 0) {
+        problems.push({
+          field: `${actionAt}.unlockedBy`,
+          message: 'Interaction-only actions are never offered to the model, so unlocking them changes nothing',
+        });
+      }
     }
 
     const steps: IWActionStep[] = Array.isArray(action?.steps) ? action.steps : [];
@@ -645,6 +732,59 @@ function validateNpcActions(
 }
 
 /**
+ * The three fields shared by everything a model may CHOOSE (2026-09-06) — an NPC's authored
+ * action, and a selectable overheard conversation.
+ *
+ * ONE FUNCTION RATHER THAN TWO COPIES, for the same reason `IWSelectable` is one interface:
+ * the rules are not merely similar, they are the same rules about the same question. The
+ * fields each type does NOT share — an action's `interactionOnly`, a conversation's
+ * `selectable` — are checked at their own call sites, because their meanings are mirror
+ * images rather than one shape.
+ *
+ * `cueIds` is the scene's complications and events in one set. A cue naming neither is the
+ * silent failure this whole file exists to catch: a dependent action whose gate can never
+ * open is an action the learner will simply never be offered, with nothing on screen to say
+ * so — strictly worse than one that misfires, because there is no symptom to chase.
+ */
+function validateSelectable(
+  sel: IWSelectable | undefined,
+  at: string,
+  cueIds: Set<string>,
+): IWSceneProblem[] {
+  const problems: IWSceneProblem[] = [];
+
+  if (str(sel?.when).length > IW_MAX_ACTION_WHEN_LENGTH) {
+    problems.push({ field: `${at}.when`, message: `Guidance must be ≤ ${IW_MAX_ACTION_WHEN_LENGTH} characters` });
+  }
+
+  const cues = sel?.unlockedBy;
+  if (cues === undefined || cues === null) return problems;
+  if (!Array.isArray(cues)) {
+    problems.push({ field: `${at}.unlockedBy`, message: 'Unlocking cues must be a list' });
+    return problems;
+  }
+  if (cues.length > IW_MAX_UNLOCK_CUES) {
+    problems.push({ field: `${at}.unlockedBy`, message: `At most ${IW_MAX_UNLOCK_CUES} unlocking cues` });
+  }
+  const seen = new Set<string>();
+  cues.forEach((cue) => {
+    const id = str(cue);
+    if (!id) {
+      problems.push({ field: `${at}.unlockedBy`, message: 'Pick the complication or event that unlocks this' });
+    } else if (!cueIds.has(id)) {
+      problems.push({ field: `${at}.unlockedBy`, message: `This scene has no complication or event "${id}"` });
+    } else if (seen.has(id)) {
+      // Harmless at run time (the gate is an ANY over a set), but it is always a mis-click,
+      // and a list showing the same cue twice reads as a rule the author did not write.
+      problems.push({ field: `${at}.unlockedBy`, message: `"${id}" is listed twice` });
+    }
+    seen.add(id);
+  });
+
+  return problems;
+}
+
+/**
  * The scene's authored EVENT pool (migration 161).
  *
  * An event is a complication with a different trigger, so this is deliberately the same set of
@@ -711,6 +851,8 @@ function validateEvents(events: IWSceneEvent[] | undefined): IWSceneProblem[] {
 function validateConversations(
   conversations: IWConversation[] | undefined,
   speakerIds: Set<string>,
+  cueIds: Set<string>,
+  startedConversationIds: Set<string>,
 ): IWSceneProblem[] {
   const problems: IWSceneProblem[] = [];
   if (!Array.isArray(conversations)) {
@@ -728,9 +870,45 @@ function validateConversations(
     else if (seenIds.has(id)) problems.push({ field: `${at}.id`, message: `Duplicate conversation id "${id}"` });
     seenIds.add(id);
 
+    // `when` / `urgent` / `unlockedBy` — the same three fields an action has, checked by the
+    // same helper (2026-09-06).
+    problems.push(...validateSelectable(conv, at, cueIds));
+
     const turns = Array.isArray(conv?.turns) ? conv.turns : [];
     if (turns.length === 0) {
       problems.push({ field: `${at}.turns`, message: 'A conversation needs at least one line' });
+    }
+
+    // ── The conversation-only half of selectability (2026-09-06) ────────────
+    // A selectable conversation is offered to whoever speaks FIRST, so both halves of that
+    // sentence have to exist: somebody has to speak first, and the model has to have a handle
+    // to choose it by.
+    if (conv?.selectable) {
+      const owner = str(turns[0]?.npcId);
+      if (!owner) {
+        problems.push({
+          field: `${at}.selectable`,
+          message: 'Write the first line before making this choosable — whoever speaks first is who may start it',
+        });
+      }
+      if (!str(conv?.title)) {
+        // The one field whose AUDIENCE changes with this flag: an author-facing label becomes
+        // the thing the model picks by, exactly like an action's name.
+        problems.push({
+          field: `${at}.title`,
+          message: 'A choosable conversation needs a title — it is what the NPC chooses it by',
+        });
+      }
+    } else if (id && !startedConversationIds.has(id)) {
+      // NOT SELECTABLE AND NOT STARTED BY ANYTHING = unreachable. This is newly worth saying:
+      // before `selectable` existed there was exactly one way in, and a conversation waiting
+      // for its `start_conversation` step to be authored was an ordinary half-built scene. Now
+      // there are two ways in and neither is taken, which is a scene that will never play a
+      // conversation somebody wrote — the failure prod's own "Welcoming back a regular" has.
+      problems.push({
+        field: `${at}.selectable`,
+        message: 'Nothing plays this: no action or interaction starts it, and it is not choosable',
+      });
     }
     if (turns.length > IW_MAX_CONVERSATION_TURNS) {
       problems.push({ field: `${at}.turns`, message: `At most ${IW_MAX_CONVERSATION_TURNS} lines` });
@@ -786,7 +964,7 @@ function validateConversations(
  */
 function validateInteractions(
   interactions: IWSceneInteractions | undefined,
-  locations: Record<string, string>,
+  places: Record<string, string>,
   cast: IWSceneCastMember[],
   conversationIds: Set<string>,
   eventIds: Set<string>,
@@ -801,11 +979,11 @@ function validateInteractions(
     const at = `interactions.${tag}`;
     const label = tag.trim() ? `“${tag}”` : 'A place';
 
-    if (!(tag in locations)) {
+    if (!(tag in places)) {
       problems.push({ field: at, message: `${label} is not a place in this scene, so nothing can trigger this` });
     }
     // NOTHING is checked about the tag's CELL. Two interactive tags on one cell both run
-    // (see the header), and an unplaced tag is already `layout.locations`'s complaint.
+    // (see the header), and an unplaced tag is already `layout.places`'s complaint.
 
     if (!Array.isArray(steps)) {
       problems.push({ field: at, message: `${label}'s interaction must be a list of steps` });

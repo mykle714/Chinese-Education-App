@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateScene, parseCellKey, isBlocking } from '../services/iw/sceneValidation.js';
-import type { IWScene } from '../contracts/iw.js';
+import { IW_MAX_UNLOCK_CUES, type IWScene } from '../contracts/iw.js';
 
 /**
  * Tests for the pure iw scene validator (docs/IMMERSIVE_WORLD.md § 12 phase 1d).
@@ -36,7 +36,7 @@ function validScene(): IWScene {
     // the interaction below hangs off this tag, so the two have to stay in step.
     layout: {
       terrain1: ['0,0', '1,0'], terrain2: [], decor: { '2,2': 'tree_1' },
-      locations: { counter: '4,4' },
+      places: { counter: '4,4' },
     },
     // The companion is NOT cast — he is in every scene by definition and is positioned by
     // companionStartCol/Row above. Casting him is a refusal (see the test below).
@@ -62,7 +62,13 @@ function validScene(): IWScene {
     // scene itself 20s in; a `schedule_event` step could arm it too.
     events: [{ id: 'food_ready', description: 'The kitchen sends out the noodles.', atStartSeconds: 20 }],
     conversations: [
-      { id: 'chat', title: 'Weather', turns: [{ npcId: 'wang_shen', text: '下雨了。' }] },
+      // SELECTABLE (2026-09-06): 王婶 speaks first, so 王婶 is who may start it. A
+      // conversation that is neither selectable nor started by a step is unreachable, and
+      // the validator now says so — see the "nothing plays this" test below.
+      {
+        id: 'chat', title: 'Remark on the weather', selectable: true,
+        turns: [{ npcId: 'wang_shen', text: '下雨了。' }],
+      },
     ],
     // Walking up to the counter makes 王婶 run her own authored script (migration 162). Note
     // the reference rather than an inline line: the same action stays choosable by the model.
@@ -137,7 +143,7 @@ describe('validateScene', () => {
       // Keeps “counter”, which the fixture's interaction hangs off — replacing the whole map
       // would strand that script under a tag nothing names and make every assertion here
       // fail for an unrelated reason.
-      scene.layout.locations = { ...scene.layout.locations, 'water station': '5,5' };
+      scene.layout.places = { ...scene.layout.places, 'water station': '5,5' };
       scene.npcCast[0].actions = [...scene.npcCast[0].actions!, {
         id: 'a1',
         name: 'bring water',
@@ -163,7 +169,7 @@ describe('validateScene', () => {
 
     it('rejects a walk to a place nothing is tagged with', () => {
       const scene = withBringWater();
-      scene.layout.locations = {};
+      scene.layout.places = {};
       const messages = validateScene(scene).map((p) => p.message);
       expect(messages.some((m) => m.includes('no place named "water station"'))).toBe(true);
     });
@@ -247,7 +253,7 @@ describe('validateScene', () => {
         .toContain('npcCast[0].actions[2].steps[0].instruction');
 
       const noPlaces = validScene();
-      noPlaces.layout.locations = {};
+      noPlaces.layout.places = {};
       noPlaces.npcCast[0].actions!.push({
         id: 'go', name: 'go where needed',
         steps: [{ kind: 'ai_walk', instruction: 'to the counter' }],
@@ -271,7 +277,7 @@ describe('validateScene', () => {
 
     it('rejects a place tagged off the board', () => {
       const scene = withBringWater();
-      scene.layout.locations!['far away'] = '99,0';
+      scene.layout.places!['far away'] = '99,0';
       const messages = validateScene(scene).map((p) => p.message);
       expect(messages.some((m) => m.includes('off the board'))).toBe(true);
     });
@@ -465,7 +471,7 @@ describe('validateScene interactions (migration 162)', () => {
     // Two of them carrying SCRIPTS is a composition rather than an ambiguity: both fire, in
     // the order § 5.4a fixes. A proposed refusal here was overruled by the author, 2026-09-05.
     const scene = validScene();
-    scene.layout.locations = { counter: '4,4', 'where the tea is': '4,4' };
+    scene.layout.places = { counter: '4,4', 'where the tea is': '4,4' };
     scene.interactions = {
       counter: [{ kind: 'wait', seconds: 2 }],
       'where the tea is': [{ kind: 'wait', seconds: 2 }],
@@ -530,5 +536,191 @@ describe('validateScene interactions (migration 162)', () => {
     const scene = validScene();
     scene.interactions = { nowhere: [{ kind: 'popup', imageId: '' }] };
     expect(validateScene(scene).some(isBlocking)).toBe(false);
+  });
+});
+
+/**
+ * Selectability (2026-09-06) — the three shared `IWSelectable` fields, plus the two
+ * per-type flags whose polarity is deliberately opposite.
+ *
+ * These are the rules that decide what the model is even OFFERED, so every failure here is
+ * silent at run time: an action nobody can reach, a gate that never opens, a conversation
+ * nothing plays. That is the whole reason they are authoring-time checks.
+ */
+describe('validateScene selectability (2026-09-06)', () => {
+  const actionAt = 'npcCast[0].actions[0]';
+
+  describe('unlockedBy — dependent actions and conversations', () => {
+    it('accepts a gate naming a complication or an event', () => {
+      const scene = validScene();
+      scene.npcCast[0].actions![0].unlockedBy = ['rain', 'food_ready'];
+      expect(validateScene(scene)).toHaveLength(0);
+    });
+
+    it('rejects a cue that is neither a complication nor an event', () => {
+      const scene = validScene();
+      scene.npcCast[0].actions![0].unlockedBy = ['the_moon'];
+      const problems = validateScene(scene);
+      expect(problems).toContainEqual(expect.objectContaining({
+        field: `${actionAt}.unlockedBy`,
+        message: expect.stringContaining('no complication or event'),
+      }));
+    });
+
+    it('flags the same cue listed twice', () => {
+      const scene = validScene();
+      scene.npcCast[0].actions![0].unlockedBy = ['rain', 'rain'];
+      expect(validateScene(scene)).toContainEqual(expect.objectContaining({
+        field: `${actionAt}.unlockedBy`,
+        message: expect.stringContaining('listed twice'),
+      }));
+    });
+
+    it('caps the number of cues', () => {
+      const scene = validScene();
+      scene.npcCast[0].actions![0].unlockedBy = Array(IW_MAX_UNLOCK_CUES + 1).fill('rain');
+      expect(validateScene(scene)).toContainEqual(expect.objectContaining({
+        field: `${actionAt}.unlockedBy`,
+        message: expect.stringContaining(`At most ${IW_MAX_UNLOCK_CUES}`),
+      }));
+    });
+
+    // The reason the two pools are merged for `unlockedBy` but kept apart everywhere else:
+    // a shared id makes the gate unanswerable, so it has to be caught here.
+    it('flags an id shared by a complication and an event', () => {
+      const scene = validScene();
+      scene.events.push({ id: 'rain', description: 'The awning finally gives way.' });
+      expect(validateScene(scene)).toContainEqual(expect.objectContaining({
+        field: 'events',
+        message: expect.stringContaining('both an event and a complication'),
+      }));
+    });
+
+    it('treats an omitted gate as always available', () => {
+      const scene = validScene();
+      delete scene.npcCast[0].actions![0].unlockedBy;
+      expect(validateScene(scene)).toHaveLength(0);
+    });
+  });
+
+  describe('interactionOnly — an action hidden from the model', () => {
+    // The fixture's interaction already performs `pay`, so hiding it from the model still
+    // leaves it reachable. This is the shape prod's first scene wanted and wrote as prose.
+    it('accepts one that a place interaction performs', () => {
+      const scene = validScene();
+      scene.npcCast[0].actions![0].interactionOnly = true;
+      expect(validateScene(scene)).toHaveLength(0);
+    });
+
+    it('flags one nothing can trigger', () => {
+      const scene = validScene();
+      scene.interactions = {};
+      scene.npcCast[0].actions![0].interactionOnly = true;
+      expect(validateScene(scene)).toContainEqual(expect.objectContaining({
+        field: `${actionAt}.interactionOnly`,
+        message: expect.stringContaining('Nothing can trigger this'),
+      }));
+    });
+
+    // Checked as a PAIR: another NPC's identically-named action must not satisfy the gate.
+    it('does not count another NPC’s action of the same id', () => {
+      const scene = validScene();
+      scene.npcCast[0].actions![0].interactionOnly = true;
+      scene.interactions = { counter: [{ kind: 'npc_action', npcId: 'xiao_chen', actionId: 'pay' }] };
+      expect(validateScene(scene)).toContainEqual(expect.objectContaining({
+        field: `${actionAt}.interactionOnly`,
+      }));
+    });
+
+    it('flags urgency and gating on it as contradictions', () => {
+      const scene = validScene();
+      scene.npcCast[0].actions![0].interactionOnly = true;
+      scene.npcCast[0].actions![0].urgent = true;
+      scene.npcCast[0].actions![0].unlockedBy = ['rain'];
+      const problems = validateScene(scene);
+      expect(problems).toContainEqual(expect.objectContaining({ field: `${actionAt}.urgent` }));
+      expect(problems).toContainEqual(expect.objectContaining({ field: `${actionAt}.unlockedBy` }));
+    });
+  });
+
+  describe('selectable — a conversation its first speaker may start', () => {
+    it('flags a conversation that nothing plays', () => {
+      const scene = validScene();
+      scene.conversations[0].selectable = false;
+      expect(validateScene(scene)).toContainEqual(expect.objectContaining({
+        field: 'conversations[0].selectable',
+        message: expect.stringContaining('Nothing plays this'),
+      }));
+    });
+
+    // The other way in. A script-fired conversation is not meant to be spontaneous, which is
+    // exactly the case `selectable`'s opt-IN polarity protects.
+    it('accepts a non-selectable conversation a step starts', () => {
+      const scene = validScene();
+      scene.conversations[0].selectable = false;
+      scene.npcCast[0].actions![0].steps.unshift({ kind: 'start_conversation', conversationId: 'chat' });
+      expect(validateScene(scene)).toHaveLength(0);
+    });
+
+    it('accepts one an INTERACTION starts', () => {
+      const scene = validScene();
+      scene.conversations[0].selectable = false;
+      scene.interactions = {
+        counter: [
+          { kind: 'npc_action', npcId: 'wang_shen', actionId: 'pay' },
+          { kind: 'start_conversation', conversationId: 'chat' },
+        ],
+      };
+      expect(validateScene(scene)).toHaveLength(0);
+    });
+
+    it('needs a first speaker before it can be chosen', () => {
+      const scene = validScene();
+      scene.conversations[0].turns = [];
+      expect(validateScene(scene)).toContainEqual(expect.objectContaining({
+        field: 'conversations[0].selectable',
+        message: expect.stringContaining('whoever speaks first'),
+      }));
+    });
+
+    // The field whose audience the flag changes: an author-facing label becomes the handle
+    // the model chooses by.
+    it('needs a title, because that is what the NPC chooses it by', () => {
+      const scene = validScene();
+      scene.conversations[0].title = '';
+      expect(validateScene(scene)).toContainEqual(expect.objectContaining({
+        field: 'conversations[0].title',
+        message: expect.stringContaining('chooses it by'),
+      }));
+    });
+
+    it('gates a conversation on a cue like an action', () => {
+      const scene = validScene();
+      scene.conversations[0].unlockedBy = ['nope'];
+      expect(validateScene(scene)).toContainEqual(expect.objectContaining({
+        field: 'conversations[0].unlockedBy',
+      }));
+    });
+  });
+});
+
+/**
+ * The `locations` → `places` rename (2026-09-06). `layout` is jsonb, so a row written before
+ * the rename can still arrive carrying the old key — and the failure mode if it is not read
+ * is loud but misleading: every `walk_to_tag` in a finished scene reported as pointing at a
+ * place that does not exist.
+ */
+describe('validateScene places/locations compatibility', () => {
+  it('reads a layout that still carries the old `locations` key', () => {
+    const scene = validScene();
+    scene.layout.locations = scene.layout.places;
+    delete scene.layout.places;
+    expect(validateScene(scene)).toHaveLength(0);
+  });
+
+  it('prefers `places` when a row somehow carries both', () => {
+    const scene = validScene();
+    scene.layout.locations = { somewhere_else: '1,1' };
+    expect(validateScene(scene)).toHaveLength(0);
   });
 });

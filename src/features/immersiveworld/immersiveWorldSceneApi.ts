@@ -56,7 +56,7 @@ export interface IWSceneProblem {
  */
 export function masksToSceneLayout(
   masks: EditorMasks,
-  locations: Record<string, string> = {},
+  places: Record<string, string> = {},
 ): IWSceneLayout {
   const decor: Record<string, string> = {};
   for (const [cell, url] of [...masks.decor].sort(([a], [b]) => (a < b ? -1 : 1))) {
@@ -73,7 +73,12 @@ export function masksToSceneLayout(
     // Named places (§ 14 Q42) are NOT part of EditorMasks — that type is the night market's
     // and has no concept of a tagged cell — so the draft keeps them alongside the masks and
     // they are folded in here, at the same seam where the masks are.
-    locations,
+    //
+    // ⚠️ WRITES `places` ONLY (2026-09-06). The pre-rename key was `locations`, and this is
+    // the ONE writer of either — so every save heals a row that still carries the old one.
+    // Reads go through `scenePlaces`, never through the field, precisely because the two
+    // sides are deliberately asymmetric.
+    places,
     // The board floor rides in the layout because that is where everything spatial lives.
     // Written even when it is dirt, so a scene that was decked and then reverted persists
     // the revert rather than falling back to the "absent ⇒ dirt" default by accident.

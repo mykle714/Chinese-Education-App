@@ -59,7 +59,7 @@ export interface IWSceneMapPanelProps {
   scene: IWScene;
   masks: EditorMasks;
   /** Named places: tag → "col,row" (§ 14 Q42). Unplaced tags are skipped by the pins. */
-  locations: Record<string, string>;
+  places: Record<string, string>;
   npcs: IWNpcOption[];
   activeTool: IWEditorTool;
   onToolChange: (tool: IWEditorTool) => void;
@@ -157,7 +157,7 @@ const HOTKEY_TO_PAINT_TOOL: Record<string, IWPaintTool> = {
 };
 
 /** "col,row" → a cell, or null for anything else (notably an unplaced tag's empty cell). */
-function parseLocationCell(cell: string): { col: number; row: number } | null {
+function parsePlaceCell(cell: string): { col: number; row: number } | null {
   const m = /^(\d+),(\d+)$/.exec(cell);
   return m ? { col: Number(m[1]), row: Number(m[2]) } : null;
 }
@@ -178,10 +178,10 @@ const PLAYER_MARKER_COLOR = 0x66ccff;
 const COMPANION_MARKER_COLOR = 0xffcc44;
 const CAST_MARKER_COLOR = 0xff7777;
 /** A named place is not a body, so it is the one pin colour outside the warm/cool pair. */
-const LOCATION_MARKER_COLOR = 0x9cff9c;
+const PLACE_MARKER_COLOR = 0x9cff9c;
 
 /** The bodies-group accent, reused by the places group so the two read as one family. */
-const LOCATION_ACCENT = '150,255,150';
+const PLACE_ACCENT = '150,255,150';
 
 /**
  * One place button. The ONLY palette control in either editor that is not a 40×40 icon,
@@ -200,7 +200,7 @@ const PlaceChip = ({ tag, active, onClick }: { tag: string; active: boolean; onC
       onClick={onClick}
       startIcon={<PlaceIcon fontSize="small" />}
       sx={{
-        ...paletteBtnSx(active, LOCATION_ACCENT),
+        ...paletteBtnSx(active, PLACE_ACCENT),
         // Undo the fixed 40×40 box: a name sets the width, and the row wraps.
         width: 'auto', minWidth: 0, maxWidth: 'none',
         height: 32, minHeight: 32, maxHeight: 32,
@@ -215,7 +215,7 @@ const PlaceChip = ({ tag, active, onClick }: { tag: string; active: boolean; onC
 );
 
 export default function IWSceneMapPanel({
-  scene, masks, locations, npcs, activeTool, onToolChange, eraseMode, onEraseModeChange,
+  scene, masks, places, npcs, activeTool, onToolChange, eraseMode, onEraseModeChange,
   onPaintCell, onPlaceAt, onFloorChange,
 }: IWSceneMapPanelProps) {
 
@@ -263,8 +263,8 @@ export default function IWSceneMapPanel({
 
   /** Every tag in the scene, placed or not — one palette button each, alphabetical. */
   const placeTags = useMemo(
-    () => Object.keys(locations).sort(),
-    [locations],
+    () => Object.keys(places).sort(),
+    [places],
   );
 
   /**
@@ -290,16 +290,16 @@ export default function IWSceneMapPanel({
       label: npcName(member.npcId), color: CAST_MARKER_COLOR,
       sprite: avatarFor(member.npcId, member.facing),
     })),
-    // Named places. `parseLocationCell` returns null for an unplaced tag's empty cell,
+    // Named places. `parsePlaceCell` returns null for an unplaced tag's empty cell,
     // which is how a named-but-unplaced place draws nothing rather than drawing at (0,0).
     // Two tags on one cell stack two pins there — that is legal, and seeing both is right.
-    ...Object.entries(locations).flatMap(([tag, cell]): EditorMarker[] => {
-      const at = parseLocationCell(cell);
-      return at ? [{ col: at.col, row: at.row, label: tag, color: LOCATION_MARKER_COLOR }] : [];
+    ...Object.entries(places).flatMap(([tag, cell]): EditorMarker[] => {
+      const at = parsePlaceCell(cell);
+      return at ? [{ col: at.col, row: at.row, label: tag, color: PLACE_MARKER_COLOR }] : [];
     }),
   ], [scene.playerStartCol, scene.playerStartRow, scene.playerStartFacing,
       scene.companionStartCol, scene.companionStartRow, scene.companionStartFacing,
-      scene.npcCast, npcName, avatarFor, companionAvatar, locations]);
+      scene.npcCast, npcName, avatarFor, companionAvatar, places]);
 
   /**
    * One click on the board. A PLACE tool moves a body; every other tool paints its layer.
@@ -458,14 +458,14 @@ export default function IWSceneMapPanel({
                 edge. `flexWrap` overrides `toolGroupSx`'s nowrap for this group only. */}
             <Box
               className="iw-scene-tool-group iw-scene-tool-group-places"
-              sx={{ ...toolGroupSx(LOCATION_ACCENT), flexWrap: 'wrap' }}
+              sx={{ ...toolGroupSx(PLACE_ACCENT), flexWrap: 'wrap' }}
             >
               {placeTags.map((tag) => (
                 <PlaceChip
                   key={tag}
                   tag={tag}
-                  active={activeTool === `loc:${tag}`}
-                  onClick={() => onToolChange(`loc:${tag}`)}
+                  active={activeTool === `tag:${tag}`}
+                  onClick={() => onToolChange(`tag:${tag}`)}
                 />
               ))}
             </Box>

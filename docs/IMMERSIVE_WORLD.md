@@ -1,7 +1,8 @@
 # Immersive World (AI-driven NPCs in a walkable scene)
 
-> STATUS: **PHASE 1 COMPLETE ON DEV — 1a–1e are built; phase 2 (one stall you can talk to)
-> is the next step.**
+> STATUS: **PHASE 1 COMPLETE AND ITS KILL CONDITION SURVIVED — 1a–1e are built, and an
+> author has assembled a whole scene in the tool with no engineering help (§ 12 phase 1).
+> Phase 2 (one stall you can talk to) is the next step, and is no longer gated.**
 > The question log (§ 14) is closed — every question is answered or explicitly parked — and
 > § 12 is a phased build plan.
 >
@@ -38,8 +39,9 @@
 > `ImmersiveWorldDAL` → `ImmersiveWorldSceneService` → `ImmersiveWorldSceneController` →
 > `immersiveWorldRoutes.ts` on the server, and `src/features/immersiveworld/` on the
 > client. It reuses the night market's `TemplateEditorViewer` for the map (via a new
-> `markers` prop) and adds the non-spatial half. **No scene has been authored in it yet** —
-> that is the first thing phase 2 needs.
+> `markers` prop) and adds the non-spatial half. **The first scene exists: "Get Dinner"
+> (zh, 12×12, prod, 2026-09-06)** — see § 12 phase 1's kill-condition note. Phase 2's gate
+> is therefore open.
 >
 > **The three decisions that shape everything else:** the reply wire format is three lines of
 > plain text, speech first (§ 5.1, measured); **NPC lines are spoken aloud and the audio paces
@@ -555,6 +557,99 @@ the backstop for prompt injection (§ 11.4): the worst a successful injection ca
 off-character sentence, never an illegal world state — and now it cannot even name a
 behaviour the author did not write.
 
+### 5.4b What the model is OFFERED — selectability
+
+**BUILT 2026-09-06 (authoring half; the runtime that reads these fields is phase 2). No
+migration — all four fields ride existing jsonb blobs.**
+
+§ 5.4 says the model's move is *pick one of the offered names*. This section is about the
+other half of that sentence, which had no answer: **what determines the offer.** Until now it
+was the whole list, always, and the only lever an author had was `when` — prose *inside* the
+option, hoping the model reads it and declines.
+
+Two things are now choosable rather than one, and they share the shape.
+
+| | Chosen by | Was |
+|---|---|---|
+| An NPC's authored **action** | that NPC | always offered |
+| An overheard **conversation** | its FIRST speaker | not choosable at all — only a `start_conversation` step played one |
+
+**A conversation is now something its first speaker may start.** 王婶, holding a lull while
+the learner reads the menu, may decide there is time to greet the regular at table 2; an NPC
+that a complication has already pulled toward another body may take that as the opening for
+the exchange the author wrote for exactly that moment. The owner is **derived** — `turns[0]`,
+because whoever speaks first is who started it — never authored, so there is no second,
+desynchronizable answer to a question the script already answers.
+
+#### The three shared fields (`IWSelectable`)
+
+| Field | Meaning |
+|---|---|
+| `when` | Guidance on when it fits. Unchanged; it was already on actions. |
+| `urgent` | **Lean toward this whenever it is available.** A prompt weight, not a scheduler. |
+| `unlockedBy` | **Dependent:** offer this only after one of these complications or events has fired. |
+
+**`urgent` is deliberately not a guarantee, and that is the design rather than a shortcut.**
+A hard "must fire next" would flatten the one thing iw exists to produce: an NPC who abandons
+a half-finished sentence to the learner because a flag said so is not a scene unfolding, it is
+a queue draining. So the model may still rank something above it — finishing a reply,
+answering what it was just asked, reacting to a complication — and `urgent` only says which
+way to lean when nothing else is pressing. **The consequence to accept: an urgent thing may
+not happen. A beat that MUST happen is an event on a timer, not an urgent action.**
+
+**`unlockedBy` is ANY, not ALL.** Several cues mean several ways in ("once the glass breaks OR
+the kitchen calls, offer *fetch a broom*"), which is what a list of cues reads as and what
+almost every scene wants. An ALL gate is expressible only by authoring the intermediate state
+as an event of its own — which is the honest way to say it anyway, since a conjunction of
+world facts IS a new world fact.
+
+⚠️ **Complications and events are ONE POOL here**, and only here. Everywhere else they are two
+lists on purpose (§ 5.4a, `IWSceneEvent`'s header): the random roll must never spring an
+authored beat, and a script must never arm the surprise. But *"has this happened yet"* is the
+same question about both, and a gate does not care which list its cue was typed into. The one
+cost is that their ids must not collide across the lists — the validator says so, since a
+gate naming an id both lists define cannot say what it is waiting for.
+
+#### The two per-type flags, and why their polarity differs
+
+| Flag | On | Polarity |
+|---|---|---|
+| `interactionOnly` | an action | opt-**OUT** of being offered |
+| `selectable` | a conversation | opt-**IN** to being offered |
+
+They are mirror images, and the asymmetry is not an oversight: **each flag is written as the
+exception to what that thing already is**, so no already-authored scene changes meaning when
+the field lands. An action is model-selectable today; a conversation is not.
+
+The opt-in polarity earns itself on prod's own data: "Taking the companion's order" is a
+*sub-step* of 王婶's order-taking script, and a version of it that could also fire on its own
+would have her taking the companion's order twice.
+
+⚠️ **`interactionOnly` REPLACES A PROSE WORKAROUND, which is the argument for it.** Prod's
+first scene carries an action whose `when` reads *"Do not pick, triggered by interaction"* —
+an instruction to the model, written into the field the model chooses **by**, hoping it
+declines an option it was nonetheless offered. That is unenforceable by construction: the
+whole purpose of `when` is to make an action more choosable. A flag removes it from the
+candidate list instead of arguing with the model about it.
+
+#### What the validator adds (`sceneValidation.ts` → `validateSelectable`)
+
+Every one of these is a **silent** run-time failure — nothing happens and nothing says why —
+which is why they are authoring-time checks:
+
+- a cue naming neither a complication nor an event (a gate that can never open);
+- the same cue listed twice; more than `IW_MAX_UNLOCK_CUES` (8) of them;
+- an id shared by a complication and an event;
+- an `interactionOnly` action **no place interaction performs** — checked as the `(npc,
+  action)` PAIR, since an action id is unique only within an NPC;
+- `interactionOnly` combined with `urgent` or `unlockedBy` (contradictions: nothing never
+  offered can be urgent or need unlocking);
+- a `selectable` conversation with no first speaker, or no `title` — **the one field whose
+  audience the flag changes**, from an author's filing label to the handle the model picks by;
+- a conversation that is **neither selectable nor started by any step**, which is now a real
+  complaint rather than an ordinary half-built scene, because there are two ways in and
+  neither was taken. Prod's "Welcoming back a regular" is exactly this.
+
 ### 5.4a Place interactions — what happens when the learner pokes a cell
 
 **BUILT 2026-09-05 (authoring half), migration 162, § 14 Q43. The runtime is phase 2.**
@@ -575,7 +670,7 @@ real possibility — and a script that shouted across the room when the learner 
 cells away would read as a bug, not as a beat.
 
 **An interaction is a PROPERTY OF A PLACE, not a thing standing beside one.** It hangs off a
-`layout.locations` tag (§ 5.4's named places), keyed by tag in `iw_scenes.interactions`:
+`layout.places` tag (§ 5.4's named places), keyed by tag in `iw_scenes.interactions`:
 
 ```
 { "menu board": [ {kind: "popup", imageId: "tea_menu", caption: "The day's menu"},
@@ -1377,6 +1472,7 @@ do something, and you leave with a rating and a label.
 | **Cast** | The other NPCs the objective forces you through — waitress, hotel clerk, cab driver, shop assistant. Each is an NPC (§ 5.5) with its own hearing history. |
 | **Complication** | Per scene, environmental (Q31): the cab takes a wrong turn, the order arrives wrong, the room is double-booked. It belongs to the world, not to an NPC — everyone present reacts to it in character. A complication exists to force the learner past the memorised opening exchange. ⚠️ "Optional" here means a scene *may* be authored without one, not that the learner may skip it. |
 | **Event** (migration 161) | **The same kind of fact as a complication, with a different trigger.** One line, the world's, injected into the turn context of everyone present and reacted to in character — but SCHEDULED rather than drawn: by a `schedule_event` step inside an authored action (§ 5.4), or by the event's own `atStartSeconds`, which arms it when the scene opens. Both timers feed the same queue and fire at the **next legal opportunity** — the same one a complication uses, so never mid-turn and never while the learner is composing (Q29); the delay is an *earliest*, not an exactly-when. Two separate pools rather than one flagged list, deliberately: **the random roll must never spring an authored beat before its cue, and a script must never be able to arm the surprise.** Environmental like a complication, so no owner field — "the kitchen sends out the noodles" is a fact about the room, and an event written as "王婶 is flustered" is a character note misfiled. A run records what fired in `iw_scene_runs."eventIds"`, mirroring `"complicationIds"`. |
+| **Conversation** (Q6) | A canned, pre-reviewed exchange between two bodies on the board — the cast, or the companion — played back with **no model calls** at a fixed `IW_CONVERSATION_LINE_MS` per line, tap-to-pause, yielding if the learner speaks. Since **2026-09-06** it has two ways in, not one: a `start_conversation` step fires it, and — if marked `selectable` — its **first speaker** may choose to start it, the way they choose an action (§ 5.4b). Ownership is derived from `turns[0]`, never authored. ⚠️ A conversation that is neither selectable nor started by any step is unreachable, and the validator now says so. |
 | **Interaction** (migration 162) | **What a PLACE does when the learner walks up to it** (§ 5.4a, Q43) — the only thing in the feature triggered by the learner's own body rather than by the model, the per-turn roll or a timer. It hangs off a named place as an optional property of it, and can show a picture, make a cast NPC perform one of its own authored actions, play an overheard conversation, arm an event, or wait. ⚠️ If the learner cannot reach the place they walk as close as they can and **nothing fires**. Two interactive places may share a cell, and a walk there runs **both**. |
 
 Worked examples given by the product owner:
@@ -1877,6 +1973,13 @@ seeds (Q31), Q6's authored NPC-to-NPC conversations, and **Q42's named places an
 authored actions** (`IWSceneActionsPanel`), which are the first authored thing in the feature
 that produces behaviour rather than text.
 
+⚠️ **Updated 2026-09-06 (no migration): § 5.4b's SELECTABILITY fields.** Actions and
+conversations both gained `urgent` and `unlockedBy`; an action gained `interactionOnly` and a
+conversation gained `selectable`, which makes it something its first speaker may start. All
+four ride existing jsonb blobs. The shared three are rendered by one component
+(`IWSelectableControls`) in both panels; the two per-type flags are drawn by their own panel,
+because their polarity is opposite.
+
 **Three things the editor deliberately does NOT let an author write**, each removed after it
 was first built, and each for the same reason — it was a decision the author should not be
 making:
@@ -1972,7 +2075,10 @@ decor cells; a conversation line spoken by someone not in the scene; duplicate c
 ids (a run stores the id, so a duplicate makes a finished run ambiguous); a `schedule_event`
 step naming an event the scene does not have, or a delay outside 0–600 whole seconds; and (migration
 162) an interaction keyed by a tag no place defines, two interactive places on one cell, or an
-`npc_action` naming somebody not in the cast or an action that NPC does not own. It returns
+`npc_action` naming somebody not in the cast or an action that NPC does not own; and (2026-09-06)
+every selectability complaint in § 5.4b — an unlocking cue that names nothing, an
+`interactionOnly` action no interaction performs, a `selectable` conversation with no first
+speaker or no title, and a conversation nothing plays at all. It returns
 **every** problem at once rather than the first, and the editor marks up the fields —
 fixing a scene one complaint per save round-trip is the tool being annoying in exactly the
 way this phase's kill condition describes.
@@ -2016,9 +2122,26 @@ the runtime load ("give the learner today's scene") is phase 2 and needs a diffe
 contract — pick a published scene, draw a complication, open a run. Add that method; do not
 relax the gate on `getScene`.
 
-⚠️ **Phase 1's kill condition is BEING tested — first authoring attempt 2026-09-05, on prod.**
-It has not fired, but the first attempt immediately found the class of fault it was written
-to catch, and the finding is worth keeping because the bug was **not in iw**.
+✅ **Phase 1's kill condition did NOT fire. The first scene exists: "Get Dinner"**
+(prod, `zh`, 12×12, authored 2026-09-05, last saved 2026-09-06). An author assembled it end
+to end with no engineering help, and it exercises very nearly the whole vocabulary: **26 named
+places** (six tables and their twelve seats, two entrance doors, a rear exit, a cash register,
+a food window, a bathroom, self-serve water and utensils), a two-NPC cast (王婶 at the counter,
+何老师 seated at t2s2), **five authored actions** on 王婶 using nine of the ten step kinds —
+including `ai_walk` and `schedule_event` — one place `interaction`, one event, one
+complication, two conversations, `sceneNotes`, and a **wood** floor. It **re-validates with
+zero problems**, at either severity.
+
+Three structural facts about the board are worth recording, because they are what the § 3a
+walkability model was betting on and all three came out right: every one of the 112 walkable
+cells is reachable from the player's start; every table cell carries BLOCKING decor while
+every seat cell beside it is clear; and both entrance doors are the two gaps in an otherwise
+solid tree wall down column 0. The author got an enclosed, fully-connected room out of a
+palette with **no walkability tool in it** — which is the strongest available evidence that
+inverting the night market's model was the right call.
+
+The first attempt did, however, immediately find the class of fault the kill condition was
+written to catch, and the finding is worth keeping because the bug was **not in iw**.
 
 **What happened.** A save was refused with 400 five times running. The server was right and
 its message was precise — three problems (`name` blank, no completer, no completion action),
@@ -2041,8 +2164,11 @@ A pure function's tests cannot cover the wire. Second, this is exactly why the k
 had to be a **human sitting down with the tool**: every infrastructure check in the deploy
 runbook passed, including the DAL↔schema probe, because the server was never the broken half.
 
-Q2's sequencing advice still stands for the rest: the first scene may be quicker as a
-hand-written row, and the editor is how scenes two through twenty get made.
+⚠️ **Q2's sequencing advice is now MOOT and was wrong.** It said the first scene might be
+quicker as a hand-written row, with the editor earning its keep on scenes two through twenty.
+In the event the first scene was authored *in the tool*, and a hand-written row could not
+plausibly have produced the 26-place / 5-action / 9-step-kind body above. Keep the second half
+of the advice — the editor is how scenes two through twenty get made — and drop the first.
 
 ---
 
@@ -2180,6 +2306,12 @@ to be watched for deliberately.
 - `src/features/nightmarket/TemplateEditorViewer.tsx` → `EditorMarker`, `MarkerOverlay`,
   the `markers` prop — the shared map surface iw drives (§ 12 phase 1d). Additive: the
   night market passes no markers
+- `server/contracts/iw.ts` → `IWSelectable`, `IWNpcAction.interactionOnly`,
+  `IWConversation.selectable`, `IW_MAX_UNLOCK_CUES`, `scenePlaces` — § 5.4b's selectability
+  model and the `places`/`locations` read fallback
+- `src/features/immersiveworld/IWSelectableControls.tsx` → the shared `when`/`urgent`/
+  `unlockedBy` editor both panels render (§ 5.4b). It deliberately does NOT draw the per-type
+  flag, whose polarity is opposite on each side
 - `server/contracts/iw.ts` → `IW_ACTION_STEP_KINDS`, `IW_ACTOR_STEP_KINDS`, `isActorStep`,
   `IW_CONVERSATION_LINE_MS`, `IW_MAX_EVENT_DELAY_SECONDS`, `IWNpcAction`, `IWActionStep`, `IWScene`,
   `IWSceneLayout`, `IWSceneCastMember`, `IWComplication`, `IWSceneEvent`, `IWConversation`,
@@ -2210,7 +2342,13 @@ to be watched for deliberately.
 - `server/services/iw/sceneValidation.ts` → `validateInteractions` — every § 5.4a complaint.
 - `src/features/immersiveworld/IWSceneActionsPanel.tsx` → per-NPC authored
   actions (§ 14 Q42); `blankStep` and `insertBeforeTrailingWait` encode two of that
-  question's rules in the UI so the author is not fighting the validator.
+  question's rules in the UI so the author is not fighting the validator. Since 2026-09-06 it
+  also draws the `interactionOnly` flag and hosts `IWSelectableControls` (§ 5.4b), which it
+  GREYS rather than hides when the action is interaction-only — an author who ticks that box
+  can then see what it switched off.
+- `server/services/iw/sceneValidation.ts` → `validateSelectable` — the § 5.4b rules shared by
+  actions and conversations. One function, because the rules are not merely similar: they are
+  the same rules about the same question.
 - `server/services/iw/sceneValidation.ts` → `validateNpcActions` — every Q42 complaint (all
   of them warnings: an unwritten script saves).
 - `src/features/immersiveworld/` → `IWSceneEditorPage.tsx` (orchestration),
@@ -2283,6 +2421,8 @@ to be watched for deliberately.
 | Q40 | Is there a pre-scene vocabulary preview? | ✅ **no preview** — instead, add words to your library *from the report* |
 | Q41 | What does tap-to-complete do to the audio? | ✅ **tap-to-complete removed entirely** — replay instead |
 | Q42 | How much of an NPC's behaviour can an author script? | ✅ **all of it** — authored actions REPLACED the `IW_ACTIONS` enum; the model only picks which one fits |
+| Q43 | Can a PLACE do something when the learner walks up to it? | ✅ **yes** — an optional interaction script hangs off a place (§ 5.4a, migration 162); `popup` is the one thing it can do that an action cannot |
+| Q44 | What decides what the model is OFFERED? | ✅ **§ 5.4b** — `urgent` (a lean, never a guarantee) and `unlockedBy` (ANY of a cue list) on both actions and conversations; `interactionOnly` hides an action; `selectable` makes a conversation choosable by its first speaker |
 
 Also decided outside this log, on judgement rather than measurement: iw builds **its own
 beginner text input** (§ 9a).
@@ -2465,7 +2605,7 @@ What was actually built:
 
 | Table | Holds |
 |---|---|
-| `iw_scenes` | scene identity, `language` (Q8), published, the completion `(npcId, actionId)` pair, board geometry (`playerStart*` / `companionStart*` — cell **and** facing — plus width / height in template cells), and four jsonb blobs: `layout` (terrain, decor, floor, and Q42's `locations`), `npcCast` (placement **and** Q42's authored actions), `complications`, `conversations` |
+| `iw_scenes` | scene identity, `language` (Q8), published, the completion `(npcId, actionId)` pair, board geometry (`playerStart*` / `companionStart*` — cell **and** facing — plus width / height in template cells), and four jsonb blobs: `layout` (terrain, decor, floor, and Q42's `places`), `npcCast` (placement **and** Q42's authored actions), `complications`, `conversations` |
 | `iw_scene_runs` | one playthrough — durable and resumable within the day (Q30), with the `transcript` jsonb (Q21) and `complicationIds` (a LIST — Q31's per-turn roll) |
 | `iw_scene_ratings` | per-run, per-NPC 1–5 on vocabulary / grammar / politeness (Q21) |
 | `iw_npc_memories` | `(userId, npcId)` → one rolling summary (Q3) |
@@ -3534,7 +3674,7 @@ authored thing in the feature that produces behaviour rather than text.
 ⚠️ **`accept_payment` / `hand_over` / `give_item` / `refuse` are NOT steps** — see sub-answer 4.
 
 **Named places are a new map layer.** A cell can be tagged ("water station", "counter"),
-stored as `layout.locations`: `tag → "col,row"`. It lives inside the existing `layout` blob
+stored as `layout.places`: `tag → "col,row"` (the key was `locations` until 2026-09-06 — migration 163). It lives inside the existing `layout` blob
 because a tagged cell **is** board data, in the same sense a decor cell is — so it needed no
 migration. Keyed by **TAG** (2026-09-05; it was briefly keyed by cell), so **a place names
 exactly one cell** and `walk_to_tag` has a single destination rather than a nearest-of-many.
@@ -3649,7 +3789,7 @@ to walk.
    re-triggering the same beat, and if that turns out to read badly the fix is a *runtime*
    debounce, not an authored field.
 
-4. **It is a COLUMN, not a field inside `layout.locations`.** *"To be clear this should be a
+4. **It is a COLUMN, not a field inside `layout.places`.** *"To be clear this should be a
    feature built off locations. Locations have an option to attach an NPC action or popup etc
    on interaction."* — which settled both halves at once: keyed by tag (so it is a property of
    a place, and inherits every cascade a tag has), but stored in `iw_scenes.interactions`,

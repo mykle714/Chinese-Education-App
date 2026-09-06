@@ -231,6 +231,23 @@ const PAGE_ROUTES: RouteMeta[] = [
     chrome: "none",
     note: "The iw scene editor (docs/IMMERSIVE_WORLD.md § 12 phase 1d). Template-author-only (migration 115), enforced in ImmersiveWorldSceneService and mirrored as UX on the page. Desktop-only three-column authoring surface — plain shell for the width, no page transition.",
   },
+
+  // ── Immersive World (§ 14 Q9: its own hp destination, not a Games tile) ──
+  {
+    path: "/immersive-world",
+    access: "any",
+    shell: "frame",
+    chrome: "leaf",
+    note: "The learner's scene list (docs/IMMERSIVE_WORLD.md § 12 phase 2). ORDER IS LOAD-BEARING: `findRoute` takes the FIRST row whose pattern matches, so both rows here sit BELOW the exact /immersive-world/scene-editor row — otherwise :sceneId would swallow the editor and give an author a leaf shell with no width.",
+  },
+  {
+    path: "/immersive-world/:sceneId",
+    access: "any",
+    shell: "frame",
+    chrome: "leaf",
+    note: "One scene, running. A LEAF: the down-arrow is the only way out, and the page owns its whole surface (canvas + bubbles + composer). No footer — a walkable board must not lose its bottom rows to one.",
+  },
+
   {
     path: "/font-lab",
     access: "any",

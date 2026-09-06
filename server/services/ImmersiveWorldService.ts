@@ -1,5 +1,5 @@
 import { npcById } from '../config/iwNpcs.js';
-import type { IWScene, IWSceneCastMember } from '../contracts/iw.js';
+import type { IWScene, IWSceneCastMember, IWSceneSummary } from '../contracts/iw.js';
 import { findMetaLanguage, renderNpcBlock } from './iw/npcPrompt.js';
 import { getIwLadder } from './iw/modelLadder.js';
 import { runNpcTurn, type IWModelRung, type IWRungAttempt, type IWTurnOutcome } from './iw/npcTurn.js';
@@ -9,6 +9,8 @@ import { renderWorldRules } from './iw/worldRules.js';
 import type { IWTurnReply } from './iw/turnParser.js';
 import { iwTurnBudget, IWTurnBudget, type IWBudgetRefusal } from './iw/turnBudget.js';
 import type { IImmersiveWorldDAL } from '../dal/interfaces/IImmersiveWorldDAL.js';
+import { npcOptionsForLanguage } from './iw/npcOptions.js';
+import type { IWNpcOption } from '../contracts/iw.js';
 
 /**
  * ImmersiveWorldService — the runtime half of iw (§ 8, phase 2).
@@ -160,6 +162,12 @@ export interface IWTurnHttpRequest {
   perception: Omit<TurnStateInput, 'offers'>;
 }
 
+/** What a learner needs to open a scene: the scene itself, and who is in it. */
+export interface IWScenePlayPayload {
+  scene: IWScene;
+  npcs: IWNpcOption[];
+}
+
 export type IWRuntimeResult =
   | { kind: 'refused'; refusal: IWBudgetRefusal; remaining: number }
   | { kind: 'no-scene'; sceneId: string }
@@ -229,6 +237,47 @@ export class ImmersiveWorldService {
     // Only a turn that produced words is billed to the session (see the header).
     if (result.kind === 'reply') this.budget.spend(userId, request.sessionId);
     return { ...result, remaining: this.budget.remaining(request.sessionId) };
+  }
+
+  /**
+   * The scenes a LEARNER may open, newest-updated first.
+   *
+   * ⚠️ **PUBLISHED ONLY, and that is the whole difference from the editor's list.**
+   * `ImmersiveWorldSceneService.listScenes` gates on `users.isTemplateAuthor` and returns
+   * drafts too, because an author has to be able to load the half-built thing they are
+   * building. A learner must not, so this method exists rather than the runtime relaxing that
+   * gate — the header of the authoring service asks for exactly this ("add the runtime's own
+   * method"), and the two lists answer genuinely different questions.
+   *
+   * The filter is applied here rather than in the DAL because `published` is a POLICY about
+   * who sees what, and the DAL's job is to return rows. One extra row per draft crossing a
+   * process boundary is not worth a second query shape.
+   */
+  async listPlayableScenes(language: 'zh' | 'es'): Promise<IWSceneSummary[]> {
+    const scenes = await this.iwDAL.listScenes(language);
+    return scenes.filter(scene => scene.published);
+  }
+
+  /**
+   * One whole scene for a learner to walk into, WITH the cast projection needed to draw it —
+   * or null.
+   *
+   * Returns null for an UNPUBLISHED scene as well as a missing one, deliberately: the two are
+   * the same fact to a learner ("there is nothing here"), and distinguishing them would let
+   * anybody enumerate an author's drafts by id.
+   *
+   * ⚠️ It opens no RUN and draws no complication. Phase 2 is "one stall you can talk to" — the
+   * run row, the complication draw and the transcript are phase 3 (§ 12), so a scene today is
+   * loaded, walked around and left, and nothing about it is remembered.
+   */
+  async openScene(sceneId: string): Promise<IWScenePlayPayload | null> {
+    const scene = await this.iwDAL.findSceneById(sceneId);
+    if (!scene || !scene.published) return null;
+    // The cast rides along rather than being a second request: a name over a head and the
+    // right body sprite are needed before the first frame is drawn, and the alternative is a
+    // scene that renders as unlabelled squares for one round trip. It is the SAME projection
+    // the editor's picker gets (§ 11's layer-1 boundary — no NPC prose crosses the wire).
+    return { scene, npcs: npcOptionsForLanguage(scene.language) };
   }
 
   /** A scene run ended — release its budget counter (see {@link IWTurnBudget.endSession}). */

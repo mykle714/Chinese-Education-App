@@ -201,6 +201,39 @@ export function useTTS() {
         await speakText(text, pronunciation, 'auto');
     }, [speakText]);
 
+    /**
+     * Synthesize a sentence WITHOUT playing it and report how long it will take to say, in ms
+     * — or null when there will be no audio to pace against.
+     *
+     * ⚠️ **THIS EXISTS FOR ONE CALLER**: Immersive World, where the audio is the clock
+     * (docs/IMMERSIVE_WORLD.md § 6.4) and the typewriter cannot start until the duration is
+     * known. Every other narration site should keep calling `autoSpeakSentence` and forget.
+     *
+     * It returns null — meaning "pace it on a timer instead" (§ 5.3a) — in exactly the three
+     * ordinary situations that doc lists, and this hook is where two of them are decided:
+     *
+     *   1. **Autoplay is off.** An automatic utterance stays silent, so there is no clock.
+     *   2. **Cloud TTS failed on the `media` route.** The browser voice is not a legal
+     *      fallback for automatic narration there (see the hook doc's fallback rule), and it
+     *      could not report a duration anyway.
+     *   3. A deadline the CALLER imposes — § 6.4 rule 4's ~400 ms — which is not enforced
+     *      here because "how long may this line wait" is the scene's decision, not the
+     *      provider's. Race this promise; a late answer is dropped, not awaited.
+     *
+     * `stamp: false` is passed for the same reason iw is the only caller: an NPC line is a
+     * sentence, not a headword, and the server's `det."ttsVoice"` stamp would be a
+     * guaranteed-zero-row UPDATE on every cache miss (§ 6.4's code note).
+     */
+    const prepareSentence = useCallback(async (text: string, pronunciation?: string): Promise<number | null> => {
+        if (!text) return null;
+        if (!settings.autoplay) return null;
+        try {
+            return await tts.cloud.prepare({ text, lang: ttsLang, pronunciation, stamp: false });
+        } catch {
+            return null;
+        }
+    }, [settings.autoplay, ttsLang]);
+
     // Cancel on unmount so a stale utterance can't outlive the page.
     useEffect(() => {
         return () => {
@@ -251,6 +284,8 @@ export function useTTS() {
         cancel,
         prefetch,
         prefetchSentence,
+        /** iw only — synthesize ahead of time and report the clip's duration. See above. */
+        prepareSentence,
         unlockAudio,
         isSpeaking,
         speakingKey,

@@ -7,7 +7,7 @@ import { dictTableForLanguage } from '../dal/shared/dictTable.js';
  * TTSController
  *
  * POST /api/tts/synthesize
- *   body: { entryId: number }
+ *   body: { text, language?, pronunciation?, stamp? }
  *   returns: audio/mpeg MP3 stream (with long-lived Cache-Control)
  *
  * Flow: look up the det row → ask TTSService for audio (disk-cache aware) →
@@ -37,6 +37,9 @@ export class TTSController {
           ? body.pronunciation.trim()
           : null;
 
+      // Whether to stamp det."ttsVoice" on a cache miss. See the stamp block below.
+      const stamp: boolean = body.stamp !== false;
+
       if (!text) {
         res.status(400).json({ error: 'text is required' });
         return;
@@ -57,7 +60,13 @@ export class TTSController {
       // doesn't know det's primary key, and routed to the per-language det table
       // so Spanish words land in dictionaryentries_es. Skipped on cache hit (the
       // column was set during the original miss).
-      if (!result.cacheHit) {
+      //
+      // ⚠️ SKIPPED ENTIRELY FOR `stamp: false` — text that is not a headword. The stamp is
+      // meaningful for a flashcard WORD and is a guaranteed-zero-row UPDATE for a sentence,
+      // which is what an Immersive World NPC line is (docs/IMMERSIVE_WORLD.md § 6.4's code
+      // note): one pointless write per spoken line, invisible until somebody reads the query
+      // log. Opt-OUT rather than opt-in so every existing caller keeps its behaviour.
+      if (!result.cacheHit && stamp) {
         const detTable = dictTableForLanguage(language);
         const c = await db.getClient();
         try {

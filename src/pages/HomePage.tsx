@@ -36,6 +36,11 @@ function HomePage() {
         { key: "night-market", to: "/night-market", title: "Night Market", subtitle: "Explore the vocabulary night market", hue: "pur", icon: "nights_stay", variant: "hero" },
         { key: "games", to: "/games", title: "Games", subtitle: "Play vocabulary mini-games", hue: "blu", icon: "sports_esports" },
         { key: "arena", to: "/arena", title: "Arena", subtitle: "Race 24 other learners", hue: "pur", icon: "emoji_events" },
+        // Its own destination rather than a Games tile (docs/IMMERSIVE_WORLD.md § 14 Q9): iw
+        // is once per day, earns no marks and is capped by design, so it behaves unlike
+        // everything on the Games shelf, where a tile is an activity you can do as much as
+        // you like. `tea` matches the Scene Editor tile below — one feature, one hue.
+        { key: "immersive-world", to: "/immersive-world", title: "Immersive World", subtitle: "Walk in and talk to somebody", hue: "tea", icon: "theater_comedy" },
         { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", hue: "org", icon: "article" },
         { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them", hue: "red", icon: "book" },
         // The three `low` tiles are the utilities. The artboard drops their subtitles:

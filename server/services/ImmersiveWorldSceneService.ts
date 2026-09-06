@@ -3,7 +3,7 @@ import type { IImmersiveWorldDAL } from '../dal/interfaces/IImmersiveWorldDAL.js
 import { DALError, DuplicateError, NotFoundError, ValidationError } from '../types/dal.js';
 import type { IWNpcOption, IWScene, IWSceneSummary } from '../contracts/iw.js';
 import { isBlocking, validateScene, type IWSceneProblem } from './iw/sceneValidation.js';
-import { COMPANION_NPC_ID_BY_LANGUAGE, npcsForLanguage } from '../config/iwNpcs.js';
+import { npcOptionsForLanguage } from './iw/npcOptions.js';
 
 /**
  * Immersive World Scene Service — the authoring half of iw (docs/IMMERSIVE_WORLD.md
@@ -110,17 +110,7 @@ export class ImmersiveWorldSceneService {
   async listNpcOptions(userId: string, language: unknown): Promise<IWNpcOption[]> {
     await this.assertTemplateAuthor(userId);
     const lang = this.cleanLanguage(language);
-    const companionId = COMPANION_NPC_ID_BY_LANGUAGE[lang];
-    return npcsForLanguage(lang).map((npc) => ({
-      id: npc.id,
-      language: npc.language,
-      name: npc.name,
-      romanization: npc.romanization,
-      occupation: npc.occupation,
-      avatar: npc.avatar,
-      isCompanion: npc.id === companionId,
-      canComplete: Boolean(npc.completionRule),
-    }));
+    return npcOptionsForLanguage(lang);
   }
 
   /** Is a scene name free within its language? Backs the editor's rename gate. */

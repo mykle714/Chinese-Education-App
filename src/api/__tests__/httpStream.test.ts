@@ -124,8 +124,9 @@ describe('apiPostStream — failures', () => {
   it('asks for an event stream and sends JSON', async () => {
     respondWith(['data: {}\n\n']);
     await apiPostStream('/api/test', { a: 1 }, () => {});
-    const [, init] = (globalThis.fetch as any).mock.calls[0];
-    expect(init.headers.Accept).toBe('text/event-stream');
+    const fetchMock = globalThis.fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } };
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init.headers as Record<string, string>).Accept).toBe('text/event-stream');
     expect(init.body).toBe('{"a":1}');
     // Cookie auth, same as every other call in this module — a raw fetch in a feature would
     // silently drop this.

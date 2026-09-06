@@ -122,14 +122,19 @@ model, the NPC brain, and the whole server side of the conversation.
 
 ## 3. The player avatar
 
-Proposed: the avatar is a `PedestrianAgent` with its movement source swapped. It keeps
-tile occupancy, collision avoidance and the smooth lerp; it loses the agenda. A
-`Wandering`-shaped state (`PlayerControlled`) takes its next tile from input rather than
-from a random pick.
+⚠️ **BUILT 2026-09-06, and NOT as this section proposed.** The original plan was "a
+`PedestrianAgent` with its movement source swapped". What shipped is `src/engine/iw/sceneActor.ts`,
+a body of its own — because `tickPedestrian`'s context requires a `StreetGraph` (nodes,
+junctions, `NavLeg`s) and § 3a deleted the very masks the night market derives one from. A
+scene is one open floor, so reusing that FSM would have meant synthesizing a fake one-node
+street graph purely to satisfy a code path that would then be told to ignore it. `sceneActor.ts`'s
+header carries the full comparison, including what IS reused directly: the per-step lerp, the
+heading→sprite-direction mapping, and destination-ownership occupancy.
 
-This matters more than it sounds: reusing the agent means the player is *visible to the
-same occupancy grid* NPCs read, so an NPC pathing to the player can't walk through them,
-and "walk away from the player" is expressible in the same coordinates.
+The property this section wanted is kept in full: **the learner is in the same occupancy set
+the cast reads**, so an NPC pathing to the player cannot walk through them and "walk away from
+the player" is expressible in the same coordinates (`occupiedCells`, and `IW_ACTOR_PLAYER` as
+an ordinary actor id).
 
 Controls (mobile-first, per [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md)): **tap-to-move**
 (Q18, decided — a tap on a walkable tile plans a path with the existing `planPath`, over the
@@ -417,7 +422,22 @@ The implemented parser (`FORMATS.lines.parse`, `scenario.js`) is exercised again
 > supply it, with no rescue), and the bench reports the second. Any future metric over this
 > parser needs the same split.
 
-### 5.3a Displaying it — typewriter reveal, paced by the audio (DECIDED)
+### 5.3a Displaying it — typewriter reveal, paced by the audio (DECIDED, BUILT 2026-09-06)
+
+> **BUILT.** The pacing is `src/engine/iw/revealSchedule.ts` → `planGlyphReveal`, and the two
+> paths below share it: the audio-paced one passes the decoded clip's `duration`, the
+> timer-paced one passes nothing and gets `estimateSpeechMs`. Sharing the module is what makes
+> them indistinguishable, which is this section's own requirement. The bubble is
+> `IWSpeechBubbles.tsx` — DOM, because § 5.3a says it is `ForeignText`, with the speaker's
+> position written straight to `style.transform` from an animation frame so following a walking
+> NPC costs no React renders.
+>
+> ⚠️ **One thing here was NOT implementable as written**: "sanitize on line 1's close … a reply
+> that fails is replaced by a canned NPC line". There are no canned lines any more — per-NPC
+> `fallbackLines` were withdrawn on 2026-09-04 (§ 5.5). A failed line therefore degrades to
+> § 4.1's NON-VERBAL channel instead: no bubble, no sound, but the action and the emote still
+> play (`src/engine/iw/lineGuard.ts`). That is consistent with Q7's ladder-exhausted answer —
+> the world says nothing rather than something plausible.
 
 **The bubble reveals character by character.** This was an open call and it is now settled;
 the reasoning is worth keeping because it overturned my initial recommendation.
@@ -1379,13 +1399,23 @@ play at 0 ms. (NPC fallback lines used to be the other cache-warm case; withdraw
 **Cost** is not the constraint: Wavenet/Neural2 bill $16/1M characters, so a 40-turn session
 of ~10-glyph lines is ~400 characters ≈ **0.6 ¢**, against ~3 ¢ for the model calls (§ 6).
 
-⚠️ **Code note, if iw uses the existing endpoint.** `POST /api/tts/synthesize`
-(`TTSController.synthesize`) does two things iw does not want: it caps text at 200 chars
-(fine), and on every cache miss it runs `UPDATE <det> SET "ttsVoice" = ... WHERE word1 = $2`
-— a stamp that is meaningful for a flashcard word and a guaranteed-zero-row write for a
-sentence. iw should either pass a flag that skips the stamp or get its own route; silently
-firing a pointless UPDATE on every NPC line is the kind of thing that is invisible until
-someone reads the query log.
+⚠️ **Code note — RESOLVED 2026-09-06.** `POST /api/tts/synthesize`
+(`TTSController.synthesize`) used to run `UPDATE <det> SET "ttsVoice" = ... WHERE word1 = $2`
+on every cache miss — meaningful for a flashcard word, a guaranteed-zero-row write for a
+sentence. It now takes **`stamp: false`**, which iw passes (`TTSRequest.stamp` →
+`CloudTTSProvider`). Opt-OUT rather than opt-in, so no existing caller changed behaviour. The
+200-char cap was always fine: § 5.6 caps a bubble at 16 glyphs.
+
+⚠️ **What the contract needed that did not exist: a way to synthesize WITHOUT playing.**
+`speak()` fetches, decodes and plays as one call and resolves when the audio finishes, so
+there was no moment at which the duration was known and playback had not started — and the
+duration is the whole of "audio is the clock". `CloudTTSProvider.prepare` (surfaced as
+`useTTS().prepareSentence`) is that moment: it warms the same caches `speak` reads, so
+prepare-then-speak costs one synthesis rather than two, and it returns null — meaning
+*pace it on a timer instead* — whenever there will be no audio (Mute, a cloud failure on the
+`media` route, or no decoder). It decodes even on the `passthrough` route, where playback goes
+through the `<audio>` element and never touches the buffer, because otherwise every learner on
+the default route would silently fall back to the timer.
 
 ## 6a. The bench harness (BUILT — `server/scripts/bench/npc-latency/`)
 
@@ -1435,6 +1465,15 @@ four actions behind the shipped set (§ 5.6c).
 
 ## 7. Cost and abuse
 
+> **Where the numbers live (2026-09-06).** Three of the five are in `server/contracts/iw.ts`
+> and re-exported by `turnBudget.ts` — `IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS` and
+> `IW_MAX_LISTENERS_PER_UTTERANCE` — because a well-behaved CLIENT has to respect them: the
+> composer counts characters against the cap, the send path waits out the gap, and the hearing
+> gate caps its own fan-out. A client that has to guess a server limit gets it wrong the first
+> time the limit is tuned, and the learner sees it as the game losing their sentence. The other
+> two (`IW_SESSION_TURN_BUDGET`, `IW_DAILY_TURN_CAP`) stay server-only: `remaining` rides back
+> on every reply, and the daily cap is deliberately not a number anybody is shown.
+
 The existing precedent is `dictionary_ai_usage` (migration 99): a per-user, per-local-day
 counter checked *before* the call and incremented *after* a billed call, throwing
 `RateLimitError` → 429.
@@ -1450,8 +1489,9 @@ gracefully winds down instead of erroring.
 Also required, and **now the only bound that exists**: a hard cap on the player's input
 length, and a per-utterance rate limit, both enforced **on the server**.
 
-> **BUILT 2026-09-06 — `server/services/iw/turnBudget.ts`.** All four numbers, plus the
-> session budget below, live in one pure module with an injected clock:
+> **BUILT 2026-09-06 — `server/services/iw/turnBudget.ts`.** All five numbers live in one pure
+> module with an injected clock (the first three are DECLARED in `server/contracts/iw.ts` and
+> re-exported there — see the note at the top of this section):
 >
 > | Constant | Value | What it bounds |
 > |---|---|---|
@@ -1460,6 +1500,14 @@ length, and a per-utterance rate limit, both enforced **on the server**.
 > | `IW_MAX_LISTENERS_PER_UTTERANCE` | 4 | § 4.1's fan-out. It re-imposes the hearing gate's *budget* server-side without re-implementing its geometry — the gate itself is client-side and therefore not trustworthy here. **It drops rather than refuses**: a crowded market should get quieter, not error |
 > | `IW_SESSION_TURN_BUDGET` | 60 | One scene run. Reported on every response as `remaining`, for the in-world HUD this section asks for |
 > | `IW_DAILY_TURN_CAP` | 400 | The caller who exhausts a run and starts another. ≈ 32 ¢ |
+>
+> ⚠️ **The session number is billed per CALL, not per utterance, and that is a bug in the
+> making.** `spend(userId, sessionId, turns)` was written for § 4.1's fan-out — charge the
+> daily cap once per model call and the session once per utterance — but the endpoint takes one
+> npcId, so the CLIENT fans out and each request bills the session 1. The money bound is
+> unaffected (the daily cap counts calls either way); what is wrong is the `remaining` a learner
+> is shown, which drains N× faster in a crowded scene. Fixing it means either a fan-out endpoint
+> or a session spend keyed on the utterance rather than the request.
 >
 > Two properties worth knowing before relying on it. **Check and spend are separate**: a turn
 > the ladder could not answer (§ 14 Q7's `frozen`) costs the learner nothing, because they got
@@ -1503,11 +1551,21 @@ Per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) / [FRONTEND_LAYERING.md](./FRON
 | Scene walkability + pathfinding | **engine (pure)** | `src/engine/iw/sceneGraph.ts` (BUILT) |
 | Audibility | **engine (pure)** | `src/engine/iw/hearing.ts` (BUILT) |
 | Arbitration ordering, action legality | **engine (pure)** — no React, no Pixi, no fetch | `src/engine/iw/` (`npcArbitration.ts`, not built) |
-| Player avatar movement source | engine | extend `pedestrianAgent.ts` |
-| Scene rendering, bubbles, HUD | feature | `src/features/immersiveworld/` |
+| Body movement (learner AND cast) | **engine (pure)** | `src/engine/iw/sceneActor.ts` (BUILT). ⚠️ NOT an extension of `pedestrianAgent.ts` — that FSM requires a `StreetGraph`, and § 3a deleted the masks one is derived from |
+| Typewriter pacing (§ 5.3a) | **engine (pure)** | `src/engine/iw/revealSchedule.ts` (BUILT). One module for both the audio-paced and timer-paced paths, which is what makes them indistinguishable |
+| Sanitize + the § 5.6 language check | **engine (pure)** | `src/engine/iw/lineGuard.ts` (BUILT) |
+| One authored step → one instruction | **feature (pure)** | `play/actionPlayer.ts` (BUILT). ⚠️ Deliberately NOT in `src/engine/`: the engine may not import the server contract (`enginePurity.test.ts`), and this module's input IS the contract |
+| Playing a script to the end | feature | `play/iwScript.ts` (BUILT) |
+| Scene state: bodies, bubbles, the gate, the turn fan-out | feature hook | `play/useIWSceneRuntime.ts` (BUILT) — the ONE stateful thing in the play surface |
+| Scene rendering | feature view | `play/IWSceneStage.tsx` (BUILT). Reuses `EditorTerrainLayer`, the app's one mask-driven terrain renderer — NOT `TemplateEditorViewer`, which is an authoring surface |
+| Bubbles | feature view | `play/IWSpeechBubbles.tsx` (BUILT). **DOM, not Pixi**, because the bubble is `ForeignText` — an app-wide rule, not an iw preference |
+| The input | feature view | `play/IWComposer.tsx` (BUILT, throwaway — § 9a) |
+| Synthesize-without-playing, for the audio clock | shared service | `src/services/tts/CloudTTSProvider.ts` → `prepare`, surfaced as `useTTS().prepareSentence` (BUILT). iw is its only caller |
 | Server calls | `src/api/http.ts` only, never a raw fetch, **no function takes a `token`** | `immersiveWorldSceneApi.ts` (authoring) and `immersiveWorldTurnApi.ts` (runtime), both under `src/features/immersiveworld/` — split by lifecycle, like their services |
 | Prompt assembly, model call, streamed three-line parse (§ 5.3) | **service** | `server/services/ImmersiveWorldService.ts` → `takeNpcTurn` (BUILT) |
 | Scene lookup + the § 7 budget check | **service** | `ImmersiveWorldService` the CLASS → `runTurn` (BUILT). Split from `takeNpcTurn` so the pure pipeline stays testable without a DAL |
+| The learner's scene reads — published only, no author gate | **service** | `ImmersiveWorldService.listPlayableScenes` / `openScene` (BUILT). A separate method from the editor's, as `ImmersiveWorldSceneService`'s header asked: an editor read returns drafts and a learner's must not |
+| The NPC projection that crosses the wire | **service helper (pure)** | `server/services/iw/npcOptions.ts` (BUILT). One copy, shared by the editor's picker and the play surface — § 11's layer-1 boundary is enforced by there being nothing else to send |
 | The turn endpoint — **SSE**, not JSON | **controller** | `server/controllers/ImmersiveWorldRuntimeController.ts` (BUILT). ⚠️ A stream cannot change its status code once headers flush, so every refusal is decided before the first write |
 | Streaming transport | `src/api/http.ts` → `apiPostStream` (BUILT) | The app's only one. It lives there rather than in the feature because that is where `authHeader()` is read at call time — a raw `fetch` for a stream opts out silently, and works until a token rotates |
 | Scene authoring: validation, the template-author gate | **service** (built) | `server/services/ImmersiveWorldSceneService.ts`, with the pure rules in `server/services/iw/sceneValidation.ts` |
@@ -1749,6 +1807,20 @@ the only guard, and it is a weak one against someone who is genuinely playing sl
 looking at once real session lengths exist, but not worth pre-empting with a rule.
 
 ## 9a. The beginner writing assistant (a named work item, not an open question)
+
+> **BUILT 2026-09-06 as a throwaway** — `src/features/immersiveworld/play/IWComposer.tsx`,
+> header-commented as destined for replacement by [BACKLOG.md](./BACKLOG.md) item 1, and
+> imported by nothing outside that folder. Its shape, against the two requirements below:
+>
+> | Requirement | What shipped |
+> |---|---|
+> | *"I know what I want to say but can't type it"* | a **look-up** field — English or pinyin into the ordinary `/api/dictionary/search`, tap a result and the hanzi is appended — plus chips for the learner's own `getGameVocabPool` words |
+> | *"I don't know where to begin"* | a fixed row of **openers** in the target language, always present and never search-dependent |
+>
+> The openers are hardcoded content, knowingly: a scene-aware version is a better feature and a
+> bigger one, and an empty field with nothing to press is the failure this exists to prevent.
+> A **backspace button** is there because the assistant appends whole words and a learner with
+> no Chinese keyboard may have no other way to take one back.
 
 **Decided: iw ships its own input surface rather than depending on the OS IME.** This is a
 work item of the feature, not a blocker inherited from elsewhere.
@@ -2272,19 +2344,36 @@ feature is worth building.
 
 **Gated by:** an author having made a scene in phase 1.
 
-> **Status 2026-09-06 — the server half is built and REACHABLE; nothing is on screen yet.**
-> `iw-turn-probe.ts` runs a real turn against the real authored scene: 王婶 answers
-> 大碗还是小碗啊 in ~930 ms on rung 1, picks the right authored action, and needs no parser
-> rescue.
+> **Status 2026-09-06 — PHASE 2 IS ON SCREEN. Untested by a human.**
+> `/immersive-world` lists the published scenes in the learner's language and
+> `/immersive-world/:sceneId` opens one: the board renders, the learner walks it by tapping,
+> tapping a person addresses them, typing something sends a turn to everyone in earshot, and
+> the answer arrives in a bubble that is revealed in step with the voice saying it.
 >
-> Built: the § 3a walkable graph and pathing, the § 4 hearing gate, the scene actor, prompt
-> layers 1 and 3, § 5.4b's offer builder, § 5.3's streaming parser, Q7's ladder and its
-> adapters, `takeNpcTurn`, and — as of this pass — **the wire**: `POST
-> /api/immersiveWorld/turn` as SSE, § 7's budget, `apiPostStream`, and the client's
-> `immersiveWorldTurnApi.ts`. A logged-in client can now take a turn and stream the answer.
+> Built, in the order the phase lists them:
+> - **The world** — the § 3a walkable graph and pathing, the scene actor, `IWSceneStage`
+>   (Pixi; it reuses the night market's `EditorTerrainLayer`, NOT its editor), tap-to-move with
+>   Q18's near-miss tolerance, the § 4 hearing gate, `useBlockEdgeSwipe(true)`.
+> - **The brain** — the whole server pipeline, `POST /api/immersiveWorld/turn` as SSE, and the
+>   client transport. Plus the two learner-facing scene reads (`/play/scenes`), which are a
+>   separate method from the editor's on purpose: published only, no author gate.
+> - **Q7's ladder** and **§ 7's budget** — unchanged from the previous pass, except that three
+>   of § 7's five numbers moved into the contract so the client can respect them.
+> - **Speech** — the § 6.4 ordering, end to end: guard → synthesize → decode → paint across the
+>   clip's own duration, with the 400 ms deadline and the timer-paced fallback behind it.
+>   `CloudTTSProvider.prepare` is the new primitive that makes audio-as-clock possible at all.
+> - **Authored behaviour** — the model's chosen action is now PERFORMED (`actionPlayer.ts` +
+>   `iwScript.ts`), as are place interactions and NPC-to-NPC conversations.
+> - **The input** — the throwaway assistant (§ 9a), with an answer for both *"I cannot type
+>   this"* and *"I don't know where to begin"*.
+> - **The hp row** (Q9) and the two routes.
 >
-> Not built: **everything on screen** — the scene renderer, the player avatar and tap-to-move,
-> bubbles, the typewriter, audio, the input, the hp row and the route.
+> Not built, and deliberately: **`ai_walk`** (it needs a model call to choose a destination,
+> which is a turn rather than a step — it skips with a reason), a `comment` step's
+> EMBELLISHMENT (§ 14 Q42 wants the model to colour an authored line; phase 2 speaks the
+> author's words verbatim, which is the conservative half), and the cast REACTING to an event
+> that fires (the cue is recorded and the fact is shown; reacting in character is a turn per
+> audible NPC and belongs with phase 3's complication draw).
 >
 > Three things the build changed in this plan, all from measurement or from a constraint
 > rather than opinion — the § 14 Q7 deadline (first glyph, not `sayDone`), the rung-1 model
@@ -2294,6 +2383,14 @@ feature is worth building.
 > § 6.4 rule 1 fires TTS when line 1 *closes*, which only a stream can report, and § 5.3a's
 > timer-paced fallback stalls for the whole turn without deltas. A JSON endpoint would have
 > worked today and been replaced the first time either mattered.
+>
+> ⚠️ **The client fans out, and § 7's fan-out billing does not see it.** § 4.1 makes one
+> utterance several model calls, and `IWTurnBudget.spend` takes a `turns` count for exactly
+> that — but the endpoint takes ONE npcId, so the client makes N requests and each bills the
+> session budget 1 rather than one billing it N. The daily cap still counts every call, so the
+> money bound holds; what is wrong is the SESSION number the learner is shown, which drains
+> N× faster in a crowded scene than in an empty one. The fix is either a fan-out endpoint or a
+> session spend that charges once per utterance; neither is phase 2 work.
 
 **Performance target:** the ~1.2 s to first glyph must not read as lag behind the walk-over
 animation (§ 6.4). Missing it is a **bug with a fix**, not a reason to stop — § 6.2 lists the
@@ -2311,10 +2408,14 @@ is the opposite of the test.
 > has to be something no lever fixes; latency, cost and character fidelity all have levers, and
 > the only untunable question phase 2 actually answers is whether the thing is worth playing.
 
-- **The world:** player avatar as a `PedestrianAgent` with `PlayerControlled` movement (§ 3);
-  **tap-to-move** on `streetGraph.planPath` with padded hit areas and near-miss tolerance
-  (Q18); the tap-routing rule (only the world surface hit-tests); the mechanical hearing gate
-  (§ 4); `useBlockEdgeSwipe(true)`.
+- **The world:** ✅ BUILT, with one correction to this line: the avatar is NOT a
+  `PedestrianAgent` and does not use `streetGraph.planPath`. § 3a deleted the masks that graph
+  is derived from, so iw has its own actor (`sceneActor.ts`) over its own cell set
+  (`sceneGraph.ts`) — see `sceneActor.ts`'s header for why reusing `tickPedestrian` would have
+  meant synthesizing a fake one-node street graph. Everything else shipped as written:
+  **tap-to-move** with padded hit areas and near-miss tolerance (Q18), the tap-routing rule
+  (only the world surface hit-tests, and a body wins over the tile beneath it), the mechanical
+  hearing gate (§ 4), `useBlockEdgeSwipe(true)`.
 - **The brain:** ✅ BUILT — turn endpoint (SSE), streaming line parser (§ 5.3), prompt builder
   (§ 5.5), and § 5.4's validation, which is **not** an action enum any more: Q42 replaced the
   global verb list with per-NPC authored action NAMES, and the offered list *is* the
@@ -2326,15 +2427,18 @@ is the opposite of the test.
   bound that exists. ✅ BUILT (`turnBudget.ts`); the table of numbers is in § 7.
 - **§ 11 ships here.** Free text means the injection surface is live from the first playable
   build; it cannot be deferred.
-- **Speech — build the ordering first, not as polish.** react → move → speak (§ 6.2 lever 3)
+- **Speech — build the ordering first, not as polish.** ✅ BUILT. react → move → speak (§ 6.2 lever 3)
   starting when the utterance is *sent*; audio as the clock (§ 6.4) with sanitize-then-
   synthesize, glyphs across the decoded buffer's duration, punctuation weighted; the
   timer-paced fallback and its deadline; no tap-to-complete, a replay control instead (Q41);
   `autoSpeakSentence`, never `speakSentence`.
-- **The input:** the throwaway writing assistant (Q4b), entirely under `features/iw`,
+- **The input:** ✅ BUILT — the throwaway writing assistant (Q4b), entirely under `features/iw`,
   header-commented as destined for replacement by BACKLOG item 1. ⚠️ It must answer *"I don't
   know where to begin"* — it is the learner's only safety net (Q24, Q29).
-- The hp row (Q9) and the route.
+- The hp row (Q9) and the route. ✅ BUILT — a `tea` bento tile on `/`, plus
+  `/immersive-world` (the scene list) and `/immersive-world/:sceneId` (one scene, running).
+  Both rows sit BELOW the exact `/immersive-world/scene-editor` row in `routeMeta.ts`, because
+  `findRoute` takes the first match and `:sceneId` would otherwise swallow the editor.
 
 ---
 
@@ -2456,14 +2560,48 @@ to be watched for deliberately.
 - `server/services/iw/modelLadder.ts` → `buildIwLadder`, `cacheStats` — the concrete rungs and
   the § 5.5 cache assertion. **The only file in iw that constructs a model client**
 - `server/services/ImmersiveWorldService.ts` → `takeNpcTurn` (the pure pipeline),
-  `ImmersiveWorldService.runTurn` (the stateful half: scene lookup + § 7 budget)
+  `ImmersiveWorldService.runTurn` (the stateful half: scene lookup + § 7 budget),
+  `listPlayableScenes` / `openScene` (the runtime's own reads — published only, no author gate)
 - `server/services/iw/turnBudget.ts` → `IWTurnBudget`, `checkUtterance`, `capListeners`,
-  `IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS`, `IW_SESSION_TURN_BUDGET`,
-  `IW_DAILY_TURN_CAP` — § 7's bound. In-memory and per-process; see § 7's caveat
-- `server/controllers/ImmersiveWorldRuntimeController.ts` → `takeTurn` — the SSE endpoint
+  `IW_SESSION_TURN_BUDGET`, `IW_DAILY_TURN_CAP` — § 7's bound. In-memory and per-process; see
+  § 7's caveat. Its other three numbers (`IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS`,
+  `IW_MAX_LISTENERS_PER_UTTERANCE`) live in `server/contracts/iw.ts` and are re-exported here,
+  because the client has to respect them to behave well
+- `server/controllers/ImmersiveWorldRuntimeController.ts` → `takeTurn` (the SSE endpoint),
+  `listScenes` / `getScene` (the learner's PUBLISHED-only reads, a different gate from the
+  editor's)
 - `src/api/http.ts` → `apiPostStream` — the app's only streaming transport
 - `src/features/immersiveworld/immersiveWorldTurnApi.ts` → `takeNpcTurn`, `newSessionId`,
   `endIwSession` — the client half of the turn endpoint
+- `src/engine/iw/revealSchedule.ts` → `planGlyphReveal`, `estimateSpeechMs`, `revealedText`,
+  `IW_TIMER_GLYPHS_PER_SEC` — § 5.3a's typewriter pacing. ONE module for both paths (audio-paced
+  and timer-paced), which is what makes them indistinguishable
+- `src/engine/iw/lineGuard.ts` → `guardNpcLine` — sanitize + the § 5.6 language check, run
+  BEFORE the TTS call (§ 6.4 rule 2). A rejected line is silence, not an error
+- `src/features/immersiveworld/play/actionPlayer.ts` → `resolveActionStep`, `actionById` —
+  one authored step → one instruction, resolved late. **Not in `src/engine/`**: the engine may
+  not import the server contract (`enginePurity.test.ts`), and this module's input IS the
+  contract
+- `src/features/immersiveworld/play/iwScript.ts` → `runAuthoredAction`, `runInteraction` — the
+  async loop that plays a script to the end (§ 14 Q42, Q43)
+- `src/features/immersiveworld/play/useIWSceneRuntime.ts` — the ONE stateful thing in the play
+  surface: bodies, bubbles, the § 4 gate, the turn fan-out, authored scripts, § 7's client-side
+  rate limit
+- `src/features/immersiveworld/play/IWSceneStage.tsx` — the Pixi host. Reuses
+  `EditorTerrainLayer` (the app's one mask-driven terrain renderer), NOT `TemplateEditorViewer`
+- `src/features/immersiveworld/play/IWSpeechBubbles.tsx` — the DOM bubble layer, because the
+  bubble is `ForeignText` (§ 5.3a). Q41's replay control lives here
+- `src/features/immersiveworld/play/IWComposer.tsx` — the throwaway writing assistant (§ 9a)
+- `src/features/immersiveworld/play/iwPlayApi.ts`, `iwSceneActors.ts`, `IWPlayPage.tsx`,
+  `IWWorldPage.tsx` — the learner-facing reads, the body builder, and the two routes
+- `src/engine/market/isometric.ts` → `screenToCell` — the projection inverse behind tap-to-move
+  (§ 14 Q18). Extracted from `TemplateEditorViewer`, which now calls it: two copies of an
+  inverse drift by a square
+- `src/hooks/useTTS.ts` → `prepareSentence`, `src/services/tts/CloudTTSProvider.ts` → `prepare`
+  — synthesize and decode WITHOUT playing, reporting the clip's duration. The whole of
+  "audio is the clock" rests on this one call (§ 6.4)
+- `server/services/iw/npcOptions.ts` → `npcOptionsForLanguage` — the ONE projection of an NPC
+  that crosses the wire (§ 11 layer 1). Shared by the editor's picker and the play surface
 - `server/scripts/iw-turn-probe.ts` — one real turn against one real scene, end to end.
   `--file` probes a scene dumped from prod without needing it in the local database
   model and the `places`/`locations` read fallback
@@ -3068,6 +3206,11 @@ tile is an activity you can do as much as you like. A daily ritual with its own 
 as a pillar of the app, and an hp row is what the app already uses for pillars
 ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md), [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)).
 
+> **BUILT 2026-09-06 (the row, not its state).** A `tea` bento tile on `/` next to Arena and
+> Friends, leading to `/immersive-world`. The state recommendation below is NOT built and
+> cannot be yet: available / in progress / done is read from a run row, and phase 2 has none.
+> The scene list is a plain leaf list until then.
+
 ⚠️ **Worth designing into the row: today's state.** Available / in progress / done — because
 the once-per-day cap and Q30's within-the-day resume are both invisible otherwise, and a
 learner who taps into a spent feature has been misled by the row. This was raised as an option
@@ -3215,7 +3358,15 @@ elsewhere in this doc:
 
 Cost was never the constraint: 0.6 ¢/session against ~3 ¢ for the model calls.
 
-**Q18 — ~~Movement controls~~ DECIDED: tap-to-move.** Tap a tile and the avatar walks there
+**Q18 — ~~Movement controls~~ DECIDED: tap-to-move. BUILT 2026-09-06.** Both of the things
+this decision made load-bearing shipped with it: hit areas are padded beyond the sprite bounds
+(`IWSceneStage`), and a tap on an unwalkable or unreachable cell walks to the nearest cell
+BESIDE it rather than doing nothing (`useIWSceneRuntime.walkPlayerTo`, over `approachCells`).
+The four-way tap overload is down to three — Q41 removed the bubble's skip, and Q4c removed the
+palette — and gained one Q43 did not exist for: **a tap on an interactive place runs its
+script**, which wins over the floor beneath it exactly as a body does.
+
+ Tap a tile and the avatar walks there
 on the existing tile pathing (`planPath` over the § 3a walkable set), so iw inherits the night market's
 movement wholesale and adds no permanent screen furniture. § 3's hedge is resolved; a virtual
 stick is rejected because it would need continuous-position movement the engine does not do

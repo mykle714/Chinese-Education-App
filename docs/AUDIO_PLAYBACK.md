@@ -205,6 +205,39 @@ zhòng are genuinely different audio.
 *Code:* `CloudTTSProvider` → `getOrFetchBlob`, `getOrDecodeBuffer`,
 `getOrCreateUrl`, `evictOldestUrls`, `bufferKey`.
 
+### 3a. `prepare()` — synthesize and decode WITHOUT playing (2026-09-06)
+
+Every other entry point plays and forgets: `speak()` fetches, decodes and starts the clip as
+one call, resolving when the audio finishes. There is no moment at which the duration is known
+and playback has not started — and that moment is exactly what the Immersive World needs, where
+**the audio is the clock** and a line's typewriter reveal is spread across the clip's own
+duration ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 6.4).
+
+`prepare(req)` warms the same caches `speak` reads and returns the clip's duration in **ms**,
+or `null`. So prepare-then-speak costs one synthesis, not two.
+
+Three things about it are deliberate:
+
+- **It decodes even on the `passthrough` route**, where playback goes through the `<audio>`
+  element and never touches the decoded buffer. An element cannot report a duration without
+  loading, both sinks derive from the same cached Blob, and without this every learner on the
+  default route would silently lose the audio-paced reveal.
+- **`null` is an answer, not a failure** — it means *pace it on a timer instead*. It is returned
+  when autoplay is off, when the cloud call fails, and when there is no decoder.
+- **It does not cancel in-flight playback** and does not bump `generation`: preparing the next
+  line while the current one is still being spoken is the normal case.
+
+`WebSpeechProvider.prepare` always returns `null` — `speechSynthesis` synthesizes inside the OS
+and exposes no buffer and no duration. That is not a gap to fill: it is why the browser voice
+can only ever drive the timer-paced reveal.
+
+Its companion is `TTSRequest.stamp`. `POST /api/tts/synthesize` stamps `det."ttsVoice"` on a
+cache miss, which is meaningful for a headword and a guaranteed-zero-row `UPDATE` for a
+sentence; `stamp: false` skips it. Opt-OUT, so no existing caller changed behaviour.
+
+*Code:* `CloudTTSProvider` → `prepare`; `useTTS` → `prepareSentence`;
+`server/controllers/TTSController.ts` → `synthesize`.
+
 ---
 
 ## 4. Autoplay vs. manual — the rule every call site follows

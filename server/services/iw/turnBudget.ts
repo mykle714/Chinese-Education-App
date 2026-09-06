@@ -1,3 +1,9 @@
+import {
+  IW_MAX_LISTENERS_PER_UTTERANCE,
+  IW_MAX_UTTERANCE_CHARS,
+  IW_MIN_TURN_GAP_MS,
+} from '../../contracts/iw.js';
+
 /**
  * iw turn budget — § 7's server-side bound on cost and abuse.
  *
@@ -28,40 +34,29 @@
  * Referenced by: docs/IMMERSIVE_WORLD.md § 7, § 4.1, § 9 (the once-per-day cadence).
  */
 
-/**
- * The hard cap on one learner utterance, in characters.
- *
- * Sized against the thing being protected, which is the PROMPT, not the database: layer 3
- * quotes the learner's text verbatim (§ 11), so an unbounded utterance is an unbounded
- * prompt and a way to blow past the cached prefix into an arbitrarily expensive call. 120
- * characters is several sentences of Chinese and far more than a beginner produces; a
- * learner who genuinely wants to say more can send it as two turns.
- */
-export const IW_MAX_UTTERANCE_CHARS = 120;
+
+
 
 /**
- * The minimum gap between two turns from the same user, in ms.
+ * ⚠️ THREE OF § 7's FIVE NUMBERS LIVE IN THE CONTRACT, NOT HERE (2026-09-06).
  *
- * NOT a per-IP `express-rate-limit` window (`middleware/rateLimits.ts`), because those are
- * sized to catch scripted floods over minutes and iw's abuse shape is a tight loop over
- * seconds. 700 ms is below any human's send cadence — a real turn takes ~1 s of model time
- * before the learner has even read the reply — and above what a loop can exploit.
+ * `IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS` and `IW_MAX_LISTENERS_PER_UTTERANCE` moved to
+ * `server/contracts/iw.ts` and are re-exported below, because the CLIENT has to respect them
+ * to behave well: the composer counts characters against the cap, the send button waits out
+ * the gap, and the hearing gate caps its own fan-out. A client that has to guess a server
+ * limit gets it wrong the first time the limit is tuned — a refusal the learner sees as the
+ * game losing their sentence.
  *
- * ⚠️ It bounds SENDS, not model calls: one send can legitimately fan out to several NPCs
- * (§ 4.1), which is what {@link IW_MAX_LISTENERS_PER_UTTERANCE} bounds instead.
+ * The two that did NOT move are the two the server enforces alone. A learner never needs to
+ * know how many turns a session holds — `remaining` rides back on every reply — and the daily
+ * cap is deliberately not a number anybody is shown (§ 7 asks for the wind-down to read
+ * in-world, not as a quota bar).
  */
-export const IW_MIN_TURN_GAP_MS = 700;
-
-/**
- * How many NPCs one utterance may be routed to.
- *
- * § 4.1 decided that every audible NPC decides for itself whether to answer, so a single
- * utterance is several model calls; § 7 says the ~800 µ$/turn figure must be multiplied by
- * the audible cast size before any budget is set. The design target is 2–4, so 4 is the cap
- * and a fifth listener is dropped rather than refused — a scene with a crowd in it should
- * get quieter, not error.
- */
-export const IW_MAX_LISTENERS_PER_UTTERANCE = 4;
+export {
+  IW_MAX_UTTERANCE_CHARS,
+  IW_MAX_LISTENERS_PER_UTTERANCE,
+  IW_MIN_TURN_GAP_MS,
+} from '../../contracts/iw.js';
 
 /**
  * The session turn budget (§ 7): how many model turns one scene run may spend.

@@ -45,6 +45,13 @@ router.delete('/api/immersiveWorld/scenes/:id', authenticateToken, handle(immers
 
 // ── Runtime (§ 12 phase 2) ───────────────────────────────────────────────────
 
+// The learner's scene list — PUBLISHED scenes in their own study language. Deliberately a
+// different path from the editor's `/scenes`, not a flag on it: different gate, different rows.
+router.get('/api/immersiveWorld/play/scenes', authenticateToken, handle(immersiveWorldRuntimeController.listScenes, immersiveWorldRuntimeController));
+
+// One whole scene to walk into. 404 for a draft as well as for a missing id.
+router.get('/api/immersiveWorld/play/scenes/:id', authenticateToken, handle(immersiveWorldRuntimeController.getScene, immersiveWorldRuntimeController));
+
 // One NPC turn. Streams `delta`* → (`reply` | `frozen` | `refused`) → `end`.
 router.post('/api/immersiveWorld/turn', authenticateToken, handle(immersiveWorldRuntimeController.takeTurn, immersiveWorldRuntimeController));
 

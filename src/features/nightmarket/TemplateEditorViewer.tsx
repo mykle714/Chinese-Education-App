@@ -7,7 +7,7 @@ import { Container, Sprite, Graphics, Text, Assets, Texture } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box } from '@mui/material';
 import {
-  isoToScreen, computeLayerZ, TILE_WIDTH, TILE_HEIGHT, ORIGIN_ZERO, type CellOrigin,
+  isoToScreen, computeLayerZ, screenToCell, TILE_WIDTH, TILE_HEIGHT, ORIGIN_ZERO, type CellOrigin,
 } from '../../engine/market/isometric';
 import {
   buildEditorField, compileMasks, editorSurfaceAt, editorDecorRotation,
@@ -194,18 +194,11 @@ const ZOOM_STEP = 1;
 interface Cell { col: number; row: number; }
 
 /**
- * Invert the iso projection: scene-local (lx, ly) → nearest tile (col, row), or
- * null if outside the board. Mirrors {@link isoToScreen} against the diamond centre.
+ * Cell under a scene-local point. Delegates to `screenToCell` — the projection inverse used
+ * to live here and now lives beside `isoToScreen`, because the iw play surface needs the same
+ * one for tap-to-move and two copies of it would drift by a square.
  */
-function localToCell(lx: number, ly: number, width: number, height: number): Cell | null {
-  // screenX = (X−Y)·(TILE_WIDTH/2); diamond-centre Y = −(X+Y)·(TILE_HEIGHT/2) − TILE_HEIGHT/2.
-  const xMinusY = lx / (TILE_WIDTH / 2);
-  const xPlusY = -(ly + TILE_HEIGHT / 2) / (TILE_HEIGHT / 2);
-  const col = Math.round((xMinusY + xPlusY) / 2);
-  const row = Math.round((xPlusY - xMinusY) / 2);
-  if (col < 0 || col >= width || row < 0 || row >= height) return null;
-  return { col, row };
-}
+const localToCell = screenToCell;
 
 // ─── Grid overlay (fine per-cell + major every 4, counted inward from the NE corner) ───────────
 const GRID_Z = 9_000;

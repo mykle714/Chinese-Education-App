@@ -78,6 +78,35 @@ export function isoToScreen(isoX: number, isoY: number): ScreenPosition {
  * @param isoY - Foot-anchor isoY
  * @param slot - Render slot determining fractional z-offset within the asset
  */
+/**
+ * Invert {@link isoToScreen}: scene-local pixels → the cell under them, or null off the board.
+ *
+ * ⚠️ IT MIRRORS AGAINST THE DIAMOND CENTRE, not the tile origin. `isoToScreen` returns a
+ * cell's SOUTH (foot) vertex, and rounding against that lands the cursor on the neighbour
+ * whenever it is in the upper half of a diamond — which is most of the visible area of a
+ * 2:1 tile. Subtracting half a tile height first is what makes the picked cell the one the
+ * pointer is actually over.
+ *
+ * Extracted from the night market's template editor on 2026-09-06, when the Immersive World
+ * play surface needed the same inversion for tap-to-move (§ 14 Q18). Two copies of a
+ * projection inverse is exactly the kind of duplication that drifts silently: the symptom
+ * would be one surface picking a cell one square off from the other.
+ */
+export function screenToCell(
+  localX: number,
+  localY: number,
+  width: number,
+  height: number,
+): { col: number; row: number } | null {
+  // screenX = (X−Y)·(TILE_WIDTH/2); diamond-centre Y = −(X+Y)·(TILE_HEIGHT/2) − TILE_HEIGHT/2.
+  const xMinusY = localX / (TILE_WIDTH / 2);
+  const xPlusY = -(localY + TILE_HEIGHT / 2) / (TILE_HEIGHT / 2);
+  const col = Math.round((xMinusY + xPlusY) / 2);
+  const row = Math.round((xPlusY - xMinusY) / 2);
+  if (col < 0 || col >= width || row < 0 || row >= height) return null;
+  return { col, row };
+}
+
 export function computeLayerZ(isoX: number, isoY: number, slot: RenderSlot): number {
   return -(isoX + isoY) + RENDER_SLOT_Z[slot];
 }

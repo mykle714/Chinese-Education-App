@@ -32,7 +32,12 @@ export interface IWPerception {
   nearby: Array<{ label: string; distance: number; facingYou: boolean }>;
   /** Recent lines this NPC heard, for continuity. */
   heard: string[];
-  holding?: string;
+  /**
+   * What the NPC is holding, in their own terms — a LIST, matching the prompt's shape
+   * (`TurnStateInput.holding`). It was typed as a single string until 2026-09-06, which the
+   * controller silently coerced; the endpoint still accepts a bare string as a one-item list.
+   */
+  holding?: string[];
   event:
     | { kind: 'utterance'; speaker: string; text: string; addressed: boolean }
     | { kind: 'approach'; who: string }
@@ -126,34 +131,45 @@ export async function takeNpcTurn(
     '/api/immersiveWorld/turn',
     request,
     (event: SseEvent) => {
-      const data = event.data as any;
+      // A loose record rather than a per-event type: the payload is whatever the server sent,
+      // and every read below already guards for a missing field. Narrowing it here would be a
+      // second copy of the wire shape that a newer server could silently contradict.
+      const data = (event.data ?? {}) as Record<string, unknown>;
       switch (event.event) {
         case 'delta': {
-          const say: string = data?.say ?? '';
+          const say = typeof data.say === 'string' ? data.say : '';
           // A new rung means a fresh sentence: forget any sayDone we fired for the dead one,
           // or a rescued turn would speak the abandoned half and never the real line.
-          if (data?.attemptIndex !== lastAttempt) { sayDoneFired = false; lastAttempt = data?.attemptIndex ?? 0; }
+          const attemptIndex = typeof data.attemptIndex === 'number' ? data.attemptIndex : 0;
+          if (attemptIndex !== lastAttempt) { sayDoneFired = false; lastAttempt = attemptIndex; }
           handlers.onDelta?.(say, lastAttempt);
           // § 6.4 rule 1: fire TTS when line 1 CLOSES, not when the turn completes. The
           // server derives `speechComplete` from the parser, which is the only thing that
           // knows a leading code fence is not speech.
-          if (data?.speechComplete && !sayDoneFired && say) {
+          if (data.speechComplete && !sayDoneFired && say) {
             sayDoneFired = true;
             handlers.onSayDone?.(say);
           }
           break;
         }
         case 'reply':
-          outcome = { kind: 'reply', reply: data as IWTurnReplyEvent };
+          outcome = { kind: 'reply', reply: data as unknown as IWTurnReplyEvent };
           // Belt and braces: a turn whose whole reply arrived in one delta never showed us
           // line 1 closing, and TTS must still fire.
-          if (!sayDoneFired && data?.say) { sayDoneFired = true; handlers.onSayDone?.(data.say); }
+          if (!sayDoneFired && typeof data.say === 'string' && data.say) {
+            sayDoneFired = true;
+            handlers.onSayDone?.(data.say);
+          }
           break;
         case 'frozen':
-          outcome = { kind: 'frozen', attempts: data?.attempts ?? [] };
+          outcome = { kind: 'frozen', attempts: Array.isArray(data.attempts) ? data.attempts : [] };
           break;
         case 'refused':
-          outcome = { kind: 'refused', refusal: data?.refusal, remaining: data?.remaining };
+          outcome = {
+            kind: 'refused',
+            refusal: data.refusal as IWTurnRefusal | undefined,
+            remaining: typeof data.remaining === 'number' ? data.remaining : undefined,
+          };
           break;
         default:
           break; // `end`, and anything a future server adds

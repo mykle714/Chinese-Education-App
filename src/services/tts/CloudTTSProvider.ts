@@ -358,6 +358,39 @@ export class CloudTTSProvider implements TTSProvider {
         }
     }
 
+    /**
+     * Fetch + decode a line WITHOUT playing it, and report how long it will take to say.
+     *
+     * ⚠️ **IT DECODES EVEN ON THE 'passthrough' ROUTE**, where playback will go through the
+     * `<audio>` element and never touch the decoded buffer. That is deliberate: the duration
+     * is the whole product of this call, an element cannot report one without loading, and
+     * both sinks are derived from the SAME cached Blob — so the decode costs one extra pass
+     * over 8–23 KB and no extra network. The alternative (route-dependent duration, or none
+     * on passthrough) would make Immersive World's reveal silently fall back to the timer
+     * for every learner on the default route.
+     *
+     * Returns null rather than throwing when the audio cannot be produced or decoded — a
+     * missing duration is a legitimate answer meaning "pace it on a timer instead"
+     * (docs/IMMERSIVE_WORLD.md § 5.3a), and this must never be the thing that breaks a scene.
+     *
+     * ⚠️ It does NOT cancel in-flight playback and does not bump `generation`: preparing the
+     * next line while the current one is still being spoken is the normal case.
+     */
+    async prepare(req: TTSRequest): Promise<number | null> {
+        if (!req.text) return null;
+        // Arm the unlock listener here too — prepare is usually the FIRST thing iw calls, and
+        // waiting until speak() would waste the gesture that got us here.
+        this.ensureUnlockListener();
+        try {
+            const key = this.bufferKey(req.text, req.lang, req.pronunciation);
+            const buffer = await this.getOrDecodeBuffer(key, req.text, req.lang, req.pronunciation, req.stamp);
+            const ms = Math.round((buffer.duration ?? 0) * 1000);
+            return ms > 0 ? ms : null;
+        } catch {
+            return null;
+        }
+    }
+
     async speak(req: TTSRequest): Promise<void> {
         if (!req.text) throw new Error('CloudTTSProvider requires text');
 
@@ -378,14 +411,14 @@ export class CloudTTSProvider implements TTSProvider {
         const key = this.bufferKey(req.text, req.lang, req.pronunciation);
 
         if (route === 'passthrough') {
-            const url = await this.getOrCreateUrl(key, req.text, req.lang, req.pronunciation);
+            const url = await this.getOrCreateUrl(key, req.text, req.lang, req.pronunciation, req.stamp);
             // Superseded by a newer speak() or a cancel() while the fetch was in
             // flight — drop this call on the floor.
             if (myGeneration !== this.generation) return;
             return this.playViaElement(url, myGeneration);
         }
 
-        const buffer = await this.getOrDecodeBuffer(key, req.text, req.lang, req.pronunciation);
+        const buffer = await this.getOrDecodeBuffer(key, req.text, req.lang, req.pronunciation, req.stamp);
         if (myGeneration !== this.generation) return;
         return this.playViaWebAudio(buffer, myGeneration);
     }
@@ -614,7 +647,7 @@ export class CloudTTSProvider implements TTSProvider {
      * The one network path. Everything else derives from this Blob, so a word is
      * fetched at most once per session no matter how the route changes.
      */
-    private getOrFetchBlob(key: string, text: string, lang: string, pronunciation?: string | null): Promise<Blob> {
+    private getOrFetchBlob(key: string, text: string, lang: string, pronunciation?: string | null, stamp?: boolean): Promise<Blob> {
         const cached = this.blobCache.get(key);
         if (cached) return cached;
 
@@ -637,6 +670,10 @@ export class CloudTTSProvider implements TTSProvider {
                     // Server uses this as both a cache-key component and an SSML
                     // phoneme hint to Google so the audio matches the displayed pinyin.
                     pronunciation: normalizedPinyin || undefined,
+                    // Only ever sent as `false`, and only by a caller whose text is not a
+                    // headword — see TTSRequest.stamp. Omitted otherwise so the request body
+                    // is byte-identical to what every existing call site sends.
+                    ...(stamp === false ? { stamp: false } : {}),
                 }),
             });
             if (!res.ok) {
@@ -652,14 +689,14 @@ export class CloudTTSProvider implements TTSProvider {
     }
 
     /** Derived cache for the 'media' sink: decoded PCM. */
-    private getOrDecodeBuffer(key: string, text: string, lang: string, pronunciation?: string | null): Promise<AudioBuffer> {
+    private getOrDecodeBuffer(key: string, text: string, lang: string, pronunciation?: string | null, stamp?: boolean): Promise<AudioBuffer> {
         const cached = this.bufferCache.get(key);
         if (cached) return cached;
 
         const promise = (async (): Promise<AudioBuffer> => {
             const ctx = this.ensureContext();
             if (!ctx) throw new Error('Web Audio unavailable');
-            const blob = await this.getOrFetchBlob(key, text, lang, pronunciation);
+            const blob = await this.getOrFetchBlob(key, text, lang, pronunciation, stamp);
             // .arrayBuffer() hands out a fresh copy, so decodeAudioData detaching
             // it leaves the cached Blob intact for the other sink.
             return await this.decode(ctx, await blob.arrayBuffer());
@@ -671,11 +708,11 @@ export class CloudTTSProvider implements TTSProvider {
     }
 
     /** Derived cache for the 'passthrough' sink: object URLs, capped + revoked. */
-    private async getOrCreateUrl(key: string, text: string, lang: string, pronunciation?: string | null): Promise<string> {
+    private async getOrCreateUrl(key: string, text: string, lang: string, pronunciation?: string | null, stamp?: boolean): Promise<string> {
         const cached = this.urlCache.get(key);
         if (cached) return cached;
 
-        const blob = await this.getOrFetchBlob(key, text, lang, pronunciation);
+        const blob = await this.getOrFetchBlob(key, text, lang, pronunciation, stamp);
         // Re-check after the await: a concurrent call may have won the race, and
         // minting a second URL for the same key would leak the first.
         const raced = this.urlCache.get(key);

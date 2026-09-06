@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { ImmersiveWorldService } from '../services/ImmersiveWorldService.js';
 import type { TurnStateInput } from '../services/iw/turnState.js';
 import { IW_MAX_LISTENERS_PER_UTTERANCE, IW_MAX_UTTERANCE_CHARS } from '../services/iw/turnBudget.js';
+import { getUserLanguage } from '../utils/controllerUtils.js';
 
 /**
  * Immersive World Runtime Controller — the learner-facing half of iw (§ 12 phase 2).
@@ -41,6 +42,44 @@ export class ImmersiveWorldRuntimeController {
       return null;
     }
     return userId;
+  }
+
+  /**
+   * GET /api/immersiveWorld/play/scenes → `{ scenes: IWSceneSummary[] }`
+   *
+   * The learner's list: PUBLISHED scenes in the language they are studying. It takes no
+   * `?language=` — the editor's list does, because an author works across languages, whereas
+   * a learner has exactly one active language and letting the client name it would be a way
+   * to walk into a cast that does not speak to them.
+   */
+  async listScenes(req: Request, res: Response): Promise<void> {
+    const userId = this.userIdOr401(req, res);
+    if (!userId) return;
+    const language = await getUserLanguage(userId);
+    // iw has a cast for zh and es only (§ 14 Q8). Any other study language has no world yet,
+    // which is an empty list rather than an error — the row simply offers nothing to open.
+    if (language !== 'zh' && language !== 'es') {
+      res.json({ scenes: [], language });
+      return;
+    }
+    res.json({ scenes: await this.service.listPlayableScenes(language), language });
+  }
+
+  /**
+   * GET /api/immersiveWorld/play/scenes/:id → `{ scene: IWScene, npcs: IWNpcOption[] }`
+   *
+   * The whole scene, once, at scene start — the read migration 158 shaped the five jsonb
+   * columns around. 404 covers both "no such scene" and "not published"; see `openScene`.
+   */
+  async getScene(req: Request, res: Response): Promise<void> {
+    const userId = this.userIdOr401(req, res);
+    if (!userId) return;
+    const payload = await this.service.openScene(req.params.id);
+    if (!payload) {
+      res.status(404).json({ error: 'Scene not found', code: 'ERR_IW_SCENE_NOT_FOUND' });
+      return;
+    }
+    res.json(payload);
   }
 
   /**
@@ -202,7 +241,11 @@ function parseTurnBody(body: any): { request: import('../services/ImmersiveWorld
     // an uncapped list is an uncapped prompt.
     nearby: Array.isArray(p.nearby) ? p.nearby.slice(0, IW_MAX_LISTENERS_PER_UTTERANCE * 3) : [],
     heard: Array.isArray(p.heard) ? p.heard.slice(0, 12) : [],
-    holding: typeof p.holding === 'string' ? p.holding : undefined,
+    // `holding` is a LIST on the prompt side (`TurnStateInput.holding: readonly string[]`),
+    // and this used to coerce it to a string — invisible because the body is `any`, and it
+    // would have rendered as a bare character per item. A single string is still accepted,
+    // as one item, so a client written against the older client type keeps working.
+    holding: holdingList(p.holding),
     event,
     spokeLastTurn: Boolean(p.spokeLastTurn),
   };
@@ -216,6 +259,19 @@ function parseTurnBody(body: any): { request: import('../services/ImmersiveWorld
       perception,
     },
   };
+}
+
+/**
+ * `holding`, normalized to the prompt's list shape — or undefined, which renders as nothing.
+ *
+ * Accepts a bare string as a one-item list because that is what the client's older
+ * `IWPerception` type declared; an empty list becomes undefined so `renderTurnState` omits
+ * the line entirely rather than printing an empty bullet.
+ */
+function holdingList(value: unknown): string[] | undefined {
+  if (typeof value === 'string') return value.trim() ? [value] : undefined;
+  const items = strings(value);
+  return items.length ? items : undefined;
 }
 
 /** Every string in an unknown array, or an empty list. Never throws on a hostile body. */

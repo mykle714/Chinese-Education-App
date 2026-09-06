@@ -144,6 +144,56 @@ export const IW_MAX_POPUP_CAPTION_LENGTH = 200;
  */
 export const IW_POPUP_IMAGE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// § 7's budget — the three numbers the CLIENT must also know
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ⚠️ THE REST OF § 7's BUDGET IS NOT HERE. `IWTurnBudget` in
+ * `server/services/iw/turnBudget.ts` owns the whole bound and re-exports these three; only
+ * the numbers a WELL-BEHAVED CLIENT has to respect are contract, and the session budget and
+ * the daily cap are not among them (a learner is never shown either — § 7 asks for the
+ * wind-down to read in-world rather than as a quota bar).
+ *
+ * They are here rather than duplicated as client constants for the ordinary reason: a mirror
+ * drifts the first time a limit is tuned, and the symptom is a composer that lets a learner
+ * finish a sentence the server then refuses.
+ */
+/**
+ * The hard cap on one learner utterance, in characters.
+ *
+ * Sized against the thing being protected, which is the PROMPT, not the database: layer 3
+ * quotes the learner's text verbatim (§ 11), so an unbounded utterance is an unbounded
+ * prompt and a way to blow past the cached prefix into an arbitrarily expensive call. 120
+ * characters is several sentences of Chinese and far more than a beginner produces; a
+ * learner who genuinely wants to say more can send it as two turns.
+ */
+export const IW_MAX_UTTERANCE_CHARS = 120;
+
+/**
+ * The minimum gap between two turns from the same user, in ms.
+ *
+ * NOT a per-IP `express-rate-limit` window (`middleware/rateLimits.ts`), because those are
+ * sized to catch scripted floods over minutes and iw's abuse shape is a tight loop over
+ * seconds. 700 ms is below any human's send cadence — a real turn takes ~1 s of model time
+ * before the learner has even read the reply — and above what a loop can exploit.
+ *
+ * ⚠️ It bounds SENDS, not model calls: one send can legitimately fan out to several NPCs
+ * (§ 4.1), which is what {@link IW_MAX_LISTENERS_PER_UTTERANCE} bounds instead.
+ */
+export const IW_MIN_TURN_GAP_MS = 700;
+
+/**
+ * How many NPCs one utterance may be routed to.
+ *
+ * § 4.1 decided that every audible NPC decides for itself whether to answer, so a single
+ * utterance is several model calls; § 7 says the ~800 µ$/turn figure must be multiplied by
+ * the audible cast size before any budget is set. The design target is 2–4, so 4 is the cap
+ * and a fifth listener is dropped rather than refused — a scene with a crowd in it should
+ * get quieter, not error.
+ */
+export const IW_MAX_LISTENERS_PER_UTTERANCE = 4;
+
 /**
  * The emote channel of an NPC's reply (§ 5.1 line 3). Drives a sprite; NEVER rendered as text.
  *

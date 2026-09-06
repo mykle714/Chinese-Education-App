@@ -171,10 +171,40 @@ cell the author forgot to paint".
 | Every movement step | `walk_to_tag`, `walk_to_actor`, `walk_away_from` and tap-to-move all path over the set above |
 | Authoring a blocked cell | is an act of **decoration**: drop a tree or a prop and the cell stops being walkable. There is no separate "wall" concept |
 
-⚠️ **Not yet built:** the graph builder that turns a scene layout into the `TileGraph`
-`planPath` consumes. The night market's `buildMarketWorld` assembles its graph from street
-and communal `TileDef`s, which is precisely the input iw no longer has, so iw needs its own
-assembler over the formula above rather than a call into that one.
+✅ **BUILT (2026-09-06):** `src/engine/iw/sceneGraph.ts` → `buildSceneGraph`. It is iw's own
+assembler, not a call into the night market's `buildMarketWorld` — that one composes its graph
+from street and communal `TileDef`s, which is precisely the input iw no longer has, and its
+validator is about stand `connections` that a scene does not have either. `planScenePath` is a
+BFS over the same cell set (a scene is at most 60×60, so a heuristic buys nothing and can be
+subtly wrong), and `reachableFrom` answers the authoring question "can the player actually get
+to the counter?".
+
+⚠️ **It does not import `server/contracts/iw.ts`, and must not.** `src/engine/` imports nothing
+outside itself (`src/engine/__tests__/enginePurity.test.ts`), so the wire type is inverted into
+a local `SceneBoard` — the three fields of a scene the builder reads. The feature layer adapts
+an `IWScene` into it, which is also the one place `scenePlaces()` is called, so the
+`places`/`locations` fallback stays in a single spot.
+
+#### A place usually names a THING, not a standing spot
+
+The first authored scene settled a question the design had not asked. **9 of its 26 place tags
+name an unwalkable cell** — the six tables, `cash register`, `self-serve water station`,
+`self-serve utensils station` — because a place normally names an object, and an authored
+object is blocking decor by § 3a's own rule. Both `walk_to_tag` targets the author actually
+used (`cash register`, `ready-to-serve food window`) and the scene's only place interaction
+(`cash register`) are among them.
+
+So an unwalkable place is the **normal case, not an authoring fault**. `resolvePlaceTarget`
+covers both:
+
+| The tagged cell is | Where you stand |
+|---|---|
+| walkable — a doorway, a seat, a spot on the floor | the cell itself |
+| unwalkable — a counter, a table, a station | the nearest **reachable** cell beside it |
+
+An earlier draft of the builder dropped unwalkable places as mistakes. It would have silently
+broken the only place interaction in the only authored scene, which is the argument for
+running a new pure module against real authored data before believing its tests.
 
 Referenced by: `server/contracts/iw.ts` → `IWSceneLayout`;
 `src/features/immersiveworld/useIWSceneDraft.ts` → `IWPaintTool`, `paintCell`;
@@ -192,7 +222,10 @@ An utterance at tile `T` with volume `V` is **audible** to NPC `N` when:
 1. `chebyshev(T, N.tile) ≤ radius(V)` — proposed `radius`: whisper 2, talk 5, shout 12 tiles.
 2. **Occlusion**: the tile line from `T` to `N` is not blocked by more than `k` non-walkable
    tiles (a stand between you and the vendor muffles; a building wall stops).
-   `tileTraversal.ts` already walks tile lines for the pedestrian FSM.
+   The line walker lives in `src/engine/iw/hearing.ts` → `cellsOnLine`. (This paragraph used
+   to claim `tileTraversal.ts` "already walks tile lines for the pedestrian FSM" — it does
+   not, and never did: that file interpolates between two *adjacent* tiles for the movement
+   lerp and has no rasterizer. Corrected 2026-09-06.)
 3. `N` is not `Interacting` in a state that consumes it (mid-conversation with someone else).
 
 Everything about the gate is inspectable and tunable without touching a prompt. A debug
@@ -1425,7 +1458,9 @@ Per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) / [FRONTEND_LAYERING.md](./FRON
 
 | Piece | Layer | Home |
 |---|---|---|
-| Audibility, arbitration scoring, action legality | **engine (pure)** — no React, no Pixi, no fetch | `src/engine/market/` (new `hearing.ts`, `npcArbitration.ts`) |
+| Scene walkability + pathfinding | **engine (pure)** | `src/engine/iw/sceneGraph.ts` (BUILT) |
+| Audibility | **engine (pure)** | `src/engine/iw/hearing.ts` (BUILT) |
+| Arbitration ordering, action legality | **engine (pure)** — no React, no Pixi, no fetch | `src/engine/iw/` (`npcArbitration.ts`, not built) |
 | Player avatar movement source | engine | extend `pedestrianAgent.ts` |
 | Scene rendering, bubbles, HUD | feature | `src/features/immersiveworld/` |
 | Server calls | `src/api/http.ts` only, never a raw fetch, **no function takes a `token`** | `src/features/immersiveworld/immersiveWorldSceneApi.ts` (authoring, built); a sibling runtime module in phase 2 |
@@ -1434,6 +1469,13 @@ Per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) / [FRONTEND_LAYERING.md](./FRON
 | Scene definitions (objective, cast, completion pair) | **DATA**, in `iw_scenes` — ~~contract or constant~~ | migration 158; the wire shape is `server/contracts/iw.ts` → `IWScene`. Q20's "a constant beside the NPCs" was overtaken by Q2: scenes are authored content, NPCs are code |
 | End-of-scene grading + overview tag (§ 9.3) | **service**, off the interaction path, larger model, structured outputs allowed here | `ImmersiveWorldService.ts` → a separate `gradeScene` entry point |
 | Sessions/transcripts/scene runs+ratings read+write | **DAL** | `server/dal/implementations/ImmersiveWorldDAL.ts` |
+
+**Why `src/engine/iw/` and not `src/engine/market/`** (changed 2026-09-06; this table used to
+say the latter). `engine/market` means "night market", and iw's graph builder inverts that
+feature's central walkability rule (§ 3a) rather than extending it. Filing the inversion inside
+the directory named after the thing it inverts is how a future agent reaches for
+`buildMarketWorld` and finds it does not fit. The two live side by side under `src/engine/`,
+subject to the same purity test.
 
 The pure/impure split is the important line: **everything that decides *whether* an NPC
 may speak is pure and unit-testable; only the words come from the model.** That is what
@@ -2288,7 +2330,13 @@ to be watched for deliberately.
 ## 13. Referenced code (keep in sync)
 
 - `src/engine/market/pedestrianAgent.ts` — the FSM the player avatar and NPC bodies extend
-- `src/engine/market/streetGraph.ts` → `planPath`; `tileTraversal.ts` — pathing + tile lines
+- `src/engine/market/streetGraph.ts` → `planPath` — the night market's pathing. iw does NOT
+  use it (§ 3a); `tileTraversal.ts` is the movement lerp and walks no tile lines
+- `src/engine/iw/sceneGraph.ts` → `buildSceneGraph`, `planScenePath`, `approachCells`,
+  `resolvePlaceTarget`, `reachableFrom`, `SceneBoard` — iw's own walkable set + pathing (§ 3a)
+- `src/engine/iw/hearing.ts` → `audibleListeners`, `hears`, `cellsOnLine`, `audibleCells`,
+  `HEARING_RADIUS`, `OCCLUSION_PENALTY`, `MAX_OCCLUDERS` — the § 4 gate, which is also the
+  § 4.1 cost control
 - `src/engine/market/cameraFollow.ts` → `approachPan` — camera chase
 - `src/features/nightmarket/MarketEngineViewer.tsx`, `src/hooks/usePixiPedestrians.ts` — the render + tick host
 - `server/services/OnDeckVocabService.ts` → `getGameVocabPool` — the vocabulary pool

@@ -24,10 +24,14 @@ import {
  * The two axes a caller chooses are:
  *   • `markTypes`     — which tracks count as "ready". flp: recognition + production.
  *                       Memory Map: reading alone.
- *   • window category — which cooldown DURATION applies. flp: the card's core
- *                       (whole-card) category, because the loop shows two mark types
- *                       on one card. Games: the per-type category of the single track
- *                       they exercise. See docs/MASTERY_REWORK.md § Per-type cooldown.
+ *   • window category — which cooldown DURATION applies, PER MARK TYPE. flp: each of
+ *                       recognition/production cools down under its OWN per-type
+ *                       category, matching what the cdp already displays per track —
+ *                       a card is eligible the moment EITHER track is off cooldown
+ *                       under its own category, not only when the whole-card core
+ *                       category's window has elapsed. Games: the per-type category of
+ *                       the single track they exercise. See
+ *                       docs/MASTERY_REWORK.md § Per-type cooldown.
  *
  * Behaviour is otherwise identical for every caller, which is the point.
  */
@@ -55,11 +59,12 @@ export {
  * The card's ARRIVAL TIME in the queue: the moment it FIRST became reviewable, as
  * epoch ms. Cards are served longest-waiting first, so this is the sort key.
  *
- * Per ready type the card came off cooldown at `lastCorrect + window`; we take the
- * MIN across the ready types, because a card has been waiting since the EARLIEST of
- * them. MIN rather than MAX is what makes this a queue: a card whose recognition track
- * has been ready for ten days is ten days overdue, even if its production track only
- * rested yesterday.
+ * Per ready type the card came off cooldown at `lastCorrect + window`, where `window`
+ * comes from THAT type's own category (`windowCategoryOf`, either one category shared
+ * by every type or a per-type resolver); we take the MIN across the ready types,
+ * because a card has been waiting since the EARLIEST of them. MIN rather than MAX is
+ * what makes this a queue: a card whose recognition track has been ready for ten days
+ * is ten days overdue, even if its production track only rested yesterday.
  *
  * Tracks with no correct mark are SKIPPED rather than counted as ready-since-forever.
  * Counting them would score -Infinity for any partially-marked card and drag it into
@@ -70,13 +75,15 @@ export {
 export function queueArrivalAt(
   typedMarkHistory: TypedMarkHistory | undefined,
   readyTypes: readonly MarkType[],
-  windowCategory: string | null | undefined
+  windowCategory: string | null | undefined | ((type: MarkType) => string | null | undefined)
 ): number {
-  const window = COOLDOWN_MS_BY_CATEGORY[windowCategory ?? ''] ?? 0;
+  const categoryFor =
+    typeof windowCategory === 'function' ? windowCategory : () => windowCategory;
   let readyAt = Infinity;
   for (const type of readyTypes) {
     const lastCorrect = lastCorrectMarkTimestamp(typedMarkHistory, type);
     if (lastCorrect === null) continue; // no correct mark in this track — see above
+    const window = COOLDOWN_MS_BY_CATEGORY[categoryFor(type) ?? ''] ?? 0;
     readyAt = Math.min(readyAt, lastCorrect + window);
   }
   return readyAt === Infinity ? -Infinity : readyAt;
@@ -114,20 +121,20 @@ export function rankCardQueue<T extends RankableCard>(
   options: {
     /** Tracks that count as "ready" for this surface. */
     markTypes: readonly MarkType[];
-    /** The utcm category whose cooldown window applies, per card. */
-    windowCategoryOf: (card: T) => string | null | undefined;
+    /** The utcm category whose cooldown window applies, per card and per mark type. */
+    windowCategoryOf: (card: T, type: MarkType) => string | null | undefined;
   }
 ): RankedCard<T>[] {
   const scored: RankedCard<T>[] = [];
 
   for (const card of cards) {
-    const windowCategory = options.windowCategoryOf(card);
-    const ready = readyMarkTypes(card.typedMarkHistory, now, options.markTypes, windowCategory);
+    const categoryFor = (type: MarkType) => options.windowCategoryOf(card, type);
+    const ready = readyMarkTypes(card.typedMarkHistory, now, options.markTypes, categoryFor);
     if (ready.length === 0) continue;
     scored.push({
       card,
       readyTypes: ready,
-      readyAt: queueArrivalAt(card.typedMarkHistory, ready, windowCategory),
+      readyAt: queueArrivalAt(card.typedMarkHistory, ready, categoryFor),
     });
   }
 
@@ -177,21 +184,21 @@ export function rankCardQueueCooled<T extends RankableCard>(
   now: number,
   options: {
     markTypes: readonly MarkType[];
-    windowCategoryOf: (card: T) => string | null | undefined;
+    windowCategoryOf: (card: T, type: MarkType) => string | null | undefined;
   }
 ): T[] {
   const scored: Array<{ card: T; remainingMs: number }> = [];
 
   for (const card of cards) {
-    const windowCategory = options.windowCategoryOf(card);
-    const ready = readyMarkTypes(card.typedMarkHistory, now, options.markTypes, windowCategory);
+    const categoryFor = (type: MarkType) => options.windowCategoryOf(card, type);
+    const ready = readyMarkTypes(card.typedMarkHistory, now, options.markTypes, categoryFor);
     if (ready.length > 0) continue; // rested — rankCardQueue's business, not ours
 
     let remainingMs = Infinity;
     for (const type of options.markTypes) {
       remainingMs = Math.min(
         remainingMs,
-        cooldownRemainingMs(card.typedMarkHistory, type, now, windowCategory)
+        cooldownRemainingMs(card.typedMarkHistory, type, now, categoryFor(type))
       );
     }
     // Unreachable in practice (a card with no ready track has a positive remainder on

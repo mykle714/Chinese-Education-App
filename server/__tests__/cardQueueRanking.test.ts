@@ -98,6 +98,19 @@ describe('readyMarkTypes', () => {
       'production',
     ]);
   });
+
+  it('accepts a per-type category resolver, not just one category for every type', () => {
+    // The flp's own case: recognition marked correct 2 days ago (Comfortable window,
+    // 14 days — still resting), production marked correct 2 days ago too but under a
+    // WEAKER per-type category (Target, 24h — long since released). Passing a resolver
+    // lets each track answer against its own window instead of one shared category.
+    const history = {
+      recognition: [{ isCorrect: true, timestamp: new Date(NOW - 2 * DAY).toISOString() }],
+      production: [{ isCorrect: true, timestamp: new Date(NOW - 2 * DAY).toISOString() }],
+    } as TypedMarkHistory;
+    const categoryFor = (type: string) => (type === 'recognition' ? 'Comfortable' : 'Target');
+    expect(readyMarkTypes(history, NOW, FLP_TRACKS, categoryFor)).toEqual(['production']);
+  });
 });
 
 describe('queueArrivalAt', () => {
@@ -184,6 +197,29 @@ describe('rankCardQueue', () => {
     const card = { id: 'read-just-now', readingCategory: 'Target', typedMarkHistory: correctAgo('reading', 1 * MINUTE) };
     expect(rank([card], READING)).toEqual([]);
     expect(rank([card], FLP_TRACKS)).toEqual(['read-just-now']);
+  });
+
+  it("is eligible once EITHER mark type clears its OWN per-type window — the flp's rule", () => {
+    // Core category Comfortable (14-day window) would hold this card back on BOTH
+    // tracks for another 12 days. But production's own per-type category is weaker
+    // (Target, 24h) and cleared long ago, so a per-type `windowCategoryOf(card, type)`
+    // must surface the card as ready — this is what fixed the flp holding a card back
+    // past what the cdp's per-track cooldown display already showed as ready.
+    const card = {
+      id: 'either-track',
+      coreCategory: 'Comfortable',
+      typeCategory: { recognition: 'Comfortable', production: 'Target' },
+      typedMarkHistory: {
+        recognition: [{ isCorrect: true, timestamp: new Date(NOW - 2 * DAY).toISOString() }],
+        production: [{ isCorrect: true, timestamp: new Date(NOW - 2 * DAY).toISOString() }],
+      } as TypedMarkHistory,
+    };
+    const ranked = rankCardQueue([card], NOW, {
+      markTypes: FLP_TRACKS,
+      windowCategoryOf: (c: any, type: any) => c.typeCategory[type],
+    });
+    expect(ranked.map((r) => r.card.id)).toEqual(['either-track']);
+    expect(ranked[0].readyTypes).toEqual(['production']);
   });
 });
 

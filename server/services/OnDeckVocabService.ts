@@ -147,15 +147,18 @@ export class OnDeckVocabService {
   // shown can never disagree with the mark the client then writes.
   private static readonly DEFAULT_FOREIGN_TRACK: FlpForeignTrack = 'recognition';
 
-  // The flp's cooldown WINDOW is keyed on the card's OVERALL (core) category: the loop
-  // presents two mark types on one card, so a single whole-card window is the coherent
-  // choice. Games that exercise ONE track pass that track's per-type category instead.
+  // The flp's cooldown WINDOW is keyed PER MARK TYPE: recognition and production each
+  // cool down under their OWN per-type category (`computeTypeCategory`), the same one
+  // the cdp already displays under each track. A card is eligible the moment EITHER
+  // track clears its own window — it no longer waits for the whole-card core category's
+  // (generally longer) window, which used to hold a card back even after the cdp showed
+  // both tracks as ready. See docs/MASTERY_REWORK.md § Per-type cooldown.
   //
   // The cooldown table and the queue maths themselves live in services/cardQueueRanking.ts
   // — a pure module shared with Memory Map, which needs the identical discipline on the
   // reading track (docs/MEMORY_MAP_GAME.md § 13.1). They used to be private methods here.
-  private flpWindowCategory(card: VocabEntry): string | null | undefined {
-    return card.category;
+  private flpWindowCategory(card: VocabEntry, type: MarkType): string | null | undefined {
+    return computeTypeCategory(card.typedMarkHistory, type);
   }
 
   /**
@@ -191,7 +194,7 @@ export class OnDeckVocabService {
     // to steer which face it shows.
     return rankCardQueue(cards, now, {
       markTypes: flpMarkTypes(foreignTrack),
-      windowCategoryOf: (card) => this.flpWindowCategory(card),
+      windowCategoryOf: (card, type) => this.flpWindowCategory(card, type),
     }).map(({ card, readyTypes }) => ({ ...card, readyMarkTypes: readyTypes }));
   }
 
@@ -950,7 +953,7 @@ export class OnDeckVocabService {
           const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection);
           const resting = rankCardQueueCooled(cards, now, {
             markTypes: flpMarkTypes(foreignTrack),
-            windowCategoryOf: (card) => this.flpWindowCategory(card),
+            windowCategoryOf: (card, type) => this.flpWindowCategory(card, type),
           });
           if (resting.length > 0) return resting[0];
         }
@@ -1063,7 +1066,7 @@ export class OnDeckVocabService {
     const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds);
     return rankCardQueueCooled(candidates, now, {
       markTypes: flpMarkTypes(foreignTrack),
-      windowCategoryOf: (card) => this.flpWindowCategory(card),
+      windowCategoryOf: (card, type) => this.flpWindowCategory(card, type),
     }).slice(0, limit);
   }
 

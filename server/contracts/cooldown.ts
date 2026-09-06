@@ -89,12 +89,22 @@ export function isTypeOnCooldown(
   return cooldownRemainingMs(typedMarkHistory, type, now, windowCategory) > 0;
 }
 
-/** The subset of `types` whose per-type cooldown has elapsed. Empty ⇒ fully rested. */
+/**
+ * The subset of `types` whose per-type cooldown has elapsed. Empty ⇒ fully rested.
+ *
+ * `windowCategory` is either ONE category applied to every type (Memory Map: a single
+ * track, so there is only one category to apply) or a per-type resolver `(type) =>
+ * category` (the flp: recognition and production each cool down under their OWN
+ * per-type category — see `OnDeckVocabService.flpWindowCategory` — so a card with one
+ * track still resting and the other rested is correctly ready on the rested track alone).
+ */
 export function readyMarkTypes(
   typedMarkHistory: TypedMarkHistory | undefined,
   now: number,
   types: readonly MarkType[],
-  windowCategory: string | null | undefined
+  windowCategory: string | null | undefined | ((type: MarkType) => string | null | undefined)
 ): MarkType[] {
-  return types.filter((type) => !isTypeOnCooldown(typedMarkHistory, type, now, windowCategory));
+  const categoryFor =
+    typeof windowCategory === 'function' ? windowCategory : () => windowCategory;
+  return types.filter((type) => !isTypeOnCooldown(typedMarkHistory, type, now, categoryFor(type)));
 }

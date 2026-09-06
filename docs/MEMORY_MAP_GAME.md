@@ -1116,4 +1116,4 @@ the game.
 | Client API | `src/api/memoryMap.ts` — `fetchMemoryMap`, `graduateMemoryMapWord` |
 | Game | `src/games/memory-map/` — `MemoryMapPage.tsx`, `MemoryMapWorld.tsx`, `MemoryMapWord.tsx`, `MemoryMapPrompt.tsx`, `MemoryMapIslandCompass.tsx`, `MemoryMapRestartDialog.tsx`, `useMemoryMapRun.ts`, `useTapGesture.ts`, `promptQueue.ts`, `runStorage.ts`, `constants.ts`, `types.ts` |
 | Registry | `src/games/registry.ts` (the `memory-map` entry), `src/games/GamesPage.tsx` (the All-Cards-only gate), `src/constants.ts` (`MINUTE_POINTS_ELIGIBLE_PAGES`) |
-| Tests | `server/__tests__/memoryMapSpawn.test.ts` (45), `server/__tests__/cardQueueRanking.test.ts` (17), `src/__tests__/memoryMapPromptQueue.test.ts` (8) |
+| Tests | `server/__tests__/memoryMapSpawn.test.ts` (45), `server/__tests__/cardQueueRanking.test.ts` (26, shared with the flp), `src/__tests__/memoryMapPromptQueue.test.ts` (8) |

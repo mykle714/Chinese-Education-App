@@ -324,10 +324,18 @@ users join**:
 | Consumer | Code |
 |---|---|
 | Deck bucket counts | `OnDeckVocabService.getCategoryCounts` |
-| flp working-loop quotas + cooldown window | `OnDeckVocabService`, Section 6 |
+| flp working-loop quotas (which utcm bucket a card counts toward) | `OnDeckVocabService`, Section 6 |
 | Level estimate | `StarterPacksService.estimateLevel` |
 | Night Market community **Learning** feed (a word drops out when core is Mastered) | `CommunityLayoutDAL.ts`, [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md) |
 | The `category` field on the wire | `VocabEntryBase.category` |
+
+⚠️ **One deliberate exception: the flp's cooldown window.** Bucket *quotas* (which utcm
+tier a card counts toward, and therefore Review's Comfortable+Mastered eligibility) are
+still `core`. But the per-card, per-track cooldown check within that bucket is **not** —
+since the "either category" fix (§ 6), each of recognition/production clears its OWN
+per-type window independently, matching what the cdp already displays per track. A card
+can sit in the core-Comfortable bucket while its production track is individually off
+cooldown under a weaker per-type category, and Review will serve it on that track alone.
 
 The per-bar reads are the exceptions, and each one is a *display* of that bar:
 the Mastered collections (`masteredBarClause(bar)`), the per-bar Learn Now collections
@@ -669,7 +677,7 @@ window, and its colour is the band.
 
 After a **correct** mark, a card is put on a **cooldown** so it doesn't
 immediately reappear in the flp working loop. The window **duration** is keyed on
-the card's overall utcm category (weaker = shorter, so weak cards drill more):
+a utcm category (weaker = shorter, so weak cards drill more):
 
 | Category | Window |
 |---|---|
@@ -698,10 +706,23 @@ pinyin-off session is cooled on the reading track it actually writes to.
 
 ### Eligibility + face steering
 
+> STATUS: **CHANGED (2026-09-05, "either category")**. The window used to be a single
+> whole-card value — the core category — applied to both tracks alike. It is now
+> resolved **per track**: recognition and production each cool down under their OWN
+> per-type category (`computeTypeCategory`, Section 7), the same one the cdp already
+> displays under each bar. `OnDeckVocabService.flpWindowCategory(card, type)` is the
+> resolver, threaded through `cardQueueRanking`'s `windowCategoryOf` (which now takes
+> `(card, type)` instead of `(card)`). This closes a real inconsistency: the cdp could
+> show a track's cooldown as expired while the old whole-card core-category window still
+> withheld the card from Review. Bucket membership (which utcm quota / whether Review's
+> Comfortable+Mastered filter admits the card at all) is unchanged — only the per-track
+> cooldown check inside that bucket is now per-type.
+
 When a card is selected for the loop (both the **initial** `getDistributedWorkingLoop`
 build and the **correct-mark refill** `getNextLibraryCardWithFallback`), the
 service computes the subset of the session's two tracks (`flpMarkTypes(foreignTrack)`
-= {recognition **or** reading, production}) currently off cooldown:
+= {recognition **or** reading, production}) currently off cooldown, each against its
+own per-type category:
 
 - **≥1 ready** ⇒ the card is eligible; it's stamped with `readyMarkTypes` and the
   client's `sideOneForCard` **steers the shown face** to a ready type (only
@@ -777,18 +798,19 @@ same way, so a loop and its replacements cannot diverge.
 > track because an unmarked track reports 0, which would flatten nearly every card to
 > "ready". See [DECKS_FEATURE.md § "Sort by"](./DECKS_FEATURE.md).
 > `rankFlpEligible` is a thin wrapper that supplies the flp's two axes — mark types
-> `['recognition','production']`, cooldown window keyed on the card's **core** category —
-> and stamps `readyMarkTypes` onto the result. The extraction happened when Memory Map
+> `['recognition','production']`, cooldown window keyed on **each track's own per-type**
+> category (`flpWindowCategory`) — and stamps `readyMarkTypes` onto the result. The
+> extraction happened when Memory Map
 > needed the identical discipline on the **reading** track
 > ([MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 13.1); a second copy would have drifted.
-> Behaviour for the flp is unchanged, and is now covered by
+> The "either category" per-type window (above) is covered by
 > `server/__tests__/cardQueueRanking.test.ts`.
 
 The sort key is `flpReadyAt` = the card's **arrival time in the queue**, i.e. when it
 *first* became reviewable:
 
 ```
-readyAt(card) = MIN over its ready types of ( lastCorrect(type) + window(overall category) )
+readyAt(card) = MIN over its ready types of ( lastCorrect(type) + window(that type's own category) )
                   — skipping tracks with no correct mark
 
 ranked        = [ cards with history, by readyAt ASC ]   // longest-waiting first
@@ -844,10 +866,12 @@ dictionary has no more words to lend. See docs/PROVISIONAL_CARDS.md § 6.
 
 ### Notes / caveats
 
-- **flp only:** the window duration is a whole-card property (derived from the
-  overall utcm category), even though the timer is per-type. Games no longer share
-  this — they key the duration on the per-type category of the track they play
-  (Section 7).
+- **flp and games now agree:** both key the cooldown window's duration on the
+  **per-type** category of the track being timed (Section 7) — the flp resolves it
+  independently for recognition and production, games for the single track they play.
+  This was not always true: before the 2026-09-05 "either category" fix, the flp used
+  one whole-card core-category window for both tracks, which could hold a card back
+  from Review even after its cdp display showed a track's cooldown as expired.
 
 ### Games honor the same per-type cooldown
 
@@ -1027,12 +1051,16 @@ category expression joins `users` — bands are goal-independent across the boar
 | Word Search — Pinyin | `production` per-type category | `production` per-type category |
 | Word Search — No-Pinyin | `reading` per-type category | `reading` per-type category |
 | Speed Reading | `reading` per-type category | `reading` per-type category |
-| flp working loop | **core** band (unchanged) | **core** band (unchanged) |
+| flp working loop | **core** band (bucket/quota only) | each track's own per-type category (§ 6, "either category") |
 | decks page counts | **core** band (unchanged) | — |
 
-The flp keeps the whole-card band because it presents **two** mark types on one
-card — and those two are exactly the core bar's tracks, so "the flp's band" and "the
-core bar" are the same thing by construction.
+The flp still buckets on the whole-card core band — it presents **two** mark types on
+one card, and those two are exactly the core bar's tracks, so "which utcm quota a card
+counts toward" and "the core bar" are the same thing by construction. But the cooldown
+**window** is no longer core: since the 2026-09-05 fix (§ 6) each track's window comes
+from that track's own `computeTypeCategory`, so a card can be core-Comfortable (a long
+window) while its production track individually clears a shorter per-type window and
+becomes servable on that track alone.
 
 **The bucket is visible on the wire.** `fetchGameCandidates` stamps each returned
 row with `gameCategory` — the per-type bucket it was actually drawn from — which is

@@ -302,7 +302,7 @@ Current open runbooks:
 (gloss phase-2 half B, the runtime guard — **no migration**). **Deployed 2026-08-24** and
 verified on the infrastructure checks; it stays open only until someone opens a real game
 board and confirms it fills rather than coming back short, which is the one over-blocking
-symptom those checks cannot see. Prod is current through migration **161**.
+symptom those checks cannot see. Prod is current through migration **162**.
 
 **[docs/IW_SCENE_NOTES_DEPLOY_RUNBOOK.md](./docs/IW_SCENE_NOTES_DEPLOY_RUNBOOK.md)**
 (iw scene notes + scene events — migrations **160** and **161**, plus the advisory-validator
@@ -311,6 +311,15 @@ expand-only and went in one `migrate.sh` pass BEFORE the rebuild, as required �
 `ImmersiveWorldDAL` selects `iw_scenes."sceneNotes"` and `iw_scenes.events` by name. It stays
 open only until someone saves a scene carrying notes or an event, and confirms a half-built
 scene now saves with amber warnings rather than being refused.
+
+Deployed 2026-09-05 (second deploy of the day, **no runbook** — and that was correct):
+place interactions (**162**, `iw_scenes.interactions`). A single expand-only migration
+applied by `migrate.sh` before the container rebuild is the *standard* procedure this
+skill already describes, so it needs no temp runbook; write one only when the deploy
+cannot be `/deploy` as-is. The usual ordering reason applied — the shipped
+`ImmersiveWorldDAL` selects `iw_scenes.interactions` by name, so old schema + new code
+would 500 every scene read. Verified after applying: the column landed NOT NULL
+defaulting to `'{}'::jsonb` and prod's single existing scene backfilled in one pass.
 
 Deployed and retired on 2026-09-05 (runbook deleted): Immersive World scene authoring
 (**159**). Its one open condition — an author opening the editor and saving a scene — was

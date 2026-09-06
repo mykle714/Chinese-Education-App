@@ -2257,8 +2257,11 @@ feature is worth building.
 > § 14 Q7 deadline (first glyph, not `sayDone`) and the rung-1 model question (§ 5.5). Both
 > are written up where they were decided.
 
-**Kill condition:** talking to it isn't fun for 60 seconds — *or* the ~1.2 s to first glyph
-reads as lag even behind the walk-over animation (§ 6.4).
+**Kill condition:** the ~1.2 s to first glyph reads as lag even behind the walk-over
+animation (§ 6.4).
+
+> **The "isn't fun for 60 seconds" clause was removed (2026-09-06, by the author.)** It used
+> to lead this line. Phase 2's kill condition is now the objective one only.
 
 - **The world:** player avatar as a `PedestrianAgent` with `PlayerControlled` movement (§ 3);
   **tap-to-move** on `streetGraph.planPath` with padded hit areas and near-miss tolerance

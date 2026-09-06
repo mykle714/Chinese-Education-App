@@ -356,6 +356,45 @@ Two consequences worth knowing:
   answer is a dark top band on light pages, **not** a return to `default`, which
   cannot colour the band at all.
 
+### The bottom shortfall: `--app-height`
+
+`black-translucent` buys the top band at a price that is **not** an inset: iOS moves
+the standalone web view's **origin** to `y=0` but does **not** grow its **height**. The
+layout viewport stays `screen height − status bar height`, so `100dvh` computes short,
+and a strip that size at the **bottom** of the screen is never painted by the page at
+all — it shows through as black **on every page, whatever that page's ground is**. The
+symptom is diagnostic: the top band starts matching and an *identically sized* band
+appears at the base. (Found 2026-09-05, immediately after the status-bar fix landed.)
+
+This is **not** `SAFE_BOTTOM`. That inset describes a strip the page *does* paint and
+merely has to keep content out of; this is a strip the page cannot reach. They stack —
+the footer bar still grows by `SAFE_BOTTOM` *inside* the height restored here.
+
+`src/hooks/useAppHeight.ts` fixes it by **measurement, not by a constant**: in the iOS
+home-screen app only (`navigator.standalone === true`) it compares `window.innerHeight`
+to `window.screen.height` and, when the shortfall is real and under
+`MAX_SHORTFALL_PX` (100), publishes the screen height as `--app-height` on the root
+element. Adding a hard-coded status-bar height instead would need a number per
+notch/Dynamic-Island generation.
+
+**It is self-disabling.** In a Safari tab, on Android, on desktop, or on a future iOS
+that grows the web view, the two numbers agree, the variable is never set, and every
+consumer falls back to plain `100dvh` — so nothing outside the iOS home-screen app
+changes. Publishing a *pixel* height is safe for the same reason: it only ever fires in
+the standalone app, which has no URL bar, so the dynamic viewport is not dynamic there.
+Rotation and any other `resize` / `orientationchange` re-measure.
+
+| Consumer | Reads |
+|---|---|
+| `#root`, the shell scroller | `var(--app-height, 100dvh)` — `src/App.css` |
+| `FrameRoot`, the phone surface | `var(--app-height, 100dvh)` — `MobileDemoFrame` |
+| `PHONE_OVERLAY_SX`, the full-bleed sheet box | same expression as the frame — `phoneGeometry.ts` |
+| The plain (non-frame) shell | `minHeight: var(--app-height, 100dvh)` — `Layout` |
+
+The hook is called once in `App`, beside `useBlockZoom` — not in `MobileDemoFrame`,
+because `Layout`'s non-frame branch reads the same variable and the frame is unmounted
+on those routes.
+
 ### Who absorbs the insets
 
 `SAFE_TOP` / `SAFE_BOTTOM` (`src/theme/safeArea.ts`) are CSS **strings**
@@ -387,6 +426,7 @@ Today that is only the flp merge sheet's header.
 - `src/index.css` — shell `overflow: hidden`, global `user-select: none`, cpcd desktop-selectable exception
 - `src/theme/safeArea.ts` — `SAFE_TOP` / `SAFE_BOTTOM`, and `index.html`'s `viewport-fit=cover` + `apple-mobile-web-app-*` tags (see above)
 - `src/hooks/useThemeColor.ts` — `theme-color` claims for Safari tabs / Android Chrome only
+- `src/hooks/useAppHeight.ts` — `--app-height`, the measured full-screen height for the iOS home-screen app (see above)
 - `src/App.css` — `#root` shell scroller
 - `src/hooks/useBlockEdgeSwipe.ts` — edge-swipe-back blocker
 - `src/hooks/useScrollStretch.ts` — displacement-driven elastic card spacing (see above)

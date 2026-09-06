@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   editorDecorRotation, editorSurfaceAt, rollFloorSeed, DIRT_FLOOR,
   type BoardFloor, type DecorCategory, type EditorMasks,
@@ -64,17 +64,18 @@ export const decorCategoryFor = (tool: IWEditorTool): DecorCategory | null =>
 const DEFAULT_DIM = 12;
 
 /**
- * Key prefix for a named place that has been created but not yet put on the board.
+ * The cell a named place carries before it has been put on the board.
  *
- * `layout.locations` is keyed by cell, and an unplaced tag has no cell — so it is parked
- * under a key that CANNOT parse as one ("col,row" is digits and a comma). The validator
- * rejects any key it cannot parse, which is exactly right: an unplaced tag must not be
+ * `layout.locations` is keyed by TAG and valued by cell, so a tag can exist with no cell at
+ * all — it is stored as the empty string, which CANNOT parse as "col,row". The validator
+ * rejects any value it cannot parse, which is exactly right: an unplaced tag must not be
  * saveable, and this makes "you named a place but never put it anywhere" a save error
  * rather than a scene whose action walks nowhere.
  */
-export const UNPLACED_PREFIX = 'unplaced:';
+export const UNPLACED_CELL = '';
 
-export const isUnplacedLocationKey = (cell: string) => cell.startsWith(UNPLACED_PREFIX);
+/** True for a tag that has been dropped on a cell (as opposed to merely named). */
+export const isPlacedLocation = (cell: string) => /^\d+,\d+$/.test(cell);
 
 /** Rewrite every `walk_to_tag` step in one cast member from one tag name to another. */
 const renameTagInCast = (from: string, to: string) => (m: IWSceneCastMember): IWSceneCastMember => (
@@ -146,7 +147,12 @@ export interface IWSceneDraft {
   loadScene: (scene: IWScene) => void;
 
   /** Apply the active paint tool to one cell. `erase` removes that tool's own layer. */
-  paintCell: (col: number, row: number, tool: IWPaintTool, erase: boolean) => void;
+  /**
+   * Paint one cell. `variantIdx` is the caller's currently-selected decor variant (the one
+   * the ghost is previewing); it is ignored by the non-decor tools. The draft does NOT own
+   * it — see the comment on the decor branch below.
+   */
+  paintCell: (col: number, row: number, tool: IWPaintTool, erase: boolean, variantIdx: number) => void;
   /** Move the player start, the companion start, or a cast NPC to a cell. */
   placeAt: (tool: IWPlaceTool, col: number, row: number) => void;
 
@@ -163,14 +169,15 @@ export interface IWSceneDraft {
   updateCastMember: (npcId: string, patch: Partial<IWSceneCastMember>) => void;
 
   /**
-   * Named places (§ 14 Q42): "col,row" → tag. Held BESIDE the masks rather than inside
-   * them, because `EditorMasks` is the night market's type and knows nothing about tags —
-   * `toPayload` folds the two together into `layout`.
+   * Named places (§ 14 Q42): tag → "col,row" (or {@link UNPLACED_CELL} while unplaced).
+   * Held BESIDE the masks rather than inside them, because `EditorMasks` is the night
+   * market's type and knows nothing about tags — `toPayload` folds the two together into
+   * `layout`.
    */
   locations: Record<string, string>;
   /** Create a tag with no cell yet; the author then places it with the `loc:` tool. */
   addLocation: (tag: string) => void;
-  /** Rename every cell carrying `from`. Also rewrites the steps that walk to it. */
+  /** Rename a tag in place, keeping its cell. Also rewrites the steps that walk to it. */
   renameLocation: (from: string, to: string) => void;
   /** Forget a tag entirely, and any action step that walked to it. */
   removeLocation: (tag: string) => void;
@@ -191,10 +198,6 @@ export function useIWSceneDraft(): IWSceneDraft {
   const [locations, setLocations] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
 
-  // The decor variant index advances per placement so repeated clicks with one tool cycle
-  // its rotation — the same affordance the night market editor gives, minus the Space key.
-  const decorVariantRef = useRef(0);
-
   const update = useCallback((patch: Partial<IWScene>) => {
     setScene((prev) => ({ ...prev, ...patch }));
     setDirty(true);
@@ -207,7 +210,7 @@ export function useIWSceneDraft(): IWSceneDraft {
     setDirty(false);
   }, []);
 
-  const paintCell = useCallback((col: number, row: number, tool: IWPaintTool, erase: boolean) => {
+  const paintCell = useCallback((col: number, row: number, tool: IWPaintTool, erase: boolean, variantIdx: number) => {
     const k = `${col},${row}`;
     setDirty(true);
     setMasks((prev) => {
@@ -227,8 +230,13 @@ export function useIWSceneDraft(): IWSceneDraft {
         if (erase) { next.decor.delete(k); return next; }
         const rotation = editorDecorRotation(category, editorSurfaceAt(next, col, row));
         if (rotation.length === 0) return next;
-        next.decor.set(k, rotation[decorVariantRef.current % rotation.length]);
-        decorVariantRef.current += 1;
+        // Stamp the variant the CALLER has selected, and do not advance it. The index is a
+        // tool modifier owned by the palette (Space cycles it, the ghost previews it), exactly
+        // as in the night market editor's `paintCell` — the draft must not have a second,
+        // invisible copy of it. Auto-advancing here (the previous behaviour) made every click
+        // place a different prop, made a drag spray a row of mismatched ones, and left the
+        // ghost preview permanently lying about what a click would place.
+        next.decor.set(k, rotation[variantIdx % rotation.length]);
         // Nothing to clear: painting a common prop or a tree is ITSELF what makes the cell
         // impassable (`farmTerrain.isBlockingDecorUrl`). In the night market this branch also
         // had to strip the cell's walkable class; a scene has none to strip.
@@ -249,15 +257,11 @@ export function useIWSceneDraft(): IWSceneDraft {
     // `locations` instead of to the scene.
     if (tool.startsWith('loc:')) {
       const tag = tool.slice('loc:'.length);
-      setLocations((prev) => {
-        const next = { ...prev };
-        // Clicking with a tag ADDS a cell rather than moving the tag: several cells may
-        // share one name, and `walk_to_tag` heads for the nearest. Dropping the unplaced
-        // sentinel is what turns "named" into "placed".
-        delete next[`${UNPLACED_PREFIX}${tag}`];
-        next[`${col},${row}`] = tag;
-        return next;
-      });
+      // Clicking with a tag MOVES it: a tag names exactly one cell, so the click replaces
+      // whatever cell it named before (or the unplaced sentinel, which is what turns
+      // "named" into "placed"). Nothing is cleared from the target cell — several tags may
+      // legitimately name the same one.
+      setLocations((prev) => ({ ...prev, [tag]: `${col},${row}` }));
       return;
     }
 
@@ -338,33 +342,32 @@ export function useIWSceneDraft(): IWSceneDraft {
     const clean = tag.trim();
     if (!clean) return;
     setDirty(true);
-    // Uncelled tags live in the same record under a sentinel key, so one structure holds
+    // Uncelled tags live in the same record under a sentinel CELL, so one structure holds
     // both "named but unplaced" and "named and placed" without a second list to keep in sync.
-    setLocations((prev) => (Object.values(prev).includes(clean)
-      ? prev
-      : { ...prev, [`${UNPLACED_PREFIX}${clean}`]: clean }));
+    setLocations((prev) => (clean in prev ? prev : { ...prev, [clean]: UNPLACED_CELL }));
   }, []);
 
   const renameLocation = useCallback((from: string, to: string) => {
     const clean = to.trim();
     if (!clean || clean === from) return;
+    // Renaming onto a name that already exists would silently MERGE two places (one key,
+    // one cell), so it is refused outright — and refused HERE, before anything is touched,
+    // so the cast rewrite below can never repoint steps at somebody else's place.
+    if (clean in locations) return;
     setDirty(true);
+    // The tag IS the key, so a rename moves the entry — and `fromEntries` keeps its cell.
     setLocations((prev) => Object.fromEntries(
-      Object.entries(prev).map(([cell, tag]) => [
-        // An unplaced tag's key encodes its own name, so renaming has to move the key too.
-        cell.startsWith(UNPLACED_PREFIX) && tag === from ? `${UNPLACED_PREFIX}${clean}` : cell,
-        tag === from ? clean : tag,
-      ]),
+      Object.entries(prev).map(([tag, cell]) => [tag === from ? clean : tag, cell]),
     ));
     // The steps that walked there must follow the rename, or a save that was valid a
     // moment ago becomes invalid for a reason the author did not cause.
     setScene((prev) => ({ ...prev, npcCast: prev.npcCast.map(renameTagInCast(from, clean)) }));
-  }, []);
+  }, [locations]);
 
   const removeLocation = useCallback((tag: string) => {
     setDirty(true);
     setLocations((prev) => Object.fromEntries(
-      Object.entries(prev).filter(([, t]) => t !== tag),
+      Object.entries(prev).filter(([t]) => t !== tag),
     ));
     // Drop the steps that pointed at it, for the same reason removeCastMember drops the
     // conversation turns of a departed NPC: a dangling reference is a silent playback stall.

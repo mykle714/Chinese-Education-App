@@ -13,7 +13,7 @@ import {
   type IWActionStep, type IWActionStepKind,
   type IWNpcAction, type IWNpcOption, type IWScene,
 } from '../../../server/contracts/iw';
-import { isUnplacedLocationKey } from './useIWSceneDraft';
+import { isPlacedLocation } from './useIWSceneDraft';
 
 /**
  * IWSceneActionsPanel — named PLACES and per-NPC authored ACTIONS
@@ -41,7 +41,7 @@ import { isUnplacedLocationKey } from './useIWSceneDraft';
 export interface IWSceneActionsPanelProps {
   scene: IWScene;
   npcs: IWNpcOption[];
-  /** "col,row" → tag, plus `unplaced:` keys for named-but-unplaced tags. */
+  /** tag → "col,row", or the empty string for a named-but-unplaced tag. */
   locations: Record<string, string>;
   problemsByField: Map<string, string>;
   onAddLocation: (tag: string) => void;
@@ -75,13 +75,10 @@ export default function IWSceneActionsPanel({
   const npcName = (npcId: string) => npcs.find((n) => n.id === npcId)?.name ?? npcId;
   const [newTag, setNewTag] = useState('');
 
-  /** Each distinct tag with how many cells carry it — 0 means named but never placed. */
-  const tags = [...new Set(Object.values(locations))].sort().map((tag) => ({
-    tag,
-    cells: Object.entries(locations)
-      .filter(([cell, t]) => t === tag && !isUnplacedLocationKey(cell))
-      .map(([cell]) => cell),
-  }));
+  /** Every place, alphabetical. `cell` is empty for one that was named but never placed. */
+  const tags = Object.entries(locations)
+    .map(([tag, cell]) => ({ tag, cell: isPlacedLocation(cell) ? cell : '' }))
+    .sort((a, b) => (a.tag < b.tag ? -1 : 1));
 
   /** Who a `walk_to_actor` step may target: the two fixed bodies plus the cast. */
   const actorOptions = [
@@ -120,8 +117,9 @@ export default function IWSceneActionsPanel({
         <Typography variant="overline">Places</Typography>
         <Typography sx={{ fontSize: 12, opacity: 0.7, mb: 1 }}>
           Name a spot on the board so an action can send somebody to it. Name it here, then
-          tag cells with the matching map tool — several cells may share one name, and a walk
-          heads for the nearest.
+          click its cell with the matching map tool along the top of the board — each place
+          sits on exactly one cell, and clicking again moves it. Several places may name the
+          same cell.
         </Typography>
 
         <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
@@ -141,20 +139,21 @@ export default function IWSceneActionsPanel({
         )}
 
         <Stack spacing={1}>
-          {tags.map(({ tag, cells }) => (
+          {tags.map(({ tag, cell }) => (
             <Stack key={tag} direction="row" spacing={1} alignItems="center" className="iw-scene-actions-panel__place">
               <TextField
                 size="small" fullWidth
                 value={tag}
                 onChange={(e) => onRenameLocation(tag, e.target.value)}
                 // A rename rewrites every step that walked here, so an author can fix a typo
-                // without silently invalidating their own scripts.
-                helperText={cells.length === 0
-                  ? 'Named but not on the board yet — tag a cell with the map tool.'
-                  : `${cells.length} cell${cells.length === 1 ? '' : 's'}: ${cells.join(' · ')}`}
-                error={cells.length === 0}
+                // without silently invalidating their own scripts. It is refused when the new
+                // name is already taken — two places may not share one name.
+                helperText={cell
+                  ? `Cell ${cell}`
+                  : 'Named but not on the board yet — click its cell with the map tool.'}
+                error={!cell}
               />
-              <Tooltip title={`Tag cells as “${tag}”`}>
+              <Tooltip title={`Put “${tag}” on a cell`}>
                 <IconButton size="small" onClick={() => onPlaceLocation(tag)}>
                   <PlaceIcon fontSize="small" />
                 </IconButton>

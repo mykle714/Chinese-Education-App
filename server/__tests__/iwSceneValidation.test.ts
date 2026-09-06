@@ -120,7 +120,7 @@ describe('validateScene', () => {
     /** The worked example from the design: fetch water, deliver it, offer more. */
     function withBringWater(): IWScene {
       const scene = validScene();
-      scene.layout.locations = { '5,5': 'water station' };
+      scene.layout.locations = { 'water station': '5,5' };
       scene.npcCast[0].actions = [...scene.npcCast[0].actions!, {
         id: 'a1',
         name: 'bring water',
@@ -148,7 +148,7 @@ describe('validateScene', () => {
       const scene = withBringWater();
       scene.layout.locations = {};
       const messages = validateScene(scene).map((p) => p.message);
-      expect(messages.some((m) => m.includes('tagged "water station"'))).toBe(true);
+      expect(messages.some((m) => m.includes('no place named "water station"'))).toBe(true);
     });
 
     it('rejects a walk to somebody who is not in the scene', () => {
@@ -225,7 +225,7 @@ describe('validateScene', () => {
 
     it('rejects a place tagged off the board', () => {
       const scene = withBringWater();
-      scene.layout.locations!['99,0'] = 'far away';
+      scene.layout.locations!['far away'] = '99,0';
       const messages = validateScene(scene).map((p) => p.message);
       expect(messages.some((m) => m.includes('off the board'))).toBe(true);
     });

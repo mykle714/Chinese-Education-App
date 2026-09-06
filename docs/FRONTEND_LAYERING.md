@@ -151,6 +151,25 @@ It deliberately wraps the **global** `fetch`, which `utils/fetchInterceptor.ts` 
 already patched for transparent token refresh + retry on 401 — so one auth layer serves
 the whole app.
 
+> ⛔ **`withFallback` substitutes the MESSAGE and nothing else — never the error object.**
+> It exists only to replace `ApiError`'s generic `Request failed with status N` text with a
+> caller-supplied sentence, and it must rethrow an **`ApiError`** carrying the original
+> `status` and `response.data`.
+>
+> Until 2026-09-05 it threw `new Error(message)`, which silently dropped the status and the
+> entire parsed body — everything except the one `error` string. **The symptom appears far
+> from the cause**: the call site still gets an `Error` with a sensible `.message`, so
+> nothing looks broken until some caller reads a *structured* body. The iw scene editor was
+> the first to: `problemsFromError` (`features/immersiveworld/immersiveWorldSceneApi.ts`)
+> reads `response.data.problems`, so a refused save showed the server's one-line summary and
+> never the per-field list — defeating a validator deliberately written to return every
+> problem at once. An `err.status === 409` check would have failed identically and just as
+> quietly.
+>
+> The general rule: **a wrapper in the transport layer may enrich an error, never narrow
+> it.** Anything that re-throws must preserve the class and the payload, because the
+> transport cannot know which field a future caller will need.
+
 ### 3.1 A feature with more than one endpoint gets an API module
 
 `features/<x>/<x>Api.ts` (or `src/cardIcons/cardIconApi.ts`). One function per endpoint,

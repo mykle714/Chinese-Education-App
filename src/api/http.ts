@@ -151,12 +151,29 @@ export const apiDelete = <T>(path: string, body?: unknown, options?: RequestOpti
  * Exists because ~every hand-rolled call site used to spell this out as
  * `throw new Error(data?.error || 'Failed to ...')`. The server's own `error` text always
  * wins; the fallback is only the last resort. See docs/ARCHITECTURE_REVIEW.md finding 5.
+ *
+ * ⚠️ IT MUST RETHROW AN `ApiError`, NOT A PLAIN `Error`. Until 2026-09-05 this rewrote
+ * every failure into `new Error(message)`, which silently discarded `status` and
+ * `response.data` — everything in the error body except the one `error` string. Any caller
+ * that reads a STRUCTURED error body therefore got nothing, and the symptom was remote from
+ * the cause: the iw scene editor's `problemsFromError` reads `response.data.problems`, so a
+ * refused save reported the server's one-line summary ("This scene has problems…") and
+ * never the per-field list, defeating the whole point of validating every field at once.
+ * A `status` check (`err.status === 409`) would have failed the same way.
+ *
+ * Only the MESSAGE is substituted; the class, status and body are carried through, so
+ * `err instanceof Error` and `err.message` behave exactly as before for the callers that
+ * only want a string.
  */
 export async function withFallback<T>(call: Promise<T>, fallback: string): Promise<T> {
   try {
     return await call;
   } catch (err) {
     const message = err instanceof Error ? err.message : '';
-    throw new Error(!message || /^Request failed with status/.test(message) ? fallback : message);
+    const resolved = !message || /^Request failed with status/.test(message) ? fallback : message;
+    if (err instanceof ApiError) {
+      throw new ApiError(err.status, err.response.data, resolved);
+    }
+    throw new Error(resolved);
   }
 }

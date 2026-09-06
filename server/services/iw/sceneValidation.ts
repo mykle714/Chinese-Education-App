@@ -162,8 +162,8 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
   // computed from the draft rather than passed in, so a scene is always checked against its
   // own places and its own cast — never against a stale copy.
   const locationTags = new Set<string>(
-    Object.values(scene.layout?.locations ?? {})
-      .filter((t): t is string => typeof t === 'string' && !!t.trim())
+    Object.keys(scene.layout?.locations ?? {})
+      .filter((t) => !!t.trim())
       .map((t) => t.trim()),
   );
   const actorIds = new Set<string>([
@@ -341,31 +341,34 @@ function validateLayout(
     problems.push({ field: 'layout.decor', message: 'Decor must be an object keyed by cell' });
   }
 
-  // Named places (§ 14 Q42). Keyed by cell, so one cell has at most one tag; several cells
-  // may legitimately share a tag, and `walk_to_tag` heads for the nearest.
+  // Named places (§ 14 Q42). Keyed by TAG, so a tag names exactly one cell; several tags
+  // may legitimately name the SAME cell. A tag whose cell does not parse is one the author
+  // named but never placed — the empty-string sentinel the editor stores — and it is
+  // rejected here so a `walk_to_tag` can never point at a place with no destination.
   if (layout.locations && typeof layout.locations === 'object') {
     const entries = Object.entries(layout.locations);
     if (entries.length > IW_MAX_LOCATIONS) {
       problems.push({ field: 'layout.locations', message: `At most ${IW_MAX_LOCATIONS} named places` });
     }
-    for (const [cell, tag] of entries) {
-      const parsed = parseCellKey(cell);
-      if (!parsed) {
-        problems.push({ field: 'layout.locations', message: `"${cell}" is not a "col,row" cell` });
-      } else if (dimsOk && (parsed.col >= width || parsed.row >= height)) {
-        problems.push({ field: 'layout.locations', message: `The place at ${cell} is off the board` });
-      }
-      if (typeof tag !== 'string' || !tag.trim()) {
-        problems.push({ field: 'layout.locations', message: `The place at ${cell} has no name` });
+    for (const [tag, cell] of entries) {
+      const label = tag.trim() ? `“${tag}”` : 'A place';
+      if (!tag.trim()) {
+        problems.push({ field: 'layout.locations', message: 'A place has no name' });
       } else if (tag.length > IW_MAX_LOCATION_TAG_LENGTH) {
         problems.push({
           field: 'layout.locations',
           message: `Place names must be ≤ ${IW_MAX_LOCATION_TAG_LENGTH} characters`,
         });
       }
+      const parsed = typeof cell === 'string' ? parseCellKey(cell) : null;
+      if (!parsed) {
+        problems.push({ field: 'layout.locations', message: `${label} is not on the board yet` });
+      } else if (dimsOk && (parsed.col >= width || parsed.row >= height)) {
+        problems.push({ field: 'layout.locations', message: `${label} is off the board` });
+      }
     }
   } else if (layout.locations !== undefined) {
-    problems.push({ field: 'layout.locations', message: 'Places must be an object keyed by cell' });
+    problems.push({ field: 'layout.locations', message: 'Places must be an object keyed by place name' });
   }
 
   return problems;
@@ -456,7 +459,7 @@ function validateNpcActions(
           const tag = str((step as { tag?: unknown }).tag).trim();
           if (!tag) problems.push({ field: `${stepAt}.tag`, message: 'Pick a place to walk to' });
           else if (!tags.has(tag)) {
-            problems.push({ field: `${stepAt}.tag`, message: `No cell in this scene is tagged "${tag}"` });
+            problems.push({ field: `${stepAt}.tag`, message: `This scene has no place named "${tag}"` });
           }
           break;
         }

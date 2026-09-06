@@ -33,6 +33,14 @@
 //   • src/components/FooterPresenter.tsx — the bar's hide travel, which must clear the
 //     grown bar or it peeks back above the bottom edge.
 //
+// ⚠️ NOT THE ONLY THING black-translucent COSTS. It also leaves the standalone web
+// view's HEIGHT short by the status bar (the origin moves to y=0, the height does not
+// grow), so `100dvh` under-computes and an unpainted strip appears at the BOTTOM of the
+// screen on every page. That is a different problem with a different fix —
+// src/hooks/useAppHeight.ts and its `--app-height` variable — and it does NOT belong in
+// these insets: SAFE_BOTTOM is a strip the page paints and keeps content out of, the
+// shortfall is a strip the page cannot reach. They stack.
+//
 // Docs: docs/UX_AND_NAVIGATION.md § Safe areas and the iOS status bar.
 
 /** Height of the OS strip at the TOP of the screen (status bar / notch), or 0px. */

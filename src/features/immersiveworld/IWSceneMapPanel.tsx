@@ -36,8 +36,8 @@ import { decorCategoryFor, isPlaceTool, type IWEditorTool, type IWPaintTool, typ
  * THE PALETTE IS THE TEMPLATE EDITOR'S, DELIBERATELY. Same 40×40 `PaletteButton`, same
  * accent-tinted `toolGroupSx` groups, same corner hotkey badges, same one-palette-row-per-
  * KEYBOARD-row layout, and the SAME KEY for the same tool wherever both editors have it
- * (T/Y terrain · S/D/F decor · B eraser · ` grid). An author who has learned one board
- * learns nothing new here. See docs/NIGHT_MARKET_TEMPLATE_EDITOR.md for the rationale
+ * (T/Y terrain · S/D/F decor · B eraser · ` grid · SPACE to cycle the active decor tool's
+ * variant). An author who has learned one board learns nothing new here. See docs/NIGHT_MARKET_TEMPLATE_EDITOR.md for the rationale
  * behind that layout.
  *
  * WHAT IS DELIBERATELY MISSING vs the night market palette: **the two WALKABILITY tools and
@@ -57,14 +57,14 @@ import { decorCategoryFor, isPlaceTool, type IWEditorTool, type IWPaintTool, typ
 export interface IWSceneMapPanelProps {
   scene: IWScene;
   masks: EditorMasks;
-  /** Named places: "col,row" → tag (§ 14 Q42). Unplaced tags are skipped by the pins. */
+  /** Named places: tag → "col,row" (§ 14 Q42). Unplaced tags are skipped by the pins. */
   locations: Record<string, string>;
   npcs: IWNpcOption[];
   activeTool: IWEditorTool;
   onToolChange: (tool: IWEditorTool) => void;
   eraseMode: boolean;
   onEraseModeChange: (erase: boolean) => void;
-  onPaintCell: (col: number, row: number, tool: IWPaintTool, erase: boolean) => void;
+  onPaintCell: (col: number, row: number, tool: IWPaintTool, erase: boolean, variantIdx: number) => void;
   /** Only ever called with a PLACE tool — the panel resolves which kind a click is. */
   onPlaceAt: (tool: IWPlaceTool, col: number, row: number) => void;
   /**
@@ -155,7 +155,7 @@ const HOTKEY_TO_PAINT_TOOL: Record<string, IWPaintTool> = {
   s: 'familyDecor', d: 'commonDecor', f: 'treeDecor',
 };
 
-/** "col,row" → a cell, or null for anything else (notably an unplaced tag's sentinel key). */
+/** "col,row" → a cell, or null for anything else (notably an unplaced tag's empty cell). */
 function parseLocationCell(cell: string): { col: number; row: number } | null {
   const m = /^(\d+),(\d+)$/.exec(cell);
   return m ? { col: Number(m[1]), row: Number(m[2]) } : null;
@@ -194,6 +194,21 @@ export default function IWSceneMapPanel({
   // the draft, and a reload is entitled to forget them.
   const [showGrid, setShowGrid] = useState(true);
 
+  /**
+   * The selected DECOR variant, as an index into the active decor tool's rotation — cycled by
+   * Space, previewed as the viewer's ghost, and stamped verbatim by a click. Mirrors the night
+   * market editor's `decorVariantIdx` field for field, including the two rules that make the
+   * palette honest:
+   *   • ONE source of truth — the ghost and the stamp read the same number, so what you see
+   *     under the cursor is what a click places (the draft no longer keeps its own counter);
+   *   • a click does NOT advance it — placing the same prop twice, or dragging a row of one
+   *     prop, is the common act and must not require re-picking the variant each cell.
+   * It lives here rather than on the page because both consumers (the viewer's ghost and
+   * `onPaintCell`) are this panel; the page would only be a pass-through. It is not reset on
+   * a tool change — the modulo is applied per rotation, as in the nme.
+   */
+  const [decorVariantIdx, setDecorVariantIdx] = useState(0);
+
   const npcName = useCallback(
     (npcId: string) => npcs.find((n) => n.id === npcId)?.name ?? npcId,
     [npcs],
@@ -214,9 +229,9 @@ export default function IWSceneMapPanel({
     [npcs],
   );
 
-  /** Every distinct tag in the scene, placed or not — one palette button each. */
+  /** Every tag in the scene, placed or not — one palette button each, alphabetical. */
   const placeTags = useMemo(
-    () => [...new Set(Object.values(locations))].sort(),
+    () => Object.keys(locations).sort(),
     [locations],
   );
 
@@ -243,11 +258,12 @@ export default function IWSceneMapPanel({
       label: npcName(member.npcId), color: CAST_MARKER_COLOR,
       sprite: avatarFor(member.npcId, member.facing),
     })),
-    // Named places. `parseLocationCell` returns null for an unplaced tag's sentinel key,
+    // Named places. `parseLocationCell` returns null for an unplaced tag's empty cell,
     // which is how a named-but-unplaced place draws nothing rather than drawing at (0,0).
-    ...Object.entries(locations).flatMap(([cell, tag]): EditorMarker[] => {
+    // Two tags on one cell stack two pins there — that is legal, and seeing both is right.
+    ...Object.entries(locations).flatMap(([tag, cell]): EditorMarker[] => {
       const at = parseLocationCell(cell);
-      return at ? [{ col: at.col, row: at.row, label: String(tag), color: LOCATION_MARKER_COLOR }] : [];
+      return at ? [{ col: at.col, row: at.row, label: tag, color: LOCATION_MARKER_COLOR }] : [];
     }),
   ], [scene.playerStartCol, scene.playerStartRow, scene.playerStartFacing,
       scene.companionStartCol, scene.companionStartRow, scene.companionStartFacing,
@@ -260,8 +276,8 @@ export default function IWSceneMapPanel({
    */
   const handleCell = useCallback((col: number, row: number) => {
     if (isPlaceTool(activeTool)) onPlaceAt(activeTool, col, row);
-    else onPaintCell(col, row, activeTool, eraseMode);
-  }, [activeTool, eraseMode, onPaintCell, onPlaceAt]);
+    else onPaintCell(col, row, activeTool, eraseMode, decorVariantIdx);
+  }, [activeTool, eraseMode, decorVariantIdx, onPaintCell, onPlaceAt]);
 
   // ── Keyboard hotkeys ──────────────────────────────────────────────────────────────
   // Same contract as the night market editor's: bare keypresses only (never hijack a
@@ -286,7 +302,12 @@ export default function IWSceneMapPanel({
 
       // Space cycles the active decor tool's variant (the ghost previews it), and is
       // swallowed otherwise so it never scrolls the page or re-taps a focused button.
-      if (key === ' ') { e.preventDefault(); return; }
+      // The nme's other Space meaning — resizing the placeholder drop — has no iw equivalent.
+      if (key === ' ') {
+        if (decorCategoryFor(activeTool)) setDecorVariantIdx((i) => i + 1);
+        e.preventDefault();
+        return;
+      }
 
       // The FLOOR row. Not tools, so they are handled here beside the view toggles rather
       // than through HOTKEY_TO_PAINT_TOOL — pressing one must not change what a click does.
@@ -362,6 +383,7 @@ export default function IWSceneMapPanel({
         // A place tool must not preview a paint ghost, so the decor category is suppressed
         // for it (decorCategoryFor already returns null for every place tool).
         decorCategory={decorCategoryFor(activeTool)}
+        decorVariantIdx={decorVariantIdx}
         eraseMode={eraseMode && !isPlaceTool(activeTool)}
         onPaintCell={handleCell}
         markers={markers}
@@ -372,7 +394,33 @@ export default function IWSceneMapPanel({
         className="iw-scene-map-panel__palette"
         sx={{ position: 'absolute', top: 16, left: 16, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}
       >
-        {/* Row 1 — the only view toggle: gridlines. The walkability tints that used to sit
+        {/* Row 1 — PLACES, one button per named place, spanning the top of the board.
+            First because a place is what an authored action points at: the tags are the
+            scene's vocabulary, so they read before the paints rather than tucked in beside
+            the bodies. Their own group because a place is not a body — clicking with one
+            MOVES its single cell (a tag names exactly one cell), and several tags may name
+            the same cell. Tags are created in the content panel; this palette only places
+            the ones that exist, so the row is absent until the first one is named. */}
+        {placeTags.length > 0 && (
+          <Box className="iw-scene-tool-row iw-scene-tool-row-places" sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Box className="iw-scene-tool-group iw-scene-tool-group-places" sx={toolGroupSx(LOCATION_ACCENT)}>
+              {placeTags.map((tag) => (
+                <PaletteButton
+                  key={tag}
+                  className={`iw-scene-tool iw-scene-tool-loc-${tag.replace(/\s+/g, '-')}`}
+                  title={`Put “${tag}” on a cell — clicking again moves it`}
+                  active={activeTool === `loc:${tag}`}
+                  accent={LOCATION_ACCENT}
+                  onClick={() => onToolChange(`loc:${tag}`)}
+                >
+                  <PlaceIcon fontSize="small" />
+                </PaletteButton>
+              ))}
+            </Box>
+          </Box>
+        )}
+
+        {/* Row 2 — the only view toggle: gridlines. The walkability tints that used to sit
             beside it are gone with the masks they showed. */}
         <Box className="iw-scene-tool-row" sx={{ display: 'flex', gap: 1 }}>
           <Box className="iw-scene-tool-group iw-scene-tool-group-grid" sx={toolGroupSx()}>
@@ -388,15 +436,15 @@ export default function IWSceneMapPanel({
           </Box>
         </Box>
 
-        {/* Row 2 (top letter row) — terrain (T/Y). */}
+        {/* Row 3 (top letter row) — terrain (T/Y). */}
         <Box className="iw-scene-tool-row" sx={{ display: 'flex', gap: 1 }}>
           {renderToolGroup(TOOL_GROUPS[0])}
         </Box>
 
-        {/* Row 3 (home row) — decor tools (S/D/F). */}
+        {/* Row 4 (home row) — decor tools (S/D/F). */}
         {renderToolGroup(TOOL_GROUPS[1])}
 
-        {/* Row 4 — the FLOOR radio (A/G). Its own row because it is not a tool: it restyles
+        {/* Row 5 — the FLOOR radio (A/G). Its own row because it is not a tool: it restyles
             the whole board rather than arming the next click, so grouping it with the paints
             would misread. Wood pressed twice reshuffles the deck. */}
         <Box className="iw-scene-tool-row" sx={{ display: 'flex', gap: 1 }}>
@@ -417,7 +465,7 @@ export default function IWSceneMapPanel({
           </Box>
         </Box>
 
-        {/* Row 5 (bottom row) — the BODIES group, then the eraser modifier at B, in the
+        {/* Row 6 (bottom row) — the BODIES group, then the eraser modifier at B, in the
             same position the night market editor's eraser occupies. Placing a body is a
             different KIND of act from painting: a click sets where one person stands
             rather than adding to a layer, which is why it gets its own group. */}
@@ -457,26 +505,6 @@ export default function IWSceneMapPanel({
               </PaletteButton>
             ))}
           </Box>
-          {/* Places. Their own group because a place is not a body: clicking with one ADDS a
-              cell to the tag rather than moving anything, so several cells can share a name
-              and `walk_to_tag` heads for the nearest. Tags are created in the content panel
-              — this palette only places the ones that exist. */}
-          {placeTags.length > 0 && (
-            <Box className="iw-scene-tool-group iw-scene-tool-group-places" sx={toolGroupSx(LOCATION_ACCENT)}>
-              {placeTags.map((tag) => (
-                <PaletteButton
-                  key={tag}
-                  className={`iw-scene-tool iw-scene-tool-loc-${tag.replace(/\s+/g, '-')}`}
-                  title={`Tag a cell as “${tag}” — click as many cells as you like`}
-                  active={activeTool === `loc:${tag}`}
-                  accent={LOCATION_ACCENT}
-                  onClick={() => onToolChange(`loc:${tag}`)}
-                >
-                  <PlaceIcon fontSize="small" />
-                </PaletteButton>
-              ))}
-            </Box>
-          )}
           <Box className="iw-scene-tool-group iw-scene-tool-group-erase" sx={toolGroupSx(ERASE_ACCENT)}>
             {/* Disabled for the place tools — a body has no layer to erase, so the modifier
                 is meaningless there. PaletteButton's span wrapper keeps the tooltip alive. */}
@@ -503,6 +531,8 @@ export default function IWSceneMapPanel({
       >
         {isPlaceTool(activeTool)
           ? 'Click a cell to stand this body there.'
+          : decorCategoryFor(activeTool)
+          ? 'Drag to paint. Space cycles the prop under the cursor. The eraser removes the active tool’s own layer.'
           : 'Drag to paint. The eraser removes the active tool’s own layer.'}
       </Typography>
     </Box>

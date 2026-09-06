@@ -172,15 +172,21 @@ export interface IWSceneLayout {
   /** Per-cell decor: "col,row" → decor sprite stem. */
   decor: Record<string, string>;
   /**
-   * NAMED PLACES: "col,row" → an author-chosen tag ("water station", "counter").
+   * NAMED PLACES: an author-chosen tag ("water station", "counter") → the ONE cell it names,
+   * as "col,row".
    *
    * Lives in `layout` rather than in a column of its own because a tagged cell IS board
    * data — it is where something is, in the same sense that a decor cell is. It needs no
    * migration for the same reason.
    *
-   * Keyed by CELL, so one cell carries at most one tag. The reverse is deliberately not
-   * true: **several cells may share a tag**, and that is the useful case — tag three cells
-   * "counter" and `walk_to_tag` heads for whichever is nearest.
+   * Keyed by TAG (2026-09-05; it used to be keyed by cell), so **a tag resolves to exactly
+   * one cell** — `walk_to_tag` has a single destination and never has to pick a nearest.
+   * The reverse is deliberately still free: **several tags may name the same cell**, so a
+   * counter can be both "counter" and "where the tea is" without duplicating the spot.
+   *
+   * An author may name a place before putting it on the board; such a tag is stored with an
+   * EMPTY cell, which the validator rejects — "named but never placed" must not be saveable,
+   * because an action that walks there would walk nowhere.
    */
   locations?: Record<string, string>;
   /**

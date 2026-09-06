@@ -31,6 +31,9 @@ export const PHONE_OVERLAY_SX = {
     m: 0,
     width: { xs: "100vw", md: PHONE_WIDTH },
     maxWidth: "100vw",
-    height: { xs: "100dvh", md: "calc(100dvh - 48px)" },
-    maxHeight: { xs: "100dvh", md: PHONE_HEIGHT },
+    // Mirrors MobileDemoFrame's own height expression — including `--app-height`
+    // (src/hooks/useAppHeight.ts), or the overlay would stop short of the frame's
+    // bottom edge in the iOS home-screen app.
+    height: { xs: "var(--app-height, 100dvh)", md: "calc(var(--app-height, 100dvh) - 48px)" },
+    maxHeight: { xs: "var(--app-height, 100dvh)", md: PHONE_HEIGHT },
 } as const;

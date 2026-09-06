@@ -19,22 +19,50 @@ import { PHONE_WIDTH, PHONE_HEIGHT, PHONE_RADIUS, PHONE_SHADOW } from "./phoneGe
 // every converted page (docs/SHELF_REDESIGN.md A2c). Geometry constants live in ./phoneGeometry.
 
 const FrameRoot = styled(Box)(() => ({
-    // --paper. The frame is the ground everything else sits on; a page that wants
-    // to feel tinted tints an inner surface, never this.
-    backgroundColor: COLORS.background,
+    // --paper by default. The frame is the ground everything else sits on; a page
+    // that wants to feel tinted tints an inner surface, never this.
+    //
+    // `--surface-ground` is the exception, and it is not a page tinting the frame: it
+    // is set by src/hooks/useThemeColor.ts to whatever surface currently owns the
+    // screen (a game's flooded ground), so the strip below FrameViewport — which no
+    // page paints — matches the page instead of showing a paper band under it.
+    backgroundColor: `var(--surface-ground, ${COLORS.background})`,
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
     width: "100%",
-    // ⚠️ Exactly the dynamic viewport, never `window.screen.height`. The iOS
-    // home-screen app's web view is SHORTER than the screen (see src/theme/safeArea.ts
-    // § "the bottom shortfall"); a frame sized to the screen just runs its own bottom
-    // off the end of the web view.
-    height: "100dvh",
+    // THE PAINT HEIGHT. `--app-height` (src/hooks/useAppHeight.ts) is the SCREEN
+    // height in the iOS home-screen app, where the app extends under the status bar
+    // but the layout viewport iOS reports does not. The frame has to reach the band
+    // behind the clock or that band renders as a flat paper strip over a coloured
+    // page. Unset — and therefore exactly `100dvh` — in every browser tab.
+    //
+    // ⚠️ Nothing may be LAID OUT against this height; see FrameViewport below.
+    height: "var(--app-height, 100dvh)",
+}));
+
+// THE LAYOUT HEIGHT — the part of the frame that is actually on screen.
+//
+// Every page, and the footer bar, lives in here rather than in FrameRoot, because the
+// two heights differ in the iOS home-screen app: content laid out against the frame's
+// paint height runs past the visible area and is sliced (measured 2026-09-05 — the
+// game panel's "drop here to cancel match" row lost its bottom half). The strip
+// between this box and the frame's bottom edge is painted frame ground and holds
+// nothing.
+//
+// `--app-viewport` is unset everywhere but that one case, so this is normally `100%` —
+// the full frame, exactly as it was before the split.
+const FrameViewport = styled(Box)(() => ({
+    display: "flex",
+    flexDirection: "column",
+    width: "100%",
+    height: "var(--app-viewport, 100%)",
+    flexShrink: 0,
+    overflow: "hidden",
     // Positioning context for the footer bar, which FooterPresenter renders as a
     // sibling of the page: `position: absolute; bottom: 0` resolves against THIS
-    // box, so on desktop the bar stays inside the phone card instead of escaping
-    // to the viewport. (It said "pill" until A2a made the footer a flat bar.)
+    // box — not the frame — so the bar sits at the bottom of what is on screen, and
+    // on desktop stays inside the phone card instead of escaping to the viewport.
     position: "relative",
 }));
 
@@ -58,7 +86,7 @@ const MobileDemoFrame: React.FC<MobileDemoFrameProps> = ({ children, className }
               // Vertical margin breathes space above/below the phone card;
               // "auto" still centers it horizontally.
               margin: "24px auto",
-              // Override the base height: 100dvh. Subtracting the 48px of
+              // Override the base paint height. Subtracting the 48px of
               // top+bottom margin keeps the card strictly shorter than the
               // viewport, so the margin gap is always visible above AND below
               // instead of the full-height card pushing the bottom into scroll.
@@ -72,14 +100,16 @@ const MobileDemoFrame: React.FC<MobileDemoFrameProps> = ({ children, className }
 
     return (
         <FrameRoot className={className ?? "mobile-demo-frame"} sx={desktopSx}>
-            {/* The provider must wrap BOTH the pages and the footer: pages take
-                suppression holds (useHideFooter), FooterPresenter reads them. */}
-            <FooterVisibilityProvider>
-                {children}
-                {/* Single persistent footer pill, animated independently of the page
-                    slides (it lives outside the page surfaces). See FooterPresenter. */}
-                <FooterPresenter />
-            </FooterVisibilityProvider>
+            <FrameViewport className="mobile-demo-frame__viewport">
+                {/* The provider must wrap BOTH the pages and the footer: pages take
+                    suppression holds (useHideFooter), FooterPresenter reads them. */}
+                <FooterVisibilityProvider>
+                    {children}
+                    {/* Single persistent footer pill, animated independently of the page
+                        slides (it lives outside the page surfaces). See FooterPresenter. */}
+                    <FooterPresenter />
+                </FooterVisibilityProvider>
+            </FrameViewport>
         </FrameRoot>
     );
 };

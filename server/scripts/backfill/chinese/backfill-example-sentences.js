@@ -68,7 +68,7 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { ALLOWED_POS_TAGS } from '../shared/lib/posTags.js';
-import { initRunLog, cachedSystem } from '../run-log.js';
+import { initRunLog, cachedSystem, ORACLE_MODE } from '../run-log.js';
 import {
   getAllSubstrings,
   buildDictMap,
@@ -899,7 +899,9 @@ ${segLines}`;
 
 /**
  * Produce the segment-keyed render data for one finished sentence:
- *   { segments, segmentExceptions, partOfSpeechDict, senseDict, numberDict, tenseDict }.
+ *   { segments, segmentExceptions, audited, partOfSpeechDict, senseDict, numberDict, tenseDict }.
+ * `audited` says whether step 2 actually ran (it is skipped when the dictionary load
+ * failed), so the caller can print a denominator for the exception count.
  * `targetWord` is forced to win segmentation (prioritySegments) so it always surfaces
  * as its own segment, matching the read path.
  *
@@ -921,7 +923,9 @@ async function tagSentenceSegments(client, sentence, targetWord) {
   // Segmentation audit — see auditSegmentation. Skipped entirely when the dictionary
   // load failed (segments are then bare characters, which cannot be mis-glued).
   let segmentExceptions = [];
+  let audited = false;
   if (data) {
+    audited = true;
     segmentExceptions = await auditSegmentation(sentence, targetWord, segments);
     if (segmentExceptions.length > 0) {
       // Union, don't replace: the entry-wide matchException tokens still apply. A new
@@ -994,7 +998,7 @@ async function tagSentenceSegments(client, sentence, targetWord) {
     }
   }
 
-  return { segments, segmentExceptions, partOfSpeechDict, senseDict, numberDict, tenseDict };
+  return { segments, segmentExceptions, audited, partOfSpeechDict, senseDict, numberDict, tenseDict };
 }
 
 async function run() {
@@ -1032,8 +1036,20 @@ async function run() {
     let totalFlagged = 0;     // sentences the validator rejected
     let totalRepaired = 0;    // flagged sentences successfully replaced by Opus
     let totalStillFlagged = 0; // Opus replacements that still tripped a rule (kept anyway)
-    let totalSegmentExceptions = 0; // segments the audit pass split apart (across all sentences)
+    // Segmentation-audit tallies. All three are counted ONLY for rows whose UPDATE
+    // succeeded, so a row that throws after tagging cannot inflate them.
+    //
+    // ⚠ These count the exceptions STORED by this process, which is not the same as
+    // "exceptions discovered by this pass" when the script runs under oracle apply.
+    // The oracle keys answers by a content hash of (model, system, messages), so a
+    // sentence that regenerates identically on a later convergence link replays the
+    // audit answer authored for it earlier — flags and all — without the operator
+    // authoring anything new. A converging batch therefore reports a CUMULATIVE
+    // figure: 0 newly-authored audit prompts can still print a non-zero count.
+    // `sentencesAudited` is the denominator that makes the number readable.
+    let totalSegmentExceptions = 0;  // exception tokens stored across all sentences
     let sentencesWithExceptions = 0; // how many sentences carried at least one
+    let sentencesAudited = 0;        // sentences the audit pass actually ran on
 
     for (const row of entries) {
       try {
@@ -1069,8 +1085,12 @@ async function run() {
         // generation-time coverage signal only — drop it before storing (the pass
         // folds it into partOfSpeechDict[targetWord]).
         const taggedSentences = [];
+        // Per-row tallies, folded into the totals only once the UPDATE below lands.
+        let rowSegmentExceptions = 0;
+        let rowSentencesWithExceptions = 0;
+        let rowSentencesAudited = 0;
         for (const s of finalSentences) {
-          const { segments, segmentExceptions, partOfSpeechDict, senseDict, numberDict, tenseDict } =
+          const { segments, segmentExceptions, audited, partOfSpeechDict, senseDict, numberDict, tenseDict } =
             await tagSentenceSegments(client, s, row.word1);
           const { targetPos, ...rest } = s;
           // `segmentExceptions` is omitted when empty (the common case) so the stored
@@ -1084,9 +1104,10 @@ async function run() {
             numberDict,
             tenseDict,
           });
+          if (audited) rowSentencesAudited++;
           if (segmentExceptions.length > 0) {
-            totalSegmentExceptions += segmentExceptions.length;
-            sentencesWithExceptions++;
+            rowSegmentExceptions += segmentExceptions.length;
+            rowSentencesWithExceptions++;
           }
         }
 
@@ -1097,6 +1118,10 @@ async function run() {
         await stampEntries(client, 'dictionaryentries_zh', row.id);
 
         updated++;
+        // Only now: the row is written, so its audit tallies describe stored state.
+        totalSegmentExceptions += rowSegmentExceptions;
+        sentencesWithExceptions += rowSentencesWithExceptions;
+        sentencesAudited += rowSentencesAudited;
 
         if (isSpotCheck) {
           // Print full sentence details in spot-check mode
@@ -1141,8 +1166,15 @@ async function run() {
     console.log(`Flagged sentences : ${totalFlagged}`);
     console.log(`Repaired by Opus  : ${totalRepaired}`);
     if (totalStillFlagged) console.log(`Still flagged*    : ${totalStillFlagged} (Opus version kept anyway)`);
-    if (totalSegmentExceptions) {
-      console.log(`Segments split    : ${totalSegmentExceptions} by the audit pass, across ${sentencesWithExceptions} sentence(s)`);
+    if (sentencesAudited) {
+      // Deliberately verbose: the bare count was repeatedly misread as "flags this
+      // pass received" (see the tally comment above — under oracle apply it is a
+      // cumulative, replay-inclusive figure).
+      console.log(`Segment exceptions: ${totalSegmentExceptions} token(s) stored on ${sentencesWithExceptions} of ${sentencesAudited} audited sentence(s)`);
+      if (ORACLE_MODE === 'apply') {
+        console.log('                    (cumulative for this batch — identical regenerated sentences replay');
+        console.log('                     audit answers authored on earlier links; not "found this pass")');
+      }
     }
     console.log('='.repeat(60) + '\n');
   } finally {

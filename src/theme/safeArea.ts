@@ -33,23 +33,24 @@
 //   • src/components/FooterPresenter.tsx — the bar's hide travel, which must clear the
 //     grown bar or it peeks back above the bottom edge.
 //
-// ⚠️ THE BOTTOM SHORTFALL — NOT THE ONLY THING black-translucent COSTS, AND NOT
-// FIXABLE FROM CSS. It also leaves the standalone WEB VIEW ITSELF short by the status
-// bar: the origin moves to y=0 but the height does not grow, so the web view is
-// `screen − status bar` tall and a strip that size at the BOTTOM of the screen belongs
-// to no one. It renders as the window's flat #FFFFFF backdrop on every page, whatever
-// the page's ground.
+// ⚠️ THE PAINT-VS-LAYOUT GAP — NOT THE ONLY THING black-translucent COSTS, AND NOT
+// THESE INSETS' JOB. It also makes the app taller than the layout viewport iOS
+// reports: the web view extends over the whole screen, but `100dvh` still computes
+// `screen − status bar`. That gap has to be handled as TWO numbers, and both
+// single-number attempts on 2026-09-05 were half right —
 //
-// ⛔ DO NOT try to fix it by growing the shell to `window.screen.height`. That was
-// tried on 2026-09-05 (`useAppHeight` / `--app-height`, reverted the same day) and it
-// makes things strictly worse: the missing pixels are OUTSIDE the web view, so a taller
-// layout cannot paint them — it only pushes the last ~60pt of every page past the web
-// view's edge, where it is clipped. Measured off a Bubble Match screenshot on a 393×852
-// device: page content ran to 791pt, the white strip was 61pt, and the game panel's
-// bottom hint was cut in half. The white strip stayed exactly where it was.
+//   `100dvh` everywhere      → nothing clips, but the shell never reaches the band
+//                              behind the clock, which then renders as a flat paper
+//                              strip over a crimson game page.
+//   `window.screen.height`   → the band matches, but the last ~60pt of every page is
+//     everywhere                laid out past the visible area and sliced.
 //
-// This is distinct from SAFE_BOTTOM, which describes a strip the page DOES paint and
-// merely has to keep content out of. They stack.
+// The split lives in src/hooks/useAppHeight.ts: `--app-height` is what the shell
+// PAINTS, `--app-viewport` is what it may LAY OUT, and MobileDemoFrame's FrameViewport
+// is the boundary between them.
+//
+// This is distinct from SAFE_TOP / SAFE_BOTTOM, which describe strips the page DOES
+// paint and merely has to keep content out of. They stack.
 //
 // Docs: docs/UX_AND_NAVIGATION.md § Safe areas and the iOS status bar.
 

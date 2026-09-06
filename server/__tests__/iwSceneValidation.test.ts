@@ -550,6 +550,36 @@ describe('validateScene interactions (migration 162)', () => {
 describe('validateScene selectability (2026-09-06)', () => {
   const actionAt = 'npcCast[0].actions[0]';
 
+  describe('a choosable title collides with an action name', () => {
+    // Both are offered to the SAME NPC as one flat list of names, and the model answers with
+    // a name — so two identical strings are a choice the engine cannot read. `turnOffers`
+    // resolves it in the action's favour, meaning the conversation silently never plays.
+    it('flags a conversation titled the same as one of its first speaker\'s actions', () => {
+      const scene = validScene();
+      const actionName = scene.npcCast[0].actions![0].name;
+      const conv = scene.conversations[0];
+      conv.selectable = true;
+      conv.turns[0].npcId = scene.npcCast[0].npcId;
+      conv.title = actionName;
+      expect(validateScene(scene)).toContainEqual(expect.objectContaining({
+        field: 'conversations[0].title',
+        message: expect.stringContaining('the action wins'),
+      }));
+    });
+
+    it('allows the same title when a DIFFERENT NPC owns the action', () => {
+      // The offer list is per NPC, so two casts may reuse a name without ambiguity.
+      const scene = validScene();
+      const conv = scene.conversations[0];
+      conv.selectable = true;
+      conv.title = scene.npcCast[0].actions![0].name;
+      conv.turns[0].npcId = 'he_laoshi';
+      expect(validateScene(scene)).not.toContainEqual(expect.objectContaining({
+        message: expect.stringContaining('the action wins'),
+      }));
+    });
+  });
+
   describe('unlockedBy — dependent actions and conversations', () => {
     it('accepts a gate naming a complication or an event', () => {
       const scene = validScene();

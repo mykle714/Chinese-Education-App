@@ -35,6 +35,11 @@ import { COLORS } from "../theme/colors";
  * The `<meta>` tag itself is declared in index.html with the paper default; this hook
  * only ever rewrites its `content`, and creates the tag only if it has gone missing.
  *
+ * A claim writes THREE places, all describing the same ground: the meta tag (browser
+ * chrome), `documentElement`'s background (Safari's overscroll area), and the
+ * `--surface-ground` variable (MobileDemoFrame's frame ground, which shows in the
+ * paint-vs-layout gap of the iOS home-screen app — src/hooks/useAppHeight.ts).
+ *
  * Layer: presentational (a document-level side effect, like `usePageTitle`).
  * Callers: `GameSurfaceProvider` (src/games/shared/GameSurface.tsx) — every game page
  * gets this for free through `GameLeafPage`, which is what makes the header and the
@@ -66,6 +71,15 @@ function applyTopClaim(): void {
         document.head.appendChild(meta);
     }
     meta.content = color;
+
+    // The frame's own ground follows the claim too. MobileDemoFrame paints a strip
+    // the page does not fill (the iOS home-screen app's paint-vs-layout gap — see
+    // src/hooks/useAppHeight.ts), and leaving that strip paper would simply move the
+    // colour mismatch from the top of the screen to the bottom. Published as a CSS
+    // variable rather than pushed through React state because the frame is a styled
+    // component far above every claimant, and this way a claim repaints it without
+    // re-rendering the tree.
+    document.documentElement.style.setProperty("--surface-ground", color);
 
     // Safari also uses the DOCUMENT background for the overscroll/rubber-band area at
     // the top and bottom edges, which `theme-color` does not cover. Painting the root

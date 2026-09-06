@@ -50,7 +50,8 @@ export type EipTab = EntryEipTab | CompareEipTab;
 const COMPARE_TAB_LABEL = "Compare";
 
 interface UseEipTabsOptions {
-    // Ref to the EipTabStripContainer. Its clientWidth is the budget for fitting tabs.
+    // Ref to the EipTabStripContainer. Its own content box — NOT the viewport — is the
+    // budget a new tab must fit inside; see readStripGeometry.
     stripRef: RefObject<HTMLDivElement | null>;
     // Language every drill-in lookup is scoped to. Optional: omitted, the server falls
     // back to the account's selectedLanguage (the flp's behavior, unchanged). scp passes
@@ -67,25 +68,104 @@ interface UseEipTabsOptions {
 // random color; we try to avoid colors already in use before falling back.
 const TONE_COLOR_VALUES = Object.values(TONE_COLORS);
 
-// Strip horizontal padding + gap between tabs, mirroring EipTabStripContainer / EipEntryTab.
-const STRIP_HORIZONTAL_PADDING = 14 * 2;
-const TAB_GAP = 4;
+// FALLBACKS ONLY. The fit check reads the strip's real geometry out of the DOM
+// (readStripGeometry); these are used when that geometry is unreadable — today only the
+// pre-tabbed-mode strip, whose padding is collapsed to 0 while the trail is hidden but
+// will be 16px a side the moment a 2nd pill mounts. Keep them in sync with
+// EipTabStripContainer's padding and the tab list's `gap` in EipTabStrip.
+const STRIP_HORIZONTAL_PADDING = 16 * 2;
+const TAB_GAP = 7;
+
+// Sub-pixel safety margin, in px. Fractional label widths mean a projection that lands
+// exactly on the budget can still paint a hairline past the container's content box and
+// clip the last pill's rounded edge, so a tab must clear the budget by this much.
+const FIT_EPSILON = 1;
 
 // Measures the rendered width of a tab pill for a given label, off-DOM. Mirrors
-// EipEntryTab's font/padding/border so the result matches what will be painted.
+// EipEntryTab's font/padding so the result matches what will be painted — 700 weight,
+// 11px horizontal padding, the 0.01em tracking, and NO border (the pill has none; the
+// 2px bottom border this used to declare was copied from the content tabs and, being
+// horizontal, never affected width anyway).
+//
+// ⚠️ Appended to document.body, so it only sees a `:root`-level `--cjk-font` override
+// (see FONTS.cjk). That is why the fit check prefers the widths of the pills actually in
+// the DOM and treats this as the estimate for the not-yet-mounted candidate.
 function measureTabWidth(label: string): number {
     const el = document.createElement("span");
     el.style.cssText =
         "position:absolute;left:-9999px;top:-9999px;visibility:hidden;" +
         `font-family:${FONTS.cjk};` +
-        "font-size:14px;font-weight:600;line-height:1.1;" +
-        "padding:6px 12px;border-bottom:2px solid transparent;" +
+        "font-size:14px;font-weight:700;line-height:1.1;letter-spacing:0.01em;" +
+        "padding:6px 11px;" +
         "white-space:nowrap;display:inline-block;box-sizing:border-box;";
     el.textContent = label;
     document.body.appendChild(el);
     const w = el.getBoundingClientRect().width;
     document.body.removeChild(el);
     return w;
+}
+
+// What the trail actually has to spend, read off the live strip.
+interface StripGeometry {
+    // Content-box width of the row the pills lay out in — the CONTAINER, never the
+    // viewport. Padding is already subtracted.
+    available: number;
+    // Flex gap between two adjacent pills, from computed style.
+    gap: number;
+    // Painted widths of the pills currently mounted, in tab order; null when the pill
+    // row is not rendered yet (trail hidden at one tab) and only cached estimates exist.
+    pillWidths: number[] | null;
+}
+
+// Reads the trail's budget from the DOM rather than from constants, so the gate can
+// never drift out of sync with the stylesheet (it had: 14px padding vs the strip's 16px,
+// a 4px gap vs the strip's 7px, and a 600-weight measurement of a 700-weight pill — each
+// one an under-count, which is what let a pill hang off the edge before the gate fired).
+// Returns null when nothing measurable is mounted; the caller then allows the tab rather
+// than rejecting every tab forever.
+function readStripGeometry(strip: HTMLElement | null): StripGeometry | null {
+    if (!strip) return null;
+
+    // Preferred path: the pill row itself. Its clientWidth IS the space pills may occupy
+    // (it carries no padding of its own), and its children are the painted pills.
+    const list = strip.querySelector<HTMLElement>(".eip-entry-tab-list");
+    if (list && list.clientWidth > 0) {
+        const gap = parseFloat(getComputedStyle(list).columnGap) || TAB_GAP;
+        const pillWidths = Array.from(list.children).map(
+            child => (child as HTMLElement).getBoundingClientRect().width
+        );
+        return { available: list.clientWidth, gap, pillWidths };
+    }
+
+    // Fallback: the strip before tabbed mode, where the pill row is not rendered.
+    const style = getComputedStyle(strip);
+    const measuredPadding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+    // The hidden strip is explicitly padded to 0 (EipTabStrip's `sx`), so a 0 here is the
+    // collapsed state, not a genuinely edge-to-edge row — charge the visible padding.
+    const padding = measuredPadding > 0 ? measuredPadding : STRIP_HORIZONTAL_PADDING;
+    const available = strip.clientWidth - padding;
+    if (available <= 0) return null;
+    return { available, gap: parseFloat(style.columnGap) || TAB_GAP, pillWidths: null };
+}
+
+// True when one more pill labelled `label` would fit ENTIRELY inside the strip. A tab
+// that would be even partly clipped is rejected — the trail never shows a cut-off pill,
+// because a half-pill reads as "scroll for more" on a row that does not scroll.
+function fitsNewTab(strip: HTMLElement | null, tabs: EipTab[], label: string): boolean {
+    const geo = readStripGeometry(strip);
+    if (!geo) return true; // unmeasurable — don't gate on a number we don't have
+
+    // Prefer painted widths, but never trust one that is SMALLER than the cached
+    // estimate: a pill mounted moments ago is mid-entrance (the eipPillIn keyframe
+    // animates max-width up from 0), and measuring it there would under-count the row.
+    const usePainted = geo.pillWidths !== null && geo.pillWidths.length === tabs.length;
+    const existingTotal = tabs.reduce(
+        (sum, t, i) => sum + (usePainted ? Math.max(geo.pillWidths![i], t.measuredWidth) : t.measuredWidth),
+        0
+    );
+    const gapsTotal = tabs.length * geo.gap; // n existing + 1 new ⇒ n gaps between them
+    const projected = existingTotal + gapsTotal + measureTabWidth(label);
+    return projected <= geo.available - FIT_EPSILON;
 }
 
 // Picks a tone color not already used by any current tab. Falls back to any
@@ -160,16 +240,9 @@ export function useEipTabs({ stripRef, language }: UseEipTabsOptions) {
             }
 
             // Fit-check before pushing, same budget math as openForEntryKey.
-            const stripWidth = stripRef.current?.clientWidth ?? 0;
-            if (stripWidth > 0) {
-                const candidateWidth = measureTabWidth(COMPARE_TAB_LABEL);
-                const existingTotal = prev.reduce((sum, t) => sum + t.measuredWidth, 0);
-                const gapsTotal = prev.length * TAB_GAP;
-                const projected = existingTotal + candidateWidth + gapsTotal + STRIP_HORIZONTAL_PADDING;
-                if (projected > stripWidth) {
-                    setOverflowSignal(n => n + 1);
-                    return prev;
-                }
+            if (!fitsNewTab(stripRef.current, prev, COMPARE_TAB_LABEL)) {
+                setOverflowSignal(n => n + 1);
+                return prev;
             }
 
             const usedColors = new Set(prev.map(t => t.toneColor));
@@ -203,17 +276,10 @@ export function useEipTabs({ stripRef, language }: UseEipTabsOptions) {
         }
 
         // Fit-check before fetching — cheap and avoids a wasted network call if
-        // the strip is already full. clientWidth is read live each call.
-        const stripWidth = stripRef.current?.clientWidth ?? 0;
-        if (stripWidth > 0) {
-            const candidateWidth = measureTabWidth(entryKey);
-            const existingTotal = tabs.reduce((sum, t) => sum + t.measuredWidth, 0);
-            const gapsTotal = tabs.length * TAB_GAP; // n existing + 1 new ⇒ n gaps between them
-            const projected = existingTotal + candidateWidth + gapsTotal + STRIP_HORIZONTAL_PADDING;
-            if (projected > stripWidth) {
-                setOverflowSignal(n => n + 1);
-                return;
-            }
+        // the strip is already full. Geometry is read live each call.
+        if (!fitsNewTab(stripRef.current, tabs, entryKey)) {
+            setOverflowSignal(n => n + 1);
+            return;
         }
 
         latestRequestRef.current = entryKey;

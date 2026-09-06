@@ -144,6 +144,30 @@ export const IW_MAX_POPUP_CAPTION_LENGTH = 200;
  */
 export const IW_POPUP_IMAGE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
+/**
+ * The emote channel of an NPC's reply (§ 5.1 line 3). Drives a sprite; NEVER rendered as text.
+ *
+ * ⚠️ SINGLE-SOURCED WITH THE BENCH. `server/scripts/bench/npc-latency/scenario.js` →
+ * `EMOTE_KINDS` holds the same six, and its prompt contract lists them to the model. The
+ * bench must grade the same production the game ships (`npcPrompt.ts`'s header), so if this
+ * list changes, that one changes with it or a passing sweep proves nothing.
+ *
+ * Six rather than a rich set, on purpose: the emote is what makes a beginner-legible
+ * judgement visible (§ 9a) when the Chinese itself is too subtle to read, and a learner
+ * cannot distinguish twenty sprites at a glance.
+ */
+export const IW_EMOTES = ['neutral', 'curious', 'pleased', 'confused', 'impatient', 'amused'] as const;
+export type IWEmote = (typeof IW_EMOTES)[number];
+
+/** The emote a reply degrades to when the model supplied none the parser could read. */
+export const IW_DEFAULT_EMOTE: IWEmote = 'neutral';
+
+/**
+ * What line 2 says when the NPC does nothing — and the value the parser degrades an
+ * unreadable action line to. Mirrors `NO_ACTION` in the bench's `scenario.js`.
+ */
+export const IW_NO_ACTION = 'none';
+
 /** The four facings a placed body can be authored with. Mirrors the engine's `Direction`. */
 export const IW_FACINGS = ['n', 'e', 's', 'w'] as const;
 export type IWFacing = (typeof IW_FACINGS)[number];

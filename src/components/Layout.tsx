@@ -69,7 +69,10 @@ function Layout({ children }: LayoutProps) {
             className="layout-main-content"
             component="main"
             sx={{
-                minHeight: "100dvh",
+                // Paint height, not layout height — see src/hooks/useAppHeight.ts. This
+                // is the plain shell, whose content flows, so a box taller than the
+                // visible area cannot clip anything the way the frame's would.
+                minHeight: "var(--app-height, 100dvh)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "stretch",

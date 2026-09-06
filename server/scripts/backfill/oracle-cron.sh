@@ -16,6 +16,13 @@
 # overruns its tick simply causes the next tick to exit 0 without starting a second
 # session — the lock, not the schedule, is what guarantees one worker per shard.
 #
+# Note the throughput cost: a dropped tick is DROPPED, not queued, so a round running
+# 61 minutes costs the whole following hour. Solo throughput is therefore capped at
+# one round per hour and falls off sharply once the median round approaches 60 min.
+# Measure it before assuming the account budget is what limits enrichment: sum the
+# start/finish pairs in the run log for a duty cycle, and compare against `seven_day`
+# utilization at the end of the week (see .claude/commands/oracle-backfill.md §6b).
+#
 # PARALLEL WORKERS: set SHARD=k/N. Each worker then gets
 #   - its own lock file          (never two sessions on the same shard)
 #   - its own oracle scratch files (BACKFILL_ORACLE_PROMPTS/_ANSWERS — run-log.js
@@ -407,7 +414,11 @@ Autonomous cron round ($SLUG). $SHARD_INSTRUCTION
 ${LANG_INSTRUCTION:+$LANG_INSTRUCTION
 }Write any parked-run state to $ORACLE_RESUME_FILE and run notes to $ORACLE_NOTES_FILE
 instead of the skill's default paths — a parallel worker owns those.
-Stop cleanly at the end of one round; do not start a second." \
+Stop cleanly at the end of one round; do not start a second. A round ends ONLY where
+skill section 6c says it does: the planner re-run over this batch's own word list
+returns 0 prompts across 0 scripts, or a budget cap parked you (write the resume note
+first), or a section 6 guardrail tripped. A clean 'Updated: N' apply is not
+convergence — it usually creates the next link's work." \
   --permission-mode bypassPermissions \
   >> "$RUN_LOG" 2>&1 || RC=$?
 RC=${RC:-0}

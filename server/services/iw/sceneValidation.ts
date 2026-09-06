@@ -418,8 +418,22 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
   // exchange between him and an NPC is one the learner can walk up on like any other.
   const speakerIds = new Set<string>(seenNpcIds);
   if (companionId) speakerIds.add(companionId);
+  // Action NAMES, per NPC — a selectable conversation's title is offered beside them and
+  // must not collide (see `turnOffers.buildTurnOffers`, which resolves a tie in the action's
+  // favour rather than coin-flipping in front of a player).
+  const actionNamesByNpc = new Map<string, Set<string>>();
+  for (const member of cast) {
+    const npcId = str(member?.npcId);
+    if (!npcId) continue;
+    const names = actionNamesByNpc.get(npcId) ?? new Set<string>();
+    for (const action of Array.isArray(member?.actions) ? member.actions : []) {
+      const name = str(action?.name);
+      if (name) names.add(name);
+    }
+    actionNamesByNpc.set(npcId, names);
+  }
   problems.push(...validateConversations(
-    scene.conversations, speakerIds, cueIds, startedConversationIds,
+    scene.conversations, speakerIds, cueIds, startedConversationIds, actionNamesByNpc,
   ));
 
   // ── Place interactions (migration 162, § 14 Q43) ──────────────────────────
@@ -853,6 +867,7 @@ function validateConversations(
   speakerIds: Set<string>,
   cueIds: Set<string>,
   startedConversationIds: Set<string>,
+  actionNamesByNpc: Map<string, Set<string>>,
 ): IWSceneProblem[] {
   const problems: IWSceneProblem[] = [];
   if (!Array.isArray(conversations)) {
@@ -891,12 +906,22 @@ function validateConversations(
           message: 'Write the first line before making this choosable — whoever speaks first is who may start it',
         });
       }
-      if (!str(conv?.title)) {
+      const title = str(conv?.title);
+      if (!title) {
         // The one field whose AUDIENCE changes with this flag: an author-facing label becomes
         // the thing the model picks by, exactly like an action's name.
         problems.push({
           field: `${at}.title`,
           message: 'A choosable conversation needs a title — it is what the NPC chooses it by',
+        });
+      } else if (owner && actionNamesByNpc.get(owner)?.has(title)) {
+        // Both are offered to the SAME NPC as one flat list of names, and the model answers
+        // with a name — so two identical strings are a choice the engine cannot read. It
+        // resolves deterministically in the action's favour at runtime, which means the
+        // conversation silently never plays; better to say so while it can still be renamed.
+        problems.push({
+          field: `${at}.title`,
+          message: `"${title}" is also the name of one of this NPC's actions — the action wins and this would never play`,
         });
       }
     } else if (id && !startedConversationIds.has(id)) {

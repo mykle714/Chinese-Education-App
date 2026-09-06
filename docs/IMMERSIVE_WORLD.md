@@ -1877,7 +1877,7 @@ seeds (Q31), Q6's authored NPC-to-NPC conversations, and **Q42's named places an
 authored actions** (`IWSceneActionsPanel`), which are the first authored thing in the feature
 that produces behaviour rather than text.
 
-**Four things the editor deliberately does NOT let an author write**, each removed after it
+**Three things the editor deliberately does NOT let an author write**, each removed after it
 was first built, and each for the same reason — it was a decision the author should not be
 making:
 
@@ -1885,7 +1885,7 @@ making:
 |---|---|
 | **Essential words** (the `words` blob) | Out of spec. Vocabulary guidance is derived from the learner, never authored per scene — see § 9.4 and Q14, now closed. |
 | **A per-line `holdMs`** on conversation turns | Pacing is a constant (7 s, `IW_CONVERSATION_LINE_MS`), not a per-line choice. See Q6. |
-| **The companion, as a cast member or a speaker** | He is in every scene by definition and is placed by the scene's own companion start cell, so casting him would be a second answer to where he stands; and he walks in *with* the learner, so an exchange he is in is one he is having, not one overheard. |
+| **The companion as a cast member** | He is in every scene by definition and is placed by the scene's own companion start cell, so casting him would be a second answer to where he stands. ⚠️ This covers CASTING only: since 2026-09-05 he **may speak in an overheard conversation** — he stands on the board like anyone else, so an authored exchange between him and a cast member is one the learner can walk up on. `sceneValidation.ts` → `validateConversations` takes the cast ∪ companion as its speaker set. He still terminates nothing (Q19/Q27). |
 | **The objective** | The completion action already says what the scene is for, in steps rather than in prose. Two descriptions of one fact is one description too many, and the prose one had no reader (§ 9.1). |
 
 ✅ **The dead columns are gone.** `words` and `objective` were dropped by **migration 159**

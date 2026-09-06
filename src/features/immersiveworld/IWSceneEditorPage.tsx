@@ -49,8 +49,21 @@ import {
  * that column is both wider than the left one and rendered a notch smaller than the rest of
  * the app — the shrink is scoped here rather than pushed into each panel so the two panels
  * stay ordinary MUI and there is exactly ONE place to retune the density.
+ *
+ * The width exists ENTIRELY for the step row (2026-09-05): every pixel added here lands on
+ * the step's payload field — the comment text, the place/actor/conversation dropdown —
+ * because everything else in that row (the index, the kind select, the three icon buttons)
+ * is fixed-width. Widening this constant is therefore the one lever that makes a step
+ * legible; the panels themselves only trim their own chrome to feed it.
  */
-const IW_CONTENT_COLUMN_WIDTH = 560;
+const IW_CONTENT_COLUMN_WIDTH = 720;
+
+/**
+ * The details column, narrowed to pay for the content column (the map keeps `flex: 1` and
+ * absorbs the rest). Nothing in it is a side-by-side row — cast entries and the completion
+ * pair stack — so it loses far less to the trim than the step row gains.
+ */
+const IW_DETAILS_COLUMN_WIDTH = 320;
 
 /** Compact typography for everything inside the content column (labels, fields, buttons). */
 const IW_CONTENT_COLUMN_DENSITY_SX = {
@@ -320,7 +333,7 @@ export default function IWSceneEditorPage() {
         <Box
           className="iw-scene-editor-page__details"
           sx={{
-            width: 360,
+            width: IW_DETAILS_COLUMN_WIDTH,
             flex: '0 0 auto',
             p: 2,
             overflowY: 'auto',

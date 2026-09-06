@@ -126,7 +126,9 @@ export default function IWSceneActionsPanel({
             <Box
               key={member.npcId}
               className="iw-scene-actions-panel__npc"
-              sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 1.5 }}
+              // Padding is deliberately tight (px < py): the step row inside is the widest
+              // thing in the column, and side padding is the cheapest space to give it back.
+              sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, px: 0.75, py: 1.25 }}
             >
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{npcName(member.npcId)}</Typography>
@@ -142,7 +144,7 @@ export default function IWSceneActionsPanel({
                     <Box
                       key={action.id}
                       className="iw-scene-actions-panel__action"
-                      sx={{ border: '1px dashed', borderColor: 'divider', borderRadius: 1, p: 1.25 }}
+                      sx={{ border: '1px dashed', borderColor: 'divider', borderRadius: 1, px: 0.75, py: 1 }}
                     >
                       <Stack direction="row" spacing={1} alignItems="flex-start">
                         <TextField
@@ -175,14 +177,14 @@ export default function IWSceneActionsPanel({
                         {action.steps.map((step, si) => (
                           <Stack
                             key={si}
-                            direction="row" spacing={0.75} alignItems="flex-start"
+                            direction="row" spacing={0.5} alignItems="flex-start"
                             className="iw-scene-actions-panel__step"
                           >
-                            <Typography sx={{ fontSize: 11, opacity: 0.5, width: 18, mt: 1.25 }}>
+                            <Typography sx={{ fontSize: 11, opacity: 0.5, width: 12, mt: 1.25, flex: '0 0 auto' }}>
                               {si + 1}
                             </Typography>
                             <TextField
-                              size="small" select sx={{ width: 130 }}
+                              size="small" select sx={{ width: 124, flex: '0 0 auto' }}
                               value={step.kind}
                               {...warn(`${at}.steps[${si}].kind`)}
                               onChange={(e) => patchStep(
@@ -314,14 +316,16 @@ export default function IWSceneActionsPanel({
                               />
                             )}
 
-                            <IconButton size="small" title="Move up" onClick={() => moveStep(member.npcId, action, si, -1)}>
+                            {/* The row's three fixed controls, drawn dense: their default
+                                padding costs ~30px the payload field would otherwise have. */}
+                            <IconButton size="small" sx={{ p: 0.25, flex: '0 0 auto' }} title="Move up" onClick={() => moveStep(member.npcId, action, si, -1)}>
                               <ArrowUpwardIcon fontSize="small" />
                             </IconButton>
-                            <IconButton size="small" title="Move down" onClick={() => moveStep(member.npcId, action, si, 1)}>
+                            <IconButton size="small" sx={{ p: 0.25, flex: '0 0 auto' }} title="Move down" onClick={() => moveStep(member.npcId, action, si, 1)}>
                               <ArrowDownwardIcon fontSize="small" />
                             </IconButton>
                             <IconButton
-                              size="small" title="Remove step"
+                              size="small" sx={{ p: 0.25, flex: '0 0 auto' }} title="Remove step"
                               onClick={() => onUpdateAction(member.npcId, action.id, {
                                 steps: action.steps.filter((_, i) => i !== si),
                               })}

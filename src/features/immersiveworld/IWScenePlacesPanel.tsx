@@ -241,12 +241,12 @@ export default function IWScenePlacesPanel({
                     {steps.map((step, si) => (
                       <Stack
                         key={si}
-                        direction="row" spacing={0.75} alignItems="flex-start"
+                        direction="row" spacing={0.5} alignItems="flex-start"
                         className="iw-scene-places-panel__step"
                       >
-                        <Typography sx={{ fontSize: 11, opacity: 0.5, width: 18, mt: 1.25 }}>{si + 1}</Typography>
+                        <Typography sx={{ fontSize: 11, opacity: 0.5, width: 12, mt: 1.25, flex: '0 0 auto' }}>{si + 1}</Typography>
                         <TextField
-                          size="small" select sx={{ width: 150 }}
+                          size="small" select sx={{ width: 140, flex: '0 0 auto' }}
                           value={step.kind}
                           {...warn(`${at}.steps[${si}].kind`)}
                           onChange={(e) => patchStep(
@@ -265,7 +265,7 @@ export default function IWScenePlacesPanel({
                         {step.kind === 'popup' && (
                           <>
                             <TextField
-                              size="small" select sx={{ width: 150 }}
+                              size="small" select sx={{ width: 140, flex: '0 0 auto' }}
                               value={IW_POPUP_IMAGES.some((im) => im.id === step.imageId) ? step.imageId : ''}
                               {...warn(`${at}.steps[${si}].imageId`)}
                               helperText={problem(`${at}.steps[${si}].imageId`)
@@ -389,14 +389,16 @@ export default function IWScenePlacesPanel({
                           />
                         )}
 
-                        <IconButton size="small" title="Move up" onClick={() => moveStep(tag, steps, si, -1)}>
+                        {/* Dense, like the action panel's row: the padding these three shed
+                            goes straight to the step's payload field. */}
+                        <IconButton size="small" sx={{ p: 0.25, flex: '0 0 auto' }} title="Move up" onClick={() => moveStep(tag, steps, si, -1)}>
                           <ArrowUpwardIcon fontSize="small" />
                         </IconButton>
-                        <IconButton size="small" title="Move down" onClick={() => moveStep(tag, steps, si, 1)}>
+                        <IconButton size="small" sx={{ p: 0.25, flex: '0 0 auto' }} title="Move down" onClick={() => moveStep(tag, steps, si, 1)}>
                           <ArrowDownwardIcon fontSize="small" />
                         </IconButton>
                         <IconButton
-                          size="small"
+                          size="small" sx={{ p: 0.25, flex: '0 0 auto' }}
                           // Removing the LAST step makes the place inert again — the draft hook
                           // drops the entry rather than storing an empty script.
                           title={steps.length === 1 ? 'Remove step (this place stops being interactive)' : 'Remove step'}

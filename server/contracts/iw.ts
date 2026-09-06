@@ -99,8 +99,6 @@ export const IW_MAX_CAST = 8;
 export const IW_MAX_COMPLICATIONS = 12;
 /** Authored events a scene may hold (migration 161) — the pool `schedule_event` picks from. */
 export const IW_MAX_EVENTS = 12;
-/** Named places on the board an authored action can send somebody to (§ 14 Q42). */
-export const IW_MAX_LOCATIONS = 24;
 export const IW_MAX_LOCATION_TAG_LENGTH = 40;
 /** Authored actions per NPC, and steps per action. */
 export const IW_MAX_NPC_ACTIONS = 8;

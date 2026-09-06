@@ -322,13 +322,13 @@ describe('validateScene', () => {
     expect(messages.some((m) => m.includes('is not in this scene'))).toBe(true);
   });
 
-  it('refuses to let the COMPANION speak in an overheard conversation', () => {
-    // He walks in with the learner, so he is never a voice the learner OVERHEARS — an
-    // exchange he is part of is one he is having, which is the live NPC path.
+  it('lets the COMPANION speak in an overheard conversation (2026-09-05)', () => {
+    // He is not cast, but he stands on the board in every scene, so an authored exchange
+    // between him and a cast member is one the learner can walk up on like any other.
     const scene = validScene();
     scene.conversations[0].turns[0].npcId = 'michael';
     const messages = validateScene(scene).map((p) => p.message);
-    expect(messages.some((m) => m.includes('is not in this scene'))).toBe(true);
+    expect(messages.some((m) => m.includes('is not in this scene'))).toBe(false);
   });
 
   it('rejects duplicate complication ids (a run stores the id and would be ambiguous)', () => {

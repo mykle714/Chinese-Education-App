@@ -21,7 +21,6 @@ import {
   IW_MAX_CONVERSATIONS,
   IW_MAX_CONVERSATION_LINE_LENGTH,
   IW_MAX_CONVERSATION_TURNS,
-  IW_MAX_LOCATIONS,
   IW_MAX_LOCATION_TAG_LENGTH,
   IW_MAX_NPC_ACTIONS,
   IW_MAX_SCENE_DIM,
@@ -362,8 +361,13 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
   // a `schedule_event` step names an event by id, so a duplicate makes the step ambiguous.
   problems.push(...validateEvents(scene.events));
 
-  // ── Authored NPC-to-NPC conversations (§ 14 Q6) ───────────────────────────
-  problems.push(...validateConversations(scene.conversations, seenNpcIds));
+  // ── Authored overheard conversations (§ 14 Q6) ────────────────────────────
+  // Speakers are the cast PLUS the companion: he is not cast (he is placed by the scene's
+  // own companionStart cell, not by an entry), but he is present in every scene, so an
+  // exchange between him and an NPC is one the learner can walk up on like any other.
+  const speakerIds = new Set<string>(seenNpcIds);
+  if (companionId) speakerIds.add(companionId);
+  problems.push(...validateConversations(scene.conversations, speakerIds));
 
   // ── Place interactions (migration 162, § 14 Q43) ──────────────────────────
   // Runs LAST because it is the only check that needs everything else resolved at once: a
@@ -437,9 +441,6 @@ function validateLayout(
   // rejected here so a `walk_to_tag` can never point at a place with no destination.
   if (layout.locations && typeof layout.locations === 'object') {
     const entries = Object.entries(layout.locations);
-    if (entries.length > IW_MAX_LOCATIONS) {
-      problems.push({ field: 'layout.locations', message: `At most ${IW_MAX_LOCATIONS} named places` });
-    }
     for (const [tag, cell] of entries) {
       const label = tag.trim() ? `“${tag}”` : 'A place';
       if (!tag.trim()) {
@@ -701,14 +702,15 @@ function validateEvents(events: IWSceneEvent[] | undefined): IWSceneProblem[] {
  * is a broken playback rather than an off-character line: a speaker who is not in the scene
  * simply never says their turn.
  *
- * ONLY THE CAST MAY SPEAK — and the companion is not cast (2026-09-05). He walks in with the
- * learner, so he is never a voice the learner OVERHEARS; an exchange he is part of is one he
- * is having, which is the live NPC path, not this authored playback. Casting him is refused
- * in the cast loop, and this is the other half of the same rule.
+ * WHO MAY SPEAK: the cast, PLUS the companion (2026-09-05). The companion is still not
+ * castable — he is placed by the scene's own companionStart cell rather than by a cast
+ * entry — but he is on the board in every scene, so an authored exchange between him and a
+ * cast member is a perfectly ordinary thing for the learner to overhear. The caller passes
+ * the union; `speakerIds` is not the cast set.
  */
 function validateConversations(
   conversations: IWConversation[] | undefined,
-  castIds: Set<string>,
+  speakerIds: Set<string>,
 ): IWSceneProblem[] {
   const problems: IWSceneProblem[] = [];
   if (!Array.isArray(conversations)) {
@@ -737,7 +739,7 @@ function validateConversations(
     turns.forEach((turn, t) => {
       const turnAt = `${at}.turns[${t}]`;
       const speakerId = str(turn?.npcId);
-      if (!castIds.has(speakerId)) {
+      if (!speakerIds.has(speakerId)) {
         problems.push({
           field: `${turnAt}.npcId`,
           message: `"${speakerId || '(blank)'}" is not in this scene and cannot speak here`,

@@ -28,8 +28,8 @@ import { warningFieldProps } from './iwSceneWarnings';
  *    cue, and a script must never be able to arm the surprise.
  *  - **Conversations** are canned, pre-reviewed exchanges the learner can OVERHEAR and tap
  *    to pause (§ 14 Q6). They cost nothing per line because no model call is made for them.
- *    Only cast members may speak in one — never the companion, who walks in with the
- *    learner and so is never overheard.
+ *    The cast may speak in one, and so may the companion — he is on the board in every
+ *    scene, so the learner can overhear him talking to an NPC.
  *
  * ⚠️ There was a third list, **essential words**, removed on 2026-09-05 as out of spec.
  * § 9.4's point 3 went with it: the model's vocabulary guidance is now the learner's level
@@ -60,13 +60,18 @@ export default function IWSceneContentPanel({
   const npcName = (npcId: string) => npcs.find((n) => n.id === npcId)?.name ?? npcId;
 
   /**
-   * Who may speak a line in an overheard conversation: THE CAST, and nobody else.
-   * The companion is deliberately absent — he walks in with the learner, so he is never a
-   * voice the learner OVERHEARS; an exchange he is part of is one he is having, which is the
-   * live NPC path rather than this authored playback. He is also not castable at all. The
-   * server enforces the same rule; see `sceneValidation.ts` → `validateConversations`.
+   * Who may speak a line in an overheard conversation: THE CAST, plus THE COMPANION.
+   * The companion is not castable — he is placed by the scene's own companion start cell
+   * rather than by a cast entry — but he stands on the board in every scene, so an authored
+   * exchange between him and a cast member is one the learner can walk up on like any
+   * other. He is appended last so the cast keeps its authored order in the dropdown.
+   * The server enforces the same set; see `sceneValidation.ts` → `validateConversations`.
    */
-  const speakers = scene.npcCast.map((m) => m.npcId);
+  const companionId = npcs.find((n) => n.isCompanion)?.id;
+  const speakers = [
+    ...scene.npcCast.map((m) => m.npcId),
+    ...(companionId ? [companionId] : []),
+  ];
 
   // ── Complications ─────────────────────────────────────────────────────────
   const patchComplication = (i: number, patch: Partial<IWComplication>) => {

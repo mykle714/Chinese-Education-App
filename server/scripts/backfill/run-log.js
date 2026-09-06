@@ -204,9 +204,10 @@ const PRICING_PER_MTOK = {
   // Opus 4.8 list price is $5/$25 per Mtok (NOT the old $15/$75 Opus-3-era rate).
   'claude-opus-4-8':   { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   'claude-sonnet-4-6': { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
-  // Sonnet 5 list price ($3/$15; intro pricing through 2026-08-31 is $2/$10 —
-  // we log at list so estimates don't silently drop when the intro ends).
-  'claude-sonnet-5':   { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+  // Sonnet 5 is $2/$10 per MTok as of 2026-09-06 (what was called "intro pricing
+  // through 2026-08-31" did not revert to $3/$15 — that guess is why this row read
+  // high). No script currently selects Sonnet 5; it is here for estimate coverage.
+  'claude-sonnet-5':   { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
   'claude-haiku-4-5':  { input: 1, output: 5,  cacheWrite: 1.25, cacheRead: 0.1 },
   // Dated full ID used by DictionaryService.generateLongDefinition — same model,
   // same price as the alias above.

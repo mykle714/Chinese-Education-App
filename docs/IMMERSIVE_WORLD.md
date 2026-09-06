@@ -850,11 +850,28 @@ invalidates everything after it):
 >   ~1400 uncached, and it cuts prefill latency too. The world rules have room to be more
 >   explicit. Note this is now a **2700-token** pad, not the ~2600 the earlier estimate
 >   implied, and every one of those tokens is paid in full on a cache miss.
-> - **Reconsider the model.** Sonnet 5 caches iw's prefix *today* and Haiku never will
->   without padding — and § 6 measured them at 548 ms vs 551 ms to the first glyph, i.e.
->   indistinguishable. The 2.6× price gap in that table is **uncached on both**; with caching
->   working on one and not the other it narrows. Worth re-running the bench with caching
->   actually engaged before treating Haiku as the settled default.
+> - **Reconsider the model.** ✅ **MEASURED 2026-09-06 — and the answer is: keep Haiku, but
+>   for latency, not for cost.** `server/scripts/iw-turn-probe.ts`, 3 runs each, against the
+>   real "Get Dinner" scene (prefix 2175 tokens — larger than the table above because the reply
+>   contract carries five long authored action names):
+>
+>   | model | first glyph | line 1 closed | cache | billed input |
+>   |---|---|---|---|---|
+>   | Haiku 4.5 | 792–970 ms | 792–970 ms | ❌ never (2175 < 4096 floor) | 1817 |
+>   | Sonnet 5 | 715–1254 ms | **1326–1869 ms** | ✅ 2175 read | **320** |
+>
+>   Two things fall out. **The caching prediction was right**: Sonnet reads the whole prefix
+>   and bills 320 input tokens against Haiku's 1817, so a cached Sonnet turn is genuinely
+>   CHEAPER than an uncached Haiku one, price gap included. **The latency claim above was
+>   wrong on this workload**: 548 vs 551 ms to first glyph does not survive contact with a real
+>   scene — Sonnet closes line 1 roughly 600–900 ms later, which is exactly the budget § 6.4's
+>   audio spends. iw is a latency feature before it is a cost feature, so Haiku stays at rung 1
+>   and Sonnet takes rung 2, where it is both a real failover and the cheap one.
+>   `IW_MODEL_PRIMARY` flips them; the table is what that trade costs.
+>
+>   ⚠️ Note Haiku's line-1-closed column EQUALS its first glyph: it emits the whole first line
+>   in one delta. § 5.3's "the bubble starts painting long before the turn is done" is therefore
+>   not free on every model — on Haiku there is no head start within line 1 at all.
 >
 > Either way: **assert `cache_read_input_tokens > 0` in the turn path** rather than assuming it.
 > Re-run `prefix-size.js` after editing the world rules or any NPC — the numbers above
@@ -1805,7 +1822,12 @@ Layers proposed:
    Do not replace it with a refusal message, which would break the world to announce a
    defense.
 
-   That result is encouraging, not sufficient — it is one model, one NPC, nine probes,
+   ✅ **Re-run 2026-09-06 against the production prompt** (`worldRules.ts` + `turnState.ts`,
+   王婶 in the real "Get Dinner" scene): **2/2 ignored outright** — an instruction-override
+   attempt and a fake `SYSTEM:` prefix both got 要吃面吗 / 坐啊，要吃面吗？ back, with the
+   ordinary order action and a neutral emote. Same ideal shape as the original result.
+
+   That result is encouraging, not sufficient — it is one model, one NPC, a handful of probes,
    and it must be re-run on every prompt edit (§ 12). Three structural mitigations stand
    behind it: player text is **quoted as data in a user turn** and never concatenated into
    the system layer; the palette (§ 9a) shrinks the attack surface to a word list the server
@@ -2222,6 +2244,19 @@ feature is worth building.
 
 **Gated by:** an author having made a scene in phase 1.
 
+> **Status 2026-09-06 — the SERVER half is built and verified end to end; the CLIENT half is
+> not started.** `iw-turn-probe.ts` runs a real turn against the real authored scene: 王婶
+> answers 大碗还是小碗啊 in ~930 ms on rung 1, picks the right authored action, and needs no
+> parser rescue. What exists: the § 3a walkable graph and pathing, the § 4 hearing gate, the
+> scene actor, prompt layers 1 and 3, § 5.4b's offer builder, § 5.3's streaming parser, Q7's
+> ladder and its adapters, and `ImmersiveWorldService.takeNpcTurn`. What does not: the route
+> and controller, the § 7 cap and rate limit, and **everything on screen** — the scene
+> renderer, the player avatar and tap-to-move, bubbles, the typewriter, audio, and the input.
+>
+> Two things the build changed in this plan, both from measurement rather than opinion — the
+> § 14 Q7 deadline (first glyph, not `sayDone`) and the rung-1 model question (§ 5.5). Both
+> are written up where they were decided.
+
 **Kill condition:** talking to it isn't fun for 60 seconds — *or* the ~1.2 s to first glyph
 reads as lag even behind the walk-over animation (§ 6.4).
 
@@ -2356,6 +2391,19 @@ to be watched for deliberately.
   night market passes no markers
 - `server/contracts/iw.ts` → `IWSelectable`, `IWNpcAction.interactionOnly`,
   `IWConversation.selectable`, `IW_MAX_UNLOCK_CUES`, `scenePlaces` — § 5.4b's selectability
+- `server/services/iw/worldRules.ts` → `IW_WORLD_RULES_STEM`, `renderReplyContract` — layer 1.
+  **The bench imports this**, it does not keep a copy (§ 5.5)
+- `server/services/iw/turnState.ts` → `renderTurnState` — layer 3, as the USER message (§ 11)
+- `server/services/iw/turnOffers.ts` → `buildTurnOffers`, `isUnlocked` — what one NPC is
+  offered on one turn, and the list `turnParser` validates against (§ 5.4, § 5.4b)
+- `server/services/iw/turnParser.ts` → `createTurnParser`, `parseTurnReply` — § 5.3's tolerant
+  three-line parser, streaming. No error path, only degraded outputs
+- `server/services/iw/npcTurn.ts` → `runNpcTurn`, `RUNG_FIRST_GLYPH_DEADLINE_MS` — Q7's ladder
+- `server/services/iw/modelLadder.ts` → `buildIwLadder`, `cacheStats` — the concrete rungs and
+  the § 5.5 cache assertion. **The only file in iw that constructs a model client**
+- `server/services/ImmersiveWorldService.ts` → `takeNpcTurn` — the runtime pipeline
+- `server/scripts/iw-turn-probe.ts` — one real turn against one real scene, end to end.
+  `--file` probes a scene dumped from prod without needing it in the local database
   model and the `places`/`locations` read fallback
 - `src/features/immersiveworld/IWSelectableControls.tsx` → the shared `when`/`urgent`/
   `unlockedBy` editor both panels render (§ 5.4b). It deliberately does NOT draw the per-type
@@ -2888,10 +2936,25 @@ the adapter.
 
 ⚠️ **The ladder has a latency budget and it must be enforced per rung, not per ladder.** Three
 sequential attempts at ~750 ms each is a 2.5 s turn — worse than the failure it is hiding, and
-well outside § 6. Each rung needs its own short deadline (a rung that has not produced
-`sayDone` by ~1.2 s is dead, move on), and the § 6.2 lever-3 animation is the only thing
-covering the extra time. **A ladder without per-rung deadlines is a slower failure, not a
-better one.**
+well outside § 6. Each rung needs its own short deadline, and the § 6.2 lever-3 animation is
+the only thing covering the extra time. **A ladder without per-rung deadlines is a slower
+failure, not a better one.**
+
+⚠️ **CORRECTED 2026-09-06 BY MEASUREMENT: the liveness signal is FIRST GLYPH, not `sayDone`,
+and the number is 1.5 s, not 1.2 s.** This paragraph originally said "a rung that has not
+produced `sayDone` by ~1.2 s is dead", written when § 5.3 measured `sayDone` at 720 ms. Built
+that way and pointed at the real scene, it killed Sonnet 5 on **4 of 4 turns** (its `sayDone`
+is 1326–1869 ms) and on one of those killed both rungs and froze a scene that had a perfectly
+good answer arriving. Two separate faults:
+- **`sayDone` is the wrong signal.** A rung that has emitted a glyph is alive, streaming, and
+  *already painting a bubble the learner can see*. Killing it there throws away visible work.
+- **1.2 s is inside the good case.** Observed first glyphs span 715–1254 ms, so the deadline
+  fired on healthy calls whenever the slow tail was hit.
+
+The shipped shape is therefore two deadlines with different jobs: no glyph by
+`RUNG_FIRST_GLYPH_DEADLINE_MS` (1.5 s) means the rung is dead and the ladder moves on; a rung
+that spoke and then hung is stopped at `RUNG_TOTAL_DEADLINE_MS` (2.5 s) but **keeps what
+arrived**, degrading the action to `none` through the parser's ordinary defaults.
 
 **✅ What the NPC does when the ladder is exhausted: nothing.** The world stands still. The
 NPC does not speak, does not emote, does not improvise a cover line — the banner carries the

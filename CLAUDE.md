@@ -302,18 +302,19 @@ Current open runbooks:
 (gloss phase-2 half B, the runtime guard — **no migration**). **Deployed 2026-08-24** and
 verified on the infrastructure checks; it stays open only until someone opens a real game
 board and confirms it fills rather than coming back short, which is the one over-blocking
-symptom those checks cannot see. Prod is current through migration **159**.
+symptom those checks cannot see. Prod is current through migration **161**.
 
 **[docs/IW_SCENE_NOTES_DEPLOY_RUNBOOK.md](./docs/IW_SCENE_NOTES_DEPLOY_RUNBOOK.md)**
 (iw scene notes + scene events — migrations **160** and **161**, plus the advisory-validator
-and palette-click fixes). **NOT YET DEPLOYED.** Both are expand-only and go in one pass, but
-they must run BEFORE the rebuild: the shipped `ImmersiveWorldDAL` selects
-`iw_scenes."sceneNotes"` and `iw_scenes.events` by name.
+and palette-click fixes). **DEPLOYED 2026-09-05**; every schema check passed. Both are
+expand-only and went in one `migrate.sh` pass BEFORE the rebuild, as required — the shipped
+`ImmersiveWorldDAL` selects `iw_scenes."sceneNotes"` and `iw_scenes.events` by name. It stays
+open only until someone saves a scene carrying notes or an event, and confirms a half-built
+scene now saves with amber warnings rather than being refused.
 
-**[docs/IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md](./docs/IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md)**
-(Immersive World scene authoring — migration **159**). **DEPLOYED 2026-09-05**; every schema
-check passed. It stays open only until someone opens the editor as a template author and saves
-a scene — the one path the infrastructure checks cannot see.
+Deployed and retired on 2026-09-05 (runbook deleted): Immersive World scene authoring
+(**159**). Its one open condition — an author opening the editor and saving a scene — was
+closed by the scene "Get Dinner" appearing in prod's `iw_scenes` before the 160/161 deploy.
 
 Worth keeping from it: a contract migration that was nevertheless a **single-pass** deploy. It
 drops `iw_scenes.words` / `.objective`, reshapes `iw_scene_runs."complicationId"` into a

@@ -1,7 +1,11 @@
 # TEMPORARY — Deploy runbook: iw scene notes + scene events (migrations 160, 161)
 
-> **Delete this file once prod is verified.** Status: **NOT YET DEPLOYED.** Prod is current
-> through migration **159**; dev has 160 and 161 applied (2026-09-05).
+> **Delete this file once prod is verified.** Status: **DEPLOYED 2026-09-05**; every schema
+> check below passed on prod (both columns landed with their empty defaults, the one existing
+> scene backfilled to `''`, both versions recorded). Prod is current through migration **161**.
+> It stays open only until someone opens the editor and saves a scene carrying notes or an
+> event, and confirms a half-built scene now saves with amber warnings — the one path the
+> schema checks cannot see.
 
 ## What ships
 

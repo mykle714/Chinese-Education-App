@@ -1450,6 +1450,31 @@ gracefully winds down instead of erroring.
 Also required, and **now the only bound that exists**: a hard cap on the player's input
 length, and a per-utterance rate limit, both enforced **on the server**.
 
+> **BUILT 2026-09-06 — `server/services/iw/turnBudget.ts`.** All four numbers, plus the
+> session budget below, live in one pure module with an injected clock:
+>
+> | Constant | Value | What it bounds |
+> |---|---|---|
+> | `IW_MAX_UTTERANCE_CHARS` | 120 | The PROMPT, not the database — layer 3 quotes the learner verbatim (§ 11), so an unbounded utterance is an unbounded call. Counted in **code points** after trimming |
+> | `IW_MIN_TURN_GAP_MS` | 700 | Sends per user. Below any human cadence, above what a loop exploits |
+> | `IW_MAX_LISTENERS_PER_UTTERANCE` | 4 | § 4.1's fan-out. It re-imposes the hearing gate's *budget* server-side without re-implementing its geometry — the gate itself is client-side and therefore not trustworthy here. **It drops rather than refuses**: a crowded market should get quieter, not error |
+> | `IW_SESSION_TURN_BUDGET` | 60 | One scene run. Reported on every response as `remaining`, for the in-world HUD this section asks for |
+> | `IW_DAILY_TURN_CAP` | 400 | The caller who exhausts a run and starts another. ≈ 32 ¢ |
+>
+> Two properties worth knowing before relying on it. **Check and spend are separate**: a turn
+> the ladder could not answer (§ 14 Q7's `frozen`) costs the learner nothing, because they got
+> nothing — which also means the same check/spend TOCTOU `dictionary_ai_usage` has, tolerable
+> for a bound whose overshoot is one turn and not for a currency. And it is **in-memory and
+> per-process**: a backend rebuild forgives every daily cap and a second replica would double
+> them. Moving it to the `dictionary_ai_usage` precedent is a phase-3 decision *with a
+> migration attached*, so it is not something to do quietly.
+>
+> ⚠️ The daily key is **server-local**, unlike `dictionary_ai_usage`, which keys on the
+> learner's local day. That inconsistency is deliberate and survives only while this is an
+> abuse backstop rather than a user-visible allowance: nobody legitimate reaches 400 turns, so
+> which midnight resets it changes no honest learner's experience. If it ever becomes an
+> allowance it must move to the client's day and to the database in the same change.
+
 ⚠️ **Withdrawn:** an earlier draft said the palette bounded this by construction. Q4c decided
 the input is **free text** (§ 9a), so there is no server-issued word list and nothing
 structural limiting what a learner can send. The writing assistant is a client affordance and
@@ -1480,8 +1505,11 @@ Per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) / [FRONTEND_LAYERING.md](./FRON
 | Arbitration ordering, action legality | **engine (pure)** — no React, no Pixi, no fetch | `src/engine/iw/` (`npcArbitration.ts`, not built) |
 | Player avatar movement source | engine | extend `pedestrianAgent.ts` |
 | Scene rendering, bubbles, HUD | feature | `src/features/immersiveworld/` |
-| Server calls | `src/api/http.ts` only, never a raw fetch, **no function takes a `token`** | `src/features/immersiveworld/immersiveWorldSceneApi.ts` (authoring, built); a sibling runtime module in phase 2 |
-| Prompt assembly, model call, streamed three-line parse (§ 5.3), budget check | **service** | `server/services/ImmersiveWorldService.ts` (phase 2 — not built) |
+| Server calls | `src/api/http.ts` only, never a raw fetch, **no function takes a `token`** | `immersiveWorldSceneApi.ts` (authoring) and `immersiveWorldTurnApi.ts` (runtime), both under `src/features/immersiveworld/` — split by lifecycle, like their services |
+| Prompt assembly, model call, streamed three-line parse (§ 5.3) | **service** | `server/services/ImmersiveWorldService.ts` → `takeNpcTurn` (BUILT) |
+| Scene lookup + the § 7 budget check | **service** | `ImmersiveWorldService` the CLASS → `runTurn` (BUILT). Split from `takeNpcTurn` so the pure pipeline stays testable without a DAL |
+| The turn endpoint — **SSE**, not JSON | **controller** | `server/controllers/ImmersiveWorldRuntimeController.ts` (BUILT). ⚠️ A stream cannot change its status code once headers flush, so every refusal is decided before the first write |
+| Streaming transport | `src/api/http.ts` → `apiPostStream` (BUILT) | The app's only one. It lives there rather than in the feature because that is where `authHeader()` is read at call time — a raw `fetch` for a stream opts out silently, and works until a token rotates |
 | Scene authoring: validation, the template-author gate | **service** (built) | `server/services/ImmersiveWorldSceneService.ts`, with the pure rules in `server/services/iw/sceneValidation.ts` |
 | Scene definitions (objective, cast, completion pair) | **DATA**, in `iw_scenes` — ~~contract or constant~~ | migration 158; the wire shape is `server/contracts/iw.ts` → `IWScene`. Q20's "a constant beside the NPCs" was overtaken by Q2: scenes are authored content, NPCs are code |
 | End-of-scene grading + overview tag (§ 9.3) | **service**, off the interaction path, larger model, structured outputs allowed here | `ImmersiveWorldService.ts` → a separate `gradeScene` entry point |
@@ -2244,18 +2272,28 @@ feature is worth building.
 
 **Gated by:** an author having made a scene in phase 1.
 
-> **Status 2026-09-06 — the SERVER half is built and verified end to end; the CLIENT half is
-> not started.** `iw-turn-probe.ts` runs a real turn against the real authored scene: 王婶
-> answers 大碗还是小碗啊 in ~930 ms on rung 1, picks the right authored action, and needs no
-> parser rescue. What exists: the § 3a walkable graph and pathing, the § 4 hearing gate, the
-> scene actor, prompt layers 1 and 3, § 5.4b's offer builder, § 5.3's streaming parser, Q7's
-> ladder and its adapters, and `ImmersiveWorldService.takeNpcTurn`. What does not: the route
-> and controller, the § 7 cap and rate limit, and **everything on screen** — the scene
-> renderer, the player avatar and tap-to-move, bubbles, the typewriter, audio, and the input.
+> **Status 2026-09-06 — the server half is built and REACHABLE; nothing is on screen yet.**
+> `iw-turn-probe.ts` runs a real turn against the real authored scene: 王婶 answers
+> 大碗还是小碗啊 in ~930 ms on rung 1, picks the right authored action, and needs no parser
+> rescue.
 >
-> Two things the build changed in this plan, both from measurement rather than opinion — the
-> § 14 Q7 deadline (first glyph, not `sayDone`) and the rung-1 model question (§ 5.5). Both
-> are written up where they were decided.
+> Built: the § 3a walkable graph and pathing, the § 4 hearing gate, the scene actor, prompt
+> layers 1 and 3, § 5.4b's offer builder, § 5.3's streaming parser, Q7's ladder and its
+> adapters, `takeNpcTurn`, and — as of this pass — **the wire**: `POST
+> /api/immersiveWorld/turn` as SSE, § 7's budget, `apiPostStream`, and the client's
+> `immersiveWorldTurnApi.ts`. A logged-in client can now take a turn and stream the answer.
+>
+> Not built: **everything on screen** — the scene renderer, the player avatar and tap-to-move,
+> bubbles, the typewriter, audio, the input, the hp row and the route.
+>
+> Three things the build changed in this plan, all from measurement or from a constraint
+> rather than opinion — the § 14 Q7 deadline (first glyph, not `sayDone`), the rung-1 model
+> question (§ 5.5), and **the endpoint being a stream rather than a JSON response**. With
+> § 6.4 making audio the clock, streaming looks pointless — the bubble does not paint from
+> the deltas in the normal case. It earns its place on two paths that are not the normal case:
+> § 6.4 rule 1 fires TTS when line 1 *closes*, which only a stream can report, and § 5.3a's
+> timer-paced fallback stalls for the whole turn without deltas. A JSON endpoint would have
+> worked today and been replaced the first time either mattered.
 
 **Performance target:** the ~1.2 s to first glyph must not read as lag behind the walk-over
 animation (§ 6.4). Missing it is a **bug with a fix**, not a reason to stop — § 6.2 lists the
@@ -2277,12 +2315,15 @@ is the opposite of the test.
   **tap-to-move** on `streetGraph.planPath` with padded hit areas and near-miss tolerance
   (Q18); the tap-routing rule (only the world surface hit-tests); the mechanical hearing gate
   (§ 4); `useBlockEdgeSwipe(true)`.
-- **The brain:** turn endpoint, streaming line parser (§ 5.3), prompt builder (§ 5.5), action
-  enum with engine-side validation (§ 5.4).
-- **Q7's ladder:** retry → backup model same vendor → **DeepSeek** → freeze + banner, with
-  **per-rung deadlines** (§ 6.4), plus the ladder metric.
+- **The brain:** ✅ BUILT — turn endpoint (SSE), streaming line parser (§ 5.3), prompt builder
+  (§ 5.5), and § 5.4's validation, which is **not** an action enum any more: Q42 replaced the
+  global verb list with per-NPC authored action NAMES, and the offered list *is* the
+  validation list (`turnOffers.ts` → `buildTurnOffers`).
+- **Q7's ladder:** ✅ BUILT — retry → backup model same vendor → **DeepSeek** → freeze +
+  banner, with **per-rung deadlines** (§ 6.4), plus the ladder metric. The deadline signal
+  changed under measurement: first glyph, not `sayDone`.
 - **§ 7's server-side input cap and rate limit** — with free text (Q4c) these are the only
-  bound that exists.
+  bound that exists. ✅ BUILT (`turnBudget.ts`); the table of numbers is in § 7.
 - **§ 11 ships here.** Free text means the injection surface is live from the first playable
   build; it cannot be deferred.
 - **Speech — build the ordering first, not as polish.** react → move → speak (§ 6.2 lever 3)
@@ -2414,7 +2455,15 @@ to be watched for deliberately.
 - `server/services/iw/npcTurn.ts` → `runNpcTurn`, `RUNG_FIRST_GLYPH_DEADLINE_MS` — Q7's ladder
 - `server/services/iw/modelLadder.ts` → `buildIwLadder`, `cacheStats` — the concrete rungs and
   the § 5.5 cache assertion. **The only file in iw that constructs a model client**
-- `server/services/ImmersiveWorldService.ts` → `takeNpcTurn` — the runtime pipeline
+- `server/services/ImmersiveWorldService.ts` → `takeNpcTurn` (the pure pipeline),
+  `ImmersiveWorldService.runTurn` (the stateful half: scene lookup + § 7 budget)
+- `server/services/iw/turnBudget.ts` → `IWTurnBudget`, `checkUtterance`, `capListeners`,
+  `IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS`, `IW_SESSION_TURN_BUDGET`,
+  `IW_DAILY_TURN_CAP` — § 7's bound. In-memory and per-process; see § 7's caveat
+- `server/controllers/ImmersiveWorldRuntimeController.ts` → `takeTurn` — the SSE endpoint
+- `src/api/http.ts` → `apiPostStream` — the app's only streaming transport
+- `src/features/immersiveworld/immersiveWorldTurnApi.ts` → `takeNpcTurn`, `newSessionId`,
+  `endIwSession` — the client half of the turn endpoint
 - `server/scripts/iw-turn-probe.ts` — one real turn against one real scene, end to end.
   `--file` probes a scene dumped from prod without needing it in the local database
   model and the `places`/`locations` read fallback

@@ -79,6 +79,8 @@ import { StudyChallengeController } from '../controllers/StudyChallengeControlle
 import { ImmersiveWorldDAL } from './implementations/ImmersiveWorldDAL.js';
 import { ImmersiveWorldSceneService } from '../services/ImmersiveWorldSceneService.js';
 import { ImmersiveWorldSceneController } from '../controllers/ImmersiveWorldSceneController.js';
+import { ImmersiveWorldService } from '../services/ImmersiveWorldService.js';
+import { ImmersiveWorldRuntimeController } from '../controllers/ImmersiveWorldRuntimeController.js';
 
 // DAL instances
 const userDAL = new UserDAL();
@@ -258,6 +260,11 @@ const studyChallengeController = new StudyChallengeController(studyChallengeServ
 // (phase 1e) — the same grant the night market template editor uses.
 const immersiveWorldSceneService = new ImmersiveWorldSceneService(immersiveWorldDAL, userDAL);
 const immersiveWorldSceneController = new ImmersiveWorldSceneController(immersiveWorldSceneService);
+// The runtime half (§ 12 phase 2) — a separate service from the authoring one by lifecycle:
+// authoring runs once under a human's eye and may refuse; this runs many times in front of a
+// learner and may never refuse harder than a frozen scene (§ 14 Q7).
+const immersiveWorldService = new ImmersiveWorldService(immersiveWorldDAL);
+const immersiveWorldRuntimeController = new ImmersiveWorldRuntimeController(immersiveWorldService);
 
 export {
   userDAL,
@@ -339,4 +346,6 @@ export {
   immersiveWorldDAL,
   immersiveWorldSceneService,
   immersiveWorldSceneController,
+  immersiveWorldService,
+  immersiveWorldRuntimeController,
 };

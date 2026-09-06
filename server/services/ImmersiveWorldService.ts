@@ -7,6 +7,8 @@ import { buildTurnOffers, type TurnOffer } from './iw/turnOffers.js';
 import { renderTurnState, type TurnStateInput } from './iw/turnState.js';
 import { renderWorldRules } from './iw/worldRules.js';
 import type { IWTurnReply } from './iw/turnParser.js';
+import { iwTurnBudget, IWTurnBudget, type IWBudgetRefusal } from './iw/turnBudget.js';
+import type { IImmersiveWorldDAL } from '../dal/interfaces/IImmersiveWorldDAL.js';
 
 /**
  * ImmersiveWorldService — the runtime half of iw (§ 8, phase 2).
@@ -40,7 +42,7 @@ export interface NpcTurnRequest {
   perception: Omit<TurnStateInput, 'offers'>;
   /** Override the ladder — tests and the CLI probe pass fakes. */
   rungs?: readonly IWModelRung[];
-  onDelta?: (say: string, attemptIndex: number) => void;
+  onDelta?: (say: string, attemptIndex: number, speechComplete: boolean) => void;
 }
 
 /** What the engine gets back. */
@@ -142,4 +144,95 @@ export function findSceneMetaLanguage(scene: IWScene): Array<{ npcId: string; te
     if (terms.length) hits.push({ npcId: member.npcId, terms });
   }
   return hits;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The runtime service (§ 7, § 8) — the stateful half, wrapping the pure one above
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One send from the client: who is speaking, to whom, and what they perceived. */
+export interface IWTurnHttpRequest {
+  sceneId: string;
+  /** Identifies one scene RUN, for the § 7 session budget. Client-generated. */
+  sessionId: string;
+  npcId: string;
+  firedCues?: readonly string[];
+  perception: Omit<TurnStateInput, 'offers'>;
+}
+
+export type IWRuntimeResult =
+  | { kind: 'refused'; refusal: IWBudgetRefusal; remaining: number }
+  | { kind: 'no-scene'; sceneId: string }
+  | (NpcTurnResult & { remaining: number });
+
+/**
+ * The runtime service — everything `takeNpcTurn` deliberately does not know about: which
+ * scene this is, who is asking, and whether they may.
+ *
+ * LAYER: service. It reads the scene through the DAL and writes no SQL of its own.
+ *
+ * ⚠️ **IT RE-READS THE SCENE ON EVERY TURN.** One indexed primary-key read per turn, next
+ * to a ~1 s model call, so it does not show up — and the alternative (a process-local scene
+ * cache) is a correctness hazard the moment an author saves a scene someone is playing.
+ * Revisit only with a measurement, not on instinct.
+ *
+ * ⚠️ **THE BUDGET IS CHECKED BEFORE THE CALL AND SPENT AFTER IT.** A turn the ladder could
+ * not answer (§ 14 Q7's `frozen`) costs the learner nothing, because they got nothing. This
+ * is the same check-then-write shape as `dictionary_ai_usage` and has the same TOCTOU: two
+ * concurrent turns can both pass a check that only one should. That is tolerable for a
+ * money BOUND — the overshoot is one turn — and would not be for a currency.
+ */
+export class ImmersiveWorldService {
+  constructor(
+    private readonly iwDAL: IImmersiveWorldDAL,
+    private readonly budget: IWTurnBudget = iwTurnBudget,
+    /**
+     * Override the model ladder. Defaults to the process ladder (`getIwLadder`).
+     *
+     * It exists so this class is testable at all: without it every test of the budget, the
+     * scene lookup or the result mapping would need a network and a key, which is exactly
+     * the shape of test that stops being run.
+     */
+    private readonly rungs?: readonly IWModelRung[],
+  ) {}
+
+  /**
+   * Run one NPC turn on behalf of an authenticated learner.
+   *
+   * `onDelta` is threaded straight through so a streaming transport (SSE) can paint the
+   * bubble as it arrives; a caller that wants one JSON object simply omits it.
+   */
+  async runTurn(
+    userId: string,
+    request: IWTurnHttpRequest,
+    onDelta?: (say: string, attemptIndex: number, speechComplete: boolean) => void,
+  ): Promise<IWRuntimeResult> {
+    // The learner's own words are the only unbounded input on this path (§ 7, Q4c).
+    const spoken =
+      request.perception.event.kind === 'utterance' ? request.perception.event.text : undefined;
+
+    const verdict = this.budget.check(userId, request.sessionId, spoken);
+    if (verdict.refusal) return { kind: 'refused', refusal: verdict.refusal, remaining: verdict.remaining };
+
+    const scene = await this.iwDAL.findSceneById(request.sceneId);
+    if (!scene) return { kind: 'no-scene', sceneId: request.sceneId };
+
+    const result = await takeNpcTurn({
+      scene,
+      npcId: request.npcId,
+      firedCues: request.firedCues,
+      perception: request.perception,
+      rungs: this.rungs,
+      onDelta,
+    });
+
+    // Only a turn that produced words is billed to the session (see the header).
+    if (result.kind === 'reply') this.budget.spend(userId, request.sessionId);
+    return { ...result, remaining: this.budget.remaining(request.sessionId) };
+  }
+
+  /** A scene run ended — release its budget counter (see {@link IWTurnBudget.endSession}). */
+  endSession(sessionId: string): void {
+    this.budget.endSession(sessionId);
+  }
 }

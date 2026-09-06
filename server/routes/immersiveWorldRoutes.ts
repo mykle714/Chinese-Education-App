@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
-import { immersiveWorldSceneController } from '../dal/setup.js';
+import { immersiveWorldRuntimeController, immersiveWorldSceneController } from '../dal/setup.js';
 import { handle } from './asyncHandler.js';
 
 /**
@@ -11,10 +11,16 @@ import { handle } from './asyncHandler.js';
  * `nightMarketTemplateRoutes.ts` makes, and for the same reason (a gate in a route is one
  * forgotten middleware away from being absent).
  *
- * Everything registered today is AUTHORING. The learner-facing runtime (start a run, take
- * a turn, finish and grade) is phase 2+ and gets its own routes in this file.
+ * Two groups live here: AUTHORING (phase 1, the scene editor) and the learner-facing
+ * RUNTIME (phase 2, `/turn` and `/session/end`). They are deliberately in one file and one
+ * router because they share a URL prefix; they do NOT share a service — see the lifecycle
+ * split in ImmersiveWorldService's header.
  *
- * See docs/IMMERSIVE_WORLD.md § 12 phase 1d/1e.
+ * ⚠️ `/turn` answers `text/event-stream`, not JSON (§ 5.2, § 6.4). It is the app's only
+ * streaming endpoint, so nothing in the shared client fetch helpers handles it — see
+ * `src/features/immersiveworld/immersiveWorldTurnApi.ts`.
+ *
+ * See docs/IMMERSIVE_WORLD.md § 12 phase 1d/1e and phase 2.
  */
 const router = Router();
 
@@ -36,5 +42,13 @@ router.post('/api/immersiveWorld/scenes', authenticateToken, handle(immersiveWor
 
 // Delete a scene. Refused with 409 once the scene has been played (ON DELETE RESTRICT).
 router.delete('/api/immersiveWorld/scenes/:id', authenticateToken, handle(immersiveWorldSceneController.deleteScene, immersiveWorldSceneController));
+
+// ── Runtime (§ 12 phase 2) ───────────────────────────────────────────────────
+
+// One NPC turn. Streams `delta`* → (`reply` | `frozen` | `refused`) → `end`.
+router.post('/api/immersiveWorld/turn', authenticateToken, handle(immersiveWorldRuntimeController.takeTurn, immersiveWorldRuntimeController));
+
+// A scene run ended — drop its § 7 session counter.
+router.post('/api/immersiveWorld/session/end', authenticateToken, handle(immersiveWorldRuntimeController.endSession, immersiveWorldRuntimeController));
 
 export default router;

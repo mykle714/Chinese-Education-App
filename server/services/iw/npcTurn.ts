@@ -131,8 +131,12 @@ export interface RunNpcTurnOptions {
    * ⚠️ IT IS CALLED FOR FAILED RUNGS TOO, and the caller must handle that: a rung can emit
    * three characters and then die, and those characters must not stay on screen when the next
    * rung starts over. `attemptIndex` changes so the caller can reset the bubble.
+   *
+   * `speechComplete` is the newline closing line 1 — § 6.4 rule 1's `sayDone`, and the moment
+   * to fire TTS. It is surfaced here rather than re-derived downstream because the parser is
+   * the only thing that knows a leading fence is not speech.
    */
-  onDelta?: (say: string, attemptIndex: number) => void;
+  onDelta?: (say: string, attemptIndex: number, speechComplete: boolean) => void;
   /** Injectable for tests. Defaults to `Date.now`. */
   now?: () => number;
   firstGlyphDeadlineMs?: number;
@@ -179,7 +183,7 @@ export async function runNpcTurn(options: RunNpcTurnOptions): Promise<IWTurnOutc
       for await (const delta of rung.stream(request, controller.signal)) {
         const progress = parser.push(delta);
         if (progress.say.length > 0) spoke = true;
-        onDelta?.(progress.say, i);
+        onDelta?.(progress.say, i, progress.speechComplete);
       }
     } catch (err) {
       // An abort lands here too, and is NOT distinguished from a transport error on purpose:

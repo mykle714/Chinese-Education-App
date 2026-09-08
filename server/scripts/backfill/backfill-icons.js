@@ -117,7 +117,7 @@ import { initRunLog, cachedSystem } from './run-log.js';
 import { parseModelJson } from './shared/lib/json.js';
 import { searchIcons, getIconById } from '../../services/Icons8FetchService.js';
 
-const SCRIPT_VERSION = 4; // bump when this script's logic changes (v4: score floor — a judged candidate below MIN_STORED_SCORE is discarded rather than stored as a least-bad fallback; v3: intent-aware judging — a reformulated term's rationale is carried into the next judge call, so a deliberate metaphor is scored on whether it serves the word rather than on literal depiction; v2: LLM acceptability judge + reformulation loop, replacing the pure deterministic cascade)
+const SCRIPT_VERSION = 5; // bump when this script's logic changes (v5: comma-split search terms — a gloss packing several synonyms is split so each searches on its own (fixes icons8 HTTP 400 on long seed terms, and stops the search matching the LAST synonym), plus a 400 now advances the cascade instead of failing the row; v4: score floor — a judged candidate below MIN_STORED_SCORE is discarded rather than stored as a least-bad fallback; v3: intent-aware judging — a reformulated term's rationale is carried into the next judge call, so a deliberate metaphor is scored on whether it serves the word rather than on literal depiction; v2: LLM acceptability judge + reformulation loop, replacing the pure deterministic cascade)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Args & config
@@ -196,8 +196,22 @@ const JUDGE_MODEL = 'claude-sonnet-4-6';
  */
 async function searchTopIcon(term) {
   if (!term) return null;
-  const { icons } = await searchIcons(term, { amount: 1 });
-  return icons[0] ?? null;
+  try {
+    const { icons } = await searchIcons(term, { amount: 1 });
+    return icons[0] ?? null;
+  } catch (err) {
+    // A 400 is icons8 rejecting THIS TERM, not an outage — treat it as "no results"
+    // so the cascade advances to the next term instead of failing the whole word.
+    // Before this, one unsearchable seed gloss errored the row out of every run and
+    // it could never receive an icon (see MAX_SEARCH_TERM_LENGTH).
+    // Auth (401), rate limit (429) and 5xx still throw: those are real faults, and
+    // swallowing them would silently turn an outage into a corpus of empty icons.
+    if (/HTTP 400\b/.test(err?.message ?? '')) {
+      console.log(`      ↳ icons8 rejected term "${term}" (400) — trying the next term`);
+      return null;
+    }
+    throw err;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -220,11 +234,42 @@ function iconSearchTerm(definition) {
   return term.trim();
 }
 
+// Longest term we will send to icons8. The API rejects long multi-clause terms
+// outright with HTTP 400 — `agradecido`'s seed gloss
+// "grateful, thankful, appreciative, obliged, indebted" (50 chars) did exactly that,
+// which errored the word out of the batch on every run rather than degrading to a
+// worse icon. Splitting on commas (below) keeps terms well under this in practice;
+// the cap is the backstop for a long comma-free gloss.
+const MAX_SEARCH_TERM_LENGTH = 40;
+
+/**
+ * One gloss → the search terms it yields, in preference order.
+ *
+ * A single gloss routinely packs several synonyms behind commas — this is the norm
+ * in the Wiktionary-derived es data ("lawyer, solicitor, counsel") and rare but
+ * possible in zh. Searching the JOINED string is wrong twice over: icons8 400s on the
+ * long ones, and on the rest it tends to match the LAST synonym, which is the least
+ * representative one ("weapon, arm" → Robotic Arm; "elevator, lift" → Not Working
+ * Elevator; "motorway, freeway" → Traffic Jam). So split and let each synonym search
+ * on its own, best-first — the leading synonym is the primary sense.
+ *
+ * Parentheses are stripped BEFORE splitting, so a comma inside a parenthetical
+ * ("acute (terminating in a point or edge, especially ...)") never produces a fragment.
+ */
+function iconSearchFragments(definition) {
+  const term = iconSearchTerm(definition);
+  if (!term) return [];
+  return term
+    .split(',')
+    .map((fragment) => fragment.trim())
+    .filter((fragment) => fragment && fragment.length <= MAX_SEARCH_TERM_LENGTH);
+}
+
 /**
  * Ordered list of candidate search terms for a det row:
- *   1. dd = iconSearchTerm(definitions[0])
+ *   1. each comma-separated fragment of dd = definitions[0], leading synonym first
  *   2. word1 (fallback headword)
- *   3. ddt(definitions[i]) for the remaining glosses, in array order
+ *   3. the fragments of definitions[i] for the remaining glosses, in array order
  * Empty/duplicate candidates are dropped so we never re-search the same term twice.
  * This is the FALLBACK cascade used to find an initial (or next) candidate to judge;
  * the judge's own `nextSearchTerm` reformulation takes priority when present.
@@ -232,9 +277,9 @@ function iconSearchTerm(definition) {
 function buildSearchTerms(row) {
   const definitions = Array.isArray(row.definitions) ? row.definitions : [];
   const candidates = [
-    iconSearchTerm(definitions[0]),
+    ...iconSearchFragments(definitions[0]),
     (row.word1 ?? '').trim(),
-    ...definitions.slice(1).map(iconSearchTerm),
+    ...definitions.slice(1).flatMap(iconSearchFragments),
   ];
 
   const seen = new Set();

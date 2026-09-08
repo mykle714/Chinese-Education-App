@@ -13,9 +13,22 @@
  *                 the word, from TEXT METADATA ONLY (name/commonName/category/
  *                 subcategory + the word's definitions — never the image itself).
  *                 If rejected, the judge also proposes a new, more concrete search
- *                 term; SEARCH+JUDGE repeats with that term (falling back to the
- *                 next cascade term if the judge doesn't supply one, or repeats one
- *                 already tried) for up to MAX_JUDGE_ATTEMPTS candidates.
+ *                 term PLUS a `termRationale` saying what metaphor that term is
+ *                 betting on; SEARCH+JUDGE repeats with that term (falling back to
+ *                 the next cascade term if the judge doesn't supply one, or repeats
+ *                 one already tried) for up to MAX_JUDGE_ATTEMPTS candidates.
+ *                 INTENT-AWARE (v3): the rationale is carried into the NEXT judge
+ *                 call as "Search intent". Without it every attempt re-asked the flat
+ *                 "does this icon depict the word?" question, which structurally
+ *                 penalised the very cases the loop exists for — a reformulated term
+ *                 is deliberately ADJACENT for a word with no literal icon, so
+ *                 grading its result against the word alone rejects metaphors that
+ *                 actually succeeded (一场空 → "futile effort" → "Effort", rejected
+ *                 2/5 for "not conveying futility", i.e. graded against the word
+ *                 instead of against the metaphor it had just committed to). With the
+ *                 intent present the judge scores two things together: does the icon
+ *                 depict the INTENDED concept, and does that concept serve the WORD.
+ *                 Both must hold, so a drifted chain of loose hops still fails.
  *   3. CHOOSE   — the first ACCEPTED candidate wins. If none of the (up to
  *                 MAX_JUDGE_ATTEMPTS) judged candidates was accepted, the
  *                 highest-scored candidate seen is used anyway (a NULL iconId is
@@ -94,7 +107,7 @@ import { initRunLog, cachedSystem } from './run-log.js';
 import { parseModelJson } from './shared/lib/json.js';
 import { searchIcons, getIconById } from '../../services/Icons8FetchService.js';
 
-const SCRIPT_VERSION = 2; // bump when this script's logic changes (v2: LLM acceptability judge + reformulation loop, replacing the pure deterministic cascade)
+const SCRIPT_VERSION = 3; // bump when this script's logic changes (v3: intent-aware judging — a reformulated term's rationale is carried into the next judge call, so a deliberate metaphor is scored on whether it serves the word rather than on literal depiction; v2: LLM acceptability judge + reformulation loop, replacing the pure deterministic cascade)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Args & config
@@ -234,12 +247,33 @@ REJECT when the icon is generic, unrelated, misleading, keyed off an unrelated h
 Respond with ONLY valid JSON, no markdown:
 {"acceptable": true|false, "score": 1-5, "reason": "1 short sentence", "nextSearchTerm": "..." or null}
 - score: 5 = perfect match, 1 = unrelated/misleading. Always include it, even when acceptable is true.
-- nextSearchTerm: REQUIRED (a different, more concrete or differently-angled English search phrase) when acceptable is false. Must not repeat any already-tried term. null when acceptable is true.`;
+- nextSearchTerm: REQUIRED (a different, more concrete or differently-angled English search phrase) when acceptable is false. Must not repeat any already-tried term. null when acceptable is true.
+- termRationale: REQUIRED alongside nextSearchTerm — one short sentence saying WHY that term should stand in for this word (the metaphor or angle you are betting on). null when acceptable is true.
 
-function buildJudgeRequest(wordContext, searchIcon, currentTerm, triedTerms) {
+INTENT-AWARE JUDGING. When the candidate was found via a term that a previous pass
+proposed as a deliberate stand-in (you will be shown that term and its rationale under
+"Search intent"), do NOT re-ask whether the icon literally depicts the word. That term was
+chosen precisely because the word has no literal icon. Instead score TWO things together:
+  (a) does the icon faithfully depict the INTENDED concept the term was reaching for, and
+  (b) does that concept genuinely help a learner recall the WORD?
+Both must hold. A faithful icon for a well-chosen metaphor is ACCEPTABLE and should score
+3-5 even though it does not picture the word itself — that is a success, not a miss. But an
+icon for a concept that has drifted away from the word (a chain of loosely-related hops that
+no longer points back at the meaning) fails (b) and must still be REJECTED, however well it
+matches the search term.`;
+
+function buildJudgeRequest(wordContext, searchIcon, currentTerm, triedTerms, searchIntent) {
   const defsText = wordContext.definitions.slice(0, 4).join('; ') || '(none)';
+  // Carry the PRIOR pass's reformulation intent forward. Without it every attempt
+  // re-asks the flat "does this depict the word?" question, which structurally
+  // penalises the deliberate metaphors the loop exists to find: the reformulated
+  // term is adjacent ON PURPOSE for a word with no literal icon, so judging its
+  // result against the word alone rejects a metaphor that actually succeeded.
+  const intentText = searchIntent
+    ? `\n\nSearch intent — "${currentTerm}" was NOT a literal description of the word. A previous pass proposed it as a deliberate stand-in because: ${searchIntent}\nJudge this candidate against that intent (see INTENT-AWARE JUDGING), not against a literal depiction of the word.`
+    : '';
   const prompt = `Word: ${wordContext.word1}
-Definitions: ${defsText}
+Definitions: ${defsText}${intentText}
 
 Candidate icon (found via search term "${currentTerm}"):
   name: ${searchIcon.name ?? '(none)'}
@@ -263,11 +297,11 @@ Already-tried search terms (do not repeat these in nextSearchTerm): ${triedTerms
  * output. Token usage is accrued automatically — initRunLog wraps
  * anthropic.messages.create itself, so this must NOT also call accrueUsage.
  */
-async function judgeIcon(wordContext, searchIcon, currentTerm, triedTerms) {
-  const response = await anthropic.messages.create(buildJudgeRequest(wordContext, searchIcon, currentTerm, triedTerms));
+async function judgeIcon(wordContext, searchIcon, currentTerm, triedTerms, searchIntent) {
+  const response = await anthropic.messages.create(buildJudgeRequest(wordContext, searchIcon, currentTerm, triedTerms, searchIntent));
   const parsed = parseModelJson(response.content[0]?.text ?? '');
   if (!parsed || typeof parsed.acceptable !== 'boolean') {
-    return { acceptable: false, score: 1, reason: 'unparseable judge response', nextSearchTerm: null };
+    return { acceptable: false, score: 1, reason: 'unparseable judge response', nextSearchTerm: null, termRationale: null };
   }
   const nextSearchTerm = typeof parsed.nextSearchTerm === 'string' && parsed.nextSearchTerm.trim()
     ? parsed.nextSearchTerm.trim()
@@ -277,6 +311,11 @@ async function judgeIcon(wordContext, searchIcon, currentTerm, triedTerms) {
     score: typeof parsed.score === 'number' ? parsed.score : (parsed.acceptable ? 5 : 1),
     reason: typeof parsed.reason === 'string' ? parsed.reason : '',
     nextSearchTerm,
+    // Why the judge believes nextSearchTerm stands in for the word. Fed to the NEXT
+    // attempt as its "Search intent" so the metaphor is judged on its own terms.
+    termRationale: typeof parsed.termRationale === 'string' && parsed.termRationale.trim()
+      ? parsed.termRationale.trim()
+      : null,
   };
 }
 
@@ -387,13 +426,19 @@ async function processEntry(client, row) {
   const attempts = []; // { term, icon, judgement }
   let cascadeIdx = 0;
   let queuedTerm = cascadeTerms[cascadeIdx++] ?? null;
+  // Rationale for `queuedTerm`, when it came from a judge reformulation rather than
+  // the cascade. Cascade terms are literal (dd / word1 / other glosses) and carry no
+  // intent, so they stay null and the judge falls back to the plain literal test.
+  let queuedIntent = null;
 
   // Each iteration either (a) finds nothing for `queuedTerm` and advances the
   // cascade without spending a judge attempt, or (b) finds a candidate, judges it,
   // and queues either the judge's reformulation or the next cascade term.
   while (attempts.length < MAX_JUDGE_ATTEMPTS && queuedTerm) {
     const term = queuedTerm;
+    const intent = queuedIntent;
     queuedTerm = null;
+    queuedIntent = null;
 
     if (triedTerms.includes(term)) {
       queuedTerm = cascadeTerms[cascadeIdx++] ?? null;
@@ -407,14 +452,19 @@ async function processEntry(client, row) {
       continue;
     }
 
-    const judgement = await judgeIcon(wordContext, searchIcon, term, triedTerms);
-    attempts.push({ term, icon: searchIcon, judgement });
+    const judgement = await judgeIcon(wordContext, searchIcon, term, triedTerms, intent);
+    attempts.push({ term, icon: searchIcon, judgement, intent });
 
     if (judgement.acceptable) break;
 
-    queuedTerm = judgement.nextSearchTerm && !triedTerms.includes(judgement.nextSearchTerm)
-      ? judgement.nextSearchTerm
-      : (cascadeTerms[cascadeIdx++] ?? null);
+    // A judge reformulation carries its rationale forward; falling back to the next
+    // cascade term drops it, since that term is literal and needs no intent framing.
+    if (judgement.nextSearchTerm && !triedTerms.includes(judgement.nextSearchTerm)) {
+      queuedTerm = judgement.nextSearchTerm;
+      queuedIntent = judgement.termRationale;
+    } else {
+      queuedTerm = cascadeTerms[cascadeIdx++] ?? null;
+    }
   }
 
   if (attempts.length === 0) {

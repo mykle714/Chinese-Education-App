@@ -429,11 +429,29 @@ both the runtime trigger and the manual CLI):
    > `parts-of-speech` (its icons8 search-term cascade keys off the finalized
    > `definitions[0]`). Since v2 it is no longer `deterministic: true`: each candidate icon
    > is judged for acceptability by an LLM call (text metadata only, never the image),
-   > which reformulates the search term and retries up to 4 candidates before falling back
-   > to the least-bad one seen. The judge calls are oracle-capturable, but the icons8
+   > which reformulates the search term and retries up to `MAX_JUDGE_ATTEMPTS` (4)
+   > candidates. **v3** carries a rejected pass's `termRationale` into the next judge call
+   > (`INTENT-AWARE JUDGING`), so a deliberate metaphor is scored on whether it serves the
+   > word rather than on literal depiction. **v4** added `MIN_STORED_SCORE` (3): exhausting
+   > the attempts no longer guarantees an icon — a best candidate below the floor is
+   > discarded, the row keeps `iconId` NULL, and no `icons8` row is inserted for it. (The
+   > pre-v4 "fall back to the least-bad one seen" behaviour is gone; it was shipping
+   > actively misleading icons, e.g. a Fortnite logo for 长平之战 and a court *judge* for
+   > `abogado`, which would teach *juez*.) **v5** splits a comma-packed gloss into one
+   > search term per synonym — see `iconSearchFragments` — because searching the joined
+   > string both 400s on long ones and tends to match the LAST synonym; a 400 now advances
+   > the cascade instead of failing the row, while 401/429/5xx still throw.
+   >
+   > The judge calls are oracle-capturable, but the icons8
    > search/getById HTTP calls are not, so an oracle run still cannot answer this step
-   > locally. It stamps even when icons8 returns no match at all (`iconId` stays NULL), so
-   > an unmatchable word still completes and can be promoted.
+   > locally. Note also that icons8 search is **not deterministic** — the same term can
+   > return a different icon across runs — so under oracle mode a word that keeps
+   > rejecting never converges: every new candidate is a new prompt hash needing a fresh
+   > authored answer. It stamps even when icons8 returns no match at all (`iconId` stays
+   > NULL), so an unmatchable word still completes and can be promoted. Its own row
+   > selection gates on `"iconId" IS NULL` alone and never reads `enrichmentLog`, so a
+   > `SCRIPT_VERSION` bump does not re-run rows that already have an icon — it moves only
+   > the planner's staleness view for the opt-in `--with-icons` path.
    >
    > **It is also the manifest's only `optional: true` step, i.e. OPT-IN**: because it
    > needs an external paid API and a NULL `iconId` degrades gracefully everywhere it is

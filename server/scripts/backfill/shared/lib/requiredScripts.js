@@ -91,7 +91,7 @@ export const REQUIRED_SCRIPTS_ZH = [
   // never blocks promotion — see the `optional` bullet in the header. NOT
   // deterministic (v2+): the search→judge→reformulate loop makes an LLM acceptability
   // call per candidate icon.
-  { id: 'backfill-icons',                             when: 'always',    version: 3, optional: true },
+  { id: 'backfill-icons',                             when: 'always',    version: 4, optional: true },
   { id: 'chinese/backfill-word-forms',                when: 'always',    version: 3 },
   { id: 'chinese/backfill-hsk-level',                 when: 'always',    version: 2, validationFields: ['difficulty'] },
   { id: 'chinese/backfill-frequency-score',           when: 'always',    version: 4, validationFields: ['frequencyScore'] },
@@ -176,7 +176,7 @@ export const REQUIRED_SCRIPTS_ES = [
   // Un-prefixed id because it stamps the same key for every language.
   // OPTIONAL (opt-in) for the same reason as in the zh manifest — external icons8 API.
   // NOT deterministic (v2+) — see the zh entry's comment above.
-  { id: 'backfill-icons',                               when: 'always',         version: 3, optional: true },
+  { id: 'backfill-icons',                               when: 'always',         version: 4, optional: true },
   // Writes BOTH `frequencyScore` and `difficulty` in one pass, so a review of either
   // chip protects the row — mirrors the script's own validatedClause.
   { id: 'spanish/backfill-frequency-score',             when: 'always',         version: 5, validationFields: ['frequencyScore', 'difficulty'] },

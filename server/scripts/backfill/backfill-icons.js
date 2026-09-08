@@ -31,9 +31,19 @@
  *                 Both must hold, so a drifted chain of loose hops still fails.
  *   3. CHOOSE   — the first ACCEPTED candidate wins. If none of the (up to
  *                 MAX_JUDGE_ATTEMPTS) judged candidates was accepted, the
- *                 highest-scored candidate seen is used anyway (a NULL iconId is
- *                 worse than an imperfect one) — this only happens when the loop
- *                 found at least one candidate to score in the first place.
+ *                 highest-scored one is used only when it still reaches
+ *                 MIN_STORED_SCORE; below that the word keeps iconId = NULL.
+ *                 SCORE FLOOR (v4): the fallback used to be stored unconditionally
+ *                 ("a NULL iconId is worse than an imperfect one"). That holds for a
+ *                 3/5 near-miss but not at the bottom — sub-floor picks are
+ *                 misleading rather than weak (年中 "mid-year" → a NEW YEAR calendar;
+ *                 锦囊 "brocade pouch" → a money bag; 长平之战, a 260 BC battle → the
+ *                 Fortnite logo) and a missing icon degrades gracefully everywhere it
+ *                 is read. The threshold is not tuned: across a 50-word sample every
+ *                 ACCEPTED candidate scored >= 3 and every REJECTED one <= 2, so the
+ *                 floor sits on the judge's own boundary and only discards what the
+ *                 judge already rejected. A discarded candidate also skips the
+ *                 getIconById fetch and icons8 INSERT, so it leaves no junk row.
  *   4. UPSERT?  — if the winning icons8Id is NOT already in the local `icons8`
  *                 table, call getIconById to fetch the icon's full metadata + raw
  *                 SVG bytes and INSERT it (assetBytes + downloadedFormat='svg'). If
@@ -107,7 +117,7 @@ import { initRunLog, cachedSystem } from './run-log.js';
 import { parseModelJson } from './shared/lib/json.js';
 import { searchIcons, getIconById } from '../../services/Icons8FetchService.js';
 
-const SCRIPT_VERSION = 3; // bump when this script's logic changes (v3: intent-aware judging — a reformulated term's rationale is carried into the next judge call, so a deliberate metaphor is scored on whether it serves the word rather than on literal depiction; v2: LLM acceptability judge + reformulation loop, replacing the pure deterministic cascade)
+const SCRIPT_VERSION = 4; // bump when this script's logic changes (v4: score floor — a judged candidate below MIN_STORED_SCORE is discarded rather than stored as a least-bad fallback; v3: intent-aware judging — a reformulated term's rationale is carried into the next judge call, so a deliberate metaphor is scored on whether it serves the word rather than on literal depiction; v2: LLM acceptability judge + reformulation loop, replacing the pure deterministic cascade)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Args & config
@@ -161,6 +171,12 @@ const DELAY_MS = 300;
 // least-bad one seen. Locked in with the user: 4 attempts, then take the best score
 // so far rather than leave iconId NULL when at least one candidate was ever found.
 const MAX_JUDGE_ATTEMPTS = 4;
+
+// Minimum judge score (1-5) that may be WRITTEN to a row. A candidate scoring below
+// this is discarded and the word keeps iconId = NULL rather than shipping a
+// misleading picture. 3 is the judge's own accept/reject boundary — see the SCORE
+// FLOOR note in the CHOOSE step.
+const MIN_STORED_SCORE = 3;
 
 const JUDGE_MODEL = 'claude-sonnet-4-6';
 
@@ -472,13 +488,37 @@ async function processEntry(client, row) {
   }
 
   // Winner: the last attempt if it was accepted, otherwise the highest-scored
-  // candidate across every attempt — least-bad fallback per the capped loop, so a
-  // word never ends up with iconId NULL just because nothing hit the bar.
+  // candidate across every attempt.
   const last = attempts[attempts.length - 1];
   let chosen = last;
   if (!last.judgement.acceptable) {
     chosen = attempts.reduce((best, a) =>
       (a.judgement.score ?? 0) > (best.judgement.score ?? 0) ? a : best, attempts[0]);
+  }
+
+  // SCORE FLOOR (v4). The least-bad fallback used to be stored unconditionally, on
+  // the theory that a NULL iconId is worse than an imperfect one. Measured over a
+  // 50-word random sample that theory does not hold at the bottom of the range: the
+  // sub-floor picks are not merely weak but actively misleading — 年中 ("mid-year")
+  // drew a NEW YEAR calendar, 锦囊 ("brocade pouch") a money bag, 长平之战 (a 260 BC
+  // battle) the Fortnite logo — and a missing icon degrades gracefully everywhere it
+  // is read, which is why this whole step is `optional` in the manifest.
+  //
+  // The threshold needs no tuning: the judge's own accept/reject boundary already
+  // falls exactly here. Across 100 judged candidates every ACCEPTED one scored >= 3
+  // and every REJECTED one <= 2, with nothing straddling. So this only discards
+  // candidates the judge itself had already rejected.
+  //
+  // Returning early also skips the getIconById fetch and the icons8 INSERT, so a
+  // rejected candidate no longer pays an HTTP call or leaves a junk row behind
+  // (tonight's runs put "Samsung Flow" and "Fortnite Battle Royale" in the catalog
+  // that way). The row is still stamped by the caller's no-icon branch, so it is not
+  // re-searched on every subsequent run.
+  if (!chosen.judgement.acceptable && (chosen.judgement.score ?? 0) < MIN_STORED_SCORE) {
+    return {
+      status: 'no-icon',
+      reason: `below score floor (best ${chosen.judgement.score}/5 < ${MIN_STORED_SCORE} after ${attempts.length} judged): ${chosen.judgement.reason}`,
+    };
   }
 
   const { icon: searchIcon, term, judgement } = chosen;
@@ -508,6 +548,11 @@ async function processEntry(client, row) {
     accepted: judgement.acceptable,
     score: judgement.score,
     judgeAttempts: attempts.length,
+    // Index (1-based) of the attempt that won, and whether that attempt carried a
+    // reformulation intent. Distinguishes "accepted on the literal first try" from
+    // "accepted under the intent-aware rubric", which are different rubrics.
+    winningAttempt: attempts.indexOf(chosen) + 1,
+    winningHadIntent: Boolean(chosen.intent),
     reason: judgement.reason,
   };
 }
@@ -577,9 +622,10 @@ async function run() {
           const tag = result.fetched
             ? `(fetched${result.storedBytes ? ' +svg' : ' meta-only'})`
             : '(cached)';
+          const attemptTag = `[att ${result.winningAttempt}/${result.judgeAttempts}${result.winningHadIntent ? ' intent' : ' literal'}]`;
           const verdict = result.accepted
-            ? `accepted, score ${result.score}/5`
-            : `FALLBACK (least-bad after ${result.judgeAttempts} judged), score ${result.score}/5`;
+            ? `accepted ${attemptTag}, score ${result.score}/5`
+            : `FALLBACK ${attemptTag} (least-bad after ${result.judgeAttempts} judged), score ${result.score}/5`;
           console.log(`→ ${result.iconId} "${result.name}" via "${result.term}" ${tag} — ${verdict}: ${result.reason}`);
         } else {
           // Stamp even though iconId stays NULL: this version of the term cascade really

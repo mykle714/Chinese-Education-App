@@ -167,9 +167,11 @@ const { stampEntries } = initRunLog({ script: 'backfill-icons', version: SCRIPT_
 // Be polite to the icons8 API: small delay between rows.
 const DELAY_MS = 300;
 
-// Cap on how many candidates get judged per word before falling back to the
-// least-bad one seen. Locked in with the user: 4 attempts, then take the best score
-// so far rather than leave iconId NULL when at least one candidate was ever found.
+// Cap on how many candidates get judged per word. After this many rejections the
+// loop stops reformulating and settles on the best-scoring candidate it saw. That
+// candidate is only STORED if it clears MIN_STORED_SCORE below — as of v4 exhausting
+// the attempts no longer guarantees an icon, so a word with no decent match keeps
+// iconId = NULL instead of taking a least-bad one.
 const MAX_JUDGE_ATTEMPTS = 4;
 
 // Minimum judge score (1-5) that may be WRITTEN to a row. A candidate scoring below

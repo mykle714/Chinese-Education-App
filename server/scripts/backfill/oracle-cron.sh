@@ -82,6 +82,14 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
   set -a; . "$REPO_ROOT/.env"; set +a
 fi
 
+# The .env also carries ANTHROPIC_API_KEY for the direct-SDK backfill scripts
+# (backfill-icons.js etc.) — but `claude -p` below prefers an API key over the
+# OAuth subscription session whenever both are present, so sourcing it here would
+# silently bill this hourly round against pay-as-you-go API usage instead of the
+# subscription the budget gate below is actually checking. Unset it for this
+# process only; the other scripts still get it by sourcing .env themselves.
+unset ANTHROPIC_API_KEY
+
 # discord_notify <message>: best-effort POST to the webhook. A short timeout plus
 # a swallowed exit code mean a Discord outage or bad URL never fails or hangs a
 # backfill round — this is a side channel, not part of the pipeline's guarantees.

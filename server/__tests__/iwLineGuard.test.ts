@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { guardNpcLine } from '../lineGuard';
+import { guardNpcLine } from '../contracts/iwLineGuard.js';
 
 const ok = (text: string, lang: 'zh' | 'es' = 'zh') => guardNpcLine(text, lang);
 

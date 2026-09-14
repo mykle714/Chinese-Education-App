@@ -39,7 +39,10 @@ import { cooldownRemainingMs } from './cooldown.js';
 
 /** The minimal shape every function here needs from a card row. */
 export interface FlpReadinessCard {
-  typedMarkHistory: TypedMarkHistory | undefined;
+  // Optional, not `T | undefined`: the client passes `VocabEntry`, whose history is an
+  // optional property. Every function below already reads a missing history as
+  // never-studied (ready), so accepting an absent key changes no behaviour.
+  typedMarkHistory?: TypedMarkHistory;
 }
 
 /**

@@ -5,7 +5,7 @@ import {
 } from '../../../../server/contracts/iw';
 import { actionById, type ActionWorld } from './actionPlayer';
 import { audibleListeners, chebyshev } from '../../../engine/iw/hearing';
-import { guardNpcLine } from '../../../engine/iw/lineGuard';
+import { guardNpcLine } from '../../../../server/contracts/iwLineGuard';
 import { planGlyphReveal } from '../../../engine/iw/revealSchedule';
 import {
   approachCells, buildSceneGraph, cellKey, parseCellKey, planScenePath, type SceneGraph,

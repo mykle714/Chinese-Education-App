@@ -358,37 +358,53 @@ Two consequences worth knowing:
 
 ### The bottom shortfall (open, and NOT fixable from CSS)
 
-`black-translucent` buys the top band at a price that is **not** an inset: iOS moves the
-standalone web view's **origin** to `y=0` but does **not** grow its **height**. The web
-view is therefore `screen height − status bar height` tall, and a strip that size at the
-**bottom** of the screen belongs to no one — it renders as the window's flat `#FFFFFF`
-backdrop **on every page, whatever that page's ground is**. The symptom is diagnostic:
-the top band starts matching and an *identically sized* band appears at the base. (Found
-2026-09-05, immediately after the status-bar fix landed.)
+`black-translucent` buys the top band at a price that is **not** an inset: iOS extends
+the standalone web view over the **whole** screen but leaves the document's **initial
+containing block** at the old `screen height − status bar height`. The web view is 852pt
+on a 393×852 device; the containing block is 793pt; the difference is exactly
+`env(safe-area-inset-top)` (59pt). Uncorrected, the shell stops 59pt short of the bottom
+of the screen and that strip renders as a flat `#FFFFFF` band **on every page, whatever
+that page's ground is**. The symptom is diagnostic: the top band starts matching and an
+*identically sized* band appears at the base. (Found 2026-09-05.)
 
 This is **not** `SAFE_BOTTOM`. That inset describes a strip the page *does* paint and
-merely has to keep content out of; this one is outside the web view entirely.
+merely has to keep content out of; this one is a strip the page fails to paint at all.
 
-**⛔ Do not fix it by growing the shell to `window.screen.height`.** That was tried the
-same day (`useAppHeight`, publishing a measured `--app-height` read by `#root`,
-`FrameRoot`, `PHONE_OVERLAY_SX` and `Layout`) and **reverted within hours**, because the
-missing pixels are outside the web view: a taller layout cannot paint them, it only
-pushes the last ~60pt of every page past the web view's edge, where it is clipped.
-Measured off a Bubble Match screenshot on a 393×852 device with the hook live — page
-content ran to 791pt, the white strip was still 61pt, and the play panel's bottom hint
-was cut in half. Pages that merely *shifted* looked "slightly off"; a game, which fills
-its surface exactly, lost its bottom row outright.
+**The fix — measured on-device 2026-09-13**, full attempt log and probe numbers in
+[IOS_STATUS_BAR_BUG.md](./IOS_STATUS_BAR_BUG.md) § 3 round 6:
 
-The strip is currently **accepted**, unfixed. The three real options, none of them CSS:
+⚠️ **No CSS unit can express the real height.** `100%` and `100svh` always give the short
+793; `100vh`, `100dvh` and `100lvh` give 793 *or* 852 depending on the page load, with
+identical CSS, and `window.innerHeight` is just as unstable. Only `screen.height` (852)
+and `documentElement.clientHeight` (793) hold still. `src/hooks/useAppHeight.ts`
+measures the gap from those two and publishes the web view's height as a plain **px**
+value, `--app-height`, set only in the iOS home-screen app (`navigator.standalone`, gap
+in `0 < gap ≤ 100px`) and unset everywhere else, where every consumer falls back to the
+`100dvh` / `100%` it used before the hook existed.
 
-| Option | What it costs |
+⚠️ **`html, body` is the load-bearing consumer, and the one three earlier rounds
+missed.** `index.css` gives them `overflow: hidden`, which makes `body` a **clipping
+box**: its height is a hard ceiling on `#root` and the frame no matter how correctly
+those are sized. Round 3 and round 5 both sized `#root` and `FrameRoot` to 852 and still
+shipped the strip, because `body` was 793 and quietly slicing 59pt off them.
+
+| Consumer | Why |
 |---|---|
-| Revert `apple-mobile-web-app-status-bar-style` to `default` | The web view is letterboxed *below* an opaque OS bar and spans to the bottom, so the strip goes away — but the band behind the clock is OS-painted again and the app cannot colour it. That is the bug the `black-translucent` change was made to fix. |
-| Ship a **web app manifest** (`display: standalone` + `background_color`) instead of / alongside the Apple meta tags | iOS 17+ honours it; `background_color` paints the window backdrop, so the strip would at least take the app's paper instead of white. Unverified on this device, and it is one static colour, not the current page's ground. |
-| Leave it | A 61pt white band under every page in the home-screen app. |
+| `html, body` (`src/index.css`) | the clipping box — **without this one, none of the others matter** |
+| `#root` (`src/App.css`) | the shell scroll container |
+| `FrameRoot` (`MobileDemoFrame`) | the phone surface |
+| `Layout`'s `minHeight` | the non-frame shell |
 
-⚠️ **Whatever ships, iOS snapshots these tags when the icon is added** — an installed
-icon has to be deleted and re-added before any of it takes effect.
+⛔ **The region past the containing block is visible and ours.** An earlier version of
+this section said the opposite — that the missing pixels are *outside* the web view, that
+no layout can paint them, and that growing the shell only clips content. A device probe
+painted `793..852` and it appeared on screen with the home indicator inside it. The
+clipping that observation was based on was real, but `body` caused it, not the web view.
+There is **one** height, not a paint height and a shorter layout height.
+
+⚠️ **Whatever ships, iOS snapshots the `apple-mobile-web-app-*` tags when the icon is
+added** — an installed icon has to be deleted and re-added before a *tag* change takes
+effect. CSS and JS changes ship with a normal reload.
 
 ### The status-bar scrim (open)
 

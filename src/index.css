@@ -67,11 +67,23 @@ a:hover {
    taller than the visible viewport when the mobile URL bar is shown. That extra
    height dragged the scroll-away header AND the floating footer pill with it.
    Pinning the shell to the dynamic viewport keeps the header/footer fixed and
-   confines scrolling to the designated content containers. */
+   confines scrolling to the designated content containers.
+
+   ⚠️ `height` HERE IS THE ONE THAT MATTERS ON iOS. `overflow: hidden` makes body a
+   CLIPPING box, so body's height is a hard ceiling on everything below it — `#root`
+   and MobileDemoFrame can be sized perfectly and still be sliced here. In the iOS
+   home-screen app `black-translucent` extends the web view over the full screen while
+   leaving the document's initial containing block at `screen − statusBar`, so the
+   `100%` fallback resolves 59px short and cut the bottom off the shell (measured
+   2026-09-13; the strip showed as a dead white bar under every page). `--app-height`
+   is the web view's real height in px, published by src/hooks/useAppHeight.ts — which
+   explains why a px value is the only thing that works here, as EVERY css unit
+   (`vh`/`dvh`/`lvh`/`svh`/`%`) resolves against the short containing block. The
+   variable is unset everywhere else, so this is exactly the `100%` it has always been. */
 html,
 body {
   margin: 0;
-  height: 100%;
+  height: var(--app-height, 100%);
   min-width: 320px;
   overflow: hidden; /* shell never scrolls — only inner scroll containers do */
   overscroll-behavior: none; /* no rubber-banding at shell boundaries */

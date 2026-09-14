@@ -646,7 +646,7 @@ it reads as "my second tap did nothing". Reported reproduction rate ≈20%; meas
 
 ### What was measured
 
-Instrumentation was added, deployed to prod, exercised across five real sessions,
+Instrumentation was added, deployed to PPE, exercised across five real sessions,
 and then **reverted**. To resurrect it, revert the revert; the originals are
 commits `0c07f0a` (window-level tap census), `dc7bfec` (touch-layer probe), and
 `41fd700`/`453ec2b`/`2dfbaaf` (on-screen live finger-count overlay).
@@ -845,7 +845,7 @@ currently answered.
 ### Process
 
 15. **Feature freeze policy.** There are currently **8 open deploy runbooks**;
-    several are not yet on prod. A migration means a freeze, by one person, for
+    several are not yet on PPE. A migration means a freeze, by one person, for
     months. This is the largest single cost and needs an explicit decision.
 16. **E2E replacement.** Puppeteer → Maestro, and who maintains it.
 
@@ -867,17 +867,17 @@ wasted work.
 | 4a | **Build a synthetic scale harness** — a ped-count knob, synthesized placements/stands, a ped counter in `nmpPerf` | `src/hooks/usePixiPedestrians.ts`, `src/features/nightmarket/{MarketEngineViewer,nmpPerf,NightMarketEnginePage}.ts(x)`, `src/utils/perfDiagnostics.ts` | 🟨 **ped load + measurement bridge done 2026-08-13; stands/templates NOT synthesized** — see below |
 
 > ⚠️ **Item 4 is blocked on the telemetry existing.** The perf sink writes JSONL to
-> the **prod host filesystem** (`~/vocabulary-app/server/logs/client-perf-*.jsonl`),
-> not to a database table, and the pipeline may not be deployed to prod yet. The
-> pull path is the **`/diagnostics-pull`** skill. **Check that prod actually
+> the **PPE host filesystem** (`~/vocabulary-app/server/logs/client-perf-*.jsonl`),
+> not to a database table, and the pipeline may not be deployed to PPE yet. The
+> pull path is the **`/diagnostics-pull`** skill. **Check that PPE actually
 > has log files before planning around this item.**
 >
-> 📌 **After the perf pipeline is confirmed live on prod, run a LOAD TEST IN DEV.**
-> Prod telemetry answers "what do real users experience"; it cannot answer "what
+> 📌 **After the perf pipeline is confirmed live on PPE, run a LOAD TEST IN DEV.**
+> PPE telemetry answers "what do real users experience"; it cannot answer "what
 > happens at the scale target", because no real user has 1,000 pedestrians. Run
 > item 4a's harness locally against the same instrumentation so the two data sets
 > are directly comparable — same metrics, same analyzer, one synthetic and one
-> real. Doing the dev load test *before* the prod pipeline is verified risks
+> real. Doing the dev load test *before* the PPE pipeline is verified risks
 > measuring against instrumentation that later changes shape.
 
 #### Why item 4a exists (added 2026-08-13)
@@ -1009,7 +1009,7 @@ machine, or a pair of eyes. Nothing here is waiting on more code being written.
 
 | # | What | Why it can't be automated | Unblocks |
 |---|---|---|---|
-| H1 | **Run Step 0 of [`/diagnostics-pull`](../.claude/commands/diagnostics-pull.md) on the prod box** — three `ls` commands | Needs prod shell access; there is no cross-machine SSH from dev | Item 4 (gate 1). Also tells us whether the pipeline is deployed at all — an empty pull and a healthy app produce identical analyzer output |
+| H1 | **Run Step 0 of [`/diagnostics-pull`](../.claude/commands/diagnostics-pull.md) on the PPE box** — three `ls` commands | Needs PPE shell access; there is no cross-machine SSH from dev | Item 4 (gate 1). Also tells us whether the pipeline is deployed at all — an empty pull and a healthy app produce identical analyzer output |
 | H2 | **Eyeball the chunked terrain** — nmp debug column, the `ViewComfy` toggle | Chunk seams, level-transition popping and ped occlusion are judged by looking; the math is already unit-tested (23 tests) | Item 7 leaving "off by default". Checklist: [NIGHT_MARKET_TERRAIN_CHUNKING.md](./NIGHT_MARKET_TERRAIN_CHUNKING.md) § "What still needs a human" |
 | H3 | **Run the dev load test** — nmp in dev with `localStorage.perfDiag = '1'`, cycle the ped-load button through every rung, then `analyze-client-perf.ts` | Someone has to sit at the machine and drive the knob | The first real number on the pedestrian ceiling → justifies (or refutes) items 5, 6, 9. **Do this after H1**, so both data sets share verified instrumentation |
 | H4 | **A real phone** for item 10 | It is the target device; a laptop result answers a different question | Item 10, and with it the migration decision on the actual product requirement |
@@ -1052,7 +1052,7 @@ The reasoning, in order of weight:
    technique is renderer-agnostic.
 
 3. **The largest cost is not in the replacement map.** It is that this is a
-   single-developer project with 8 open runbooks, several not yet on prod. A
+   single-developer project with 8 open runbooks, several not yet on PPE. A
    migration is a months-long feature freeze. That cost dwarfs any of the
    individual line items and is the reason to demand that all three gates be
    cleared with evidence rather than argument.

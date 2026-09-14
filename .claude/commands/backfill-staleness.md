@@ -24,8 +24,8 @@ Report `stale` and `missing` as separate columns; never collapse them.
 
 ## 0. Machine check
 
-Read `amIOnTheProdMachine.md`. This skill only reads, so either machine is safe,
-but note which DB you are analyzing (dev and prod have separate `enrichmentLog`
+Read `machineEnvironment.md`. This skill only reads, so either machine is safe,
+but note which DB you are analyzing (dev and PPE have separate `enrichmentLog`
 histories and separate `server/logs/backfill-runs.jsonl`).
 
 ## 1. Collect each script's current SCRIPT_VERSION
@@ -75,7 +75,7 @@ ORDER BY (COUNT(*) FILTER (WHERE (p.log -> c.script) IS NULL)
 SELECT COUNT(*) AS cohort_total FROM dictionaryentries_zh WHERE language='zh' AND discoverable=TRUE;
 ```
 
-Run via `docker exec -i cow-postgres-local psql -U cow_user -d cow_db < query.sql`
+Run via `docker exec -i cow-postgres psql -U cow_user -d cow_db < query.sql`
 (the heredoc must be piped with `-i`; a bare `-c` with a multi-statement heredoc
 silently produces no output).
 
@@ -126,7 +126,7 @@ patch_cost(script) ≈ per_entry_cost × (stale + applicable missing)
 Aggregate the per-model tokens from a log line like this:
 
 ```bash
-docker exec -i cow-backend-local node -e '
+docker exec -i cow-backend node -e '
 const P={"claude-opus-4-8":{i:5,o:25,cw:6.25,cr:0.5},"claude-sonnet-4-6":{i:3,o:15,cw:3.75,cr:0.3},"claude-haiku-4-5":{i:1,o:5,cw:1.25,cr:0.1}};
 let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const r=JSON.parse(d.trim().split("\n").pop());let c=0;
 for(const[m,u]of Object.entries(r.usageByModel||{})){const p=P[m];if(!p)continue;
@@ -169,6 +169,6 @@ NULL/eligible unless the script re-processes by version — confirm each script'
 selection query before assuming a plain re-run will refresh stale-version rows
 (many select `WHERE <col> IS NULL`, so stale-but-populated rows need the column
 nulled first). And these are DB writes. Note the target: run against **dev** and they stay local
-and harmless, but there is no longer a dev → prod push step, so a dev-side fix does
-not reach learners at all. Anything that must ship has to be run against prod (see
+and harmless, but there is no longer a dev → PPE push step, so a dev-side fix does
+not reach learners at all. Anything that must ship has to be run against PPE (see
 `/oracle-backfill` / `/mark-discoverable`, which back up first).

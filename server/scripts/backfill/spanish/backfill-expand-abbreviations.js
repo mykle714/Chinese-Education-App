@@ -7,7 +7,7 @@
  * differs.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-expand-abbreviations.js [--dry-run]
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-expand-abbreviations.js [--dry-run]
  */
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';

@@ -1,6 +1,6 @@
 # Client Performance Diagnostics
 
-Real-user interaction-latency telemetry, built to diagnose the **prod-only**
+Real-user interaction-latency telemetry, built to diagnose the **PPE-only**
 "buttons take 1–2s before working" lag on the mobile-demo footer and `/decks`
 page (the lag does not reproduce locally, so synthetic profiling is not enough).
 
@@ -9,12 +9,12 @@ page (the lag does not reproduce locally, so synthetic profiling is not enough).
 | Layer | File | Responsibility |
 |---|---|---|
 | **Client capture** | `src/utils/perfDiagnostics.ts` | Observes the platform Performance APIs, buffers interesting entries, beacons batches to the server. |
-| **Client bootstrap** | `src/main.tsx` | Calls `initPerfDiagnostics()` once, gated to production (or `localStorage.perfDiag === "1"`). |
+| **Client bootstrap** | `src/main.tsx` | Calls `initPerfDiagnostics()` once, gated to PPE (or `localStorage.perfDiag === "1"`). |
 | **Frame reporter** | `src/features/nightmarket/nmpPerf.ts` → `reportFrameStats()` | Ships each 2s window's mean/worst frame time under the current load label. The only *non*-interaction source — see "Frame records" below. |
 | **Server sink** | `server/routes/diagnosticsRoutes.ts` → `POST /api/diagnostics/perf` | Unauthenticated endpoint; appends each batch via the shared writer + prints a one-line summary. |
 | **Shared writer** | `server/utils/diagnosticsLog.ts` | `appendDiagnostic(prefix, record)` — resolves the (configurable) log dir, daily-rotates, and sweeps expired files. Used by **both** the perf and error sinks. |
 | **Analysis** | `server/scripts/analyze-client-perf.ts` | Read-only aggregator; reads every `client-perf-*.jsonl` (+ legacy single file) and prints per-route p50/p95 latency breakdowns. |
-| **Export (prod → dev)** | `server/scripts/export-diagnostics-bundle.ts` | Packages the JSONL for transport to a dev box, **stripping the `ip` field**. There is no cross-machine SSH on this project, so the only transport is a git commit — which makes scrubbing mandatory, not advisory. Driven by `/diagnostics-pull`. |
+| **Export (PPE → dev)** | `server/scripts/export-diagnostics-bundle.ts` | Packages the JSONL for transport to a dev box, **stripping the `ip` field**. There is no cross-machine SSH on this project, so the only transport is a git commit — which makes scrubbing mandatory, not advisory. Driven by `/diagnostics-pull`. |
 | **Storage** | `server/logs/client-perf-YYYY-MM-DD.jsonl` (host) | Append-only JSONL, git-ignored. **Persisted + daily-rotated** — see "Persistence & rotation" below. |
 
 ## What is captured
@@ -87,7 +87,7 @@ cost has to be volunteered by the renderer.
 **Why here, and not a console log.** The Night Market scale question
 (`docs/REACT_NATIVE_MIGRATION.md` action item 4a: does it hold at 1,000
 pedestrians?) is answered by a *synthetic dev load test*, while the tap-lag
-question is answered by *real prod telemetry*. Routing both through this pipeline
+question is answered by *real PPE telemetry*. Routing both through this pipeline
 means they share one transport, one JSONL shape, and one analyzer — so the two
 numbers are comparable rather than merely similarly named.
 
@@ -110,15 +110,15 @@ the tap census.
 
 | Gate | Where | Effect |
 |---|---|---|
-| `initPerfDiagnostics()` ran | `src/main.tsx` — prod, or `localStorage.perfDiag = "1"` | Without it `reportFrameStats` is a no-op |
-| `nmpPerf` enabled | dev by default; `localStorage.nmpPerf = "1"` in prod | Without it no window is ever reported |
+| `initPerfDiagnostics()` ran | `src/main.tsx` — PPE, or `localStorage.perfDiag = "1"` | Without it `reportFrameStats` is a no-op |
+| `nmpPerf` enabled | dev by default; `localStorage.nmpPerf = "1"` in PPE | Without it no window is ever reported |
 
 Consequence worth knowing before reading a report: **in ordinary production these
 records do not exist**, because `nmpPerf` is off there. They are a *load-test
-instrument* that happens to share the prod pipeline, not passive prod telemetry.
+instrument* that happens to share the PPE pipeline, not passive PPE telemetry.
 To run one, open nmp in dev with `localStorage.perfDiag = "1"`, cycle the
 pedestrian-load button in the debug column, and read the result with the same
-`analyze-client-perf.ts` invocation used for prod.
+`analyze-client-perf.ts` invocation used for PPE.
 
 Each record carries the route `path` and a best-effort `target` description
 derived from the app's descriptive class names (e.g.
@@ -157,14 +157,14 @@ npx tsx scripts/analyze-client-perf.ts --since 2026-06-13
 npx tsx scripts/analyze-client-perf.ts --min 500        # only taps ≥500ms
 ```
 
-**Reading prod's data on a dev box:** these are files on the prod host, not a
-database table, so `/data-prod-to-dev`'s `pg_dump` path does not reach them. Use
-the dedicated **`/diagnostics-pull`** skill, which runs `export-diagnostics-bundle.ts` on prod
+**Reading PPE's data on a dev box:** these are files on the PPE host, not a
+database table, so `/data-ppe-to-dev`'s `pg_dump` path does not reach them. Use
+the dedicated **`/diagnostics-pull`** skill, which runs `export-diagnostics-bundle.ts` on PPE
 (IP-stripped + gzipped), commits the bundle, and unpacks it into local
 `server/logs/` where `analyze-client-perf.ts` picks it up with no flag.
 
 ⚠️ That also means **local dev records mix into the same report** — clear or rename
-them first, or the prod picture is contaminated with laptop timings.
+them first, or the PPE picture is contaminated with laptop timings.
 
 Output groups by `(kind, route)`, sorted by p95 duration, and prints a
 "dominant cost" line per interaction route. **Interpretation:**
@@ -210,8 +210,8 @@ Both the perf and error sinks write through `server/utils/diagnosticsLog.ts`
 (`appendDiagnostic(prefix, record)`), which owns three behaviors:
 
 - **Persistence across rebuilds.** The log directory is `DIAGNOSTICS_LOG_DIR` when
-  set, else `<dist>/logs` (the historical in-container path). In prod,
-  `docker-compose.prod.yml` sets `DIAGNOSTICS_LOG_DIR=/app/logs` and bind-mounts
+  set, else `<dist>/logs` (the historical in-container path). In PPE,
+  `docker-compose.ppe.yml` sets `DIAGNOSTICS_LOG_DIR=/app/logs` and bind-mounts
   `./server/logs:/app/logs`, so the logs live on the **host** at
   `~/vocabulary-app/server/logs/` and **survive `docker-compose up --build`** (they
   used to be wiped on every rebuild). The bind-mount dir must be writable by the
@@ -226,8 +226,8 @@ Both the perf and error sinks write through `server/utils/diagnosticsLog.ts`
   prefix. Keeps the directory bounded without an external cron.
 
 **Container stdout/stderr logs** are a *separate* concern (not the JSONL above):
-all three prod services set a `json-file` `max-size: 10m` / `max-file: 5` cap (a
-shared `x-logging` anchor in `docker-compose.prod.yml`) so docker's default
+all three PPE services set a `json-file` `max-size: 10m` / `max-file: 5` cap (a
+shared `x-logging` anchor in `docker-compose.ppe.yml`) so docker's default
 *unbounded* driver can't grow to GBs over long uptimes.
 
 ## Lifecycle / removal
@@ -254,7 +254,7 @@ logged anywhere** — so user-reported "crashes" were invisible. This captures t
 |---|---|---|
 | **Error boundary** | `src/components/AppErrorBoundary.tsx` | Top-level React boundary; catches render/commit throws in the tree, reports them, and renders a recoverable "Something went wrong / Reload" fallback instead of a blank page. Wraps `<App/>` in `src/main.tsx`. |
 | **Global listeners + reporter** | `src/utils/errorReporting.ts` | `initErrorReporting()` attaches `window` `error` + `unhandledrejection` listeners (handler/async throws the boundary can't see). `reportClientError()` scrubs + ships one record. |
-| **Client bootstrap** | `src/main.tsx` | Calls `initErrorReporting()` once, **always on** (crashes were invisible in every environment, not just prod — unlike the prod-gated perf init). |
+| **Client bootstrap** | `src/main.tsx` | Calls `initErrorReporting()` once, **always on** (crashes were invisible in every environment, not just PPE — unlike the PPE-gated perf init). |
 | **Server sink** | `server/routes/diagnosticsRoutes.ts` → `POST /api/diagnostics/error` | Unauthenticated endpoint; appends one scrubbed record per POST via the shared writer + prints a `💥 client-error …` one-line summary. |
 | **Storage** | `server/logs/client-error-YYYY-MM-DD.jsonl` (host) | Append-only JSONL via `appendDiagnostic` — **persisted + daily-rotated** (see "Persistence & rotation"). |
 
@@ -332,5 +332,5 @@ cat server/logs/client-error-$(date -u +%F).jsonl
 # all days, real crashes only (filter out manual SMOKE/TEST lines)
 cat server/logs/client-error-*.jsonl | grep -iv 'test'
 # one-line summaries in the container console log (capped at 10m × 5 files)
-docker logs cow-backend-prod 2>&1 | grep '💥 client-error'
+docker logs cow-backend 2>&1 | grep '💥 client-error'
 ```

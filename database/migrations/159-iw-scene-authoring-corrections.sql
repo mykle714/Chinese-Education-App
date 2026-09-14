@@ -4,7 +4,7 @@
 --
 -- ⚠️ CONTRACT MIGRATION. Every change here DROPS or RESHAPES a column 158 created.
 -- It is safe to run in one pass because **no shipped code reads or writes any of these
--- tables**: the whole iw feature is unreleased, and both dev and prod hold ZERO rows in
+-- tables**: the whole iw feature is unreleased, and both dev and PPE hold ZERO rows in
 -- `iw_scenes` and `iw_scene_runs` (verified before writing this — see the runbook). There
 -- is therefore no expand/contract window to respect and no data to preserve; if a future
 -- deploy of this file ever finds rows, that assumption has broken and the runbook's

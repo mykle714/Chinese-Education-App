@@ -4,8 +4,8 @@ import { API_BASE_URL } from "../constants";
  * Client-side interaction-latency telemetry.
  *
  * Purpose: the "buttons take 1–2s before working" lag on the mobile-demo footer
- * and /decks page only reproduces in production, so we cannot profile it
- * locally. This module records *real-user* tap→response latency in prod and
+ * and /decks page only reproduces in PPE, so we cannot profile it
+ * locally. This module records *real-user* tap→response latency in PPE and
  * ships it to the server (`POST /api/diagnostics/perf`, see server.ts) for
  * offline analysis.
  *
@@ -235,7 +235,7 @@ export function reportTap(
  * Frame cost has to be reported by the thing doing the rendering.
  *
  * The point of routing it through THIS module rather than logging it is
- * comparability: the synthetic dev load test and the real prod telemetry then
+ * comparability: the synthetic dev load test and the real PPE telemetry then
  * share one transport, one JSONL shape, and one analyzer
  * (server/scripts/analyze-client-perf.ts), so "the harness said 40ms" and "a real
  * user saw 40ms" are the same measurement rather than two numbers that merely

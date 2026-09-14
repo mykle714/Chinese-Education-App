@@ -11,7 +11,7 @@
 --   1. users."isValidator"  — gates the validator UI + endpoints.
 --   2. validations          — a DEDICATED table of review records. It is NOT a column
 --                             on the det tables on purpose: `dictionaryentries_{zh,es}`
---                             are TRUNCATE+restored wholesale on every prod data deploy
+--                             are TRUNCATE+restored wholesale on every PPE data deploy
 --                             (see docs/DATA_DEPLOYMENT_GUIDE.md), which would wipe any
 --                             review column. `validations` lives outside that set and is
 --                             keyed by the det row's surrogate `id` (stable across data
@@ -53,7 +53,7 @@ CREATE INDEX IF NOT EXISTS idx_validations_entry ON validations ("entryId", lang
 CREATE INDEX IF NOT EXISTS idx_validations_user  ON validations ("validatorUserId");
 
 COMMENT ON TABLE validations IS
-    'Human validation records (approve/flag + reviewed content) per (entry, field). Kept off the det tables so prod data deploys (TRUNCATE+restore of dictionaryentries_*) never wipe them; backfills skip fields recorded here. See docs/DATA_VALIDATION_SYSTEM.md.';
+    'Human validation records (approve/flag + reviewed content) per (entry, field). Kept off the det tables so PPE data deploys (TRUNCATE+restore of dictionaryentries_*) never wipe them; backfills skip fields recorded here. See docs/DATA_VALIDATION_SYSTEM.md.';
 
 -- ── 3. texts.validation* linkage columns ─────────────────────────────────────
 -- All nullable; NULL ⇒ an ordinary user document. When set, the text is a

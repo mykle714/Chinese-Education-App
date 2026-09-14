@@ -1,8 +1,8 @@
-# ⏳ TEMPORARY — Gloss Confusability phase 2 **half B** (runtime guard), prod deploy runbook
+# ⏳ TEMPORARY — Gloss Confusability phase 2 **half B** (runtime guard), PPE deploy runbook
 
-**Delete this file once prod is verified.**
+**Delete this file once PPE is verified.**
 
-**Status: DEPLOYED 2026-08-24.** Prod rebuilt from `cac71c1`; the § 2 state is now
+**Status: DEPLOYED 2026-08-24.** PPE rebuilt from `cac71c1`; the § 2 state is now
 **2a = 4 / 2b = 7647 — "Phase 2 ON"** (2a was `0` before). Health 200, all three containers
 healthy, no errors in the backend log after restart. Nothing was pending in
 `schema_migrations` (max 154, highest file 154), so the guard was the only code change in
@@ -75,14 +75,14 @@ from **"phase 2 on and finding nothing."** Two independent reads settle it — r
 
 ```bash
 # 2a. Is the guard in the RUNNING container? (code half)
-ssh -i ~/.ssh/id_ed25519_cow_prod michael@174.127.171.187 \
-  'docker exec cow-backend-prod grep -c fetchGroupIds dist/services/OnDeckVocabService.js'
+ssh -i ~/.ssh/id_ed25519_cow_ppe michael@174.127.171.187 \
+  'docker exec cow-backend grep -c fetchGroupIds dist/services/OnDeckVocabService.js'
 ```
 
 ```bash
 # 2b. Are there rows for it to act on? (data half)
-ssh -i ~/.ssh/id_ed25519_cow_prod michael@174.127.171.187 \
-  'docker exec cow-postgres-prod psql -U cow_user -d cow_db -tAc "SELECT count(*) FROM gloss_meaning_groups;"'
+ssh -i ~/.ssh/id_ed25519_cow_ppe michael@174.127.171.187 \
+  'docker exec cow-postgres psql -U cow_user -d cow_db -tAc "SELECT count(*) FROM gloss_meaning_groups;"'
 ```
 
 | 2a (code) | 2b (rows) | State |
@@ -103,17 +103,17 @@ with 2a ≥ 1 and 2b = 7647, that is coincidence of draw, not a broken deploy.
 Plain deploy. No migration, no held-back file, no split around the rebuild.
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_cow_prod michael@174.127.171.187
+ssh -i ~/.ssh/id_ed25519_cow_ppe michael@174.127.171.187
 cd ~/vocabulary-app
 git pull origin main
 bash database/deploy/migrate.sh --dry-run     # EXPECT: nothing pending
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml up --build -d
+docker-compose -f docker-compose.ppe.yml down
+docker-compose -f docker-compose.ppe.yml up --build -d
 ```
 
 ⚠️ **`down`/`up --build` takes the live site down for real users.** Confirm before running
 it unless the user has already said to proceed. **Never** add `-v` — it destroys
-`cow-prod_postgres_data` and all real user data.
+`cow_postgres_data` and all real user data.
 
 ---
 
@@ -121,17 +121,17 @@ it unless the user has already said to proceed. **Never** add `-v` — it destro
 
 ```bash
 # 4a. Guard is in the running container (expect ≥1; it is 0 before this deploy)
-docker exec cow-backend-prod grep -c fetchGroupIds dist/services/OnDeckVocabService.js
+docker exec cow-backend grep -c fetchGroupIds dist/services/OnDeckVocabService.js
 
 # 4b. Data still intact — the rebuild must not have touched it (expect 7647)
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -tAc \
+docker exec cow-postgres psql -U cow_user -d cow_db -tAc \
   'SELECT count(*) FROM gloss_meaning_groups;'
 
 # 4c. App is healthy (expect 200)
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost/api/health
 
 # 4d. Containers are up and healthy
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.ppe.yml ps
 ```
 
 Then exercise one real board — open a game and confirm it still fills. The failure mode
@@ -146,10 +146,10 @@ quiet symptom, not an error page. Check the backend log for lending that suddenl
 
 | Failure | Do this |
 | --- | --- |
-| 4a returns `0` after the rebuild | The image did not rebuild from the new checkout. Confirm `git log -1` on prod is at/after `b5e2198`, then `up --build` again (a plain `up` reuses the old image). |
+| 4a returns `0` after the rebuild | The image did not rebuild from the new checkout. Confirm `git log -1` on PPE is at/after `b5e2198`, then `up --build` again (a plain `up` reuses the old image). |
 | 4b is not 7647 | Do **not** re-run half A blindly. Read `SELECT count(*), count(DISTINCT "meaningGroupId") FROM gloss_meaning_groups;` and compare against the half-A runbook before deciding; the rebuild has no business changing this. |
 | Boards come back short / lending spikes | Roll back (§ 5). This is the over-blocking case and it is exactly what rollback is for. |
-| 4c not 200 | Ordinary deploy failure, unrelated to this feature — `docker-compose logs cow-backend-prod`. |
+| 4c not 200 | Ordinary deploy failure, unrelated to this feature — `docker-compose logs cow-backend`. |
 
 ---
 

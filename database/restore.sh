@@ -7,7 +7,7 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-CONTAINER_NAME="cow-postgres-local"  # Change to cow-postgres-prod for production
+CONTAINER_NAME="cow-postgres"  # Change to cow-postgres for production
 DB_NAME="cow_db"
 DB_USER="cow_user"
 BACKUP_FILE=$1

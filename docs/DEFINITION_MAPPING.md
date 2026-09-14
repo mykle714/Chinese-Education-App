@@ -427,7 +427,7 @@ on the cdp (`VocabCardDetailBody.tsx`), the eip (`InfoCardPanelBody.tsx`), scp
 (`SortCardsPage.tsx`), and as the top-left badge on Quick Mark mini cards
 (`QuickMarkCard.tsx`).
 
-**Deployed.** Migration 122 (the rename) is on prod; its temporary deploy runbook has
+**Deployed.** Migration 122 (the rename) is on PPE; its temporary deploy runbook has
 been deleted. The one ordering fact worth keeping: **122 must precede 123**, since 123
 references the already-renamed column — both are long since applied, so this matters only
 to someone rebuilding a database from the migration files in order.
@@ -438,7 +438,7 @@ a *register* number under a *frequency* name until the backfills are re-run with
 `--stale` (SCRIPT_VERSION was bumped for exactly this: zh word-level → 2, es → 4,
 cluster-definitions → 5). **That re-run never happened.** Measured on dev 2026-08-17:
 896 of 930 discoverable zh rows are still stamped `version: 1` (only 34 reached v2), and
-no es row has ever reached v4 (713 at v3, 130 at v2). Prod is very unlikely to be ahead
+no es row has ever reached v4 (713 at v3, 130 at v2). PPE is very unlikely to be ahead
 of dev. **So most "Commonality" dots in the app today are still register judgments
 wearing a frequency label.** This is a known, accepted state — it is deliberately **not**
 queued in [DEFERRED_WORK.md](./DEFERRED_WORK.md); the re-run costs one Sonnet call per row
@@ -455,10 +455,10 @@ SELECT "enrichmentLog" -> 'chinese/backfill-frequency-score' ->> 'version' AS v,
 deploy runbook, so they are not lost with it):
 
 ```bash
-# From the HOST — the prod backend image ships neither scripts/backfill/ nor tsx.
+# From the HOST — the PPE backend image ships neither scripts/backfill/ nor tsx.
 # Needs POSTGRES_PASSWORD in the repo-root .env. Idempotent, per-row commit.
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-frequency-score.js --stale
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-frequency-score.js --stale
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-frequency-score.js --stale
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-frequency-score.js --stale
 ```
 
 - **Order matters: word-level before clustering.** Clustering's single-definition fast

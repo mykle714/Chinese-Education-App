@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Snapshot the dictionary-entry tables from the PRODUCTION database.
+# Snapshot the dictionary-entry tables from the PPE database.
 #
 # LAYER: data-enrichment (backfill) safety net.
 #
-# WHY: enrichment now writes directly to prod (the old dev → prod data-deploy review
+# WHY: enrichment now writes directly to PPE (the old dev → PPE data-deploy review
 # gate is retired), so a bad run reaches learners immediately with no staging copy
 # to fall back on. Every oracle-backfill run takes one of these FIRST.
 #
@@ -14,7 +14,7 @@
 #
 # RESTORE (destructive — read before running):
 #   gunzip -c server/backups/det-<ts>.sql.gz \
-#     | docker exec -i cow-postgres-prod psql -U cow_user -d cow_db
+#     | docker exec -i cow-postgres psql -U cow_user -d cow_db
 #
 # USAGE: scripts/backfill/backup-det.sh [label]
 # Referenced by: .claude/commands/oracle-backfill.md
@@ -28,9 +28,9 @@ OUT="$OUT_DIR/det-${TS}${LABEL:+-$LABEL}.sql.gz"
 
 mkdir -p "$OUT_DIR"
 
-echo "📦 Dumping det tables from cow-postgres-prod ..."
+echo "📦 Dumping det tables from cow-postgres ..."
 # --clean --if-exists so the dump is directly replayable over an existing DB.
-docker exec cow-postgres-prod pg_dump \
+docker exec cow-postgres pg_dump \
   -U cow_user -d cow_db \
   --clean --if-exists \
   -t dictionaryentries_zh \

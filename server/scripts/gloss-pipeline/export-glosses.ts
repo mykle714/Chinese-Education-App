@@ -108,7 +108,7 @@ async function main(): Promise<void> {
   fs.writeFileSync(path.join(HERE, 'glosses.tsv'), out + '\n');
 
   // corpusSnapshot travels onto every gloss_meaning_groups row (§ 5a rule 3), so a
-  // grouping on prod can be traced back to the exact corpus it was built from.
+  // grouping on PPE can be traced back to the exact corpus it was built from.
   const snapshot = `${LANGS.join('+')}${ALL ? '-all' : '-discoverable'}-${rowCount}rows-${keys.length}keys`;
   fs.writeFileSync(path.join(HERE, 'corpus-snapshot.txt'), snapshot + '\n');
 

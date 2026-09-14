@@ -6,7 +6,7 @@ them all week, then play the same three games against that set and compare score
 **Status: PHASE 1 (ASYNC) IS BUILT, 2026-08-22. THE SHELF-SYSTEM REDESIGN LANDED
 2026-09-01.** The schema, the server stack, the client surfaces, the maintenance job and
 the scored round runner in all four eligible games are done. Migrations 148 and 150 are
-on prod; **migration 156 (taunts) is NOT yet on prod.** What remains is phase 2 (live
+on PPE; **migration 156 (taunts) is NOT yet on PPE.** What remains is phase 2 (live
 mode, § 7), a separate design: [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md).
 
 ⚠️ **The 2026-09-01 redesign changed behaviour, not only appearance.** Four things a
@@ -36,9 +36,9 @@ became a full-bleed dark board (§ 5.5).
 | **Client** — `src/api/studyChallenges.ts`, `src/features/studyChallenge/*` (incl. `challengeLabels.ts` → `acceptLapsed`,
 `challengeAnytime.ts` + `ChallengeAnytimeNotice.tsx` → the tester hatch and its
 on-screen consequences, and `ChallengeDetailPage`'s per-round Play buttons), the `/friends/challenges` NodePage + its badge, the fifth `/decks` section | ✅ built. The detail page's round list is the test's entry point: one **Play** button per unplayed round, strictly sequential (§ 5.1a), launched through `src/games/runtime/challengeLaunch.ts` |
-| **Maintenance job** — `database/cron/expire-study-challenges.sql` and its `ExecStart` step | ✅ written; all four passes exercised on dev with backdated fixtures, and idempotent on re-run. ⚠️ **Inert on prod until `install-timers.sh` re-renders the unit** — a git pull does not roll out a unit-template change, and until it does nothing expires |
-| **Runbook** | ✅ Retired 2026-08-17 — **shipped to prod**. Migration 148 was applied before the container rebuild (the deck read selects `decks."editMode"`), and the systemd unit was **re-rendered** by `database/cron/install-timers.sh`, without which the whole time-triggered half stays inert |
-| **Week-counter follow-up (150)** | ✅ On prod since 2026-08-17. `"weekStart"` → `"weekIndex"`; the rename was applied before the container rebuild (its temporary runbook has been deleted) |
+| **Maintenance job** — `database/cron/expire-study-challenges.sql` and its `ExecStart` step | ✅ written; all four passes exercised on dev with backdated fixtures, and idempotent on re-run. ⚠️ **Inert on PPE until `install-timers.sh` re-renders the unit** — a git pull does not roll out a unit-template change, and until it does nothing expires |
+| **Runbook** | ✅ Retired 2026-08-17 — **shipped to PPE**. Migration 148 was applied before the container rebuild (the deck read selects `decks."editMode"`), and the systemd unit was **re-rendered** by `database/cron/install-timers.sh`, without which the whole time-triggered half stays inert |
+| **Week-counter follow-up (150)** | ✅ On PPE since 2026-08-17. `"weekStart"` → `"weekIndex"`; the rename was applied before the container rebuild (its temporary runbook has been deleted) |
 | **Migration 156** — `study_challenges.taunts jsonb NOT NULL DEFAULT '{}'` | ⚠️ **written, not yet applied anywhere.** Additive and defaulted, so old code tolerates it — but the shipped `toSummary` selects `taunts` by name, so **it must be applied BEFORE the container rebuild** or every challenge read 500s. See § 6a |
 | **Shelf-system redesign** | ✅ built 2026-09-01 — `ChallengeSheet` + `ChallengePanel` (§ 3.2), the two-page View Challenge with `ChallengeTestCard` (§ 5.4b), `ChallengeResults` (§ 6/6a), `ChallengeHelpPopup` (§ 5.4c), the dark round scoreboard (§ 5.5), the relabelled pill lexicon (§ 1) and the tinted history log (§ 1) |
 
@@ -502,7 +502,7 @@ crossing pair on its own — the **live-pair guard** does:
 
 "Unfinished" is **derived**, never the stored status — `latestTestWindowClose` against
 the row's week — for the same reason every other read here derives its state: the hourly
-job runs late on prod and not at all on dev, and reading `status` would hold Monday's
+job runs late on PPE and not at all on dev, and reading `status` would hold Monday's
 challenge hostage to a row the job has not rewritten. The guard is also the invariant
 `getChallengesPage` already assumes when it keys live challenges by opponent, so it is
 now enforced rather than hoped for. It is **not** lifted by `anytime` (§ 2a): it is a
@@ -715,7 +715,7 @@ tester would otherwise meet as a bug report against themselves:
 | a friend who cannot accept, or cannot play | the hatch is spent PER REQUEST and is not attached to the challenge, so it covers the holder's own calls only. The other player's accept and their own rounds are judged against the real calendar unless they too are a validator with the switch on in their own browser — a two-sided test needs two validator accounts and two switches |
 | Play buttons vanishing | switching it off puts a parked challenge's test window back in the future, so the server withholds `gameSequence` again. Submitted rounds are kept |
 | "you're in 6 challenges" in a normal session | parked challenges still count toward the cap when the hatch is off |
-| a challenge quietly becoming `no_contest` | on prod the hourly job resolves it once the parked week actually passes. Not installed on dev |
+| a challenge quietly becoming `no_contest` | on PPE the hourly job resolves it once the parked week actually passes. Not installed on dev |
 
 The **detail page carries no anytime banner** (removed 2026-09-01). It is only ever
 reached from `/friends/challenges`, where the switch and the full notice above it are
@@ -2611,7 +2611,7 @@ sits on.
 
 **The maintenance job writes a lapse down; it does not create one.** Every read
 derives the effective status live, so the feature behaves identically on a machine
-where the timer has never been installed (dev, and prod until `install-timers.sh`
+where the timer has never been installed (dev, and PPE until `install-timers.sh`
 re-renders the unit).
 
 The one rule, in the one place a row becomes a payload
@@ -2635,7 +2635,7 @@ the server's own number.
 Not derived this way, deliberately: **`countActiveForUser`**. A lapsed-but-unwritten
 `pending` row still consumes one of the issuer's six slots until pass 1 flips it,
 because that count is a SQL aggregate and the deadline needs each challengee's
-timezone. On prod the hourly job closes the gap within the hour; on dev the slot stays
+timezone. On PPE the hourly job closes the gap within the hour; on dev the slot stays
 spent until the SQL is run by hand. Tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
 
 ### The maintenance job (Q60)
@@ -2649,13 +2649,13 @@ crosses the boundary each hour), and it is already a `Type=oneshot` singleton, s
 cannot overlap. See [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md).
 
 New file: `database/cron/expire-study-challenges.sql`, appended as
-`ExecStart` step 3, logging to `logs/study-challenges.log`. **Prod only**, like the rest
+`ExecStart` step 3, logging to `logs/study-challenges.log`. **PPE only**, like the rest
 of the unit; dev runs it by hand with `psql -f`.
 
-**Testing (Q61):** prod has no users yet and is effectively a pre-production
-environment, so this feature is tested **on prod** rather than behind a dev-only clock
-offset or admin trigger endpoints. Nothing simulated is built. When prod becomes a real
-production environment, this decision has to be revisited — at that point a week-long,
+**Testing (Q61):** PPE has no users yet and is effectively a pre-production
+environment, so this feature is tested **on PPE** rather than behind a dev-only clock
+offset or admin trigger endpoints. Nothing simulated is built. When PPE becomes a real
+PPE environment, this decision has to be revisited — at that point a week-long,
 cron-driven feature has no safe way to be exercised, and the trigger endpoints deferred
 here become necessary.
 
@@ -2786,7 +2786,7 @@ incoming requests.
 | Q59 | Account deletion mid-challenge | **let it cascade** — the challenge row and its history vanish for both sides, matching how `friendships` already treats a deleted account (§ 9) |
 | Q27 | Set size | **fixed at 9** (`CHALLENGE_WORD_COUNT`; 10 until 2026-08-17, 12 until 2026-08-28) — a constant, not a choice (§ 8.4). Changing it is one edit plus copy, but it moves the per-round contested ceiling (9 × 100 = 900) and obliges Word Search's board to hold that many (§ 5.2) |
 | Q60 | Where the time-triggered work runs | **a third step in the hourly `cow-maintenance` unit**, not a new schedule; four passes, including a sweep for preset decks orphaned by Q59's cascade (§ 9) |
-| Q61 | Testing a week-long, cron-driven feature | **test on prod** — it has no users yet and is effectively a PPE. No dev-only clock offset and no trigger endpoints (§ 9) |
+| Q61 | Testing a week-long, cron-driven feature | **test on PPE** — it has no users yet and is effectively a PPE. No dev-only clock offset and no trigger endpoints (§ 9) |
 | Q62 | Who chooses the variant | **the challenger**, stated in the invitation; cross-language pairs get different-word only (§ 8.4) |
 | Q63 | Is the game sequence visible before Friday | **no** — drawn at issue, revealed at window open, and **omitted from the payload** until then so the rule is server-enforced (§ 5.1b) |
 | Q65 | Per-user challenge cap | **6 active at once** (`MAX_ACTIVE_CHALLENGES`), **per (user, language)**, spent only by your own issue/accept — pending invitations never consume a slot (§ 1) |

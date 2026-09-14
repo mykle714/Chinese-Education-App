@@ -1,5 +1,5 @@
 version: "3.8"
-name: cow-prod
+name: cow-ppe
 
 # Bounded container stdout/stderr logs. The default json-file driver is UNBOUNDED;
 # over long uptimes (auth noise, perf/error summaries) that file can grow to GBs.
@@ -14,7 +14,7 @@ x-logging: &default-logging
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: cow-postgres-prod
+    container_name: cow-postgres
     restart: always
     stop_grace_period: 30s
     environment:
@@ -44,7 +44,7 @@ services:
       context: ./server
       dockerfile: Dockerfile
       target: production
-    container_name: cow-backend-prod
+    container_name: cow-backend
     restart: always
     environment:
       - NODE_ENV=production
@@ -81,7 +81,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
-    container_name: cow-frontend-prod
+    container_name: cow-frontend
     restart: always
     ports:
       - "0.0.0.0:80:80"      # Standard HTTP port (redirects to HTTPS)
@@ -102,6 +102,10 @@ services:
 
 volumes:
   postgres_data:
+    # Explicit, env-neutral name. Without it Docker derives `<project>_postgres_data`,
+    # so renaming the compose project (e.g. cow-prod → cow-ppe) silently mounts a NEW,
+    # EMPTY volume. Dev and PPE are separate Docker daemons, so sharing a name is safe.
+    name: cow_postgres_data
 
 networks:
   cow-network:

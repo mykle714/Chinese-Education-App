@@ -1,4 +1,4 @@
--- Arena load-test users — 55 synthetic accounts, prod, 2026-08-16.
+-- Arena load-test users — 55 synthetic accounts, PPE, 2026-08-16.
 --
 -- Every row is identifiable by the email suffix '@arena-test.local'. That suffix is
 -- the ONLY handle teardown uses, so nothing here can reach a real account.

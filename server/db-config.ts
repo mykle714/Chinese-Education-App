@@ -21,11 +21,11 @@ export const config: PoolConfig = {
  * `DB_SSL` is the explicit control — set it to 'true'/'1' to force TLS on, or
  * 'false'/'0' to force it off, and nothing else is consulted.
  *
- * When DB_SSL is unset we fall back to the historical inference: TLS in production
+ * When DB_SSL is unset we fall back to the historical inference: TLS in PPE
  * unless DB_HOST is the literal 'postgres', which is the docker-compose service name
  * and therefore means "the database next door on the compose network, plaintext is
  * fine". That heuristic breaks for any OTHER way of reaching the same container —
- * notably the host reaching cow-postgres-prod over its published 127.0.0.1:5432
+ * notably the host reaching cow-postgres over its published 127.0.0.1:5432
  * port, where the hostname is an IP, so TLS was inferred and the connection died
  * with "The server does not support SSL connections" (postgres:15-alpine is not
  * built with TLS). Prefer setting DB_SSL explicitly; the inference is kept only so

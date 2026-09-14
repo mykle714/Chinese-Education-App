@@ -21,7 +21,7 @@ const router = Router();
 
 // Client performance diagnostics sink. Receives batched interaction-latency
 // telemetry from the browser (see src/utils/perfDiagnostics.ts). Used to diagnose
-// the prod-only "buttons take 1–2s before working" lag on the mobile-demo
+// the PPE-only "buttons take 1–2s before working" lag on the mobile-demo
 // footer/decks.
 router.post('/api/diagnostics/perf', diagnosticsLimiter, (req, res) => {
   try {
@@ -44,7 +44,7 @@ router.post('/api/diagnostics/perf', diagnosticsLimiter, (req, res) => {
 
     appendDiagnostic('client-perf', entry);
 
-    // Compact console summary: the worst interaction in this batch, so prod logs
+    // Compact console summary: the worst interaction in this batch, so PPE logs
     // surface the lag without needing to open the JSONL.
     const worst = records
       .filter((r: any) => r && r.kind === 'interaction')
@@ -110,7 +110,7 @@ router.post('/api/diagnostics/error', diagnosticsLimiter, (req, res) => {
 
     appendDiagnostic('client-error', entry);
 
-    // Compact console summary so prod logs surface crashes without opening the JSONL.
+    // Compact console summary so PPE logs surface crashes without opening the JSONL.
     console.error(
       `💥 client-error [${entry.kind || 'error'}] on ${entry.path || '?'}: ${message.slice(0, 200)}`
     );

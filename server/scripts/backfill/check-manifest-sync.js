@@ -14,8 +14,8 @@
  * broke the oracle skill's Spanish path when backfill-parts-of-speech.js was deleted.
  *
  * USAGE
- *   docker exec cow-backend-local npx tsx /app/scripts/backfill/check-manifest-sync.js
- *   server/scripts/backfill/run-prod.sh scripts/backfill/check-manifest-sync.js
+ *   docker exec cow-backend npx tsx /app/scripts/backfill/check-manifest-sync.js
+ *   server/scripts/backfill/run-ppe.sh scripts/backfill/check-manifest-sync.js
  *
  * Exit 0 = in sync. Exit 1 = drift (details printed). Safe to wire into CI.
  *

@@ -454,7 +454,7 @@ export class OnDeckVocabController {
       // Board mode decides the PRIMARY mark type of this board (docs/MASTERY_REWORK.md
       // § "Games select by their own mark type"): No-Pinyin is a reading review,
       // Pinyin is a production review. That type buckets the pool by its own mark
-      // history and gates its per-type cooldown. Default to production (Pinyin) if
+      // history and gates its per-type cooldown. Default to PPE (Pinyin) if
       // the mode param is absent/unrecognized.
       //
       // PRIMARY, because a No-Pinyin find also writes a `production` mark

@@ -106,12 +106,12 @@ After running, you'll have 3 files with the **same 100 words** but different AI-
 ### Prerequisites
 Install npm packages first:
 ```bash
-docker exec cow-backend-local npm install @anthropic-ai/sdk openai
+docker exec cow-backend npm install @anthropic-ai/sdk openai
 ```
 
 ### Run the Script
 ```bash
-docker exec cow-backend-local sh -c "ANTHROPIC_API_KEY=your_key OPENAI_API_KEY=your_key node server/scripts/test-ai-enrichment.js"
+docker exec cow-backend sh -c "ANTHROPIC_API_KEY=your_key OPENAI_API_KEY=your_key node server/scripts/test-ai-enrichment.js"
 ```
 
 ### Expected Runtime

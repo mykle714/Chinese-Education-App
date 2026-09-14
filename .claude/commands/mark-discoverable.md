@@ -15,8 +15,8 @@ If the user doesn't say, infer from the script (Han characters → zh; Latin →
 and confirm.
 
 > ⚠️ **This pipeline writes directly to PRODUCTION.** Backfills are no longer run on
-> dev and pushed up to prod — they run against the prod det tables, so
-> every change reaches learners immediately. Read `amIOnTheProdMachine.md`, confirm
+> dev and pushed up to PPE — they run against the PPE det tables, so
+> every change reaches learners immediately. Read `machineEnvironment.md`, confirm
 > the word list with the user, and take a backup
 > (`server/scripts/backfill/backup-det.sh <label>`) before the first write.
 
@@ -99,22 +99,22 @@ RETURNING id, word1, discoverable;
 Run all steps in order with `--words=word1,word2,...` (comma-joined hanzi).
 
 ```bash
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-tones.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-numbered-pinyin.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-process-definitions-array.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-parts-of-speech.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/backfill-icons.js --lang=zh --words=未来,摸脉   # OPTIONAL (opt-in) — needs ICONS8_API_KEY; skip it and the word still ships
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-word-forms.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-frequency-score.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-cluster-definitions.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-long-definitions.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-longdef-citations.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-breakdown-senses.js --words=未来,摸脉
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-breakdown-elaboration.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-tones.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-numbered-pinyin.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-process-definitions-array.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-parts-of-speech.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/backfill-icons.js --lang=zh --words=未来,摸脉   # OPTIONAL (opt-in) — needs ICONS8_API_KEY; skip it and the word still ships
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-word-forms.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-frequency-score.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-cluster-definitions.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-long-definitions.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-longdef-citations.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-example-sentences.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-breakdown-senses.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-breakdown-elaboration.js --words=未来,摸脉
 ```
 
 **The two breakdown steps are no-ops on single-character words.** Both carry
@@ -147,7 +147,7 @@ single-char batch will report "0 entries" — that is correct, not a failure.
 
 **Scan the `backfill-breakdown-elaboration` output for `⚠ BREAKDOWN ELABORATION REVIEW <word>` lines.** A word is flagged when the model's answer was unparseable, or still over its character budget after one shortening retry. Those rows are left **unwritten AND unstamped** on purpose, so a later run retries them rather than freezing in a truncated sentence — they will simply reappear as pending in the next `oracle-plan` round. Same for `⚠ BREAKDOWN SENSE REVIEW` from the tagger.
 
-**Scan the `backfill-cluster-definitions` output for `⚠ CLUSTER REVIEW <word> (id=...): <reason>` lines and surface every one of them to the user for human review.** It self-flags any sense it is even slightly unsure about (uncertain readings/heteronyms, borderline split/merge calls, low-confidence ordering, etc.). These are the cases most likely to need a manual fix (e.g. a wrong heteronym reading), and because this pipeline writes straight to prod that fix has to happen *now* rather than at a review gate — and a wrong cluster here now also feeds a wrong `sense` into the example sentences downstream.
+**Scan the `backfill-cluster-definitions` output for `⚠ CLUSTER REVIEW <word> (id=...): <reason>` lines and surface every one of them to the user for human review.** It self-flags any sense it is even slightly unsure about (uncertain readings/heteronyms, borderline split/merge calls, low-confidence ordering, etc.). These are the cases most likely to need a manual fix (e.g. a wrong heteronym reading), and because this pipeline writes straight to PPE that fix has to happen *now* rather than at a review gate — and a wrong cluster here now also feeds a wrong `sense` into the example sentences downstream.
 
 ### A4. Verify enrichment
 
@@ -223,23 +223,23 @@ list, is what `oracle-plan.js --lang=es` plans against. Keep the two in sync.
 
 ```bash
 # 1-2 deterministic definition cleanup (table-wide; they rewrite `definitions` in place)
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-split-semicolon-definitions.js
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-expand-abbreviations.js
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-split-semicolon-definitions.js
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-expand-abbreviations.js
 # 3 order + prune `definitions` (AI) — MUST precede clustering, see the note below
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-process-definitions-array.js --words=cura,perro
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-process-definitions-array.js --words=cura,perro
 # 4 icons8 icon — OPTIONAL (opt-in, needs ICONS8_API_KEY); after every step that can still rewrite definitions[0]; shared script, es table via --lang
-server/scripts/backfill/run-prod.sh scripts/backfill/backfill-icons.js --lang=es --words=cura,perro
+server/scripts/backfill/run-ppe.sh scripts/backfill/backfill-icons.js --lang=es --words=cura,perro
 # 5 word-level frequency score
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-frequency-score.js
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-frequency-score.js
 # 6 sense clustering (also writes partsOfSpeech). --dry-run first to review!
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro --dry-run
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro --dry-run
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro
 # 7-8 sense-tagged generation — both read the cluster `sense` labels, so they follow clustering
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-long-definitions.js
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-example-sentences.js
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-long-definitions.js
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-example-sentences.js
 ```
 
-Or the whole pipeline at once: `bash server/scripts/run-discoverable-enrichment-es.sh local  # dev-shaped (local Docker); prefer per-step run-prod.sh for prod`
+Or the whole pipeline at once: `bash server/scripts/run-discoverable-enrichment-es.sh local  # dev-shaped (local Docker); prefer per-step run-ppe.sh for PPE`
 
 **`backfill-process-definitions-array` MUST run BEFORE `backfill-cluster-definitions`.**
 The clusterer's `checkShape` validator requires the clusters to be an **exact partition**
@@ -289,7 +289,7 @@ All discoverable rows should have non-null `definitionClusters`, `partsOfSpeech`
 
 ## Finally (both languages): enrichment is already live
 
-**Enrichment now runs directly against production** — there is no dev→prod push
+**Enrichment now runs directly against PPE** — there is no dev→PPE push
 step for det data any more (that skill has been deleted). The rows
 you just enriched are visible to learners as soon as the pipeline finishes, which
 is exactly why the backup and the verification steps above are mandatory rather
@@ -300,10 +300,10 @@ credit, use `/oracle-backfill` — same pipeline and validators, local answerer.
 
 ## Notes
 
-- Scripts run **on the host** via `server/scripts/backfill/run-prod.sh <script> [args]`,
-  which points them at `cow-postgres-prod` on 127.0.0.1. The prod backend image ships
-  neither `scripts/backfill/` nor `tsx`, so `docker exec cow-backend-prod` cannot work,
-  and `cow-backend-local` does not exist on this machine.
+- Scripts run **on the host** via `server/scripts/backfill/run-ppe.sh <script> [args]`,
+  which points them at `cow-postgres` on 127.0.0.1. The PPE backend image ships
+  neither `scripts/backfill/` nor `tsx`, so `docker exec cow-backend` cannot work,
+  and `cow-backend` does not exist on this machine.
 - Take a snapshot first: `server/scripts/backfill/backup-det.sh <label>`.
 - The `--words` flag filters the SQL query; the deterministic/AI steps skip entries
   whose target column is already populated, so re-runs are safe.

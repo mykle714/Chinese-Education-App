@@ -11,7 +11,7 @@ import type { ReviewMark, TypedMarkHistory } from '../types/index.js';
  *
  * This logic was untestable until it left the Express handler it used to live in:
  * every rule below could only be exercised by booting a router against a live
- * database. Each one also fails SILENTLY in production if it regresses —
+ * database. Each one also fails SILENTLY in PPE if it regresses —
  *   • a lost row lock drops one of Word Search's two parallel marks;
  *   • a missed cooldown gate records a mark the design says must not count;
  *   • a wrong displaced mark makes undo restore the wrong review;

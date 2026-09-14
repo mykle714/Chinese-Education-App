@@ -110,7 +110,7 @@ Breakdown enrichment is two ordered passes over `dictionaryentries_zh.breakdown`
   rows already carrying a `sense`), `--stale` (below `SCRIPT_VERSION`),
   `--reconcile` (**sense drift** — see below), `--limit=N`, `--spot-check`
   (5 entries, NO writes, verbose).
-- Usage: `docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-breakdown-senses.js`
+- Usage: `docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-breakdown-senses.js`
 
 #### 5b-drift. Orphaned sense labels — the third staleness axis
 
@@ -196,7 +196,7 @@ minute-points migration claimed 130)
   flips back to straightforward CLEARS the stale elaboration), `--stale` (re-decide
   rows stamped below `SCRIPT_VERSION`), `--limit=N`, `--spot-check` (5 random entries,
   NO writes, verbose).
-- Usage: `docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-breakdown-elaboration.js`
+- Usage: `docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-breakdown-elaboration.js`
 - **No consumer yet** — nothing in the det read path or the bt UI reads this column as
   of migration 133; it is populated ahead of the display work.
 

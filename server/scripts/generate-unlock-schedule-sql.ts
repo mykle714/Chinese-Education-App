@@ -6,7 +6,7 @@
  *
  *     npm run gen:unlock-schedule-sql
  *
- * Then redeploy `database/cron/expire-stale-streaks.sql` to prod (the cron file is the install —
+ * Then redeploy `database/cron/expire-stale-streaks.sql` to PPE (the cron file is the install —
  * it CREATE OR REPLACEs the function every tick, so there is no migration to write).
  *
  * LAYER: build/codegen script. The string building is in the pure shared module
@@ -39,7 +39,7 @@ function main(): void {
 
   writeFileSync(CRON_SQL_PATH, after, 'utf8');
   console.log(`[gen:unlock-schedule-sql] regenerated block in ${CRON_SQL_PATH}`);
-  console.log('  → redeploy this cron file to prod so the function is replaced there too.');
+  console.log('  → redeploy this cron file to PPE so the function is replaced there too.');
 }
 
 try {

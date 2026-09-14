@@ -5,7 +5,7 @@
 -- both run against the same schema, so this migration and the app restart must land
 -- together. The standard /deploy order (compose up --build, then migrate) leaves a
 -- few seconds where the NEW code sees the OLD column and every challenge read 500s.
--- With the feature not yet live on prod that window was harmless. Applied on prod
+-- With the feature not yet live on PPE that window was harmless. Applied on PPE
 -- 2026-08-17 BEFORE the container rebuild (a rename has no both-versions-work window),
 -- together with 148. Its deploy runbook has since been retired.
 --
@@ -76,7 +76,7 @@ ALTER TABLE study_challenges DROP COLUMN IF EXISTS "weekStart";
 --
 -- ⚠️ If this CREATE fails with a uniqueness violation, the table already holds the
 -- duplicate crossing challenges this migration exists to prevent (possible on dev,
--- impossible on a prod that has never run the feature). Resolve by deleting the
+-- impossible on a PPE that has never run the feature). Resolve by deleting the
 -- later row of each colliding pair:
 --
 --   SELECT LEAST("challengerId","challengeeId") a, GREATEST("challengerId","challengeeId") b,

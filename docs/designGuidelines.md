@@ -105,7 +105,7 @@ PostgreSQL 15 database with Node.js/Express backend, managed via Docker Compose.
 
 > ⚠️ **Verify before trusting.** These tables drift. `\d <table>` in the local Postgres
 > container is the source of truth:
-> `docker exec cow-postgres-local psql -U cow_user -d cow_db -c '\d users'`.
+> `docker exec cow-postgres psql -U cow_user -d cow_db -c '\d users'`.
 
 #### Users
 

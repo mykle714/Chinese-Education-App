@@ -1134,8 +1134,8 @@ Code: `componentUnits.ts` (the counterpart to `pinyinUnits.ts`),
 they must run in that order, since the font subset is built from the column):
 
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-character-components.js
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/generate-component-font.js
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-character-components.js
+docker exec cow-backend npx tsx scripts/backfill/chinese/generate-component-font.js
 ```
 
 The decomposition source is makemeahanzi's `dictionary.txt` (**LGPLv3**), fetched on

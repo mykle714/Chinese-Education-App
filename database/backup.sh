@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-CONTAINER_NAME="cow-postgres-local"  # Change to cow-postgres-prod for production
+CONTAINER_NAME="cow-postgres"  # Change to cow-postgres for production
 DB_NAME="cow_db"
 DB_USER="cow_user"
 BACKUP_DIR="./database/backups"

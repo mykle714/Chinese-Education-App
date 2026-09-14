@@ -2,7 +2,7 @@
 
 One report per `/oracle-backfill` run, named `oracle-run-<UTC-timestamp>.md`.
 
-Each run enriches the dictionary-entry tables **directly on production** with a
+Each run enriches the dictionary-entry tables **directly on PPE** with a
 local answerer standing in for the Anthropic API (see
 `.claude/commands/oracle-backfill.md` §0). These reports are the review record for
 that work: what was written, what the validators rejected, which guardrails fired,

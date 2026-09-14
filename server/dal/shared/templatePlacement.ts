@@ -708,7 +708,7 @@ function solveOffset(ea: ExposedAnchor, cv: CatalogVersion, bAnchor: TemplateAnc
  * Plan where a new template attaches (§ "Placement algorithm"). Returns the single persisted
  * placement, or `{ plan: null }` with per-anchor failures when no legal candidate exists at any
  * exposed anchor. `rng` is injectable for a deterministic random tiebreak in tests (default
- * `Math.random`); the choice is persisted, so true randomness is safe in production.
+ * `Math.random`); the choice is persisted, so true randomness is safe in PPE.
  *
  * `sealCheck` (optional) is the growth-safety veto — see {@link SealCheck}. Omitting it restores
  * the pre-constraint behavior (used by the geometry-only unit tests).

@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { CustomError } from './types/index.js';
 import 'dotenv/config';
 
-// JWT secret key - should be in environment variables in production
+// JWT secret key - should be in environment variables in PPE
 const JWT_SECRET = process.env.JWT_SECRET;
 
 // Extend Express Request type to include user

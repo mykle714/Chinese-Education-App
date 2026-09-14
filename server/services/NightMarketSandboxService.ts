@@ -127,7 +127,7 @@ export class NightMarketSandboxService {
    *
    * Delegates the geometry to {@link NightMarketPlacementService.planNextPlacement}, the very same
    * planner the live continent grows with (docs/NIGHT_MARKET_TEMPLATES.md § "Placement algorithm"),
-   * so the sandbox preview can never drift from production behaviour.
+   * so the sandbox preview can never drift from PPE behaviour.
    *
    * Iterated placements are inserted LOCKED (unlike hand-dropped ones): the position is the
    * algorithm's answer, and a stray drag would silently turn the preview into a hand-made layout

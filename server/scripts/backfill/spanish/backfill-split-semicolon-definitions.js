@@ -7,7 +7,7 @@
  * Chinese version; only the target table differs.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-split-semicolon-definitions.js [--dry-run]
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-split-semicolon-definitions.js [--dry-run]
  */
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';

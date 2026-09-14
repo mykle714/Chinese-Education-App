@@ -12,8 +12,8 @@ const __dirname = path.dirname(__filename);
  * resolution, daily rotation, and retention sweep.
  *
  * PERSISTENCE: the log directory is configurable via `DIAGNOSTICS_LOG_DIR`. In
- * prod that env var points at a bind-mounted host directory (see
- * docker-compose.prod.yml: `DIAGNOSTICS_LOG_DIR=/app/logs` + `./server/logs:/app/logs`)
+ * PPE that env var points at a bind-mounted host directory (see
+ * docker-compose.ppe.yml: `DIAGNOSTICS_LOG_DIR=/app/logs` + `./server/logs:/app/logs`)
  * so the logs SURVIVE container rebuilds — previously they lived at
  * `<dist>/logs` inside the container and were wiped on every `up --build`. The
  * default keeps that historical in-container location for local/dev (`<dist>/logs`,

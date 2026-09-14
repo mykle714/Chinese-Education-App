@@ -237,7 +237,7 @@ export interface ParticleClassifierEntry {
 
 /**
  * One row of the `validations` table (migration 104/106) — a human review record for
- * a single (entry, field). Kept OFF the det tables so prod data deploys (which
+ * a single (entry, field). Kept OFF the det tables so PPE data deploys (which
  * TRUNCATE+restore dictionaryentries_*) never wipe review data. `content` is the data
  * version approved, copied verbatim from the doc the validator read; NULL for a flag.
  * `entryId` is dictionaryentries_<language>.id. See docs/DATA_VALIDATION_SYSTEM.md.

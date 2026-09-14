@@ -6,7 +6,7 @@
  * Reads server/logs/client-perf.jsonl — the JSONL written by the
  * `POST /api/diagnostics/perf` endpoint in server.ts, which receives batches
  * emitted by src/utils/perfDiagnostics.ts — and prints per-route percentile
- * breakdowns so we can diagnose the prod-only "buttons take 1–2s before
+ * breakdowns so we can diagnose the PPE-only "buttons take 1–2s before
  * working" lag on the mobile-demo footer/decks.
  *
  * The key question this answers: of the total tap→paint lag, how much is

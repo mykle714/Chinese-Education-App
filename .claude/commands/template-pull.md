@@ -1,10 +1,10 @@
-# Template Pull (prod authored content → local)
+# Template Pull (PPE authored content → local)
 
-Pull the **authored content catalogs** from production down to a local dev
+Pull the **authored content catalogs** from PPE down to a local dev
 machine, completely overwriting local's copies. This is the **reverse-direction**
-sibling of [`/data-prod-to-dev`](./data-prod-to-dev.md), and shares its shape:
-Prod half = SOURCE, Local half = TARGET, transport = Git LFS. Both move **prod →
-local**; there is no supported local → prod direction for either.
+sibling of [`/data-ppe-to-dev`](./data-ppe-to-dev.md), and shares its shape:
+PPE half = SOURCE, Local half = TARGET, transport = Git LFS. Both move **PPE →
+local**; there is no supported local → PPE direction for either.
 
 Two tables move, and they are **independent** — either half of this skill can be
 run alone. Note that they need DIFFERENT overwrite primitives, for the reason in
@@ -16,7 +16,7 @@ the FK section below:
 | `iw_scenes` | `database/iw_scenes-data.dump` | **DELETE + restore** (`TRUNCATE` is impossible — see below) |
 
 Both are authored on the desktop by a **template author** (`users.isTemplateAuthor`,
-migration 115 — one grant, three tools), and prod is the source of truth for both:
+migration 115 — one grant, three tools), and PPE is the source of truth for both:
 
 - **Templates** — the Night Market template catalog, from the template editor.
   See [NIGHT_MARKET_TEMPLATES.md](../../docs/NIGHT_MARKET_TEMPLATES.md) and
@@ -41,23 +41,23 @@ migration 115 — one grant, three tools), and prod is the source of truth for b
 
 ## ⚠️ FIRST: Which machine are you on?
 
-Read [amIOnTheProdMachine.md](../../amIOnTheProdMachine.md) (gitignored, present on
-every machine) to determine dev vs prod. A full sync has **two halves that run on
+Read [machineEnvironment.md](../../machineEnvironment.md) (gitignored, present on
+every machine) to determine dev vs PPE. A full sync has **two halves that run on
 two different machines**, and you can only run the half for the machine you are on
 — you have no SSH access to the other one. Your job is:
 
-- **On PROD** → you are the **SOURCE**. Run the [Prod half](#prod-half--source)
+- **On PPE** → you are the **SOURCE**. Run the [PPE half](#ppe-half--source)
   yourself (dump → commit → push), then hand the user the
   [Local half](#local-half--target) commands to run on their dev box.
 - **On DEV/local** → you are the **TARGET**. Hand the user the
-  [Prod half](#prod-half--source) commands to run on the server first; once they
+  [PPE half](#ppe-half--source) commands to run on the server first; once they
   confirm the push landed, run the [Local half](#local-half--target) yourself.
 
 Always present the "other machine" commands as a single copy-pasteable block.
 
 ---
 
-## Prod half — SOURCE (run against `cow-postgres-prod`)
+## PPE half — SOURCE (run against `cow-postgres`)
 
 Dumps each catalog in binary custom format, writes the plain-text **manifest** that
 lets the local half check its references *before* it overwrites anything, then commits
@@ -70,14 +70,14 @@ cd ~/vocabulary-app
 git pull origin main          # start from a clean main
 
 # 1. Binary dump of the catalog
-docker exec cow-postgres-prod pg_dump -U cow_user -d cow_db \
+docker exec cow-postgres pg_dump -U cow_user -d cow_db \
   -t nightmarkettemplatedefinitions --data-only -F c -f /tmp/nmt_dump.dump
-docker cp cow-postgres-prod:/tmp/nmt_dump.dump \
+docker cp cow-postgres:/tmp/nmt_dump.dump \
   database/nightmarkettemplatedefinitions-data.dump
 
 # 2. Author manifest — every distinct createdBy + its email.
 #    The local half checks these exist locally BEFORE truncating (see below).
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -At -F',' -c \
+docker exec cow-postgres psql -U cow_user -d cow_db -At -F',' -c \
   'SELECT DISTINCT t."createdBy", u.email
      FROM nightmarkettemplatedefinitions t
      JOIN users u ON u.id = t."createdBy"
@@ -86,14 +86,14 @@ docker exec cow-postgres-prod psql -U cow_user -d cow_db -At -F',' -c \
 
 # 3. Report what is being shipped
 ls -lh database/nightmarkettemplatedefinitions-data.dump
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c \
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   'SELECT COUNT(*) FROM nightmarkettemplatedefinitions;'
 cat database/nightmarkettemplatedefinitions-authors.txt
 
 # 4. Commit (dump via LFS, manifest as plain text) and push
 git add database/nightmarkettemplatedefinitions-data.dump \
         database/nightmarkettemplatedefinitions-authors.txt
-git commit -m "data: refresh nightmarkettemplatedefinitions dump (prod snapshot)"
+git commit -m "data: refresh nightmarkettemplatedefinitions dump (PPE snapshot)"
 git push origin main
 ```
 
@@ -114,15 +114,15 @@ git pull origin main
 
 # 1. Binary dump of the scene catalog — SCENES ONLY. Never add -t iw_scene_runs,
 #    iw_scene_ratings or iw_npc_memories: those are live learner data.
-docker exec cow-postgres-prod pg_dump -U cow_user -d cow_db \
+docker exec cow-postgres pg_dump -U cow_user -d cow_db \
   -t iw_scenes --data-only -F c -f /tmp/iw_scenes.dump
-docker cp cow-postgres-prod:/tmp/iw_scenes.dump \
+docker cp cow-postgres:/tmp/iw_scenes.dump \
   database/iw_scenes-data.dump
 
 # 2. NPC manifest — every distinct npc id any scene references, from all three
 #    places one can hide: the completer column, the npcCast blob, and the turns of
 #    each authored conversation. The local half asserts each still resolves in code.
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -At -c \
+docker exec cow-postgres psql -U cow_user -d cow_db -At -c \
   'SELECT DISTINCT "npcId" FROM (
        SELECT "completerNpcId" AS "npcId" FROM iw_scenes
        UNION ALL
@@ -138,13 +138,13 @@ docker exec cow-postgres-prod psql -U cow_user -d cow_db -At -c \
 
 # 3. Report what is being shipped
 ls -lh database/iw_scenes-data.dump
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c \
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   'SELECT COUNT(*) AS scenes, COUNT(*) FILTER (WHERE published) AS published FROM iw_scenes;'
 cat database/iw_scenes-npcs.txt
 
 # 4. Commit (dump via LFS, manifest as plain text) and push
 git add database/iw_scenes-data.dump database/iw_scenes-npcs.txt
-git commit -m "data: refresh iw_scenes dump (prod snapshot)"
+git commit -m "data: refresh iw_scenes dump (PPE snapshot)"
 git push origin main
 ```
 
@@ -152,7 +152,7 @@ git push origin main
 
 ---
 
-## Local half — TARGET (run against `cow-postgres-local`)
+## Local half — TARGET (run against `cow-postgres`)
 
 ### Templates
 
@@ -172,7 +172,7 @@ git pull origin main
 cat database/nightmarkettemplatedefinitions-authors.txt   # id,email per line
 
 #    For each id in that file:
-docker exec cow-postgres-local psql -U cow_user -d cow_db -c \
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   "SELECT id, email FROM users WHERE id = '<author-id-from-manifest>';"
 ```
 
@@ -186,16 +186,16 @@ docker exec cow-postgres-local psql -U cow_user -d cow_db -c \
 - **All authors present** → proceed to the restore:
 
 ```bash
-# 2. Full overwrite: truncate local, restore prod's dump
+# 2. Full overwrite: truncate local, restore PPE's dump
 docker cp database/nightmarkettemplatedefinitions-data.dump \
-  cow-postgres-local:/tmp/nmt_dump.dump
-docker exec cow-postgres-local psql -U cow_user -d cow_db -c \
+  cow-postgres:/tmp/nmt_dump.dump
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   'TRUNCATE TABLE nightmarkettemplatedefinitions;'
-docker exec cow-postgres-local pg_restore -U cow_user -d cow_db \
+docker exec cow-postgres pg_restore -U cow_user -d cow_db \
   -t nightmarkettemplatedefinitions --data-only /tmp/nmt_dump.dump
 
-# 3. Verify — should match the prod row count from the prod half
-docker exec cow-postgres-local psql -U cow_user -d cow_db -c \
+# 3. Verify — should match the PPE row count from the PPE half
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   'SELECT COUNT(*) FROM nightmarkettemplatedefinitions;'
 ```
 
@@ -220,7 +220,7 @@ docker exec cow-postgres-local psql -U cow_user -d cow_db -c \
 > A template's risk is an INBOUND reference (`createdBy` → `users`), so its check runs
 > *before* the overwrite. A scene's risk is an OUTBOUND one (`iw_scene_runs` → scenes),
 > so the database itself enforces it *during* the overwrite — and the scene ids in a
-> prod dump are per-machine UUIDs that would not match a local run's `sceneId` anyway.
+> PPE dump are per-machine UUIDs that would not match a local run's `sceneId` anyway.
 
 ```bash
 cd <local repo>
@@ -228,7 +228,7 @@ git pull origin main          # brings the dump, the manifest AND server/config/
 
 # 1. RUN PRE-CHECK — is any local run pointing at a scene? If this is 0 the DELETE
 #    below is safe; if it is not, STOP (see the decision point).
-docker exec cow-postgres-local psql -U cow_user -d cow_db -c \
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   'SELECT COUNT(*) AS local_runs FROM iw_scene_runs;'
 ```
 
@@ -243,15 +243,15 @@ docker exec cow-postgres-local psql -U cow_user -d cow_db -c \
 - **`local_runs` = 0** → proceed:
 
 ```bash
-# 2. Full overwrite: DELETE local (not TRUNCATE), restore prod's dump
-docker cp database/iw_scenes-data.dump cow-postgres-local:/tmp/iw_scenes.dump
-docker exec cow-postgres-local psql -U cow_user -d cow_db -c \
+# 2. Full overwrite: DELETE local (not TRUNCATE), restore PPE's dump
+docker cp database/iw_scenes-data.dump cow-postgres:/tmp/iw_scenes.dump
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   'DELETE FROM iw_scenes;'
-docker exec cow-postgres-local pg_restore -U cow_user -d cow_db \
+docker exec cow-postgres pg_restore -U cow_user -d cow_db \
   -t iw_scenes --data-only /tmp/iw_scenes.dump
 
-# 3. Verify the row count matches the prod half's report
-docker exec cow-postgres-local psql -U cow_user -d cow_db -c \
+# 3. Verify the row count matches the PPE half's report
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   'SELECT COUNT(*) AS scenes, COUNT(*) FILTER (WHERE published) AS published FROM iw_scenes;'
 
 # 4. NPC RESOLUTION CHECK — the one check the database cannot make. Compare the
@@ -284,10 +284,10 @@ clean boot means a clean catalog.
   includes the sibling `iw_scene_runs`, `iw_scene_ratings` and `iw_npc_memories`.
 - **The two halves are independent.** Pull templates without scenes or scenes without
   templates; nothing in one references the other. Run only the half the user asked for.
-- **Direction is prod → local only.** There is no way to push either catalog the other
-  way: the local → prod data push skill has been **deleted** and prod is the source of
-  truth. Never restore these dumps into `cow-postgres-prod` — it would clobber the
-  authoritative catalogs. Author templates and scenes against prod directly.
+- **Direction is PPE → local only.** There is no way to push either catalog the other
+  way: the local → PPE data push skill has been **deleted** and PPE is the source of
+  truth. Never restore these dumps into `cow-postgres` — it would clobber the
+  authoritative catalogs. Author templates and scenes against PPE directly.
 - **Binary format (`-F c`) + `pg_restore`.** Plain SQL causes psql meta-command
   errors from pg_dump version skew; always dump with `-F c` and restore with
   `pg_restore` (not `psql -f`).

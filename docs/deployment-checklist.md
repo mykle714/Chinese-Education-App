@@ -22,22 +22,22 @@
 - [ ] Set secure permissions: `chmod 600 .env`
 
 ## Docker Services
-- [ ] Build and start services: `docker-compose -f docker-compose.prod.yml up --build -d`
-- [ ] Verify containers running: `docker-compose -f docker-compose.prod.yml ps`
-- [ ] Check service logs: `docker-compose -f docker-compose.prod.yml logs -f`
+- [ ] Build and start services: `docker-compose -f docker-compose.ppe.yml up --build -d`
+- [ ] Verify containers running: `docker-compose -f docker-compose.ppe.yml ps`
+- [ ] Check service logs: `docker-compose -f docker-compose.ppe.yml logs -f`
 - [ ] Test backend health: `curl http://localhost:5000/api/health` (internal Docker network)
 - [ ] Test frontend: `curl http://localhost/` (internal Docker network)
 - [ ] Test frontend externally: Visit `http://<server-ip>` (or https:// with SSL)
 
 ## Multi-Language Dictionary Import (CRITICAL - 15-30 minutes)
 - [ ] Make script executable: `chmod +x server/scripts/import-all-dictionaries.sh`
-- [ ] Run import script: `bash server/scripts/import-all-dictionaries.sh production`
+- [ ] Run import script: `bash server/scripts/import-all-dictionaries.sh ppe`
 - [ ] Verify migrations completed successfully
 - [ ] Verify Chinese dictionary imported (~120,000 entries)
 - [ ] Verify Japanese dictionary imported (~180,000 entries)
 - [ ] Verify Korean dictionary imported (~50,000 entries)
 - [ ] Verify Vietnamese dictionary imported (~40,000 entries)
-- [ ] Check total entries: `docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT COUNT(*) FROM \"dictionaryentries_zh\";"`
+- [ ] Check total entries: `docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT COUNT(*) FROM \"dictionaryentries_zh\";"`
 - [ ] Verify multi-language support: Check each language has entries
 - [ ] Abbreviation expansion runs automatically as part of the import script (expands "sth" → "something", "sb" → "somebody" in all definitions)
 
@@ -56,7 +56,7 @@
 
 ## Final Testing
 - [ ] Check Docker container status: `docker ps`
-- [ ] Check Docker service logs: `docker-compose -f docker-compose.prod.yml logs`
+- [ ] Check Docker service logs: `docker-compose -f docker-compose.ppe.yml logs`
 - [ ] Verify dictionary counts per language (see verification commands below)
 - [ ] Test external access: http://174.127.171.187
 - [ ] Test from mobile data (outside network)
@@ -66,7 +66,7 @@
 ## Multi-Language Verification Commands
 ```bash
 # Check all language counts
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "
     SELECT language, COUNT(*) as entries 
     FROM \"dictionaryentries_zh\" 
     GROUP BY language 
@@ -74,16 +74,16 @@ docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "
 "
 
 # Test Chinese entries
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='zh' LIMIT 3;"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='zh' LIMIT 3;"
 
 # Test Japanese entries  
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ja' LIMIT 3;"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ja' LIMIT 3;"
 
 # Test Korean entries
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ko' LIMIT 3;"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ko' LIMIT 3;"
 
 # Test Vietnamese entries
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, definitions FROM \"dictionaryentries_zh\" WHERE language='vi' LIMIT 3;"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT word1, definitions FROM \"dictionaryentries_zh\" WHERE language='vi' LIMIT 3;"
 ```
 
 ## Important Notes
@@ -92,30 +92,30 @@ docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, de
 - **Backend Container:** localhost:5000 (Docker managed)
 - **Database Container:** PostgreSQL with automatic setup and persistent storage
 - **Dictionary Data:** Stored in `postgres_data` volume (persists across restarts)
-- **Logs:** `docker-compose -f docker-compose.prod.yml logs`
+- **Logs:** `docker-compose -f docker-compose.ppe.yml logs`
 - **Dictionary Re-import:** Only needed after database reset or schema changes
 
 ## If Something Goes Wrong
 
 ### Dictionary Import Issues
 - Check if containers are running: `docker ps`
-- View backend logs: `docker logs cow-backend-prod`
-- View PostgreSQL logs: `docker logs cow-postgres-prod`
-- Manually re-run import: `bash server/scripts/import-all-dictionaries.sh production`
-- Check database connection: `docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT version();"`
-- Verify migrations ran: `docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "\d \"dictionaryentries_zh\""`
+- View backend logs: `docker logs cow-backend`
+- View PostgreSQL logs: `docker logs cow-postgres`
+- Manually re-run import: `bash server/scripts/import-all-dictionaries.sh ppe`
+- Check database connection: `docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT version();"`
+- Verify migrations ran: `docker exec -i cow-postgres psql -U cow_user -d cow_db -c "\d \"dictionaryentries_zh\""`
 
 ### General Troubleshooting
-- Check Docker logs: `docker-compose -f docker-compose.prod.yml logs -f`
+- Check Docker logs: `docker-compose -f docker-compose.ppe.yml logs -f`
 - Check container status: `docker ps`
-- Restart services: `docker-compose -f docker-compose.prod.yml restart`
-- Rebuild services: `docker-compose -f docker-compose.prod.yml up --build -d`
+- Restart services: `docker-compose -f docker-compose.ppe.yml restart`
+- Rebuild services: `docker-compose -f docker-compose.ppe.yml up --build -d`
 - Check resource usage: `docker stats`
-- Access container shell: `docker-compose -f docker-compose.prod.yml exec backend sh`
+- Access container shell: `docker-compose -f docker-compose.ppe.yml exec backend sh`
 
 ## Docker-Specific Troubleshooting
 - [ ] Verify Docker daemon running: `sudo systemctl status docker`
 - [ ] Check Docker disk usage: `docker system df`
 - [ ] Clean up if needed: `docker system prune -f`
 - [ ] Check container logs individually: `docker logs <container-name>`
-- [ ] Verify environment variables: `docker-compose -f docker-compose.prod.yml config`
+- [ ] Verify environment variables: `docker-compose -f docker-compose.ppe.yml config`

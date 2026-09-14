@@ -7,7 +7,7 @@
  * Why this exists: the vocab path (extract tokens → dedupe against the cache →
  * batch the misses → merge personal + dictionary hits) had ~35 bare `console.log`
  * calls spread across four modules, several of which printed whole token arrays.
- * They ran on EVERY Reader document open, in production, for every user — the
+ * They ran on EVERY Reader document open, in PPE, for every user — the
  * diagnostics are genuinely useful when the batching misbehaves, but they should
  * not be on by default. This is the same shape as authDebug.ts, which the auth
  * path already uses for exactly this reason.

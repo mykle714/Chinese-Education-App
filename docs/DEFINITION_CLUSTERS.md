@@ -447,15 +447,15 @@ re-implementing the prompts:
 
 ```bash
 # discoverable, not-yet-clustered entries
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --all        # all zh
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --force      # re-cluster
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --words=会,中  # specific words
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --spot-check  # 5 entries, NO writes, verbose
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --merge-pass  # Stage A.5: consolidate over-fine clusters
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --no-critic   # skip the Stage B critic
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --no-tiebreak # skip the Stage C.5 tied-sense ordering
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --rescore-only # Stage C only: re-score, keep the partition
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --all        # all zh
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --force      # re-cluster
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --words=会,中  # specific words
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --spot-check  # 5 entries, NO writes, verbose
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --merge-pass  # Stage A.5: consolidate over-fine clusters
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --no-critic   # skip the Stage B critic
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --no-tiebreak # skip the Stage C.5 tied-sense ordering
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --rescore-only # Stage C only: re-score, keep the partition
 ```
 
 ### ⚠ After a scoring-only `SCRIPT_VERSION` bump, use `--rescore-only`, never `--stale`
@@ -528,11 +528,11 @@ canonical order is `REQUIRED_SCRIPTS_ES` in
 > clustering only to keep the two pipelines the same shape.
 
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js               # discoverable, never AI-clustered
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --force       # re-cluster
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --dry-run     # print clusters, write nothing
-docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --spot-check  # first 5 words, implies --dry-run
+docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js               # discoverable, never AI-clustered
+docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --force       # re-cluster
+docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro
+docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --dry-run     # print clusters, write nothing
+docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --spot-check  # first 5 words, implies --dry-run
 ```
 
 **Shape: one generation call, not zh's four stages.** Where the Chinese clusterer
@@ -651,5 +651,5 @@ The run summary tallies `Flagged for review: N entries`. The marker string
 detects these lines and surfaces them to the user** (see
 `.claude/commands/mark-discoverable.md`, §A3) — clustering is the last step of
 that pipeline. These flags are the cases most likely to need a manual fix (e.g. a
-wrong heteronym reading); since that pipeline writes straight to prod, the fix has to
+wrong heteronym reading); since that pipeline writes straight to PPE, the fix has to
 happen right then rather than at a review gate.

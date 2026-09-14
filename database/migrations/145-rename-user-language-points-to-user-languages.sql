@@ -33,11 +33,11 @@
 --
 -- DEPLOY ORDER
 --   Runs AFTER 130 (creates the table) and 134 (adds lifetimeMinutesEarned).
---   Neither 130 nor 134 has reached prod yet, so on prod this rename applies to
+--   Neither 130 nor 134 has reached PPE yet, so on PPE this rename applies to
 --   a table created minutes earlier in the same `migrate.sh` run. That is
 --   harmless and deliberate: 130 is already applied on dev, and an applied
 --   migration is immutable, so the rename is a new file rather than an edit to
---   130. (Its deploy runbook was retired after prod was verified on 2026-08-16;
+--   130. (Its deploy runbook was retired after PPE was verified on 2026-08-16;
 --   the ordering it specified is recorded in the note below.)
 --
 --   ⚠️ The pg_cron job in database/cron/expire-stale-streaks.sql references this

@@ -1,12 +1,12 @@
 -- Dev-only build artifacts for the gloss confusability pipeline
 -- (docs/GLOSS_CONFUSABILITY.md § 5). Run on the box that runs the job:
 --
---   docker exec -i cow-postgres-local psql -U cow_user -d cow_db < dev-tables.sql
+--   docker exec -i cow-postgres psql -U cow_user -d cow_db < dev-tables.sql
 --
--- ⚠️ DELIBERATELY NOT A MIGRATION. These tables must never reach prod: they are large
--- (~71 MB of vectors, ~1.25M verdict rows at full det) and are pure build cache. Prod
+-- ⚠️ DELIBERATELY NOT A MIGRATION. These tables must never reach PPE: they are large
+-- (~71 MB of vectors, ~1.25M verdict rows at full det) and are pure build cache. PPE
 -- receives only gloss_meaning_groups (migration 154). Putting them in database/migrations/
--- would ship them to prod on the next deploy, which is exactly the split § 5 exists to
+-- would ship them to PPE on the next deploy, which is exactly the split § 5 exists to
 -- prevent. Losing them costs a rebuild and nothing else.
 
 -- Step 2 output: one embedding per distinct dd key.

@@ -3,7 +3,7 @@
  * columns dropped in migration 95).
  *
  * LAYER: reference-data integrity check (read-only). Run before deploying sort_packs
- * to prod (or in CI). Flags structural problems: empty/oversized packs, non-existent
+ * to PPE (or in CI). Flags structural problems: empty/oversized packs, non-existent
  * entryIds, level out of 1..6.
  *
  * Usage (from server/):  npx tsx scripts/validate-sort-packs.ts

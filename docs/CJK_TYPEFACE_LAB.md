@@ -1,6 +1,6 @@
 # Chinese Typeface — the setting, and the lab behind it
 
-**Status: SHIPPED (migration 157, not yet on prod as of 2026-09-04).** Accounts choose
+**Status: SHIPPED (migration 157, not yet on PPE as of 2026-09-04).** Accounts choose
 their own Chinese face in Settings → Display. `/font-lab` is the dev tool the shortlist
 was chosen with, and remains the place new candidates are evaluated.
 

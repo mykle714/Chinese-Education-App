@@ -43,7 +43,7 @@ Or wherever your application is located on the server.
 git pull origin main
 ```
 
-This will pull the updated `nginx.conf` and `docker-compose.prod.yml` files.
+This will pull the updated `nginx.conf` and `docker-compose.ppe.yml` files.
 
 ---
 
@@ -93,7 +93,7 @@ certbot --version
 We need to free up port 80 for Certbot to verify domain ownership.
 
 ```bash
-docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.ppe.yml down
 ```
 
 Verify containers are stopped:
@@ -161,13 +161,13 @@ sudo chmod 755 /etc/letsencrypt/archive
 Start the containers with the new HTTPS configuration:
 
 ```bash
-docker-compose -f docker-compose.prod.yml up -d --build
+docker-compose -f docker-compose.ppe.yml up -d --build
 ```
 
 Wait for containers to start (30-60 seconds), then verify:
 
 ```bash
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.ppe.yml ps
 ```
 
 All services should show "Up" status.
@@ -179,7 +179,7 @@ All services should show "Up" status.
 Monitor the frontend logs to ensure Nginx started successfully:
 
 ```bash
-docker-compose -f docker-compose.prod.yml logs frontend
+docker-compose -f docker-compose.ppe.yml logs frontend
 ```
 
 Look for messages indicating Nginx started successfully. If you see SSL certificate errors, check that the certificate files exist and have correct permissions.
@@ -242,7 +242,7 @@ sudo crontab -e
 **Choose an editor (nano is easiest), then add this line at the bottom:**
 
 ```bash
-0 0 1 * * certbot renew --quiet --deploy-hook "docker-compose -f ~/vocabulary-app/docker-compose.prod.yml restart frontend"
+0 0 1 * * certbot renew --quiet --deploy-hook "docker-compose -f ~/vocabulary-app/docker-compose.ppe.yml restart frontend"
 ```
 
 This will:
@@ -266,7 +266,7 @@ sudo crontab -l
 
 ```bash
 # Check Docker containers
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.ppe.yml ps
 
 # Check backend health
 curl http://localhost:5000/api/health
@@ -290,8 +290,8 @@ curl -I https://mren.me
 
 **Solution:** Check if frontend container is running:
 ```bash
-docker-compose -f docker-compose.prod.yml ps
-docker-compose -f docker-compose.prod.yml logs frontend
+docker-compose -f docker-compose.ppe.yml ps
+docker-compose -f docker-compose.ppe.yml logs frontend
 ```
 
 ### Issue: "SSL certificate problem" or "certificate not found"
@@ -310,14 +310,14 @@ docker-compose -f docker-compose.prod.yml logs frontend
 
 3. Restart frontend container:
    ```bash
-   docker-compose -f docker-compose.prod.yml restart frontend
+   docker-compose -f docker-compose.ppe.yml restart frontend
    ```
 
 ### Issue: HTTP doesn't redirect to HTTPS
 
 **Solution:** Check Nginx configuration:
 ```bash
-docker exec cow-frontend-prod cat /etc/nginx/conf.d/default.conf
+docker exec cow-frontend cat /etc/nginx/conf.d/default.conf
 ```
 
 Should show both HTTP (port 80) and HTTPS (port 443) server blocks.
@@ -326,9 +326,9 @@ Should show both HTTP (port 80) and HTTPS (port 443) server blocks.
 
 **Solution:** Stop Docker containers first:
 ```bash
-docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.ppe.yml down
 sudo certbot certonly --standalone -d mren.me
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.ppe.yml up -d
 ```
 
 ### Issue: Can't access app from outside network
@@ -347,7 +347,7 @@ docker-compose -f docker-compose.prod.yml up -d
 **Solution:** Run manual renewal with verbose output:
 ```bash
 sudo certbot renew --force-renewal
-docker-compose -f ~/vocabulary-app/docker-compose.prod.yml restart frontend
+docker-compose -f ~/vocabulary-app/docker-compose.ppe.yml restart frontend
 ```
 
 ---
@@ -382,13 +382,13 @@ sudo certbot certificates
 sudo certbot renew --force-renewal
 
 # Restart frontend container after renewal
-docker-compose -f docker-compose.prod.yml restart frontend
+docker-compose -f docker-compose.ppe.yml restart frontend
 
 # Check SSL certificate
 openssl s_client -connect mren.me:443 -servername mren.me
 
 # View container logs
-docker-compose -f docker-compose.prod.yml logs -f frontend
+docker-compose -f docker-compose.ppe.yml logs -f frontend
 
 # Test from command line
 curl -I https://mren.me
@@ -400,7 +400,7 @@ curl -I https://mren.me
 
 ### Configuration Files Updated:
 1. ✅ `nginx.conf` - Added HTTPS server block and HTTP redirect
-2. ✅ `docker-compose.prod.yml` - Changed ports from 8080→80, added SSL volume mount
+2. ✅ `docker-compose.ppe.yml` - Changed ports from 8080→80, added SSL volume mount
 
 ### On Your Server:
 1. ✅ SSL certificates installed at `/etc/letsencrypt/`
@@ -428,7 +428,7 @@ curl -I https://mren.me
 
 If you encounter issues:
 1. Check the troubleshooting section above
-2. Review Docker logs: `docker-compose -f docker-compose.prod.yml logs`
+2. Review Docker logs: `docker-compose -f docker-compose.ppe.yml logs`
 3. Verify certificate: `sudo certbot certificates`
 4. Test connectivity: `curl -I https://mren.me`
 

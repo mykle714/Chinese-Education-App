@@ -62,16 +62,16 @@ normal `/deploy` migration step. **Already applied on dev.**
 
 ## 3. Pre-flight: read this first, then take a census
 
-1. **Read [amIOnTheProdMachine.md](../amIOnTheProdMachine.md).** It decides your role — see
-   `/deploy`. On DEV you build/test/commit/push only; on PROD you run the deploy.
-2. **Know where prod postgres is.** `server/scripts/backfill/run-prod.sh` (the only supported
-   way to run a backfill against prod) talks to `cow-postgres-prod` on `127.0.0.1:5432` and
+1. **Read [machineEnvironment.md](../machineEnvironment.md).** It decides your role — see
+   `/deploy`. On DEV you build/test/commit/push only; on PPE you run the deploy.
+2. **Know where PPE postgres is.** `server/scripts/backfill/run-ppe.sh` (the only supported
+   way to run a backfill against PPE) talks to `cow-postgres` on `127.0.0.1:5432` and
    needs `POSTGRES_PASSWORD` in the **repo-root `.env`**. At the time this doc was written the
-   dev box had only `cow-*-local` containers running, so **the data step (§7) cannot run from
-   dev** — it must run wherever `cow-postgres-prod` lives. Confirm with
-   `docker ps --format '{{.Names}}' | grep prod` before planning §7.
+   dev box had only its dev containers running, so **the data step (§7) cannot run from
+   dev** — it must run wherever `cow-postgres` lives. Confirm with
+   `docker ps --format '{{.Names}}' | grep PPE` before planning §7.
 
-Census (run against **prod**; substitute your psql invocation):
+Census (run against **PPE**; substitute your psql invocation):
 
 ```sql
 SELECT
@@ -102,7 +102,7 @@ WHERE d.language = 'zh' AND d.discoverable;
 ## 4. Back up the column before regenerating
 
 Regeneration is destructive per row (`UPDATE … SET "longDefinition" = …`). Take a snapshot
-**on prod, immediately before §7**:
+**on PPE, immediately before §7**:
 
 ```sql
 CREATE TABLE IF NOT EXISTS longdefinition_backup_v13 AS
@@ -156,7 +156,7 @@ rows are silently not selected — they will keep their legacy object forever if
 If the census showed `unclustered_blocked > 0`:
 
 ```bash
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-cluster-definitions.js
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-cluster-definitions.js
 ```
 
 Clustering itself needs `partsOfSpeech` + `frequencyScore` populated first (its
@@ -173,13 +173,13 @@ a wrong sense/reading here propagates into the long definitions you are about to
 
 ```bash
 # Full sweep: NULL rows plus every row stamped below v15 (i.e. all v13/v14 rows).
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-long-definitions.js --stale
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-long-definitions.js --stale
 
 # Preview on a handful first (5 rows, still WRITES — there is no dry-run):
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-long-definitions.js --stale --spot-check
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-long-definitions.js --stale --spot-check
 
 # Targeted regeneration / re-do of one word (bypasses the discoverable + IS NULL gates):
-server/scripts/backfill/run-prod.sh scripts/backfill/chinese/backfill-long-definitions.js --words=坏,说
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-long-definitions.js --words=坏,说
 ```
 
 **`--stale` is required.** Without it the WHERE clause is `"longDefinition" IS NULL`, which
@@ -357,8 +357,8 @@ running a full revert** — it discards generated content they may have already 
   string, which the read boundary would pass through verbatim as visible JSON. **Ask the user
   before editing those files** — they are outside this change's scope and may be stale for
   other reasons too.
-- **Dev/prod drift.** Dev already holds a few v15 rows (坏, 说) from testing. After the prod
-  sweep, `/data-prod-to-dev` brings dev in line with prod.
+- **Dev/ppe drift.** Dev already holds a few v15 rows (坏, 说) from testing. After the PPE
+  sweep, `/data-ppe-to-dev` brings dev in line with PPE.
 
 ---
 

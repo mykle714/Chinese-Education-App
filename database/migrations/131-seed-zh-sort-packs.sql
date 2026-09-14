@@ -14,7 +14,7 @@
 --
 -- KEYED BY WORD, NOT BY det id
 -- `sort_packs."entryIds"` holds `dictionaryentries_zh.id` surrogate keys, which are
--- NOT portable across environments — prod is the source of truth for that table
+-- NOT portable across environments — PPE is the source of truth for that table
 -- (docs/DATA_DEPLOYMENT_GUIDE.md header) and its ids need not match any dev box.
 -- So the seed below lists each pack by WORD and resolves the ids against whatever
 -- `dictionaryentries_zh` this database has. `word1` is a safe lookup key here

@@ -21,11 +21,11 @@
  *   - approval protection: a step whose validation field a validator approved/flagged
  *     is never pending (mirrors validatedClause in the scripts themselves).
  *
- * USAGE (via the prod shim so it reaches cow-postgres-prod):
- *   scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --limit=25
- *   scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --new --limit=25
- *   scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --words=未来,摸脉
- *   scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --lang=es --discoverable
+ * USAGE (via the PPE shim so it reaches cow-postgres):
+ *   scripts/backfill/run-ppe.sh scripts/backfill/oracle-plan.js --limit=25
+ *   scripts/backfill/run-ppe.sh scripts/backfill/oracle-plan.js --new --limit=25
+ *   scripts/backfill/run-ppe.sh scripts/backfill/oracle-plan.js --words=未来,摸脉
+ *   scripts/backfill/run-ppe.sh scripts/backfill/oracle-plan.js --lang=es --discoverable
  *
  * FLAGS
  *   --lang=zh|es    which pipeline to plan (default zh). Selects the manifest AND the

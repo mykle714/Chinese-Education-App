@@ -1,4 +1,4 @@
--- Hourly escalating inactivity-penalty cron (prod only).
+-- Hourly escalating inactivity-penalty cron (PPE only).
 --
 -- PER-LANGUAGE since migration 130 (docs/PER_LANGUAGE_STREAKS.md). Every unit of
 -- state this cron reads and writes is keyed (userId, language) via

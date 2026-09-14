@@ -160,7 +160,7 @@ is otherwise underused. Reading is a tracked mastery bar with no dedicated teach
 ### 7. Bound-form words (会子 and its class)
 
 → **Already has a doc: [BOUND_FORM_WORDS.md](./BOUND_FORM_WORDS.md)**. The **data cleanup
-is DONE on prod (2026-08-17)**; what remains is the **learner-facing teaching work**,
+is DONE on PPE (2026-08-17)**; what remains is the **learner-facing teaching work**,
 specified in that doc § 4 and tracked as DEFERRED_WORK.md § 2. Same as item 5: the next
 action is a decision on the existing spec, not a new one.
 

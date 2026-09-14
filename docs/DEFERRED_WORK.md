@@ -2,7 +2,7 @@
 
 A single place for work that is **known, agreed to be worth doing, and deliberately not
 being done right now**. It exists because the alternative is a `⚠️` buried in a feature doc
-that nobody reads again, or a dead function sitting in prod because the person who could
+that nobody reads again, or a dead function sitting in PPE because the person who could
 have dropped it was in the middle of something else.
 
 ## What belongs here
@@ -20,7 +20,7 @@ have dropped it was in the middle of something else.
   ([ARENA_FEATURE.md](./ARENA_FEATURE.md) § 11, [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)
   § 11) where the surrounding context is.
 * **Deploy steps for an unshipped change.** Those go in a
-  `docs/<FEATURE>_DEPLOY_RUNBOOK.md` per CLAUDE.md, which is deleted once prod is verified.
+  `docs/<FEATURE>_DEPLOY_RUNBOOK.md` per CLAUDE.md, which is deleted once PPE is verified.
 
 ## How to use it
 
@@ -69,7 +69,7 @@ carries `suppressed: true`, and **no client reads it today**.
 | | |
 |---|---|
 | **What** | A short learner-facing note on the ~10 **hosted** forms in det (`一会儿`, `一辈子`, `一家子`, `一阵子`, `这会儿` …) saying the word is a fixed unit and its tail is not a standalone word. Full spec, the complete 14-item class, and four open questions: [BOUND_FORM_WORDS.md](./BOUND_FORM_WORDS.md) § 6 |
-| **Why deferred** | The **data** half shipped on 2026-08-17 — the 6 bound bases were deleted from prod det (+1 vet row) and both re-entry paths are now gated by `boundForms.js`. That stopped the app teaching a bad card, which was the urgent part. The **teaching** half is new UI with an undecided surface (eip tab vs. bt inline copy vs. cdp chip) and so is not a same-day change |
+| **Why deferred** | The **data** half shipped on 2026-08-17 — the 6 bound bases were deleted from PPE det (+1 vet row) and both re-entry paths are now gated by `boundForms.js`. That stopped the app teaching a bad card, which was the urgent part. The **teaching** half is new UI with an undecided surface (eip tab vs. bt inline copy vs. cdp chip) and so is not a same-day change |
 | **Cost of leaving it** | Moderate and silent. A learner meeting `一会儿` has no way to know `会儿` is not a word, and the bt actively misleads by decomposing the word into `一` + `会` + `儿` — implying a compositional reading that does not hold. They will infer wrong and produce ungrammatical Mandarin. Nothing in the app currently corrects this |
 | **Trigger** | The next piece of eip/cdp work that touches the bt or adds a tab — the note should ride along rather than claim a surface of its own. Decide open question § 6.1 (where it lives) at that point |
 | **⚠️ Do not** | Add a det column for this without asking first (CLAUDE.md rule). The note is derivable at read time from `ZH_BOUND_FORMS`, which needs no migration and cannot drift from the denylist — that is the recommended route |
@@ -93,7 +93,7 @@ carries `suppressed: true`, and **no client reads it today**.
 |---|---|
 | **What** | A system for handling text one user writes and 24 strangers read. The first (and today only) such surface is the **arena message** (`users."arenaMessage"`, migration 152, [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 2.1a) — one line under each competitor's name on the `/arena` board. At minimum it needs: a **report** affordance on a row, somewhere for reports to land, a **takedown** path (clear the message and keep it cleared), and a decision about whether a cleared account may write another. Probably also a cheap pre-filter on write, and a per-account rate limit so a takedown is not undone in one tap |
 | **Why deferred** | The message shipped 2026-08-21 with SHAPE checks only — `ArenaService.setMessage` strips control characters, collapses whitespace, trims and caps at 80 — and none of that is judgement. Moderation was not built alongside it because the correct design depends on facts we do not have yet: how many people write one at all, and whether abuse arrives as a trickle (a human queue is fine) or not at all (a report button and nothing else is fine). Building a review queue for a feature nobody uses is the more expensive mistake |
-| **Cost of leaving it** | **Currently low, and it stops being low the day the app has strangers in it.** Prod has no customers ([memory: prod is effectively a PPE](../CLAUDE.md)), and arena boards are mostly synthetic padding — bots draw their lines from a fixed pool and cannot type anything. So today the realistic blast radius is one tester reading another tester's line. The moment real users share a board, this is an unmoderated broadcast channel to 24 people who did not consent to each other, and the arena is the one surface a user **cannot leave mid-week** |
+| **Cost of leaving it** | **Currently low, and it stops being low the day the app has strangers in it.** PPE has no customers ([memory: PPE is effectively a PPE](../CLAUDE.md)), and arena boards are mostly synthetic padding — bots draw their lines from a fixed pool and cannot type anything. So today the realistic blast radius is one tester reading another tester's line. The moment real users share a board, this is an unmoderated broadcast channel to 24 people who did not consent to each other, and the arena is the one surface a user **cannot leave mid-week** |
 | **Trigger** | ⚠️ **Before the arena carries real strangers** — whichever comes first: the first non-tester cohort, or a second surface adopting user-authored public text (a profile blurb, a deck description shown to others, a challenge taunt). Do not ship a second such field before this exists; the second one is what makes an ad-hoc fix permanent |
 | **Interim mitigation** | The write path is a single chokepoint by design (`ArenaService.setMessage` → `ArenaDAL.setArenaMessage`, the ONLY writer of the column), and `{ message: null }` clears it. So an urgent takedown today is one `UPDATE users SET "arenaMessage" = NULL WHERE id = …` and nothing else in the app needs to change |
 | **References** | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 2.1a, `server/services/ArenaService.ts` → `setMessage`, `database/migrations/152-add-arena-message.sql`, `src/features/arena/ArenaMessageDialog.tsx` |
@@ -104,7 +104,7 @@ carries `suppressed: true`, and **no client reads it today**.
 |---|---|
 | **What** | `StudyChallengeDAL.countActiveForUser` counts `pending` rows the user issued, and a `pending` row is only rewritten to `expired` by pass 1 of `database/cron/expire-study-challenges.sql`. Between the challengee's Wednesday 04:00 and the next run of that job, the challenger is carrying a slot against a challenge nobody can accept any more. Every OTHER read derives the lapse live ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § "The read path never waits for the job") — this count is the one that cannot |
 | **Why deferred** | The count is a SQL aggregate and the deadline is per-challengee-timezone, so deriving it in SQL means joining `users.timezone` and re-deriving `DATE '2026-01-05' + 7 * "weekIndex" + 2` at 04:00 per row — a fourth copy of the boundary arithmetic (`server/shared/challengeWeek.ts`, the cron SQL, migration 150 already hold three), in the hot path of the challenges page, to reclaim a slot the hourly job reclaims anyway |
-| **Cost of leaving it** | On prod, at most one hour of a slot, and only for a user who is at 6 of 6 with a lapsed invitation among them — they would see "You're in 6 challenges this week" briefly. On **dev**, where the timer is not installed, the slot stays spent until the SQL is run by hand |
+| **Cost of leaving it** | On PPE, at most one hour of a slot, and only for a user who is at 6 of 6 with a lapsed invitation among them — they would see "You're in 6 challenges this week" briefly. On **dev**, where the timer is not installed, the slot stays spent until the SQL is run by hand |
 | **Trigger** | If the cap ever drops, if the job's cadence ever slows, or if the boundary arithmetic gets a shared SQL helper for another reason — at which point this becomes a one-line change rather than a fourth copy |
 | **References** | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 1 "How many at once", § "The maintenance job (Q60)", `server/dal/implementations/StudyChallengeDAL.ts` → `countActiveForUser` |
 
@@ -225,7 +225,7 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 | **Why deferred** | The redesign's entry 9 shipped the banner's SHAPE (name, ladder position, next rung, twelve ticks, the pennant notch) without settling its MATERIAL. The design project's `Arena Division Banners.html` draws all twelve as distinct materials, and porting them — in full, then flattened to base gradients — would have minted ~30 hex values outside the ramp. Both ports were withdrawn on the user's ruling (2026-08-24) rather than take that palette decision under deadline. **D2 is therefore unbroken, and there is no arena-palette precedent to cite** |
 | **Cost of leaving it** | A ladder whose rungs look alike is not a finished ladder: the point of twelve *named* rungs is that climbing one should look like something. What currently differentiates them is the name, the "N of 12" line and the tick row — the ticks carrying more weight than they were drawn to carry. This is the redesign's largest open visual gap, and unlike most gaps it is on a screen a competitor stares at for a week |
 | **The decision to take** | Three options were costed: (a) port the twelve plates as a contained exception to D2 — a rung is a MATERIAL, and the ramp has fewer hues than the ladder has rungs, so ramp-only forces repeats; (b) ramp-only and accept the repeats; (c) the flattened middle, `linear-gradient` layers kept and every `repeating-*` / `radial-gradient` / `conic-gradient` texture dropped. (c) was built and withdrawn; the port rule is recorded in SHELF_REDESIGN entry 9 so it can be rebuilt exactly |
-| **Trigger** | Any deliberate pass on Arena's look, or the moment someone asks why every division looks the same. Arena is **dev-only** — it is not in front of a prod user, which is part of why this could wait |
+| **Trigger** | Any deliberate pass on Arena's look, or the moment someone asks why every division looks the same. Arena is **dev-only** — it is not in front of a PPE user, which is part of why this could wait |
 | **References** | `src/features/arena/DivisionBanner.tsx` (the whole change lives here); `src/features/arena/arenaStyles.ts` → `DIVISION_NAMES`; docs/ARENA_FEATURE.md § 7.0; docs/SHELF_REDESIGN.md entry 9 and D2 |
 
 ### 16. Starter-pack ordering has no real tie-break under the merged top band
@@ -265,7 +265,7 @@ Bring a headline figure back only with a caption that matches what it counts.
 ### Build Study Challenge, phase 1 async (closed 2026-08-22 — DONE)
 
 The whole feature shipped in stages: migration 148 + the server stack + the client
-surfaces (2026-08-17, on prod), and **the scored round runner on 2026-08-22** — the last
+surfaces (2026-08-17, on PPE), and **the scored round runner on 2026-08-22** — the last
 piece, and the one this entry stayed open for. It needed no migration.
 
 What the runner turned out to be, for anyone reading the old plan: `?challengeId=` on the
@@ -291,8 +291,8 @@ and is buildable at any point now that phase 1 exists —
 ### Two runbooks with false "NOT YET DEPLOYED" banners (closed 2026-08-17)
 
 `FREQUENCY_SCORE_DEPLOY_RUNBOOK.md` (migration 122) and `SENSE_COMMONALITY_DEPLOY_RUNBOOK.md`
-(migration 139) **deleted** — both migrations are on prod, and per CLAUDE.md a temporary
-runbook is deleted once prod is verified. Recoverable from git history if ever needed.
+(migration 139) **deleted** — both migrations are on PPE, and per CLAUDE.md a temporary
+runbook is deleted once PPE is verified. Recoverable from git history if ever needed.
 
 Both were read end to end before deletion rather than dropped on their banners, which is
 how the frequency runbook's **§7 re-scoring step** was caught: a post-deploy data step that
@@ -318,7 +318,7 @@ sort, filter, aggregate or join, no service, and zero references in `src/`.
 
 The lesson worth keeping: the "per-type or all-type?" framing presumed a reader. Asking
 *who consumes this* before *what shape should it be* dissolved a standing schema decision
-into a deletion. **Deployed and verified on prod 2026-08-17** (0 leftover columns across
+into a deletion. **Deployed and verified on PPE 2026-08-17** (0 leftover columns across
 `vocabentries_zh` / `vocabentries_es`). Being a **contract** migration, it was applied
 *after* the container rebuild rather than in one `migrate.sh` pass with 147/148 — 148 had
 to land before the new code and 149 after it, so the batch was split around the rebuild.
@@ -330,8 +330,8 @@ future lifetime statistic would start counting from zero.
 ### Drop the dead `compute_utcm_category()` (closed 2026-08-17 — done)
 
 `database/migrations/147-drop-compute-utcm-category.sql`, the contract half of migration
-143 (whose deploy window closed when 143 was verified on prod on 2026-08-11).
-**Deployed and verified on prod 2026-08-17**: `pg_proc` now holds exactly
+143 (whose deploy window closed when 143 was verified on PPE on 2026-08-11).
+**Deployed and verified on PPE 2026-08-17**: `pg_proc` now holds exactly
 `compute_core_category(jsonb)` and `compute_type_category(jsonb,text)`, so the mirror set
 is four-way as intended and the phantom fifth is gone.
 
@@ -344,6 +344,6 @@ on deploy day. Confirmed against the live columns, not just the design doc.
 ### Study Challenge deploy-order constraints (closed 2026-08-16)
 
 Migrations 140 and 145 were blocking the challenge migration from shipping first. Both
-are now on prod; prod is current through 146. Kept here because the *shape* of the
+are now on PPE; PPE is current through 146. Kept here because the *shape* of the
 constraint recurs: a new migration that depends on an unshipped one cannot be numbered
 until the dependency lands.

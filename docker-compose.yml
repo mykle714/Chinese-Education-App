@@ -3,7 +3,7 @@ version: "3.8"
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: cow-postgres-local
+    container_name: cow-postgres
     restart: unless-stopped
     stop_grace_period: 30s
     environment:
@@ -29,7 +29,7 @@ services:
       context: ./server
       dockerfile: Dockerfile
       target: development
-    container_name: cow-backend-local
+    container_name: cow-backend
     restart: unless-stopped
     environment:
       - NODE_ENV=development
@@ -52,7 +52,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: development
-    container_name: cow-frontend-local
+    container_name: cow-frontend
     restart: unless-stopped
     environment:
       - VITE_API_URL=http://backend:5000
@@ -79,6 +79,10 @@ services:
 
 volumes:
   postgres_data:
+    # Explicit, env-neutral name. Without it Docker derives `<project>_postgres_data`,
+    # so renaming the compose project (e.g. cow-prod → cow-ppe) silently mounts a NEW,
+    # EMPTY volume. Dev and PPE are separate Docker daemons, so sharing a name is safe.
+    name: cow_postgres_data
 
 networks:
   cow-network:

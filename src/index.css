@@ -8,7 +8,7 @@
  * This is a subset of the SAME face, so per-glyph fallback to "Noto Sans SC" for
  * everything it doesn't carry is visually seamless. Regenerate whenever
  * dictionaryentries_zh.components changes:
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/generate-component-font.js
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/generate-component-font.js
  *
  * Source: Noto Sans SC, SIL OFL 1.1 — see data/hanzi/NotoSansSC-OFL.txt.
  * `font-display: swap` keeps the hint row readable while the file loads.

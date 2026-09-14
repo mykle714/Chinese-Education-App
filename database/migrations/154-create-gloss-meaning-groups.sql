@@ -1,10 +1,10 @@
 -- Migration 154: create gloss_meaning_groups — the runtime artifact of the gloss
 -- confusability pipeline (docs/GLOSS_CONFUSABILITY.md § 5, phase 2).
 --
--- This is the ONLY table of that feature that prod ever sees. The build artifacts
+-- This is the ONLY table of that feature that PPE ever sees. The build artifacts
 -- (gloss_vectors, gloss_pair_verdicts) are dev-only and are deliberately NOT migrations —
 -- they are created by server/scripts/gloss-pipeline/dev-tables.sql on the box that runs
--- the job. Prod never runs a model, never stores a vector, and never needs a GPU.
+-- the job. PPE never runs a model, never stores a vector, and never needs a GPU.
 --
 -- Contents: one row per DISTINCT dd key (the output of ddCollisionKey), not per det row.
 -- Keying by the string rather than a det id is what lets zh and es share one English
@@ -17,10 +17,10 @@
 -- Rollback is TRUNCATE (degrade to phase 1) or DROP; no code change is needed for either.
 --
 -- ⚠️  Source of truth for the DATA in this table is the DEV box, inverting the app-wide
--- rule that prod is authoritative — it is derived data, recomputable from
+-- rule that PPE is authoritative — it is derived data, recomputable from
 -- (det corpus, model revision, template version, thresholds). It must therefore be
--- EXCLUDED from /data-prod-to-dev, or a routine dev refresh overwrites dev's freshly
--- computed groups with prod's copy of what dev just sent up. See § 5a.
+-- EXCLUDED from /data-ppe-to-dev, or a routine dev refresh overwrites dev's freshly
+-- computed groups with PPE's copy of what dev just sent up. See § 5a.
 
 CREATE TABLE IF NOT EXISTS gloss_meaning_groups (
   -- The normalized display definition. Output of ddCollisionKey (server/utils/definitions.ts).
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS gloss_meaning_groups (
 
   "builtAt"         timestamptz NOT NULL DEFAULT NOW(),
 
-  -- Provenance, so a grouping on prod can always be traced to the build that produced it
+  -- Provenance, so a grouping on PPE can always be traced to the build that produced it
   -- and "why are these two grouped?" is answerable without the build tables (§ 5a rule 3).
   "modelRevision"   text NOT NULL,
   "templateVersion" text NOT NULL,
@@ -46,4 +46,4 @@ CREATE INDEX IF NOT EXISTS idx_gloss_meaning_groups_group
   ON gloss_meaning_groups ("meaningGroupId");
 
 COMMENT ON TABLE gloss_meaning_groups IS
-  'Phase-2 gloss confusability groups (docs/GLOSS_CONFUSABILITY.md). One row per distinct dd key. DERIVED data, built on dev and pushed up; EXCLUDE from /data-prod-to-dev.';
+  'Phase-2 gloss confusability groups (docs/GLOSS_CONFUSABILITY.md). One row per distinct dd key. DERIVED data, built on dev and pushed up; EXCLUDE from /data-ppe-to-dev.';

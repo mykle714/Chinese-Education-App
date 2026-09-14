@@ -144,7 +144,7 @@ export function useIWSceneRuntime(scene: IWScene | null, npcs: readonly IWNpcOpt
       height: scene?.height ?? 1,
       decor: scene?.layout?.decor ?? {},
       // Read through `scenePlaces`, never `layout.places` directly — a scene stored before the
-      // 2026-09-06 rename still carries `locations` (migration 163 is not on prod yet).
+      // 2026-09-06 rename still carries `locations` (migration 163 is not on PPE yet).
       places: scenePlaces(scene?.layout),
     }),
     [scene],

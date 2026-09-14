@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Master Dictionary Import Script for Production Deployment
+# Master Dictionary Import Script for PPE Deployment
 # This script handles the complete dictionary setup process:
 # 1. Runs database migrations
 # 2. Downloads all dictionary files
 # 3. Imports all 4 language dictionaries (Chinese, Japanese, Korean, Vietnamese)
 #
-# Usage: bash server/scripts/import-all-dictionaries.sh [production|local]
+# Usage: bash server/scripts/import-all-dictionaries.sh [ppe|local]
 # Default: local
 
 set -e  # Exit on error
@@ -26,13 +26,13 @@ DATA_DIR="$PROJECT_ROOT/data/dictionaries"
 MIGRATIONS_DIR="$PROJECT_ROOT/database/migrations"
 
 # Docker container names based on mode
-if [ "$MODE" = "production" ]; then
-    POSTGRES_CONTAINER="cow-postgres-prod"
-    BACKEND_CONTAINER="cow-backend-prod"
+if [ "$MODE" = "ppe" ]; then
+    POSTGRES_CONTAINER="cow-postgres"
+    BACKEND_CONTAINER="cow-backend"
     echo -e "${BLUE}🚀 Running in PRODUCTION mode${NC}\n"
 else
-    POSTGRES_CONTAINER="cow-postgres-local"
-    BACKEND_CONTAINER="cow-backend-local"
+    POSTGRES_CONTAINER="cow-postgres"
+    BACKEND_CONTAINER="cow-backend"
     echo -e "${BLUE}🔧 Running in LOCAL mode${NC}\n"
 fi
 

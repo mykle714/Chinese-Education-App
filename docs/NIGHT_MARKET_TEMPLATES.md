@@ -531,7 +531,7 @@ shared by two callers: `spawnTemplate` (the live growth path, which persists the
 Template Sandbox's **Iterate** button (`NightMarketSandboxService.iteratePlacement` — the author
 tool that steps this algorithm over a scratch layout, see
 [NIGHT_MARKET_TEMPLATE_SANDBOX.md](./NIGHT_MARKET_TEMPLATE_SANDBOX.md)). Keep them on the one
-wrapper so the preview cannot drift from production.
+wrapper so the preview cannot drift from PPE.
 
 **Anchor fallback + logging.** If **no candidate at the closest anchor is legal**,
 advance to the **next-closest** anchor and repeat, emitting a
@@ -699,7 +699,7 @@ path feeds the simulation its real occupant fill state. The Template Sandbox has
 rows, so every slot reads as empty there — the guard itself is the same code on both surfaces.
 
 **When no candidate survives.** The spawn is aborted (nothing is placed) and
-`anchor-all-candidates-seal` is logged. **This should never happen in production**: it is an
+`anchor-all-candidates-seal` is logged. **This should never happen in PPE**: it is an
 **authoring** defect, not a runtime state — the catalog is expected to always offer some template
 that leaves a road stub open. Treat the log as a signal to fix the catalog.
 

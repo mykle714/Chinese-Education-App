@@ -244,7 +244,7 @@ const SpeedReadingPage: React.FC = () => {
      *
      * The glyphs used to be prefetched here too (the stroke corpus behind the
      * old `GlyphSvg` options needed a dynamic import in dev / a CDN fetch in
-     * prod, showing as empty buttons on a miss). The options are plain font text
+     * production builds, showing as empty buttons on a miss). The options are plain font text
      * now — nothing to load — so only audio is warmed.
      */
     const prefetchRound = useCallback((r: Round) => {

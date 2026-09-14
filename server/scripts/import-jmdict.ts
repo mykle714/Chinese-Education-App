@@ -221,7 +221,7 @@ async function importJMdict() {
 
     console.log('🔌 Connecting to PostgreSQL...');
     const client = new pg.Client({
-        host: process.env.DB_HOST || 'cow-postgres-local',
+        host: process.env.DB_HOST || 'cow-postgres',
         port: parseInt(process.env.DB_PORT || '5432'),
         database: process.env.DB_NAME || 'cow_db',
         user: process.env.DB_USER || 'cow_user',

@@ -15,7 +15,7 @@
 #   - Entries must already be marked discoverable = TRUE in the database
 #
 # Usage:
-#   bash server/scripts/run-discoverable-enrichment.sh [production|local]
+#   bash server/scripts/run-discoverable-enrichment.sh [ppe|local]
 #   Default: local
 #
 # Pipeline order (each step depends on the previous):
@@ -59,11 +59,11 @@ NC='\033[0m'
 
 MODE="${1:-local}"
 
-if [ "$MODE" = "production" ]; then
-    BACKEND_CONTAINER="cow-backend-prod"
+if [ "$MODE" = "ppe" ]; then
+    BACKEND_CONTAINER="cow-backend"
     echo -e "${BLUE}Running in PRODUCTION mode${NC}\n"
 else
-    BACKEND_CONTAINER="cow-backend-local"
+    BACKEND_CONTAINER="cow-backend"
     echo -e "${BLUE}Running in LOCAL mode${NC}\n"
 fi
 

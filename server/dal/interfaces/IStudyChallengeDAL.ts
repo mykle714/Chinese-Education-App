@@ -26,7 +26,7 @@ import type {
  * The danger is therefore NOT concurrency — it is somebody later adding a
  * convenient read-modify-write helper ("fetch the challenge, splice a round in,
  * write the whole blob back"). That helper would be correct in every test and
- * lossy in production. Do not add it. If the discipline ever feels unreliable, the
+ * lossy in PPE. Do not add it. If the discipline ever feels unreliable, the
  * fallback is a `study_challenge_rounds` child table where the same guarantee
  * comes from a unique constraint instead — see STUDY_CHALLENGE.md § 9, Q53.
  *

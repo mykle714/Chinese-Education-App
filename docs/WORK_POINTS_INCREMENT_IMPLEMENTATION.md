@@ -275,13 +275,13 @@ Expected: `lastWorkPointIncrement` should update after successful increment
 ### Development Environment
 ```bash
 # Run migration
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db < database/migrations/13-add-last-work-point-increment.sql
+docker exec -i cow-postgres psql -U cow_user -d cow_db < database/migrations/13-add-last-work-point-increment.sql
 
 # Restart backend
 docker-compose restart backend
 
 # Verify
-docker logs cow-backend-local --tail 50
+docker logs cow-backend --tail 50
 ```
 
 ### Production Environment
@@ -290,13 +290,13 @@ docker logs cow-backend-local --tail 50
 cd ~/vocabulary-app
 
 # Run migration
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < database/migrations/13-add-last-work-point-increment.sql
+docker exec -i cow-postgres psql -U cow_user -d cow_db < database/migrations/13-add-last-work-point-increment.sql
 
 # Rebuild and restart (if needed)
-docker-compose -f docker-compose.prod.yml restart backend
+docker-compose -f docker-compose.ppe.yml restart backend
 
 # Verify
-docker logs cow-backend-prod --tail 50
+docker logs cow-backend --tail 50
 ```
 
 ## Monitoring and Debugging
@@ -338,7 +338,7 @@ The backend logs key events with emoji prefixes:
 
 Example:
 ```bash
-docker logs cow-backend-local -f | grep "WORK-POINTS"
+docker logs cow-backend -f | grep "WORK-POINTS"
 ```
 
 ## Future Enhancements

@@ -15,7 +15,7 @@
  *
  * SHIPS ITS FRAME STATS, TOO. Every report window also goes to the client-diagnostics pipeline via
  * {@link reportFrameStats}, so a synthetic load test (docs/REACT_NATIVE_MIGRATION.md action item 4a)
- * and real prod telemetry land in the same JSONL and are read by the same analyzer. The console is
+ * and real PPE telemetry land in the same JSONL and are read by the same analyzer. The console is
  * for watching; the records are for measuring. That leg is inert unless `initPerfDiagnostics()` ran
  * (`localStorage.perfDiag = '1'` in dev), so normal dev sessions still only pay for the console line.
  *

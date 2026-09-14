@@ -8,7 +8,7 @@ import { ValidationError, DuplicateError, NotFoundError, DALError } from '../typ
 import { resolveTimezone } from '../utils/streakDate.js';
 import { CHINESE_FONT_IDS } from '../contracts/wire.js';
 
-// JWT secret key - should be in environment variables in production
+// JWT secret key - should be in environment variables in PPE
 const JWT_SECRET = process.env.JWT_SECRET;
 const SALT_ROUNDS = 10;
 

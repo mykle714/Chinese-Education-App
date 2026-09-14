@@ -512,7 +512,7 @@ Restated from STUDY_CHALLENGE.md § 7, now with the reasons this document suppli
    nothing to report for a forfeited player.
 4. **Do not make pause-on-background unconditional** (§ 6).
 5. **Do not let anything in §§ 1–6 of the async doc depend on the socket.** If live mode
-   is cut, deleted, or broken in production, the challenge must be unaffected.
+   is cut, deleted, or broken in PPE, the challenge must be unaffected.
 
 ---
 

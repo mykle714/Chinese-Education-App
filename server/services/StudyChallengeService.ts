@@ -1219,7 +1219,7 @@ export class StudyChallengeService {
      * offering "Review words" in green after their Wednesday 04:00, and tapping it
      * ran into `acceptChallenge`'s own deadline check — a control that exists only
      * to produce an error. On a machine where the timer is not installed at all
-     * (dev, and prod until `install-timers.sh` re-renders the unit) it never
+     * (dev, and PPE until `install-timers.sh` re-renders the unit) it never
      * lapsed at all.
      *
      * Deriving it here fixes every surface at once, because this is the only place

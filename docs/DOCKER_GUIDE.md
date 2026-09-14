@@ -1,6 +1,6 @@
 # Docker Guide for Vocabulary Entry Manager
 
-This guide explains how to run the Vocabulary Entry Manager application using Docker containers for development and production environments.
+This guide explains how to run the Vocabulary Entry Manager application using Docker containers for development and PPE environments.
 
 ## Overview
 
@@ -77,37 +77,37 @@ docker-compose down -v
 docker-compose down --rmi all
 ```
 
-## Production Environment
+## PPE Environment
 
 ### Environment Setup
 
-1. **Create production environment file**:
+1. **Create PPE environment file**:
    ```bash
    cp .env.example .env
    ```
 
 2. **Set required environment variables**:
    ```bash
-   # Required for production
+   # Required for PPE
    export POSTGRES_PASSWORD="your-secure-password"
    export JWT_SECRET="your-jwt-secret-key"
    export CLIENT_URL="https://yourdomain.com"
    ```
 
-### Starting Production Services
+### Starting PPE Services
 
 ```bash
-# Start production environment
-docker-compose -f docker-compose.prod.yml up --build -d
+# Start PPE environment
+docker-compose -f docker-compose.ppe.yml up --build -d
 
 # View logs
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.ppe.yml logs -f
 
 # Check service health
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.ppe.yml ps
 ```
 
-### Production Features
+### PPE Features
 
 - **Optimized Builds**: Multi-stage builds for smaller images
 - **Security**: Non-root users, localhost binding for sensitive services
@@ -125,7 +125,7 @@ docker-compose -f docker-compose.prod.yml ps
 - API proxy to backend
 - Volume mounted source code
 
-**Production**:
+**PPE**:
 - Port: 80 (HTTP), 443 (HTTPS)
 - Nginx serving static files
 - Gzip compression
@@ -140,7 +140,7 @@ docker-compose -f docker-compose.prod.yml ps
 - TypeScript compilation on-the-fly
 - Volume mounted source code
 
-**Production**:
+**PPE**:
 - Host port: 5002 (localhost only) → internal port 5000
 - Compiled JavaScript
 - Health check endpoint
@@ -156,7 +156,7 @@ docker-compose -f docker-compose.prod.yml ps
 
 **Access**:
 - Host: `postgres` (Docker-internal) / `localhost` (external)
-- Dev host port: 5433, Prod host port: 127.0.0.1:5432
+- Dev host port: 5433, PPE host port: 127.0.0.1:5432
 - Database: cow_db
 - User: cow_user
 
@@ -175,7 +175,7 @@ PORT=5000
 NODE_ENV=development
 ```
 
-### Production (.env)
+### PPE (.env)
 ```bash
 DB_HOST=postgres
 DB_PORT=5432
@@ -381,7 +381,7 @@ docker-compose up --build
 - Leverage Docker layer caching
 - Use volume mounts for faster development
 
-### Production
+### PPE
 
 - Multi-stage builds reduce image size
 - Nginx serves static files efficiently
@@ -393,10 +393,10 @@ docker-compose up --build
 ### Development
 
 - Database exposed on localhost only
-- Default passwords (change for production)
+- Default passwords (change for PPE)
 - CORS configured for development origins
 
-### Production
+### PPE
 
 - Services bound to localhost for security
 - Non-root users in containers
@@ -410,7 +410,7 @@ docker-compose up --build
 
 ```bash
 # Test production build locally
-docker-compose -f docker-compose.prod.yml up --build
+docker-compose -f docker-compose.ppe.yml up --build
 
 # Access via http://localhost
 ```
@@ -431,7 +431,7 @@ docker-compose -f docker-compose.prod.yml up --build
 
 3. **Start services**:
    ```bash
-   docker-compose -f docker-compose.prod.yml up -d --build
+   docker-compose -f docker-compose.ppe.yml up -d --build
    ```
 
 4. **Setup SSL** (recommended):
@@ -467,4 +467,4 @@ docker system df
 docker-compose top
 ```
 
-This Docker setup provides a complete development and production environment for the Vocabulary Entry Manager application with proper isolation, scalability, and maintainability.
+This Docker setup provides a complete development and PPE environment for the Vocabulary Entry Manager application with proper isolation, scalability, and maintainability.

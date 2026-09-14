@@ -1,9 +1,9 @@
 # TEMPORARY — Deploy runbook: iw scene notes + scene events (migrations 160, 161)
 
-> **Delete this file once prod is verified.** Status: **DEPLOYED 2026-09-05**; every schema
-> check below passed on prod (both columns landed with their empty defaults, the one existing
-> scene backfilled to `''`, both versions recorded). Prod is current through migration **161**.
-> **The notes/events half is now CONFIRMED (2026-09-06).** Prod's one scene, "Get Dinner",
+> **Delete this file once PPE is verified.** Status: **DEPLOYED 2026-09-05**; every schema
+> check below passed on PPE (both columns landed with their empty defaults, the one existing
+> scene backfilled to `''`, both versions recorded). PPE is current through migration **161**.
+> **The notes/events half is now CONFIRMED (2026-09-06).** PPE's one scene, "Get Dinner",
 > carries a non-empty `sceneNotes` ("This scene is Wang Shen's Restaurant. t1s1 means…") and
 > one authored event (`e1`, "The player's food is ready"), armed by a `schedule_event` step in
 > 王婶's *Submit the player's order to the kitchen*. Both columns round-tripped through the
@@ -37,8 +37,8 @@ harmless — the columns simply sit at `''` and `[]` — which is why the expand
 safe one. Both are in one `migrate.sh` pass; there is no held-back contract migration here.
 
 ```bash
-# 1. On prod, from the repo root:
-git status --short          # prod usually has real uncommitted work — commit & push it FIRST
+# 1. On PPE, from the repo root:
+git status --short          # PPE usually has real uncommitted work — commit & push it FIRST
 git pull
 
 # 2. Apply the migration BEFORE rebuilding.
@@ -57,7 +57,7 @@ SELECT column_name, data_type, is_nullable, column_default
  WHERE table_name = 'iw_scenes' AND column_name = 'sceneNotes';
 -- → sceneNotes | text | NO | ''::text
 
--- Every pre-existing scene backfilled to ''. (Prod had 0 scenes at the 159 deploy; if any
+-- Every pre-existing scene backfilled to ''. (PPE had 0 scenes at the 159 deploy; if any
 -- exist now they must all be '' — nothing else can have written this column yet.)
 SELECT count(*) AS total, count(*) FILTER (WHERE "sceneNotes" <> '') AS non_empty
   FROM iw_scenes;

@@ -68,11 +68,11 @@ Do not write content descibing what you just completed; you should write the sta
 - **Docker Setup**: See [docs/DOCKER_GUIDE.md](./docs/DOCKER_GUIDE.md) and [docs/DOCKER_COMMANDS.md](./docs/DOCKER_COMMANDS.md)
 - **Server Development**: See [server/README.md](./server/README.md)
 - **General Reference**: See [AI_REFERENCE.md](./AI_REFERENCE.md)
-- **Which machine am I on?**: See [amIOnTheProdMachine.md](./amIOnTheProdMachine.md) — present on all machines (gitignored); read the file to determine if this is dev or prod
+- **Which machine am I on?**: See [machineEnvironment.md](./machineEnvironment.md) — present on all machines (gitignored); read the file to determine if this is dev or PPE
 
 ## 💾 Database Tasks
 
-> ⚠️ **Before doing any database work**, read [amIOnTheProdMachine.md](./amIOnTheProdMachine.md) to determine which machine you are on. If it says **PROD**, be especially careful about writes, migrations, and destructive operations — confirm with the user before proceeding. If it says **DEV**, normal local development is safe.
+> ⚠️ **Before doing any database work**, read [machineEnvironment.md](./machineEnvironment.md) to determine which machine you are on. If it says **PPE**, be especially careful about writes, migrations, and destructive operations — confirm with the user before proceeding. If it says **DEV**, normal local development is safe.
 
 ### PostgreSQL Queries
 When querying or working with the PostgreSQL database:
@@ -144,8 +144,8 @@ For adding a completely new language:
 ### Minute Points & Streak System
 → See [docs/MINUTE_POINTS_SYSTEM.md](./docs/MINUTE_POINTS_SYSTEM.md)
 
-#### Inactivity penalty cron (prod only)
-An hourly Postgres cron on the prod server. For each **(user, language)** balance that has gone a full local day below the 3-minute threshold, it breaks that language's streak and debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then the remainder at day 7+), floored at the balance's **24-hour checkpoint** (a penalty never carries a balance across a multiple of 1440 minute points; under 1440 it can still reach 0), and decays the user's Night Market occupants to match. The streak breaks on a missed day even when the checkpoint absorbs the whole penalty. Penalties are per language (migration 130): keeping up Chinese does not shield neglected Spanish. Never touches `lifetimeMinutesEarned` (gross is monotonic). Not installed on dev.
+#### Inactivity penalty cron (PPE only)
+An hourly Postgres cron on the PPE server. For each **(user, language)** balance that has gone a full local day below the 3-minute threshold, it breaks that language's streak and debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then the remainder at day 7+), floored at the balance's **24-hour checkpoint** (a penalty never carries a balance across a multiple of 1440 minute points; under 1440 it can still reach 0), and decays the user's Night Market occupants to match. The streak breaks on a missed day even when the checkpoint absorbs the whole penalty. Penalties are per language (migration 130): keeping up Chinese does not shield neglected Spanish. Never touches `lifetimeMinutesEarned` (gross is monotonic). Not installed on dev.
 → See [docs/STREAK_EXPIRATION_CRON.md](./docs/STREAK_EXPIRATION_CRON.md)
 
 ### Flashcards & Review History
@@ -233,7 +233,7 @@ so the progress survives.
 → See [docs/FRIENDS_FEATURE.md](./docs/FRIENDS_FEATURE.md) — the friend graph (`friendships`, migration 138): the hp Friends row and its three NodePages (`/friends`, `/friends/sent`, `/friends/requests`), adding a friend by pasted user ID, the one-row-per-pair model (a friendship IS an accepted request; declining deletes the row), and the crossing-request auto-accept rule.
 
 ### Arena (weekly global division leaderboard)
-→ See [docs/ARENA_FEATURE.md](./docs/ARENA_FEATURE.md) — **BUILT ON DEV, not on prod**: the hp Arena row and `/arena`, a weekly cluster of 25 players ranked by minutes earned while the arena is live. Covers the Tue 04:00 → **Sun 16:00** cycle and its 36-hour break/opt-in period (the app's only non-04:00 boundary, and why), 12 divisions held **per (user, language)** on `user_languages`, clustering as a **sort-and-chunk over a geohash cell** (a space-filling curve, so the stored location format *is* the sort key) inside a hard (timezone, division) partition, synthetic padding that lives in `arena_members` rather than `users`, ±5 promotion/relegation, and the opt-in location flow for `users."geoCell"` (a ~5 km cell truncated **on the device**; coordinates never reach the server).
+→ See [docs/ARENA_FEATURE.md](./docs/ARENA_FEATURE.md) — **BUILT ON DEV, not on PPE**: the hp Arena row and `/arena`, a weekly cluster of 25 players ranked by minutes earned while the arena is live. Covers the Tue 04:00 → **Sun 16:00** cycle and its 36-hour break/opt-in period (the app's only non-04:00 boundary, and why), 12 divisions held **per (user, language)** on `user_languages`, clustering as a **sort-and-chunk over a geohash cell** (a space-filling curve, so the stored location format *is* the sort key) inside a hard (timezone, division) partition, synthetic padding that lives in `arena_members` rather than `users`, ±5 promotion/relegation, and the opt-in location flow for `users."geoCell"` (a ~5 km cell truncated **on the device**; coordinates never reach the server).
 
 ### Study Challenge (weekly head-to-head between friends)
 → See [docs/STUDY_CHALLENGE.md](./docs/STUDY_CHALLENGE.md) — **PHASE 1 BUILT** (async; the "DESIGN/DRAFT" this line used to claim was stale, and the set is **9** words, not 10 — `CHALLENGE_WORD_COUNT`): a Monday-issued, Friday-played challenge between two friends — the same-word vs different-word variants, the 04:00-local week boundaries, generated (non-editable) challenge decks that don't count against the 100-deck cap, the `mastered-first` provisioning mode, the per-game contested/filler scoring contract, and results/no-contest. The **2026-09-01 shelf-system redesign** changed behaviour as well as looks: the opponent's rounds are now revealed per submitted round (reversing the anti-anchoring rule), issue/withdraw/accept became a sheet over the list (two routes deleted), View Challenge became two swipeable pages, and taunts arrived (migration 156). Live (synchronous) mode is deferred to phase 2.
@@ -252,7 +252,7 @@ so the progress survives.
 → See [docs/CPCD_PINYIN_SHIFT.md](./docs/CPCD_PINYIN_SHIFT.md) — how `CPCDRow` spaces out long pinyin (rendered wider than its column): a long syllable stays centered over its char and pushes its immediate neighbors outward; opposing pushes cancel.
 
 ### Client Performance Diagnostics
-→ See [docs/CLIENT_PERF_DIAGNOSTICS.md](./docs/CLIENT_PERF_DIAGNOSTICS.md) — real-user tap-latency telemetry (Event Timing / long tasks) for the prod-only footer/decks lag; sink at `POST /api/diagnostics/perf`, analyze with `server/scripts/analyze-client-perf.ts`
+→ See [docs/CLIENT_PERF_DIAGNOSTICS.md](./docs/CLIENT_PERF_DIAGNOSTICS.md) — real-user tap-latency telemetry (Event Timing / long tasks) for the PPE-only footer/decks lag; sink at `POST /api/diagnostics/perf`, analyze with `server/scripts/analyze-client-perf.ts`
 
 ## 🔧 Troubleshooting
 
@@ -275,8 +275,8 @@ from the diff.
 The runbook must state: the exact **step order**, which migrations are safe to auto-run vs.
 held back, **copy-pasteable verification SQL with the expected result**, what to do when a
 check fails, the rollback path, and any user-visible behaviour change to expect. Mark it
-**TEMPORARY** at the top with a "delete once verified on prod" note, and say plainly whether
-it has been deployed yet. Delete the file once prod is verified.
+**TEMPORARY** at the top with a "delete once verified on PPE" note, and say plainly whether
+it has been deployed yet. Delete the file once PPE is verified.
 
 #### Migration number collisions — just renumber, don't ask
 Work happens on more than one machine, so two branches can independently claim the same
@@ -284,7 +284,7 @@ migration number (e.g. two files numbered `142`). When you find a collision, **r
 yourself as part of the deploy prep** — do not stop to ask which number wins. Rules:
 
 1. **Only renumber migrations that have not reached any database.** Check
-   `schema_migrations` (and the runbook's "not yet on prod" status). A migration that has
+   `schema_migrations` (and the runbook's "not yet on PPE" status). A migration that has
    been applied anywhere is immutable — renumber the other one.
 2. **Order by deploy constraint, not by authorship date.** Migrations that must run
    *before* the new code get the lower numbers; any **held-back / contract** migration
@@ -302,7 +302,7 @@ Current open runbooks:
 (gloss phase-2 half B, the runtime guard — **no migration**). **Deployed 2026-08-24** and
 verified on the infrastructure checks; it stays open only until someone opens a real game
 board and confirms it fills rather than coming back short, which is the one over-blocking
-symptom those checks cannot see. Prod is current through migration **162**.
+symptom those checks cannot see. PPE is current through migration **162**.
 
 **[docs/IW_SCENE_NOTES_DEPLOY_RUNBOOK.md](./docs/IW_SCENE_NOTES_DEPLOY_RUNBOOK.md)**
 (iw scene notes + scene events — migrations **160** and **161**, plus the advisory-validator
@@ -319,11 +319,11 @@ skill already describes, so it needs no temp runbook; write one only when the de
 cannot be `/deploy` as-is. The usual ordering reason applied — the shipped
 `ImmersiveWorldDAL` selects `iw_scenes.interactions` by name, so old schema + new code
 would 500 every scene read. Verified after applying: the column landed NOT NULL
-defaulting to `'{}'::jsonb` and prod's single existing scene backfilled in one pass.
+defaulting to `'{}'::jsonb` and PPE's single existing scene backfilled in one pass.
 
 Deployed and retired on 2026-09-05 (runbook deleted): Immersive World scene authoring
 (**159**). Its one open condition — an author opening the editor and saving a scene — was
-closed by the scene "Get Dinner" appearing in prod's `iw_scenes` before the 160/161 deploy.
+closed by the scene "Get Dinner" appearing in PPE's `iw_scenes` before the 160/161 deploy.
 
 Worth keeping from it: a contract migration that was nevertheless a **single-pass** deploy. It
 drops `iw_scenes.words` / `.objective`, reshapes `iw_scene_runs."complicationId"` into a
@@ -331,7 +331,7 @@ drops `iw_scenes.words` / `.objective`, reshapes `iw_scene_runs."complicationId"
 2026-08-17 lesson), but **no shipped code read either table** (the feature is unreleased) and
 both were empty, so there was no old-code window to split around. The runbook made that
 assumption a **pre-check** rather than a claim, which is the part to copy: `scenes = 0`,
-`runs = 0` was verified on prod before `migrate.sh` ran.
+`runs = 0` was verified on PPE before `migrate.sh` ran.
 
 Deployed and retired on 2026-09-04 (runbook deleted): the Chinese typeface account setting
 (**157**, `users."chineseFont"`) shipped alongside the immersive-world schema (**158**).
@@ -341,22 +341,22 @@ them — 157 had to go first for the usual reason (the shipped `UserDAL.findById
 request), and 158 creates four brand-new `iw_*` tables no shipped code reads yet, which no
 ordering can break. Verification matched the runbook exactly: the column landed NOT NULL
 defaulting to `975-maru`, and all 71 pre-existing accounts backfilled to `noto-sans-sc` in
-a single row. **The 2026-09-02 lesson repeated verbatim** — prod again held uncommitted
-tracked work (the `backfill-icons` v2 LLM acceptability judge, authored on prod because the
-hourly oracle cron runs there), and it was again committed and pushed **from prod** before
+a single row. **The 2026-09-02 lesson repeated verbatim** — PPE again held uncommitted
+tracked work (the `backfill-icons` v2 LLM acceptability judge, authored on PPE because the
+hourly oracle cron runs there), and it was again committed and pushed **from PPE** before
 the dev branch, keeping the pull a fast-forward. Treat this as the norm, not the exception:
-prod always has local work, and `git status --short` on prod is the only thing that shows it.
+PPE always has local work, and `git status --short` on PPE is the only thing that shows it.
 
 Deployed and retired on 2026-09-02 (runbook deleted): the Study Challenge shelf-system
 redesign (**156**, `study_challenges.taunts`). Applied BEFORE the container rebuild as its
 runbook required — the shipped `StudyChallengeDAL` selects `taunts` by name, so old schema
 + new code 500s every challenge read (the same shape as 152's `users."arenaMessage"`). The
-deploy also surfaced a second habit worth keeping: **prod's checkout had four uncommitted
+deploy also surfaced a second habit worth keeping: **PPE's checkout had four uncommitted
 tracked files** (oracle cron `ORACLE_LANGS`, the es backfill `--stale`/`--words=` fixes),
-authored on prod because the hourly oracle cron runs there. They were committed and pushed
-from prod *before* the dev branch was pushed, so the pull was a fast-forward rather than a
-conflict. Always run `git status --short` on prod during the divergence check — the
-ancestor/descendant counts alone report `0 0` for a prod that has real uncommitted work.
+authored on PPE because the hourly oracle cron runs there. They were committed and pushed
+from PPE *before* the dev branch was pushed, so the pull was a fast-forward rather than a
+conflict. Always run `git status --short` on PPE during the divergence check — the
+ancestor/descendant counts alone report `0 0` for a PPE that has real uncommitted work.
 
 > **A rubric/prompt change does NOT need a runbook.** Bumping a backfill's
 > `SCRIPT_VERSION` (+ its `requiredScripts.js` entry) makes every already-enriched row a
@@ -366,7 +366,7 @@ ancestor/descendant counts alone report `0 0` for a prod that has real uncommitt
 > limits (partial coverage, and `--stale` vs `--rescore-only` on the clusterer).
 
 Gloss confusability shipped in two halves on 2026-08-24, and the split is worth
-remembering as a pattern: **half A** (migration 154 + the dev→prod `gloss_meaning_groups`
+remembering as a pattern: **half A** (migration 154 + the dev→PPE `gloss_meaning_groups`
 push, 7647 rows / 5076 groups) was inert by construction because no shipped code read the
 table, so it could land with zero user-visible risk; **half B** (the runtime guard in
 `OnDeckVocabService` → `getGameVocabPool` / `getWordSearchGrid`) then became a pure code
@@ -411,13 +411,13 @@ Deployed and retired on 2026-08-16 (runbooks deleted): the `user_language_points
 `user_languages` rename (145) and Arena (146), which also installed the **`cow-arena`**
 hourly systemd timer via `database/cron/install-timers.sh` — **renamed** from
 `install-maintenance-timer.sh`; it now installs both `cow-maintenance` and `cow-arena`.
-Retired in the same pass, having shipped earlier and been verified on prod after the
+Retired in the same pass, having shipped earlier and been verified on PPE after the
 fact: per-language minute points (130, 134), provisional cards (140), unit-slot unlocks
 (cron SQL only). Earlier, on 2026-08-11: collection Sort by + `masteredAt` (142), three
 mastery bars (143), `sortable` drop (144).
 
 > ⚠️ **A runbook's own status line is not evidence.** Four of the runbooks retired above
-> still read "not yet on prod" when their migrations had already been applied — the
+> still read "not yet on PPE" when their migrations had already been applied — the
 > 2026-08-16 deploy nearly acted on that, and the remedy (`--allow-out-of-order`) would
 > have suppressed the guard that was correctly reporting the mismatch. **Always derive
 > pending work from `schema_migrations` and a `migrate.sh --dry-run`**, and treat any
@@ -434,22 +434,22 @@ explicitly postponed decisions. Add an item here rather than leaving a `⚠️` 
 doc that nobody re-reads. **Not** for bugs, and not for feature design questions (those
 belong in the owning doc's question log).
 
-### Data Sync (refreshing a dev box from prod)
-Prod is the **source of truth** for the det/reference tables; there is no dev → prod
-push any more (the `/data-deploy` skill was deleted). Use the `/data-prod-to-dev` skill
+### Data Sync (refreshing a dev box from PPE)
+PPE is the **source of truth** for the det/reference tables; there is no dev → PPE
+push any more (the `/data-deploy` skill was deleted). Use the `/data-ppe-to-dev` skill
 to pull `icons8`, `dictionaryentries_zh`, `dictionaryentries_es`,
 `particlesandclassifiers` and `validations` **down** to a dev box.
 **One planned exception, not yet built:** `gloss_meaning_groups`
 ([docs/GLOSS_CONFUSABILITY.md](./docs/GLOSS_CONFUSABILITY.md) § 5a) would be the only table
 whose source of truth is **DEV** — it is GPU-computed derived data pushed **up**. It must be
-explicitly EXCLUDED from `/data-prod-to-dev`, or a routine dev refresh silently overwrites
-the freshly-computed groups with prod's copy of what dev just sent.
+explicitly EXCLUDED from `/data-ppe-to-dev`, or a routine dev refresh silently overwrites
+the freshly-computed groups with PPE's copy of what dev just sent.
 ⚠️ **TEMPORARY (2026-08-28): a pull will undo dev's `frequencyScore` repair.** Dev's det
 rows were repaired to satisfy `frequencyScore == MAX(definitionClusters[*].frequencyScore)`
-(430 zh + 562 es rows); prod has not been repaired yet, so a pull re-imports the drift.
-Either run `scripts/backfill/shared/repair-frequency-score-drift.js` against prod first, or
+(430 zh + 562 es rows); PPE has not been repaired yet, so a pull re-imports the drift.
+Either run `scripts/backfill/shared/repair-frequency-score-drift.js` against PPE first, or
 re-run it on dev after the pull — it is deterministic, costs nothing and is idempotent.
-**Delete this note once prod has been repaired.**
+**Delete this note once PPE has been repaired.**
 → Retired push flow, kept for the `icons8` FK rule + the 2026-07-02 incident: [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)
 
 ### Docker Commands & Setup

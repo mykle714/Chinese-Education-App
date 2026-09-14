@@ -15,11 +15,11 @@ All project documentation is organized in the `/docs` directory. This keeps the 
 - **Design goals & architecture**: [`docs/designGuidelines.md`](docs/designGuidelines.md) - UI/UX goals, current features, database schema
 
 ### 🐳 Development & Docker Setup
-- **Docker overview**: [`docs/DOCKER_GUIDE.md`](docs/DOCKER_GUIDE.md) - Services, dev/prod environments
+- **Docker overview**: [`docs/DOCKER_GUIDE.md`](docs/DOCKER_GUIDE.md) - Services, dev/ppe environments
 - **Docker commands**: [`docs/DOCKER_COMMANDS.md`](docs/DOCKER_COMMANDS.md) - Container management reference
 - **Environment migration**: [`docs/WSL_TO_WINDOWS_MIGRATION_GUIDE.md`](docs/WSL_TO_WINDOWS_MIGRATION_GUIDE.md) - WSL to Windows native development
 
-### 🚀 Deployment & Production
+### 🚀 Deployment & PPE
 - **Deployment guide**: [`docs/deployment-guide.md`](docs/deployment-guide.md) - Server setup, Docker deployment
 - **Deployment checklist**: [`docs/deployment-checklist.md`](docs/deployment-checklist.md) - Pre-deployment verification
 - **HTTPS setup**: [`docs/HTTPS_SETUP_GUIDE.md`](docs/HTTPS_SETUP_GUIDE.md) - Let's Encrypt SSL for mren.me
@@ -73,7 +73,7 @@ A: Read [`docs/MINUTE_POINTS_SYSTEM.md`](docs/MINUTE_POINTS_SYSTEM.md) (minute p
 **Q: How do I add a new language?**  
 A: Follow [`docs/ADDING_NEW_LANGUAGE_GUIDE.md`](docs/ADDING_NEW_LANGUAGE_GUIDE.md)
 
-**Q: How do I deploy to production?**  
+**Q: How do I deploy to PPE?**  
 A: Use [`docs/deployment-guide.md`](docs/deployment-guide.md) and [`docs/deployment-checklist.md`](docs/deployment-checklist.md)
 
 **Q: What languages are supported?**  
@@ -124,7 +124,7 @@ A: Read [`docs/WSL_TO_WINDOWS_MIGRATION_GUIDE.md`](docs/WSL_TO_WINDOWS_MIGRATION
 ├── src/                               # Frontend source
 ├── package.json                       # Frontend dependencies
 ├── docker-compose.yml                 # Dev environment
-├── docker-compose.prod.yml            # Prod environment
+├── docker-compose.ppe.yml            # PPE environment
 └── ... (other config files)
 ```
 

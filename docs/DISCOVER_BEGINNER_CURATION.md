@@ -52,10 +52,10 @@ Filters applied to the supply (all in `_fetchSupplyRows`):
 
 ## 2. Export recipe (reproducible)
 
-Run against **prod**, which is now the source of truth for the det tables: the
+Run against **PPE**, which is now the source of truth for the det tables: the
 `discoverable` flag is set there by `/mark-discoverable` / `/oracle-backfill`, and the
-old dev-curation + dev → prod push flow is retired (that skill has been deleted). Use
-`/data-prod-to-dev` to refresh a dev box afterwards. Swap the table name to do the
+old dev-curation + dev → PPE push flow is retired (that skill has been deleted). Use
+`/data-ppe-to-dev` to refresh a dev box afterwards. Swap the table name to do the
 other language.
 
 | Language | Dict table | Extra columns |
@@ -66,7 +66,7 @@ other language.
 ### zh — first 400
 
 ```bash
-docker exec cow-postgres-local psql -U cow_user -d cow_db --csv -c "
+docker exec cow-postgres psql -U cow_user -d cow_db --csv -c "
 SELECT
   row_number() OVER (ORDER BY ABS(CAST(difficulty AS INTEGER) - 1) ASC, id ASC) AS sort_order,
   id,
@@ -88,7 +88,7 @@ Same query against `dictionaryentries_es`. Spanish identity is `word1` (migratio
 merged the old per-(pos, gender) rows), so each word appears exactly once — as in zh:
 
 ```bash
-docker exec cow-postgres-local psql -U cow_user -d cow_db --csv -c "
+docker exec cow-postgres psql -U cow_user -d cow_db --csv -c "
 SELECT
   row_number() OVER (ORDER BY ABS(CAST(difficulty AS INTEGER) - 1) ASC, id ASC) AS sort_order,
   id, word1, pronunciation, difficulty,
@@ -132,7 +132,7 @@ Exported files live in `discover-beginner-csv/` (gitignored working area):
    just group cards that make sense to sort together (by `id` / `word1`).
 3. Import the packs into `sort_packs` (one row per pack), assigning `packOrder` to
    control the beginner sequence within each level.
-4. Ship `sort_packs` to prod via a **seed migration** — no data-sync skill carries this
+4. Ship `sort_packs` to PPE via a **seed migration** — no data-sync skill carries this
    table (see `docs/SORT_PACKS_IMPLEMENTATION.md` §2.1).
 
 ---

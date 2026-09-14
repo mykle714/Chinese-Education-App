@@ -87,7 +87,7 @@ CREATE INDEX IF NOT EXISTS idx_texts_userid ON texts("userId");
 -- Human review records (approve/flag) for AI-enriched dictionary fields
 -- (migration 104; docs/DATA_VALIDATION_SYSTEM.md). Deliberately a standalone
 -- table, NOT a column on dictionaryentries_* — those are TRUNCATE+restored on
--- every prod data deploy, which would wipe review data. Keyed by the det row's
+-- every PPE data deploy, which would wipe review data. Keyed by the det row's
 -- surrogate id (stable across data deploys) + language.
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS validations (

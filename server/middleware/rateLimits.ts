@@ -8,7 +8,7 @@ import jwt from 'jsonwebtoken';
  * LAYER: HTTP middleware (sits in front of controllers; no business logic).
  *
  * All limiters key on req.ip, which is correct only because server.ts sets
- * `trust proxy: 1` — in prod the backend is reachable solely through the nginx
+ * `trust proxy: 1` — in PPE the backend is reachable solely through the nginx
  * frontend container (bound to 127.0.0.1:5002 + the docker network), so the
  * one trusted hop is exactly the TLS-terminating proxy.
  *

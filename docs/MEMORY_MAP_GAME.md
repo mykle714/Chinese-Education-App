@@ -7,7 +7,7 @@ gloss appears at the top, you find the word it belongs to and tap it twice — o
 select, once to confirm (§ 3.3a) — and the word takes a colour recording how well you
 knew it.
 
-**Status: BUILT ON DEV (2026-08-18). Not on prod.** Migration **151** is applied to the
+**Status: BUILT ON DEV (2026-08-18). Not on PPE.** Migration **151** is applied to the
 dev database; the route, page, tables, endpoints and tests all exist. All 32 design
 questions were settled before the build (§ 12) and both carried assumptions have been
 resolved (§ 13). What the build changed about the design is recorded in § 14.

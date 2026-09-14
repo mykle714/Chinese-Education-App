@@ -5,7 +5,7 @@
 ; __REPO_DIR__ is substituted with the absolute repo path at install time, so the
 ; unit never depends on the checkout living at any particular path.
 ;
-; PROD ONLY. Dev is intentionally left with no schedule — run the SQL by hand with
+; PPE ONLY. Dev is intentionally left with no schedule — run the SQL by hand with
 ; `psql -f` when testing. See docs/STREAK_EXPIRATION_CRON.md.
 
 [Unit]
@@ -31,18 +31,18 @@ Type=oneshot
 ; Step 1 — debit inactive users + decay their occupants (pure SQL, one transaction).
 ; `bash -c` is required for the `<` stdin redirect and `>>` append, which are shell
 ; syntax that systemd's ExecStart does not itself interpret.
-ExecStart=/bin/bash -c '/usr/bin/docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < __REPO_DIR__/database/cron/expire-stale-streaks.sql >> __REPO_DIR__/logs/streak-expire.log 2>&1'
+ExecStart=/bin/bash -c '/usr/bin/docker exec -i cow-postgres psql -U cow_user -d cow_db < __REPO_DIR__/database/cron/expire-stale-streaks.sql >> __REPO_DIR__/logs/streak-expire.log 2>&1'
 
 ; Step 2 — prune templates that step 1's decay left empty and weakly attached. This
 ; is the TypeScript adjacency fixpoint (impractical in plpgsql), run as COMPILED JS
-; inside the backend container (the prod image has no tsx/devDeps).
+; inside the backend container (the PPE image has no tsx/devDeps).
 ;
 ; NOTE a deliberate behaviour change from cron: if step 1 fails, systemd aborts the
 ; unit and step 2 does NOT run. That is correct here — step 2 targets rows step 1
 ; would have written, so after a failed step 1 it has nothing to do. It also means a
 ; failure is visible in `systemctl --user status cow-maintenance` instead of being
 ; buried in a log file.
-ExecStart=/bin/bash -c '/usr/bin/docker exec cow-backend-prod node dist/scripts/night-market/prune-dangling-templates.js >> __REPO_DIR__/logs/prune-templates.log 2>&1'
+ExecStart=/bin/bash -c '/usr/bin/docker exec cow-backend node dist/scripts/night-market/prune-dangling-templates.js >> __REPO_DIR__/logs/prune-templates.log 2>&1'
 
 ; Step 3 — Study Challenge expiry: lapse unaccepted invitations, close finished test
 ; windows (declaring the winner or a no-contest), and drop the generated study decks
@@ -59,7 +59,7 @@ ExecStart=/bin/bash -c '/usr/bin/docker exec cow-backend-prod node dist/scripts/
 ;
 ; HOURLY IS THE REQUIRED GRANULARITY, not a convenience: every challenge boundary is
 ; 04:00 local, so exactly one timezone crosses one each hour.
-ExecStart=/bin/bash -c '/usr/bin/docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < __REPO_DIR__/database/cron/expire-study-challenges.sql >> __REPO_DIR__/logs/study-challenges.log 2>&1'
+ExecStart=/bin/bash -c '/usr/bin/docker exec -i cow-postgres psql -U cow_user -d cow_db < __REPO_DIR__/database/cron/expire-study-challenges.sql >> __REPO_DIR__/logs/study-challenges.log 2>&1'
 
 ; Both steps append to their own log file (unchanged from the cron setup, so the
 ; verification steps in the docs still apply). systemd additionally records each

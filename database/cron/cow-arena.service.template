@@ -5,7 +5,7 @@
 ; __REPO_DIR__ is substituted with the absolute repo path at install time, so the
 ; unit never depends on the checkout living at any particular path.
 ;
-; PROD ONLY. Dev is intentionally left with no schedule — trigger a pass by hand
+; PPE ONLY. Dev is intentionally left with no schedule — trigger a pass by hand
 ; with `npx tsx scripts/arena-tick.ts` from server/. See docs/ARENA_FEATURE.md § 10
 ; and docs/ARENA_DEPLOY_RUNBOOK.md.
 
@@ -32,14 +32,14 @@ Type=oneshot
 ; A oneshot is still a SINGLETON, so overlapping runs remain impossible: if a pass
 ; somehow ran past the hour, systemd will not start the next one on top of it.
 ;
-; Runs as COMPILED JS inside the backend container — the prod image has no tsx and
+; Runs as COMPILED JS inside the backend container — the PPE image has no tsx and
 ; no devDeps, exactly as the template-prune step does. `bash -c` is required for
 ; the `>>` append, which is shell syntax systemd's ExecStart does not interpret.
 ;
 ; ⚠️ The script is arena-cron.js, NOT arena-tick.js. arena-tick is the dev trigger
 ; and accepts --seed-opt-ins, which would opt every user in the database into next
 ; week. Never point a scheduler at it.
-ExecStart=/bin/bash -c '/usr/bin/docker exec cow-backend-prod node dist/scripts/arena-cron.js >> __REPO_DIR__/logs/arena-cron.log 2>&1'
+ExecStart=/bin/bash -c '/usr/bin/docker exec cow-backend node dist/scripts/arena-cron.js >> __REPO_DIR__/logs/arena-cron.log 2>&1'
 
 ; The script exits non-zero on any failure, so a bad run shows up in
 ; `systemctl --user status cow-arena` and in the journal rather than only in the

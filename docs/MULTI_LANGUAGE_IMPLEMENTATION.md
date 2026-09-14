@@ -109,7 +109,7 @@ npm install xml2js @types/xml2js
 
 ```bash
 # Using Docker (recommended)
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db < database/migrations/05-add-multi-language-support.sql
+docker exec -i cow-postgres psql -U cow_user -d cow_db < database/migrations/05-add-multi-language-support.sql
 ```
 
 This migration will:
@@ -317,7 +317,7 @@ curl -X PUT http://localhost:3001/api/users/language \
 ### Database Connection
 - Ensure Docker containers are running
 - Check environment variables (DB_HOST, DB_PORT, etc.)
-- Verify connection with: `docker exec -it cow-postgres-local psql -U cow_user -d cow_db`
+- Verify connection with: `docker exec -it cow-postgres psql -U cow_user -d cow_db`
 
 ### Performance
 - Imports may take several minutes for large dictionaries (especially JMdict)

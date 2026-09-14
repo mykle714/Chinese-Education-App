@@ -46,11 +46,11 @@
  * glosses the row no longer has.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js              # discoverable, not yet clustered
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --force      # re-cluster (ignores the seeded/AI state)
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --dry-run    # print clusters, write nothing
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --spot-check # first 5 words, no writes, verbose
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js              # discoverable, not yet clustered
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --force      # re-cluster (ignores the seeded/AI state)
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --dry-run    # print clusters, write nothing
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-cluster-definitions.js --spot-check # first 5 words, no writes, verbose
  */
 
 import dotenv from 'dotenv';

@@ -45,7 +45,7 @@ export const UNLOCKS_FN_NAME = 'nightmarket_unlocks_for_minutes';
  * negatives fall to the `ELSE 0` arm and a NULL argument yields 0 (GREATEST ignores NULLs), so the
  * cron can never compute a negative trim target. Includes the marker lines so the generator/guard can
  * locate it, and the block is idempotent — the cron re-runs it every tick, which is also how a
- * schedule change reaches prod (no migration: the cron file IS the install).
+ * schedule change reaches PPE (no migration: the cron file IS the install).
  */
 export function renderUnlocksForMinutesSql(): string {
   // Explicit breakpoints, highest threshold first. `[0, 0]` is dropped (it is the ELSE arm), and so

@@ -12,7 +12,7 @@
 -- need no schema change — only a new key.
 --
 -- Lifecycle: this table is meant to be WIPED at the start of each week by a
--- prod-only cron (UPDATE/DELETE), so a row's presence means "earned this week".
+-- PPE-only cron (UPDATE/DELETE), so a row's presence means "earned this week".
 -- The reset cron is NOT part of this migration and is not installed on dev.
 --
 -- Idempotent: safe to re-run.
@@ -34,4 +34,4 @@ CREATE INDEX IF NOT EXISTS idx_weeklies_user
     ON weeklies ("userId");
 
 COMMENT ON TABLE weeklies
-  IS 'Per-user weekly achievement flags. One row per (userId, activity); wiped weekly by a prod cron so presence means "earned this week".';
+  IS 'Per-user weekly achievement flags. One row per (userId, activity); wiped weekly by a PPE cron so presence means "earned this week".';

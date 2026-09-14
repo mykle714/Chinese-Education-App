@@ -24,7 +24,7 @@
 > stall*, not write NPC text.
 >
 > **Tables created by migration 158** (`database/migrations/158-create-immersive-world-schema.sql`),
-> corrected by **159** (`159-iw-scene-authoring-corrections.sql`, deployed to prod 2026-09-05 —
+> corrected by **159** (`159-iw-scene-authoring-corrections.sql`, deployed to PPE 2026-09-05 —
 > [runbook](./IW_SCENE_AUTHORING_DEPLOY_RUNBOOK.md)):
 > `iw_scenes`, `iw_scene_runs`, `iw_scene_ratings`, `iw_npc_memories` — **four tables, not nine.**
 > The originally-approved child tables were collapsed into jsonb columns on `iw_scenes`
@@ -40,7 +40,7 @@
 > `immersiveWorldRoutes.ts` on the server, and `src/features/immersiveworld/` on the
 > client. It reuses the night market's `TemplateEditorViewer` for the map (via a new
 > `markers` prop) and adds the non-spatial half. **The first scene exists: "Get Dinner"
-> (zh, 12×12, prod, 2026-09-06)** — see § 12 phase 1's kill-condition note. Phase 2's gate
+> (zh, 12×12, PPE, 2026-09-06)** — see § 12 phase 1's kill-condition note. Phase 2's gate
 > is therefore open.
 >
 > **The three decisions that shape everything else:** the reply wire format is three lines of
@@ -674,11 +674,11 @@ They are mirror images, and the asymmetry is not an oversight: **each flag is wr
 exception to what that thing already is**, so no already-authored scene changes meaning when
 the field lands. An action is model-selectable today; a conversation is not.
 
-The opt-in polarity earns itself on prod's own data: "Taking the companion's order" is a
+The opt-in polarity earns itself on PPE's own data: "Taking the companion's order" is a
 *sub-step* of 王婶's order-taking script, and a version of it that could also fire on its own
 would have her taking the companion's order twice.
 
-⚠️ **`interactionOnly` REPLACES A PROSE WORKAROUND, which is the argument for it.** Prod's
+⚠️ **`interactionOnly` REPLACES A PROSE WORKAROUND, which is the argument for it.** PPE's
 first scene carries an action whose `when` reads *"Do not pick, triggered by interaction"* —
 an instruction to the model, written into the field the model chooses **by**, hoping it
 declines an option it was nonetheless offered. That is unenforceable by construction: the
@@ -701,7 +701,7 @@ which is why they are authoring-time checks:
   audience the flag changes**, from an author's filing label to the handle the model picks by;
 - a conversation that is **neither selectable nor started by any step**, which is now a real
   complaint rather than an ordinary half-built scene, because there are two ways in and
-  neither was taken. Prod's "Welcoming back a regular" is exactly this.
+  neither was taken. PPE's "Welcoming back a regular" is exactly this.
 
 ### 5.4a Place interactions — what happens when the learner pokes a cell
 
@@ -2005,7 +2005,7 @@ NPCs are code. NPC references are **text** everywhere.
 > naming the migration rather than a fault.
 >
 > Numbered 158 rather than 157 because 157 (the Chinese typeface column) was committed with
-> an open runbook and had to reach prod first; nothing in iw depends on it.
+> an open runbook and had to reach PPE first; nothing in iw depends on it.
 
 **1b — The cast** ✅ **DONE.** `server/config/iwNpcs.ts` — 迈克尔 (the companion, Q25),
 王婶 (default, forgiving), 小陈 (the difficulty setting: low agreeableness, high energy),
@@ -2287,7 +2287,7 @@ contract — pick a published scene, draw a complication, open a run. Add that m
 relax the gate on `getScene`.
 
 ✅ **Phase 1's kill condition did NOT fire. The first scene exists: "Get Dinner"**
-(prod, `zh`, 12×12, authored 2026-09-05, last saved 2026-09-06). An author assembled it end
+(PPE, `zh`, 12×12, authored 2026-09-05, last saved 2026-09-06). An author assembled it end
 to end with no engineering help, and it exercises very nearly the whole vocabulary: **26 named
 places** (six tables and their twelve seats, two entrance doors, a rear exit, a cash register,
 a food window, a bathroom, self-serve water and utensils), a two-NPC cast (王婶 at the counter,
@@ -2603,7 +2603,7 @@ to be watched for deliberately.
 - `server/services/iw/npcOptions.ts` → `npcOptionsForLanguage` — the ONE projection of an NPC
   that crosses the wire (§ 11 layer 1). Shared by the editor's picker and the play surface
 - `server/scripts/iw-turn-probe.ts` — one real turn against one real scene, end to end.
-  `--file` probes a scene dumped from prod without needing it in the local database
+  `--file` probes a scene dumped from PPE without needing it in the local database
   model and the `places`/`locations` read fallback
 - `src/features/immersiveworld/IWSelectableControls.tsx` → the shared `when`/`urgent`/
   `unlockedBy` editor both panels render (§ 5.4b). It deliberately does NOT draw the per-type
@@ -2863,7 +2863,7 @@ conversations.
 → [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), and the nme itself.
 
 Why this beats the alternatives: direct DB editing has no review and drifts between dev and
-prod; a repo seed script is reviewable but keeps authoring in engineers' hands, which defeats
+PPE; a repo seed script is reviewable but keeps authoring in engineers' hands, which defeats
 the reason Q2 chose data in the first place. An editor is the only option that makes scene
 authoring a *content* activity, which is what Q1 put on the critical path.
 

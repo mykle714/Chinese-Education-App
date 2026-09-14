@@ -279,9 +279,9 @@ character is top-1-correct in one Verify (a partial pass awards nothing).
 >   rare-miss path. `import('hanzi-writer-data/<char>.json')` is a bare specifier
 >   with a dynamic segment, which Rollup cannot statically analyze — it survives
 >   the build as a runtime bare-specifier `import()` that no browser can resolve,
->   so the local branch always throws in prod and the CDN always carries the
+>   so the local branch always throws in production builds and the CDN always carries the
 >   glyph. (Confirmed in `dist/`: no per-character chunks are emitted.) Deleting
->   that fallback as "dead code" would break the grey guide in production while
+>   that fallback as "dead code" would break the grey guide in PPE while
 >   leaving it working in `vite dev`. `GlyphSvg` carries the same fallback for the
 >   same reason.
 > - **A third consumer once existed** — the Mandela game's offline pipeline, which

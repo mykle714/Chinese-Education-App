@@ -201,9 +201,9 @@ over-fitting) or a post-hoc rule; they are left as-is.
 ## Reproduce
 
 ```bash
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js \
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js \
   --words=行,当,点,干,着,和,倒,得,分,别 --spot-check --merge-pass
-docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js \
+docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js \
   --words=对,蒙,折,冲,溜,白,糊,落,处,调 --spot-check --merge-pass
 ```
 

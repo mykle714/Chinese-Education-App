@@ -6,16 +6,16 @@ division, a timezone and (where known) a rough geographic neighbourhood — and 
 the **minutes you earn while that arena is live**. Top 5 promote, bottom 5 demote — with
 the lines moved by ties (§ 7).
 
-**Status: LIVE ON PROD** since 2026-08-16 (migration 146; the `cow-arena` hourly timer is
+**Status: LIVE ON PPE** since 2026-08-16 (migration 146; the `cow-arena` hourly timer is
 installed and armed). Every design question in § 11 was answered before implementation began.
 
-**The first prod week (2026-08-18) formed wrong; the fix is deployed** (2026-08-18) — see
+**The first PPE week (2026-08-18) formed wrong; the fix is deployed** (2026-08-18) — see
 § 5.3 for both causes. Formation had no time gate, so it fired ~31 hours early and locked
 four real users out of the week; the straggler path that should have caught them was never
 wired to a caller. Both were invisible in the logs, which is why `tick()` now returns a
 `stranded` count (§ 10).
 
-No prod rows were edited by hand. The first hourly pass after the deploy repaired the week
+No PPE rows were edited by hand. The first hourly pass after the deploy repaired the week
 on its own: the four locked-out users were seated into their bucket's partly-empty batch
 arena via the now-wired straggler path (§ 5.3 step 1), taking synthetic seats rather than
 opening a second arena, and every opted-in (user, language) pair now holds exactly one live
@@ -431,7 +431,7 @@ different rank numbers (§ 7, "Ties move the lines").
 ## 5. Clustering — how the 25 are chosen
 
 Runs **shortly before** Tuesday 04:00, **for one timezone at a time**, from an hourly cron
-(same shape and same host as the existing penalty cron — prod only). The lead time is not
+(same shape and same host as the existing penalty cron — PPE only). The lead time is not
 cosmetic: arenas must already exist at 04:00 because that is when minutes begin counting
 toward them (§ 5.3).
 
@@ -677,7 +677,7 @@ the break**. A bucket formed on Sunday evening therefore contains whoever happen
 joined by Sunday evening, and everyone who joins across the remaining ~31 hours is skipped —
 with no error, because a skipped bucket and a quiet hour both log `formed 0`.
 
-**This happened on prod, 2026-08-17.** `arenaFormationAt()` was written, exported, and never
+**This happened on PPE, 2026-08-17.** `arenaFormationAt()` was written, exported, and never
 called by anything: `formArenas` had no time gate at all, so it fired on the first hourly
 tick that saw any candidate — 21:06 local Sunday. The `America/Los_Angeles` division-1 bucket
 froze around 55 seeded test accounts, and the four real users who opted in later that break
@@ -1327,7 +1327,7 @@ transaction. This is the same shape as the penalty cron's `lastPenaltyDate` guar
 ([STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)), and it is worth copying that
 pattern rather than inventing one.
 
-Because the cron is **prod-only**, dev needs a manual trigger — an admin/validator-gated
+Because the cron is **PPE-only**, dev needs a manual trigger — an admin/validator-gated
 `POST /api/arena/admin/tick` or a `server/scripts/arena-tick.ts` — or the feature is
 untestable locally. Do not skip this.
 
@@ -1355,7 +1355,7 @@ Three decisions worth keeping:
    (`ARENA_FORMATION_LEAD_MINUTES`), so lateness of a few minutes is invisible.
 3. **A dedicated entry point, `arena-cron.ts`, separate from the dev `arena-tick.ts`.**
    The dev trigger accepts `--seed-opt-ins`, which opts *every user in the database* into
-   next week. That flag must not exist on any code path a scheduler can reach, so the prod
+   next week. That flag must not exist on any code path a scheduler can reach, so the PPE
    entry point takes no arguments at all. It exits non-zero on failure, which is what makes
    a bad run visible in `systemctl --user status cow-arena` rather than only in a log file.
 
@@ -1425,7 +1425,7 @@ This document describes (all of the following now exist except where marked):
 `database/migrations/146+` (`arenas`, `arena_members`, two `user_languages` columns,
 `users."geoCell"`),
 `server/scripts/arena-tick.ts` (the dev trigger) and `server/scripts/arena-cron.ts`
-(the prod entry point, driven by the `cow-arena` systemd timer —
+(the PPE entry point, driven by the `cow-arena` systemd timer —
 `database/cron/cow-arena.{service,timer}.template`, `database/cron/install-timers.sh`),
 `server/contracts/wire.ts` (arena constants),
 `server/shared/arenaWeek.ts` + `src/utils/arenaWeek.ts`,
@@ -1458,7 +1458,7 @@ Tests: `server/__tests__/arenaWeek.test.ts` (boundary maths incl. DST),
   side-effect (§ 4.1).
 * [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md) — `user_languages` gains
   `division` and `"arenaOptInWeek"`; that doc's column table is the canonical one (§ 7.1).
-* [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) — a second prod-only cron now
+* [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) — a second PPE-only cron now
   shares the host; its idempotency pattern is the model for arena formation (§ 10).
 * [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) — the new hp row.
 

@@ -37,8 +37,8 @@ docker compose up -d
 **Known conflicts on this host:**
 | Port | Conflict | Resolution |
 |------|----------|------------|
-| 5000 | Plex Media Server | Dev backend mapped to `5001:5000`, prod backend mapped to `5002:5000` |
-| 5432 | Prod postgres (when running alongside dev) | Dev postgres mapped to `5433:5432` |
+| 5000 | Plex Media Server | Dev backend mapped to `5001:5000`, PPE backend mapped to `5002:5000` |
+| 5432 | PPE postgres (when running alongside dev) | Dev postgres mapped to `5433:5432` |
 
 **Note:** Backend containers communicate with postgres via Docker's internal network (`postgres:5432`), so host port mappings only affect external access — changing them does not affect service-to-service communication.
 
@@ -46,13 +46,13 @@ docker compose up -d
 
 ## Compose Project Name Conflicts
 
-**Symptom:** Running `sudo docker compose -f docker-compose.prod.yml up -d` recreates or interferes with dev containers, or vice versa.
+**Symptom:** Running `sudo docker compose -f docker-compose.ppe.yml up -d` recreates or interferes with dev containers, or vice versa.
 
-**Cause:** By default, Docker Compose derives the project name from the directory name. Both `docker-compose.yml` and `docker-compose.prod.yml` live in the same directory (`vocabulary-app`), so they share a project name and Docker treats their containers as belonging to the same project.
+**Cause:** By default, Docker Compose derives the project name from the directory name. Both `docker-compose.yml` and `docker-compose.ppe.yml` live in the same directory (`vocabulary-app`), so they share a project name and Docker treats their containers as belonging to the same project.
 
 **Fix applied:** Both files now have explicit `name:` fields at the top:
 - `docker-compose.yml` → `name: cow-dev`
-- `docker-compose.prod.yml` → `name: cow-prod`
+- `docker-compose.ppe.yml` → `name: cow-ppe`
 
 This gives each environment its own isolated namespace of containers and networks.
 
@@ -60,20 +60,20 @@ This gives each environment its own isolated namespace of containers and network
 
 ## Frontend Container Not Joining Docker Network
 
-**Symptom:** `docker logs cow-frontend-prod` shows `host not found in upstream "backend"`. `docker inspect cow-frontend-prod --format '{{json .NetworkSettings.Networks}}'` returns `{}`.
+**Symptom:** `docker logs cow-frontend` shows `host not found in upstream "backend"`. `docker inspect cow-frontend --format '{{json .NetworkSettings.Networks}}'` returns `{}`.
 
 **Cause:** The frontend container was created before the Docker network was fully established (e.g., due to repeated failed start attempts). The container exists but was never connected to the compose network.
 
 **Fix:** `restart` does not re-attach a container to a network — use `--force-recreate`:
 ```bash
-sudo docker compose -f docker-compose.prod.yml up -d --force-recreate frontend
+sudo docker compose -f docker-compose.ppe.yml up -d --force-recreate frontend
 ```
 
 ---
 
 ## Database Password Mismatch
 
-**Symptom:** Backend returns 500 on all DB operations. `docker logs cow-backend-prod` shows `ERR_DATABASE_CONNECTION: Database connection unavailable` or `password authentication failed for user "cow_user"`.
+**Symptom:** Backend returns 500 on all DB operations. `docker logs cow-backend` shows `ERR_DATABASE_CONNECTION: Database connection unavailable` or `password authentication failed for user "cow_user"`.
 
 **Cause:** `.env` contains two separate password variables:
 - `POSTGRES_PASSWORD` — used by the postgres container to initialize the database user
@@ -84,7 +84,7 @@ If these values differ, the backend cannot authenticate. **These must always be 
 **Diagnosis:**
 ```bash
 # Test which password works
-docker exec cow-backend-prod node -e "
+docker exec cow-backend node -e "
 const { Pool } = require('pg');
 const pool = new Pool({ host: process.env.DB_HOST, port: process.env.DB_PORT, database: process.env.DB_NAME, user: process.env.DB_USER, password: process.env.DB_PASSWORD });
 pool.connect().then(c => { console.log('OK'); c.release(); pool.end(); }).catch(e => console.error(e.message));
@@ -95,7 +95,7 @@ pool.connect().then(c => { console.log('OK'); c.release(); pool.end(); }).catch(
 
 **Important:** After editing `.env`, a `restart` is not sufficient — env vars are baked in at container creation time. Use `--force-recreate`:
 ```bash
-sudo docker compose -f docker-compose.prod.yml up -d --force-recreate backend
+sudo docker compose -f docker-compose.ppe.yml up -d --force-recreate backend
 ```
 
 ---

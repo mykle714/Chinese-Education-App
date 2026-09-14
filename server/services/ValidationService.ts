@@ -35,7 +35,7 @@ import { longDefToDisplayString, type LongDefinitionValue } from '../utils/defin
  * data server-side (never trusts client content), and Flag records only the flag
  * with no content. Records are written to the dedicated `validations` table — NOT to
  * the det tables — because dictionaryentries_{zh,es} are TRUNCATE+restored on every
- * prod data deploy, which would wipe a review column. `validations` is keyed by the
+ * PPE data deploy, which would wipe a review column. `validations` is keyed by the
  * det row id (stable across data deploys) + language, so it survives deploys and
  * drives the backfill guard. Each (user, entry, field, senseLabel) may be recorded at
  * most once (enforced by the `validations_unique_per_user` constraint) — shared by both

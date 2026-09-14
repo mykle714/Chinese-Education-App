@@ -139,11 +139,11 @@ The database is automatically configured when you start the Docker containers:
 
 ### Production Deployment
 
-For production deployment, use the production Docker Compose configuration:
+For PPE deployment, use the production Docker Compose configuration:
 
 ```bash
 # Production build and deployment
-docker-compose -f docker-compose.prod.yml up --build -d
+docker-compose -f docker-compose.ppe.yml up --build -d
 ```
 
 The production setup includes optimized builds, proper environment variables, and production-ready configurations.

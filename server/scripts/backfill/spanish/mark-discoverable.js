@@ -34,8 +34,8 @@
  * SAFETY: DRY-RUN by default; --apply writes. The eligibility predicate is re-asserted
  * inside the UPDATE so a row that changed between SELECT and UPDATE cannot slip through.
  *
- *   server/scripts/backfill/run-prod.sh scripts/backfill/spanish/mark-discoverable.js --words=cura,perro
- *   server/scripts/backfill/run-prod.sh scripts/backfill/spanish/mark-discoverable.js --words=cura,perro --apply
+ *   server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/mark-discoverable.js --words=cura,perro
+ *   server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/mark-discoverable.js --words=cura,perro --apply
  *
  * Referenced by: .claude/commands/mark-discoverable.md §B2, .claude/commands/oracle-backfill.md §3.
  */

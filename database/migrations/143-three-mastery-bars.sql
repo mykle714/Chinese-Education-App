@@ -1,7 +1,7 @@
 -- Migration 143: Three independent mastery bars per card (core / reading / writing).
 --
 -- See docs/MASTERY_REWORK.md § "Three bars". (The deploy runbook that sequenced this
--- with 142 was deleted once prod was verified on 2026-08-11.)
+-- with 142 was deleted once PPE was verified on 2026-08-11.)
 --
 -- ── WHAT CHANGES ─────────────────────────────────────────────────────────────
 -- Migration 101 made a card's utcm band GOAL-BLENDED: turning on the reading goal
@@ -34,7 +34,7 @@
 -- compute_utcm_category() is deliberately LEFT IN PLACE here. It is dead once the
 -- new server code deploys, but this migration runs BEFORE that code (it has to —
 -- see the masteredAt note below), and the still-running old code calls it on every
--- deck read. Drop it in a follow-up contract migration once prod is verified.
+-- deck read. Drop it in a follow-up contract migration once PPE is verified.
 --
 -- ── 2. vet."masteredAt" becomes jsonb, keyed by bar ──────────────────────────
 -- Three bars cross into mastered at three different moments, so one timestamptz can
@@ -47,7 +47,7 @@
 --
 -- ORDERING: this migration MUST land before the new server code, which reads and
 -- writes the jsonb shape. That is safe in both directions here because migration 142
--- has never reached prod — prod gets 142 and 143 back to back and no deployed code
+-- has never reached PPE — PPE gets 142 and 143 back to back and no deployed code
 -- has ever written the timestamptz form. On dev the conversion below preserves any
 -- existing value under the 'core' key.
 --
@@ -90,7 +90,7 @@ COMMENT ON FUNCTION compute_core_category(jsonb) IS
   'utcm band of the CORE mastery bar (recognition + production blended: LEAST(6,max) + min/3). Goal-independent, so unlike the superseded compute_utcm_category() it needs no users join. The band every whole-card read means. See docs/MASTERY_REWORK.md';
 
 COMMENT ON FUNCTION compute_utcm_category(jsonb, boolean, boolean) IS
-  'SUPERSEDED by compute_core_category() in migration 143 — the reading/writing goals no longer weight a card''s band, they raise their own bars. Retained only so the pre-143 server code keeps working through the deploy window; drop once prod is verified.';
+  'SUPERSEDED by compute_core_category() in migration 143 — the reading/writing goals no longer weight a card''s band, they raise their own bars. Retained only so the pre-143 server code keeps working through the deploy window; drop once PPE is verified.';
 
 -- ── 2. masteredAt: timestamptz → jsonb keyed by bar ──────────────────────────
 -- Guarded by the current column type so a re-run is a no-op rather than an error

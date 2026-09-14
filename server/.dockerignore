@@ -4,7 +4,7 @@
 #
 # Two goals:
 #   1. SECRETS never enter image layers. Credentials are provided at runtime:
-#      google-tts-credentials.json is bind-mounted by docker-compose.prod.yml,
+#      google-tts-credentials.json is bind-mounted by docker-compose.ppe.yml,
 #      and env comes from env_file/environment entries — never from baked .env.
 #   2. Keep the context small: host node_modules (musl/glibc mismatch risk),
 #      dist, logs, and the TTS disk cache are all rebuilt or mounted at runtime.
@@ -19,7 +19,7 @@ google-tts-credentials.json
 node_modules
 dist
 
-# Runtime state (bind-mounted in prod; regenerated in dev)
+# Runtime state (bind-mounted in PPE; regenerated in dev)
 logs
 cache
 

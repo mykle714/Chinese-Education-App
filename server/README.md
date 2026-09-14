@@ -205,5 +205,5 @@ Docker containerization provides:
 1. **Consistent environment** across development and production
 2. **Easy setup** with single command deployment
 3. **Isolated dependencies** preventing conflicts
-4. **Scalable architecture** ready for production deployment
+4. **Scalable architecture** ready for PPE deployment
 5. **Automatic database setup** with test data

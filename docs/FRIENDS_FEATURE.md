@@ -3,7 +3,7 @@
 The friend graph: sending, answering and revoking friend requests, and the list of
 accepted friends. Reached from the **Friends** row on the hp (`/` Home hub).
 
-Status: **implemented**, on dev. Migration **138** is not yet on prod (see
+Status: **implemented**, on dev. Migration **138** is not yet on PPE (see
 [§ Deploying](#deploying)).
 
 ---
@@ -317,7 +317,7 @@ Run: `npm run test:server`.
 Ordinary `/deploy` — one additive migration (`138`), no backfill, no ordering
 constraint, no cron change. `migrate.sh` picks it up. No runbook needed.
 
-Verify on prod after deploy:
+Verify on PPE after deploy:
 
 ```sql
 SELECT to_regclass('friendships');            -- expect: friendships

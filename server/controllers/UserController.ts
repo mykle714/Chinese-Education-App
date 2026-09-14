@@ -14,7 +14,7 @@ const REFRESH_COOKIE = 'refreshToken';
 const REFRESH_COOKIE_PATH = '/api/auth';
 const ACCESS_COOKIE_MAX_AGE_MS = 15 * 60 * 1000; // mirrors ACCESS_TOKEN_TTL
 
-// Prod serves over HTTPS (https://mren.me), so auth cookies must never ride a
+// PPE serves over HTTPS (https://mren.me), so auth cookies must never ride a
 // plain-HTTP request there. Dev runs on http://localhost, where `secure: true`
 // would make the browser drop the cookies entirely — hence the env switch.
 const SECURE_COOKIES = process.env.NODE_ENV === 'production';
@@ -34,7 +34,7 @@ export class UserController {
 
   /**
    * Set the access + refresh cookies after a login or refresh. Both are httpOnly
-   * (invisible to JS — XSS can't read them) and, in production, `secure`
+   * (invisible to JS — XSS can't read them) and, in PPE, `secure`
    * (HTTPS-only). The refresh cookie's lifetime tracks its DB expiry so the
    * browser drops it in lockstep with the server.
    */

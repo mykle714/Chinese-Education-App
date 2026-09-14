@@ -6,7 +6,7 @@
 > ⚠️ **Read § "Three bars" (Section 4) first.** Migration 101 built a single
 > goal-*blended* bar; migration 143 split it into three independently-banded bars.
 > Sections written against the old blended model are marked **SUPERSEDED** inline.
-> Migrations 142–144 shipped to prod on 2026-08-11; their deploy runbooks are deleted.
+> Migrations 142–144 shipped to PPE on 2026-08-11; their deploy runbooks are deleted.
 >
 > Key code:
 > - DB: `database/migrations/101-mastery-rework-typed-marks-and-goals.sql`
@@ -1407,17 +1407,17 @@ Settled since:
   its stamp/retract sites in `server/services/FlashcardMarkService.ts` and its one
   reader, `src/utils/vocabSort.ts`.
 - `database/migrations/143-three-mastery-bars.sql` — `compute_core_category()`,
-  `masteredAt` → jsonb, `category_promotions.bar`. On prod since 2026-08-11; it
+  `masteredAt` → jsonb, `category_promotions.bar`. On PPE since 2026-08-11; it
   intentionally left `compute_utcm_category()` in place for the deploy window.
 - `database/migrations/147-drop-compute-utcm-category.sql` — the contract half of the
-  above: drops the now-dead `compute_utcm_category()`. **On prod since 2026-08-17.**
+  above: drops the now-dead `compute_utcm_category()`. **On PPE since 2026-08-17.**
 - `database/migrations/149-drop-lifetime-mark-counters.sql` — drops vet's
   `totalMarkCount` / `totalCorrectCount`. Migration 101 kept them when it dropped the
   success-rate columns they fed; nothing ever read them again, so they were write-only
   from 101 until 149. ⚠️ **Contract migration** — the code that stopped writing them
   (the mark + undo path, now `FlashcardMarkService`, and
   `VocabEntryDAL.updateTypedMarkHistory`) had to be live first, so it was applied
-  AFTER the container rebuild. **On prod since 2026-08-17.**
+  AFTER the container rebuild. **On PPE since 2026-08-17.**
 - `server/contracts/mastery.ts` — **the definition of the bars**; mirrored by
   `server/__tests__/mastery.test.ts`, which pins the TS/SQL agreement.
 - `server/contracts/wire.ts` — `MasteryBarId`, `MASTERY_BARS`,

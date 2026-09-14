@@ -1,14 +1,14 @@
 /**
  * Step 7 of the gloss confusability pipeline (docs/GLOSS_CONFUSABILITY.md § 5a):
- * push `gloss_meaning_groups` from the dev box UP to prod.
+ * push `gloss_meaning_groups` from the dev box UP to PPE.
  *
- * LAYER: offline deploy script. It is the ONLY writer of prod's copy of this table.
+ * LAYER: offline deploy script. It is the ONLY writer of PPE's copy of this table.
  *
- * ⚠️ THIS INVERTS THE APP-WIDE RULE that prod is the source of truth. It is safe for this
+ * ⚠️ THIS INVERTS THE APP-WIDE RULE that PPE is the source of truth. It is safe for this
  * table and this table ONLY, because the contents are DERIVED — a pure function of
  * (det corpus, model revision, template version, thresholds). No user writes it, nothing
- * on prod authors it, and losing it costs a rebuild and nothing else. Skew degrades
- * harmlessly in both directions: a gloss prod has and dev never saw simply gets no row,
+ * on PPE authors it, and losing it costs a rebuild and nothing else. Skew degrades
+ * harmlessly in both directions: a gloss PPE has and dev never saw simply gets no row,
  * and § 6 rule 1 says no row means NO CONSTRAINT. Skew can only ever cause a MISSING
  * suppression, never a wrong one.
  *
@@ -25,9 +25,9 @@
  *   5. Rollback is TRUNCATE  — with the table empty the app degrades to phase-1 behaviour
  *                             with no code change. Prefer that to debugging a bad push.
  *
- * Run from server/ with the PROD connection in the environment:
+ * Run from server/ with the PPE connection in the environment:
  *   npx tsx scripts/gloss-pipeline/push-groups.ts --dry-run
- *   PROD_DB_HOST=... PROD_DB_PASSWORD=... npx tsx scripts/gloss-pipeline/push-groups.ts
+ *   PPE_DB_HOST=... PPE_DB_PASSWORD=... npx tsx scripts/gloss-pipeline/push-groups.ts
  */
 import pg from 'pg';
 import { config as devConfig } from '../../db-config.js';
@@ -44,21 +44,21 @@ interface GroupRow {
   corpusSnapshot: string;
 }
 
-/** Prod connection, from PROD_* env vars only — never inherited from the dev config, so a
+/** PPE connection, from PROD_* env vars only — never inherited from the dev config, so a
  *  missing variable fails loudly instead of silently pushing dev's table onto itself. */
-function prodConfig(): pg.PoolConfig {
-  const host = process.env.PROD_DB_HOST;
-  const password = process.env.PROD_DB_PASSWORD;
+function ppeConfig(): pg.PoolConfig {
+  const host = process.env.PPE_DB_HOST;
+  const password = process.env.PPE_DB_PASSWORD;
   if (!host || !password) {
-    throw new Error('PROD_DB_HOST and PROD_DB_PASSWORD must be set (see /deploy for the tunnel)');
+    throw new Error('PPE_DB_HOST and PPE_DB_PASSWORD must be set (see /deploy for the tunnel)');
   }
   return {
     host,
-    port: parseInt(process.env.PROD_DB_PORT || '5432'),
-    database: process.env.PROD_DB_NAME || 'cow_db',
-    user: process.env.PROD_DB_USER || 'cow_user',
+    port: parseInt(process.env.PPE_DB_PORT || '5432'),
+    database: process.env.PPE_DB_NAME || 'cow_db',
+    user: process.env.PPE_DB_USER || 'cow_user',
     password,
-    ssl: process.env.PROD_DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    ssl: process.env.PPE_DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
   };
 }
 
@@ -83,7 +83,7 @@ async function main(): Promise<void> {
 
   // A build must be internally consistent: one modelRevision, one templateVersion, one
   // corpusSnapshot across every row. A mixture means cluster.py was interrupted or two
-  // builds were merged, and pushing it would make prod's provenance stamps meaningless.
+  // builds were merged, and pushing it would make PPE's provenance stamps meaningless.
   const stamps = new Set(rows.map((r) => `${r.modelRevision}|${r.templateVersion}|${r.corpusSnapshot}`));
   if (stamps.size !== 1) {
     throw new Error(`dev ${TABLE} carries ${stamps.size} different provenance stamps — rebuild before pushing`);
@@ -93,15 +93,15 @@ async function main(): Promise<void> {
   console.log(`provenance: ${[...stamps][0]}`);
 
   if (DRY_RUN) {
-    console.log('\n--dry-run: prod not contacted, nothing written');
+    console.log('\n--dry-run: PPE not contacted, nothing written');
     return;
   }
 
-  const pool = new pg.Pool(prodConfig());
+  const pool = new pg.Pool(ppeConfig());
   const client = await pool.connect();
   try {
     const before = await client.query(`SELECT count(*)::int AS n FROM ${TABLE}`);
-    console.log(`prod ${TABLE} before: ${before.rows[0].n} rows`);
+    console.log(`PPE ${TABLE} before: ${before.rows[0].n} rows`);
 
     // Requirement 2: one transaction. Readers keep seeing the old snapshot until COMMIT.
     await client.query('BEGIN');
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
     await client.query('COMMIT');
 
     const after = await client.query(`SELECT count(*)::int AS n FROM ${TABLE}`);
-    console.log(`prod ${TABLE} after:  ${after.rows[0].n} rows`);
+    console.log(`PPE ${TABLE} after:  ${after.rows[0].n} rows`);
     if (after.rows[0].n !== rows.length) {
       throw new Error(`row count mismatch — expected ${rows.length}, got ${after.rows[0].n}`);
     }

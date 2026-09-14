@@ -20,9 +20,9 @@
 -- are deliberately KEPT in place (per product decision) so nothing goes blank; they
 -- are re-scored under the new rubric by re-running the backfills with --stale
 -- (SCRIPT_VERSION was bumped, so staleClause() picks up every already-stamped row):
---   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-frequency-score.js --stale
---   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-frequency-score.js --stale
---   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --stale
+--   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-frequency-score.js --stale
+--   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-frequency-score.js --stale
+--   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-cluster-definitions.js --stale
 -- Until those runs complete, the stored numbers still mean "register".
 
 -- Wrapped in one transaction: migrate.sh applies each file with a plain `psql -f`

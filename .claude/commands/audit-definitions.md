@@ -15,22 +15,22 @@ By default, audit **discoverable** entries only (`discoverable = TRUE`) — that
 
 ## Run the checks
 
-> ⚠️ Read `amIOnTheProdMachine.md` first. On DEV, normal work is safe. On PROD, confirm before any `UPDATE`.
+> ⚠️ Read `machineEnvironment.md` first. On DEV, normal work is safe. On PPE, confirm before any `UPDATE`.
 
-Local container is `cow-postgres-local` / db `cow_db` / user `cow_user`. Output CJK reliably with `-At` (terminal rendering of wide tables in this environment is unreliable; prefer `-At` or writing to a temp file and reading it).
+Local container is `cow-postgres` / db `cow_db` / user `cow_user`. Output CJK reliably with `-At` (terminal rendering of wide tables in this environment is unreliable; prefer `-At` or writing to a temp file and reading it).
 
 ### ERROR checks (structural — these are real bugs)
 
 **1. Empty / missing definitions** (regression example: 体检 had `[]`)
 ```bash
-docker exec cow-postgres-local psql -U cow_user -d cow_db -At -c "
+docker exec cow-postgres psql -U cow_user -d cow_db -At -c "
 SELECT id||' | '||word1 FROM dictionaryentries_zh
 WHERE discoverable AND (definitions IS NULL OR jsonb_array_length(definitions)=0);"
 ```
 
 **2. Duplicate glosses within one entry** (regression: 上 had \"above\"×2, 床 had \"bed\"×2)
 ```bash
-docker exec cow-postgres-local psql -U cow_user -d cow_db -At -c "
+docker exec cow-postgres psql -U cow_user -d cow_db -At -c "
 SELECT id||' | '||word1||' | dups='||
   (jsonb_array_length(definitions) - (SELECT count(DISTINCT lower(v)) FROM jsonb_array_elements_text(definitions) v))
 FROM dictionaryentries_zh
@@ -41,7 +41,7 @@ WHERE discoverable
 **3. Unknown / non-canonical POS tags** (catches drift like \"measure word\" vs the canonical \"classifier\")
 The canonical tag list is `scripts/lib/posTags.js` (`ALLOWED_POS_TAGS`). Read it first, then flag any tag outside it:
 ```bash
-docker exec cow-postgres-local psql -U cow_user -d cow_db -At -c "
+docker exec cow-postgres psql -U cow_user -d cow_db -At -c "
 SELECT id||' | '||word1||' | '||tag
 FROM dictionaryentries_zh, jsonb_array_elements_text(\"partsOfSpeech\") tag
 WHERE discoverable
@@ -51,7 +51,7 @@ WHERE discoverable
 
 **4. Discoverable entry with no POS at all** (should have at least one)
 ```bash
-docker exec cow-postgres-local psql -U cow_user -d cow_db -At -c "
+docker exec cow-postgres psql -U cow_user -d cow_db -At -c "
 SELECT id||' | '||word1 FROM dictionaryentries_zh
 WHERE discoverable AND (\"partsOfSpeech\" IS NULL OR jsonb_array_length(\"partsOfSpeech\")=0);"
 ```
@@ -61,7 +61,7 @@ WHERE discoverable AND (\"partsOfSpeech\" IS NULL OR jsonb_array_length(\"partsO
 **5. Bare suffix-form glosses** (regression: 有 had standalone \"-ful\", \"-ed\", \"-al\")
 Match only **leading-hyphen** glosses (English suffix forms, which read as noise on their own). Do **not** match trailing-hyphen prefix forms like \"un-\", \"multi-\", \"poly-\", \"post-\" — those are legitimate bound-form glosses.
 ```bash
-docker exec cow-postgres-local psql -U cow_user -d cow_db -At -c "
+docker exec cow-postgres psql -U cow_user -d cow_db -At -c "
 SELECT id||' | '||word1||' | '||v
 FROM dictionaryentries_zh, jsonb_array_elements_text(definitions) v
 WHERE discoverable AND v ~ '^-[a-z]';"
@@ -88,7 +88,7 @@ Present findings grouped as: 🔴 Errors (1–4) · 🧹 Subtract (2, 5) · ➕ 
 
 Batch the approved changes in a single transaction so a mistake rolls back cleanly:
 ```bash
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db <<'SQL'
+docker exec -i cow-postgres psql -U cow_user -d cow_db <<'SQL'
 BEGIN;
 UPDATE dictionaryentries_zh SET definitions   = '[...]'::jsonb     WHERE id=<id> AND word1='<word>';
 UPDATE dictionaryentries_zh SET "partsOfSpeech" = '[...]'::jsonb   WHERE id=<id> AND word1='<word>';
@@ -99,7 +99,7 @@ Always include `AND word1='<word>'` as a guard so a wrong id can't silently edit
 
 ## After applying
 
-Remind the user these are **local-DB** edits, and that there is no dev → prod push any more — the local → prod data skill was deleted and prod is the source of truth. A local fix stays local; to change what learners see, run the equivalent edit against prod (backed up first, per `/mark-discoverable`).
+Remind the user these are **local-DB** edits, and that there is no dev → PPE push any more — the local → PPE data skill was deleted and PPE is the source of truth. A local fix stays local; to change what learners see, run the equivalent edit against PPE (backed up first, per `/mark-discoverable`).
 
 ## Notes
 

@@ -12,22 +12,22 @@ a host `npm run dev` / Vite started outside Docker, a leftover container from an
 worktree, or a second frontend on a stray port (3001 / 5173 / 4173). When more than one
 is up, the browser may be talking to an old one — so a fix that's already in the code
 "doesn't show up". This skill culls everything except the one canonical dev stack and the
-prod stack.
+PPE stack.
 
 ## Hard safety rules
 
-1. **NEVER touch the prod stack.** On this machine prod runs alongside dev (see
-   `deploy.md`): any container whose name ends in `-prod` (`cow-frontend-prod`,
-   `cow-backend-prod`, `cow-postgres-prod`) and anything on ports **80 / 443 / 5002** is
-   off-limits. Confirm the machine first with `amIOnTheProdMachine.md`; the rules are the
-   same either way, but be extra careful if it says PROD.
+1. **NEVER touch the PPE stack.** On this machine PPE runs alongside dev (see
+   `deploy.md`): any container whose name ends in `-PPE` (`cow-frontend`,
+   `cow-backend`, `cow-postgres`) and anything on ports **80 / 443 / 5002** is
+   off-limits. Confirm the machine first with `machineEnvironment.md`; the rules are the
+   same either way, but be extra careful if it says PPE.
 2. **Detect, don't assume ports.** The live container port maps drift from the docs
    (dev backend has been seen on `5000` *and* `5001`; dev db on `5432` *and* `5433`).
    Always read the actual maps from `docker ps`; never hardcode.
-3. **Keep the DB.** `cow-postgres-local` holds dev data — never remove it, only ever
+3. **Keep the DB.** `cow-postgres` holds dev data — never remove it, only ever
    start it if stopped.
 4. Stop/remove **app server** duplicates only (frontend / backend / stray Vite). Leave
-   `cow-adminer` and `cow-postgres-local` alone.
+   `cow-adminer` and `cow-postgres` alone.
 
 ## Step 1 — Inventory everything that could be serving the app
 
@@ -50,15 +50,15 @@ ps -eo pid,cmd | grep -E 'vite|npm run dev|node .*(server|index)' | grep -v grep
 ## Step 2 — Identify the canonical version (the keeper)
 
 The keeper is the Docker frontend publishing **0.0.0.0:3000->3000** — normally
-`cow-frontend-local`. Confirm it answers:
+`cow-frontend`. Confirm it answers:
 
 ```bash
-docker ps --format '{{.Names}} {{.Ports}}' | grep '3000->'   # expect cow-frontend-local
+docker ps --format '{{.Names}} {{.Ports}}' | grep '3000->'   # expect cow-frontend
 curl -sI http://localhost:3000 | head -1                     # expect HTTP 200
 ```
 
 Its sibling local containers (same compose project, names ending `-local`) form the
-canonical set to keep: `cow-frontend-local`, `cow-backend-local`, `cow-postgres-local`,
+canonical set to keep: `cow-frontend`, `cow-backend`, `cow-postgres`,
 `cow-adminer`.
 
 ## Step 3 — Cull the strays
@@ -73,7 +73,7 @@ kill <pid>        # escalate to: kill -9 <pid> only if it doesn't exit
 ```
 
 **(b) Duplicate / orphaned Docker app containers.** Any container that is an app
-frontend or backend but is **not** in the canonical `-local` set and **not** `-prod`
+frontend or backend but is **not** in the canonical `-local` set and **not** `-PPE`
 (e.g. a second `cow-frontend-*`, a container publishing 3000/3001 from another worktree,
 an old image). Stop and remove it:
 
@@ -81,7 +81,7 @@ an old image). Stop and remove it:
 docker stop <name> && docker rm <name>
 ```
 
-Do **not** remove `cow-postgres-local`, `cow-adminer`, or any `-prod` container.
+Do **not** remove `cow-postgres`, `cow-adminer`, or any `-PPE` container.
 
 ## Step 4 — Make sure the keeper is up
 
@@ -90,9 +90,9 @@ are correct):
 
 ```bash
 # Preferred — from the main repo where the compose file lives:
-docker compose -f /home/cow/docker-compose.yml up -d cow-frontend-local cow-backend-local cow-postgres-local
+docker compose -f /home/cow/docker-compose.yml up -d cow-frontend cow-backend cow-postgres
 # Fallback if already created but stopped:
-docker start cow-postgres-local cow-backend-local cow-frontend-local
+docker start cow-postgres cow-backend cow-frontend
 ```
 
 ## Step 5 — Verify the end state

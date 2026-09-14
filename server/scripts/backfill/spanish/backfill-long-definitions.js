@@ -28,9 +28,9 @@
  * (Opus tightener) guarantees every value respects the budget.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-long-definitions.js              # full backfill
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-long-definitions.js --spot-check # test 5 entries
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-long-definitions.js --words=correr,banco
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-long-definitions.js              # full backfill
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-long-definitions.js --spot-check # test 5 entries
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-long-definitions.js --words=correr,banco
  */
 
 import dotenv from 'dotenv';

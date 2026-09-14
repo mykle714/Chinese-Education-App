@@ -46,7 +46,7 @@ games; each game lives as its own page linked from the hub.
   [§ Layer 2](#layer-2--runtime-srcgamesruntime).
 
 - **Memory Map** (`/games/memory-map`) — see [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md).
-  **BUILT ON DEV (migration 151), not on prod.** A persistent, pan/zoom **reading** map:
+  **BUILT ON DEV (migration 151), not on PPE.** A persistent, pan/zoom **reading** map:
   every card the learner sorted that is **not reading-mastered** owns a permanent spot
   (capped at 100, chosen by the flp offering priority list evaluated on the reading
   track), new words spawn touching an existing island (10% start a new one), and an

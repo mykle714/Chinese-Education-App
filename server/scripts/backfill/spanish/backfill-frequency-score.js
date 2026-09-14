@@ -42,12 +42,12 @@
  * accounted for — a word can be band-5 frequent in one dialect and unheard in another.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-frequency-score.js                          # full backfill (serial)
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-frequency-score.js --batch                  # via Batches API (50% price)
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-frequency-score.js --stale                  # also re-score rows stamped below SCRIPT_VERSION
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-frequency-score.js --spot-check             # test 5 entries with reasoning
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-frequency-score.js --spot-check --random    # random 5 entries
- *   docker exec cow-backend-local npx tsx scripts/backfill/spanish/backfill-frequency-score.js --spot-check --random --limit=25
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-frequency-score.js                          # full backfill (serial)
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-frequency-score.js --batch                  # via Batches API (50% price)
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-frequency-score.js --stale                  # also re-score rows stamped below SCRIPT_VERSION
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-frequency-score.js --spot-check             # test 5 entries with reasoning
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-frequency-score.js --spot-check --random    # random 5 entries
+ *   docker exec cow-backend npx tsx scripts/backfill/spanish/backfill-frequency-score.js --spot-check --random --limit=25
  */
 
 import dotenv from 'dotenv';

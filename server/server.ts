@@ -43,7 +43,7 @@ dotenv.config();
 const app = express();
 const PORT = parseInt(process.env.PORT || '5000');
 
-// Exactly one trusted proxy hop: in prod the backend is only reachable through
+// Exactly one trusted proxy hop: in PPE the backend is only reachable through
 // the TLS-terminating nginx frontend container (host binding is 127.0.0.1:5002),
 // so req.ip resolves to the real client for rate limiting. Dev connections are
 // direct and unaffected.
@@ -72,8 +72,8 @@ app.use(cors({
       'http://localhost:3000',  // Docker frontend development port
       'http://127.0.0.1:3000',  // Docker frontend development port
       'http://frontend:3000',   // Docker container networking
-      'http://cow-frontend-local:3000', // Docker container name
-      'https://mren.me' // Production domain (HTTPS only — auth cookies are `secure` in prod)
+      'http://cow-frontend:3000', // Docker container name
+      'https://mren.me' // PPE domain (HTTPS only — auth cookies are `secure` in PPE)
     ];
 
     if(allowedOrigins.indexOf(origin) !== -1) {

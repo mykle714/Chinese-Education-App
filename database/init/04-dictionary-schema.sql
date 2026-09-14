@@ -1,7 +1,7 @@
 -- Dictionary Entries Table Schema for PostgreSQL
 -- Supports Chinese, Japanese, Korean, and Vietnamese dictionaries.
 -- This file reflects the current schema after all migrations have been applied.
--- For production deployment use database/deploy/01-schema.sql instead.
+-- For PPE deployment use database/deploy/01-schema.sql instead.
 
 CREATE TABLE IF NOT EXISTS dictionaryentries (
     id SERIAL PRIMARY KEY,

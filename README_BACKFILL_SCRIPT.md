@@ -26,7 +26,7 @@ The `backfill-enrichment.js` script populates enrichment data (synonyms, example
 
 ### From Backend Container
 ```bash
-docker exec cow-backend-local sh -c 'npx tsx /app/scripts/backfill/chinese/backfill-enrichment.js'
+docker exec cow-backend sh -c 'npx tsx /app/scripts/backfill/chinese/backfill-enrichment.js'
 ```
 
 **Important Notes:**
@@ -95,7 +95,7 @@ Database error: error: column "discoverable" does not exist
 **Solution:** Add the missing columns to the database:
 
 ```bash
-docker exec -e PGPASSWORD=cow_password_local cow-postgres-local psql -h localhost -U cow_user -d cow_db << 'EOF'
+docker exec -e PGPASSWORD=cow_password_local cow-postgres psql -h localhost -U cow_user -d cow_db << 'EOF'
 ALTER TABLE dictionaryentries_zh ADD COLUMN discoverable BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE dictionaryentries_zh ADD COLUMN script VARCHAR(20);
 ALTER TABLE dictionaryentries_zh ADD COLUMN "hskLevel" VARCHAR(10);
@@ -110,7 +110,7 @@ EOF
 
 **Verification:**
 ```bash
-docker exec -e PGPASSWORD=cow_password_local cow-postgres-local psql -h localhost -U cow_user -d cow_db -c "SELECT column_name FROM information_schema.columns WHERE table_name='dictionaryentries_zh' ORDER BY ordinal_position;"
+docker exec -e PGPASSWORD=cow_password_local cow-postgres psql -h localhost -U cow_user -d cow_db -c "SELECT column_name FROM information_schema.columns WHERE table_name='dictionaryentries_zh' ORDER BY ordinal_position;"
 ```
 
 ### Issue 2: TypeScript Import Path Errors
@@ -124,7 +124,7 @@ Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/app/db.js'
 
 **Solution:** Use `npx tsx` to run the script:
 ```bash
-docker exec cow-backend-local sh -c 'npx tsx /app/scripts/backfill/chinese/backfill-enrichment.js'
+docker exec cow-backend sh -c 'npx tsx /app/scripts/backfill/chinese/backfill-enrichment.js'
 ```
 
 ### Issue 3: Git Bash Path Translation
@@ -139,7 +139,7 @@ Error: Cannot find module '/app/C:/Program Files/Git/app/scripts/...'
 
 **Solution:** Wrap the command in `sh -c` to avoid path translation:
 ```bash
-docker exec cow-backend-local sh -c 'npx tsx /app/scripts/backfill/chinese/backfill-enrichment.js'
+docker exec cow-backend sh -c 'npx tsx /app/scripts/backfill/chinese/backfill-enrichment.js'
 ```
 
 ### Issue 4: Database Connection Issues
@@ -152,13 +152,13 @@ psql: error: connection to server failed: FATAL: role "postgres" does not exist
 **Cause:** Using wrong PostgreSQL credentials.
 
 **Solution:** Use the correct credentials for the local setup:
-- Container: `cow-postgres-local`
+- Container: `cow-postgres`
 - User: `cow_user`
 - Password: `cow_password_local` (set via PGPASSWORD environment variable)
 - Database: `cow_db`
 
 ```bash
-docker exec -e PGPASSWORD=cow_password_local cow-postgres-local psql -h localhost -U cow_user -d cow_db -c "your_query"
+docker exec -e PGPASSWORD=cow_password_local cow-postgres psql -h localhost -U cow_user -d cow_db -c "your_query"
 ```
 
 ## Database Connection Details

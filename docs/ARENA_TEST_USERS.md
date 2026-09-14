@@ -1,6 +1,6 @@
-# Arena Load-Test Users (55 synthetic accounts, **on PROD**)
+# Arena Load-Test Users (55 synthetic accounts, **on PPE**)
 
-> ⚠️ **TEMPORARY DATA LIVING IN PRODUCTION.** These 55 accounts exist in the prod
+> ⚠️ **TEMPORARY DATA LIVING IN PRODUCTION.** These 55 accounts exist in the PPE
 > `users` table. Delete them once Arena testing is finished:
 > `database/testdata/arena-test-users-teardown.sql`.
 
@@ -10,14 +10,14 @@ These are neither.
 
 | | Dev test users ([TEST_USERS.md](./TEST_USERS.md)) | Arena load-test users (this doc) |
 |---|---|---|
-| Environment | dev containers | **prod** |
+| Environment | dev containers | **PPE** |
 | Created by | `database/init/` on startup | manual, `database/testdata/arena-test-users-seed.sql` |
 | Loginable | yes (`testing123`) | **no** — password is not a bcrypt hash |
 | Lifetime | permanent | delete after Arena testing |
 
 ## What exists
 
-Seeded **2026-08-16**. Prod had 15 real users and 16 `user_languages` rows before this.
+Seeded **2026-08-16**. PPE had 15 real users and 16 `user_languages` rows before this.
 
 | Field | Value |
 |---|---|
@@ -39,7 +39,7 @@ you write further queries against these users, key off the suffix too — not of
 `createdAt`, or an id range.
 
 **The password is deliberately not a valid bcrypt hash.** `bcrypt.compare()` can never
-succeed against it, so 55 accounts with guessable emails sitting in prod cannot be logged
+succeed against it, so 55 accounts with guessable emails sitting in PPE cannot be logged
 into. Do not "fix" this into a real hash.
 
 **All 55 share one timezone on purpose.** Clustering partitions hard by
@@ -50,7 +50,7 @@ third padded by `arenaSynthetic`** — which is the multi-board behaviour worth 
 
 **Real users were not opted in.** The 15 real users' `user_languages` rows still have
 `arenaOptInWeek IS NULL`. This is the entire reason the seed script exists rather than
-`arena-tick.ts --seed-opt-ins`, which opts in **every row in the database** — on prod
+`arena-tick.ts --seed-opt-ins`, which opts in **every row in the database** — on PPE
 that would enrol real people in an arena they never asked to join.
 
 ## ⚠️ Do not force formation early
@@ -102,8 +102,8 @@ GROUP BY a.id;
 ## Teardown
 
 ```bash
-docker cp database/testdata/arena-test-users-teardown.sql cow-postgres-prod:/tmp/teardown.sql
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/teardown.sql
+docker cp database/testdata/arena-test-users-teardown.sql cow-postgres:/tmp/teardown.sql
+docker exec cow-postgres psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/teardown.sql
 ```
 
 Removes their `arena_members` rows first (so the count is visible rather than silently

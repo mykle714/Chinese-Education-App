@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Run texts table migrations in production
+# Run texts table migrations in PPE
 # This script creates the texts table and adds user-specific columns
 
 echo "========================================"
@@ -9,8 +9,8 @@ echo "========================================"
 echo ""
 
 # Check if running in Docker context
-if [ ! -f "docker-compose.prod.yml" ]; then
-    echo "❌ Error: docker-compose.prod.yml not found"
+if [ ! -f "docker-compose.ppe.yml" ]; then
+    echo "❌ Error: docker-compose.ppe.yml not found"
     echo "Please run this script from the project root directory"
     exit 1
 fi
@@ -31,7 +31,7 @@ echo ""
 echo "========================================"
 echo "Step 1: Creating texts table..."
 echo "========================================"
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < database/migrations/06-create-texts-table-clean.sql
+docker exec -i cow-postgres psql -U cow_user -d cow_db < database/migrations/06-create-texts-table-clean.sql
 
 if [ $? -eq 0 ]; then
     echo "✅ texts table created successfully"
@@ -44,7 +44,7 @@ echo ""
 echo "========================================"
 echo "Step 2: Adding userId and isUserCreated columns..."
 echo "========================================"
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db < database/migrations/08-add-userid-to-texts.sql
+docker exec -i cow-postgres psql -U cow_user -d cow_db < database/migrations/08-add-userid-to-texts.sql
 
 if [ $? -eq 0 ]; then
     echo "✅ User-specific columns added successfully"
@@ -57,7 +57,7 @@ echo ""
 echo "========================================"
 echo "Step 3: Verifying texts table structure..."
 echo "========================================"
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "\d texts"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "\d texts"
 
 echo ""
 echo "========================================"
@@ -65,7 +65,7 @@ echo "Migration Complete!"
 echo "========================================"
 echo ""
 echo "Next steps:"
-echo "  1. Restart backend: docker-compose -f docker-compose.prod.yml restart backend"
+echo "  1. Restart backend: docker-compose -f docker-compose.ppe.yml restart backend"
 echo "  2. Test the /api/texts endpoint"
 echo "  3. Verify no sample texts appear in the UI"
 echo ""

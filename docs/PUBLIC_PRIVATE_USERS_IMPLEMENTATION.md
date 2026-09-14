@@ -238,15 +238,15 @@ app.put('/api/users/public', async (req: AuthRequest, res: Response) => {
 ### Database Verification
 ```bash
 # Check isPublic column exists
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c \
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c \
   "SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='isPublic';"
 
 # Count public vs private users
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c \
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c \
   "SELECT \"isPublic\", COUNT(*) FROM Users GROUP BY \"isPublic\";"
 
 # Check leaderboard index exists
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c \
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c \
   "SELECT indexname FROM pg_indexes WHERE tablename='Users' AND indexname LIKE '%ispublic%';"
 ```
 

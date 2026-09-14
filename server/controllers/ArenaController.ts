@@ -121,7 +121,7 @@ export class ArenaController {
   /**
    * POST /api/arena/admin/tick — run formation and resolution by hand.
    *
-   * The real driver is an hourly cron that exists only on prod (§ 10), so
+   * The real driver is an hourly cron that exists only on PPE (§ 10), so
    * without this endpoint the entire feature is untestable locally: arenas would
    * never form on a dev machine and the board would be permanently empty.
    *

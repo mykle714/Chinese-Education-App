@@ -27,7 +27,7 @@
  *
  * Subsetting to just the ~20 glyphs Google omits would produce a ~6 KB file instead of
  * ~91 KB. It was rejected: it silently depends on Google's current subsetting, which is
- * theirs to change at any time, and the failure mode is invisible tofu in production
+ * theirs to change at any time, and the failure mode is invisible tofu in PPE
  * with nothing in our repo having changed. Including every component in use makes the
  * asset correct by construction. It is lazy-loaded by the word search page only.
  *
@@ -41,7 +41,7 @@
  * "Source". The OFL notice ships alongside the font and must not be removed.
  *
  * USAGE
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/generate-component-font.js
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/generate-component-font.js
  *   ... --all       include components of EVERY single-char row, not just those
  *                   reachable from discoverable words (larger file, future-proof)
  */
@@ -56,7 +56,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = path.resolve(__dirname, '..', '..', '..');
 
 // ⚠️ PATHS DIFFER BETWEEN HOST AND CONTAINER. These scripts are normally run via
-// `docker exec cow-backend-local`, where server/ is mounted at /app and the REPO ROOT
+// `docker exec cow-backend`, where server/ is mounted at /app and the REPO ROOT
 // is mounted separately at /app/project-root — so /app/.. is `/`, not the repo. Probe
 // for the container layout first and fall back to the host layout.
 const CONTAINER_REPO_ROOT = '/app/project-root';

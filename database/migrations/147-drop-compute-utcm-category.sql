@@ -15,7 +15,7 @@
 -- decide which bars are SHOWN, not how a card is banded), which is why the successor
 -- needs no users JOIN. 143 deliberately left this function in place because it ran
 -- BEFORE the new server code, and the still-running old code called it on every deck
--- read. That deploy window closed when 143 was verified on prod on 2026-08-11, so
+-- read. That deploy window closed when 143 was verified on PPE on 2026-08-11, so
 -- nothing has called it since.
 --
 -- WHY IT IS BEING REMOVED RATHER THAN LEFT ALONE

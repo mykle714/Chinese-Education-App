@@ -1,4 +1,4 @@
-# Inactivity Penalty Cron (prod only)
+# Inactivity Penalty Cron (PPE only)
 
 > **PER-LANGUAGE since migration 130.** Every piece of state below is keyed
 > `(userId, language)` in **`user_languages`**, not on `users`. A user
@@ -195,8 +195,8 @@ decay left **empty AND weakly attached** (0 occupants; touched on {0, 1, or 2 *a
 sides; never the starter hub; never a 2-*opposite*-side bridge), iterated to a fixpoint.
 That is an iterative rectangle-adjacency computation that is impractical in plpgsql, so it
 lives in TypeScript (`NightMarketPlacementService.pruneDanglingTemplates`, pure core in
-`server/dal/shared/templatePrune.ts`) and runs as **compiled JS inside `cow-backend-prod`**
-(`node dist/scripts/night-market/prune-dangling-templates.js`; the prod image has no tsx).
+`server/dal/shared/templatePrune.ts`) and runs as **compiled JS inside `cow-backend`**
+(`node dist/scripts/night-market/prune-dangling-templates.js`; the PPE image has no tsx).
 It targets exactly the **(user, language) pairs** this SQL just penalized via
 `user_languages.lastPenaltyDate`, pruning each market separately — no `DISTINCT`, because
 a market is per (user, language) and each penalized language needs its own pass. A failure on one
@@ -211,7 +211,7 @@ The cron evaluates each user against the 4 AM local-day boundary using their
 stored `users.timezone`.
 
 - **SQL**: `database/cron/expire-stale-streaks.sql` (filename kept for backward
-  compatibility with the prod crontab; consider renaming to e.g.
+  compatibility with the PPE crontab; consider renaming to e.g.
   `hourly-maintenance.sql` next time the crontab is touched).
 - **Config source of truth**: `STREAK_CONFIG.PENALTY_SCHEDULE_MINUTES` in
   `server/constants.ts` (mirrored in `src/constants.ts`). The values are
@@ -269,7 +269,7 @@ Not installed. Run manually to test:
 psql "$DATABASE_URL" -f database/cron/expire-stale-streaks.sql
 ```
 
-## Prod adoption (one-time, after `/deploy`)
+## PPE adoption (one-time, after `/deploy`)
 
 1. **Verify migrations applied.** `/deploy` runs them automatically; confirm
    `users.timezone` and `user_languages."lastPenaltyDate"` exist.
@@ -277,10 +277,10 @@ psql "$DATABASE_URL" -f database/cron/expire-stale-streaks.sql
 2. **Let timezones backfill organically.** Existing rows default to `'UTC'` and
    get rewritten the next time the user hits the minute-points endpoint.
 
-3. **Smoke-test the SQL on prod** before scheduling. Prod postgres runs in the
-   `cow-postgres-prod` container — pipe the SQL in over stdin:
+3. **Smoke-test the SQL on PPE** before scheduling. PPE postgres runs in the
+   `cow-postgres` container — pipe the SQL in over stdin:
    ```bash
-   docker exec -i cow-postgres-prod psql -U cow_user -d cow_db \
+   docker exec -i cow-postgres psql -U cow_user -d cow_db \
      < /home/michael/vocabulary-app/database/cron/expire-stale-streaks.sql
    ```
    Safe to re-run within the same local day (idempotent — a second run returns
@@ -375,13 +375,13 @@ grep '^NOTICE:  inactivity-cron' /home/michael/vocabulary-app/logs/streak-expire
 | Schedule source of truth (WHEN) | `database/cron/cow-maintenance.timer.template` |
 | Job definition (WHAT) | `database/cron/cow-maintenance.service.template` |
 | Installer (no sudo) | `database/cron/install-timers.sh` |
-| Rendered units on prod | `~/.config/systemd/user/cow-maintenance.{service,timer}` |
+| Rendered units on PPE | `~/.config/systemd/user/cow-maintenance.{service,timer}` |
 
 The installer renders each template, substituting `__REPO_DIR__` with the absolute
 repo path, then runs `systemctl --user daemon-reload` and
 `systemctl --user enable --now cow-maintenance.timer`.
 
-### Third step — Study Challenge expiry (built on dev 2026-08-17, NOT on prod)
+### Third step — Study Challenge expiry (built on dev 2026-08-17, NOT on PPE)
 
 Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 9 (Q60) and now written:
 `database/cron/expire-study-challenges.sql`, plus the third `ExecStart=` line and the
@@ -389,15 +389,15 @@ Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 9 (Q60) and now writt
 exercised against dev with backdated fixtures, and a second run is silent (idempotent).
 
 ⚠️ **A UNIT-TEMPLATE CHANGE IS NOT ROLLED OUT BY A GIT PULL.** The rendered copy in
-`~/.config/systemd/user/` is a *substituted* file, so prod keeps running the two-step
+`~/.config/systemd/user/` is a *substituted* file, so PPE keeps running the two-step
 unit until `database/cron/install-timers.sh` is re-run. Until then the SQL file sits on
 disk doing nothing, and — because the whole feature's time-triggered transitions live in
-it — **no challenge ever expires or resolves on prod**. This is the step of the deploy
+it — **no challenge ever expires or resolves on PPE**. This is the step of the deploy
 most likely to be forgotten, because everything else about the feature works without it.
 
 The unit gains a **third `ExecStart=` line** running a new pure-SQL file,
 `database/cron/expire-study-challenges.sql`, appending to
-`__REPO_DIR__/logs/study-challenges.log`. Prod only, like everything else here.
+`__REPO_DIR__/logs/study-challenges.log`. PPE only, like everything else here.
 
 It belongs in this unit rather than in a timer of its own for the same reason the prune
 does: it is hourly, it is idempotent, it talks to the same container, and a second timer
@@ -458,7 +458,7 @@ this is safe because the penalty SQL is idempotent within a local day
 ### Lingering is required
 
 User units only run while the user is logged in **unless** lingering is enabled. It
-is enabled on prod, is a one-time machine setup step rather than a per-deploy one,
+is enabled on PPE, is a one-time machine setup step rather than a per-deploy one,
 and is the single thing here that needs root:
 
 ```bash
@@ -505,7 +505,7 @@ normal `/deploy` (git pull) is the entire rollout for a change to this file. No
 migration, no manual step, no runbook.
 
 ⚠️ **That is true of the SQL only.** A change to the **unit template** — adding an
-`ExecStart` line, editing `Description=` — is *not* picked up by a git pull, because prod
+`ExecStart` line, editing `Description=` — is *not* picked up by a git pull, because PPE
 runs the rendered copy in `~/.config/systemd/user`. It needs
 `database/cron/install-timers.sh` to re-render and `systemctl --user
 daemon-reload`. `/deploy` Step 3 runs the installer every deploy, so this is automatic —

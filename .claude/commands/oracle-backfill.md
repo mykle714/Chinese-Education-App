@@ -7,7 +7,7 @@ and keep going until the Max-plan 5-hour session budget is spent.
 Same pipeline, same prompts, same validators, same DB writes — only the *answerer*
 changes. This is NOT a shortcut around any of the pipeline's checks.
 
-> ⚠️ **Writes directly to PRODUCTION.** The old dev → prod data-deploy review gate is
+> ⚠️ **Writes directly to PRODUCTION.** The old dev → PPE data-deploy review gate is
 > retired; there is no staging copy. Take the backup (§2) every single run.
 
 ---
@@ -46,7 +46,7 @@ the scripts are ignored — you are the answerer regardless.
 
 ## 1. Preflight
 
-1. Read `amIOnTheProdMachine.md`. This skill is written for the **prod** box.
+1. Read `machineEnvironment.md`. This skill is written for the **PPE** box.
 2. Check session headroom — it decides how many rounds to run:
 
 ```bash
@@ -111,7 +111,7 @@ on the next request and runs five hours from there.
    that is a sign the situation belongs in §3c or the §6 stop-condition list, not in
    a prompt to the user.
 
-## 2. Back up prod det — every run, no exceptions
+## 2. Back up PPE det — every run, no exceptions
 
 ```bash
 server/scripts/backfill/backup-det.sh <short-label>
@@ -130,10 +130,10 @@ of truth the on-first-sort lazy-enrichment worker uses:
 
 ```bash
 # refresh/heal work on already-shipped words
-server/scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --discoverable --limit=50
+server/scripts/backfill/run-ppe.sh scripts/backfill/oracle-plan.js --discoverable --limit=50
 
 # candidates to newly ship
-server/scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --new --limit=25
+server/scripts/backfill/run-ppe.sh scripts/backfill/oracle-plan.js --new --limit=25
 ```
 
 It prints, in dependency order, each script that has real work and the exact
@@ -181,7 +181,7 @@ if the script is language-shared (`backfill-icons`) — or the planner will unde
 **Verify sync before a long run** (read-only, no DB, exits non-zero on drift):
 
 ```bash
-server/scripts/backfill/run-prod.sh scripts/backfill/check-manifest-sync.js
+server/scripts/backfill/run-ppe.sh scripts/backfill/check-manifest-sync.js
 ```
 
 Drift where the *script* is ahead of the manifest is the dangerous direction: rows
@@ -202,7 +202,7 @@ run** — it is a switch of scope, and §6 still applies. ~113k zh rows have nev
 enriched at all, so there is always work. Switch to:
 
 ```bash
-server/scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --new --limit=25
+server/scripts/backfill/run-ppe.sh scripts/backfill/oracle-plan.js --new --limit=25
 ```
 
 **One bar, not two.** A row is either fully enriched and `discoverable`, or it is
@@ -225,8 +225,8 @@ take the batch the planner gives you. (es gets no such filter — see §4.)
 1. **Enrich** — every script the planner named, in its order, export→author→apply per §4.
 2. **Promote** — never with hand-written SQL:
    ```bash
-   server/scripts/backfill/run-prod.sh scripts/backfill/promote-discoverable.js --words=<batch>            # dry run
-   server/scripts/backfill/run-prod.sh scripts/backfill/promote-discoverable.js --words=<batch> --apply
+   server/scripts/backfill/run-ppe.sh scripts/backfill/promote-discoverable.js --words=<batch>            # dry run
+   server/scripts/backfill/run-ppe.sh scripts/backfill/promote-discoverable.js --words=<batch> --apply
    ```
    It re-derives the bar (`buildCompletePredicate`: every applicable manifest step
    stamped at manifest version, **plus** `difficulty BETWEEN 1 AND 6`) and re-asserts it
@@ -267,8 +267,8 @@ so applicability, version-staleness and approval protection all behave exactly a
 do for zh:
 
 ```bash
-server/scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --lang=es --discoverable --limit=50
-server/scripts/backfill/run-prod.sh scripts/backfill/oracle-plan.js --lang=es --new --limit=25
+server/scripts/backfill/run-ppe.sh scripts/backfill/oracle-plan.js --lang=es --discoverable --limit=50
+server/scripts/backfill/run-ppe.sh scripts/backfill/oracle-plan.js --lang=es --new --limit=25
 ```
 
 Four es-specific things to know:
@@ -328,18 +328,18 @@ Per script, three steps:
 ```bash
 # (1) capture the real prompts — no DB write, no network
 rm -f server/logs/oracle-prompts.jsonl
-BACKFILL_ORACLE=export server/scripts/backfill/run-prod.sh \
+BACKFILL_ORACLE=export server/scripts/backfill/run-ppe.sh \
   scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
 
 # (2) read every prompt and author an answer per promptId (see below)
 
 # (3) feed them back through the untouched validators
-BACKFILL_ORACLE=apply server/scripts/backfill/run-prod.sh \
+BACKFILL_ORACLE=apply server/scripts/backfill/run-ppe.sh \
   scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
 ```
 
-`run-prod.sh` runs on the host against `cow-postgres-prod` — the prod backend image
-ships neither the scripts nor `tsx`, so `docker exec cow-backend-prod` cannot work.
+`run-ppe.sh` runs on the host against `cow-postgres` — the PPE backend image
+ships neither the scripts nor `tsx`, so `docker exec cow-backend` cannot work.
 
 ### Authoring answers
 
@@ -642,8 +642,8 @@ fresh one.
 
 `server/scripts/backfill/oracle-cron.sh` runs one round with no human present. The
 answerer is a Claude session, so this is a `claude -p '/oracle-backfill'` invocation,
-not a headless node process — and it must run **on the prod box**, because
-`run-prod.sh` reaches the DB at `127.0.0.1:5432` (published on loopback only). A
+not a headless node process — and it must run **on the PPE box**, because
+`run-ppe.sh` reaches the DB at `127.0.0.1:5432` (published on loopback only). A
 cloud scheduled agent cannot do this.
 
 Every invocation takes a non-blocking `flock`. A round that overruns its tick makes
@@ -726,7 +726,7 @@ sloppy run is worse than no run at all.
 - Oracle implementation: `server/scripts/backfill/run-log.js` (ORACLE MODE block,
   `oraclePromptId`, `OracleExportSignal`, `assertOracleCompatible`); export
   accounting in `server/scripts/backfill/shared/lib/runner.js`.
-- Prod invocation shim: `server/scripts/backfill/run-prod.sh` (incl. the
+- PPE invocation shim: `server/scripts/backfill/run-ppe.sh` (incl. the
   `server/db-config.ts:15` SSL-sentinel override).
 - Backup: `server/scripts/backfill/backup-det.sh`.
 - Word selection, pipeline order, verification SQL: `.claude/commands/mark-discoverable.md`.

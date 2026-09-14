@@ -12,7 +12,7 @@
 -- must be cleared first. The pre-placement unlock rows have no placement/slot linkage and
 -- cannot be backfilled, so this migration WIPES all current nightmarketunlocks rows. This
 -- is a deliberate clean cutover to the template-placement occupant model (confirmed
--- 2026-07-17). On prod this loses every user's current unlocks — the /deploy migration
+-- 2026-07-17). On PPE this loses every user's current unlocks — the /deploy migration
 -- step runs this the same as any other; ensure that is intended before deploying.
 
 DELETE FROM nightmarketunlocks;

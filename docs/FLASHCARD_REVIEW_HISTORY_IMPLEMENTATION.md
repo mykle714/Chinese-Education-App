@@ -193,7 +193,7 @@ To test the implementation:
 
 ```bash
 # vet is split per language — query the table for the language you marked in.
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c \
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c \
   "SELECT id, \"entryKey\", \"typedMarkHistory\", \"masteredAt\" FROM vocabentries_zh \
    WHERE \"typedMarkHistory\" IS NOT NULL AND \"typedMarkHistory\" != '{}'::jsonb LIMIT 5;"
 ```

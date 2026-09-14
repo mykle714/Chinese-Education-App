@@ -34,7 +34,7 @@
  * is therefore the right weight of tool; a general boundness detector would be
  * heavy machinery for a set that fits on one screen and does not grow.
  *
- * HOW THE LIST WAS DERIVED (2026-08-17 audit of prod det, 114,774 rows)
+ * HOW THE LIST WAS DERIVED (2026-08-17 audit of PPE det, 114,774 rows)
  * Two complementary detectors, neither sufficient alone:
  *   A. Example-sentence host analysis — the char immediately preceding the headword
  *      across its generated sentences. Never sentence-initial + only 一/这/那 hosts
@@ -60,7 +60,7 @@
  * silently.
  */
 export const ZH_BOUND_FORMS = [
-  // --- Removed from prod det on 2026-08-17 (all six existed as headwords) ---
+  // --- Removed from PPE det on 2026-08-17 (all six existed as headwords) ---
   { base: '会子', hosts: ['一会子', '好一会子'],           gloss: 'a while',        inDet: true,  removed: '2026-08-17' },
   { base: '家子', hosts: ['一家子', '这家子', '那家子'],   gloss: 'household',      inDet: true,  removed: '2026-08-17' },
   { base: '辈子', hosts: ['一辈子', '半辈子', '这辈子'],   gloss: 'lifetime',       inDet: true,  removed: '2026-08-17' },

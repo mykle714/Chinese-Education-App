@@ -42,7 +42,7 @@ COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
 # Copy built application from build stage. NOTE: node_modules is NOT copied from
-# the build stage — that would overwrite the prod-only install above with the
+# the build stage — that would overwrite the PPE-only install above with the
 # full dev dependency tree (typescript, tsx, etc.), bloating the image.
 COPY --from=build /app/dist ./dist
 

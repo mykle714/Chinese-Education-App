@@ -1,6 +1,6 @@
 # Per-Language Streaks, Wallets & Penalties
 
-**STATUS: IMPLEMENTED AND ON PROD.** Migrations 130 and 134 shipped 2026-07-30; the
+**STATUS: IMPLEMENTED AND ON PPE.** Migrations 130 and 134 shipped 2026-07-30; the
 table rename (145) shipped 2026-08-16. See § 5 for the cron.
 
 > ⚠️ **Renamed:** the table this document describes was created by migration 130 as
@@ -8,7 +8,7 @@ table rename (145) shipped 2026-08-16. See § 5 for the cron.
 > (2026-08-16). Every name in this document is the post-145 one. Migrations 130 and
 > 134 still say `user_language_points` in their own text — correctly, since that was
 > its name when they ran; an applied migration is never edited. Because 130 has not
-> reached prod, a prod deploy creates the old name and renames it minutes later in
+> reached PPE, a PPE deploy creates the old name and renames it minutes later in
 > the same `migrate.sh` run.
 
 Every unit of study progress — the streak, the minute-point wallet, the
@@ -239,9 +239,9 @@ This document is referenced by:
 
 ## 5. Deployment
 
-Migration 130 has **not been run on prod**. It was authored on the prod machine but
+Migration 130 has **not been run on PPE**. It was authored on the PPE machine but
 deliberately not executed there; it is applied and verified on dev, and ships to
-prod via `/deploy`.
+PPE via `/deploy`.
 
 Order matters — the cron SQL and the prune script both read
 `user_languages`, so they break until the migrations land:

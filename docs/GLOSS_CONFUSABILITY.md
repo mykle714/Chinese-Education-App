@@ -1,14 +1,14 @@
 # Gloss Confusability — keeping same-meaning cards off one game board
 
 **Status:** Phase 1 **BUILT** (2026-08-22, no migration). Phase 2 offline pipeline **BUILT**
-2026-08-24 (migration 154) and its migration is **live on prod** as of 2026-08-24 (table
+2026-08-24 (migration 154) and its migration is **live on PPE** as of 2026-08-24 (table
 created, empty). Phase 2 runtime guard (§ 6) is **BUILT** 2026-08-24 in
 `OnDeckVocabService.getGameVocabPool`/`getWordSearchGrid`, not yet deployed. It carries no
 migration of its own (154 already covers the table it reads) and needs no cron/ordering
 steps, so it ships through the ordinary `/deploy` flow — no temp runbook. `gloss_meaning_groups`
-is still empty on prod, so even once this code ships the guard is inert until the
+is still empty on PPE, so even once this code ships the guard is inert until the
 dev-computed groups are pushed up (§ 5a, `push-groups.ts` — not yet run — is what would need
-a runbook, for the prod DB credentials step). Every open design question in § 10 was
+a runbook, for the PPE DB credentials step). Every open design question in § 10 was
 answered 2026-08-22; § 9 carries the residual risks.
 
 **Build status (2026-08-24): both halves are BUILT; neither is live for a player yet.**
@@ -16,13 +16,13 @@ answered 2026-08-22; § 9 carries the residual risks.
 | Half | State |
 | --- | --- |
 | Offline pipeline (§ 4 steps 1–7) | **BUILT** — `server/scripts/gloss-pipeline/`, runs end to end on dev in ~5 min |
-| `gloss_meaning_groups` (migration 154) | **BUILT, migration live on prod (empty)** — dev copy has 7,647 glosses, 5,076 groups (§ 8k, post-`stripParentheses`-fix build) |
+| `gloss_meaning_groups` (migration 154) | **BUILT, migration live on PPE (empty)** — dev copy has 7,647 glosses, 5,076 groups (§ 8k, post-`stripParentheses`-fix build) |
 | Dev-only build caches (§ 5) | **BUILT** — created by `dev-tables.sql`, deliberately not migrations |
 | Runtime guard (§ 6) | **BUILT, NOT DEPLOYED** — `OnDeckVocabService.getGameVocabPool` / `getWordSearchGrid` now check `takenGroups` alongside `takenDds`; `MemoryMapService.spawnInto` deliberately untouched (§ 10 opt-out) |
-| Push to prod (§ 5a) | **BUILT, NEVER RUN** — `push-groups.ts`, dry-run verified only |
+| Push to PPE (§ 5a) | **BUILT, NEVER RUN** — `push-groups.ts`, dry-run verified only |
 
 Because a gloss with no group id imposes no constraint (§ 6 rule 1) and `gloss_meaning_groups`
-is empty on prod, **the guard is inert in production even once its code ships** — every
+is empty on PPE, **the guard is inert in PPE even once its code ships** — every
 `glossKeyToGroup` lookup misses, so behaviour is byte-for-byte phase 1 until § 5a's push
 actually lands rows. It can be deployed, rebuilt, retuned or reverted without affecting a
 single learner ahead of that push. The blocking rule itself lives at
@@ -152,7 +152,7 @@ signal. Could still serve as a recall booster feeding § 4 step 3.
 Not installed on the image (`cube` and `pg_trgm` are; `vector` is not). The runtime
 comparison universe is one round's candidate list (≤500 rows already in memory), and the
 phase-2 design reduces the runtime artifact to **one integer per gloss** — no vector math in
-the request path at all. Installing pgvector would mean changing the Postgres image on prod
+the request path at all. Installing pgvector would mean changing the Postgres image on PPE
 for zero gain. *Revisit only if "find similar words" ever becomes a user-facing feature.*
 
 ---
@@ -197,7 +197,7 @@ BI-ENCODER (cosine)                    CROSS-ENCODER (NLI)
 | 3–5 | `pipeline.py judge` | hnswlib in-process (never Postgres), then the cross-encoder both directions + the WordNet veto |
 | 6–7 | `cluster.py` | constrained average-linkage; **no model inference**, so a re-cluster is seconds |
 | — | `validate.py` | § 7's every-rebuild gold-set check, run against the BUILT table rather than pair scores |
-| 7 | `push-groups.ts` | the dev → prod push, § 5a |
+| 7 | `push-groups.ts` | the dev → PPE push, § 5a |
 
 **One thing § 4 step 1 understates: one det row yields SEVERAL keys.** dd is sense-resolved,
 so a clustered entry shows different English to different learners depending on their
@@ -299,17 +299,17 @@ constraint that has bitten this project before). The pipeline is an **offline jo
 host in a venv, or in a throwaway `python:3.12` container. Node never sees Python; the only
 interface is the gloss table.
 
-Which machine, and how the result reaches prod: **§ 5a**.
+Which machine, and how the result reaches PPE: **§ 5a**.
 
 ## 5. Data model — CONFIRMED 2026-08-22
 
-Three tables, **approved 2026-08-22** (§ 10 Q5), split by **where they live**. This split is what makes § 5a work: prod
+Three tables, **approved 2026-08-22** (§ 10 Q5), split by **where they live**. This split is what makes § 5a work: PPE
 receives one small flat table and never sees a vector or a model.
 
 **Deliberately not columns on det**: keying by the dd string (not a det id) means zh and es
 share one space, repeated glosses dedupe, and — critically — a cluster backfill that rewrites
 a gloss produces an unseen key rather than a stale vector on a row (§ 7 self-healing). det is
-untouched, so `/data-prod-to-dev` and the det deploy path do not change.
+untouched, so `/data-ppe-to-dev` and the det deploy path do not change.
 
 ### Dev-only build artifacts — NEVER deployed
 
@@ -336,42 +336,42 @@ gloss_pair_verdicts                  -- cached cross-encoder output
 These exist only on the machine that runs the pipeline. They are large (71 MB of vectors,
 ~1.25M verdict rows at full det) and are pure build cache.
 
-### The deployed artifact — the ONLY table prod needs
+### The deployed artifact — the ONLY table PPE needs
 
 ```
 gloss_meaning_groups
   glossKey        text PRIMARY KEY
   meaningGroupId  integer NOT NULL   -- indexed; the runtime lookup
   builtAt         timestamptz
-  modelRevision   text               -- provenance, so prod can answer "why grouped?"
+  modelRevision   text               -- provenance, so PPE can answer "why grouped?"
   templateVersion text
   corpusSnapshot  text
 ```
 
 ~277k rows of (text, int) at full det — roughly 15–20 MB. No vectors, no models, no torch.
 
-## 5a. Where the pipeline runs, and how the table reaches prod
+## 5a. Where the pipeline runs, and how the table reaches PPE
 
-**Prod does not need a GPU. Prod never runs a model.** The runtime read is a hash lookup
+**PPE does not need a GPU. PPE never runs a model.** The runtime read is a hash lookup
 against `gloss_meaning_groups`; nothing at request time touches an embedding.
 
 **The build runs on the dev box** (RTX 3050) and its output is pushed up. This makes
 `gloss_meaning_groups` **the one table whose source of truth is DEV**, inverting the app-wide
-rule that prod is authoritative.
+rule that PPE is authoritative.
 
 That inversion is safe here, and only here, because the table is **derived data**: a pure
 function of (det corpus, model revision, template version, thresholds). No user ever writes
-it, nothing on prod authors it, and losing it costs nothing but a rebuild.
+it, nothing on PPE authors it, and losing it costs nothing but a rebuild.
 
 ### Why skew is safe in both directions
 
-Dev's det is a `/data-prod-to-dev` pull and will lag prod. Both failure modes degrade
+Dev's det is a `/data-ppe-to-dev` pull and will lag PPE. Both failure modes degrade
 harmlessly:
 
 | Skew | Effect |
 | --- | --- |
-| Prod has a discoverable word dev never saw | no group id → **no constraint** (§ 6 rule 1). Falls back to phase-1 exact-dd |
-| Dev has a gloss prod does not | orphan row, never looked up |
+| PPE has a discoverable word dev never saw | no group id → **no constraint** (§ 6 rule 1). Falls back to phase-1 exact-dd |
+| Dev has a gloss PPE does not | orphan row, never looked up |
 
 Neither can produce a *wrong* suppression — only a missing one. That is the property that
 makes a dev-authored table acceptable.
@@ -385,7 +385,7 @@ makes a dev-authored table acceptable.
 2. **Atomic replace.** `TRUNCATE` + `COPY` **inside one transaction**, so live readers see
    the previous snapshot until commit. Never a piecemeal upsert against a live table.
 3. **Stamp provenance** on every row (`modelRevision`, `templateVersion`, `corpusSnapshot`)
-   so a grouping on prod can always be traced to the build that produced it.
+   so a grouping on PPE can always be traced to the build that produced it.
 4. **Commit the pipeline to the repo.** The dev box becomes load-bearing for *updates*; the
    scripts must not live in someone's home directory. Any machine with a GPU must be able to
    reproduce the table.
@@ -393,38 +393,38 @@ makes a dev-authored table acceptable.
    behaviour with no code change. Cheapest possible escape hatch — prefer it to debugging a
    bad push in place.
 
-> ⚠️ **The trap a future agent will fall into.** `/data-prod-to-dev` pulls reference tables
-> **down** from prod. If `gloss_meaning_groups` is ever added to that skill's table list, a
-> routine dev refresh will overwrite dev's freshly-computed groups with prod's copy of what
+> ⚠️ **The trap a future agent will fall into.** `/data-ppe-to-dev` pulls reference tables
+> **down** from PPE. If `gloss_meaning_groups` is ever added to that skill's table list, a
+> routine dev refresh will overwrite dev's freshly-computed groups with PPE's copy of what
 > dev sent up — a silent circular sync. **This table must be explicitly excluded from
-> `/data-prod-to-dev`, and the exclusion commented with the reason.**
+> `/data-ppe-to-dev`, and the exclusion commented with the reason.**
 
 ### As built (2026-08-24)
 
 `push-groups.ts` implements all five requirements above and has been **dry-run verified
-only** — nothing has been pushed to prod. Migration 154 is live on prod (table created,
-empty) as of 2026-08-24. The `/data-prod-to-dev` exclusion warned about below is **now
+only** — nothing has been pushed to PPE. Migration 154 is live on PPE (table created,
+empty) as of 2026-08-24. The `/data-ppe-to-dev` exclusion warned about below is **now
 written into that skill**, in its own ⛔ section, rather than living only here.
 
 The pre-flight → push → verification steps for running this on dev are written up as a
 skill: [`/gloss-groups-push`](../.claude/commands/gloss-groups-push.md). It is Track 1
-work — it needs the dev GPU-pipeline box and prod DB credentials, so it can only be run by
-whoever has hands on that machine, not from a prod session.
+work — it needs the dev GPU-pipeline box and PPE DB credentials, so it can only be run by
+whoever has hands on that machine, not from a PPE session.
 
 Two guards worth knowing about, neither of which § 5a asked for but both of which fall out
 of building it:
 
-- **Prod credentials come from `PROD_*` env vars only**, never from `db-config.ts`. A
+- **PPE credentials come from `PROD_*` env vars only**, never from `db-config.ts`. A
   missing variable fails loudly instead of quietly pushing dev's table onto itself.
 - **A build must be internally consistent.** The script refuses to push if the dev rows
   carry more than one `(modelRevision, templateVersion, corpusSnapshot)` stamp — that means
-  an interrupted `cluster.py` or two builds merged, and pushing it would make prod's
+  an interrupted `cluster.py` or two builds merged, and pushing it would make PPE's
   provenance stamps meaningless.
 
 ### Deploying this — see the runbook
 
 **→ [GLOSS_CONFUSABILITY_DEPLOY_RUNBOOK.md](./GLOSS_CONFUSABILITY_DEPLOY_RUNBOOK.md)**
-(TEMPORARY; delete once prod is verified). Written 2026-08-24, not yet executed.
+(TEMPORARY; delete once PPE is verified). Written 2026-08-24, not yet executed.
 
 There is no *ordering* hazard here — migration 154 creates the table **empty** and § 6
 rule 1 makes an empty table mean "no constraint", so every ordering works. The runbook
@@ -449,13 +449,13 @@ rollback stops being free and the runbook's § 6 must be rewritten before that s
 
 ### If the dev box is unavailable
 
-Increments are small enough to run on prod CPU in a pinch (a day's growth is ~1k–22k
+Increments are small enough to run on PPE CPU in a pinch (a day's growth is ~1k–22k
 cross-encoder passes — minutes, not hours). Only a **full rebuild** genuinely wants the GPU,
 and full rebuilds happen only on a deliberate model or template change.
 
 ## 6. Runtime integration
 
-**BUILT 2026-08-24**, gated inert by an empty `gloss_meaning_groups` on prod (§ 5a's push
+**BUILT 2026-08-24**, gated inert by an empty `gloss_meaning_groups` on PPE (§ 5a's push
 has not run). No new chokepoints. The three sets in § 2 change key type:
 
 - `OnDeckVocabService.getGameVocabPool` — `takenDds: Set<string>` → also a
@@ -499,7 +499,7 @@ has not run). No new chokepoints. The three sets in § 2 change key type:
 
 ## 7. Keeping it up to date — operator instructions
 
-> The pipeline and the runtime guard (§ 6) both exist now; § 5a's push to prod is the one
+> The pipeline and the runtime guard (§ 6) both exist now; § 5a's push to PPE is the one
 > step below not yet run.
 
 ### What grows, and how the job notices
@@ -598,7 +598,7 @@ the numeral guard can veto it.
 
 Report both rates on every rebuild and record them alongside `modelRevision` /
 `templateVersion`, so a regression is at least *visible* even though it does not fail the
-build. Watch the must-not-block rate especially: that failure is silent in production (a
+build. Watch the must-not-block rate especially: that failure is silent in PPE (a
 board that quietly never teaches 大 vs 小), and under the hard rule of § 6 a wrong block has
 no fallback. If it drifts, revisit the balance — the tuning target is a decision, not a law.
 
@@ -1175,7 +1175,7 @@ would need the C16 near-homograph guard built first. Filed as **C19**.
 | # | Concern | Status |
 | --- | --- | --- |
 | **C1** | ~~Premise unvalidated.~~ **ANSWERED 2026-08-22 by the § 8i probe: YES.** Cosine tops out at 82% with overlapping ranges; NLI separates cleanly (+0.94 margin, 100%). Templated families pass. Residual gap is the 115-pair grey band → C13. *Original text:* **the core premise is unvalidated** — nobody has measured whether an NLI cross-encoder separates *big/small* from *a little/a bit* **on Chinese-dictionary glosses**. MNLI is news/fiction prose; `"classifier for square things"` and `"surname Zhou"` are far out of distribution. **Accepted as a known unknown (2026-08-22)** — the decision is to build it and find out which cases work, using the § 8 matrix. § 8c is where it is most likely to fail. | Accepted, test per § 8 |
-| **C2** | ~~Deployment path unresolved.~~ **RESOLVED 2026-08-22**: prod needs no GPU (it never runs a model); the build runs on dev and pushes `gloss_meaning_groups` up. That table's source of truth is **dev**, inverting the app-wide rule — safe because it is derived data and skew can only cause a *missing* suppression, never a wrong one. See § 5a for the push requirements and the `/data-prod-to-dev` exclusion trap. | Resolved |
+| **C2** | ~~Deployment path unresolved.~~ **RESOLVED 2026-08-22**: PPE needs no GPU (it never runs a model); the build runs on dev and pushes `gloss_meaning_groups` up. That table's source of truth is **dev**, inverting the app-wide rule — safe because it is derived data and skew can only cause a *missing* suppression, never a wrong one. See § 5a for the push requirements and the `/data-ppe-to-dev` exclusion trap. | Resolved |
 | **C3** | ~~Tables unconfirmed.~~ **RESOLVED 2026-08-22** — all three approved as specced (§ 5). | Resolved |
 | **C4** | ~~Soft vs hard unresolved.~~ **RESOLVED 2026-08-22** — **hard**, on the rationale that lending is the fallback; **soft only where lending cannot run** (§ 6 rule 4). | Resolved |
 | **C5** | ~~Hypernym policy.~~ **RESOLVED 2026-08-22** — ignored; only mutual entailment suppresses. | Resolved |
@@ -1184,7 +1184,7 @@ would need the C16 near-homograph guard built first. Filed as **C19**.
 | **C8** | Co-hyponyms (*Monday/Tuesday*, *red/blue*) may return `neutral` rather than `contradiction`. Neutral is correctly "not confusable" under § 4's rule (entailment is not high), so the pair is not suppressed — **but neutral produces no cannot-link edge**, so co-hyponyms remain merge-able by chaining in a way antonyms are not. Watch § 8g for co-hyponym families landing in one group. | Watch in § 8b, § 8g |
 | **C9** | WordNet is English-only. Harmless — glosses are English for both languages — but the veto has no Spanish-specific coverage. A zh gloss and an es gloss can share a group, which is inert because rounds are single-language. | Accepted |
 | **C10** | Study Challenge word sets compose rounds outside the three chokepoints. Not wired to games yet, but when it is, it needs the same key — and a client-side composer would need a `ddCollisionKey` twin. | Tracked in GAMES_FEATURE.md |
-| **C11** | ~~Hard rule × balanced tuning.~~ **CHANGED 2026-08-22** — tuning now favours blocking (Q4 revised), so the risk inverts: the exposure is no longer wrongly-blocked contrast pairs slipping past a balanced threshold, but the liberal must-link over-merging groups. Watch the § 8g size alarm rather than the must-not-block rate. *Original:* **hard rule × balanced tuning is the riskiest combination.** Balanced tuning (Q4) accepts some wrongly-blocked contrast pairs; the hard rule (Q1) gives those blocks no fallback; and the failure is invisible in production. Individually defensible, compounding together. **Mitigation:** § 7 reports the must-not-block rate every rebuild, and § 8b flags a jump as the trigger to revisit the tuning target. | Open — monitor |
+| **C11** | ~~Hard rule × balanced tuning.~~ **CHANGED 2026-08-22** — tuning now favours blocking (Q4 revised), so the risk inverts: the exposure is no longer wrongly-blocked contrast pairs slipping past a balanced threshold, but the liberal must-link over-merging groups. Watch the § 8g size alarm rather than the must-not-block rate. *Original:* **hard rule × balanced tuning is the riskiest combination.** Balanced tuning (Q4) accepts some wrongly-blocked contrast pairs; the hard rule (Q1) gives those blocks no fallback; and the failure is invisible in PPE. Individually defensible, compounding together. **Mitigation:** § 7 reports the must-not-block rate every rebuild, and § 8b flags a jump as the trigger to revisit the tuning target. | Open — monitor |
 | **C12** | ~~Templated-family risk carried.~~ **LARGELY CLEARED 2026-08-22** — § 8i shows all nine real surname/classifier/district pairs correctly allowed (contra 0.98–1.00). Keep per-family reporting as routine monitoring. *Original:* no special-casing (Q6) means the § 8c risk is carried, not mitigated. Concentrated in `surname X` / `X district of Y city`, which grow as a share of the corpus. **Mitigation:** report per-family rates separately so they are not averaged away; the prefix-exemption fallback stays on the shelf. | Open — monitor |
 
 | **C13** | ~~The § 8i grey band.~~ **RESOLVED 2026-08-22** by the liberal-must-link + brake rule (§ 8i, Q11). Residual known false positives are accepted per the revised Q4 (e.g. `East and West Germany`/`West Germany`, `east`/`east and west`). | Resolved |
@@ -1213,7 +1213,7 @@ would need the C16 near-homograph guard built first. Filed as **C19**.
 - **Q6 — templated gloss families (`classifier for X`)?** **Let the model decide** — no
   prefix special-casing. § 8c becomes a measurement; failure reopens it. See C12.
 - **Q7 — where does the job run?** Build on dev (the GPU box), push `gloss_meaning_groups` to
-  prod; prod needs no GPU and runs no model. See § 5a. **The C1 probe runs first**, in a
+  PPE; PPE needs no GPU and runs no model. See § 5a. **The C1 probe runs first**, in a
   throwaway venv on the dev box.
 - **Q8 — max group size cap?** **Alarm only** — log oversized groups and their members, never
   auto-split, until § 8g provides a real size distribution.

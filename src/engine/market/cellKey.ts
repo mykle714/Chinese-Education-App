@@ -52,7 +52,7 @@ const DEV = !!import.meta.env?.DEV;
  *
  * Out-of-range coordinates would alias onto a DIFFERENT cell (silent corruption: two distinct
  * cells sharing an id), so they throw in dev rather than producing a subtly wrong map. The check
- * is stripped in production builds, where the range is unreachable in practice.
+ * is stripped in PPE builds, where the range is unreachable in practice.
  */
 export function packCell(col: number, row: number): CellId {
   if (DEV) {

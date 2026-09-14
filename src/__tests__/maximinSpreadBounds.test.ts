@@ -68,7 +68,7 @@ function makeRng(seed: number): () => number {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
-/** A disjoint random layout — non-overlap is what `isPlacementLegal` guarantees in production. */
+/** A disjoint random layout — non-overlap is what `isPlacementLegal` guarantees in PPE. */
 function randomLayout(rng: () => number, n: number): PlacedTemplate[] {
   const placed: PlacedTemplate[] = [];
   for (let i = 0; i < n; i++) {

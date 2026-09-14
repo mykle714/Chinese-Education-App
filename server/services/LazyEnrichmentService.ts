@@ -38,10 +38,10 @@ import { buildIncompletePredicate } from '../scripts/backfill/shared/lib/require
  * worker for that ONE word: `run-lazy-enrichment.js --words=<word> --apply --stale`
  * (which runs only the pending steps, honours validator-approved fields, and promotes
  * to discoverable on completion). The spawn is best-effort: if it can't start (e.g.
- * prod, which runs compiled `node` with no `tsx`), it logs and no-ops — enrichment
- * stays a dev/curation activity, never mutating prod det rows out-of-band. (Its
- * output no longer feeds a dev → prod data push — that flow is retired and prod is
- * the source of truth; prod-side enrichment goes through the backfill scripts.)
+ * PPE, which runs compiled `node` with no `tsx`), it logs and no-ops — enrichment
+ * stays a dev/curation activity, never mutating PPE det rows out-of-band. (Its
+ * output no longer feeds a dev → PPE data push — that flow is retired and PPE is
+ * the source of truth; PPE-side enrichment goes through the backfill scripts.)
  *
  * Referenced by: server/controllers/DictionaryController.ts (lookupTerm),
  * server/services/StarterPacksService.ts (sortCard), docs/DISCOVER_LAZY_ENRICHMENT.md §5.
@@ -140,7 +140,7 @@ export class LazyEnrichmentService {
       const clear = () => this.inFlight.delete(key);
       child.on('exit', clear);
       child.on('error', (err) => {
-        // Most likely cause: the child command is unavailable (e.g. prod without tsx).
+        // Most likely cause: the child command is unavailable (e.g. PPE without tsx).
         console.error(`[LazyEnrich] worker spawn failed for "${w}" (no-op):`, err.message);
         clear();
       });

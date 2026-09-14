@@ -1,4 +1,4 @@
--- Teardown for the 55 Arena load-test accounts (prod, seeded 2026-08-16).
+-- Teardown for the 55 Arena load-test accounts (PPE, seeded 2026-08-16).
 --
 -- Scoped ENTIRELY by the '@arena-test.local' email suffix. No real account has that
 -- suffix, so this cannot touch one. Verify before and after with the counts at the end.

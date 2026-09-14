@@ -15,24 +15,24 @@ player cannot tell apart. Built 2026-08-24.
 | `cluster.py` | 6–7 | Constrained average-linkage clustering → `gloss_meaning_groups`. **No model inference** |
 | `sweep.py` | — | `LINKAGE_TAU` sensitivity analysis. No inference, no writes. Scores each tau against the rule's own verdicts over every judged pair, because goldset.json's 26 pairs cannot separate tau values (§ 8m). Slow at low tau (many merges) — minutes, not seconds. |
 | `validate.py` | — | § 7's every-rebuild gold-set check, run against the BUILT table |
-| `push-groups.ts` | 7 | Dev → prod push of `gloss_meaning_groups`, the only table prod sees |
+| `push-groups.ts` | 7 | Dev → PPE push of `gloss_meaning_groups`, the only table PPE sees |
 | `../gloss-probe/rule.py` | — | The § 8i blocking rule. **`cluster.py` calls it; never re-implement it** |
 
 ## Where things live, and why
 
-**Prod never runs a model.** The runtime read is a hash lookup against
+**PPE never runs a model.** The runtime read is a hash lookup against
 `gloss_meaning_groups`; nothing at request time touches an embedding. The build runs on the
 dev box (RTX 3050) and its output is pushed up, making that table the one table in the app
 **whose source of truth is DEV** — safe only because it is derived data (§ 5a).
 
-| Table | Lives on | Ships to prod? |
+| Table | Lives on | Ships to PPE? |
 |---|---|---|
 | `gloss_vectors` | dev only | **never** — build cache |
 | `gloss_pair_verdicts` | dev only | **never** — build cache |
-| `gloss_meaning_groups` | dev + prod | yes, via `push-groups.ts` (migration 154) |
+| `gloss_meaning_groups` | dev + PPE | yes, via `push-groups.ts` (migration 154) |
 
-⚠️ `gloss_meaning_groups` must stay **excluded** from `/data-prod-to-dev`, or a routine dev
-refresh overwrites dev's freshly computed groups with prod's copy of what dev just sent up.
+⚠️ `gloss_meaning_groups` must stay **excluded** from `/data-ppe-to-dev`, or a routine dev
+refresh overwrites dev's freshly computed groups with PPE's copy of what dev just sent up.
 The exclusion is written into that skill.
 
 ## Two environments
@@ -66,7 +66,7 @@ take torch.
 python3 -m venv ~/.venvs/gloss-pipeline
 ~/.venvs/gloss-pipeline/bin/pip install -r requirements-graph.txt   # light: re-cluster / validate / sweep
 ~/.venvs/gloss-pipeline/bin/pip install -r requirements.txt         # heavy: ONLY when judging new glosses
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db < dev-tables.sql
+docker exec -i cow-postgres psql -U cow_user -d cow_db < dev-tables.sql
 
 # every build
 cd ../..            && npx tsx scripts/gloss-pipeline/export-glosses.ts
@@ -117,6 +117,6 @@ so retuning is a re-derivation instead of a re-judge (§ 7 rule 1).
 
 ## Rollback
 
-`TRUNCATE gloss_meaning_groups` on prod. With the table empty every gloss has no group id,
+`TRUNCATE gloss_meaning_groups` on PPE. With the table empty every gloss has no group id,
 and § 6 rule 1 makes that "no constraint" — the app degrades to the phase-1 exact-dd guard
 with no code change. Prefer this to debugging a bad push in place.

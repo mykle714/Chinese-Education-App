@@ -14,7 +14,7 @@
  * Re-running within the same day is a safe no-op — the prune is idempotent once a market has
  * nothing left to cull.
  *
- * LAYER: operational script (prod cron). Run AFTER the SQL cron in the same crontab entry:
+ * LAYER: operational script (PPE cron). Run AFTER the SQL cron in the same crontab entry:
  *   tsx server/scripts/night-market/prune-dangling-templates.ts
  * On dev, run manually to test. Exits 0 on success, 1 on error.
  */

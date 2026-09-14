@@ -114,7 +114,7 @@ a second caller. The one exception is `/api/arena/admin/tick`, gated in
 
 | Role | Covers |
 |---|---|
-| `users.isTemplateAuthor` | all 9 template mutations, all 7 sandbox mutations, `POST /api/nightMarket/dev/adjustMinutes` (a real prod route despite the `/dev/` path) |
+| `users.isTemplateAuthor` | all 9 template mutations, all 7 sandbox mutations, `POST /api/nightMarket/dev/adjustMinutes` (a real PPE route despite the `/dev/` path) |
 | `users.isValidator` | all 5 validation endpoints, `/api/arena/admin/tick`, the study-challenge `anytime` escape hatch, AI enrichment spend |
 
 ---

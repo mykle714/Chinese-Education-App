@@ -48,10 +48,10 @@
  * simply keep the old per-segment popup.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-longdef-citations.js              # full backfill
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-longdef-citations.js --spot-check # test 5 entries
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-longdef-citations.js --words=快,会
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-longdef-citations.js --stale      # revisit rows stamped below SCRIPT_VERSION
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-longdef-citations.js              # full backfill
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-longdef-citations.js --spot-check # test 5 entries
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-longdef-citations.js --words=快,会
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-longdef-citations.js --stale      # revisit rows stamped below SCRIPT_VERSION
  */
 
 import dotenv from 'dotenv';

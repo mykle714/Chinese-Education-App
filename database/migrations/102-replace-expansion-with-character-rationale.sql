@@ -34,7 +34,7 @@
 -- Idempotent: safe to re-run.
 --
 -- ⚠️ DEPLOY NOTE: this migration DROPS `expansion` + `expansionLiteralTranslation`.
--- On prod, run the character-rationale backfill (bundled reference-data sync) so the
+-- On PPE, run the character-rationale backfill (bundled reference-data sync) so the
 -- new column is populated BEFORE the old feature disappears from the UI.
 
 ALTER TABLE dictionaryentries_zh

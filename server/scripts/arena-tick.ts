@@ -2,7 +2,7 @@
  * arena-tick.ts — run one arena formation + resolution pass by hand.
  *
  * WHY THIS EXISTS. The real driver is an hourly cron that is installed only on
- * prod (docs/ARENA_FEATURE.md § 10), so on a dev machine arenas would never form
+ * PPE (docs/ARENA_FEATURE.md § 10), so on a dev machine arenas would never form
  * and the board would be permanently empty — the feature would be untestable
  * locally. This script is the dev-side trigger. `POST /api/arena/admin/tick` is
  * the same thing over HTTP for when the server is already up.

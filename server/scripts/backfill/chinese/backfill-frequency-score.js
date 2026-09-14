@@ -28,11 +28,11 @@
  * NULL means "not yet scored". After processing, the column holds an integer 1–5.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-frequency-score.js                          # full backfill
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-frequency-score.js --stale                  # also re-score rows stamped below SCRIPT_VERSION
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-frequency-score.js --spot-check             # test 5 entries with reasoning
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-frequency-score.js --spot-check --random    # random 5 entries
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-frequency-score.js --spot-check --random --limit=25
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-frequency-score.js                          # full backfill
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-frequency-score.js --stale                  # also re-score rows stamped below SCRIPT_VERSION
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-frequency-score.js --spot-check             # test 5 entries with reasoning
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-frequency-score.js --spot-check --random    # random 5 entries
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-frequency-score.js --spot-check --random --limit=25
  */
 
 import dotenv from 'dotenv';

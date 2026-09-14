@@ -125,11 +125,11 @@ Request: { selectedLanguage: 'zh' | 'ja' | 'ko' | 'vi' }
 ### Database Verification
 ```bash
 # Check language distribution
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c "
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "
   SELECT language, COUNT(*) FROM dictionaryentries GROUP BY language;"
 
 # Sample entries per language
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c "
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "
   SELECT language, word1, word2, pronunciation
   FROM dictionaryentries
   WHERE language IN ('zh', 'ja', 'ko', 'vi')
@@ -179,7 +179,7 @@ Potential improvements for multi-language support:
 
 ### Regular Tasks
 - Monitor dictionary data imports for new/updated sources
-- Test new language additions before production deployment
+- Test new language additions before PPE deployment
 - Verify encoding is correct for all dictionary files
 - Check database size and consider archiving old entries if needed
 

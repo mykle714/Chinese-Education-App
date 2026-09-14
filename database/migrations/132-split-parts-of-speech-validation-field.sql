@@ -80,7 +80,7 @@ UPDATE validations
 
 -- ── 3. Refresh the documentation comments ────────────────────────────────────
 COMMENT ON TABLE validations IS
-    'Human validation records (approve/flag + reviewed content) per (entry, field). field ∈ {definitions, exampleSentence0..2, partsOfSpeech, difficulty, frequencyScore}; the last three are inline-only (never handed out by the Reader-document queue). Kept off the det tables so prod data deploys (TRUNCATE+restore of dictionaryentries_*) never wipe them; backfills skip fields recorded here. See docs/DATA_VALIDATION_SYSTEM.md.';
+    'Human validation records (approve/flag + reviewed content) per (entry, field). field ∈ {definitions, exampleSentence0..2, partsOfSpeech, difficulty, frequencyScore}; the last three are inline-only (never handed out by the Reader-document queue). Kept off the det tables so PPE data deploys (TRUNCATE+restore of dictionaryentries_*) never wipe them; backfills skip fields recorded here. See docs/DATA_VALIDATION_SYSTEM.md.';
 
 COMMENT ON COLUMN texts."validationField" IS
     'Which field of the entry this doc validates: definitions | exampleSentence0..2. (The inline-only fields partsOfSpeech/difficulty/frequencyScore never produce a document, so they never appear here.)';

@@ -7,7 +7,7 @@
  * ```
  *
  * `--file` reads a scene as JSON instead of from the database. It exists because the scene
- * worth probing lives on PROD and a dev box's `iw_scenes` is usually empty — dumping the row
+ * worth probing lives on PPE and a dev box's `iw_scenes` is usually empty — dumping the row
  * and probing it locally is much cheaper than authoring a stand-in that would then be the
  * thing under test.
  *

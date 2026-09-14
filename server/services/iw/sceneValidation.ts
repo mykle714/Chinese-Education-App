@@ -929,7 +929,7 @@ function validateConversations(
       // before `selectable` existed there was exactly one way in, and a conversation waiting
       // for its `start_conversation` step to be authored was an ordinary half-built scene. Now
       // there are two ways in and neither is taken, which is a scene that will never play a
-      // conversation somebody wrote — the failure prod's own "Welcoming back a regular" has.
+      // conversation somebody wrote — the failure PPE's own "Welcoming back a regular" has.
       problems.push({
         field: `${at}.selectable`,
         message: 'Nothing plays this: no action or interaction starts it, and it is not choosable',

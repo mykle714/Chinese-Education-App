@@ -35,9 +35,9 @@
  * SAFETY: DRY-RUN by default (prints the candidate set + planned command sequence,
  * writes nothing, spends nothing). Pass --apply to actually spawn the steps and
  * promote. Run inside the backend container (siblings resolve via `npx tsx`):
- *   docker exec cow-backend-local npx tsx scripts/backfill/run-lazy-enrichment.js            # dry run
- *   docker exec cow-backend-local npx tsx scripts/backfill/run-lazy-enrichment.js --apply --limit=10
- *   docker exec cow-backend-local npx tsx scripts/backfill/run-lazy-enrichment.js --words=未来  # target words (skips the candidate query)
+ *   docker exec cow-backend npx tsx scripts/backfill/run-lazy-enrichment.js            # dry run
+ *   docker exec cow-backend npx tsx scripts/backfill/run-lazy-enrichment.js --apply --limit=10
+ *   docker exec cow-backend npx tsx scripts/backfill/run-lazy-enrichment.js --words=未来  # target words (skips the candidate query)
  *
  * Referenced by: docs/DISCOVER_LAZY_ENRICHMENT.md §5.
  */

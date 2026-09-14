@@ -100,7 +100,7 @@ enrichment, which conflicts with that meaning. We therefore split the two concep
   `listQuickMarkCards`, and `getProgress`; the `validPredicate` level gate stays.
 - **`discoverable`** (unchanged) — still means "fully enriched"; still gates the
   flashcard/reader/dictionary surfaces. (It historically also meant "data-deployed",
-  from when det rows were enriched on dev and pushed up; enrichment now writes prod
+  from when det rows were enriched on dev and pushed up; enrichment now writes PPE
   directly, so there is no deploy half any more.)
 
 Migration 110 **backfilled `sortable = TRUE` for existing qualifying rows**
@@ -333,8 +333,8 @@ for a rubric or prompt change** — the bump IS the mechanism, and rows heal in 
 
 ```bash
 # dry run: prints the candidate set and the planned command sequence, writes nothing
-docker exec cow-backend-local npx tsx scripts/backfill/run-lazy-enrichment.js
-docker exec cow-backend-local npx tsx scripts/backfill/run-lazy-enrichment.js --apply --limit=25
+docker exec cow-backend npx tsx scripts/backfill/run-lazy-enrichment.js
+docker exec cow-backend npx tsx scripts/backfill/run-lazy-enrichment.js --apply --limit=25
 ```
 
 Two limits to know before relying on it:
@@ -362,10 +362,10 @@ an entry — they are the ones reviewing/curating content (see
 [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md)), so their engagement is the
 natural signal for "spend AI to finish this word."
 
-**Prod caveat.** `triggerForWord` spawns the worker via `npx tsx`, available in **dev**
-(`tsx server.ts`). Prod runs compiled `node` with no `tsx`, so the spawn fails
+**PPE caveat.** `triggerForWord` spawns the worker via `npx tsx`, available in **dev**
+(`tsx server.ts`). PPE runs compiled `node` with no `tsx`, so the spawn fails
 gracefully and the trigger is a **no-op there** — enrichment stays a dev/curation
-activity, and never mutates prod det rows out-of-band
+activity, and never mutates PPE det rows out-of-band
 (consistent with the "illegal to set `discoverable=TRUE` outside `/mark-discoverable`"
 rule).
 
@@ -643,7 +643,7 @@ still surfaced *after* that step's batch completes and *before* the dependent
 - `database/migrations/110-add-sortable-to-zh.sql` — the `sortable` column + backfill + index (§3). **Reverted by `144-drop-sortable-from-zh.sql`.**
 - `server/services/LazyEnrichmentService.ts` — the request-time, validator-gated trigger
   (`triggerForWord`): zh + `isValidator` + manifest-incomplete gate, `inFlight` dedupe,
-  fire-and-forget worker spawn, best-effort prod no-op (§5).
+  fire-and-forget worker spawn, best-effort PPE no-op (§5).
 - `server/services/StarterPacksService.ts` — `_supplyGate` (`_levelConfig` neighbour),
   supply gates in `_fetchSupplyRows`, `listQuickMarkCards`, `getProgress`; card mapping
   (`_rowsToDiscoverCards`), sort commit (`sortCard`) — fires the **on-sort** trigger (§5).

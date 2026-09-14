@@ -752,7 +752,7 @@ endpoint is specific to one game's data model.
 > [§ The option word is cpcd at a fixed `xl`](#the-option-word-is-cpcd-at-a-fixed-xl).
 > `GlyphSvg` has no call site left in the tree. The section is kept because the
 > component still exists and its CDN-fallback warning below is the reason the
-> writing drill's grey guide works in production — delete the component and that
+> writing drill's grey guide works in PPE — delete the component and that
 > lesson goes with it.
 
 `src/components/handwriting/GlyphSvg.tsx` — a ~40-line static SVG renderer that
@@ -781,8 +781,8 @@ resolve without an import map. It works in `vite dev` (which rewrites bare
 specifiers) and **throws in every production build**.
 
 `loadCharData.ts` has always carried this fallback, which is why the writing
-drill's grey guide works in production. `GlyphSvg` needs it for the same reason:
-without it, Speed Reading renders **blank buttons in prod while looking perfect in
+drill's grey guide works in PPE. `GlyphSvg` needs it for the same reason:
+without it, Speed Reading renders **blank buttons in production builds while looking perfect in
 dev**. Do not delete either fallback as dead code — verify against `dist/`, not
 against a dev session.
 

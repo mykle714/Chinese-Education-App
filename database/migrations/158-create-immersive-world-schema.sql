@@ -3,7 +3,7 @@
 -- See docs/IMMERSIVE_WORLD.md § 12 phase 1a and § 14 Q2/Q3/Q19/Q21/Q25/Q27/Q30/Q31.
 --
 -- NUMBERED 158, NOT 157. 157 is the Chinese-typeface column, which is committed with an
--- open runbook and must reach prod before this. Nothing here depends on it.
+-- open runbook and must reach PPE before this. Nothing here depends on it.
 --
 -- ── Four tables, not nine ────────────────────────────────────────────────────
 -- Q2 originally called for a fully normalized set (a table per cast row, per

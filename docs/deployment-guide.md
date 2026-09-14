@@ -73,9 +73,9 @@ Example:
 git clone https://github.com/user/Chinese-Education-App.git vocabulary-app
 ```
 
-## Step 4: Configure Production Environment
+## Step 4: Configure PPE Environment
 ```bash
-# Create production environment file
+# Create PPE environment file
 cat > .env << EOF
 # Database Configuration
 # IMPORTANT: DB_PASSWORD and POSTGRES_PASSWORD must be identical.
@@ -108,13 +108,13 @@ Replace `<SERVER_IP>` with your actual server IP or domain.
 ## Step 5: Build and Start Docker Services
 ```bash
 # Build and start production services
-docker-compose -f docker-compose.prod.yml up --build -d
+docker-compose -f docker-compose.ppe.yml up --build -d
 
 # Verify services are running
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.ppe.yml ps
 
 # Check service logs
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.ppe.yml logs -f
 ```
 
 ## Step 6: Import Multi-Language Dictionaries
@@ -129,7 +129,7 @@ chmod +x server/scripts/import-all-dictionaries.sh
 # - Run all database migrations (including multi-language support)
 # - Download all 4 language dictionary files
 # - Import all dictionaries into the database
-bash server/scripts/import-all-dictionaries.sh production
+bash server/scripts/import-all-dictionaries.sh ppe
 ```
 
 **What this script does:**
@@ -162,7 +162,7 @@ docker ps
 curl http://localhost:5000/api/health
 
 # Test database connection
-docker-compose -f docker-compose.prod.yml exec backend node -e "
+docker-compose -f docker-compose.ppe.yml exec backend node -e "
 const { Pool } = require('pg');
 const pool = new Pool({
   host: 'postgres',
@@ -192,7 +192,7 @@ sudo ufw enable
 sudo ufw status
 ```
 
-**Note:** The production Docker setup binds the frontend to port 80 (HTTP) and 443 (HTTPS).
+**Note:** The PPE Docker setup binds the frontend to port 80 (HTTP) and 443 (HTTPS).
 
 ## Step 9: Router Port Forwarding (If Behind NAT)
 
@@ -216,10 +216,10 @@ If your deployment server is behind a NAT router, configure port forwarding:
 ## Step 10: Test Deployment
 ```bash
 # Check Docker container status
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.ppe.yml ps
 
 # Check Docker service logs
-docker-compose -f docker-compose.prod.yml logs
+docker-compose -f docker-compose.ppe.yml logs
 
 # Check if backend is responding (internal Docker network)
 curl http://localhost:5000/api/health
@@ -234,7 +234,7 @@ curl http://localhost/
 ## Step 11: Verify Multi-Language Support
 ```bash
 # Check dictionary counts for each language
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "
     SELECT
         language,
         COUNT(*) as entries,
@@ -252,28 +252,28 @@ docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "
 
 # Test a dictionary lookup for each language
 # Chinese
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='zh' LIMIT 3;"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='zh' LIMIT 3;"
 
 # Japanese
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ja' LIMIT 3;"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ja' LIMIT 3;"
 
 # Korean
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ko' LIMIT 3;"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT word1, word2, pronunciation FROM \"dictionaryentries_zh\" WHERE language='ko' LIMIT 3;"
 
 # Vietnamese
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT word1, definitions FROM \"dictionaryentries_zh\" WHERE language='vi' LIMIT 3;"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT word1, definitions FROM \"dictionaryentries_zh\" WHERE language='vi' LIMIT 3;"
 ```
 
 ## Troubleshooting Commands
 ```bash
 # View Docker service logs
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.ppe.yml logs -f
 
 # Restart Docker services
-docker-compose -f docker-compose.prod.yml restart
+docker-compose -f docker-compose.ppe.yml restart
 
 # Rebuild and restart services
-docker-compose -f docker-compose.prod.yml up --build -d
+docker-compose -f docker-compose.ppe.yml up --build -d
 
 # Check container resource usage
 docker stats
@@ -291,7 +291,7 @@ If you need to re-import dictionaries (e.g., after a database reset):
 cd ~/vocabulary-app
 
 # Re-run the import script
-bash server/scripts/import-all-dictionaries.sh production
+bash server/scripts/import-all-dictionaries.sh ppe
 ```
 
 **Note:** The script is idempotent - it will clear existing entries for each language before importing, so it's safe to run multiple times.
@@ -303,11 +303,11 @@ cd ~/vocabulary-app
 git pull origin main
 
 # Rebuild and restart Docker services
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml up --build -d
+docker-compose -f docker-compose.ppe.yml down
+docker-compose -f docker-compose.ppe.yml up --build -d
 
 # Check updated services
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.ppe.yml ps
 
 # Note: Dictionary data persists in the postgres_data volume
 # You don't need to re-import dictionaries after updates unless:

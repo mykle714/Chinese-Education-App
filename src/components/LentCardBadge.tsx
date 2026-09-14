@@ -23,8 +23,8 @@ import { iconImageUrl } from "../cardIcons/cardIconLayout";
  *
  * ⚠️ DEPLOY NOTE: `GET /api/icons8/:id/image` does NOT lazily download — it 404s when
  * the row is absent (`Icons8Controller.getIconImage`, unlike the `/ensure` route). The
- * icons8 table only ever syncs prod → dev (`/data-prod-to-dev`), so a row that exists
- * on this dev box is not proof it exists on prod. Hence `onError` below: a missing
+ * icons8 table only ever syncs PPE → dev (`/data-ppe-to-dev`), so a row that exists
+ * on this dev box is not proof it exists on PPE. Hence `onError` below: a missing
  * icon degrades to NO badge rather than a broken-image glyph on every card.
  *
  * Referenced by: src/components/ProvisionalCardsNotice.tsx,

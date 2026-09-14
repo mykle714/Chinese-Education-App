@@ -1,6 +1,6 @@
 # Velocity — recent rate of mastery progress
 
-Status: **implemented** (migration 137). Not yet deployed to prod.
+Status: **implemented** (migration 137). Not yet deployed to PPE.
 
 **Velocity** = the number of **utcm band-steps** a learner's cards climbed in the
 **last 7 days**, per **(user, language)**, **summed across the mastery bars the

@@ -107,7 +107,7 @@ export interface SceneActorTickContext {
  * compass letters directly. That function plus `DirectionalWalkAnimation`'s documented
  * axis semantics (north = isoY increasing, east = isoX increasing) is the ONLY facing
  * convention in this codebase that has been visually verified — it is what the night market
- * renders in production. iw matching it by construction means the two features cannot drift.
+ * renders in PPE. iw matching it by construction means the two features cannot drift.
  *
  * ⚠️ KNOWN DISCREPANCY, NEEDS A VISUAL CHECK. `IW_FACING_LABELS` in `server/contracts/iw.ts`
  * describes the same four letters as n = "away, up-right", e = "down-right", s = "toward

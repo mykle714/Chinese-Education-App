@@ -1,4 +1,4 @@
--- Hourly Study Challenge maintenance (prod only).
+-- Hourly Study Challenge maintenance (PPE only).
 --
 -- See docs/STUDY_CHALLENGE.md § 9 "The maintenance job" and
 -- docs/STREAK_EXPIRATION_CRON.md (the unit this runs as a third ExecStart step of).

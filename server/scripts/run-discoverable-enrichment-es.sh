@@ -13,9 +13,9 @@
 # deterministic definition-cleanup steps run table-wide on all es rows.
 #
 # ⚠ THIS RUNNER IS DEV-SHAPED: it drives `docker exec` against a local backend
-# container. `cow-backend-prod` ships neither scripts/backfill/ nor tsx, so the
-# `production` mode below CANNOT work — for prod use the per-step
-# `server/scripts/backfill/run-prod.sh` invocations in /mark-discoverable §B3.
+# container. `cow-backend` ships neither scripts/backfill/ nor tsx, so the
+# `ppe` mode below CANNOT work — for PPE use the per-step
+# `server/scripts/backfill/run-ppe.sh` invocations in /mark-discoverable §B3.
 #
 # Prerequisites:
 #   - Docker containers must be running
@@ -23,7 +23,7 @@
 #   - dictionaryentries_es must be populated (import-esdict-temp.ts)
 #
 # Usage:
-#   bash server/scripts/run-discoverable-enrichment-es.sh [production|local]
+#   bash server/scripts/run-discoverable-enrichment-es.sh [ppe|local]
 #   Default: local
 #
 # Pipeline order — MUST match REQUIRED_SCRIPTS_ES in
@@ -73,11 +73,11 @@ NC='\033[0m'
 
 MODE="${1:-local}"
 
-if [ "$MODE" = "production" ]; then
-    BACKEND_CONTAINER="cow-backend-prod"
+if [ "$MODE" = "ppe" ]; then
+    BACKEND_CONTAINER="cow-backend"
     echo -e "${BLUE}Running in PRODUCTION mode${NC}\n"
 else
-    BACKEND_CONTAINER="cow-backend-local"
+    BACKEND_CONTAINER="cow-backend"
     echo -e "${BLUE}Running in LOCAL mode${NC}\n"
 fi
 

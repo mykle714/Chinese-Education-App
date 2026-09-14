@@ -54,11 +54,11 @@ const glyphPromises = new Map<string, Promise<GlyphData | null>>();
  * build as a literal runtime `import()` of a bare specifier — something a browser
  * cannot resolve without an import map. Verified in `dist/`: the emitted chunk
  * still contains the raw template literal and no per-character chunks exist.
- * It resolves in `vite dev` (which rewrites bare specifiers) and throws in prod.
+ * It resolves in `vite dev` (which rewrites bare specifiers) and throws in production builds.
  *
  * `loadCharData.ts` has always had this fallback, which is why the writing
- * drill's grey guide works in production; this component needs it for the same
- * reason. Without it Speed Reading would render blank buttons in prod while
+ * drill's grey guide works in PPE; this component needs it for the same
+ * reason. Without it Speed Reading would render blank buttons in production builds while
  * looking perfect in dev.
  */
 const CDN_BASE = "https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1";

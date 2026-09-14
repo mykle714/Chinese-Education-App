@@ -18,9 +18,9 @@
  * validator.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill-parts-of-speech.js               # full backfill
- *   docker exec cow-backend-local npx tsx scripts/backfill-parts-of-speech.js --spot-check  # test 5 entries
- *   docker exec cow-backend-local npx tsx scripts/backfill-parts-of-speech.js --words=未来,摸脉
+ *   docker exec cow-backend npx tsx scripts/backfill-parts-of-speech.js               # full backfill
+ *   docker exec cow-backend npx tsx scripts/backfill-parts-of-speech.js --spot-check  # test 5 entries
+ *   docker exec cow-backend npx tsx scripts/backfill-parts-of-speech.js --words=未来,摸脉
  */
 
 import dotenv from 'dotenv';

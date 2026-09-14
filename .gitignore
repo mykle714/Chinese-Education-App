@@ -42,11 +42,11 @@ backups/
 
 # Spanish source data is a nested git clone (doozan/spanish_data, ~151MB with its
 # own .git). It's reference input for server/scripts/import-esdict-temp.ts only —
-# never needed at runtime or on prod. Re-clone locally if you need to re-import.
+# never needed at runtime or on PPE. Re-clone locally if you need to re-import.
 data/dictionaries/spanish_data/
 
 # Machine-specific identity file (not committed — each machine has its own copy)
-amIOnTheProdMachine.md
+machineEnvironment.md
 
 # Local Claude Code settings (may contain secrets)
 .claude/settings.local.json
@@ -57,7 +57,7 @@ amIOnTheProdMachine.md
 # Backfill script parse caches (derived artifacts, rebuilt with --refresh)
 server/scripts/backfill/**/.cache/
 
-# Prod det snapshots taken before each oracle-backfill run (large, regenerable)
+# PPE det snapshots taken before each oracle-backfill run (large, regenerable)
 server/backups/
 
 # Character-decomposition source (makemeahanzi, LGPLv3) — build-time input for

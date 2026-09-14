@@ -176,7 +176,7 @@ Code: `TemplateSandboxPage.selectedIsHub` / `pickableEntries` / `isFreshlyCleare
   places what it chose — the sandbox's "what would the game actually do here?" control.
   It delegates to `NightMarketPlacementService.planNextPlacement`, the **same planner** the real
   continent grows with (docs/NIGHT_MARKET_TEMPLATES.md § "Placement algorithm"), extracted out of
-  `spawnTemplate` precisely so the preview can never drift from production. Behaviour:
+  `spawnTemplate` precisely so the preview can never drift from PPE. Behaviour:
   an **empty** sandbox seeds the starter hub at the origin (mirroring
   `NightMarketWorldService.seedHubPlacement`); otherwise the plan is persisted **at the version the
   planner chose** (its most-conditioned candidate version — the runtime instead stores v0 and lets

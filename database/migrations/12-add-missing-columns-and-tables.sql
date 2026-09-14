@@ -1,5 +1,5 @@
 -- Comprehensive migration to add all missing columns and tables
--- This migration brings production database up to date with development
+-- This migration brings PPE database up to date with development
 -- Created: 2025-11-04
 
 -- Step 1: Create UserWorkPoints table for daily work points tracking

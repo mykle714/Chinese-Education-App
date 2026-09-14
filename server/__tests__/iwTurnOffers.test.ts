@@ -61,7 +61,7 @@ describe('offeredActions', () => {
   });
 
   it('never offers an interaction-only action', () => {
-    // This is the structural replacement for prod's `when: "Do not pick, triggered by
+    // This is the structural replacement for PPE's `when: "Do not pick, triggered by
     // interaction"` — an instruction written into the field that makes an action MORE
     // choosable.
     const r = offeredActions(member([action({ interactionOnly: true })]), NO_CUES);

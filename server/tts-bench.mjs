@@ -11,7 +11,7 @@ const auth = new GoogleAuth({ keyFile: '/app/google-tts-credentials.json', scope
 const LINES = ['热的还是凉的？', '要几碗？', '不好意思，厨房做错了菜。', '您好，欢迎光临，请问几位？'];
 
 const client = await auth.getClient();
-// Token fetch is amortized in production (google-auth-library caches it), so time it separately.
+// Token fetch is amortized in PPE (google-auth-library caches it), so time it separately.
 let t = performance.now();
 await client.getAccessToken();
 console.log(`token (cold): ${Math.round(performance.now() - t)} ms`);

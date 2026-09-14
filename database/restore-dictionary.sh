@@ -6,7 +6,7 @@
 
 set -e
 
-CONTAINER="cow-postgres-local"
+CONTAINER="cow-postgres"
 DB="cow_db"
 USER="cow_user"
 DUMP_FILE="$(dirname "$0")/dictionaryentries-data.sql"

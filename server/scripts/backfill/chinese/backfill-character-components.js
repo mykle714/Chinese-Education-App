@@ -23,12 +23,12 @@
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * ⚠️ AFTER RUNNING THIS, REGENERATE THE COMPONENT WEBFONT:
- *     docker exec cow-backend-local npx tsx scripts/backfill/chinese/generate-component-font.js
+ *     docker exec cow-backend npx tsx scripts/backfill/chinese/generate-component-font.js
  * ~4% of components are absent from the Google-hosted Noto Sans SC webfont, so without
  * that step newly-introduced components render as tofu on the client.
  *
  * USAGE
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-character-components.js
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-character-components.js
  *   ... --words=想,从,江     scope to specific characters
  *   ... --force              recompute rows that already have components
  *   ... --stale              also reprocess rows stamped below SCRIPT_VERSION

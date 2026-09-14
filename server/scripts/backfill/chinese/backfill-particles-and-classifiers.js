@@ -12,9 +12,9 @@
  * Characters Claude confirms as neither are simply not inserted.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-particles-and-classifiers.js               # full backfill (serial)
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-particles-and-classifiers.js --batch       # via Batches API (50% price)
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-particles-and-classifiers.js --spot-check  # test 5 entries
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-particles-and-classifiers.js               # full backfill (serial)
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-particles-and-classifiers.js --batch       # via Batches API (50% price)
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-particles-and-classifiers.js --spot-check  # test 5 entries
  */
 
 import dotenv from 'dotenv';

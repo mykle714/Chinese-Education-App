@@ -635,7 +635,7 @@ describe('validateScene selectability (2026-09-06)', () => {
 
   describe('interactionOnly — an action hidden from the model', () => {
     // The fixture's interaction already performs `pay`, so hiding it from the model still
-    // leaves it reachable. This is the shape prod's first scene wanted and wrote as prose.
+    // leaves it reachable. This is the shape PPE's first scene wanted and wrote as prose.
     it('accepts one that a place interaction performs', () => {
       const scene = validScene();
       scene.npcCast[0].actions![0].interactionOnly = true;

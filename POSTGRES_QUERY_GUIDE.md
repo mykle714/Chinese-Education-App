@@ -9,10 +9,10 @@ The fastest, most reliable method is `docker exec` — no script files, no modul
 
 ```bash
 # Local database
-docker exec cow-postgres-local psql -U cow_user -d cow_db -c "SELECT id, email FROM users;"
+docker exec cow-postgres psql -U cow_user -d cow_db -c "SELECT id, email FROM users;"
 
-# Production database
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT id, email FROM users;"
+# PPE database
+docker exec cow-postgres psql -U cow_user -d cow_db -c "SELECT id, email FROM users;"
 ```
 
 Use this by default for ad-hoc queries. Only write a `.ts` script (see below) when you need complex logic or data transformation.
@@ -67,7 +67,7 @@ cd ~/vocabulary-app
 bash database/deploy/migrate.sh
 
 # Check what's been applied
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c \
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   "SELECT version, name FROM schema_migrations ORDER BY version;"
 ```
 
@@ -376,7 +376,7 @@ Or they default to the values shown above.
 
 ## Troubleshooting Checklist
 
-- [ ] Is PostgreSQL running? (`docker ps` — look for `cow-postgres-local` / `cow-postgres-prod`)
+- [ ] Is PostgreSQL running? (`docker ps` — look for `cow-postgres` / `cow-postgres`)
 - [ ] Are dependencies installed? (Run `npm install` in `server/` directory)
 - [ ] Using `docker exec psql` instead of a script? (preferred for ad-hoc queries)
 - [ ] If writing a script: is it in `server/` and run with `npx ts-node --esm`?

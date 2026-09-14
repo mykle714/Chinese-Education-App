@@ -5,7 +5,7 @@
 -- Spanish importer (server/scripts/import-esdict-temp.ts), which merges its
 -- staging table into `dictionaryentries_es`. That importer runs against the large
 -- local Spanish source data and is NOT part of a deployment, so on any database
--- where the import has not been run (e.g. prod) the table does not exist. The
+-- where the import has not been run (e.g. PPE) the table does not exist. The
 -- following migrations (59 etymology, 64 alternateGender/alternateMeaning,
 -- 65 hasMultiplePos) and 66 (vocabentries split, which reads dictionaryentries_es)
 -- all assume the table exists and would fail with "relation does not exist".

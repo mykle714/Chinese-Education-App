@@ -7,10 +7,10 @@
  * Only keys relevant to the entry's partsOfSpeech are included.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-word-forms.js               # full backfill (serial)
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-word-forms.js --batch       # via Batches API (50% price)
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-word-forms.js --spot-check  # test 5 entries
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-word-forms.js --words=跑,快  # specific words
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-word-forms.js               # full backfill (serial)
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-word-forms.js --batch       # via Batches API (50% price)
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-word-forms.js --spot-check  # test 5 entries
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-word-forms.js --words=跑,快  # specific words
  */
 
 import dotenv from 'dotenv';

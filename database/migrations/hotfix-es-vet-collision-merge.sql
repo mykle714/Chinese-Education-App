@@ -2,12 +2,12 @@
 --
 -- Migration 123 swaps vocabentries_es's unique key from
 -- (userId, entryKey, language, pos) to (userId, entryKey, language). Under the old
--- key a learner could hold one spelling several times, once per POS — prod has 58
+-- key a learner could hold one spelling several times, once per POS — PPE has 58
 -- such groups (136 cards, 3 users). ADD CONSTRAINT would fail on every one of them,
 -- so they must collapse first.
 --
 -- POLICY (chosen by the user over the runbook's "keep highest totalMarkCount, drop
--- the rest", which would have discarded 6 of the 17 typed marks on prod): the
+-- the rest", which would have discarded 6 of the 17 typed marks on PPE): the
 -- lowest-id card survives and ABSORBS its siblings — nothing is lost.
 --
 --   * typedMarkHistory : per track, all siblings' marks are concatenated, sorted by
@@ -17,7 +17,7 @@
 --   * totalMarkCount /
 --     totalCorrectCount : summed across the group.
 --   * card customization : first non-NULL in id order (iconLayout, snapConfig,
---                        textColors, textLayout, cardColor, author). No prod group
+--                        textColors, textLayout, cardColor, author). No PPE group
 --                        actually has two competing values today.
 --   * selectedSense     : deliberately left as-is. 123 §5 does not migrate `pos`
 --                        into it, so every merged card lands on its word's default

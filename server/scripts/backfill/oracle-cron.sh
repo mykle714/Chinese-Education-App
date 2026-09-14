@@ -3,14 +3,14 @@
 # Unattended launcher for /oracle-backfill.
 #
 # LAYER: data-enrichment (backfill) invocation shim — the cron-side sibling of
-# run-prod.sh (which shims a single script; this shims a whole round).
+# run-ppe.sh (which shims a single script; this shims a whole round).
 #
 # WHY THIS EXISTS: the oracle answerer is a Claude session, not a headless process
 # (server/scripts/backfill/run-log.js, "ORACLE MODE" — the export/apply phases bracket
 # a model authoring answers into oracle-answers.jsonl). So "keep the backfill running"
 # cannot be a plain `node foo.js` cron entry; it has to start a `claude -p` session.
-# It also cannot be a CLOUD scheduled agent: run-prod.sh reaches the DB at
-# 127.0.0.1:5432, which cow-postgres-prod publishes on loopback only.
+# It also cannot be a CLOUD scheduled agent: run-ppe.sh reaches the DB at
+# 127.0.0.1:5432, which cow-postgres publishes on loopback only.
 #
 # CONCURRENCY: every invocation takes an exclusive, non-blocking flock. A round that
 # overruns its tick simply causes the next tick to exit 0 without starting a second
@@ -35,7 +35,7 @@
 #   oracle-cron.sh                 # single worker, whole candidate pool
 #   SHARD=0/3 oracle-cron.sh       # worker 0 of 3
 #   ORACLE_LANGS=zh oracle-cron.sh # restrict the round to one language (default: both)
-#   DRY_RUN=1 SHARD=0/3 oracle-cron.sh   # verify wiring; no session, no prod writes
+#   DRY_RUN=1 SHARD=0/3 oracle-cron.sh   # verify wiring; no session, no PPE writes
 #
 # BUDGET
 #   A round is skipped (exit 0) when any active plan cap is at or above ITS OWN
@@ -74,7 +74,7 @@ LOG_DIR="$REPO_ROOT/server/logs"
 mkdir -p "$LOG_DIR"
 
 # ── Discord status updates ───────────────────────────────────────────────────
-# DISCORD_WEBHOOK_URL lives in the repo-root .env (same file run-prod.sh sources
+# DISCORD_WEBHOOK_URL lives in the repo-root .env (same file run-ppe.sh sources
 # for POSTGRES_PASSWORD) so it stays out of git and off the process's argv/ps
 # listing. Optional: an unset/empty URL makes discord_notify() a silent no-op,
 # so this script works identically before the webhook is configured.
@@ -150,7 +150,7 @@ fi
 
 # ── preflight the toolchain ──────────────────────────────────────────────────
 # Fail loudly and early. Without this a missing binary surfaces as an opaque
-# "command not found" buried in a round that already took a prod backup.
+# "command not found" buried in a round that already took a PPE backup.
 for bin in claude flock docker npx; do
   if ! command -v "$bin" >/dev/null 2>&1; then
     echo "[$(date -uIs)] $SLUG: ABORT — '$bin' not found on PATH ($PATH)" >> "$RUN_LOG"
@@ -199,7 +199,7 @@ LAST_STATUS_FILE="$LOG_DIR/oracle-last-status.$SLUG"
 # parks the cron entirely without touching the crontab.
 # TOKEN FRESHNESS: the usage endpoint is authenticated with the OAuth access token
 # that Claude Code keeps in ~/.claude/.credentials.json. That token has a ~8h TTL and
-# is refreshed ONLY by a live Claude Code session — nothing on a quiet prod box
+# is refreshed ONLY by a live Claude Code session — nothing on a quiet PPE box
 # refreshes it on a schedule. So a passive read of that file eventually sends an
 # expired bearer token and gets a 401, and because the gate fails closed that 401
 # silently parked the cron for hours at a time (8 of 52 ticks over 2026-08-22..24,
@@ -209,7 +209,7 @@ LAST_STATUS_FILE="$LOG_DIR/oracle-last-status.$SLUG"
 #
 # We deliberately do NOT perform the OAuth refresh grant here. That would mean writing
 # ~/.claude/.credentials.json by hand while a real session may be writing it too, and
-# refresh tokens rotate on use — losing that race on the prod machine logs the box out
+# refresh tokens rotate on use — losing that race on the PPE machine logs the box out
 # of Claude entirely. A throughput bug does not justify that blast radius.
 #
 # Known hole: if the plan is genuinely exhausted, the refresh probe is itself a real
@@ -370,7 +370,7 @@ fi
 # ── preflight the manifest ───────────────────────────────────────────────────
 # Script-ahead-of-manifest drift makes the planner under-report stale rows, so an
 # unattended round would quietly enrich the wrong set. Read-only; exits non-zero on drift.
-if ! "$REPO_ROOT/server/scripts/backfill/run-prod.sh" \
+if ! "$REPO_ROOT/server/scripts/backfill/run-ppe.sh" \
       scripts/backfill/check-manifest-sync.js >> "$RUN_LOG" 2>&1; then
   echo "[$(date -uIs)] $SLUG: ABORT — manifest/SCRIPT_VERSION drift. Fix before running." >> "$RUN_LOG"
   discord_notify "🔴 oracle-cron ($SLUG) ABORT: manifest/SCRIPT_VERSION drift — a script is ahead of its manifest entry. Fix before the next tick."
@@ -378,7 +378,7 @@ if ! "$REPO_ROOT/server/scripts/backfill/run-prod.sh" \
 fi
 
 # DRY_RUN=1 verifies a cron install end-to-end — lock, shard parsing, manifest
-# preflight, per-worker paths — WITHOUT starting a session or writing to prod.
+# preflight, per-worker paths — WITHOUT starting a session or writing to PPE.
 if [[ -n "${DRY_RUN:-}" ]]; then
   echo "DRY_RUN $SLUG: preflight passed; would start a round with"
   echo "  shard      : ${SHARD:-<none>}"
@@ -443,7 +443,7 @@ fi
 # `enrichmentLog` timestamp is the authoritative "did cluster-definitions touch
 # this row" signal (see the skill's §5 validatedClause check for the same pattern).
 # 127.0.0.1: the host cannot resolve the docker-network hostname "postgres" that
-# $DB_HOST holds after sourcing .env — same override run-prod.sh applies.
+# $DB_HOST holds after sourcing .env — same override run-ppe.sh applies.
 CLUSTER_RESULTS=""
 if [[ -n "${POSTGRES_PASSWORD:-}" ]] && command -v psql >/dev/null 2>&1; then
   CLUSTER_RESULTS=$(PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -p 5432 \

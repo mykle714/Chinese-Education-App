@@ -415,7 +415,7 @@ npx tsx scripts/import-edict2.ts
 ### Verify Import
 
 ```bash
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c \
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c \
   "SELECT word1, word2, pronunciation, definitions FROM dictionaryentries WHERE language = 'ja' LIMIT 5;"
 ```
 
@@ -973,10 +973,10 @@ Not just `res.json([])`.
 docker ps | grep postgres
 
 # Check connection
-docker exec -i cow-postgres-local psql -U cow_user -d cow_db -c "SELECT 1;"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT 1;"
 
 # Restart if needed
-docker restart cow-postgres-local
+docker restart cow-postgres
 ```
 
 ---
@@ -1135,7 +1135,7 @@ Use this checklist when adding a new language:
 If you encounter issues:
 
 1. Check console logs in browser dev tools
-2. Check backend logs: `docker logs cow-backend-local`
+2. Check backend logs: `docker logs cow-backend`
 3. Verify database contents with psql commands
 4. Review similar implementations (Chinese/Japanese)
 

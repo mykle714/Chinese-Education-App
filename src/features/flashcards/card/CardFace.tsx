@@ -405,7 +405,7 @@ export const CardFaceSide: React.FC<{
             // the card edge into the surrounding padding.
             overflow: "visible",
             // Explicit visual hiding of the away-facing face. `backfaceVisibility:hidden`
-            // alone is unreliable on some mobile WebKit/Blink builds (prod bug: the
+            // alone is unreliable on some mobile WebKit/Blink builds (PPE bug: the
             // rotated-away Side 1 bled through the back, mirrored by the parent's
             // rotateY(180deg)), so we don't trust it for the visual. `inert` already
             // tracks "this face is facing away"; when so, force visibility:hidden but

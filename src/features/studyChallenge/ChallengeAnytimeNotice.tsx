@@ -72,7 +72,7 @@ const CAUTIONS: { label: string; detail: string }[] = [
             + "itself at \"you're in 6 challenges\" until they resolve or are deleted.",
     },
     {
-        label: "On prod, parked challenges resolve themselves later",
+        label: "On PPE, parked challenges resolve themselves later",
         detail:
             "The hourly maintenance job expires or no-contests a challenge once its parked week "
             + "actually passes. Not installed on dev, where they sit until deleted.",

@@ -8,7 +8,7 @@ import { ARENA_SIZE } from '../contracts/wire.js';
  * Arena FORMATION TIMING and straggler seating (docs/ARENA_FEATURE.md § 5.3).
  *
  * ── Why this file exists ─────────────────────────────────────────────────────
- * On 2026-08-17 the prod formation run fired at 21:06 local SUNDAY — roughly 31
+ * On 2026-08-17 the PPE formation run fired at 21:06 local SUNDAY — roughly 31
  * hours before the Tuesday 03:00 snapshot it was supposed to take — because
  * `arenaFormationAt` was written, exported and never called. The bucket froze
  * around the five accounts that had opted in by then, and `arenaExistsForBucket`
@@ -18,7 +18,7 @@ import { ARENA_SIZE } from '../contracts/wire.js';
  * Neither half of that produced an error: `formed 0` is also what a correct
  * quiet hour looks like. So the timing gate, the straggler seating that was
  * supposed to catch late arrivals, and the stranded-member alarm are all
- * asserted directly here rather than left to be noticed in production.
+ * asserted directly here rather than left to be noticed in PPE.
  *
  * These run against a fake DAL — the hazard is service-layer control flow
  * (which hour acts, and on whom), not SQL.
@@ -28,7 +28,7 @@ import { ARENA_SIZE } from '../contracts/wire.js';
 const LA_WEEK_START = new Date('2026-08-18T11:00:00Z');
 /** The 03:00 local snapshot instant for that week. */
 const LA_FORMATION_AT = new Date('2026-08-18T10:00:00Z');
-/** The real instant prod formed at: Sunday 21:06 local, 31h early. */
+/** The real instant PPE formed at: Sunday 21:06 local, 31h early. */
 const THE_BAD_HOUR = new Date('2026-08-17T04:06:01Z');
 /** The hourly tick that lands just after the week goes live. */
 const FIRST_LIVE_TICK = new Date('2026-08-18T11:06:00Z');
@@ -130,7 +130,7 @@ function seatedHumans(state: FakeState): string[] {
 describe('formArenas — the formation window', () => {
   it('does NOT form a bucket before its 03:00 snapshot, however many candidates are waiting', async () => {
     // THE REGRESSION. This is the exact instant, timezone and population shape
-    // of the 2026-08-17 prod run.
+    // of the 2026-08-17 PPE run.
     const { svc, state } = service([candidate('early-bird')]);
 
     const formed = await svc.formArenas(THE_BAD_HOUR);
@@ -238,7 +238,7 @@ describe('tick — the stranded alarm', () => {
   });
 
   it('counts an opted-in member whose week is live and who has no arena', async () => {
-    // Simulates the prod state: seating is broken, the week has opened anyway.
+    // Simulates the PPE state: seating is broken, the week has opened anyway.
     const { dal } = fakeDAL([candidate('abandoned')]);
     const broken: IArenaDAL = {
       ...dal,

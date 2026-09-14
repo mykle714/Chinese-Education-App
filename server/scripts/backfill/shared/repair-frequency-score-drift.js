@@ -21,8 +21,8 @@
  *   - Leaves one-sided nulls alone; filling them is the owning backfill's job.
  *
  * Usage (from the backend container, so it sees .env.docker):
- *   docker exec cow-backend-local npx tsx scripts/backfill/shared/repair-frequency-score-drift.js --dry-run
- *   docker exec cow-backend-local npx tsx scripts/backfill/shared/repair-frequency-score-drift.js
+ *   docker exec cow-backend npx tsx scripts/backfill/shared/repair-frequency-score-drift.js --dry-run
+ *   docker exec cow-backend npx tsx scripts/backfill/shared/repair-frequency-score-drift.js
  *   ... --language=zh            # default: both zh and es
  *   ... --discoverable-only      # only rows that actually ship
  *   ... --words=自,讨论           # scope to specific headwords

@@ -13,10 +13,10 @@
  * caching engages automatically if the rules grow.)
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js               # full backfill (serial)
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --batch       # full backfill via Batches API (50% price)
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --spot-check  # test 5 entries
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-hsk-level.js               # full backfill (serial)
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-hsk-level.js --batch       # full backfill via Batches API (50% price)
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-hsk-level.js --spot-check  # test 5 entries
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-hsk-level.js --words=未来,摸脉
  */
 
 import dotenv from 'dotenv';

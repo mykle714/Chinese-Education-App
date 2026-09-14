@@ -722,7 +722,7 @@ multiplication are not implemented at all — both asset pools (`NIGHT_MARKET_BA
 `NIGHT_MARKET_UNLOCK_POOL`) are empty, so there is no stand art to synthesize.
 
 Each 2s window is also shipped to the client-diagnostics pipeline (`kind: "frame"` /
-`"frame-worst"`, labelled `peds=N`) so a synthetic run and real prod telemetry are read by the same
+`"frame-worst"`, labelled `peds=N`) so a synthetic run and real PPE telemetry are read by the same
 analyzer — see [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md) § Frame records. That leg
 needs `localStorage.perfDiag = '1'` as well; the console line needs only `nmpPerf`.
 

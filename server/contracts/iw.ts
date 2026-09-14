@@ -545,7 +545,7 @@ export interface IWNpcAction extends IWSelectable {
    * ({@link IWConversation.selectable}) is opt-IN for exactly the same reason, since a
    * conversation is NOT selectable today.
    *
-   * ⚠️ THIS REPLACES A PROSE WORKAROUND, and that is the argument for it. Prod's first scene
+   * ⚠️ THIS REPLACES A PROSE WORKAROUND, and that is the argument for it. PPE's first scene
    * carries an action whose `when` reads *"Do not pick, triggered by interaction"* — an
    * instruction to the model, written into the field the model chooses BY, hoping it declines
    * an option it was nonetheless offered. That is unenforceable by construction: the whole
@@ -711,7 +711,7 @@ export interface IWConversation extends IWSelectable {
    *
    * Opt-IN, and the polarity is the point: every conversation authored before this field
    * existed was reachable only through a `start_conversation` step, and flipping them all to
-   * spontaneous would change what those scenes do. Prod's "Taking the companion's order" is
+   * spontaneous would change what those scenes do. PPE's "Taking the companion's order" is
    * the case that proves it — it is a *sub-step* of 王婶's order-taking script, and a version
    * of it that could also fire on its own would have her taking the companion's order twice.
    *

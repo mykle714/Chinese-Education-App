@@ -3,7 +3,7 @@
 ## Overview
 This project is developed natively on Windows while using Docker containerization for all services. This approach provides a modern development experience on Windows with parity to the production Ubuntu deployment environment.
 
-**Important:** Windows development introduces several environment-specific considerations that must be managed to ensure compatibility between Windows development and Linux production containers. This guide documents these challenges and their solutions.
+**Important:** Windows development introduces several environment-specific considerations that must be managed to ensure compatibility between Windows development and Linux PPE containers. This guide documents these challenges and their solutions.
 
 ---
 
@@ -43,7 +43,7 @@ This project is developed natively on Windows while using Docker containerizatio
    *.py text eol=lf
    Dockerfile text eol=lf
    docker-compose.yml text eol=lf
-   docker-compose.prod.yml text eol=lf
+   docker-compose.ppe.yml text eol=lf
    .env* text eol=lf
    ```
 
@@ -296,7 +296,7 @@ This project is developed natively on Windows while using Docker containerizatio
 - [ ] Test entire stack on Ubuntu target machine
 - [ ] Verify all volume mounts work with Ubuntu paths
 - [ ] Confirm Docker configurations work without modification
-- [ ] Test in production environment before full deployment
+- [ ] Test in PPE environment before full deployment
 
 ---
 

@@ -27,7 +27,7 @@ router.post('/api/arena/message', authenticateToken, handle(arenaController.setM
 // ── Coarse location (opt-in, clearable) ──
 router.post('/api/arena/location', authenticateToken, handle(arenaController.setLocation, arenaController));
 
-// ── Manual tick. The cron is prod-only, so dev needs this or the feature
+// ── Manual tick. The cron is PPE-only, so dev needs this or the feature
 //    cannot be exercised locally at all. Validator-gated inside the controller.
 router.post('/api/arena/admin/tick', authenticateToken, handle(arenaController.adminTick, arenaController));
 

@@ -1,28 +1,28 @@
-# Deploy to Production
+# Deploy to PPE
 
-Deploy the current branch to the production server at 174.127.171.187.
+Deploy the current branch to the PPE server at 174.127.171.187.
 
 ## ⚠️ FIRST: Which machine are you on?
 
-Before doing anything else, read [amIOnTheProdMachine.md](../../amIOnTheProdMachine.md)
-(gitignored, present on every machine) to determine dev vs prod. Your entire role
+Before doing anything else, read [machineEnvironment.md](../../machineEnvironment.md)
+(gitignored, present on every machine) to determine dev vs PPE. Your entire role
 depends on the answer:
 
-- **If this is the PROD machine** — you have direct Docker + repo access to prod, so
+- **If this is the PPE machine** — you have direct Docker + repo access to PPE, so
   **run the deploy commands yourself** (`git pull`, `docker-compose ... down`,
   `up --build -d`, migrations, verification). Do not hand them off as a copy-paste
   block; execute them. The only exceptions are commands that need an interactive
   `sudo` password — you cannot supply the password non-interactively, so ask the
   user to run just those. (The maintenance-schedule install is **no longer** one of
   them: it is a systemd *user* timer and needs no privilege. See Step 3.) Since rebuilding
-  prod containers briefly takes the live site down for real users, confirm with the
+  PPE containers briefly takes the live site down for real users, confirm with the
   user before running the `down`/`up --build` step unless they've already told you to
   proceed.
 
 - **If this is the DEV machine** — prepare the code first: run `npm run build`, run the
   tests, then commit and push to `origin main`. Then **run the deploy yourself over SSH**
-  — see [`/ssh-prod`](./ssh-prod.md). Prod is a separate machine, but it is reachable from
-  the dev box at `michael@174.127.171.187` with `~/.ssh/id_ed25519_cow_prod`, so there is
+  — see [`/ssh-ppe`](./ssh-ppe.md). PPE is a separate machine, but it is reachable from
+  the dev box at `michael@174.127.171.187` with `~/.ssh/id_ed25519_cow_ppe`, so there is
   no need to hand the user a copy-paste block.
 
   The confirmation rule is unchanged and matters more here, not less: the
@@ -34,26 +34,27 @@ depends on the answer:
 
 ## Environment
 
-- **Server**: 174.127.171.187 (hostname `beech-2025`) — a **separate machine from dev**, reachable over SSH (see [`/ssh-prod`](./ssh-prod.md)). Dev runs only `cow-*-local` containers; prod runs only `cow-*-prod`. An older version of this doc claimed they were the same machine with containers side by side — that was wrong, as was the address `174.127.171.180` (nothing answers there).
+- **Server**: 174.127.171.187 (hostname `beech-2025`) — a **separate machine from dev**, reachable over SSH (see [`/ssh-ppe`](./ssh-ppe.md)). Both machines use the same `cow-*` container names, so tell them apart by `hostname`
+(`beech-2025` = PPE) or `machineEnvironment.md`, never by container name. An older version of this doc claimed they were the same machine with containers side by side — that was wrong, as was the address `174.127.171.180` (nothing answers there).
 - **App directory**: `~/vocabulary-app`
 - **Domain**: `mren.me` — Cloudflare Flexible SSL (Cloudflare terminates HTTPS; server only needs to serve HTTP on port 80)
-- **Access**: When you are invoked *on the prod machine* you have direct Docker + repo access — run the deploy yourself (see "Which machine are you on?" above). When invoked on dev you cannot reach prod at all; only build/test/commit/push. Fall back to handing the user a copy-paste block only for prod commands you genuinely cannot run (e.g. interactive `sudo`).
+- **Access**: When you are invoked *on the PPE machine* you have direct Docker + repo access — run the deploy yourself (see "Which machine are you on?" above). When invoked on dev you cannot reach PPE at all; only build/test/commit/push. Fall back to handing the user a copy-paste block only for PPE commands you genuinely cannot run (e.g. interactive `sudo`).
 - **Deployment type**: "Future Updates" only (no initial setup needed)
 
 ## Port Layout
 
 | Port | Service | Notes |
 |------|---------|-------|
-| 80 | `cow-frontend-prod` (Docker) | Prod nginx — serves static build + proxies `/api` to backend |
-| 443 | `cow-frontend-prod` (Docker) | Mapped but nginx inside only listens on 80; Cloudflare handles SSL |
-| 5002 | `cow-backend-prod` (Docker) | Prod backend, bound to `127.0.0.1` only |
-| 5432 | `cow-postgres-prod` (Docker) | Prod DB, bound to `127.0.0.1` only |
-| 3000 | `cow-frontend-local` (Docker) | Dev Vite server — do NOT expose at `mren.me` |
-| 5001 | `cow-backend-local` (Docker) | Dev backend |
-| 5433 | `cow-postgres-local` (Docker) | Dev DB |
+| 80 | `cow-frontend` (Docker) | PPE nginx — serves static build + proxies `/api` to backend |
+| 443 | `cow-frontend` (Docker) | Mapped but nginx inside only listens on 80; Cloudflare handles SSL |
+| 5002 | `cow-backend` (Docker) | PPE backend, bound to `127.0.0.1` only |
+| 5432 | `cow-postgres` (Docker) | PPE DB, bound to `127.0.0.1` only |
+| 3000 | `cow-frontend` (Docker) | Dev Vite server — do NOT expose at `mren.me` |
+| 5001 | `cow-backend` (Docker) | Dev backend |
+| 5433 | `cow-postgres` (Docker) | Dev DB |
 | 8080 | `cow-adminer` (Docker) | DB admin UI |
 
-**Critical**: A host nginx process (`systemctl`) was previously misconfigured to proxy `mren.me` to the dev Vite server on port 3000. The Vite dev build hardcodes `API_BASE_URL = "http://localhost:5000"`, which resolves to the **user's own machine** — causing "Load failed" on login. The prod Docker frontend serves a production build where `API_BASE_URL = ""` (relative URLs), which routes correctly through nginx. **If the host nginx is running, it must be stopped before starting prod containers** (port conflict on 80).
+**Critical**: A host nginx process (`systemctl`) was previously misconfigured to proxy `mren.me` to the dev Vite server on port 3000. The Vite dev build hardcodes `API_BASE_URL = "http://localhost:5000"`, which resolves to the **user's own machine** — causing "Load failed" on login. The PPE Docker frontend serves a production build where `API_BASE_URL = ""` (relative URLs), which routes correctly through nginx. **If the host nginx is running, it must be stopped before starting PPE containers** (port conflict on 80).
 
 ## Required Files
 
@@ -64,9 +65,9 @@ depends on the answer:
 
 ## Data Safety
 
-- **Prod postgres volume**: `cow-prod_postgres_data` — holds all real user data
-- **NEVER run** `docker-compose -f docker-compose.prod.yml down -v` — the `-v` flag destroys the volume
-- Dev containers (`cow-*-local`) run on separate ports and do not conflict with prod; leave them running
+- **PPE postgres volume**: `cow_postgres_data` — holds all real user data
+- **NEVER run** `docker-compose -f docker-compose.ppe.yml down -v` — the `-v` flag destroys the volume
+- Dev containers run on a separate machine and do not conflict with PPE; leave them running
 
 ## Database Migrations & Tracking
 
@@ -78,45 +79,45 @@ Migrations are **tracked** in a `schema_migrations` table (defined in `database/
 | `name` | filename, e.g. `54-add-user-last-penalty-date.sql` |
 | `applied_at` | timestamp, defaults to `NOW()` |
 
-**To check which migrations prod has applied** (the authoritative source — do this before deploying to learn what's pending):
+**To check which migrations PPE has applied** (the authoritative source — do this before deploying to learn what's pending):
 
 ```bash
-docker exec cow-postgres-prod psql -U cow_user -d cow_db \
+docker exec cow-postgres psql -U cow_user -d cow_db \
   -c "SELECT version, name, applied_at FROM schema_migrations ORDER BY version;"
 ```
 
-The highest `version` is where prod stands. Pending = any migration file in `database/migrations/` numbered higher.
+The highest `version` is where PPE stands. Pending = any migration file in `database/migrations/` numbered higher.
 
 ### Inferring pending migrations from the last deployed commit (preferred, no DB query)
 
-Prod is a **separate machine** (see Environment above), and its checkout lives at
+PPE is a **separate machine** (see Environment above), and its checkout lives at
 `~/vocabulary-app` on that box — so every command in this section runs **over SSH on
-prod**, not against the dev repo. The commit prod is currently serving is that
+PPE**, not against the dev repo. The commit PPE is currently serving is that
 checkout's `HEAD` **before** the `git pull`. Diffing that commit against what you're
 about to deploy tells you exactly which migration files this deploy introduces —
-without needing to read the prod DB.
+without needing to read the PPE DB.
 
-#### ⚠️ First check that prod has not DIVERGED from `origin/main`
+#### ⚠️ First check that PPE has not DIVERGED from `origin/main`
 
-The inference below is only valid when prod's `HEAD` is an **ancestor** of
-`origin/main`. It is not always: work sometimes gets committed **directly on prod**
+The inference below is only valid when PPE's `HEAD` is an **ancestor** of
+`origin/main`. It is not always: work sometimes gets committed **directly on PPE**
 (the hourly oracle cron runs there, so its failures get fixed there), and such commits
-are easy to leave unpushed. On 2026-08-31 prod was found 1 ahead / 3 behind. A diverged
-prod breaks this step **silently** — `HEAD..origin/main` returns an empty file list, so
+are easy to leave unpushed. On 2026-08-31 PPE was found 1 ahead / 3 behind. A diverged
+PPE breaks this step **silently** — `HEAD..origin/main` returns an empty file list, so
 a deploy with pending migrations reports "no migrations" and the block omits them.
 
-Run this FIRST, on prod:
+Run this FIRST, on PPE:
 
 ```bash
 cd ~/vocabulary-app
 git fetch origin main
-# "<behind>\t<ahead>" — left = commits on origin/main that prod lacks,
-# right = commits on prod that origin/main lacks.
+# "<behind>\t<ahead>" — left = commits on origin/main that PPE lacks,
+# right = commits on PPE that origin/main lacks.
 git rev-list --left-right --count origin/main...HEAD
 ```
 
-- **right column `0`** — prod is a clean ancestor. Proceed to the inference below.
-- **right column non-zero** — prod has local commits. **Do not `git pull` and do not
+- **right column `0`** — PPE is a clean ancestor. Proceed to the inference below.
+- **right column non-zero** — PPE has local commits. **Do not `git pull` and do not
   `reset --hard`**: the first creates a merge, the second destroys real work. Inspect
   them (`git log --oneline origin/main..HEAD`, `git show <sha>`), then converge with:
 
@@ -126,27 +127,27 @@ git rev-list --left-right --count origin/main...HEAD
   ```
 
   Only then compute the pending set, and use the **post-rebase** `HEAD` of the commit
-  prod was serving (capture `PROD_SHA` *before* the rebase) — or just fall back to the
+  PPE was serving (capture `PPE_SHA` *before* the rebase) — or just fall back to the
   authoritative `schema_migrations` query, which is unaffected by any of this.
 
-Also worth checking in the same pass: `git status --short` on prod. Untracked files
+Also worth checking in the same pass: `git status --short` on PPE. Untracked files
 there (e.g. `docs/oracle-runs/*`) are normal cron output and need no action, but a
-**modified tracked file** means someone hand-edited prod and the pull will conflict.
+**modified tracked file** means someone hand-edited PPE and the pull will conflict.
 
 #### Computing the pending set
 
 Run this **before** the deploy block:
 
 ```bash
-# Commit prod is currently on (read its checkout's HEAD before pulling):
-PROD_SHA=$(git -C ~/vocabulary-app rev-parse HEAD)
+# Commit PPE is currently on (read its checkout's HEAD before pulling):
+PPE_SHA=$(git -C ~/vocabulary-app rev-parse HEAD)
 
-# Migration files ADDED between prod's commit and what you're deploying (origin/main),
+# Migration files ADDED between PPE's commit and what you're deploying (origin/main),
 # in apply order. --diff-filter=A = only newly-added files (edits to existing
 # migrations are never re-applied; migrations are immutable once shipped).
 git -C ~/vocabulary-app fetch origin main
 git -C ~/vocabulary-app log --name-only --diff-filter=A --pretty=format: \
-  "${PROD_SHA}..origin/main" -- database/migrations/ \
+  "${PPE_SHA}..origin/main" -- database/migrations/ \
   | grep -E '^database/migrations/[0-9]+.*\.sql$' | sort -Vu
 ```
 
@@ -161,7 +162,7 @@ divergence check above has come back clean.
 ⚠️ **If you apply a migration by hand** (`psql -f`) instead of via `migrate.sh`, you MUST also insert a tracking row, or `migrate.sh` will try to re-run it next time:
 
 ```bash
-docker exec cow-postgres-prod psql -U cow_user -d cow_db \
+docker exec cow-postgres psql -U cow_user -d cow_db \
   -c "INSERT INTO schema_migrations (version, name) VALUES (54, '54-add-user-last-penalty-date.sql');"
 ```
 
@@ -187,14 +188,14 @@ Stage and commit all relevant changes, then push to `origin main`.
 
 Determine which migrations are pending using the **"Inferring pending migrations from
 the last deployed commit"** method above — **its divergence check first**, then the
-diff of `prodSHA..origin/main` over `database/migrations/`. This is what drives the inline migration commands in Step 3 —
+diff of `ppeSHA..origin/main` over `database/migrations/`. This is what drives the inline migration commands in Step 3 —
 note the exact filenames + version numbers so they can be dropped into the command
 block verbatim. The `schema_migrations` query is the authoritative fallback if the
 git diff is ambiguous.
 
 ### 3. Tell the user to run on the server
 
-Check if host nginx is running first (`systemctl is-active nginx`). If it is, the user must stop it before starting prod containers.
+Check if host nginx is running first (`systemctl is-active nginx`). If it is, the user must stop it before starting PPE containers.
 
 Always present ALL server commands as a single copy-pasteable block — never split across multiple steps or prose sections. Include the nginx stop if needed.
 
@@ -208,12 +209,12 @@ with two pending migrations (87 and 88) already substituted:
 
 ```bash
 cd ~/vocabulary-app
-sudo systemctl stop nginx   # only needed if host nginx is running — frees port 80 for prod container
+sudo systemctl stop nginx   # only needed if host nginx is running — frees port 80 for PPE container
 git pull origin main
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml up --build -d
+docker-compose -f docker-compose.ppe.yml down
+docker-compose -f docker-compose.ppe.yml up --build -d
 
-# Schedules (prod only) — idempotent; installs/refreshes BOTH hourly systemd USER
+# Schedules (PPE only) — idempotent; installs/refreshes BOTH hourly systemd USER
 # timers from the git-tracked unit templates in database/cron/:
 #   cow-maintenance  HH:01  inactivity penalty + template prune  (docs/STREAK_EXPIRATION_CRON.md)
 #   cow-arena        HH:06  resolve then form arenas             (docs/ARENA_FEATURE.md § 10)
@@ -222,21 +223,21 @@ docker-compose -f docker-compose.prod.yml up --build -d
 # Safe to run every deploy.
 bash database/cron/install-timers.sh
 
-# Migration(s) — one cp + -f + INSERT triple per pending file (inferred from prodSHA..origin/main),
+# Migration(s) — one cp + -f + INSERT triple per pending file (inferred from ppeSHA..origin/main),
 # in sort -V order. Copy file into container, run with -f, then RECORD it in schema_migrations.
 # (never use < redirect, it breaks in pasted blocks; always insert the tracking row so migrate.sh stays correct)
-docker cp database/migrations/87-add-default-icon-results-to-dictionaryentries.sql cow-postgres-prod:/tmp/87-add-default-icon-results-to-dictionaryentries.sql
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/87-add-default-icon-results-to-dictionaryentries.sql
-docker exec cow-postgres-prod psql -U cow_user -d cow_db \
+docker cp database/migrations/87-add-default-icon-results-to-dictionaryentries.sql cow-postgres:/tmp/87-add-default-icon-results-to-dictionaryentries.sql
+docker exec cow-postgres psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/87-add-default-icon-results-to-dictionaryentries.sql
+docker exec cow-postgres psql -U cow_user -d cow_db \
   -c "INSERT INTO schema_migrations (version, name) VALUES (87, '87-add-default-icon-results-to-dictionaryentries.sql');"
 
-docker cp database/migrations/88-add-snap-config-to-vocabentries.sql cow-postgres-prod:/tmp/88-add-snap-config-to-vocabentries.sql
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/88-add-snap-config-to-vocabentries.sql
-docker exec cow-postgres-prod psql -U cow_user -d cow_db \
+docker cp database/migrations/88-add-snap-config-to-vocabentries.sql cow-postgres:/tmp/88-add-snap-config-to-vocabentries.sql
+docker exec cow-postgres psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/88-add-snap-config-to-vocabentries.sql
+docker exec cow-postgres psql -U cow_user -d cow_db \
   -c "INSERT INTO schema_migrations (version, name) VALUES (88, '88-add-snap-config-to-vocabentries.sql');"
 
 # Verify
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.ppe.yml ps
 curl http://localhost/api/health
 ```
 

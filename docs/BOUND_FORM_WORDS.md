@@ -1,6 +1,6 @@
 # Bound-Form Words — the huìzi class
 
-**Status:** the data cleanup is **DONE on prod (2026-08-17)**. The learner-facing
+**Status:** the data cleanup is **DONE on PPE (2026-08-17)**. The learner-facing
 teaching work is **NOT BUILT** — it is tracked as an open item in
 [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 2 and specified in § 4 below.
 
@@ -75,7 +75,7 @@ carried it while discoverable were free high-frequency characters (`上`, `会`,
 
 ## 3. How the list was derived
 
-A 2026-08-17 audit of prod det (114,774 rows) used two detectors. **Neither is
+A 2026-08-17 audit of PPE det (114,774 rows) used two detectors. **Neither is
 sufficient alone** — each caught what the other missed:
 
 | detector | method | caught | missed |
@@ -94,7 +94,7 @@ The canonical machine-readable copy is
 `server/scripts/backfill/shared/lib/boundForms.js` → `ZH_BOUND_FORMS`. **That file is
 the authority; this table is the prose mirror.** Keep them in sync.
 
-### 4a. Were in det, removed from prod 2026-08-17
+### 4a. Were in det, removed from PPE 2026-08-17
 
 | base | pinyin | gloss | frames | det id (deleted) |
 |---|---|---|---|---|
@@ -141,7 +141,7 @@ set that fits on one screen and does not grow.
 | `server/scripts/backfill/promote-discoverable.js` | `main` | refuses to promote, checked **before** the discoverable/readiness branches so an already-promoted bound form is reported loudly (`⛔ … ⚠️ ALREADY DISCOVERABLE`) rather than counted as a benign "already discoverable" |
 
 The hosted forms are unaffected and still import and promote normally: `一会儿`,
-`一下子`, `一下儿`, `一家子` are discoverable on prod today.
+`一下子`, `一下儿`, `一家子` are discoverable on PPE today.
 
 ### What the 2026-08-17 cleanup did
 

@@ -1885,8 +1885,8 @@ viewer would have watched their chip dissolve into their row.
 suite clean. The board itself (`.bd`) had already landed with A7; what this entry added is
 the banner, the state chrome around it, and the twelve-rung material ladder.
 
-Arena is **built on dev, not on prod** — check `docs/ARENA_FEATURE.md` before assuming a
-field exists on prod.
+Arena is **built on dev, not on PPE** — check `docs/ARENA_FEATURE.md` before assuming a
+field exists on PPE.
 
 ### The division banner replaced a tinted card — and `.ladder` with it
 

@@ -82,7 +82,7 @@ revoke moment is preserved), `revokeAllForUser`. Wired in `server/dal/setup.ts`
   (sent with every request); the refresh cookie is path `/api/auth` (only sent to
   refresh/logout/delete-account, shrinking exposure). **`clearCookie` must use the
   same path + flags or the browser keeps the cookie.** Both cookies carry
-  `secure: true` when `NODE_ENV === 'production'` (prod is HTTPS-only; dev is
+  `secure: true` when `NODE_ENV === 'production'` (PPE is HTTPS-only; dev is
   http://localhost where `secure` would drop the cookies).
 - `login` — authenticate → `issueRefreshToken` → `setAuthCookies`. The refresh
   token is **cookie-only**, never in the response body.

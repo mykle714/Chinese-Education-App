@@ -333,7 +333,7 @@ JSONB array keyed by the cluster's `sense` label. Only generated for `language =
 ### Backfill
 
 ```bash
-docker exec cow-backend-local ./node_modules/.bin/tsx scripts/backfill/chinese/backfill-long-definitions.js
+docker exec cow-backend ./node_modules/.bin/tsx scripts/backfill/chinese/backfill-long-definitions.js
 ```
 
 (The old combined `backfill-short-long-definitions.js` was split in commit `fcbaef1`;

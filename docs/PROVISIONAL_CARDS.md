@@ -1,6 +1,6 @@
 # Provisional Cards — nothing blocks on card count
 
-**Status:** implemented and on prod (migration 140, shipped 2026-08-08).
+**Status:** implemented and on PPE (migration 140, shipped 2026-08-08).
 
 ---
 
@@ -506,10 +506,10 @@ column leaks nothing: every English card is unbadged whatever its partner is.
 
 ⚠️ **Deploy caveat.** `GET /api/icons8/:id/image` does **not** lazily download — it 404s
 on a missing row, unlike `POST /api/icons8/:id/ensure` (`Icons8Controller`). The `icons8`
-table syncs prod → dev only (`/data-prod-to-dev`), so a row present on a dev box is not
-evidence it is on prod. `LentCardIcon` therefore hides itself on image error: a missing
+table syncs PPE → dev only (`/data-ppe-to-dev`), so a row present on a dev box is not
+evidence it is on PPE. `LentCardIcon` therefore hides itself on image error: a missing
 icon degrades to no badge rather than a broken-image glyph on every card. Before this
-ships, confirm the id exists on prod (`SELECT 1 FROM icons8 WHERE "icons8Id" = '15850'`)
+ships, confirm the id exists on PPE (`SELECT 1 FROM icons8 WHERE "icons8Id" = '15850'`)
 and `POST /api/icons8/15850/ensure` there if it does not.
 
 ### After the round — `src/components/ProvisionalSortOffer.tsx`

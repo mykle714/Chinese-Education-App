@@ -58,9 +58,9 @@
  * every value respects the budget.
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js              # full backfill
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js --spot-check # test 5 entries
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=快,打
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-long-definitions.js              # full backfill
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-long-definitions.js --spot-check # test 5 entries
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=快,打
  */
 
 import dotenv from 'dotenv';

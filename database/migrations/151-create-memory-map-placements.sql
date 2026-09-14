@@ -2,7 +2,7 @@
 --
 -- See docs/MEMORY_MAP_GAME.md (§ 8 is the signed-off data model, 2026-08-18).
 --
--- NUMBERED 151: 150 (the study-challenge week-index rename) is applied on prod and
+-- NUMBERED 151: 150 (the study-challenge week-index rename) is applied on PPE and
 -- its runbook is retired, so this simply takes the next free number.
 --
 -- NO OWN TRANSACTION: migrate.sh already wraps each file in one. A file that opens

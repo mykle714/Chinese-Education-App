@@ -5,7 +5,7 @@
 -- two columns must be DEPLOYED BEFORE this file runs, or every flashcard mark and undo
 -- errors on a missing column. The standard /deploy order already satisfies this: the
 -- deploy block runs `docker-compose up --build -d` (new code) BEFORE the migration
--- commands, so no runbook is needed — just do not run this file against a prod box that
+-- commands, so no runbook is needed — just do not run this file against a PPE box that
 -- has not been rebuilt from this commit.
 --
 -- WHY THEY EXISTED

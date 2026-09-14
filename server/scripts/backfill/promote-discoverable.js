@@ -27,9 +27,9 @@
  * blocker (the pending step names) so the caller re-runs the right script rather than
  * forcing the flag.
  *
- *   server/scripts/backfill/run-prod.sh scripts/backfill/promote-discoverable.js --words=未来,摸脉
- *   server/scripts/backfill/run-prod.sh scripts/backfill/promote-discoverable.js --words=未来,摸脉 --apply
- *   server/scripts/backfill/run-prod.sh scripts/backfill/promote-discoverable.js --limit=200 --apply  # sweep the backlog
+ *   server/scripts/backfill/run-ppe.sh scripts/backfill/promote-discoverable.js --words=未来,摸脉
+ *   server/scripts/backfill/run-ppe.sh scripts/backfill/promote-discoverable.js --words=未来,摸脉 --apply
+ *   server/scripts/backfill/run-ppe.sh scripts/backfill/promote-discoverable.js --limit=200 --apply  # sweep the backlog
  *
  * Referenced by: .claude/commands/oracle-backfill.md §3b, docs/DISCOVER_LAZY_ENRICHMENT.md §4b.
  */

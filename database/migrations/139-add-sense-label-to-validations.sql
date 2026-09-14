@@ -56,6 +56,6 @@ ALTER TABLE validations
 
 COMMENT ON TABLE validations IS
     'Human validation records (approve/flag + reviewed content) per (entry, field, senseLabel). '
-    'Kept off the det tables so prod data deploys (TRUNCATE+restore of dictionaryentries_*) never '
+    'Kept off the det tables so PPE data deploys (TRUNCATE+restore of dictionaryentries_*) never '
     'wipe them; backfills skip fields recorded here. senseLabel is '''' for entry-level fields and '
     'a definitionClusters[].sense label for per-sense fields. See docs/DATA_VALIDATION_SYSTEM.md.';

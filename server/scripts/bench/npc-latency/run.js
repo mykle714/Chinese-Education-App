@@ -58,7 +58,7 @@ async function runAnthropic(candidate, apiKey, scenario) {
     model: candidate.model,
     max_tokens: scenario.maxTokens,
     // The stable half rides a cache_control block exactly as the shipped dictionary path
-    // does, so the bench measures the prefill cost we would ACTUALLY pay in production.
+    // does, so the bench measures the prefill cost we would ACTUALLY pay in PPE.
     system: [{ type: 'text', text: scenario.system, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: scenario.user }],
   };

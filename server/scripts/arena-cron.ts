@@ -1,5 +1,5 @@
 /**
- * arena-cron.ts — the hourly prod driver for the Arena (docs/ARENA_FEATURE.md § 10).
+ * arena-cron.ts — the hourly PPE driver for the Arena (docs/ARENA_FEATURE.md § 10).
  *
  * WHY A SEPARATE FILE FROM arena-tick.ts. `arena-tick.ts` is the DEV trigger and
  * carries test scaffolding — most importantly `--seed-opt-ins`, which opts every
@@ -24,8 +24,8 @@
  * visible in `systemctl --user status cow-arena` instead of being buried in the
  * log file, so every failure path must exit 1.
  *
- * Run on prod by the cow-arena systemd user timer:
- *   docker exec cow-backend-prod node dist/scripts/arena-cron.js
+ * Run on PPE by the cow-arena systemd user timer:
+ *   docker exec cow-backend node dist/scripts/arena-cron.js
  */
 import { arenaService } from '../dal/setup.js';
 

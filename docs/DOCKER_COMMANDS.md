@@ -1,21 +1,23 @@
 # Docker Container Management Guide
 
-This document provides essential Docker commands for managing both development and production environment containers.
+This document provides essential Docker commands for managing both development and PPE environment containers.
 
 ## Container Names
 
 ### Development Environment (`name: cow-dev`)
-- `cow-frontend-local` - Frontend Vite dev server (host port 3000)
-- `cow-backend-local` - Backend Node.js server (host port 5001 → internal 5000)
-- `cow-postgres-local` - PostgreSQL database (host port 5433 → internal 5432)
+- `cow-frontend` - Frontend Vite dev server (host port 3000)
+- `cow-backend` - Backend Node.js server (host port 5001 → internal 5000)
+- `cow-postgres` - PostgreSQL database (host port 5433 → internal 5432)
 - `cow-adminer` - Adminer DB UI (host port 8080)
 
-### Production Environment (`name: cow-prod`)
-- `cow-frontend-prod` - Frontend Nginx server (ports 80, 443)
-- `cow-backend-prod` - Backend Node.js server (host port 5002 → internal 5000)
-- `cow-postgres-prod` - PostgreSQL database (host port 127.0.0.1:5432 → internal 5432)
+### PPE Environment (`name: cow-ppe`)
+- `cow-frontend` - Frontend Nginx server (ports 80, 443)
+- `cow-backend` - Backend Node.js server (host port 5002 → internal 5000)
+- `cow-postgres` - PostgreSQL database (host port 127.0.0.1:5432 → internal 5432)
 
-**Note:** Both compose files have explicit `name:` fields to prevent cross-contamination when run from the same directory. Production commands require `sudo`.
+**Note:** Only the PPE compose file sets `name:` (`cow-ppe`); the dev file has none, so its
+project defaults to the directory name (`cow`). Both pin the Postgres volume to
+`cow_postgres_data`, so the project name never decides which data a stack mounts.
 
 ---
 
@@ -61,52 +63,52 @@ docker-compose restart
 
 ### Install npm Package in Frontend Container
 ```bash
-docker exec cow-frontend-local npm install <package-name>
+docker exec cow-frontend npm install <package-name>
 ```
 
 ### Install npm Package in Backend Container
 ```bash
-docker exec cow-backend-local npm install <package-name>
+docker exec cow-backend npm install <package-name>
 ```
 
 ### Uninstall npm Package
 ```bash
-docker exec cow-frontend-local npm uninstall <package-name>
+docker exec cow-frontend npm uninstall <package-name>
 ```
 
 ### Example: Installing lodash
 ```bash
-docker exec cow-frontend-local npm install lodash @types/lodash
+docker exec cow-frontend npm install lodash @types/lodash
 ```
 
 ## Viewing Container Logs
 
 ### View Recent Logs
 ```bash
-docker logs cow-frontend-local --tail 30
+docker logs cow-frontend --tail 30
 ```
 
 ### Follow Logs in Real-Time
 ```bash
-docker logs cow-frontend-local -f
+docker logs cow-frontend -f
 ```
 
 ### View Logs from Last N Minutes
 ```bash
-docker logs cow-frontend-local --since 5m
+docker logs cow-frontend --since 5m
 ```
 
 ### View Logs with Filtering
 ```bash
-docker logs cow-frontend-local 2>&1 | grep -i error
-docker logs cow-frontend-local 2>&1 | grep -E "(ready|Network)"
+docker logs cow-frontend 2>&1 | grep -i error
+docker logs cow-frontend 2>&1 | grep -E "(ready|Network)"
 ```
 
 ## Cache and Build Management
 
 ### Clear Vite Cache (Frontend)
 ```bash
-docker exec cow-frontend-local rm -rf node_modules/.vite
+docker exec cow-frontend rm -rf node_modules/.vite
 ```
 
 ### Rebuild Containers
@@ -132,44 +134,44 @@ docker-compose up -d
 
 ### List Files in Container
 ```bash
-docker exec cow-frontend-local ls -la
-docker exec cow-frontend-local ls node_modules | grep lodash
+docker exec cow-frontend ls -la
+docker exec cow-frontend ls node_modules | grep lodash
 ```
 
 ### Execute Commands in Container
 ```bash
-docker exec cow-frontend-local <command>
+docker exec cow-frontend <command>
 ```
 
 ### Open Shell in Container
 ```bash
-docker exec -it cow-frontend-local sh
+docker exec -it cow-frontend sh
 # or for bash
-docker exec -it cow-frontend-local bash
+docker exec -it cow-frontend bash
 ```
 
 ## Troubleshooting Steps
 
 ### When Frontend Won't Start
-1. Check logs: `docker logs cow-frontend-local --tail 50`
-2. Clear Vite cache: `docker exec cow-frontend-local rm -rf node_modules/.vite`
+1. Check logs: `docker logs cow-frontend --tail 50`
+2. Clear Vite cache: `docker exec cow-frontend rm -rf node_modules/.vite`
 3. Restart container: `docker-compose restart frontend`
 4. If still failing, rebuild: `docker-compose build frontend && docker-compose up -d frontend`
 
 ### When Package Import Fails (e.g., "Failed to resolve import")
-1. Verify package is installed: `docker exec cow-frontend-local ls node_modules | grep <package>`
-2. Install if missing: `docker exec cow-frontend-local npm install <package>`
-3. Clear Vite cache: `docker exec cow-frontend-local rm -rf node_modules/.vite`
+1. Verify package is installed: `docker exec cow-frontend ls node_modules | grep <package>`
+2. Install if missing: `docker exec cow-frontend npm install <package>`
+3. Clear Vite cache: `docker exec cow-frontend rm -rf node_modules/.vite`
 4. Restart container: `docker-compose restart frontend`
 
 ### When Backend Has Issues
-1. Check logs: `docker logs cow-backend-local --tail 50`
+1. Check logs: `docker logs cow-backend --tail 50`
 2. Restart: `docker-compose restart backend`
 3. Check database connection: Verify postgres container is running
 
 ### When Database Connection Fails
 1. Check postgres is running: `docker-compose ps`
-2. Check logs: `docker logs cow-postgres-local --tail 30`
+2. Check logs: `docker logs cow-postgres --tail 30`
 3. Restart postgres: `docker-compose restart postgres`
 
 ## Common Workflow After Code Changes
@@ -180,7 +182,7 @@ docker exec -it cow-frontend-local bash
 npm install <package>
 
 # Then install in container
-docker exec cow-frontend-local npm install
+docker exec cow-frontend npm install
 
 # Restart to ensure changes are picked up
 docker-compose restart frontend
@@ -211,7 +213,7 @@ docker stats
 
 ### Check Container Health
 ```bash
-docker inspect cow-frontend-local | grep -A 10 State
+docker inspect cow-frontend | grep -A 10 State
 ```
 
 ## Network Troubleshooting
@@ -224,7 +226,7 @@ docker network inspect cow-network
 
 ### Test Backend from Frontend Container
 ```bash
-docker exec cow-frontend-local curl http://backend:5000/api/health
+docker exec cow-frontend curl http://backend:5000/api/health
 ```
 
 ## Best Practices
@@ -242,17 +244,17 @@ docker exec cow-frontend-local curl http://backend:5000/api/health
 |------|---------|
 | View all containers | `docker-compose ps` |
 | Restart frontend | `docker-compose restart frontend` |
-| Install package | `docker exec cow-frontend-local npm install <pkg>` |
-| View logs | `docker logs cow-frontend-local --tail 30` |
-| Clear Vite cache | `docker exec cow-frontend-local rm -rf node_modules/.vite` |
+| Install package | `docker exec cow-frontend npm install <pkg>` |
+| View logs | `docker logs cow-frontend --tail 30` |
+| Clear Vite cache | `docker exec cow-frontend rm -rf node_modules/.vite` |
 | Rebuild container | `docker-compose build frontend && docker-compose up -d` |
-| Open shell | `docker exec -it cow-frontend-local sh` |
+| Open shell | `docker exec -it cow-frontend sh` |
 
 ---
 
-# PRODUCTION COMMANDS
+# PPE COMMANDS
 
-All production commands use `docker-compose -f docker-compose.prod.yml`.
+All PPE commands use `docker-compose -f docker-compose.ppe.yml`.
 
 ## Basic Container Operations
 
@@ -263,184 +265,184 @@ cd ~/vocabulary-app
 
 ### List Running Containers
 ```bash
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.ppe.yml ps
 ```
 
 ### List All Services
 ```bash
-docker-compose -f docker-compose.prod.yml config --services
+docker-compose -f docker-compose.ppe.yml config --services
 ```
 
 ### Start All Containers
 ```bash
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.ppe.yml up -d
 ```
 
 ### Start with Rebuild (After Code Changes)
 ```bash
-docker-compose -f docker-compose.prod.yml up -d --build
+docker-compose -f docker-compose.ppe.yml up -d --build
 ```
 
 ### Stop All Containers
 ```bash
-docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.ppe.yml down
 ```
 
 ### Stop and Remove Volumes (Clean Slate)
 ```bash
-docker-compose -f docker-compose.prod.yml down -v
+docker-compose -f docker-compose.ppe.yml down -v
 ```
 
 ### Restart Specific Container
 ```bash
-docker-compose -f docker-compose.prod.yml restart frontend
-docker-compose -f docker-compose.prod.yml restart backend
-docker-compose -f docker-compose.prod.yml restart postgres
+docker-compose -f docker-compose.ppe.yml restart frontend
+docker-compose -f docker-compose.ppe.yml restart backend
+docker-compose -f docker-compose.ppe.yml restart postgres
 ```
 
 ### Restart All Containers
 ```bash
-docker-compose -f docker-compose.prod.yml restart
+docker-compose -f docker-compose.ppe.yml restart
 ```
 
 ## Viewing Container Logs
 
 ### View Recent Logs (All Services)
 ```bash
-docker-compose -f docker-compose.prod.yml logs
+docker-compose -f docker-compose.ppe.yml logs
 ```
 
 ### View Logs for Specific Service
 ```bash
-docker-compose -f docker-compose.prod.yml logs frontend
-docker-compose -f docker-compose.prod.yml logs backend
-docker-compose -f docker-compose.prod.yml logs postgres
+docker-compose -f docker-compose.ppe.yml logs frontend
+docker-compose -f docker-compose.ppe.yml logs backend
+docker-compose -f docker-compose.ppe.yml logs postgres
 ```
 
 ### Follow Logs in Real-Time
 ```bash
-docker-compose -f docker-compose.prod.yml logs -f
-docker-compose -f docker-compose.prod.yml logs -f frontend
-docker-compose -f docker-compose.prod.yml logs -f backend
+docker-compose -f docker-compose.ppe.yml logs -f
+docker-compose -f docker-compose.ppe.yml logs -f frontend
+docker-compose -f docker-compose.ppe.yml logs -f backend
 ```
 
 ### View Last N Lines
 ```bash
-docker logs cow-frontend-prod --tail 50
-docker logs cow-backend-prod --tail 50
-docker logs cow-postgres-prod --tail 50
+docker logs cow-frontend --tail 50
+docker logs cow-backend --tail 50
+docker logs cow-postgres --tail 50
 ```
 
 ### View Logs with Filtering
 ```bash
-docker logs cow-frontend-prod 2>&1 | grep -i error
-docker logs cow-backend-prod 2>&1 | grep -E "(Error|Warning)"
+docker logs cow-frontend 2>&1 | grep -i error
+docker logs cow-backend 2>&1 | grep -E "(Error|Warning)"
 ```
 
 ## Package Management
 
 ### Install npm Package in Backend Container
 ```bash
-docker exec cow-backend-prod npm install <package-name>
+docker exec cow-backend npm install <package-name>
 ```
 
 ### After Installing, Rebuild Container
 ```bash
-docker-compose -f docker-compose.prod.yml build backend
-docker-compose -f docker-compose.prod.yml up -d backend
+docker-compose -f docker-compose.ppe.yml build backend
+docker-compose -f docker-compose.ppe.yml up -d backend
 ```
 
 ## Build and Deployment
 
 ### Rebuild All Containers
 ```bash
-docker-compose -f docker-compose.prod.yml build
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.ppe.yml build
+docker-compose -f docker-compose.ppe.yml up -d
 ```
 
 ### Rebuild Specific Container
 ```bash
-docker-compose -f docker-compose.prod.yml build frontend
-docker-compose -f docker-compose.prod.yml up -d frontend
+docker-compose -f docker-compose.ppe.yml build frontend
+docker-compose -f docker-compose.ppe.yml up -d frontend
 ```
 
 ### Full Clean Rebuild (Nuclear Option)
 ```bash
-docker-compose -f docker-compose.prod.yml down -v
-docker-compose -f docker-compose.prod.yml build --no-cache
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.ppe.yml down -v
+docker-compose -f docker-compose.ppe.yml build --no-cache
+docker-compose -f docker-compose.ppe.yml up -d
 ```
 
 ### Pull Latest Code and Rebuild
 ```bash
 cd ~/vocabulary-app
 git pull origin main
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml up -d --build
+docker-compose -f docker-compose.ppe.yml down
+docker-compose -f docker-compose.ppe.yml up -d --build
 ```
 
 ## File System Operations
 
 ### Execute Commands in Container
 ```bash
-docker exec cow-backend-prod <command>
-docker exec cow-frontend-prod <command>
+docker exec cow-backend <command>
+docker exec cow-frontend <command>
 ```
 
 ### Open Shell in Container
 ```bash
-docker exec -it cow-backend-prod sh
-docker exec -it cow-frontend-prod sh
-docker exec -it cow-postgres-prod sh
+docker exec -it cow-backend sh
+docker exec -it cow-frontend sh
+docker exec -it cow-postgres sh
 ```
 
 ### View Nginx Configuration
 ```bash
-docker exec cow-frontend-prod cat /etc/nginx/conf.d/default.conf
+docker exec cow-frontend cat /etc/nginx/conf.d/default.conf
 ```
 
 ### Test Nginx Configuration
 ```bash
-docker exec cow-frontend-prod nginx -t
+docker exec cow-frontend nginx -t
 ```
 
 ## Database Operations
 
 ### Access PostgreSQL Shell
 ```bash
-docker exec -it cow-postgres-prod psql -U cow_user -d cow_db
+docker exec -it cow-postgres psql -U cow_user -d cow_db
 ```
 
 ### Run SQL Query
 ```bash
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "SELECT version();"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "SELECT version();"
 ```
 
 ### Check Database Connection
 ```bash
-docker exec cow-postgres-prod pg_isready -U cow_user -d cow_db
+docker exec cow-postgres pg_isready -U cow_user -d cow_db
 ```
 
 ### View Database Tables
 ```bash
-docker exec -i cow-postgres-prod psql -U cow_user -d cow_db -c "\dt"
+docker exec -i cow-postgres psql -U cow_user -d cow_db -c "\dt"
 ```
 
 ### Backup Database
 ```bash
-docker exec cow-postgres-prod pg_dump -U cow_user cow_db > backup_$(date +%Y%m%d_%H%M%S).sql
+docker exec cow-postgres pg_dump -U cow_user cow_db > backup_$(date +%Y%m%d_%H%M%S).sql
 ```
 
 ### Restore Database
 ```bash
-cat backup.sql | docker exec -i cow-postgres-prod psql -U cow_user -d cow_db
+cat backup.sql | docker exec -i cow-postgres psql -U cow_user -d cow_db
 ```
 
 ## Health Checks
 
 ### Check Backend Health Endpoint
 ```bash
-# Production backend is bound to host port 5002
+# PPE backend is bound to host port 5002
 curl http://localhost:5002/api/health
 ```
 
@@ -451,8 +453,8 @@ curl http://localhost/
 
 ### Check All Container Health
 ```bash
-docker inspect cow-frontend-prod | grep -A 10 Health
-docker inspect cow-backend-prod | grep -A 10 Health
+docker inspect cow-frontend | grep -A 10 Health
+docker inspect cow-backend | grep -A 10 Health
 ```
 
 ## Troubleshooting
@@ -461,35 +463,35 @@ docker inspect cow-backend-prod | grep -A 10 Health
 
 **Check if container is running:**
 ```bash
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.ppe.yml ps
 ```
 
 **View Nginx logs:**
 ```bash
-docker logs cow-frontend-prod --tail 100
+docker logs cow-frontend --tail 100
 ```
 
 **Check Nginx configuration syntax:**
 ```bash
-docker exec cow-frontend-prod nginx -t
+docker exec cow-frontend nginx -t
 ```
 
 **Restart Nginx:**
 ```bash
-docker-compose -f docker-compose.prod.yml restart frontend
+docker-compose -f docker-compose.ppe.yml restart frontend
 ```
 
 **Rebuild if configuration changed:**
 ```bash
-docker-compose -f docker-compose.prod.yml build frontend
-docker-compose -f docker-compose.prod.yml up -d frontend
+docker-compose -f docker-compose.ppe.yml build frontend
+docker-compose -f docker-compose.ppe.yml up -d frontend
 ```
 
 ### Backend Issues
 
 **Check logs:**
 ```bash
-docker logs cow-backend-prod --tail 100 -f
+docker logs cow-backend --tail 100 -f
 ```
 
 **Test backend directly:**
@@ -499,46 +501,46 @@ curl http://localhost:5000/api/health
 
 **Check environment variables:**
 ```bash
-docker exec cow-backend-prod env | grep -E "(NODE_ENV|DB_|CLIENT_URL)"
+docker exec cow-backend env | grep -E "(NODE_ENV|DB_|CLIENT_URL)"
 ```
 
 **Restart backend:**
 ```bash
-docker-compose -f docker-compose.prod.yml restart backend
+docker-compose -f docker-compose.ppe.yml restart backend
 ```
 
 ### Database Issues
 
 **Check if postgres is running:**
 ```bash
-docker-compose -f docker-compose.prod.yml ps postgres
+docker-compose -f docker-compose.ppe.yml ps postgres
 ```
 
 **View postgres logs:**
 ```bash
-docker logs cow-postgres-prod --tail 50
+docker logs cow-postgres --tail 50
 ```
 
 **Test connection:**
 ```bash
-docker exec cow-postgres-prod pg_isready -U cow_user -d cow_db
+docker exec cow-postgres pg_isready -U cow_user -d cow_db
 ```
 
 **Restart database:**
 ```bash
-docker-compose -f docker-compose.prod.yml restart postgres
+docker-compose -f docker-compose.ppe.yml restart postgres
 ```
 
 ### SSL Certificate Issues
 
 **Check if certificates exist:**
 ```bash
-docker exec cow-frontend-prod ls -la /etc/letsencrypt/live/
+docker exec cow-frontend ls -la /etc/letsencrypt/live/
 ```
 
 **View Nginx SSL configuration:**
 ```bash
-docker exec cow-frontend-prod cat /etc/nginx/conf.d/default.conf | grep ssl
+docker exec cow-frontend cat /etc/nginx/conf.d/default.conf | grep ssl
 ```
 
 **Test SSL locally:**
@@ -550,7 +552,7 @@ curl -I https://localhost
 
 ### Check Resource Usage
 ```bash
-docker stats cow-frontend-prod cow-backend-prod cow-postgres-prod
+docker stats cow-frontend cow-backend cow-postgres
 ```
 
 ### Check Disk Usage
@@ -560,7 +562,7 @@ docker system df
 
 ### View Container Processes
 ```bash
-docker-compose -f docker-compose.prod.yml top
+docker-compose -f docker-compose.ppe.yml top
 ```
 
 ## Network Troubleshooting
@@ -570,24 +572,24 @@ docker-compose -f docker-compose.prod.yml top
 docker network ls
 # Dev network
 docker network inspect cow-dev_cow-network
-# Prod network
-docker network inspect cow-prod_cow-network
+# PPE network
+docker network inspect cow-ppe_cow-network
 ```
 
 ### Test Backend Connection from Frontend
 ```bash
-docker exec cow-frontend-prod wget -O- http://backend:5000/api/health
+docker exec cow-frontend wget -O- http://backend:5000/api/health
 ```
 
-## Common Production Workflows
+## Common PPE Workflows
 
 ### After Deploying Code Changes
 ```bash
 cd ~/vocabulary-app
 git pull origin main
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml up -d --build
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.ppe.yml down
+docker-compose -f docker-compose.ppe.yml up -d --build
+docker-compose -f docker-compose.ppe.yml logs -f
 ```
 
 ### After Updating Environment Variables
@@ -597,32 +599,32 @@ nano .env
 
 # IMPORTANT: restart does NOT reload env vars — they are baked in at container creation.
 # You must force-recreate the affected container:
-sudo docker compose -f docker-compose.prod.yml up -d --force-recreate backend
+sudo docker compose -f docker-compose.ppe.yml up -d --force-recreate backend
 ```
 
 ### After Updating Nginx Configuration
 ```bash
 # Test configuration first
-docker exec cow-frontend-prod nginx -t
+docker exec cow-frontend nginx -t
 
 # If OK, restart
-docker-compose -f docker-compose.prod.yml restart frontend
+docker-compose -f docker-compose.ppe.yml restart frontend
 ```
 
 ### Checking Application Status
 ```bash
 # Quick status check
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.ppe.yml ps
 
 # Detailed health check
 curl http://localhost:5000/api/health
 curl http://localhost/
 
 # View recent logs
-docker-compose -f docker-compose.prod.yml logs --tail 20
+docker-compose -f docker-compose.ppe.yml logs --tail 20
 ```
 
-## Best Practices - Production
+## Best Practices - PPE
 
 1. **Always check logs** before and after operations
 2. **Test configuration** before restarting services
@@ -633,33 +635,33 @@ docker-compose -f docker-compose.prod.yml logs --tail 20
 7. **Pull latest code** before rebuilding containers
 8. **Check health endpoints** after deployments
 
-## Quick Reference - Production
+## Quick Reference - PPE
 
 | Task | Command |
 |------|---------|
-| View containers | `docker-compose -f docker-compose.prod.yml ps` |
-| Start all | `docker-compose -f docker-compose.prod.yml up -d` |
-| Stop all | `docker-compose -f docker-compose.prod.yml down` |
-| Restart service | `docker-compose -f docker-compose.prod.yml restart frontend` |
-| View logs | `docker logs cow-frontend-prod --tail 50` |
-| Follow logs | `docker-compose -f docker-compose.prod.yml logs -f` |
-| Rebuild & restart | `docker-compose -f docker-compose.prod.yml up -d --build` |
-| Open shell | `docker exec -it cow-backend-prod sh` |
+| View containers | `docker-compose -f docker-compose.ppe.yml ps` |
+| Start all | `docker-compose -f docker-compose.ppe.yml up -d` |
+| Stop all | `docker-compose -f docker-compose.ppe.yml down` |
+| Restart service | `docker-compose -f docker-compose.ppe.yml restart frontend` |
+| View logs | `docker logs cow-frontend --tail 50` |
+| Follow logs | `docker-compose -f docker-compose.ppe.yml logs -f` |
+| Rebuild & restart | `docker-compose -f docker-compose.ppe.yml up -d --build` |
+| Open shell | `docker exec -it cow-backend sh` |
 | Check health | `curl http://localhost:5000/api/health` |
-| Database shell | `docker exec -it cow-postgres-prod psql -U cow_user -d cow_db` |
-| View Nginx config | `docker exec cow-frontend-prod cat /etc/nginx/conf.d/default.conf` |
-| Test Nginx config | `docker exec cow-frontend-prod nginx -t` |
+| Database shell | `docker exec -it cow-postgres psql -U cow_user -d cow_db` |
+| View Nginx config | `docker exec cow-frontend cat /etc/nginx/conf.d/default.conf` |
+| Test Nginx config | `docker exec cow-frontend nginx -t` |
 
 ---
 
 ## Environment Comparison
 
-| Aspect | Development | Production |
+| Aspect | Development | PPE |
 |--------|-------------|------------|
-| Compose File | `docker-compose.yml` | `docker-compose.prod.yml` |
-| Frontend Container | `cow-frontend-local` | `cow-frontend-prod` |
-| Backend Container | `cow-backend-local` | `cow-backend-prod` |
-| Database Container | `cow-postgres-local` | `cow-postgres-prod` |
+| Compose File | `docker-compose.yml` | `docker-compose.ppe.yml` |
+| Frontend Container | `cow-frontend` | `cow-frontend` |
+| Backend Container | `cow-backend` | `cow-backend` |
+| Database Container | `cow-postgres` | `cow-postgres` |
 | Frontend Server | Vite Dev Server | Nginx |
 | Frontend Port | 3000 | 80, 443 |
 | Hot Reload | Yes | No |

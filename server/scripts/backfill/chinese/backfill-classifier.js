@@ -15,9 +15,9 @@
  * today, so the marker is a silent no-op — structure kept caching-correct.)
  *
  * Usage:
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js               # full backfill (serial)
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js --batch       # via Batches API (50% price)
- *   docker exec cow-backend-local npx tsx scripts/backfill/chinese/backfill-classifier.js --spot-check  # test 5 entries
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-classifier.js               # full backfill (serial)
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-classifier.js --batch       # via Batches API (50% price)
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-classifier.js --spot-check  # test 5 entries
  */
 
 import dotenv from 'dotenv';

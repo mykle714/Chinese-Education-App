@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install every prod schedule this project owns, as systemd USER timers.
+# Install every PPE schedule this project owns, as systemd USER timers.
 #
 # Currently two, independent of each other:
 #   cow-maintenance  HH:01  inactivity penalty + dangling-template prune
@@ -9,7 +9,7 @@
 #                           (docs/ARENA_FEATURE.md § 10)
 #
 # Why this exists: the *job logic* (expire-stale-streaks.sql, arena-cron.ts) has
-# always been git-tracked, but the *schedule* used to live only in the prod user's
+# always been git-tracked, but the *schedule* used to live only in the PPE user's
 # crontab — untracked and un-deployable. This script makes the schedule a
 # reviewable, diffable artifact in the repo and lets `/deploy` install it the same
 # way it ships code: edit the templates here, commit, deploy.
@@ -38,11 +38,11 @@
 #
 # Requires LINGERING to be enabled for the user, or user units only run while the
 # user is logged in. This is the ONE thing that needs root, it is a one-time
-# machine setup step (not per-deploy), and it is already enabled on prod. The
+# machine setup step (not per-deploy), and it is already enabled on PPE. The
 # script checks and tells you the exact command if it is ever turned off.
 #
 # Design notes:
-#   - PROD ONLY. Dev is intentionally left clean (run the SQL by hand with
+#   - PPE ONLY. Dev is intentionally left clean (run the SQL by hand with
 #     `psql -f`, and the arena pass with `npx tsx scripts/arena-tick.ts`).
 #   - Idempotent. It rewrites every unit file and re-enables every timer, so
 #     re-running just converges on the same state — safe on every deploy.

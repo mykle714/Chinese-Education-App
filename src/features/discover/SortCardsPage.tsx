@@ -410,7 +410,7 @@ const CardShell = styled(AnimatedBox)<{ locked?: boolean }>(({ locked, theme }) 
     // whose cross-axis is content-sized (CardSlot: `flex: 0 0 auto` +
     // `align-items: center`); it falls back to the content's min-content width,
     // which the wrapping definition text lets collapse far below the true card
-    // width — the card rendered tall and skinny on prod mobile. Deriving the
+    // width — the card rendered tall and skinny on PPE mobile. Deriving the
     // height from a definite width (what the buckets above do) is fine in
     // Safari; deriving the width is not.
     height: CARD_HEIGHT,

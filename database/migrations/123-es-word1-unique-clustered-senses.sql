@@ -315,7 +315,7 @@ WHERE tgt.id = m.id AND m.rn = 1;
 -- card, a pack loses a slot, a validation detaches from the row it reviewed.
 --
 -- On the dev database all three hold zh rows only, so all of this is a no-op there. It
--- exists for prod, whose es data is not the same data. Both single-id tables carry a
+-- exists for PPE, whose es data is not the same data. Both single-id tables carry a
 -- UNIQUE constraint that the remap could collide with (the survivor may already have its
 -- own row), so each remap DELETEs the colliding loser first, then updates the rest.
 -- ---------------------------------------------------------------------------

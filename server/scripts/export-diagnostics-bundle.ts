@@ -1,12 +1,12 @@
 /**
- * export-diagnostics-bundle.ts — package prod's client-diagnostics JSONL for
+ * export-diagnostics-bundle.ts — package PPE's client-diagnostics JSONL for
  * transport to a dev box, with client IPs stripped.
  *
  * LAYER: script (read-only against the log directory; writes only to --out).
  *
  * ── Why this exists ────────────────────────────────────────────────────────────
- * The diagnostics sinks write to the prod HOST FILESYSTEM, not to Postgres, so
- * `/data-prod-to-dev`'s pg_dump machinery does not reach them. And there is no
+ * The diagnostics sinks write to the PPE HOST FILESYSTEM, not to Postgres, so
+ * `/data-ppe-to-dev`'s pg_dump machinery does not reach them. And there is no
  * cross-machine SSH on this project, so the only transport is a commit — which
  * makes scrubbing mandatory rather than advisory: every perf batch carries the
  * reporting client's `ip` (stamped from `x-forwarded-for` in
@@ -16,7 +16,7 @@
  * A `cp` + `gzip` one-liner in the skill would have been shorter and would have
  * shipped the IPs. Hence a script.
  *
- * Usage (on prod, from the repo root):
+ * Usage (on PPE, from the repo root):
  *   npx tsx server/scripts/export-diagnostics-bundle.ts --days 30 --out database/diagnostics
  *
  * Flags:
@@ -110,7 +110,7 @@ function main(): void {
     console.error(
       `❌ "${args.logs}" exists but holds no client-perf/client-error files within ${args.days} days.\n` +
       `   Either no traffic has been reported, or clients are not initialising the\n` +
-      `   reporter. Check that initPerfDiagnostics() runs in the prod build.`,
+      `   reporter. Check that initPerfDiagnostics() runs in the production build.`,
     );
     process.exit(1);
   }

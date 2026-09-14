@@ -96,10 +96,10 @@
  * iconId first).
  *
  * Usage (run from the server/ dir, or via docker):
- *   docker exec cow-backend-local npx tsx scripts/backfill/backfill-icons.js --lang=zh
- *   docker exec cow-backend-local npx tsx scripts/backfill/backfill-icons.js --lang=es --spot-check
- *   docker exec cow-backend-local npx tsx scripts/backfill/backfill-icons.js --lang=zh --words=猫,狗
- *   docker exec cow-backend-local npx tsx scripts/backfill/backfill-icons.js --lang=zh --metadata-only
+ *   docker exec cow-backend npx tsx scripts/backfill/backfill-icons.js --lang=zh
+ *   docker exec cow-backend npx tsx scripts/backfill/backfill-icons.js --lang=es --spot-check
+ *   docker exec cow-backend npx tsx scripts/backfill/backfill-icons.js --lang=zh --words=猫,狗
+ *   docker exec cow-backend npx tsx scripts/backfill/backfill-icons.js --lang=zh --metadata-only
  */
 
 import dotenv from 'dotenv';

@@ -35,7 +35,7 @@ Migrations live in `database/migrations/` (run by `database/deploy/migrate.sh`; 
 
 ```sql
 -- Authored sort packs (reference data; delivered via SEED MIGRATIONS — see §2.1.
--- NOT movable by any data-sync skill: prod->dev covers det/icons8/pct/validations only).
+-- NOT movable by any data-sync skill: PPE->dev covers det/icons8/pct/validations only).
 CREATE TABLE sort_packs (
   id                SERIAL PRIMARY KEY,
   language          VARCHAR   NOT NULL,            -- 'zh' | 'es'
@@ -76,28 +76,28 @@ sentence is authored or validated.
 ### 2.1 Getting authored packs into another environment (seed migrations)
 
 `sort_packs` is hand-authored reference data, and no data-sync skill carries it
-(`/data-prod-to-dev` covers `dictionaryentries_zh`, `dictionaryentries_es`,
-`particlesandclassifiers`, `icons8`, `validations` only — and it only moves prod →
-dev; the old dev → prod push skill has been deleted). There is no dump
+(`/data-ppe-to-dev` covers `dictionaryentries_zh`, `dictionaryentries_es`,
+`particlesandclassifiers`, `icons8`, `validations` only — and it only moves PPE →
+dev; the old dev → PPE push skill has been deleted). There is no dump
 file and no import script. **Authored packs travel as seed migrations, which means
 they ship with the ordinary code deploy** — `/deploy` picks the file up in its pending
 migration set like any other, `database/deploy/migrate.sh` applies it in `sort -V`
 order and records it in `schema_migrations`. There is no separate pack-deployment
 step, no out-of-band data push, and nothing to remember: authoring a new pack means
-writing the next seed migration, and it reaches prod the next time code does.
+writing the next seed migration, and it reaches PPE the next time code does.
 
 > **Failure mode if you forget.** An environment with an empty `sort_packs` is not
 > visibly broken — `fetchPacksAtLevel` returns nothing at every level and
 > `getNextPacks` silently falls through to system packs-of-1, so the sort flow serves
 > 100% single cards and no authored pack is ever offered. This is exactly what shipped
-> to production between migration 93 and migration 131.
+> to PPE between migration 93 and migration 131.
 
 `131-seed-zh-sort-packs.sql` is the reference implementation for such a seed. Its
 rules, which any future pack seed should follow:
 
 | Rule | Why |
 |---|---|
-| Seed rows **by `word1`**, resolving to `entryIds` at run time | det ids are not portable across environments — prod is the source of truth for `dictionaryentries_zh` and its ids need not match the authoring box. Safe for `zh` (word1 is unique per language there); do **not** generalize to `es` without re-checking the homograph caveat above. |
+| Seed rows **by `word1`**, resolving to `entryIds` at run time | det ids are not portable across environments — PPE is the source of truth for `dictionaryentries_zh` and its ids need not match the authoring box. Safe for `zh` (word1 is unique per language there); do **not** generalize to `es` without re-checking the homograph caveat above. |
 | Insert **explicit `id`s**, then `setval` the sequence past them | `users."seenPacks"` stores raw `sort_packs.id` values, so an id is user-visible state — every environment must agree on which id is which pack. |
 | `ON CONFLICT (id) DO NOTHING` | Idempotent; never clobbers a pack that environment already has under that id. |
 | Skip (with `RAISE WARNING`) any pack whose words don't all resolve; `RAISE NOTICE` the inserted/existing/skipped counts | A dictionary missing one word must not abort a deploy. Read the NOTICE after running — a nonzero skip count means that environment's det table is behind. |
@@ -110,18 +110,18 @@ seed migration for the new rows only and commit it. The deploy carries it.
 Post-deploy verification, on the target box — part of the normal deploy's verify step:
 
 ```bash
-docker exec cow-postgres-prod psql -U cow_user -d cow_db \
+docker exec cow-postgres psql -U cow_user -d cow_db \
   -c "SELECT language, level, count(*) FROM sort_packs GROUP BY 1,2 ORDER BY 1,2;"
 ```
 
-Expected on prod today: `zh` → **19 packs at level 1, 2 at level 2, and nothing
+Expected on PPE today: `zh` → **19 packs at level 1, 2 at level 2, and nothing
 else** (21 total). Levels 3 and 4 are legitimately empty (none authored yet); levels 5
 and 6 are empty **by decision** — see below.
 
 ### 2.2 Levels 5 and 6 have no authored packs
 
 Migration 131 seeded 34 packs at levels 5–6. They were **withdrawn on 2026-08-11 by a
-one-off ad-hoc `DELETE` against prod**, deliberately *not* shipped as a migration: this
+one-off ad-hoc `DELETE` against PPE**, deliberately *not* shipped as a migration: this
 is a content decision about the rows one seed happened to insert, not a schema change,
 and a migration file would replay the withdrawal on every freshly-bootstrapped database
 forever. Every withdrawn pack was the same genre — an **idiom decomposition**, i.e.
@@ -259,8 +259,8 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 - **Build/deploy test (required):** `server/scripts/validate-sort-packs.ts`. For every
   `sort_packs` row it asserts structural validity (1–3 `entryIds`, level in 1..6, every
   `entryId` exists in the per-language det table). Enforced at build time, not runtime.
-- Get `sort_packs` onto prod via a **seed migration** (§2.1) — there is no data-sync
-  skill that moves it, and none that moves anything dev → prod.
+- Get `sort_packs` onto PPE via a **seed migration** (§2.1) — there is no data-sync
+  skill that moves it, and none that moves anything dev → PPE.
 
 ## 7. Suggested sequencing
 
@@ -292,5 +292,5 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 - `database/migrations/131-seed-zh-sort-packs.sql` — the zh pack seed (§2.1); the only
   delivery path for authored packs into a non-authoring environment.
   (No companion migration withdraws the L5/L6 idiom-decomposition packs 131 seeded —
-  that was a one-off ad-hoc DELETE on prod, §2.2. A database bootstrapped from the
+  that was a one-off ad-hoc DELETE on PPE, §2.2. A database bootstrapped from the
   migrations alone therefore still has them.)

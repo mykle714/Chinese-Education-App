@@ -9,7 +9,7 @@
 -- gloss cleaned) from "fully enriched + data-deployed" (discoverable), so a cheap
 -- two-step pre-pass could put cards in front of learners long before the 13-step
 -- manifest finished. The split only pays for itself if that corpus-wide pre-pass
--- actually runs. It never did: on prod, ~1.3% of the zh corpus was sortable and only
+-- actually runs. It never did: on PPE, ~1.3% of the zh corpus was sortable and only
 -- ~218 rows were sortable-but-not-discoverable, because the oracle backfill's
 -- `--discoverable` heal queue refills on every manifest version bump and starves the
 -- `--unsortable` pre-pass scope. So the column bought a few hundred rows of reach
@@ -28,8 +28,8 @@
 -- ⚠️ EXPAND/CONTRACT — THIS IS THE CONTRACT STEP. The code that stopped reading
 -- `sortable` must be DEPLOYED BEFORE this file runs, or every discover supply query
 -- errors on a missing column. (Shipped in that order on 2026-08-11; the deploy runbook
--- that described the sequence has been deleted now that prod is verified. Note the
--- column was already absent from prod when this ran — both drops skipped via IF EXISTS.)
+-- that described the sequence has been deleted now that PPE is verified. Note the
+-- column was already absent from PPE when this ran — both drops skipped via IF EXISTS.)
 --
 -- Idempotent (IF EXISTS on both drops).
 

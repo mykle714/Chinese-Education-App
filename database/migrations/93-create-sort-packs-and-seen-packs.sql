@@ -22,7 +22,7 @@
 -- Idempotent: guarded with IF NOT EXISTS so re-running is a no-op.
 
 -- ---------------------------------------------------------------------------
--- Authored sort packs (reference data; synced to prod via /data-deploy).
+-- Authored sort packs (reference data; synced to PPE via /data-deploy).
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sort_packs (
     id                SERIAL PRIMARY KEY,

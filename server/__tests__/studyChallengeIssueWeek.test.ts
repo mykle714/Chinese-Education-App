@@ -145,7 +145,7 @@ describe('StudyChallengeService.issueChallenge — which week', () => {
 
     it('does not block on a finished week whose row the cron has not rewritten', async () => {
         // "Unfinished" is DERIVED from the test window, never from `status` — the
-        // hourly job runs late on prod and not at all on dev, and a stored
+        // hourly job runs late on PPE and not at all on dev, and a stored
         // 'accepted' from last week must not hold Monday's challenge hostage.
         const stale = liveRow({ weekIndex: 31, status: 'accepted' });
         const { service, created } = serviceFor([stale]);

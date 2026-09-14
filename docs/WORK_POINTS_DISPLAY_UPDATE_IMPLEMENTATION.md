@@ -167,7 +167,7 @@ The server enforces a 59-second minimum between successful increments:
 
 ```bash
 # Watch for increment requests
-docker logs cow-backend-local -f | grep "WORK-POINTS"
+docker logs cow-backend -f | grep "WORK-POINTS"
 
 # Expected logs when user earns a point:
 [WORK-POINTS-INCREMENT] ⬆️ Incrementing work point

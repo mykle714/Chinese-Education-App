@@ -164,4 +164,4 @@ Verify authentication is enforced on protected routes:
 
 - [TOKEN_EXPIRATION_IMPLEMENTATION.md](../docs/TOKEN_EXPIRATION_IMPLEMENTATION.md) - Token lifecycle and expiration
 - [TEST_USERS.md](../docs/TEST_USERS.md) - Available test users for development
-- [HTTPS_SETUP_GUIDE.md](../docs/HTTPS_SETUP_GUIDE.md) - Securing authentication in production
+- [HTTPS_SETUP_GUIDE.md](../docs/HTTPS_SETUP_GUIDE.md) - Securing authentication in PPE

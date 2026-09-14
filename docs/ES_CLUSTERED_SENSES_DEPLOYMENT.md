@@ -101,43 +101,43 @@ means: **record the migration in `schema_migrations` so `migrate.sh` never retri
 
 ---
 
-## 3. Pre-flight checks (run these on PROD before deploying)
+## 3. Pre-flight checks (run these on PPE before deploying)
 
-Prod's Spanish data is **not** the same data as dev's, so gather the real numbers rather
+PPE's Spanish data is **not** the same data as dev's, so gather the real numbers rather
 than assuming dev's. Report each result to the user before proceeding.
 
 ```bash
 # a. Is migration 122 already applied? (MUST be yes, or ship 122 in this deploy ahead of 123)
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "
+docker exec cow-postgres psql -U cow_user -d cow_db -c "
   SELECT column_name FROM information_schema.columns
    WHERE table_name='dictionaryentries_zh' AND column_name IN ('vernacularScore','frequencyScore');"
 #    -> expect 'frequencyScore'. If you see 'vernacularScore', 122 is pending: apply it first.
 
-# b. Which migrations does prod have? (authoritative)
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "
+# b. Which migrations does PPE have? (authoritative)
+docker exec cow-postgres psql -U cow_user -d cow_db -c "
   SELECT max(version) FROM schema_migrations;"
 
-# c. Scale of the merge on prod — record before/after
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "
+# c. Scale of the merge on PPE — record before/after
+docker exec cow-postgres psql -U cow_user -d cow_db -c "
   SELECT count(*) AS rows, count(DISTINCT word1) AS words,
          count(*) - count(DISTINCT word1) AS rows_to_delete
     FROM dictionaryentries_es;"
 
 # d. Spanish learners affected: every one of these cards moves to its word's DEFAULT sense
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "
+docker exec cow-postgres psql -U cow_user -d cow_db -c "
   SELECT count(*) AS es_cards, count(DISTINCT \"userId\") AS users,
          count(*) FILTER (WHERE pos IS NOT NULL) AS cards_with_pos
     FROM vocabentries_es;"
 
 # e. Would any two of a user's cards collide under the new (userId, entryKey, language) key?
 #    MUST return 0 rows — if not, STOP and see §7.
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "
+docker exec cow-postgres psql -U cow_user -d cow_db -c "
   SELECT \"userId\", \"entryKey\", count(*) FROM vocabentries_es
    GROUP BY 1,2 HAVING count(*) > 1;"
 
 # f. Soft references to es det ids (the migration remaps these automatically; this is
 #    just so you can verify the counts survive)
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "
+docker exec cow-postgres psql -U cow_user -d cow_db -c "
   SELECT (SELECT count(*) FROM validations    WHERE language='es') AS es_validations,
          (SELECT count(*) FROM discover_skips WHERE language='es') AS es_skips,
          (SELECT count(*) FROM sort_packs     WHERE language='es') AS es_sort_packs;"
@@ -150,7 +150,7 @@ Spanish spelling twice** — `vivir`(v) and `vivir`(n) as two separate cards. Th
 forbids that, and `ADD CONSTRAINT vocabentries_es_user_key_language_unique` will fail on any
 such pair, rolling the migration back.
 
-Dev had zero collisions (28 cards, 28 distinct pairs). **If prod returns any rows, do not
+Dev had zero collisions (28 cards, 28 distinct pairs). **If PPE returns any rows, do not
 improvise a fix — report the list to the user and ask which card to keep.** The two cards
 have independent review histories (`typedMarkHistory`, `totalMarkCount`) and possibly
 independent icon layouts, so merging them is a product decision, not a mechanical one. The
@@ -174,7 +174,7 @@ The generic deploy takes no data backup. **This migration deletes rows, so take 
 anything else, and keep it until §6's verification passes:
 
 ```bash
-docker exec cow-postgres-prod pg_dump -U cow_user -d cow_db \
+docker exec cow-postgres pg_dump -U cow_user -d cow_db \
   -t dictionaryentries_es -t vocabentries_es \
   -t validations -t discover_skips -t sort_packs \
   --format=custom > ~/es-pre-123-$(date +%Y%m%d-%H%M).dump
@@ -191,28 +191,28 @@ Follow `/deploy` for the container/build mechanics. The migration-specific order
 ```bash
 cd ~/vocabulary-app
 git pull origin main
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml up --build -d
+docker-compose -f docker-compose.ppe.yml down
+docker-compose -f docker-compose.ppe.yml up --build -d
 
 # --- migrations, in this order ---
 
 # 122 FIRST (if pre-flight (a) showed it pending)
-docker cp database/migrations/122-rename-vernacular-score-to-frequency-score.sql cow-postgres-prod:/tmp/
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/122-rename-vernacular-score-to-frequency-score.sql
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c \
+docker cp database/migrations/122-rename-vernacular-score-to-frequency-score.sql cow-postgres:/tmp/
+docker exec cow-postgres psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/122-rename-vernacular-score-to-frequency-score.sql
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   "INSERT INTO schema_migrations (version, name) VALUES (122, '122-rename-vernacular-score-to-frequency-score.sql') ON CONFLICT DO NOTHING;"
 
 # Fresh planner stats — turns a ~4-minute exclusive lock into well under a minute
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "ANALYZE dictionaryentries_es;"
+docker exec cow-postgres psql -U cow_user -d cow_db -c "ANALYZE dictionaryentries_es;"
 
 # 123
-docker cp database/migrations/123-es-word1-unique-clustered-senses.sql cow-postgres-prod:/tmp/
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/123-es-word1-unique-clustered-senses.sql
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c \
+docker cp database/migrations/123-es-word1-unique-clustered-senses.sql cow-postgres:/tmp/
+docker exec cow-postgres psql -U cow_user -d cow_db -v ON_ERROR_STOP=1 -f /tmp/123-es-word1-unique-clustered-senses.sql
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   "INSERT INTO schema_migrations (version, name) VALUES (123, '123-es-word1-unique-clustered-senses.sql') ON CONFLICT DO NOTHING;"
 
 # Refresh stats over the merged table before real traffic hits it
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "ANALYZE dictionaryentries_es; ANALYZE vocabentries_es;"
+docker exec cow-postgres psql -U cow_user -d cow_db -c "ANALYZE dictionaryentries_es; ANALYZE vocabentries_es;"
 ```
 
 `migrate.sh` also works and does the `schema_migrations` bookkeeping for you; the explicit
@@ -230,7 +230,7 @@ SELECT <n multi-row words>
 UPDATE <n multi-row words>       -- survivors merged
 SELECT <rows_to_delete>          -- id remap table
 CREATE INDEX
-DELETE/UPDATE ×5                 -- soft-reference remap (mostly 0 on a prod with no es refs)
+DELETE/UPDATE ×5                 -- soft-reference remap (mostly 0 on a PPE with no es refs)
 DELETE <rows_to_delete>          -- losing rows
 ALTER TABLE ×2, DROP INDEX, ALTER TABLE ×4
 COMMIT
@@ -297,10 +297,10 @@ Rolling back a **successful** migration means restoring the dump from §4, becau
 not reversible in SQL (the losing rows are gone):
 
 ```bash
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c \
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   "DROP TABLE dictionaryentries_es CASCADE; DROP TABLE vocabentries_es CASCADE;"
-docker exec -i cow-postgres-prod pg_restore -U cow_user -d cow_db --no-owner < ~/es-pre-123-<stamp>.dump
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c \
+docker exec -i cow-postgres pg_restore -U cow_user -d cow_db --no-owner < ~/es-pre-123-<stamp>.dump
+docker exec cow-postgres psql -U cow_user -d cow_db -c \
   "DELETE FROM schema_migrations WHERE version = 123;"
 ```
 
@@ -321,22 +321,22 @@ refines the discoverable words into real senses with per-sense frequency scores,
 what fixes any survivor-ranking miss found in verification step 4.
 
 **This is a separate, optional, billable step — confirm with the user before running it.**
-It calls Opus + Sonnet per word (843 words in scope on dev; check prod's count first —
+It calls Opus + Sonnet per word (843 words in scope on dev; check PPE's count first —
 single-gloss words take a zero-API-call fast path, so the billable subset is smaller).
 
 ```bash
-# How many words are in scope on prod
-docker exec cow-postgres-prod psql -U cow_user -d cow_db -c "
+# How many words are in scope on PPE
+docker exec cow-postgres psql -U cow_user -d cow_db -c "
   SELECT count(*) FROM dictionaryentries_es
    WHERE language='es' AND discoverable AND jsonb_array_length(definitions) > 0
      AND NOT (\"enrichmentLog\" ? 'spanish/backfill-cluster-definitions');"
 
 # Always dry-run a sample first and show the user the output
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-cluster-definitions.js --spot-check
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-cluster-definitions.js --spot-check
 
 # Then a narrow live run, then the full run
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro,leche
-server/scripts/backfill/run-prod.sh scripts/backfill/spanish/backfill-cluster-definitions.js
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-cluster-definitions.js --words=cura,perro,leche
+server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-cluster-definitions.js
 ```
 
 - It only UPDATEs `definitionClusters` + `partsOfSpeech` on one row — never inserts, deletes,
@@ -363,7 +363,7 @@ words in scope here that content is regenerated by the normal §B pipeline in
    interjection row in the dictionary at all — so the value cannot have come from the row the
    card was displaying). Migrating it faithfully would have pinned learners' cards to "shit"
    for `leche` and "awful" for `perro`. Learners re-pick a sense once and it persists as a
-   stable label. Pre-flight (d) tells you how many cards this touches on prod.
+   stable label. Pre-flight (d) tells you how many cards this touches on PPE.
 2. **A learner can no longer hold one Spanish spelling as two cards.** One word, one card,
    with a sense picker.
 3. **The POS badge is gone.** Spanish headwords no longer show "(v)"/"(n)"; the disambiguation
@@ -381,11 +381,11 @@ Running `migrate.sh` on dev would therefore retry them and fail on 123's `ADD CO
 dev bookkeeping with:
 
 ```bash
-docker exec cow-postgres-local psql -U cow_user -d cow_db -c "
+docker exec cow-postgres psql -U cow_user -d cow_db -c "
   INSERT INTO schema_migrations (version, name) VALUES
     (122, '122-rename-vernacular-score-to-frequency-score.sql'),
     (123, '123-es-word1-unique-clustered-senses.sql')
   ON CONFLICT DO NOTHING;"
 ```
 
-This is dev-only housekeeping and has no bearing on the prod deploy.
+This is dev-only housekeeping and has no bearing on the PPE deploy.

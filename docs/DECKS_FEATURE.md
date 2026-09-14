@@ -748,22 +748,37 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    card in 10 — so the figure was short by the largest band a long-running account has.
 
    **Readiness is the flp's rule, restated — not a second definition.**
-   `src/utils/flpReadiness.ts` applies `rankFlpEligible`'s eligibility test (at least one
-   of the session's two mark types off cooldown, windowed by the card's **core**
+   `server/contracts/flpReadiness.ts` is the canonical home of the formula:
+   `flpReadyCountsByBand`/`nextFlpReadyMs` apply `rankFlpEligible`'s eligibility test (at
+   least one of the session's two mark types off cooldown, windowed by the card's **core**
    category) on top of the shared `server/contracts/cooldown.ts` arithmetic. Note this
    deliberately differs from the card grid's own cooldown SORT, which takes the *maximum*
    remaining across a bar's tracks windowed by each track's *per-type* category — the
    grid answers "what has rested longest", these figures answer "what would a session
-   deal me". The util's docblock carries the full comparison.
+   deal me". `src/utils/flpReadiness.ts` is now a thin client re-export shim over the
+   contract module (adapting `VocabEntry` → `{ typedMarkHistory }`), kept only because
+   `src/__tests__/flpReadiness.test.ts` still exercises it directly; new callers should
+   import the contract module or, from the client, go through `useFlpReadyCounts` below
+   rather than recomputing the formula themselves.
 
-   **Computed on the client, with no endpoint.** The page already loads every sorted card
-   (`useDecksPanel` → `fetchCollectionCards(ALL_COLLECTION_ID)`, which excludes lent
-   provisional rows), those rows carry `typedMarkHistory`, and the cooldown module is a
-   client-importable contract. A count endpoint would have added a round trip and a
-   second definition of "rested" that could drift from the pool it predicts. `now` is
-   read **once** per computation — a clock advancing mid-count could break the partition
-   by a card. See DEFERRED_WORK.md § "Recently closed" → the decks page
-   `.duebar`, whose original "this needs server work" reasoning this disproved.
+   **Computed server-side, behind a dedicated endpoint.** The figures used to be derived
+   client-side from `useDecksPanel` → `fetchCollectionCards(ALL_COLLECTION_ID)` — the
+   same fully-enriched, dictionary-joined fetch the card grid needs — which meant the
+   hand's three numbers sat blocked behind a slow read they didn't actually need. They now
+   come from `GET /api/onDeck/flpReadyCounts` (`OnDeckVocabController.getFlpReadyCounts` →
+   `OnDeckVocabService.getFlpReadyCounts`), which runs `flpReadyCountsByBand`/
+   `nextFlpReadyMs` against a narrow `{ id, typedMarkHistory }`-only read
+   (`vetSortedClause()`, no dictionary join, so lent provisional rows are still excluded)
+   and returns `{ counts, reviewNextReadyMs }`. `now` is still read **once** per
+   computation server-side — a clock advancing mid-count could break the partition by a
+   card. The client side is `src/api/flpReadyCounts.ts` (`fetchFlpReadyCounts`, via
+   `apiGet`/`withFallback`) and `src/hooks/useFlpReadyCounts.ts` (`{ counts,
+   reviewNextReadyMs, loaded }`), called directly from `FlashcardsDecksPage.tsx` rather
+   than folded into the shared `useDecksPanel` — the Mastery Center pages that also use
+   `useDecksPanel` don't render `StudyHand`, and the endpoint's `foreignTrack` param
+   depends on `useFlashcardLearnSettings()`, a page-level hook `useDecksPanel` doesn't
+   have. See DEFERRED_WORK.md § "Recently closed" → the decks page `.duebar`, whose
+   original "this needs server work" reasoning is what this endpoint eventually acted on.
 
    All three are `undefined` until the library lands, and the numeral spins as a
    `SlotNumber` reel rather than printing a provisional `0` — `0` is a real answer every

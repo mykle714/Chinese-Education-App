@@ -17,7 +17,7 @@ import StudyHand, { type StudyHandCard, type StudyModeId } from "./StudyHand";
 import SheetPill from "../../components/SheetPill";
 import { FOOTER_TOTAL_CLEARANCE } from "../../components/MobileFooter";
 import type { VocabEntry } from "../../types";
-import { flpReadyCountsByBand, nextFlpReadyMs } from "../../utils/flpReadiness";
+import { useFlpReadyCounts } from "../../hooks/useFlpReadyCounts";
 import { formatCooldownRemaining } from "../../utils/formatDuration";
 import { foreignPromptTrack } from "../../../server/contracts/wire";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
@@ -163,13 +163,6 @@ const HAND_HUES: Record<StudyModeId, RampHue> = {
     mix: "yel",
 };
 
-/**
- * The two bands each mode draws from. They PARTITION the four utcm bands, which is what
- * makes Challenge + Review == Study Mix on the hand — see "The three modes' figures".
- * Module scope so the readiness memos below have a stable dependency.
- */
-const REVIEW_BANDS = ["Comfortable", "Mastered"] as const;
-
 // Main Component
 const FlashcardsDecksPage: React.FC = () => {
     usePageTitle("Decks");
@@ -227,31 +220,18 @@ const FlashcardsDecksPage: React.FC = () => {
     // contract. See src/utils/flpReadiness.ts for why that differs from the card grid's
     // own cooldown sort, which is a per-TYPE measure.
     //
-    // Computed on the CLIENT from the already-loaded library rather than fetched: the
-    // page holds every sorted card (`panel.allCards`) and the cooldown arithmetic is a
-    // shared contract, so a count endpoint would have added a round trip and a second
+    // Fetched from the server (`/api/onDeck/flpReadyCounts`) INDEPENDENTLY of the full
+    // card library: the endpoint reads only `{ id, typedMarkHistory }` behind
+    // `vetSortedClause()` and runs the same `server/contracts/flpReadiness.ts` formula
+    // this page used to run client-side against `panel.allCards` — so these figures
+    // land long before the fully-enriched collection fetch does, without a second
     // definition of "rested" that could drift from the pool it predicts.
-    //
-    // ⚠️ `now` is read ONCE per render pass, not per card — a clock that advanced
-    // mid-computation could let Challenge + Review disagree with Study Mix by a card.
-    // The figures are therefore a snapshot; they refresh when the page re-renders, which
-    // is the same freshness the flp pool itself has.
     const { settings: learnSettings } = useFlashcardLearnSettings();
     // Which two tracks the session will present — the same derivation the flp makes, so
     // the count cools on exactly the tracks the learner is about to be shown.
     const foreignTrack = foreignPromptTrack(panel.language ?? "zh", learnSettings.showPinyin);
 
-    const readyCounts = useMemo(
-        () => flpReadyCountsByBand(panel.allCards, foreignTrack, Date.now()),
-        [panel.allCards, foreignTrack]
-    );
-
-    // `undefined` until the library lands, so the cards spin their numeral (SlotNumber)
-    // rather than printing a provisional 0 — 0 is a real answer every one of these figures
-    // can give, and on a cooldown count it is a COMMON one (a learner who just finished a
-    // session). Anything DERIVED from these figures owes the same honesty: see
-    // `reviewEligible` below, which stays undefined for the same reason.
-    const figuresLoaded = !panel.cardsLoading;
+    const { counts: readyCounts, reviewNextReadyMs, loaded: figuresLoaded } = useFlpReadyCounts(foreignTrack);
     const ready = useCallback((name: string): number => readyCounts[name] || 0, [readyCounts]);
     const challengePool = figuresLoaded ? ready("Unfamiliar") + ready("Target") : undefined;
     const reviewPool = figuresLoaded ? ready("Comfortable") + ready("Mastered") : undefined;
@@ -286,12 +266,9 @@ const FlashcardsDecksPage: React.FC = () => {
     // common case) sees no state change at all when the count arrives.
     const reviewEligible = reviewPool === undefined ? undefined : reviewPool > 0;
 
-    // Time until the soonest Review card rests out, for the greyed-card toast. null when
-    // none is resting — which, given reviewPool is 0 here, means the learner owns none.
-    const reviewNextReadyMs = useMemo(
-        () => nextFlpReadyMs(panel.allCards, REVIEW_BANDS, foreignTrack, Date.now()),
-        [panel.allCards, foreignTrack]
-    );
+    // `reviewNextReadyMs` (time until the soonest Review card rests out, for the
+    // greyed-card toast) comes straight off `useFlpReadyCounts` above — null when none
+    // is resting, which, given reviewPool is 0 here, means the learner owns none.
 
     const handCards: StudyHandCard[] = useMemo(() => [
         // ⚠️ `label` is DISPLAY TEXT ONLY. The ids stay `challenge` / `review` — they are

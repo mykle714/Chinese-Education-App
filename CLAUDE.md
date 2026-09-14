@@ -302,7 +302,7 @@ Current open runbooks:
 (gloss phase-2 half B, the runtime guard — **no migration**). **Deployed 2026-08-24** and
 verified on the infrastructure checks; it stays open only until someone opens a real game
 board and confirms it fills rather than coming back short, which is the one over-blocking
-symptom those checks cannot see. PPE is current through migration **162**.
+symptom those checks cannot see. PPE is current through migration **163**.
 
 **[docs/IW_SCENE_NOTES_DEPLOY_RUNBOOK.md](./docs/IW_SCENE_NOTES_DEPLOY_RUNBOOK.md)**
 (iw scene notes + scene events — migrations **160** and **161**, plus the advisory-validator

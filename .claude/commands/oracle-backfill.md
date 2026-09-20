@@ -85,12 +85,33 @@ on the next request and runs five hours from there.
 > the **weekly** caps at `ORACLE_MAX_UTILIZATION`, default 75% as of 2026-08-28, lowered
 > from 95%, and the **session** window separately at `ORACLE_MAX_UTILIZATION_SESSION`,
 > default 99% — the two caps fail in different currencies), but it can only refuse to *start*; a round that
-> crosses the cap mid-manifest can only be stopped by you. That gate reads
-> `~/.claude/.credentials.json`'s access token, which expires (~8h TTL) and is refreshed
-> only by a live session — on a quiet box the gate will otherwise 401 and fail closed
-> for hours with the plan under-utilized. It now retries once via a throwaway
-> `claude -p` probe on a 401 before skipping, and escalates on stderr after
-> `ORACLE_GATE_FAIL_ESCALATE` (default 3) consecutive non-cap failures.
+> crosses the cap mid-manifest can only be stopped by you.
+>
+> **When a cap parks the cron, it now sleeps to that cap's `resets_at`** rather than
+> re-reading usage every tick: the binding cap's reset is stamped into
+> `server/logs/oracle-park-until.<slug>` and earlier ticks exit immediately with no
+> network call. Both cap groups are fixed windows, so nothing a mid-park read could
+> discover changes before the reset. Delete that file to force an early re-read;
+> changing `ORACLE_MAX_UTILIZATION`/`_SESSION` discards it automatically on the next tick.
+>
+> That gate reads `~/.claude/.credentials.json`'s access token, which expires (~8h TTL)
+> and is refreshed only by a live session — on a quiet box the gate will otherwise 401
+> and fail closed for hours with the plan under-utilized. Three things now hold that
+> shut: the token's `expiresAt` is checked **before** the call and refreshed via a
+> throwaway `claude -p` probe when it has less than `ORACLE_TOKEN_MIN_TTL` (default
+> 600s) left; a **401 *or* 429** response triggers the same probe and one re-read; and
+> the gate escalates on stderr after `ORACLE_GATE_FAIL_ESCALATE` (default 3)
+> consecutive non-cap failures.
+>
+> ⚠️ **A 429 from the usage endpoint is a stale credential, not a rate limit.**
+> `oracle-cron.sh` is the only caller of `api/oauth/usage` in the repo and calls it at
+> most twice an hour, so a volume limit is not plausible; what produces a 429 is
+> repeated *auth failure* once the token lapses. On 2026-09-18 both shards took a 401,
+> failed the refresh probe, and were then 429-parked for nine consecutive hours — with
+> the weekly cap at 75% and the escalation counter climbing to 10 — until an
+> interactive session refreshed the credential, after which the endpoint answered 200
+> on the first try. Classifying 429 as `ERR` was what suppressed the self-heal; it is
+> now classified `RETRY` alongside 401.
 
 3. **Check for a parked run**: if the resume note exists (`$ORACLE_RESUME_FILE` when
    set — a parallel/cron worker owns its own; otherwise `server/logs/oracle-resume.md`),
@@ -670,9 +691,20 @@ Concurrent rounds collide in two places, and both must be handled:
    overridable via `BACKFILL_ORACLE_PROMPTS` / `BACKFILL_ORACLE_ANSWERS` (honored in
    `run-log.js`); the parked-run note (§6a) and the run notes are single fixed paths
    by default. `oracle-cron.sh` namespaces all four per shard automatically.
+   ⚠️ **Pass these two as ABSOLUTE paths.** `run-ppe.sh` ends with `cd "$REPO_ROOT/server"`
+   before `exec npx tsx`, so a relative `server/logs/oracle-prompts.X.jsonl` resolves to
+   `server/server/logs/...`. The export pass still prints `captured prompt <id>` and exits
+   0, so the misdirect is silent — you just find no prompts where you expect them.
 
 `SHARD=k/N oracle-cron.sh` wires both together. Per-row DB writes are then disjoint,
 since every script is `--words=` scoped to its own batch.
+
+The gate's own bookkeeping is namespaced the same way, one file per shard under
+`server/logs/`: `oracle-park-until.<slug>` (sleep-to-reset stamp, §6a above),
+`oracle-gate-failures.<slug>` (consecutive non-cap failure streak) and
+`oracle-last-status.<slug>` (the last Discord-notified park reason, so a multi-hour
+park pings once rather than hourly). All three are disposable — deleting any of them
+only costs the shard one extra usage read or one duplicate notification.
 
 ⚠️ **Parallelism creates capacity only when the budget is the binding constraint —
 check which one it is.** All workers draw on the same account budget, so N workers

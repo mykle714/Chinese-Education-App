@@ -43,7 +43,7 @@ A row in `dictionaryentries_zh` has one `pronunciation` / `numberedPinyin` per w
 For each word about to be made discoverable, look up *all* cedict readings:
 
 ```bash
-grep -P "^\S+\s+<HANZI>\s+\[" /home/cow/server/cedict_ts.u8
+grep -P "^\S+\s+<HANZI>\s+\[" "$REPO_ROOT"/server/cedict_ts.u8
 ```
 
 Compare each row's current `numberedPinyin` against the cedict readings. If the row's reading is **not** the most popular one (heuristic: shorter/sparser definition list, or clearly archaic/literary meaning), flag it to the user with the alternatives and proposed fix. Apply the fix BEFORE setting `discoverable = TRUE` so enrichment runs against the right pronunciation:
@@ -53,7 +53,7 @@ UPDATE dictionaryentries_zh SET
   pronunciation = '<diacritic form>',
   "numberedPinyin" = '<numbered form>',
   definitions = '<cedict defs JSON for new pinyin>'::jsonb,
-  tone = NULL, "hskLevel" = NULL, "longDefinition" = NULL, breakdown = NULL,
+  tone = NULL, difficulty = NULL, "longDefinition" = NULL, breakdown = NULL,
   synonyms = NULL, "exampleSentences" = NULL, classifier = NULL,
   "frequencyScore" = NULL,
   "shortDefinitionPronunciationOverride" = NULL,

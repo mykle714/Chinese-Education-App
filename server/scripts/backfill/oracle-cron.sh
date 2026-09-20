@@ -51,6 +51,12 @@
 #   ORACLE_GATE_FAIL_ESCALATE (default 3) is how many CONSECUTIVE unexpected gate
 #   failures (stale credential, unreachable endpoint) it takes before the script
 #   complains on stderr. At-the-cap skips are not failures and never count.
+#   ORACLE_TOKEN_MIN_TTL (default 600s) is how much life the on-disk OAuth token must
+#   have left before the gate will use it; below that it is refreshed first.
+#
+#   A capped round then SLEEPS to that cap's reset (oracle-park-until.$SLUG) rather
+#   than re-reading usage every tick — see PARK-UNTIL below. Delete that file to force
+#   an early re-read; changing either threshold discards it automatically.
 #
 # CRONTAB (hourly; the lock makes over-scheduling harmless)
 #   PATH=/home/michael/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin
@@ -215,6 +221,31 @@ LAST_STATUS_FILE="$LOG_DIR/oracle-last-status.$SLUG"
 # rather than as a budget signal: we spend one trivial `claude -p` turn to make Claude
 # Code refresh the credential through its own supported path, then re-read usage once.
 #
+# 429 IS THE SAME FAILURE WEARING A DIFFERENT STATUS CODE. This script is the only
+# caller of the usage endpoint in the repo, and it calls it at most twice an hour, so a
+# genuine volume rate limit is implausible. What actually produces a 429 here is
+# repeated *auth failure* after the access token lapses. On 2026-09-18 both shards took
+# a 401, failed their refresh probe, and then got 429 on every tick for nine hours — a
+# stretch that ended the instant an interactive session refreshed the credential. 429 is
+# therefore classified RETRY alongside 401 rather than as an opaque ERR, which is what
+# had been suppressing the self-heal path (ERR does not probe).
+#
+# Better still, do not wait for the failure: ORACLE_TOKEN_MIN_TTL (default 600s) makes
+# the gate read `expiresAt` out of the credentials file FIRST and refresh pre-emptively
+# when the token is expired or about to be. That matters more now that a capped round
+# sleeps to its reset (see PARK-UNTIL): a two-day weekly park guarantees the token is
+# stale by the time the cron wakes, so without a proactive refresh every park would end
+# in a wasted 401/429 tick.
+#
+# PARK-UNTIL: a cap verdict carries the binding cap's `resets_at`, and both cap groups
+# are fixed windows rather than rolling ones — so once a cap parks the round there is
+# nothing a subsequent read can discover before that timestamp. The reset epoch is
+# stamped into oracle-park-until.$SLUG and every tick before it exits 0 with no network
+# call at all. A weekly park is ~50 ticks, i.e. ~50 pointless authenticated reads that
+# can only cost throttle headroom. The stamp also records the thresholds it was written
+# under, so raising/lowering ORACLE_MAX_UTILIZATION* discards the park immediately
+# instead of leaving the operator's change inert until the reset.
+#
 # We deliberately do NOT perform the OAuth refresh grant here. That would mean writing
 # ~/.claude/.credentials.json by hand while a real session may be writing it too, and
 # refresh tokens rotate on use — losing that race on the PPE machine logs the box out
@@ -234,16 +265,82 @@ MAX_UTIL="${ORACLE_MAX_UTILIZATION:-75}"                 # weekly caps (dollars)
 MAX_UTIL_SESSION="${ORACLE_MAX_UTILIZATION_SESSION:-99}" # five-hour window (throughput only)
 GATE_FAIL_STATE="$LOG_DIR/oracle-gate-failures.$SLUG"
 GATE_FAIL_ESCALATE="${ORACLE_GATE_FAIL_ESCALATE:-3}"
+PARK_FILE="$LOG_DIR/oracle-park-until.$SLUG"
+# The thresholds a park was written under. A park is only honoured while they still
+# hold, so an operator retuning either cap takes effect on the next tick.
+PARK_GATES_NOW="$MAX_UTIL/$MAX_UTIL_SESSION"
+
+# ── park-until: skip ticks that cannot learn anything new ────────────────────
+# Both cap groups are fixed windows, so between a cap verdict and its `resets_at`
+# there is no reading to be had — the percentage cannot fall. Exit before the network
+# call rather than re-asking ~50 times across a weekly park. See PARK-UNTIL above.
+if [[ -s "$PARK_FILE" ]]; then
+  IFS=$'\t' read -r PARK_EPOCH PARK_GATES PARK_REASON < "$PARK_FILE" || true
+  NOW_EPOCH="$(date +%s)"
+  if [[ "$PARK_GATES" != "$PARK_GATES_NOW" ]]; then
+    echo "[$(date -uIs)] $SLUG: park discarded — thresholds changed ($PARK_GATES → $PARK_GATES_NOW)" >> "$RUN_LOG"
+    rm -f "$PARK_FILE"
+  elif [[ "$PARK_EPOCH" =~ ^[0-9]+$ ]] && (( NOW_EPOCH < PARK_EPOCH )); then
+    echo "[$(date -uIs)] $SLUG: SKIP — parked until $(date -uIs -d "@$PARK_EPOCH") ($PARK_REASON)" >> "$RUN_LOG"
+    exit 0
+  else
+    echo "[$(date -uIs)] $SLUG: park expired — re-reading usage" >> "$RUN_LOG"
+    rm -f "$PARK_FILE"
+  fi
+fi
+
+# park_until <epoch> <reason>: stamp the park, with sanity bounds. A reset already in
+# the past (clock skew, or a cap still reading high just after its window rolled) and
+# an implausibly distant one are both ignored — the tick simply falls back to the
+# historical behaviour of re-reading next hour rather than sleeping on a bad number.
+park_until() {
+  local epoch="$1" reason="$2" now
+  now="$(date +%s)"
+  [[ "$epoch" =~ ^[0-9]+$ ]] || return 0
+  (( epoch > now )) || return 0
+  (( epoch <= now + 8 * 86400 )) || return 0   # nothing legitimately parks past a week
+  printf '%s\t%s\t%s\n' "$epoch" "$PARK_GATES_NOW" "$reason" > "$PARK_FILE"
+  echo "[$(date -uIs)] $SLUG: parking until $(date -uIs -d "@$epoch") — no further usage reads before then" >> "$RUN_LOG"
+}
+
+# refresh_credential <why>: spend one trivial `claude -p` turn so Claude Code refreshes
+# ~/.claude/.credentials.json through its own supported path. Default permission mode
+# on purpose (NOT bypassPermissions like the round below) — cron has no TTY, so the
+# probe cannot take a tool action even if the model tried to. haiku keeps it cheap.
+# The probe's output goes to RUN_LOG rather than /dev/null: when this fails it is the
+# only evidence of WHY, and discarding it is what made the 2026-09-18 lockout opaque.
+refresh_credential() {
+  echo "[$(date -uIs)] $SLUG: refreshing OAuth credential ($1)" >> "$RUN_LOG"
+  timeout 120 claude -p 'Reply with the single word: ok' --model haiku >> "$RUN_LOG" 2>&1
+}
+
+# token_fresh_for <seconds>: succeeds when the on-disk access token is still valid that
+# far ahead. Purely a local file read — no network, no cost. An unreadable or
+# shapeless credentials file counts as NOT fresh so the probe runs and produces a real
+# diagnostic, rather than letting the gate discover it as an opaque HTTP failure.
+token_fresh_for() {
+  python3 - "$1" <<'PY'
+import json, os, sys, time
+try:
+    creds = json.load(open(os.path.expanduser("~/.claude/.credentials.json")))
+    expires_at = float(creds["claudeAiOauth"]["expiresAt"]) / 1000.0
+except Exception:
+    raise SystemExit(1)
+raise SystemExit(0 if expires_at - time.time() >= float(sys.argv[1]) else 1)
+PY
+}
 
 # read_usage: echoes exactly one classified verdict line.
-#   OK   <summary>  — under the cap, safe to start a round
-#   CAP  <detail>   — at/over the cap; the gate working as designed
-#   AUTH <detail>   — HTTP 401, i.e. the on-disk access token is stale (retryable)
-#   ERR  <detail>   — unreachable, malformed creds, or unreadable payload
+#   OK    <summary>  — under the cap, safe to start a round
+#   CAP   <detail>   — at/over the cap; the gate working as designed. Carries the
+#                      binding cap's reset as `(resets_epoch=<unix>)` for PARK-UNTIL.
+#   RETRY <detail>   — HTTP 401 or 429, i.e. the on-disk access token is stale and a
+#                      refresh probe is worth one turn (see TOKEN FRESHNESS above)
+#   ERR   <detail>   — unreachable, malformed creds, or unreadable payload
 # CAP/ERR reasons keep their historical wording so existing log greps still match.
 read_usage() {
   python3 - "$MAX_UTIL" "$MAX_UTIL_SESSION" <<'PY' 2>&1 || true
-import json, os, sys, urllib.error, urllib.request
+import datetime, json, os, sys, urllib.error, urllib.request
 
 max_util_weekly  = float(sys.argv[1])
 max_util_session = float(sys.argv[2])
@@ -265,12 +362,18 @@ try:
                  "anthropic-beta": "oauth-2025-04-20"},
     )
     data = json.load(urllib.request.urlopen(req, timeout=20))
-# HTTPError is caught before Exception on purpose: a 401 is a stale credential the
+# HTTPError is caught before Exception on purpose: 401/429 are a stale credential the
 # caller can fix by forcing a refresh, whereas a timeout or malformed payload is not
-# worth retrying and must stay a hard skip.
+# worth retrying and must stay a hard skip. 429 sits with 401 rather than with the
+# other HTTP failures because at two calls an hour it cannot be a volume limit — see
+# the TOKEN FRESHNESS comment for the 2026-09-18 nine-hour lockout it caused.
 except urllib.error.HTTPError as exc:
-    if exc.code == 401:
-        print("AUTH access token rejected (HTTP 401 Unauthorized) — stale credential")
+    if exc.code in (401, 429):
+        # A Retry-After, when the server sends one, bounds how long the caller should
+        # wait if even the post-refresh read is still refused.
+        retry_after = (exc.headers.get("Retry-After") or "").strip()
+        hint = f" (retry_after={retry_after})" if retry_after.isdigit() else ""
+        print(f"RETRY access token rejected (HTTP {exc.code} {exc.reason}) — stale credential{hint}")
     else:
         print(f"ERR usage endpoint unreadable (HTTP {exc.code}: {exc.reason})")
     raise SystemExit(0)
@@ -313,27 +416,59 @@ gates = f"session {max_util_session:g}% / weekly {max_util_weekly:g}%"
 # plain max() over percent would let a lenient session reading mask a weekly one.
 kind, pct, thresh = max(caps, key=lambda c: c[1] - c[2])
 if pct >= thresh:
-    resets = ""
+    # The binding cap's reset drives PARK-UNTIL, so look it up in whichever shape the
+    # payload used: `limits[]` keys on `kind`, while the legacy fallback's `kind` IS
+    # the top-level key ("five_hour"/"seven_day"). The old code only searched
+    # `limits[]`, so a fallback payload silently parked without a reset timestamp.
+    resets_at = ""
     for lim in data.get("limits") or []:
         if lim.get("kind") == kind and lim.get("resets_at"):
-            resets = f", resets {lim['resets_at']}"
-    print(f"CAP {kind} at {pct:g}% >= {thresh:g}% [{summary}]{resets}")
+            resets_at = lim["resets_at"]
+    if not resets_at:
+        resets_at = (data.get(kind) or {}).get("resets_at") or ""
+    resets = f", resets {resets_at}" if resets_at else ""
+    # Emitted as a trailing machine-readable field rather than by reformatting the
+    # line, so the caller can regex it out while existing log greps keep matching.
+    epoch = ""
+    if resets_at:
+        try:
+            epoch = f" (resets_epoch={int(datetime.datetime.fromisoformat(resets_at).timestamp())})"
+        except ValueError:
+            epoch = ""
+    print(f"CAP {kind} at {pct:g}% >= {thresh:g}% [{summary}]{resets}{epoch}")
 else:
     print(f"OK [{summary}] under {gates}")
 PY
 }
 
+# Refresh BEFORE the read when the token is already expired or nearly so. Cheaper than
+# discovering it as a 401/429, and it is what keeps a multi-day park from waking up
+# into a stale credential.
+TOKEN_MIN_TTL="${ORACLE_TOKEN_MIN_TTL:-600}"
+if ! token_fresh_for "$TOKEN_MIN_TTL"; then
+  refresh_credential "access token expired or within ${TOKEN_MIN_TTL}s of expiry" || true
+fi
+
 BUDGET="$(read_usage)"
 
-# One retry, and only for a 401. The probe's job is purely to make Claude Code notice
-# the expired token and refresh it; the reply is discarded. Default permission mode on
-# purpose (NOT bypassPermissions like the round below) — cron has no TTY, so the probe
-# cannot take a tool action even if the model tried to. haiku keeps it cheap.
-if [[ "$BUDGET" == AUTH* ]]; then
-  echo "[$(date -uIs)] $SLUG: usage read rejected (${BUDGET#AUTH }) — forcing a token refresh" >> "$RUN_LOG"
-  if timeout 120 claude -p 'Reply with the single word: ok' --model haiku >/dev/null 2>&1; then
+# One retry, and only for 401/429 — both of which mean "this credential is stale".
+# The probe's job is purely to make Claude Code notice and refresh it; the reply is
+# discarded. A still-rejected read after the refresh is a real problem (revoked login,
+# or an actual throttle), so it degrades to ERR and, when the server named a
+# Retry-After, parks for that long instead of re-probing every tick.
+if [[ "$BUDGET" == RETRY* ]]; then
+  echo "[$(date -uIs)] $SLUG: usage read rejected (${BUDGET#RETRY }) — forcing a token refresh" >> "$RUN_LOG"
+  if refresh_credential "usage read rejected"; then
+    RETRY_HINT="$BUDGET"
     BUDGET="$(read_usage)"
-    [[ "$BUDGET" == OK* ]] && echo "[$(date -uIs)] $SLUG: token refreshed; usage readable again" >> "$RUN_LOG"
+    if [[ "$BUDGET" == OK* ]]; then
+      echo "[$(date -uIs)] $SLUG: token refreshed; usage readable again" >> "$RUN_LOG"
+    elif [[ "$BUDGET" == RETRY* ]]; then
+      if [[ "$RETRY_HINT" =~ retry_after=([0-9]+) ]]; then
+        park_until "$(( $(date +%s) + BASH_REMATCH[1] ))" "usage endpoint throttled (Retry-After)"
+      fi
+      BUDGET="ERR usage read still rejected after a token refresh (${BUDGET#RETRY })"
+    fi
   else
     BUDGET="ERR token refresh probe failed — credential likely needs an interactive 'claude auth login'"
   fi
@@ -342,7 +477,7 @@ fi
 if [[ "$BUDGET" != OK* ]]; then
   # Strip whichever verdict prefix is present so the log keeps its historical
   # "SKIP — <reason>" shape.
-  REASON="${BUDGET#CAP }"; REASON="${REASON#AUTH }"; REASON="${REASON#ERR }"
+  REASON="${BUDGET#CAP }"; REASON="${REASON#RETRY }"; REASON="${REASON#ERR }"
   echo "[$(date -uIs)] $SLUG: SKIP — $REASON" >> "$RUN_LOG"
 
   # Only ping Discord on the transition INTO a parked state, not every tick
@@ -355,6 +490,12 @@ if [[ "$BUDGET" != OK* ]]; then
   if [[ "$BUDGET" == CAP* ]]; then
     # Being at the cap is the gate succeeding, not failing — clear any failure streak.
     rm -f "$GATE_FAIL_STATE"
+    # Sleep to the binding cap's reset instead of re-asking hourly. Absent an epoch
+    # (an older payload shape, or an unparseable timestamp) this is a no-op and the
+    # next tick reads usage as before.
+    if [[ "$BUDGET" =~ resets_epoch=([0-9]+) ]]; then
+      park_until "${BASH_REMATCH[1]}" "$REASON"
+    fi
   else
     FAILS=$(( $(cat "$GATE_FAIL_STATE" 2>/dev/null || echo 0) + 1 ))
     echo "$FAILS" > "$GATE_FAIL_STATE"
@@ -398,6 +539,8 @@ if [[ -n "${DRY_RUN:-}" ]]; then
   echo "  lock       : $LOCK"
   echo "  log        : $RUN_LOG"
   echo "  budget     : $BUDGET (gates: session ${MAX_UTIL_SESSION}% / weekly ${MAX_UTIL}%)"
+  echo "  token ttl  : $(token_fresh_for "$TOKEN_MIN_TTL" && echo "fresh (>${TOKEN_MIN_TTL}s)" || echo "stale/expiring — would refresh first")"
+  echo "  park file  : $PARK_FILE $( [[ -s "$PARK_FILE" ]] && echo "(active)" || echo "(none)" )"
   exit 0
 fi
 

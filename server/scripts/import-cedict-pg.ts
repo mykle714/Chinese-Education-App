@@ -63,7 +63,12 @@ function convertPinyinToToneMarks(pinyinWithNumbers: string): string {
 
         letters = letters.replace(/v/g, 'ü').replace(/V/g, 'Ü');
 
+        // Standard tone-mark placement: a/e always win; then the o of an "ou"
+        // diphthong (hou4 -> hòu, not hoù); otherwise the last vowel (gui4 -> guì).
         let vowelIndex = letters.search(/[aeAE]/);
+        if (vowelIndex === -1) {
+            vowelIndex = letters.search(/[oO][uU]/);
+        }
         if (vowelIndex === -1) {
             const vowelMatches = Array.from(letters.matchAll(/[iouüIOUÜ]/g));
             if (vowelMatches.length > 0) {

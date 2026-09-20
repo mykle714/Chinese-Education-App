@@ -35,10 +35,12 @@ import {
   freeFarmTileset,
   PLANK_VARIATIONS,
   type Compass,
+  type Direction,
   type LandmassEdge,
   type WalkwayDirection,
 } from './freeFarmTileset';
 import type { PlaceholderArea } from './placeholderArea';
+import type { FurniturePlacement } from './furniture';
 import type { CellWindow } from './isometric';
 import { packCell, packCellKey, type CellId } from './cellKey';
 
@@ -509,8 +511,48 @@ export interface EditorMasks {
    * overlap any surface freely — no mutual exclusion.
    */
   condition: Set<string>;
+  /**
+   * UNWALKABLE cells — the iw scene editor's walkability mask (the INVERSE of
+   * {@link street}/{@link communal}: a scene paints what you cannot walk on, the night market
+   * paints what you can). Like the two walkable classes it is a spriteless ANNOTATION
+   * rendered as a highlight TINT only, so it never feeds surface/decor rendering and is
+   * absent from {@link EditorTile}/{@link buildEditorField}.
+   *
+   * It is an OVERRIDE overlay with no mutual exclusion at all: any cell may be masked
+   * unwalkable whatever stands on it, which is the whole point of the 2026-09-19 change
+   * (docs/IMMERSIVE_WORLD.md § 3a) — a wall needs no sprite, and a sprite need not be a wall.
+   * The iw editor STAMPS it automatically when a blocking prop or a furniture piece is
+   * dropped, but that is an authoring convenience in `useIWSceneDraft`, not a rule here.
+   *
+   * OMITTED ⇒ no cell is masked. The night market never paints it.
+   */
+  unwalkable?: Set<string>;
+  /**
+   * FORCED-DIRECTION cells — cell "col,row" → the facing forced on whoever settles there
+   * (the iw scene editor's second mask). A MAP rather than a Set because each cell carries a
+   * direction; rendered as a tint PLUS an arrow drawn in that direction.
+   *
+   * Like {@link unwalkable} it is spriteless, unconstrained, absent from the terrain build,
+   * and never painted by the night market. OMITTED ⇒ no cell forces a facing.
+   */
+  forcedDirection?: Map<string, Direction>;
   /** cell "col,row" → the chosen decor sprite URL for that cell. */
   decor: Map<string, string>;
+  /**
+   * Placed FURNITURE — multi-cell lumeish props ({@link ./furniture FurniturePlacement}),
+   * each `{col,row,id}` anchored at its near (min-iso) foot cell. Unlike {@link decor} (one
+   * flat sprite keyed BY cell) a furniture piece may span several cells, so it is stored as
+   * its own record — the same reason {@link placeholder} is a record list rather than a mask.
+   *
+   * It is a REAL SPRITE layer, not an annotation: the view draws it as depth-sorted
+   * per-screen-column strips (see {@link ./footprint propStrips}). It does not feed
+   * {@link EditorTile}/{@link buildEditorField}, which describe the GROUND — furniture stands
+   * on top of whatever ground the masks resolve to and constrains none of it.
+   *
+   * OMITTED ⇒ no furniture. Optional like {@link floor} so the many surfaces that build an
+   * `EditorMasks` (tests, the iw scene draft, the stitcher) need not opt in.
+   */
+  furniture?: FurniturePlacement[];
   /**
    * The board-wide default FLOOR — what a cell shows when no terrain mask covers it.
    * NOT a cell mask: it is one setting for the whole board, carried here so it reaches

@@ -1,5 +1,6 @@
 import React from "react";
 import { HeaderCycleChip } from "./PageHeader";
+import { cycleChipWidthCh } from "./cycleChipSizing";
 import { useTTS } from "../hooks/useTTS";
 import type { AudioMode } from "../hooks/useTTSSettings";
 
@@ -19,7 +20,8 @@ import type { AudioMode } from "../hooks/useTTSSettings";
  * (Bubble Match on a reading run) simply do not render it.
  *
  * Used by: FlashcardsLearnHeader (flp), SortCardsPage (scp), BubbleMatchHeader
- * (Bubble Match + Hydra Bubbles), MatchSpeedHeader, WordSearchHeaderControls.
+ * (Bubble Match + Hydra Bubbles), MatchSpeedHeader, WordSearchHeaderControls,
+ * IWPlayPage (Immersive World).
  * Documented in: docs/AUDIO_PLAYBACK.md.
  */
 
@@ -77,8 +79,13 @@ const MODE_CHIP: Record<AudioMode, { icon: string; label: string; ariaLabel: str
  * as it cycles and the controls to its left hold still under the tapping thumb.
  * Derived from the table rather than hard-coded: renaming or adding a state resizes
  * the chip automatically instead of silently reintroducing the jump.
+ *
+ * `cycleChipWidthCh` also accounts for the chip's long-label rule — `default` is
+ * seven characters and renders a size down, so the width it asks for is what it
+ * actually occupies rather than its raw character count. `mute` and `media` are
+ * unaffected and stay full size.
  */
-const MODE_LABEL_WIDTH_CH = Math.max(...Object.values(MODE_CHIP).map((m) => m.label.length));
+const MODE_LABEL_WIDTH_CH = cycleChipWidthCh(Object.values(MODE_CHIP).map((m) => m.label));
 
 const AudioModeChip: React.FC<{ className?: string }> = ({ className }) => {
     const { mode, cycleAudioMode } = useTTS();

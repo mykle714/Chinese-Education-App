@@ -25,6 +25,7 @@ import type {
 import {
   acceptDeadline,
   isAcceptWindowOpen,
+  isIssueWindowOpen,
   isTestWindowOpen,
   latestTestWindowClose,
   localChallengeWeekIndex,
@@ -116,6 +117,8 @@ export interface ChallengeUserLookup {
  * `anytime` lifts exactly the gates that are about the CALENDAR, plus the commitment
  * cap that would otherwise strand a tester mid-session:
  *
+ *   * the issue window (the challenger's Monday 04:00 → Tuesday 04:00 local, plus
+ *     the challengee's accept deadline checked at issue)
  *   * the accept deadline (Wednesday 04:00 local)
  *   * the test window (Friday 04:00 → Monday 04:00 local), including the rule that
  *     hides `gameSequence` until it opens
@@ -235,12 +238,15 @@ export class StudyChallengeService {
       // This week's already-finished challenges. They are not live, but their
       // results stay on the row until the next challenge period opens (§ 1).
       this.studyChallengeDAL.listResolvedForUserInWeek(userId, weekIndex),
-      this.studyChallengeDAL.countActiveForUser(userId, language),
+      this.countActiveChallenges(userId, language, now),
     ]);
 
     // Resolved ONCE for the whole page, not per row: it is one account-level question
     // and asking it per friend would be one user lookup per row.
     const anytimeOn = await this.resolveAnytime(userId, anytime);
+    // Challenges go out on the VIEWER's own Monday only (§ 2). One answer for the whole
+    // page — it depends on the viewer's clock, not on which friend the row is.
+    const issueWindowOpen = isIssueWindowOpen(weekIndex, viewerTz, now);
 
     // Index the challenges by the OTHER player, so each friend row is a map lookup
     // rather than a scan of every challenge per friend.
@@ -277,7 +283,7 @@ export class StudyChallengeService {
       const championUserId = lastResolved?.winnerUserId ?? null;
 
       const { canChallenge, blockedReason, viewerBlocked } = await this.challengeability(
-        userId, friend.userId, language, weekIndex, activeCount, row, anytimeOn
+        userId, friend.userId, language, weekIndex, activeCount, row, issueWindowOpen, anytimeOn
       );
 
       rows.push({
@@ -510,6 +516,30 @@ export class StudyChallengeService {
       ? await this.nextFreeWeekForPair(userId, friendUserId, currentWeek)
       : currentWeek;
 
+    // ── The issue window: the challenger's Monday, and a challengee who can still accept ──
+    //
+    // Checked BEFORE the candidate draw (several queries) because it is a pure clock
+    // question with no race to guard — nothing another request does can move it — so
+    // there is no reason to spend the draw on a challenge that will be refused.
+    //
+    // Two checks, because the two players' clocks differ (§ 2):
+    //   * the CHALLENGER must be inside their local Monday 04:00 → Tuesday 04:00. A
+    //     challenge issued later in the week took the week's fixed deadlines with it
+    //     and was born past its Wednesday accept deadline — unacceptable, but still
+    //     spending the pair's week and a cap slot;
+    //   * the CHALLENGEE must still be before their Wednesday 04:00 — the end of their
+    //     Tuesday. Only a pair ~24h+ apart can trip this (a far-west challenger late on
+    //     their Monday, a far-east challengee), but when it does the result is the same
+    //     born-expired challenge, so it is refused for the same reason.
+    // Both are CALENDAR gates, so `anytime` lifts them (§ 2a).
+    const challengeeTz = await this.timezoneOf(friendUserId);
+    if (!anytimeOn && !isIssueWindowOpen(weekIndex, challengerTz, now)) {
+      throw new ValidationError('Challenges can only be sent on Mondays');
+    }
+    if (!anytimeOn && !isAcceptWindowOpen(weekIndex, challengeeTz, now)) {
+      throw new ValidationError('It is too late in the week for this friend to accept a challenge');
+    }
+
     // A cross-language pair can only play different-word, because a shared set is
     // impossible for them (Q29). The challengee's language is their own current one.
     const challengeeLanguage = await this.selectedLanguageOf(friendUserId);
@@ -584,7 +614,6 @@ export class StudyChallengeService {
     //     Not lifted by `anytime`: it is a data invariant the read path depends on
     //     (`getChallengesPage` keys live challenges by opponent), not a calendar.
     const live = await this.studyChallengeDAL.listLiveForUser(userId, client);
-    const challengeeTz = await this.timezoneOf(friendUserId);
     const unfinished = live.find((row) => {
       const other = row.challengerId === userId ? row.challengeeId : row.challengerId;
       if (other !== friendUserId) return false;
@@ -606,7 +635,7 @@ export class StudyChallengeService {
 
     // 3. The commitment cap, in THIS language. Lifted by `anytime` so a tester
     //    working through the flow repeatedly is not stranded six challenges in.
-    const active = await this.studyChallengeDAL.countActiveForUser(userId, language, client);
+    const active = await this.countActiveChallenges(userId, language, now, client);
     if (!anytimeOn && active >= MAX_ACTIVE_CHALLENGES) {
       throw new ValidationError(
         `You're already in ${MAX_ACTIVE_CHALLENGES} challenges this week`
@@ -755,7 +784,7 @@ export class StudyChallengeService {
       // pre-accept count, all passed, and all created their decks — the cap is a
       // COUNT, which no constraint can enforce, so the critical section is the only
       // thing holding it.
-      const active = await this.studyChallengeDAL.countActiveForUser(userId, myLanguage, client);
+      const active = await this.countActiveChallenges(userId, myLanguage, now, client);
       if (!anytimeOn && active >= MAX_ACTIVE_CHALLENGES) {
         throw new ValidationError(
           `You're already in ${MAX_ACTIVE_CHALLENGES} challenges this week`
@@ -1517,6 +1546,8 @@ export class StudyChallengeService {
      * week. Either way it means "this row already has its own lifecycle control".
      */
     currentRow: StudyChallengeRow | undefined,
+    /** Is the VIEWER inside their own Monday issue window right now (§ 2)? */
+    issueWindowOpen: boolean,
     /** Tester escape hatch, ALREADY RESOLVED — lifts the cap and the pair-week rule. */
     anytime = false
   ): Promise<Pick<ChallengeFriendRow, 'canChallenge' | 'blockedReason' | 'viewerBlocked'>> {
@@ -1539,6 +1570,12 @@ export class StudyChallengeService {
     // The block is NOT lifted by `anytime` — it is a person's decision about another
     // person, not a clock, and a tester flag must never override it.
     if (eitherBlocked) return { canChallenge: false, blockedReason: 'unavailable', viewerBlocked };
+    // The calendar comes before the cap: off-Monday it is the reason for EVERY friend,
+    // and "you're in 6 challenges" would wrongly suggest that finishing one frees a
+    // slot today. Lifted by `anytime`, like every other calendar gate (§ 2a).
+    if (!anytime && !issueWindowOpen) {
+      return { canChallenge: false, blockedReason: 'not-issue-day', viewerBlocked };
+    }
     if (!anytime && activeCount >= MAX_ACTIVE_CHALLENGES) {
       return { canChallenge: false, blockedReason: 'at-cap', viewerBlocked };
     }
@@ -1553,6 +1590,58 @@ export class StudyChallengeService {
     }
 
     return { canChallenge: true, blockedReason: null, viewerBlocked };
+  }
+
+  /**
+   * How many of `MAX_ACTIVE_CHALLENGES` slots the user has spent in one language
+   * (Q65) — the committed rows, minus any whose deadline has ALREADY PASSED.
+   *
+   * THE COUNT IS DERIVED, NOT READ, for the same reason `toSummary`'s status is
+   * (docs/STUDY_CHALLENGE.md § 9 "The read path never waits for the job"). Counting
+   * stored statuses kept a lapsed challenge on the cap until the hourly job rewrote
+   * it — within the hour on PPE, and forever on dev, where the timer is not
+   * installed. A row is dropped when:
+   *   * `pending` and the CHALLENGEE's Wednesday 04:00 has passed — `toSummary`
+   *     already serializes it as `expired` (maintenance pass 1);
+   *   * `accepted` and the LATER of the two players' test windows has closed — the
+   *     same "unfinished" rule as `issueChallenge` gate 1a (maintenance pass 2).
+   *
+   * The rows come from the DAL and the deadlines from `shared/challengeWeek.ts`,
+   * rather than a SQL aggregate, so the boundary arithmetic stays in the one module
+   * the client and the tests already trust (the cron SQL is the only other copy).
+   *
+   * Timezones are memoised per call: every row shares `userId`, so a page of up to
+   * six rows costs at most seven user lookups, not twelve.
+   */
+  private async countActiveChallenges(
+    userId: string,
+    language: Language,
+    now: Date,
+    // The DAL's own client type, so the service stays free of a direct `pg` import.
+    client?: Parameters<IStudyChallengeDAL['listCommittedForUser']>[2]
+  ): Promise<number> {
+    const rows = await this.studyChallengeDAL.listCommittedForUser(userId, language, client);
+    const tzCache = new Map<string, Promise<string>>();
+    const tzOf = (id: string) => {
+      let tz = tzCache.get(id);
+      if (!tz) { tz = this.timezoneOf(id); tzCache.set(id, tz); }
+      return tz;
+    };
+
+    let active = 0;
+    for (const row of rows) {
+      const challengeeTz = await tzOf(row.challengeeId);
+      if (row.status === 'pending') {
+        if (isAcceptWindowOpen(row.weekIndex, challengeeTz, now)) active++;
+        continue;
+      }
+      // `accepted` — the DAL returns no other status.
+      const challengerTz = await tzOf(row.challengerId);
+      if (latestTestWindowClose(row.weekIndex, challengerTz, challengeeTz).getTime() > now.getTime()) {
+        active++;
+      }
+    }
+    return active;
   }
 
   /** True when either player has opted out of challenges with the other. */

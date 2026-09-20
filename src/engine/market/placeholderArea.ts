@@ -12,6 +12,11 @@
  * {@link PLACEHOLDER_SIZES} are mirrored in server/dal/shared/placeholderArea.ts; the guard
  * test src/__tests__/placeholderAreaSync.test.ts fails the build if the two ever drift.
  *
+ * The rectangle math itself (cells covered, overlap, fit, hit-test) is NOT implemented here —
+ * it is {@link ./footprint}, shared with houses and the lumeish furniture pack. The
+ * `placeholder*` names below are kept as thin, domain-named wrappers because they read better
+ * at their ~30 call sites and because `placeholderUnitSlots` genuinely is placeholder-specific.
+ *
  * A placeholder area is an occupant slot authored by DROPPING one of a fixed set of
  * rectangle sizes ({@link PLACEHOLDER_SIZES}) at a corner, instead of free-painting a
  * per-cell mask. Storing each drop as its own `{col,row,w,h}` record (rather than a flat
@@ -21,7 +26,24 @@
  * `[row, row+h-1]`.
  */
 
-/** A dropped placeholder area: near-corner anchor (`col,row`) + span (`w` along isoX, `h` along isoY). */
+import {
+  footprintAt,
+  footprintCells,
+  footprintCoversCell,
+  footprintFitsBoard,
+  footprintOverlapsAny,
+  footprintUnionCells,
+  footprintsOverlap,
+} from './footprint';
+
+/**
+ * A dropped placeholder area: near-corner anchor (`col,row`) + span (`w` along isoX, `h` along isoY).
+ *
+ * Structurally identical to {@link ./footprint CellFootprint}, and every occupancy helper below
+ * delegates to that shared module — a placeholder area IS a multi-cell footprint, it just happens
+ * to be one the editor authored rather than one a prop carries. The declaration stays here (rather
+ * than aliasing `CellFootprint`) because it is a server-mirrored contract; see the module doc.
+ */
 export interface PlaceholderArea {
   col: number;
   row: number;
@@ -123,16 +145,12 @@ export function placeholderUnitSlotAt(
 
 /** The "col,row" cell keys an area covers (its full w×h footprint). */
 export function placeholderAreaCells(area: PlaceholderArea): string[] {
-  const cells: string[] = [];
-  for (let dx = 0; dx < area.w; dx++) {
-    for (let dy = 0; dy < area.h; dy++) cells.push(`${area.col + dx},${area.row + dy}`);
-  }
-  return cells;
+  return footprintCells(area);
 }
 
 /** Whether the cell (col,row) falls inside `area`'s footprint. */
 export function placeholderCoversCell(area: PlaceholderArea, col: number, row: number): boolean {
-  return col >= area.col && col < area.col + area.w && row >= area.row && row < area.row + area.h;
+  return footprintCoversCell(area, col, row);
 }
 
 /**
@@ -141,9 +159,7 @@ export function placeholderCoversCell(area: PlaceholderArea, col: number, row: n
  * the Set is agnostic to that.
  */
 export function placeholderCoveredCells(areas: readonly PlaceholderArea[]): Set<string> {
-  const out = new Set<string>();
-  for (const area of areas) for (const c of placeholderAreaCells(area)) out.add(c);
-  return out;
+  return footprintUnionCells(areas);
 }
 
 /** The area whose footprint covers (col,row), or undefined — backs erase-by-click (remove the whole area). */
@@ -152,23 +168,20 @@ export function placeholderAreaAt(
   col: number,
   row: number,
 ): PlaceholderArea | undefined {
-  return areas.find((a) => placeholderCoversCell(a, col, row));
+  return footprintAt(areas, col, row);
 }
 
 /** Whether an area's whole footprint is inside a width×height board (no clipping — a drop that overhangs is refused). */
 export function placeholderAreaFits(area: PlaceholderArea, width: number, height: number): boolean {
-  return area.col >= 0 && area.row >= 0 && area.col + area.w <= width && area.row + area.h <= height;
+  return footprintFitsBoard(area, width, height);
 }
 
 /** Whether two areas share any cell (axis-aligned rectangle overlap). */
 export function placeholderAreasOverlap(a: PlaceholderArea, b: PlaceholderArea): boolean {
-  return (
-    a.col < b.col + b.w && b.col < a.col + a.w &&
-    a.row < b.row + b.h && b.row < a.row + a.h
-  );
+  return footprintsOverlap(a, b);
 }
 
 /** Whether `area` overlaps any already-placed area (drops onto an occupied slot are refused). */
 export function placeholderAreaOverlapsAny(area: PlaceholderArea, areas: readonly PlaceholderArea[]): boolean {
-  return areas.some((a) => placeholderAreasOverlap(area, a));
+  return footprintOverlapsAny(area, areas);
 }

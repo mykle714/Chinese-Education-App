@@ -15,6 +15,7 @@
  * here is a stored counter. See docs/VELOCITY.md.
  */
 import type { FlashcardCategory, MarkType, MasteryBarId } from '../contracts/wire.js';
+import { CATEGORY_BOUNDARIES } from '../contracts/mastery.js';
 
 /** One logged promotion: a card moving up one or more utcm bands. */
 export interface CategoryPromotion {
@@ -48,6 +49,31 @@ export interface CategoryPromotionInput {
   markTimestamp: string;
 }
 
+/**
+ * Velocity for one language, split by which band boundary was crossed.
+ *
+ * `boundaryCounts[i]` is how many cards crossed `CATEGORY_BOUNDARIES[i]`
+ * (contracts/mastery.ts) inside the window — ascending, so [0] is Unfamiliar→Target
+ * and the last entry is Comfortable→Mastered. A card that climbed TWO bands in one
+ * mark counts in BOTH boundaries it crossed, which is what makes the entries sum
+ * exactly to `total`: `bandsClimbed` IS the number of boundaries crossed.
+ *
+ * `total` is therefore derived from the counts rather than read from
+ * SUM("bandsClimbed"), so the card's `x + y + z = total` arithmetic can never
+ * disagree with its own parts.
+ */
+export interface VelocityBreakdown {
+  /** Band-steps climbed — the headline figure. Always equals `boundaryCounts` summed. */
+  total: number;
+  /** Cards crossing each adjacent-band boundary, aligned with `CATEGORY_BOUNDARIES`. */
+  boundaryCounts: number[];
+}
+
+/** An all-zero breakdown of the right length — what a language with no promotions reads as. */
+export function emptyVelocityBreakdown(): VelocityBreakdown {
+  return { total: 0, boundaryCounts: CATEGORY_BOUNDARIES.map(() => 0) };
+}
+
 /** The length of the velocity window, in days. Single source of truth. */
 export const VELOCITY_WINDOW_DAYS = 7;
 
@@ -57,12 +83,17 @@ export const VELOCITY_WINDOW_DAYS = 7;
  *   with zero promotions are ABSENT (clients default to 0).
  * - `velocity`: the caller's currently-selected language's number — what the
  *   Account page renders.
+ * - `boundaryCounts`: that same number split three ways (see `VelocityBreakdown`).
+ *   Always present and always the right length, even at zero, so the card never has
+ *   to guess how many columns to draw.
  * - `total`: all languages summed.
  */
 export interface VelocityResponse {
   velocity: number;
   language: string;
   byLanguage: Record<string, number>;
+  /** `velocity` broken out per band boundary, aligned with `CATEGORY_BOUNDARIES`. */
+  boundaryCounts: number[];
   total: number;
   windowDays: number;
 }

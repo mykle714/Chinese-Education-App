@@ -9,6 +9,17 @@ the lines moved by ties (§ 7).
 **Status: LIVE ON PPE** since 2026-08-16 (migration 146; the `cow-arena` hourly timer is
 installed and armed). Every design question in § 11 was answered before implementation began.
 
+🚩 **Arena sits behind a feature flag, currently ON** — `FEATURE_FLAGS.arena` in
+`server/contracts/featureFlags.ts`, see [FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 2c.
+Everything below is live and unchanged; the flag exists so the feature *can* be switched
+off. If set to `false`: `app.use(arenaRoutes)` is skipped (all six `/api/arena*` endpoints
+404 — arena has **no** endpoint outside that router), `/arena` is filtered out of the route
+table, and the Home hub's Arena tile is dropped. Three things would deliberately stay:
+the hourly `cow-arena` timer (so an in-flight week still resolves), the optional
+`arenaService` injection into `UserMinutePointsService`, and `users."arenaMessage"` in
+`UserDAL.findById`'s column list — a column rather than a route, which no client reads off
+`GET /api/users/:id` and which nobody can set once `POST /api/arena/message` is unmounted.
+
 **The first PPE week (2026-08-18) formed wrong; the fix is deployed** (2026-08-18) — see
 § 5.3 for both causes. Formation had no time gate, so it fired ~31 hours early and locked
 four real users out of the week; the straggler path that should have caught them was never

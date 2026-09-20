@@ -16,6 +16,7 @@ import { parseBuiltinCollectionId } from '../dal/shared/vetTable.js';
 import { DeckService } from '../services/DeckService.js';
 import type { StudyChallengeService } from '../services/StudyChallengeService.js';
 import type { ChallengeRoundContext } from '../types/studyChallenge.js';
+import { isFeatureEnabled } from '../contracts/featureFlags.js';
 
 /**
  * OnDeck Vocabulary Controller
@@ -49,6 +50,13 @@ export class OnDeckVocabController {
    * their test window must be told, not handed a casual board that scores nothing.
    */
   private async resolveChallengeRound(req: Request, userId: string): Promise<ChallengeRoundContext | null> {
+    // Study Challenge flag (server/contracts/featureFlags.ts). Returning null here
+    // gates BOTH callers — gamePool and wordSearchGrid — because a challenge board is
+    // the only thing either does differently for a challenge. Deliberately a silent
+    // fall-through to the ordinary pool rather than the 400/404 an unplayable
+    // challenge gets: with the feature off there is no challenge to report on, and a
+    // stray `?challengeId=` in a bookmarked URL should still hand back a casual board.
+    if (!isFeatureEnabled('studyChallenge')) return null;
     const rawId = req.query.challengeId;
     if (rawId == null || String(rawId).trim() === '') return null;
     const gameId = typeof req.query.gameId === 'string' ? req.query.gameId : '';

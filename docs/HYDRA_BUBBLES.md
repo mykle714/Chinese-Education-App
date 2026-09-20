@@ -879,9 +879,11 @@ So a strict-bucket request **collapses the fill order to the requested buckets a
 > freely" and silently reintroduced the exact mispricing the rule was written to stop.
 > The client now sends **`?strictBuckets=1`**
 > (`useColorBuffers.fetchColor`), the controller parses it, and
-> `getGameVocabPool` honors it via `opts.strictBuckets`. The length-1 inference is kept
-> underneath as a backstop for a future single-bucket caller that does not know about
-> the flag.
+> `getGameVocabPool` honors it via `opts.strictBuckets`. **The flag is now the only way
+> in** — the length-1 inference that was kept underneath as a backstop was removed on
+> 2026-09-13, because Match Speed's single-bucket buffer top-ups tripped it and lent
+> cards instead of borrowing (GAMES_FEATURE.md, the strict-bucket note). Hydra is
+> unaffected: it always sends the flag.
 >
 > **Note for anyone auditing other games:** Match Speed's Review and Challenge modes
 > also request a two-band subset (`Comfortable`+`Mastered`, `Unfamiliar`+`Target`) and

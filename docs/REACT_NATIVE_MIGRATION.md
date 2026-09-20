@@ -593,7 +593,9 @@ re-read.
 |---|---|---|---|
 | **Coarse location** (a ~5 km geohash cell, for arena clustering) | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 5.2 | `navigator.geolocation` at `enableHighAccuracy: false`, HTTPS-only, and on iOS effectively Safari-only | `@capacitor/geolocation` → CoreLocation: the real `NSLocationWhenInUseUsageDescription` **inside** the system prompt instead of a second dialog we render ourselves; explicit reduced-accuracy authorization (and `ACCESS_COARSE_LOCATION` on Android) rather than a hint; and a deep link to the app's Settings pane, so a denial is recoverable instead of permanent |
 | **Notifications** ("your arena opens", "a friend challenged you", "your streak is at risk") | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 13, [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) § 8 | none — web push on iOS needs a Home-Screen install (16.4+) | native push with no install precondition |
+| **Replacing the OS keyboard** (the beginner handwriting keyboard, swappable from any focused text field) | [BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § 7a | works, but on two unreliable primitives: `window.visualViewport` to guess the keyboard's height (reports nothing until it has opened, jitters through the iOS animation) and `inputmode="none"` + a blur/refocus to dismiss it (does not reliably dismiss an already-open iOS keyboard; the caret must be captured and restored by hand) | `@capacitor/keyboard`: `keyboardWillShow` carries the **exact** `keyboardHeight` before the animation starts, `Keyboard.hide()` dismisses reliably without touching focus, and `setResizeMode('none')` stops the WebView reflowing under us. It replaces both guesses with facts. **It does not add a native accessory bar** — the swap bar stays web-rendered either way (see below) |
 | **Time-critical "join now" invite** (a friend has opened a live Study Challenge room and is waiting) | [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 4 (Q21) | an in-app banner over the live WebSocket, reaching only a player who already has the app open. Live mode is **still fully playable without it** — the waiting room is a permanent rendezvous both players can enter from the challenge screen, so friends coordinate out of band | `@capacitor/push-notifications` → APNs/FCM, deep-linked into the waiting room, capped at one per day per (sender, target). Turns live mode from "arrange it by text first" into something **spontaneous** — a reach improvement, **not** a precondition |
+| **Haptic feedback** (a tap on a game answer, a flashcard mark, a drag-snap in scp, a component tap in bk) | not specified in any feature doc yet — recorded here **2026-09-20** as a standing want, so the packaging ledger is complete | `navigator.vibrate()`, which **iOS Safari does not implement at all** and which Chrome Android gates behind a user gesture and freely coalesces. On the platform this app is mostly played on, the web path is not degraded — it is **absent** | `@capacitor/haptics` → `UIImpactFeedbackGenerator` / `UINotificationFeedbackGenerator` / `UISelectionFeedbackGenerator` on iOS (Taptic Engine, iPhone 7+) and `VibrationEffect` on Android: `impact` (light/medium/heavy), `notification` (success/warning/error), and the `selectionStart/Changed/End` tick trio |
 
 The two notification rows are deliberately separate. The first is a **"come back
 sometime"** class — it can be late, batched, or missed without breaking anything, and the
@@ -605,9 +607,33 @@ Neither is a blocker, and the live-invite row is a **weaker** argument than it f
 the feature was designed so that a permanent waiting-room entrance carries it, precisely so
 that no part of Study Challenge waits on a packaging decision.
 
+The keyboard entry is the one row where **React Native offers something Capacitor
+genuinely cannot**: RN's iOS-only `InputAccessoryView` is a real
+`inputAccessoryView`, so a swap bar could be *attached* to the system keyboard
+rather than positioned near it. That is the literal behaviour asked for — but it
+is a very large lever for a small gain, since a bar drawn at a known-exact
+keyboard height is visually the same thing. It does not move the recommendation.
+
 The location entry is worth noting for *why* it is not a React Native argument:
 **Capacitor supplies it in full.** It moves the packaging question, not the
 framework question — consistent with the recommendation below.
+
+The haptics entry is the only row with **no web path at all**, which makes it the
+cleanest capability argument in the table — but also the smallest, because nothing
+currently depends on it. Two constraints should shape whatever is eventually built:
+
+- **It can silently do nothing, undetectably.** iOS mutes impact/notification feedback
+  when System Haptics is off or the device is in Low Power Mode, and there is no API to
+  ask. So haptics must stay a **garnish on feedback already carried visually or
+  audibly** — never the sole channel for a game result or a confirmation.
+- **It is native-build-only.** The dev browser and the mdp frame will feel nothing, so
+  the call sites need a no-op path rather than a `Capacitor.isNativePlatform()` check
+  scattered through the UI. The shape that matches how this app already isolates
+  platform differences (`src/utils/authHeader.ts`, and the bk's own
+  `src/features/beginnerKeyboard/useKeyboardViewport.ts`) is a single client-util module
+  exposing **intent-named** verbs — `tapFeedback()`, `correctMark()`, `wrongMark()` —
+  so the haptic vocabulary stays consistent the way `src/theme/*` keeps type and color
+  consistent, and no component picks an `ImpactStyle` for itself.
 
 ### What React Native can do that Capacitor cannot
 
@@ -760,6 +786,15 @@ satisfies gate 3 on its own — but run the control test first, since the same
 evidence would otherwise point at a one-line CSS fix.
 
 **Current status: 0 of 3 gates cleared.** Two of them are days of work.
+
+**2026-09-07 — Capacitor adoption decided, and it does not touch these gates.**
+The [beginner keyboard](./BEGINNER_KEYBOARD.md) § 7a will be built on Capacitor
+for its keyboard-height and dismissal APIs. That is the *hybrid path* below and
+the standing recommendation working as intended: it raises the value of
+**packaging**, not of **migrating**. Gate 3 stays uncleared — Capacitor supplies
+what the keyboard needs. RN gets revisited only if the shipped keyboard proves it
+needs a true `inputAccessoryView`, and that argument must be made here with
+evidence, not assumed.
 
 ---
 
@@ -996,7 +1031,7 @@ a bundle-size diff.
 
 | # | Action | Notes |
 |---|---|---|
-| 13 | **Keep `src/engine/` renderer-free** | ✅ **automated 2026-08-13** — `src/engine/__tests__/enginePurity.test.ts` replaces the manual grep and is stricter than it: it covers subdirectories and `__tests__`, catches dynamic `import()`/`require()`, and rejects relative paths that escape the engine (`../../features/…`). Verified against a planted leak, static and dynamic. Allowlist inside engine tests: `vitest`, `fs`, `path` — nothing else |
+| 13 | **Keep `src/engine/` renderer-free** | ✅ **automated 2026-08-13** — `src/engine/__tests__/enginePurity.test.ts` replaces the manual grep and is stricter than it: it covers subdirectories and `__tests__`, catches dynamic `import()`/`require()`, and rejects relative paths that escape the engine (`../../features/…`). Verified against a planted leak, static and dynamic. Allowlist inside engine tests: `vitest`, `fs`, `path` — nothing else. **Extended 2026-09-09**: the scan now also catches `import.meta.glob` path literals (previously a blind spot that exempted the whole farm asset pack), and a single narrow carve-out admits asset/data files under `src/assets/` — extension-gated, so code there is still rejected |
 | 14 | ~~**Move `pedestrianDepth.test.ts` off `pixi.js`**~~ | ✅ **done 2026-08-13.** Split rather than weakened — the real-Pixi `sortDirty` block moved to `src/features/nightmarket/__tests__/pedestrianDepthPixi.test.ts`; the depth math stays in the engine test |
 | 15 | **Keep `src/theme/` as the single token source** | Whatever replaces MUI reads from it |
 | 16 | **Consider Capacitor** if native packaging, push or orientation lock is wanted | No rewrite; see [§ The hybrid path](#the-hybrid-path) |
@@ -1120,7 +1155,7 @@ should not be re-derived:
 | Terrain chunk baking | `src/features/nightmarket/{EditorTerrainLayer,TemplateTerrainLayer,GroundBackdropLayer}.tsx`, `src/engine/market/templateStitch.ts` |
 | The hanzi-writer port | `src/components/handwriting/{HanziGuide,GlyphSvg,loadCharData}.{tsx,ts}`, `node_modules/hanzi-writer/dist/index.esm.js`, [HANDWRITING_RECOGNITION.md](./HANDWRITING_RECOGNITION.md), [PRACTICE_WRITING.md](./PRACTICE_WRITING.md) |
 | The dropped-touch finding | `src/games/match-speed/MatchSpeedBoard.tsx` (`handleTap`), `src/hooks/useBlockZoom.ts`, `src/utils/perfDiagnostics.ts` (`reportTap`), `server/scripts/analyze-client-perf.ts`, [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md), [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md), [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) |
-| Capacitor vs RN / concrete demands | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 5.2 (location), [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) § 8 + [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 7 (notifications) — none of these has code yet |
+| Capacitor vs RN / concrete demands | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 5.2 (location), [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) § 8 + [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 7 (notifications), [BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § 7a + `src/features/beginnerKeyboard/useKeyboardViewport.ts` (keyboard); haptics has no owning doc — none of these has code yet |
 | The hybrid path | `src/components/MobileDemoFrame.tsx`, `src/games/runtime/useSidewaysStage.ts` |
 | Open / action items | all of the above |
 

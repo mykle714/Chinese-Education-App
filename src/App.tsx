@@ -4,6 +4,7 @@ import { AuthProvider } from "./AuthContext";
 import { ConfirmationProvider } from "./contexts/ConfirmationContext";
 import { ThemeContextProvider } from "./contexts/ThemeContext";
 import { VocabularyUpdateProvider } from "./contexts/VocabularyUpdateContext";
+import BeginnerKeyboardProvider from "./features/beginnerKeyboard/BeginnerKeyboardProvider";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { APP_ROUTES, type AppRoute } from "./routes/registry";
@@ -54,11 +55,11 @@ function App() {
   // wanted). Complements the viewport meta in index.html, which iOS ignores.
   useBlockZoom(true);
 
-  // App-wide: measure the gap between the screen and the layout viewport in the iOS
-  // home-screen app, and publish it as `--app-height` (how tall the shell PAINTS) and
-  // `--app-viewport` (how tall its content may BE). Must be here rather than in
-  // MobileDemoFrame — the plain (non-frame) shell in Layout reads the same variables,
-  // and the frame unmounts on those routes.
+  // App-wide: measure the gap between the screen and the document's containing block
+  // in the iOS home-screen app, and publish the web view's real height as
+  // `--app-height`. Must be here rather than in MobileDemoFrame — html/body and the
+  // plain (non-frame) shell in Layout read the same variable, and the frame unmounts
+  // on those routes.
   useAppHeight();
 
   return (
@@ -67,9 +68,18 @@ function App() {
         <ChineseFontApplier />
         <VocabularyUpdateProvider>
           <ConfirmationProvider>
-            <Layout>
-              <Routes>{APP_ROUTES.map(renderRoute)}</Routes>
-            </Layout>
+            {/*
+              App-wide handwriting IME (docs/BEGINNER_KEYBOARD.md § 7a). Wraps
+              Layout rather than sitting beside it so its focus listener sees
+              every field in the app — including ones inside portals — without
+              any input having to opt in. Fields decline with
+              `data-beginner-keyboard="off"`.
+            */}
+            <BeginnerKeyboardProvider>
+              <Layout>
+                <Routes>{APP_ROUTES.map(renderRoute)}</Routes>
+              </Layout>
+            </BeginnerKeyboardProvider>
           </ConfirmationProvider>
         </VocabularyUpdateProvider>
       </AuthProvider>

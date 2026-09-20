@@ -19,7 +19,7 @@ import { WEIGHT } from '../../theme/scale';
  *    visual weight. Active/idle is expressed purely through `paletteBtnSx` colours instead.
  *
  * Referenced by TemplateEditorPage.tsx, TemplateSandboxPage.tsx and — for the PALETTE half
- * only — the immersive world's IWSceneMapPanel.tsx, which reuses `PaletteButton` /
+ * only — the immersive world's IWSceneToolsPanel.tsx, which reuses `PaletteButton` /
  * `toolGroupSx` / `HotkeyBadge` so an author who has learned one board has learned both.
  * It deliberately does NOT reuse `headerBtnSx` and friends: those are drawn to float over
  * a dark Pixi canvas, and the iw editor's toolbar sits on the app's ordinary paper ground.

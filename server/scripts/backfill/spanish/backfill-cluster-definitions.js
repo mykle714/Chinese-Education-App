@@ -68,7 +68,7 @@ import { parseModelJson } from '../shared/lib/json.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
 import { reconcileFrequencyScore } from '../shared/lib/senseClusters.js';
 
-const SCRIPT_VERSION = 3; // bump when this script's logic/prompt changes (v3: rule 7 — clusters must now be EMITTED most- to least-common, with same-score ties ordered by the marginal difference the 1-5 scale cannot record; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. zh does the same job in a separate Stage C.5 pass (shared/lib/tiebreakOrder.js) because its scorer never sees a cluster's siblings; here one call already sees them all. v2: Stage-C scoring now receives the FULL rubric from lib/frequencyRubric.js — it previously had only the five band names — and that rubric's axis changed to conversational commonality; pre-2026-08-28 cluster scores are stale)
+const SCRIPT_VERSION = 4; // bump when this script's logic/prompt changes (v4: rule 7 gains the content-vs-grammatical-function tie test, mirroring zh Stage C.5 rule 3 (shared/lib/tiebreakOrder.js) — "which sense would a learner say the word MEANS?" — with function words learned AS their function (sobre, como, bajo) on the exception side. Order-only intent, but es has no --rescore-only: the whole generate call re-runs, so re-clustering can re-mint labels. v3: rule 7 — clusters must now be EMITTED most- to least-common, with same-score ties ordered by the marginal difference the 1-5 scale cannot record; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. zh does the same job in a separate Stage C.5 pass (shared/lib/tiebreakOrder.js) because its scorer never sees a cluster's siblings; here one call already sees them all. v2: Stage-C scoring now receives the FULL rubric from lib/frequencyRubric.js — it previously had only the five band names — and that rubric's axis changed to conversational commonality; pre-2026-08-28 cluster scores are stale)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const { stampEntries, staleClause, validatedClause } = initRunLog({
@@ -159,6 +159,12 @@ ${POLYSEMY_GUIDELINE.sense}
    most: everyday concrete usage before figurative or specialist usage, plain modern
    usage before anything formal, regional or dated. Do not change a score to express
    the difference; express it in the order.
+   When a tie pits a CONTENT meaning against a GRAMMATICAL-FUNCTION sense (an article,
+   pronoun, preposition, conjunction or auxiliary use), ask which one a learner would
+   say the word MEANS if they could know only one. Usually that is the content meaning,
+   rather than a grammatical role that leans on it. But a word learned chiefly AS its
+   function keeps that sense first: sobre "on / about" before "envelope", como
+   "like / as" before "I eat", bajo "under" before "short".
 
 8. FLAG YOUR DOUBTS. Add a short note to "reviewNotes" for anything you are even
    slightly unsure about — an ambiguous sense boundary, a gloss that could sit in

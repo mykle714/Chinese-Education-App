@@ -1,9 +1,10 @@
 import { useState, useCallback, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { Box, Alert, Snackbar } from "@mui/material";
 import MobileTabScreen from "../../components/MobileTabScreen";
-import SheetPanel, { type SheetPanelBodyHandle } from "../../components/sheet/SheetPanel";
+import SheetPanel, { type SheetPanelBodyHandle, type SheetPanelHandle } from "../../components/sheet/SheetPanel";
+import { readBackSnapshot, saveBackSnapshot, type DecksPageSnapshot } from "./backRestore";
 import DecksPanelBody from "./DecksPanelBody";
 import NewDeckDialog from "./NewDeckDialog";
 import { useDecksPanel } from "./useDecksPanel";
@@ -177,31 +178,67 @@ const FlashcardsDecksPage: React.FC = () => {
     // Collection pages are node drill-ins that slide over this page, so they use
     // the view-transition navigate and Decks is held beneath. See useSlideNavigate.
     const slideNavigate = useSlideNavigate();
+    // ── Back restore (backRestore.ts) ─────────────────────────────────────────
+    // If this history entry was left from inside a sheet, come back to that sheet at the
+    // same height, scroll, search, sort and filter — on the first frame. Read ONCE per
+    // mount; `restoreRef` is dropped when that sheet closes, so reopening it later in
+    // the same visit opens it fresh rather than re-applying a stale height and scroll.
+    const { key: locationKey } = useLocation();
+    const [restored] = useState(() => readBackSnapshot("decks", locationKey));
+    const restoreRef = useRef<DecksPageSnapshot | null>(restored ?? null);
     // The whole panel, through the CORE lens — this page's one question. Every fetch,
     // count and ordering behind the sheet lives in the hook, shared verbatim with the
     // two Mastery Centers (useDecksPanel.ts).
-    const panel = useDecksPanel("core");
+    const panel = useDecksPanel("core", restored?.panel);
     // Which Center buttons this account gets: one per goal it has set. Read off the
     // panel's memoized goals rather than `user` again, so the two cannot disagree.
     const centers = activeMasteryCenters(panel.goals);
     // Body of the sets sheet; SheetPanel reads {root, scroll} off this handle to
     // wire its resize/scroll coupling.
     const sheetBodyRef = useRef<SheetPanelBodyHandle | null>(null);
+    // The sheet itself — read only for its live height when the learner leaves.
+    const sheetPanelRef = useRef<SheetPanelHandle | null>(null);
     // WHICH sheet is up, or null for neither. One state rather than two booleans: the
     // sheets are modal and mutually exclusive, and two flags could describe a state
     // (both open) that the surface has no rendering for. Mirrors the flp's `isEicOpen`
     // in its lifetime — the panel is mounted ONLY while a section is named, so each
     // open replays SheetPanel's 0 → default animation instead of reappearing at
     // whatever height the last session left it.
-    const [openSheet, setOpenSheet] = useState<"cards" | "decks" | null>(null);
+    const [openSheet, setOpenSheet] = useState<"cards" | "decks" | null>(() => restored?.openSheet ?? null);
     // Toast shown when a greyed Review button is tapped (no eligible cards yet).
     const [markMoreSnackOpen, setMarkMoreSnackOpen] = useState(false);
     const [newDeckOpen, setNewDeckOpen] = useState(false);
 
-    // Card Detail is a leaf that slides over this page. No lens param: this page is
+    // Card Detail is a NODE page that slides over this page. No lens param: this page is
     // the core bar, which is what a card page shows by default.
+    // Record where the learner is, the moment before they leave through the sheet, so
+    // Back lands them in the same place. Held in a ref so the two open handlers below
+    // stay referentially stable — the memoized mini cards re-render if `onCardClick`
+    // changes identity — while still reading this render's panel state.
+    const rememberPlace = () => {
+        saveBackSnapshot("decks", locationKey, {
+            panel: panel.snapshot(),
+            openSheet,
+            sheetHeight: sheetPanelRef.current?.getCurrentHeight() ?? null,
+            scrollTop: sheetBodyRef.current?.scroll?.scrollTop ?? 0,
+        });
+    };
+    const rememberPlaceRef = useRef(rememberPlace);
+    rememberPlaceRef.current = rememberPlace;
+
     const handleOpenCard = useCallback(
-        (entry: VocabEntry) => slideNavigate(`/flashcards/card/${entry.id}`),
+        (entry: VocabEntry) => {
+            rememberPlaceRef.current();
+            slideNavigate(`/flashcards/card/${entry.id}`);
+        },
+        [slideNavigate]
+    );
+    // A set (collection or deck page) opened from either sheet — same Back contract.
+    const handleOpenPath = useCallback(
+        (path: string) => {
+            rememberPlaceRef.current();
+            slideNavigate(path);
+        },
         [slideNavigate]
     );
 
@@ -475,7 +512,13 @@ const FlashcardsDecksPage: React.FC = () => {
                 {openSheet && (
                 <SheetPanel
                     key={openSheet}
-                    onClose={() => setOpenSheet(null)}
+                    ref={sheetPanelRef}
+                    // Only the sheet the snapshot was taken in, and only until it closes.
+                    restoreHeight={restoreRef.current?.openSheet === openSheet ? restoreRef.current.sheetHeight : null}
+                    onClose={() => {
+                        restoreRef.current = null;
+                        setOpenSheet(null);
+                    }}
                     bodyRef={sheetBodyRef}
                     // The body's scroll element is stable, but its identity changes
                     // when the deck list first arrives (the empty-state message and
@@ -494,8 +537,9 @@ const FlashcardsDecksPage: React.FC = () => {
                             panel={panel}
                             variant="sheet"
                             section={openSheet}
-                            onOpenPath={slideNavigate}
+                            onOpenPath={handleOpenPath}
                             onOpenCard={handleOpenCard}
+                            initialScrollTop={restoreRef.current?.openSheet === openSheet ? restoreRef.current.scrollTop : undefined}
                             onNewDeck={() => setNewDeckOpen(true)}
                             headerDragBind={bindHeaderDrag}
                         />

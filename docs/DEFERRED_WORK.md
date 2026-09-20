@@ -98,18 +98,6 @@ carries `suppressed: true`, and **no client reads it today**.
 | **Interim mitigation** | The write path is a single chokepoint by design (`ArenaService.setMessage` → `ArenaDAL.setArenaMessage`, the ONLY writer of the column), and `{ message: null }` clears it. So an urgent takedown today is one `UPDATE users SET "arenaMessage" = NULL WHERE id = …` and nothing else in the app needs to change |
 | **References** | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 2.1a, `server/services/ArenaService.ts` → `setMessage`, `database/migrations/152-add-arena-message.sql`, `src/features/arena/ArenaMessageDialog.tsx` |
 
-### 5. A lapsed challenge invitation still spends one of the issuer's six slots
-
-| | |
-|---|---|
-| **What** | `StudyChallengeDAL.countActiveForUser` counts `pending` rows the user issued, and a `pending` row is only rewritten to `expired` by pass 1 of `database/cron/expire-study-challenges.sql`. Between the challengee's Wednesday 04:00 and the next run of that job, the challenger is carrying a slot against a challenge nobody can accept any more. Every OTHER read derives the lapse live ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § "The read path never waits for the job") — this count is the one that cannot |
-| **Why deferred** | The count is a SQL aggregate and the deadline is per-challengee-timezone, so deriving it in SQL means joining `users.timezone` and re-deriving `DATE '2026-01-05' + 7 * "weekIndex" + 2` at 04:00 per row — a fourth copy of the boundary arithmetic (`server/shared/challengeWeek.ts`, the cron SQL, migration 150 already hold three), in the hot path of the challenges page, to reclaim a slot the hourly job reclaims anyway |
-| **Cost of leaving it** | On PPE, at most one hour of a slot, and only for a user who is at 6 of 6 with a lapsed invitation among them — they would see "You're in 6 challenges this week" briefly. On **dev**, where the timer is not installed, the slot stays spent until the SQL is run by hand |
-| **Trigger** | If the cap ever drops, if the job's cadence ever slows, or if the boundary arithmetic gets a shared SQL helper for another reason — at which point this becomes a one-line change rather than a fourth copy |
-| **References** | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 1 "How many at once", § "The maintenance job (Q60)", `server/dal/implementations/StudyChallengeDAL.ts` → `countActiveForUser` |
-
----
-
 ### 6. Pinyin is one shared setting across three games, and Hydra's track does not follow it
 
 | | |
@@ -249,7 +237,65 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 | **Trigger** | A second report of a challenge deadline at an unexpected hour, or any new surface that renders a server-computed local boundary as an absolute instant (that is the third instance, and the point at which the two implementations should become one helper) |
 | **References** | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 2 "`users.timezone` must be fresh", `server/services/StudyChallengeService.ts` → `toSummary`, `src/features/studyChallenge/challengeLabels.ts` → `deadlineLabel`, `src/api/arena.ts` → `ArenaBoundaries` |
 
+### 18. iw has no answer for "I don't know where to begin"
+
+| | |
+|---|---|
+| **What** | Give the iw composer something for the learner who cannot start a sentence at all. [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 9a names this as one of two requirements the writing assistant must meet, and as the harder one |
+| **Why deferred** | It shipped on 2026-09-06 as a hardcoded `OPENERS` chip row (你好 / 请问 / 我要 / …) plus a row of the learner's own `getGameVocabPool` words, and both were **deleted on 2026-09-07**: standing word lists put words on screen before the learner typed anything, turning the tray into a menu of things to say — the palette Q4c rejected, arriving through the back door. The tray is a pure dictionary now. The requirement was not re-homed, because the replacement is a different and bigger feature (scene-aware prompting, or the beginner keyboard) rather than a smaller version of what was removed |
+| **Cost of leaving it** | A true beginner can be stuck with an empty field and nothing to press. Q24 removed the native-language companion and Q29 removed the nudge, so nothing else in the scene covers this — it is the one failure § 9a was written to prevent, and it is currently live |
+| **Trigger** | The first playtest where somebody opens a scene and sends no line, or [BACKLOG.md](./BACKLOG.md) item 1 (the beginner writing keyboard) starting work — it is the natural owner and would make a separate iw-only answer redundant |
+| **References** | [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 9a (the reversal note), § 14 Q4b/Q4c/Q24/Q29, `src/features/immersiveworld/play/IWComposer.tsx` (header comment) |
+
+### 19. Rotate every API key and secret the app holds
+
+*Added 2026-09-07.*
+
+| | |
+|---|---|
+| **What** | Issue new values for every credential in the four env files and the Google service-account JSON, update dev **and** PPE, and confirm each consumer still works. The trigger was one key being exposed, but the decision was to rotate the whole set rather than that one — a partial rotation leaves you doing this again |
+| **Why deferred** | Explicitly postponed by the owner on the day it came up. Nothing is on fire: the exposure below is not public, and no credential is committed to git |
+| **Cost of leaving it** | The `ANTHROPIC_API_KEY` in `server/.env.docker` was transmitted three times as IDE selection context on 2026-09-07 and is therefore sitting in a stored Claude Code session transcript. It was never used, echoed, or sent anywhere else, but "it left the machine" is the bar for rotation. Until it is rotated, that key is spendable by anyone with the transcript. The rest of the set is precautionary |
+| **Trigger** | Owner's choice — this one is a calendar item, not an event. Do it before any wider access to the machine or the transcripts, and immediately if unexpected API spend appears on the Anthropic or OpenAI account |
+
+**What to rotate** — names only; never paste a value into a doc, a commit, or a chat.
+
+| Credential | Lives in | Rotate at | Consumer |
+|---|---|---|---|
+| `ANTHROPIC_API_KEY` | `server/.env.docker` | console.anthropic.com | The iw model ladder (`server/services/iw/modelLadder.ts`), the backfill scripts |
+| `OPENAI_API_KEY` | `server/.env.docker` | platform.openai.com | Enrichment / TTS fallbacks |
+| `DICT_AI_API_KEY` | `server/.env`, `.env.docker`, `.env.production` | The issuing vendor | Dictionary AI features (est, compare, elaboration) |
+| `ICONS8_API_KEY` | `server/.env`, `.env.docker` | icons8.com | The fie icon search proxy |
+| `JWT_SECRET` | all three server env files | Generate a new random value | ⚠️ **Rotating this invalidates every live session** — every user is logged out. Do it deliberately, not in the same pass as the others |
+| `DB_PASSWORD` | all three server env files | Postgres role | ⚠️ Must change in the DB and the env file together, and the containers restart |
+| Google service account | `server/google-tts-credentials.json` (path via `GOOGLE_APPLICATION_CREDENTIALS`) | GCP IAM — issue a new key, then delete the old one | `server/services/TTSService.ts` |
+
+**Checked while writing this**: none of these files is tracked by git — `.gitignore:14`
+(`**/.env.*`), `server/.gitignore:12` (`.env`) and `server/.gitignore:20`
+(`*-credentials.json`) cover all five. So this is a rotation, not a history rewrite.
+
+**The habit that caused it**, worth fixing at the same time: Claude Code's IDE integration
+appends the current editor selection to every message. A line left highlighted in a `.env`
+file is re-sent with each turn regardless of what is being discussed. Clear the selection
+before typing, and treat `.env` files as the one category where an idle highlight costs
+something.
+
 ## Recently closed
+
+### A lapsed challenge invitation still spent one of the issuer's six slots (closed 2026-09-13 — DONE)
+
+The cap count is now derived from the deadlines rather than read from the stored
+status. `StudyChallengeDAL.listCommittedForUser` returns the committed rows (it replaced
+the `countActiveForUser` aggregate), and `StudyChallengeService.countActiveChallenges`
+drops each row whose deadline has passed: a `pending` row past the challengee's Wednesday
+04:00, or an `accepted` row past the later of the two test-window closes. The fix is
+wider than the entry was: lapsed **accepted** rows had the same problem.
+
+The "fourth copy of the boundary arithmetic" this entry was deferred over never happened.
+Filtering in the service reuses `server/shared/challengeWeek.ts` instead of re-deriving
+the boundary in SQL. The cost is one user lookup per distinct opponent (memoised, at most
+seven for a full cap), not a hot-path join. See [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)
+§ 9 "The read path never waits for the job".
 
 ### The decks page `.duebar` (closed 2026-09-05 — line deleted)
 

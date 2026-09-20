@@ -34,6 +34,11 @@ interface ForeignTextBaseProps {
     // CPCDRow.selectable. Ignored for Latin-script plain text, which inherits the
     // app-wide non-selectable default.
     selectable?: boolean;
+    // Tap the rendered word to copy it, alternating characters → pinyin on
+    // successive taps (see CPCDRow.tapToCopy). Row layout only: ignored by the block
+    // layout and by Latin-script plain text, neither of which has a pinyin half to
+    // alternate with. Defaults to false.
+    tapToCopy?: boolean;
     // Optional override for the word/character color (the per-card flashcard Contrast
     // setting — see docs/CARD_ICON_LAYOUT.md). Applies to the cpcd glyphs and the
     // Latin-script plain text; the pinyin overlay is never affected. Undefined = theme
@@ -160,6 +165,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     items,
     pinyinShift = true,
     selectable = false,
+    tapToCopy = false,
     characterColor,
     layout = "row",
     firstTwoAreSegment,
@@ -243,6 +249,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
             className={className}
             pinyinShift={pinyinShift}
             selectable={selectable}
+            tapToCopy={tapToCopy}
             characterColor={characterColor}
             bigPinyin={bigPinyin}
         />

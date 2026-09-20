@@ -24,45 +24,24 @@ const FrameRoot = styled(Box)(() => ({
     //
     // `--surface-ground` is the exception, and it is not a page tinting the frame: it
     // is set by src/hooks/useThemeColor.ts to whatever surface currently owns the
-    // screen (a game's flooded ground), so the strip below FrameViewport — which no
-    // page paints — matches the page instead of showing a paper band under it.
+    // screen (a game's flooded ground), so a bounce or a sub-pixel seam shows the
+    // page's colour rather than a paper band under it.
     backgroundColor: `var(--surface-ground, ${COLORS.background})`,
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
     width: "100%",
-    // THE PAINT HEIGHT. `--app-height` (src/hooks/useAppHeight.ts) is the SCREEN
-    // height in the iOS home-screen app, where the app extends under the status bar
-    // but the layout viewport iOS reports does not. The frame has to reach the band
-    // behind the clock or that band renders as a flat paper strip over a coloured
-    // page. Unset — and therefore exactly `100dvh` — in every browser tab.
-    //
-    // ⚠️ Nothing may be LAID OUT against this height; see FrameViewport below.
+    // `--app-height` (src/hooks/useAppHeight.ts) is the iOS home-screen web view's
+    // REAL height in px — the screen — which `black-translucent` makes larger than
+    // anything CSS can compute. Unset, and therefore exactly `100dvh`, everywhere
+    // else. Note this only works because src/index.css applies the same variable to
+    // `html, body`: body is `overflow: hidden`, so a taller frame inside a short body
+    // is silently sliced rather than painted.
     height: "var(--app-height, 100dvh)",
-}));
-
-// THE LAYOUT HEIGHT — the part of the frame that is actually on screen.
-//
-// Every page, and the footer bar, lives in here rather than in FrameRoot, because the
-// two heights differ in the iOS home-screen app: content laid out against the frame's
-// paint height runs past the visible area and is sliced (measured 2026-09-05 — the
-// game panel's "drop here to cancel match" row lost its bottom half). The strip
-// between this box and the frame's bottom edge is painted frame ground and holds
-// nothing.
-//
-// `--app-viewport` is unset everywhere but that one case, so this is normally `100%` —
-// the full frame, exactly as it was before the split.
-const FrameViewport = styled(Box)(() => ({
-    display: "flex",
-    flexDirection: "column",
-    width: "100%",
-    height: "var(--app-viewport, 100%)",
-    flexShrink: 0,
-    overflow: "hidden",
     // Positioning context for the footer bar, which FooterPresenter renders as a
     // sibling of the page: `position: absolute; bottom: 0` resolves against THIS
-    // box — not the frame — so the bar sits at the bottom of what is on screen, and
-    // on desktop stays inside the phone card instead of escaping to the viewport.
+    // box, and on desktop stays inside the phone card instead of escaping to the
+    // viewport.
     position: "relative",
 }));
 
@@ -100,16 +79,14 @@ const MobileDemoFrame: React.FC<MobileDemoFrameProps> = ({ children, className }
 
     return (
         <FrameRoot className={className ?? "mobile-demo-frame"} sx={desktopSx}>
-            <FrameViewport className="mobile-demo-frame__viewport">
-                {/* The provider must wrap BOTH the pages and the footer: pages take
-                    suppression holds (useHideFooter), FooterPresenter reads them. */}
-                <FooterVisibilityProvider>
-                    {children}
-                    {/* Single persistent footer pill, animated independently of the page
-                        slides (it lives outside the page surfaces). See FooterPresenter. */}
-                    <FooterPresenter />
-                </FooterVisibilityProvider>
-            </FrameViewport>
+            {/* The provider must wrap BOTH the pages and the footer: pages take
+                suppression holds (useHideFooter), FooterPresenter reads them. */}
+            <FooterVisibilityProvider>
+                {children}
+                {/* Single persistent footer pill, animated independently of the page
+                    slides (it lives outside the page surfaces). See FooterPresenter. */}
+                <FooterPresenter />
+            </FooterVisibilityProvider>
         </FrameRoot>
     );
 };

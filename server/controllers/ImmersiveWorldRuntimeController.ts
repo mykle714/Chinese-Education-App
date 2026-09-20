@@ -3,6 +3,7 @@ import { ImmersiveWorldService } from '../services/ImmersiveWorldService.js';
 import type { TurnStateInput } from '../services/iw/turnState.js';
 import { IW_MAX_LISTENERS_PER_UTTERANCE, IW_MAX_UTTERANCE_CHARS } from '../services/iw/turnBudget.js';
 import { getUserLanguage } from '../utils/controllerUtils.js';
+import { iwFault, iwLog } from '../services/iw/iwDebugLog.js';
 
 /**
  * Immersive World Runtime Controller — the learner-facing half of iw (§ 12 phase 2).
@@ -25,9 +26,15 @@ import { getUserLanguage } from '../utils/controllerUtils.js';
  * the reason `runTurn` checks the budget before it touches a model, and the reason this
  * controller validates the body itself rather than letting the service throw mid-stream.
  *
- * ⚠️ **THE CLIENT IS TRUSTED ABOUT EARSHOT** (§ 4, § 4.1). The hearing gate is pure client
- * geometry, so a caller can claim any NPC heard them. `ImmersiveWorldService` documents
+ * ⚠️ **THE CLIENT DECIDES WHO IS ASKED, AND THE SERVER CANNOT CHECK IT** (§ 4.1, § 4.2). The
+ * endpoint takes one npcId; which one is the client's routing decision (`chooseAddressee`), so
+ * a caller can ask for a turn from anybody in any scene. Earshot was the notional check and was
+ * never enforceable here either (§ 4, withdrawn 2026-09-07). `ImmersiveWorldService` documents
  * this; the bound is § 7's budget, which is why the caps here are not optional.
+ *
+ * One thing DID improve on 2026-09-07: the client used to send N of these per utterance, so the
+ * session counter drained N× too fast (§ 7). Routing means one utterance is one request, and
+ * the number the learner is shown is now correct.
  *
  * Referenced by: docs/IMMERSIVE_WORLD.md § 5.2, § 5.3a, § 6.4, § 7, § 8, § 12 phase 2.
  */
@@ -100,42 +107,29 @@ export class ImmersiveWorldRuntimeController {
     }
 
     // Everything above this line can still answer with a status code. Nothing below can.
-    let opened = false;
-    const open = (): void => {
-      if (opened) return;
-      opened = true;
-      res.status(200);
-      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-cache, no-transform');
-      res.setHeader('Connection', 'keep-alive');
-      // nginx buffers proxied responses by default, which would hold every delta until the
-      // turn finished and silently undo the whole point of streaming.
-      res.setHeader('X-Accel-Buffering', 'no');
-      res.flushHeaders?.();
-    };
-    const send = (event: string, data: unknown): void => {
-      open();
-      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    };
+    const stream = openStream(req, res);
+    const { send } = stream;
 
-    // A client that navigates away mid-turn: stop writing, but let the model call finish —
-    // it is already billed, and aborting it buys nothing.
-    let gone = false;
-    req.on('close', () => { gone = true; });
+    iwLog('turn', `→ user=${userId} scene=${parsed.request.sceneId} npc=${parsed.request.npcId}`, {
+      sessionId: parsed.request.sessionId,
+      firedCues: parsed.request.firedCues,
+      playedConversations: parsed.request.playedConversations,
+      event: parsed.request.perception.event,
+    });
 
     try {
       const result = await this.service.runTurn(userId, parsed.request, (say, attemptIndex, speechComplete) => {
         // `attemptIndex` changes when the ladder moves to another rung, and the client MUST
         // reset the bubble when it does — a dead rung's three characters are not the start
         // of the live rung's sentence (§ 14 Q7).
-        if (!gone) send('delta', { say, attemptIndex, speechComplete });
+        if (!stream.gone) send('delta', { say, attemptIndex, speechComplete });
       });
 
       if (result.kind === 'refused') {
         // Refusals are the one branch that can still be a status code, because nothing has
         // been written yet: `runTurn` checks the budget before it opens a model call, and
         // no delta can precede a refusal.
-        if (!opened) {
+        if (!stream.opened) {
           res.status(429).json({
             error: refusalMessage(result.refusal),
             code: 'ERR_IW_BUDGET',
@@ -144,14 +138,22 @@ export class ImmersiveWorldRuntimeController {
           });
           return;
         }
+        iwLog('turn', `refused code=${result.refusal.code} (mid-stream)`, result.refusal);
         send('refused', result);
       } else if (result.kind === 'no-scene') {
-        if (!opened) {
+        // ⚠️ Not a refusal — the client and the server disagree about what exists. It travels
+        // on the `refused` event only because an open stream has no other channel, and it
+        // carries no `refusal.code`, so the learner sees the generic "Not right now." banner.
+        iwFault('turn', `no-scene sceneId=${result.sceneId} — the client is holding a scene id that does not resolve`);
+        if (!stream.opened) {
           res.status(404).json({ error: 'Scene not found', code: 'ERR_IW_SCENE_NOT_FOUND' });
           return;
         }
         send('refused', result);
       } else if (result.kind === 'reply') {
+        iwLog('turn', `reply npc=${parsed.request.npcId} rung=${result.rung} remaining=${result.remaining}`, {
+          say: result.reply.say, action: result.reply.action, emote: result.reply.emote, rescued: result.reply.rescued,
+        });
         send('reply', {
           say: result.reply.say,
           action: result.reply.action,
@@ -161,16 +163,34 @@ export class ImmersiveWorldRuntimeController {
           rung: result.rung,
           remaining: result.remaining,
         });
+        // § 5.3b — the tap-to-look-up data for the line just sent, as a SEPARATE, LATER
+        // event. The ordering is the whole design: `reply` is what starts the TTS call and
+        // the reveal (§ 6.4), so a dictionary round trip in front of it would be added
+        // straight onto the 516 ms first-glyph figure phase 0 exists to protect. Sent after,
+        // it lands during the reveal and the bubble upgrades from plain text to tappable
+        // segments mid-sentence — or never, and stays exactly as it was before this existed.
+        if (!stream.gone) {
+          const language = await getUserLanguage(userId);
+          const segmented = await this.service.segmentLines([result.reply.say], language);
+          const line = segmented[result.reply.say];
+          if (line && !stream.gone) send('segments', { say: result.reply.say, line });
+        }
       } else if (result.kind === 'frozen') {
+        iwFault('turn', `frozen npc=${parsed.request.npcId} — every rung of the ladder failed`, result.attempts);
         // § 14 Q7: no speech, no emote, no improvised cover line. The client freezes the
         // scene and shows a banner; it must NOT substitute anything of its own.
         send('frozen', { attempts: result.attempts, remaining: result.remaining });
       } else {
+        // ⚠️ Same shape as `no-scene`: a FAULT on the refusal channel, with no code, so the
+        // learner is told "Not right now." for what is really "that NPC is not in this
+        // scene's cast, or the registry no longer defines him". The two halves of the check
+        // live in `takeNpcTurn`; this is the only place the id is still in scope to name.
+        iwFault('turn', `unknown-npc npcId=${result.npcId} scene=${parsed.request.sceneId} — not cast in this scene, or not in iwNpcs.ts`);
         send('refused', { kind: 'unknown-npc', npcId: result.npcId });
       }
     } catch (error: any) {
       // An escaped error after headers are out can only be reported inside the stream.
-      if (opened) send('frozen', { attempts: [], error: 'internal' });
+      if (stream.opened) send('frozen', { attempts: [], error: 'internal' });
       else {
         res.status(500).json({ error: 'Failed to take turn', code: 'ERR_IW_TURN_FAILED' });
         return;
@@ -182,7 +202,191 @@ export class ImmersiveWorldRuntimeController {
     res.end();
   }
 
-  /** POST /api/immersiveWorld/session/end — release a finished run's budget counter. */
+  /**
+   * POST /api/immersiveWorld/line → `text/event-stream`
+   *
+   * The authored half of the world speaking (§ 14 Q42). Same event vocabulary as `takeTurn`
+   * — any number of `delta`, then one of `line` | `frozen` | `refused`, then `end` — so the
+   * client's transport is one reader rather than two.
+   *
+   * ⚠️ **`frozen` HERE DOES NOT MEAN THE SAME THING IT MEANS ON A TURN.** A frozen turn
+   * freezes the scene and shows a banner, because the learner said something and got nothing
+   * back. A frozen render means one authored beat could not be put into words; the script
+   * skips it and plays on. The client must not treat them alike, and the two live on
+   * different routes partly so that difference is impossible to miss.
+   */
+  /**
+   * Decide who the learner was talking to (§ 4.2). **Plain JSON, not SSE.**
+   *
+   * ⚠️ **THE ONE IW MODEL ENDPOINT THAT DOES NOT STREAM**, and the reason is the shape of the
+   * answer rather than an oversight: a turn and a render both produce text a learner watches
+   * appear, so the stream IS the feature; a route produces one identifier nobody sees. Opening
+   * an SSE channel to deliver a single token would buy nothing and cost the client a parser.
+   *
+   * ⚠️ **IT NEVER 500s ON A ROUTING FAILURE.** A dead model, an UNCLEAR and an unresolvable
+   * scene all come back `200 {"npcId": null}`, because the client has a free fallback for all
+   * three and an error would only make it write one. The single non-200 is the daily cap (429),
+   * which is a money bound and must be seen.
+   */
+  async routeAddressee(req: Request, res: Response): Promise<void> {
+    const userId = this.userIdOr401(req, res);
+    if (!userId) return;
+
+    const parsed = parseRouteBody(req.body);
+    if ('error' in parsed) {
+      res.status(400).json({ error: parsed.error, code: 'ERR_IW_TURN_BAD_REQUEST' });
+      return;
+    }
+
+    try {
+      const result = await this.service.routeAddressee(userId, parsed.request);
+      if (result.kind === 'refused') {
+        res.status(429).json({
+          error: refusalMessage(result.refusal),
+          code: 'ERR_IW_BUDGET',
+          refusal: result.refusal,
+        });
+        return;
+      }
+      if (result.kind === 'no-scene') {
+        iwFault('route', `no-scene sceneId=${result.sceneId} — the client is holding a scene id that does not resolve`);
+        res.json({ npcId: null, detail: 'no such scene' });
+        return;
+      }
+      iwLog('route', `→ ${result.npcId ?? '(unclear)'} — ${result.detail}`, {
+        utterance: parsed.request.utterance,
+        cast: parsed.request.cast.map(m => m.npcId),
+      });
+      res.json({ npcId: result.npcId, detail: result.detail });
+    } catch (error) {
+      // Same rule as above: the caller can route itself, so a thrown router is a null answer
+      // rather than an error. Logged loudly, because a router that always throws is invisible
+      // from the outside — the scene keeps working on the fallback and nobody notices.
+      iwFault('route', 'router threw — falling back to the client rules', error);
+      res.json({ npcId: null, detail: 'router failed' });
+    }
+  }
+
+  /**
+   * POST /api/immersiveWorld/segment → `{ line: IWLineSegments | null }`
+   *
+   * The learner's OWN utterance, segmented for § 5.3b — the same treatment an NPC's line gets
+   * on the turn stream, and for the same two reasons: pinyin over the characters, and a
+   * tappable popup on every word.
+   *
+   * ⚠️ **IT IS A SEPARATE ROUND TRIP, NOT AN EVENT ON `/turn`, BECAUSE OF WHEN IT IS NEEDED.**
+   * The learner's bubble goes up the instant they press Say, and it is REPLACED by the NPC's
+   * bubble the moment the reply lands — so segmentation that arrived on the turn stream would
+   * arrive after the only bubble it describes had gone. Firing it alongside the turn is what
+   * makes it land while the learner's own words are still on screen. It also has to work for a
+   * line that takes no turn at all (nobody was addressed).
+   *
+   * ⚠️ **PLAIN JSON, LIKE `/addressee`** — there is nothing to stream, and no failure here is
+   * worth a status code the caller would act on: a null line is a bubble that renders exactly
+   * as it did before this existed.
+   */
+  async segmentUtterance(req: Request, res: Response): Promise<void> {
+    const userId = this.userIdOr401(req, res);
+    if (!userId) return;
+
+    const raw = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+    // The same cap the turn enforces (§ 7). Not a courtesy: this opens a dictionary query, so
+    // an unbounded string is an unbounded query.
+    if (!raw || [...raw].length > IW_MAX_UTTERANCE_CHARS) {
+      res.status(400).json({ error: 'text is required', code: 'ERR_IW_TURN_BAD_REQUEST' });
+      return;
+    }
+
+    const language = await getUserLanguage(userId);
+    // `segmentLines` never throws — a dictionary problem costs the learner a popup, not a line.
+    const segmented = await this.service.segmentLines([raw], language);
+    res.json({ line: segmented[raw] ?? null });
+  }
+
+  async renderLine(req: Request, res: Response): Promise<void> {
+    const userId = this.userIdOr401(req, res);
+    if (!userId) return;
+
+    const parsed = parseLineBody(req.body);
+    if ('error' in parsed) {
+      res.status(400).json({ error: parsed.error, code: 'ERR_IW_TURN_BAD_REQUEST' });
+      return;
+    }
+
+    const stream = openStream(req, res);
+    const { send } = stream;
+
+    iwLog('line', `→ user=${userId} scene=${parsed.request.sceneId} npc=${parsed.request.npcId}`, {
+      direction: parsed.request.direction,
+      toward: parsed.request.toward,
+    });
+
+    try {
+      const result = await this.service.runLine(userId, parsed.request, (text, attemptIndex, complete) => {
+        if (!stream.gone) send('delta', { say: text, attemptIndex, speechComplete: complete });
+      });
+
+      if (result.kind === 'refused') {
+        if (!stream.opened) {
+          res.status(429).json({
+            error: refusalMessage(result.refusal),
+            code: 'ERR_IW_BUDGET',
+            refusal: result.refusal,
+          });
+          return;
+        }
+        send('refused', result);
+      } else if (result.kind === 'no-scene') {
+        iwFault('line', `no-scene sceneId=${result.sceneId} — the client is holding a scene id that does not resolve`);
+        if (!stream.opened) {
+          res.status(404).json({ error: 'Scene not found', code: 'ERR_IW_SCENE_NOT_FOUND' });
+          return;
+        }
+        send('refused', result);
+      } else if (result.kind === 'line') {
+        iwLog('line', `${parsed.request.npcId} rung=${result.rung}: ${result.text}`, {
+          direction: parsed.request.direction,
+        });
+        send('line', { say: result.text, rung: result.rung });
+        // Identical to the turn path, and deliberately so: § 5.3b's tappable bubble must not
+        // depend on WHICH kind of call produced the line, or an authored beat would be the
+        // one place in the scene a learner cannot look a word up.
+        if (!stream.gone) {
+          const language = await getUserLanguage(userId);
+          const segmented = await this.service.segmentLines([result.text], language);
+          const line = segmented[result.text];
+          if (line && !stream.gone) send('segments', { say: result.text, line });
+        }
+      } else if (result.kind === 'frozen') {
+        // NOT a scene freeze — see the header. The client skips the step.
+        iwFault('line', `frozen npc=${parsed.request.npcId} — every rung failed to render an authored line`, result.attempts);
+        send('frozen', { attempts: result.attempts });
+      } else {
+        iwFault('line', `unknown-npc npcId=${result.npcId} scene=${parsed.request.sceneId} — not cast in this scene, or not in iwNpcs.ts`);
+        send('refused', { kind: 'unknown-npc', npcId: result.npcId });
+      }
+    } catch (error: any) {
+      if (stream.opened) send('frozen', { attempts: [], error: 'internal' });
+      else {
+        res.status(500).json({ error: 'Failed to render line', code: 'ERR_IW_LINE_FAILED' });
+        return;
+      }
+      console.error('[iw] line render failed:', error?.message ?? error);
+    }
+
+    send('end', {});
+    res.end();
+  }
+
+  /**
+   * POST /api/immersiveWorld/session/end — release a finished run's budget counter and close
+   * its transcript row (§ 12 phase 3).
+   *
+   * ⚠️ **THE CLIENT SENDS THIS WITH `keepalive`, ON UNMOUNT, AND IT IS ALLOWED TO NEVER
+   * ARRIVE.** A learner who kills the tab hard leaves the run OPEN; it is closed and
+   * displaced by the next run they start in that language (`openRun`), so the durable state
+   * is self-healing and this endpoint is an optimisation rather than a requirement.
+   */
   async endSession(req: Request, res: Response): Promise<void> {
     const userId = this.userIdOr401(req, res);
     if (!userId) return;
@@ -191,9 +395,48 @@ export class ImmersiveWorldRuntimeController {
       res.status(400).json({ error: 'sessionId is required', code: 'ERR_IW_TURN_BAD_REQUEST' });
       return;
     }
-    this.service.endSession(sessionId);
+    this.service.endSession(userId, sessionId);
     res.json({ ok: true });
   }
+}
+
+/**
+ * Open an SSE response, lazily.
+ *
+ * ⚠️ **`opened` IS THE WHOLE POINT.** Once headers flush the response is 200 forever, so
+ * every caller has to know whether it may still answer with a status code. Writing the first
+ * event is what commits; until then a refusal can still be a 429 or a 404. Two endpoints now
+ * need exactly this dance, and copying it was how one of them would eventually get it wrong.
+ *
+ * `gone` tracks a client that navigated away. The model call is deliberately allowed to
+ * finish — it is already billed, and aborting it buys nothing.
+ */
+function openStream(req: Request, res: Response): {
+  send(event: string, data: unknown): void;
+  readonly opened: boolean;
+  readonly gone: boolean;
+} {
+  let opened = false;
+  let gone = false;
+  req.on('close', () => { gone = true; });
+  return {
+    get opened() { return opened; },
+    get gone() { return gone; },
+    send(event, data) {
+      if (!opened) {
+        opened = true;
+        res.status(200);
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        // nginx buffers proxied responses by default, which would hold every delta until the
+        // call finished and silently undo the whole point of streaming.
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders?.();
+      }
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    },
+  };
 }
 
 /** A refusal in a sentence, for a client with nowhere better to put it. */
@@ -235,17 +478,7 @@ function parseTurnBody(body: any): { request: import('../services/ImmersiveWorld
   }
 
   const perception: Omit<TurnStateInput, 'offers'> = {
-    knownWords: strings(p.knownWords),
-    // `nearby` is what the client's hearing gate produced. Capping it here is the server
-    // side of § 4.1's cost story: the gate itself is client-side and cannot be trusted, and
-    // an uncapped list is an uncapped prompt.
-    nearby: Array.isArray(p.nearby) ? p.nearby.slice(0, IW_MAX_LISTENERS_PER_UTTERANCE * 3) : [],
-    heard: Array.isArray(p.heard) ? p.heard.slice(0, 12) : [],
-    // `holding` is a LIST on the prompt side (`TurnStateInput.holding: readonly string[]`),
-    // and this used to coerce it to a string — invisible because the body is `any`, and it
-    // would have rendered as a bare character per item. A single string is still accepted,
-    // as one item, so a client written against the older client type keeps working.
-    holding: holdingList(p.holding),
+    ...parsePerception(p),
     event,
     spokeLastTurn: Boolean(p.spokeLastTurn),
   };
@@ -256,8 +489,100 @@ function parseTurnBody(body: any): { request: import('../services/ImmersiveWorld
       sessionId,
       npcId,
       firedCues: strings(body.firedCues),
+      playedConversations: strings(body.playedConversations),
       perception,
     },
+  };
+}
+
+/**
+ * Validate a line-render body (§ 14 Q42).
+ *
+ * The same "not a schema validator" contract as {@link parseTurnBody}, and it shares that
+ * function's perception parsing — the two calls send the same perception because they must
+ * see the same world (`renderContextSections` is literally shared), so parsing it twice by
+ * hand would be the first place the two drifted.
+ */
+/**
+ * The router's body (§ 4.2).
+ *
+ * ⚠️ **THE CLIENT SENDS IDS, NOT CHARACTERS.** Names, ages, trades and biographies are looked
+ * up server-side from the registry, so a caller cannot describe an NPC into the router's
+ * roster — and the sheets never cross the wire to do a job the server can do without them.
+ * Same "not a schema validator" contract as {@link parseTurnBody}: reject what would produce a
+ * nonsense prompt, coerce what would merely be untidy.
+ */
+function parseRouteBody(body: any): { request: import('../services/ImmersiveWorldService.js').IWRouteHttpRequest } | { error: string } {
+  if (!body || typeof body !== 'object') return { error: 'A JSON body is required' };
+  const { sceneId, utterance } = body;
+  if (typeof sceneId !== 'string' || !sceneId) return { error: 'sceneId is required' };
+  if (typeof utterance !== 'string' || !utterance.trim()) return { error: 'utterance is required' };
+  if (!Array.isArray(body.cast) || body.cast.length === 0) return { error: 'cast is required' };
+  const cast = body.cast
+    .filter((m: any) => m && typeof m.npcId === 'string' && m.npcId)
+    .slice(0, IW_MAX_LISTENERS_PER_UTTERANCE)
+    .map((m: any) => ({
+      npcId: m.npcId,
+      distance: Number.isFinite(m.distance) ? Math.max(0, Math.trunc(m.distance)) : 0,
+      // Geometry the client measured. Coerced rather than trusted as typed, for the same
+      // reason `distance` is clamped: this is an HTTP body, and `=== true` is the whole
+      // validation a boolean needs.
+      facedByLearner: m.facedByLearner === true,
+      facingLearner: m.facingLearner === true,
+      focused: m.focused === true,
+      spokeLast: m.spokeLast === true,
+    }));
+  if (cast.length === 0) return { error: 'cast is required' };
+  return {
+    request: {
+      sceneId,
+      // The same cap a turn puts on the prompt (§ 7) — the router quotes the learner verbatim
+      // too, so an unbounded utterance is an unbounded call here as well.
+      utterance: [...utterance.trim()].slice(0, IW_MAX_UTTERANCE_CHARS).join(''),
+      cast,
+      heard: Array.isArray(body.heard) ? body.heard.filter((h: any) => typeof h === 'string').slice(-8) : [],
+    },
+  };
+}
+
+function parseLineBody(body: any): { request: import('../services/ImmersiveWorldService.js').IWLineHttpRequest } | { error: string } {
+  if (!body || typeof body !== 'object') return { error: 'A JSON body is required' };
+  const { sceneId, sessionId, npcId, direction, toward } = body;
+  if (typeof sceneId !== 'string' || !sceneId) return { error: 'sceneId is required' };
+  if (typeof sessionId !== 'string' || !sessionId) return { error: 'sessionId is required' };
+  if (typeof npcId !== 'string' || !npcId) return { error: 'npcId is required' };
+  // ⚠️ NO LONGER REQUIRED (2026-09-19). An unbriefed `prompt_npc` cue legitimately sends
+  // none — "say whatever this moment calls for" — so only a direction of the WRONG TYPE is a
+  // bad request. Absent and empty collapse to the same thing the render path calls "no brief".
+  if (direction !== undefined && typeof direction !== 'string') return { error: 'direction must be a string' };
+  if (!body.perception || typeof body.perception !== 'object') return { error: 'perception is required' };
+
+  return {
+    request: {
+      sceneId,
+      sessionId,
+      npcId,
+      // Bounded for the same reason the learner's utterance is: it is content reaching a
+      // prompt. An author typed it, which makes it a little more trusted and not unbounded.
+      direction: direction?.trim() ? direction.trim().slice(0, 400) : undefined,
+      toward: typeof toward === 'string' && toward.trim() ? toward.trim().slice(0, 80) : undefined,
+      perception: parsePerception(body.perception),
+    },
+  };
+}
+
+/**
+ * The perception block, shared by both endpoints.
+ *
+ * Caps are the server side of § 4.1's cost story: the client assembles this block and cannot
+ * be trusted, and an uncapped list is an uncapped prompt.
+ */
+function parsePerception(p: any): import('../services/iw/turnState.js').IWContextInput {
+  return {
+    knownWords: strings(p.knownWords),
+    nearby: Array.isArray(p.nearby) ? p.nearby.slice(0, IW_MAX_LISTENERS_PER_UTTERANCE * 3) : [],
+    heard: Array.isArray(p.heard) ? p.heard.slice(0, 12) : [],
+    holding: holdingList(p.holding),
   };
 }
 

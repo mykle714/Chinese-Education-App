@@ -65,6 +65,10 @@ function blankStep(kind: IWActionStepKind): IWActionStep {
   if (isActorStepKind(kind)) return { kind, actor: IW_ACTOR_PLAYER };
   switch (kind) {
     case 'comment': return { kind, text: '' };
+    // No speaker pre-picked, and both optional halves left out: a blank `prompt_npc` is a
+    // legal, meaningful step (somebody say something now) once a speaker is chosen, so the
+    // factory must not invent a target or a brief the author did not ask for.
+    case 'prompt_npc': return { kind, npcId: '' };
     case 'walk_to_tag': return { kind, tag: '' };
     case 'ai_walk': return { kind, instruction: '' };
     case 'start_conversation': return { kind, conversationId: '' };
@@ -89,6 +93,16 @@ export default function IWSceneActionsPanel({
   const tags = Object.entries(places)
     .map(([tag, cell]) => ({ tag, cell: isPlacedCell(cell) ? cell : '' }))
     .sort((a, b) => (a.tag < b.tag ? -1 : 1));
+
+  /**
+   * Who a `prompt_npc` step may make SPEAK: the cast, plus the companion — every body that
+   * has an NPC sheet to render a line from. The learner is absent on purpose; they are a
+   * legal addressee and never a speaker.
+   */
+  const promptSpeakerOptions = [
+    { id: IW_ACTOR_COMPANION, label: 'the companion' },
+    ...scene.npcCast.map((m) => ({ id: m.npcId, label: npcName(m.npcId) })),
+  ];
 
   /** Who a `walk_to_actor` step may target: the two fixed bodies plus the cast. */
   const actorOptions = [
@@ -248,6 +262,54 @@ export default function IWSceneActionsPanel({
                                 {...warn(`${at}.steps[${si}].text`)}
                                 onChange={(e) => patchStep(member.npcId, action, si, { kind: 'comment', text: e.target.value })}
                               />
+                            )}
+
+                            {/* Prompt an NPC to speak (2026-09-19) — the one step whose
+                                SUBJECT is somebody other than the performer, which is why it
+                                is the only step row with a "who speaks" control. Both the
+                                addressee and the brief are optional, and blank means "the
+                                model decides" rather than "nothing": the placeholders say so
+                                because an empty field otherwise reads as unfinished. */}
+                            {step.kind === 'prompt_npc' && (
+                              <>
+                                <TextField
+                                  size="small" select sx={{ width: 150, flex: '0 0 auto' }} label="who speaks"
+                                  value={promptSpeakerOptions.some((o) => o.id === step.npcId) ? step.npcId : ''}
+                                  {...warn(`${at}.steps[${si}].npcId`)}
+                                  onChange={(e) => patchStep(member.npcId, action, si, {
+                                    ...step, kind: 'prompt_npc', npcId: e.target.value,
+                                  })}
+                                >
+                                  {promptSpeakerOptions
+                                    // The performer is excluded because a Say step already
+                                    // says it, and the learner because they speak for
+                                    // themselves — both are refused on save too.
+                                    .filter((o) => o.id !== member.npcId)
+                                    .map((o) => <MenuItem key={o.id} value={o.id}>{o.label}</MenuItem>)}
+                                </TextField>
+                                <TextField
+                                  size="small" select sx={{ width: 150, flex: '0 0 auto' }} label="to"
+                                  value={actorOptions.some((o) => o.id === step.target) ? step.target : ''}
+                                  {...warn(`${at}.steps[${si}].target`)}
+                                  onChange={(e) => patchStep(member.npcId, action, si, {
+                                    ...step, kind: 'prompt_npc', target: e.target.value || undefined,
+                                  })}
+                                >
+                                  <MenuItem value="">whoever the model picks</MenuItem>
+                                  {actorOptions
+                                    .filter((o) => o.id !== step.npcId)
+                                    .map((o) => <MenuItem key={o.id} value={o.id}>{o.label}</MenuItem>)}
+                                </TextField>
+                                <TextField
+                                  size="small" fullWidth
+                                  placeholder="Roughly what they say — leave blank to let the model decide"
+                                  value={step.instruction ?? ''}
+                                  {...warn(`${at}.steps[${si}].instruction`)}
+                                  onChange={(e) => patchStep(member.npcId, action, si, {
+                                    ...step, kind: 'prompt_npc', instruction: e.target.value || undefined,
+                                  })}
+                                />
+                              </>
                             )}
 
                             {step.kind === 'walk_to_tag' && (

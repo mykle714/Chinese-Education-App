@@ -9,6 +9,7 @@ import Icon from "../../components/Icon";
 import FriendPersonRow from "./FriendPersonRow";
 import { fetchFriendsLeaderboard, fetchIncomingRequests } from "../../api/friends";
 import { fetchChallengeBadge } from "../../api/studyChallenges";
+import { isFeatureEnabled } from "../../../server/contracts/featureFlags";
 import type { FriendLeaderboardEntry } from "../../api/friends";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -163,7 +164,12 @@ function FriendsPage() {
             // The challenge badge must not be able to fail the whole page: it is the
             // newest of the three reads and the least important to the screen's purpose,
             // so it degrades to 0 rather than replacing the leaderboard with an error.
-            fetchChallengeBadge().catch(() => ({ count: 0 })),
+            // Skipped entirely when the Study Challenge flag is off
+            // (server/contracts/featureFlags.ts): the endpoint is not mounted, so the
+            // request would 404 into the .catch above and cost a round trip to learn 0.
+            isFeatureEnabled("studyChallenge")
+                ? fetchChallengeBadge().catch(() => ({ count: 0 }))
+                : Promise.resolve({ count: 0 }),
         ])
             .then(([board, incoming, badge]) => {
                 if (cancelled) return;
@@ -262,7 +268,7 @@ function FriendsPage() {
                         is deliberately LANGUAGE-BLIND — a challenge in a language the
                         viewer is not currently studying is invisible on the challenges
                         page itself, and this pin is the one thread back to it. */}
-                    <BentoTile
+                    {isFeatureEnabled("studyChallenge") && <BentoTile
                         className="friends-page__challenges-tile"
                         title="Challenges"
                         // The subtitle says what the feature IS, not what this tile is for.
@@ -278,7 +284,7 @@ function FriendsPage() {
                         pinTone="alert"
                         to="/friends/challenges"
                         onClick={slideTo("/friends/challenges")}
-                    />
+                    />}
                 </Bento>
 
                 {/* Your own ID — the shareable friend handle. */}

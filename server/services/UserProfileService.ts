@@ -5,7 +5,7 @@ import { IUserLanguagesDAL } from '../dal/interfaces/IUserLanguagesDAL.js';
 import { ICommunityLayoutDAL } from '../dal/interfaces/ICommunityLayoutDAL.js';
 import { OnDeckVocabService } from './OnDeckVocabService.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
-import { VELOCITY_WINDOW_DAYS } from '../types/velocity.js';
+import { VELOCITY_WINDOW_DAYS, emptyVelocityBreakdown } from '../types/velocity.js';
 import { activeBars } from '../utils/masteryCompute.js';
 import type { MasteryBarId } from '../contracts/wire.js';
 import type { CommunityDesign } from '../types/community.js';
@@ -123,13 +123,19 @@ export class UserProfileService {
       panelLanguages.map((lang) => this.onDeckVocabService.getCategoryCounts(targetId, lang, BANDS)),
     );
 
-    const languageStats: ProfileLanguageStats[] = panelLanguages.map((lang, i) => ({
-      language: lang,
-      isSelected: lang === language,
-      velocity: velocityByLanguage.get(lang) ?? 0,
-      netMinutes: walletByLanguage.get(lang) ?? 0,
-      bandCounts: bandCountsPerLanguage[i],
-    }));
+    const languageStats: ProfileLanguageStats[] = panelLanguages.map((lang, i) => {
+      // A language with no promotions in the window is absent from the map; the empty
+      // breakdown is a real zero of the right shape, not a missing value.
+      const velocity = velocityByLanguage.get(lang) ?? emptyVelocityBreakdown();
+      return {
+        language: lang,
+        isSelected: lang === language,
+        velocity: velocity.total,
+        velocityBoundaryCounts: velocity.boundaryCounts,
+        netMinutes: walletByLanguage.get(lang) ?? 0,
+        bandCounts: bandCountsPerLanguage[i],
+      };
+    });
 
     // Relationship. `self` is checked first and short-circuits: a user cannot be
     // their own friend, so any row found for (viewer, viewer) would be nonsense.

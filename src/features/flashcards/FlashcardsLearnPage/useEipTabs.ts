@@ -1,11 +1,9 @@
 import { useCallback, useRef, useState } from "react";
-import type { RefObject } from "react";
 import { TONE_COLORS } from "../../../utils/toneColors";
 import { getBreakdownItems } from "../../../utils/breakdownUtils";
 import type { LongDefinitionPart } from "../../../types";
 import type { CompareState } from "../../../components/CompareWorkspace";
 import type { VocabEntry, BreakdownItem } from "../types";
-import { FONTS } from "../../../theme/fonts";
 import { lookupVocabEntry } from "../../../api/dictionary";
 import { resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
 
@@ -24,7 +22,6 @@ export interface EntryEipTab {
     // copy of the entry arrives (syncEntry), so a pick made on the flashcard and a pick
     // made in the panel converge on the same sense. See docs/DEFINITION_CLUSTERS.md.
     selectedSenseIndex: number;
-    measuredWidth: number; // cached pixel width of the tab pill, used for fit checks
 }
 
 // The Compare tab (docs/WORD_COMPARE_FEATURE.md) — a SINGLETON, not attached to any card. Slot A
@@ -41,18 +38,11 @@ export interface CompareEipTab extends CompareState {
     kind: "compare";
     id: "compare";
     toneColor: string;
-    measuredWidth: number;
 }
 
 export type EipTab = EntryEipTab | CompareEipTab;
 
-// Fixed label the Compare tab renders/measures under — it has no headword of its own.
-const COMPARE_TAB_LABEL = "Compare";
-
 interface UseEipTabsOptions {
-    // Ref to the EipTabStripContainer. Its own content box — NOT the viewport — is the
-    // budget a new tab must fit inside; see readStripGeometry.
-    stripRef: RefObject<HTMLDivElement | null>;
     // Language every drill-in lookup is scoped to. Optional: omitted, the server falls
     // back to the account's selectedLanguage (the flp's behavior, unchanged). scp passes
     // its route language explicitly because the page can show a language the account is
@@ -64,109 +54,26 @@ interface UseEipTabsOptions {
     // dependency array — see CLAUDE.md "Never reload on token refresh".
 }
 
-// All five tone colors (tones 1–4 + neutral 0). Used to assign each new tab a
+// All five tone colors (tones 1-4 + neutral 0). Used to assign each new tab a
 // random color; we try to avoid colors already in use before falling back.
 const TONE_COLOR_VALUES = Object.values(TONE_COLORS);
 
-// FALLBACKS ONLY. The fit check reads the strip's real geometry out of the DOM
-// (readStripGeometry); these are used when that geometry is unreadable — today only the
-// pre-tabbed-mode strip, whose padding is collapsed to 0 while the trail is hidden but
-// will be 16px a side the moment a 2nd pill mounts. Keep them in sync with
-// EipTabStripContainer's padding and the tab list's `gap` in EipTabStrip.
-const STRIP_HORIZONTAL_PADDING = 16 * 2;
-const TAB_GAP = 7;
-
-// Sub-pixel safety margin, in px. Fractional label widths mean a projection that lands
-// exactly on the budget can still paint a hairline past the container's content box and
-// clip the last pill's rounded edge, so a tab must clear the budget by this much.
-const FIT_EPSILON = 1;
-
-// Measures the rendered width of a tab pill for a given label, off-DOM. Mirrors
-// EipEntryTab's font/padding so the result matches what will be painted — 700 weight,
-// 11px horizontal padding, the 0.01em tracking, and NO border (the pill has none; the
-// 2px bottom border this used to declare was copied from the content tabs and, being
-// horizontal, never affected width anyway).
-//
-// ⚠️ Appended to document.body, so it only sees a `:root`-level `--cjk-font` override
-// (see FONTS.cjk). That is why the fit check prefers the widths of the pills actually in
-// the DOM and treats this as the estimate for the not-yet-mounted candidate.
-function measureTabWidth(label: string): number {
-    const el = document.createElement("span");
-    el.style.cssText =
-        "position:absolute;left:-9999px;top:-9999px;visibility:hidden;" +
-        `font-family:${FONTS.cjk};` +
-        "font-size:14px;font-weight:700;line-height:1.1;letter-spacing:0.01em;" +
-        "padding:6px 11px;" +
-        "white-space:nowrap;display:inline-block;box-sizing:border-box;";
-    el.textContent = label;
-    document.body.appendChild(el);
-    const w = el.getBoundingClientRect().width;
-    document.body.removeChild(el);
-    return w;
-}
-
-// What the trail actually has to spend, read off the live strip.
-interface StripGeometry {
-    // Content-box width of the row the pills lay out in — the CONTAINER, never the
-    // viewport. Padding is already subtracted.
-    available: number;
-    // Flex gap between two adjacent pills, from computed style.
-    gap: number;
-    // Painted widths of the pills currently mounted, in tab order; null when the pill
-    // row is not rendered yet (trail hidden at one tab) and only cached estimates exist.
-    pillWidths: number[] | null;
-}
-
-// Reads the trail's budget from the DOM rather than from constants, so the gate can
-// never drift out of sync with the stylesheet (it had: 14px padding vs the strip's 16px,
-// a 4px gap vs the strip's 7px, and a 600-weight measurement of a 700-weight pill — each
-// one an under-count, which is what let a pill hang off the edge before the gate fired).
-// Returns null when nothing measurable is mounted; the caller then allows the tab rather
-// than rejecting every tab forever.
-function readStripGeometry(strip: HTMLElement | null): StripGeometry | null {
-    if (!strip) return null;
-
-    // Preferred path: the pill row itself. Its clientWidth IS the space pills may occupy
-    // (it carries no padding of its own), and its children are the painted pills.
-    const list = strip.querySelector<HTMLElement>(".eip-entry-tab-list");
-    if (list && list.clientWidth > 0) {
-        const gap = parseFloat(getComputedStyle(list).columnGap) || TAB_GAP;
-        const pillWidths = Array.from(list.children).map(
-            child => (child as HTMLElement).getBoundingClientRect().width
-        );
-        return { available: list.clientWidth, gap, pillWidths };
-    }
-
-    // Fallback: the strip before tabbed mode, where the pill row is not rendered.
-    const style = getComputedStyle(strip);
-    const measuredPadding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-    // The hidden strip is explicitly padded to 0 (EipTabStrip's `sx`), so a 0 here is the
-    // collapsed state, not a genuinely edge-to-edge row — charge the visible padding.
-    const padding = measuredPadding > 0 ? measuredPadding : STRIP_HORIZONTAL_PADDING;
-    const available = strip.clientWidth - padding;
-    if (available <= 0) return null;
-    return { available, gap: parseFloat(style.columnGap) || TAB_GAP, pillWidths: null };
-}
-
-// True when one more pill labelled `label` would fit ENTIRELY inside the strip. A tab
-// that would be even partly clipped is rejected — the trail never shows a cut-off pill,
-// because a half-pill reads as "scroll for more" on a row that does not scroll.
-function fitsNewTab(strip: HTMLElement | null, tabs: EipTab[], label: string): boolean {
-    const geo = readStripGeometry(strip);
-    if (!geo) return true; // unmeasurable — don't gate on a number we don't have
-
-    // Prefer painted widths, but never trust one that is SMALLER than the cached
-    // estimate: a pill mounted moments ago is mid-entrance (the eipPillIn keyframe
-    // animates max-width up from 0), and measuring it there would under-count the row.
-    const usePainted = geo.pillWidths !== null && geo.pillWidths.length === tabs.length;
-    const existingTotal = tabs.reduce(
-        (sum, t, i) => sum + (usePainted ? Math.max(geo.pillWidths![i], t.measuredWidth) : t.measuredWidth),
-        0
-    );
-    const gapsTotal = tabs.length * geo.gap; // n existing + 1 new ⇒ n gaps between them
-    const projected = existingTotal + gapsTotal + measureTabWidth(label);
-    return projected <= geo.available - FIT_EPSILON;
-}
+/**
+ * How many words the trail may hold at once.
+ *
+ * This used to be a WIDTH gate: the strip did not scroll, so a tab was refused the
+ * moment one more pill would not fit the row entirely (a half-pill reads as "scroll for
+ * more" on a row that does not scroll). The strip scrolls now — drag it sideways, see
+ * EipTabStrip — so the row's width has stopped being a budget and the only reason left to
+ * cap the trail is that an unbounded one is a memory leak and an unusable scroll. 50 is
+ * that cap: far past any real drill-in chain (the deepest observed is single digits), and
+ * small enough that the strip stays a strip.
+ *
+ * With the gate gone, so did `measureTabWidth`/`readStripGeometry`/`fitsNewTab`, the
+ * per-tab `measuredWidth` cache they fed on, and the `stripRef` this hook took purely to
+ * read that geometry — EipTabStrip now owns its own refs.
+ */
+export const MAX_EIP_TABS = 50;
 
 // Picks a tone color not already used by any current tab. Falls back to any
 // tone color if all five are taken.
@@ -185,7 +92,6 @@ function buildEntryTab(entry: VocabEntry, usedColors: Set<string>): EntryEipTab 
         toneColor: pickToneColor(usedColors),
         selectedSubTab: 0,
         selectedSenseIndex: resolveSelectedSenseIndex(entry),
-        measuredWidth: measureTabWidth(entry.entryKey),
     };
 }
 
@@ -194,7 +100,6 @@ function buildCompareTab(slotA: VocabEntry, usedColors: Set<string>): CompareEip
         kind: "compare",
         id: "compare",
         toneColor: pickToneColor(usedColors),
-        measuredWidth: measureTabWidth(COMPARE_TAB_LABEL),
         slotA,
         slotB: null,
         comparison: null,
@@ -202,14 +107,14 @@ function buildCompareTab(slotA: VocabEntry, usedColors: Set<string>): CompareEip
     };
 }
 
-export function useEipTabs({ stripRef, language }: UseEipTabsOptions) {
+export function useEipTabs({ language }: UseEipTabsOptions = {}) {
     const [tabs, setTabs] = useState<EipTab[]>([]);
     const [activeIndex, setActiveIndex] = useState(0);
     // Latches to true the moment a 2nd tab is first added and stays true for
     // the lifetime of the panel — closing back down to 1 tab does not hide the
     // strip. Reset only by clear() when the panel closes.
     const [isTabbedMode, setIsTabbedMode] = useState(false);
-    // Bumped each time a new-tab push is rejected for not fitting. Consumers
+    // Bumped each time a new-tab push is rejected for hitting MAX_EIP_TABS. Consumers
     // watch this to fire a toast — we use a counter (not a boolean) so back-to-back
     // overflows still trigger the toast each time.
     const [overflowSignal, setOverflowSignal] = useState(0);
@@ -218,11 +123,22 @@ export function useEipTabs({ stripRef, language }: UseEipTabsOptions) {
     // can't overwrite the user's later tap (race-free push).
     const latestRequestRef = useRef<string | null>(null);
 
+    // Seed the trail with the card the panel was opened FROM.
+    //
+    // ⚠️ RE-OPENING THE PANEL ON THE SAME CARD RESUMES ITS TRAIL (2026-09-06). Closing the
+    // eip no longer discards the tabs — a learner who drills 你 → 好 → 吗, closes the panel
+    // to look at the card, and opens it again gets the same three pills and the same word
+    // showing. So this is a no-op when the root tab is already this entry, and only a
+    // DIFFERENT root starts a fresh trail (which is also what ends the old one: the flp's
+    // next card, or another card's info button on scp). The `isTabbedMode` latch resets
+    // with it, or the new card would open showing a one-pill strip left over from the old.
     const openForRoot = useCallback((entry: VocabEntry) => {
-        const tab = buildEntryTab(entry, new Set());
-        setTabs([tab]);
+        const root = tabs[0];
+        if (root?.kind === "entry" && root.id === entry.entryKey) return;
+        setTabs([buildEntryTab(entry, new Set())]);
         setActiveIndex(0);
-    }, []);
+        setIsTabbedMode(false);
+    }, [tabs]);
 
     // Compare tab (docs/WORD_COMPARE_FEATURE.md) — a SINGLETON pushed from the header's Compare
     // button, not attached to any card. Re-tapping Compare from a different word's tab focuses the
@@ -239,8 +155,8 @@ export function useEipTabs({ stripRef, language }: UseEipTabsOptions) {
                 return next;
             }
 
-            // Fit-check before pushing, same budget math as openForEntryKey.
-            if (!fitsNewTab(stripRef.current, prev, COMPARE_TAB_LABEL)) {
+            // Cap check before pushing, same rule as openForEntryKey.
+            if (prev.length >= MAX_EIP_TABS) {
                 setOverflowSignal(n => n + 1);
                 return prev;
             }
@@ -252,7 +168,7 @@ export function useEipTabs({ stripRef, language }: UseEipTabsOptions) {
             setIsTabbedMode(true);
             return next;
         });
-    }, [stripRef]);
+    }, []);
 
     // Compare tab is a singleton (kind: "compare"), so a slot / the fetched result are updated in
     // place by kind rather than by index. Either slot can be set/cleared (docs/WORD_COMPARE_FEATURE.md
@@ -275,9 +191,9 @@ export function useEipTabs({ stripRef, language }: UseEipTabsOptions) {
             return;
         }
 
-        // Fit-check before fetching — cheap and avoids a wasted network call if
-        // the strip is already full. Geometry is read live each call.
-        if (!fitsNewTab(stripRef.current, tabs, entryKey)) {
+        // Cap check before fetching — cheap, and avoids a wasted network call when the
+        // trail is already at MAX_EIP_TABS.
+        if (tabs.length >= MAX_EIP_TABS) {
             setOverflowSignal(n => n + 1);
             return;
         }
@@ -308,7 +224,7 @@ export function useEipTabs({ stripRef, language }: UseEipTabsOptions) {
         // No `token` dep: the underlying apiGet reads the header at call time, so this callback's
         // identity survives a silent refresh (CLAUDE.md ⛔ rule). A non-2xx now throws
         // and is handled by the catch below, where the old code returned early.
-    }, [tabs, stripRef, language]);
+    }, [tabs, language]);
 
     // Re-seed an already-open entry tab from a fresher copy of the same word. Tabs hold a
     // SNAPSHOT of the entry, so a change made outside the panel while it is open (today:

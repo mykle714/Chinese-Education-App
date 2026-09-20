@@ -1,6 +1,6 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 import { GAME_REGISTRY } from "../games/registry";
-import { ROUTE_META, type RouteMeta } from "./routeMeta";
+import { FLAGGED_OFF_PATHS, ROUTE_META, type RouteMeta } from "./routeMeta";
 
 /**
  * Binds each route in `./routeMeta` to its page component.
@@ -147,9 +147,15 @@ export const APP_ROUTES: AppRoute[] = ROUTE_META.map((meta) => {
 // longer has a row, which leaves that page unreachable. Warned rather than thrown —
 // an orphan is harmless at runtime, and bricking the app over a stale map entry
 // would be worse than the bug.
+//
+// A path behind an OFF feature flag is exempt: its row is filtered out of ROUTE_META
+// on purpose (server/contracts/featureFlags.ts), and the binding below is kept
+// deliberately so that flipping the flag back on is a one-boolean change rather than a
+// hunt for deleted entries. The cost of keeping it is only the unreferenced `lazy()`
+// arrow — the page's chunk is built but never fetched, because no route can match it.
 if (import.meta.env.DEV) {
   const orphans = Object.keys(PAGE_COMPONENTS).filter(
-    (path) => !ROUTE_META.some((m) => m.path === path)
+    (path) => !ROUTE_META.some((m) => m.path === path) && !FLAGGED_OFF_PATHS.has(path)
   );
   if (orphans.length > 0) {
     console.warn(

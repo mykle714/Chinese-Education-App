@@ -39,9 +39,10 @@ a profile is a *composition* of five features that each already own their data.
 This is the same rule the friends leaderboard follows (docs/FRIENDS_FEATURE.md §
 Leaderboard), and it exists because the alternative misreports real learners: scoring a
 Spanish learner in a Chinese viewer's language renders a dedicated account as four
-zeros and an empty design list. Each stats panel renders its language's flag + region
-code **inside** the panel so a reader never has to look elsewhere to learn what the
-figures describe — which matters more now that several panels stack.
+zeros and an empty design list. Each stats panel is **titled** by its language — a
+large centred flag over the language's name — **inside** the panel, so a reader never
+has to look elsewhere to learn what the figures describe, which matters more now that
+several panels stack.
 
 Code: `server/services/UserProfileService.ts` → `getProfile`, `listDesigns`.
 
@@ -130,8 +131,16 @@ as received, never re-sorting it:
 
 1. The account's **selected** language leads — whatever its balance, including zero.
    The header says they are studying it, so a profile that then showed no panel for it
-   would contradict itself on the same screen. A "Currently studying" chip says *why* it
-   leads, because position alone cannot distinguish "first" from "current".
+   would contradict itself on the same screen.
+
+   > **The panels themselves no longer mark which language is selected.** A
+   > "Currently studying" chip used to sit beside the panel's language badge, on the
+   > argument that position alone cannot distinguish "first" from "current"; it was
+   > dropped in the 2026-09-19 panel-heading change. The fact is still on screen —
+   > the identity card at the top says "Studying 🇨🇳 CN" — but it is now one
+   > cross-reference away rather than stated on the panel. `isSelected` is still sent
+   > by the server and still lands on the panel as an `is-selected` class, so a visual
+   > treatment can be restored without a contract change; nothing styles it today.
 2. Every other language follows by **`netMinutes` descending**. Note this means the top
    panel is **not** necessarily the largest one — an account newly switched to Spanish
    shows Spanish first with a Chinese wallet ten times its size beneath it.
@@ -144,6 +153,8 @@ The **goal badges sit above the panels**, not inside each one: reading/writing g
 account-wide opt-ins (`users.readingGoal` / `writingGoal`), and repeating them per panel
 would imply a learner could pursue writing in one language and not another.
 `velocityWindowDays` sits outside the array for the same reason — it is a constant.
+`velocityBoundaryCounts`, by contrast, is **inside** each language's entry: it is that
+language's `velocity` broken out per band boundary, and it sums to it.
 
 **Card designs stay single-language.** They remain in the selected language alone, because
 that list is a keyset-paginated scrolling feed and interleaving languages inside one page
@@ -157,9 +168,86 @@ would give the cursor two orderings to satisfy.
 then run in parallel, one per panel, bounded by the languages the account has actually
 touched rather than by the number the app supports.
 
+### The panel heading: flag over name
+
+The panel is titled by a **40px flag emoji, centred, with the language's display name
+under it** (`LANGUAGE_NAMES` — "Mandarin", not the "CN" region code). This is
+deliberately *not* the inline `🇨🇳 CN` badge the friends leaderboard and this page's
+own identity line use: those annotate a line of running text, whereas here a language
+labels a whole BLOCK, and at 40px it is legible as the panel's identity from across
+the card — which is what lets two stacked panels tell themselves apart at a glance.
+
+The name under the flag is **load-bearing, not decoration**. `LANGUAGE_FLAGS`
+(`server/contracts/wire.ts`) warns that Windows does not render regional-indicator
+pairs as flags — it shows the bare letters — so a flag must never be the only carrier
+of meaning. The flag is therefore `aria-hidden` and the name is the accessible label;
+reading both aloud would give "flag of China, Mandarin", a duplicate rather than a
+clarification.
+
+Code: `src/features/profile/ProfileStatsCard.tsx` → `LanguagePanel`;
+`src/features/profile/UserProfilePage.tsx` → `languageDisplay` (the one lookup behind
+both the panel title and the identity line's inline badge, so the two cannot drift).
+
+### The three figures, and where each sits
+
+A panel now reads top to bottom as **identity → state → rate**, with the wallet parked
+out of that flow:
+
+| Figure | Treatment | Position |
+|---|---|---|
+| Language | 40px flag over its name (above) | centred, top |
+| Banked minutes | `FireCount` — the app's flame readout | **absolutely** pinned top-right |
+| Band counts | `DeckBuckets` shelf | middle |
+| Velocity | `VelocityStatCard` — the Account page's own card, boundary breakdown included | below the shelf |
+
+**Velocity is below the shelf** because that is the Account page's order, and the order
+carries an argument: the library is the *state* and velocity is its *rate of change*, so
+the reader meets the thing before the thing's derivative. Both pages now render the
+literal same component (`src/components/VelocityStatCard.tsx`), ⓘ included — velocity is
+uninterpretable without the definition of a level-up, and two pages each writing that
+sentence out is two sentences that will drift. That includes the band-boundary breakdown
+sharing the figure's line as `9 = 4 U→T + 3 T→C + 2 C→M`
+([VELOCITY.md § 2b](./VELOCITY.md)): each panel gets its OWN language's split, carried
+per language as `velocityBoundaryCounts`.
+
+**The minutes flame is absolutely positioned, and that is not decoration.** The title
+block is centred; a figure sharing its row would push the flag off-centre by half the
+figure's width, and by a *different* amount per panel, since "2w 3d" and "41m" are not
+the same length. Out of flow, every panel's flag lands on the same axis whatever the
+balance reads.
+
+**It is a flat flame, with no fill level.** `FireCount` draws the seconds gauge only when
+given a `fillPct`; this caller passes none. A part-full gauge here would invite the
+reader to watch a level that belongs to somebody else and cannot move on this screen —
+the same argument that gives the header badge its off-study mode.
+
+> ⚠️ **`MinutePointsFireBadge` could not be reused directly.** It calls
+> `useMinutePoints()` internally, so it is hard-wired to the signed-in *viewer* and
+> their *selected* language — dropping it on a profile would have shown the viewer's own
+> live count under somebody else's name, in the wrong language. The visual was therefore
+> extracted into `src/minutePoints/FireCount.tsx` (presentational, takes the number as a
+> prop) and the badge rebuilt on top of it, keeping its hooks, eligibility branch, tick
+> and pulse.
+
+Code: `src/features/profile/ProfileStatsCard.tsx` → `LanguagePanel`;
+`src/components/VelocityStatCard.tsx`; `src/minutePoints/FireCount.tsx`;
+`src/minutePoints/MinutePointsFireBadge.tsx`.
+
+### The band counts are a shelf, inside a card
+
+The four band counts are the same `DeckBuckets` shelf the Account page draws, so a
+profile and your own account present progress identically. The panel is a **padded
+card**, though, and the Account page is a page with no padding of its own — so this
+host passes `gutter={false}` to suppress `Shelf`'s own 22px page gutter (which would
+otherwise indent the spines past the panel's "Progress" heading), and `DeckBuckets`
+measures the panel and narrows all four spines to fit one line. Without that the
+fourth band wraps below the shelf's board. See docs/SHELF_REDESIGN.md § "5 · Account"
+for why the gutter is opt-in rather than always-off.
+
 Code: `server/services/UserProfileService.ts` → `getProfile`;
 `server/types/userProfile.ts` → `ProfileLanguageStats`, `ProfileStats`;
-`src/features/profile/ProfileStatsCard.tsx` → `LanguagePanel`.
+`src/features/profile/ProfileStatsCard.tsx` → `LanguagePanel`;
+`src/components/DeckBuckets.tsx` → `useFittedSpineWidth`, `BucketsContainer`.
 
 ## Card designs
 
@@ -194,6 +282,10 @@ Code: `src/features/profile/ProfileDesignGrid.tsx`;
 ## Night market visit
 
 `/night-market/user/:userId` renders another account's continent, read-only.
+
+🚩 **Gated by the `nightMarket` flag** ([FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 2d). The
+"Visit their night market" button on this page is the only way in, so with the flag off the
+button is not rendered and the route is not registered.
 
 **The read is read-only on the server too, and that took a deliberate change.**
 `NightMarketWorldService.getUserLayout` *seeds an origin hub* when a market has no

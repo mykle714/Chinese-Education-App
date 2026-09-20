@@ -3,7 +3,7 @@
 import './pixiRuntime';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Application, extend, useTick, useApplication } from '@pixi/react';
-import { Container, Sprite, Graphics, Text, Assets, Texture } from 'pixi.js';
+import { Container, Sprite, Graphics, Text } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box } from '@mui/material';
 import {
@@ -14,6 +14,10 @@ import {
   type EditorMasks, type DecorCategory,
 } from '../../engine/market/farmTerrain';
 import { occupantHousesForArea } from '../../engine/market/house';
+// The iw scene editor's forced-direction mask is drawn as an ARROW, and which way the arrow
+// points must be the engine's answer, not this file's — see FACING_SCREEN_VECTOR.
+import { facingForStep } from '../../engine/iw/sceneActor';
+import type { Direction } from '../../engine/market/freeFarmTileset';
 import { useCameraControls } from '../../hooks/useCameraControls';
 import HouseStripSprites from './HouseStripSprites';
 import {
@@ -23,6 +27,12 @@ import {
 // EditorTerrainLayer (House.png lives in the pack's excluded Originals/ bucket).
 import houseUrl from '../../assets/free-assets/free-farm-assets/Environment/Originals/House.png';
 import EditorTerrainLayer from './EditorTerrainLayer';
+import FurnitureSprites from './FurnitureSprites';
+import { usePixiTexture } from './usePixiTexture';
+import { lumeishTileset } from '../../engine/market/lumeishTileset';
+import {
+  furnitureFitsBoard, furnitureOverlapsAny, type FurniturePlacement,
+} from '../../engine/market/furniture';
 
 // Register Pixi.js classes as pixiContainer / pixiSprite / pixiGraphics / pixiText.
 extend({ Container, Sprite, Graphics, Text });
@@ -52,6 +62,7 @@ export type EditorTool =
   | 'commonDecor'
   | 'treeDecor'
   | 'plankDecor'
+  | 'furniture'
   | 'copy'
   | 'paste';
 
@@ -100,6 +111,18 @@ export interface TemplateEditorViewerProps {
    * via a modulo, so an out-of-range index simply wraps.
    */
   decorVariantIdx?: number;
+  /**
+   * The lumeish sprite id the Furniture tool will place — paged with the LEFT/RIGHT arrow keys
+   * on the parent. Drives the placement GHOST + footprint preview. Ignored by every other tool.
+   */
+  furnitureSpriteId?: number | null;
+  /**
+   * The facing the iw scene editor's forced-direction tool will stamp (Space cycles it on the
+   * parent), or null when that tool is not active. Drives a GHOST ARROW over the hover
+   * diamond, so the author sees which way a click will point the tile before committing —
+   * the same contract the decor ghost has, and the reason the parent owns the selection.
+   */
+  forcedFacingGhost?: Direction | null;
   /**
    * Whether the active tool uses a two-click RECTANGLE selection instead of the default
    * free drag-paint. The parent turns this on for the annotation-mask tools (street /
@@ -323,17 +346,9 @@ function MarkerOverlay({ markers }: { markers: readonly EditorMarker[] }) {
  * not fit.
  */
 function MarkerSprite({ col, row, url }: { col: number; row: number; url: string }) {
-  const [texture, setTexture] = useState<Texture | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    Assets.load<Texture>(url).then((tex) => {
-      // `nearest` for the same reason the whole board uses it: this is pixel art, and
-      // Pixi's default smoothing turns a 32px body into a smudge at zoom 3+.
-      tex.source.scaleMode = 'nearest';
-      if (!cancelled) setTexture(tex);
-    }).catch(() => { /* a missing body must not take the board down */ });
-    return () => { cancelled = true; };
-  }, [url]);
+  // `nearest` filtering and the missing-asset guard live in the shared hook: this is pixel
+  // art, and Pixi's default smoothing turns a 32px body into a smudge at zoom 3+.
+  const texture = usePixiTexture(url);
 
   if (!texture) return null;
   const { screenX, screenY } = isoToScreen(col, row);
@@ -418,6 +433,23 @@ function PlaceholderPreviewOverlay({
 // sprite will. Planks preview their flat CENTER tile; the far-end cap is derived only at
 // render (see plankRenderUrl), so the ghost intentionally shows the mid-run tile.
 const DECOR_GHOST_Z = HOVER_Z + 1;
+
+/**
+ * The forced-direction tool's ghost: the arrow a click would stamp, over the hover diamond.
+ *
+ * Half-opaque rather than solid so it reads as a preview and not as an already-painted cell —
+ * the same tell the decor ghost uses. It shares {@link traceFacingArrow} with the painted
+ * layer, so the preview cannot drift from what lands.
+ */
+function FacingGhostOverlay({ cell, facing }: { cell: Cell; facing: Direction }) {
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    traceFacingArrow(g, cell.col, cell.row, facing);
+    g.fill({ color: FACING_ARROW_COLOR, alpha: 0.5 });
+    g.stroke({ color: FORCED_OVERLAY_COLOR, width: 1, alpha: 0.9 });
+  }, [cell.col, cell.row, facing]);
+  return <pixiGraphics draw={draw} zIndex={DECOR_GHOST_Z} />;
+}
 const DECOR_GHOST_ALPHA = 0.55;
 
 function DecorGhostOverlay({
@@ -437,18 +469,9 @@ function DecorGhostOverlay({
     return rotation[variantIdx % rotation.length];
   }, [cell, masks, category, variantIdx]);
 
-  const [texture, setTexture] = useState<Texture | null>(null);
-  // Load the ghost sprite whenever the resolved url changes (Assets caches, so re-hovering a
-  // seen sprite is a no-op). Cleared to null between loads so no stale texture flashes.
-  useEffect(() => {
-    if (!url) { setTexture(null); return; }
-    let cancelled = false;
-    Assets.load<Texture>(url).then((tex) => {
-      tex.source.scaleMode = 'nearest';
-      if (!cancelled) setTexture(tex);
-    });
-    return () => { cancelled = true; };
-  }, [url]);
+  // Loads whenever the resolved url changes (Assets caches, so re-hovering a seen sprite is a
+  // no-op) and clears between loads, so no stale texture flashes.
+  const texture = usePixiTexture(url);
 
   if (!cell || !texture) return null;
   const { screenX, screenY } = isoToScreen(cell.col, cell.row);
@@ -465,6 +488,80 @@ function DecorGhostOverlay({
   );
 }
 
+// ─── Furniture placement preview ─────────────────────────────────────────────────
+// While the Furniture tool is active, the cursor previews the piece the next click will
+// place: a translucent GHOST of the actual sprite, seated exactly as the placed piece will be
+// (its measured base-diamond corner on the hovered cell's south vertex — NOT the frame's
+// bottom-centre, which is what makes a prop float), over its iso FOOTPRINT tinted by whether
+// the placement is legal — GREEN if the whole footprint is on the board and hits no other
+// piece, RED if the click will be refused.
+//
+// The footprint is the sprite's OWN measured iso span, which routinely disagrees with its
+// padded pixel box (a 64x32 canvas is not a 2x1 prop) — see docs/LUMEISH_ASSET_PIPELINE.md
+// "Multi-cell occupancy". Drawing the box instead of the span would lie about what a click
+// occupies.
+const FURNITURE_GHOST_ALPHA = 0.6;
+const FURNITURE_PREVIEW_VALID_COLOR = 0x33ff66;
+const FURNITURE_PREVIEW_INVALID_COLOR = 0xff4d4d;
+
+function FurniturePreviewOverlay({
+  cell, spriteId, width, height, placed,
+}: {
+  cell: Cell | null;
+  /** The lumeish sprite the arrow keys have paged to. */
+  spriteId: number;
+  width: number;
+  height: number;
+  /** Already-placed pieces — a drop is refused where the footprint overlaps any of them. */
+  placed: readonly FurniturePlacement[];
+}) {
+  const sprite = lumeishTileset.sprite(spriteId);
+  const texture = usePixiTexture(sprite?.url);
+  const span = lumeishTileset.span(spriteId);
+
+  const valid = !!cell
+    && furnitureFitsBoard({ col: cell.col, row: cell.row, id: spriteId }, width, height)
+    && !furnitureOverlapsAny({ col: cell.col, row: cell.row, id: spriteId }, placed);
+
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    if (!cell) return;
+    const color = valid ? FURNITURE_PREVIEW_VALID_COLOR : FURNITURE_PREVIEW_INVALID_COLOR;
+    // Trace each footprint cell that is on the board (an off-board overhang isn't drawn; the
+    // red tint already flags it refused) — same treatment as the placeholder drop preview.
+    for (let dx = 0; dx < span.w; dx++) {
+      for (let dy = 0; dy < span.h; dy++) {
+        const col = cell.col + dx;
+        const row = cell.row + dy;
+        if (col < 0 || col >= width || row < 0 || row >= height) continue;
+        traceCellDiamond(g, col, row);
+      }
+    }
+    g.fill({ color, alpha: 0.3 });
+    g.stroke({ color, width: 1, alpha: 0.9 });
+  }, [cell, span.w, span.h, width, height, valid]);
+
+  if (!cell) return null;
+  const { screenX, screenY } = isoToScreen(cell.col, cell.row);
+  const anchor = lumeishTileset.anchorFraction(spriteId);
+  return (
+    <>
+      <pixiGraphics draw={draw} zIndex={HOVER_Z} />
+      {texture && (
+        <pixiSprite
+          texture={texture}
+          x={screenX}
+          y={screenY}
+          anchor={anchor}
+          alpha={FURNITURE_GHOST_ALPHA}
+          zIndex={HOVER_Z + 1}
+          eventMode="none"
+        />
+      )}
+    </>
+  );
+}
+
 // ─── Mask tint highlights (street / communal / placeholder / condition) ──────────
 // A translucent diamond tint over every cell in a spriteless annotation mask,
 // mirroring the nmp GrassOverlay. These masks (street-walkable, communal-walkable,
@@ -478,6 +575,97 @@ const COMMUNAL_OVERLAY_COLOR = 0xc266ff; // violet
 const PLACEHOLDER_OVERLAY_COLOR = 0x33c8ff; // cyan
 const CONDITION_OVERLAY_COLOR = 0xff9f40; // orange
 const MASK_TINT_ALPHA = 0.4;
+
+// ─── The iw scene editor's two masks (2026-09-19) ────────────────────────────────
+// Both are spriteless annotations like the four above, and both are painted ONLY by the iw
+// scene editor — the night market has no concept of either, so its masks simply never carry
+// them and these layers draw nothing there (docs/IMMERSIVE_WORLD.md § 3a).
+/** UNWALKABLE: a hard red, the one colour on this board that has to read as "no". */
+const UNWALKABLE_OVERLAY_COLOR = 0xff3b30;
+/** FORCED DIRECTION: teal, far from the red above and from the violet communal tint. */
+const FORCED_OVERLAY_COLOR = 0x2ee6a8;
+/** The forced-facing arrow, drawn over the tint. White reads over every floor the board has. */
+const FACING_ARROW_COLOR = 0xffffff;
+
+/**
+ * Screen-space unit vector per compass facing — which way an arrow for this facing points.
+ *
+ * ⚠️ DERIVED, NOT TYPED OUT. The mapping from a col/row step to a sprite facing lives in
+ * `sceneActor.facingForStep` (which itself defers to the night market's `headingToIsoDir`,
+ * the only facing convention in this codebase that has been visually verified). Hand-writing
+ * a second table here is how the editor's arrows would end up pointing one quadrant away
+ * from where the runtime actually turns the body — a bug nobody would catch by reading
+ * either file alone. So: step one cell in each of the four directions, ask the engine what
+ * facing that step IS, and project the step into screen space. The arrow then points exactly
+ * where a body given that facing walked from.
+ */
+const FACING_SCREEN_VECTOR: Record<Direction, { x: number; y: number }> = (() => {
+  const out = {} as Record<Direction, { x: number; y: number }>;
+  const origin = isoToScreen(0, 0);
+  for (const [dc, dr] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
+    const facing = facingForStep('0,0', `${dc},${dr}`);
+    if (!facing) continue; // unreachable: every offset is a real step
+    const to = isoToScreen(dc, dr);
+    const x = to.screenX - origin.screenX;
+    const y = to.screenY - origin.screenY;
+    const len = Math.hypot(x, y) || 1;
+    out[facing] = { x: x / len, y: y / len };
+  }
+  return out;
+})();
+
+/** Half the arrow's length, in px, as a share of the tile. */
+const FACING_ARROW_REACH = TILE_WIDTH * 0.3;
+/** Half the width of the arrow head. */
+const FACING_ARROW_HALF_WIDTH = TILE_HEIGHT * 0.26;
+
+/**
+ * Trace one facing arrow — a shaft from the far side of the diamond's centre to a head at the
+ * near side — onto `g`. The caller fills/strokes it, so a ghost and a painted cell can share
+ * the geometry and differ only in alpha.
+ */
+function traceFacingArrow(g: Graphics, col: number, row: number, facing: Direction) {
+  const v = FACING_SCREEN_VECTOR[facing];
+  if (!v) return;
+  const { screenX, screenY } = isoToScreen(col, row);
+  const cx = screenX;
+  const cy = screenY - TILE_HEIGHT / 2; // diamond centre
+  const tipX = cx + v.x * FACING_ARROW_REACH;
+  const tipY = cy + v.y * FACING_ARROW_REACH;
+  const baseX = cx - v.x * FACING_ARROW_REACH * 0.5;
+  const baseY = cy - v.y * FACING_ARROW_REACH * 0.5;
+  // Perpendicular to the facing, for the head's two back corners.
+  const px = -v.y * FACING_ARROW_HALF_WIDTH;
+  const py = v.x * FACING_ARROW_HALF_WIDTH;
+  g.moveTo(tipX, tipY);
+  g.lineTo(baseX + px, baseY + py);
+  g.lineTo(baseX - px, baseY - py);
+  g.closePath();
+}
+
+/**
+ * The arrows for every forced-direction cell.
+ *
+ * Drawn at the FLAT mask-tint depth even in `'world'` mode, unlike the tint beneath them: the
+ * only surface that paints this mask is the iw scene editor, which is a single flat board, so
+ * a per-cell depth pass here would be machinery for a case that does not exist. If a
+ * compositing surface ever grows this mask, this is the thing to revisit.
+ */
+function ForcedArrowOverlay(
+  { cells, origin = ORIGIN_ZERO }:
+  { cells: Map<string, Direction>; origin?: CellOrigin },
+) {
+  const draw = useCallback((g: Graphics) => {
+    g.clear();
+    for (const [cell, facing] of cells) {
+      const [col, row] = cell.split(',').map(Number);
+      if (!Number.isInteger(col) || !Number.isInteger(row)) continue;
+      traceFacingArrow(g, col + origin.col, row + origin.row, facing);
+    }
+    g.fill({ color: FACING_ARROW_COLOR, alpha: 0.9 });
+  }, [cells, origin.col, origin.row]);
+  return <pixiGraphics draw={draw} zIndex={MASK_TINT_Z + 1} />;
+}
 
 /**
  * How an annotation overlay picks its z:
@@ -634,16 +822,8 @@ function PlaceholderOccupantHouses(
   { areas, origin = ORIGIN_ZERO, depthMode = 'flat' }:
   { areas: readonly PlaceholderArea[]; origin?: CellOrigin; depthMode?: OverlayDepthMode },
 ) {
-  const [texture, setTexture] = useState<Texture | null>(null);
-  // Load House.png once; Assets caches it, so this is a no-op after the first mount.
-  useEffect(() => {
-    let cancelled = false;
-    Assets.load<Texture>(houseUrl).then((tex) => {
-      tex.source.scaleMode = 'nearest';
-      if (!cancelled) setTexture(tex);
-    });
-    return () => { cancelled = true; };
-  }, []);
+  // House.png loads once; Assets caches it, so this is a no-op after the first mount.
+  const texture = usePixiTexture(houseUrl);
 
   // Houses are derived in local space, then shifted to global cells (position + depth together).
   const houses = useMemo(
@@ -770,6 +950,40 @@ export function TemplateMaskOverlays({
       {houseMode !== 'none' && (
         <PlaceholderOccupantHouses areas={houseAreas} origin={origin} depthMode={depthMode} />
       )}
+      {/* The iw scene editor's two masks. Not toggleable, and not gated on a show* flag: they
+          are the only annotations that change what the SIMULATION does rather than how the
+          board looks, so an author must never be able to hide them and then paint blind. A
+          night market board carries neither, so both draw nothing there. */}
+      {(masks.unwalkable?.size ?? 0) > 0 && (
+        <MaskTintOverlay
+          cells={masks.unwalkable!}
+          color={UNWALKABLE_OVERLAY_COLOR}
+          origin={origin}
+          depthMode={depthMode}
+        />
+      )}
+      {(masks.forcedDirection?.size ?? 0) > 0 && (
+        <>
+          <MaskTintOverlay
+            cells={new Set(masks.forcedDirection!.keys())}
+            color={FORCED_OVERLAY_COLOR}
+            origin={origin}
+            depthMode={depthMode}
+          />
+          <ForcedArrowOverlay cells={masks.forcedDirection!} origin={origin} />
+        </>
+      )}
+      {/* Placed FURNITURE. Not a tint and not toggleable — it is authored ART, so it draws
+          whenever the board does, the same way the terrain sprites do. It lives in this shared
+          overlay component (rather than in the editor scene) so the Load gallery and the
+          sandbox show a board's furniture too, exactly as they do its occupant houses. The
+          flat-mode lift is the houses' — furniture and buildings must sort against each other,
+          so they share one base. */}
+      <FurnitureSprites
+        placements={masks.furniture ?? []}
+        origin={origin}
+        zBase={depthMode === 'world' ? 0 : OCCUPANT_HOUSE_Z_BASE}
+      />
     </>
   );
 }
@@ -895,6 +1109,10 @@ interface SceneProps {
   decorCategory?: DecorCategory | null;
   /** Current decor variant index (Space cycles it) — resolved per the hovered surface. */
   decorVariantIdx?: number;
+  /** Sprite id the Furniture tool will place (LEFT/RIGHT arrows page it) — drives its ghost. */
+  furnitureSpriteId?: number | null;
+  /** Facing the iw forced-direction tool will stamp (Space cycles it) — drives its ghost arrow. */
+  forcedFacingGhost?: Direction | null;
   rectangleMode?: boolean;
   onRectComplete?: (a: { col: number; row: number }, b: { col: number; row: number }) => void;
   pasteMode?: boolean;
@@ -910,7 +1128,7 @@ interface SceneProps {
   onPanChange: (pan: { x: number; y: number }) => void;
 }
 
-function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, markers, pan, zoom, onPanChange }: SceneProps) {
+function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, furnitureSpriteId, forcedFacingGhost, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, markers, pan, zoom, onPanChange }: SceneProps) {
   const { app, isInitialised } = useApplication();
   const [hover, setHover] = useState<Cell | null>(null);
   // Latest hovered cell for the stable pointer handlers — lets the rectangle-drag release
@@ -1081,6 +1299,11 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
   // single-cell hover). Suppressed while erasing — there you remove the cell's existing
   // decor, so previewing a to-be-placed sprite would mislead (the red hover marks erase).
   const decorTool = !!decorCategory && !eraseMode;
+  // The Furniture tool previews the piece the next click will place (ghost + footprint).
+  // Suppressed while erasing — there a click removes the piece under the cursor, so previewing
+  // a to-be-placed sprite would mislead (the red hover marks erase).
+  const furnitureTool = activeTool === 'furniture' && !eraseMode
+    && furnitureSpriteId !== null && furnitureSpriteId !== undefined;
   // Colour of the rectangle-selection preview: the target mask's own tint (white fallback).
   const rectColor = (activeTool && RECT_TOOL_COLOR[activeTool]) ?? 0xffffff;
   // Copy just reads the region — the eraser modifier is a no-op for it, so don't tint its
@@ -1105,7 +1328,7 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
       {markers && markers.length > 0 && <MarkerOverlay markers={markers} />}
       {/* Preview priority: an anchored rectangle selection → its live preview; the paste
           tool → a clipboard-sized footprint stamp; the placeholder tool → its current drop
-          footprint; every other tool (and any erase) → single-cell hover, tinted red under the
+          footprint; the furniture tool → its sprite ghost + iso footprint; every other tool (and any erase) → single-cell hover, tinted red under the
           eraser modifier. A rectangle/paste tool BEFORE it has anything to preview falls
           through to the hover. */}
       {rectangleMode && rectAnchor
@@ -1114,17 +1337,30 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
           ? <PastePreviewOverlay cell={hover} w={pasteFootprint!.w} h={pasteFootprint!.h} width={width} height={height} />
           : placeholderTool
             ? <PlaceholderPreviewOverlay cell={hover} size={placeholderSize!} width={width} height={height} areas={masks.placeholder} />
+            : furnitureTool
+              ? <FurniturePreviewOverlay
+                  cell={hover}
+                  spriteId={furnitureSpriteId!}
+                  width={width}
+                  height={height}
+                  placed={masks.furniture ?? []}
+                />
             : <>
                 <HoverOverlay cell={hover} erase={eraseMode} />
                 {/* Decor tools add a ghost of the selected sprite over the hover diamond. */}
                 {decorTool && <DecorGhostOverlay cell={hover} masks={masks} category={decorCategory!} variantIdx={decorVariantIdx ?? 0} />}
+                {/* The forced-direction tool ghosts the ARROW it would stamp, for the same
+                    reason: what is under the cursor must be what a click places. */}
+                {forcedFacingGhost && hover && (
+                  <FacingGhostOverlay cell={hover} facing={forcedFacingGhost} />
+                )}
               </>}
     </pixiContainer>
   );
 }
 
 // ─── Outer component: pan/zoom state + wheel zoom + Application mount ─────────────
-function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, markers }: TemplateEditorViewerProps) {
+function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, furnitureSpriteId, forcedFacingGhost, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, markers }: TemplateEditorViewerProps) {
   // The board is a fixed authored size, so unlike nmp/nms there is no fit-derived sub-floor here:
   // MIN_ZOOM is both the ladder's bottom rung and the hard floor.
   const { containerRef, pan, zoom, setPan, ready } = useCameraControls({
@@ -1175,6 +1411,8 @@ function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, show
             placeholderSize={placeholderSize}
             decorCategory={decorCategory}
             decorVariantIdx={decorVariantIdx}
+            furnitureSpriteId={furnitureSpriteId}
+            forcedFacingGhost={forcedFacingGhost}
             rectangleMode={rectangleMode}
             onRectComplete={onRectComplete}
             pasteMode={pasteMode}

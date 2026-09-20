@@ -133,7 +133,8 @@ nothing in the DOM to suggest a problem. This is what hid the Study Challenge sh
 The fix is not to weaken the mask. An overlay portals to
 `nearestOverlayHost(el)` (`src/components/overlayHost.ts`) — the nearest ancestor that
 both covers the frame and can host it without inverting paint order, which is
-`NodePage`'s transformed `Surface` on a node page and `.mobile-demo-frame` otherwise —
+`NodePage`'s transformed `Surface` on a node page and the frame's positioned inner box
+(`.mobile-demo-frame__viewport`) otherwise —
 and, because the footer bar paints above any such host, also calls
 `useHideFooter(open)` for its lifetime. Callers: `SheetPanel`, `ChallengeSheet`,
 `ChallengeHelpPopup`, `ChallengeRoundScoreboard` (the last needs no `useHideFooter` —

@@ -183,7 +183,11 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
     return rows;
   }
 
-  async countActiveForUser(userId: string, language: string, client?: PoolClient): Promise<number> {
+  async listCommittedForUser(
+    userId: string,
+    language: string,
+    client?: PoolClient
+  ): Promise<StudyChallengeRow[]> {
     this.requireId(userId, 'userId');
     this.requireLanguage(language);
 
@@ -197,9 +201,13 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
     //
     // Language is matched per ROLE, because the two sides of a cross-language
     // challenge spend a slot in different languages.
-    const { rows } = await this.run<{ count: string }>(client, (c) =>
+    //
+    // STORED status only — the service drops rows whose deadline has already passed
+    // (`StudyChallengeService.countActiveChallenges`), because that needs both
+    // players' timezones and the shared week helpers.
+    const { rows } = await this.run<StudyChallengeRow>(client, (c) =>
       c.query(
-        `SELECT COUNT(*) AS count
+        `SELECT ${ROW}
            FROM study_challenges
           WHERE (
                   ("challengerId" = $1 AND "challengerLanguage" = $2
@@ -210,7 +218,7 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
         [userId, language]
       )
     );
-    return parseInt(rows[0]?.count ?? '0', 10);
+    return rows;
   }
 
   async findLastResolvedForPair(

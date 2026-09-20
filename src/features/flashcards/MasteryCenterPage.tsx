@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import NodePage from "../../components/NodePage";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
@@ -11,6 +11,8 @@ import {
     MASTERY_CENTER_PATHS, MASTERY_CENTER_TITLES, type MasteryCenterBar,
 } from "./masteryCenters";
 import type { VocabEntry } from "../../types";
+import type { SheetPanelBodyHandle } from "../../components/sheet/SheetPanel";
+import { readBackSnapshot, saveBackSnapshot } from "./backRestore";
 
 /**
  * ONE page for both Mastery Centers — the Reading Center (`/flashcards/reading`) and
@@ -50,7 +52,7 @@ const MasteryCenterPage: React.FC = () => {
     const navigate = useNavigate();
     // Decks/cards opened from here are node/leaf drill-ins that slide over this page.
     const slideNavigate = useSlideNavigate();
-    const { pathname } = useLocation();
+    const { pathname, key: locationKey } = useLocation();
 
     // Which Center is this? Derived from the path rather than a route param, so the
     // two routes are literal strings in one table (masteryCenters.ts) and a typo
@@ -62,20 +64,41 @@ const MasteryCenterPage: React.FC = () => {
     const title = MASTERY_CENTER_TITLES[bar];
     usePageTitle(title);
 
-    const panel = useDecksPanel(bar);
+    // Back restore (backRestore.ts): a Center left for a card or a set comes back with
+    // the same search, sort, filter and scroll, painted from the cached lists at once.
+    const [restored] = useState(() => readBackSnapshot("mastery-center", locationKey));
+    const panel = useDecksPanel(bar, restored?.panel);
+    // The body's handle — only its scroller is read, at the moment of leaving.
+    const bodyRef = useRef<SheetPanelBodyHandle | null>(null);
+
+    // Ref-held so the open handlers stay stable for the memoized cards (see the fdp).
+    const rememberPlace = () => {
+        saveBackSnapshot("mastery-center", locationKey, {
+            panel: panel.snapshot(),
+            scrollTop: bodyRef.current?.scroll?.scrollTop ?? 0,
+        });
+    };
+    const rememberPlaceRef = useRef(rememberPlace);
+    rememberPlaceRef.current = rememberPlace;
     const [newDeckOpen, setNewDeckOpen] = useState(false);
 
     // A card opened from here keeps the lens, so its detail page shows this skill's
     // bar and cooldown rather than all of them (VocabCardDetailPage).
     const handleOpenCard = useCallback(
-        (entry: VocabEntry) => slideNavigate(withLens(`/flashcards/card/${entry.id}`, bar)),
+        (entry: VocabEntry) => {
+            rememberPlaceRef.current();
+            slideNavigate(withLens(`/flashcards/card/${entry.id}`, bar));
+        },
         [slideNavigate, bar]
     );
 
     // Same rule for a set: the per-bar collections carry their lens in the id, a deck
     // needs the param. `withLens` is a no-op on a path that is already this bar's.
     const handleOpenPath = useCallback(
-        (path: string) => slideNavigate(withLens(path, bar)),
+        (path: string) => {
+            rememberPlaceRef.current();
+            slideNavigate(withLens(path, bar));
+        },
         [slideNavigate, bar]
     );
 
@@ -92,7 +115,9 @@ const MasteryCenterPage: React.FC = () => {
                 scrollable={false}
             >
                 <DecksPanelBody
+                    ref={bodyRef}
                     panel={panel}
+                    initialScrollTop={restored?.scrollTop}
                     variant="page"
                     onOpenPath={handleOpenPath}
                     onOpenCard={handleOpenCard}

@@ -7,6 +7,16 @@
 // selection. `es-US` is Google's Latin-American/Mexican Spanish locale.
 export type TTSLang = 'zh-CN' | 'zh-TW' | 'es-US' | 'en-US' | 'en';
 
+/**
+ * WHICH voice within the language, as an abstract ROLE. Mirrors `TTSVoiceKey` in
+ * `server/services/TTSService.ts`, which owns the role → provider-voice-name mapping; the
+ * name itself is never sent over the wire (see that type's doc for why).
+ *
+ * Used by Immersive World to give a male NPC a male voice (docs/IMMERSIVE_WORLD.md § 6.4a).
+ * Flashcard narration omits it and gets 'default'.
+ */
+export type TTSVoice = 'default' | 'male' | 'female';
+
 export interface TTSRequest {
     // Hanzi (or other Chinese text) to speak. For non-Chinese languages, the
     // appropriate field on the entry — callers should choose what to read.
@@ -25,6 +35,15 @@ export interface TTSRequest {
      * (docs/IMMERSIVE_WORLD.md § 6.4's code note).
      */
     stamp?: boolean;
+    /**
+     * Which voice to synthesize with. Defaults to 'default' (the language's single flashcard
+     * voice), so every existing call site is unchanged.
+     *
+     * ⚠️ Part of the provider's cache key. `prepare` and the `speak` that follows it MUST pass
+     * the same value, or the duration measured on one clip paces the reveal of another — the
+     * one thing Immersive World's audio-as-clock contract cannot survive.
+     */
+    voice?: TTSVoice;
 }
 
 export interface TTSProvider {

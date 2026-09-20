@@ -113,12 +113,18 @@ export interface IStudyChallengeDAL {
   lockUsersForChallenge(userIds: string[], client: PoolClient): Promise<void>;
 
   /**
-   * How many challenges the user is COMMITTED to in one language — issued and
-   * still pending, plus accepted, in either role. Incoming pending invitations are
-   * excluded, because a slot must only ever be spent by the user's own decision
-   * (Q65).
+   * The challenges the user is COMMITTED to in one language, by STORED status —
+   * issued and still pending, plus accepted, in either role. Incoming pending
+   * invitations are excluded, because a slot must only ever be spent by the user's
+   * own decision (Q65).
+   *
+   * ⚠️ Returns ROWS, not a count, on purpose: a stored `pending`/`accepted` may
+   * already have lapsed (the hourly job has not rewritten it yet, or never will on
+   * dev). Whether it has depends on BOTH players' timezones, so the service drops
+   * lapsed rows with the shared week helpers — see
+   * `StudyChallengeService.countActiveChallenges`. Do not add a COUNT(*) sibling.
    */
-  countActiveForUser(userId: string, language: string, client?: PoolClient): Promise<number>;
+  listCommittedForUser(userId: string, language: string, client?: PoolClient): Promise<StudyChallengeRow[]>;
 
   /**
    * The pair's most recently RESOLVED challenge, for the reigning-champion crown.

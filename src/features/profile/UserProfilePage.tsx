@@ -21,8 +21,9 @@ import {
     sendFriendRequest,
 } from "../../api/friends";
 import { setChallengeBlock } from "../../api/studyChallenges";
+import { isFeatureEnabled } from "../../../server/contracts/featureFlags";
 import { friendErrorMessage } from "../friends/friendLabels";
-import { LANGUAGE_FLAGS, languageRegionCode } from "../../types";
+import { LANGUAGE_FLAGS, LANGUAGE_NAMES, languageRegionCode } from "../../types";
 import type { Language } from "../../types";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -33,10 +34,26 @@ import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { profileCardSx, profileErrorSx, profileHeaderIconSx, profileMutedSx } from "./profileStyles";
 
-/** "🇨🇳 CN" — the same flag + region-code badge the friends leaderboard uses. */
-function languageBadge(language: string): string {
+/**
+ * The three ways this page names a language, from ONE lookup: the flag emoji, the
+ * compact region code and the full display name.
+ *
+ * Kept as a single function rather than three call sites into the wire constants so
+ * the identity line and the stats panels cannot drift apart — they present the same
+ * language two different ways on one screen, and the flag has to be the same flag.
+ *
+ * The code falls back to the raw language tag upper-cased, and the name to the code,
+ * so an unrecognised language degrades to something readable rather than a blank.
+ */
+function languageDisplay(language: string): { flag: string; code: string; name: string } {
     const flag = LANGUAGE_FLAGS[language as Language] ?? "";
     const code = languageRegionCode(language as Language) || language.toUpperCase();
+    return { flag, code, name: LANGUAGE_NAMES[language as Language] ?? code };
+}
+
+/** "🇨🇳 CN" — the inline flag + region-code badge the friends leaderboard uses. */
+function languageBadge(language: string): string {
+    const { flag, code } = languageDisplay(language);
     return `${flag}${flag ? " " : ""}${code}`;
 }
 
@@ -234,6 +251,10 @@ function UserProfilePage() {
      * deliberately NOT said: it is a promise made to them, not to the viewer.
      */
     const renderBlockToggle = () => {
+        // Study Challenge flag (server/contracts/featureFlags.ts). A control that opts
+        // you out of a feature nobody can reach is worse than absent — it implies the
+        // feature exists — and its POST is not mounted, so it could only fail.
+        if (!isFeatureEnabled("studyChallenge")) return null;
         if (!profile?.challengeBlock) return null;
         const blocked = profile.challengeBlock.viewerBlocked;
         return (
@@ -322,7 +343,12 @@ function UserProfilePage() {
                         {/* ── Visit their night market ──
                             Read-only: the visit endpoint suppresses the hub seeding a first
                             load would otherwise perform, so opening someone's market never
-                            writes to their account. */}
+                            writes to their account.
+
+                            Flagged (server/contracts/featureFlags.ts): this button is the
+                            ONLY way to reach `/night-market/user/:userId`, so dropping it is
+                            that route's whole entry gate. */}
+                        {isFeatureEnabled("nightMarket") && (
                         <Button
                             className="user-profile-page__night-market-button"
                             onClick={() => slideNavigate(`/night-market/user/${profile.identity.userId}`)}
@@ -342,19 +368,28 @@ function UserProfilePage() {
                         >
                             {profile.relationship === "self" ? "Visit your night market" : "Visit their night market"}
                         </Button>
+                        )}
 
                         <ProfileStatsCard
                             identity={profile.identity}
                             stats={profile.stats}
-                            languageBadge={languageBadge}
+                            languageDisplay={languageDisplay}
                         />
 
-                        <ProfileDesignGrid
-                            userId={profile.identity.userId}
-                            language={profile.identity.language as Language}
-                            displayName={displayName}
-                            isSelf={profile.relationship === "self"}
-                        />
+                        {/* Community flag (server/contracts/featureFlags.ts) — this grid
+                            is SHARING: it shows one account's designs to anybody viewing
+                            the profile, and carries its own vote flow. Authoring your own
+                            card icons is untouched by the flag
+                            (docs/CARD_ICON_LAYOUT.md). Its feed endpoint,
+                            GET /api/users/:userId/designs, is gated in userRoutes.ts. */}
+                        {isFeatureEnabled("community") && (
+                            <ProfileDesignGrid
+                                userId={profile.identity.userId}
+                                language={profile.identity.language as Language}
+                                displayName={displayName}
+                                isSelf={profile.relationship === "self"}
+                            />
+                        )}
                     </>
                 )}
 

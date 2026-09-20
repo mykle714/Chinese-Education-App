@@ -33,21 +33,27 @@
 //   • src/components/FooterPresenter.tsx — the bar's hide travel, which must clear the
 //     grown bar or it peeks back above the bottom edge.
 //
-// ⚠️ THE PAINT-VS-LAYOUT GAP — NOT THE ONLY THING black-translucent COSTS, AND NOT
-// THESE INSETS' JOB. It also makes the app taller than the layout viewport iOS
-// reports: the web view extends over the whole screen, but `100dvh` still computes
-// `screen − status bar`. That gap has to be handled as TWO numbers, and both
-// single-number attempts on 2026-09-05 were half right —
+// ⚠️ THE OTHER THING black-translucent COSTS — NOT THESE INSETS' JOB. It also leaves
+// the document's INITIAL CONTAINING BLOCK at the pre-cover height: the web view covers
+// the whole screen (852pt on an iPhone 15) while every CSS length that resolves against
+// the viewport — `100%`, `100vh`, `100dvh`, `100svh`, `100lvh` — comes back 59pt short,
+// i.e. exactly `env(safe-area-inset-top)`. Left uncorrected, the shell stops 59pt above
+// the bottom of the screen and that strip is painted by nobody.
 //
-//   `100dvh` everywhere      → nothing clips, but the shell never reaches the band
-//                              behind the clock, which then renders as a flat paper
-//                              strip over a crimson game page.
-//   `window.screen.height`   → the band matches, but the last ~60pt of every page is
-//     everywhere                laid out past the visible area and sliced.
+// The correction is `--app-height` (src/hooks/useAppHeight.ts): the web view's real
+// height in px, measured as `screen.height - documentElement.clientHeight`, applied to
+// `html, body` (src/index.css), `#root` (src/App.css), `FrameRoot` and `Layout`.
+// Applying it to `html, body` is the load-bearing part — body is `overflow: hidden`, so
+// it clips everything below it at its own height no matter how correctly those are
+// sized. Three earlier rounds sized `#root` and the frame correctly and still shipped
+// the strip, because body was still 59pt short and quietly slicing them.
 //
-// The split lives in src/hooks/useAppHeight.ts: `--app-height` is what the shell
-// PAINTS, `--app-viewport` is what it may LAY OUT, and MobileDemoFrame's FrameViewport
-// is the boundary between them.
+// ⛔ A PREVIOUS VERSION OF THIS COMMENT TOLD YOU TO SPLIT THIS INTO TWO NUMBERS — a
+// paint height and a shorter layout height, with a reserved strip in between. That was
+// wrong and the reserved strip WAS the bug's bottom half. A device probe (2026-09-13)
+// painted the region beyond the containing block and it showed on screen, with the home
+// indicator inside it: those pixels are fully visible and fully ours. There is one
+// height, not two. Details and the full attempt log: docs/IOS_STATUS_BAR_BUG.md.
 //
 // This is distinct from SAFE_TOP / SAFE_BOTTOM, which describe strips the page DOES
 // paint and merely has to keep content out of. They stack.

@@ -52,11 +52,17 @@
 #   failures (stale credential, unreachable endpoint) it takes before the script
 #   complains on stderr. At-the-cap skips are not failures and never count.
 #
-# CRONTAB (hourly; the lock makes over-scheduling harmless)
+# CRONTAB (hourly; the lock makes over-scheduling harmless). Stagger the shards so
+# their DB-heavy planner phases do not land on the same minute. What PPE runs as of
+# 2026-09-06 — two zh shards, doubled from one because the refresh backlog measured
+# schedule-bound (see the CONCURRENCY note above and the skill's 6b):
 #   PATH=/home/michael/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin
-#   0 * * * * SHARD=0/3 /home/michael/vocabulary-app/server/scripts/backfill/oracle-cron.sh
-#   0 * * * * SHARD=1/3 /home/michael/vocabulary-app/server/scripts/backfill/oracle-cron.sh
-#   0 * * * * SHARD=2/3 /home/michael/vocabulary-app/server/scripts/backfill/oracle-cron.sh
+#   17 * * * * SHARD=0/2 ORACLE_LANGS=zh /home/michael/vocabulary-app/server/scripts/backfill/oracle-cron.sh
+#   47 * * * * SHARD=1/2 ORACLE_LANGS=zh /home/michael/vocabulary-app/server/scripts/backfill/oracle-cron.sh
+#
+#   While sharded workers are scheduled, do NOT run an unsharded round (a manual
+#   /oracle-backfill, or this script with no SHARD): its planner sees the whole
+#   candidate set and races every shard for the same rows.
 #
 # DISCORD STATUS PINGS (optional)
 #   Set DISCORD_WEBHOOK_URL in the repo-root .env (same file that carries

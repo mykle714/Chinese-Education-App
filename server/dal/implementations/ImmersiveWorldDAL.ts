@@ -1,11 +1,15 @@
 import type { PoolClient } from 'pg';
 import type { IImmersiveWorldDAL, IWNpcReference } from '../interfaces/IImmersiveWorldDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
-import type { IWScene, IWSceneSummary } from '../../contracts/iw.js';
+import type {
+  IWScene, IWSceneRun, IWSceneSummary, IWTranscriptEntry,
+} from '../../contracts/iw.js';
+import { IW_TRANSCRIPT_MAX_ENTRIES, IW_TRANSCRIPT_MAX_TEXT_CHARS } from '../../contracts/iw.js';
 import { ValidationError } from '../../types/dal.js';
 
 /**
- * Persists the Immersive World scene catalog (`iw_scenes`, migration 158).
+ * Persists the Immersive World scene catalog (`iw_scenes`) and its playthroughs
+ * (`iw_scene_runs`), both migration 158.
  *
  * WHY EVERY WRITE IS A WHOLE ROW. A scene is authored whole and read whole — that property
  * is what collapsed the five originally-approved child tables into five jsonb columns
@@ -14,6 +18,9 @@ import { ValidationError } from '../../types/dal.js';
  *
  * SCENES ARE NOT USER DATA. There is no `createdBy` and no per-user scoping: authors are
  * staff (§ 14 Q2), and the gate is a permission check in the service, not a row filter.
+ * RUNS ARE THE OPPOSITE — every run method is scoped by `userId`, and the read methods take
+ * it as a parameter rather than filtering afterwards, so there is no shape of call that
+ * returns somebody else's conversation.
  *
  * See docs/IMMERSIVE_WORLD.md § 8, § 12 phase 1d.
  */
@@ -26,6 +33,12 @@ const SCENE_COLUMNS = `id, language, name, published, "sceneNotes",
   width, height,
   layout, "npcCast", complications, events, conversations, interactions,
   "createdAt", "updatedAt"`;
+
+/** Every column of an `iw_scene_runs` row. `complicationIds`/`eventIds` are omitted
+ * deliberately: nothing draws a complication yet (§ 12 phase 3), and a column selected by
+ * name that no caller reads is the shape that survives long after the feature is cut. */
+const RUN_COLUMNS = `id, "userId", language, "sceneId", completed, "durationSeconds",
+  "minutePointsEarned", "overviewTagId", transcript, "startedAt", "completedAt"`;
 
 /** The scene as Postgres hands it back — jsonb arrives parsed, timestamps as Date. */
 interface SceneRow {
@@ -275,5 +288,159 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
       )
     );
     return rows.filter((r) => typeof r.npcId === 'string' && r.npcId.length > 0);
+  }
+  // ── Runs and their transcripts (§ 12 phase 3) ──────────────────────────────
+
+  /**
+   * Row → wire shape. `transcript` arrives from pg already parsed; it is defaulted
+   * defensively for the same reason the scene blobs are — a row written by hand would
+   * otherwise hand a caller an `undefined` where it expects a list.
+   */
+  private toRun(row: any): IWSceneRun {
+    return {
+      id: row.id,
+      userId: row.userId,
+      language: row.language,
+      sceneId: row.sceneId,
+      completed: row.completed,
+      durationSeconds: row.durationSeconds ?? null,
+      minutePointsEarned: row.minutePointsEarned ?? 0,
+      overviewTagId: row.overviewTagId ?? null,
+      transcript: Array.isArray(row.transcript) ? row.transcript : [],
+      startedAt: row.startedAt?.toISOString?.() ?? String(row.startedAt),
+      completedAt: row.completedAt ? (row.completedAt.toISOString?.() ?? String(row.completedAt)) : null,
+    };
+  }
+
+  /**
+   * The one statement that closes a learner's open run in a language, stamping the elapsed
+   * time. Shared by {@link openRun} (where it clears the way for the insert) and by
+   * {@link completeRun} (where it IS the operation), so the duration is computed the same
+   * way whether a run ended or was displaced.
+   */
+  private static readonly CLOSE_RUN_SET = `
+    "completedAt" = NOW(),
+    "durationSeconds" = COALESCE(
+      "durationSeconds",
+      GREATEST(0, EXTRACT(EPOCH FROM (NOW() - "startedAt"))::int)
+    )`;
+
+  async openRun(
+    userId: string,
+    language: string,
+    sceneId: string,
+    client?: PoolClient
+  ): Promise<IWSceneRun> {
+    this.requireId(userId, 'User id');
+    this.requireId(sceneId, 'Scene id');
+    if (!language) throw new ValidationError('Language is required');
+
+    // Both statements or neither — see the interface note. Between them the partial unique
+    // index is satisfied by nothing, so a crash in the gap would leave the learner with a
+    // language they can never start a run in again.
+    const work = async (c: PoolClient): Promise<IWSceneRun> => {
+      await c.query(
+        `UPDATE iw_scene_runs SET ${ImmersiveWorldDAL.CLOSE_RUN_SET}
+          WHERE "userId" = $1 AND language = $2 AND "completedAt" IS NULL`,
+        [userId, language]
+      );
+      const inserted = await c.query(
+        `INSERT INTO iw_scene_runs ("userId", language, "sceneId")
+         VALUES ($1, $2, $3)
+         RETURNING ${RUN_COLUMNS}`,
+        [userId, language, sceneId]
+      );
+      return this.toRun(inserted.rows[0]);
+    };
+
+    if (client) return work(client);
+    return this.dbManager.executeInTransaction((tx) => work(tx.getClient() as PoolClient));
+  }
+
+  async appendTranscript(
+    runId: string,
+    entries: readonly IWTranscriptEntry[],
+    client?: PoolClient
+  ): Promise<boolean> {
+    this.requireId(runId, 'Run id');
+    // Nothing to say is not an error — the recorder calls this with whatever a turn produced,
+    // and a frozen turn produces nothing.
+    if (entries.length === 0) return false;
+
+    // Truncated HERE rather than at the caller, because this is the layer that owns what the
+    // row may contain: a caller that forgot would otherwise be the one path that can breach
+    // migration 158's size bound (see IW_TRANSCRIPT_MAX_TEXT_CHARS).
+    const bounded = entries.map((e) => ({
+      speaker: String(e.speaker ?? ''),
+      text: [...String(e.text ?? '')].slice(0, IW_TRANSCRIPT_MAX_TEXT_CHARS).join(''),
+      at: e.at ?? new Date().toISOString(),
+    }));
+
+    // Append then keep the LAST n, in one statement. `WITH ORDINALITY` is what makes the
+    // "oldest first" of the cap expressible at all — jsonb arrays have an order but no
+    // column to sort by, so the position has to be materialized before it can be reversed.
+    const { rowCount } = await this.run(client, (c) =>
+      c.query(
+        `UPDATE iw_scene_runs
+            SET transcript = (
+              SELECT COALESCE(jsonb_agg(entry ORDER BY ord), '[]'::jsonb)
+                FROM (
+                  SELECT entry, ord
+                    FROM jsonb_array_elements(transcript || $2::jsonb)
+                         WITH ORDINALITY AS t(entry, ord)
+                   ORDER BY ord DESC
+                   LIMIT $3
+                ) kept
+            )
+          WHERE id = $1`,
+        [runId, JSON.stringify(bounded), IW_TRANSCRIPT_MAX_ENTRIES]
+      )
+    );
+    return rowCount > 0;
+  }
+
+  async completeRun(runId: string, completed: boolean, client?: PoolClient): Promise<IWSceneRun | null> {
+    this.requireId(runId, 'Run id');
+    // Idempotent by the WHERE clause: closing an already-closed run returns null rather than
+    // re-stamping it, so a duplicate `/session/end` cannot move a finished run's end time.
+    const { rows } = await this.run<any>(client, (c) =>
+      c.query(
+        `UPDATE iw_scene_runs
+            SET ${ImmersiveWorldDAL.CLOSE_RUN_SET}, completed = $2
+          WHERE id = $1 AND "completedAt" IS NULL
+          RETURNING ${RUN_COLUMNS}`,
+        [runId, completed]
+      )
+    );
+    return rows[0] ? this.toRun(rows[0]) : null;
+  }
+
+  async findRunById(runId: string, client?: PoolClient): Promise<IWSceneRun | null> {
+    this.requireId(runId, 'Run id');
+    const { rows } = await this.run<any>(client, (c) =>
+      c.query(`SELECT ${RUN_COLUMNS} FROM iw_scene_runs WHERE id = $1`, [runId])
+    );
+    return rows[0] ? this.toRun(rows[0]) : null;
+  }
+
+  async listRuns(
+    userId: string,
+    limit: number,
+    language?: string,
+    client?: PoolClient
+  ): Promise<IWSceneRun[]> {
+    this.requireId(userId, 'User id');
+    // `idx_iw_scene_runs_user_started` is exactly this ordering, so the language filter is a
+    // cheap filter on an already-narrow scan rather than a second index.
+    const { rows } = await this.run<any>(client, (c) =>
+      c.query(
+        `SELECT ${RUN_COLUMNS} FROM iw_scene_runs
+          WHERE "userId" = $1 AND ($2::varchar IS NULL OR language = $2)
+          ORDER BY "startedAt" DESC
+          LIMIT $3`,
+        [userId, language ?? null, Math.max(1, Math.min(200, Math.trunc(limit) || 20))]
+      )
+    );
+    return rows.map((r) => this.toRun(r));
   }
 }

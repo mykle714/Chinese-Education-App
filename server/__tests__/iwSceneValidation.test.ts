@@ -51,7 +51,7 @@ function validScene(): IWScene {
           name: 'take payment',
           steps: [
             { kind: 'walk_to_actor', actor: 'player' },
-            { kind: 'comment', text: 'Five yuan, please.' },
+            { kind: 'comment', text: '五块钱。' },
             { kind: 'wait_for_response' },
           ],
         }],
@@ -152,11 +152,11 @@ describe('validateScene', () => {
           { kind: 'walk_to_tag', tag: 'water station' },
           { kind: 'wait', seconds: 5 },
           { kind: 'walk_to_actor', actor: 'companion' },
-          { kind: 'comment', text: 'I brought you water.' },
+          { kind: 'comment', text: '水来了。' },
           { kind: 'wait', seconds: 2 },
           { kind: 'walk_to_actor', actor: 'player' },
           { kind: 'wait', seconds: 2 },
-          { kind: 'comment', text: 'Is there anything else I can get you?' },
+          { kind: 'comment', text: '还要别的吗？' },
           { kind: 'wait_for_response' },
         ],
       }];
@@ -218,7 +218,7 @@ describe('validateScene', () => {
       // MIGHT emit, so nothing at authoring time could tell whether it ever would.
       const scene = validScene();
       scene.npcCast[0].actions = [{
-        id: 'chat', name: 'chat', steps: [{ kind: 'comment', text: 'Nice day.' }],
+        id: 'chat', name: 'chat', steps: [{ kind: 'comment', text: '今天天气好。' }],
       }];
       const messages = validateScene(scene).map((p) => p.message);
       expect(messages.some((m) => m.includes('has no action that ends the scene'))).toBe(true);
@@ -268,7 +268,7 @@ describe('validateScene', () => {
       scene.npcCast[0].actions!.push({
         id: 'no', name: 'turn them away',
         steps: [
-          { kind: 'comment', text: 'Sorry, we are out of that.' },
+          { kind: 'comment', text: '不好意思，卖完了。' },
           { kind: 'walk_away_from', actor: 'player' },
         ],
       });
@@ -337,11 +337,67 @@ describe('validateScene', () => {
     expect(messages.some((m) => m.includes('is not in this scene'))).toBe(false);
   });
 
-  it('rejects duplicate complication ids (a run stores the id and would be ambiguous)', () => {
-    const scene = validScene();
-    scene.complications.push({ id: 'rain', description: 'A queue forms.' });
-    const messages = validateScene(scene).map((p) => p.message);
-    expect(messages.some((m) => m.includes('Duplicate complication id'))).toBe(true);
+  /**
+   * Authored text is a DIRECTION, not a line (§ 14 Q42, 2026-09-07).
+   *
+   * These tests replaced an inverted set written hours earlier the same day, and the flip is
+   * the fact worth preserving. The bug that started it: every authored line in PPE's "Get
+   * Dinner" was English, so 王婶 walked over, faced the learner and said nothing for her whole
+   * order-taking script — the runtime's line guard doing exactly its job, silently. The first
+   * remedy required authored text to be Chinese. The real remedy was to stop speaking it at
+   * all: it is piped through the model, which says something like it in character. So English
+   * here is now CORRECT, and a language rule would reject the normal case.
+   */
+  describe('authored text is a direction, not a line', () => {
+    const messagesFor = (mutate: (scene: ReturnType<typeof validScene>) => void): string[] => {
+      const scene = validScene();
+      mutate(scene);
+      return validateScene(scene).map((p) => p.message);
+    };
+
+    it('accepts an English comment step in a Chinese scene', () => {
+      // The regression this suite exists for. An author writes the INTENTION in their own
+      // language; the NPC renders it in theirs.
+      const messages = messagesFor(s => {
+        s.npcCast[0].actions[0].steps[1] = { kind: 'comment', text: "Here's your food." };
+      });
+      expect(messages.some(m => m.includes('direction') || m.includes('intention'))).toBe(false);
+    });
+
+    it('accepts an English conversation turn', () => {
+      const messages = messagesFor(s => { s.conversations[0].turns[0].text = 'Welcome back'; });
+      expect(messages.some(m => m.includes('direction') || m.includes('intention'))).toBe(false);
+    });
+
+    it('flags a direction that talks about the game, and names the speaker', () => {
+      // § 14 Q27 arriving by a route it did not anticipate: the direction is rendered into
+      // the NPC's own head, so the fiction's scaffolding must not be inside it.
+      const messages = messagesFor(s => {
+        s.npcCast[0].actions[0].steps[1] = { kind: 'comment', text: 'Tell the player they finished the scene' };
+      });
+      expect(messages.some(m => m.startsWith('王婶') && m.includes('own intention'))).toBe(true);
+    });
+
+    it('flags a direction longer than the runtime will send', () => {
+      const messages = messagesFor(s => {
+        s.npcCast[0].actions[0].steps[1] = { kind: 'comment', text: 'x'.repeat(401) };
+      });
+      expect(messages.some(m => m.includes('only the first 400'))).toBe(true);
+    });
+
+    it('is a WARNING — a half-written scene still saves', () => {
+      // Same rule as the rest of this validator: an author mid-draft is a normal state.
+      const scene = validScene();
+      scene.npcCast[0].actions[0].steps[1] = { kind: 'comment', text: 'Tell the player the game is over' };
+      expect(validateScene(scene).every(p => p.severity !== 'error')).toBe(true);
+    });
+
+    it('says nothing about a blank direction, which another rule owns', () => {
+      const messages = messagesFor(s => {
+        s.npcCast[0].actions[0].steps[1] = { kind: 'comment', text: '   ' };
+      });
+      expect(messages.some(m => m.includes('own intention'))).toBe(false);
+    });
   });
 
   it('reports every problem at once rather than stopping at the first', () => {
@@ -438,6 +494,35 @@ describe('validateScene severity', () => {
     const noLayout = validScene();
     (noLayout as { layout: unknown }).layout = 'nope';
     expect(blocking(noLayout)).toEqual(['layout']);
+  });
+
+  it('accepts furniture placements and flags malformed or off-board ones', () => {
+    // The editor cannot produce any of the bad shapes below — it bounds-checks and refuses at
+    // placement time. They can only reach the row by hand-editing the jsonb, and nothing
+    // renders them, so this validator is the only place they can ever be found.
+    const ok = validScene();
+    ok.layout.furniture = [{ col: 1, row: 1, id: 4 }, { col: 3, row: 0, id: 57 }];
+    expect(validateScene(ok).filter((p) => p.field === 'layout.furniture')).toEqual([]);
+
+    const offBoard = validScene();
+    offBoard.layout.furniture = [{ col: 9, row: 1, id: 4 }]; // board is 6×6
+    expect(validateScene(offBoard).some((p) => p.field === 'layout.furniture')).toBe(true);
+
+    const negative = validScene();
+    negative.layout.furniture = [{ col: -1, row: 0, id: 4 }];
+    expect(validateScene(negative).some((p) => p.field === 'layout.furniture')).toBe(true);
+
+    const malformed = validScene();
+    (malformed.layout as { furniture: unknown }).furniture = [{ col: 1, row: 1 }];
+    expect(validateScene(malformed).some((p) => p.field === 'layout.furniture')).toBe(true);
+
+    const notAList = validScene();
+    (notAList.layout as { furniture: unknown }).furniture = { '1,1': 4 };
+    expect(validateScene(notAList).some((p) => p.field === 'layout.furniture')).toBe(true);
+
+    // Absent is the normal case for every scene authored before the Furniture tool.
+    const none = validScene();
+    expect(validateScene(none).filter((p) => p.field === 'layout.furniture')).toEqual([]);
   });
 
   it('warns — but does not block — when a start cell falls off a shrunken board', () => {
@@ -740,6 +825,60 @@ describe('validateScene selectability (2026-09-06)', () => {
  * is loud but misleading: every `walk_to_tag` in a finished scene reported as pointing at a
  * place that does not exist.
  */
+describe('validateScene walkability masks (2026-09-19)', () => {
+  it('accepts a scene carrying neither mask — the pre-cutover shape', () => {
+    const scene = validScene();
+    delete scene.layout.unwalkable;
+    delete scene.layout.forcedDirection;
+    expect(validateScene(scene)).toHaveLength(0);
+  });
+
+  it('accepts both masks when they are well formed', () => {
+    const scene = validScene();
+    scene.layout.unwalkable = ['2,2', '3,2'];
+    scene.layout.forcedDirection = { '1,1': 'n', '5,5': 'w' };
+    expect(validateScene(scene)).toHaveLength(0);
+  });
+
+  it('reports an unwalkable cell that is off the board or unparseable', () => {
+    const scene = validScene();
+    scene.layout.unwalkable = ['9,9', 'nonsense'];
+    const fields = validateScene(scene).map((p) => p.field);
+    expect(fields.filter((f) => f === 'layout.unwalkable')).toHaveLength(2);
+  });
+
+  it('reports a forced direction that is not one of the four facings', () => {
+    const scene = validScene();
+    scene.layout.forcedDirection = { '1,1': 'up' as never };
+    expect(validateScene(scene).some((p) => p.field === 'layout.forcedDirection')).toBe(true);
+  });
+
+  it('reports a cell that is both unwalkable and facing-forced', () => {
+    // Contradictory rather than malformed: nobody can settle there, so the facing can never
+    // fire. `buildSceneGraph` drops it; the author is told why.
+    const scene = validScene();
+    scene.layout.unwalkable = ['1,1'];
+    scene.layout.forcedDirection = { '1,1': 'n' };
+    expect(validateScene(scene).some(
+      (p) => p.field === 'layout.forcedDirection' && /both unwalkable/.test(p.message),
+    )).toBe(true);
+  });
+
+  it('warns — but does not refuse — when a body is authored onto a walled cell', () => {
+    // A body that starts inside a wall can never take a step: `planScenePath` returns null
+    // for a walk that starts off the walkable set, so every walk_to_tag silently does nothing.
+    const scene = validScene();
+    scene.layout.unwalkable = [
+      `${scene.playerStartCol},${scene.playerStartRow}`,
+      `${scene.npcCast[0].col},${scene.npcCast[0].row}`,
+    ];
+    const problems = validateScene(scene);
+    expect(problems.some((p) => p.field === 'playerStartCol' && /unwalkable/.test(p.message))).toBe(true);
+    expect(problems.some((p) => p.field === 'npcCast[0].col' && /unwalkable/.test(p.message))).toBe(true);
+    expect(problems.every((p) => p.severity !== 'error')).toBe(true);
+  });
+});
+
 describe('validateScene places/locations compatibility', () => {
   it('reads a layout that still carries the old `locations` key', () => {
     const scene = validScene();
@@ -752,5 +891,73 @@ describe('validateScene places/locations compatibility', () => {
     const scene = validScene();
     scene.layout.locations = { somewhere_else: '1,1' };
     expect(validateScene(scene)).toHaveLength(0);
+  });
+});
+
+/**
+ * `prompt_npc` — the one step whose SUBJECT is not the performer (2026-09-19).
+ *
+ * Every rule here is a way to author a cue that would fail SILENTLY: a beat nobody speaks,
+ * or one aimed at a body that is not in the room. Both look identical to a learner — nothing
+ * happens — which is why they are refused at save time rather than skipped at playback.
+ *
+ * Referenced by: docs/IMMERSIVE_WORLD.md § 14 Q45.
+ */
+describe('validateScene prompt_npc (2026-09-19)', () => {
+  /** 王婶 calls the order through and the companion answers. `pay`'s last step must stay last. */
+  function withPrompt(step: Partial<Record<string, unknown>> = {}): IWScene {
+    const scene = validScene();
+    const steps = scene.npcCast[0].actions![0].steps;
+    steps.splice(steps.length - 1, 0, {
+      kind: 'prompt_npc', npcId: 'companion', ...step,
+    } as any);
+    return scene;
+  }
+
+  it('accepts a cue naming only a speaker — the model decides the rest', () => {
+    expect(validateScene(withPrompt())).toEqual([]);
+  });
+
+  it('accepts a fully specified cue', () => {
+    expect(validateScene(withPrompt({ target: 'player', instruction: 'press them about the bill' })))
+      .toEqual([]);
+  });
+
+  it('refuses a cue with nobody to speak it', () => {
+    const messages = validateScene(withPrompt({ npcId: '' })).map((p) => p.message);
+    expect(messages.some((m) => m.includes('Pick who is prompted to speak'))).toBe(true);
+  });
+
+  it('refuses a speaker who is not in the scene', () => {
+    const messages = validateScene(withPrompt({ npcId: 'lao_zhou' })).map((p) => p.message);
+    expect(messages.some((m) => m.includes('is not in this scene'))).toBe(true);
+  });
+
+  it('refuses the performer prompting itself, because that is a Say step', () => {
+    // Two ways to write one beat is the thing being refused, not the beat.
+    const messages = validateScene(withPrompt({ npcId: 'wang_shen' })).map((p) => p.message);
+    expect(messages.some((m) => m.includes('use a Say step'))).toBe(true);
+  });
+
+  it('refuses putting words in the learner’s mouth', () => {
+    const messages = validateScene(withPrompt({ npcId: 'player' })).map((p) => p.message);
+    expect(messages.some((m) => m.includes('speaks for themselves'))).toBe(true);
+  });
+
+  it('refuses an addressee who is not in the scene, but not an omitted one', () => {
+    const messages = validateScene(withPrompt({ target: 'lao_zhou' })).map((p) => p.message);
+    expect(messages.some((m) => m.includes('"lao_zhou" is not in this scene'))).toBe(true);
+    // Omitted is a real authoring choice — the model picks whom — so it is NOT a problem.
+    expect(validateScene(withPrompt())).toEqual([]);
+  });
+
+  it('refuses somebody being prompted to talk to themselves', () => {
+    const messages = validateScene(withPrompt({ target: 'companion' })).map((p) => p.message);
+    expect(messages.some((m) => m.includes('talk to themselves'))).toBe(true);
+  });
+
+  it('refuses a runaway brief, on the same grounds ai_walk’s is — it reaches a prompt', () => {
+    const fields = validateScene(withPrompt({ instruction: 'x'.repeat(201) })).map((p) => p.field);
+    expect(fields.some((f) => f.endsWith('.instruction'))).toBe(true);
   });
 });

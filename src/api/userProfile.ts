@@ -47,6 +47,12 @@ export interface ProfileLanguageStats {
   /** True for the account's currently selected language, which sorts first. */
   isSelected: boolean;
   velocity: number;
+  /**
+   * `velocity` split per band boundary, aligned with `CATEGORY_BOUNDARIES`
+   * (server/contracts/mastery.ts) and summing to it. Mirrors
+   * `ProfileLanguageStats.velocityBoundaryCounts` on the server.
+   */
+  velocityBoundaryCounts: number[];
   netMinutes: number;
   /** Sorted-card counts per utcm band, keyed by band label. */
   bandCounts: Record<string, number>;

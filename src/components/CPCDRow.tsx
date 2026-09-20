@@ -1,5 +1,7 @@
-import React, { useEffect, useLayoutEffect, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
+import CpcdPopup from "./CpcdPopup";
+import { copyToClipboard } from "../utils/copyToClipboard";
 import { getToneColor } from "../utils/toneColors";
 import { FONTS } from "../theme/fonts";
 import { WEIGHT } from "../theme/scale";
@@ -47,6 +49,14 @@ interface CPCDRowProps {
     // non-text surfaces; only prose-like surfaces (example sentences) opt in.
     // Mobile stays non-selectable regardless (see the `(pointer: coarse)` block).
     selectable?: boolean;
+    // Tap-to-copy: a click/tap anywhere on the row copies it to the clipboard and
+    // confirms with a small floating caption (the SAME box the est uses for a tapped
+    // segment's definition — see CpcdPopup). Successive taps ALTERNATE what they copy:
+    // characters first ("Characters Copied!"), then the pinyin ("Pinyin Copied!"), then
+    // back. A row with no pinyin at all only ever copies characters. Defaults to false:
+    // most cpcd surfaces already own the tap (flip the card, select a segment), so this
+    // is opt-in per call site — currently the eip header headword only.
+    tapToCopy?: boolean;
     // Optional override for the CHARACTER glyph color only (the per-card Contrast
     // setting on the flashcard — see docs/CARD_ICON_LAYOUT.md). The pinyin overlay is
     // never affected. Undefined keeps the theme default (text.primary).
@@ -93,6 +103,9 @@ const BIG_PINYIN_SCALE = 1.2;
 // factor than it renders with is the kind of drift that only shows up as a
 // clipped board on one browser.
 const CHAR_LINE_HEIGHT = 1.21;
+// How long the tap-to-copy confirmation caption stays up. Long enough to read two
+// words, short enough that it never sits over the content the user came back to.
+const COPY_MESSAGE_MS = 1400;
 
 /**
  * Convert one of the font tables above to px. The tables mix `px` and `rem`
@@ -186,6 +199,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     bold = false,
     pinyinShift = true,
     selectable = false,
+    tapToCopy = false,
     characterColor,
     bigPinyin = false,
 }) => {
@@ -194,6 +208,49 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     const pinyinRefs = useRef<(HTMLSpanElement | null)[]>([]);
     // One separator apostrophe per gap (indexed by the LEFT syllable's item index).
     const sepRefs = useRef<(HTMLSpanElement | null)[]>([]);
+
+    // --- Tap-to-copy (opt-in via `tapToCopy`) -----------------------------------
+    // The confirmation caption's anchor. Held in STATE rather than in a ref because
+    // Popper has to re-render once the node exists; a ref assignment alone would
+    // leave the first tap with a null anchor.
+    const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
+    const [copyMessage, setCopyMessage] = useState<string | null>(null);
+    // Which field the NEXT tap copies. A ref, not state: it must advance
+    // synchronously so a fast double tap sees the first tap's result, and it drives
+    // no rendering of its own.
+    const nextCopyFieldRef = useRef<"characters" | "pinyin">("characters");
+    const copyMessageTimerRef = useRef<number | null>(null);
+
+    // Clear any pending caption timer on unmount so it can't setState on a dead component.
+    useEffect(() => () => {
+        if (copyMessageTimerRef.current !== null) window.clearTimeout(copyMessageTimerRef.current);
+    }, []);
+
+    const handleTapToCopy = () => {
+        const characters = items.map((item) => item.character).join("");
+        // Space-joined, matching how the pinyin row reads on screen (and how the
+        // dictionary stores a pronunciation), with empty syllables dropped.
+        const pinyin = items
+            .map((item) => item.pinyin?.trim())
+            .filter((syllable): syllable is string => !!syllable)
+            .join(" ");
+
+        // Alternate, except that a row with no pinyin (e.g. pinyin hidden by data,
+        // not by display) has only one thing to give and always gives it.
+        const field = pinyin && nextCopyFieldRef.current === "pinyin" ? "pinyin" : "characters";
+        nextCopyFieldRef.current = field === "characters" ? "pinyin" : "characters";
+
+        const text = field === "pinyin" ? pinyin : characters;
+        const label = field === "pinyin" ? "Pinyin Copied!" : "Characters Copied!";
+
+        // Fire-and-forget with an explicit failure caption: a refused clipboard
+        // permission must not leave the user thinking the copy worked.
+        void copyToClipboard(text).then((ok) => {
+            setCopyMessage(ok ? label : "Copy failed");
+            if (copyMessageTimerRef.current !== null) window.clearTimeout(copyMessageTimerRef.current);
+            copyMessageTimerRef.current = window.setTimeout(() => setCopyMessage(null), COPY_MESSAGE_MS);
+        });
+    };
 
     const columnWidth = COLUMN_WIDTH[size];
     const overlap = OVERLAP_BY_SIZE[size];
@@ -398,8 +455,10 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
 
     return (
         <Box
+            ref={setRootEl}
             className={rootClassName}
-            sx={{ position: "relative" }}
+            onClick={tapToCopy ? handleTapToCopy : undefined}
+            sx={{ position: "relative", ...(tapToCopy && { cursor: "pointer" }) }}
         >
             {/* Chars block — all characters contiguous in DOM order. A drag-selection that
                 visually skips over the pinyin row (e.g. from one wrapped line of chars
@@ -580,6 +639,18 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                     </span>
                 ))}
             </Box>
+
+            {/* Tap-to-copy confirmation. Non-interactive (nothing to tap on it) and
+                self-dismissing after COPY_MESSAGE_MS; only mounted for rows that
+                opted into `tapToCopy`. */}
+            {tapToCopy && (
+                <CpcdPopup
+                    open={!!copyMessage}
+                    anchorEl={rootEl}
+                    className="cpcd-row__copy-toast"
+                    text={copyMessage ?? ""}
+                />
+            )}
         </Box>
     );
 };

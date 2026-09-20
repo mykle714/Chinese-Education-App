@@ -53,8 +53,8 @@
  * single strokes: without excluding them, "is a radical" would wave through exactly
  * the stroke-noise expansions we are trying to prevent.
  *
- * Result over the 753 characters in discoverable words: average 2.09 components,
- * max 6, only 4 characters exceeding 4 components.
+ * Result over the 784 characters in discoverable words (re-measured 2026-09-07):
+ * average 2.09 components, max 6, only 6 characters exceeding 4 components.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY THE BOUND FORM IS KEPT (氵 not 水, ⺮ not 竹)

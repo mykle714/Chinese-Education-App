@@ -47,11 +47,21 @@ const ShelfRowRoot = styled(Box)(() => ({
 
 /** `.spines` — bottom-aligned so banded heights grow UPWARD off the board. */
 const Spines = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "scrollable",
-})<{ scrollable: boolean }>(({ scrollable }) => ({
+    shouldForwardProp: (prop) => prop !== "scrollable" && prop !== "distribute",
+})<{ scrollable: boolean; distribute: boolean }>(({ scrollable, distribute }) => ({
     display: "flex",
+    // The gap is a MINIMUM, not the spacing, on a distributed row: `space-between`
+    // hands the leftover width to the gaps, and `gap` only sets the floor they can
+    // close to. On a packed row (the default) it is the spacing outright.
     gap: 10,
     alignItems: "flex-end",
+    // A FIXED row — one whose membership is known and always fits — spreads its
+    // spines across the board, so the first and last stand at its ends rather than
+    // leaving a ragged tail of empty board on the right. A row that GROWS packs to
+    // the left instead: spreading a growing row would make every spine move sideways
+    // each time one is added, and the ends would only reach the edges once the row
+    // happened to be full. See `distribute` on ShelfRowProps.
+    ...(distribute && { justifyContent: "space-between" }),
     ...(scrollable
         ? {
               // A row longer than the column scrolls sideways rather than wrapping:
@@ -89,6 +99,17 @@ export interface ShelfRowProps {
     scrollable?: boolean;
     /** Drop the board — for a row that is a group of spines but not a shelf. */
     board?: boolean;
+    /**
+     * Spread the spines across the full width (`space-between`) instead of packing
+     * them to the left (the default).
+     *
+     * Only for a row with a FIXED, always-fitting membership — the four utcm bands.
+     * Such a row is read as one shape, and a packed one leaves dead board on the
+     * right that reads as "there is more, cut off". A row the user adds to must stay
+     * packed, for the reasons in the `Spines` comment; a `scrollable` row cannot use
+     * this at all, since a row that overflows has no leftover space to distribute.
+     */
+    distribute?: boolean;
     className?: string;
 }
 
@@ -96,6 +117,7 @@ export const ShelfRow: React.FC<ShelfRowProps> = ({
     children,
     scrollable = false,
     board = true,
+    distribute = false,
     className,
 }) => {
     // Spines spread apart while the row is flung sideways and close back up when it
@@ -107,7 +129,15 @@ export const ShelfRow: React.FC<ShelfRowProps> = ({
 
     return (
         <ShelfRowRoot className={`shelf-row${className ? ` ${className}` : ""}`}>
-            <Spines ref={spinesRef} className="shelf-row__spines" scrollable={scrollable}>
+            <Spines
+                ref={spinesRef}
+                className="shelf-row__spines"
+                scrollable={scrollable}
+                // A scrolling row overflows by definition, so there is nothing to
+                // distribute — asking for both is a caller mistake, resolved here in
+                // favour of scrolling rather than rendering something half-applied.
+                distribute={distribute && !scrollable}
+            >
                 {children}
             </Spines>
             {board && <Board className="shelf-row__board" />}

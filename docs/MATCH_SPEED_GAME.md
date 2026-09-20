@@ -526,11 +526,21 @@ shows. The `game-pool` endpoint already buckets this way — see
 [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md).
 
 **Empty-category fallback.** This is the *client-side* buffer's recovery, and it is
-distinct from the server's tier order — the server lends before it borrows across
-buckets, but only for the part of the shortfall borrowing cannot cover
-([PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md)), so a buffer top-up for a short
-bucket arrives as lent `Unfamiliar` cards only when the library has no fresh cards left;
-otherwise it arrives as borrowed cards, still before this walk ever fires.
+distinct from the server's tier order. On the server, **a top-up borrows across buckets
+before it lends**: fresh cards from the requested buckets, then fresh cards from the
+other buckets, then cooling cards, and only then lent cards
+([PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md)). So a buffer top-up for a short
+bucket arrives as borrowed cards (stamped with the bucket they really came from) and
+arrives as lent `Unfamiliar` cards only when the whole library, minus what is on the
+board and in the buffer, cannot cover it.
+
+⚠️ **This holds even for a one-bucket top-up** (since 2026-09-13). `topUpQuery` omits
+buckets that are already full, so a learner with almost no Unfamiliar cards routinely
+sends `?Unfamiliar=5` alone. The server used to treat any one-bucket request as
+strict (a Hydra-era fallback check), skip the cross-bucket tiers, and lend. PPE account
+`11bee9ad…`, with 699 sorted zh cards and one Unfamiliar card, was dealt lent cards
+mid-run because of it. Only an explicit `strictBuckets=1` (Hydra) is strict now; see
+`OnDeckVocabService.getGameVocabPool` → `substituting`.
 If the rolled category's buffer is still empty, walk the
 mode's fallback order — in Study Mix, the existing bubble-match one —
 **Target → Comfortable → Unfamiliar → Mastered**
@@ -542,9 +552,9 @@ purely a "that shelf was bare" recovery.
 ### The buffer
 
 API latency is far too high to fetch a card at the moment a slot empties, so the
-page keeps a **client-side buffer of pairs, keyed by category, target depth 5
-each in Study Mix** (20 cards buffered; a restricted mode buffers 10 in each of its two
-buckets for the same 20 total). The buffer is filled once before the run starts
+page keeps a **client-side buffer of pairs, keyed by category, target depth 6
+each in Study Mix** (24 cards buffered, `BUFFER_TOTAL_TARGET`; a restricted mode buffers
+12 in each of its two buckets for the same 24 total). The buffer is filled once before the run starts
 and topped up continuously during it.
 
 ```

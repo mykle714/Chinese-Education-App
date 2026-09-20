@@ -4,6 +4,8 @@ import { LazyEnrichmentService } from '../services/LazyEnrichmentService.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { RateLimitError } from '../types/dal.js';
+import { DICTIONARY_SEARCH_RANKINGS } from '../types/index.js';
+import type { DictionarySearchRanking } from '../types/index.js';
 import { resolveTimezone, streakDateOf } from '../utils/streakDate.js';
 import { requireUserId, getUserLanguage } from '../utils/controllerUtils.js';
 import { resolveWriteLanguage } from '../utils/languageParam.js';
@@ -184,11 +186,16 @@ export class DictionaryController {
 
   /**
    * Search dictionary entries with pagination
-   * GET /api/dictionary/search?term=<query>&language=<lang>&page=<num>&limit=<num>
+   * GET /api/dictionary/search?term=<query>&language=<lang>&page=<num>&limit=<num>&rankBy=<ranking>
+   *
+   * `rankBy` (optional, defaults to `relevance`) chooses which READING of the term leads the
+   * result set — see `DictionarySearchRanking` in contracts/wire.ts. An unrecognised value is
+   * a 400 rather than a silent fall back to the default, so a client typo surfaces as a broken
+   * request instead of quietly-wrong ordering.
    */
   async search(req: Request, res: Response): Promise<void> {
     try {
-      const { term, language, page = '1', limit = '50' } = req.query;
+      const { term, language, page = '1', limit = '50', rankBy = 'relevance' } = req.query;
       const userId = (req as any).user?.userId;
 
       if (!term || typeof term !== 'string') {
@@ -221,8 +228,19 @@ export class DictionaryController {
         return;
       }
 
+      if (typeof rankBy !== 'string' || !DICTIONARY_SEARCH_RANKINGS.includes(rankBy as DictionarySearchRanking)) {
+        res.status(400).json({ error: `Invalid rankBy (must be one of: ${DICTIONARY_SEARCH_RANKINGS.join(', ')})` });
+        return;
+      }
+
       const offset = (pageNum - 1) * limitNum;
-      const result = await this.dictionaryService.searchDictionary(term, searchLanguage, limitNum, offset);
+      const result = await this.dictionaryService.searchDictionary(
+        term,
+        searchLanguage,
+        limitNum,
+        offset,
+        rankBy as DictionarySearchRanking,
+      );
 
       res.json({
         entries: result.entries,

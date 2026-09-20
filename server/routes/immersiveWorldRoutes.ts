@@ -56,6 +56,15 @@ router.get('/api/immersiveWorld/play/scenes/:id', authenticateToken, handle(imme
 router.post('/api/immersiveWorld/turn', authenticateToken, handle(immersiveWorldRuntimeController.takeTurn, immersiveWorldRuntimeController));
 
 // A scene run ended — drop its § 7 session counter.
+// § 14 Q42 — an authored direction rendered into the NPC's own words. A SEPARATE route from
+// /turn because its `frozen` means "skip this beat", not "freeze the scene".
+router.post('/api/immersiveWorld/line', authenticateToken, handle(immersiveWorldRuntimeController.renderLine, immersiveWorldRuntimeController));
+// § 4.2 — who was the learner talking to. Plain JSON (one id), unlike its two SSE neighbours.
+router.post('/api/immersiveWorld/addressee', authenticateToken, handle(immersiveWorldRuntimeController.routeAddressee, immersiveWorldRuntimeController));
+// § 5.3b — the learner's OWN line, segmented so their bubble carries pinyin and tappable
+// words like an NPC's. Separate from /turn because the bubble it describes is replaced by the
+// reply: on the turn stream it would arrive too late to paint anything.
+router.post('/api/immersiveWorld/segment', authenticateToken, handle(immersiveWorldRuntimeController.segmentUtterance, immersiveWorldRuntimeController));
 router.post('/api/immersiveWorld/session/end', authenticateToken, handle(immersiveWorldRuntimeController.endSession, immersiveWorldRuntimeController));
 
 export default router;

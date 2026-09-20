@@ -21,4 +21,4 @@ export const tts = {
     browser: browserProvider as TTSProvider,
 };
 
-export type { TTSProvider, TTSRequest, TTSLang } from './types';
+export type { TTSProvider, TTSRequest, TTSLang, TTSVoice } from './types';

@@ -144,32 +144,62 @@ export interface RunNpcTurnOptions {
 }
 
 /**
- * Run one NPC turn, walking the ladder until something answers.
+ * How one kind of model call reads its own stream.
  *
- * A rung "answers" when it produces a non-empty reply. A rung that returns an EMPTY buffer is
- * treated as a failure and the ladder continues — § 5.3's table calls the empty reply the only
- * true parse failure, and retrying it on another model is exactly what the ladder is for.
+ * ⚠️ **THE LADDER IS NOT ABOUT TURNS, IT IS ABOUT DEADLINES**, and that distinction only
+ * became visible when a SECOND kind of call appeared (§ 14 Q42's line render). Everything in
+ * {@link runLadder} — the two timers, the "spoke, then broke" rescue, the empty-buffer retry,
+ * `attemptIndex` — is about how a *stream* fails, and none of it knows what three lines are.
+ * A sink is the small part that does: it accumulates deltas and says what it got.
+ *
+ * `push` returns the text painted SO FAR (so the caller can stream a bubble) and whether the
+ * spoken part has closed (the moment to fire TTS — § 6.4 rule 1). `finish` returns the parsed
+ * value and whether the rung produced nothing usable, which is what makes the ladder move on.
  */
-export async function runNpcTurn(options: RunNpcTurnOptions): Promise<IWTurnOutcome> {
+export interface IWLadderSink<T> {
+  push(delta: string): { text: string; complete: boolean };
+  finish(): { value: T; failed: boolean };
+}
+
+export interface RunLadderOptions<T> {
+  rungs: readonly IWModelRung[];
+  request: IWModelRequest;
+  /** A fresh sink per rung — a dead rung's partial buffer must never seed the next one. */
+  createSink: () => IWLadderSink<T>;
+  onDelta?: (text: string, attemptIndex: number, complete: boolean) => void;
+  now?: () => number;
+  firstGlyphDeadlineMs?: number;
+  totalDeadlineMs?: number;
+}
+
+export type IWLadderOutcome<T> =
+  | { kind: 'ok'; value: T; rung: string; attempts: IWRungAttempt[] }
+  | { kind: 'frozen'; attempts: IWRungAttempt[] };
+
+/**
+ * Walk the ladder until a rung answers.
+ *
+ * A rung "answers" when its sink reports a usable value. A rung whose sink reports `failed`
+ * is treated as a failure and the ladder continues — § 5.3's table calls the empty reply the
+ * only true parse failure, and retrying it on another model is exactly what the ladder is for.
+ */
+export async function runLadder<T>(options: RunLadderOptions<T>): Promise<IWLadderOutcome<T>> {
   const {
     rungs,
-    offered,
+    request,
+    createSink,
     onDelta,
     now = Date.now,
     firstGlyphDeadlineMs = RUNG_FIRST_GLYPH_DEADLINE_MS,
     totalDeadlineMs = RUNG_TOTAL_DEADLINE_MS,
   } = options;
-  const request: IWModelRequest = {
-    ...options.request,
-    maxTokens: options.request.maxTokens ?? IW_TURN_MAX_TOKENS,
-  };
 
   const attempts: IWRungAttempt[] = [];
 
   for (let i = 0; i < rungs.length; i++) {
     const rung = rungs[i];
     const started = now();
-    const parser = createTurnParser(offered);
+    const sink = createSink();
     const controller = new AbortController();
     let spoke = false;
 
@@ -181,9 +211,9 @@ export async function runNpcTurn(options: RunNpcTurnOptions): Promise<IWTurnOutc
 
     try {
       for await (const delta of rung.stream(request, controller.signal)) {
-        const progress = parser.push(delta);
-        if (progress.say.length > 0) spoke = true;
-        onDelta?.(progress.say, i, progress.speechComplete);
+        const progress = sink.push(delta);
+        if (progress.text.length > 0) spoke = true;
+        onDelta?.(progress.text, i, progress.complete);
       }
     } catch (err) {
       // An abort lands here too, and is NOT distinguished from a transport error on purpose:
@@ -206,16 +236,51 @@ export async function runNpcTurn(options: RunNpcTurnOptions): Promise<IWTurnOutc
     clearTimeout(glyphTimer);
     clearTimeout(totalTimer);
 
-    const reply = parser.finish();
-    if (reply.failed) {
+    const { value, failed } = sink.finish();
+    if (failed) {
       attempts.push({ id: rung.id, vendor: rung.vendor, ms: now() - started, outcome: 'empty' });
       continue;
     }
     attempts.push({ id: rung.id, vendor: rung.vendor, ms: now() - started, outcome: 'ok' });
-    return { kind: 'reply', reply, rung: rung.id, attempts };
+    return { kind: 'ok', value, rung: rung.id, attempts };
   }
 
   return { kind: 'frozen', attempts };
+}
+
+/**
+ * Run one NPC turn — {@link runLadder} with the three-line parser as its sink.
+ *
+ * Kept as its own export rather than inlined at the call site because the pairing of the
+ * offered-name list with the parser that validates against it is § 5.4's guarantee, and it
+ * should be expressible in one place.
+ */
+export async function runNpcTurn(options: RunNpcTurnOptions): Promise<IWTurnOutcome> {
+  const outcome = await runLadder<IWTurnReply>({
+    rungs: options.rungs,
+    request: { ...options.request, maxTokens: options.request.maxTokens ?? IW_TURN_MAX_TOKENS },
+    createSink: () => {
+      const parser = createTurnParser(options.offered);
+      return {
+        push: delta => {
+          const progress = parser.push(delta);
+          return { text: progress.say, complete: progress.speechComplete };
+        },
+        finish: () => {
+          const reply = parser.finish();
+          return { value: reply, failed: reply.failed };
+        },
+      };
+    },
+    onDelta: options.onDelta,
+    now: options.now,
+    firstGlyphDeadlineMs: options.firstGlyphDeadlineMs,
+    totalDeadlineMs: options.totalDeadlineMs,
+  });
+
+  return outcome.kind === 'ok'
+    ? { kind: 'reply', reply: outcome.value, rung: outcome.rung, attempts: outcome.attempts }
+    : { kind: 'frozen', attempts: outcome.attempts };
 }
 
 /**

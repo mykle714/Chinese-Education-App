@@ -33,6 +33,7 @@ import handwritingRoutes from './routes/handwritingRoutes.js';
 import diagnosticsRoutes from './routes/diagnosticsRoutes.js';
 import metaRoutes from './routes/metaRoutes.js';
 import immersiveWorldRoutes from './routes/immersiveWorldRoutes.js';
+import { isFeatureEnabled } from './contracts/featureFlags.js';
 import { immersiveWorldDAL } from './dal/setup.js';
 import { validateStoredNpcIds } from './services/iw/validateStoredNpcIds.js';
 import { writeLimiter } from './middleware/rateLimits.js';
@@ -112,8 +113,15 @@ app.use(vocabEntryRoutes);
 app.use(flashcardRoutes);
 app.use(textRoutes);
 app.use(validationRoutes);
-app.use(nightMarketTemplateRoutes);
-app.use(nightMarketSandboxRoutes);
+// Night Market is flagged (server/contracts/featureFlags.ts). The feature owns THREE
+// routers rather than one — the market, the template library and the sandbox — so the
+// gate has to be repeated; they are flagged together because the two authoring
+// namespaces exist only to produce content for the market itself. The third mount is
+// further down, where the original path-ordering comment puts it.
+if (isFeatureEnabled('nightMarket')) {
+  app.use(nightMarketTemplateRoutes);
+  app.use(nightMarketSandboxRoutes);
+}
 app.use(onDeckRoutes);
 app.use(starterPacksRoutes);
 app.use(dictionaryRoutes);
@@ -123,18 +131,33 @@ app.use(dictionaryRoutes);
 app.use(speedReadingRoutes);
 app.use(memoryMapRoutes);
 app.use(gamesRoutes);
-app.use(nightMarketRoutes);
-app.use(communityRoutes);
+if (isFeatureEnabled('nightMarket')) app.use(nightMarketRoutes);
+// Community is flagged (server/contracts/featureFlags.ts). Not mounting the router IS
+// the gate: every /api/community/* path then 404s like any unknown route. The second
+// half of the gate is GET /api/users/:userId/designs, which serves the same designs
+// from userRoutes.ts and so cannot be covered from here.
+if (isFeatureEnabled('community')) app.use(communityRoutes);
 app.use(leaderboardRoutes);
 app.use(friendRoutes);
-app.use(arenaRoutes);
-app.use(studyChallengeRoutes);
+// Arena is flagged (server/contracts/featureFlags.ts). Unlike community and Study
+// Challenge, arena has NO endpoint outside this router — all six live in
+// arenaRoutes.ts — so this single mount is the whole server gate. See the note in
+// featureFlags.ts about the one arena field that still rides GET /api/users/:id.
+if (isFeatureEnabled('arena')) app.use(arenaRoutes);
+// Study Challenge is flagged (server/contracts/featureFlags.ts). As with community, the
+// router covers /api/studyChallenges/* only — the challenge BOARD is served by
+// ?challengeId= on /api/onDeck/*, gated inside OnDeckVocabController instead.
+if (isFeatureEnabled('studyChallenge')) app.use(studyChallengeRoutes);
 app.use(deckRoutes);
 app.use(mediaRoutes);
 app.use(handwritingRoutes);
 app.use(diagnosticsRoutes);
 app.use(metaRoutes);
-app.use(immersiveWorldRoutes);
+// Immersive World is flagged (server/contracts/featureFlags.ts). One mount covers both
+// halves of the feature — the phase-1 authoring endpoints and the phase-2 learner
+// runtime share this router (see immersiveWorldRoutes.ts) — and it has no endpoint
+// outside it, so this is the whole server gate.
+if (isFeatureEnabled('immersiveWorld')) app.use(immersiveWorldRoutes);
 
 // iw's startup validation pass (docs/IMMERSIVE_WORLD.md § 12 phase 1a): every NPC id
 // stored in the iw_* tables is TEXT pointing at a code constant, so the database cannot

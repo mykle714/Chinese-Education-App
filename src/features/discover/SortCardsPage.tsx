@@ -704,8 +704,7 @@ const SortCardsPage: React.FC = () => {
     // BEFORE deciding which bucket it belongs in (docs/SORT_CARDS_REQUIREMENTS.md §4.7).
     // useEipTabs owns tab state + the drill-in lookups; `language` is the ROUTE's
     // language, not the account's, because scp can show either.
-    const eipStripRef = useRef<HTMLDivElement | null>(null);
-    const eip = useEipTabs({ stripRef: eipStripRef, language });
+    const eip = useEipTabs({ language });
     const [eipOpen, setEipOpen] = useState(false);
     // entryKey whose lookup is in flight, so only the tapped card's info button
     // shows a spinner. Also gates re-taps on that same card.
@@ -919,12 +918,13 @@ const SortCardsPage: React.FC = () => {
         [eipLoadingKey, language, eip]
     );
 
-    // Closing drops every tab as well, so reopening on another card starts clean rather
-    // than resuming the previous card's drill-in stack.
+    // Closing KEEPS the tabs (2026-09-06): the trail belongs to the card, so reopening the
+    // panel on the same card resumes the drill-in chain where the learner left it. Opening
+    // it on a DIFFERENT card is what starts clean — `openForRoot` reseeds whenever the root
+    // word changes — and leaving the page unmounts the hook, which drops everything.
     const handleCloseEip = useCallback(() => {
         setEipOpen(false);
-        eip.clear();
-    }, [eip]);
+    }, []);
 
     // Autoplay: narrate every card in the on-deck pack, left to right, once per
     // pack (keyed on packKey so it fires exactly once when a pack lands on-deck,
@@ -1555,7 +1555,6 @@ const SortCardsPage: React.FC = () => {
                                         activeIndex={eip.activeIndex}
                                         onSelect={eip.setActive}
                                         isTabbedMode={eip.isTabbedMode}
-                                        stripRef={eipStripRef}
                                     />
                                 }
                                 // ✕ = close the showing word; false means "that was the

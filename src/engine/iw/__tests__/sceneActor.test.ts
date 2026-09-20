@@ -8,8 +8,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildSceneGraph, type SceneBoard } from '../sceneGraph';
-import { freeFarmTileset } from '../../market/freeFarmTileset';
-import { isBlockingDecorUrl } from '../../market/farmTerrain';
 import {
   BLOCKED_GIVE_UP_MS,
   createSceneActor,
@@ -22,18 +20,16 @@ import {
   tickSceneActor,
   tickSceneActors,
   walkActorTo,
+  forcedFacingFor,
   type SceneActorState,
 } from '../sceneActor';
 
-const BLOCKING_STEM = (() => {
-  const url = freeFarmTileset.getDecorUrls('common')[0];
-  const stem = freeFarmTileset.stemOf(url);
-  if (!stem || !isBlockingDecorUrl(url)) throw new Error('no blocking decor stem');
-  return stem;
-})();
-
-const board = (w: number, h: number, decor: Record<string, string> = {}): SceneBoard =>
-  ({ width: w, height: h, decor, places: {} });
+/**
+ * A board with an optional list of UNWALKABLE cells. It used to take a decor map and derive
+ * the walls from the sprites; walkability is painted now (2026-09-19, see `sceneGraph`).
+ */
+const board = (w: number, h: number, unwalkable: string[] = []): SceneBoard =>
+  ({ width: w, height: h, unwalkable, forcedDirection: {}, places: {} });
 
 const OPEN = buildSceneGraph(board(10, 10));
 const EMPTY = new Set<string>();
@@ -142,7 +138,7 @@ describe('tickSceneActor', () => {
 
   it('gives up when the path is blocked by decor that appeared under it', () => {
     const a = walkActorTo(createSceneActor('p', '0,0', 's'), OPEN, '3,0');
-    const walled = buildSceneGraph(board(10, 10, { '1,0': BLOCKING_STEM }));
+    const walled = buildSceneGraph(board(10, 10, ['1,0']));
     let s = a;
     let event = null;
     for (let i = 0; i < 100; i++) {
@@ -154,7 +150,7 @@ describe('tickSceneActor', () => {
   });
 
   it('routes around a prop without ever standing on it', () => {
-    const g = buildSceneGraph(board(3, 3, { '1,0': BLOCKING_STEM, '1,1': BLOCKING_STEM }));
+    const g = buildSceneGraph(board(3, 3, ['1,0', '1,1']));
     let a = walkActorTo(createSceneActor('p', '0,0', 's'), g, '2,0');
     const visited: string[] = [];
     for (let i = 0; i < 300 && isWalking(a); i++) {
@@ -200,7 +196,7 @@ describe('setActorPath', () => {
 
 describe('walkActorTo', () => {
   it('leaves the actor untouched when no path exists', () => {
-    const g = buildSceneGraph(board(3, 1, { '1,0': BLOCKING_STEM }));
+    const g = buildSceneGraph(board(3, 1, ['1,0']));
     const a = createSceneActor('p', '0,0', 's');
     expect(walkActorTo(a, g, '2,0')).toBe(a);
   });
@@ -249,5 +245,57 @@ describe('tickSceneActors', () => {
       for (const e of r.events) if (e.event.kind === 'arrived') seen.push(`${e.id}@${e.event.cell}`);
     }
     expect(seen.sort()).toEqual(['a@1,0', 'b@2,0']);
+  });
+});
+
+
+describe('forced-direction cells (2026-09-19)', () => {
+  /** A 5-wide corridor whose cell `at` forces a facing. */
+  const forcedBoard = (at: string, facing: 'n' | 'e' | 's' | 'w' = 'n') => buildSceneGraph({
+    width: 5, height: 1, unwalkable: [], forcedDirection: { [at]: facing }, places: {},
+  });
+
+  it('turns a body that SETTLES on the cell', () => {
+    const g = forcedBoard('2,0');
+    const walked = setActorPath(createSceneActor('p', '0,0', 's'), ['0,0', '1,0', '2,0']);
+    const { actor } = runToRest(walked, g);
+    expect(actor.cell).toBe('2,0');
+    expect(actor.facing).toBe('n');
+  });
+
+  it('does NOT turn a body that merely walks THROUGH it', () => {
+    // Crossing 2,0 on the way to 4,0: the facing must stay the one its movement gives it,
+    // or a body would pirouette in the middle of a corridor.
+    const g = forcedBoard('2,0', 'n');
+    const walked = setActorPath(
+      createSceneActor('p', '0,0', 's'),
+      ['0,0', '1,0', '2,0', '3,0', '4,0'],
+    );
+    const { actor } = runToRest(walked, g);
+    expect(actor.cell).toBe('4,0');
+    expect(actor.facing).toBe(facingForStep('3,0', '4,0'));
+  });
+
+  it('LOCKS the facing: an idle tick re-asserts it', () => {
+    // Something turned the body while it stood there (a tap, an authored face step). The
+    // next tick puts it back — that is what makes the rule a lock rather than a one-shot.
+    const g = forcedBoard('2,0');
+    const turned = { ...createSceneActor('p', '2,0', 'n'), facing: 's' as const };
+    const { actor } = tickSceneActor(turned, 50, { graph: g, occupied: EMPTY });
+    expect(actor.facing).toBe('n');
+  });
+
+  it('turns a body AUTHORED onto the cell on its first tick', () => {
+    const g = forcedBoard('2,0', 'e');
+    const { actor } = tickSceneActor(createSceneActor('p', '2,0', 'w'), 50, { graph: g, occupied: EMPTY });
+    expect(actor.facing).toBe('e');
+  });
+
+  it('reports no forced facing while the body is still walking', () => {
+    const g = forcedBoard('2,0');
+    const walking = setActorPath(createSceneActor('p', '2,0', 's'), ['2,0', '3,0']);
+    expect(forcedFacingFor(g, walking)).toBeNull();
+    expect(forcedFacingFor(g, createSceneActor('p', '2,0', 's'))).toBe('n');
+    expect(forcedFacingFor(g, createSceneActor('p', '1,0', 's'))).toBeNull();
   });
 });

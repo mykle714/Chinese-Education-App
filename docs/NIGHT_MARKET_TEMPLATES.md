@@ -1,5 +1,10 @@
 # Night Market Templates
 
+> 🚩 **Covered by the `nightMarket` feature flag** ([FEATURE_FLAGS.md](./FEATURE_FLAGS.md)
+> § 2d), not by a flag of its own: this tool authors night-market content, so it is part of
+> that feature. `users.isTemplateAuthor` is a separate question — the grant says who may
+> author, the flag says whether the feature exists. Each tile and endpoint tests both.
+
 > **Status: DESIGN — authoring built, runtime not yet built.** This doc specifies the
 > template system that is the *authoring source* for a user's Night Market layout.
 > **Authoring exists**: validators paint templates in the desktop editor
@@ -794,8 +799,12 @@ the far half of a 10×4 only fires once *that* half is occupied).
 
 - **Code.** `placeholderUnitSlots` / `placeholderUnitSlotsOf` / `placeholderUnitSlotAt` in
   `src/engine/market/placeholderArea.ts` (source of truth) + `server/dal/shared/placeholderArea.ts`
-  (server mirror, since the server can't import the client engine). The tiling is single-sourced
-  from there — `occupantHousesForArea` in `src/engine/market/house.ts` only adds the sprite flip —
+  (server mirror, since the server can't import the client engine). The unit-slot tiling is
+  placeholder-specific and stays there; the plain rectangle math underneath it (cells covered,
+  overlap, board fit, hit-test) is shared with houses and the lumeish pack in
+  `src/engine/market/footprint.ts` as of 2026-09-09, with the `placeholder*` helpers kept as thin
+  delegating wrappers. The tiling is single-sourced from here — `occupantHousesForArea` in
+  `src/engine/market/house.ts` only adds the sprite flip —
   and `src/__tests__/placeholderAreaSync.test.ts` asserts the two copies split every drop size
   identically.
 - **The first unit inherits the parent anchor**, so occupant rows written before this split
@@ -1194,7 +1203,12 @@ Code this doc will depend on / drive once implemented:
 - `server/dal/shared/versionSelection.ts` — `boardCells` lives here (single source; the layout
   read, `templatePlacement.ts` and `continentSeal.ts` all use it).
 - `src/engine/market/templateDefinition.ts` — **owns `TemplateDefinitionPayload`**, the
-  serialized `definition` shape (terrain1/terrain2/street/communal/placeholder/condition/decor).
+  serialized `definition` shape
+  (terrain1/terrain2/street/communal/placeholder/condition/decor/**furniture**). `furniture` is
+  an optional array of `{col,row,id}` records — placed multi-cell props from the lumeish pack,
+  keyed by manifest id so they survive asset re-fingerprinting (see
+  [LUMEISH_ASSET_PIPELINE.md](./LUMEISH_ASSET_PIPELINE.md) § 6b). It is **per version**, like
+  decor and the terrain masks; a definition saved before the Furniture tool simply omits it.
   It lives in the engine because it is the engine's INPUT contract: `templateStitch` and the
   pedestrian / street-recovery tests consume a definition and must not depend on the authoring
   UI that produces one. `src/features/nightmarket/templateEditorApi.ts` re-exports it, so the

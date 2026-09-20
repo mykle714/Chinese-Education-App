@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Button, Chip, CircularProgress, IconButton, InputBase, Tooltip } from '@mui/material';
+import { Box, CircularProgress, IconButton, InputBase, Tooltip } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import SearchIcon from '@mui/icons-material/Search';
 import BackspaceIcon from '@mui/icons-material/Backspace';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import { apiGet } from '../../../api/http';
-import ForeignText from '../../../components/ForeignText';
-import { IW_MAX_UTTERANCE_CHARS } from '../../../../server/contracts/iw';
+import IWLookupResults from './IWLookupResults';
+import IWVolumeChip from './IWVolumeChip';
+import { IW_MAX_UTTERANCE_CHARS, IW_VOLUME_LABELS, type IWVolume } from '../../../../server/contracts/iw';
 import type { DictionaryEntry } from '../../../types';
 
 /**
@@ -24,18 +25,51 @@ import type { DictionaryEntry } from '../../../types';
  * back to the learner. So the field accepts anything, and the assistance is a way IN rather
  * than a fence.
  *
- * ── The two questions it has to answer ────────────────────────────────────────────────────
- * § 9a names them, and they are different problems:
+ * ── The one question it answers: a PURE DICTIONARY (decided 2026-09-07) ───────────────────
+ * *"I know what I want to say but cannot type it"* — type English or pinyin, tap a result, the
+ * hanzi is appended. That is the whole component.
  *
- * | The learner's problem | This component's answer |
- * |---|---|
- * | *"I know what I want to say but cannot type it"* | **Look it up** — type English or pinyin, tap a result, the hanzi is appended |
- * | *"I don't know where to begin"* | **Openers** — a handful of in-language phrases to start from |
+ * ── HOW THE LOOKUP IS RANKED (2026-09-09) ────────────────────────────────────────────────
+ * A dictionary query is never "an English search" or "a pinyin search": one SQL statement ORs
+ * the headword, the pinyin regexes and the gloss regex together, and the RANKING decides which
+ * reading leads. Every search surface now shares one four-bucket ladder (see
+ * `DictionarySearchRanking`, server/contracts/wire.ts):
  *
- * The second is the harder requirement and the one iw cannot skip: Q24 removed the
- * native-language companion and Q29 removed the nudge, so this is the learner's ONLY safety
- * net. An assistant that only solves the first problem leaves a beginner staring at an empty
- * field, which is exactly the failure § 9a warns about.
+ *     0  complete English   a sense IS the term            "long" → 长; "me" → 我
+ *     1  complete word      headword/pronunciation IS it   "long" → 龙 lóng
+ *     2  partial word       the term is a leading prefix   "long" → 龙虾 lóng xiā
+ *     3  partial English    the term sits inside a sense   "long" → 寿 "long life"
+ *
+ * ⚠️ **THE ONLY THING THIS TRAY DOES DIFFERENTLY IS THE INTERLEAVED HEAD.** It passes
+ * `rankBy: 'english-first'`, which prepends the first two rows of EVERY bucket
+ * (0,0,1,1,2,2,3,3) before the ladder resumes. On a strip this short, straight bucket order
+ * would let a term with dozens of exact glosses fill every visible chip with bucket 0, hiding
+ * that a complete pinyin reading of what the learner typed exists at all. A page-long list has
+ * no such problem, which is why the dictionary page does not get the head. Purely a
+ * re-ordering: same rows, same total, nothing dropped or repeated as pages append.
+ *
+ * The ladder itself was a general fix and is NOT tray-specific — at `limit: 8` it had also been
+ * deciding which reading survived the LIMIT inside Postgres, which is why the page size below
+ * is 16 and the strip pages rather than truncating.
+ *
+ * ⚠️ **IT DELIBERATELY NO LONGER SUGGESTS ANYTHING.** Two chip rows were removed: a hardcoded
+ * `OPENERS` list (你好 / 请问 / 我要 / …) and a row of the learner's own `getGameVocabPool`
+ * words. Both put words on screen before the learner had typed a character, which made the
+ * tray read as a menu of things to say rather than a tool for saying your own thing — the
+ * palette Q4c rejected, arriving through the back door. **Nothing renders until the learner
+ * types**, and what renders is only ever what they asked for.
+ *
+ * ⚠️ **THIS GIVES UP § 9a's SECOND REQUIREMENT, KNOWINGLY.** § 9a asks the assistant to answer
+ * *"I don't know where to begin"* too, and calls it the harder one, because Q24 removed the
+ * native-language companion and Q29 removed the nudge. A pure dictionary answers only the
+ * first: a learner who cannot start a sentence now has nothing to press. That safety net is
+ * **unassigned**, not relocated — if it comes back it must arrive as something other than a
+ * standing word list, and BACKLOG item 1's keyboard is the natural owner.
+ *
+ * ── The volume control (§ 4c) ─────────────────────────────────────────────────────────────
+ * One `HeaderCycleChip`, the same control as the audio-mode chip: one word saying which
+ * volume is live, one tap to the next, fixed width so nothing shuffles under the thumb. See
+ * `IWVolumeChip` for why it is not three buttons and not three icons.
  *
  * ⚠️ **IT IS NOT A BOUND ON INPUT** (§ 9a, § 7). The character counter here is a courtesy so
  * a learner is not surprised by a refusal; the real cap is `IW_MAX_UTTERANCE_CHARS` on the
@@ -45,40 +79,62 @@ import type { DictionaryEntry } from '../../../types';
  */
 
 /**
- * Openers, in the target language — the answer to "I don't know where to begin".
- *
- * ⚠️ HARDCODED CONTENT, AND KNOWINGLY SO. These are not authored per scene and not drawn from
- * the learner's cards: they are the four or five things anybody can say in any situation, and
- * the point is that they are always there. A scene-aware version is a better feature and a
- * bigger one; an empty field with nothing to press is the failure this exists to prevent.
+ * How many lookup results one page of the strip holds. Still a phone row rather than a
+ * dictionary page — but big enough that the English-first ranking (see the header) has room
+ * to show BOTH readings of the term, which eight slots did not.
  */
-const OPENERS: Record<'zh' | 'es', string[]> = {
-  zh: ['你好', '请问', '我要', '多少钱', '谢谢', '我不懂'],
-  es: ['Hola', 'Perdone', 'Quiero', '¿Cuánto cuesta?', 'Gracias', 'No entiendo'],
-};
+const LOOKUP_PAGE_SIZE = 16;
 
-/** How many lookup results to show. A phone row, not a dictionary page. */
-const LOOKUP_LIMIT = 8;
+/**
+ * Which reading of the typed term leads the results. See the header, and
+ * `DictionarySearchRanking` in server/contracts/wire.ts.
+ */
+const LOOKUP_RANK_BY = 'english-first';
+
+/** The slice of `GET /api/dictionary/search` this tray reads. It ignores the AI-fallback flags. */
+interface LookupPage {
+  entries: DictionaryEntry[];
+  pagination?: { page: number; limit: number; total: number; totalPages: number };
+}
 
 /** Debounce on the lookup field. Long enough that typing a word is one query, not five. */
 const LOOKUP_DEBOUNCE_MS = 300;
 
 export interface IWComposerProps {
   language: 'zh' | 'es';
-  /** The learner's own words (§ 9.4) — the most likely things they can actually read. */
-  knownWords: readonly string[];
   /** A turn is in flight, or the scene is frozen: the send button is inert. */
   disabled: boolean;
   sending: boolean;
-  onSend(text: string): void;
+  onSend(text: string, volume: IWVolume): void;
 }
 
-export default function IWComposer({ language, knownWords, disabled, sending, onSend }: IWComposerProps) {
+export default function IWComposer({ language, disabled, sending, onSend }: IWComposerProps) {
   const [text, setText] = useState('');
   const [assistOpen, setAssistOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<DictionaryEntry[]>([]);
   const [looking, setLooking] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  /**
+   * Paging state lives in REFS, not state. `loadMore` is handed to the strip's scroll/resize
+   * measurement, which calls whatever closure it captured — a state read there would see a
+   * stale page number and re-request the page it just appended. The chips themselves are
+   * state, because they are what renders; these four are only ever read inside a callback.
+   *
+   * `termRef` is the guard for the other race: a page that resolves AFTER the learner has
+   * retyped is a page of the wrong query, and appending it would mix two searches in one strip.
+   */
+  const pageRef = useRef(1);
+  const totalPagesRef = useRef(1);
+  const loadingMoreRef = useRef(false);
+  const termRef = useRef('');
+  /**
+   * ⚠️ **IT DOES NOT RESET AFTER A LINE, AND THAT IS DELIBERATE.** A learner who leans in to
+   * whisper is usually about to whisper again; snapping back to a normal voice every send
+   * would make the quiet exchange the one thing in the scene you cannot have twice in a row.
+   * The button label carries the current setting, so a stale one is visible rather than a trap.
+   */
+  const [volume, setVolume] = useState<IWVolume>('talk');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const glyphs = useMemo(() => [...text.trim()].length, [text]);
@@ -87,23 +143,76 @@ export default function IWComposer({ language, knownWords, disabled, sending, on
 
   // ── Look up a word by English or pinyin ─────────────────────────────────────────────────
   // The ordinary dictionary search, which already resolves pinyin and English (its multi-stage
-  // matcher is what the Dictionary page uses). iw does not need a search of its own.
+  // matcher is what the Dictionary page uses). iw does not need a search of its own — only a
+  // different RANKING of the same results (see the header) and a page size it can grow.
+
+  /** Reset paging. Called for a new query and after a send clears the tray. */
+  const resetPaging = useCallback((term: string) => {
+    pageRef.current = 1;
+    totalPagesRef.current = 1;
+    loadingMoreRef.current = false;
+    termRef.current = term;
+    setLoadingMore(false);
+  }, []);
+
   useEffect(() => {
     const term = query.trim();
+    resetPaging(term);
     if (!assistOpen || term.length < 2) { setResults([]); return; }
     let cancelled = false;
     setLooking(true);
     const timer = setTimeout(() => {
-      apiGet<{ entries: DictionaryEntry[] }>('/api/dictionary/search', {
-        params: { term, language, limit: LOOKUP_LIMIT },
+      apiGet<LookupPage>('/api/dictionary/search', {
+        params: { term, language, limit: LOOKUP_PAGE_SIZE, page: 1, rankBy: LOOKUP_RANK_BY },
       })
-        .then(data => { if (!cancelled) setResults(data.entries ?? []); })
+        .then(data => {
+          if (cancelled) return;
+          setResults(data.entries ?? []);
+          totalPagesRef.current = data.pagination?.totalPages ?? 1;
+        })
         // A failed lookup is an empty result, never an error in front of a learner mid-scene.
         .catch(() => { if (!cancelled) setResults([]); })
         .finally(() => { if (!cancelled) setLooking(false); });
     }, LOOKUP_DEBOUNCE_MS);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [query, language, assistOpen]);
+  }, [query, language, assistOpen, resetPaging]);
+
+  /**
+   * Append the next page. Fired by the strip when the learner reaches its right edge — the
+   * strip has no idea whether more exists, so every guard is here: nothing in flight, a term
+   * to search for, and a page left to fetch.
+   */
+  const loadMore = useCallback(() => {
+    const term = termRef.current;
+    if (!term || loadingMoreRef.current) return;
+    if (pageRef.current >= totalPagesRef.current) return;
+
+    const nextPage = pageRef.current + 1;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    apiGet<LookupPage>('/api/dictionary/search', {
+      params: { term, language, limit: LOOKUP_PAGE_SIZE, page: nextPage, rankBy: LOOKUP_RANK_BY },
+    })
+      .then(data => {
+        // The learner retyped while this was in flight: it answers a question that is no
+        // longer on screen, so drop it rather than mixing two searches into one strip.
+        if (termRef.current !== term) return;
+        pageRef.current = nextPage;
+        totalPagesRef.current = data.pagination?.totalPages ?? nextPage;
+        setResults(prev => {
+          // Pages should not overlap, but a duplicate id would break the React keys and show
+          // the same word twice, so it is cheap insurance rather than a trusted invariant.
+          const seen = new Set(prev.map(entry => entry.id));
+          return [...prev, ...(data.entries ?? []).filter(entry => !seen.has(entry.id))];
+        });
+      })
+      // A failed page is simply no more chips — same rule as the first page.
+      .catch(() => {})
+      .finally(() => {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
+  }, [language]);
 
   const append = useCallback((word: string) => {
     // Chinese is not space-delimited and Spanish is: joining with a space in zh would put a
@@ -114,96 +223,69 @@ export default function IWComposer({ language, knownWords, disabled, sending, on
 
   const send = useCallback(() => {
     if (!canSend) return;
-    onSend(text.trim());
+    onSend(text.trim(), volume);
     setText('');
     setQuery('');
     setResults([]);
-  }, [canSend, onSend, text]);
+    // The tray is emptied with the sentence, so its paging cursor has to go back to the
+    // start too — otherwise the next query would resume from a stale page number.
+    resetPaging('');
+  }, [canSend, onSend, text, volume, resetPaging]);
 
   return (
     <Box
       className="iw-composer"
+      /*
+        Every control in here acts on the sentence being composed — the helper toggle, the
+        dictionary chips, backspace, the volume chip, send. The handwriting keyboard treats
+        focus as a TRIGGER and dismisses on anything not explicitly kept (BEGINNER_KEYBOARD.md
+        § 6z), and a `<button>` takes focus when clicked on desktop, so without this the
+        keyboard closed the moment the learner reached for send. Marked on the whole composer
+        rather than per button so a control added here later inherits it.
+      */
+      data-beginner-keyboard="keep"
       sx={{
         position: 'relative',
         display: 'flex', flexDirection: 'column', gap: 0.75,
         p: 1,
-        bgcolor: 'rgba(12,12,16,0.92)',
-        borderTop: '1px solid rgba(255,255,255,0.1)',
+        // ⚠️ THE COMPOSER IS CHROME, NOT THE SCENE — so it is theme-skinned, like the side
+        // panels of the scene editor and for the same reason phase 1d gives there: only a
+        // Pixi canvas gets to be dark, and this is an ordinary form control sitting under the
+        // page's `LeafPage` paper. It shipped as a near-black bar (`rgba(12,12,16,0.92)`)
+        // while every control inside it kept `color: 'inherit'`, which inherits the page's
+        // DARK-on-light body colour — so the learner typed invisible text onto black. Painting
+        // the text white would have hidden that mismatch rather than fixed it; the ground was
+        // the thing that was wrong.
+        bgcolor: 'background.paper',
+        borderTop: 1,
+        borderColor: 'divider',
       }}
     >
       {assistOpen && (
         <Box className="iw-composer__assistant" sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-          {/* "I don't know where to begin" — always present, never search-dependent. */}
-          <Box className="iw-composer__openers" sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-            {OPENERS[language].map(opener => (
-              <Chip
-                key={opener}
-                className="iw-composer__opener"
-                size="small"
-                label={<ForeignText text={opener} language={language} size="xs" showPinyin={false} />}
-                onClick={() => append(opener)}
-              />
-            ))}
-          </Box>
-
-          {/* The learner's own cards — the words they are most likely to be able to read. */}
-          {knownWords.length > 0 && (
-            <Box
-              className="iw-composer__known"
-              sx={{ display: 'flex', gap: 0.5, overflowX: 'auto', pb: 0.5 }}
-            >
-              {knownWords.slice(0, 24).map(word => (
-                <Chip
-                  key={word}
-                  className="iw-composer__known-word"
-                  size="small"
-                  variant="outlined"
-                  label={<ForeignText text={word} language={language} size="xs" showPinyin={false} />}
-                  onClick={() => append(word)}
-                />
-              ))}
-            </Box>
-          )}
-
-          {/* "How do I say…" */}
+          {/*
+            The quick dictionary, and nothing above it. The tray is EMPTY until the learner
+            types — no openers, no card list, no standing suggestions of any kind.
+          */}
           <Box className="iw-composer__lookup" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <SearchIcon sx={{ fontSize: 16, opacity: 0.6 }} />
             <InputBase
               className="iw-composer__lookup-input"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder={language === 'zh' ? 'How do I say… (english or pinyin)' : 'How do I say… (english)'}
+              placeholder={language === 'zh' ? 'Quick dictionary — english or pinyin' : 'Quick dictionary — english'}
               sx={{ flex: 1, fontSize: 13, color: 'inherit' }}
             />
             {looking && <CircularProgress size={12} />}
           </Box>
           {results.length > 0 && (
-            <Box
-              className="iw-composer__results"
-              sx={{ display: 'flex', gap: 0.5, overflowX: 'auto', pb: 0.5 }}
-            >
-              {results.map(entry => (
-                <Chip
-                  key={entry.id}
-                  className="iw-composer__result"
-                  size="small"
-                  onClick={() => append(entry.word1)}
-                  label={(
-                    <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
-                      <ForeignText
-                        text={entry.word1}
-                        pronunciation={entry.pronunciation}
-                        language={language}
-                        size="xs"
-                      />
-                      <Box component="span" sx={{ fontSize: 10, opacity: 0.65 }}>
-                        {entry.definitions?.[0] ?? ''}
-                      </Box>
-                    </Box>
-                  )}
-                />
-              ))}
-            </Box>
+            <IWLookupResults
+              results={results}
+              language={language}
+              loadingMore={loadingMore}
+              onSelect={append}
+              onReachEnd={loadMore}
+            />
           )}
         </Box>
       )}
@@ -240,22 +322,46 @@ export default function IWComposer({ language, knownWords, disabled, sending, on
             <BackspaceIcon sx={{ fontSize: 16 }} />
           </IconButton>
         )}
-        <Box
-          className="iw-composer__count"
-          sx={{ fontSize: 10, opacity: overLimit ? 1 : 0.5, color: overLimit ? 'error.main' : 'inherit' }}
-        >
-          {glyphs}/{IW_MAX_UTTERANCE_CHARS}
-        </Box>
-        <Button
-          className="iw-composer__send"
-          size="small"
-          variant="contained"
-          disabled={!canSend}
-          onClick={send}
-          startIcon={sending ? <CircularProgress size={12} color="inherit" /> : <SendIcon sx={{ fontSize: 16 }} />}
-        >
-          Say
-        </Button>
+        {/*
+          The counter now appears only as the limit gets close. It used to sit there
+          permanently at half opacity, which cost a slot in a row that has to hold a volume
+          control on a phone — and a courtesy warning is not a warning until there is
+          something to warn about (the real cap is the server's; see the header).
+        */}
+        {glyphs > IW_MAX_UTTERANCE_CHARS * 0.7 && (
+          <Box
+            className="iw-composer__count"
+            sx={{ fontSize: 10, opacity: overLimit ? 1 : 0.6, color: overLimit ? 'error.main' : 'inherit' }}
+          >
+            {glyphs}/{IW_MAX_UTTERANCE_CHARS}
+          </Box>
+        )}
+        {/*
+          One word, one tap to the next volume — the app's `HeaderCycleChip`, the same control
+          as the audio-mode chip (§ 4c). It replaced a three-button segmented group that could
+          not share a phone row with the field.
+        */}
+        <IWVolumeChip volume={volume} onChange={setVolume} />
+        {/*
+          A bare icon, not a pill. The volume group now carries the words, and a labelled
+          button beside it would say the same thing twice while spending the width the three
+          labels need — on a phone this row holds the assist toggle, the field, three volumes
+          and this. `aria-label` keeps the verb for anybody not reading the row visually.
+        */}
+        <Tooltip title={`${IW_VOLUME_LABELS[volume]} it`}>
+          <span>
+            <IconButton
+              className="iw-composer__send"
+              size="small"
+              color="primary"
+              disabled={!canSend}
+              onClick={send}
+              aria-label={`${IW_VOLUME_LABELS[volume]} it`}
+            >
+              {sending ? <CircularProgress size={16} color="inherit" /> : <SendIcon sx={{ fontSize: 20 }} />}
+            </IconButton>
+          </span>
+        </Tooltip>
       </Box>
     </Box>
   );

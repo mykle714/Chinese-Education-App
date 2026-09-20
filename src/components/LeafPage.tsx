@@ -54,7 +54,8 @@ interface LeafPageChildApi {
 
 export interface LeafPageProps {
     title: string;
-    // Where the back arrow goes. Invoked AFTER the slide-down completes.
+    // Where the back arrow goes. Invoked IMMEDIATELY (the destination mounts beneath)
+    // while a clone of this page slides down on top — see usePageSlide's `exit`.
     onBack: () => void;
     // Header right slot (e.g. a badge / toggle).
     rightContent?: ReactNode;

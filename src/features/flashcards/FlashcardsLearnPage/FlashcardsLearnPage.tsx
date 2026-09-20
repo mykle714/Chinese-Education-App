@@ -332,11 +332,11 @@ const FlashcardsLearnPage: React.FC = () => {
 
     // Entry-tab system: tapping a breakdown/used-in row inside the EIP adds a
     // tab to the panel instead of stacking another panel on top. Each tab is
-    // its own looked-up dictionary entry. Tapping the scrim closes the panel
-    // and clears every tab (see closeEip). The active tab owns its own selected
-    // sub-tab, so the page no longer tracks a separate selectedTab.
-    const eipStripRef = useRef<HTMLDivElement | null>(null);
-    const eip = useEipTabs({ stripRef: eipStripRef });
+    // its own looked-up dictionary entry. The trail lives as long as the CARD does —
+    // closing the panel keeps it, moving to the next card clears it (see closeEip and
+    // the currentIndex effect). The active tab owns its own selected sub-tab, so the
+    // page no longer tracks a separate selectedTab.
+    const eip = useEipTabs();
 
     const openEicSheet = () => {
         if (!displayCurrentEntry) return;
@@ -358,11 +358,13 @@ const FlashcardsLearnPage: React.FC = () => {
         eip.syncEntry(displayCurrentEntry);
     }, [isEicOpen, displayCurrentEntry?.id, displayCurrentEntry?.selectedSense]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Closes the EIP entirely and discards every tab (scrim tap or drag-dismiss).
+    // Closes the EIP (scrim tap or drag-dismiss). The TABS SURVIVE: the trail belongs to
+    // the card, not to the panel, so reopening the sheet on the same card comes back to
+    // the same drill-in chain on the same word. It is dropped when the card changes (the
+    // `currentIndex` effect below), which is also when `openForRoot` would reseed it.
     const closeEip = useCallback(() => {
         setIsEicOpen(false);
-        eip.clear();
-    }, [eip]);
+    }, []);
 
     // "+ Add to Learn Now" from the EIP header 2×2 action grid. The primary card
     // is already in the library, but drilled-in words (breakdown chars / example
@@ -401,9 +403,8 @@ const FlashcardsLearnPage: React.FC = () => {
     // The card editor and the EIP can't coexist — entering edit mode dismisses the
     // panel (and the More Info pill is disabled while editing, see MoreInfoPill below).
     // Key off editMode ONLY (rising edge): closeEip's identity churns every render
-    // (useEipTabs returns a fresh object, and closeEip -> eip.clear() -> setTabs([]),
-    // a new array ref each call), so depending on it here would re-run the effect every
-    // render and loop infinitely.
+    // (useEipTabs returns a fresh object each render), so depending on it here would
+    // re-run the effect every render and loop infinitely.
     useEffect(() => {
         if (editMode) closeEip();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -859,7 +860,6 @@ const FlashcardsLearnPage: React.FC = () => {
                                     activeIndex={eip.activeIndex}
                                     onSelect={eip.setActive}
                                     isTabbedMode={eip.isTabbedMode}
-                                    stripRef={eipStripRef}
                                 />
                             }
                             // The sheet's ✕ closes the SHOWING WORD, which is the word

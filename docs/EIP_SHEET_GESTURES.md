@@ -18,10 +18,13 @@ compare sheet, `src/components/CompareSheet.tsx`) and `DecksPanelBody`
 `SettingsPanelBody` (the flp settings sheet), was deleted on 2026-08-28 when the
 last of its rows moved out — see [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md).
 
-**Mount sites.** The eip sheet is not flp-private: the sort cards page (scp) and the
-saved-card cdp mount the same `InfoCardSection`, and scp brings the `EipTabStrip` +
-`useEipTabs` trio with it from each on-deck card's info button
-([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)). Everything on this
+**Mount sites.** The eip sheet is not flp-private: the sort cards page (scp), the
+saved-card cdp and the immersive-world play page all mount the same `InfoCardSection`, and
+scp brings the `EipTabStrip` + `useEipTabs` trio with it from each on-deck card's info button
+([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)). `IWPlayPage` mounts the
+same trio from a tapped word in a speech bubble, and is the only host that takes a **hold on
+the page behind it** for the sheet's lifetime — a scene keeps running otherwise, and would
+replace the line being read ([IMMERSIVE_WORLD.md § 5.3c](./IMMERSIVE_WORLD.md)). Everything on this
 page applies to all of them, and to the compare sheet, which is a plain `SheetPanel`
 host of its own ([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) — the first one
 to use `depth` for real, stacking over the cdp's eip.
@@ -227,6 +230,37 @@ What the ✕ *does* on the eip is still the trail's rule (close the showing word
 one closes the panel), passed in by the host as `onCloseX`; returning `true` from it means
 "handled, stay open".
 
+### The trail scrolls, holds up to 50 words, and outlives the panel
+
+Three rules, all changed on **2026-09-06**:
+
+- **It scrolls sideways.** `.eip-entry-tab-list` is an `overflow-x: auto` row: touch pans
+  it natively (`touch-action: pan-x`, `overscroll-behavior-x: contain` so the end of the
+  trail does not rubber-band the sheet), and desktop drags it with the shared
+  `useDragScroll` mouse-drag hook — the same gesture the card shelves use. No scrollbar is
+  drawn; the pill cut off at the edge IS the affordance.
+- **It is capped by COUNT, not by width** — `MAX_EIP_TABS` (50) in `useEipTabs`. It used to
+  be a width gate (`fitsNewTab`, which measured a candidate pill off-DOM and refused any
+  word that would not fit the row entirely) because a half-pill reads as "scroll for more"
+  on a row that does not scroll. The row scrolls now, so that reading is true, and the
+  measuring apparatus (`measureTabWidth`, `readStripGeometry`, `fitsNewTab`, the per-tab
+  `measuredWidth` cache, and the `stripRef` the hook took to read the geometry) is deleted.
+  `TooManyTabsSnackbar` still fires on the counter, now at 50 rather than after a handful.
+- **The active pill is scrolled into view** whenever the active index or the tab count
+  changes — twice, because a just-pushed pill is mid-entrance (`eipPillIn` widens it from
+  `max-width: 0`) and a scroll aimed at it then lands short. The second pass runs at
+  `EIP_PILL_IN_MS`; on an already-mounted pill both passes are no-ops (`inline: "nearest"`
+  does not move a fully visible target).
+
+**The trail now outlives the panel.** Closing the eip no longer clears the tabs — the trail
+belongs to the CARD, so reopening the sheet on the same card resumes the same drill-in
+chain on the same word. It is dropped when the ROOT changes: the flp's next card (the
+`currentIndex` reset effect, plus `openForRoot` reseeding), another card's info button on
+scp, or the page unmounting. The `isTabbedMode` latch resets with the trail, so a new card
+never opens showing a leftover one-pill strip. (The cdp is unaffected — it has no entry-tab
+strip at all; it drills in by NAVIGATING to the tapped word's own card detail, and its
+content sub-tab already survives a close for the page's life.)
+
 ### The sheet grows for its tab strip — it does not squeeze
 
 When the word trail appears, the strip is ~40px of new chrome. Laid out normally it takes
@@ -387,13 +421,28 @@ The host is **not** unconditionally the phone frame. It is the nearest ancestor 
 satisfies BOTH of:
 
 1. **It creates a stacking context** (`transform` / `filter` / `perspective` /
-   `backdrop-filter` / `contain` / `will-change: transform`) — or it IS the frame
-   (`.mobile-demo-frame` / `FrameRoot`), which is where the walk stops.
+   `backdrop-filter` / `contain` / `will-change: transform`) — or it IS the frame-level
+   host, which is where the walk stops.
 2. **It covers the frame** (rect check). An animated inner box could satisfy (1) without
    filling the screen; hosting there would dim a box instead of the page, so the walk
-   falls back to the frame.
+   falls back to the frame-level host.
 
 `document.body` is the last-resort fallback.
+
+**The frame-level host is `.mobile-demo-frame`** (`FrameRoot`), and it works only because
+that element is **positioned**. Sheet layers are `position: absolute`, which resolves
+against the nearest positioned ancestor; `FrameRoot` was once static, and hosted there the
+sheet escaped the frame entirely and pinned itself to the initial containing block. On
+mobile that is invisible (the frame is full-bleed, so the two rects coincide), but on
+**desktop the frame is a 402px centered card and the sheet spanned the whole browser
+window** (fixed 2026-09-06). `FrameRoot` now carries `position: relative` itself — it is
+what the footer bar pins against — and its height is the on-screen height, which is what
+`parentElement.clientHeight` in the height model wants.
+
+> Until 2026-09-13 the host was an inner `FrameViewport` box, which existed to reserve a
+> strip at the bottom of the iOS home-screen app. That strip turned out to be the bug
+> rather than a necessity, so the box is gone and `position: relative` moved up to
+> `FrameRoot` — see [IOS_STATUS_BAR_BUG.md](./IOS_STATUS_BAR_BUG.md) § 3 round 6.
 
 **Why (1) matters — the cdp bug (fixed 2026-08-24).** z-indexes only compare inside a
 shared stacking context. `NodePage`'s `Surface` carries the page-slide `transform`
@@ -505,6 +554,41 @@ Now:
 
 ---
 
+## Header tap-to-copy (headword)
+
+**Added 2026-09-06.** Tapping the eip header's headword copies it. Successive taps
+**alternate**: the first copies the **characters**, the next copies the **pinyin**, then it
+cycles back — each confirmed by a small floating caption ("Characters Copied!" /
+"Pinyin Copied!") that self-dismisses after `COPY_MESSAGE_MS` (1.4 s).
+
+- **Where it lives.** The behaviour is a `CPCDRow` property (`tapToCopy`, defaulting to
+  false), threaded through `ForeignText` and switched on at exactly one call site: the
+  header `ForeignText` in `InfoCardPanelBody`. It is opt-in because most cpcd surfaces
+  already own the tap (flip the card, select a segment); the eip header is the one place
+  the headword is shown purely as a reference, so a tap there has nothing else to mean.
+- **The caption is the est's popup**, not a new widget: `CpcdPopup`
+  (`src/components/CpcdPopup.tsx`), anchored to the row's root element, non-interactive,
+  class `.cpcd-row__copy-toast`. See
+  [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) § "Segment popup → eip drill-in".
+- **What is copied.** Characters = the row's items joined; pinyin = each item's syllable
+  joined by spaces, empty syllables dropped (so it matches how the row reads on screen and
+  how the dictionary stores a pronunciation). A row with **no** pinyin at all never enters
+  the pinyin leg — it always copies characters.
+- **Which field is next** is a ref, not state: it must advance synchronously so a fast
+  double tap sees the first tap's result, and it drives no rendering.
+- **Clipboard fallback.** `src/utils/copyToClipboard.ts` prefers
+  `navigator.clipboard.writeText` and falls back to a hidden-textarea `execCommand('copy')`,
+  because the async Clipboard API only exists in a secure context and this app is regularly
+  opened over plain http on the LAN. A failed copy says "Copy failed" rather than claiming
+  success.
+- **It does not fight the sheet drag.** The header doubles as the drag-to-resize handle
+  (`headerDragBind`), but `useDrag` is configured with `filterTaps`, so a tap is not a drag
+  and the click still reaches the row.
+- **Latin-script (es) headwords are unaffected** — `ForeignText`'s plain-text branch has no
+  pinyin half to alternate with and ignores the prop.
+
+---
+
 ## Referenced code
 
 - `src/components/sheet/SheetPanel.tsx` — everything above
@@ -527,6 +611,9 @@ Now:
   longer reserves a column for the ✕; see § The close cluster)
 - `src/features/flashcards/constants.ts` — `TAB_SWIPE_*` gesture constants
   (axis lock, commit ratio, transition, edge rubber-band)
+- `src/components/CPCDRow.tsx` — `tapToCopy` (the header copy gesture) and
+  `src/components/CpcdPopup.tsx` — the shared caption card it confirms with
+- `src/utils/copyToClipboard.ts` — clipboard write with the non-secure-context fallback
 - `src/components/CompareWorkspace.tsx` — the other sheet body;
   `src/components/CompareSheet.tsx` — the host that pairs it with a `SheetPanel` off the flp
 - `src/features/flashcards/DecksPanelBody.tsx` + `FlashcardsDecksPage.tsx` — a second

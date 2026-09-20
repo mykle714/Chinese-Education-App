@@ -45,6 +45,7 @@ import {
   scenePlaces,
 } from '../../contracts/iw.js';
 import { COMPANION_NPC_ID_BY_LANGUAGE, npcById } from '../../config/iwNpcs.js';
+import { findMetaLanguage } from './npcPrompt.js';
 
 /**
  * iw scene validation — PURE. No database, no HTTP, no model.
@@ -179,15 +180,34 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
   const wholeCell = (col: unknown, row: unknown): boolean =>
     Number.isInteger(col as number) && Number.isInteger(row as number);
 
+  /**
+   * Whether a cell carries the unwalkable mask (2026-09-19).
+   *
+   * A body authored onto one can never take a step — `planScenePath` returns null for a walk
+   * that STARTS off the walkable set — so every `walk_to_tag` it is ever asked to perform
+   * silently does nothing. Worth telling an author about, and a WARNING rather than a block
+   * for the usual reason: painting a wall before moving the NPC out of it is an ordinary
+   * half-finished edit, not a scene the row cannot hold.
+   */
+  const unwalkableCells = new Set<string>(
+    Array.isArray(scene.layout?.unwalkable) ? scene.layout.unwalkable : [],
+  );
+  const isWalled = (col: unknown, row: unknown): boolean =>
+    unwalkableCells.has(`${String(col)},${String(row)}`);
+
   if (!wholeCell(scene.playerStartCol, scene.playerStartRow)) {
     block('playerStartCol', 'The player start cell must be whole numbers');
   } else if (!onBoard(scene.playerStartCol, scene.playerStartRow)) {
     add('playerStartCol', 'The player start cell is off the board');
+  } else if (isWalled(scene.playerStartCol, scene.playerStartRow)) {
+    add('playerStartCol', 'The player starts on an unwalkable cell and could never move');
   }
   if (!wholeCell(scene.companionStartCol, scene.companionStartRow)) {
     block('companionStartCol', 'The companion start cell must be whole numbers');
   } else if (!onBoard(scene.companionStartCol, scene.companionStartRow)) {
     add('companionStartCol', 'The companion start cell is off the board');
+  } else if (isWalled(scene.companionStartCol, scene.companionStartRow)) {
+    add('companionStartCol', 'The companion starts on an unwalkable cell and could never move');
   }
   // Both bodies also face somewhere at scene open (migration 159). Checked exactly like a
   // cast member's `facing` below — the constraint is identical, only the storage differs.
@@ -326,6 +346,9 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
       const taken = occupied.get(key);
       if (taken) add(`${at}.col`, `Cell ${key} is already occupied by ${taken}`);
       else occupied.set(key, npc ? npc.name : 'another NPC');
+      if (isWalled(member.col, member.row)) {
+        add(`${at}.col`, `Cell ${key} is unwalkable, so this NPC could never move`);
+      }
     }
 
     if (!IW_FACINGS.includes(member?.facing as IWFacing)) {
@@ -447,6 +470,85 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
     eventIds,
   ));
 
+  // ── Authored speech (2026-09-07) ──────────────────────────────────────────
+  // LAST, and over the WHOLE scene at once, because it does not care where a line came from —
+  // only that it is a line, and that the runtime will refuse to speak it.
+  problems.push(...validateAuthoredLines(scene));
+
+  return problems;
+}
+
+/**
+ * The longest direction the runtime will send. Matches the controller's own slice.
+ *
+ * Not a style rule: `parseLineBody` truncates at 400 characters, so anything past that is
+ * silently not part of the intention the NPC is given.
+ */
+const MAX_DIRECTION_CHARS = 400;
+
+/**
+ * Authored `comment` text and conversation turns are DIRECTIONS, not lines (§ 14 Q42).
+ *
+ * ⚠️ **THIS RULE INVERTED ON 2026-09-07, AND THE HISTORY IS THE POINT.** For a few hours this
+ * function required every authored line to pass {@link guardNpcLine} — the runtime's own
+ * "would an NPC ever say this out loud" test — because PPE's "Get Dinner" was written in
+ * English and 王婶 was walking over, turning to face the learner and saying nothing, with
+ * nothing anywhere reporting it. That diagnosis was right and the remedy was wrong. The
+ * authored text was never meant to be spoken: it is piped through the model, which says
+ * something like it in Chinese, in character, knowing what has just been said. So English in
+ * a `comment` is now CORRECT, and a language rule here would reject the normal case.
+ *
+ * What is still worth checking is what a direction cannot be:
+ *
+ *   - **Empty** — caught where comments are validated, not here.
+ *   - **Longer than the runtime will send**, because the tail is silently dropped.
+ *   - **Written ABOUT the game.** A direction is rendered into layer 3 as the NPC's own
+ *     intention, so "tell the player they have completed the objective" puts the fiction's
+ *     own scaffolding inside the character's head — § 14 Q27's rule, arriving by a route Q27
+ *     did not anticipate. {@link findMetaLanguage} is the same lint used on NPC sheets.
+ *
+ * A WARNING, not an error: a half-written scene is a normal saved state (see this file's
+ * header), and an author typing a placeholder should not be blocked from saving.
+ */
+function validateAuthoredLines(scene: IWScene): IWSceneProblem[] {
+  const problems: IWSceneProblem[] = [];
+
+  const check = (field: string, text: unknown, who: string): void => {
+    const raw = str(text);
+    if (!raw.trim()) return;
+    if (raw.length > MAX_DIRECTION_CHARS) {
+      problems.push({
+        field,
+        message: `This direction is ${raw.length} characters; only the first ${MAX_DIRECTION_CHARS} reach ${who}. Say the intention in a sentence.`,
+      });
+    }
+    const meta = findMetaLanguage(raw);
+    if (meta.length) {
+      problems.push({
+        field,
+        message: `${who} is told this as their own intention, so it must not mention ${meta.join(', ')}. Write what they mean to say, in their world's terms.`,
+      });
+    }
+  };
+
+  (scene.npcCast ?? []).forEach((member, m) => {
+    const who = npcById(str(member?.npcId))?.name ?? str(member?.npcId) ?? 'This NPC';
+    (member?.actions ?? []).forEach((action, a) => {
+      (action?.steps ?? []).forEach((step, s) => {
+        if (step?.kind === 'comment') {
+          check(`npcCast[${m}].actions[${a}].steps[${s}].text`, (step as { text?: unknown }).text, who);
+        }
+      });
+    });
+  });
+
+  (scene.conversations ?? []).forEach((conv, c) => {
+    (conv?.turns ?? []).forEach((turn, t) => {
+      const who = npcById(str(turn?.npcId))?.name ?? str(turn?.npcId) ?? 'This speaker';
+      check(`conversations[${c}].turns[${t}].text`, turn?.text, who);
+    });
+  });
+
   return problems;
 }
 
@@ -467,11 +569,16 @@ function validateLayout(
     return [{ field: 'layout', message: 'Layout must be an object', severity: 'error' }];
   }
 
-  // Only the two terrain layers are cell lists now: a scene paints no walkability class
-  // (see IWSceneLayout's header — every cell is walkable unless blocking decor stands on it).
-  const masks: Array<keyof IWSceneLayout> = ['terrain1', 'terrain2'];
+  // The three cell-LIST masks. `unwalkable` joined them on 2026-09-19, when walkability
+  // stopped being derived from the objects on the board (see IWSceneLayout's header) — it is
+  // checked here exactly like a terrain layer because that is exactly what it is: a list of
+  // "col,row" cells. The facing mask is a MAP, so it is checked separately below.
+  const masks: Array<keyof IWSceneLayout> = ['terrain1', 'terrain2', 'unwalkable'];
   for (const mask of masks) {
     const cells = layout[mask];
+    // `unwalkable` is OPTIONAL (absent ⇒ an empty room; see IWSceneLayout), unlike the two
+    // terrain layers, which every save writes. Absent is not the same as malformed.
+    if (cells === undefined && mask === 'unwalkable') continue;
     if (!Array.isArray(cells)) {
       problems.push({ field: `layout.${mask}`, message: `${mask} must be a list of "col,row" cells` });
       continue;
@@ -500,6 +607,70 @@ function validateLayout(
     }
   } else if (layout.decor !== undefined) {
     problems.push({ field: 'layout.decor', message: 'Decor must be an object keyed by cell' });
+  }
+
+  // THE FACING MASK (2026-09-19): cell → one of the four compass facings. Both halves are
+  // checked — a cell key that cannot be parsed and a facing that is not a facing are equally
+  // invisible in the editor and equally survive every save, which is the whole reason this
+  // function exists. WARNINGS, not errors, and for the same reason the other masks' are: a
+  // half-built scene must stay saveable (2026-09-05), and an unreadable entry is simply
+  // dropped when the graph is built rather than breaking playback.
+  if (layout.forcedDirection && typeof layout.forcedDirection === 'object') {
+    for (const [cell, facing] of Object.entries(layout.forcedDirection)) {
+      const parsed = parseCellKey(cell);
+      if (!parsed) {
+        problems.push({ field: 'layout.forcedDirection', message: `"${cell}" is not a "col,row" cell` });
+      } else if (dimsOk && (parsed.col >= width || parsed.row >= height)) {
+        problems.push({ field: 'layout.forcedDirection', message: `Forced direction at ${cell} is off the board` });
+      }
+      if (!IW_FACINGS.includes(facing as IWFacing)) {
+        problems.push({
+          field: 'layout.forcedDirection',
+          message: `Forced direction at ${cell} is "${str(facing)}", not one of ${IW_FACINGS.join('/')}`,
+        });
+      }
+    }
+    // A cell that is both impassable and facing-forced is contradictory rather than broken:
+    // nobody can settle there, so the facing can never fire. `buildSceneGraph` drops it; the
+    // author is told, because the likely cause is a wall painted over a stool they meant to keep.
+    const blocked = new Set(Array.isArray(layout.unwalkable) ? layout.unwalkable : []);
+    for (const cell of Object.keys(layout.forcedDirection)) {
+      if (blocked.has(cell)) {
+        problems.push({
+          field: 'layout.forcedDirection',
+          message: `${cell} is both unwalkable and facing-forced — nobody can stand there, so the facing never applies`,
+        });
+      }
+    }
+  } else if (layout.forcedDirection !== undefined) {
+    problems.push({ field: 'layout.forcedDirection', message: 'Forced directions must be an object keyed by cell' });
+  }
+
+  // Placed FURNITURE. Structure + on-board foot cell only: the server cannot import the
+  // client's lumeish manifest (`src/engine/` is outside the server's Docker build context, the
+  // same constraint that forces `server/dal/shared/placeholderArea.ts` to mirror its shape), so
+  // it cannot know a sprite's iso SPAN and therefore cannot check that the far corner of a
+  // multi-cell piece is on the board. The editor refuses that at placement time; this catches
+  // the shapes a hand-edited jsonb could hold, which nothing renders and every save preserves.
+  if (Array.isArray(layout.furniture)) {
+    for (const piece of layout.furniture) {
+      if (!piece || typeof piece !== 'object'
+        || typeof piece.col !== 'number' || typeof piece.row !== 'number'
+        || typeof piece.id !== 'number') {
+        problems.push({ field: 'layout.furniture', message: 'A furniture piece is not a {col,row,id} record' });
+        continue;
+      }
+      if (!Number.isInteger(piece.col) || !Number.isInteger(piece.row)
+        || piece.col < 0 || piece.row < 0
+        || (dimsOk && (piece.col >= width || piece.row >= height))) {
+        problems.push({
+          field: 'layout.furniture',
+          message: `Furniture #${piece.id} stands off the board at ${piece.col},${piece.row}`,
+        });
+      }
+    }
+  } else if (layout.furniture !== undefined) {
+    problems.push({ field: 'layout.furniture', message: 'Furniture must be a list of {col,row,id} records' });
   }
 
   // Named places (§ 14 Q42). Read through `scenePlaces` rather than off `layout.places`, so
@@ -645,6 +816,44 @@ function validateNpcActions(
             problems.push({ field: `${stepAt}.text`, message: 'Say what, roughly? The NPC paraphrases this.' });
           } else if (text.length > IW_MAX_ACTION_COMMENT_LENGTH) {
             problems.push({ field: `${stepAt}.text`, message: `Must be ≤ ${IW_MAX_ACTION_COMMENT_LENGTH} characters` });
+          }
+          break;
+        }
+        case 'prompt_npc': {
+          // THE ONE STEP THAT NAMES ITS OWN SUBJECT, so it is the one step where "who" can be
+          // wrong in two places. Both are the silent failure this file exists to catch: a cue
+          // aimed at somebody who is not in the scene is a beat that simply never happens,
+          // with nothing on screen to say why.
+          const speaker = str((step as { npcId?: unknown }).npcId).trim();
+          if (!speaker) {
+            problems.push({ field: `${stepAt}.npcId`, message: 'Pick who is prompted to speak' });
+          } else if (speaker === selfNpcId) {
+            // Expressible already, and better, as a `comment`: an NPC saying something itself
+            // is the step this feature started with. Two ways to write one beat is the thing
+            // worth refusing, not the beat.
+            problems.push({ field: `${stepAt}.npcId`, message: 'To make this NPC speak, use a Say step' });
+          } else if (!actorIds.has(speaker)) {
+            problems.push({ field: `${stepAt}.npcId`, message: `"${speaker}" is not in this scene` });
+          } else if (speaker === IW_ACTOR_PLAYER) {
+            // The learner is a legal ADDRESSEE and never a speaker — putting words in their
+            // mouth is the one thing the whole feature is built not to do.
+            problems.push({ field: `${stepAt}.npcId`, message: 'The learner speaks for themselves — they cannot be prompted' });
+          }
+
+          // An omitted target is a real authoring choice (the model picks whom), so only a
+          // target that was PICKED and is wrong is a problem.
+          const target = str((step as { target?: unknown }).target).trim();
+          if (target && !actorIds.has(target)) {
+            problems.push({ field: `${stepAt}.target`, message: `"${target}" is not in this scene` });
+          } else if (target && target === speaker) {
+            problems.push({ field: `${stepAt}.target`, message: 'Nobody is prompted to talk to themselves' });
+          }
+
+          // Same for the brief: omitted means the model decides the content. Only a runaway
+          // one is refused, on the same grounds `ai_walk`'s is — it reaches a prompt.
+          const brief = str((step as { instruction?: unknown }).instruction);
+          if (brief.length > IW_MAX_ACTION_INSTRUCTION_LENGTH) {
+            problems.push({ field: `${stepAt}.instruction`, message: `Must be ≤ ${IW_MAX_ACTION_INSTRUCTION_LENGTH} characters` });
           }
           break;
         }

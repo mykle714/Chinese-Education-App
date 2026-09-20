@@ -116,7 +116,6 @@ at `:root`. This is what each reaches.
 |---|---|---|
 | Every `FONTS.cjk` call site under the container | ✅ | Custom properties inherit. |
 | `CPCDRow`'s pinyin-shift measurement | ✅ | It measures a `Range` over its own **in-DOM** nodes, so it measures the candidate. |
-| `measureTabWidth` (`features/flashcards/FlashcardsLearnPage/useEipTabs.ts`) | ❌ scoped / ✅ `:root` | It appends a probe span to `document.body`, outside any scoped container. |
 | `FONTS.hanziComponents` | ❌ by design | The self-hosted `HanziComponents` subset is keyed to Noto Sans SC's metrics; the seamless per-glyph fallback breaks if either half moves. **Left pinned regardless of what `FONTS.cjk` becomes** — see `src/index.css`. |
 
 ---

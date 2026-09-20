@@ -18,7 +18,6 @@ import type { FlpForeignTrack } from "../../../../server/contracts/wire";
 // Face steering — which language Side 1 shows, and which mark type that face writes.
 // Pure util so the cooldown gate + weaker-track bias can be tested without the hook.
 import { markTypeForSideOne, sideOneForCard } from "../../../utils/flpFaceSteering";
-import { useMarkArpeggio } from "../../../hooks/useMarkArpeggio";
 
 // Minimal contract the working loop needs from the card-drag layer. Passed as a
 // ref so this hook can read the latest flip value (for undo snapshots) and drive
@@ -110,12 +109,6 @@ export function useWorkingLoop({
     prefetch,
     cardDragRef,
 }: UseWorkingLoopArgs): UseWorkingLoopReturn {
-    // Start (and leave) the session on the low C. This lives on the working loop
-    // rather than on FlashcardsLearnPage because the loop is what marks: one mount
-    // per study session, which is exactly the span the arpeggio describes
-    // (src/services/audio/markArpeggio.ts).
-    useMarkArpeggio();
-
     // Which collection this session was launched from (docs/DECKS_FEATURE.md) — null
     // for an ordinary launch from the Review/Study/Challenge buttons. Read from the flp's own
     // URL, and threaded into BOTH the initial loop fetch and every mark call (which
@@ -294,11 +287,6 @@ export function useWorkingLoop({
                 // mark itself is typed by `type` above.
                 foreignTrack,
                 ...collectionMarkFields(launchCollection),
-            }, {
-                // The learner swiped ONCE. A retry is this function re-entering after a
-                // network failure, not a new answer, so it must not sound a second note
-                // (which would also walk the arpeggio up four steps for one swipe).
-                silent: retryCount > 0,
             });
 
             // A SUPPRESSED mark (the card's track had not finished cooling —

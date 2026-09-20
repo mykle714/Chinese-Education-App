@@ -39,7 +39,6 @@ import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 import { countPinyinRevealSteps } from "./pinyinUnits";
 import { countComponentUnits } from "./componentUnits";
 import type { BonusWord, PlacedWord, WordSearchResponse } from "./types";
-import { useMarkArpeggio } from "../../hooks/useMarkArpeggio";
 
 type Phase = "loading" | "blocked" | "playing" | "won";
 
@@ -112,9 +111,6 @@ const WordSearchPage: React.FC = () => {
 
     // An edge swipe would navigate away mid-drag; block it while mounted.
     useBlockEdgeSwipe(true);
-    // Start (and leave) this screen on the low C: the answer-feedback arpeggio
-    // describes a streak within one surface (src/services/audio/markArpeggio.ts).
-    useMarkArpeggio();
 
     // No mode chosen (direct URL / stray nav) — bounce back to the Games hub,
     // where the player picks Pinyin vs No Pinyin. Runs before any board loads.
@@ -609,17 +605,12 @@ const WordSearchPage: React.FC = () => {
         //
         // excludeIds defaults to []: the game doesn't use the replacement card the
         // endpoint returns, so there's nothing to dedupe against.
-        markTypes.forEach((type, i) => {
+        markTypes.forEach((type) => {
             markFlashcard({
                 cardId: word.id,
                 isCorrect: true,
                 type,
                 surface: "word-search",
-            }, {
-                // One find is one answer, so only the first of the two posts sounds the
-                // feedback note — otherwise a No-Pinyin find plays two notes at once and
-                // skips a rung of the arpeggio (src/services/audio/markArpeggio.ts).
-                silent: i > 0,
             }).catch((err) => console.error(`[WordSearch] ${type} mark failed → card ${word.id}:`, err));
         });
         // No `token` dep — markFlashcard reads the header at call time, so this

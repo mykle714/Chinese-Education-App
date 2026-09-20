@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
     Box, TextField, IconButton, Typography, Button, Menu, MenuItem,
     Dialog, DialogTitle, DialogContent, DialogActions, ListItemIcon,
@@ -25,6 +25,7 @@ import {
     type CollectionRef, collectionTitle, withCollectionParams, parseBuiltinCollection,
     builtinCollectionRef, lensFromCollection, lensFromSearch, withLens,
 } from "./collectionRef";
+import { readBackSnapshot, saveBackSnapshot } from "./backRestore";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
@@ -65,6 +66,10 @@ const CollectionViewPage: React.FC = () => {
     const params = useParams();
     const [searchParams] = useSearchParams();
     const { user, isAuthenticated } = useAuth();
+    // Back restore (backRestore.ts): this history entry's snapshot, if the learner left
+    // it for a card. Read once per mount; every piece of state below seeds from it.
+    const { key: locationKey } = useLocation();
+    const [restored] = useState(() => readBackSnapshot("collection", locationKey));
 
     // Which collection is this? Derived from the route, so the two routes share
     // every line below. `deckId` is NaN-guarded because the segment is user-typed.
@@ -72,17 +77,17 @@ const CollectionViewPage: React.FC = () => {
     const deckId = params.id ? parseInt(params.id, 10) : NaN;
     const isDeck = Number.isInteger(deckId) && deckId > 0;
 
-    const [entries, setEntries] = useState<VocabEntry[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [entries, setEntries] = useState<VocabEntry[]>(() => restored?.entries ?? []);
+    const [loading, setLoading] = useState(() => restored === undefined);
     const [error, setError] = useState<string | null>(null);
     // A deck's name isn't in the URL, so it arrives with the deck list. Held in
     // state (not derived) because renaming updates it without a refetch.
-    const [deckName, setDeckName] = useState<string | null>(null);
+    const [deckName, setDeckName] = useState<string | null>(() => restored?.deckName ?? null);
     // Client-side search over the loaded collection. Supports the same query
     // formats as the dictionary search bars (CJK / numbered pinyin / toneless
     // pinyin / English) via filterVocabEntries — no network round trip, since the
     // collection is already in memory.
-    const [searchInput, setSearchInput] = useState("");
+    const [searchInput, setSearchInput] = useState(() => restored?.searchInput ?? "");
     // Client-side ordering over the loaded collection (src/utils/vocabSort.ts). Held
     // per-visit rather than persisted: it is a way of LOOKING at the set, not a
     // property of it, and a collection always opens in its natural order.
@@ -91,10 +96,11 @@ const CollectionViewPage: React.FC = () => {
     // (it needs `collection`), so the initializer re-reads the URL rather than closing
     // over it — a one-time cost on mount, and the load effect re-applies it anyway.
     const [sortKey, setSortKey] = useState<VocabSortKey>(
-        () => defaultSortKey(isDeck, lensFromSearch(new URLSearchParams(window.location.search)))
+        () => restored?.sortKey
+            ?? defaultSortKey(isDeck, lensFromSearch(new URLSearchParams(window.location.search)))
     );
     // Whether this deck was generated for the user rather than authored by them.
-    const [deckIsPreset, setDeckIsPreset] = useState(false);
+    const [deckIsPreset, setDeckIsPreset] = useState(() => restored?.deckIsPreset ?? false);
     // Anchor for the deck-only overflow menu (rename / delete).
     const [deckMenuAnchor, setDeckMenuAnchor] = useState<HTMLElement | null>(null);
     const [renameOpen, setRenameOpen] = useState(false);
@@ -133,17 +139,28 @@ const CollectionViewPage: React.FC = () => {
     // The three sources are three different endpoints, but all return the SAME
     // enriched VocabEntry[] shape — which is the whole reason one page can render
     // them (see DeckService.listDeckCards).
+    // Which collection the Back snapshot was taken on. The load effect compares against
+    // this rather than consuming a one-shot flag, so React's dev double-invoke of effects
+    // cannot spend the restore on its throwaway first run and reset the sort on the real one.
+    const restoredCollectionRef = useRef(restored ? `${isDeck}:${deckId}:${builtin}:${lens}` : null);
+
     useEffect(() => {
         let cancelled = false;
+        // A Back-restored visit to the SAME collection refreshes silently: the cached
+        // cards stay on screen (no spinner under the restored scroll) and the learner's
+        // chosen sort is kept rather than reset to the default.
+        const isRestoredRefresh = restoredCollectionRef.current === `${isDeck}:${deckId}:${builtin}:${lens}`;
 
         const load = async () => {
             try {
-                setLoading(true);
                 setError(null);
-                // A different collection opens in ITS natural order — the routes for
-                // a deck and a built-in collection render this same component, so
-                // React can reuse the instance and carry a stale key across.
-                setSortKey(defaultSortKey(isDeck, lens));
+                if (!isRestoredRefresh) {
+                    setLoading(true);
+                    // A different collection opens in ITS natural order — the routes for
+                    // a deck and a built-in collection render this same component, so
+                    // React can reuse the instance and carry a stale key across.
+                    setSortKey(defaultSortKey(isDeck, lens));
+                }
 
                 let cards: VocabEntry[] = [];
                 if (isDeck) {
@@ -194,10 +211,44 @@ const CollectionViewPage: React.FC = () => {
     }, [isAuthenticated, isDeck, deckId, builtin, lens]);
 
     // Stable tap handler so the memoized cards don't all re-render on parent renders.
+    // ── Back restore: remember, and put the scroll back ───────────────────────
+    // This page scrolls inside NodePage's MobileTabScreen, which does not hand out its
+    // scroller, so it is found by class from an element that is always rendered.
+    const launchRowRef = useRef<HTMLDivElement | null>(null);
+    const findScroller = () =>
+        launchRowRef.current?.closest<HTMLElement>(".mobile-tab-screen__scroll") ?? null;
+
+    // Ref-held so `handleCardClick` stays stable for the memoized cards while still
+    // reading this render's state.
+    const rememberPlace = () => {
+        saveBackSnapshot("collection", locationKey, {
+            entries, searchInput, sortKey, deckName, deckIsPreset,
+            scrollTop: findScroller()?.scrollTop ?? 0,
+        });
+    };
+    const rememberPlaceRef = useRef(rememberPlace);
+    rememberPlaceRef.current = rememberPlace;
+
+    // Once, on mount. The grid is at full height on the first frame (cached entries +
+    // `revealImmediately`), so the offset is reachable; re-applied a frame later in case
+    // the page surface settles its own layout after this effect.
+    useLayoutEffect(() => {
+        const target = restored?.scrollTop;
+        const scroller = findScroller();
+        if (!target || !scroller) return;
+        scroller.scrollTop = target;
+        requestAnimationFrame(() => { if (scroller.isConnected) scroller.scrollTop = target; });
+        // Mount-only by design: a restore must never fight the learner's own scrolling.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const handleCardClick = useCallback(
         // The lens rides along, so a card opened from a Center's collection still shows
         // that skill's bar on its detail page.
-        (entry: VocabEntry) => slideNavigate(withLens(`/flashcards/card/${entry.id}`, lens)),
+        (entry: VocabEntry) => {
+            rememberPlaceRef.current();
+            slideNavigate(withLens(`/flashcards/card/${entry.id}`, lens));
+        },
         [slideNavigate, lens]
     );
 
@@ -290,7 +341,7 @@ const CollectionViewPage: React.FC = () => {
             {/* Launch row — the FIRST thing on the page, per the feature's brief:
                 from any collection you can drop straight into any surface with
                 exactly these cards. */}
-            <Box className="collection-view__launch" sx={{ width: 364, maxWidth: "100%", px: 3.5, pt: 1.5 }}>
+            <Box ref={launchRowRef} className="collection-view__launch" sx={{ width: 364, maxWidth: "100%", px: 3.5, pt: 1.5 }}>
                 <Button
                     className="collection-view__launch-button"
                     fullWidth
@@ -358,6 +409,8 @@ const CollectionViewPage: React.FC = () => {
                 entries={visibleEntries}
                 emptyMessage={emptyMessage}
                 onCardClick={handleCardClick}
+                // A Back-restored visit paints its final grid at once (backRestore.ts).
+                revealImmediately={restored !== undefined}
                 // Every card carries exactly this collection's bar — one strip, badged
                 // by that bar's band. Under `core` (the usual case) that is recognition
                 // and production only; reading and writing live in their Centers.

@@ -9,6 +9,12 @@ interface VelocityResult {
     windowDays: number;
     /** Per-language breakdown; languages with zero promotions are absent. */
     byLanguage: Record<string, number>;
+    /**
+     * `velocity` split per band boundary (see `VelocityResponse.boundaryCounts`).
+     * Undefined until the fetch settles — the card then skips the breakdown row
+     * rather than drawing three zeroes it has not confirmed.
+     */
+    boundaryCounts?: number[];
     /** False until the first fetch settles, so the caller can reserve space. */
     loaded: boolean;
 }
@@ -51,6 +57,7 @@ export function useVelocity(): VelocityResult {
         velocity: data?.velocity ?? 0,
         windowDays: data?.windowDays ?? 7,
         byLanguage: data?.byLanguage ?? {},
+        boundaryCounts: data?.boundaryCounts,
         loaded,
     };
 }

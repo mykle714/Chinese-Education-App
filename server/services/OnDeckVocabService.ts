@@ -1757,11 +1757,17 @@ export class OnDeckVocabService {
       // bearing has to be stated by the caller, not guessed from the shape of what it
       // asked for.
       //
-      // The length-1 inference is kept underneath as a backstop for any future caller
-      // that asks for a single bucket without knowing about the flag; a single-bucket
-      // request is unambiguous in a way a subset request is not.
+      // THE FLAG IS THE ONLY WAY IN (2026-09-13). A length-1 inference used to sit
+      // underneath as a "backstop" for single-bucket callers, and it turned out to have
+      // a real, unintended caller: Match Speed's buffer top-up omits every bucket that
+      // is already full (`topUpQuery`), so a learner with one Unfamiliar card routinely
+      // sent `?Unfamiliar=5` alone. The backstop read that as strict, skipped tier 2 and
+      // the fallback half of tiers 3–4, came back short, and fell straight through to
+      // tier 5 — LENDING to an account with ~700 sorted cards it could have borrowed
+      // from. The rule is: a non-strict request borrows across buckets before it lends,
+      // however many buckets it happened to name.
       const requested = Object.keys(distribution);
-      const substituting = !opts.strictBuckets && requested.length > 1;
+      const substituting = !opts.strictBuckets;
       const fallbackOrder = substituting ? OnDeckVocabService.GAME_FALLBACK_ORDER : requested;
       const lastResortOrder = substituting
         ? [...requested, ...OnDeckVocabService.GAME_FALLBACK_ORDER]

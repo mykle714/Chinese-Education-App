@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
 import { userController, userMinutePointsController, winsController, velocityController, userProfileController } from '../dal/setup.js';
 import { handle } from './asyncHandler.js';
+import { isFeatureEnabled } from '../contracts/featureFlags.js';
 
 /**
  * User routes — /api/users/* (profile, minute points, game wins, velocity)
@@ -59,7 +60,15 @@ router.get('/api/users/me/velocity', authenticateToken, handle(velocityControlle
 router.get('/api/users/:userId/profile', authenticateToken, handle(userProfileController.getProfile, userProfileController));
 
 // One keyset page of that account's card designs: ?after=<last entryKey>&limit=
-router.get('/api/users/:userId/designs', authenticateToken, handle(userProfileController.getDesigns, userProfileController));
+//
+// This is the SECOND half of the community gate (server/contracts/featureFlags.ts):
+// sharing designs is community, and this endpoint serves them from outside
+// communityRoutes.ts, so not mounting that router would otherwise leave it live. Only
+// the SHARING is gated — authoring your own icon layouts is untouched by the flag
+// (docs/CARD_ICON_LAYOUT.md).
+if (isFeatureEnabled('community')) {
+    router.get('/api/users/:userId/designs', authenticateToken, handle(userProfileController.getDesigns, userProfileController));
+}
 
 // Get user by ID (kept after the literal paths above)
 router.get('/api/users/:id', authenticateToken, handle(userController.getUserById, userController));

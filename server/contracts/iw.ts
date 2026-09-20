@@ -1,3 +1,5 @@
+import type { SegmentMetadata } from './wire.js';
+
 /**
  * iw.ts — the client↔server contract for the Immersive World (iw) SCENE, plus the
  * closed action vocabulary a scene's completion pair is drawn from.
@@ -218,6 +220,45 @@ export const IW_DEFAULT_EMOTE: IWEmote = 'neutral';
  */
 export const IW_NO_ACTION = 'none';
 
+/**
+ * How loudly the learner said it (2026-09-07).
+ *
+ * ⚠️ **THIS IS THE HEARING GATE COMING BACK, DELIBERATELY REBUILT AS A CHOICE.** § 4 removed
+ * an earshot model on three findings, and the volume toggle answers all three rather than
+ * overruling them:
+ *
+ * 1. *It never gated memory.* This one does — an NPC out of range does not get the line in
+ *    its transcript, so it cannot use tomorrow what it could not hear today.
+ * 2. *Its failure was invisible* — silence looked identical to an NPC choosing not to answer.
+ *    Now the learner SET the range, one control, one press ago, and the banner names it.
+ * 3. *A scene is small, so the geometry was almost always trivially satisfied.* True, and it
+ *    is why the old automatic model bought nothing. A volume the learner picks is not a
+ *    simulation of distance — it is an INTENTION, and 悄悄说 to one person at a table of four
+ *    is a thing a learner means to do rather than a thing the room does to them.
+ *
+ * What is NOT coming back is occlusion: no line-of-sight walk, no stall counted as a wall.
+ * That was the half of the old model whose failures were unexplainable to a player.
+ */
+export const IW_VOLUMES = ['whisper', 'talk', 'shout'] as const;
+export type IWVolume = (typeof IW_VOLUMES)[number];
+
+/**
+ * How far an ordinary speaking voice carries, in Chebyshev cells.
+ *
+ * Inherited from the deleted `hearing.ts`, where it was `HEARING_RADIUS.talk`. A one-room
+ * stall is rarely wider than this, which is the point: `talk` is the volume that behaves the
+ * way the scene did before there were volumes at all, so a learner who never touches the
+ * toggle notices nothing.
+ */
+export const IW_TALK_RADIUS = 5;
+
+/** How the composer labels each volume, and what it tells the NPC in layer 3. */
+export const IW_VOLUME_LABELS: Record<IWVolume, string> = {
+  whisper: 'Whisper',
+  talk: 'Say',
+  shout: 'Shout',
+};
+
 /** The four facings a placed body can be authored with. Mirrors the engine's `Direction`. */
 export const IW_FACINGS = ['n', 'e', 's', 'w'] as const;
 export type IWFacing = (typeof IW_FACINGS)[number];
@@ -263,22 +304,26 @@ export const IW_PLAYER_AVATAR: IWAvatar = 'female';
  * night market, and this is a starting point rather than a contract, chosen because that
  * editor is the only layout authoring tool that exists today.
  *
- * ⚠️ **THERE ARE NO WALKABILITY MASKS HERE** (2026-09-05). `street` and `communal` — the
- * night market's two mutually-exclusive walkable classes — were removed, because a scene
- * inverts that model: **every in-bounds cell is walkable**, and the only thing that makes a
- * cell impassable is a BLOCKING asset standing on it (a tree or a common prop; see
- * `farmTerrain.isBlockingDecorUrl`). Flush family decor and planks stay walkable.
+ * ⚠️ **WALKABILITY IS PAINTED, AND IT IS THE INVERSE OF THE NIGHT MARKET'S** (2026-09-19).
+ * `street` and `communal` — the nme's two mutually-exclusive WALKABLE classes — are not here
+ * and never will be: a scene is a small enclosed place a learner moves around in, so its
+ * walkable set is nearly everything and painting it would be busywork an author could
+ * silently get wrong. A scene paints the exceptions instead, in {@link unwalkable}.
  *
- * The reason the inversion is right: the night market is mostly not-walkable (stalls and
- * terrain) with paths carved through it, so painting the walkable set is the cheap
- * description. A scene is a small enclosed place a learner moves around in — a shop floor,
- * a courtyard — so the walkable set is nearly everything and painting it would be busywork
- * that an author could silently get wrong, stranding an NPC on an unpainted cell.
+ * ⚠️ **AND IT IS NO LONGER DERIVED FROM THE OBJECTS ON THE BOARD** (2026-09-19). Between
+ * 2026-09-05 and this change a scene had no walkability mask at all: a cell was impassable
+ * iff it carried BLOCKING decor (a tree or a common prop; `farmTerrain.isBlockingDecorUrl`).
+ * That coupling made two ordinary things impossible — a wall with no sprite, and a tree the
+ * learner may walk under — so the mask is authored now, and the editor merely STAMPS it as a
+ * convenience when a blocking prop or a furniture piece is dropped (`useIWSceneDraft`).
  *
- * Consequences: `walk_to_tag` and every other movement step path over
- * `{all cells} − {cells with blocking decor}`, nothing in the editor paints walkability, and
- * a layout jsonb written before this change may still carry `street`/`communal` keys — they
- * are ignored on read and dropped on the next save (jsonb, so no migration).
+ * ⚠️ **THIS WAS A HARD CUTOVER, WITH NO READ-TIME FALLBACK.** A layout written before
+ * 2026-09-19 carries no `unwalkable` key, so its trees and props stop blocking and its board
+ * comes back fully walkable — deliberately, by the author's decision: the handful of
+ * existing scenes are being repainted by hand rather than carrying a derivation forever. If
+ * a scene suddenly lets the learner walk through the furniture, this is why; open it in the
+ * editor, repaint, save. (A layout may also still carry dead `street`/`communal` keys from
+ * before 2026-09-05; they are ignored on read and dropped on the next save.)
  */
 export interface IWSceneLayout {
   /** Terrain-1 mask cells, each "col,row". */
@@ -287,6 +332,60 @@ export interface IWSceneLayout {
   terrain2: string[];
   /** Per-cell decor: "col,row" → decor sprite stem. */
   decor: Record<string, string>;
+  /**
+   * THE WALKABILITY MASK: cells nobody — learner, companion or cast — may stand on or walk
+   * through. Each `"col,row"`, as in {@link terrain1}.
+   *
+   * A LIST rather than a map because a cell either is or is not in it; there is no per-cell
+   * value to carry. It is the ONLY thing that makes a scene cell impassable
+   * (`src/engine/iw/sceneGraph.ts` → `buildSceneGraph`), so a body can be authored to stand
+   * under a tree and a corridor can be walled off with nothing drawn in it.
+   *
+   * OMITTED ⇒ EVERY CELL IS WALKABLE. That is not only the pre-2026-09-19 scene's fate (see
+   * the header) but also the honest default for a brand-new board: an empty room.
+   */
+  unwalkable?: string[];
+  /**
+   * THE FACING MASK: `"col,row"` → the compass facing forced on whoever SETTLES on that cell.
+   * A stool that faces a counter, a spot in front of a window, the cushion at a low table.
+   *
+   * A MAP, not a list, because each cell carries a value — which is also why it is shaped
+   * like {@link decor} rather than like {@link unwalkable}.
+   *
+   * The three rules, all enforced in `sceneGraph`:
+   *   • a forced cell IS walkable — it is a legal destination (tap it, or `walk_to_tag` it)
+   *     and a legal cell to start a walk from;
+   *   • it is expensive to walk THROUGH — `FORCED_TILE_COST` ordinary steps — so a body
+   *     detours around it when the detour is short and cuts through when it is not;
+   *   • only SETTLING turns a body. Passing through leaves the facing alone; standing there
+   *     pins it (`sceneActor.forcedFacingFor`), so a later tap cannot turn the body away
+   *     while it stands on the tile.
+   *
+   * A facing on an unwalkable cell is dropped when the graph is built: nobody can settle
+   * there, so the rule could never fire. The editor allows the overlap because the two are
+   * independent paint layers.
+   *
+   * OMITTED ⇒ no cell forces a facing, which is every scene authored before 2026-09-19.
+   */
+  forcedDirection?: Record<string, IWFacing>;
+  /**
+   * PLACED FURNITURE — multi-cell props from the lumeish pack, each `{col, row, id}` anchored
+   * at its near (min-iso) foot cell.
+   *
+   * A LIST, not a per-cell map like {@link decor}: a piece spans several cells, so a map keyed
+   * by cell could not tell two abutting pieces apart. `id` is the pack's manifest id (also the
+   * normalized file's name) — the durable key, since asset URLs are fingerprinted per build,
+   * the same reason `decor` stores stems. A placement whose id the pack no longer ships is
+   * dropped on load.
+   *
+   * Lives in `layout` for the same reason `places` does: it is board data, in the same sense a
+   * decor cell is, so it needs no migration (jsonb).
+   *
+   * OMITTED ⇒ no furniture, which is every scene authored before the Furniture tool.
+   * Client mirror: `FurniturePlacement` in `src/engine/market/furniture.ts`; the placement
+   * rules live there, and docs/LUMEISH_ASSET_PIPELINE.md § 6b describes them.
+   */
+  furniture?: { col: number; row: number; id: number }[];
   /**
    * NAMED PLACES: an author-chosen tag ("water station", "counter") → the ONE cell it names,
    * as "col,row".
@@ -405,9 +504,15 @@ export interface IWSceneCastMember {
  * author. The answer space is closed — the scene's own places and bodies — so the model
  * supplies a CHOICE among authored referents, never a new capability and never a route.
  * Anything that would need the engine to invent a referent still fails the test.
+ *
+ * `prompt_npc` (2026-09-19) passes it the way `comment` does: rendering a line is something
+ * the engine already knows how to do for any body in the cast, and the step merely says which
+ * body and, optionally, to whom. What it BREAKS is a different invariant worth naming — that
+ * a step's subject is the performer — which is why it carries an explicit `npcId`.
  */
 export const IW_ACTION_STEP_KINDS = [
   'comment',
+  'prompt_npc',
   'walk_to_tag',
   'ai_walk',
   'walk_to_actor',
@@ -424,6 +529,7 @@ export type IWActionStepKind = (typeof IW_ACTION_STEP_KINDS)[number];
 /** Human labels for the step kinds — one source of truth for the editor's picker. */
 export const IW_ACTION_STEP_LABELS: Record<IWActionStepKind, string> = {
   comment: 'Say',
+  prompt_npc: 'Prompt an NPC to speak',
   walk_to_tag: 'Walk to place',
   ai_walk: 'Walk (AI picks where)',
   walk_to_actor: 'Walk to person',
@@ -467,6 +573,62 @@ export type IWActionStep =
    * day 12 does not read like day 11. It is the only step that is not executed verbatim.
    */
   | { kind: 'comment'; text: string }
+  /**
+   * Make a DIFFERENT NPC speak, now (2026-09-19).
+   *
+   * ⚠️ **THE FIRST STEP WHOSE SUBJECT IS NOT THE PERFORMER**, and that is the whole reason it
+   * needs `npcId` when `comment` does not. Every other step in this union is written from
+   * inside one NPC — "walk to the counter" means *this NPC walks*, because an action hangs off
+   * a cast entry. This one hands the floor to somebody else for one line, which is what an
+   * author reaches for when a script is a little scene rather than one body's behaviour: 王婶
+   * calls the order through and the kitchen answers, without the answer having to be a whole
+   * second action that something else has to choose.
+   *
+   * ⚠️ **IT IS A CUE, NOT A LINE, AND IT COSTS A MODEL CALL** — the third step that does,
+   * after `comment` and `ai_walk`. Nothing here is ever spoken as written: the prompted NPC
+   * renders the beat in its own register, out of its own mood and memory, exactly as a
+   * `comment` does for the performer.
+   *
+   * WHY IT IS NOT A `comment` HUNG OFF THE OTHER NPC'S OWN ACTION. It could be — author a
+   * one-step `interactionOnly` action on the kitchen hand and have nothing point at it — and
+   * that is strictly worse in the way § 14 Q43 already documents: an action authored purely to
+   * be triggered clutters a repertoire the model reasons about, and the reply to a cue is not
+   * an intention anybody would ever CHOOSE. A cue is not a behaviour.
+   */
+  | {
+      kind: 'prompt_npc';
+      /**
+       * WHO IS MADE TO SPEAK. Required, and never the performer — an NPC that wants to say
+       * something itself has `comment`, and the validator refuses the self-case rather than
+       * leaving two ways to write one beat.
+       */
+      npcId: string;
+      /**
+       * WHOM THEY ADDRESS, as an actor id ({@link IW_ACTOR_PLAYER}, {@link IW_ACTOR_COMPANION}
+       * or a cast npcId) — the same closed vocabulary an actor-aimed step names.
+       *
+       * ⚠️ **OMITTED IS A REAL AUTHORING CHOICE, NOT A BLANK.** It means *the model decides
+       * whom this is aimed at*, which is the honest answer whenever the right addressee
+       * depends on who is standing where by the time the cue lands. It is NOT "the room":
+       * a line to nobody in particular is what an unbriefed cue with no target already
+       * produces, and the model is told to pick a person when it can.
+       */
+      target?: string;
+      /**
+       * The author's brief for WHAT gets said — "press them about the bill" — in the same
+       * register as `ai_walk`'s and an action's `when`.
+       *
+       * ⚠️ **NEVER SPOKEN VERBATIM**, for the reason the whole render path exists: it is
+       * English prose about a character, and putting it on screen is the exact leak
+       * `lineRender.ts` was built to close.
+       *
+       * Omitted means the model decides the content too, from character and turn context
+       * alone. So an empty `prompt_npc` is the minimal cue the feature has — *somebody say
+       * something now* — and an author fills in as much of the WHAT and the WHO as the moment
+       * actually pins down.
+       */
+      instruction?: string;
+    }
   /** Path to the nearest cell adjacent to a cell tagged `tag`, then face it. */
   | { kind: 'walk_to_tag'; tag: string }
   /**
@@ -516,6 +678,35 @@ export type IWActionStep =
    * same question, *who*.
    */
   | { kind: IWActorStepKind; actor: string };
+
+/**
+ * One spoken line, segmented for the tap-to-look-up popup (§ 5.3b).
+ *
+ * ⚠️ **THIS IS THE EST'S `SentenceData`, DELIBERATELY.** The field names are
+ * `SegmentedSentenceDisplay`'s, not names of iw's own choosing, because the whole point is
+ * that a bubble hands its line to the SAME component an example sentence does — one popup,
+ * one drill chain, one set of tone colours. A shape of iw's own would need a translation
+ * layer whose only job is to undo the difference.
+ *
+ * `segments` is an in-order partition of `foreignText`: the display walks a cursor across
+ * `[...foreignText]` and consumes each segment's length, so a gap or an overlap silently
+ * shifts every popup after it. Non-target-language stretches ride along as single-character
+ * segments carrying no metadata, which keeps the partition exact without making punctuation
+ * or a stray Latin word tappable.
+ */
+export interface IWLineSegments {
+  foreignText: string;
+  segments: string[];
+  /** Keyed by segment text. Absent key = that segment has no dictionary answer. */
+  /**
+   * ⚠️ **THE EST'S OWN TYPE, NOT AN IW COPY OF IT.** This was briefly a near-duplicate
+   * (`IWSegmentMeta`) that had already drifted — it omitted `wordForms` and typed the drill
+   * chain as `unknown[]`, which made a bubble's metadata structurally unassignable to the very
+   * component § 5.3b exists to reuse. A second declaration of a shared shape is a second thing
+   * to keep in step; there is one, and it lives in `wire.ts` beside the pipeline that fills it.
+   */
+  segmentMetadata: SegmentMetadata;
+}
 
 /** The two non-NPC bodies a `walk_to_actor` step may target. */
 export const IW_ACTOR_PLAYER = 'player';
@@ -941,4 +1132,75 @@ export interface IWNpcOption {
    * without one, the character has no idea what it would be agreeing to (§ 14 Q27).
    */
   canComplete: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The run transcript (§ 12 phase 3 — BUILT 2026-09-08)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * One utterance in a scene run's transcript, as stored in `iw_scene_runs.transcript`
+ * (migration 158, which fixed this shape before there was anything writing it).
+ *
+ * ⚠️ **FREE TEXT, NOT SEGMENTED.** Nothing here is parsed at write time — not the NPC's
+ * line and not the learner's. The gsa runs over it later (the post-scene review, and a
+ * learner tapping a line back), and segmenting 200 lines at write time would put a
+ * dictionary query on the turn path to answer a question nobody has asked yet.
+ *
+ * ⚠️ **`speaker` IS AN ACTOR ID, NOT A NAME.** {@link IW_ACTOR_PLAYER} for the learner, an
+ * npcId for anybody else. Names are display, and the display name of an NPC is a code
+ * constant that may be re-spelled; the id is what still resolves a year later.
+ */
+export interface IWTranscriptEntry {
+  /** {@link IW_ACTOR_PLAYER}, or the npcId of whoever spoke. */
+  speaker: string;
+  /** What was said, verbatim, capped at {@link IW_TRANSCRIPT_MAX_TEXT_CHARS}. */
+  text: string;
+  /** ISO-8601, stamped server-side when the line was PRODUCED — see the caveat below. */
+  at: string;
+}
+
+/**
+ * How many utterances one run's transcript keeps. Oldest are dropped first.
+ *
+ * Migration 158 fixed this at 200 and said why: a run is a single day's conversation and
+ * should never reach it, so this is not a product limit but the thing that stops a runaway
+ * client loop writing an unbounded row. § 7's session budget (60 learner turns) means an
+ * honest run cannot exceed ~120 entries even before authored beats are counted.
+ */
+export const IW_TRANSCRIPT_MAX_ENTRIES = 200;
+
+/**
+ * How long any one stored line may be.
+ *
+ * ⚠️ **THIS IS WHAT KEEPS THE ROW UNDER MIGRATION 158's 256 KB, and it is why there is no
+ * byte-counting trim.** 200 entries × 500 characters is ~100 KB of UTF-8 worst case, so the
+ * count cap and this cap together bound the row by construction — which a byte loop in the
+ * service could only do by re-reading and re-writing the whole column on every append.
+ *
+ * It is set well above both real sources: a learner cannot exceed
+ * {@link IW_MAX_UTTERANCE_CHARS}, and an NPC line is bounded by the line guard.
+ */
+export const IW_TRANSCRIPT_MAX_TEXT_CHARS = 500;
+
+/**
+ * One playthrough (`iw_scene_runs`), as the server hands it back.
+ *
+ * ⚠️ **A RUN IS OPENED LAZILY BY THE FIRST MODEL CALL OF A SESSION, NOT BY OPENING THE
+ * SCENE** — see `SceneTranscript`. A learner who walks in, looks around and leaves without
+ * a word writes no row, which is the right answer for a transcript: there is no
+ * conversation to keep.
+ */
+export interface IWSceneRun {
+  id: string;
+  userId: string;
+  language: string;
+  sceneId: string;
+  completed: boolean;
+  durationSeconds: number | null;
+  minutePointsEarned: number;
+  overviewTagId: string | null;
+  transcript: IWTranscriptEntry[];
+  startedAt: string;
+  completedAt: string | null;
 }

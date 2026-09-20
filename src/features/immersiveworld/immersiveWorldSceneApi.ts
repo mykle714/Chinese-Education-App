@@ -1,5 +1,7 @@
 import { apiGet, apiPost, apiDelete, withFallback, ApiError } from '../../api/http';
 import { DIRT_FLOOR, type EditorMasks } from '../../engine/market/farmTerrain';
+import type { Direction } from '../../engine/market/freeFarmTileset';
+import { furnitureSpriteExists, isFurniturePlacement } from '../../engine/market/furniture';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 import type {
   IWNpcOption,
@@ -66,9 +68,18 @@ export function masksToSceneLayout(
   return {
     terrain1: [...masks.terrain1],
     terrain2: [...masks.terrain2],
-    // NO street/communal: a scene has no walkability masks (IWSceneLayout's header). The
-    // editor never paints them, so `masks.street`/`masks.communal` are always empty here —
-    // they exist only because `EditorMasks` is the night market's shape.
+    // NO street/communal: those are the night market's two WALKABLE classes, and a scene
+    // paints the inverse (IWSceneLayout's header). The editor never paints them, so
+    // `masks.street`/`masks.communal` are always empty here — they exist only because
+    // `EditorMasks` is the night market's shape.
+    //
+    // The scene's OWN two masks (2026-09-19) do ride in EditorMasks, like `floor` and
+    // `furniture` before them, so they need no separate argument. Both are sorted for the
+    // same reason the decor map is: an unchanged board must produce an unchanged jsonb blob.
+    unwalkable: [...(masks.unwalkable ?? [])].sort(),
+    forcedDirection: Object.fromEntries(
+      [...(masks.forcedDirection ?? [])].sort(([a], [b]) => (a < b ? -1 : 1)),
+    ),
     decor,
     // Named places (§ 14 Q42) are NOT part of EditorMasks — that type is the night market's
     // and has no concept of a tagged cell — so the draft keeps them alongside the masks and
@@ -79,6 +90,10 @@ export function masksToSceneLayout(
     // Reads go through `scenePlaces`, never through the field, precisely because the two
     // sides are deliberately asymmetric.
     places,
+    // Placed furniture (the lumeish pack). Sorted by anchor so an unchanged board produces an
+    // unchanged jsonb blob — the same stable-diff treatment the decor map gets above.
+    furniture: [...(masks.furniture ?? [])]
+      .sort((a, b) => a.col - b.col || a.row - b.row || a.id - b.id),
     // The board floor rides in the layout because that is where everything spatial lives.
     // Written even when it is dirt, so a scene that was decked and then reverted persists
     // the revert rather than falling back to the "absent ⇒ dirt" default by accident.
@@ -103,6 +118,15 @@ export function sceneLayoutToMasks(layout: IWSceneLayout | undefined): EditorMas
   return {
     terrain1: new Set(layout?.terrain1 ?? []),
     terrain2: new Set(layout?.terrain2 ?? []),
+    // The scene's two walkability masks. ABSENT ⇒ EMPTY, with no fallback to the old
+    // derive-from-blocking-decor rule: the 2026-09-19 cutover was deliberate (see
+    // IWSceneLayout's header), so a pre-cutover scene opens fully walkable and is repainted
+    // by hand. Reading `layout.decor` here to synthesize walls would quietly re-create the
+    // object↔walkability coupling the change exists to remove.
+    unwalkable: new Set(layout?.unwalkable ?? []),
+    forcedDirection: new Map(
+      Object.entries(layout?.forcedDirection ?? {}) as [string, Direction][],
+    ),
     // Empty like placeholder/condition below, and for the same reason — but note these two
     // USED to be authored (before 2026-09-05). A layout stored back then still carries the
     // keys; dropping them here is what retires them, with no migration.
@@ -111,6 +135,12 @@ export function sceneLayoutToMasks(layout: IWSceneLayout | undefined): EditorMas
     placeholder: [],
     condition: new Set<string>(),
     decor,
+    // Furniture placements. Structurally-invalid records are dropped, and so are placements
+    // whose sprite the pack no longer ships — a stale id would occupy cells invisibly and
+    // could never be erased. Scenes authored before the Furniture tool carry no key at all.
+    furniture: (Array.isArray(layout?.furniture) ? layout.furniture : [])
+      .filter(isFurniturePlacement)
+      .filter(furnitureSpriteExists),
     // Scenes authored before the floor row carry no `floor` at all — they are dirt boards.
     floor: layout?.floor ?? DIRT_FLOOR,
   };

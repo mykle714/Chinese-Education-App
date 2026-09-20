@@ -293,10 +293,11 @@ for the whole round, and do not fall through to another language's backlog even 
 restricted language's own backlog runs dry mid-round — park or end the round instead of
 picking up the excluded language.
 
-> As of 2026-09-01 the solo cron worker (crontab line `17 * * * *`) runs with
-> `ORACLE_LANGS=zh` — es is paused there **temporarily**, at the user's request, until
-> further notice. Sharded (`SHARD=k/N`) workers are unaffected (none currently
-> scheduled). Remove the env var from that crontab line to resume es on solo.
+> As of 2026-09-06 the PPE crontab runs **two sharded zh workers** — `17 * * * *
+> SHARD=0/2` and `47 * * * * SHARD=1/2`, both with `ORACLE_LANGS=zh`. es is paused on
+> both **temporarily**, at the user's request, until further notice; remove the env var
+> from a crontab line to resume es on that shard. (Before 2026-09-06 this was a single
+> unsharded `solo` worker — see §6b for why it was doubled and when to halve it again.)
 
 **es target selection (no planner):** the goal is to backfill the *whole* table, so
 **any incomplete entry is a suitable target** — there is no curated batch to wait on.
@@ -673,10 +674,92 @@ Concurrent rounds collide in two places, and both must be handled:
 `SHARD=k/N oracle-cron.sh` wires both together. Per-row DB writes are then disjoint,
 since every script is `--words=` scoped to its own batch.
 
-⚠️ **Parallelism does not create capacity.** All workers draw on the same account
-budget, so N workers spend the same weekly pool N times faster. Check `seven_day`
-utilization in §1.2 before adding workers — if it is near 100%, more workers buy
-nothing.
+⚠️ **Parallelism creates capacity only when the budget is the binding constraint —
+check which one it is.** All workers draw on the same account budget, so N workers
+spend the same weekly pool N times faster. When `seven_day` is pinned near 100%, more
+workers buy nothing. When the week **ends with budget unspent**, they buy real
+throughput, because the limit is then the schedule, not the plan.
+
+Two numbers decide it, and they must be read together before adding or removing a
+worker:
+
+| Reading | What it means | Action |
+|---|---|---|
+| `seven_day` ends the week at ~100% | budget-bound | do **not** add workers |
+| `seven_day` ends the week well under `ORACLE_MAX_UTILIZATION`, **and** duty cycle < ~80% | schedule-bound | adding a shard converts idle hours into rows |
+
+**Duty cycle** = busy hours ÷ elapsed hours, from the round start/finish pairs in
+`server/logs/oracle-cron.<slug>.log`. The hourly tick plus a non-blocking `flock`
+caps a solo worker at one round per hour, so *any* round that overruns 60 minutes
+costs the whole next hour — the tick is dropped, not queued.
+
+> **The binding constraint depends on which work the round is doing.** A refresh/heal
+> round (§3, `--discoverable`) is cheap per row and **schedule-bound**. A `--new` round
+> (§3b) takes a word through the whole manifest and is far more budget-hungry per word:
+> the week of 2026-08-24 shipped **544 new words and ended pinned at `weekly_all` =
+> 100%** (which is why 2026-08-30 lost all 24 ticks to the gate), while the following
+> refresh-only week did ~3,500 row-refreshes and ended at **50%**. So extra shards buy
+> throughput for refresh backlogs and buy **little or nothing** for new-word shipping —
+> that mode is already spending the plan. Budget the two phases separately.
+>
+> **Acted on 2026-09-06:** the PPE crontab went 1 → 2 workers on this reading
+> (`SHARD=0/2` at `:17`, `SHARD=1/2` at `:47`, staggered so the planner phases do not
+> collide). The `ORACLE_MAX_UTILIZATION=75%` gate caps the gain at **~1.5×**, not 2× —
+> two shards spend the same pool faster, the gate trips at 75%, and the rest of the week
+> becomes skipped ticks rather than overspend. **Halve it back to one worker when the
+> refresh backlog drains and the workers return to `--new` shipping**, where the plan,
+> not the clock, is what runs out. While the shards are live, do **not** run an
+> unsharded round (a manual `/oracle-backfill`, or `oracle-cron.sh` with no `SHARD`):
+> its planner sees the whole candidate set and races both shards for the same rows.
+>
+> **Measured 2026-08-31 → 2026-09-06 (solo, `ORACLE_LANGS=zh`)**: 117 rounds, all
+> `exit 0`; median round 51 min with 40 rounds over 60 min; **94.8 busy hours of 168
+> (56% duty cycle)**; 43 ticks dropped on a held lock; the week ended at
+> **`seven_day` = 50%**. That is squarely schedule-bound — half the plan expired
+> unspent while the worker idled ~73 hours. The crontab comment asserting the
+> opposite ("throughput is capped by the weekly account budget, not by concurrency")
+> was written when the plan was pinned at 100% and is no longer true; re-measure
+> before trusting either claim.
+
+### 6c. What ends a round — the convergence gate
+
+`oracle-cron.sh` tells an unattended session to *"stop cleanly at the end of one
+round; do not start a second."* That instruction bounds how much work a tick takes.
+It does **not** license stopping wherever the work happens to be, and it never
+overrides §6's exhaustion rule for an interactive run.
+
+**A round ends only at one of these three points. Nothing else is an ending:**
+
+1. **The batch converged.** The planner, re-run over *the batch's own word list*,
+   returns **0 prompts across 0 scripts** — and the script last worked reports
+   `Found 0 entries needing …` on a `--stale` re-run. Both, not either.
+2. **A budget cap parked you** (§6a). Write the resume note **before** stopping; the
+   batch is in flight and the next tick must continue it, not re-plan around it.
+3. **A §6 guardrail tripped** (backup failure, overwritten reviewed field, an
+   unexplained flat-usage reading).
+
+> 🛑 **"The last apply printed `Updated: N` with no failures" is NOT convergence.**
+> This is the single most repeated defect in the run reports: a session sees a clean
+> apply, writes "batch closed here", and the next tick opens with *"continuing the
+> same in-flight batch after a prior 'closed here' note that turned out to be
+> premature."* An apply that writes rows commonly **creates** the next link's work —
+> a regenerated sentence needs a fresh audit, a re-audited sentence needs a fresh
+> tagger pass. `backfill-example-sentences` has chained **11 links** on one 50-word
+> batch (`docs/oracle-runs/oracle-run-20260906T101647Z.md`). Convergence is a number
+> the planner prints, never an impression the apply leaves.
+
+Before writing anything that claims a round is over, run and paste the check:
+
+```bash
+# converged ⟺ this prints 0 prompts across 0 scripts for the batch just worked
+server/scripts/backfill/run-ppe.sh scripts/backfill/oracle-plan.js \
+  --words=<the batch's exact word list>
+```
+
+If it returns work and budget remains, **the round has not ended** — keep going. If
+it returns work and budget does not remain, that is case 2: park and write the resume
+note. A report or a hand-back that cannot quote a 0/0 planner line, a resume note, or
+a tripped guardrail is premature by definition.
 
 ## 7. Write the run report — required, and ONLY at the end
 

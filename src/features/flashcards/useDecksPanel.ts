@@ -5,6 +5,7 @@ import { useMasteredCounts } from "../../hooks/useMasteredCounts";
 import { fetchDecks, createDeck, type DeckSummary } from "../../api/decks";
 import { fetchCollectionCards } from "../../api/collections";
 import { ALL_COLLECTION_ID, type MasteryBarId } from "../../../server/contracts/wire";
+import { isFeatureEnabled } from "../../../server/contracts/featureFlags";
 import type { VocabEntry } from "../../types";
 import type { MasteryGoals } from "../../utils/masteryCompute";
 import { filterVocabEntries } from "../../utils/vocabSearch";
@@ -13,6 +14,7 @@ import { sortVocabEntries, masteryLowestKey, type VocabSortKey } from "../../uti
 import {
     builtinCollectionCount, lensCollectionEntries, type BuiltinCollectionEntry,
 } from "./builtinCollections";
+import type { DecksPanelSnapshot } from "./backRestore";
 
 /**
  * Which of the lens's two constants the inline card grid is narrowed to, if either.
@@ -115,9 +117,28 @@ export interface DecksPanelState {
     /** Which library constant the grid is narrowed to, or `"all"`. */
     cardsFilter: CardsFilter;
     setCardsFilter: (filter: CardsFilter) => void;
+
+    /**
+     * True when this panel was seeded from a Back snapshot (backRestore.ts). The body
+     * reads it to paint the grid in its final state at once — no paced reveal, no pop-in
+     * — so the restored scroll position lands on real cards.
+     */
+    restored: boolean;
+    /** Everything a Back snapshot needs to re-seed this panel. Read at the moment of leaving. */
+    snapshot: () => DecksPanelSnapshot;
 }
 
-export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
+/**
+ * @param restore A Back snapshot (backRestore.ts) to seed from. When present the panel
+ *   starts LOADED with the snapshot's lists and view state, and the two fetches below
+ *   still run — as silent background refreshes that never flip `*Loading` back on, so
+ *   the grid is not replaced by a spinner under a restored scroll position. Read on
+ *   mount only; the hosts read the snapshot once per mount.
+ */
+export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot): DecksPanelState {
+    // Frozen on mount: a later render passing a different (or no) snapshot must not
+    // turn a live panel back into a "restored" one or vice versa.
+    const [restored] = useState(() => restore !== undefined);
     const { isAuthenticated, user } = useAuth();
 
     // Per-band card counts THROUGH THIS LENS, driving the tile figures (and, on the
@@ -142,14 +163,23 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
     // an unrelated render.
     const collections = useMemo(() => lensCollectionEntries(lens), [lens]);
 
-    const [decks, setDecks] = useState<DeckSummary[]>([]);
-    const [decksLoading, setDecksLoading] = useState(true);
+    const [decks, setDecks] = useState<DeckSummary[]>(() => restore?.decks ?? []);
+    const [decksLoading, setDecksLoading] = useState(() => restore === undefined);
     const [decksError, setDecksError] = useState<string | null>(null);
     // `/api/decks` returns BOTH kinds since migration 148, so the panel splits them:
     // generated ("preset") decks get their own captioned section ABOVE the user's own,
     // which is what keeps a new challenge from shuffling the authored decks the user
     // knows the position of. See docs/STUDY_CHALLENGE.md § 4.
-    const challengeDecks = useMemo(() => decks.filter((d) => d.editMode === "preset"), [decks]);
+    // With the Study Challenge flag off (server/contracts/featureFlags.ts) this stays
+    // empty, which is the whole gate for the /decks Challenges shelf: DecksPanelBody
+    // already omits that section entirely when the list is empty, so one chokepoint
+    // here beats a second flag check in the JSX. Generated decks are only ever created
+    // by a challenge accept, so with the feature off there is nothing to hide anyway —
+    // this covers decks left behind from before the flag was turned off.
+    const challengeDecks = useMemo(
+        () => (isFeatureEnabled("studyChallenge") ? decks.filter((d) => d.editMode === "preset") : []),
+        [decks]
+    );
     const authoredDecks = useMemo(() => decks.filter((d) => d.editMode !== "preset"), [decks]);
 
     // ── The inline card library ───────────────────────────────────────────────
@@ -159,25 +189,26 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
     //
     // Bar-agnostic on purpose: the LIBRARY is the same set through every lens (see
     // lensCollectionEntries), and only how its cards are read and ordered changes.
-    const [cards, setCards] = useState<VocabEntry[]>([]);
-    const [cardsLoading, setCardsLoading] = useState(true);
+    const [cards, setCards] = useState<VocabEntry[]>(() => restore?.cards ?? []);
+    const [cardsLoading, setCardsLoading] = useState(() => restore === undefined);
     const [cardsError, setCardsError] = useState<string | null>(null);
-    const [cardsSearch, setCardsSearch] = useState("");
+    const [cardsSearch, setCardsSearch] = useState(() => restore?.cardsSearch ?? "");
     // Ordering of that grid. Held per-visit rather than persisted, the same rule the
     // collection page follows: it is a way of LOOKING at the set, not a property of it.
     //
     // Opens on the LENS BAR's mastery, lowest first, in all three panels (fdp, Reading
     // Center, Writing Center) — the panel lists the whole library and is opened to answer
     // "what should I work on". See `masteryLowestKey` for why this is not `defaultSortKey`.
-    const [cardsSortKey, setCardsSortKey] = useState<VocabSortKey>(() => masteryLowestKey(lens));
+    const [cardsSortKey, setCardsSortKey] = useState<VocabSortKey>(() => restore?.cardsSortKey ?? masteryLowestKey(lens));
     // Which library constant the grid is narrowed to. Per-visit like the sort key and
     // for the same reason: it is a way of LOOKING at the library, not a property of it.
     // Opens on "all" — the panel's job is to show the whole library until asked otherwise.
-    const [cardsFilter, setCardsFilter] = useState<CardsFilter>("all");
+    const [cardsFilter, setCardsFilter] = useState<CardsFilter>(() => restore?.cardsFilter ?? "all");
 
     const loadDecks = useCallback(async () => {
         try {
-            setDecksLoading(true);
+            // A restored panel refreshes silently: its cached decks stay on screen.
+            if (!restored) setDecksLoading(true);
             setDecksError(null);
             setDecks(await fetchDecks());
         } catch (err: unknown) {
@@ -186,7 +217,7 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
         } finally {
             setDecksLoading(false);
         }
-    }, []);
+    }, [restored]);
 
     // Keyed on isAuthenticated — the stable auth-presence flag, not the `token`
     // string — so a silent refresh doesn't re-fetch and reset the list.
@@ -203,7 +234,9 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
 
         (async () => {
             try {
-                setCardsLoading(true);
+                // A restored panel refreshes silently (see `restore` above): swapping the
+                // grid for a spinner would throw away the scroll position just restored.
+                if (!restored) setCardsLoading(true);
                 setCardsError(null);
                 const loaded = await fetchCollectionCards(ALL_COLLECTION_ID);
                 if (!cancelled) setCards(loaded);
@@ -216,7 +249,7 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
         })();
 
         return () => { cancelled = true; };
-    }, [isAuthenticated]);
+    }, [isAuthenticated, restored]);
 
     const addDeck = useCallback(async (name: string) => {
         // The server owns the rules (blank name, duplicate name, the 100-deck
@@ -280,6 +313,12 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
         [categoryCounts, masteredCounts]
     );
 
+    // Read by a host at the moment it navigates away (backRestore.ts). The RAW deck list,
+    // not the split challenge/authored pair, so re-seeding re-derives the split.
+    const snapshot = useCallback((): DecksPanelSnapshot => ({
+        cards, decks, cardsSearch, cardsSortKey, cardsFilter,
+    }), [cards, decks, cardsSearch, cardsSortKey, cardsFilter]);
+
     return {
         lens,
         goals,
@@ -303,5 +342,7 @@ export function useDecksPanel(lens: MasteryBarId): DecksPanelState {
         setCardsSortKey,
         cardsFilter,
         setCardsFilter,
+        restored,
+        snapshot,
     };
 }

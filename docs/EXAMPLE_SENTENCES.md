@@ -287,9 +287,19 @@ that changes a sentence's text automatically demotes it back to AI-generated.
 
 ## Segment popup → eip drill-in
 
-The per-segment definition popup (`SegmentedSentenceDisplay.tsx`, the `Popper` at the
+The per-segment definition popup (`SegmentedSentenceDisplay.tsx`, the `CpcdPopup` at the
 bottom of the file) is **tappable**: tapping it opens the extra-info panel (eip) for the
 tapped segment's headword.
+
+- **The card itself is shared** (2026-09-06). Its placement (`Popper`, above the anchor,
+  flipping below) and its looks (white card, caption text, optional drill-in chevron) were
+  extracted to `src/components/CpcdPopup.tsx` so a second surface could reuse the same
+  affordance rather than re-author it — the eip header's tap-to-copy toast
+  ([EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) § "Header tap-to-copy") is the same box
+  saying something else. Everything below — what opens it, what dismisses it, what a tap on
+  it does — stayed in `SegmentedSentenceDisplay` and is passed in as props. The class names
+  are unchanged: `CpcdPopup` derives the text/chevron classes from the root `className`, so
+  this popup is still `.segment-definition-popup` / `__text` / `__chevron`.
 
 - **Affordance.** When the popup is interactive it renders `cursor: pointer`, an `:active`
   press tint, and a trailing drill-in chevron (`›`) — the same glyph the breakdown/used-in
@@ -416,11 +426,21 @@ a segment in one sentence clears the selection in every other mounted
 
 The est tab is the main surface, but `exampleSentences` also ships on **game pool
 cards** (`DICT_COLS` in `server/dal/shared/dictJoin.ts`, enriched by
-`OnDeckVocabService.enrichEntriesPipeline`), and one game reads it:
+`OnDeckVocabService.enrichEntriesPipeline`), and one game reads it.
+
+⚠️ **Two kinds of consumer, and the second is the more load-bearing.** One kind reads the
+stored `exampleSentences` data; the other reuses this pipeline's **machinery** — the
+segmenter and the popup component — on text that is not an example sentence at all. The rule
+for the second kind is that they must not fork either: a second segmenter means the same word
+splits two ways in two places, and a second popup means the same gloss is styled two ways.
+`DictionaryDAL.segmentTexts` exists to be that shared entry point (it was the private
+`segmentLongDefinitionTexts` until iw needed it, which is why its name no longer mentions long
+definitions).
 
 | Surface | What it uses | Where |
 |---|---|---|
 | **Speed Reading finale** (rounds 19–20 of a run) | `foreignText` (both options are that sentence, one character apart), `english` (the prompt's translation line), and `_segments` + `segmentMetadata` via `buildSentencePronunciation` (the prompt's pinyin line **and** the TTS pinyin hint) | [SPEED_READING_GAME.md § The last two rounds are sentences](./SPEED_READING_GAME.md#the-last-two-rounds-are-sentences), `src/games/speed-reading/buildRound.ts`, `src/games/speed-reading/roundPrompt.ts` |
+| **Immersive World speech bubbles** (2026-09-07) | Not `exampleSentences` at all — the **component and the segmenter**. An NPC's spoken line is rendered by `SegmentedSentenceDisplay` from segments built by `DictionaryDAL.segmentTexts`, so a word tapped in a bubble opens the same popup and the same drill chain as the same word tapped here | [IMMERSIVE_WORLD.md § 5.3b](./IMMERSIVE_WORLD.md), `server/services/iw/lineSegments.ts`, `src/features/immersiveworld/play/IWSpeechBubbles.tsx` |
 
 Two consequences for this pipeline: a sentence is only usable there if it
 **literally contains its entry's headword** (the round alters one character of the

@@ -1,15 +1,18 @@
 import type { PoolClient } from 'pg';
-import type { IWScene, IWSceneSummary } from '../../contracts/iw.js';
+import type { IWScene, IWSceneSummary, IWSceneRun, IWTranscriptEntry } from '../../contracts/iw.js';
 
 /**
  * Data-access contract for the Immersive World scene catalog (`iw_scenes`,
  * migration 158).
  *
- * SCOPE: scenes only, for now. `iw_scene_runs`, `iw_scene_ratings` and
- * `iw_npc_memories` are phase 2+ (docs/IMMERSIVE_WORLD.md § 12) and get their methods
- * when there is a runtime to call them — with one exception: `listNpcReferences` reads
- * all three, because the startup validation pass has to cover every table that stores an
- * NPC id, not just the authored one.
+ * SCOPE: scenes and RUNS. `iw_scene_ratings` and `iw_npc_memories` are still phase 3b
+ * (docs/IMMERSIVE_WORLD.md § 12) and get their methods when there is a grader to call
+ * them — with one exception: `listNpcReferences` reads all three, because the startup
+ * validation pass has to cover every table that stores an NPC id, not just the authored one.
+ *
+ * The run methods arrived with the transcript (2026-09-08) and cover only what a transcript
+ * needs: open, append, close, read back. A run's `complicationId` draw, its minute points
+ * and its `overviewTagId` are written by nothing yet.
  *
  * NO POLICY HERE. Whether a scene is well-formed (`validateScene`) and who may write one
  * (`users.isTemplateAuthor`) are ImmersiveWorldSceneService's business. This layer refuses
@@ -64,4 +67,41 @@ export interface IImmersiveWorldDAL {
    * request path.
    */
   listNpcReferences(client?: PoolClient): Promise<IWNpcReference[]>;
+
+  // ── Runs and their transcripts ─────────────────────────────────────────────
+
+  /**
+   * Start a run, closing whatever open run this learner had in this language first.
+   *
+   * ⚠️ **THE CLOSE IS NOT HOUSEKEEPING — IT IS WHAT MAKES THE INSERT LEGAL.**
+   * `uq_iw_open_run_per_user_language` permits exactly one run with a NULL `completedAt`
+   * per (user, language), so a learner whose last tab was closed without a `/session/end`
+   * would otherwise be unable to start another scene ever again. Both statements run in
+   * ONE transaction, because between them the constraint is satisfied by nothing.
+   *
+   * ⚠️ It does NOT resume. § 14 Q30's within-the-day resume is phase 3 proper and needs the
+   * learner's 04:00 local boundary, which this layer has no business knowing; today a
+   * second visit to a scene is a second run, and the first one is closed where it stood.
+   */
+  openRun(userId: string, language: string, sceneId: string, client?: PoolClient): Promise<IWSceneRun>;
+
+  /**
+   * Append utterances to a run's transcript, dropping the oldest beyond
+   * {@link IW_TRANSCRIPT_MAX_ENTRIES}. Returns false when the run id is gone.
+   *
+   * ⚠️ **THE TRIM IS IN SQL, AND IT HAS TO BE.** Appending is a read-modify-write on one
+   * jsonb column from a path that runs several times a second in one scene; doing it in the
+   * service would mean fetching the column, splicing it and writing it back, and two turns
+   * landing together would silently lose one. One `UPDATE` is atomic against itself.
+   */
+  appendTranscript(runId: string, entries: readonly IWTranscriptEntry[], client?: PoolClient): Promise<boolean>;
+
+  /** Close a run, stamping `completedAt` and the elapsed `durationSeconds`. */
+  completeRun(runId: string, completed: boolean, client?: PoolClient): Promise<IWSceneRun | null>;
+
+  /** One run, whole. */
+  findRunById(runId: string, client?: PoolClient): Promise<IWSceneRun | null>;
+
+  /** A learner's runs, newest first — the read behind any history view or CLI dump. */
+  listRuns(userId: string, limit: number, language?: string, client?: PoolClient): Promise<IWSceneRun[]>;
 }

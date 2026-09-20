@@ -1,33 +1,10 @@
 import React, { useEffect, useRef } from "react";
-import { Box, Typography } from "@mui/material";
-import Icon from "../components/Icon";
+import { Box } from "@mui/material";
+import FireCount, { FIRE_GLYPH_SIZE_PX, INK_BOTTOM_PCT, INK_TOP_PCT } from "./FireCount";
 import { useMinutePoints } from "./useMinutePoints";
 import { useAuth } from "../AuthContext";
 import { useMinutePointsPaused } from "./minutePointsPause";
 import { COLORS } from "../theme/colors";
-import { FONTS } from "../theme/fonts";
-
-/**
- * Rendered size of the flame glyph, in px. Shared by the base and the fill copy.
- *
- * The design's `.hd .fire` draws it at 15px beside an 11px count. It is drawn 50% larger
- * here (2026-08-24) because the glyph now carries the seconds as a fill level, not just an
- * identity: at 15px the ink band is ~13px tall, so one second of progress is a fifth of a
- * pixel and the creep is invisible. Enlarging the glyph is what makes the animation
- * legible; the count stays at 11px, so the flame — not the number — is the thing the eye
- * lands on, which matches what it now reports.
- */
-const FLAME_SIZE_PX = 22.5;
-
-/**
- * Where the flame's INK sits inside its em box, as a percentage of that box measured
- * from the bottom. A Material Symbols glyph does not touch the edges of its em square,
- * so a raw 0–100% clip would spend its first and last ~8% moving through empty space —
- * the fill would look stalled at both ends. Clipping between these two marks makes the
- * orange line track the visible flame instead of the invisible box.
- */
-const INK_BOTTOM_PCT = 8;
-const INK_TOP_PCT = 94;
 
 /**
  * The largest rise (in points of the ink band) that is allowed to ANIMATE. One second of
@@ -42,11 +19,15 @@ const SMOOTH_STEP_LIMIT_PCT = ((INK_TOP_PCT - INK_BOTTOM_PCT) / 60) * 1.6;
 /**
  * The minute-points flame — the app's single earning indicator, in every header.
  *
- * This is the design's `.hd .fire` / `.lhd .fire` treatment (docs/SHELF_REDESIGN.md):
- * a Material Symbols Rounded `local_fire_department` glyph beside a mono count at 11px,
- * both in `COLORS.fireActive` (#E65100 — the design writes the same hex), with a 4px gap.
- * The glyph is drawn at `FLAME_SIZE_PX`, 50% over the design's 15px — see that constant. Nothing else: no MUI `Badge` bubble, no bordered counter chip, no drop-shadow
- * glow, no circular ground.
+ * The VISUAL is `FireCount` — the design's `.hd .fire` / `.lhd .fire` treatment: a
+ * Material Symbols Rounded `local_fire_department` glyph beside a mono count at 11px,
+ * both in `COLORS.fireActive` (#E65100 — the design writes the same hex), with a 4px
+ * gap. Nothing else: no MUI `Badge` bubble, no bordered counter chip, no drop-shadow
+ * glow, no circular ground. This file is the STATE around it — the hooks, the
+ * eligibility branch, the per-second tick and the pulse — and owns no markup of its own
+ * beyond the pulse wrapper. The split exists because the profile page shows somebody
+ * ELSE's minutes with the same visual and must not inherit this file's viewer-scoped
+ * hooks; see `FireCount`'s header.
  *
  * ── WHY IT GOT SMALLER RATHER THAN RESTYLED ──────────────────────────────────────────
  * The old badge was a 24px filled MUI icon carrying an overlaid count bubble and an
@@ -157,24 +138,14 @@ const MinutePointsFireBadge: React.FC = () => {
     if (!user) return null;
 
     return (
+        // The pulse is the one thing that is NOT `FireCount`'s: it marks a point
+        // LANDING, which is an event in this component's state rather than a property
+        // of the readout, and it has to scale the glyph and numeral together — so it
+        // belongs on a wrapper rather than inside the shared visual.
         <Box
             className="minute-points-fire-badge"
-            // The seconds are no longer written out, so the only place the exact figure
-            // survives is the accessible name.
-            title={`${minutePoints.currentPoints} minute points — ${minutePoints.liveSeconds}s toward the next`}
             sx={{
-                display: "flex",
-                alignItems: "center",
-                // The design's 4px: tight enough that the glyph reads as the count's UNIT
-                // rather than as a separate icon that happens to sit nearby.
-                gap: "4px",
-                fontFamily: FONTS.mono,
-                color: tone,
-                // Fade rather than snap between earning and idle. Chromium leaves a ghost
-                // repaint when a filter is removed outright, which is why the old glow was
-                // animated to transparent instead of `none` — with the glow gone this is
-                // just a colour transition, but the same reasoning applies.
-                transition: "color 0.3s ease-out",
+                display: "inline-flex",
                 animation: (earning && minutePoints.isAnimating)
                     ? "minutePointsFirePulse 0.6s ease-out"
                     : "none",
@@ -184,91 +155,19 @@ const MinutePointsFireBadge: React.FC = () => {
                 },
             }}
         >
-            <Box
-                className="minute-points-fire-badge__flame"
-                sx={{
-                    position: "relative",
-                    width: `${FLAME_SIZE_PX}px`,
-                    height: `${FLAME_SIZE_PX}px`,
-                    // The glyph is inline-block with line-height 1; zeroing the line box
-                    // keeps the wrapper exactly one em tall so the clip maths is exact.
-                    lineHeight: 0,
-                    flexShrink: 0,
-                }}
-            >
-                {/* The vessel. Filled rather than outlined: an outline would give the
-                    rising level a second edge to cross and read as a gauge, and the glyph's
-                    job is to be recognised at a glance. Always faint, in EVERY state — the
-                    ghost/level contrast is what draws the level at all, so dropping it
-                    while idle would hide the banked seconds behind a flat glyph. Idle
-                    changes the ink, never the shape. */}
-                <Icon
-                    className="minute-points-fire-badge__icon"
-                    name="local_fire_department"
-                    size={FLAME_SIZE_PX}
-                    color={tone}
-                    fill={1}
-                    sx={{
-                        position: "absolute",
-                        left: 0,
-                        bottom: 0,
-                        // Faint only in study mode, where it is the GROUND the level is
-                        // read against. Off-study there is no level, so the same glyph is
-                        // drawn at full strength and is the whole badge.
-                        opacity: isStudySurface ? 0.24 : 1,
-                        transition: "opacity 0.3s ease-out",
-                    }}
-                />
-                {/* The level, STUDY MODE ONLY. A bottom-anchored window over an identical
-                    glyph: the window grows, the glyph inside it does not move (it is
-                    pinned to the window's bottom edge, which is the wrapper's bottom
-                    edge). Off-study it is not rendered at all rather than merely held at
-                    100% — an unmounted layer cannot animate on the way in or out, and the
-                    solid base glyph above already reads as a full flame. */}
-                {isStudySurface && <Box
-                    className="minute-points-fire-badge__flame-fill"
-                    aria-hidden
-                    sx={{
-                        position: "absolute",
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        height: `${fillHeightPct}%`,
-                        overflow: "hidden",
-                        // Linear, and exactly the tick interval: the level should arrive at
-                        // each second's value just as the next tick starts, with no easing
-                        // that would make it visibly accelerate mid-second.
-                        transition: isSmoothTick ? "height 1s linear" : "none",
-                        willChange: "height",
-                    }}
-                >
-                    <Icon
-                        name="local_fire_department"
-                        size={FLAME_SIZE_PX}
-                        // `tone`, not a hard-coded orange: going idle must desaturate the
-                        // level, never discard it. Grey-on-grey then makes the whole glyph
-                        // read flat, which is the idle state's whole point.
-                        color={tone}
-                        fill={1}
-                        sx={{ position: "absolute", left: 0, bottom: 0, transition: "color 0.3s ease-out" }}
-                    />
-                </Box>}
-            </Box>
-            <Typography
-                className="minute-points-fire-badge__count"
-                component="span"
-                sx={{
-                    fontFamily: FONTS.mono,
-                    fontSize: 11,
-                    // Tabular so the row does not shift width as the count ticks over.
-                    fontVariantNumeric: "tabular-nums",
-                    color: tone,
-                    lineHeight: 1,
-                    textDecoration: paused ? "line-through" : "none",
-                }}
-            >
-                {minutePoints.currentPoints}
-            </Typography>
+            <FireCount
+                value={minutePoints.currentPoints}
+                tone={tone}
+                glyphSize={FIRE_GLYPH_SIZE_PX}
+                // Off-study there is no level to show — see OFF-STUDY MODE above.
+                // `undefined` is what tells `FireCount` to draw one flat solid flame.
+                fillPct={isStudySurface ? fillHeightPct : undefined}
+                animateFill={isSmoothTick}
+                struck={paused}
+                // The seconds are no longer written out, so the only place the exact
+                // figure survives is the accessible name.
+                title={`${minutePoints.currentPoints} minute points — ${minutePoints.liveSeconds}s toward the next`}
+            />
         </Box>
     );
 };

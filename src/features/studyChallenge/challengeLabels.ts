@@ -269,13 +269,17 @@ export function challengeActionColor(action: ChallengeAction): string {
  * neutral line, and `null` means "show no control and no explanation".
  */
 export function blockedReasonLabel(
-    reason: "at-cap" | "declined-this-week" | "unavailable" | null,
+    reason: "at-cap" | "declined-this-week" | "not-issue-day" | "unavailable" | null,
     maxActive: number
 ): string | null {
     switch (reason) {
         case "at-cap":
             return `You're in ${maxActive} challenges this week`;
+        // Same copy for both: whether the pair already had this week's turn or it is
+        // simply not Monday (challenges only go out on the viewer's own Monday — § 2),
+        // the actionable answer is identical.
         case "declined-this-week":
+        case "not-issue-day":
             return "Next challenge on Monday";
         case "unavailable":
             return "Not available";

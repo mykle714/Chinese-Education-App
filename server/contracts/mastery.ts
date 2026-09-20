@@ -216,6 +216,23 @@ export const CATEGORY_ORDER: readonly FlashcardCategory[] = [
   'Mastered',
 ] as const;
 
+/**
+ * The upward transitions between ADJACENT bands, ascending — Unfamiliar→Target,
+ * Target→Comfortable, Comfortable→Mastered. Derived from `CATEGORY_ORDER` rather
+ * than written out, so adding a band can never leave a stale list behind.
+ *
+ * Index = the boundary's rank = the rank of the band BELOW it, which is the contract
+ * the velocity wire relies on: `VelocityBreakdown.boundaryCounts[i]` is the number of
+ * cards that crossed `CATEGORY_BOUNDARIES[i]` inside the window. Both halves read it —
+ * the DAL builds its `COUNT(*) FILTER` list from the length, the card labels its
+ * columns from the band names.
+ *
+ * Consumers: `CategoryPromotionDAL.getVelocityByLanguage`,
+ * `src/components/VelocityStatCard.tsx`. See docs/VELOCITY.md.
+ */
+export const CATEGORY_BOUNDARIES: readonly { from: FlashcardCategory; to: FlashcardCategory }[] =
+  CATEGORY_ORDER.slice(0, -1).map((from, i) => ({ from, to: CATEGORY_ORDER[i + 1] }));
+
 /** Rank of a utcm band (0..3). Unknown input ranks as 0 rather than throwing. */
 export function categoryRank(category: FlashcardCategory | string | undefined): number {
   const i = CATEGORY_ORDER.indexOf(category as FlashcardCategory);

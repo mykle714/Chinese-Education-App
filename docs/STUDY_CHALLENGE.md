@@ -9,6 +9,19 @@ the scored round runner in all four eligible games are done. Migrations 148 and 
 on PPE; **migration 156 (taunts) is NOT yet on PPE.** What remains is phase 2 (live
 mode, § 7), a separate design: [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md).
 
+🚩 **THE WHOLE FEATURE IS BEHIND A FEATURE FLAG, AND THE FLAG IS OFF (2026-09-19).**
+`FEATURE_FLAGS.studyChallenge` in `server/contracts/featureFlags.ts` — see
+[FEATURE_FLAGS.md](./FEATURE_FLAGS.md). Everything described below is built and
+unchanged, but unreachable: `/api/studyChallenges/*` is not mounted, the `?challengeId=`
+challenge-board branch on `/api/onDeck/*` falls through to an ordinary pool, the three
+`/friends/challenges*` routes are filtered out of the route table, and the Challenges
+tile + badge, the `/decks` Challenges shelf and the profile block toggle are all hidden.
+**Two things are deliberately NOT gated**: the hourly
+`database/cron/expire-study-challenges.sql` pass keeps running so challenges that were
+already live still resolve rather than hanging mid-week, and no `study_challenges` row or
+generated preset deck is touched. Turning the flag back on restores the feature as it
+stood.
+
 ⚠️ **The 2026-09-01 redesign changed behaviour, not only appearance.** Four things a
 reader of an older revision of this doc will find contradicted:
 
@@ -32,7 +45,7 @@ became a full-bleed dark board (§ 5.5).
 | **`mastered-first` provisioning** | ✅ `ProvisionalCardDAL.findOwnCardsByBand` + `ProvisionalCardService.getFillerPool` (the full ladder: Mastered → Comfortable → Target → Unfamiliar → lent), and the `ProvisionMode` parameter threaded through `ensureBaseline`/`lendCards`. Band ordering verified against dev data |
 | **Games** — the shared scoring runner, the registry↔pool sync test, pause-on-background | ✅ `src/games/runtime/challengeScoring.ts` (the declarative spec runner, 15 unit tests against the real specs), `challengeScoringFor` on the registry, `src/games/__tests__/challengePool.test.ts` (the test that keeps eligibility registry-derived), and pause-on-background in every game that needs it — Hydra included as of 2026-08-22, since a challenge round is the one timed variant it has |
 | **The scored round runner** | ✅ **built 2026-08-22.** (a) the challenge-board pool read — `?challengeId=` on the EXISTING `/api/onDeck/gamePool` and `/api/onDeck/wordSearchGrid`, authorized by `StudyChallengeService.getRoundContext` and assembled by `OnDeckVocabService.getChallengeGamePool`; (b) all four eligible games classify contested/filler at board generation and emit `ChallengeEvent`s through one shared hook, `src/games/runtime/useChallengeRound.ts`; (c) Match Speed's alternation rule as a pure, tested module (`src/games/match-speed/challengeDeal.ts`); (d) the between-games scoreboard (`src/games/runtime/ChallengeRoundScoreboard.tsx`) and the round POST. The whole path is § 5.2a |
-| **Tester hatch — "allow anytime"** | ✅ **built 2026-08-22.** A validator-only switch on `/friends/challenges` that lifts the four calendar gates (accept deadline, test window, one-per-pair-per-week, the 6-challenge cap) and nothing else. Per-device `localStorage` + `?anytime=1`, honoured by the server only for `isValidator`. See § 2a |
+| **Tester hatch — "allow anytime"** | ✅ **built 2026-08-22.** A validator-only switch on `/friends/challenges` that lifts the calendar gates (the Monday issue window, accept deadline, test window, one-per-pair-per-week, the 6-challenge cap) and nothing else. Per-device `localStorage` + `?anytime=1`, honoured by the server only for `isValidator`. See § 2a |
 | **Client** — `src/api/studyChallenges.ts`, `src/features/studyChallenge/*` (incl. `challengeLabels.ts` → `acceptLapsed`,
 `challengeAnytime.ts` + `ChallengeAnytimeNotice.tsx` → the tester hatch and its
 on-screen consequences, and `ChallengeDetailPage`'s per-round Play buttons), the `/friends/challenges` NodePage + its badge, the fifth `/decks` section | ✅ built. The detail page's round list is the test's entry point: one **Play** button per unplayed round, strictly sequential (§ 5.1a), launched through `src/games/runtime/challengeLaunch.ts` |
@@ -105,7 +118,12 @@ the point where any of them gets real preparation).
 Three rules make the cap behave (Q65):
 
 * **It counts challenges you are *committed* to** — ones you issued that are still
-  pending, plus ones you accepted — in either role.
+  pending, plus ones you accepted — in either role. **A challenge whose deadline has
+  passed stops counting at that instant**, not when the hourly job rewrites it: an
+  invitation past the challengee's Wednesday 04:00, or an accepted challenge past the
+  later of the two test-window closes (`StudyChallengeService.countActiveChallenges`
+  over `StudyChallengeDAL.listCommittedForUser` — § 9 "The read path never waits for
+  the job").
 * **Incoming invitations do not count until you accept.** This matters: if pending
   invitations consumed slots, a single friend could fill your quota with invitations you
   never asked for and lock you out of challenging anyone. Instead the cap is checked
@@ -454,6 +472,7 @@ use. "Monday" here therefore means Monday 04:00 → Tuesday 04:00 in that user's
 | Boundary | Whose clock | Exact instant |
 |---|---|---|
 | Issue window opens | **the challenger's own** | Monday **04:00 local** (see "When a week opens" below) |
+| Issue window closes | **the challenger's own** | **Tuesday 04:00 local** — challenges go out on the challenger's Monday only (see "Challenges go out on Monday only" below) |
 | Accept deadline | **challengee's** | **Wednesday 04:00 local** (i.e. the end of their Tuesday) |
 | Test window opens | **each player's own** | Friday 04:00 local |
 | Test window closes | **each player's own** | Monday 04:00 local — the instant the next issue window opens |
@@ -476,6 +495,34 @@ Consequences that the design must accept rather than paper over:
 Boundaries are computed on demand from the stored **week index** plus each user's
 timezone — **not** stored as pre-computed local timestamps, which would go stale the
 moment a player travels.
+
+### Challenges go out on Monday only (2026-09-13)
+
+**A challenge may be issued only during the challenger's own Monday (04:00 → Tuesday
+04:00 local), and only while the challengee is still before their own Wednesday 04:00.**
+Accepting stays open until the end of the challengee's Tuesday, as in the table above.
+
+Why this exists: until 2026-09-13 nothing *closed* the issue window. A challenge takes its
+week from the moment it is issued, and every later boundary is fixed to that week. So a
+challenge issued on a Wednesday was **born past its accept deadline**. Nobody could accept
+it, yet it still spent the pair's week (the pair-week check counts any status) and, until
+the hourly job rewrote it, one of the challenger's six cap slots.
+
+| Check | Clock | Enforced in |
+|---|---|---|
+| Challenger is inside their Monday | challenger's | `isIssueWindowOpen` (`server/shared/challengeWeek.ts`), called by `StudyChallengeService.issueChallenge` before the candidate draw, and by `getChallengesPage` → `challengeability` (`blockedReason: 'not-issue-day'`, rendered as "Next challenge on Monday" by `challengeLabels.blockedReasonLabel`) |
+| Challengee can still accept | challengee's | `isAcceptWindowOpen` in `issueChallenge` only |
+
+The second check only matters for a pair about 24 hours or more apart, such as a far-west
+challenger late on their Monday and a far-east challengee. It is enforced **only at issue**,
+not on the friend list: checking it per row would cost one timezone lookup per friend for a
+case that almost never happens. A challenger who hits it gets an error from the sheet rather
+than a hidden pill.
+
+Both checks are calendar gates, so the tester hatch lifts them (§ 2a).
+
+Pinned by `server/__tests__/challengeWeek.test.ts` and
+`server/__tests__/studyChallengeIssueWeek.test.ts`.
 
 ### When a week opens (2026-08-23)
 
@@ -654,7 +701,8 @@ the kind of state that gets left on and then misread as a bug.
 
 | Lifted | Still enforced |
 |---|---|
-| the accept deadline (Wed 04:00 local) | you must be **friends** |
+| the issue window (the challenger's Monday 04:00 → Tue 04:00 local, and the challengee's accept deadline at issue) | you must be **friends** |
+| the accept deadline (Wed 04:00 local) | |
 | the test window (Fri 04:00 → Mon 04:00 local), including the rule that hides `gameSequence` until it opens (Q63) | the **per-pair block** — a person's decision about another person is not a clock |
 | **one challenge per pair per week** — the gate that actually blocks repeat testing | rounds are **strictly sequential, one attempt each** — claimed at the first mark, immutable once final (§ 5.1a) |
 | `MAX_ACTIVE_CHALLENGES` (6) | scoring, storage, deck creation and winner resolution are **identical** to a real week |
@@ -2632,11 +2680,16 @@ serialized `deadlines.acceptDeadline` instant, purely so a page left open across
 boundary does not go stale; it cannot disagree with the server, because it is reading
 the server's own number.
 
-Not derived this way, deliberately: **`countActiveForUser`**. A lapsed-but-unwritten
-`pending` row still consumes one of the issuer's six slots until pass 1 flips it,
-because that count is a SQL aggregate and the deadline needs each challengee's
-timezone. On PPE the hourly job closes the gap within the hour; on dev the slot stays
-spent until the SQL is run by hand. Tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+**The cap count is derived the same way** (since 2026-09-13):
+`StudyChallengeService.countActiveChallenges`. The DAL (`listCommittedForUser`) returns
+the committed rows by stored status, and the service drops each one whose deadline has
+passed: a `pending` row past its **challengee's** Wednesday 04:00 (what pass 1 would
+expire), or an `accepted` row past the **later** of the two players' test-window closes
+(what pass 2 would resolve — the same "unfinished" rule as `issueChallenge` gate 1a).
+It is filtered in the service rather than aggregated in SQL because it needs both
+players' timezones, and the boundary arithmetic belongs to `shared/challengeWeek.ts`.
+Before this, a lapsed-but-unwritten row kept spending one of the six slots until the
+job ran — within the hour on PPE, and indefinitely on dev.
 
 ### The maintenance job (Q60)
 
@@ -2835,7 +2888,7 @@ This document describes (phase 1 is fully built — see the status table at the 
 `server/shared/challengeWeek.ts`,
 `server/__tests__/challengeWeek.test.ts`,
 `server/__tests__/studyChallengeStatus.test.ts` (the lapsed-accept derivation),
-`server/__tests__/studyChallengeIssueWeek.test.ts` (the local week open + the live-pair guard — § 2),
+`server/__tests__/studyChallengeIssueWeek.test.ts` (the local week open, the Monday issue window + the live-pair guard — § 2),
 `server/__tests__/studyChallengeRound.test.ts` (the round gate — § 5.2a),
 `server/contracts/wire.ts`,
 `server/dal/{interfaces,implementations}/StudyChallengeDAL`,

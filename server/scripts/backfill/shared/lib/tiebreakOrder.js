@@ -51,14 +51,24 @@ const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const TIEBREAK_SYSTEM = (language) =>
   `You are a ${language} linguistics expert ranking equally-common senses of a word for a modern (2020s) learner's vocabulary card.`;
 
-const TIEBREAK_INSTRUCTIONS = `You are given a word and one or more GROUPS of its sense clusters. Every cluster inside a group was independently given the SAME 1-5 commonality score (how much that sense would stand out if a friend used it in casual conversation), so the score cannot say which of them the learner should see first. Rank each group.
+// Rule 3 (CORE MEANING BEFORE GRAMMATICAL FUNCTION) was added in zh cluster
+// SCRIPT_VERSION 10 after 回 starred "classifier for times/occurrences" over
+// "to go back / return" — both scored 5, and the old rules gave the model nothing to
+// separate a counting use from the meaning it leans on. Its examples are Chinese
+// because zh is the only caller; Spanish expresses the same test inline in its
+// CLUSTER_RULES rule 7 with function-word examples on the EXCEPTION side, since an
+// es preposition (sobre "on") usually IS the meaning a learner names.
+const TIEBREAK_INSTRUCTIONS = `You are given a word and one or more GROUPS of its sense clusters. Each cluster carries its sense label, glosses and part(s) of speech. Every cluster inside a group was independently given the SAME 1-5 commonality score (how much that sense would stand out if a friend used it in casual conversation), so the score cannot say which of them the learner should see first. Rank each group.
 
 Rules:
 1. RANK BY MARGINAL COMMONALITY, WITHIN the band. The senses in a group really are about equally common — you are separating differences far too small to change anyone's 1-5 score. Never argue that a cluster's score is wrong and never propose a different one; the score is given, your only output is an order.
 2. Rank first the sense a learner is most likely to MEET FIRST and hear most often. Useful tie-breakers, in rough priority: everyday concrete usage over extended or figurative usage; the sense that stands alone as a word over one that only lives inside fixed compounds or set phrases; the sense that covers more ordinary situations over a narrower or domain-specific one; plain modern usage over anything with a formal, regional or dated flavour.
-3. The winner MATTERS: the top-ranked cluster of the highest-scoring group is the sense the flashcard shows by default and the one starred in the sense picker. Pick the one you would want a learner to see with no further context.
-4. Return EVERY cluster id of a group exactly once in that group's "order", and never move a cluster between groups.
-5. reviewNotes is for GENUINE COIN FLIPS only — two senses you truly cannot separate, or a group where you think the shared score itself is the problem. This pass runs on nearly every polysemous word, so do NOT note ordinary close calls; an empty array is the normal answer.
+3. CORE MEANING BEFORE GRAMMATICAL FUNCTION. When a group pits the word's core CONTENT meaning (a verb, noun or adjective sense — what the word is about) against a GRAMMATICAL-FUNCTION sense (a classifier / measure word, a particle, a resultative or directional complement, or any sense that only counts, links or marks), rank the content meaning first, even if the function use is heard just as often: it is the meaning a learner needs to understand the word, and usually the one the function use grew out of. Example: 回 — "to go back / return" outranks "classifier for times/occurrences".
+   EXCEPTION: when the word is overwhelmingly learned AS that function word and its content sense is marginal, bookish or confined to compounds, the function sense wins — 个 (general classifier), 了 (aspect particle), 的 (possessive particle), 把 (object-marking particle over "to hold").
+   The test for both halves: if a learner could know only one of these senses, which would they say the word MEANS?
+4. The winner MATTERS: the top-ranked cluster of the highest-scoring group is the sense the flashcard shows by default and the one starred in the sense picker. Pick the one you would want a learner to see with no further context.
+5. Return EVERY cluster id of a group exactly once in that group's "order", and never move a cluster between groups.
+6. reviewNotes is for GENUINE COIN FLIPS only — two senses you truly cannot separate, or a group where you think the shared score itself is the problem. This pass runs on nearly every polysemous word, so do NOT note ordinary close calls; an empty array is the normal answer.
 
 Return ONLY a valid JSON object, no explanation:
 {"groups":[{"group":<the group number you were given>,"order":[<cluster ids, most common first>]}],"reviewNotes":[<strings>]}`;
@@ -120,8 +130,10 @@ export function createClusterTiebreaker({ anthropic, cachedSystem, model = DEFAU
     const groups = tieGroups(clusters);
     if (groups.length === 0) return { clusters, notes: [], called: false };
 
-    // The model sees ids (original array indices), the sense label and the glosses —
-    // not the cluster objects, so it cannot be tempted to rewrite one.
+    // The model sees ids (original array indices), the sense label, the glosses and the
+    // part(s) of speech — not the cluster objects, so it cannot be tempted to rewrite
+    // one. `pos` is what lets rule 3 see that a cluster is a classifier/particle rather
+    // than inferring it from the label (added v10; before it, 回's classifier sense won).
     const payload = groups.map((g, n) => ({
       group: n,
       score: g.key === 'null' ? null : Number(g.key),
@@ -129,6 +141,7 @@ export function createClusterTiebreaker({ anthropic, cachedSystem, model = DEFAU
         id: i,
         sense: clusters[i].sense,
         glosses: clusters[i].glosses,
+        pos: Array.isArray(clusters[i].pos) ? clusters[i].pos : [],
       })),
     }));
 

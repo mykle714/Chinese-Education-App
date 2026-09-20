@@ -1,6 +1,6 @@
 import { IDictionaryDAL } from '../interfaces/IDictionaryDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
-import type { Language } from '../../types/index.js';
+import type { Language, DictionarySearchRanking } from '../../types/index.js';
 import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry, DefinitionCluster } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
 import { resolveShortDefinition, resolveLongDefinition, type LongDefinitionValue, type LongDefinitionSense } from '../../utils/definitions.js';
@@ -116,6 +116,90 @@ function buildCitationMap(citations: LongDefinitionCitation[] | null | undefined
 // highest conversation frequency, then alphabetical. Kept as one constant so the three query sites
 // below (searchByWord1, its numbered-pinyin fallback, findMultipleByWord1) can't drift apart.
 const RELEVANCE_ORDER_BY = `LENGTH(word1), "frequencyScore" DESC NULLS LAST, word1`;
+
+/**
+ * EVERY sense of an entry as one searchable blob, parentheticals stripped.
+ *
+ * ⚠️ THIS USED TO BE `definitions->>0` — THE FIRST SENSE ONLY — AND THAT WAS A BUG (fixed
+ * 2026-09-09). The justification on record was that the search should only match text the
+ * result card actually displays. That stopped being true: `src/components/DictionaryEntryRow.tsx`
+ * renders `entry.definitions.map(stripParentheses).join('; ')`, i.e. ALL senses. So the card
+ * showed 我 as "I; me; my" while a search for "me" could not find it — `definitions[0]` is "I".
+ * Worse, the search DID return 咱 "I or me" and 麿 "I, me", whose first gloss happens to carry
+ * the word: it found the obscure pronouns and missed the one every learner wants.
+ *
+ * The scale of the gap: 3,225 of the 4,224 discoverable zh rows (76%) carry more than one
+ * sense, averaging 2.67 — roughly 63% of the corpus's meanings were unreachable.
+ *
+ * Cast through `::text` rather than unnesting because this runs in the WHERE, against every
+ * row in the table: measured on dev over 114,768 zh rows, `::text` finds the identical row set
+ * as an `EXISTS`/`jsonb_array_elements_text` lateral at about a third of the cost (533ms vs
+ * 1549ms for five terms, against 320ms for the old first-gloss-only clause). The JSON
+ * punctuation it leaves behind (`["`, `", "`) is harmless: matching is `\y`-anchored, so a
+ * multi-word term cannot bridge two array elements — `["I", "me"]` does not contain `I me`.
+ */
+const STRIPPED_ALL_GLOSSES = `regexp_replace(definitions::text, '\\s*\\([^)]*\\)', '', 'g')`;
+
+/**
+ * Predicate: does ANY single sense of the entry, normalized, equal the (already normalized)
+ * term bound to `param`? This is the `english-first` ladder's bucket-0 test.
+ *
+ * It must unnest rather than reuse `STRIPPED_ALL_GLOSSES`, because "complete" is an EQUALITY
+ * on one sense — 我 is a complete match for "me" precisely because one of its senses IS "me",
+ * which no test against the concatenated blob could express. The cost is acceptable here and
+ * not in the WHERE: an ORDER BY expression is evaluated only over rows that already matched,
+ * typically hundreds rather than the whole table.
+ *
+ * Each element is also split on `'; '` before comparison, mirroring `generateShortDefinition`
+ * (server/utils/definitions.ts) so that "complete" agrees with how the dd is built. Only 18 zh
+ * rows have a `'; '` inside a single element (从来's "never; always"), but the split is free and
+ * without it those senses would be invisible to the equality.
+ */
+function completeGlossMatch(param: string): string {
+  return `EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements_text(definitions) AS d,
+                   LATERAL regexp_split_to_table(d, '; ') AS sense
+              WHERE regexp_replace(
+                      btrim(lower(regexp_replace(sense, '\\s*\\([^)]*\\)', '', 'g'))),
+                      '${GLOSS_LEADING_MARKER_SQL}', ''
+                    ) = ${param}
+            )`;
+}
+
+/**
+ * Leading grammatical markers ignored when testing a gloss for a COMPLETE English match.
+ *
+ * A CC-CEDICT gloss carries the English marker a headword does not: 吃 is *"to eat"*, not
+ * *"eat"*, and 说 is *"to say"*. 648 of the 4,224 discoverable zh rows have a `to `-prefixed
+ * first gloss and another 123 lead with an article. Testing raw equality would therefore drop
+ * the single best answer for every verb into the "incomplete" bucket, behind partial matches
+ * like 饱 "to eat till full" — the opposite of what the ranking is for.
+ *
+ * Stripped from BOTH sides, so a learner who types "to eat" and one who types "eat" get the
+ * same bucket. Longest alternatives first: Postgres ARE alternation is leftmost-longest for
+ * the whole match, but spelling it out costs nothing and does not depend on that.
+ */
+const GLOSS_LEADING_MARKERS = ['to', 'the', 'an', 'a'] as const;
+const GLOSS_LEADING_MARKER_SQL = `^(${GLOSS_LEADING_MARKERS.join('|')})\\s+`;
+const GLOSS_LEADING_MARKER_JS = new RegExp(`^(?:${GLOSS_LEADING_MARKERS.join('|')})\\s+`);
+
+/**
+ * How many rows `english-first` takes from EACH bucket before falling back to plain bucket
+ * order — the "interleaved head".
+ *
+ * Straight bucket order has a failure mode at the top of a small strip: a term with dozens of
+ * complete-English matches fills every visible slot with bucket 0, and the learner never learns
+ * that a complete PINYIN reading of what they typed exists at all. Taking a couple from each
+ * bucket first guarantees that every reading of the term is represented in the first handful of
+ * results; after the head, the ladder resumes exactly as before and no row is lost or
+ * duplicated — the head is a re-ORDERING of the same rows, not a separate query.
+ *
+ * ⚠️ Applies to `english-first` ONLY, which is the iw hint tray's ranking and nothing else's.
+ * `relevance` — the dictionary page and the Community search bar — does not take the windowed
+ * query path at all.
+ */
+const HINT_HEAD_PER_BUCKET = 2;
 
 /**
  * Parse a numbered-pinyin search query (e.g. "jian4 shen1") into a Postgres regex matched
@@ -362,9 +446,10 @@ export class DictionaryDAL implements IDictionaryDAL {
     searchTerm: string,
     language: string,
     limit: number = 50,
-    offset: number = 0
+    offset: number = 0,
+    rankBy: DictionarySearchRanking = 'relevance'
   ): Promise<{ entries: DictionaryEntry[], total: number }> {
-    console.log(`[DICTIONARY-DAL] 🔍 Searching for "${searchTerm}" in ${language} (limit: ${limit}, offset: ${offset})`);
+    console.log(`[DICTIONARY-DAL] 🔍 Searching for "${searchTerm}" in ${language} (limit: ${limit}, offset: ${offset}, rankBy: ${rankBy})`);
     const startTime = performance.now();
 
     // Pinyin is stored lowercase in the pronunciation/numberedPinyin columns, and
@@ -445,31 +530,150 @@ export class DictionaryDAL implements IDictionaryDAL {
     // alone (the pinyin/pronunciation pieces are empty).
     const wordMatchExpr = `word1 ILIKE $2${pronunciationClause}${numberedPinyinClause}`;
 
-    // English-definition search. We match only the text actually shown on the result
-    // card (DictionaryEntryRow): the FIRST definition with all parenthetical substrings
-    // stripped — i.e. regexp_replace(definitions->>0, '\s*\([^)]*\)', '', 'g'), mirroring
-    // the frontend stripParentheses(definitions[0]). Matching is whole-word only, via the
-    // Postgres word-boundary anchor \y, so "art" matches "art"/"fine art" but not "start".
+    // English-definition search, across ALL of an entry's senses (see STRIPPED_ALL_GLOSSES for
+    // why it is no longer the first sense alone — the card displays every sense, so refusing to
+    // match them made 我 "I; me; my" unfindable by "me"). Parenthetical substrings are stripped
+    // first. Matching is whole-word only, via the Postgres word-boundary anchor \y, so "art"
+    // matches "art"/"fine art" but not "start".
     // Case-insensitive (~*) since the query term is lowercased but card text may be capitalised.
     // Guarded by a minimum length so trivial single-letter searches don't scan the table.
     const definitionsSearchEnabled = searchTerm.trim().length >= 2;
     // Escape regex metacharacters in the user term, then anchor it to word boundaries.
     const escapedTerm = searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const wholeWordDefinitionPattern = `\\y${escapedTerm}\\y`;
+    // Held as a bare predicate (no leading OR) because it is needed TWICE: once in the WHERE
+    // group below, and again in the `english-first` ORDER BY, which ranks on whether this
+    // exact test passed. Empty string ⇒ no English search ran for this term.
+    let definitionsMatchExpr = '';
     let definitionsClause = '';
     if (definitionsSearchEnabled) {
       paramIdx += 1;
-      definitionsClause = `\n          OR regexp_replace(definitions->>0, '\\s*\\([^)]*\\)', '', 'g') ~* $${paramIdx}`;
+      definitionsMatchExpr = `${STRIPPED_ALL_GLOSSES} ~* $${paramIdx}`;
+      definitionsClause = `\n          OR ${definitionsMatchExpr}`;
       params.push(wholeWordDefinitionPattern);
     }
 
+    /*
+      ── RANKING ────────────────────────────────────────────────────────────────────────────
+      Which reading of the term leads the result set. Only the ORDER BY changes — the WHERE
+      above is identical for every ranking, so the same rows qualify and the same `total` comes
+      back; what moves is which of them survives a small LIMIT.
+
+      EVERY SURFACE NOW USES THE SAME BUCKETS. A match is COMPLETE when the term IS the whole
+      field (a sense that equals it, a pronunciation it spells in full) and PARTIAL when the
+      term is only a piece of one. Crossed with the two readings:
+
+        0  complete English   a sense IS the term              ("long" → 长; "me" → 我)
+        1  complete word      the headword or pronunciation IS the term   ("long" → 龙 lóng;
+                              es "casa" → casa)
+        2  partial word       the term is a leading prefix     ("long" → 龙头; es → casarse)
+        3  partial English    the term sits inside a sense     ("long" → 寿 "long life")
+
+      "Word" is `word1` in both languages, plus the pronunciation/numberedPinyin regexes for zh.
+      Buckets 1 and 2 differ by a single trailing `$`: an anchored match versus a prefix.
+
+      Every complete match outranks every partial one; English leads the complete pair, pinyin
+      leads the partial pair. The asymmetry is deliberate: someone typing a whole English word
+      usually means it, so an exact gloss is the best answer available — but a PARTIAL pinyin
+      match is usually someone still typing a syllable, which says far more than an English word
+      merely appearing inside a longer definition.
+
+      WHY THIS REPLACED THE OLD TWO-BUCKET ORDER EVERYWHERE. Before the split, the whole word
+      side was ordered by headword length, so a term with many prefix matches buried the exact
+      answers: on dev, "long" put 长 "long" at roughly position 214, behind 190 partial-pinyin
+      rows like 龙头 lóng tóu. It now leads the list.
+
+      ⚠️ `rankBy` NO LONGER CHANGES THE BUCKETS — IT CHANGES ONLY THE HEAD (2026-09-09).
+      `english-first` additionally leads with an INTERLEAVED HEAD (see HINT_HEAD_PER_BUCKET and
+      the windowed query below); `relevance` gets the same ladder without it. That is now the
+      whole of the difference between the iw hint tray and every other search surface. The two
+      value names predate this convergence and are worth revisiting — see
+      `DictionarySearchRanking` in contracts/wire.ts.
+
+      SPANISH USES THE SAME FOUR BUCKETS, with the HEADWORD in pinyin's slot (decided
+      2026-09-09; this reverses an earlier two-buckets-for-es call). es has no pronunciation
+      column, so "complete pinyin" there means `word1` equals the term and "partial pinyin"
+      means it is a prefix — the same complete/partial distinction, read off the only
+      target-language field es has.
+
+      ⚠️ THE TWO-BUCKET VERSION WAS ACTIVELY BROKEN FOR es, and the reason generalizes. Spanish
+      glosses come from Wiktionary and constantly QUOTE the headword — casón is "augmentative of
+      \"casa\"", casita is "diminutive of \"casa\"". With only a gloss bucket and a headword
+      bucket, English leading put every one of those ahead of `casa` itself: searching "casa"
+      ranked the word at position 11, "perro" at 8, "libro" at 5. A complete-match tier is what
+      rescues it — an exact headword outranks anything that merely mentions it.
+
+      Both rankings fall back to the historical two-bucket word-first expression when no English
+      search ran (a sub-2-character term): with no gloss predicate there is nothing to test
+      completeness or Englishness against.
+    */
+
+    // Ranking params are kept OUT of `params` because only the entries query has an ORDER BY.
+    // Postgres rejects a bind that supplies more parameters than the statement references, so
+    // handing these to the COUNT query as well would make it fail outright.
+    const rankParams: any[] = [];
+    let rankIdx = paramIdx;
+    const nextRankParam = (value: any): string => {
+      rankIdx += 1;
+      rankParams.push(value);
+      return `$${rankIdx}`;
+    };
+
+    // The historical word-first order, and the fallback when there is no gloss predicate.
+    const twoBucketRankExpr = `CASE WHEN (${wordMatchExpr}) THEN 0 ELSE 1 END`;
+    let rankExpr = twoBucketRankExpr;
+    /*
+      Whether to take the windowed "interleaved head" query path below. It tracks whether a real
+      ladder was built as well as the ranking, NOT `rankBy` alone: when the ladder degrades to
+      the two-bucket expression (a sub-2-character term), sampling a head off those buckets
+      would re-order results by a rule the caller did not ask for. Degrading should mean
+      degrading all the way to the flat query.
+    */
+    let interleaveHead = false;
+
+    if (definitionsMatchExpr) {
+      interleaveHead = rankBy === 'english-first';
+
+      // Complete English: ANY one of the entry's senses, trimmed, lowercased and stripped of a
+      // leading grammatical marker, EQUALS the term given the same treatment. Testing every
+      // sense rather than just the first is what makes 我 ["I","me","my"] a complete match for
+      // "me" instead of merely a partial one — it IS the word, in its second sense.
+      const normalizedTerm = searchTerm.trim().replace(GLOSS_LEADING_MARKER_JS, '');
+      const completeEnglishExpr = completeGlossMatch(nextRankParam(normalizedTerm));
+
+      // Complete word side: the same fields as `wordMatchExpr`, matched WHOLE instead of as a
+      // prefix. Equality rather than ILIKE, so a term containing `%` or `_` cannot turn the
+      // exact test into a wildcard one (`searchTerm` is already lowercased above, and lower()
+      // is a no-op on hanzi). The pinyin halves are zh-only: es has NULL pronunciation and
+      // numberedPinyin, so its complete-word test is the headword alone.
+      const completeWordParts = [`lower(word1) = ${nextRankParam(searchTerm.trim())}`];
+      if (isZh) {
+        completeWordParts.push(`pronunciation ~ ${nextRankParam(`${regexPattern}$`)}`);
+        if (numberedPinyinPattern) {
+          completeWordParts.push(`"numberedPinyin" ~* ${nextRankParam(`${numberedPinyinPattern}$`)}`);
+        }
+      }
+
+      // A CASE ladder, so precedence needs no extra predicates: a row that is both a complete
+      // English and a complete word match takes 0, and bucket 3 is the ELSE by elimination —
+      // the WHERE guarantees every row matched something, so anything reaching it matched a
+      // gloss without matching the word side.
+      rankExpr = `CASE
+          WHEN (${completeEnglishExpr}) THEN 0
+          WHEN (${completeWordParts.join(' OR ')}) THEN 1
+          WHEN (${wordMatchExpr}) THEN 2
+          ELSE 3
+        END`;
+    }
+
     // Placeholder indices for LIMIT/OFFSET shift with however many optional params preceded them.
-    const limitPlaceholder = `$${paramIdx + 1}`;
-    const offsetPlaceholder = `$${paramIdx + 2}`;
+    const limitPlaceholder = `$${rankIdx + 1}`;
+    const offsetPlaceholder = `$${rankIdx + 2}`;
 
     // Build the parameter lists so their count exactly matches the referenced placeholders.
+    // The count query sees only the WHERE params; the entries query adds the ranking ones.
     const countParams: any[] = params;
-    const entriesParams = [...params, limit, offset];
+    const entriesParams = [...params, ...rankParams, limit, offset];
 
     // Get total count for pagination
     // Search with regex for pronunciation (accent-agnostic + word boundaries), LIKE for word1/definitions
@@ -484,18 +688,60 @@ export class DictionaryDAL implements IDictionaryDAL {
       `, countParams);
     });
 
-    // Get paginated results
-    // Search with regex for pronunciation (accent-agnostic + word boundaries), LIKE for word1/definitions
-    // Exclude results where pronunciation ends in 'g' immediately after the search term
+    /*
+      Get paginated results. Two shapes, and which one runs is decided ENTIRELY by `rankBy`:
+
+      • `relevance` — the flat query this has always been: WHERE, then ORDER BY the two-bucket
+        CASE. Untouched, and it is what the dictionary page and the Community search bar run,
+        so nothing below can change their behaviour or their query plan.
+
+      • `english-first` — the same WHERE wrapped in a subquery that also numbers each row
+        WITHIN its bucket, so the outer ORDER BY can put the first `HINT_HEAD_PER_BUCKET` rows
+        of every bucket ahead of everything else (the "interleaved head"), then resume plain
+        bucket order. The window is computed after WHERE and before LIMIT, so paging through it
+        is coherent: the head occupies the first slots of page 1 and the tail continues across
+        pages with no row repeated or skipped.
+
+      The bucket expression is repeated inside `OVER (PARTITION BY …)` because Postgres cannot
+      reference a SELECT alias from the same level's window clause. It is the same generated
+      SQL and the same bound placeholders, so it costs nothing but width.
+    */
     const entriesResult = await this.dbManager.executeQuery<any>(async (client) => {
-      return await client.query(`
-        SELECT ${dictionaryColumns(language)}
-        FROM ${table}
+      const whereSql = `
         WHERE language = $1 AND (
           ${wordMatchExpr}${definitionsClause}
-        )${pronunciationExclusion}
+        )${pronunciationExclusion}`;
+
+      if (interleaveHead) {
+        // The outer list is the plain column NAMES: for es, `dictionaryColumns` aliases its
+        // NULL placeholder to the right name inside the subquery, so the names resolve for
+        // both languages.
+        return await client.query(`
+          SELECT ${DICTIONARY_COLUMNS}
+          FROM (
+            SELECT ${dictionaryColumns(language)},
+              (${rankExpr}) AS "rankBucket",
+              ROW_NUMBER() OVER (
+                PARTITION BY (${rankExpr})
+                ORDER BY ${RELEVANCE_ORDER_BY}
+              ) AS "bucketPos"
+            FROM ${table}${whereSql}
+          ) ranked
+          ORDER BY
+            CASE WHEN "bucketPos" <= ${HINT_HEAD_PER_BUCKET} THEN 0 ELSE 1 END,
+            "rankBucket",
+            "bucketPos"
+          LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
+        `, entriesParams);
+      }
+
+      // Search with regex for pronunciation (accent-agnostic + word boundaries), LIKE for word1/definitions
+      // Exclude results where pronunciation ends in 'g' immediately after the search term
+      return await client.query(`
+        SELECT ${dictionaryColumns(language)}
+        FROM ${table}${whereSql}
         ORDER BY
-          CASE WHEN (${wordMatchExpr}) THEN 0 ELSE 1 END,
+          ${rankExpr},
           ${RELEVANCE_ORDER_BY}
         LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
       `, entriesParams);
@@ -1228,7 +1474,7 @@ export class DictionaryDAL implements IDictionaryDAL {
       senseIdx[i] = sensesByEntry[i].map(s => push(s.definition));
     });
 
-    const partsByText = await this.segmentLongDefinitionTexts(texts, language, citationsByText);
+    const partsByText = await this.segmentTextsWithMetadata(texts, language, citationsByText);
 
     return entries.map((entry, i) => {
       // The raw citation list is a server-side join key only — the translations are already
@@ -1261,7 +1507,27 @@ export class DictionaryDAL implements IDictionaryDAL {
    * A citation is applied ONLY to a run that is not itself a det headword — see the
    * `detWords` check below.
    */
-  private async segmentLongDefinitionTexts(
+  /**
+   * GSA-segment arbitrary target-language text and attach the per-segment popup metadata
+   * (pronunciation + dd) the est's `SegmentedSentenceDisplay` renders.
+   *
+   * Public because a second surface needs it: Immersive World hands NPC dialogue through
+   * here so a spoken line is tappable in exactly the way an example sentence is
+   * (docs/IMMERSIVE_WORLD.md § 5.3b). That is also why the method below is no longer named
+   * for long definitions — it never was about them, it was about "text with embedded
+   * target-language runs", which a bubble is too.
+   *
+   * Batched: one dictionary query covers every text in the array, so a whole scene's
+   * authored lines cost the same round trip as one.
+   */
+  async segmentTexts(
+    texts: string[],
+    language: string
+  ): Promise<(LongDefinitionPart[] | null)[]> {
+    return this.segmentTextsWithMetadata(texts, language);
+  }
+
+  private async segmentTextsWithMetadata(
     texts: string[],
     language: string,
     citationsByText?: (Map<string, string> | null)[]

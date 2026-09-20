@@ -123,15 +123,21 @@ describe('layer 3 — the volatile turn', () => {
     expect(renderTurnState(baseTurn())).toContain('say NOTHING');
   });
 
-  it('renders distance as a number, and the two perception notes', () => {
+  /**
+   * `muffled` went with § 4's occlusion model (2026-09-07). It had never been SET by anything
+   * — the client's `contextFor` has only ever built `{label, distance, facingYou}` — so this
+   * test was the field's only caller, which is why the removal is a deletion rather than a
+   * migration. `facingYou` is the one perception note left.
+   */
+  it('renders distance as a number, and the facing note', () => {
     const text = renderTurnState(baseTurn({
       nearby: [
         { label: 'the customer', distance: 2, facingYou: true },
-        { label: '老周', distance: 7, muffled: true },
+        { label: '老周', distance: 7 },
       ],
     }));
     expect(text).toContain('- the customer at 2 tiles, facing you');
-    expect(text).toContain('- 老周 at 7 tiles, muffled, something is in the way');
+    expect(text).toContain('- 老周 at 7 tiles');
   });
 
   it('says "nothing yet" for an empty history, but omits holding entirely', () => {
@@ -169,6 +175,35 @@ describe('layer 3 — the volatile turn', () => {
     const text = renderTurnState(baseTurn({ spokeLastTurn: true }));
     expect(text).toContain('You spoke on the last beat.');
     expect(text).not.toMatch(/do not speak|you must|stay quiet/i);
+  });
+
+  /**
+   * ⚠️ The volume is COLOUR, not a gate (§ 4c). Whether this NPC hears the line at all was
+   * settled before the turn was requested — an NPC out of range is never asked — so what
+   * reaches layer 3 is only the register the answer should match.
+   */
+  it('says how loudly the line was said, when the learner chose', () => {
+    const said = (volume: 'whisper' | 'talk' | 'shout') => renderTurnState(baseTurn({
+      event: { kind: 'utterance', speaker: 'the customer', text: '买单', addressed: true, volume },
+    }));
+    expect(said('whisper')).toContain('whispered to you');
+    expect(said('shout')).toContain('shouted to you');
+    expect(said('talk')).toContain('said to you');
+  });
+
+  it('reads exactly as before when no volume is sent', () => {
+    const text = renderTurnState(baseTurn({
+      event: { kind: 'utterance', speaker: 'the customer', text: '买单', addressed: true },
+    }));
+    expect(text).toContain('said to you');
+    expect(text).not.toMatch(/whispered|shouted/);
+  });
+
+  it('carries the volume through the overheard phrasing too', () => {
+    const text = renderTurnState(baseTurn({
+      event: { kind: 'utterance', speaker: 'the customer', text: '买单', addressed: false, volume: 'shout' },
+    }));
+    expect(text).toContain('you overheard the customer shouted, not to you');
   });
 
   it('handles an approach with no speech', () => {

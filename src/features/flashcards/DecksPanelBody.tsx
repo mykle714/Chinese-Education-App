@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef, useState, useCallback } from "react";
+import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { Box, Typography, Collapse } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { styled } from "@mui/material/styles";
@@ -190,6 +190,12 @@ export interface DecksPanelBodyProps {
      * "page" variant — there is nothing to resize.
      */
     headerDragBind?: () => Record<string, unknown>;
+    /**
+     * Scroll the body to this offset once, on mount — a Back restore
+     * (backRestore.ts). Read once; later renders passing a different value change
+     * nothing, so a restore never fights the learner's own scrolling.
+     */
+    initialScrollTop?: number;
 }
 
 // ── Sheet bottom edge ─────────────────────────────────────────────────────────
@@ -212,6 +218,7 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
     onOpenCard,
     onNewDeck,
     headerDragBind,
+    initialScrollTop,
 }, ref) {
     const {
         lens, goals, language, collections, tileCount,
@@ -228,6 +235,27 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
     const showDecks = section === "all" || section === "decks";
     const rootRef = useRef<HTMLDivElement | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
+
+    // ── Back restore: put the scroller back where the learner left it ────────────
+    // Deps-free on purpose, guarded by a once-flag: in the SHEET variant this body lives
+    // inside SheetPanel's portal, which mounts on a later commit than the page, so the
+    // scroller may not exist on the first pass. The grid is already at its full height
+    // (a restored panel skips the paced reveal and reserves the grid's height), so the
+    // offset is reachable immediately; it is re-applied one frame later because the
+    // sheet writes its own restored height in a layout effect that runs after this one.
+    const initialScrollTopRef = useRef(initialScrollTop);
+    const scrollRestoredRef = useRef(false);
+    useLayoutEffect(() => {
+        const target = initialScrollTopRef.current;
+        if (scrollRestoredRef.current || !target) return;
+        const el = scrollRef.current;
+        if (!el) return;
+        scrollRestoredRef.current = true;
+        el.scrollTop = target;
+        // Not cancelled on cleanup: a re-render inside the frame would otherwise drop it,
+        // and writing a detached node's scrollTop is harmless.
+        requestAnimationFrame(() => { if (el.isConnected) el.scrollTop = target; });
+    });
     // Purely presentational, so it lives here rather than in the page: nothing above
     // this component behaves differently when the deck tiles are folded away.
     const [decksOpen, setDecksOpen] = useState(readDecksOpen);
@@ -553,6 +581,8 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                         // flicker, and search narrowing is not a change of set.
                         key={cardsFilter}
                         entries={visibleCards}
+                        // A Back-restored panel paints its final grid at once (backRestore.ts).
+                        revealImmediately={panel.restored}
                         // One strip per card, on the panel's own bar (core in the fdp).
                         lens={lens}
                         loading={cardsLoading}

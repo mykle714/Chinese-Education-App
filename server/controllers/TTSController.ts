@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import type { TTSService } from '../services/TTSService.js';
+import { toTTSVoiceKey, type TTSService } from '../services/TTSService.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 
@@ -7,7 +7,7 @@ import { dictTableForLanguage } from '../dal/shared/dictTable.js';
  * TTSController
  *
  * POST /api/tts/synthesize
- *   body: { text, language?, pronunciation?, stamp? }
+ *   body: { text, language?, pronunciation?, voice?, stamp? }
  *   returns: audio/mpeg MP3 stream (with long-lived Cache-Control)
  *
  * Flow: look up the det row → ask TTSService for audio (disk-cache aware) →
@@ -37,6 +37,13 @@ export class TTSController {
           ? body.pronunciation.trim()
           : null;
 
+      // WHICH voice within the language: 'default' | 'male' | 'female' (see TTSVoiceKey).
+      // ⛔ An abstract ROLE, never a provider voice name — `toTTSVoiceKey` rejects anything
+      // else back to 'default'. Accepting a name here would let any authenticated caller
+      // synthesize through an arbitrary (and arbitrarily priced) Google voice on our billing
+      // account, and would let a typo become a 400 from the provider instead of a default.
+      const voiceKey = toTTSVoiceKey(body.voice);
+
       // Whether to stamp det."ttsVoice" on a cache miss. See the stamp block below.
       const stamp: boolean = body.stamp !== false;
 
@@ -53,7 +60,7 @@ export class TTSController {
       // Map short language code → BCP-47 TTS tag. Expand here as new langs get TTS.
       const ttsLang = language === 'zh' ? 'zh-CN' : language;
 
-      const result = await this.ttsService.synthesize(text, ttsLang, pronunciation);
+      const result = await this.ttsService.synthesize(text, ttsLang, pronunciation, voiceKey);
 
       // Best-effort: stamp the matching det row(s) so we can later query "which
       // det rows have cached audio". Matched by (word1, language) since the client
@@ -66,7 +73,13 @@ export class TTSController {
       // which is what an Immersive World NPC line is (docs/IMMERSIVE_WORLD.md § 6.4's code
       // note): one pointless write per spoken line, invisible until somebody reads the query
       // log. Opt-OUT rather than opt-in so every existing caller keeps its behaviour.
-      if (!result.cacheHit && stamp) {
+      //
+      // ⛔ ALSO SKIPPED FOR A NON-DEFAULT VOICE. The stamp records `result.voice`, the RESOLVED
+      // voice name, into shared dictionary data — so one learner who picked the male voice in
+      // /settings would otherwise rewrite the column for everybody, and `ttsVoice` would stop
+      // meaning "this row has audio in the voice the app reads with". The learner's voice
+      // preference is per-account (localStorage); the det row is not.
+      if (!result.cacheHit && stamp && this.ttsService.isDefaultVoice(ttsLang, voiceKey)) {
         const detTable = dictTableForLanguage(language);
         const c = await db.getClient();
         try {

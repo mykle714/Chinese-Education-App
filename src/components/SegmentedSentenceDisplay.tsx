@@ -1,10 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Box, Popper, Typography } from "@mui/material";
+import { Box } from "@mui/material";
+import CpcdPopup from "./CpcdPopup";
 import type { Instance as PopperInstance } from "@popperjs/core";
 import { stripParentheses } from "../utils/definitionUtils";
 import ForeignText, { type CPCDRowItem, isLatinScriptLang } from "./ForeignText";
-import { FONTS } from "../theme/fonts";
-import { SIZE } from "../theme/scale";
 import { claimSegmentSelection, registerSegmentSelectionOwner } from "../utils/segmentSelectionOwner";
 import { pickDrillRung } from "../utils/segmentDrill";
 import { applyYiBuSandhi } from "../utils/toneSandhi";
@@ -788,112 +787,54 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         );
       })()}
 
-      {/* Render into a portal via Popper so the popup escapes any ancestor's
-          overflow:auto/hidden (e.g. the EIP scroll container) and is never clipped. */}
-      <Popper
+      {/* Tapped-segment definition box. The card itself (placement, looks) is the
+          shared CpcdPopup; everything below is this surface's behaviour.
+          When interactive, the popup must fully absorb the tap. We open on
+          pointerup and, on both pointerdown and pointerup, call:
+            - stopPropagation() so the event doesn't bubble in the React tree to
+              the row Box's onPointerDown (which would clear the selection). Note
+              the Popper is portaled in the DOM but is still a React child of the
+              row, so React events DO bubble to it.
+            - preventDefault() on pointerdown to suppress the compatibility
+              mouse/click synthesis on touch. Without it, that ghost click fires
+              ~after the popup closes and lands on whatever is now behind it
+              (the "tap registers behind the popup" bug). */}
+      <CpcdPopup
         open={showPopup}
         anchorEl={popperAnchorEl}
         popperRef={popperInstanceRef}
-        placement="top"
-        modifiers={[
-          { name: "offset", options: { offset: [0, 6] } },
-          { name: "preventOverflow", options: { boundary: "viewport", padding: 8 } },
-          { name: "flip", options: { fallbackPlacements: ["bottom"] } },
-        ]}
-        sx={{ zIndex: 1300 }}
-      >
-        <Box
-          ref={popupRef}
-          className="segment-definition-popup"
-          onMouseEnter={cancelDismiss}
-          onMouseLeave={scheduleDismiss}
-          // When interactive, the popup must fully absorb the tap. We open on
-          // pointerup and, on both pointerdown and pointerup, call:
-          //   - stopPropagation() so the event doesn't bubble in the React tree to
-          //     the row Box's onPointerDown (which would clear the selection). Note
-          //     the Popper is portaled in the DOM but is still a React child of the
-          //     row, so React events DO bubble to it.
-          //   - preventDefault() on pointerdown to suppress the compatibility
-          //     mouse/click synthesis on touch. Without it, that ghost click fires
-          //     ~after the popup closes and lands on whatever is now behind it
-          //     (the "tap registers behind the popup" bug).
-          onPointerDown={
-            isPopupInteractive
-              ? (e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  setPopupPressed(true);
-                }
-              : undefined
-          }
-          onPointerUp={
-            isPopupInteractive
-              ? (e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  setPopupPressed(false);
-                  if (selectedRange?.segment) onSegmentOpen!(selectedRange.segment);
-                  setSelectedRange(null);
-                }
-              : undefined
-          }
-          // Cancel the pressed state if the finger/pointer leaves the popup or the
-          // gesture is aborted (e.g. scroll), so it doesn't stay greyed out.
-          onPointerLeave={isPopupInteractive ? () => setPopupPressed(false) : undefined}
-          onPointerCancel={isPopupInteractive ? () => setPopupPressed(false) : undefined}
-          sx={{
-            backgroundColor: "#FFFFFF",
-            border: "1px solid",
-            borderColor: "divider",
-            borderRadius: "8px",
-            boxShadow: 2,
-            px: 1.25,
-            py: 0.75,
-            maxWidth: "220px",
-            ...(isPopupInteractive && {
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 0.5,
-              // Grey the whole card while pressed so a registered tap is obvious.
-              transition: "background-color 100ms ease",
-              backgroundColor: popupPressed ? "action.selected" : "#FFFFFF",
-            }),
-          }}
-        >
-          <Typography
-            className="segment-definition-popup__text"
-            sx={{
-              fontSize: SIZE.caption,
-              lineHeight: 1.3,
-              color: "text.primary",
-              fontFamily: FONTS.sans,
-              textAlign: "center",
-              wordBreak: "break-word",
-              ...(isPopupInteractive && { flex: 1, textAlign: "left" }),
-            }}
-          >
-            {selectedRange?.definition ? stripParentheses(selectedRange.definition) : ""}
-          </Typography>
-          {isPopupInteractive && (
-            // Same drill-in chevron the breakdown/used-in rows use, so "chevron =
-            // opens the eip for this word" stays a consistent gesture across the card.
-            <Box
-              className="segment-definition-popup__chevron"
-              component="span"
-              sx={{
-                flexShrink: 0,
-                fontSize: SIZE.body,
-                lineHeight: 1,
-                color: "text.secondary",
-                fontFamily: FONTS.sans,
-              }}
-            >
-              ›
-            </Box>
-          )}
-        </Box>
-      </Popper>
+        cardRef={popupRef}
+        className="segment-definition-popup"
+        interactive={isPopupInteractive}
+        pressed={popupPressed}
+        text={selectedRange?.definition ? stripParentheses(selectedRange.definition) : ""}
+        onMouseEnter={cancelDismiss}
+        onMouseLeave={scheduleDismiss}
+        onPointerDown={
+          isPopupInteractive
+            ? (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setPopupPressed(true);
+              }
+            : undefined
+        }
+        onPointerUp={
+          isPopupInteractive
+            ? (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setPopupPressed(false);
+                if (selectedRange?.segment) onSegmentOpen!(selectedRange.segment);
+                setSelectedRange(null);
+              }
+            : undefined
+        }
+        // Cancel the pressed state if the finger/pointer leaves the popup or the
+        // gesture is aborted (e.g. scroll), so it doesn't stay greyed out.
+        onPointerLeave={isPopupInteractive ? () => setPopupPressed(false) : undefined}
+        onPointerCancel={isPopupInteractive ? () => setPopupPressed(false) : undefined}
+      />
     </Box>
   );
 };

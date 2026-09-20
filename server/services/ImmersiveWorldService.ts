@@ -1,16 +1,23 @@
 import { npcById } from '../config/iwNpcs.js';
-import type { IWScene, IWSceneCastMember, IWSceneSummary } from '../contracts/iw.js';
+import type { IWScene, IWSceneSummary } from '../contracts/iw.js';
 import { findMetaLanguage, renderNpcBlock } from './iw/npcPrompt.js';
 import { getIwLadder } from './iw/modelLadder.js';
 import { runNpcTurn, type IWModelRung, type IWRungAttempt, type IWTurnOutcome } from './iw/npcTurn.js';
 import { buildTurnOffers, type TurnOffer } from './iw/turnOffers.js';
-import { renderTurnState, type TurnStateInput } from './iw/turnState.js';
+import { renderTurnState, type IWContextInput, type TurnStateInput } from './iw/turnState.js';
+import { buildLineSystemBlock, renderNpcLine, type IWLineOutcome } from './iw/lineRender.js';
+import { routeAddressee, type RouterCastMember } from './iw/addresseeRouter.js';
 import { renderWorldRules } from './iw/worldRules.js';
 import type { IWTurnReply } from './iw/turnParser.js';
 import { iwTurnBudget, IWTurnBudget, type IWBudgetRefusal } from './iw/turnBudget.js';
 import type { IImmersiveWorldDAL } from '../dal/interfaces/IImmersiveWorldDAL.js';
 import { npcOptionsForLanguage } from './iw/npcOptions.js';
-import type { IWNpcOption } from '../contracts/iw.js';
+import { resolveCastMember } from './iw/sceneCast.js';
+import type { IWLineSegments, IWNpcOption, IWTranscriptEntry } from '../contracts/iw.js';
+import { IW_ACTOR_PLAYER } from '../contracts/iw.js';
+import { SceneTranscript } from './iw/sceneTranscript.js';
+import type { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
+import { partsToLineSegments } from './iw/lineSegments.js';
 
 /**
  * ImmersiveWorldService — the runtime half of iw (§ 8, phase 2).
@@ -24,12 +31,14 @@ import type { IWNpcOption } from '../contracts/iw.js';
  * a human's eye and may refuse; this runs many times per second in front of a learner and may
  * never refuse — the worst it does is freeze with a banner (§ 14 Q7).
  *
- * ⚠️ **THE HEARING GATE IS NOT HERE.** § 4 puts audibility client-side, as pure geometry
- * running BEFORE any model call, so by the time a request reaches this service the client has
- * already decided who heard what. That is the correct place for it — the gate must be
- * inspectable and it is also the § 4.1 cost control — but it means this service TRUSTS the
- * client about who was in earshot. Phase 2 accepts that; the bound that actually exists is
- * § 7's per-user rate limit and daily cap, which is why those are not optional.
+ * ⚠️ **THE CLIENT DECIDES WHO IS ASKED, AND THIS SERVICE CANNOT CHECK IT.** The endpoint
+ * takes one npcId per call and the client fans out, so a caller can ask for a turn from any
+ * NPC in any scene, claiming any perception. That was true when § 4's earshot gate stood in
+ * front of it and is no less true now the gate is withdrawn (2026-09-07) — the gate was
+ * client-side geometry either way. What changed is that there is no longer a *shape* of
+ * request the server could in principle validate: the honest audience is now the whole cast,
+ * so the only bounds are § 7's per-user rate limit, listener cap and daily cap. They are not
+ * optional; they are the entire defence.
  *
  * Referenced by: docs/IMMERSIVE_WORLD.md § 5.4, § 5.5, § 8, § 14 Q7.
  */
@@ -40,6 +49,14 @@ export interface NpcTurnRequest {
   npcId: string;
   /** Complication and event ids that have fired so far in this run. */
   firedCues?: readonly string[];
+  /**
+   * Conversation ids already overheard in this run — each plays at most once (`turnOffers`).
+   *
+   * Client-held, like `firedCues`, and for the same reason: it is per-RUN state and the run
+   * lives in the browser tab. A reload starts a new run and hears them again, which is
+   * correct — it is a new scene, not a resumed one.
+   */
+  playedConversations?: readonly string[];
   /** Layer 3's contents minus the offers, which this service computes. */
   perception: Omit<TurnStateInput, 'offers'>;
   /** Override the ladder — tests and the CLI probe pass fakes. */
@@ -95,15 +112,20 @@ export function buildSystemBlock(npcId: string, offeredNames: readonly string[])
 export async function takeNpcTurn(request: NpcTurnRequest): Promise<NpcTurnResult> {
   const { scene, npcId } = request;
 
-  // Both halves must hold: the NPC has to be CAST in this scene (so it has actions and a
-  // position) and has to exist in the registry (so it has a sheet). A scene can name an npcId
-  // the code no longer defines — the cast is TEXT, not a foreign key, because the referent is
-  // code — so the two checks are genuinely different failures with one answer.
-  const member = (scene.npcCast ?? []).find((m: IWSceneCastMember) => m.npcId === npcId);
+  // Both halves must hold: the NPC has to be IN this scene (so it has actions and a position)
+  // and has to exist in the registry (so it has a sheet). A scene can name an npcId the code
+  // no longer defines — the cast is TEXT, not a foreign key, because the referent is code — so
+  // the two checks are genuinely different failures with one answer.
+  //
+  // "In this scene" is `resolveCastMember`, not a lookup in `npcCast`, because the COMPANION is
+  // in every scene without being cast in any of them (§ 14 Q25). Reading the stored list
+  // directly is what made him unanswerable.
+  const member = resolveCastMember(scene, npcId);
   if (!member || !npcById(npcId)) return { kind: 'unknown-npc', npcId };
 
   const firedCues = new Set(request.firedCues ?? []);
-  const { offers, names, suppressed } = buildTurnOffers(scene, member, firedCues);
+  const played = new Set(request.playedConversations ?? []);
+  const { offers, names, suppressed } = buildTurnOffers(scene, member, firedCues, played);
 
   const user = renderTurnState({ ...request.perception, offers });
   const outcome: IWTurnOutcome = await runNpcTurn({
@@ -127,6 +149,54 @@ export async function takeNpcTurn(request: NpcTurnRequest): Promise<NpcTurnResul
     offers,
     suppressed,
   };
+}
+
+/** One authored direction to put into an NPC's own words (§ 14 Q42). */
+export interface NpcLineRequest {
+  scene: IWScene;
+  npcId: string;
+  /**
+   * The authored direction — an intention in the author's language, never a line.
+   *
+   * Optional since 2026-09-19: an unbriefed `prompt_npc` cue sends none, and the NPC speaks
+   * from character and perception alone. See {@link renderLineDirection} for the two closers.
+   */
+  direction?: string;
+  /** Who it is aimed at, as this NPC would name them. Omitted = the NPC picks. */
+  toward?: string;
+  /** What this NPC perceives. The SAME shape a turn takes, minus the event. */
+  perception: IWContextInput;
+  rungs?: readonly IWModelRung[];
+  onDelta?: (text: string, attemptIndex: number, complete: boolean) => void;
+}
+
+export type NpcLineResult =
+  | { kind: 'line'; text: string; rung: string; attempts: IWRungAttempt[] }
+  | { kind: 'frozen'; attempts: IWRungAttempt[] }
+  | { kind: 'unknown-npc'; npcId: string };
+
+/**
+ * Render one authored direction as something this NPC would actually say (§ 14 Q42).
+ *
+ * The same two-part membership check a turn makes, and for the same reason — a scene's cast
+ * is TEXT, so "in this scene" and "exists in the registry" are different failures with one
+ * answer — routed through `resolveCastMember` so the COMPANION is renderable too (§ 14 Q25).
+ * He is the NPC whose lines are most often authored, so getting this wrong would silence the
+ * one character every scene has.
+ */
+export async function takeNpcLine(request: NpcLineRequest): Promise<NpcLineResult> {
+  const { scene, npcId } = request;
+  const member = resolveCastMember(scene, npcId);
+  const npc = npcById(npcId);
+  if (!member || !npc) return { kind: 'unknown-npc', npcId };
+
+  const outcome: IWLineOutcome = await renderNpcLine({
+    rungs: request.rungs ?? getIwLadder(),
+    system: buildLineSystemBlock(renderNpcBlock(npc)),
+    direction: { ...request.perception, direction: request.direction, toward: request.toward },
+    onDelta: request.onDelta,
+  });
+  return outcome;
 }
 
 /**
@@ -159,13 +229,62 @@ export interface IWTurnHttpRequest {
   sessionId: string;
   npcId: string;
   firedCues?: readonly string[];
+  playedConversations?: readonly string[];
   perception: Omit<TurnStateInput, 'offers'>;
 }
+
+/** One line render from the client: whose line, what it means, and what they perceive. */
+/** What the client asks the addressee router (§ 4.2). Sheets are NOT sent — see the service. */
+export interface IWRouteHttpRequest {
+  sceneId: string;
+  utterance: string;
+  cast: readonly RouterCastMember[];
+  heard: readonly string[];
+}
+
+/**
+ * ⚠️ `routed` WITH A NULL `npcId` IS A SUCCESS, not a failure. It means "the model had no
+ * opinion, use your own rules" — which the client can always do, and which is why this shape
+ * has no `frozen` case the way a turn does.
+ */
+export type IWRouteRuntimeResult =
+  | { kind: 'routed'; npcId: string | null; detail: string }
+  | { kind: 'refused'; refusal: IWBudgetRefusal }
+  | { kind: 'no-scene'; sceneId: string };
+
+export interface IWLineHttpRequest {
+  sceneId: string;
+  sessionId: string;
+  npcId: string;
+  /** Optional since 2026-09-19 — an unbriefed cue. See {@link NpcLineRequest.direction}. */
+  direction?: string;
+  toward?: string;
+  perception: IWContextInput;
+}
+
+export type IWLineRuntimeResult =
+  | { kind: 'refused'; refusal: IWBudgetRefusal }
+  | { kind: 'no-scene'; sceneId: string }
+  | NpcLineResult;
 
 /** What a learner needs to open a scene: the scene itself, and who is in it. */
 export interface IWScenePlayPayload {
   scene: IWScene;
   npcs: IWNpcOption[];
+  /**
+   * ⚠️ **ALWAYS EMPTY SINCE 2026-09-07, AND KEPT ONLY AS A WIRE FIELD.**
+   *
+   * It used to carry every authored line the scene could speak, segmented up front for
+   * § 5.3b's tap-to-look-up — one batched dictionary query at scene open instead of a round
+   * trip in front of each one. § 14 Q42 removed the premise: there ARE no authored lines any
+   * more. What a scene stores is a DIRECTION, which is rendered by the model into Chinese at
+   * the moment it is spoken, so the string that reaches the bubble does not exist until then
+   * and arrives with its own `segments` event, exactly like a turn's.
+   *
+   * The field stays so an older client keeps parsing the payload. Remove it once none are
+   * left, along with `IWScenePlayPayload.lineSegments` on the client.
+   */
+  lineSegments: Record<string, IWLineSegments>;
 }
 
 export type IWRuntimeResult =
@@ -202,6 +321,19 @@ export class ImmersiveWorldService {
      * the shape of test that stops being run.
      */
     private readonly rungs?: readonly IWModelRung[],
+    /**
+     * The dictionary, for § 5.3b's segmented bubbles. OPTIONAL, and the feature degrades to
+     * plain text without it rather than failing — a scene that cannot be looked up is still
+     * a scene you can walk around and talk in, and every test of the turn pipeline would
+     * otherwise need a dictionary it has no opinion about.
+     */
+    private readonly dictionaryDAL?: IDictionaryDAL,
+    /**
+     * Where a run's conversation is kept (§ 12 phase 3). Defaulted rather than injected at
+     * every call site for the same reason `budget` is: every existing construction and every
+     * existing test predates it, and a transcript is not something a caller opts into.
+     */
+    private readonly transcript: SceneTranscript = new SceneTranscript(iwDAL),
   ) {}
 
   /**
@@ -229,6 +361,7 @@ export class ImmersiveWorldService {
       scene,
       npcId: request.npcId,
       firedCues: request.firedCues,
+      playedConversations: request.playedConversations,
       perception: request.perception,
       rungs: this.rungs,
       onDelta,
@@ -236,7 +369,89 @@ export class ImmersiveWorldService {
 
     // Only a turn that produced words is billed to the session (see the header).
     if (result.kind === 'reply') this.budget.spend(userId, request.sessionId);
+
+    // ⚠️ **THE LEARNER'S LINE IS KEPT ONLY WHEN THE TURN PRODUCED A REPLY, AND THE PAIRING IS
+    // WHY.** A frozen turn is a line that was said into a scene that did not answer; storing
+    // the half of it we have would put an unanswered utterance in the transcript that reads
+    // as an NPC ignoring the learner, which is a different — and untrue — story. The one
+    // genuine gap this leaves is § 4c's no-audience case: an utterance nobody could hear
+    // never reaches this endpoint at all, so nothing here can keep it.
+    if (result.kind === 'reply') {
+      this.transcript.record(userId, request.sessionId, { sceneId: request.sceneId, language: scene.language }, [
+        ...(spoken ? [entry(IW_ACTOR_PLAYER, spoken)] : []),
+        entry(request.npcId, result.reply.say),
+      ]);
+    }
     return { ...result, remaining: this.budget.remaining(request.sessionId) };
+  }
+
+  /**
+   * Render one authored direction on behalf of an authenticated learner (§ 14 Q42).
+   *
+   * ⚠️ **A FROZEN RENDER IS NOT BILLED AND NOT SPOKEN.** Same shape as a turn: the cap is
+   * checked before the call and spent only when words came back, because a learner who got
+   * nothing should not be charged for it. The difference is what the caller does with the
+   * failure — a frozen TURN freezes the scene, a frozen RENDER just skips the step, because
+   * the rest of the script is still perfectly playable without that one beat.
+   */
+  async runLine(
+    userId: string,
+    request: IWLineHttpRequest,
+    onDelta?: (text: string, attemptIndex: number, complete: boolean) => void,
+  ): Promise<IWLineRuntimeResult> {
+    const refusal = this.budget.checkSceneCall(userId);
+    if (refusal) return { kind: 'refused', refusal };
+
+    const scene = await this.iwDAL.findSceneById(request.sceneId);
+    if (!scene) return { kind: 'no-scene', sceneId: request.sceneId };
+
+    const result = await takeNpcLine({
+      scene,
+      npcId: request.npcId,
+      direction: request.direction,
+      toward: request.toward,
+      perception: request.perception,
+      rungs: this.rungs,
+      onDelta,
+    });
+    if (result.kind === 'line') {
+      this.budget.spendSceneCall(userId);
+      // An authored beat is as much a part of the conversation as a turn is — since § 14 Q42
+      // it IS generated speech, in the same voice, and a transcript missing it would read as
+      // the learner talking to themselves between replies.
+      this.transcript.record(userId, request.sessionId, { sceneId: request.sceneId, language: scene.language }, [entry(request.npcId, result.text)]);
+    }
+    return result;
+  }
+
+  /**
+   * Decide which single NPC a learner's utterance was aimed at (§ 4.2).
+   *
+   * ⚠️ **A FAILURE HERE IS NOT AN ERROR — IT IS `npcId: null`, AND THE CLIENT ROUTES ITSELF.**
+   * Every other model call in iw has a caller who needs the words; this one has a caller with
+   * a perfectly good free answer already in hand (`play/addressee.ts`'s rule ladder). So a
+   * dead rung, an UNCLEAR, a bad reply and a missing scene all resolve to the same thing, and
+   * none of them is worth a non-200. The one case that DOES refuse is the daily cap, because
+   * that is a money bound and must be visible.
+   *
+   * ⚠️ **BILLED ONLY WHEN IT ANSWERS.** `spendSceneCall` runs on a real id, not on UNCLEAR or
+   * a timeout — the learner got no routing out of those and the fallback did the work.
+   */
+  async routeAddressee(userId: string, request: IWRouteHttpRequest): Promise<IWRouteRuntimeResult> {
+    const refusal = this.budget.checkSceneCall(userId);
+    if (refusal) return { kind: 'refused', refusal };
+
+    const scene = await this.iwDAL.findSceneById(request.sceneId);
+    if (!scene) return { kind: 'no-scene', sceneId: request.sceneId };
+
+    // Only bodies the scene actually contains may be routed to. The client sends ids and
+    // distances; the SHEETS come from the registry here, so the roster the model reads cannot
+    // be shaped by the caller — and the names, ages and trades it routes on never have to
+    // cross the wire in the first place.
+    const cast = request.cast.filter(m => resolveCastMember(scene, m.npcId) !== null);
+    const outcome = await routeAddressee({ rungs: this.rungs ?? getIwLadder(), input: { ...request, cast } });
+    if (outcome.npcId) this.budget.spendSceneCall(userId);
+    return { kind: 'routed', npcId: outcome.npcId, detail: outcome.detail };
   }
 
   /**
@@ -266,9 +481,11 @@ export class ImmersiveWorldService {
    * the same fact to a learner ("there is nothing here"), and distinguishing them would let
    * anybody enumerate an author's drafts by id.
    *
-   * ⚠️ It opens no RUN and draws no complication. Phase 2 is "one stall you can talk to" — the
-   * run row, the complication draw and the transcript are phase 3 (§ 12), so a scene today is
-   * loaded, walked around and left, and nothing about it is remembered.
+   * ⚠️ It opens no RUN and draws no complication — and the RUN part is deliberate rather
+   * than unbuilt. Since 2026-09-08 a run row exists, but it is opened by the first model
+   * call of the session (`SceneTranscript`), not here: a scene walked into and left in
+   * silence has no conversation to keep, and a GET that inserts a row is a GET a page
+   * refresh can spam. The complication draw is still phase 3 (§ 12).
    */
   async openScene(sceneId: string): Promise<IWScenePlayPayload | null> {
     const scene = await this.iwDAL.findSceneById(sceneId);
@@ -277,11 +494,68 @@ export class ImmersiveWorldService {
     // right body sprite are needed before the first frame is drawn, and the alternative is a
     // scene that renders as unlabelled squares for one round trip. It is the SAME projection
     // the editor's picker gets (§ 11's layer-1 boundary — no NPC prose crosses the wire).
-    return { scene, npcs: npcOptionsForLanguage(scene.language) };
+    return {
+      scene,
+      npcs: npcOptionsForLanguage(scene.language),
+      // Empty by construction — see the field's note. Segmenting the authored DIRECTIONS
+      // would be a dictionary query over English prose nobody will ever tap.
+      lineSegments: {},
+    };
   }
 
-  /** A scene run ended — release its budget counter (see {@link IWTurnBudget.endSession}). */
-  endSession(sessionId: string): void {
-    this.budget.endSession(sessionId);
+  /**
+   * Segment spoken lines for § 5.3b's tappable bubbles, keyed by the line's exact text.
+   *
+   * ⚠️ **IT NEVER THROWS AT A CALLER.** A dictionary that is slow, missing or broken must
+   * cost the learner a popup, not a scene — and on the turn path it runs AFTER the reply has
+   * already been streamed, where an exception would take down a response the learner is
+   * already listening to. So the failure mode is an empty map and one log line.
+   *
+   * One batched query for the whole array (`DictionaryDAL.segmentTexts`), which is why the
+   * scene's authored lines are collected up front rather than looked up one at a time.
+   */
+  async segmentLines(texts: string[], language: string): Promise<Record<string, IWLineSegments>> {
+    const out: Record<string, IWLineSegments> = {};
+    if (!this.dictionaryDAL || texts.length === 0) return out;
+    try {
+      const partsByText = await this.dictionaryDAL.segmentTexts(texts, language);
+      texts.forEach((text, i) => {
+        const line = partsToLineSegments(text, partsByText[i]);
+        if (line) out[text] = line;
+      });
+    } catch (error: any) {
+      console.error('[iw] line segmentation failed:', error?.message ?? error);
+    }
+    return out;
   }
+
+  /**
+   * A scene run ended — release its budget counter (see {@link IWTurnBudget.endSession}) and
+   * close its run row.
+   *
+   * ⚠️ **IT TAKES A `userId` NOW.** The budget keys on the client-generated `sessionId`
+   * alone, which was safe while the counter was the only thing behind it; a RUN is a row in
+   * somebody's history, so the session id — a string a caller chooses — must never be the
+   * whole key to one.
+   */
+  endSession(userId: string, sessionId: string): void {
+    this.budget.endSession(sessionId);
+    this.transcript.end(userId, sessionId);
+  }
+
+  /** Await a session's pending transcript writes and hand back its run id. Test seam. */
+  flushTranscript(userId: string, sessionId: string): Promise<string | null> {
+    return this.transcript.flush(userId, sessionId);
+  }
+}
+
+/**
+ * One transcript entry, stamped now.
+ *
+ * Free-standing rather than a method because it is the only thing the two record sites
+ * share, and it has no business being on the service's surface — see `IWTranscriptEntry`
+ * for why the speaker is an id and the text is not segmented.
+ */
+function entry(speaker: string, text: string): IWTranscriptEntry {
+  return { speaker, text, at: new Date().toISOString() };
 }

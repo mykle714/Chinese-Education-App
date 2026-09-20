@@ -25,24 +25,28 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    The union type is `FooterTab` (exported from `MobileFooter.tsx`). The tab list
    itself is the `TABS` array in that file.
 
-2. **Home menu** (`/`, `HomePage`) — a `HubMenu` (the shared row component, also
-   used by Discover + Games hubs) of secondary destinations:
+2. **Home menu** (`/`, `HomePage`) — a `Bento` mosaic (the shared tile primitive, also
+   used by the Discover + Games hubs; `HubMenu` was deleted 2026-08-21 — see
+   [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)) of secondary destinations:
    **Night Market**, **Games**, **Community**, **Reader**, **Dictionary**
    (plus a validator-only **Tester Dashboard** row and two template-author-only rows).
    There is deliberately **no Compare Words row**: Compare is a sheet raised over the
    word you are already looking at, not a destination — see
    [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md).
 
-3. **Back-arrow drill-ins** — every page reached from a hub has a common header
+3. **Back-arrow drill-ins** — how Back behaves (arrow vs. browser back vs. edge swipe,
+   restoring state, guards) is specified in [BACK_NAVIGATION.md](./BACK_NAVIGATION.md).
+   Every page reached from a hub has a common header
    with a back button. These come in two archetypes (see
    [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)): **leaf pages** (down arrow, no
    footer, back-arrow-only exit, slide up/down) and **node pages** (left arrow,
    keep the footer, slide in-from-right / out-to-right via the arrow).
    - Home-menu destinations → back to `/`: `/dictionary` (node), `/games` (node);
      `/night-market`, `/reader`, `/tester-dashboard` use their own headers.
-   - Sort Cards (`/discover/sort/:language`) → back to `/discover` (leaf).
-   - Card Detail (`/flashcards/card/:id`, saved-card cdp) → back (node); Mastered
-     Cards (`/flashcards/mastered`) → back to Decks (node). Its breakdown/used-in/
+   - Sort Cards (`/discover/sort/:language`) → back to `/discover` (node).
+   - Card Detail (`/flashcards/card/:id`, saved-card cdp) → back (node); collection and
+     deck pages (`/flashcards/collection/:builtin`, `/flashcards/deck/:id`; the legacy
+     `/flashcards/mastered` redirects to the Mastered collection) → back (node). The cdp's breakdown/used-in/
      example drill-ins open the tapped word's saved card when the learner has one,
      else the read-only dictionary cdp (`src/hooks/useOpenWordCard.ts`).
    - Dictionary result tap → the read-only dictionary cdp (`/dictionary/card/:word`,

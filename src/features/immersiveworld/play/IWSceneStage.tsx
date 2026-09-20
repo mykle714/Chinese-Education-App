@@ -4,14 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Application, extend, useApplication, useTick } from '@pixi/react';
 import { Assets, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
-import { Box } from '@mui/material';
+import { Box, IconButton, Tooltip } from '@mui/material';
+import MyLocationIcon from '@mui/icons-material/MyLocation';
 import {
-  computePedestrianZ, isoToScreen, screenToCell, TILE_HEIGHT,
+  computePedestrianZ, isoToScreen, TILE_HEIGHT, TILE_WIDTH,
 } from '../../../engine/market/isometric';
-import { buildEditorField, compileMasks, type EditorMasks } from '../../../engine/market/farmTerrain';
+import { buildEditorField, compileMasks, DIRT_FLOOR, type EditorMasks } from '../../../engine/market/farmTerrain';
 import EditorTerrainLayer from '../../nightmarket/EditorTerrainLayer';
+import FurnitureSprites from '../../nightmarket/FurnitureSprites';
 import { useCameraControls } from '../../../hooks/useCameraControls';
 import { parseCellKey } from '../../../engine/iw/sceneGraph';
+import { resolveTapTarget, type IWTapTarget, type TapBody } from './tapTarget';
 import type { IWBodyDrawable } from './iwSceneActors';
 
 extend({ Container, Sprite, Graphics, Text });
@@ -47,10 +50,22 @@ extend({ Container, Sprite, Graphics, Text });
 /** Pointer travel that still counts as a tap rather than a drag. */
 const TAP_SLOP_PX = 10;
 
-/** Whole-number zoom ladder, as everywhere else in this engine — pixel art stays crisp. */
-const MIN_ZOOM = 2;
+/**
+ * Whole-number zoom ladder, as everywhere else in this engine — pixel art stays crisp.
+ *
+ * ⚠️ `MIN_ZOOM` IS THE CRISP FLOOR, NOT A HARD LIMIT: `useCameraControls` still lets a pinch
+ * travel below it, that range simply never settles on a rung. It moved to 1 with the default
+ * (2026-09-07) so that halving the default did not park the camera ON the floor, where zooming
+ * out is the one gesture with nowhere to go.
+ */
+const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
-const DEFAULT_ZOOM = 4;
+/**
+ * Halved from 4 on 2026-09-07: a scene opened so close that the room around the conversation
+ * was off screen, and the whole point of a scene is that the stall, the seats and the other
+ * customers are visible while you talk to one of them.
+ */
+const DEFAULT_ZOOM = 2;
 const ZOOM_STEP = 1;
 
 /** How fast the camera closes on the player, per frame at 60fps. A lerp, not a snap. */
@@ -59,9 +74,39 @@ const CAMERA_EASE = 0.12;
 /** Padding around a body's texture for hit-testing — a 16×32 sprite is a cruel finger target. */
 const BODY_HIT_PAD_PX = 8;
 
+/**
+ * WHERE A BODY'S HEAD IS, in world px above the foot anchor — the one number both the name
+ * label and the speech bubble hang off.
+ *
+ * ⚠️ **THE TEXTURE BOX IS NOT THE BODY.** The free-farm pack's characters are 48×48 sprites
+ * with the figure inked from row 6 to row 46, drawn `anchor={{x:0.5,y:1}}` so the box's BOTTOM
+ * sits on the tile. So the visible head is 42px above the anchor, not 48 — and the two
+ * offsets below were previously separate hand-tuned multiples of `TILE_HEIGHT` (3.0 and 3.4)
+ * that happened to clear it. Derived from one head line instead, so "raise the bubble" is one
+ * edit rather than two that can disagree.
+ */
+const BODY_SPRITE_PX = 48;
+const BODY_INK_TOP_PX = 6;
+const HEAD_TOP_PX = BODY_SPRITE_PX - BODY_INK_TOP_PX;
+
+/** The name label's CENTRE above the head, and the bubble's BOTTOM EDGE above it. */
+const NAME_LABEL_GAP_PX = 6;
+const BUBBLE_GAP_PX = 12;
+
 const PLACE_RING_COLOR = 0xffe1a3;
 const FOCUS_RING_COLOR = 0x8fd6ff;
 const LABEL_STYLE = { fontFamily: 'monospace', fontSize: 8, fill: 0xffffff } as const;
+
+/**
+ * The hover highlight, tinted by WHAT the click would select — the same three kinds
+ * `resolveTapTarget` returns, in colours the surface already uses for those things, so the
+ * highlight reads as "this is the thing you keep seeing ringed" rather than as a fourth idiom.
+ */
+const HOVER_TINT: Record<IWTapTarget['kind'], number> = {
+  body: FOCUS_RING_COLOR,   // the same blue that rings whoever you are addressing
+  place: PLACE_RING_COLOR,  // the same amber that rings a pokeable place
+  cell: 0xffffff,
+};
 
 export interface IWSceneStageProps {
   width: number;
@@ -79,6 +124,12 @@ export interface IWSceneStageProps {
   onTapPlace(tag: string): void;
   /** Places that have an interaction, so they can be ringed as pokeable. */
   places: ReadonlyArray<{ tag: string; cell: string }>;
+  /**
+   * `SceneGraph.walkable`. Used ONLY by the hit test, where an unwalkable cell means "blocking
+   * decor stands here" and so outranks a body's near-miss box — see `tapTarget.ts` rule 2.
+   * The renderer does not consult it; terrain is drawn from `masks`.
+   */
+  walkable: ReadonlySet<string>;
   /** The body the learner is addressing, ringed so "who am I talking to" is never a guess. */
   focusedId: string | null;
   /** Whose body id belongs to the learner, so the camera knows what to follow. */
@@ -101,9 +152,13 @@ function SceneContents(props: IWSceneStageProps & {
   pan: { x: number; y: number };
   zoom: number;
   onPanChange(pan: { x: number; y: number }): void;
+  /** While true the camera rides the avatar; a drag turns it off. */
+  following: boolean;
+  /** The learner dragged the board. Breaks the follow lock. */
+  onPanGesture(): void;
 }) {
   const { app, isInitialised } = useApplication();
-  const { width, height, masks, onTick, drawables, places, focusedId, playerId } = props;
+  const { width, height, masks, onTick, drawables, places, walkable, focusedId, playerId } = props;
 
   const tiles = useMemo(
     () => buildEditorField(width, height, compileMasks(masks)),
@@ -124,13 +179,17 @@ function SceneContents(props: IWSceneStageProps & {
   const zoomRef = useRef(props.zoom);
   zoomRef.current = props.zoom;
   const onPanChange = props.onPanChange;
+  const followingRef = useRef(props.following);
+  followingRef.current = props.following;
 
   useTick(ticker => {
     const dtMs = ticker.deltaMS;
     nowRef.current += dtMs;
     onTick(dtMs, nowRef.current);
 
-    const me = drawables(nowRef.current).find(b => b.id === playerId);
+    // ⚠️ Read through a ref: the tick callback is registered once, and a stale `false` here
+    // would leave the camera unlocked forever after the first re-lock.
+    const me = followingRef.current ? drawables(nowRef.current).find(b => b.id === playerId) : null;
     if (me) {
       const target = isoToScreen(me.isoX, me.isoY);
       const want = { x: -target.screenX * zoomRef.current, y: -target.screenY * zoomRef.current };
@@ -164,8 +223,9 @@ function SceneContents(props: IWSceneStageProps & {
       const { screenX, screenY } = isoToScreen(body.isoX, body.isoY);
       map.set(body.id, {
         x: originX + screenX * props.zoom,
-        // A bubble hangs above the HEAD, not at the feet the sprite is anchored by.
-        y: originY + (screenY - TILE_HEIGHT * 3.4) * props.zoom,
+        // A bubble hangs above the HEAD, not at the feet the sprite is anchored by. The DOM
+        // layer treats this as the bubble's BOTTOM edge (it applies `translate(-50%,-100%)`).
+        y: originY + (screenY - (HEAD_TOP_PX + BUBBLE_GAP_PX)) * props.zoom,
       });
     }
   }
@@ -191,8 +251,52 @@ function SceneContents(props: IWSceneStageProps & {
 
   // ── Tap routing (§ 14 Q18) ────────────────────────────────────────────────────────────
   const downAt = useRef({ x: 0, y: 0 });
+  /** Where the last pan step was measured from — advanced each move so the drag is relative. */
+  const dragFrom = useRef({ x: 0, y: 0 });
+  const dragging = useRef(false);
+  /**
+   * The pan this drag has accumulated so far.
+   *
+   * ⚠️ **NOT READ BACK FROM `panRef` MID-DRAG.** That mirror is written during RENDER, so two
+   * pointer moves inside one frame would both measure from the same stale pan and the first
+   * one's delta would be thrown away — a fast drag would visibly lag the finger. Seeded from
+   * the live pan at `pointerdown` instead, which is also the moment any correction elsewhere
+   * gets picked up. (The camera passes no `clampPan`, so nothing rewrites what we push and the
+   * accumulator cannot drift from the truth within a gesture.)
+   */
+  const dragPan = useRef({ x: 0, y: 0 });
+  const onPanGesture = props.onPanGesture;
   const onTapCell = props.onTapCell;
   const onTapPlace = props.onTapPlace;
+  const onTapBody = props.onTapBody;
+
+  /**
+   * What the pointer is over, or null. A REF read during render rather than state: this
+   * subtree already re-renders every frame (`setFrame`), so the highlight repaints with the
+   * next tick at no extra cost, and a `pointermove` that set state would add a second,
+   * unsynchronised render at mouse-move rate on top of it.
+   */
+  const hoverRef = useRef<IWTapTarget | null>(null);
+
+  /**
+   * The bodies, as `resolveTapTarget` needs them. Sprite size comes from the LOADED texture,
+   * so a body whose frame has not arrived yet contributes no near-miss box — it can still be
+   * selected by standing on the pointed-at cell, which is rule 1 and needs no picture.
+   */
+  const tapBodies = useMemo<TapBody[]>(
+    () => bodies.map(b => {
+      const texture = textures.get(b.imagePath);
+      return {
+        id: b.id, isoX: b.isoX, isoY: b.isoY,
+        spriteWidth: texture?.width ?? 0, spriteHeight: texture?.height ?? 0,
+      };
+    }),
+    [bodies, textures],
+  );
+  // Read by the pointer handlers, which are registered once and must not close over a stale
+  // frame's bodies — the array is rebuilt every tick.
+  const tapBodiesRef = useRef(tapBodies);
+  tapBodiesRef.current = tapBodies;
 
   useEffect(() => {
     if (!app?.stage || !isInitialised) return;
@@ -200,31 +304,96 @@ function SceneContents(props: IWSceneStageProps & {
     stage.eventMode = 'static';
     stage.hitArea = app.screen;
 
-    const onDown = (e: FederatedPointerEvent) => { downAt.current = { x: e.global.x, y: e.global.y }; };
+    /** Screen point → board-local point, with pan and zoom removed. */
+    const toLocal = (e: FederatedPointerEvent) => ({
+      x: (e.global.x - (app.screen.width / 2 + panRef.current.x)) / zoomRef.current,
+      y: (e.global.y - (app.screen.height / 2 + panRef.current.y)) / zoomRef.current,
+    });
+    const resolve = (e: FederatedPointerEvent) => resolveTapTarget(toLocal(e), {
+      boardWidth: width, boardHeight: height,
+      bodies: tapBodiesRef.current, places, walkable, playerId, padPx: BODY_HIT_PAD_PX,
+    });
+
+    const onDown = (e: FederatedPointerEvent) => {
+      downAt.current = { x: e.global.x, y: e.global.y };
+      dragFrom.current = { x: e.global.x, y: e.global.y };
+      dragPan.current = { ...panRef.current };
+      dragging.current = true;
+    };
+    const endDrag = () => { dragging.current = false; };
+
+    const onMove = (e: FederatedPointerEvent) => {
+      // ── Drag-to-pan ───────────────────────────────────────────────────────────────────
+      // `pan` is added AFTER the container's scale (`x = screen.width/2 + pan.x`, then
+      // `scale={zoom}`), so it is already in screen pixels and the pointer delta transfers
+      // one-for-one — no division by zoom.
+      if (dragging.current) {
+        const from = dragFrom.current;
+        // Below the tap slop this is still a tap being made, not a drag. Waiting for the slop
+        // is what stops a shaky finger from unlocking the camera on every tap.
+        if (Math.hypot(e.global.x - downAt.current.x, e.global.y - downAt.current.y) > TAP_SLOP_PX) {
+          onPanGesture();
+          dragPan.current = {
+            x: dragPan.current.x + (e.global.x - from.x),
+            y: dragPan.current.y + (e.global.y - from.y),
+          };
+          onPanChange(dragPan.current);
+          dragFrom.current = { x: e.global.x, y: e.global.y };
+          // A drag is not a hover: hide the highlight rather than dragging it along.
+          hoverRef.current = null;
+          return;
+        }
+      }
+
+      // Mouse only. A touch pointer "hovers" for exactly as long as a finger is down, so
+      // painting a highlight for it would only ever flash under the finger that is already
+      // acting; a pen is left out for the same reason.
+      if (e.pointerType !== 'mouse') { hoverRef.current = null; return; }
+      hoverRef.current = resolve(e);
+    };
+    const onLeave = () => { hoverRef.current = null; endDrag(); };
+
     const onUp = (e: FederatedPointerEvent) => {
+      endDrag();
+      // A drag is a camera pan, not a tap.
       if (Math.hypot(e.global.x - downAt.current.x, e.global.y - downAt.current.y) > TAP_SLOP_PX) return;
-      const cx = app.screen.width / 2 + panRef.current.x;
-      const cy = app.screen.height / 2 + panRef.current.y;
-      const local = {
-        x: (e.global.x - cx) / props.zoom,
-        y: (e.global.y - cy) / props.zoom,
-      };
-      const cell = screenToCell(local.x, local.y, width, height);
-      if (!cell) return;
-      // An interactive place wins over the floor: poking the water station should examine it,
-      // not walk to the square it happens to occupy.
-      const place = places.find(p => p.cell === `${cell.col},${cell.row}`);
-      if (place) onTapPlace(place.tag);
-      else onTapCell(cell.col, cell.row);
+      // ⚠️ THE SAME CALL THE HIGHLIGHT WAS PAINTED FROM. See `tapTarget.ts` — one resolver is
+      // what makes the indicator a promise rather than a guess.
+      const target = resolve(e);
+      if (!target) return;
+      if (target.kind === 'body') onTapBody(target.id);
+      else if (target.kind === 'place') onTapPlace(target.tag);
+      else onTapCell(target.col, target.row);
     };
 
     stage.on('pointerdown', onDown);
     stage.on('pointerup', onUp);
+    // A pointer released outside the canvas still ends the drag — without this the board keeps
+    // panning when the button comes back down somewhere else.
+    stage.on('pointerupoutside', onUp);
+    stage.on('globalpointermove', onMove);
+    stage.on('pointerleave', onLeave);
     return () => {
       stage.off('pointerdown', onDown);
       stage.off('pointerup', onUp);
+      stage.off('pointerupoutside', onUp);
+      stage.off('globalpointermove', onMove);
+      stage.off('pointerleave', onLeave);
     };
-  }, [app, isInitialised, props.zoom, width, height, places, onTapCell, onTapPlace]);
+  }, [app, isInitialised, width, height, places, walkable, playerId,
+      onTapCell, onTapPlace, onTapBody, onPanChange, onPanGesture]);
+
+  /** One tile diamond, at the origin. Positioned and tinted by the node that draws it. */
+  const drawHoverCell = useCallback((g: Graphics) => {
+    g.clear();
+    g.moveTo(0, 0);                              // bottom vertex — the foot point itself
+    g.lineTo(TILE_WIDTH / 2, -TILE_HEIGHT / 2);  // right
+    g.lineTo(0, -TILE_HEIGHT);                   // top
+    g.lineTo(-TILE_WIDTH / 2, -TILE_HEIGHT / 2); // left
+    g.closePath();
+    g.fill({ color: 0xffffff, alpha: 0.13 });
+    g.stroke({ color: 0xffffff, width: 1, alpha: 0.85 });
+  }, []);
 
   const drawPlaceRing = useCallback((g: Graphics) => {
     g.clear();
@@ -243,26 +412,42 @@ function SceneContents(props: IWSceneStageProps & {
     g.stroke({ color: FOCUS_RING_COLOR, width: 1.5, alpha: 0.9 });
   }, []);
 
-  const handleBodyTap = useCallback((e: FederatedPointerEvent) => {
-    // A body hit WINS over the tile beneath it (§ 14 Q18), and the stage's own handler is an
-    // ancestor in the federated event tree — without this it would also fire and walk the
-    // learner to the square the person is standing on.
-    e.stopPropagation();
-    if (Math.hypot(e.global.x - downAt.current.x, e.global.y - downAt.current.y) > TAP_SLOP_PX) return;
-    const id = (e.currentTarget as { label?: string | null } | null)?.label;
-    if (id && id !== playerId) props.onTapBody(id);
-  }, [playerId, props]);
-
   if (!app?.renderer) return null;
   const cx = app.screen.width / 2 + props.pan.x;
   const cy = app.screen.height / 2 + props.pan.y;
   const focused = focusedId ? bodies.find(b => b.id === focusedId) : undefined;
   const focusFoot = focused ? isoToScreen(focused.isoX, focused.isoY) : null;
+  // The highlight sits on the target's CELL, not under a moving sprite: for a body it is the
+  // cell `resolveTapTarget` reported them standing on, so a walking NPC's highlight snaps
+  // between tiles rather than sliding, which is what makes it read as "this square".
+  const hover = hoverRef.current;
+  const hoverFoot = hover ? isoToScreen(hover.col, hover.row) : { screenX: 0, screenY: 0 };
 
   return (
     <pixiContainer x={cx} y={cy} scale={props.zoom} sortableChildren>
       <EditorTerrainLayer tiles={tiles} />
+      {/* Placed FURNITURE. Drawn from the same `masks` the terrain comes from, through the
+          shared strip renderer, so a piece depth-sorts per screen column against the bodies
+          (`computeLayerZ(..., 'entity')` is the same axis as `computePedestrianZ`): the
+          companion passes IN FRONT of a table's near edge and BEHIND its far edge.
+          ⚠️ Furniture does not yet BLOCK movement — see docs/LUMEISH_ASSET_PIPELINE.md § 7. */}
+      <FurnitureSprites placements={masks.furniture ?? []} />
       <pixiGraphics draw={drawPlaceRing} zIndex={1} eventMode="none" />
+      {hover && (
+        // Read straight from the ref during render, which is sound here for the reason the
+        // ref's own note gives: this subtree already re-renders every frame, so the highlight
+        // is never more than one tick stale and costs no render of its own.
+        // zIndex 2 — above the terrain and the place rings, below every body, so a highlight
+        // on an occupied cell never paints over the person standing on it.
+        <pixiGraphics
+          draw={drawHoverCell}
+          x={hoverFoot.screenX}
+          y={hoverFoot.screenY}
+          tint={HOVER_TINT[hover.kind]}
+          zIndex={2}
+          eventMode="none"
+        />
+      )}
       {focused && focusFoot && (
         <pixiGraphics
           draw={drawFocusRing}
@@ -287,13 +472,13 @@ function SceneContents(props: IWSceneStageProps & {
             y={screenY}
             anchor={{ x: 0.5, y: 1 }}
             zIndex={computePedestrianZ(body.isoX, body.isoY)}
-            eventMode={body.id === playerId ? 'none' : 'static'}
-            hitArea={{
-              contains: (px: number, py: number) =>
-                px >= -texture.width / 2 - BODY_HIT_PAD_PX && px <= texture.width / 2 + BODY_HIT_PAD_PX
-                && py >= -texture.height - BODY_HIT_PAD_PX && py <= BODY_HIT_PAD_PX,
-            }}
-            onPointerUp={handleBodyTap}
+            // ⚠️ NOT INTERACTIVE, DELIBERATELY. Bodies used to carry their own padded hit
+            // area and tap handler; a foot-anchored 48px sprite's box reaches three rows
+            // BACKWARD in an isometric projection, so it swallowed every tap meant for the
+            // furniture behind it. `resolveTapTarget` now hit-tests every pointer in one
+            // place, with an explicit priority — and, being the same call the hover highlight
+            // is painted from, it cannot disagree with what the learner was shown.
+            eventMode="none"
           />
         );
       })}
@@ -305,7 +490,7 @@ function SceneContents(props: IWSceneStageProps & {
             text={body.label}
             anchor={0.5}
             x={screenX}
-            y={screenY - TILE_HEIGHT * 3}
+            y={screenY - (HEAD_TOP_PX + NAME_LABEL_GAP_PX)}
             style={LABEL_STYLE}
             zIndex={computePedestrianZ(body.isoX, body.isoY) + 1}
             eventMode="none"
@@ -325,16 +510,75 @@ export default function IWSceneStage(props: IWSceneStageProps) {
     suppressContextMenu: true,
   });
 
+  /**
+   * Is the camera riding the avatar?
+   *
+   * ⚠️ **A DRAG BREAKS THE LOCK, AND NOTHING RE-TAKES IT SILENTLY.** The camera used to follow
+   * unconditionally, so the board could not be looked around: any pan the learner made was
+   * pulled back to the avatar within a few frames, which reads as the drag not working rather
+   * than as a deliberate camera. Now a drag past the tap slop hands control over and KEEPS it —
+   * a camera that snapped back on its own would be the same bug wearing a delay. Re-locking is
+   * an explicit act, and the button below is the only thing that does it, which is also why the
+   * button has to exist: an unlocked camera that has been panned far from the avatar is
+   * otherwise a way to lose yourself in your own scene with no way back.
+   */
+  const [following, setFollowing] = useState(true);
+  const unlock = useCallback(() => setFollowing(false), []);
+
+  // The board's floor, read straight off the masks (absent ⇒ dirt) — the SAME derivation
+  // `IWSceneMapPanel` makes, so the editor and the scene cannot disagree about it.
+  const floorKind = (props.masks.floor ?? DIRT_FLOOR).kind;
+
   return (
     <Box
-      className="iw-scene-stage"
+      className={`iw-scene-stage iw-scene-stage--floor-${floorKind}`}
       ref={containerRef}
-      sx={{ position: 'absolute', inset: 0, touchAction: 'none' }}
+      sx={{
+        position: 'absolute', inset: 0, touchAction: 'none',
+        // BLACK BEHIND A WOOD BOARD — the same rule, and the same one line, as the editor's
+        // `IWSceneMapPanel`. The Pixi canvas is transparent (`backgroundAlpha={0}`), so
+        // whatever this Box paints IS the void around the board; a wood floor replaces the
+        // dirt slab, leaving the deck with no plateau body, and on the app's light paper that
+        // reads as planks lying on a page rather than as a lit platform in the dark. Authoring
+        // a scene and standing in it must not look like two different places, which is exactly
+        // what a black editor and a white runtime were.
+        backgroundColor: floorKind === 'wood' ? '#000' : 'transparent',
+      }}
     >
       {ready && (
         <Application resizeTo={containerRef} backgroundAlpha={0} antialias={false}>
-          <SceneContents {...props} pan={pan} zoom={zoom} onPanChange={setPan} />
+          <SceneContents
+            {...props}
+            pan={pan}
+            zoom={zoom}
+            onPanChange={setPan}
+            following={following}
+            onPanGesture={unlock}
+          />
         </Application>
+      )}
+      {!following && (
+        // Only while unlocked: a permanent recentre button on a camera that is already centred
+        // is a control that does nothing, and its absence is what tells the learner the camera
+        // is behaving normally again. Re-locking does not teleport — the tick's existing ease
+        // glides back, so the way home is legible as movement rather than as a cut.
+        <Tooltip title="Follow me again" placement="right">
+          <IconButton
+            className="iw-scene-stage__recentre"
+            aria-label="Re-centre the camera on your character"
+            size="small"
+            onClick={() => setFollowing(true)}
+            sx={{
+              position: 'absolute', top: 8, left: 8, zIndex: 2,
+              bgcolor: 'background.paper',
+              border: 1, borderColor: 'divider',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.28)',
+              '&:hover': { bgcolor: 'background.paper' },
+            }}
+          >
+            <MyLocationIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
       )}
     </Box>
   );

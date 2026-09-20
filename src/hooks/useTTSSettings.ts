@@ -38,6 +38,25 @@ export type AudioRoute = 'passthrough' | 'media';
 export type AudioMode = 'off' | AudioRoute;
 
 /**
+ * WHICH voice reads to the learner. Two values because there are two voices to choose
+ * between, not three: `TTSVoice`'s `'default'` and `'female'` resolve to the SAME provider
+ * voice server-side (see `TTSVoiceKey` in `server/services/TTSService.ts`), so offering both
+ * would be one setting with two names for one outcome.
+ *
+ * `'female'` is spelled out rather than stored as `'default'` so the stored value says what
+ * the learner picked instead of saying "whatever we ship". It is a member of `TTSVoice`, so it
+ * crosses to the server unchanged and shares the default voice's cache slots.
+ *
+ * ⚠️ It does NOT govern Immersive World's NPCs. A character's voice follows their gender
+ * (docs/IMMERSIVE_WORLD.md § 6.4a) — this is the voice the app uses when it reads TO you:
+ * flashcards, example sentences, game reveals.
+ */
+export type NarrationVoice = 'female' | 'male';
+
+/** Display order for the /settings voice picker. Current voice first. */
+export const NARRATION_VOICE_ORDER: readonly NarrationVoice[] = ['female', 'male'] as const;
+
+/**
  * Cycle order for the one-tap header chip, and the display order on /settings.
  *
  * 'off' first so a single tap from the default silences the app — the most urgent
@@ -58,6 +77,11 @@ export interface TTSSettings {
     autoplay: boolean;
     /** Where audio goes when it does play. Persists across `autoplay: false`. */
     route: AudioRoute;
+    /**
+     * Which voice reads to the learner. Applies per language — picking 'male' gets the male
+     * voice of whichever language they are studying, not a fixed voice.
+     */
+    voice: NarrationVoice;
 }
 
 // Passthrough by default: a learner who turns audio on wants to hear it, and the
@@ -67,6 +91,9 @@ export interface TTSSettings {
 const DEFAULT_SETTINGS: TTSSettings = {
     autoplay: true,
     route: 'passthrough',
+    // The voice the app shipped with for its whole life before 2026-09-09, so the default is
+    // "no change" for every existing learner rather than a voice swap nobody asked for.
+    voice: 'female',
 };
 
 /** Read + JSON-parse one localStorage blob, or null if absent/malformed. */
@@ -104,6 +131,7 @@ function migrateLegacy(legacy: Record<string, unknown>): TTSSettings {
     return {
         autoplay: wasEnabled && autoplayChinese && discoverAutoplay,
         route: DEFAULT_SETTINGS.route,
+        voice: DEFAULT_SETTINGS.voice,
     };
 }
 
@@ -117,6 +145,9 @@ function loadSettings(): TTSSettings {
     return {
         autoplay: parsed.autoplay !== false,
         route: parsed.route === 'media' ? 'media' : 'passthrough',
+        // Absent in every blob written before 2026-09-09, and the check is positive ('male'
+        // wins) rather than negative, so a blob carrying junk reads as the default voice.
+        voice: parsed.voice === 'male' ? 'male' : 'female',
     };
 }
 
@@ -210,9 +241,14 @@ export function useTTSSettings() {
     // user switches back on; selecting a route implies autoplay on.
     const setMode = useCallback((next: AudioMode) => {
         const prev = getSnapshot();
+        // ⚠️ Spread `prev` in BOTH branches. The audible branch used to build a fresh
+        // `{ autoplay, route }`, which silently dropped any other field in the blob — it was
+        // correct only while those two were the whole setting, and adding `voice` made it a
+        // "picking a route resets your voice" bug. Type-checked now, but spread anyway so the
+        // next knob added does not depend on someone noticing.
         setSettings(next === 'off'
             ? { ...prev, autoplay: false }
-            : { autoplay: true, route: next });
+            : { ...prev, autoplay: true, route: next });
     }, []);
 
     // Advance to the next mode in AUDIO_MODE_ORDER. Backs the one-tap header chip,
@@ -224,8 +260,15 @@ export function useTTSSettings() {
         const next = AUDIO_MODE_ORDER[(AUDIO_MODE_ORDER.indexOf(current) + 1) % AUDIO_MODE_ORDER.length];
         setSettings(next === 'off'
             ? { ...prev, autoplay: false }
-            : { autoplay: true, route: next });
+            : { ...prev, autoplay: true, route: next });
     }, []);
 
-    return { settings, update, mode, setMode, cycleMode };
+    // The voice picker's setter. A plain field write — unlike `mode`, the voice has no
+    // projection and no interaction with `autoplay`, so it needs no dedicated logic beyond
+    // being named for what it sets.
+    const setVoice = useCallback((voice: NarrationVoice) => {
+        setSettings({ ...getSnapshot(), voice });
+    }, []);
+
+    return { settings, update, mode, setMode, cycleMode, voice: settings.voice, setVoice };
 }

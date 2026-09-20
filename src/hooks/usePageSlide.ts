@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useNavigationType } from "react-router-dom";
 import type { CSSProperties, RefObject } from "react";
 
 // Shared enter/exit slide transition for LeafPage / NodePage (see
@@ -66,7 +67,16 @@ export function usePageSlide({ axis }: UsePageSlideOptions): UsePageSlideResult 
     // false = off-screen (pre-enter), true = in place. If we were reached as the
     // destination of another page's exit, start ALREADY in place (no enter
     // animation) so we sit statically beneath the departing page.
-    const [entered, setEntered] = useState(() => skipNextEnter);
+    //
+    // Also start in place on a POP (Back, from any source). The arrow's own `exit` arms
+    // the latch anyway, but the browser button and iOS's edge swipe do not go through
+    // `exit` at all — and a page returned to with Back must not slide in again from the
+    // right after the browser has already animated back to it. On iOS that second slide
+    // also stops the page from matching Safari's swipe snapshot, which stalls input for
+    // seconds (src/features/flashcards/backRestore.ts). A POP is also the initial load,
+    // where no entrance slide is wanted either.
+    const navigationType = useNavigationType();
+    const [entered, setEntered] = useState(() => skipNextEnter || navigationType === "POP");
 
     // Flip to in-place on the frame after first paint so the enter transition
     // runs — unless we already started in place (the skip-enter case above).
@@ -85,8 +95,13 @@ export function usePageSlide({ axis }: UsePageSlideOptions): UsePageSlideResult 
                 performNavigate();
                 return;
             }
-            // Anchor the clone to the phone frame so it stays clipped to the card.
-            const frame = (el.closest(".mobile-demo-frame") as HTMLElement | null) ?? el.parentElement;
+            // Anchor the clone to the phone frame so it stays clipped to the card. The
+            // clone is `position: absolute`, so the frame MUST stay positioned: parked
+            // against a static ancestor it resolves against the initial containing block
+            // and slides across the whole browser window on desktop, where the frame is a
+            // 402px card. Same trap as the sheet portal — see src/components/overlayHost.ts.
+            const frame = (el.closest(".mobile-demo-frame")
+                ?? el.parentElement) as HTMLElement | null;
             const clone = el.cloneNode(true) as HTMLElement;
             Object.assign(clone.style, {
                 position: "absolute",

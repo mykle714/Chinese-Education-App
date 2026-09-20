@@ -3,7 +3,7 @@ import { ICategoryPromotionDAL } from '../dal/interfaces/ICategoryPromotionDAL.j
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
 import { resolveWriteLanguage } from '../utils/languageParam.js';
-import { VELOCITY_WINDOW_DAYS, VelocityResponse } from '../types/velocity.js';
+import { VELOCITY_WINDOW_DAYS, VelocityResponse, emptyVelocityBreakdown } from '../types/velocity.js';
 import { activeBars } from '../utils/masteryCompute.js';
 
 /**
@@ -50,17 +50,26 @@ export class VelocityController {
       const requested = resolveWriteLanguage(req.query.language);
       const language = requested || user?.selectedLanguage || 'zh';
 
+      // `byLanguage` stays a flat number per language — it is the "which languages is
+      // this account moving in" summary. Only the HEADLINE language is sent broken
+      // out, because only the headline figure is the one the Velocity card splits.
       const byLanguage: Record<string, number> = {};
       let total = 0;
-      for (const [lang, steps] of byLanguageMap) {
-        byLanguage[lang] = steps;
-        total += steps;
+      for (const [lang, breakdown] of byLanguageMap) {
+        byLanguage[lang] = breakdown.total;
+        total += breakdown.total;
       }
 
+      // Absent = no promotions in the window, which is a real zero rather than a gap;
+      // the empty breakdown keeps `boundaryCounts` the right length so the card draws
+      // its three columns as zeroes instead of collapsing.
+      const headline = byLanguageMap.get(language) ?? emptyVelocityBreakdown();
+
       const response: VelocityResponse = {
-        velocity: byLanguage[language] ?? 0,
+        velocity: headline.total,
         language,
         byLanguage,
+        boundaryCounts: headline.boundaryCounts,
         total,
         windowDays: VELOCITY_WINDOW_DAYS,
       };

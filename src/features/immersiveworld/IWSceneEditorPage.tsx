@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Box, Button, Menu, MenuItem, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Menu, MenuItem, Stack, Tab, Tabs, Typography } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
@@ -10,13 +10,17 @@ import { useAuth } from '../../AuthContext';
 import { useConfirmation } from '../../contexts/ConfirmationContext';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { COLORS } from '../../theme/colors';
+import IWEditorColumn from './IWEditorColumn';
 import IWSceneMapPanel from './IWSceneMapPanel';
+import IWSceneToolsPanel, { IW_TOOLS_PANEL_BG } from './IWSceneToolsPanel';
 import IWSceneDetailsPanel from './IWSceneDetailsPanel';
 import IWSceneContentPanel from './IWSceneContentPanel';
 import IWSceneActionsPanel from './IWSceneActionsPanel';
 import IWScenePlacesPanel from './IWScenePlacesPanel';
 import { type IWCueOption } from './IWSelectableControls';
 import { blankScene, useIWSceneDraft, type IWEditorTool } from './useIWSceneDraft';
+import { useIWEditorTools } from './useIWEditorTools';
+import { useIWEditorLayout } from './useIWEditorLayout';
 import {
   deleteScene, errorMessage, listNpcs, listScenes, loadScene, problemsFromError, saveScene,
   type IWNpcOption, type IWSceneProblem, type IWSceneSummary,
@@ -37,11 +41,28 @@ import {
  * help" — so anything an author cannot express here is a gap in this page, not a thing to
  * fix in a seed script.
  *
- * THE THREE COLUMNS (§ 12 phase 1d): the MAP (reusing the night market's editor viewer),
- * the SCENE (identity, cast, completion pair) and the CONTENT — which is two panels stacked,
- * the per-NPC action scripts plus the named places and their interactions, over the scene's
+ * THE THREE COLUMNS (§ 12 phase 1d): the MAP (reusing the night market's editor viewer)
+ * between two COLLAPSIBLE side columns — the left one a two-page tab set (the SCENE's
+ * identity/cast/completion pair, and the board's TOOLS), the right one the CONTENT: the
+ * per-NPC action scripts plus the named places and their interactions, over the scene's
  * complications, events and overheard conversations. NPCs are never authored here — they are
  * code, and this page only picks from them.
+ *
+ * THE 2026-09-19 RESHAPE, and the two ideas behind it:
+ *
+ *  1. **Nothing floats over the board any more.** The paint/place palette used to be a DOM
+ *     overlay on top of the Pixi canvas; it is now the left column's Tools page
+ *     (`IWSceneToolsPanel`). The board is clickable edge to edge as a result — see that
+ *     panel's header for the pointer bug the overlay had by construction.
+ *  2. **Both side columns collapse SIDEWAYS to a rail** (`IWEditorColumn`), because the
+ *     scarce resource in this editor is board WIDTH: the map is the body row's only
+ *     `flex: 1` child, so every pixel a column gives up goes to the canvas. Which columns
+ *     are open, and which page the left one shows, persist per browser
+ *     (`useIWEditorLayout`) — authoring a scene spans many sittings.
+ *
+ * The tool MODIFIERS (gridlines, decor variant, furniture page, forced facing) and the
+ * keyboard dispatch live in `useIWEditorTools`, held here: the palette and the canvas are
+ * now in different subtrees, so their one shared truth has to sit above both.
  */
 
 /**
@@ -60,11 +81,16 @@ import {
 const IW_CONTENT_COLUMN_WIDTH = 720;
 
 /**
- * The details column, narrowed to pay for the content column (the map keeps `flex: 1` and
- * absorbs the rest). Nothing in it is a side-by-side row — cast entries and the completion
- * pair stack — so it loses far less to the trim than the step row gains.
+ * The LEFT column, narrowed to pay for the content column (the map keeps `flex: 1` and
+ * absorbs the rest). Nothing on its Details page is a side-by-side row — cast entries and
+ * the completion pair stack — so it loses far less to the trim than the step row gains.
+ *
+ * ONE width for BOTH of its pages, deliberately: a per-page width would resize the Pixi
+ * canvas every time the author flipped between the fields and the tools, and a board that
+ * re-lays-out on a tab press reads as a glitch. 320 also happens to be four palette groups
+ * wide, so the Tools page needs no width of its own.
  */
-const IW_DETAILS_COLUMN_WIDTH = 320;
+const IW_LEFT_COLUMN_WIDTH = 320;
 
 /** Compact typography for everything inside the content column (labels, fields, buttons). */
 const IW_CONTENT_COLUMN_DENSITY_SX = {
@@ -107,6 +133,34 @@ export default function IWSceneEditorPage() {
   const [problems, setProblems] = useState<IWSceneProblem[]>([]);
   const [status, setStatus] = useState<{ kind: 'error' | 'warning' | 'success'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Which columns are open and which page the left one shows — chrome only, persisted per
+  // browser. Deliberately NOT part of the draft: hiding a column must never make a scene dirty.
+  const layout = useIWEditorLayout();
+
+  /**
+   * The tool MODIFIERS and the whole keyboard dispatch. Held here because the palette
+   * (left column) and the canvas (middle) are siblings — the ghost under the cursor and the
+   * stamp a click lays down must read the same number, and neither subtree can own it.
+   */
+  const tools = useIWEditorTools({
+    activeTool,
+    eraseMode,
+    npcCast: scene.npcCast,
+    onToolChange: setActiveTool,
+    onEraseModeChange: setEraseMode,
+    onFloorChange: draft.setFloor,
+  });
+
+  /**
+   * Arm a placement tool AND show the palette that owns it. Both cross-column jumps — the
+   * cast list's "place this NPC" and the places panel's "put this tag on the board" — go
+   * through here, because selecting a tool the author cannot see is a dead press.
+   */
+  const armPlacementTool = useCallback((tool: IWEditorTool) => {
+    setActiveTool(tool);
+    layout.setLeftPage('tools');
+  }, [layout.setLeftPage]); // eslint-disable-line react-hooks/exhaustive-deps -- the setter is stable; the layout object is not
 
   /** Field path → the first complaint about it, for inline marking in the panels. */
   const problemsByField = useMemo(() => {
@@ -344,32 +398,69 @@ export default function IWSceneEditorPage() {
         </Alert>
       )}
 
-      {/* ── Body: details | map | content ──
-          Only the middle column is dark, because only the middle column is a Pixi canvas.
-          The two authoring panels stay on the app's paper ground with ordinary fields. */}
+      {/* ── Body: [details | tools] · map · content ──
+          Only the middle column is dark, because only the middle column is a Pixi canvas —
+          with ONE exception: the Tools page brings the night market's dark palette chrome
+          with it rather than forking a second, light-ground skin of every palette button
+          (see `IWSceneToolsPanel`). The map is the row's only `flex: 1` child, so collapsing
+          either side column hands the freed width straight to the board. */}
       <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
-        <Box
-          className="iw-scene-editor-page__details"
-          sx={{
-            width: IW_DETAILS_COLUMN_WIDTH,
-            flex: '0 0 auto',
-            p: 2,
-            overflowY: 'auto',
-            borderRight: `1px solid ${COLORS.border}`,
-            backgroundColor: COLORS.white,
-          }}
+        <IWEditorColumn
+          // Named for the SLOT, not its contents: this column shows either page.
+          className="iw-scene-editor-page__left-column"
+          side="left"
+          // The rail names the page it would come back to, so expanding is never a surprise.
+          label={layout.leftPage === 'tools' ? 'Tools' : 'Details'}
+          width={IW_LEFT_COLUMN_WIDTH}
+          collapsed={layout.leftCollapsed}
+          onToggleCollapsed={layout.setLeftCollapsed}
+          bodyBackground={layout.leftPage === 'tools' ? IW_TOOLS_PANEL_BG : COLORS.white}
+          header={(
+            <Tabs
+              className="iw-scene-editor-page__left-tabs"
+              value={layout.leftPage}
+              onChange={(_, page) => layout.setLeftPage(page as 'details' | 'tools')}
+              sx={{
+                minHeight: 34,
+                '& .MuiTab-root': { minHeight: 34, px: 1.5, fontSize: 12, textTransform: 'none' },
+              }}
+            >
+              <Tab className="iw-scene-editor-page__left-tab-details" value="details" label="Details" />
+              <Tab className="iw-scene-editor-page__left-tab-tools" value="tools" label="Tools" />
+            </Tabs>
+          )}
         >
-          <IWSceneDetailsPanel
-            scene={scene}
-            npcs={npcs}
-            problemsByField={problemsByField}
-            onUpdate={draft.update}
-            onAddCastMember={draft.addCastMember}
-            onRemoveCastMember={draft.removeCastMember}
-            onUpdateCastMember={draft.updateCastMember}
-            onPlaceNpc={(npcId) => setActiveTool(`npc:${npcId}`)}
-          />
-        </Box>
+          {/* BOTH pages are mounted only one at a time. The Tools page holds no state of its
+              own (the modifiers live in `useIWEditorTools`, above), so unmounting it loses
+              nothing — and the Details page's fields are all driven by the draft. */}
+          {layout.leftPage === 'details' ? (
+            <Box className="iw-scene-editor-page__details-page" sx={{ p: 2 }}>
+              <IWSceneDetailsPanel
+                scene={scene}
+                npcs={npcs}
+                problemsByField={problemsByField}
+                onUpdate={draft.update}
+                onAddCastMember={draft.addCastMember}
+                onRemoveCastMember={draft.removeCastMember}
+                onUpdateCastMember={draft.updateCastMember}
+                onPlaceNpc={(npcId) => armPlacementTool(`npc:${npcId}`)}
+              />
+            </Box>
+          ) : (
+            <IWSceneToolsPanel
+              scene={scene}
+              masks={masks}
+              places={draft.places}
+              npcs={npcs}
+              activeTool={activeTool}
+              onToolChange={setActiveTool}
+              eraseMode={eraseMode}
+              onEraseModeChange={setEraseMode}
+              onFloorChange={draft.setFloor}
+              tools={tools}
+            />
+          )}
+        </IWEditorColumn>
 
         <Box className="iw-scene-editor-page__map" sx={{ flex: 1, minWidth: 0, position: 'relative' }}>
           <IWSceneMapPanel
@@ -378,26 +469,21 @@ export default function IWSceneEditorPage() {
             places={draft.places}
             npcs={npcs}
             activeTool={activeTool}
-            onToolChange={setActiveTool}
             eraseMode={eraseMode}
-            onEraseModeChange={setEraseMode}
             onPaintCell={draft.paintCell}
             onPlaceAt={draft.placeAt}
-            onFloorChange={draft.setFloor}
+            tools={tools}
           />
         </Box>
 
-        <Box
-          className="iw-scene-editor-page__content"
-          sx={{
-            width: IW_CONTENT_COLUMN_WIDTH,
-            flex: '0 0 auto',
-            p: 2,
-            overflowY: 'auto',
-            borderLeft: `1px solid ${COLORS.border}`,
-            backgroundColor: COLORS.white,
-            ...IW_CONTENT_COLUMN_DENSITY_SX,
-          }}
+        <IWEditorColumn
+          className="iw-scene-editor-page__content-column"
+          side="right"
+          label="Content"
+          width={IW_CONTENT_COLUMN_WIDTH}
+          collapsed={layout.rightCollapsed}
+          onToggleCollapsed={layout.setRightCollapsed}
+          bodySx={{ p: 2, ...IW_CONTENT_COLUMN_DENSITY_SX }}
         >
           <IWSceneActionsPanel
             scene={scene}
@@ -421,7 +507,7 @@ export default function IWSceneEditorPage() {
             onAddPlace={draft.addPlace}
             onRenamePlace={draft.renamePlace}
             onRemovePlace={draft.removePlace}
-            onPutOnBoard={(tag) => setActiveTool(`tag:${tag}`)}
+            onPutOnBoard={(tag) => armPlacementTool(`tag:${tag}`)}
             onSetInteraction={draft.setInteraction}
           />
 
@@ -432,7 +518,7 @@ export default function IWSceneEditorPage() {
             cues={cues}
             onUpdate={draft.update}
           />
-        </Box>
+        </IWEditorColumn>
       </Stack>
     </LeafPage>
   );

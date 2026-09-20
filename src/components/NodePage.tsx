@@ -30,7 +30,8 @@ const Surface = styled(Box)(() => ({
 
 interface NodePageProps {
     title: string;
-    // Where the back arrow goes. Invoked AFTER the slide-right completes.
+    // Where the back arrow goes. Invoked IMMEDIATELY (the destination mounts beneath)
+    // while a clone of this page slides right on top — see usePageSlide's `exit`.
     onBack: () => void;
     headerExtraActions?: ReactNode;
     // Forwarded to MobileTabScreen -> PageHeader. Pass "dense" on a node page whose

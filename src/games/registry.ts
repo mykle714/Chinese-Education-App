@@ -20,6 +20,7 @@ import { GAME_HUE as WORD_SEARCH_HUE } from "./word-search/constants";
 // test that pins the two together.
 import { CHALLENGE_GAMES } from "../types";
 import type { ChallengeScoringSpec } from "../types";
+import { isGameEnabled } from "../../server/contracts/featureFlags";
 
 /**
  * The scoring spec for a game (or a game MODE), or undefined when it is not
@@ -48,7 +49,7 @@ export function challengeScoringFor(gameId: string, mode: string | null = null):
  * allowlist (`src/components/Layout.tsx`) all derive from this array — adding a
  * game requires no edits to those files.
  */
-export const GAME_REGISTRY: GameDef[] = [
+const ALL_GAMES: GameDef[] = [
     {
         gameId: "bubble-match",
         glyph: "bubble_chart",
@@ -147,6 +148,26 @@ export const GAME_REGISTRY: GameDef[] = [
         // read as a bug (Q21).
     },
 ];
+
+/**
+ * Every game that is switched ON (`GAME_FLAGS`, server/contracts/featureFlags.ts).
+ *
+ * Filtering HERE is the single client-side chokepoint for a per-game flag, and it is
+ * what the block comment above promises: the hub (`GamesPage`), the route metadata
+ * (`GAME_ROUTE_META` in routes/routeMeta.ts), the component bindings
+ * (`GAME_COMPONENTS` in routes/registry.ts), `GAME_ROUTES`, `originLabelFor` and the
+ * route tests ALL derive from this array, so one filter removes a game from the hub,
+ * from the router and from every test that enumerates games, with no other edit.
+ *
+ * A disabled game's route therefore stops existing rather than 404-ing from a live
+ * row — and because `GAME_COMPONENTS` derives from the same filtered array, the
+ * registry's boot-time "row with no component" check cannot fire, and its dev-only
+ * orphan warning has nothing to report either.
+ *
+ * The server half is `isGameEnabled` in `GamesController` — a hidden tile does not
+ * stop a saved bookmark from POSTing progress.
+ */
+export const GAME_REGISTRY: GameDef[] = ALL_GAMES.filter((g) => isGameEnabled(g.gameId));
 
 /** Routes for every registered game; consumed by `MOBILE_DEMO_PATHS`. */
 export const GAME_ROUTES: string[] = GAME_REGISTRY.map((g) => g.route);

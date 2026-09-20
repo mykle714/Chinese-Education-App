@@ -36,6 +36,19 @@ catches dynamic `import()` and `require()`, and it also rejects **relative** pat
 that escape the engine (`../../features/…`), which would drag React and Pixi in
 transitively while looking local.
 
+**One carve-out: `src/assets/` data** (added 2026-09-09). An engine module may
+reference sprite/manifest files under `src/assets/` — `market/freeFarmTileset.ts` and
+`market/lumeishTileset.ts` both do. It is gated to that one directory *and* to asset
+extensions (`.png .webp .jpg .jpeg .svg .json .woff2`), so a `.ts` under `src/assets/`
+is still forbidden. Rationale: data cannot drag in a renderer, React or the DOM, so
+neither property above is at risk.
+
+The same change closed a **blind spot** — `import.meta.glob('…')` was not scanned at
+all, so the ~180-sprite farm pack had always been exempt while a plain
+`import manifest from '../../assets/….json'` (inert data, strictly safer) was rejected.
+The rule was blocking the harmless case and permitting the Vite-coupled one. Both are
+now scanned and both are allowed on the same narrow terms.
+
 The equivalent grep, if you want it by hand:
 
 ```bash
@@ -99,6 +112,17 @@ sat in the same folder while the /decks sheet and the scp already used it. That 
 `FlashcardsLearnPage/styled.ts` and into `src/components/sheet/sheetStyled.ts` — they had
 exactly one importer, so nothing else had to change. Note the trigger: the file did not
 become shared when a second *page* used it, but when a second *feature* did.
+
+**Applied again, 2026-09-09.** The beginner keyboard's candidate bar carried desktop-only
+horizontal paging arrows (measuring, the `(hover: hover) and (pointer: fine)` gate, the
+`scrollBy` travel). The iw composer's hint tray then needed the identical control, which is
+the same trigger as above — a **second feature**, not a second page. The logic moved to
+`src/hooks/useHorizontalScrollArrows.ts` and the button to `src/components/ScrollArrow.tsx`;
+each call site keeps only what genuinely differs (`CandidateRow` passes its per-mode accent
+colour, the tray passes an end-of-travel callback that fetches its next page). Worth noting
+what stayed behind: the *chrome* was not promoted with the behaviour, because the two strips
+legitimately look different — promoting the shared part is not the same as unifying the two
+surfaces.
 
 ### Dependency direction
 

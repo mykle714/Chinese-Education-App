@@ -1,8 +1,21 @@
 # Community Page — Shareable Advanced Card-Icon Layouts
 
-> Status: **implemented**. Backed by migration 86 (`community_layout_votes`), the
-> `/api/community/*` endpoints, and the `src/features/community/` UI. Reached from the Home
-> hub (`/community`).
+> Status: **implemented and ON**, behind a feature flag (2026-09-19). Backed by
+> migration 86 (`community_layout_votes`), the `/api/community/*` endpoints, and the
+> `src/features/community/` UI. Reached from the Home hub (`/community`).
+
+🚩 **The flag is `FEATURE_FLAGS.community` in `server/contracts/featureFlags.ts`, currently
+`true`** — the feature behaves exactly as described below; this section documents what would
+switch off if it were set to `false`. See
+[FEATURE_FLAGS.md](./FEATURE_FLAGS.md). It gates **sharing**, not **authoring**: the
+`/api/community/*` endpoints (both feeds, the search bar's per-entry feed, vote/unvote and
+`applyDesign`), the `/community` route and its Home tile, the tip in `src/data/tips.ts`, and
+the fourth surface described below — the profile design grid, together with the endpoint that
+feeds it (`GET /api/users/:userId/designs`, which lives in `userRoutes.ts`, **not** in
+`communityRoutes.ts`, and so needs its own guard). Everything in
+[CARD_ICON_LAYOUT.md](./CARD_ICON_LAYOUT.md) stays live — a learner still designs their own
+advanced layouts, `VocabEntryService.updateIconLayout` and the `author` column are untouched,
+and no vote or design row is modified. Only the sharing of those designs goes away.
 
 ## What it is
 

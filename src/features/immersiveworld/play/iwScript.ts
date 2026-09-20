@@ -34,6 +34,19 @@ export interface IWScriptDeps {
   face(actorId: string, cell: string): void;
   /** Show and speak a line; resolves when the bubble has finished revealing (§ 5.3a). */
   say(actorId: string, text: string): Promise<void>;
+  /**
+   * Put an authored DIRECTION into this NPC's own words (§ 14 Q42). `null` = skip the beat.
+   *
+   * ⚠️ **A `null` IS NEVER A REASON TO SPEAK THE DIRECTION.** It is English prose about the
+   * character; putting it on screen is the exact leak this call exists to close.
+   *
+   * Both optional arguments carry `prompt_npc`'s contract rather than a default (2026-09-19):
+   * an absent `direction` asks the NPC to say whatever the moment calls for, and an absent
+   * `towardActorId` lets it pick whom. `towardActorId` is an ACTOR ID — the host owns the
+   * mapping to the in-world name the prompt sees, because that name is not the one the UI
+   * prints over a head.
+   */
+  renderLine(actorId: string, direction?: string, towardActorId?: string): Promise<string | null>;
   /** Play an authored NPC-to-NPC conversation to the end (§ 14 Q6). */
   playConversation(conversationId: string): Promise<void>;
   /** Arm an authored event. Fire-and-forget: the step does NOT wait for it (migration 161). */
@@ -64,22 +77,83 @@ export async function runAuthoredAction(
   steps: readonly IWActionStep[],
   deps: IWScriptDeps,
 ): Promise<void> {
-  for (const step of steps) {
+  // The one in-flight render, and which step it belongs to. See `nextPrefetchableComment`.
+  let prefetch: { index: number; line: Promise<string | null> } | null = null;
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
     if (deps.cancelled()) return;
+
+    // ⚠️ **START THE NEXT LINE'S RENDER AS EARLY AS IT IS PROVABLY SAFE TO** (§ 14 Q42). A
+    // render is a model call, so a `comment` reached cold makes the NPC pause for a second in
+    // the middle of a beat. Q42's answer was to generate a whole action's comments at once;
+    // that is unsound (see `nextPrefetchableComment`), so instead the render is started at the
+    // earliest step from which nothing can change what this NPC has heard. In the common
+    // `walk_to_tag → wait → walk_to_actor → comment` shape that is the whole walk, which is
+    // exactly the window Q42 wanted to hide the latency in.
+    if (!prefetch) {
+      const at = nextPrefetchableComment(steps, i);
+      // `> i` only: a comment at `i` itself is rendered inline below, where its result is
+      // needed immediately anyway and a prefetch would just be an extra variable.
+      if (at !== null && at > i) {
+        const text = (steps[at] as { text?: string }).text?.trim();
+        if (text) prefetch = { index: at, line: deps.renderLine(actorId, text) };
+      }
+    }
+
     // Resolved HERE, immediately before performing it, so positions are the current ones —
     // see `actionPlayer.ts`'s "resolved late" note.
     const instruction = resolveActionStep(step, deps.worldFor(actorId));
 
     switch (instruction.kind) {
       case 'walkTo':
+        // Faced BEFORE and AFTER, mirroring `approachAndFace`. Before, so the performer
+        // visibly sets off toward something rather than sidling. After, because facing is a
+        // DIRECTION and the performer has moved: the same target cell is on a different
+        // bearing from the arrival cell than it was from where they started.
+        //
+        // ⚠️ Unlike the learner's version, `facing` is a SNAPSHOT — the cell the target stood
+        // on when the step was resolved, not a getter. A target that walks off mid-step is
+        // therefore faced at where it was. That is deliberate for now: the alternative needs
+        // the instruction to carry the target's identity rather than its position, and a
+        // shopkeeper looking at the tile you just left is a far smaller wrong than the
+        // back-to-the-learner pose this replaced.
+        if (instruction.facing) deps.face(actorId, instruction.facing);
         await deps.walk(actorId, instruction.cell);
+        if (instruction.facing && !deps.cancelled()) deps.face(actorId, instruction.facing);
         break;
       case 'face':
         deps.face(actorId, instruction.cell);
         break;
-      case 'say':
-        await deps.say(actorId, instruction.text);
+      case 'say': {
+        // `instruction.text` is the authored DIRECTION, not a line. It is rendered — here,
+        // or already in flight from a prefetch started a few steps back — and only the
+        // rendered Chinese is ever spoken.
+        const line = prefetch?.index === i
+          ? await prefetch.line
+          : await deps.renderLine(actorId, instruction.text);
+        prefetch = null;
+        if (deps.cancelled()) return;
+        // Skipped, never spoken as written. `renderLine` has already left the reason in the
+        // note log, so the script simply moves on.
+        if (line) await deps.say(actorId, line);
         break;
+      }
+      case 'promptNpc': {
+        // ⚠️ RENDERED AND SPOKEN AS `instruction.npcId`, NOT AS `actorId` — this is the one
+        // instruction whose subject is somebody else, and using the performer here would make
+        // 王婶 speak the kitchen's line in her own bubble.
+        //
+        // NOT PREFETCHED, and it could not be: the prefetch window is "nothing can change what
+        // this NPC has heard", and a cue is by definition another voice entering the scene. It
+        // is a `RENDER_BARRIER` for the same reason.
+        const line = await deps.renderLine(instruction.npcId, instruction.instruction, instruction.toward);
+        if (deps.cancelled()) return;
+        // A frozen render is silence, exactly as it is for `say`. The cue is dropped; the
+        // performer's own script plays on.
+        if (line) await deps.say(instruction.npcId, line);
+        break;
+      }
       case 'wait':
         await deps.wait(instruction.ms);
         break;
@@ -99,6 +173,42 @@ export async function runAuthoredAction(
         break;
     }
   }
+}
+
+/**
+ * Steps that make a prefetched render WRONG, rather than merely early.
+ *
+ * A render is written against what the NPC has heard. Anything that can add to that list
+ * between now and the comment invalidates a line generated in advance:
+ *
+ *   - **`wait_for_response`** hands the floor to the learner. This is the case that sinks
+ *     Q42's batch-per-action plan outright — a script straddles the learner's own sentences,
+ *     and a line written before them would answer something nobody said.
+ *   - **`comment`** is a line this same NPC is about to speak, which the next one should be
+ *     able to build on rather than repeat.
+ *   - **`start_conversation`** is several other NPCs speaking.
+ *   - **`prompt_npc`** is exactly one other NPC speaking, which is the same fact in smaller
+ *     form: a line the performer is about to answer cannot have been written before it.
+ */
+const RENDER_BARRIERS: ReadonlySet<string> = new Set([
+  'wait_for_response', 'comment', 'start_conversation', 'prompt_npc',
+]);
+
+/**
+ * The next `comment` reachable from `from` without crossing a barrier, or null.
+ *
+ * `from` is the step ABOUT TO BE PERFORMED, so it is examined like any other — a
+ * `wait_for_response` sitting at `from` is exactly the barrier this is looking for. The
+ * `comment` test runs first, so a comment at `from` returns `from` rather than being read as
+ * its own barrier; the caller uses the `> from` test to decide whether prefetching it is
+ * worth anything.
+ */
+export function nextPrefetchableComment(steps: readonly IWActionStep[], from: number): number | null {
+  for (let i = from; i < steps.length; i++) {
+    if (steps[i].kind === 'comment') return i;
+    if (RENDER_BARRIERS.has(steps[i].kind)) return null;
+  }
+  return null;
 }
 
 /**

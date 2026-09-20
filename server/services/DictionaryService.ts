@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
 import { DictionaryEntry, VocabEntry, AiDictionaryEntry, WordComparisonResult, LongDefinitionPart, LongDefinitionCitation, DefinitionCluster, EntryApprovalFlags } from '../types/index.js';
-import type { Language } from '../types/index.js';
+import type { Language, DictionarySearchRanking } from '../types/index.js';
 import type { LongDefinitionValue } from '../utils/definitions.js';
 import { ValidationError, RateLimitError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
@@ -201,7 +201,8 @@ export class DictionaryService {
     searchTerm: string,
     language: string,
     limit: number = 50,
-    offset: number = 0
+    offset: number = 0,
+    rankBy: DictionarySearchRanking = 'relevance'
   ): Promise<{ entries: DictionaryEntry[], total: number } & AiFallbackState> {
     // Validation
     if (!searchTerm || searchTerm.trim().length === 0) {
@@ -222,7 +223,9 @@ export class DictionaryService {
 
     const trimmedTerm = searchTerm.trim();
 
-    const result = await this.dictionaryDAL.searchByWord1(trimmedTerm, language, limit, offset);
+    // `rankBy` only reorders (see DictionarySearchRanking) — the qualifying row set, the
+    // total, and therefore the AI-fallback decision below are identical either way.
+    const result = await this.dictionaryDAL.searchByWord1(trimmedTerm, language, limit, offset, rankBy);
 
     // AI synthetic-entry fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md): only when stages 1–2
     // found nothing. Surface either a cached AI answer (auto-shown orange card) or the flag that

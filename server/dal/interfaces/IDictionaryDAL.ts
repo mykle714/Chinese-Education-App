@@ -1,6 +1,6 @@
-import { DictionaryEntry, DictionaryEntryCreateData, AiDictionaryCacheRow, WordComparisonRow, DefinitionCluster, LongDefinitionCitation, EntryApprovalFlags } from '../../types/index.js';
+import { DictionaryEntry, DictionaryEntryCreateData, AiDictionaryCacheRow, WordComparisonRow, DefinitionCluster, LongDefinitionCitation, LongDefinitionPart, EntryApprovalFlags } from '../../types/index.js';
 import type { LongDefinitionValue } from '../../utils/definitions.js';
-import type { Language } from '../../types/index.js';
+import type { Language, DictionarySearchRanking } from '../../types/index.js';
 
 /**
  * Dictionary Data Access Layer Interface.
@@ -42,13 +42,19 @@ export interface IDictionaryDAL {
   findMultipleBySimplified(simplifiedTerms: string[]): Promise<DictionaryEntry[]>;
 
   /**
-   * Search dictionary entries by word1 with pagination
+   * Search dictionary entries by word1 with pagination.
+   *
+   * `rankBy` picks which READING of the term is surfaced first (see
+   * `DictionarySearchRanking`); it changes only the ORDER BY, never the WHERE, so the same
+   * rows qualify either way. It matters most at a small `limit`, where the ranking decides
+   * which reading survives the LIMIT at all. Defaults to `'relevance'`.
    */
   searchByWord1(
     searchTerm: string,
     language: string,
     limit?: number,
-    offset?: number
+    offset?: number,
+    rankBy?: DictionarySearchRanking
   ): Promise<{ entries: DictionaryEntry[], total: number }>;
 
   /**
@@ -106,6 +112,18 @@ export interface IDictionaryDAL {
     model: string,
     citations?: LongDefinitionCitation[] | null
   ): Promise<void>;
+
+  /**
+   * GSA-segment arbitrary target-language text and return it as ordered parts, each Chinese
+   * run carrying `_segments` + `segmentMetadata` — the same popup data the est renders.
+   *
+   * Batched: one dictionary query serves every text in the array.
+   *
+   * Used by Immersive World to make spoken NPC dialogue tappable
+   * (docs/IMMERSIVE_WORLD.md § 5.3b). Non-`zh` languages have no segmentation and come back
+   * as a single text part.
+   */
+  segmentTexts(texts: string[], language: string): Promise<(LongDefinitionPart[] | null)[]>;
 
   /**
    * Enrich each example sentence in a batch of entries with:

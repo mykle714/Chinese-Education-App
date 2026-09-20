@@ -140,11 +140,14 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
   (slot A entry, slot B entry | null, search text, comparison result/loading/error). When the
   Compare tab is active, the panel renders `CompareWorkspace` **instead of** the normal
   `InfoCardPanelBody` content (no entry header, no inner sub-tab strip).
-- Closing the Compare tab (the strip's X button) discards its state entirely.
+- Closing the Compare tab discards its state entirely. The ✕ is the panel header's
+  (`SheetCloseX`, passed in as `SheetPanel`'s `onCloseX`) — the word trail itself has
+  carried no ✕ since 2026-09-05; it closes whichever word is showing.
 
 References: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` (`EipTab`,
-`measureTabWidth`, overflow fitting — the "Compare" label goes through the same width
-measurement), `EipTabStrip.tsx`, `src/components/WordToolsRail.tsx` (the `Compare` pill — the sole entry
+`MAX_EIP_TABS` — the Compare tab is pushed under the same 50-tab cap as a word tab; the
+width gate it used to pass through, `measureTabWidth`/`readStripGeometry`/`fitsNewTab`,
+was deleted on 2026-09-06 when the strip became scrollable), `EipTabStrip.tsx`, `src/components/WordToolsRail.tsx` (the `Compare` pill — the sole entry
 point), `FlashcardsLearnPage.tsx` (mounts the eip wrapper).
 
 The eip has a single wrapper — the bottom-sheet `InfoCardSection` (`SheetPanel` +

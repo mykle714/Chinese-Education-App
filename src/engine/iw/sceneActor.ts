@@ -1,7 +1,7 @@
 import { advanceLocalProgress, headingBetweenTiles, lerpTile } from '../market/tileTraversal';
 import { headingToIsoDir, type IsoDir } from '../market/pedestrianAgent';
 import type { Direction } from '../market/freeFarmTileset';
-import { cellKey, parseCellKey, planScenePath, type SceneGraph } from './sceneGraph';
+import { cellKey, forcedFacingAt, parseCellKey, planScenePath, type SceneGraph } from './sceneGraph';
 
 /**
  * iw scene actor — a body that walks a planned path, one cell at a time.
@@ -180,6 +180,29 @@ export const stopActor = (actor: SceneActorState): SceneActorState =>
   ({ ...actor, path: [], blockedMs: 0 });
 
 /**
+ * The facing this actor's cell FORCES on it right now, or `null`.
+ *
+ * ⚠️ **SETTLING IS WHAT TURNS YOU, NOT PASSING THROUGH.** An actor mid-step, or one with more
+ * path left to walk, is merely crossing the cell — it keeps the facing its own movement gave
+ * it, or a body would pirouette on its way past a stool. The forced facing applies only once
+ * the actor is standing on the cell with nothing left to do, which is also why the rule
+ * survives re-application: {@link tickSceneActor} asserts it on every idle tick, so anything
+ * that turns a standing body away from its tile's facing is corrected on the next frame.
+ *
+ * Referenced by: docs/IMMERSIVE_WORLD.md § 3a.
+ */
+export function forcedFacingFor(graph: SceneGraph, actor: SceneActorState): SceneFacing | null {
+  if (actor.path.length > 0 || actor.progress > 0) return null;
+  return forcedFacingAt(graph, actor.cell);
+}
+
+/** {@link forcedFacingFor}, applied. Returns the actor unchanged when nothing forces it. */
+export function applyForcedFacing(actor: SceneActorState, graph: SceneGraph): SceneActorState {
+  const forced = forcedFacingFor(graph, actor);
+  return forced && forced !== actor.facing ? { ...actor, facing: forced } : actor;
+}
+
+/**
  * Advance one actor by `dtMs`.
  *
  * The step loop is deliberately NOT a while-loop over leftover progress: at 3 cells/sec a
@@ -198,13 +221,22 @@ export function tickSceneActor(
     if (!completed) return { actor: { ...actor, progress }, event: { kind: 'none' } };
     const landed: SceneActorState = { ...actor, fromCell: actor.cell, progress: 0, blockedMs: 0 };
     if (landed.path.length === 0) {
-      return { actor: landed, event: { kind: 'arrived', cell: landed.cell } };
+      // Settled: the cell may own the facing from here on (a stool, a spot at a window).
+      return {
+        actor: applyForcedFacing(landed, ctx.graph),
+        event: { kind: 'arrived', cell: landed.cell },
+      };
     }
     return { actor: landed, event: { kind: 'none' } };
   }
 
-  // Standing still with nothing planned.
-  if (actor.path.length === 0) return { actor, event: { kind: 'none' } };
+  // Standing still with nothing planned. A forced-direction cell is re-asserted here rather
+  // than only on arrival, which is what makes it a LOCK: a body authored onto one starts
+  // turned correctly, and anything that turns a standing body away (a tap, a `face_*` step)
+  // is undone on the next frame instead of silently defeating the tile.
+  if (actor.path.length === 0) {
+    return { actor: applyForcedFacing(actor, ctx.graph), event: { kind: 'none' } };
+  }
 
   const next = actor.path[0];
   if (!ctx.graph.walkable.has(next) || ctx.occupied.has(next)) {

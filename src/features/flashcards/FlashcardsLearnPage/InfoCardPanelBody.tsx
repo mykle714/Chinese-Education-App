@@ -488,6 +488,11 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         pronunciation={resolveDisplayPronunciation(currentEntry, selectedSenseIndex)}
                         useToneColor={showPinyinColor}
                         showPinyin={showPinyin}
+                        // Tap the headword to copy it: first tap the characters, next
+                        // tap the pinyin (CPCDRow.tapToCopy). The header is the one place
+                        // the headword is shown purely as a reference, so a tap has
+                        // nothing else to mean here.
+                        tapToCopy
                     />
                 )}
                 {/* Header action buttons laid out as a 2-column grid (reading order:

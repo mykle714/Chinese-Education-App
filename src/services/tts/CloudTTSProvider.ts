@@ -1,7 +1,24 @@
 import { API_BASE_URL } from '../../constants';
 import * as authStorage from '../../utils/authStorage';
 import type { AudioRoute } from '../../hooks/useTTSSettings';
-import type { TTSProvider, TTSRequest } from './types';
+import type { TTSProvider, TTSRequest, TTSVoice } from './types';
+
+/**
+ * Everything the cache layer needs to identify and, on a miss, fetch one clip.
+ *
+ * `TTSRequest` is structurally a superset of this, so `speak`/`prepare` pass their own request
+ * straight through. It exists because the three cache methods used to take the same four
+ * fields POSITIONALLY after the key (`text, lang, pronunciation, stamp`) — adding `voice` to
+ * that would have been a fifth positional argument threaded through five call sites, where a
+ * transposed pair is a silent wrong-voice bug rather than a type error.
+ */
+interface SynthArgs {
+    text: string;
+    lang: string;
+    pronunciation?: string | null;
+    voice?: TTSVoice;
+    stamp?: boolean;
+}
 
 /**
  * Server-proxied TTS. POSTs to /api/tts/synthesize, receives an MP3 blob, and
@@ -382,8 +399,8 @@ export class CloudTTSProvider implements TTSProvider {
         // waiting until speak() would waste the gesture that got us here.
         this.ensureUnlockListener();
         try {
-            const key = this.bufferKey(req.text, req.lang, req.pronunciation);
-            const buffer = await this.getOrDecodeBuffer(key, req.text, req.lang, req.pronunciation, req.stamp);
+            const key = this.bufferKey(req);
+            const buffer = await this.getOrDecodeBuffer(key, req);
             const ms = Math.round((buffer.duration ?? 0) * 1000);
             return ms > 0 ? ms : null;
         } catch {
@@ -408,17 +425,17 @@ export class CloudTTSProvider implements TTSProvider {
         // Capture the route for the whole call: a settings change mid-fetch must
         // not start playback on one sink having prepared the other's artifact.
         const route = this.route;
-        const key = this.bufferKey(req.text, req.lang, req.pronunciation);
+        const key = this.bufferKey(req);
 
         if (route === 'passthrough') {
-            const url = await this.getOrCreateUrl(key, req.text, req.lang, req.pronunciation, req.stamp);
+            const url = await this.getOrCreateUrl(key, req);
             // Superseded by a newer speak() or a cancel() while the fetch was in
             // flight — drop this call on the floor.
             if (myGeneration !== this.generation) return;
             return this.playViaElement(url, myGeneration);
         }
 
-        const buffer = await this.getOrDecodeBuffer(key, req.text, req.lang, req.pronunciation, req.stamp);
+        const buffer = await this.getOrDecodeBuffer(key, req);
         if (myGeneration !== this.generation) return;
         return this.playViaWebAudio(buffer, myGeneration);
     }
@@ -616,44 +633,52 @@ export class CloudTTSProvider implements TTSProvider {
      * before the response reaches us, so this fetch is the cheap follow-up
      * that pulls bytes across the wire.
      */
-    prefetch(text: string, lang: string, pronunciation?: string | null): void {
+    prefetch(text: string, lang: string, pronunciation?: string | null, voice?: TTSVoice): void {
         if (!text) return;
         // Arm the gesture-unlock listener as early as possible — prefetch fires
         // during deck load, well before the first speak(), giving the user's
         // very first tap a chance to prime both sinks.
         this.ensureUnlockListener();
-        const key = this.bufferKey(text, lang, pronunciation);
+        const args: SynthArgs = { text, lang, pronunciation, voice };
+        const key = this.bufferKey(args);
         const warm: Promise<unknown> = this.route === 'passthrough'
-            ? this.getOrCreateUrl(key, text, lang, pronunciation)
-            : this.getOrDecodeBuffer(key, text, lang, pronunciation);
+            ? this.getOrCreateUrl(key, args)
+            : this.getOrDecodeBuffer(key, args);
         warm.catch(() => {
             // already evicted by the failing cache layer
         });
     }
 
     /**
-     * Canonical cache key for a (text, lang, pinyin) triple. Normalizes the
+     * Canonical cache key for a (text, lang, pinyin, voice) tuple. Normalizes the
      * language to its short code and trims pinyin so prefetch() and speak() land
      * on the same slot regardless of whitespace or null-vs-undefined. Shared by
      * all three caches so they stay aligned.
+     *
+     * ⚠️ **The voice belongs in the key.** Without it two NPCs saying the same line share one
+     * cached clip, and whoever speaks second is voiced by whoever spoke first — a bug that
+     * only shows up on the *second* utterance and looks like the voice feature not working at
+     * all. 'default' is spelled out rather than elided so a key can be read without knowing
+     * which role is the default.
      */
-    private bufferKey(text: string, lang: string, pronunciation?: string | null): string {
-        const shortLang = lang.split('-')[0];
-        const normalizedPinyin = (pronunciation || '').trim();
-        return `${shortLang}:${text}:${normalizedPinyin}`;
+    private bufferKey(args: SynthArgs): string {
+        const shortLang = args.lang.split('-')[0];
+        const normalizedPinyin = (args.pronunciation || '').trim();
+        return `${shortLang}:${args.voice ?? 'default'}:${args.text}:${normalizedPinyin}`;
     }
 
     /**
      * The one network path. Everything else derives from this Blob, so a word is
      * fetched at most once per session no matter how the route changes.
      */
-    private getOrFetchBlob(key: string, text: string, lang: string, pronunciation?: string | null, stamp?: boolean): Promise<Blob> {
+    private getOrFetchBlob(key: string, args: SynthArgs): Promise<Blob> {
         const cached = this.blobCache.get(key);
         if (cached) return cached;
 
+        const { text, stamp } = args;
         // Server expects short language code (e.g. 'zh'); strip BCP-47 region.
-        const shortLang = lang.split('-')[0];
-        const normalizedPinyin = (pronunciation || '').trim();
+        const shortLang = args.lang.split('-')[0];
+        const normalizedPinyin = (args.pronunciation || '').trim();
 
         const promise = (async (): Promise<Blob> => {
             const token = this.getToken();
@@ -670,6 +695,9 @@ export class CloudTTSProvider implements TTSProvider {
                     // Server uses this as both a cache-key component and an SSML
                     // phoneme hint to Google so the audio matches the displayed pinyin.
                     pronunciation: normalizedPinyin || undefined,
+                    // Which voice within the language. Omitted for 'default' so the request
+                    // body stays byte-identical to what every flashcard call site sends.
+                    ...(args.voice && args.voice !== 'default' ? { voice: args.voice } : {}),
                     // Only ever sent as `false`, and only by a caller whose text is not a
                     // headword — see TTSRequest.stamp. Omitted otherwise so the request body
                     // is byte-identical to what every existing call site sends.
@@ -689,14 +717,14 @@ export class CloudTTSProvider implements TTSProvider {
     }
 
     /** Derived cache for the 'media' sink: decoded PCM. */
-    private getOrDecodeBuffer(key: string, text: string, lang: string, pronunciation?: string | null, stamp?: boolean): Promise<AudioBuffer> {
+    private getOrDecodeBuffer(key: string, args: SynthArgs): Promise<AudioBuffer> {
         const cached = this.bufferCache.get(key);
         if (cached) return cached;
 
         const promise = (async (): Promise<AudioBuffer> => {
             const ctx = this.ensureContext();
             if (!ctx) throw new Error('Web Audio unavailable');
-            const blob = await this.getOrFetchBlob(key, text, lang, pronunciation, stamp);
+            const blob = await this.getOrFetchBlob(key, args);
             // .arrayBuffer() hands out a fresh copy, so decodeAudioData detaching
             // it leaves the cached Blob intact for the other sink.
             return await this.decode(ctx, await blob.arrayBuffer());
@@ -708,11 +736,11 @@ export class CloudTTSProvider implements TTSProvider {
     }
 
     /** Derived cache for the 'passthrough' sink: object URLs, capped + revoked. */
-    private async getOrCreateUrl(key: string, text: string, lang: string, pronunciation?: string | null, stamp?: boolean): Promise<string> {
+    private async getOrCreateUrl(key: string, args: SynthArgs): Promise<string> {
         const cached = this.urlCache.get(key);
         if (cached) return cached;
 
-        const blob = await this.getOrFetchBlob(key, text, lang, pronunciation, stamp);
+        const blob = await this.getOrFetchBlob(key, args);
         // Re-check after the await: a concurrent call may have won the race, and
         // minting a second URL for the same key would leak the first.
         const raced = this.urlCache.get(key);

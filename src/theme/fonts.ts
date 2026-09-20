@@ -32,10 +32,11 @@ export const FONTS = {
     //
     // The override is INHERITED, so setting `--cjk-font` on a container re-faces every
     // descendant, and CPCDRow's pinyin-shift measurement (a Range over its own in-DOM
-    // nodes) measures the candidate face correctly. The one path it does NOT reach is
-    // off-DOM measurement appended to document.body — `measureTabWidth` in
-    // features/flashcards/FlashcardsLearnPage/useEipTabs.ts — which sees only a
-    // `:root`-level override. src/pages/FontLabPage.tsx is the consumer of all this.
+    // nodes) measures the candidate face correctly. The one path it would NOT reach is
+    // off-DOM measurement appended to document.body, which sees only a `:root`-level
+    // override; the app has no such measurement left (the eip trail's `measureTabWidth`
+    // was the last one, deleted 2026-09-06 when the trail stopped being width-gated).
+    // src/pages/FontLabPage.tsx is the consumer of all this.
     cjk: 'var(--cjk-font, "Noto Sans SC", "Noto Sans JP", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif)',
 
     // Sub-character component glyphs (word search No Pinyin hint row). "HanziComponents"

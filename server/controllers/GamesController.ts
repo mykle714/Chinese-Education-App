@@ -4,6 +4,7 @@ import { GameProgressService } from '../services/GameProgressService.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
 import { GameAssetsResponse, GameProgressResponse } from '../types/games.js';
 import { isKnownGameId } from '../constants.js';
+import { isGameEnabled } from '../contracts/featureFlags.js';
 
 /**
  * Games framework HTTP layer.
@@ -25,6 +26,15 @@ export class GamesController {
       if (!userId) return;
 
       const { gameId } = req.params;
+      // Per-game flag (GAME_FLAGS, server/contracts/featureFlags.ts). Gated on the
+      // reads too, not just the write below: otherwise a disabled game's asset list
+      // and save state stay probeable by anyone with the URL, which discloses
+      // unshipped work. Note these two reads carry no `isKnownGameId` check at all —
+      // they are harmless for an unknown slug (empty list / null), unlike the write.
+      if (!isGameEnabled(gameId)) {
+        res.status(404).json({ error: 'Unknown game', code: 'ERR_UNKNOWN_GAME' });
+        return;
+      }
       const assets = await this.gameAssetService.listForGame(gameId);
 
       const response: GameAssetsResponse = { gameId, assets };
@@ -44,6 +54,11 @@ export class GamesController {
       if (!userId) return;
 
       const { gameId } = req.params;
+      // Per-game flag — see the note in getAssets.
+      if (!isGameEnabled(gameId)) {
+        res.status(404).json({ error: 'Unknown game', code: 'ERR_UNKNOWN_GAME' });
+        return;
+      }
       const progress = await this.gameProgressService.get(userId, gameId);
 
       const response: GameProgressResponse = { gameId, progress };
@@ -71,6 +86,17 @@ export class GamesController {
       // game that does not exist — unbounded rows per account for the cost of a
       // loop. See KNOWN_GAME_IDS.
       if (!isKnownGameId(gameId)) {
+        res.status(404).json({ error: 'Unknown game', code: 'ERR_UNKNOWN_GAME' });
+        return;
+      }
+
+      // Per-game flag (GAME_FLAGS, server/contracts/featureFlags.ts). Hiding the hub
+      // tile is not a gate on its own — a bookmarked game page would still POST save
+      // state for a game that is switched off, which is the same unbounded-rows
+      // problem the whitelist above exists to prevent. Reported as 404 rather than
+      // 403: to a client, a disabled game is indistinguishable from one that does not
+      // exist, and saying "this exists but is turned off" discloses unshipped work.
+      if (!isGameEnabled(gameId)) {
         res.status(404).json({ error: 'Unknown game', code: 'ERR_UNKNOWN_GAME' });
         return;
       }

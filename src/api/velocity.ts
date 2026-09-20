@@ -19,6 +19,14 @@ export interface VelocityResponse {
     language: string;
     /** Per-language breakdown; languages with zero are absent. */
     byLanguage: Record<string, number>;
+    /**
+     * `velocity` split per band boundary, ascending and aligned with
+     * `CATEGORY_BOUNDARIES` (server/contracts/mastery.ts): [Unfamiliar→Target,
+     * Target→Comfortable, Comfortable→Mastered]. Sums to `velocity` — a card that
+     * climbed two bands is counted at both boundaries it crossed. Always sent, and
+     * always full length, even when every entry is zero.
+     */
+    boundaryCounts: number[];
     /** All languages summed. */
     total: number;
     /** Window length in days (7). Sent so the UI never hard-codes the copy. */

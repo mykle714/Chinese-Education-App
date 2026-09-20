@@ -6,7 +6,9 @@ import {
   challengeWeekIndex,
   challengeWeekKey,
   isAcceptWindowOpen,
+  isIssueWindowOpen,
   isTestWindowOpen,
+  issueWindowClose,
   latestTestWindowClose,
   localChallengeWeekIndex,
   testWindowClose,
@@ -200,6 +202,22 @@ describe('deadlines', () => {
     expect(isTestWindowOpen(32, tz, closes)).toBe(false);
   });
 
+  it('opens the issue window only on the challenger\'s own Monday, 04:00 → Tuesday 04:00', () => {
+    // Challenges go out on Mondays only (§ 2): anything later inherits the week's
+    // fixed Wednesday accept deadline and can be born already expired.
+    const tz = 'America/New_York';
+    const opens = weekOpen(32, tz);
+    const closes = issueWindowClose(32, tz);
+    expect(localOf(opens, tz).label).toBe('Mon 04:00');
+    expect(localOf(closes, tz).label).toBe('Tue 04:00');
+    expect(isIssueWindowOpen(32, tz, new Date(opens.getTime() - 1))).toBe(false);
+    expect(isIssueWindowOpen(32, tz, opens)).toBe(true);
+    expect(isIssueWindowOpen(32, tz, new Date(closes.getTime() - 1))).toBe(true);
+    expect(isIssueWindowOpen(32, tz, closes)).toBe(false);
+    // Mid-week, still inside week 32 — the case that used to create a dead challenge.
+    expect(isIssueWindowOpen(32, tz, testWindowOpen(32, tz))).toBe(false);
+  });
+
   it('spans a DST transition without slipping a day', () => {
     // US DST ends 2026-11-01. Week 43 = Monday 2026-11-02, so the accept deadline
     // (Wed) is on the far side of the shift from the epoch arithmetic.
@@ -207,5 +225,8 @@ describe('deadlines', () => {
     expect(challengeWeekKey(idx)).toBe('2026-11-02');
     expect(localOf(acceptDeadline(idx, 'America/New_York'), 'America/New_York').label).toBe('Wed 04:00');
     expect(localOf(testWindowClose(idx, 'America/New_York'), 'America/New_York').label).toBe('Mon 04:00');
+    // The issue window closes on the far side of the shift too (week 43's Monday is
+    // the day after it), so it must still read 04:00 local, not 03:00 or 05:00.
+    expect(localOf(issueWindowClose(idx, 'America/New_York'), 'America/New_York').label).toBe('Tue 04:00');
   });
 });

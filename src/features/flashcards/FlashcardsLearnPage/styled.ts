@@ -58,6 +58,11 @@ export const EipTabStripContainer = styled(Box)(() => ({
     overflow: "hidden",
 }));
 
+// How long a trail pill takes to widen into the strip. Exported because EipTabStrip has
+// to wait it out before it can scroll a freshly-pushed pill into view — measured
+// mid-entrance, the pill is still near zero-width and the scroll lands short.
+export const EIP_PILL_IN_MS = 240;
+
 // Entrance keyframes for a trail pill (see EipEntryTab). Kept as a `keyframes` const so
 // the animation is emitted with the component's own styles rather than a global rule.
 const eipPillIn = keyframes({
@@ -100,7 +105,7 @@ export const EipEntryTab = styled(Box, {
     // strip are pushed aside rather than jumped aside, and rises to full opacity, in step
     // with the panel slide that shows the same word's content (InfoCardSection).
     // max-width, not width: the resting size stays intrinsic to the label.
-    animation: `${eipPillIn} 240ms cubic-bezier(0.22, 1, 0.36, 1) both`,
+    animation: `${eipPillIn} ${EIP_PILL_IN_MS}ms cubic-bezier(0.22, 1, 0.36, 1) both`,
 }));
 
 // `.tabs2` — the eip's CONTENT tabs: which question about this word is being

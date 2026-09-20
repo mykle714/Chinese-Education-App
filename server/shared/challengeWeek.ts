@@ -18,6 +18,8 @@
  *
  *   Mon 04:00  ISSUE OPENS    each player's OWN clock — challenger picks friend
  *                             + variant + word set
+ *   Tue 04:00  ISSUE CLOSES   the CHALLENGER's clock — a challenge may only be
+ *                             issued on their own Monday (2026-09-13)
  *   Wed 04:00  ACCEPT DEADLINE  the CHALLENGEE's clock — end of their Tuesday
  *   Fri 04:00  TEST OPENS     each player's OWN clock
  *   Mon 04:00  TEST CLOSES    each player's own clock — the instant the next
@@ -120,6 +122,7 @@ export const CHALLENGE_BOUNDARY_HOUR = 4;
 
 /** Days from the week's Monday to each boundary. */
 const WEEK_OPEN_DAY_OFFSET = 0;      // Monday 04:00 — the week opens
+const ISSUE_CLOSE_DAY_OFFSET = 1;     // Tuesday 04:00 — the end of the challenger's Monday
 const ACCEPT_DEADLINE_DAY_OFFSET = 2; // Wednesday 04:00 — the end of the challengee's Tuesday
 const TEST_OPEN_DAY_OFFSET = 4;       // Friday 04:00
 const TEST_CLOSE_DAY_OFFSET = 7;      // the following Monday 04:00
@@ -176,6 +179,37 @@ function weekBoundary(weekIndex: number, tz: string, dayOffset: number): Date {
  */
 export function weekOpen(weekIndex: number, playerTz: string): Date {
   return weekBoundary(weekIndex, playerTz, WEEK_OPEN_DAY_OFFSET);
+}
+
+/**
+ * When a challenger's chance to ISSUE this week's challenges ends — Tuesday 04:00 in
+ * the CHALLENGER's zone, i.e. the end of their own Monday.
+ *
+ * Why issuing is a one-day window rather than "any time before the accept deadline":
+ * a challenge takes its week from the moment it is issued, and every later boundary
+ * (accept by Wed, test from Fri) is fixed to that week. Before this window existed,
+ * a challenge issued on a Wednesday was born past its accept deadline — nobody could
+ * accept it, yet it spent the pair's week and a cap slot. Pinning issue to Monday is
+ * what guarantees every challenge gets the full Mon → Fri study run.
+ */
+export function issueWindowClose(weekIndex: number, challengerTz: string): Date {
+  return weekBoundary(weekIndex, challengerTz, ISSUE_CLOSE_DAY_OFFSET);
+}
+
+/**
+ * May this challenger issue a challenge stamped `weekIndex` right now, on their own
+ * clock? True only during their local Monday 04:00 → Tuesday 04:00.
+ *
+ * ⚠️ Pass the CHALLENGER's timezone — the one that also picked `weekIndex` via
+ * `localChallengeWeekIndex`. This does NOT check the challengee's accept deadline;
+ * `StudyChallengeService.issueChallenge` checks that separately, because a
+ * challengee far enough east can already be past their Wednesday 04:00 during the
+ * last hours of the challenger's Monday.
+ */
+export function isIssueWindowOpen(weekIndex: number, challengerTz: string, now: Date): boolean {
+  const t = now.getTime();
+  return t >= weekOpen(weekIndex, challengerTz).getTime()
+      && t < issueWindowClose(weekIndex, challengerTz).getTime();
 }
 
 /**

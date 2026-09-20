@@ -95,8 +95,15 @@ Guidelines:
 const POLYSEMY_GUIDELINE = {
   word: `  - If a word has multiple meanings, score the one that would stand out LEAST — its most everyday meaning.`,
   sense: `  - Score ONLY the sense stated above. IGNORE how ordinary the word is in its other meanings — a very common word's rare sense must score LOW. 会 is everyday as "can/will" (5) but would stop a casual conversation as "to reckon accounts" (1); score the sense in front of you, not the headword.
-  - Do not let the word's overall familiarity raise the score. The question is how a listener would react to it WITH THIS MEANING.`,
+  - Do not let the word's overall familiarity raise the score. The question is how a listener would react to it WITH THIS MEANING.
+  - GRAMMATICAL-FUNCTION SENSES (a classifier / measure word, a particle, a complement) are scored by how often speakers pick THIS word for that job — not by how common the job itself is. Counting occurrences is everyday, but for "times/occurrences" speakers mostly reach for the default 次, so 回 in that role is a 4, not a 5; 个 IS the everyday default general classifier, so it is a 5. Give a function sense 5 only when this word is the default choice for its role.`,
 };
+// ↑ The GRAMMATICAL-FUNCTION line was added in zh cluster SCRIPT_VERSION 10: 回's
+// "classifier for times/occurrences" scored 5 by rating how common COUNTING is, tying
+// "to go back / return" and losing the default-sense star to it. It pairs with rule 3
+// of shared/lib/tiebreakOrder.js, which settles the ties this line cannot prevent.
+// It is sense-mode only; the word-level scorer (backfill-frequency-score.js) is
+// unchanged and needs no version bump.
 
 // Band names are the same scale in every language, so they live in the shared lib
 // and are re-exported here under the name this module's callers already import.
@@ -118,17 +125,20 @@ export { FREQUENCY_SCORE_LABELS as SCORE_LABELS } from '../../shared/lib/frequen
  * model then answers about the headword and every cluster of a word scores alike.
  */
 export function createFrequencyScorer({ anthropic, model = DEFAULT_MODEL }) {
-  async function scoreFrequency(word, pronunciation, definitions, { withReasoning = false, sense = null } = {}) {
+  async function scoreFrequency(word, pronunciation, definitions, { withReasoning = false, sense = null, pos = null } = {}) {
     const definitionText = Array.isArray(definitions)
       ? definitions.slice(0, 4).join('; ')
       : definitions;
 
     // SENSE MODE names the sense in the subject line and in the task, so the model is
     // never asked about the bare headword while being shown one cluster's glosses.
+    // `pos` (sense mode only, optional) is printed so the GRAMMATICAL-FUNCTION guideline
+    // can see a classifier/particle sense without guessing it from the label.
     const senseMode = typeof sense === 'string' && sense.trim() !== '';
+    const posText = Array.isArray(pos) && pos.length ? pos.join(', ') : null;
     const subject = senseMode
       ? `Word: ${word} (${pronunciation})
-Sense being scored: ${sense}
+Sense being scored: ${sense}${posText ? `\nPart of speech of THIS SENSE: ${posText}` : ''}
 Glosses for THIS SENSE ONLY: ${definitionText}`
       : `Word: ${word} (${pronunciation})
 Definitions: ${definitionText}`;

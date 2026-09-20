@@ -952,6 +952,31 @@ Every row is **left-aligned**. The old `TileGrid` centred its short rows and lef
 its growing ones; centring is wrong on a shelf, because the board runs the full width of
 the row and spines floating in the middle of it read as a mistake.
 
+### Back restores the page
+
+Opening a card or a set from the fdp's Cards/Decks sheet, a Mastery Center or a
+collection page, then coming **Back** (← arrow, browser back, or iOS edge swipe), returns
+to the same sheet at the same height (fdp), the same scroll position, search text, sort
+and collection filter. The page paints that state on its first frame from lists cached at
+the moment of leaving, then refetches in the background — a mark or edit made on the cdp
+arrives a moment later instead of the grid flashing a spinner. Reopening a sheet later in
+the same visit opens it fresh (the fdp drops its restore when that sheet closes).
+
+It is keyed on the history entry (`location.key`), so only Back restores: tapping the
+Flashcards footer tab opens the fdp with both sheets closed, as before. Deleting a card
+on the cdp (`navigate("/flashcards/decks")`, a push) also opens fresh, which is correct —
+the cached library would still hold the deleted card.
+
+Before this, the fdp came back with its sheet closed, and on iOS the edge-swipe back
+stalled the tab for a couple of seconds as WebKit waited for the page to match its swipe
+snapshot. The mechanism, the layer table and the no-enter-slide-on-`POP` rule are in
+[LEAF_NODE_PAGES.md § "Card-grid back-restore"](./LEAF_NODE_PAGES.md).
+
+> ⚠️ A restored visit skips the grid's entrance cascade for its whole lifetime
+> (`revealImmediately`), including the remount a duo-tile filter change causes. That is
+> deliberate — the cascade replaying under a restored scroll is the bug — but it means
+> the pop-in is absent until the learner leaves and arrives fresh.
+
 ### The mini card's FACE is shared, not copied (2026-09-01)
 
 The 92×132 tile the fdp panel draws is not this page's styling — it is the app's one
@@ -1491,6 +1516,7 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §4 Spines & built-in collections | `src/components/shelf/*` (`Shelf`, `Spine`, `AddSpine`, `spineGeometry`) (+ `DeckBuckets.tsx`, the Account host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`lensCollectionEntries`, `builtinCollectionEntries`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`, `LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
 | §1 `editMode` + §4 Challenges section | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; `database/migrations/148-create-study-challenges.sql`; `DeckService` → `assertMutable` (the preset mutation guard) and `createPresetDeck`; `DeckDAL` → `createPresetDeck` / `countCustomDecks` / `findDeckEditMode`; `study_challenges.presetDeckIds` |
 | §4 Cards section (inline library) | `src/api/collections.ts` (`fetchCollectionCards`) — also the collection page's built-in read; `src/components/MiniVocabCardGrid.tsx`; `src/utils/vocabSearch.ts` (`filterVocabEntries`); `useDecksPanel.ts` (the fetch, the search + sort state); `DecksPanelBody.tsx` (the section + the `decksSheet.decksOpen` collapse) |
+| §4 Back restores the page | `src/features/flashcards/backRestore.ts` (`saveBackSnapshot`, `readBackSnapshot`, `DecksPanelSnapshot`, `DecksPageSnapshot`, `MasteryCenterSnapshot`, `CollectionPageSnapshot`); `useDecksPanel.ts` (the `restore` param, `restored`, `snapshot`); `DecksPanelBody.tsx` (`initialScrollTop`); `FlashcardsDecksPage.tsx`, `MasteryCenterPage.tsx`, `CollectionViewPage.tsx` (`rememberPlace`); `src/components/sheet/SheetPanel.tsx` (`restoreHeight`); `src/components/MiniVocabCardGrid.tsx` (`revealImmediately`); `src/hooks/usePageSlide.ts` (no enter on `POP`). See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § "Card-grid back-restore". |
 | §4 Why the card grid is windowed | `src/hooks/useWindowedRows.ts` (`useWindowedRows`, `computeRowWindow`, `seedWindow`, `scrollParentOf`); `src/components/MiniVocabCardGrid.tsx` (`WINDOW_MIN_ITEMS`, `WINDOW_OVERSCAN_PX`, `CASCADE_LIMIT`, the two spacers); `src/hooks/useIncrementalList.ts`; `src/components/MiniVocabCard.tsx` (`memo`, `contentVisibility`); `src/features/flashcards/useDecksPanel.ts` (`useDeferredValue` on the search term); `src/__tests__/windowedRows.test.ts` |
 | §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `server/contracts/cooldown.ts` (`cooldownRemainingMs`) + `server/contracts/mastery.ts` (`computeTypeCategory`) for the Cooldown key; `src/features/flashcards/CollectionSortControl.tsx` (the shared icon trigger + menu, both visibility gates); `src/components/SearchField.tsx` (the shared search box that hosts it via `endAction`); `CollectionViewPage.tsx` and `useDecksPanel.ts` (each holds its own key + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |
 

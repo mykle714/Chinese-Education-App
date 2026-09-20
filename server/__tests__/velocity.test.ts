@@ -4,6 +4,7 @@ import {
   barCategory,
   barForMarkType,
   categoryRank,
+  CATEGORY_BOUNDARIES,
   CATEGORY_ORDER,
 } from '../contracts/mastery.js';
 import type { ReviewMark, TypedMarkHistory } from '../contracts/wire.js';
@@ -112,5 +113,45 @@ describe('velocity at the mark boundary', () => {
     const after: TypedMarkHistory = { reading: track(3) };
     expect(stepsFor(before, after, 'reading')).toBe(1);
     expect(bandsClimbed(barCategory(before, 'core'), barCategory(after, 'core'))).toBe(0);
+  });
+});
+
+/**
+ * The boundary split the Velocity card renders (`VelocityBreakdown.boundaryCounts`).
+ *
+ * The counting itself lives in SQL — `CategoryPromotionDAL.getVelocityByLanguage`
+ * builds one `COUNT(*) FILTER (WHERE "rankFrom" <= i AND "rankTo" > i)` per boundary —
+ * so what is pinned here is the RULE that query implements: a promotion is counted at
+ * every boundary it passes through, and therefore the three counts sum to exactly the
+ * same number `bandsClimbed` contributes to the headline. If those two ever disagree
+ * the card shows `x + y + z` next to a total that is not their sum.
+ */
+describe('CATEGORY_BOUNDARIES', () => {
+  it('is the adjacent pairs of CATEGORY_ORDER, ascending', () => {
+    expect(CATEGORY_BOUNDARIES).toEqual([
+      { from: 'Unfamiliar', to: 'Target' },
+      { from: 'Target', to: 'Comfortable' },
+      { from: 'Comfortable', to: 'Mastered' },
+    ]);
+  });
+
+  it('has one fewer entry than there are bands', () => {
+    expect(CATEGORY_BOUNDARIES).toHaveLength(CATEGORY_ORDER.length - 1);
+  });
+
+  it('counts a promotion at every boundary it crosses, summing to bandsClimbed', () => {
+    // The DAL's predicate, restated: boundary `i` sits between rank i and rank i+1.
+    const crossings = (from: string, to: string) =>
+      CATEGORY_BOUNDARIES.filter(
+        (_, i) => categoryRank(from) <= i && categoryRank(to) > i
+      ).length;
+
+    // Every ordered upward pair, not just the adjacent ones — the two-band and
+    // three-band jumps are the cases the sum rule exists for.
+    for (const from of CATEGORY_ORDER) {
+      for (const to of CATEGORY_ORDER) {
+        expect(crossings(from, to)).toBe(bandsClimbed(from, to));
+      }
+    }
   });
 });

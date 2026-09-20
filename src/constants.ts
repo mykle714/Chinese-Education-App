@@ -57,7 +57,28 @@ export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/games/match-speed',
   '/games/speed-reading',
   '/games/memory-map',
-  '/games/hydra-bubbles'
+  '/games/hydra-bubbles',
+  // The immersive-world PLAY surface (docs/IMMERSIVE_WORLD.md). A prefix, because the scene
+  // itself is `/immersive-world/:sceneId` and a parameterized route cannot be listed exactly —
+  // which is why the two NON-study routes that share the prefix are named in
+  // MINUTE_POINTS_EXCLUDED_EXACT_PAGES below. Holding a conversation with an NPC in the target
+  // language is the most study-shaped thing in the app; it was simply never added to this list.
+  '/immersive-world'
+];
+
+// Routes that the prefix list above sweeps in but that are NOT study surfaces.
+//
+// This exists because a parameterized study route (`/immersive-world/:sceneId`) can only be
+// admitted by its parent prefix, and that prefix also admits its siblings: the scene LIST
+// (a hub — you pick from it, you do not study on it) and the scene EDITOR (authoring, and an
+// author leaving it open all afternoon must not farm points). Matched EXACTLY, so a future
+// child of either keeps whatever its own prefix says.
+//
+// Prefer adding a narrower prefix to the list above when one exists; reach for this only when
+// the study surface is the parameterized child and the browse screens are its siblings.
+export const MINUTE_POINTS_EXCLUDED_EXACT_PAGES = [
+  '/immersive-world',
+  '/immersive-world/scene-editor'
 ];
 
 // Eligible pages matched EXACTLY, with no descendants. For a study surface whose path

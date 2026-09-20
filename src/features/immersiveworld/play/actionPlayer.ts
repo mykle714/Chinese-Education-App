@@ -39,6 +39,9 @@ import { approachCells, cellKey, planScenePath, resolvePlaceTarget, type SceneGr
  *     walks it.
  *   - **`ai_walk`.** It needs a model call to choose a destination, which is a turn, not a
  *     step. It skips with a reason until that path exists (§ 12 phase 2's note on the step).
+ *   - **Rendering a prompted line.** `prompt_npc` resolves to a `promptNpc` instruction naming
+ *     WHO speaks and, at most, what about; the model call that turns that into Chinese is the
+ *     host's, exactly as it is for a `say`.
  *
  * Referenced by: docs/IMMERSIVE_WORLD.md § 5.4, § 12 phase 2, § 14 Q42.
  */
@@ -49,7 +52,25 @@ export type IWActorRef = string;
 /** What the host should do next. One per resolved step; the host reports back when it is done. */
 export type IWInstruction =
   /** Walk to this cell, then face the way the last step of the path pointed. */
-  | { kind: 'walkTo'; cell: string; /** What the walk was FOR, so a blocked walk can be reported in character. */ purpose: string }
+  | {
+      kind: 'walkTo';
+      cell: string;
+      /** What the walk was FOR, so a blocked walk can be reported in character. */
+      purpose: string;
+      /**
+       * The cell the walk was AIMED at, when that is not the cell being walked to.
+       *
+       * ⚠️ **A WALK TOWARD SOMETHING ENDS LOOKING AT IT.** `walk_to_actor` and `walk_to_tag`
+       * both stop BESIDE their target — you do not walk into a person or onto a counter — so
+       * without this the performer arrives with their back to the thing they crossed the room
+       * for, which reads as the walk having gone somewhere else entirely. This is the same
+       * rule the LEARNER's tap already follows (`approachAndFace` in `useIWSceneRuntime.ts`):
+       * as close as the board allows, looking at what was aimed at. The host faces this cell
+       * before setting off (so the intent is legible immediately) and again on arrival
+       * (because both ends may have moved).
+       */
+      facing?: string;
+    }
   /** Turn to look at this cell without moving. */
   | { kind: 'face'; cell: string }
   /**
@@ -62,6 +83,17 @@ export type IWInstruction =
    * is why this instruction carries the raw text rather than a rendered one.
    */
   | { kind: 'say'; text: string }
+  /**
+   * Make a DIFFERENT body speak — the `prompt_npc` step resolved (2026-09-19).
+   *
+   * ⚠️ **THE ONE INSTRUCTION THAT IS NOT ABOUT THE PERFORMER.** Every other member of this
+   * union is executed BY the actor whose action is running; this one names its own speaker,
+   * so the host must render and speak it as `npcId` rather than as the performer.
+   *
+   * Both optional fields mean the same thing when absent — *the model decides* — which is
+   * the step's contract, not a missing value to substitute a default for.
+   */
+  | { kind: 'promptNpc'; npcId: string; toward?: string; instruction?: string }
   /** Stand still for this long. */
   | { kind: 'wait'; ms: number }
   /** Play an authored NPC-to-NPC conversation (§ 14 Q6). */
@@ -153,8 +185,12 @@ export function resolveActionStep(step: IWActionStep, world: ActionWorld): IWIns
 
     case 'walk_to_tag': {
       const target = resolvePlaceTarget(world.graph, world.selfCell, step.tag, { occupied: world.occupied });
+      // A place is usually unwalkable, so `target` is a cell BESIDE it; face the place itself.
+      // `places` has no entry for an unknown tag, and then there is nothing to face — the
+      // walk is still valid, it just aimed at a cell rather than at a thing.
+      const place = world.graph.places.get(step.tag);
       return target
-        ? { kind: 'walkTo', cell: target, purpose: step.tag }
+        ? { kind: 'walkTo', cell: target, purpose: step.tag, facing: place ?? undefined }
         // Both failures land here on purpose: an unknown tag and a walled-off one are the
         // same fact to the runtime — nobody is going there — and the reason says which.
         : { kind: 'skip', reason: `cannot reach the place "${step.tag}"` };
@@ -164,6 +200,26 @@ export function resolveActionStep(step: IWActionStep, world: ActionWorld): IWIns
       // The destination is a MODEL choice from a closed list, which is a turn rather than a
       // step; nothing calls that path yet. The step stays authored, validated and inert.
       return { kind: 'skip', reason: 'ai_walk is not resolved in phase 2' };
+
+    case 'prompt_npc': {
+      // A speaker who is not here is the one fatal half — there is nobody to say it, so
+      // there is no degraded version of the beat to play.
+      if (!world.cells.has(step.npcId)) {
+        return { kind: 'skip', reason: `"${step.npcId}" is not in this scene` };
+      }
+      const target = step.target?.trim();
+      return {
+        kind: 'promptNpc',
+        npcId: step.npcId,
+        // ⚠️ AN ADDRESSEE WHO IS NOT HERE IS DROPPED, NOT FATAL — and the fallback is not a
+        // guess, it is the step's own documented no-target behaviour: the model picks whom.
+        // A renamed or departed target should cost the line its aim, never the line.
+        toward: target && world.cells.has(target) ? target : undefined,
+        // Normalised to `undefined` so the empty-string and omitted cases reach the render
+        // path as one thing — "no brief" — rather than as an empty quoted direction.
+        instruction: step.instruction?.trim() || undefined,
+      };
+    }
 
     case 'start_conversation': {
       const known = !world.conversations || world.conversations.some(c => c.id === step.conversationId);
@@ -189,9 +245,23 @@ export function resolveActionStep(step: IWActionStep, world: ActionWorld): IWIns
       const destination = step.kind === 'walk_to_actor'
         ? approachActor(world, targetCell)
         : retreatCell(world, targetCell);
-      return destination
-        ? { kind: 'walkTo', cell: destination, purpose: step.actor }
-        : { kind: 'skip', reason: `cannot ${step.kind === 'walk_to_actor' ? 'reach' : 'get away from'} "${step.actor}"` };
+      if (destination) {
+        return {
+          kind: 'walkTo',
+          cell: destination,
+          purpose: step.actor,
+          // Only `walk_to_actor` faces its target. `walk_away_from` is the opposite intent:
+          // backing off while staring at what you backed away from would undo the beat.
+          facing: step.kind === 'walk_to_actor' ? targetCell : undefined,
+        };
+      }
+      // ⚠️ **AN UNREACHABLE PERSON IS STILL LOOKED AT.** Boxed in, or already surrounded — a
+      // shopkeeper who cannot get around the counter should turn to the learner and speak,
+      // not stand facing a wall while their line comes out of nowhere. Skipping here used to
+      // drop the turn AND the facing, so the whole beat read as a bug. `walk_away_from` keeps
+      // skipping: there is no fallback pose for "flee" that is not just standing still.
+      if (step.kind === 'walk_to_actor') return { kind: 'face', cell: targetCell };
+      return { kind: 'skip', reason: `cannot get away from "${step.actor}"` };
     }
 
     default:

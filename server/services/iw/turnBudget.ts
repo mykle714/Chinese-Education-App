@@ -17,11 +17,12 @@ import {
  * was bypassed entirely — which also means every check here has to be meaningful against a
  * caller who never ran our JavaScript.
  *
- * ⚠️ **THE HEARING GATE IS NOT A COST CONTROL AT THIS BOUNDARY.** § 4.1 calls the gate the
- * primary cost control, and it is — but it runs on the CLIENT, so from the server's side a
- * caller can claim any number of NPCs heard them. That is precisely why
- * {@link IW_MAX_LISTENERS_PER_UTTERANCE} exists: it re-imposes the gate's *budget* without
- * re-implementing its geometry.
+ * ⚠️ **{@link IW_MAX_LISTENERS_PER_UTTERANCE} IS NOW THE WHOLE FAN-OUT BUDGET** (2026-09-07).
+ * § 4.1 used to name the earshot gate as the primary cost control and this cap as a server-side
+ * restatement of it. The gate is withdrawn — everyone in a scene hears everything — so there is
+ * no geometry left to restate and no distance at which a scene gets cheaper. The cap is not a
+ * backstop for an untrusted client any more; it is the only thing bounding what one utterance
+ * costs, on the honest path as much as the hostile one.
  *
  * ⚠️ **IT IS PER-PROCESS AND RESETS ON RESTART.** Deliberate for phase 2 and a real
  * limitation: the counters live in a `Map`, so a backend rebuild forgives every daily cap,
@@ -43,7 +44,7 @@ import {
  * `IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS` and `IW_MAX_LISTENERS_PER_UTTERANCE` moved to
  * `server/contracts/iw.ts` and are re-exported below, because the CLIENT has to respect them
  * to behave well: the composer counts characters against the cap, the send button waits out
- * the gap, and the hearing gate caps its own fan-out. A client that has to guess a server
+ * the gap, and the send path caps its own fan-out. A client that has to guess a server
  * limit gets it wrong the first time the limit is tuned — a refusal the learner sees as the
  * game losing their sentence.
  *
@@ -187,6 +188,14 @@ export class IWTurnBudget {
    * is dressing up: "the market closes in 12 more things you say" is legible, "in 37 model
    * calls" is not.
    */
+  /**
+   * ⚠️ `turns` IS VESTIGIAL AND HAS NEVER BEEN EXERCISED (§ 7, 2026-09-07). It exists because
+   * § 4.1 made one utterance several model calls, and the session was meant to be charged once
+   * for the utterance rather than once per call. The endpoint always took a single npcId, so
+   * the client fanned out and every caller passed 1 — and since § 4.2 routes to exactly one
+   * NPC, 1 is now also CORRECT rather than merely what happens. Keep the parameter until
+   * something genuinely fans out again; do not read it as working fan-out billing.
+   */
   spend(userId: string, sessionId: string, turns = 1): void {
     const now = this.now();
     const day = this.dayKey(now);
@@ -198,6 +207,60 @@ export class IWTurnBudget {
       state.dayCount += turns;
     }
     this.sessions.set(sessionId, (this.sessions.get(sessionId) ?? 0) + 1);
+  }
+
+  /**
+   * Ask whether a NON-TURN model call may proceed — a line render (§ 14 Q42) or an addressee
+   * route (§ 4.2).
+   *
+   * ⚠️ **RENAMED FROM `checkRender` (2026-09-07)** when the addressee router became the second
+   * caller. The rule was never about rendering; it is about a call the SCENE makes rather than
+   * one the learner's sentence makes, and those bill differently. `checkRender` would now be
+   * one of two callers naming the whole category after itself.
+   *
+   * ⚠️ **SUCH A CALL IS BILLED AGAINST THE DAILY CAP AND NOTHING ELSE**, and each exclusion is
+   * deliberate:
+   *
+   *   - **Not the session budget.** That counter is dressed up in-world as "the market is
+   *     closing", and it counts things the LEARNER says. Charging it for an NPC's own
+   *     scripted beats would shorten a scene in proportion to how much was authored into it,
+   *     which is exactly backwards — and charging it for the ROUTER would bill a learner twice
+   *     for one sentence, once to work out who they meant and once for the answer.
+   *   - **Not the rate gap.** {@link IW_MIN_TURN_GAP_MS} exists to stop a learner spamming
+   *     sends. A script legitimately renders several lines in a row with nothing but a walk
+   *     between them, so the gap would refuse the scene's own content.
+   *   - **But yes, the daily cap.** That one is a MONEY bound, and both of these are model
+   *     calls that cost money. A scene that could generate unbounded lines — or route
+   *     unbounded utterances — without touching the cap would be a hole straight through § 7.
+   */
+  checkSceneCall(userId: string): IWBudgetRefusal | null {
+    const state = this.users.get(userId);
+    if (state && state.day === this.dayKey(this.now()) && state.dayCount >= IW_DAILY_TURN_CAP) {
+      return { code: 'daily-cap', spent: state.dayCount };
+    }
+    return null;
+  }
+
+  /**
+   * Record one non-turn model call against the daily cap only.
+   *
+   * Deliberately does NOT touch `lastTurnAt`: that field is the learner's rate gap, and a
+   * render happening mid-script would otherwise make their next sentence be refused as
+   * "too fast" for something they did not do. The router needs the same exemption for the
+   * opposite reason — it runs a few hundred ms BEFORE the turn it belongs to, so stamping the
+   * gap there would make every learner's own turn refuse itself.
+   */
+  spendSceneCall(userId: string): void {
+    const now = this.now();
+    const day = this.dayKey(now);
+    const state = this.users.get(userId);
+    if (!state || state.day !== day) {
+      // `lastTurnAt: 0` rather than `now` — see the note above. Epoch 0 is unambiguously
+      // "they have not spoken yet", and the gap check reads it as such.
+      this.users.set(userId, { lastTurnAt: state?.lastTurnAt ?? 0, day, dayCount: 1 });
+    } else {
+      state.dayCount += 1;
+    }
   }
 
   /** Turns left in a scene run, for a HUD that wants it without asking permission. */

@@ -1,9 +1,12 @@
+import { Box } from "@mui/material";
 import MobileTabScreen from "../components/MobileTabScreen";
 import { useAuth } from "../AuthContext";
 import { Bento, BentoTile, type BentoTileProps } from "../components/bento";
 import { FooterSpacer, ScrollPastSpacer } from "../components/MobileFooter";
 import TipBox from "../components/TipBox";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { isFeatureEnabled } from "../../server/contracts/featureFlags";
+import { COLORS } from "../theme/colors";
 
 // Home hub (`/`) — the landing surface for the footer's Home tab. A BENTO MOSAIC of
 // the app's destinations (docs/SHELF_REDESIGN.md § A4 and entry 1), replacing the
@@ -33,33 +36,54 @@ function HomePage() {
     // top-to-bottom, so moving an entry re-weights the page even though every tile
     // keeps its own variant.
     const tiles: HomeTile[] = [
-        { key: "night-market", to: "/night-market", title: "Night Market", subtitle: "Explore the vocabulary night market", hue: "pur", icon: "nights_stay", variant: "hero" },
+        // Night Market is flagged (server/contracts/featureFlags.ts). This is the hub's
+        // only HERO tile, so with the flag off the mosaic opens on Games at base weight
+        // rather than promoting a replacement — the bento reads fine without a hero, and
+        // choosing a stand-in would re-weight the page for a temporary state.
+        ...(isFeatureEnabled("nightMarket")
+            ? [{ key: "night-market", to: "/night-market", title: "Night Market", subtitle: "Explore the vocabulary night market", hue: "pur", icon: "nights_stay", variant: "hero" } as HomeTile]
+            : []),
         { key: "games", to: "/games", title: "Games", subtitle: "Play vocabulary mini-games", hue: "blu", icon: "sports_esports" },
-        { key: "arena", to: "/arena", title: "Arena", subtitle: "Race 24 other learners", hue: "pur", icon: "emoji_events" },
+        // Arena is flagged (server/contracts/featureFlags.ts). This tile is its ONLY
+        // navigational entry — nothing in the footer, no row on /friends — so dropping
+        // it is the whole client-side entry gate; the route goes in routeMeta.ts.
+        ...(isFeatureEnabled("arena")
+            ? [{ key: "arena", to: "/arena", title: "Arena", subtitle: "Race 24 other learners", hue: "pur", icon: "emoji_events" } as HomeTile]
+            : []),
         // Its own destination rather than a Games tile (docs/IMMERSIVE_WORLD.md § 14 Q9): iw
         // is once per day, earns no marks and is capped by design, so it behaves unlike
         // everything on the Games shelf, where a tile is an activity you can do as much as
         // you like. `tea` matches the Scene Editor tile below — one feature, one hue.
-        { key: "immersive-world", to: "/immersive-world", title: "Immersive World", subtitle: "Walk in and talk to somebody", hue: "tea", icon: "theater_comedy" },
+        ...(isFeatureEnabled("immersiveWorld")
+            ? [{ key: "immersive-world", to: "/immersive-world", title: "Immersive World", subtitle: "Walk in and talk to somebody", hue: "tea", icon: "theater_comedy" } as HomeTile]
+            : []),
         { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", hue: "org", icon: "article" },
         { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them", hue: "red", icon: "book" },
         // The three `low` tiles are the utilities. The artboard drops their subtitles:
         // at 90px tall a subtitle crowds the title, and these three are self-evident
         // from their names in a way "Night Market" is not.
-        { key: "community", to: "/community", title: "Community", hue: "grn", icon: "groups", variant: "low" },
+        // Community is flagged off-able (server/contracts/featureFlags.ts). This tile is
+        // the ONLY navigational entry to /community, so dropping it is the whole
+        // client-side entry gate; the route itself is removed in routeMeta.ts.
+        ...(isFeatureEnabled("community")
+            ? [{ key: "community", to: "/community", title: "Community", hue: "grn", icon: "groups", variant: "low" } as HomeTile]
+            : []),
         { key: "friends", to: "/friends", title: "Friends", hue: "red", icon: "people", variant: "low" },
         // NOTE: there is no "Compare Words" tile. Compare is not a destination — it is a
         // sheet raised over the word you are already looking at, from the `Compare` pill on
         // WordToolsRail (docs/WORD_COMPARE_FEATURE.md). The tile and its /compare page were
         // deleted 2026-09-04; a cold open with two empty slots was the rarer half of the
         // feature and cost a hub slot to reach.
+    ];
 
-        // ── Role-gated tiles ──────────────────────────────────────────────────────
-        // Not drawn in the artboard. They APPEND as further `low` tiles, which is why
-        // the mosaic must never assume a fixed tile count: with one of them present the
-        // grid ends on an odd tile and the last row is half empty. That is correct and
-        // deliberate — the alternative (stretching the orphan to full width) would give
-        // a developer tool the same weight as Night Market.
+    // ── Role-gated tiles ──────────────────────────────────────────────────────
+    // Not drawn in the artboard: these are authoring/QA tools that exist only for
+    // accounts carrying a grant, so they live BELOW A HAIRLINE in their own grid
+    // rather than appended to the mosaic. Two reasons the separator is worth a row
+    // of pixels: the main mosaic keeps a stable shape for every account (a gated
+    // tile no longer leaves the last artboard row half empty), and a tool that can
+    // rewrite authored content reads as a tool rather than as another destination.
+    const gatedTiles: HomeTile[] = [
         ...(user?.isValidator
             ? [{ key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", hue: "blu", icon: "dashboard", variant: "low" } as HomeTile]
             : []),
@@ -68,12 +92,18 @@ function HomePage() {
         // permission, not three (docs/IMMERSIVE_WORLD.md § 12 phase 1e). The scene editor
         // wears `tea` rather than the night market's `pur` because it authors a different
         // feature; sharing a hue would imply it edits night-market templates.
-        ...(user?.isTemplateAuthor
+        // Each tool needs BOTH the grant and its feature's flag: the grant says the
+        // account may author, the flag says the feature exists to be authored for. The
+        // three no longer rise or fall together — with one flag off the other tools stay,
+        // and the hairline section disappears only when nothing is left under it.
+        ...(user?.isTemplateAuthor && isFeatureEnabled("nightMarket")
             ? [
                   { key: "template-editor", to: "/night-market/template-editor", title: "Template Editor", hue: "pur", icon: "grid_view", variant: "low" } as HomeTile,
                   { key: "template-sandbox", to: "/night-market/template-sandbox", title: "Template Sandbox", hue: "pur", icon: "dashboard_customize", variant: "low" } as HomeTile,
-                  { key: "scene-editor", to: "/immersive-world/scene-editor", title: "Scene Editor", hue: "tea", icon: "theater_comedy", variant: "low" } as HomeTile,
               ]
+            : []),
+        ...(user?.isTemplateAuthor && isFeatureEnabled("immersiveWorld")
+            ? [{ key: "scene-editor", to: "/immersive-world/scene-editor", title: "Scene Editor", hue: "tea", icon: "theater_comedy", variant: "low" } as HomeTile]
             : []),
     ];
 
@@ -88,6 +118,28 @@ function HomePage() {
                     />
                 ))}
             </Bento>
+            {/* The separator and the second grid appear together or not at all — an
+                account with no grants must not see a rule with nothing under it. */}
+            {gatedTiles.length > 0 && (
+                <>
+                    <Box
+                        className="home-page__gated-divider"
+                        // `flexShrink: 0` is load-bearing, not defensive: MobileTabScreen's
+                        // content column is a flex column, so a 1px child collapses to
+                        // nothing the moment the column is squeezed to fit the viewport.
+                        sx={{ height: "1px", flexShrink: 0, backgroundColor: COLORS.border, margin: "20px 16px 0" }}
+                    />
+                    <Bento className="home-page__bento home-page__bento--gated">
+                        {gatedTiles.map(({ key, ...tile }) => (
+                            <BentoTile
+                                key={key}
+                                className={`home-page__tile home-page__tile--${key}`}
+                                {...tile}
+                            />
+                        ))}
+                    </Bento>
+                </>
+            )}
             <TipBox className="home-page__tip-box" />
             <FooterSpacer />
             <ScrollPastSpacer />

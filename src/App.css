@@ -1,16 +1,15 @@
-/* #root is the single SHELL scroll container, sized to the app's PAINT height.
+/* #root is the single SHELL scroll container, sized to the app's full height.
    On mobile the page surface (MobileDemoFrame) is exactly that height, so #root
    never scrolls there — each page owns its own inner scroller. On desktop the centered
    phone card is intentionally taller than the viewport, so #root scrolls just
    enough to reveal it. Horizontal scroll is always suppressed.
 
    `--app-height` is set ONLY by src/hooks/useAppHeight.ts, and only in the iOS
-   home-screen app, where `black-translucent` makes the app taller than the layout
-   viewport iOS reports. It is a PAINT height: the shell must reach the status-bar band
-   or that band renders as a flat paper strip over a coloured page. What may be laid
-   out inside it is the shorter `--app-viewport` — see MobileDemoFrame's FrameViewport,
-   which is what keeps a taller shell from pushing content out of sight. Everywhere
-   else the variable is unset and this is exactly `100dvh`. */
+   home-screen app, where `black-translucent` extends the web view over the whole screen
+   while leaving the document's containing block 59px shorter. Setting it HERE is not
+   sufficient on its own — `html, body` in index.css must carry it too, because body is
+   `overflow: hidden` and clips this element at its own height. Everywhere else the
+   variable is unset and this is exactly `100dvh`. */
 #root {
   width: 100%;
   height: var(--app-height, 100dvh);

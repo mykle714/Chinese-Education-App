@@ -198,8 +198,11 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
 - **Opening the panel suspends sorting.** `SheetPanel`'s scrim covers the buckets and
   the on-deck cards, so no card can be dragged while the sheet is up. Reading about a
   word and sorting it are separate modes on purpose.
-- **Closing clears every tab** (`handleCloseEip` → `eip.clear()`), so reopening on
-  another card starts clean instead of resuming the previous card's drill-in stack.
+- **Closing KEEPS every tab** (2026-09-06). The trail belongs to the CARD, not to the
+  panel, so reopening the panel on the same card resumes the drill-in chain on the word
+  the learner was reading. What starts a clean trail is opening the panel on a
+  **different** card — `openForRoot` reseeds whenever the root word changes — and leaving
+  the page, which unmounts `useEipTabs` and drops everything.
 - **No "+ Add to Learn Now" button in the panel header.** `onAddToLibrary` is
   deliberately not wired: on scp, adding to Learn Now *is* the drag gesture the whole
   page is built around, and a second, differently-shaped way to do it inside the panel

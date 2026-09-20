@@ -37,8 +37,7 @@ import { COLORS } from "../theme/colors";
  *
  * A claim writes THREE places, all describing the same ground: the meta tag (browser
  * chrome), `documentElement`'s background (Safari's overscroll area), and the
- * `--surface-ground` variable (MobileDemoFrame's frame ground, which shows in the
- * paint-vs-layout gap of the iOS home-screen app — src/hooks/useAppHeight.ts).
+ * `--surface-ground` variable (MobileDemoFrame's frame ground).
  *
  * Layer: presentational (a document-level side effect, like `usePageTitle`).
  * Callers: `GameSurfaceProvider` (src/games/shared/GameSurface.tsx) — every game page
@@ -72,13 +71,14 @@ function applyTopClaim(): void {
     }
     meta.content = color;
 
-    // The frame's own ground follows the claim too. MobileDemoFrame paints a strip
-    // the page does not fill (the iOS home-screen app's paint-vs-layout gap — see
-    // src/hooks/useAppHeight.ts), and leaving that strip paper would simply move the
-    // colour mismatch from the top of the screen to the bottom. Published as a CSS
-    // variable rather than pushed through React state because the frame is a styled
-    // component far above every claimant, and this way a claim repaints it without
-    // re-rendering the tree.
+    // The frame's own ground follows the claim too, so any sliver the page does not
+    // itself cover — a bounce, a sub-pixel seam, a transition's first frame — shows the
+    // current surface rather than paper. (Until 2026-09-13 this also backstopped a
+    // deliberately reserved strip at the bottom of the iOS home-screen app; that strip
+    // turned out to be the bug rather than a necessity and is gone — see
+    // src/hooks/useAppHeight.ts.) Published as a CSS variable rather than pushed through
+    // React state because the frame is a styled component far above every claimant, and
+    // this way a claim repaints it without re-rendering the tree.
     document.documentElement.style.setProperty("--surface-ground", color);
 
     // Safari also uses the DOCUMENT background for the overscroll/rubber-band area at

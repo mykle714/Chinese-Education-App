@@ -24,13 +24,13 @@ Me" popup, below) that consumes it.
 
 ## Confirmed backends
 
-We use **two trajectory-based (online handwriting) recognizers**, both consuming
-the same canonical stroke format below:
+We use **one** trajectory-based (online handwriting) recognizer, consuming the
+canonical stroke format below. A second was planned and is **not built**:
 
 | Backend | Role | Network | Notes |
 |---|---|---|---|
 | **Google Input Tools handwriting endpoint** | Primary recognizer | Online (HTTP POST) | Best accuracy. `https://inputtools.google.com/request?ime=handwriting`. **Unofficial / undocumented** Google service — no API key, but may change or rate-limit without notice. Verified working (returns ranked candidates, ~7–20ms server time). |
-| **HanziLookupJS** | Offline fallback | None (client-side) | Pure-geometry recognizer, fully self-hosted. No external dependency, so it survives the Google endpoint disappearing. Lower accuracy; **ignores stroke timing** (geometry only). |
+| ~~**HanziLookupJS**~~ | ⚠️ **NOT IMPLEMENTED** — planned offline fallback | None (client-side) | Pure-geometry recognizer, fully self-hosted; would survive the Google endpoint disappearing. Lower accuracy; ignores stroke timing. **No code exists**: `server/utils/handwritingRecognizer.ts` speaks only to Google, and there is no `hanzilookup` dependency in either package.json. **There is currently no fallback — if Google fails, recognition fails.** (Verified 2026-09-07.) |
 
 Deliberately **excluded** (and why), so future agents don't re-add them:
 

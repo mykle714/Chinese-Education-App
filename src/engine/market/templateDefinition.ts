@@ -1,4 +1,5 @@
 import type { PlaceholderArea } from './placeholderArea';
+import type { FurniturePlacement } from './furniture';
 
 /**
  * The serialized `definition` shape stored on a night-market template row.
@@ -38,4 +39,15 @@ export interface TemplateDefinitionPayload {
   /** Condition-mask cells — a per-version override overlay, no sprite. */
   condition: string[];
   decor: Record<string, string>;
+  /**
+   * Placed FURNITURE props — `{col,row,id}` records, where `id` is the lumeish manifest id
+   * (also the normalized file's name). Stored per VERSION, like decor and the terrain masks.
+   *
+   * The id is the stable key across builds — asset URLs are fingerprinted and change, which
+   * is the same reason `decor` stores sprite STEMS rather than urls. A placement whose id the
+   * pack no longer ships is dropped on load (see `definitionToMasks`).
+   *
+   * OMITTED (every template saved before the Furniture tool) ⇒ no furniture.
+   */
+  furniture?: FurniturePlacement[];
 }

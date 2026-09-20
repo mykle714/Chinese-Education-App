@@ -4,6 +4,7 @@ import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon";
+import { CYCLE_CHIP_FONT_PX, cycleChipFontPx } from "./cycleChipSizing";
 import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import { FONTS } from "../theme/fonts";
 import { LEADING, WEIGHT } from "../theme/scale";
@@ -384,13 +385,20 @@ export const HeaderToggleChip: React.FC<{
  */
 const CYCLE_CHIP_SLACK_CH = 4;
 
+/** The gap between a leading icon and the label, in px. Shared by the layout and the width. */
+const CYCLE_CHIP_ICON_GAP_PX = 5;
+
+/** The leading glyph's size, in px. Fixed: it is the chip's anchor, not part of the text. */
+const CYCLE_CHIP_ICON_PX = 13;
+
 /**
- * What a leading icon costs the chip's fixed width: the 13px glyph plus the 5px gap
- * before the label. Added to the width only when an icon is actually passed, so the
- * `ch` count keeps meaning "characters of label" rather than becoming a fudge that
+ * What a leading icon costs the chip's fixed width: the glyph plus the gap before
+ * the label. Added to the width only when an icon is actually passed, so the `ch`
+ * count keeps meaning "characters of label" rather than becoming a fudge that
  * silently bakes in an icon that may not be there.
  */
-const CYCLE_CHIP_ICON_ALLOWANCE_PX = 18;
+const CYCLE_CHIP_ICON_ALLOWANCE_PX = CYCLE_CHIP_ICON_PX + CYCLE_CHIP_ICON_GAP_PX;
+
 
 /**
  * A multi-state sibling of HeaderToggleChip: one tap advances to the next state
@@ -406,7 +414,17 @@ const CYCLE_CHIP_ICON_ALLOWANCE_PX = 18;
  * FIXED width: sized to its own longest label via `widthCh`, it stays put as the
  * user taps through, and everything to its left stops shuffling sideways under the
  * thumb that is still tapping. The optional per-state `icon` is included in that
- * width via CYCLE_CHIP_ICON_ALLOWANCE_PX, so it does not eat the label's room.
+ * width via cycleChipIconAllowancePx, so it does not eat the label's room.
+ *
+ * A label longer than CYCLE_CHIP_COMFORTABLE_LABEL_CH renders smaller so that one
+ * long word cannot size the whole control — see `cycleChipFontPx`. It happens
+ * automatically for a plain-string label; pass `fontPx` only to override it.
+ *
+ * The icon is PINNED to the left edge and the label centres in what is left, rather
+ * than the pair centring together. The icon is the chip's anchor — it is the part
+ * that says at a glance what the control is about — and an anchor that slides as the
+ * label changes length is not one. It also means the label's own box is a constant
+ * size in every state, which is what lets a shrunken word stay optically centred.
  *
  * Built for the audio-mode chip (mute / passthrough / media) — see
  * src/components/AudioModeChip.tsx and docs/AUDIO_PLAYBACK.md.
@@ -429,10 +447,21 @@ export const HeaderCycleChip: React.FC<{
      */
     icon?: string;
     ariaLabel: string;
+    /**
+     * Override for the label's size in px. Normally omitted: a plain-string label
+     * sizes itself via `cycleChipFontPx`. Pass it only when the label is not a bare
+     * string, or when a caller genuinely needs a size the rule would not choose.
+     */
+    fontPx?: number;
     onClick?: () => void;
     className?: string;
-}> = ({ children, active, widthCh, icon, ariaLabel, onClick, className }) => (
-    <Box
+}> = ({ children, active, widthCh, icon, ariaLabel, fontPx, onClick, className }) => {
+    // A string label sizes itself; anything else falls back to the full size, since the
+    // shrink rule is measured in characters and cannot read an arbitrary node.
+    const labelPx = fontPx
+        ?? (typeof children === "string" ? cycleChipFontPx(children) : CYCLE_CHIP_FONT_PX);
+    return (
+        <Box
         className={[
             "page-header__toggle",
             "page-header__cycle",
@@ -445,10 +474,14 @@ export const HeaderCycleChip: React.FC<{
         sx={{
             display: "inline-flex",
             alignItems: "center",
-            justifyContent: "center",
-            gap: "5px",
+            // The icon is pinned left and the label takes the rest; see the block comment.
+            justifyContent: "flex-start",
+            gap: `${CYCLE_CHIP_ICON_GAP_PX}px`,
             fontFamily: FONTS.mono,
-            fontSize: 10,
+            // The chip's OWN size stays full even when the label shrinks, because the
+            // width below is measured in `ch` of this element's face — a per-state
+            // font here would make the "fixed" width move with the label.
+            fontSize: CYCLE_CHIP_FONT_PX,
             lineHeight: LEADING.none,
             padding: "6px 8px",
             borderRadius: "7px",
@@ -457,7 +490,8 @@ export const HeaderCycleChip: React.FC<{
             // is EXACTLY the longest label with zero slack — enough for subpixel
             // rounding to clip its last glyph, and far too tight to read as a chip.
             // CYCLE_CHIP_SLACK_CH is the breathing room, added inside the derived
-            // value so every state still measures identically.
+            // value so every state still measures identically. Callers derive `widthCh`
+            // from `cycleChipWidthCh`, which already discounts any shrunken label.
             width: icon
                 ? `calc(${widthCh}ch + ${CYCLE_CHIP_SLACK_CH}ch + ${CYCLE_CHIP_ICON_ALLOWANCE_PX}px)`
                 : `calc(${widthCh}ch + ${CYCLE_CHIP_SLACK_CH}ch)`,
@@ -466,7 +500,22 @@ export const HeaderCycleChip: React.FC<{
             cursor: "pointer",
         }}
     >
-        {icon && <Icon name={icon} size={13} color={active ? COLORS.white : COLORS.iconColor} />}
-        {children}
+        {icon && (
+            <Icon
+                name={icon}
+                size={CYCLE_CHIP_ICON_PX}
+                color={active ? COLORS.white : COLORS.iconColor}
+            />
+        )}
+        <Box
+            component="span"
+            className="page-header__cycle-label"
+            // flex:1 makes this span the whole of the chip minus the pinned icon, so the
+            // word centres in the remaining space rather than in the chip as a whole.
+            sx={{ flex: 1, textAlign: "center", fontSize: labelPx }}
+        >
+            {children}
+        </Box>
     </Box>
-);
+    );
+};

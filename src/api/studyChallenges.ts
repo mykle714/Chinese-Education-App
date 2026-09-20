@@ -94,7 +94,7 @@ export interface ChallengeSummary {
 }
 
 /** Why a friend cannot be challenged. Only `at-cap` is explained to the user. */
-export type ChallengeBlockedReason = 'at-cap' | 'declined-this-week' | 'unavailable';
+export type ChallengeBlockedReason = 'at-cap' | 'declined-this-week' | 'not-issue-day' | 'unavailable';
 
 /**
  * One row of the challenges page — A FRIEND, not a challenge.

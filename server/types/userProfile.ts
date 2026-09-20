@@ -63,6 +63,12 @@ export interface ProfileLanguageStats {
   isSelected: boolean;
   /** Band-steps climbed in the velocity window, counting only bars they pursue. */
   velocity: number;
+  /**
+   * `velocity` split across the band boundaries it was earned on, aligned with
+   * `CATEGORY_BOUNDARIES` (contracts/mastery.ts) and summing to `velocity`. Always
+   * the right length, even when every entry is zero — see `VelocityBreakdown`.
+   */
+  velocityBoundaryCounts: number[];
   /** NET minute-point wallet for this language (penalty-debited, floored at 0). */
   netMinutes: number;
   /** Sorted-card counts per utcm band, keyed by band label. Provisional cards excluded. */

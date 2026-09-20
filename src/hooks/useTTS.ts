@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { VocabEntry } from '../types';
 import { tts } from '../services/tts';
-import type { TTSLang, TTSProvider } from '../services/tts';
+import type { TTSLang, TTSProvider, TTSVoice } from '../services/tts';
 import { useTTSSettings } from './useTTSSettings';
 import { useAuth } from '../AuthContext';
 import { resolveDisplayPronunciation } from '../utils/definitionUtils';
@@ -48,7 +48,7 @@ type SpeakTrigger = 'auto' | 'manual';
  * 2026-08-21 Google BILLING_DISABLED outage.)
  */
 export function useTTS() {
-    const { settings, update, mode, setMode, cycleMode } = useTTSSettings();
+    const { settings, update, mode, setMode, cycleMode, setVoice } = useTTSSettings();
     const { user } = useAuth();
     // Keep the provider's sink in sync with the setting. Done in an effect (not
     // during render) because it mutates module-level singleton state.
@@ -58,6 +58,11 @@ export function useTTS() {
     }, [route]);
     // The language to narrate in, derived from the user's current study language.
     const ttsLang = toTTSLang(user?.selectedLanguage);
+    // The voice to narrate in — the learner's `/settings` → Narration → Voice choice. It is
+    // the DEFAULT for every call, not a floor: a caller that names a voice (only Immersive
+    // World does, per speaking character) overrides it, because an NPC's voice belongs to the
+    // character rather than to the learner's reading preference.
+    const settingsVoice = settings.voice;
     // The text currently being narrated, or null when idle. Buttons compare
     // their target text to this to decide whether to show the loading spinner,
     // so only the clicked button spins when multiple are visible at once.
@@ -86,7 +91,10 @@ export function useTTS() {
         text: string,
         pronunciation?: string | null,
         trigger: SpeakTrigger = 'manual',
+        voice?: TTSVoice,
     ) => {
+        // Caller's voice wins; otherwise the learner's setting.
+        const chosenVoice: TTSVoice = voice ?? settingsVoice;
         if (!text) return;
         // Automatic narration is the only thing the autoplay setting gates; a
         // deliberate speaker press speaks in every mode, including 'off'.
@@ -106,6 +114,7 @@ export function useTTS() {
                 text,
                 lang,
                 pronunciation: pronunciation ?? undefined,
+                voice: chosenVoice,
             });
         } catch (err) {
             // Cloud failed (server unreachable, key missing, etc.). Whether we
@@ -118,6 +127,11 @@ export function useTTS() {
             console.warn('[useTTS] cloud provider failed, falling back to browser:', err);
             try {
                 activeProviderRef.current = tts.browser;
+                // `voice` is deliberately NOT forwarded: WebSpeechProvider picks an OS voice by
+                // language tag and exposes no gender control we can rely on across browsers, so
+                // the fallback voices every speaker the same. A wrong-gendered fallback voice is
+                // a cosmetic regression on a path that is already the degraded one; refusing to
+                // speak would not be.
                 await tts.browser.speak({
                     text,
                     lang,
@@ -135,7 +149,7 @@ export function useTTS() {
             // + setSpeakingKey(newText) before our finally ran.
             setSpeakingKey(prev => (prev === text ? null : prev));
         }
-    }, [settings.autoplay, route, cancel, ttsLang]);
+    }, [settings.autoplay, route, cancel, ttsLang, settingsVoice]);
 
     // ⚠️ THE PRONUNCIATION HINT MUST BE THE ONE ON SCREEN. It is passed to the cloud
     // provider and reaches Google TTS as an SSML <phoneme> tag, so it genuinely
@@ -192,13 +206,17 @@ export function useTTS() {
     // space-separated pinyin hint (one token per GSA segment) — see
     // buildSentencePronunciation. Server-side cache is keyed on text+pinyin+voice
     // so repeat plays of the same sentence reuse the same cached MP3.
-    const speakSentence = useCallback(async (text: string, pronunciation?: string) => {
-        await speakText(text, pronunciation);
+    //
+    // `voice` picks which voice within the language, and exists for Immersive World, where the
+    // speaker is a character with a gender rather than the app reading a card
+    // (docs/IMMERSIVE_WORLD.md § 6.4a). Omit it everywhere else.
+    const speakSentence = useCallback(async (text: string, pronunciation?: string, voice?: TTSVoice) => {
+        await speakText(text, pronunciation, 'manual', voice);
     }, [speakText]);
 
     // Automatic variant of speakSentence() — same gating as autoSpeak.
-    const autoSpeakSentence = useCallback(async (text: string, pronunciation?: string) => {
-        await speakText(text, pronunciation, 'auto');
+    const autoSpeakSentence = useCallback(async (text: string, pronunciation?: string, voice?: TTSVoice) => {
+        await speakText(text, pronunciation, 'auto', voice);
     }, [speakText]);
 
     /**
@@ -223,16 +241,27 @@ export function useTTS() {
      * `stamp: false` is passed for the same reason iw is the only caller: an NPC line is a
      * sentence, not a headword, and the server's `det."ttsVoice"` stamp would be a
      * guaranteed-zero-row UPDATE on every cache miss (§ 6.4's code note).
+     *
+     * ⚠️ **Pass the same `voice` to the following `autoSpeakSentence`.** The voice is part of
+     * the provider's cache key, so a mismatch measures one clip and plays another — the reveal
+     * and the audio then drift apart, which is the exact failure audio-as-clock exists to
+     * prevent, and it costs a second synthesis to do it.
      */
-    const prepareSentence = useCallback(async (text: string, pronunciation?: string): Promise<number | null> => {
+    const prepareSentence = useCallback(async (
+        text: string,
+        pronunciation?: string,
+        voice?: TTSVoice,
+    ): Promise<number | null> => {
         if (!text) return null;
         if (!settings.autoplay) return null;
         try {
-            return await tts.cloud.prepare({ text, lang: ttsLang, pronunciation, stamp: false });
+            return await tts.cloud.prepare({
+                text, lang: ttsLang, pronunciation, voice: voice ?? settingsVoice, stamp: false,
+            });
         } catch {
             return null;
         }
-    }, [settings.autoplay, ttsLang]);
+    }, [settings.autoplay, ttsLang, settingsVoice]);
 
     // Cancel on unmount so a stale utterance can't outlive the page.
     useEffect(() => {
@@ -251,10 +280,10 @@ export function useTTS() {
     const prefetch = useCallback((entry: VocabEntry | null | undefined) => {
         if (!entry || !entry.entryKey) return;
         if (entry.hasAudio === false) return;
-        // Same resolver as `speak`, or the prefetch warms a cache key nothing will
-        // ever ask for (the buffer is keyed on text + pinyin + voice).
-        tts.cloud.prefetch(entry.entryKey, ttsLang, resolveDisplayPronunciation(entry));
-    }, [ttsLang]);
+        // Same resolver AND same voice as `speak`, or the prefetch warms a cache key nothing
+        // will ever ask for (the buffer is keyed on text + pinyin + voice).
+        tts.cloud.prefetch(entry.entryKey, ttsLang, resolveDisplayPronunciation(entry), settingsVoice);
+    }, [ttsLang, settingsVoice]);
 
     /**
      * Prime the cloud provider's shared AudioContext for autoplay. Call this
@@ -269,10 +298,10 @@ export function useTTS() {
     }, []);
 
     // Sentence variant of prefetch — warm the cloud cache without playing.
-    const prefetchSentence = useCallback((text: string, pronunciation?: string) => {
+    const prefetchSentence = useCallback((text: string, pronunciation?: string, voice?: TTSVoice) => {
         if (!text) return;
-        tts.cloud.prefetch(text, ttsLang, pronunciation);
-    }, [ttsLang]);
+        tts.cloud.prefetch(text, ttsLang, pronunciation, voice ?? settingsVoice);
+    }, [ttsLang, settingsVoice]);
 
     return {
         speak,
@@ -296,6 +325,9 @@ export function useTTS() {
         setMode,
         /** One-tap advance through off → passthrough → media. Backs AudioModeChip. */
         cycleAudioMode: cycleMode,
+        /** Which voice reads to the learner, and its setter. Backs the /settings Voice picker. */
+        voice: settings.voice,
+        setVoice,
         settings,
         updateSettings: update,
     };

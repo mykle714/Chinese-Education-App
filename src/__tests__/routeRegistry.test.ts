@@ -3,6 +3,7 @@ import { ROUTE_META, findRoute, routeChrome, routeFooterTab, routeShell } from "
 import { APP_ROUTES } from "../routes/registry";
 import { routeSlideDir } from "../utils/pageTransition";
 import { GAME_REGISTRY } from "../games/registry";
+import { isFeatureEnabled } from "../../server/contracts/featureFlags";
 
 /**
  * Pins the route table (src/routes/routeMeta.ts) — the single table that the
@@ -91,7 +92,11 @@ describe("findRoute", () => {
 describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () => {
   const FRAME = [
     "/", "/flashcards/decks", "/flashcards/mastered", "/account", "/flashcards/learn",
-    "/discover", "/games", "/community", "/night-market", "/reader", "/dictionary",
+    "/discover", "/games", "/reader", "/dictionary",
+    // Flag-gated (server/contracts/featureFlags.ts): with the feature off the path is
+    // not a route at all, so it has no shell to assert.
+    ...(isFeatureEnabled("community") ? ["/community"] : []),
+    ...(isFeatureEnabled("nightMarket") ? ["/night-market"] : []),
     "/tester-dashboard", "/settings",
     "/discover/sort/zh", "/discover/quick-mark/es", "/discover/skipped/zh",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc-123",
@@ -99,7 +104,10 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
   ];
   const PLAIN = [
     "/login", "/register", "/entries", "/entries/1", "/edit/1", "/flashcards",
-    "/profile", "/night-market/template-editor", "/night-market/template-sandbox",
+    "/profile",
+    ...(isFeatureEnabled("nightMarket")
+      ? ["/night-market/template-editor", "/night-market/template-sandbox"]
+      : []),
   ];
 
   it.each(FRAME)("%s renders in the phone frame", (path) => {
@@ -122,7 +130,9 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
     ["/discover", "discover"],
     ["/account", "account"],
     ["/games", "home"],
-    ["/community", "home"],
+    ...(isFeatureEnabled("community")
+      ? ([["/community", "home"]] as Array<[string, string | undefined]>)
+      : []),
     ["/flashcards/mastered", "flashcards"],
     ["/dictionary", "home"],
     ["/reader", "home"],
@@ -135,7 +145,9 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
     // Footerless.
     ["/reader/abc", undefined],
     ["/flashcards/learn", undefined],
-    ["/night-market", undefined],
+    ...(isFeatureEnabled("nightMarket")
+      ? ([["/night-market", undefined]] as Array<[string, string | undefined]>)
+      : []),
     ["/tester-dashboard", undefined],
     ["/settings", undefined],
     ["/login", undefined],
@@ -152,7 +164,11 @@ describe("page transitions match the old NODE/LEAF tables", () => {
     "/discover/skipped/zh", "/discover/sort/zh", "/discover/quick-mark/zh",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc",
   ];
-  const LEAF = ["/tester-dashboard", "/settings", "/night-market"];
+  const LEAF = [
+    "/tester-dashboard",
+    "/settings",
+    ...(isFeatureEnabled("nightMarket") ? ["/night-market"] : []),
+  ];
   const NO_SLIDE = ["/", "/discover", "/account", "/flashcards/decks", "/login", "/flashcards/learn"];
 
   it.each(NODE)("%s slides in from the right", (path) => {

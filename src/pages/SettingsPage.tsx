@@ -10,7 +10,8 @@ import { LANGUAGE_FLAGS, LANGUAGE_NAMES } from '../types';
 import type { Language } from '../types';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useSlideNavigate } from '../hooks/useSlideNavigate';
-import { useTTSSettings, AUDIO_MODE_ORDER, type AudioMode } from '../hooks/useTTSSettings';
+import { AUDIO_MODE_ORDER, NARRATION_VOICE_ORDER, type AudioMode, type NarrationVoice } from '../hooks/useTTSSettings';
+import { useTTS } from '../hooks/useTTS';
 import { useFlashcardLearnSettings } from '../hooks/useFlashcardLearnSettings';
 import { COLORS } from '../theme/colors';
 import { FONTS } from '../theme/fonts';
@@ -49,6 +50,41 @@ const AUDIO_MODE_COPY: Record<AudioMode, { title: string; subtitle: string }> = 
 // Order comes from AUDIO_MODE_ORDER, the same constant the header chip cycles
 // through — so the list here and the tap sequence there can never disagree.
 const AUDIO_MODE_OPTIONS = AUDIO_MODE_ORDER.map((value) => ({ value, ...AUDIO_MODE_COPY[value] }));
+
+// The voice picker. Two options because there are two voices per language, not three — see
+// `NarrationVoice`. Titles are the plain gendered word: it is what the learner hears, and any
+// attempt to name the provider voice ("Wavenet A") describes nothing they can judge.
+//
+// The subtitles carry the ONE thing that is not audible from the sample: that this is the
+// app's reading voice and not the voice of the people in Immersive World, who are cast by
+// character (docs/IMMERSIVE_WORLD.md § 6.4a). Said once, on the default row, rather than
+// twice.
+const NARRATION_VOICE_COPY: Record<NarrationVoice, { title: string; subtitle: string }> = {
+    female: {
+        title: 'Female',
+        subtitle: 'Reads words and sentences to you. Characters in a story keep their own voices.',
+    },
+    male: {
+        title: 'Male',
+        subtitle: 'The same, in a male voice.',
+    },
+};
+
+const NARRATION_VOICE_OPTIONS = NARRATION_VOICE_ORDER.map((value) => ({ value, ...NARRATION_VOICE_COPY[value] }));
+
+/**
+ * What a voice sample says, per study language.
+ *
+ * A greeting rather than a word from the learner's deck: it is short (one synthesis, ~0.4 s),
+ * it is the same phrase every time so two voices can be compared on identical audio, and it
+ * needs no vocabulary the learner may not have met. The Chinese sample carries its pinyin for
+ * the same reason every other narration call does — the SSML <phoneme> hint is what stops the
+ * provider guessing a reading (docs/AUDIO_PLAYBACK.md § 3).
+ */
+const VOICE_SAMPLE: Record<Language, { text: string; pronunciation?: string }> = {
+    zh: { text: '你好', pronunciation: 'nǐ hǎo' },
+    es: { text: 'Hola' },
+};
 
 /**
  * Settings · preferences (`/settings`) — artboard 11 of the shelf redesign
@@ -94,7 +130,10 @@ function SettingsPage() {
     const { user, updateLanguage, updateDisplaySettings } = useAuth();
     const [languageSuccess, setLanguageSuccess] = useState(false);
     const [languageError, setLanguageError] = useState<string | null>(null);
-    const { mode: audioMode, setMode: setAudioMode } = useTTSSettings();
+    // One hook for the whole Narration group: it carries the mode, the voice, and the
+    // `autoSpeakSentence` the voice sample plays through — so the sample cannot drift from the
+    // route and autoplay rules the mode above it just set.
+    const { mode: audioMode, setMode: setAudioMode, voice: narrationVoice, setVoice, autoSpeakSentence } = useTTS();
     // Tone coloring lives in the flp learn-settings blob (it is read by every surface
     // that renders a reading); this page is simply where it is now EDITED.
     const { settings: learnSettings, update: updateLearnSettings } = useFlashcardLearnSettings();
@@ -341,6 +380,47 @@ function SettingsPage() {
                             value={option.value}
                             checked={audioMode === option.value}
                             onChange={(value) => setAudioMode(value as AudioMode)}
+                            title={option.title}
+                            subtitle={option.subtitle}
+                        />
+                    ))}
+                </SettingsSection>
+
+                {/* ── Voice ───────────────────────────────────────────────────────
+                    Its own section rather than a second radio group inside Narration:
+                    the page's pattern is one control per card, and two unlabelled groups
+                    in one card read as one broken group. Sits directly under Narration
+                    because it is the other half of the same question — that one is
+                    WHETHER and WHERE audio plays, this one is WHO says it.
+
+                    Tapping an option plays a sample, and plays it through
+                    `autoSpeakSentence` — the AUTOMATIC path. So the sample obeys the mode
+                    set directly above: silent in Mute, and on whichever route is selected.
+                    That keeps § 1's "changing a setting must not make a sound" rule intact
+                    where it matters (a muted phone stays muted) while still letting the
+                    choice be made by ear, which for a voice is the only way to make it. */}
+                <SettingsSection
+                    className="narration-voice-section"
+                    icon="record_voice_over"
+                    title="Voice"
+                    description="Who reads to you."
+                >
+                    {NARRATION_VOICE_OPTIONS.map((option) => (
+                        <OptionRow
+                            key={option.value}
+                            className={`narration-voice-option narration-voice-option--${option.value}`}
+                            name="narration-voice"
+                            value={option.value}
+                            checked={narrationVoice === option.value}
+                            onChange={(value) => {
+                                const next = value as NarrationVoice;
+                                setVoice(next);
+                                // Pass `next` explicitly rather than relying on the store write
+                                // above: this callback closes over the PREVIOUS render's voice,
+                                // so the sample would otherwise demo the voice being replaced.
+                                const sample = VOICE_SAMPLE[user?.selectedLanguage ?? 'zh'];
+                                void autoSpeakSentence(sample.text, sample.pronunciation, next);
+                            }}
                             title={option.title}
                             subtitle={option.subtitle}
                         />

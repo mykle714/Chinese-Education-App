@@ -263,7 +263,15 @@ const immersiveWorldSceneController = new ImmersiveWorldSceneController(immersiv
 // The runtime half (§ 12 phase 2) — a separate service from the authoring one by lifecycle:
 // authoring runs once under a human's eye and may refuse; this runs many times in front of a
 // learner and may never refuse harder than a frozen scene (§ 14 Q7).
-const immersiveWorldService = new ImmersiveWorldService(immersiveWorldDAL);
+// The dictionary is iw's fourth argument, not its second: `budget` and `rungs` keep their
+// positions so every existing construction (and every test) is unchanged. It is there for
+// § 5.3b's segmented speech bubbles, which reuse the est's popup rather than iw's own.
+const immersiveWorldService = new ImmersiveWorldService(
+  immersiveWorldDAL,
+  undefined,
+  undefined,
+  dictionaryDAL,
+);
 const immersiveWorldRuntimeController = new ImmersiveWorldRuntimeController(immersiveWorldService);
 
 export {

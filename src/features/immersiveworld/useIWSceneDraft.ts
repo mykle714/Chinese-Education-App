@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  editorDecorRotation, editorSurfaceAt, rollFloorSeed, DIRT_FLOOR,
+  editorDecorRotation, editorSurfaceAt, isBlockingDecorUrl, rollFloorSeed, DIRT_FLOOR,
   type BoardFloor, type DecorCategory, type EditorMasks,
 } from '../../engine/market/farmTerrain';
 import {
@@ -9,6 +9,11 @@ import {
   type IWSceneInteractions,
 } from '../../../server/contracts/iw';
 import { masksToSceneLayout, sceneLayoutToMasks } from './immersiveWorldSceneApi';
+import {
+  furnitureAt, furnitureAtIndex, furnitureBuriedDecorCells, furnitureCells, furnitureFitsBoard,
+  furnitureOverlapsAny,
+} from '../../engine/market/furniture';
+import type { Direction } from '../../engine/market/freeFarmTileset';
 
 /**
  * The iw scene editor's MODEL — the whole draft scene plus every mutation the panels
@@ -27,15 +32,28 @@ import { masksToSceneLayout, sceneLayoutToMasks } from './immersiveWorldSceneApi
 
 /**
  * A tool that paints the map. A strict subset of the night market's — no placeholder, no
- * condition, no copy/paste, and (since 2026-09-05) **no street/communal**: a scene has no
- * walkability masks to paint. See `IWSceneLayout`'s header for why the model is inverted.
+ * condition, no copy/paste, and **no street/communal**: those are the nme's two WALKABLE
+ * classes and a scene paints the inverse. See `IWSceneLayout`'s header.
+ *
+ * ⚠️ `unwalkable` and `forcedDirection` (2026-09-19) are the scene's own two walkability
+ * masks, and they are ORDINARY PAINT LAYERS: drag to paint, eraser to remove. What makes
+ * them unlike the nme's walkability tools is that nothing else on the board implies them any
+ * more — a cell is impassable because it was painted so, never because of what stands on it.
  */
 export type IWPaintTool =
   | 'terrain1'
   | 'terrain2'
   | 'familyDecor'
   | 'commonDecor'
-  | 'treeDecor';
+  | 'treeDecor'
+  // The two walkability masks. `forcedDirection` reads the palette's `variantIdx` as its
+  // DIRECTION (see IW_PAINT_FACINGS), exactly as the decor tools read it as a variant.
+  | 'unwalkable'
+  | 'forcedDirection'
+  // Places a MULTI-CELL prop from the lumeish furniture pack. A paint tool rather than a
+  // place tool because it adds to a LAYER (many pieces per scene, erasable with the eraser),
+  // where a place tool moves ONE known body/tag that already exists.
+  | 'furniture';
 
 /**
  * A tool that PLACES SOMETHING AT A CELL rather than painting a layer: the player's start,
@@ -54,6 +72,16 @@ export const isPlaceTool = (tool: IWEditorTool): tool is IWPlaceTool =>
   tool === 'player' || tool === 'companion'
   || tool.startsWith('npc:') || tool.startsWith('tag:');
 
+/** Whether a tool places furniture — the one paint tool that is not a per-cell layer. */
+export const isFurnitureTool = (tool: IWEditorTool): boolean => tool === 'furniture';
+
+/**
+ * Whether a tool stamps a FACING. Its own predicate, beside {@link isFurnitureTool}, because
+ * the panel has to know which meaning `variantIdx` carries for the active tool: a decor
+ * rotation, a furniture catalogue index, or — here — a compass direction.
+ */
+export const isForcedDirectionTool = (tool: IWEditorTool): boolean => tool === 'forcedDirection';
+
 /** The decor category a decor tool paints, or null for a non-decor tool. */
 const DECOR_CATEGORY: Partial<Record<IWPaintTool, DecorCategory>> = {
   familyDecor: 'family',
@@ -63,6 +91,16 @@ const DECOR_CATEGORY: Partial<Record<IWPaintTool, DecorCategory>> = {
 
 export const decorCategoryFor = (tool: IWEditorTool): DecorCategory | null =>
   (isPlaceTool(tool) ? null : DECOR_CATEGORY[tool] ?? null);
+
+/**
+ * The facings the forced-direction tool cycles through, in Space-press order.
+ *
+ * Declared here rather than imported from `IW_FACINGS` (the server contract) because this is
+ * a TOOL's cycle order, not the wire's value set: the two happen to coincide today, and if a
+ * fifth facing were ever authored the picker's order would still be a UI decision. The values
+ * themselves are the engine's `Direction`, which is what the mask stores.
+ */
+export const IW_PAINT_FACINGS: readonly Direction[] = ['n', 'e', 's', 'w'] as const;
 
 /** Board defaults for a brand-new scene — small enough to fill, big enough to walk in. */
 const DEFAULT_DIM = 12;
@@ -143,7 +181,11 @@ export function blankScene(language: 'zh' | 'es' = 'zh'): IWScene {
     companionStartFacing: 's',
     width: DEFAULT_DIM,
     height: DEFAULT_DIM,
-    layout: { terrain1: [], terrain2: [], decor: {}, places: {}, floor: DIRT_FLOOR },
+    layout: {
+      terrain1: [], terrain2: [], decor: {}, furniture: [], places: {}, floor: DIRT_FLOOR,
+      // An empty room: nothing is impassable and no cell owns a facing until one is painted.
+      unwalkable: [], forcedDirection: {},
+    },
     npcCast: [],
     complications: [],
     // The SCHEDULED half of the world's behaviour (migration 161) — armed by a
@@ -164,6 +206,9 @@ function emptyMasks(): EditorMasks {
     // because `EditorMasks` is the night market editor's shape (see `sceneLayoutToMasks`).
     street: new Set(), communal: new Set(),
     placeholder: [], condition: new Set(), decor: new Map(), floor: DIRT_FLOOR,
+    furniture: [],
+    // The scene's own two masks (2026-09-19). Unlike the four above these ARE painted here.
+    unwalkable: new Set(), forcedDirection: new Map(),
   };
 }
 
@@ -239,6 +284,13 @@ export function useIWSceneDraft(): IWSceneDraft {
   const [places, setPlaces] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
 
+  // Board dimensions for `paintCell`, which is identity-stable (deps `[]`) so a paint stroke
+  // never re-creates the viewer's handler. Only the furniture branch reads them — it is the
+  // one paint tool whose target can extend past the cell it was clicked on, so it is the one
+  // that must bounds-check.
+  const dimsRef = useRef({ width: scene.width, height: scene.height });
+  dimsRef.current = { width: scene.width, height: scene.height };
+
   const update = useCallback((patch: Partial<IWScene>) => {
     setScene((prev) => ({ ...prev, ...patch }));
     setDirty(true);
@@ -255,7 +307,13 @@ export function useIWSceneDraft(): IWSceneDraft {
     const k = `${col},${row}`;
     setDirty(true);
     setMasks((prev) => {
-      const next: EditorMasks = {
+      // The two scene masks are OPTIONAL on `EditorMasks` (the night market never paints
+      // them), but this stroke always materializes both — so the local type says so and the
+      // branches below need no `?? new Set()` noise.
+      const next: EditorMasks & {
+        unwalkable: Set<string>;
+        forcedDirection: Map<string, Direction>;
+      } = {
         terrain1: new Set(prev.terrain1),
         terrain2: new Set(prev.terrain2),
         street: prev.street,             // scenes never paint any of these four;
@@ -264,11 +322,84 @@ export function useIWSceneDraft(): IWSceneDraft {
         condition: new Set(prev.condition),
         decor: new Map(prev.decor),
         floor: prev.floor,              // board-wide; a paint stroke never touches it
+        furniture: prev.furniture ?? [], // replaced (not mutated) by the furniture branch
+        // COPIED, not carried: unlike the four night-market masks above, a scene paints
+        // both of these — and several branches below stamp `unwalkable` as a side effect of
+        // placing a solid object, so it must be a fresh Set on every stroke.
+        unwalkable: new Set(prev.unwalkable ?? []),
+        forcedDirection: new Map(prev.forcedDirection ?? []),
       };
+      // Every caller below goes through these two, so the "a solid object stamps the mask"
+      // rule is written once. It is an AUTHORING CONVENIENCE and nothing more: the runtime
+      // reads the mask alone and has no idea a sprite was ever involved (§ 3a).
+      const stampSolid = (cells: Iterable<string>) => {
+        for (const cell of cells) next.unwalkable.add(cell);
+      };
+      const unstampSolid = (cells: Iterable<string>) => {
+        for (const cell of cells) next.unwalkable.delete(cell);
+      };
+
+      // FURNITURE — a multi-cell OBJECT, so it is a record list rather than a cell in a mask.
+      // `variantIdx` carries the palette's catalogue INDEX here, exactly as it carries the
+      // decor rotation index for the decor tools: the selector is a tool modifier owned by
+      // the palette (← / → page it, the ghost previews it) and the draft must not keep a
+      // second, invisible copy of it.
+      if (tool === 'furniture') {
+        if (erase) {
+          // A click anywhere inside a piece's footprint removes the WHOLE piece — an author
+          // points at the middle of a sofa, not at its foot cell.
+          const hit = furnitureAt(next.furniture ?? [], col, row);
+          if (hit) {
+            next.furniture = (next.furniture ?? []).filter((f) => f !== hit);
+            // The solidity goes with the piece, symmetrically with the stamp below. Chosen
+            // over "the mask is independent once stamped" because the alternative leaves an
+            // invisible wall where a sofa used to be, and an invisible wall an author did not
+            // mean to paint is the harder of the two mistakes to SEE.
+            unstampSolid(furnitureCells(hit));
+          }
+          return next;
+        }
+        const id = furnitureAtIndex(variantIdx);
+        if (id === null) return next;
+        const piece = { col, row, id };
+        // Refused (no-op) only if the footprint leaves the board or touches another PIECE.
+        // Terrain, floor and flush surface decor are not solid, so a piece simply stands on
+        // them; a blocking prop/tree IS solid and is displaced below rather than refusing the
+        // drop. Board dims come from the scene, which is why they are read here.
+        if (!furnitureFitsBoard(piece, dimsRef.current.width, dimsRef.current.height)) return next;
+        if (furnitureOverlapsAny(piece, next.furniture ?? [])) return next;
+        // Clear any BLOCKING decor (a prop or a tree) from every cell the piece covers. Two
+        // solid objects cannot share a cell, so the new one REPLACES the old rather than being
+        // refused. Flush surface decor stays — furniture stands on the ground, and the ground
+        // may have grass tufts on it. Sweeps the whole FOOTPRINT, not just the clicked cell.
+        // ⚠️ In a scene this also changes WALKABILITY: blocking decor is the only thing that
+        // makes a cell impassable (§ 3a), and furniture does not yet block — so replacing a
+        // tree with a table currently OPENS that cell up. That is the same gap tracked in
+        // docs/LUMEISH_ASSET_PIPELINE.md § 7, surfacing here rather than a new one.
+        for (const cell of furnitureBuriedDecorCells(piece, next.decor, isBlockingDecorUrl)) {
+          next.decor.delete(cell);
+        }
+        next.furniture = [...(next.furniture ?? []), piece];
+        // A dropped piece is SOLID, over its whole footprint. Before 2026-09-19 furniture
+        // blocked nothing at all — walkability was derived from decor, which a piece is not —
+        // so a table was scenery the learner walked straight through (the gap tracked in
+        // docs/LUMEISH_ASSET_PIPELINE.md § 7). Stamping the mask here closes it.
+        stampSolid(furnitureCells(piece));
+        return next;
+      }
 
       const category = DECOR_CATEGORY[tool];
       if (category) {
-        if (erase) { next.decor.delete(k); return next; }
+        if (erase) {
+          // Erasing a SOLID prop/tree takes its stamped mask with it (see the furniture
+          // eraser above). Flush family decor never stamped anything, so nothing is cleared
+          // for it — checking what was actually there is what keeps erasing a grass tuft from
+          // punching a hole in a hand-painted wall.
+          const gone = next.decor.get(k);
+          if (gone && isBlockingDecorUrl(gone)) unstampSolid([k]);
+          next.decor.delete(k);
+          return next;
+        }
         const rotation = editorDecorRotation(category, editorSurfaceAt(next, col, row));
         if (rotation.length === 0) return next;
         // Stamp the variant the CALLER has selected, and do not advance it. The index is a
@@ -278,9 +409,41 @@ export function useIWSceneDraft(): IWSceneDraft {
         // place a different prop, made a drag spray a row of mismatched ones, and left the
         // ghost preview permanently lying about what a click would place.
         next.decor.set(k, rotation[variantIdx % rotation.length]);
-        // Nothing to clear: painting a common prop or a tree is ITSELF what makes the cell
-        // impassable (`farmTerrain.isBlockingDecorUrl`). In the night market this branch also
-        // had to strip the cell's walkable class; a scene has none to strip.
+        // A prop/tree and a piece of FURNITURE are both solid objects, so they cannot share a
+        // cell: dropping one on the other REPLACES it (the whole piece, from whichever of its
+        // cells was clicked). The flush surface-decor family is exempt — it lies flat and
+        // furniture legitimately stands on it. Mirrors the furniture branch above.
+        if (category === 'common' || category === 'tree') {
+          const buried = furnitureAt(next.furniture ?? [], col, row);
+          if (buried) {
+            next.furniture = (next.furniture ?? []).filter((f) => f !== buried);
+            // The displaced piece's solidity leaves with it across its WHOLE footprint —
+            // only the clicked cell gains a prop, so the rest of the sofa must not stay
+            // invisibly solid.
+            unstampSolid(furnitureCells(buried));
+          }
+          // A prop or a tree is a solid object, so it stamps the mask on the cell it lands on
+          // (after the displacement above, which could otherwise unstamp this very cell).
+          // Flush family decor stamps nothing: it lies flat and is walked over.
+          stampSolid([k]);
+        }
+        return next;
+      }
+
+      // THE WALKABILITY MASK. A plain cell mask — no sprite, no rotation, nothing to cycle.
+      if (tool === 'unwalkable') {
+        if (erase) next.unwalkable.delete(k);
+        else next.unwalkable.add(k);
+        return next;
+      }
+
+      // THE FACING MASK. `variantIdx` carries the DIRECTION here, exactly as it carries the
+      // decor rotation index and the furniture catalogue index elsewhere: the selector is a
+      // tool modifier owned by the palette (Space cycles it, the ghost arrow previews it),
+      // and the draft must not keep a second, invisible copy of it.
+      if (tool === 'forcedDirection') {
+        if (erase) next.forcedDirection.delete(k);
+        else next.forcedDirection.set(k, IW_PAINT_FACINGS[variantIdx % IW_PAINT_FACINGS.length]);
         return next;
       }
 

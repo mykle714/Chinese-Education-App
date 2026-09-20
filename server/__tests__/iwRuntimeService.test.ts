@@ -14,10 +14,12 @@ import { IWTurnBudget, IW_MAX_UTTERANCE_CHARS, IW_SESSION_TURN_BUDGET } from '..
 import type { IWModelRung } from '../services/iw/npcTurn.js';
 import type { IWScene } from '../contracts/iw.js';
 import type { IImmersiveWorldDAL } from '../dal/interfaces/IImmersiveWorldDAL.js';
-import { npcsForLanguage } from '../config/iwNpcs.js';
+import { COMPANION_NPC_ID_BY_LANGUAGE, npcsForLanguage } from '../config/iwNpcs.js';
 
-/** The first real NPC in the registry, so the sheet the prompt renders is a real one. */
-const NPC_ID = npcsForLanguage('zh')[0].id;
+/** The zh companion — in every scene, cast in none (§ 14 Q25). */
+const COMPANION_ID = COMPANION_NPC_ID_BY_LANGUAGE.zh!;
+/** A real registry NPC who is NOT the companion, so the sheet is real and the paths differ. */
+const NPC_ID = npcsForLanguage('zh').find(n => n.id !== COMPANION_ID)!.id;
 
 const SCENE: IWScene = {
   name: 'test scene',
@@ -26,6 +28,9 @@ const SCENE: IWScene = {
   height: 8,
   layout: { decor: {}, places: {} },
   npcCast: [{ npcId: NPC_ID, col: 2, row: 2, facing: 'south', actions: [] }],
+  companionStartCol: 5,
+  companionStartRow: 5,
+  companionStartFacing: 'north',
   conversations: [],
   interactions: {},
 } as unknown as IWScene;
@@ -126,6 +131,16 @@ describe('runTurn — failures that must not bill the learner', () => {
     const out = await svc.runTurn('u1', request({ npcId: 'nobody_here' }));
     expect(out).toMatchObject({ kind: 'unknown-npc' });
   });
+
+  it('takes a turn for the COMPANION, who is in the scene without being cast', async () => {
+    // The 2026-09-07 regression: he was looked up in `npcCast`, missed, and came back as
+    // `unknown-npc` — a fault the client can only render as its catch-all "Not right now.".
+    // Asserted at this level rather than on `resolveCastMember` alone because the bug was the
+    // service reaching past the resolver, which a unit test on the resolver cannot see.
+    const { svc } = service();
+    const out = await svc.runTurn('u1', request({ npcId: COMPANION_ID }));
+    expect(out.kind).not.toBe('unknown-npc');
+  });
 });
 
 describe('endSession', () => {
@@ -133,7 +148,7 @@ describe('endSession', () => {
     const { svc, budget } = service();
     await svc.runTurn('u1', request());
     expect(budget.remaining('run-1')).toBe(IW_SESSION_TURN_BUDGET - 1);
-    svc.endSession('run-1');
+    svc.endSession('u1', 'run-1');
     expect(budget.remaining('run-1')).toBe(IW_SESSION_TURN_BUDGET);
   });
 });

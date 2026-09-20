@@ -292,6 +292,65 @@ export type BreakdownMap = Record<
 >;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Dictionary search ranking
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How `GET /api/dictionary/search` orders a result set.
+ *
+ * ⚠️ **IT NO LONGER SELECTS BETWEEN TWO ORDERINGS.** As of 2026-09-09 every surface shares one
+ * bucket ladder; `rankBy` chooses only whether that ladder is led by an INTERLEAVED HEAD. The
+ * two value names predate the convergence and are now weak — `relevance` does not rank by
+ * anything the other does not, and `english-first` is not the only one that puts English first.
+ * Renaming them is cheap (a query-param value, nothing persisted) and is worth doing the next
+ * time this is touched.
+ *
+ * A dictionary query is never "an English search" or "a pinyin search": a single SQL statement
+ * ORs the headword, the pinyin regexes and the gloss regex together, so most terms qualify under
+ * more than one reading. The ladder is what picks which reading the learner sees, and at a small
+ * `limit` it also decides which reading survives the `LIMIT` at all.
+ *
+ * THE SHARED LADDER. A match is COMPLETE when the term IS the whole field and PARTIAL when it is
+ * only a piece of one. Crossed with the two readings:
+ *
+ *     0  complete English   a sense IS the term            "long" → 长; "me" → 我 ["I","me","my"]
+ *     1  complete word      the headword or pronunciation IS the term   "long" → 龙 lóng;
+ *                           es "casa" → casa
+ *     2  partial word       the term is a leading prefix    "long" → 龙虾; es → casarse
+ *     3  partial English    the term sits inside a sense    "long" → 寿 "long life"
+ *
+ * Every complete match outranks every partial one; English leads the complete pair, the word
+ * side leads the partial pair. The asymmetry is deliberate: someone typing a whole English word
+ * usually means it, so an exact gloss is the best answer available — but a PARTIAL word-side
+ * match is usually someone mid-word, which says far more than an English word merely appearing
+ * inside a longer definition.
+ *
+ * Spanish uses the same four buckets with `word1` in the pronunciation's place (it has no
+ * pronunciation column). It must: Spanish glosses quote their headword — casón is "augmentative
+ * of casa" — so without a complete tier, searching "casa" ranked the word itself 11th behind
+ * everything that merely mentions it.
+ *
+ *   • `relevance`     — the ladder, nothing more. The dictionary page and Community search bar.
+ *   • `english-first` — the same ladder, plus the interleaved head: the first two rows of every
+ *                       bucket come first (0,0,1,1,2,2,3,3), then the ladder resumes. Without it
+ *                       a term with dozens of exact glosses fills a short strip entirely with
+ *                       bucket 0 and the learner never sees that a complete pinyin reading
+ *                       exists. Used only by the iw composer's hint tray
+ *                       (docs/IMMERSIVE_WORLD.md § 9a). Pure re-ordering: same rows, same total,
+ *                       nothing dropped or repeated across pages. See `HINT_HEAD_PER_BUCKET`.
+ *
+ * Implemented by `DictionaryDAL.searchByWord1`; see docs/DICTIONARY_AI_FALLBACK_SEARCH.md for
+ * the stage-2/AI fallbacks that sit behind both rankings unchanged.
+ */
+export type DictionarySearchRanking = 'relevance' | 'english-first';
+
+/** Runtime-checkable list of the above, so the controller can validate the query param. */
+export const DICTIONARY_SEARCH_RANKINGS: readonly DictionarySearchRanking[] = [
+  'relevance',
+  'english-first',
+] as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Manual per-entry display overrides
 // ─────────────────────────────────────────────────────────────────────────────
 

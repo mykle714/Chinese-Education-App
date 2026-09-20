@@ -17,6 +17,15 @@
  * `import()` and `require()`, and it fails CI rather than relying on someone
  * remembering to look.
  *
+ * ONE DELIBERATE CARVE-OUT: static ASSET references into `src/assets/`, gated by
+ * {@link isAllowedAssetRef}. Added 2026-09-09 alongside the `import.meta.glob` pattern
+ * below — which was until then the rule's blind spot. An asset pack pulled in by a glob
+ * PATH STRING slipped the scan entirely (that is how `market/freeFarmTileset.ts` has always
+ * loaded its ~180 sprites), while a plain `import manifest from '../../assets/….json'` —
+ * inert data, and strictly safer for both properties this rule protects — was rejected. The
+ * rule was blocking the harmless case and permitting the Vite-coupled one. Both are now
+ * scanned, and both are allowed on the same explicit, narrow terms.
+ *
  * If you need a genuinely external dependency in the engine, the answer is almost
  * always to invert it: take the value as a parameter, or move the caller into
  * `src/features/`. Weakening this test is a decision to give up Web Worker
@@ -71,6 +80,15 @@ function importedSpecifiers(src: string): string[] {
   for (const re of patterns) {
     for (const m of code.matchAll(re)) specs.push(m[1]);
   }
+
+  // Vite glob (asset packs) — scanned on the RAW source, NOT the comment-stripped copy.
+  // A glob path contains `/**/`, and `stripComments`' block-comment regex happily eats that
+  // out of the middle of a string literal: `'…/free-farm-assets/**/*.png'` came back as
+  // `'…/free-farm-assetsg'`. Scanning raw is safe here because the pattern demands a quoted
+  // argument immediately after the call, which prose in a doc comment does not have.
+  for (const m of src.matchAll(/\bimport\.meta\.glob\s*\(\s*['"]([^'"]+)['"]/g)) {
+    specs.push(m[1]);
+  }
   return specs;
 }
 
@@ -98,6 +116,36 @@ const TEST_ONLY_ALLOWED = new Set(['vitest', 'fs', 'node:fs', 'path', 'node:path
 
 function isTestFile(absPath: string): boolean {
   return absPath.split(path.sep).includes('__tests__');
+}
+
+const ASSETS_DIR = path.resolve(ENGINE_DIR, '../assets');
+
+/**
+ * File extensions an engine module may reference out of `src/assets/`: images, fonts, and the
+ * generated JSON manifests that describe them.
+ *
+ * Extension-gated on purpose. `src/assets/` holds DATA, and data cannot drag in a renderer,
+ * React, or the DOM — neither property this rule protects (renderer portability, Web-Worker
+ * eligibility) is touched by a sprite URL or a manifest of tile footprints. An arbitrary
+ * `.ts`/`.tsx` under that folder could carry anything, so it stays forbidden.
+ */
+const ALLOWED_ASSET_EXT = /\.(png|webp|jpe?g|svg|json|woff2?)$/;
+
+/**
+ * True for a relative specifier that resolves inside `src/assets/` AND names an asset/data file
+ * (or a glob whose pattern ends in one). Two engine modules rely on it: `market/freeFarmTileset`
+ * and `market/lumeishTileset` glob their sprite URLs, and the latter also statically imports
+ * `lumeishManifest.json`.
+ *
+ * ⚠ NOT a general "engine may reach outside itself" escape hatch. It admits exactly one
+ * directory and one set of extensions; `src/features`, `src/pages`, `src/hooks`, npm packages
+ * and any `.ts` under assets all still fail, which is the entire point of the rule.
+ */
+function isAllowedAssetRef(fromFile: string, spec: string): boolean {
+  if (!spec.startsWith('.')) return false;
+  const resolved = path.resolve(path.dirname(fromFile), spec);
+  if (!resolved.startsWith(ASSETS_DIR + path.sep)) return false;
+  return ALLOWED_ASSET_EXT.test(spec);
 }
 
 describe('src/engine purity', () => {
@@ -132,10 +180,29 @@ describe('src/engine purity', () => {
       const rel = path.relative(ENGINE_DIR, file);
       for (const spec of importedSpecifiers(fs.readFileSync(file, 'utf8'))) {
         if (isExternal(spec)) continue;
+        if (isAllowedAssetRef(file, spec)) continue; // src/assets data — see isAllowedAssetRef
         const resolved = path.resolve(path.dirname(file), spec);
         if (!resolved.startsWith(ENGINE_DIR + path.sep)) backEdges.push(`${rel} → ${spec}`);
       }
     }
     expect(backEdges).toEqual([]);
+  });
+
+  it('keeps the asset carve-out narrow — it must not become a general escape hatch', () => {
+    // A file standing in for a real engine module, so the relative specifiers below
+    // resolve the way they would from `src/engine/market/`.
+    const from = path.join(ENGINE_DIR, 'market', 'someTileset.ts');
+
+    // Allowed: sprite globs and generated manifests under src/assets.
+    expect(isAllowedAssetRef(from, '../../assets/free-assets/pack/**/*.png')).toBe(true);
+    expect(isAllowedAssetRef(from, '../../assets/test-assets/pack/manifest.json')).toBe(true);
+
+    // Forbidden: code under assets, anything outside assets, and bare packages.
+    expect(isAllowedAssetRef(from, '../../assets/pack/index.ts')).toBe(false);
+    expect(isAllowedAssetRef(from, '../../features/nightmarket/HouseLayer.tsx')).toBe(false);
+    expect(isAllowedAssetRef(from, '../../hooks/useThing.ts')).toBe(false);
+    expect(isAllowedAssetRef(from, 'pixi.js')).toBe(false);
+    // …including a path that merely starts with the assets dir NAME but escapes it.
+    expect(isAllowedAssetRef(from, '../../assets-extra/pack/sprite.png')).toBe(false);
   });
 });

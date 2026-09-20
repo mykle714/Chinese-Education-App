@@ -1,7 +1,8 @@
 import type { PoolClient } from 'pg';
 import { ICategoryPromotionDAL, VelocityBucket } from '../interfaces/ICategoryPromotionDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
-import { CategoryPromotion, CategoryPromotionInput } from '../../types/velocity.js';
+import { CategoryPromotion, CategoryPromotionInput, VelocityBreakdown } from '../../types/velocity.js';
+import { CATEGORY_BOUNDARIES, CATEGORY_ORDER } from '../../contracts/mastery.js';
 import type { MasteryBarId } from '../../contracts/wire.js';
 import { ValidationError } from '../../types/dal.js';
 
@@ -87,27 +88,57 @@ export class CategoryPromotionDAL implements ICategoryPromotionDAL {
     userId: string,
     windowDays: number,
     bars: MasteryBarId[] = ['core']
-  ): Promise<Map<string, number>> {
+  ): Promise<Map<string, VelocityBreakdown>> {
     if (!userId) throw new ValidationError('userId is required');
+
+    // One conditional count per adjacent-band boundary, GENERATED from
+    // CATEGORY_BOUNDARIES so the band list lives in exactly one place (adding a band
+    // adds a column here for free). The index literals come from that const array's
+    // positions, never from input, so there is nothing to inject.
+    //
+    // A row crosses boundary `i` when it starts at or below the band under it and
+    // ends at or above the band over it — which is why a single two-band promotion
+    // is counted TWICE, once per boundary it passed through. That is the deliberate
+    // rule (see VelocityBreakdown): it makes the counts sum to SUM("bandsClimbed").
+    const boundaryColumns = CATEGORY_BOUNDARIES
+      .map((_, i) => `COUNT(*) FILTER (WHERE "rankFrom" <= ${i} AND "rankTo" > ${i}) AS "b${i}"`)
+      .join(',\n             ');
 
     // Restricted to the bars the account is PURSUING (migration 143). Promotions in a
     // bar whose goal is off stay in the log — turning that goal on later brings the
     // learner's real recent work with it, instead of resetting velocity to zero — but
     // they must not inflate a number for a skill the learner never opted into.
     // `bars` is a list of union values, bound as a text[] rather than interpolated.
-    const result = await this.run<{ language: string; steps: string }>(undefined, (c) => c.query(`
-      SELECT language, SUM("bandsClimbed") AS steps
-      FROM category_promotions
-      WHERE "userId" = $1
-        AND "promotedAt" >= now() - make_interval(days => $2::int)
-        AND bar = ANY($3::text[])
+    //
+    // The band names are bound as a text[] too and ranked with array_position rather
+    // than a CASE ladder, so CATEGORY_ORDER stays the only definition of the order.
+    // array_position returns NULL for a category the contract no longer knows, and a
+    // NULL rank fails every FILTER — an unrecognised row is dropped rather than
+    // silently ranked 0 and counted as a climb out of Unfamiliar.
+    const result = await this.run<Record<string, string>>(undefined, (c) => c.query(`
+      WITH ranked AS (
+        SELECT language,
+               array_position($4::text[], "fromCategory") - 1 AS "rankFrom",
+               array_position($4::text[], "toCategory")   - 1 AS "rankTo"
+        FROM category_promotions
+        WHERE "userId" = $1
+          AND "promotedAt" >= now() - make_interval(days => $2::int)
+          AND bar = ANY($3::text[])
+      )
+      SELECT language,
+             ${boundaryColumns}
+      FROM ranked
       GROUP BY language
-    `, [userId, windowDays, bars]));
+    `, [userId, windowDays, bars, [...CATEGORY_ORDER]]));
 
-    const byLanguage = new Map<string, number>();
+    const byLanguage = new Map<string, VelocityBreakdown>();
     for (const row of result.rows) {
-      // SUM() of a smallint comes back as a bigint string from pg.
-      byLanguage.set(row.language, parseInt(row.steps, 10));
+      // COUNT() comes back as a bigint string from pg.
+      const boundaryCounts = CATEGORY_BOUNDARIES.map((_, i) => parseInt(row[`b${i}`], 10) || 0);
+      const total = boundaryCounts.reduce((sum, n) => sum + n, 0);
+      // A language whose only rows were unrecognisable totals 0; drop it so "absent
+      // means zero" stays true for callers that iterate the map.
+      if (total > 0) byLanguage.set(row.language as string, { total, boundaryCounts });
     }
     return byLanguage;
   }

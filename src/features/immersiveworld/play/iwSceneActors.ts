@@ -5,6 +5,7 @@ import {
 import { freeFarmTileset } from '../../../engine/market/freeFarmTileset';
 import { cellKey, type SceneGraph } from '../../../engine/iw/sceneGraph';
 import { createSceneActor, sceneActorPosition, type SceneActorState } from '../../../engine/iw/sceneActor';
+import { iwLog, iwWarn } from '../iwDebugLog';
 
 /**
  * iwSceneActors — turning a stored scene into the bodies that stand in it.
@@ -108,6 +109,27 @@ export function buildSceneBodies(
       id: companion.id, npc: companion, avatar: companion.avatar, label: companion.name,
     });
   }
+
+  // ⚠️ THE CAST AND THE BODIES ARE NOT THE SAME SET. Every body here must be answerable by
+  // `takeNpcTurn`, which resolves an npcId through `resolveCastMember` — the stored cast PLUS
+  // the derived companion row. A body outside that set is drawn, walkable and addressable but
+  // structurally unable to reply, and the learner sees only the generic "Not right now."
+  // banner, so it is worth a console line rather than a silent reconciliation here: the two
+  // sides disagreeing means one of them has a bug, and guessing which would hide it.
+  const castIds = new Set((scene.npcCast ?? []).map(m => m.npcId));
+  for (const id of bodies.keys()) {
+    // The PLAYER is a body and is cast in nothing by definition — he is never addressed by a
+    // turn, so he is not part of this reconciliation.
+    if (id === IW_ACTOR_PLAYER) continue;
+    if (!castIds.has(id) && id !== companion?.id) {
+      iwWarn('scene', `body "${id}" is neither cast nor the companion — the server will refuse every turn addressed to him`, {
+        bodyIds: [...bodies.keys()], castIds: [...castIds], companionId: companion?.id ?? null,
+      });
+    }
+  }
+  iwLog('scene', `built ${actors.length} actors`, {
+    bodyIds: [...bodies.keys()], castIds: [...castIds], companionId: companion?.id ?? null,
+  });
 
   return { actors, bodies, companionId: companion?.id ?? null };
 }

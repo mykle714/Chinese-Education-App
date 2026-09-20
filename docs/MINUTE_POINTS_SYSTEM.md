@@ -174,6 +174,12 @@ is global except the two rollups listed above.
 - `authSync.syncTimezoneIfChanged` — same POST, but only when the browser's zone differs from what this tab last sent. Wired to `visibilitychange` in `AuthContext` for the long-lived-tab case.
 - `utils/tokenRefresh.doRefresh` — sends `{ tz }` on `POST /api/auth/refresh`, piggybacking the ~15-minute rotation.
 - `MonthlyCalendar` / `StreakCounter` / `LeaderboardPlaceholder` — UI surfaces.
+- `FireCount` (`src/minutePoints/FireCount.tsx`) — the flame-and-number VISUAL, pure
+  and presentational: the `local_fire_department` glyph beside a mono tabular count, in
+  one tone, optionally with a bottom-anchored fill window over the glyph. It takes the
+  number as a prop and reads no hooks, which is what lets a screen show a minutes figure
+  that is **not** the signed-in viewer's — the user profile's per-language panel
+  (`ProfileStatsCard`) shows somebody else's banked balance with it.
 - `MinutePointsFireBadge` — the app's earning indicator. Rendered by `PageHeader` itself,
   last in the right slot, on **every** header; pages do not pass it. `null` when signed
   out. It draws in one of two **modes**, keyed on `isEligiblePage` (not on `isActive`):
@@ -198,9 +204,33 @@ Accrual is decided by path, not by what a page does:
 
 | List | Match | Members |
 | --- | --- | --- |
-| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | `/flashcards/learn`, **`/flashcards/card`**, **`/dictionary`** (search page + the cdp under it), `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,speed-reading,memory-map,hydra-bubbles}` |
+| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | `/flashcards/learn`, **`/flashcards/card`**, **`/dictionary`** (search page + the cdp under it), `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,speed-reading,memory-map,hydra-bubbles}`, **`/immersive-world`** |
 | `MINUTE_POINTS_ELIGIBLE_EXACT_PAGES` | exact path only | `/flashcards` (the legacy desktop page) |
+| `MINUTE_POINTS_EXCLUDED_EXACT_PAGES` | exact path only; **wins over both lists above** | `/immersive-world`, `/immersive-world/scene-editor` |
 | `MINUTE_POINTS_AUTO_ACTIVE_PAGES` | prefix; subset that starts accruing on mount | `/games` |
+
+The rule over those four lists is `isMinutePointsEligiblePath` / `isMinutePointsAutoActivePath`
+(`src/minutePoints/eligibility.ts`), pulled out of `useMinutePoints` on 2026-09-07 when the
+third list arrived. Both failure directions are **silent** — a study page that earns nothing
+and a menu that farms points look the same on screen — so the rule is unit-tested rather than
+resolved inline in a 450-line hook.
+
+### The immersive world earns, but its list and its editor do not (2026-09-07)
+
+Holding a conversation with an NPC in the target language is as study-shaped as anything in the
+app; it was simply never added. The wrinkle is that the play surface is a **parameterized
+child** — `/immersive-world/:sceneId` — which only a prefix can admit, and that prefix also
+sweeps in the scene LIST (a hub you pick from) and the scene EDITOR (authoring, and a surface an
+author might leave open all afternoon). Hence `MINUTE_POINTS_EXCLUDED_EXACT_PAGES`, which
+carves those two back out by exact path.
+
+Reach for the exclusion list only in that shape — study surface as the parameterized child,
+browse screens as its siblings. When a narrower prefix exists, list it instead. Matching
+EXACTLY is deliberate: the exclusion must not quietly become a second prefix list.
+
+A scene is **not** auto-active. Games start accruing on mount because a board is read for a few
+seconds before the first tap; a scene is read for much longer than that, and its composer makes
+the learner's involvement explicit, so the ordinary first-interaction gate applies.
 
 Only **study** surfaces earn. Menus and browse screens deliberately do not: the hubs
 (Home, Discover, Games, Decks & Cards), the deck/collection browsers and the mastery

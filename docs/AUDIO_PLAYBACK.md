@@ -6,11 +6,14 @@ sinks it selects between, and the rules every narration call site must follow.
 **Status:** BUILT 2026-08-28, no migration (the setting is client-side only).
 Gesture-unlock latching fixed the same day — the "audio dies until I restart the
 app" bug, [§ 5](#-unlock-must-never-latch).
-**Not yet verified on a physical iPhone** — see [§ 7](#7-what-still-needs-a-device).
+**Not yet verified on a physical iPhone** — see [§ 8](#8-what-still-needs-a-device).
 
 ---
 
 ## 1. The setting
+
+There are **two** narration settings, and this section is about the first: *whether and where*
+audio plays. The second — *who says it* — is the Voice picker, [§ 6](#6-which-voice--one-per-language-plus-a-gender-role).
 
 Two ways in, one setting:
 
@@ -82,11 +85,30 @@ word the learner also sees on `/settings`, never an abbreviation invented for th
 chip.**
 
 The chip is **fixed-width**, sized to its own longest label (`default`, 7
-characters, plus a fixed allowance for the glyph) via `HeaderCycleChip`'s `widthCh` and measured in `ch` against the mono
+characters at 8px, so 5.6ch, plus a fixed allowance for the glyph) via `HeaderCycleChip`'s `widthCh` and measured in `ch` against the mono
 face, plus `CYCLE_CHIP_SLACK_CH` (**4ch**) of breathing room — `widthCh` alone is the
 label's exact advance width, which both clips the last glyph to subpixel rounding and
 reads as cramped inside the chip's radius. It therefore does not resize as the user taps
 through, and the controls to its left hold still under the thumb.
+**A label longer than the comfortable width renders one size down, and only that
+label does.** `default` is seven characters and would otherwise size the chip in all
+three states, including the two the learner is looking at most of the time. Rather
+than abbreviate it — which the label rule above forbids — `cycleChipFontPx`
+(`src/components/cycleChipSizing.ts`) shrinks just that word far enough to fit, down
+to a floor of **8px**, past which the chip widens instead. `mute` and `media` stay at
+the full 10px. `cycleChipWidthCh` measures the table by the same rule, so the width
+asked for is what the labels actually occupy; callers pass their whole label table to
+it rather than computing a character maximum themselves.
+
+The **icon is pinned to the chip's left edge** and the label centres in the space
+that is left, rather than the pair centring together. The icon is the chip's anchor —
+what says at a glance which control this is, before the word is read — and an anchor
+that slides as the label changes length is not one. It also gives the label a
+constant-size box in every state, which is what keeps a shrunken word optically
+centred. The immersive-world volume chip is the same control laid out the same way,
+and by the same sizing rule comes out exactly as wide (see
+[IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 9a).
+
 `MODE_LABEL_WIDTH_CH` derives the count from `MODE_CHIP`, so adding or renaming a
 state cannot silently bring the jump back.
 
@@ -109,6 +131,12 @@ mid-utterance, or "mute" leaves a word playing. That lives **once**, in `useTTS`
 edge-triggered on the on → off transition so a deliberate speaker press while muted
 is not cancelled out from under the user. Surfaces get it for free and must not
 re-add the flag to a dep list to obtain it.
+
+**The one control that does make a sound is the Voice picker** (§ 6), and it does not break
+this rule: its sample plays through `autoSpeakSentence`, so it is gated on `autoplay` like every
+other automatic utterance and a muted phone stays muted. The rule forbids a settings tap
+narrating *the card already on screen*; auditioning the voice you are choosing is the control
+doing its job.
 
 *Code:* `src/hooks/useTTS.ts` → the `wasAutoplayOnRef` effect;
 `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx` → the
@@ -140,7 +168,7 @@ fire in the writing tab, so `setSettings` notifies its own listeners directly).
 *Code:* `src/hooks/useTTSSettings.ts` → `TTSSettings`, `AudioMode`,
 `AUDIO_MODE_ORDER`, `useTTSSettings` (`mode`/`setMode`/`cycleMode`);
 `src/components/AudioModeChip.tsx` → `MODE_CHIP`, `MODE_LABEL_WIDTH_CH`; `src/components/PageHeader.tsx` →
-`HeaderCycleChip`; `src/pages/SettingsPage.tsx` → `AUDIO_MODE_COPY`.
+`HeaderCycleChip`; `src/components/cycleChipSizing.ts` → `cycleChipFontPx`, `cycleChipWidthCh`; `src/pages/SettingsPage.tsx` → `AUDIO_MODE_COPY`.
 
 ---
 
@@ -258,6 +286,14 @@ manual `speak` its speaker button uses), and the bubble games' reveal. **A
 game-tile tap counts as automatic**, not manual — only a dedicated speaker button
 breaks the silence of `off`.
 
+> ⚠️ **A speaker button must not be HIDDEN in `off` either.** Because the manual pair
+> always speaks, a surface that renders its speaker button only when narration actually ran
+> takes away the learner's one way to hear a line at exactly the moment they have no other.
+> Immersive World's speech bubble did this until 2026-09-09 — `IWBubble.replayable` meant "a
+> clip was decoded", so muting the app removed the button from every NPC line. It is now
+> shown on every line the learner did not speak themselves, and the press pays the synth
+> round-trip when nothing was cached (see IMMERSIVE_WORLD.md § 14 Q41).
+
 > Calling the manual pair from an automatic site is a real bug, not a style slip:
 > it plays audio in `off` **and** lights the speaker button's spinner, because
 > `speakingKey` is only ever set for a narration that actually runs. Speed
@@ -362,7 +398,134 @@ properties (persistent listener, mid-session resume, no latch on a refused
 
 ---
 
-## 6. What this setting does NOT cover
+## 6. Which voice — one per language, plus a gender role
+
+**Status:** BUILT 2026-09-09, no migration.
+
+Narration resolves a voice from **two** axes, both server-side:
+
+| Axis | Where it comes from |
+|---|---|
+| **Language** | The learner's `selectedLanguage`, mapped by `useTTS` → `toTTSLang` and resolved by `TTSService.voiceForLang`. Keeps a Spanish word off the Mandarin voice. |
+| **Role** (`TTSVoiceKey`) | The **caller**: `'default'` \| `'male'` \| `'female'`, defaulting to `'default'`. Exists so an Immersive World NPC drawn as a man is voiced as a man ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 6.4a). |
+
+The provider (Google Cloud TTS) carries both genders in every locale we use. Voice
+names verified against `GET texttospeech/v1/voices` on our own service account,
+**2026-09-09** — the genders below are the provider's `ssmlGender`, not the docs':
+
+| Language | `default` / `female` | `male` |
+|---|---|---|
+| `zh` (`cmn-CN`) | `cmn-CN-Wavenet-A` | `cmn-CN-Wavenet-B` |
+| `es` (`es-US`) | `es-US-Neural2-A` | `es-US-Neural2-B` |
+| `en` (`en-US`) | `en-US-Neural2-C` | `en-US-Neural2-D` |
+
+Each cell is overridable via env (`GOOGLE_TTS_VOICE_ZH`, `…_ZH_MALE`, and the `ES`/`EN`
+equivalents), so swapping a voice is a restart, not a deploy.
+
+Three deliberate choices in that table:
+
+- **`'female'` resolves to the SAME voice as `'default'`.** The disk cache is keyed on the
+  resolved voice **name**, not the role, so this makes every MP3 cached before this feature
+  shipped still a hit — and it means the flashcard voice and a female NPC are one voice rather
+  than two that merely sound alike.
+- **The male voice is from its language's own family** (`Wavenet` with `Wavenet`, `Neural2`
+  with `Neural2`), so a cast does not mix synthesis generations mid-conversation.
+- **No `Chirp3-HD-*` voices**, though they sound better and Mandarin alone has 30 of them
+  (16 male / 14 female — enough for one voice per NPC). They are a different price tier and
+  **do not accept SSML**, which would silently drop the pinyin `<phoneme>` hint that keeps a
+  polyphone's audio matching the reading on screen (§ 3, `buildPinyinSsml`). Read that
+  function before putting a Chirp3 voice in the `zh` column.
+
+**`en-US-Neural2-C` is a FEMALE voice.** It is the *language* fallback for an unknown
+language — not a gender-neutral one. Every voice this app used before 2026-09-09 was female.
+
+### The learner's choice — `/settings` → Voice (BUILT 2026-09-09)
+
+The role is not only iw's. `/settings` carries a **Voice** picker — two `OptionRow`s, *Female*
+and *Male* — that sets the voice for everything the app reads TO the learner: flashcards,
+example sentences, game reveals. It is stored in the same `tts.settings` localStorage blob as
+`autoplay` and `route` (`TTSSettings.voice`, typed `NarrationVoice`), so it needs no migration
+and no column, and it shares the store that keeps every mounted `useTTS` in agreement (§ 1).
+It is **per device**, not per account — the trade accepted for shipping it without a column.
+
+| | |
+|---|---|
+| **Two options, not three** | `NarrationVoice` is `'female' \| 'male'`. `TTSVoice`'s third value, `'default'`, resolves to the *same provider voice* as `'female'`, so offering it would be one setting with two names for one outcome. The stored value says what the learner picked rather than "whatever we ship", and because `'female'` is a member of `TTSVoice` it crosses the wire unchanged and shares the default voice's cache slots. |
+| **It applies per language** | Picking *Male* gets the male voice of whatever they are studying, not one fixed voice. The language axis is still resolved from `selectedLanguage`. |
+| **It is a DEFAULT, not a floor** | `useTTS` uses it whenever the caller names no voice. A caller that names one — only iw, per speaking character — wins, because an NPC's voice belongs to the character, not to the learner's reading preference. The picker's subtitle says so ("Characters in a story keep their own voices"). |
+| **Its own `SettingsSection`** | Not a second radio group inside Narration: the page's pattern is one control per card, and two unlabelled groups in one card read as one broken group. It sits directly under Narration because it answers the other half of the same question. |
+
+**Tapping an option plays a sample** — 你好 / *Hola* in the voice just chosen — because for a
+voice control, hearing it is the only way to make the choice. It plays through
+**`autoSpeakSentence`, the AUTOMATIC path**, so it obeys the mode set in the card directly
+above it: silent in **Mute**, and on whichever route is selected. That is what keeps § 1's
+⛔ *changing the mode must not make a sound* rule intact where it actually matters — a muted
+phone stays muted — and it is why the sample is not routed through the manual `speakSentence`,
+which would speak in every mode.
+
+The sample is a fixed greeting rather than a word from the learner's deck: one short synthesis,
+identical audio for both voices so they can be compared, and no vocabulary they may not have
+met. The zh sample carries its pinyin, for the same reason every other narration call does
+(§ 3). ⚠️ The `onChange` handler passes the **new** value explicitly to
+`autoSpeakSentence` rather than reading the store it just wrote — the callback closes over the
+previous render's voice, so relying on the write would demo the voice being replaced.
+
+**⛔ A non-default voice must not stamp `det."ttsVoice"`.** That column is shared dictionary
+data meaning "this row has cached audio in the voice the app reads with", so one learner
+picking *Male* must not rewrite it for everybody. `TTSController` skips the stamp unless
+`TTSService.isDefaultVoice(lang, voiceKey)` — the check lives in the service because only it
+knows `'female'` and `'default'` are the same voice. Before the picker existed this could not
+happen (iw was the only non-default caller and it already passes `stamp: false`), which is
+exactly why the guard had to be added *with* the picker.
+
+**Consequence worth knowing: the server's pre-warm only covers the default voice.**
+`OnDeckVocabService.prewarmAudio` synthesizes each on-deck card with no voice role, so a
+learner on *Male* misses the disk cache on the first play of each word and pays one on-demand
+synthesis (~0.2–0.4 s) — after which it is on disk forever and in the session's buffer cache.
+`hasAudio` likewise reflects the default voice's success, which is a fine proxy: a word that
+fails to synthesize in one voice fails in both. Making the pre-warm voice-aware would need the
+preference on the server, which is the localStorage trade above.
+
+### Role, never a voice name, on the wire
+
+`POST /api/tts/synthesize` accepts `voice: 'default' | 'male' | 'female'` and nothing else;
+`toTTSVoiceKey` narrows anything unrecognized back to `'default'`. A provider voice **name**
+on the wire would let any authenticated caller synthesize through an arbitrary — and
+arbitrarily priced — Google voice on our billing account, and would turn a client typo into a
+provider 400 instead of a default. The role → name mapping stays entirely in `TTSService`.
+
+### ⚠️ The voice is part of every cache key
+
+It is folded into both caches, and it has to be in both:
+
+- **Server**, `TTSService.cacheKey` → `sha256(provider:voiceName:text:pinyin)`. Adding a voice
+  therefore *adds* cache slots and never invalidates one.
+- **Client**, `CloudTTSProvider.bufferKey` → `lang:voice:text:pinyin`. Without the voice here,
+  two NPCs saying the same line share one in-session clip and **whoever speaks second is voiced
+  by whoever spoke first** — a bug that appears only on the second utterance and reads as the
+  whole feature not working.
+
+The corollary for `prepare()`-then-`speak()` callers (§ 3a): **pass the same voice to both.**
+A mismatch measures one clip's duration and plays another, which is precisely what iw's
+audio-as-clock contract cannot survive, and it pays for a second synthesis to do it.
+
+### The browser fallback does not carry the role
+
+`WebSpeechProvider` picks an OS voice by language tag and exposes no gender control that can be
+relied on across browsers, so `useTTS` deliberately does **not** forward `voice` to it. A
+wrong-gendered voice on the already-degraded fallback path is cosmetic; refusing to speak would
+not be.
+
+*Code:* `server/services/TTSService.ts` → `TTSVoiceKey`, `TTS_VOICE_KEYS`, `toTTSVoiceKey`,
+`voiceForLang`, `voiceTag`, `cacheKey`, `synthesize`; `server/controllers/TTSController.ts` →
+`synthesize`; `src/services/tts/types.ts` → `TTSVoice`, `TTSRequest.voice`;
+`src/services/tts/CloudTTSProvider.ts` → `SynthArgs`, `bufferKey`, `getOrFetchBlob`;
+`src/hooks/useTTS.ts` → `speakText`, `speakSentence`, `autoSpeakSentence`, `prepareSentence`,
+`prefetchSentence`; `src/features/immersiveworld/play/useIWSceneRuntime.ts` → `voiceFor`.
+
+---
+
+## 7. What this setting does NOT cover
 
 **The answer-feedback sound** (`src/services/audio/markArpeggio.ts`) is
 deliberately **out of scope**. It always uses media semantics: it honors the iOS
@@ -389,31 +552,23 @@ rising pitch is the feature: a single blip says only "right", the pitch says
 | | |
 |---|---|
 | **Assets** | `src/assets/Marimba/Arp/{C,E,G,C-high}.mp3` + `src/assets/Marimba/wrong.mp3` — mono 128kbps, ~22KB each, ~108KB total, peak-normalized to −1.5 dBFS so the four notes are level with one another. The `.wav` masters beside them are the source; they are 24-bit stereo with **bit-identical channels**, so the mono downmix is lossless. |
-| **Fired from** | `src/api/flashcards.ts` → `markFlashcard`, on the first line, **before** the request. One chokepoint covers all eight `MarkSurface` values, and a ninth gets the sound for free. |
+| **Fired from** | `src/api/flashcards.ts` → `markFlashcard`, on the first line, **before** the request — but **only** when `request.surface` is in `ARPEGGIO_SURFACES`: **`match-speed` and `bubble-match`**. Every other surface (flp, Hydra Bubbles, Memory Map, Speed Reading, Word Search, Practice Writing) marks silently — narrowed by request on 2026-09-13. A new surface is silent by default. |
 | **Why pre-`await`** | No network round-trip between the tap and the note, and the call is still inside the tap's user-gesture stack — the only place iOS will start audio. |
 | **Suppressed marks** | Still sound correct. The note follows the learner's **answer**, not the stored mark: cooldown suppression (docs/HYDRA_BUBBLES.md § 8) is invisible server bookkeeping and is only known *after* the response anyway. |
-| **Streak scope** | Module-level counter, reset on mount **and** unmount of each mark surface by `useMarkArpeggio()` (`src/hooks/useMarkArpeggio.ts`). Leaving the flp mid-arpeggio and opening Word Search starts again on the low C. |
+| **Streak scope** | Module-level counter, reset on mount **and** unmount of `MatchSpeedPage` and `BubbleMatchPage` by `useMarkArpeggio()` (`src/hooks/useMarkArpeggio.ts`). Leaving Match Speed mid-arpeggio and opening Bubble Match starts again on the low C. |
 | **Loading** | All five clips are fetched at module load and decoded on the first `pointerdown`, so the first answer of a session is not silent. A call that beats the decode plays late rather than being dropped. |
 
-**Two call sites must opt out**, via `markFlashcard`'s second parameter
-(`MarkFlashcardOptions.silent`) — a client-only bag, deliberately *not* a field on
-the wire request:
+**Batching surfaces must stay off the whitelist.** Until 2026-09-13 every surface
+played the sound, and two needed a per-call opt-out (`MarkFlashcardOptions.silent`,
+since deleted): the flp working loop **retries** a failed mark up to three times
+(`useWorkingLoop` → `markCard`), and Word Search's "No Pinyin" board posts one find
+on **two** tracks (`WordSearchPage` → `markWordFound`). Both are now silent, so the
+option had no callers. Adding either back to `ARPEGGIO_SURFACES` would play a chord
+and skip rungs — re-introduce a per-call opt-out first.
 
-- the flp working loop **retries** a failed mark up to three times with backoff
-  (`useWorkingLoop` → `markCard`); one swipe must be one note, not four,
-- Word Search's "No Pinyin" board posts one find on **two** mastery tracks
-  (`WordSearchPage` → `markWordFound`); one find, one note.
-
-A batching caller that forgets `silent` plays a chord and skips a rung.
-
-**Memory Map is the one surface that still calls the sound itself.** Its taps and
-its marks are not 1:1 — "one prompt, one mark", so a wrong tap on a non-target word
-emits no mark and would otherwise be silent. `MemoryMapPage` therefore calls
-`playMarkArpeggio(false)` on a wrong tap only; target taps are covered by
-`markFlashcard` as everywhere else. This also fixed an old mismatch: the red
-lock-in tap returns `"correct"` from `tapWord` (the right word *was* found) while
-the mark it writes is negative, so it used to congratulate a failed prompt. The
-note now follows the mark.
+Memory Map used to call `playMarkArpeggio(false)` directly on a wrong non-target tap
+(which emits no mark); that call went with the surface. `markFlashcard` is now the
+arpeggio's only caller.
 
 ### History
 
@@ -432,7 +587,7 @@ phone's own mute switch covers the case in `media` mode.
 
 ---
 
-## 7. What still needs a device
+## 8. What still needs a device
 
 Everything here typechecks and the suite passes, but the behavior that motivates
 the whole feature is **not observable on desktop or headless**:
@@ -453,7 +608,7 @@ Test on a physical iPhone with the ringer switch OFF and music playing.
 
 ---
 
-## 8. Migration from the pre-unification settings
+## 9. Migration from the pre-unification settings
 
 Three separate flags collapsed into `autoplay`:
 
@@ -478,7 +633,9 @@ unified flag — and all of them are in the **page header** as an `autoplay` chi
 flp (`FlashcardsLearnHeader`), scp (`SortCardsPage` header actions), Bubble Match
 and Hydra (`BubbleMatchHeaderControls`), Match Speed (`MatchSpeedHeader`) and Word
 Search (`WordSearchHeaderControls`, added 2026-08-29 — the game narrates found words,
-blue matches and review rungs, so it needed a mid-play mute like the rest). The two
+blue matches and review rungs, so it needed a mid-play mute like the rest) and
+Immersive World (`IWPlayPage`'s `rightContent`, added 2026-09-09 — a scene speaks its
+NPC lines aloud, so it needs the same mid-play mute). The two
 that were buried — flp's settings-sheet row and Match Speed's dialog row — moved up
 on 2026-08-28, so the chip means the same thing and sits in the same place
 everywhere. The *setting* was unified; the affordances were made consistent.
@@ -511,15 +668,22 @@ rule covers input-blocking overlays, and a header chip leaves the board playable
 
 ## Referenced by / depends on
 
-- `src/hooks/useTTSSettings.ts` — the setting, its projection and its migration
-- `src/hooks/useTTS.ts` — trigger contract, fallback rule, route push-down
+- `src/hooks/useTTSSettings.ts` — the settings, their projection and their migration;
+  `NarrationVoice`, `NARRATION_VOICE_ORDER`, `setVoice` (§ 6)
+- `src/hooks/useTTS.ts` — trigger contract, fallback rule, route push-down, voice role (§ 6)
+- `server/services/TTSService.ts` — the language × role voice table and the disk cache (§ 6)
+- `server/controllers/TTSController.ts` — request validation, incl. the voice role (§ 6)
+- `src/features/immersiveworld/play/useIWSceneRuntime.ts` — `voiceFor`, the only
+  caller that asks for a non-default voice (§ 6)
 - `src/services/tts/CloudTTSProvider.ts` — both sinks, all three caches, unlock
-- `src/services/tts/WebSpeechProvider.ts` — the unrouteable fallback
-- `src/pages/SettingsPage.tsx` — `AUDIO_MODE_OPTIONS`
+- `src/services/tts/WebSpeechProvider.ts` — the unrouteable fallback; carries no voice role (§ 6)
+- `src/pages/SettingsPage.tsx` — `AUDIO_MODE_OPTIONS`; `NARRATION_VOICE_OPTIONS`,
+  `VOICE_SAMPLE` and the voice section (§ 6)
+- `server/services/OnDeckVocabService.ts` — `prewarmAudio`, default-voice only (§ 6)
 - `src/services/audio/markArpeggio.ts` — the answer-feedback arpeggio, deliberately
-  out of scope (§ 6); also carries the resume-on-every-gesture pattern (§ 5)
-- `src/hooks/useMarkArpeggio.ts` — per-surface reset of the arpeggio ladder (§ 6)
-- `src/api/flashcards.ts` — `markFlashcard` fires the arpeggio; `MarkFlashcardOptions.silent` (§ 6)
+  out of scope (§ 7); also carries the resume-on-every-gesture pattern (§ 5)
+- `src/hooks/useMarkArpeggio.ts` — per-surface reset of the arpeggio ladder, Match Speed + Bubble Match only (§ 7)
+- `src/api/flashcards.ts` — `markFlashcard` fires the arpeggio for `ARPEGGIO_SURFACES` (§ 7)
 - `src/__tests__/ttsUnlockRecovery.test.ts` — unlock repeatability regression tests
 - `src/features/discover/SortCardsPage.tsx` — `unlockAudio` (no local latch, § 5)
 - [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) — est narration call sites

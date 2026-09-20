@@ -38,6 +38,7 @@ export type {
   BreakdownMap,
   CommunityDesign,
   DefinitionCluster,
+  DictionarySearchRanking,
   DifficultyLevel,
   DiscoverCard,
   DiscoverFetchResponse,
@@ -81,6 +82,7 @@ export type {
 export {
   CARD_COLOR_VALUES,
   CARD_NOTE_MAX_LENGTH,
+  DICTIONARY_SEARCH_RANKINGS,
   ENTRY_LEVEL_VALIDATION_FIELDS,
   FLASHCARD_CATEGORY,
   FLASHCARD_CATEGORIES,

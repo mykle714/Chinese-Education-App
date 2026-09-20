@@ -144,6 +144,13 @@ interface MiniVocabCardGridProps {
     // footnote under a swipeable test, and elastic rows there read as the page coming
     // loose rather than as the list having weight.
     scrollStretch?: boolean;
+    // Paint every entry at once with NO entrance animation — the grid's final state on
+    // its first frame. For a page restored by Back (src/features/flashcards/backRestore.ts):
+    // the paced reveal would mount 3 cards and grow from there, so a restored scroll
+    // position would land on empty rows, and the pop-in would replay over cards the
+    // learner already saw. Takes precedence over `staggerReveal`. Windowing still applies,
+    // so the single commit stays bounded.
+    revealImmediately?: boolean;
 }
 
 const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
@@ -160,13 +167,14 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
     cardHeightPx = CARD_HEIGHT_PX,
     lens,
     scrollStretch = true,
+    revealImmediately = false,
 }) => {
     // Progressively reveal the deck so a large list never mounts in one blocking
     // render (keeps taps on surrounding buttons responsive). In staggerReveal mode the
     // caller has bounded its own list, so we skip the paced reveal and mount everything
     // at once (the hook is still called unconditionally, its result just unused).
     const pacedEntries = useIncrementalList(entries, REVEAL_BATCH, undefined, CASCADE_LIMIT);
-    const visibleEntries = staggerReveal ? entries : pacedEntries;
+    const visibleEntries = staggerReveal || revealImmediately ? entries : pacedEntries;
 
     // Mount only the rows near the viewport once the list is long enough to be worth
     // it. Restricted to the STANDARD card: `renderCard` callers draw their own card,
@@ -250,8 +258,9 @@ const MiniVocabCardGrid: React.FC<MiniVocabCardGridProps> = ({
                         // reveal timing itself is the waterfall). Stagger mode: all cards
                         // mount together, so the first CASCADE_LIMIT get an increasing
                         // per-card delay to fan in; the rest render with no animation.
+                        // A restored grid animates nothing (see `revealImmediately`).
                         const animationDelayMs =
-                            index < CASCADE_LIMIT
+                            !revealImmediately && index < CASCADE_LIMIT
                                 ? (staggerReveal ? index * STAGGER_STEP_MS : 0)
                                 : undefined;
                         return renderCard ? (

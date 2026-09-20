@@ -42,13 +42,13 @@
  * (`AudioModeChip` / `useTTSSettings`): it always uses media semantics, so it
  * honors the iOS silent switch and never disturbs other audio. It owns a second
  * AudioContext, separate from CloudTTSProvider's, with its own unlock state —
- * see docs/AUDIO_PLAYBACK.md § 6.
+ * see docs/AUDIO_PLAYBACK.md § 7.
  *
  * Called from: `src/api/flashcards.ts` -> `markFlashcard` (the single chokepoint
- * every mark surface already goes through), plus one explicit wrong-note call in
- * `src/games/memory-map/MemoryMapPage.tsx` for the taps that make no mark.
+ * every mark surface goes through), and only for the surfaces in its
+ * `ARPEGGIO_SURFACES` whitelist: Match Speed and Bubble Match.
  * Reset by: `src/hooks/useMarkArpeggio.ts`.
- * Documented in: docs/AUDIO_PLAYBACK.md § 6.
+ * Documented in: docs/AUDIO_PLAYBACK.md § 7.
  */
 import cLowUrl from "../../assets/Marimba/Arp/C.mp3";
 import eUrl from "../../assets/Marimba/Arp/E.mp3";

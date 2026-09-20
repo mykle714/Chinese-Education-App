@@ -1,5 +1,5 @@
 import { apiGet } from '../../../api/http';
-import type { IWNpcOption, IWScene, IWSceneSummary } from '../../../../server/contracts/iw';
+import type { IWLineSegments, IWNpcOption, IWScene, IWSceneSummary } from '../../../../server/contracts/iw';
 
 /**
  * iwPlayApi — the learner-facing scene reads (§ 12 phase 2).
@@ -40,6 +40,16 @@ export interface IWScenePlayPayload {
    * same cheap constant either way and the caller looks NPCs up by id.
    */
   npcs: IWNpcOption[];
+  /**
+   * Every AUTHORED line the scene can speak, segmented for the tap-to-look-up popup
+   * (§ 5.3b), keyed by the line's exact text.
+   *
+   * It rides along with the scene for the same reason the cast does — these strings are known
+   * before the learner takes a step, so one batched dictionary query here replaces a round
+   * trip in front of every authored line. Model-generated lines arrive on the turn stream
+   * instead, since they do not exist yet when this is read.
+   */
+  lineSegments: Record<string, IWLineSegments>;
 }
 
 /**

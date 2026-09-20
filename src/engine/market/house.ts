@@ -21,7 +21,13 @@
  * horizontal mirror about the front corner swaps the +isoX/+isoY screen directions.
  */
 
-import { computeSpriteStrips } from './isometric';
+import {
+  propStrips,
+  propAnchorFraction,
+  propFootprint,
+  type CellFootprint,
+  type PropArt,
+} from './footprint';
 import { placeholderUnitSlots } from './placeholderArea';
 
 /** Native `House.png` frame size (square). */
@@ -34,16 +40,36 @@ export const HOUSE_TEX_SIZE = 160;
  */
 export const HOUSE_BASE_CORNER = { x: 90.5, y: 155 } as const;
 
+/**
+ * The house as a generic multi-cell prop. This is the single description everything else
+ * derives from — anchor fraction, depth strips and occupied cells all come out of
+ * {@link ./footprint}, so the house uses exactly the same placement system as the lumeish
+ * furniture pack (and anything added later). Before this, the house carried its own
+ * footprint constants and its own hand-written flip rule.
+ */
+export const HOUSE_ART: PropArt = {
+  texW: HOUSE_TEX_SIZE,
+  texH: HOUSE_TEX_SIZE,
+  anchorTex: HOUSE_BASE_CORNER,
+  span: { w: 4, h: 5 },
+};
+
 /** Pixi anchor fraction placing {@link HOUSE_BASE_CORNER} at the sprite's position. */
-export const HOUSE_ANCHOR = {
-  x: HOUSE_BASE_CORNER.x / HOUSE_TEX_SIZE,
-  y: HOUSE_BASE_CORNER.y / HOUSE_TEX_SIZE,
-} as const;
+export const HOUSE_ANCHOR = propAnchorFraction(HOUSE_ART);
 
 /** Default footprint span in cells: 4 along isoX (E–W). */
-export const HOUSE_FOOTPRINT_X = 4;
+export const HOUSE_FOOTPRINT_X = HOUSE_ART.span.w;
 /** Default footprint span in cells: 5 along isoY (N–S). */
-export const HOUSE_FOOTPRINT_Y = 5;
+export const HOUSE_FOOTPRINT_Y = HOUSE_ART.span.h;
+
+/**
+ * The cells one house occupies when its front corner sits at (col,row). `flip` transposes
+ * the span to 5×4 — that rule lives in {@link ./footprint transposeSpan}, not here, because
+ * it is a property of the projection rather than of this building.
+ */
+export function houseFootprint(col: number, row: number, flip = false): CellFootprint {
+  return propFootprint(HOUSE_ART, col, row, flip);
+}
 
 /**
  * Per-screen-column depth slices of `House.png`, relative to a house whose front corner sits at
@@ -61,17 +87,8 @@ export const HOUSE_FOOTPRINT_Y = 5;
  * footprint, with a few px of roof eave past each far edge.
  */
 export const HOUSE_STRIPS = {
-  normal: computeSpriteStrips({
-    footIsoX: 0, footIsoY: 0,
-    texW: HOUSE_TEX_SIZE, texH: HOUSE_TEX_SIZE,
-    anchorTexX: HOUSE_BASE_CORNER.x,
-  }),
-  flipped: computeSpriteStrips({
-    footIsoX: 0, footIsoY: 0,
-    texW: HOUSE_TEX_SIZE, texH: HOUSE_TEX_SIZE,
-    anchorTexX: HOUSE_BASE_CORNER.x,
-    flip: true,
-  }),
+  normal: propStrips(HOUSE_ART),
+  flipped: propStrips(HOUSE_ART, true),
 } as const;
 
 /**

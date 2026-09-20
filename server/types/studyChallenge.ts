@@ -174,7 +174,11 @@ export interface ChallengeFriendRow {
    * blocked friend, so it surfaces as the neutral 'unavailable'.
    */
   canChallenge: boolean;
-  blockedReason: 'at-cap' | 'declined-this-week' | 'unavailable' | null;
+  /**
+   * `not-issue-day` — outside the viewer's own Monday 04:00 → Tuesday 04:00, the only
+   * time a challenge may be issued (§ 2).
+   */
+  blockedReason: 'at-cap' | 'declined-this-week' | 'not-issue-day' | 'unavailable' | null;
   /** Whether the VIEWER has set their own half of the per-pair opt-out (§ 1). */
   viewerBlocked: boolean;
 }

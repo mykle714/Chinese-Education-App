@@ -6,14 +6,24 @@ games; each game lives as its own page linked from the hub.
 
 ## Status
 
+- 🚩 **Every game sits behind its own feature flag (2026-09-19), and all six are ON.**
+  `GAME_FLAGS` in `server/contracts/featureFlags.ts`, keyed by the game's own `gameId` —
+  see [FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 3. The client chokepoint is a single filter
+  at `GAME_REGISTRY` in `src/games/registry.ts`, so switching a game off removes it from
+  the hub, from the router and from every test that enumerates games with no other edit;
+  the server half is `isGameEnabled` on all three `GamesController` handlers, because a
+  hidden hub tile does not stop a bookmarked page from POSTing save state. The record is
+  typed against `KNOWN_GAME_IDS`, so **adding a game is a compile error until it is given a
+  flag**.
 - **Study Challenge rounds — live since 2026-08-22.** Four of the six games
   (Bubble Match, Match Speed, Hydra Bubbles, Word Search-Pinyin) can be drawn as a
   scored round of a weekly head-to-head. The contract they must honour is
   [§ Challenge-eligible games](#challenge-eligible-games-the-challengescoring-contract);
   the feature is [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md).
 - Hub page (`/games`) — shipped. Renders `GAME_REGISTRY` through the shared
-  `HubMenu`; the empty state is now only a fallback for when every game is gated
-  out (public/demo accounts).
+  `Bento`/`BentoTile` primitive ([BENTO_SYSTEM.md](./BENTO_SYSTEM.md); `HubMenu` was
+  deleted 2026-08-21); the empty state is now only a fallback for when every game is gated
+  out (public/demo accounts, a language gate, or every `GAME_FLAGS` entry off).
 - Games — **six shipped**, all registered in `src/games/registry.ts`:
   - **Bubble Match** (`/games/bubble-match`) — see [§ Game: Bubble Match](#game-bubble-match-gamesbubble-match).
   - **Word Search** (`/games/word-search`) — see [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
@@ -393,9 +403,11 @@ inherits a shell from it.
   "minimizable iff the board is still worth uncovering" — Bubble Match, Match Speed
   and Word Search all have a post-run cleanup mode, Speed Reading has none.
 - **Answer-feedback sound** — no longer lives here. `gameSounds.ts` was deleted on
-  2026-09-05; every game now sounds the shared marimba arpeggio automatically via
-  `markFlashcard` (`src/services/audio/markArpeggio.ts`, docs/AUDIO_PLAYBACK.md § 6).
-  A new game gets it for free, and only needs `useMarkArpeggio()` to scope the streak.
+  2026-09-05. The shared marimba arpeggio (`src/services/audio/markArpeggio.ts`) is
+  played by `markFlashcard` for **Match Speed and Bubble Match only** — the
+  `ARPEGGIO_SURFACES` whitelist in `src/api/flashcards.ts` (docs/AUDIO_PLAYBACK.md § 7).
+  Every other game marks silently. A new game is silent by default; to give it the
+  sound, add its `MarkSurface` to that set and call `useMarkArpeggio()` on its page.
 - **`useBackgroundPause.ts` + `GamePausedOverlay.tsx`** — the app-wide
   backgrounding pause and its tap-to-resume overlay (§ Backgrounding pauses the clock).
 - **The Study Challenge round runner** — five files, and the largest thing in here:
@@ -1084,7 +1096,7 @@ Renaming a `gameId` counts as removing one game and adding another. Don't.
 - `src/games/types.ts` — `GameDef`, `GameAsset`, `GameProgress`
 - `src/games/runtime/GameEndPopup.tsx` — shared end-of-run popup shell (all four games)
 - `src/services/audio/markArpeggio.ts` — the shared answer-feedback arpeggio
-- `src/hooks/useMarkArpeggio.ts` — resets the arpeggio streak per game page
+- `src/hooks/useMarkArpeggio.ts` — resets the arpeggio streak on the two game pages that play it
 - `src/games/runtime/useSidewaysStage.ts` — landscape-stage helper (Speed Reading)
 - `src/games/shared/GameFrame.tsx` — `GameFrame` / `GameHud` / `GameHudLabel` / `GameHudBar` / `GameHint` / `GameTimer`; the `.play` panel every game plays inside (§ Layer 2b)
 - `src/routes/routeMeta.ts` — `GAME_ROUTE_META` derives one `chrome: "leaf"` row per registry entry
@@ -1449,8 +1461,14 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   ⚠️ **It became a flag on 2026-08-21; it used to be inferred** from
   `Object.keys(distribution).length === 1`. That inference held only while Hydra asked
   for one band per color; its two-color rework asks for two, which the old rule would
-  have read as "a mix, substitute freely". The length-1 inference is kept as a backstop
-  for a future single-bucket caller. **Note:** Match Speed's Review and Challenge modes
+  have read as "a mix, substitute freely". **The length-1 inference was removed on
+  2026-09-13**: it had kept a "backstop" for single-bucket callers, and Match Speed's
+  buffer top-up turned out to be one (it omits full buckets, so a learner with a single
+  Unfamiliar card sent `?Unfamiliar=5` alone). The backstop made that request strict, so
+  it skipped the cross-bucket tiers and lent cards to a learner with ~700 sorted cards.
+  **A request without the flag now always borrows across buckets before it lends**,
+  however many buckets it names (`OnDeckVocabService.getGameVocabPool` → `substituting`).
+  **Note:** Match Speed's Review and Challenge modes
   also request a two-band subset and do *not* set the flag, so a "Review" board can be
   topped up with `Unfamiliar` cards — pre-existing, and the flag is how to fix it if
   those mode names are meant as promises.

@@ -162,17 +162,24 @@ so nothing breaks.
   and runs `document.startViewTransition(() => flushSync(() => navigate(to)))`.
   (Manual `startViewTransition` + `flushSync` because this app uses the component
   `<BrowserRouter>`/`<Routes>`, where React Router's `<Link viewTransition>` does
-  not fire one.) Used by `HubMenuRow` (all hub drill-ins), the Decks→Mastered link,
-  and the Decks/Mastered → Card Detail card taps.
+  not fire one.) Used by the card-grid drill-ins (fdp, Mastery Centers, collection
+  pages → cdp / collection; `useOpenWordCard`), Dictionary and Reader list taps,
+  Friends / Study Challenge / Arena pages, Account → Settings → Account security, and
+  `WordSearchHubItem`. The Bento hubs (Home, Discover, Games) do **not** use it — their
+  tiles navigate plainly. ⚠️ Several of those pages also call it from their **back**
+  arrow, which runs a forward slide on a back action — see
+  [BACK_NAVIGATION.md](./BACK_NAVIGATION.md) § 3.2 finding 1.
 - **CSS (`src/index.css`):** `::view-transition-new(root)` runs `vt-slide-in-up` /
   `vt-slide-in-right` per `data-vt-dir`; `::view-transition-old(root)` has
   `animation: none` so the old page is **held static** beneath (z-index below the
   new). The footer bar carries its own `view-transition-name: app-footer`, so it
   is captured as a separate group and morphs independently instead of riding the
   page slide.
-- **Fallback:** browsers without view transitions (or navigations not routed
-  through `slideNavigate` — browser back/forward, deep links) fall back to
-  `usePageSlide`'s own rAF enter slide (over a blank frame).
+- **Fallback:** browsers without view transitions (or forward navigations not routed
+  through `slideNavigate`) fall back to `usePageSlide`'s own rAF enter slide (over a
+  blank frame). **Back never slides the destination in** — a `POP` navigation (the ←
+  arrow's `navigate(-1)`, the browser button, iOS's edge swipe) and the initial page
+  load mount static; see the skip-enter latch below.
 
 ## Slide hook
 
@@ -188,9 +195,12 @@ animate. Returns `{ surfaceRef, style, exit }`:
 - **Exit:** `exit(performNavigate)` navigates **immediately** (so the destination
   mounts underneath) and slides a detached **clone** of the leaving page off the
   top. The incoming page is therefore already there beneath the departing one,
-  rather than rendering after it leaves. The clone is appended to the phone frame
-  (`.mobile-demo-frame`) so it stays clipped to the card and paints above the new
-  route. (Bubble Match's stage is DOM, not canvas, so the clone copies cleanly.
+  rather than rendering after it leaves. The clone is appended to the phone frame's positioned inner box
+  (`.mobile-demo-frame__viewport`) so it stays clipped to the card and paints above the
+  new route. (The inner box, not the outer `.mobile-demo-frame`, for the same reason
+  the sheet portal wants it — the clone is `position: absolute` and the outer box is
+  static, so on desktop it would slide across the whole window. See
+  `src/components/overlayHost.ts`.) (Bubble Match's stage is DOM, not canvas, so the clone copies cleanly.
   Caveat: Night Market renders a Pixi.js **canvas**, which `cloneNode` does not
   copy — its exit clone shows the dark background + DOM header overlay but not the
   live scene during the brief down-slide. Acceptable since the destination beneath
@@ -202,6 +212,12 @@ animate. Returns `{ surfaceRef, style, exit }`:
   live page double-animating. The destination reads it on mount; `Layout` clears it
   (`clearSkipNextEnter`) in a pathname effect that runs after the destination's
   render, so a later un-latched navigation still animates normally.
+- **No enter on `POP`:** independently of the latch, the hook starts in place when
+  `useNavigationType()` is `"POP"`. The arrow already arms the latch through `exit`, but
+  the browser button and the iOS edge swipe never call `exit`, and a page the browser
+  has just animated back to must not slide in again from the right. On iOS that second
+  slide also keeps the page from matching Safari's swipe snapshot, which blocks input for
+  seconds — see "Card-grid back-restore" below.
 - `LeafPage` uses `axis: "y"`; `NodePage` uses `axis: "x"`.
 
 The animated surface is `position: absolute; inset: 0` inside `MobileDemoFrame`
@@ -308,6 +324,45 @@ and `/dictionary/card/*`). The route watcher in `Layout.tsx` calls
 an out-of-space one, so every exit — the back arrow to Home, a footer-tab tap, and
 browser back — clears the query; `isDictionarySpacePath()` defines the space. A full
 page reload also starts fresh (the singleton is not persisted to storage).
+
+### Card-grid back-restore
+
+> The general rules this implements (Back returns the page as it was left, only on the
+> same history entry) and the audit of which other pages still lack it are in
+> [BACK_NAVIGATION.md](./BACK_NAVIGATION.md) § Rule 3.
+
+The card-grid pages — the fdp's Cards/Decks sheets, both Mastery Centers and
+`CollectionViewPage` — come back **exactly as they were left** when the learner returns
+with Back: same open sheet and sheet height (fdp), scroll position, search text, sort key
+and collection filter, painted from cached lists on the first frame and then refreshed
+silently in the background. Store: `src/features/flashcards/backRestore.ts`
+(`saveBackSnapshot` / `readBackSnapshot`).
+
+Unlike the dictionary singleton above it is keyed on the **history entry**
+(`location.key`), not on a route space: a page saves its snapshot as the learner opens a
+card or a set from it, and only a return to that same entry — any `POP`, arrow, browser
+button or edge swipe — finds it. A fresh arrival at the same URL (a footer-tab tap, the
+Centers' own `navigate("/flashcards/decks")` push) has a new key and opens fresh.
+
+**Why it is load-bearing on iOS, not just a nicety.** Safari's edge swipe drags a picture
+of the page saved when the learner left it, and after the gesture WebKit keeps that picture
+up — blocking input — until the live page resembles it, falling back to a watchdog after a
+few seconds. The fdp used to come back with its sheet closed, so a swipe back from a card
+opened in the Cards sheet froze the tab for a couple of seconds on PPE while the ← arrow
+(no Safari picture) was instant. (Diagnosed 2026-09-13 by elimination — not yet profiled on
+a device; if a swipe still stalls after this, a Safari Web Inspector timeline is the next step.)
+
+The pieces, by layer:
+
+| Layer | Code | Role |
+|---|---|---|
+| Feature utility | `backRestore.ts` | the bounded in-memory store (`MAX_SNAPSHOTS`) and the three snapshot shapes |
+| Feature hook | `useDecksPanel(lens, restore)` → `restored`, `snapshot()` | seeds lists + view state; background refetch never flips `*Loading` back on |
+| Shared component | `SheetPanel` → `restoreHeight` | opens at that height with no grow-in and no scrim fade; the resting stop is unchanged |
+| Shared component | `MiniVocabCardGrid` → `revealImmediately` | skips the paced reveal and pop-in so the restored scroll lands on real rows |
+| Feature component | `DecksPanelBody` → `initialScrollTop` | applies the scroll once the (possibly portaled) scroller exists |
+| Pages | `FlashcardsDecksPage`, `MasteryCenterPage`, `CollectionViewPage` → `rememberPlace` | save on leaving (ref-held so the memoized cards' `onCardClick` stays stable) |
+| Shared hook | `usePageSlide` → `useNavigationType` | no enter slide on `POP` |
 
 ## Card detail (cdp): two surfaces, two bodies
 

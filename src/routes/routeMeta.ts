@@ -1,6 +1,7 @@
 import { matchPath } from "react-router-dom";
 import type { FooterTab } from "../components/MobileFooter";
 import { GAME_REGISTRY } from "../games/registry";
+import { isFeatureEnabled } from "../../server/contracts/featureFlags";
 
 /**
  * THE route table — one row per route, and the single source of truth for every
@@ -98,6 +99,9 @@ export interface RouteMeta {
   /** Why this route is classified the way it is, when that isn't obvious. */
   note?: string;
 }
+
+// Feature flags decide which of the rows below actually become routes; see
+// FLAGGED_OFF_PATHS at the bottom of this file.
 
 /** Every non-game route. Order is irrelevant — React Router ranks by specificity. */
 const PAGE_ROUTES: RouteMeta[] = [
@@ -288,8 +292,49 @@ const GAME_ROUTE_META: RouteMeta[] = GAME_REGISTRY.map((g) => ({
   chrome: "leaf" as const,
 }));
 
-/** Every route in the app, metadata only. */
-export const ROUTE_META: RouteMeta[] = [...PAGE_ROUTES, ...GAME_ROUTE_META];
+/**
+ * Routes belonging to a feature that is switched OFF
+ * (server/contracts/featureFlags.ts).
+ *
+ * Filtering them out of `ROUTE_META` is the whole client-side gate: a path with no row
+ * is not a route at all, so it falls through to `"*"` → NotFoundPage, and every
+ * consumer that derives from this table (Layout's shell, the footer, the page
+ * transitions) stops knowing about it for free.
+ *
+ * The components stay bound in routes/registry.ts — see the note there on why the
+ * binding survives while the row does not.
+ *
+ * GAME routes are absent here on purpose: a per-game flag (`GAME_FLAGS`) is applied at
+ * `GAME_REGISTRY` itself, and `GAME_ROUTE_META` below derives from that already-filtered
+ * array, so a disabled game never produces a row to remove.
+ */
+export const FLAGGED_OFF_PATHS: ReadonlySet<string> = new Set<string>([
+  ...(isFeatureEnabled("community") ? [] : ["/community"]),
+  ...(isFeatureEnabled("arena") ? [] : ["/arena"]),
+  // Night Market takes four rows: the market, the read-only visit to someone else's
+  // market, and the two desktop authoring tools. The authoring tools go with it because
+  // they author this feature's content — `isTemplateAuthor` answers a different question
+  // ("may you author?") and is not a substitute for the flag.
+  ...(isFeatureEnabled("nightMarket")
+    ? []
+    : [
+        "/night-market",
+        "/night-market/user/:userId",
+        "/night-market/template-editor",
+        "/night-market/template-sandbox",
+      ]),
+  ...(isFeatureEnabled("immersiveWorld")
+    ? []
+    : ["/immersive-world", "/immersive-world/:sceneId", "/immersive-world/scene-editor"]),
+  ...(isFeatureEnabled("studyChallenge")
+    ? []
+    : ["/friends/challenges", "/friends/challenges/history", "/friends/challenges/:challengeId"]),
+]);
+
+/** Every route in the app, metadata only, minus anything behind an off flag. */
+export const ROUTE_META: RouteMeta[] = [...PAGE_ROUTES, ...GAME_ROUTE_META].filter(
+  (r) => !FLAGGED_OFF_PATHS.has(r.path)
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lookup

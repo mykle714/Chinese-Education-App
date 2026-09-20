@@ -49,6 +49,13 @@ interface SheetPanelProps {
     // 0 → natural-content height. Used by child panels stacked on top of a
     // parent so they appear at the same vertical extent.
     initialHeight?: number | null;
+    // Re-open ALREADY at this height, with no 0 → height animation and no scrim fade-in:
+    // the sheet as it was when the learner left the page, for a Back restore
+    // (src/features/flashcards/backRestore.ts). Unlike `initialHeight` it does NOT move the
+    // resting stop — the default stop is still the usual fraction of the screen, so a
+    // sheet restored at full height still collapses to the normal height, not to the
+    // restored one. Read on MOUNT only; clamped to [default stop, max].
+    restoreHeight?: number | null;
     // Stack depth (0 = root panel). Bumps z-index so child panels and their
     // scrims render above their parent.
     depth?: number;
@@ -242,6 +249,7 @@ const mountedDepths = new Set<number>();
 const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     onClose,
     initialHeight,
+    restoreHeight,
     minHeight = 0,
     showScrim = true,
     depth = 0,
@@ -352,6 +360,9 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // Latest onClose, read from timers without re-binding them.
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
+    // Frozen at mount (see the `restoreHeight` prop): a restore describes how the panel
+    // OPENS, so a host re-rendering with a different value later must change nothing.
+    const [restoreAtMount] = useState(() => restoreHeight ?? null);
 
     // A panel with a floor is persistent: it cannot be dismissed, and every
     // path that would have shrunk it to 0 stops at the floor instead.
@@ -547,6 +558,12 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 ? Math.min(minHeight, parentH * MAX_HEIGHT_RATIO)
                 : parentH * DEFAULT_HEIGHT_RATIO;
         defaultHeightRef.current = targetHeight;
+        if (restoreAtMount !== null && !persistent) {
+            // A Back restore: already at the height the learner left it, from the first
+            // paint. The resting stop stays `targetHeight` (set just above).
+            writeHeight(clamp(restoreAtMount, targetHeight, parentH * MAX_HEIGHT_RATIO));
+            return;
+        }
         if (persistent) {
             // Sits at its floor from the first paint — no 0 → height slide.
             writeHeight(targetHeight);
@@ -840,7 +857,12 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // inside their page). `depth * 2` keeps a stacked child panel and its scrim above
     // their parent's pair.
     const stackZ = depth * 2;
-    const scrimStyle: React.CSSProperties = { zIndex: SCRIM_BASE_Z_INDEX + stackZ };
+    const scrimStyle: React.CSSProperties = {
+        zIndex: SCRIM_BASE_Z_INDEX + stackZ,
+        // A restored sheet was already dimmed when the learner left; fading the scrim in
+        // again would flash the page behind it. `dismiss` still owns the fade OUT.
+        ...(restoreAtMount !== null && { animation: "none" }),
+    };
     // NOTE: no `height` key here on purpose — height is owned imperatively by
     // writeHeight (see the height-model comment above). Same for the merge chrome
     // (border radius, top padding, shadow) — writeMergeChrome owns those.

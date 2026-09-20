@@ -73,6 +73,46 @@ const lockedReason = (sel: IWSelectable): string =>
   `locked: needs one of ${(sel.unlockedBy ?? []).join(', ')}`;
 
 /**
+ * ⚠️ **AN OVERHEARD CONVERSATION HAPPENS AT MOST ONCE PER RUN** (2026-09-07).
+ *
+ * A conversation is a FIXED exchange — the same two people, the same beats, in the same order.
+ * An action can repeat without anybody noticing, because it is a shape ("bring water") whose
+ * words are rendered fresh each time. A conversation cannot: the second playing is the first
+ * one again, and hearing 王婶 greet the regular at table 2 twice in one meal is the kind of
+ * seam that tells a learner they are watching a loop rather than a room.
+ *
+ * It is a HARD rule, not an authored flag, deliberately. Every conversation in every scene
+ * wants it, so a `once` field would be a box every author had to tick and could forget — and
+ * the failure of forgetting it is invisible at authoring time and obvious to a learner. If a
+ * scene ever genuinely needs a repeatable exchange, the honest shape is an opt-OUT
+ * (`repeatable?: boolean`) added then, against a real case.
+ *
+ * Two things follow, and the second is the one that is easy to miss:
+ *
+ * 1. A conversation that has played is not offered again.
+ * 2. **Neither is any ACTION that would play it.** An action carrying a spent
+ *    `start_conversation` step is an action whose script now silently does less than it says
+ *    — the engine skips the dead step and the NPC performs a hollowed-out version of the beat
+ *    the author wrote. Dropping the whole action is the honest reading of "this beat has
+ *    already happened".
+ */
+const CONVERSATION_SPENT = 'already happened this run';
+
+/** Does this action's script reach for a conversation that has already played? */
+function needsSpentConversation(
+  action: IWNpcAction,
+  playedConversations: ReadonlySet<string>,
+): string | null {
+  if (playedConversations.size === 0) return null;
+  for (const step of action.steps ?? []) {
+    if (step.kind === 'start_conversation' && playedConversations.has(step.conversationId)) {
+      return step.conversationId;
+    }
+  }
+  return null;
+}
+
+/**
  * The actions this cast member may be offered.
  *
  * `interactionOnly` is checked FIRST and reported separately, because "never offered" and
@@ -84,6 +124,7 @@ const lockedReason = (sel: IWSelectable): string =>
 export function offeredActions(
   member: IWSceneCastMember,
   firedCues: ReadonlySet<string>,
+  playedConversations: ReadonlySet<string> = new Set(),
 ): { offered: IWNpcAction[]; suppressed: Array<{ name: string; reason: string }> } {
   const offered: IWNpcAction[] = [];
   const suppressed: Array<{ name: string; reason: string }> = [];
@@ -94,6 +135,13 @@ export function offeredActions(
     }
     if (!isUnlocked(action, firedCues)) {
       suppressed.push({ name: action.name, reason: lockedReason(action) });
+      continue;
+    }
+    // See CONVERSATION_SPENT: an action whose script starts a conversation that has already
+    // been overheard would run a hollowed-out version of itself.
+    const spent = needsSpentConversation(action, playedConversations);
+    if (spent) {
+      suppressed.push({ name: action.name, reason: `${CONVERSATION_SPENT}: ${spent}` });
       continue;
     }
     offered.push(action);
@@ -117,12 +165,19 @@ export function offeredConversations(
   conversations: readonly IWConversation[],
   npcId: string,
   firedCues: ReadonlySet<string>,
+  playedConversations: ReadonlySet<string> = new Set(),
 ): { offered: IWConversation[]; suppressed: Array<{ name: string; reason: string }> } {
   const offered: IWConversation[] = [];
   const suppressed: Array<{ name: string; reason: string }> = [];
   for (const conv of conversations) {
     const firstSpeaker = conv.turns?.[0]?.npcId;
     if (firstSpeaker !== npcId) continue; // not this NPC's to start — not a suppression
+    // Checked BEFORE `selectable`, because "it already happened" is the truer answer for an
+    // author staring at a conversation that will not come round again (see CONVERSATION_SPENT).
+    if (playedConversations.has(conv.id)) {
+      suppressed.push({ name: conv.title ?? conv.id, reason: CONVERSATION_SPENT });
+      continue;
+    }
     if (!conv.selectable) {
       suppressed.push({ name: conv.title ?? conv.id, reason: 'not choosable' });
       continue;
@@ -158,9 +213,10 @@ export function buildTurnOffers(
   scene: Pick<IWScene, 'conversations'>,
   member: IWSceneCastMember,
   firedCues: ReadonlySet<string> = new Set(),
+  playedConversations: ReadonlySet<string> = new Set(),
 ): TurnOffers {
-  const actions = offeredActions(member, firedCues);
-  const convs = offeredConversations(scene.conversations ?? [], member.npcId, firedCues);
+  const actions = offeredActions(member, firedCues, playedConversations);
+  const convs = offeredConversations(scene.conversations ?? [], member.npcId, firedCues, playedConversations);
 
   const offers: TurnOffer[] = actions.offered.map(a => ({
     name: a.name,

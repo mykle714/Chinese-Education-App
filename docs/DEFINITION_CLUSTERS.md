@@ -377,8 +377,8 @@ The two intentionally diverge — `definitions` is **not** a strict flatten of
 | **A — Split** | Sonnet (Opus on retry) partitions the entry's glosses into clusters **verbatim** — every input gloss lands in exactly one cluster; no add/rephrase/drop. Rules: **reading is a hard boundary** (never mix readings in a cluster); cluster by **shared core idea**; err toward *finer, precise* atomic senses (the merge pass consolidates). Validated by `validatePartition` (exact partition). | `backfill-cluster-definitions.js` (`CLUSTER_INSTRUCTIONS`, `callCluster`, `clusterEntry`, `validatePartition`) |
 | **A.5 — Merge (opt-in `--merge-pass`)** | A second Sonnet call reviews Stage-A's candidate clusters and **consolidates over-similar ones**, leaning toward merging but never crossing a reading boundary and never fusing an incoherent grab-bag. It only **regroups** existing glosses, so the result is re-checked as an exact partition; on any error or validation failure it **keeps Stage A's clusters** (the merge must never lose a gloss). | `backfill-cluster-definitions.js` (`MERGE_INSTRUCTIONS`, `mergeClusters`, `mergeUser`) |
 | **B — Order/prune within cluster** | Reuses the shared Pass-1/2 gloss-ordering pipeline per cluster (skips the API for ≤1-gloss clusters). Standalone-safe: Pass-1 also prunes broken/archaic glosses, so the clusterer runs on raw cedict glosses too. | `lib/orderGlosses.js` (`createGlossOrderer` → `pass1Sort`, `pass2Critique`) |
-| **C — Score frequency** | Scores each cluster's conversation frequency 1–5 **independently** (会 "can"=5 vs "accounts"=1), identical rubric to the word-level scorer. | `lib/frequencyScore.js` (`createFrequencyScorer` → `scoreFrequency`) |
-| **C.5 — Tiebreak order** | Ranks the clusters that came back with the **same** `frequencyScore`, because array order is what every read-side sort uses to break a score tie (see "Ties" below). One call per entry that *has* a tie, none otherwise. Permutes tied clusters **within the slots they already occupy** — cross-band order is left to the read-side sort, and no `sense`, `glosses`, `pos` or score is edited. On any failure the original order is kept and a review note is printed. Skippable with `--no-tiebreak`. | `shared/lib/tiebreakOrder.js` (`createClusterTiebreaker` → `tiebreakClusterOrder`, `tieGroups`) |
+| **C — Score frequency** | Scores each cluster's conversation frequency 1–5 **independently** (会 "can"=5 vs "accounts"=1), identical rubric to the word-level scorer, plus the sense-mode-only polysemy lines. Since v10 the call also receives the cluster's `pos`, and a **grammatical-function sense** (classifier / measure word, particle, complement) is scored by how often speakers pick *this word* for that job, not by how common the job is — 回 "times/occurrences" yields to the default 次 (4); 个 is the default general classifier (5). | `lib/frequencyScore.js` (`createFrequencyScorer` → `scoreFrequency`, `POLYSEMY_GUIDELINE.sense`) |
+| **C.5 — Tiebreak order** | Ranks the clusters that came back with the **same** `frequencyScore`, because array order is what every read-side sort uses to break a score tie (see "Ties" below). One call per entry that *has* a tie, none otherwise. The model is shown each tied cluster's `sense`, `glosses` and `pos` (pos since v10). Permutes tied clusters **within the slots they already occupy** — cross-band order is left to the read-side sort, and no `sense`, `glosses`, `pos` or score is edited. On any failure the original order is kept and a review note is printed. Skippable with `--no-tiebreak`. | `shared/lib/tiebreakOrder.js` (`createClusterTiebreaker` → `tiebreakClusterOrder`, `tieGroups`) |
 
 The clusterer then writes **only** `definitionClusters` and stamps the run log.
 
@@ -414,6 +414,19 @@ usage over formal, regional or dated. The score is an **input** there and never 
 the model is explicitly forbidden to re-score, so a "this is really more common" judgement
 comes out as an order, not as a band change.
 
+**Core meaning before grammatical function** (rule 3, zh `SCRIPT_VERSION` 10). When a tie
+pits a content sense (verb / noun / adjective) against a grammatical-function sense
+(classifier, particle, complement — a sense that only counts, links or marks), the content
+sense ranks first, even if the function use is heard as often. **Exception:** a word
+overwhelmingly learned *as* the function word keeps the function sense first (个, 了, 的,
+把). The single test behind both halves: *if a learner could know only one of these senses,
+which would they say the word means?* Motivating case: on PPE, 回 starred "classifier for
+times/occurrences" over "to go back / return" (both 5, v9). A 2026-09-13 audit found it was
+the only discoverable zh word where a classifier won a top-score tie against a content
+sense. The 8 words that star a classifier *without* a tie (位, 台, 本, 一头, the metric
+units) were judged correct. v10 attacks the case from both ends: Stage C's grammatical-function
+line keeps the tie from forming, and rule 3 settles it when one forms anyway.
+
 What C.5 may change is deliberately narrow: **only** the relative order of clusters that
 already share a score, and only among the array slots those clusters already occupy.
 Cross-band order stays owned by the read-side sort (two opinions about it would be one too
@@ -424,10 +437,17 @@ which address a cluster **by label**. That is also why `--rescore-only` runs it:
 produces exactly the ties C.5 exists to settle.
 
 Spanish does the same job **inline** rather than as a separate pass (`CLUSTER_RULES` rule 7,
-`spanish/backfill-cluster-definitions.js`, `SCRIPT_VERSION` 3): its single generate call
+`spanish/backfill-cluster-definitions.js`, `SCRIPT_VERSION` 4): its single generate call
 already sees every cluster *and* assigns every score, so it can emit the clusters in ranked
 order directly. The zh scorer's per-cluster isolation is what forces zh to pay for an extra
 call.
+
+es v4 mirrors rule 3 through the same "which sense would a learner say it means" test, but
+**deliberately with the exception side carrying the examples**. Spanish function words are
+usually learned *as* their function: a flat "content before function" rule would star
+*sobre* "envelope" over "on", *como* "I eat" over "like", *bajo* "short" over "under". es has
+no `--rescore-only`, so re-running it re-generates clusters and can re-mint `sense` labels —
+heal selectively (`--words=`) rather than draining the whole corpus.
 
 ### Shared cores (one source of truth)
 
@@ -547,7 +567,7 @@ verbatim, none invented or dropped) deterministically, before any model judges q
 
 | Stage | What | Code |
 |---|---|---|
-| **Generate** | Opus partitions the entry's glosses into clusters, labels each sense, assigns pos/gender, orders glosses within the cluster, scores each cluster's conversation frequency 1–5, **and emits the clusters most- to least-common** — rule 7, with same-score ties ordered by the marginal difference the 1–5 scale cannot record, because array order is what breaks a tie on read (see "Ties" above). This is zh's Stage C.5 done inline; one call sees every cluster and its score, so es needs no separate pass. | `generateClusters`, `CLUSTER_RULES` |
+| **Generate** | Opus partitions the entry's glosses into clusters, labels each sense, assigns pos/gender, orders glosses within the cluster, scores each cluster's conversation frequency 1–5, **and emits the clusters most- to least-common** — rule 7, with same-score ties ordered by the marginal difference the 1–5 scale cannot record (and, since v4, a content-vs-grammatical-function tie settled by which sense a learner would say the word *means*), because array order is what breaks a tie on read (see "Ties" above). This is zh's Stage C.5 done inline; one call sees every cluster and its score, so es needs no separate pass. | `generateClusters`, `CLUSTER_RULES` |
 | **Check** | Deterministic: exact partition, unique sense labels, score range. No API call. | `checkShape` |
 | **Review** | Sonnet judges *quality* only — mixed meanings, mergeable duplicates, violated pos/gender boundaries, a wrong lead gloss, an implausible score, **and a cluster order that would star the wrong default sense**. | `validateClusters` |
 | **Retry** | Opus regenerates against the critique; if the retry fails the partition check, the first (mechanically valid) attempt is kept — a rejected retry must never lose a gloss. | `regenerateClusters`, `runPipeline` |

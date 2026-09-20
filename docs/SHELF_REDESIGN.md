@@ -674,7 +674,7 @@ related shelves). Built once; no page invents a copy.
 |---|---|---|
 | `Shelf` | `.shelf` | The padded container; owns the 22px page gutter. |
 | `ShelfHeader` | `.shelfhd` | A row's caption + an optional right-hand affordance icon. Carries its own gutter, so it is a SIBLING of `Shelf`, not a child. |
-| `ShelfRow` | `.shrow` + `.spines` + `.board` | One row. A `scrollable` row also gets the scroll stretch — spines spread apart under a fling and close back up when it stops ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § "Scroll stretch"); a wrapping row opts out, never scrolling. |
+| `ShelfRow` | `.shrow` + `.spines` + `.board` | One row. A `scrollable` row also gets the scroll stretch — spines spread apart under a fling and close back up when it stops ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § "Scroll stretch"); a wrapping row opts out, never scrolling. A `distribute` row spreads its spines across the board (`space-between`) instead of packing them left — for a row of **fixed membership that always fits** only (the four utcm bands); a row the user adds to stays packed, and `scrollable` wins if both are passed. |
 | `ShelfNote` | `.shnote` | A sentence under a row. |
 | `Spine` | `.sp` and all its modifiers | The set-of-cards atom. |
 | `AddSpine` | `.sp.add` | The "make a new one" affordance. |
@@ -1663,6 +1663,26 @@ gutters differ per shape. The old page wrapped everything in a 20px-padded, 350p
 centred column, which would have doubled every one of them. `DeckBuckets` had zeroed
 `Shelf`'s 22px gutter for exactly that reason; that override is now **removed**, and
 leaving it would have put the spines 22px left of the header above them.
+
+> **The zeroing came back as an opt-in, not a default.** `DeckBuckets` gained a
+> second host — the user profile's per-language panel
+> (`src/features/profile/ProfileStatsCard.tsx`), a padded card rather than a page
+> section — where the argument above inverts: the card has already paid for its
+> gutter, so the shelf's 22px is a second indent that pushes the spines out of line
+> with the card's own heading. That host passes `gutter={false}`; the Account page,
+> which is still the "page with no padding of its own" this section describes, takes
+> the default. The rule to carry forward is that the gutter belongs to whichever of
+> the two is the page-level element, and exactly one of them may own it.
+>
+> The same host forced a second change: four spines at their natural 74px plus three
+> 10px gaps need 326px, which the panel does not have on a phone, and `ShelfRow`
+> wraps — dropping the fourth band below the board, standing on nothing.
+> `DeckBuckets` now measures its container (`useFittedSpineWidth`, a `ResizeObserver`)
+> and passes every spine an explicit `width`, capped at the natural 74 and floored at
+> 46. This does **not** contradict `Spine`'s `flex-shrink: 0`: the spine still never
+> shrinks itself, and the banding survives because the information is carried by
+> HEIGHT and all four spines are given the same width. It is only valid for a row of
+> uniform spines — a mixed-width row cannot be scaled this way.
 
 **Decisions taken while building.**
 

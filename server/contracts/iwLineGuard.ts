@@ -1,7 +1,15 @@
 /**
  * iw line guard — the last thing that looks at an NPC's line before it is spoken or painted.
  *
- * LAYER: engine (pure). One function in, one verdict out; no DOM, no network, no audio.
+ * LAYER: contract (pure). One function in, one verdict out; no DOM, no network, no audio.
+ *
+ * ⚠️ **IT LIVES IN `contracts/` BECAUSE IT HAS TWO ENFORCEMENT POINTS, NOT ONE** (moved out of
+ * `src/engine/iw/` on 2026-09-07). What a legal NPC line IS gets decided in two places that
+ * must never disagree: the **runtime**, where it filters a model's reply before the bubble and
+ * the TTS call, and the **scene validator**, where it tells an author at SAVE time that the
+ * line they just typed will never be spoken. A second copy of the rule would drift, and the
+ * drift would be invisible in the worst direction — a validator that passes a line the runtime
+ * then silently swallows, which is exactly the bug this move was written for (below).
  *
  * ⚠️ **IT RUNS BEFORE THE TTS CALL, NOT AFTER IT** (§ 5.3a, § 6.4 rule 2). Sanitizing after
  * synthesis would mean paying Google to speak a line we are about to throw away, and would
@@ -21,7 +29,14 @@
  * control characters, and a reply that came back in the wrong language entirely (§ 5.6, which
  * measured exactly that as the real failure mode).
  *
- * Referenced by: docs/IMMERSIVE_WORLD.md § 5.3a, § 5.6, § 6.4.
+ * ⚠️ **AUTHORED LINES GO THROUGH IT TOO, AND UNTIL 2026-09-07 THEY DID NOT.** Every authored
+ * line in PPE's "Get Dinner" was written in ENGLISH — four `comment` steps and six
+ * conversation turns — so 王婶 was mute for the whole of her order-taking script while the
+ * learner saw her walk over and turn to face them. The runtime guard was working perfectly;
+ * nothing had ever told the author. See `sceneValidation.validateAuthoredLines`.
+ *
+ * Referenced by: docs/IMMERSIVE_WORLD.md § 5.3a, § 5.6, § 6.4;
+ * server/services/iw/sceneValidation.ts.
  */
 
 /**

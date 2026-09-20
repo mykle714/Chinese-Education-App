@@ -1,5 +1,10 @@
 # Night Market Template Editor
 
+> 🚩 **Covered by the `nightMarket` feature flag** ([FEATURE_FLAGS.md](./FEATURE_FLAGS.md)
+> § 2d), not by a flag of its own: this tool authors night-market content, so it is part of
+> that feature. `users.isTemplateAuthor` is a separate question — the grant says who may
+> author, the flag says whether the feature exists. Each tile and endpoint tests both.
+
 > **Status: IMPLEMENTED (first slice).** A validator-only, **desktop-only** authoring
 > surface for Night Market templates. It currently authors the **terrain + street +
 > communal + placeholder + condition** slice of a template (terrain-1 /
@@ -100,8 +105,9 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   mask-view toggles (own group, in mask-tool order: **street-**, **communal-**,
   **placeholder-**, **condition-highlight**, and **reusing the mask-tool icons**); **(2)** the
   masks group (Street · Communal · Placeholder · Condition — all spriteless tints) sharing the
-  row with the **terrain group** (Terrain 1 · Terrain 2) to its right; **(3)** the decor group
-  (Surface decor · Common decor · Trees · **Wood panel**); **(4)** the bottom row — history (Undo · Redo),
+  row with the **terrain group** (Terrain 1 · Terrain 2) to its right; **(3)** the **furniture group**
+  (a single **Furniture** button — the whole lumeish pack) sharing the row with the decor group
+  (Surface decor · Common decor · Trees · **Wood panel**) to its right; **(4)** the bottom row — history (Undo · Redo),
   the clipboard group (Copy · Paste), and the **Eraser** toggle (red). The **Placeholder** tool is
   disabled unless the active version is 0. The **Eraser is a MODIFIER, not a tool**: it toggles
   on top of the currently-selected tool and, while on, inverts that tool's paint into an erase
@@ -115,14 +121,16 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   mirror the physical keyboard, one palette row per keyboard row: number row **`** grid, then
   view toggles **1** street / **2** communal / **3** placeholder / **4** condition; top letter
   row masks **Q** street / **W** communal / **E** placeholder / **R** condition followed by
-  terrain **T** terrain 1 / **Y** terrain 2; home row decor **S** surface /
+  terrain **T** terrain 1 / **Y** terrain 2; home row **A** furniture then decor **S** surface /
   **D** common / **F** trees / **G** wood panel; bottom row **Z** undo / **X** redo / **C** copy / **V** paste /
   **B** eraser modifier. **B** toggles the **eraser modifier** (not a tool — handled
   directly in the keydown effect, not via `HOTKEY_TO_TOOL`). **Space** is a per-tool
   modifier: it **cycles the placeholder DROP size** (4×5 → 5×4 → 4×10 → 10×4 → 4×5) while the
-  placeholder tool is active, or **cycles the selected variant** of any **decor** tool
-  (surface / common / trees / wood panel — the ghost previews it); a no-op / swallowed
-  otherwise, so it never scrolls the page.
+  placeholder tool is active, **cycles the selected variant** of any **decor** tool
+  (surface / common / trees / wood panel — the ghost previews it), or **turns the selected
+  furniture piece around** (Furniture tool — a swap to the sibling SPRITE, never a render flip);
+  a no-op / swallowed otherwise, so it never scrolls the page. **← / →** page the furniture
+  catalogue — see *Furniture* below; they are live only while that tool is active.
   Hotkeys are suppressed while the
   Properties dialog is open or a text field is focused (so typing a name never paints), and
   respect the same gating as the buttons (E ignored above version 0). A view-toggle key (or
@@ -180,6 +188,50 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
   `PlaceholderHouseLayer` (a 4×5 `House.png` footprint tiles each slot; 5-wide slots use the
   h-flipped 5×4 transpose). **There is no manual House tool** — the only houses the editor draws
   are these occupant previews.
+
+- **Furniture placement (Furniture tool, `A`):** ONE button places the entire **lumeish**
+  furniture pack (151 sprites — see [LUMEISH_ASSET_PIPELINE.md](./LUMEISH_ASSET_PIPELINE.md)).
+  There is no per-category split and no sprite names: the pack ships neither, so any category
+  would be invented rather than authored. Instead:
+  - **← / →** page the catalogue **one sprite per press**; **holding** either arrow pages
+    **rapidly** (a 300 ms delay then one step every 70 ms — `ARROW_PAGE_DELAY_MS` /
+    `ARROW_PAGE_INTERVAL_MS` in `src/hooks/useArrowPagedIndex.ts`). The cadence is the editor's own timer, not the OS key-repeat
+    rate, so it is the same on every machine; the catalogue **wraps** in both directions. The
+    arrows are bound only while the Furniture tool is active.
+  - The cursor shows a **ghost of the actual sprite**, seated exactly where the click will put
+    it, over its **iso footprint** tinted **green** (placeable) or **red** (refused). The
+    footprint is the sprite's measured iso span, which routinely differs from its padded pixel
+    box — a 64×32 canvas is not a 2×1 prop.
+  - A click **drops the piece** with its near (min-iso) foot cell under the cursor. It is
+    **refused** only if the footprint leaves the board or touches **another piece**. It may
+    stand on any terrain, either walkability class, any placeholder area and any flush decor —
+    none of those are solid objects.
+  - **Furniture and props/trees REPLACE each other.** Both are solid objects, so a cell cannot
+    hold both: dropping furniture clears any common prop or tree from **every cell of its
+    footprint**, and dropping a prop or tree on a piece removes the **whole piece**. Flush
+    decor (surface tufts, wood panels) is untouched in both directions. Replace rather than
+    refuse — an author dropping a tree on a sofa means "a tree here now".
+  - **Space turns the piece around** — a swap to the opposite-facing SPRITE, never a mirrored
+    render. The two facings are independently shaded art, so `scale.x = -1` would light the
+    wrong face; a placement therefore carries **no flip flag at all**.
+  - Under the **eraser** modifier, a click anywhere inside a piece's footprint removes the
+    **whole piece** (atomic, like a placeholder area).
+  - The button's tooltip is the live readout: sprite `#id`, its position in the catalogue, its
+    footprint in cells, and whether Space can turn it.
+  - Placements persist per **version** in the definition's `furniture` array (`{col,row,id}`),
+    are captured/stamped by **copy/paste** whole-or-nothing like placeholder areas, and render
+    on every authoring surface (editor, Load gallery, Sandbox). ⚠️ **The runtime market does not
+    draw them yet** — `stitchedToEditorMasks` does not carry furniture into world cells.
+  - **The Immersive World scene editor has the same tool** (hotkey `C` there — `A` is its
+    dirt-floor button), on the same `FURNITURE_CATALOGUE` and the same
+    `src/hooks/useArrowPagedIndex.ts` paging hook, so the two palettes cannot drift.
+  - Layers: placement rules `src/engine/market/furniture.ts` (on the shared
+    `src/engine/market/footprint.ts`); paging `src/hooks/useArrowPagedIndex.ts`;
+    art/geometry lookup `src/engine/market/lumeishTileset.ts`;
+    render `src/features/nightmarket/FurnitureSprites.tsx` →
+    `src/features/nightmarket/PropStripSprites.tsx` (the same strip renderer the house uses);
+    preview `FurniturePreviewOverlay` in `TemplateEditorViewer.tsx`; tool state + paging
+    `TemplateEditorPage.tsx`.
 
 ### Authoring guidelines (not enforced)
 
@@ -256,7 +308,15 @@ validator explicitly paints shows. Changing the **width or height** in Propertie
 ### Data / model — `src/engine/market/farmTerrain.ts`
 - `EditorMasks` — the painted layers: six `Set<"col,row">`
   (terrain1/terrain2/**street**/communal/placeholder/**condition**) + a
-  `decor: Map<"col,row", url>` (per-cell decor CHOICE, not a boolean set). `terrain1` /
+  `decor: Map<"col,row", url>` (per-cell decor CHOICE, not a boolean set) + an optional
+  `furniture: FurniturePlacement[]` (placed multi-cell props — `{col,row,id}` RECORDS, not a
+  cell map, for the same reason `placeholder` is: a piece spans cells, so a per-cell map could
+  not tell two abutting pieces apart) + two optional members **the night market never paints**:
+  `unwalkable: Set<"col,row">` and `forcedDirection: Map<"col,row", Direction>`, the iw scene
+  editor's two walkability masks (docs/IMMERSIVE_WORLD.md § 3a). They live on this shared type
+  for the same reason `floor` does — iw reuses the nme's viewer, and a mask that rides in
+  `EditorMasks` needs no new prop on it. `TemplateMaskOverlays` draws them when they are
+  non-empty, which on a night market board is never. `terrain1` /
   `terrain2` are the generically-named surface masks (currently light / dark grass —
   named so the art can be hot-swapped). **`street`, `communal`, `placeholder`, and
   `condition` are spriteless annotations** (two walkability classes, an occupant-slot
@@ -330,7 +390,19 @@ validator explicitly paints shows. Changing the **width or height** in Propertie
   only visualization, mirroring the nmp `GrassOverlay`. The shared `TemplateMaskOverlays` also
   renders **`PlaceholderOccupantHouses`**: any placeholder area containing a condition cell reads
   as FILLED and previews an occupant house (or two, for a 4×10/10×4 slot) in place of its
-  placeholder + condition tint (those cells are stripped from the cyan/orange fills).
+  placeholder + condition tint (those cells are stripped from the cyan/orange fills), and
+  **`FurnitureSprites`** — the board's placed furniture. Furniture is **not toggleable**: it is
+  authored ART, so it draws whenever the board does. It shares the houses' flat-mode z base
+  because the two must sort against each other.
+- `PropStripSprites.tsx` — **the one multi-cell prop renderer.** Draws a prop as a row of
+  full-height vertical **strips**, each z-sorted at its own implied foot anchor, so a walker
+  beside the near-left edge and one beside the near-right edge get different depths.
+  `HouseStripSprites.tsx` (House.png) and `FurnitureSprites.tsx` (the lumeish pack) are both
+  thin wrappers that supply their art's strips + anchor from
+  `src/engine/market/footprint.ts`'s `propStrips` / `propAnchorFraction`.
+- `usePixiTexture.ts` — the shared load-a-sprite-URL hook (`nearest` filtering, unmount guard,
+  clear-between-urls, missing-asset tolerance). Replaced four hand-rolled copies of the same
+  effect (marker pins, decor ghost, occupant house, furniture).
   The editor uses these overlays in their default **`depthMode='flat'`** (one Graphics per mask at
   the constant `MASK_TINT_Z`, above the whole board) with the identity `origin` — a single board
   has nothing to sort against. The multi-template sandbox passes `'world'` + a per-placement
@@ -391,10 +463,15 @@ Template) / `headerBtnPrimarySx` (Save) inside a `headerActionsSx` row. The head
 The same module dresses the Template Sandbox, so the two tools stay one visual system.
 
 **A third consumer, and it takes only half:** the immersive world's scene editor
-(`src/features/immersiveworld/IWSceneMapPanel.tsx`,
+(`src/features/immersiveworld/IWSceneToolsPanel.tsx`,
 [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 12 phase 1d) imports `PaletteButton`,
 `toolGroupSx` and the hotkey badge — and reuses this editor's KEY ASSIGNMENTS too, so
-`Q`/`W` still paint street/communal and `S`/`D`/`F` still paint decor over there. It
+`S`/`D`/`F` still paint decor over there and `Q`/`W` still carry the WALKABILITY pair,
+though a scene inverts what they mean (there they paint unwalkable / forced direction onto
+an otherwise open board, rather than street / communal onto an otherwise solid one).
+⚠️ One thing iw no longer copies: this palette **floats over the canvas** and depends on the
+`pointerEvents` fix documented with it; since 2026-09-19 iw's palette is an ordinary column
+beside the board instead. It
 deliberately does **not** import `headerBtnSx` and friends: those exist to float a button
 over a dark Pixi scene, and the iw editor's toolbar sits on the app's ordinary paper ground
 under a normal `LeafPage` header. **Palette chrome is shared; page chrome is not** — that is

@@ -8,28 +8,15 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildSceneGraph } from '../../../../engine/iw/sceneGraph';
-import { freeFarmTileset } from '../../../../engine/market/freeFarmTileset';
-import { isBlockingDecorUrl } from '../../../../engine/market/farmTerrain';
 import { actionById, resolveActionStep, type ActionWorld } from '../actionPlayer';
 import type { IWActionStep, IWSceneCastMember } from '../../../../../server/contracts/iw';
 
-/**
- * A stem the tileset resolves to a BLOCKING url — discovered rather than hardcoded, so this
- * file is not coupled to the asset pack's current filenames (the same trick sceneGraph's own
- * suite uses).
- */
-const BLOCKING_STEM = (() => {
-  const url = freeFarmTileset.getDecorUrls('common')[0];
-  const stem = freeFarmTileset.stemOf(url);
-  if (!stem || !isBlockingDecorUrl(url)) throw new Error('no blocking decor stem available');
-  return stem;
-})();
-
-/** An 8×8 open floor with a counter (blocking) at 4,4 tagged "counter". */
+/** An 8×8 open floor with a counter (an unwalkable cell) at 4,4 tagged "counter". */
 const graph = buildSceneGraph({
   width: 8,
   height: 8,
-  decor: { '4,4': BLOCKING_STEM },
+  unwalkable: ['4,4'],
+  forcedDirection: {},
   places: { counter: '4,4', doorway: '0,0' },
 });
 
@@ -43,9 +30,11 @@ const world = (over: Partial<ActionWorld> = {}): ActionWorld => ({
 });
 
 describe('resolveActionStep — the steps that just are what they say', () => {
-  it('says an authored comment verbatim', () => {
-    expect(resolveActionStep({ kind: 'comment', text: '  你好  ' }, world()))
-      .toEqual({ kind: 'say', text: '你好' });
+  it('passes an authored comment through as the DIRECTION to render (§ 14 Q42)', () => {
+    // `say.text` is the author's intention, not a line. `iwScript` renders it through the
+    // model before anything is spoken; this module never sees the Chinese.
+    expect(resolveActionStep({ kind: 'comment', text: '  greet them  ' }, world()))
+      .toEqual({ kind: 'say', text: 'greet them' });
   });
 
   it('skips a comment with no text', () => {
@@ -167,5 +156,93 @@ describe('actionById', () => {
   it('returns null for an unknown id, and for an NPC with no actions', () => {
     expect(actionById(member, 'nope')).toBeNull();
     expect(actionById(undefined, 'a1')).toBeNull();
+  });
+});
+
+/**
+ * A walk toward something ends looking at it (2026-09-07).
+ *
+ * The report: an interaction walked 王婶 over to the learner and she delivered her line to the
+ * wall behind them. Both actor- and place-aimed walks stop BESIDE their target, so without a
+ * facing the performer arrives with their back to what they crossed the room for — and the
+ * learner's own tap already had this right (`approachAndFace`), which is what made the NPC
+ * version read as a bug rather than as a limitation.
+ */
+describe('REGRESSION: a walk toward something ends looking at it (2026-09-07)', () => {
+  it('walk_to_actor stops beside the target and faces the target itself', () => {
+    const step: IWActionStep = { kind: 'walk_to_actor', actor: 'player' };
+    const instruction = resolveActionStep(step, world());
+    expect(instruction.kind).toBe('walkTo');
+    if (instruction.kind !== 'walkTo') return;
+    // Beside, never on: you do not walk into somebody.
+    expect(instruction.cell).not.toBe('6,6');
+    expect(instruction.facing).toBe('6,6');
+  });
+
+  it('faces an unreachable person instead of skipping the step entirely', () => {
+    // Boxed in — nowhere beside them is walkable. A shopkeeper who cannot get around the
+    // counter should still turn to the learner, not stand facing a wall while their line
+    // comes out of nowhere.
+    const cells = new Map([['player', '4,4']]);
+    const boxed = world({ cells, occupied: new Set(['3,4', '5,4', '4,3', '4,5']) });
+    expect(resolveActionStep({ kind: 'walk_to_actor', actor: 'player' }, boxed))
+      .toEqual({ kind: 'face', cell: '4,4' });
+  });
+
+  it('walk_away_from does NOT face its target — that would undo the beat', () => {
+    const instruction = resolveActionStep({ kind: 'walk_away_from', actor: 'player' }, world());
+    expect(instruction.kind).toBe('walkTo');
+    if (instruction.kind !== 'walkTo') return;
+    expect(instruction.facing).toBeUndefined();
+  });
+
+  it('walk_to_tag faces the PLACE, which is the unwalkable cell it stopped beside', () => {
+    const instruction = resolveActionStep({ kind: 'walk_to_tag', tag: 'counter' }, world());
+    expect(instruction.kind).toBe('walkTo');
+    if (instruction.kind !== 'walkTo') return;
+    expect(instruction.cell).not.toBe('4,4');
+    expect(instruction.facing).toBe('4,4');
+  });
+});
+
+/**
+ * `prompt_npc` — the only step resolved into an instruction about SOMEBODY ELSE (2026-09-19).
+ *
+ * The asymmetry pinned here is that a missing speaker and a missing addressee are NOT the
+ * same failure. Without a speaker there is no degraded beat to play; without an addressee
+ * there is — the line loses its aim and the model picks, which is the step's own documented
+ * no-target behaviour rather than a guess.
+ */
+describe('prompt_npc resolves to a cue for another body', () => {
+  const room = world({ cells: new Map([['player', '6,6'], ['kitchen_hand', '2,2']]) });
+
+  it('carries the speaker, the addressee and the brief through untouched', () => {
+    const step: IWActionStep = {
+      kind: 'prompt_npc', npcId: 'kitchen_hand', target: 'player', instruction: 'the noodles are coming',
+    };
+    expect(resolveActionStep(step, room)).toEqual({
+      kind: 'promptNpc', npcId: 'kitchen_hand', toward: 'player', instruction: 'the noodles are coming',
+    });
+  });
+
+  it('normalises a blank brief to undefined, so "no brief" is ONE thing downstream', () => {
+    const step: IWActionStep = { kind: 'prompt_npc', npcId: 'kitchen_hand', instruction: '   ' };
+    expect(resolveActionStep(step, room)).toEqual({
+      kind: 'promptNpc', npcId: 'kitchen_hand', toward: undefined, instruction: undefined,
+    });
+  });
+
+  it('SKIPS when the speaker is not here — there is nobody to say it', () => {
+    const step: IWActionStep = { kind: 'prompt_npc', npcId: 'lao_zhou' };
+    expect(resolveActionStep(step, room)).toEqual({
+      kind: 'skip', reason: '"lao_zhou" is not in this scene',
+    });
+  });
+
+  it('DROPS an addressee who is not here, and still cues the line', () => {
+    const step: IWActionStep = { kind: 'prompt_npc', npcId: 'kitchen_hand', target: 'lao_zhou' };
+    const instruction = resolveActionStep(step, room);
+    expect(instruction.kind).toBe('promptNpc');
+    expect((instruction as { toward?: string }).toward).toBeUndefined();
   });
 });

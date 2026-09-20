@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:server": "npm --prefix server test",
     "test:all": "npm run test && npm run test:server",
+    "gen:lumeish-assets": "node scripts/normalize-lumeish.mjs",
     "gen:unlock-schedule-sql": "tsx server/scripts/generate-unlock-schedule-sql.ts"
   },
   "dependencies": {
@@ -44,6 +45,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^16.0.0",
+    "pngjs": "^7.0.0",
     "prettier": "^3.8.1",
     "puppeteer": "^24.40.0",
     "typescript": "~5.8.3",

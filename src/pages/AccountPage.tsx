@@ -7,16 +7,16 @@ import MobileTabScreen from "../components/MobileTabScreen";
 import { HeaderIconButton } from "../components/PageHeader";
 import { FooterSpacer } from "../components/MobileFooter";
 import DeckBuckets from "../components/DeckBuckets";
+import VelocityStatCard from "../components/VelocityStatCard";
 import IconPickerDialog from "../components/IconPickerDialog";
 import Icon from "../components/Icon";
-import { Label, Row, RowList, SectionHeader, StatCard } from "../components/primitives";
+import { Label, Row, RowList, SectionHeader } from "../components/primitives";
 import { API_BASE_URL } from "../constants";
 import { useAuth } from "../AuthContext";
 import { useConfirmation } from "../contexts/ConfirmationContext";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCategoryCounts } from "../hooks/useCategoryCounts";
 import { useVelocity } from "../hooks/useVelocity";
-import InfoTip from "../components/InfoTip";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 
@@ -100,7 +100,7 @@ function AccountPage() {
 
     // Velocity — mastery band-steps climbed in the sliding 7-day window for the
     // account's selected language (docs/VELOCITY.md). Display-only.
-    const { velocity, windowDays, loaded: velocityLoaded } = useVelocity();
+    const { velocity, windowDays, boundaryCounts, loaded: velocityLoaded } = useVelocity();
 
     // "Copied to clipboard" toast for the user-ID copy button
     const [copiedToastOpen, setCopiedToastOpen] = useState(false);
@@ -242,24 +242,19 @@ function AccountPage() {
                 {/* Velocity — how many mastery bands the learner's cards climbed in the
                     last 7 days (docs/VELOCITY.md). Held back until loaded so a 0 never
                     flashes before the real number; the wrapper reserves the height so
-                    nothing below shifts. */}
-                <Box className="account-page__velocity" sx={{ minHeight: 122 }}>
+                    nothing below shifts. The ⓘ in the label carries the explanation, so
+                    the card runs without a `description` sentence (which is why the
+                    reserved height is 99 rather than 122). The band-boundary breakdown
+                    adds no height: it sits on the figure's own baseline as `9 = 4 U→T
+                    + 3 T→C + 2 C→M`, one line. */}
+                <Box className="account-page__velocity" sx={{ minHeight: 99 }}>
                     {velocityLoaded && (
-                        <StatCard
+                        <VelocityStatCard
                             className="account-page__velocity-card"
                             sx={{ textAlign: "center" }}
-                            label={
-                                <>
-                                    Velocity{" "}
-                                    <InfoTip
-                                        className="account-page__velocity-info"
-                                        ariaLabel="What counts as a level-up"
-                                        text="A level-up is one card crossing into a higher mastery band — Unfamiliar → Target → Comfortable → Mastered."
-                                    />
-                                </>
-                            }
-                            value={velocity}
-                            description={`Mastery level-ups in the last ${windowDays} days`}
+                            velocity={velocity}
+                            windowDays={windowDays}
+                            boundaryCounts={boundaryCounts}
                         />
                     )}
                 </Box>

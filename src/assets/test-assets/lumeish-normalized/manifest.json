@@ -1,0 +1,4389 @@
+{
+  "generatedBy": "scripts/normalize-lumeish.mjs",
+  "sourcePack": "src/assets/test-assets/lumeish",
+  "normalizedDir": "src/assets/test-assets/lumeish-normalized",
+  "cellPx": 32,
+  "placement": "center",
+  "spriteCount": 151,
+  "sprites": [
+    {
+      "id": 1,
+      "file": "001.png",
+      "cells": [
+        2,
+        1
+      ],
+      "src": [
+        37,
+        32
+      ],
+      "offset": [
+        13,
+        0
+      ],
+      "isoSpan": [
+        1,
+        2
+      ],
+      "anchorTex": [
+        38.5,
+        32
+      ],
+      "reachPx": [
+        25.5,
+        10.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 2,
+      "file": "002.png",
+      "cells": [
+        2,
+        1
+      ],
+      "src": [
+        37,
+        32
+      ],
+      "offset": [
+        13,
+        0
+      ],
+      "isoSpan": [
+        2,
+        1
+      ],
+      "anchorTex": [
+        23.5,
+        32
+      ],
+      "reachPx": [
+        10.5,
+        25.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 3,
+      "file": "003.png",
+      "cells": [
+        2,
+        1
+      ],
+      "src": [
+        42,
+        31
+      ],
+      "offset": [
+        11,
+        0
+      ],
+      "isoSpan": [
+        1,
+        2
+      ],
+      "anchorTex": [
+        45.5,
+        31
+      ],
+      "reachPx": [
+        34.5,
+        6.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 4,
+      "file": "004.png",
+      "cells": [
+        2,
+        1
+      ],
+      "src": [
+        42,
+        31
+      ],
+      "offset": [
+        11,
+        0
+      ],
+      "isoSpan": [
+        2,
+        1
+      ],
+      "anchorTex": [
+        17.5,
+        31
+      ],
+      "reachPx": [
+        6.5,
+        34.5
+      ],
+      "mirrorOf": 3
+    },
+    {
+      "id": 5,
+      "file": "005.png",
+      "cells": [
+        2,
+        2
+      ],
+      "src": [
+        34,
+        35
+      ],
+      "offset": [
+        15,
+        14
+      ],
+      "isoSpan": [
+        2,
+        1
+      ],
+      "anchorTex": [
+        21.5,
+        49
+      ],
+      "reachPx": [
+        6.5,
+        26.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 6,
+      "file": "006.png",
+      "cells": [
+        2,
+        2
+      ],
+      "src": [
+        34,
+        35
+      ],
+      "offset": [
+        15,
+        14
+      ],
+      "isoSpan": [
+        1,
+        2
+      ],
+      "anchorTex": [
+        41.5,
+        49
+      ],
+      "reachPx": [
+        26.5,
+        6.5
+      ],
+      "mirrorOf": 5
+    },
+    {
+      "id": 7,
+      "file": "007.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        31,
+        29
+      ],
+      "offset": [
+        0,
+        1
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        10.5,
+        30
+      ],
+      "reachPx": [
+        10.5,
+        19.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 8,
+      "file": "008.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        31,
+        29
+      ],
+      "offset": [
+        0,
+        1
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        30
+      ],
+      "reachPx": [
+        19.5,
+        10.5
+      ],
+      "mirrorOf": 7
+    },
+    {
+      "id": 9,
+      "file": "009.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        28,
+        27
+      ],
+      "offset": [
+        2,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        8.5,
+        29
+      ],
+      "reachPx": [
+        6.5,
+        20.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 10,
+      "file": "010.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        28,
+        27
+      ],
+      "offset": [
+        2,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        22.5,
+        29
+      ],
+      "reachPx": [
+        20.5,
+        6.5
+      ],
+      "mirrorOf": 9
+    },
+    {
+      "id": 11,
+      "file": "011.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        27
+      ],
+      "offset": [
+        3,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9,
+        29
+      ],
+      "reachPx": [
+        6,
+        19
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 12,
+      "file": "012.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        27
+      ],
+      "offset": [
+        3,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        22,
+        29
+      ],
+      "reachPx": [
+        19,
+        6
+      ],
+      "mirrorOf": 11
+    },
+    {
+      "id": 13,
+      "file": "013.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        30,
+        26
+      ],
+      "offset": [
+        1,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        11.5,
+        29
+      ],
+      "reachPx": [
+        10.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 14,
+      "file": "014.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        30,
+        26
+      ],
+      "offset": [
+        1,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        29
+      ],
+      "reachPx": [
+        18.5,
+        10.5
+      ],
+      "mirrorOf": 13
+    },
+    {
+      "id": 15,
+      "file": "015.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        28,
+        28
+      ],
+      "offset": [
+        2,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        20.5,
+        30
+      ],
+      "reachPx": [
+        18.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 16,
+      "file": "016.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        28,
+        28
+      ],
+      "offset": [
+        2,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        10.5,
+        30
+      ],
+      "reachPx": [
+        8.5,
+        18.5
+      ],
+      "mirrorOf": 15
+    },
+    {
+      "id": 17,
+      "file": "017.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        27
+      ],
+      "offset": [
+        3,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9.5,
+        29
+      ],
+      "reachPx": [
+        6.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 18,
+      "file": "018.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        27
+      ],
+      "offset": [
+        3,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        21.5,
+        29
+      ],
+      "reachPx": [
+        18.5,
+        6.5
+      ],
+      "mirrorOf": 17
+    },
+    {
+      "id": 19,
+      "file": "019.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        29
+      ],
+      "offset": [
+        3,
+        1
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        11.5,
+        30
+      ],
+      "reachPx": [
+        8.5,
+        16.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 20,
+      "file": "020.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        29
+      ],
+      "offset": [
+        3,
+        1
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        30
+      ],
+      "reachPx": [
+        16.5,
+        8.5
+      ],
+      "mirrorOf": 19
+    },
+    {
+      "id": 21,
+      "file": "021.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        19
+      ],
+      "offset": [
+        3,
+        6
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        11.5,
+        25
+      ],
+      "reachPx": [
+        8.5,
+        16.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 22,
+      "file": "022.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        19
+      ],
+      "offset": [
+        3,
+        6
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        25
+      ],
+      "reachPx": [
+        16.5,
+        8.5
+      ],
+      "mirrorOf": 21
+    },
+    {
+      "id": 23,
+      "file": "023.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        27
+      ],
+      "offset": [
+        3,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9.5,
+        29
+      ],
+      "reachPx": [
+        6.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 24,
+      "file": "024.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        27
+      ],
+      "offset": [
+        3,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        21.5,
+        29
+      ],
+      "reachPx": [
+        18.5,
+        6.5
+      ],
+      "mirrorOf": 23
+    },
+    {
+      "id": 25,
+      "file": "025.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        27,
+        24
+      ],
+      "offset": [
+        2,
+        4
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        10.5,
+        28
+      ],
+      "reachPx": [
+        8.5,
+        17.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 26,
+      "file": "026.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        27,
+        24
+      ],
+      "offset": [
+        2,
+        4
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        28
+      ],
+      "reachPx": [
+        17.5,
+        8.5
+      ],
+      "mirrorOf": 25
+    },
+    {
+      "id": 27,
+      "file": "027.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        20
+      ],
+      "offset": [
+        3,
+        6
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9,
+        26
+      ],
+      "reachPx": [
+        6,
+        19
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 28,
+      "file": "028.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        20
+      ],
+      "offset": [
+        3,
+        6
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        22,
+        26
+      ],
+      "reachPx": [
+        19,
+        6
+      ],
+      "mirrorOf": 27
+    },
+    {
+      "id": 29,
+      "file": "029.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        15
+      ],
+      "offset": [
+        7,
+        8
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        23
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 30,
+      "file": "030.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        16
+      ],
+      "offset": [
+        7,
+        8
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15,
+        24
+      ],
+      "reachPx": [
+        8,
+        9
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 31,
+      "file": "031.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        25
+      ],
+      "offset": [
+        7,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        28
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 32,
+      "file": "032.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        22
+      ],
+      "offset": [
+        7,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        27
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 33,
+      "file": "033.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        25
+      ],
+      "offset": [
+        7,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        28
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 31
+    },
+    {
+      "id": 34,
+      "file": "034.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        22
+      ],
+      "offset": [
+        7,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        27
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 32
+    },
+    {
+      "id": 35,
+      "file": "035.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        22,
+        28
+      ],
+      "offset": [
+        5,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        13.5,
+        30
+      ],
+      "reachPx": [
+        8.5,
+        12.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 36,
+      "file": "036.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        22,
+        28
+      ],
+      "offset": [
+        5,
+        2
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        17.5,
+        30
+      ],
+      "reachPx": [
+        12.5,
+        8.5
+      ],
+      "mirrorOf": 35
+    },
+    {
+      "id": 37,
+      "file": "037.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        23
+      ],
+      "offset": [
+        7,
+        4
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        27
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 38,
+      "file": "038.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        23
+      ],
+      "offset": [
+        7,
+        4
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        27
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 37
+    },
+    {
+      "id": 39,
+      "file": "039.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        22
+      ],
+      "offset": [
+        7,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        16,
+        27
+      ],
+      "reachPx": [
+        9,
+        8
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 40,
+      "file": "040.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        15,
+        16
+      ],
+      "offset": [
+        8,
+        8
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15,
+        24
+      ],
+      "reachPx": [
+        7,
+        7
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 41,
+      "file": "041.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        25
+      ],
+      "offset": [
+        7,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        28
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 42,
+      "file": "042.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        25
+      ],
+      "offset": [
+        7,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        28
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 41
+    },
+    {
+      "id": 43,
+      "file": "043.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        17,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15,
+        24
+      ],
+      "reachPx": [
+        8,
+        8
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 44,
+      "file": "044.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        18
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        25
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 45,
+      "file": "045.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        32,
+        46
+      ],
+      "offset": [
+        0,
+        9
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        20.5,
+        55
+      ],
+      "reachPx": [
+        20.5,
+        10.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 46,
+      "file": "046.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        32,
+        46
+      ],
+      "offset": [
+        0,
+        9
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        10.5,
+        55
+      ],
+      "reachPx": [
+        10.5,
+        20.5
+      ],
+      "mirrorOf": 45
+    },
+    {
+      "id": 47,
+      "file": "047.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        30,
+        30
+      ],
+      "offset": [
+        1,
+        1
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        11.5,
+        31
+      ],
+      "reachPx": [
+        10.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 48,
+      "file": "048.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        30,
+        30
+      ],
+      "offset": [
+        1,
+        1
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        31
+      ],
+      "reachPx": [
+        18.5,
+        10.5
+      ],
+      "mirrorOf": 47
+    },
+    {
+      "id": 49,
+      "file": "049.png",
+      "cells": [
+        2,
+        2
+      ],
+      "src": [
+        36,
+        33
+      ],
+      "offset": [
+        14,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        30.5,
+        48
+      ],
+      "reachPx": [
+        16.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 50,
+      "file": "050.png",
+      "cells": [
+        2,
+        2
+      ],
+      "src": [
+        36,
+        33
+      ],
+      "offset": [
+        14,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        32.5,
+        48
+      ],
+      "reachPx": [
+        18.5,
+        16.5
+      ],
+      "mirrorOf": 49
+    },
+    {
+      "id": 51,
+      "file": "051.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        33
+      ],
+      "offset": [
+        3,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9.5,
+        48
+      ],
+      "reachPx": [
+        6.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 52,
+      "file": "052.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        33
+      ],
+      "offset": [
+        3,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        21.5,
+        48
+      ],
+      "reachPx": [
+        18.5,
+        6.5
+      ],
+      "mirrorOf": 51
+    },
+    {
+      "id": 53,
+      "file": "053.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        33
+      ],
+      "offset": [
+        3,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9.5,
+        48
+      ],
+      "reachPx": [
+        6.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 54,
+      "file": "054.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        33
+      ],
+      "offset": [
+        3,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        21.5,
+        48
+      ],
+      "reachPx": [
+        18.5,
+        6.5
+      ],
+      "mirrorOf": 53
+    },
+    {
+      "id": 55,
+      "file": "055.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        29
+      ],
+      "offset": [
+        3,
+        1
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9.5,
+        30
+      ],
+      "reachPx": [
+        6.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 56,
+      "file": "056.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        29
+      ],
+      "offset": [
+        3,
+        1
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        21.5,
+        30
+      ],
+      "reachPx": [
+        18.5,
+        6.5
+      ],
+      "mirrorOf": 55
+    },
+    {
+      "id": 57,
+      "file": "057.png",
+      "cells": [
+        2,
+        2
+      ],
+      "src": [
+        42,
+        45
+      ],
+      "offset": [
+        11,
+        9
+      ],
+      "isoSpan": [
+        2,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        54
+      ],
+      "reachPx": [
+        8.5,
+        32.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 58,
+      "file": "058.png",
+      "cells": [
+        2,
+        2
+      ],
+      "src": [
+        42,
+        45
+      ],
+      "offset": [
+        11,
+        9
+      ],
+      "isoSpan": [
+        1,
+        2
+      ],
+      "anchorTex": [
+        43.5,
+        54
+      ],
+      "reachPx": [
+        32.5,
+        8.5
+      ],
+      "mirrorOf": 57
+    },
+    {
+      "id": 59,
+      "file": "059.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        37
+      ],
+      "offset": [
+        3,
+        13
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9.5,
+        50
+      ],
+      "reachPx": [
+        6.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 60,
+      "file": "060.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        37
+      ],
+      "offset": [
+        3,
+        13
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        21.5,
+        50
+      ],
+      "reachPx": [
+        18.5,
+        6.5
+      ],
+      "mirrorOf": 59
+    },
+    {
+      "id": 61,
+      "file": "061.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        38
+      ],
+      "offset": [
+        3,
+        13
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        21,
+        51
+      ],
+      "reachPx": [
+        18,
+        7
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 62,
+      "file": "062.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        38
+      ],
+      "offset": [
+        3,
+        13
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        10,
+        51
+      ],
+      "reachPx": [
+        7,
+        18
+      ],
+      "mirrorOf": 61
+    },
+    {
+      "id": 63,
+      "file": "063.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        37
+      ],
+      "offset": [
+        3,
+        13
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        22,
+        50
+      ],
+      "reachPx": [
+        19,
+        6
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 64,
+      "file": "064.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        37
+      ],
+      "offset": [
+        3,
+        13
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9,
+        50
+      ],
+      "reachPx": [
+        6,
+        19
+      ],
+      "mirrorOf": 63
+    },
+    {
+      "id": 65,
+      "file": "065.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        22,
+        12
+      ],
+      "offset": [
+        5,
+        10
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        22
+      ],
+      "reachPx": [
+        10.5,
+        10.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 66,
+      "file": "066.png",
+      "cells": [
+        2,
+        1
+      ],
+      "src": [
+        42,
+        23
+      ],
+      "offset": [
+        11,
+        4
+      ],
+      "isoSpan": [
+        1,
+        2
+      ],
+      "anchorTex": [
+        35.5,
+        27
+      ],
+      "reachPx": [
+        24.5,
+        16.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 67,
+      "file": "067.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        22,
+        34
+      ],
+      "offset": [
+        5,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        17.5,
+        49
+      ],
+      "reachPx": [
+        12.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 68,
+      "file": "068.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        22,
+        34
+      ],
+      "offset": [
+        5,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        13.5,
+        49
+      ],
+      "reachPx": [
+        8.5,
+        12.5
+      ],
+      "mirrorOf": 67
+    },
+    {
+      "id": 69,
+      "file": "069.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        18,
+        33
+      ],
+      "offset": [
+        7,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        48
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 70,
+      "file": "070.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        18,
+        33
+      ],
+      "offset": [
+        7,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        48
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 69
+    },
+    {
+      "id": 71,
+      "file": "071.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        37
+      ],
+      "offset": [
+        3,
+        13
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9,
+        50
+      ],
+      "reachPx": [
+        6,
+        19
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 72,
+      "file": "072.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        37
+      ],
+      "offset": [
+        3,
+        13
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        22,
+        50
+      ],
+      "reachPx": [
+        19,
+        6
+      ],
+      "mirrorOf": 71
+    },
+    {
+      "id": 73,
+      "file": "073.png",
+      "cells": [
+        2,
+        1
+      ],
+      "src": [
+        34,
+        25
+      ],
+      "offset": [
+        15,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        31,
+        28
+      ],
+      "reachPx": [
+        16,
+        17
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 74,
+      "file": "074.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 75,
+      "file": "075.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        21
+      ],
+      "offset": [
+        3,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        22,
+        26
+      ],
+      "reachPx": [
+        19,
+        6
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 76,
+      "file": "076.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        21
+      ],
+      "offset": [
+        3,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9,
+        26
+      ],
+      "reachPx": [
+        6,
+        19
+      ],
+      "mirrorOf": 75
+    },
+    {
+      "id": 77,
+      "file": "077.png",
+      "cells": [
+        2,
+        1
+      ],
+      "src": [
+        42,
+        29
+      ],
+      "offset": [
+        11,
+        1
+      ],
+      "isoSpan": [
+        1,
+        2
+      ],
+      "anchorTex": [
+        36,
+        30
+      ],
+      "reachPx": [
+        25,
+        16
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 78,
+      "file": "078.png",
+      "cells": [
+        2,
+        1
+      ],
+      "src": [
+        42,
+        29
+      ],
+      "offset": [
+        11,
+        1
+      ],
+      "isoSpan": [
+        2,
+        1
+      ],
+      "anchorTex": [
+        27,
+        30
+      ],
+      "reachPx": [
+        16,
+        25
+      ],
+      "mirrorOf": 77
+    },
+    {
+      "id": 79,
+      "file": "079.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        30,
+        21
+      ],
+      "offset": [
+        1,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        21.5,
+        26
+      ],
+      "reachPx": [
+        20.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 80,
+      "file": "080.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        30,
+        21
+      ],
+      "offset": [
+        1,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9.5,
+        26
+      ],
+      "reachPx": [
+        8.5,
+        20.5
+      ],
+      "mirrorOf": 79
+    },
+    {
+      "id": 81,
+      "file": "081.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        39
+      ],
+      "offset": [
+        3,
+        12
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        51
+      ],
+      "reachPx": [
+        16.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 82,
+      "file": "082.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        39
+      ],
+      "offset": [
+        3,
+        12
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        11.5,
+        51
+      ],
+      "reachPx": [
+        8.5,
+        16.5
+      ],
+      "mirrorOf": 81
+    },
+    {
+      "id": 83,
+      "file": "083.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        23
+      ],
+      "offset": [
+        3,
+        4
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        27
+      ],
+      "reachPx": [
+        16.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 84,
+      "file": "084.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        23
+      ],
+      "offset": [
+        3,
+        4
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        11.5,
+        27
+      ],
+      "reachPx": [
+        8.5,
+        16.5
+      ],
+      "mirrorOf": 83
+    },
+    {
+      "id": 85,
+      "file": "085.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        20,
+        34
+      ],
+      "offset": [
+        6,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        10.5,
+        49
+      ],
+      "reachPx": [
+        4.5,
+        14.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 86,
+      "file": "086.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        20,
+        34
+      ],
+      "offset": [
+        6,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        20.5,
+        49
+      ],
+      "reachPx": [
+        14.5,
+        4.5
+      ],
+      "mirrorOf": 85
+    },
+    {
+      "id": 87,
+      "file": "087.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        20,
+        34
+      ],
+      "offset": [
+        6,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        10.5,
+        49
+      ],
+      "reachPx": [
+        4.5,
+        14.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 88,
+      "file": "088.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        20,
+        34
+      ],
+      "offset": [
+        6,
+        15
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        20.5,
+        49
+      ],
+      "reachPx": [
+        14.5,
+        4.5
+      ],
+      "mirrorOf": 87
+    },
+    {
+      "id": 89,
+      "file": "089.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 90,
+      "file": "090.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 89
+    },
+    {
+      "id": 91,
+      "file": "091.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        21
+      ],
+      "offset": [
+        3,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9,
+        26
+      ],
+      "reachPx": [
+        6,
+        19
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 92,
+      "file": "092.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        21
+      ],
+      "offset": [
+        3,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        22,
+        26
+      ],
+      "reachPx": [
+        19,
+        6
+      ],
+      "mirrorOf": 91
+    },
+    {
+      "id": 93,
+      "file": "093.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        37
+      ],
+      "offset": [
+        3,
+        13
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9.5,
+        50
+      ],
+      "reachPx": [
+        6.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 94,
+      "file": "094.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        26,
+        37
+      ],
+      "offset": [
+        3,
+        13
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        21.5,
+        50
+      ],
+      "reachPx": [
+        18.5,
+        6.5
+      ],
+      "mirrorOf": 93
+    },
+    {
+      "id": 95,
+      "file": "095.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        7,
+        8
+      ],
+      "offset": [
+        12,
+        12
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15,
+        20
+      ],
+      "reachPx": [
+        3,
+        3
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 96,
+      "file": "096.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        7,
+        8
+      ],
+      "offset": [
+        12,
+        12
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15,
+        20
+      ],
+      "reachPx": [
+        3,
+        3
+      ],
+      "mirrorOf": 95
+    },
+    {
+      "id": 97,
+      "file": "097.png",
+      "cells": [
+        2,
+        2
+      ],
+      "src": [
+        43,
+        33
+      ],
+      "offset": [
+        10,
+        15
+      ],
+      "isoSpan": [
+        1,
+        2
+      ],
+      "anchorTex": [
+        37.5,
+        48
+      ],
+      "reachPx": [
+        27.5,
+        14.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 98,
+      "file": "098.png",
+      "cells": [
+        2,
+        2
+      ],
+      "src": [
+        43,
+        33
+      ],
+      "offset": [
+        10,
+        15
+      ],
+      "isoSpan": [
+        2,
+        1
+      ],
+      "anchorTex": [
+        24.5,
+        48
+      ],
+      "reachPx": [
+        14.5,
+        27.5
+      ],
+      "mirrorOf": 97
+    },
+    {
+      "id": 99,
+      "file": "099.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        20,
+        25
+      ],
+      "offset": [
+        6,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        17,
+        28
+      ],
+      "reachPx": [
+        11,
+        8
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 100,
+      "file": "100.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        20,
+        25
+      ],
+      "offset": [
+        6,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        14,
+        28
+      ],
+      "reachPx": [
+        8,
+        11
+      ],
+      "mirrorOf": 99
+    },
+    {
+      "id": 101,
+      "file": "101.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        21
+      ],
+      "offset": [
+        3,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        11.5,
+        26
+      ],
+      "reachPx": [
+        8.5,
+        16.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 102,
+      "file": "102.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        21
+      ],
+      "offset": [
+        3,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        26
+      ],
+      "reachPx": [
+        16.5,
+        8.5
+      ],
+      "mirrorOf": 101
+    },
+    {
+      "id": 103,
+      "file": "103.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        12,
+        22
+      ],
+      "offset": [
+        10,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        14.5,
+        27
+      ],
+      "reachPx": [
+        4.5,
+        6.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 104,
+      "file": "104.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        12,
+        22
+      ],
+      "offset": [
+        10,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        16.5,
+        27
+      ],
+      "reachPx": [
+        6.5,
+        4.5
+      ],
+      "mirrorOf": 103
+    },
+    {
+      "id": 105,
+      "file": "105.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        16,
+        16
+      ],
+      "offset": [
+        8,
+        8
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        12.5,
+        24
+      ],
+      "reachPx": [
+        4.5,
+        10.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 106,
+      "file": "106.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        16,
+        16
+      ],
+      "offset": [
+        8,
+        8
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        18.5,
+        24
+      ],
+      "reachPx": [
+        10.5,
+        4.5
+      ],
+      "mirrorOf": 105
+    },
+    {
+      "id": 107,
+      "file": "107.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 108,
+      "file": "108.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        13,
+        31
+      ],
+      "offset": [
+        9,
+        0
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15,
+        31
+      ],
+      "reachPx": [
+        6,
+        6
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 109,
+      "file": "109.png",
+      "cells": [
+        2,
+        1
+      ],
+      "src": [
+        34,
+        26
+      ],
+      "offset": [
+        15,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        31.5,
+        29
+      ],
+      "reachPx": [
+        16.5,
+        16.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 110,
+      "file": "110.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        9,
+        10
+      ],
+      "offset": [
+        11,
+        11
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        14.5,
+        21
+      ],
+      "reachPx": [
+        3.5,
+        4.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 111,
+      "file": "111.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        32,
+        25
+      ],
+      "offset": [
+        0,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        12.5,
+        28
+      ],
+      "reachPx": [
+        12.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 112,
+      "file": "112.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        32,
+        25
+      ],
+      "offset": [
+        0,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        18.5,
+        28
+      ],
+      "reachPx": [
+        18.5,
+        12.5
+      ],
+      "mirrorOf": 111
+    },
+    {
+      "id": 113,
+      "file": "113.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 114,
+      "file": "114.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 113
+    },
+    {
+      "id": 115,
+      "file": "115.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        24,
+        16
+      ],
+      "offset": [
+        4,
+        8
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9.5,
+        24
+      ],
+      "reachPx": [
+        5.5,
+        17.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 116,
+      "file": "116.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        24,
+        16
+      ],
+      "offset": [
+        4,
+        8
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        21.5,
+        24
+      ],
+      "reachPx": [
+        17.5,
+        5.5
+      ],
+      "mirrorOf": 115
+    },
+    {
+      "id": 117,
+      "file": "117.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        25
+      ],
+      "offset": [
+        7,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        28
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 118,
+      "file": "118.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        25
+      ],
+      "offset": [
+        7,
+        3
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        28
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 117
+    },
+    {
+      "id": 119,
+      "file": "119.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        18,
+        35
+      ],
+      "offset": [
+        7,
+        14
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        49
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 120,
+      "file": "120.png",
+      "cells": [
+        1,
+        2
+      ],
+      "src": [
+        18,
+        35
+      ],
+      "offset": [
+        7,
+        14
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        49
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 119
+    },
+    {
+      "id": 121,
+      "file": "121.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        28,
+        18
+      ],
+      "offset": [
+        2,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        12.5,
+        25
+      ],
+      "reachPx": [
+        10.5,
+        16.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 122,
+      "file": "122.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        12,
+        7
+      ],
+      "offset": [
+        10,
+        12
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        19
+      ],
+      "reachPx": [
+        5.5,
+        5.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 123,
+      "file": "123.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        17,
+        29
+      ],
+      "offset": [
+        7,
+        1
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        11.5,
+        30
+      ],
+      "reachPx": [
+        4.5,
+        11.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 124,
+      "file": "124.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        17,
+        29
+      ],
+      "offset": [
+        7,
+        1
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        18.5,
+        30
+      ],
+      "reachPx": [
+        11.5,
+        4.5
+      ],
+      "mirrorOf": 123
+    },
+    {
+      "id": 125,
+      "file": "125.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        14,
+        16
+      ],
+      "offset": [
+        9,
+        8
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        6.5,
+        6.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 126,
+      "file": "126.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        14,
+        16
+      ],
+      "offset": [
+        9,
+        8
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        6.5,
+        6.5
+      ],
+      "mirrorOf": 125
+    },
+    {
+      "id": 127,
+      "file": "127.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        24
+      ],
+      "offset": [
+        7,
+        4
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        16.5,
+        28
+      ],
+      "reachPx": [
+        9.5,
+        7.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 128,
+      "file": "128.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        20,
+        23
+      ],
+      "offset": [
+        6,
+        4
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        27
+      ],
+      "reachPx": [
+        9.5,
+        9.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 129,
+      "file": "129.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        23
+      ],
+      "offset": [
+        3,
+        4
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        9.5,
+        27
+      ],
+      "reachPx": [
+        6.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 130,
+      "file": "130.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        23
+      ],
+      "offset": [
+        3,
+        4
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        21.5,
+        27
+      ],
+      "reachPx": [
+        18.5,
+        6.5
+      ],
+      "mirrorOf": 129
+    },
+    {
+      "id": 131,
+      "file": "131.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        22,
+        13
+      ],
+      "offset": [
+        5,
+        9
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        13.5,
+        22
+      ],
+      "reachPx": [
+        8.5,
+        12.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 132,
+      "file": "132.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        22,
+        13
+      ],
+      "offset": [
+        5,
+        9
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        17.5,
+        22
+      ],
+      "reachPx": [
+        12.5,
+        8.5
+      ],
+      "mirrorOf": 131
+    },
+    {
+      "id": 133,
+      "file": "133.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        10,
+        10
+      ],
+      "offset": [
+        11,
+        11
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        21
+      ],
+      "reachPx": [
+        4.5,
+        4.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 134,
+      "file": "134.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        10,
+        10
+      ],
+      "offset": [
+        11,
+        11
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        21
+      ],
+      "reachPx": [
+        4.5,
+        4.5
+      ],
+      "mirrorOf": 133
+    },
+    {
+      "id": 135,
+      "file": "135.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        14,
+        9
+      ],
+      "offset": [
+        9,
+        11
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        14.5,
+        20
+      ],
+      "reachPx": [
+        5.5,
+        7.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 136,
+      "file": "136.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        14,
+        9
+      ],
+      "offset": [
+        9,
+        11
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        16.5,
+        20
+      ],
+      "reachPx": [
+        7.5,
+        5.5
+      ],
+      "mirrorOf": 135
+    },
+    {
+      "id": 137,
+      "file": "137.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        22,
+        13
+      ],
+      "offset": [
+        5,
+        9
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        10.5,
+        22
+      ],
+      "reachPx": [
+        5.5,
+        15.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 138,
+      "file": "138.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        22,
+        13
+      ],
+      "offset": [
+        5,
+        9
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        20.5,
+        22
+      ],
+      "reachPx": [
+        15.5,
+        5.5
+      ],
+      "mirrorOf": 137
+    },
+    {
+      "id": 139,
+      "file": "139.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        21
+      ],
+      "offset": [
+        3,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        11.5,
+        26
+      ],
+      "reachPx": [
+        8.5,
+        16.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 140,
+      "file": "140.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        21
+      ],
+      "offset": [
+        3,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        26
+      ],
+      "reachPx": [
+        16.5,
+        8.5
+      ],
+      "mirrorOf": 139
+    },
+    {
+      "id": 141,
+      "file": "141.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        21
+      ],
+      "offset": [
+        3,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        11.5,
+        26
+      ],
+      "reachPx": [
+        8.5,
+        16.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 142,
+      "file": "142.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        26,
+        21
+      ],
+      "offset": [
+        3,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        19.5,
+        26
+      ],
+      "reachPx": [
+        16.5,
+        8.5
+      ],
+      "mirrorOf": 141
+    },
+    {
+      "id": 143,
+      "file": "143.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        28,
+        22
+      ],
+      "offset": [
+        2,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        10.5,
+        27
+      ],
+      "reachPx": [
+        8.5,
+        18.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 144,
+      "file": "144.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        28,
+        22
+      ],
+      "offset": [
+        2,
+        5
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        20.5,
+        27
+      ],
+      "reachPx": [
+        18.5,
+        8.5
+      ],
+      "mirrorOf": 143
+    },
+    {
+      "id": 145,
+      "file": "145.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 146,
+      "file": "146.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 145
+    },
+    {
+      "id": 147,
+      "file": "147.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 148,
+      "file": "148.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 147
+    },
+    {
+      "id": 149,
+      "file": "149.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": null
+    },
+    {
+      "id": 150,
+      "file": "150.png",
+      "cells": [
+        1,
+        1
+      ],
+      "src": [
+        18,
+        17
+      ],
+      "offset": [
+        7,
+        7
+      ],
+      "isoSpan": [
+        1,
+        1
+      ],
+      "anchorTex": [
+        15.5,
+        24
+      ],
+      "reachPx": [
+        8.5,
+        8.5
+      ],
+      "mirrorOf": 149
+    },
+    {
+      "id": 151,
+      "file": "151.png",
+      "cells": [
+        4,
+        3
+      ],
+      "src": [
+        98,
+        84
+      ],
+      "offset": [
+        15,
+        6
+      ],
+      "isoSpan": [
+        3,
+        3
+      ],
+      "anchorTex": [
+        63.5,
+        90
+      ],
+      "reachPx": [
+        48.5,
+        48.5
+      ],
+      "mirrorOf": null
+    }
+  ]
+}

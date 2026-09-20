@@ -127,6 +127,13 @@ export function stitchWorld(placed: PlacedTemplate[]): StitchedWorld {
  * URL here). The walkability classes (street/communal) and the annotation overlays
  * (placeholder/condition) render no sprite and are passed EMPTY — the graph pipeline
  * (slice 2), not the terrain field, consumes them.
+ *
+ * ⚠️ FURNITURE IS NOT CARRIED YET. Authored furniture placements (`EditorMasks.furniture`)
+ * survive save/load and render on every AUTHORING surface (editor, Load gallery, sandbox),
+ * but the runtime market does not draw them: a placement is anchored in its own template's
+ * local cells and would have to be translated by the placement's origin into world cells
+ * here, which means `StitchedWorld` growing a furniture list first. Tracked in
+ * docs/LUMEISH_ASSET_PIPELINE.md § "Open items".
  */
 export function stitchedToEditorMasks(world: StitchedWorld): EditorMasks {
   const decor = new Map<string, string>();

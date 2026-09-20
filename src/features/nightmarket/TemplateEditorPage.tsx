@@ -15,6 +15,7 @@ import LocalFloristIcon from '@mui/icons-material/LocalFlorist';
 import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
 import ForestIcon from '@mui/icons-material/Forest';
 import ViewWeekIcon from '@mui/icons-material/ViewWeek';
+import ChairIcon from '@mui/icons-material/Chair';
 import BackspaceIcon from '@mui/icons-material/Backspace';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
@@ -44,6 +45,14 @@ import {
   type PlaceholderArea,
 } from '../../engine/market/placeholderArea';
 import { analyzeConditions, borderStreetCells } from '../../engine/market/conditionAnalysis';
+import {
+  furnitureAt, furnitureFitsBoard, furnitureOverlapsAny, furnitureFootprint,
+  furnitureAtIndex, furnitureBuriedDecorCells, furnitureIndexOf, FURNITURE_CATALOGUE,
+  type FurniturePlacement,
+} from '../../engine/market/furniture';
+import { useArrowPagedIndex } from '../../hooks/useArrowPagedIndex';
+import { footprintsOverlap } from '../../engine/market/footprint';
+import { lumeishTileset } from '../../engine/market/lumeishTileset';
 import TemplateEditorViewer, { type EditorTool } from './TemplateEditorViewer';
 import TemplateLoadGallery from './TemplateLoadGallery';
 import {
@@ -97,6 +106,7 @@ const emptyMasks = (): EditorMasks => ({
   placeholder: [],
   condition: new Set<string>(),
   decor: new Map<string, string>(),
+  furniture: [],
 });
 
 /**
@@ -118,6 +128,8 @@ interface Clipboard {
   placeholder: PlaceholderArea[];
   condition: Set<string>;
   decor: Map<string, string>;
+  /** Fully-contained furniture pieces, re-anchored relative to the selection's min corner. */
+  furniture: FurniturePlacement[];
 }
 
 /** The clipboard group's accent (pink) — panel tint + button highlight, like the other groups. */
@@ -141,6 +153,9 @@ const cloneMasks = (m: EditorMasks): EditorMasks => ({
   placeholder: [...m.placeholder],
   condition: new Set(m.condition),
   decor: new Map(m.decor),
+  // Furniture placement records are treated as immutable, so a shallow array copy fully
+  // detaches the snapshot (place/erase replace the array, never mutate an element).
+  furniture: [...(m.furniture ?? [])],
 });
 
 /**
@@ -224,6 +239,19 @@ const TOOL_GROUPS: ToolGroup[] = [
       { tool: 'plankDecor', label: 'Wood panel (Space cycles variant · autotiles edges)', icon: <ViewWeekIcon fontSize="small" />, hotkey: 'G' },
     ],
   },
+  // FURNITURE: the whole lumeish pack behind ONE button (docs/LUMEISH_ASSET_PIPELINE.md).
+  // Deliberately not split into categories the way decor is — the pack ships no semantic
+  // naming, so any category split would be invented rather than authored. Instead the single
+  // tool pages the whole catalogue with the LEFT/RIGHT arrow keys, and the ghost shows what
+  // the click will place. Its own group (and accent) because it is the one tool that places a
+  // MULTI-CELL object, with real occupancy rather than a per-cell sprite.
+  {
+    key: 'furniture',
+    accent: '198,156,109', // warm wood
+    tools: [
+      { tool: 'furniture', label: 'Furniture (← / → page the pack)', icon: <ChairIcon fontSize="small" />, hotkey: 'A' },
+    ],
+  },
 ];
 
 // Which decor category each decor tool places/erases. Used by the per-tool eraser to
@@ -250,6 +278,7 @@ const toolSupportsEraser = (tool: EditorTool): boolean => !ERASER_UNSUPPORTED_TO
 const HOTKEY_TO_TOOL: Record<string, EditorTool> = {
   q: 'street', w: 'communal', e: 'placeholder', r: 'condition',
   t: 'terrain1', y: 'terrain2',
+  a: 'furniture',
   s: 'familyDecor', d: 'commonDecor', f: 'treeDecor', g: 'plankDecor',
   c: 'copy', v: 'paste',
 };
@@ -353,6 +382,16 @@ function TemplateEditorPage() {
   const [loadedName, setLoadedName] = useState<string | null>(null);
 
   const [propsOpen, setPropsOpen] = useState(false);
+  // The selected FURNITURE sprite, as an index into the shared FURNITURE_CATALOGUE. ← / →
+  // page it (hold to page rapidly); a click places that sprite. An INDEX rather than an id so
+  // paging is a wrap, never a search. The Immersive World scene editor's Furniture tool uses
+  // the same hook and the same catalogue, so the two palettes cannot drift apart.
+  const { index: furnitureIdx, setIndex: setFurnitureIdx } = useArrowPagedIndex(
+    FURNITURE_CATALOGUE.length,
+    activeTool === 'furniture',
+    // Never page while the Properties dialog is open — the arrows belong to its fields there.
+    propsOpen,
+  );
   // The read-only authoring-guidelines popup (rules we do NOT programmatically enforce —
   // the author must follow them by hand). See GuidelinesDialog below.
   const [guidelinesOpen, setGuidelinesOpen] = useState(false);
@@ -406,6 +445,12 @@ function TemplateEditorPage() {
   // identity-stable). Read when a decor tool places its selected sprite.
   const decorVariantIdxRef = useRef(decorVariantIdx);
   decorVariantIdxRef.current = decorVariantIdx;
+  // The sprite id the Furniture tool will place, resolved from the paged index. Kept in a ref
+  // for the same reason as the two above (paintCell must stay identity-stable). Undefined only
+  // if the pack ships nothing, in which case the tool places nothing.
+  const furnitureSpriteId = furnitureAtIndex(furnitureIdx);
+  const furnitureSpriteIdRef = useRef(furnitureSpriteId);
+  furnitureSpriteIdRef.current = furnitureSpriteId;
   // Latest masks for the copy tool, which READS the current board (paintCell mutates via a
   // functional update and needs no ref, but copyRegion needs a live snapshot to capture).
   const masksRef = useRef(masks);
@@ -479,6 +524,7 @@ function TemplateEditorPage() {
       let placeholder = prev.placeholder; // areas are immutable; replaced (not mutated) on drop/erase
       const condition = new Set(prev.condition);
       const decor = new Map(prev.decor);
+      let furniture = prev.furniture ?? []; // pieces are immutable; replaced (not mutated) on place/erase
       const tool = activeToolRef.current;
       // Which cells any placeholder area currently covers — the coverage set the condition
       // cascades key on ("a condition may live only on a street/placeholder cell"). The
@@ -512,6 +558,14 @@ function TemplateEditorPage() {
         if (category === 'common' || category === 'tree') {
           communal.delete(k);
           if (street.delete(k) && !placeholderCells.has(k)) condition.delete(k);
+          // A prop/tree and a piece of FURNITURE are both solid objects standing on the
+          // ground, so they cannot share a cell — the new one REPLACES the old rather than
+          // being refused (an author dropping a tree on a sofa means "a tree here now"). The
+          // whole piece goes, from whichever of its cells was clicked, because a piece is
+          // placed and erased atomically. The flush decor families (surface, plank) are
+          // exempt: they lie flat and furniture legitimately stands on them.
+          const buried = furnitureAt(furniture, col, row);
+          if (buried) furniture = furniture.filter((f) => f !== buried);
         }
       };
 
@@ -547,6 +601,14 @@ function TemplateEditorPage() {
             break;
           }
           case 'condition': condition.delete(k); break;
+          // A click anywhere inside a piece's FOOTPRINT removes the whole piece (an author
+          // points at the middle of a sofa, not at its foot cell) — pieces are placed and
+          // erased atomically, like placeholder areas.
+          case 'furniture': {
+            const hit = furnitureAt(furniture, col, row);
+            if (hit) furniture = furniture.filter((f) => f !== hit);
+            break;
+          }
           // A cell holds ONE decor sprite shared by the three decor tools, so a decor
           // eraser removes it only when it belongs to THIS tool's category ("only erase
           // the selected tool") — e.g. the surface-decor eraser leaves a tree untouched.
@@ -559,7 +621,7 @@ function TemplateEditorPage() {
             break;
           }
         }
-        return { terrain1, terrain2, street, communal, placeholder, condition, decor };
+        return { terrain1, terrain2, street, communal, placeholder, condition, decor, furniture };
       }
 
       switch (tool) {
@@ -625,12 +687,35 @@ function TemplateEditorPage() {
           if (!placeholderCells.has(k)) break;
           condition.add(k);
           break;
+        case 'furniture': {
+          // Drop the paged sprite with its NEAR (min-iso) foot cell under the cursor. Refused
+          // (no-op) only if the piece's iso footprint would leave the board or touch another
+          // PIECE. Terrain, the walkability classes, placeholder areas and flush surface decor
+          // are not solid objects, so a piece simply stands on them; a blocking prop/tree IS
+          // solid and is displaced below rather than refusing the drop.
+          const id = furnitureSpriteIdRef.current;
+          if (id === null) break;
+          const piece: FurniturePlacement = { col, row, id };
+          if (!furnitureFitsBoard(piece, widthRef.current, heightRef.current)) break;
+          if (furnitureOverlapsAny(piece, furniture)) break;
+          // Clear any BLOCKING decor (a common prop or a tree) from every cell the piece
+          // covers — the mirror of the decor branch above, and for the same reason: two solid
+          // objects cannot share a cell. Flush surface/plank decor stays: furniture stands on
+          // the ground, and the ground may be a wood panel or have grass tufts on it.
+          // This sweeps the whole FOOTPRINT, not just the clicked cell, because that is what
+          // the piece actually occupies.
+          for (const cell of furnitureBuriedDecorCells(piece, decor, isBlockingDecorUrl)) {
+            decor.delete(cell);
+          }
+          furniture = [...furniture, piece];
+          break;
+        }
         case 'familyDecor': placeDecor('family'); break;
         case 'commonDecor': placeDecor('common'); break;
         case 'treeDecor': placeDecor('tree'); break;
         case 'plankDecor': placeDecor('plank'); break;
       }
-      return { terrain1, terrain2, street, communal, placeholder, condition, decor };
+      return { terrain1, terrain2, street, communal, placeholder, condition, decor, furniture };
     });
   }, []);
 
@@ -667,12 +752,22 @@ function TemplateEditorPage() {
         placeholder.push({ col: area.col - c0, row: area.row - r0, w: area.w, h: area.h });
       }
     }
+    // Furniture pieces whose WHOLE iso footprint fits the rectangle → re-anchored to its min
+    // corner. Same whole-or-nothing rule as the placeholder areas above: half a sofa is not a
+    // thing that can be pasted, and the footprint (not the foot cell) is what must fit.
+    const furniture: FurniturePlacement[] = [];
+    for (const piece of m.furniture ?? []) {
+      const fp = furnitureFootprint(piece);
+      if (fp.col >= c0 && fp.col + fp.w - 1 <= c1 && fp.row >= r0 && fp.row + fp.h - 1 <= r1) {
+        furniture.push({ col: piece.col - c0, row: piece.row - r0, id: piece.id });
+      }
+    }
     setClipboard({
       w, h,
       terrain1: pick(m.terrain1), terrain2: pick(m.terrain2),
       street: pick(m.street), communal: pick(m.communal),
       placeholder, condition: pick(m.condition),
-      decor,
+      decor, furniture,
     });
   }, []);
 
@@ -699,6 +794,7 @@ function TemplateEditorPage() {
       let placeholder = prev.placeholder; // areas replaced (not mutated) below, only on v0
       const condition = new Set(prev.condition);
       const decor = new Map(prev.decor);
+      let furniture = prev.furniture ?? []; // pieces replaced (not mutated) below
       // Overwrite every region cell to exactly match the clipboard.
       const setMembership = (set: Set<string>, key: string, present: boolean) => {
         if (present) set.add(key); else set.delete(key);
@@ -727,7 +823,18 @@ function TemplateEditorPage() {
           placeholder = [...placeholder, { col: col + a.col, row: row + a.row, w: a.w, h: a.h }];
         }
       }
-      return { terrain1, terrain2, street, communal, placeholder, condition, decor };
+      // Furniture pastes WHOLE, like the placeholder areas (a piece spans cells, so a
+      // per-cell overwrite has nothing to write). Every existing piece whose footprint
+      // intersects the target region is dropped first, then the captured pieces are stamped at
+      // their translated anchors — in-bounds by construction, since each was fully inside the
+      // clip and the paste footprint fits the board. Unlike placeholder there is NO version
+      // gate: furniture is per-version content, like decor and the terrain masks.
+      const region = { col, row, w, h };
+      furniture = furniture.filter((f) => !footprintsOverlap(furnitureFootprint(f), region));
+      for (const f of clip.furniture) {
+        furniture = [...furniture, { col: col + f.col, row: row + f.row, id: f.id }];
+      }
+      return { terrain1, terrain2, street, communal, placeholder, condition, decor, furniture };
     });
     setDirty(true);
   }, [pushHistory]);
@@ -746,13 +853,15 @@ function TemplateEditorPage() {
   // ── Keyboard hotkeys ────────────────────────────────────────────────────────────
   // Palette hotkeys mirror the keyboard's physical layout, one palette row per keyboard row
   // (first button = the row's left key, later buttons step right):
-  //   `  grid · 1/2/3/4 view toggles        (number row — top palette row)
-  //   Q/W/E/R masks                         (top letter row)
-  //   A/S terrain · D/F/G/H decor           (home row)
-  //   Z undo · X redo · C/V copy/paste · B eraser  (bottom row)
-  // Masks/terrain/decor/copy/paste select via HOTKEY_TO_TOOL; grid + the four view toggles +
-  // Z undo / X redo / the B eraser MODIFIER are handled directly below (not tools). SPACE cycles
-  // the placeholder drop size / decor variant of the active tool. Suppressed while the Properties
+  //   `  grid · 1/2/3/4 view toggles                    (number row — top palette row)
+  //   Q/W/E/R masks · T/Y terrain                       (top letter row)
+  //   A furniture · S/D/F/G decor                       (home row)
+  //   Z undo · X redo · C/V copy/paste · B eraser       (bottom row)
+  // Masks/terrain/furniture/decor/copy/paste select via HOTKEY_TO_TOOL; grid + the four view
+  // toggles + Z undo / X redo / the B eraser MODIFIER are handled directly below (not tools).
+  // SPACE cycles the placeholder drop size / decor variant / furniture FACING of the active
+  // tool. The Furniture tool additionally pages its catalogue with ← / → (its own effect,
+  // above, because those repeat while held). Suppressed while the Properties
   // dialog is open or focus is in a text field, so typing never paints. Keyed on [version] so the
   // placeholder gate (v0-only) reads the current version.
   useEffect(() => {
@@ -788,6 +897,15 @@ function TemplateEditorPage() {
       if (key === ' ') {
         if (activeTool === 'placeholder') setPlaceholderSizeIdx(i => (i + 1) % PLACEHOLDER_SIZES.length);
         else if (DECOR_TOOL_CATEGORY[activeTool]) setDecorVariantIdx(i => i + 1);
+        // Furniture: jump to the selected piece's OPPOSITE FACING — i.e. turn it around. This
+        // is a SPRITE SWAP, never a render flip: the pack ships each facing as its own
+        // independently-shaded file, so mirroring one would light the wrong face (see
+        // engine/market/furniture.ts). A no-op for a sprite the pack ships only one way.
+        else if (activeTool === 'furniture' && furnitureSpriteId !== null) {
+          const sibling = lumeishTileset.facingSibling(furnitureSpriteId);
+          const siblingIdx = sibling ? furnitureIndexOf(sibling.id) : -1;
+          if (siblingIdx >= 0) setFurnitureIdx(siblingIdx);
+        }
         e.preventDefault();
         return;
       }
@@ -805,7 +923,7 @@ function TemplateEditorPage() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [propsOpen, version, activeTool, handleUndo, handleRedo]);
+  }, [propsOpen, version, activeTool, furnitureSpriteId, handleUndo, handleRedo]);
 
   // Clear the board. On version 0 this wipes everything (incl. the placeholder it
   // owns); on higher versions the placeholder is inherited/read-only, so it is kept.
@@ -1080,6 +1198,18 @@ function TemplateEditorPage() {
   const terrainGroup = TOOL_GROUPS.find(g => g.key === 'terrain')!;
   const decorGroup = TOOL_GROUPS.find(g => g.key === 'decor')!;
   const masksGroup = TOOL_GROUPS.find(g => g.key === 'masks')!;
+  const furnitureGroup = TOOL_GROUPS.find(g => g.key === 'furniture')!;
+
+  // The Furniture button's live readout: which sprite of the catalogue is selected, its iso
+  // FOOTPRINT (what a click will occupy — not the padded pixel box), and whether Space can turn
+  // it around. Ids are the pack's own numbers: the pack ships no names, and inventing them was
+  // explicitly not wanted, so the number plus the ghost IS the identification.
+  const furnitureLabel = (() => {
+    if (furnitureSpriteId === null) return 'no furniture pack loaded';
+    const span = lumeishTileset.span(furnitureSpriteId);
+    const turnable = lumeishTileset.facingSibling(furnitureSpriteId) ? ' · Space turns it around' : '';
+    return `#${furnitureSpriteId} (${furnitureIdx + 1}/${FURNITURE_CATALOGUE.length}) · ${span.w}×${span.h} cells${turnable}`;
+  })();
 
   // Render one color-coded tool group as a horizontal row of paint-tool buttons. The two
   // version-gated tools (placeholder = v0-only, condition = versions-above-0-only) disable
@@ -1109,7 +1239,9 @@ function TemplateEditorPage() {
               : `${label} (${hotkey})${
                   tool === 'placeholder'
                     ? ` · ${PLACEHOLDER_SIZES[placeholderSizeIdx].w}×${PLACEHOLDER_SIZES[placeholderSizeIdx].h} (Space to resize)`
-                    : ''
+                    : tool === 'furniture'
+                      ? ` · ${furnitureLabel}`
+                      : ''
                 }`}
             hotkey={hotkey}
             active={activeTool === tool}
@@ -1480,8 +1612,13 @@ function TemplateEditorPage() {
             {renderToolGroup(terrainGroup)}
           </Box>
 
-          {/* Row 3 (home row) — decor tools (S/D/F/G). */}
-          {renderToolGroup(decorGroup)}
+          {/* Row 3 (home row) — the furniture tool (A) then the decor tools (S/D/F/G), in
+              keyboard order. Furniture keeps its own group because it places multi-cell OBJECTS
+              with real occupancy, not a per-cell sprite. */}
+          <Box className="template-editor-tool-row" sx={{ display: 'flex', gap: 1 }}>
+            {renderToolGroup(furnitureGroup)}
+            {renderToolGroup(decorGroup)}
+          </Box>
 
           {/* Row 4 (bottom keyboard row Z X C V B) — history (Undo Z · Redo X) at the start,
               then the clipboard tools (Copy C · Paste V), then the ERASER modifier (B). The
@@ -1534,6 +1671,9 @@ function TemplateEditorPage() {
             // the hovered cell's surface and previews it before the click.
             decorCategory={DECOR_TOOL_CATEGORY[activeTool] ?? null}
             decorVariantIdx={decorVariantIdx}
+            // Drives the FURNITURE ghost + footprint preview: the sprite the ← / → arrows have
+            // paged to. The viewer resolves its art and occupancy from the tileset.
+            furnitureSpriteId={activeTool === 'furniture' ? furnitureSpriteId : null}
             // The street/communal walkability tools, the terrain tools, the wood-panel (plank)
             // decor tool, AND the copy tool select by press-drag-release rectangle; the parent
             // decides what the finished rectangle means (fill the mask, fill terrain, tile planks,

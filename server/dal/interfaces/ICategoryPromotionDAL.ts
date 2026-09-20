@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { MasteryBarId } from '../../contracts/wire.js';
-import { CategoryPromotion, CategoryPromotionInput } from '../../types/velocity.js';
+import { CategoryPromotion, CategoryPromotionInput, VelocityBreakdown } from '../../types/velocity.js';
 
 /**
  * Data-access contract for `category_promotions` (migration 137) — the append-only
@@ -34,12 +34,18 @@ export interface ICategoryPromotionDAL {
    *
    * Defaults to core-only so a caller that forgets the argument under-reports rather
    * than crediting a learner for a skill they never opted into.
+   *
+   * Returns a `VelocityBreakdown` rather than a bare number: the same query that
+   * produces the headline figure also splits it across the three band boundaries
+   * (`CATEGORY_BOUNDARIES`), because the Velocity card shows both and a second
+   * method would mean a second scan of the same rows under the same predicate.
+   * `total` is the counts summed, so the two can never disagree.
    */
   getVelocityByLanguage(
     userId: string,
     windowDays: number,
     bars?: MasteryBarId[]
-  ): Promise<Map<string, number>>;
+  ): Promise<Map<string, VelocityBreakdown>>;
 
   /**
    * Band-steps climbed inside the window for MANY users, broken out by

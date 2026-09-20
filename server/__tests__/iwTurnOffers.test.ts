@@ -177,6 +177,63 @@ describe('buildTurnOffers', () => {
   });
 });
 
+/**
+ * ⚠️ A conversation is a FIXED exchange, so a second playing is the first one again. The cap
+ * is a hard rule rather than an authored flag — see `turnOffers`'s CONVERSATION_SPENT.
+ */
+describe('once per run — a spent conversation, and everything that would replay it', () => {
+  const played = new Set(['c1']);
+
+  it('stops offering a conversation that has already been overheard', () => {
+    const r = offeredConversations([conversation({ selectable: true, title: 'greet the regular' })],
+      'wang_shen', NO_CUES, played);
+    expect(r.offered).toEqual([]);
+    expect(r.suppressed).toEqual([{ name: 'greet the regular', reason: 'already happened this run' }]);
+  });
+
+  it('reports "already happened" ahead of "not choosable", the truer answer of the two', () => {
+    const r = offeredConversations([conversation({ title: 'greet the regular' })],
+      'wang_shen', NO_CUES, played);
+    expect(r.suppressed[0].reason).toBe('already happened this run');
+  });
+
+  // The half that is easy to miss: an action carrying the spent step would otherwise run a
+  // hollowed-out version of itself, silently skipping the beat the author wrote it for.
+  it('stops offering an ACTION whose script would start the spent conversation', () => {
+    const a = action({ name: 'chat with 老周', steps: [{ kind: 'start_conversation', conversationId: 'c1' }] });
+    const r = offeredActions(member([a]), NO_CUES, played);
+    expect(r.offered).toEqual([]);
+    expect(r.suppressed[0].reason).toContain('already happened this run');
+    expect(r.suppressed[0].reason).toContain('c1');
+  });
+
+  it('leaves an action alone when its conversation has NOT played', () => {
+    const a = action({ steps: [{ kind: 'start_conversation', conversationId: 'c2' }] });
+    expect(offeredActions(member([a]), NO_CUES, played).offered).toHaveLength(1);
+  });
+
+  it('finds the step wherever it sits in the script, not just first', () => {
+    const a = action({ steps: [
+      { kind: 'face', actor: 'player' },
+      { kind: 'start_conversation', conversationId: 'c1' },
+    ] });
+    expect(offeredActions(member([a]), NO_CUES, played).offered).toEqual([]);
+  });
+
+  it('changes nothing at all when no conversation has played yet', () => {
+    const a = action({ steps: [{ kind: 'start_conversation', conversationId: 'c1' }] });
+    const scene = { conversations: [conversation({ selectable: true, title: 'greet' })] };
+    const r = buildTurnOffers(scene, member([a]), NO_CUES, new Set());
+    expect(r.names).toEqual(['bring water', 'greet']);
+  });
+
+  it('drops both halves through buildTurnOffers once it has', () => {
+    const a = action({ steps: [{ kind: 'start_conversation', conversationId: 'c1' }] });
+    const scene = { conversations: [conversation({ selectable: true, title: 'greet' })] };
+    expect(buildTurnOffers(scene, member([a]), NO_CUES, played).names).toEqual([]);
+  });
+});
+
 describe('renderOffers', () => {
   it('renders a name, its guidance and its urgency on one line each', () => {
     const text = renderOffers([

@@ -8,7 +8,8 @@ import {
   loadMinutePointsDataSync,
   type MinutePointsStorage
 } from './minutePointsStorage';
-import { MINUTE_POINTS_ELIGIBLE_PAGES, MINUTE_POINTS_ELIGIBLE_EXACT_PAGES, MINUTE_POINTS_AUTO_ACTIVE_PAGES, MINUTE_POINTS_CONFIG, STREAK_CONFIG } from '../constants';
+import { MINUTE_POINTS_CONFIG, STREAK_CONFIG } from '../constants';
+import { isMinutePointsAutoActivePath, isMinutePointsEligiblePath } from './eligibility';
 import { useActivityDetection } from '../hooks/useActivityDetection';
 import { incrementMinutePoint, fetchLanguageSummary } from './minutePointsSync';
 import { isSameStreakDay } from './streakDay';
@@ -115,17 +116,9 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
     isSyncing: false
   });
 
-  // Prefix-matched study surfaces, plus the exact-match list (a study page that is
-  // also the PARENT of browse routes, so its descendants must not inherit eligibility).
-  const isEligiblePage: boolean =
-    MINUTE_POINTS_ELIGIBLE_PAGES.some(
-      (prefix) => location.pathname === prefix || location.pathname.startsWith(prefix + '/')
-    ) || MINUTE_POINTS_ELIGIBLE_EXACT_PAGES.includes(location.pathname);
-
-  // Pages that begin accruing on entry (no first-interaction required) — games.
-  const isAutoActivePage: boolean = MINUTE_POINTS_AUTO_ACTIVE_PAGES.some(
-    (prefix) => location.pathname === prefix || location.pathname.startsWith(prefix + '/')
-  );
+  // The three route lists, resolved in `./eligibility` so the rule is testable on its own.
+  const isEligiblePage: boolean = isMinutePointsEligiblePath(location.pathname);
+  const isAutoActivePage: boolean = isMinutePointsAutoActivePath(location.pathname);
 
   const liveSeconds: number = Math.floor((state.todaysMinutePointsMilli % 60000) / 1000);
   const progressToNextPoint: number = (state.todaysMinutePointsMilli % MINUTE_POINTS_CONFIG.MILLISECONDS_PER_POINT) /

@@ -3,6 +3,7 @@ import type { EditorMasks } from '../../engine/market/farmTerrain';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 import { isValidPlaceholderSize, type PlaceholderArea } from '../../engine/market/placeholderArea';
 import type { TemplateDefinitionPayload } from '../../engine/market/templateDefinition';
+import { furnitureSpriteExists, isFurniturePlacement } from '../../engine/market/furniture';
 
 // The definition payload is the ENGINE's input contract, so it is declared there
 // (see engine/market/templateDefinition.ts). Re-exported here because this module is
@@ -86,6 +87,9 @@ export function masksToDefinition(masks: EditorMasks): TemplateDefinitionPayload
     placeholder: [...masks.placeholder].sort((a, b) => a.col - b.col || a.row - b.row),
     condition: [...masks.condition],
     decor,
+    // Furniture placements → sorted {col,row,id} records (sorted by anchor for stable diffs,
+    // exactly like the placeholder areas above).
+    furniture: [...(masks.furniture ?? [])].sort((a, b) => a.col - b.col || a.row - b.row || a.id - b.id),
   };
 }
 
@@ -117,6 +121,12 @@ export function definitionToMasks(def: TemplateDefinitionPayload): EditorMasks {
     ),
     condition: new Set(def.condition ?? []),
     decor,
+    // Furniture placements. Structurally-invalid records are dropped, and so are placements
+    // whose sprite the pack no longer ships — an id that resolves to nothing would render as
+    // an invisible, un-erasable occupied region.
+    furniture: (Array.isArray(def.furniture) ? def.furniture : [])
+      .filter(isFurniturePlacement)
+      .filter(furnitureSpriteExists),
   };
 }
 

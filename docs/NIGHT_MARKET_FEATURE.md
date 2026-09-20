@@ -1,5 +1,16 @@
 # Night Market Feature
 
+> 🚩 **Behind a feature flag — currently ON.** `nightMarket` in
+> `server/contracts/featureFlags.ts` ([FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 2d). Turning
+> it off unmounts **all three** of the feature's routers (`/api/nightMarket/*`,
+> `/api/nightMarketTemplates/*`, `/api/nightMarketSandbox/*`), removes the four
+> `/night-market*` routes, and hides the hp hero tile, the two template-author tiles and the
+> "Visit their night market" button on a user profile. **Unlock accrual is deliberately NOT
+> gated** — `UserMinutePointsService` keeps granting and reconciling unlocks as minutes are
+> credited, so a learner who studies while the flag is off returns to a market that matches
+> their balance rather than an empty lot. This is the only flagged feature that still writes
+> rows while switched off.
+
 > **One market per language since migration 130.** `nightmarkettemplatelocations`
 > and `nightmarketunlocks` both carry a `language`; corner-uniqueness is
 > `(userId, language, offsetCol, offsetRow)`. Each language's continent is funded by
@@ -55,8 +66,17 @@ imports these directly as modules).
 ### Depth sorting: sprite-strip slicing for multi-cell sprites
 
 *Code: `src/engine/market/isometric.ts` (`computeSpriteStrips`, `computeStripPlacements`,
-`computeLayerZ`), `src/engine/market/house.ts` (`HOUSE_STRIPS`),
-`src/features/nightmarket/HouseStripSprites.tsx`. Tests: `src/__tests__/houseStrips.test.ts`.*
+`computeLayerZ`), `src/engine/market/footprint.ts` (`PropArt`, `propStrips`,
+`propAnchorFraction`, `propFootprint` — the shared multi-cell prop system),
+`src/engine/market/house.ts` (`HOUSE_ART`, `HOUSE_STRIPS`, `houseFootprint`),
+`src/features/nightmarket/HouseStripSprites.tsx`. Tests: `src/__tests__/houseStrips.test.ts`,
+`src/engine/market/__tests__/footprint.test.ts`.*
+
+**The house is no longer special-cased.** Since 2026-09-09 its footprint span, mirror rule
+(a flip TRANSPOSES 4×5 → 5×4), anchor fraction and depth strips all come from the shared
+`footprint.ts`, which also backs `placeholderArea.ts`'s occupancy helpers and the lumeish
+furniture pack — see [LUMEISH_ASSET_PIPELINE.md](./LUMEISH_ASSET_PIPELINE.md) § 6a. Add a new
+multi-cell prop by describing it as a `PropArt`, not by writing fresh footprint constants.
 
 Everything sorts by the painter's rule `z = -(footIsoX + footIsoY) + slot`, where the foot
 anchor is the sprite's FRONT (min-iso) corner. A sprite one tile wide can carry a single foot.
@@ -110,7 +130,14 @@ square footprint cut into exactly `2F` strips. It is now a thin wrapper over the
 `computeSpriteStrips`, which additionally takes `anchorTexX` (art whose base corner is not the
 frame centre — `House.png`), an explicit `stripTexW`, and `flip`.
 
-**Houses** are the live consumer: `HOUSE_STRIPS.normal` / `.flipped` precompute the 11 strips of
+**Every multi-cell prop** goes through `PropStripSprites.tsx`, the one strip renderer: it takes a
+prop's precomputed strips + vertical anchor (from `propStrips` / `propAnchorFraction` in
+`src/engine/market/footprint.ts`) and emits the sprites. Its two wrappers are
+`HouseStripSprites.tsx` (`House.png`) and `FurnitureSprites.tsx` (the lumeish furniture pack —
+see [LUMEISH_ASSET_PIPELINE.md](./LUMEISH_ASSET_PIPELINE.md)), so a house and a sofa depth-sort
+against each other and against pedestrians by one rule.
+
+**Houses**: `HOUSE_STRIPS.normal` / `.flipped` precompute the 11 strips of
 `House.png` relative to a front corner at (0, 0), and `HouseStripSprites` is the single component
 every house surface renders through — `PlaceholderHouseLayer` (runtime filled-slot occupant) and
 the template editor's `PlaceholderOccupantHouses` (lifted above the mask tints in flat mode). Both

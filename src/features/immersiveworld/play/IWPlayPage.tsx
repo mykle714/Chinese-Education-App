@@ -1,15 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Alert, Box, CircularProgress, IconButton, Snackbar, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
-import { IW_ACTOR_PLAYER, type IWNpcOption, type IWScene } from '../../../../server/contracts/iw';
+import { IW_ACTOR_PLAYER, type IWLineSegments, type IWNpcOption, type IWScene } from '../../../../server/contracts/iw';
 import { sceneLayoutToMasks } from '../immersiveWorldSceneApi';
 import { popupImageUrl } from '../iwPopupArt';
 import { useBlockEdgeSwipe } from '../../../hooks/useBlockEdgeSwipe';
 import { usePageTitle } from '../../../hooks/usePageTitle';
 import { useTTS } from '../../../hooks/useTTS';
 import LeafPage from '../../../components/LeafPage';
+import AudioModeChip from '../../../components/AudioModeChip';
+import InfoCardSection from '../../flashcards/FlashcardsLearnPage/InfoCardSection';
+import EipTabStrip from '../../flashcards/FlashcardsLearnPage/EipTabStrip';
+import TooManyTabsSnackbar from '../../flashcards/FlashcardsLearnPage/TooManyTabsSnackbar';
+import { useEipTabs } from '../../flashcards/FlashcardsLearnPage/useEipTabs';
+import { useFlashcardLearnSettings } from '../../../hooks/useFlashcardLearnSettings';
+import { lookupVocabEntry } from '../../../api/dictionary';
+import { saveSelectedSense } from '../../../utils/vocabApi';
+import { senseLabelForIndex } from '../../../utils/definitionUtils';
 import IWComposer from './IWComposer';
+import { useBeginnerKeyboardInset, useBeginnerKeyboardTransition } from '../../beginnerKeyboard';
 import IWSceneStage from './IWSceneStage';
 import IWSpeechBubbles from './IWSpeechBubbles';
 import { fetchKnownWords, loadPlayableScene } from './iwPlayApi';
@@ -39,6 +49,12 @@ import { useIWSceneRuntime } from './useIWSceneRuntime';
  *
  * Referenced by: docs/IMMERSIVE_WORLD.md § 12 phase 2, § 14 Q9, § 14 Q18.
  */
+/**
+ * What the learner's own bubble is labelled. A view-layer word, kept away from the runtime's
+ * `labelFor`, which calls them `the customer` because that is what an NPC's prompt must read.
+ */
+const PLAYER_BUBBLE_NAME = 'You';
+
 export default function IWPlayPage() {
   usePageTitle();
   useBlockEdgeSwipe(true);
@@ -48,10 +64,59 @@ export default function IWPlayPage() {
 
   const [scene, setScene] = useState<IWScene | null>(null);
   const [npcs, setNpcs] = useState<IWNpcOption[]>([]);
+  /** The authored lines' tap-to-look-up data, from the same scene read (§ 5.3b). */
+  const [authoredSegments, setAuthoredSegments] = useState<Record<string, IWLineSegments>>({});
   const [knownWords, setKnownWords] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const runtime = useIWSceneRuntime(scene, npcs);
+  const runtime = useIWSceneRuntime(scene, npcs, authoredSegments);
+  const { settings: learnSettings } = useFlashcardLearnSettings();
+
+  /**
+   * § 5.3c — the eip over a scene. The FOURTH host of the same panel (flp, scp, cdp, here),
+   * mounted whole rather than reduced: § 5.3b's rule is that iw does not own a lookup UI, and
+   * a cut-down eip would be exactly that. `language` is the SCENE's, not the account's — a
+   * scene can be played in a language the account is not currently set to.
+   */
+  const eip = useEipTabs({ language: scene?.language });
+  const [eipOpen, setEipOpen] = useState(false);
+  /** The word whose lookup is in flight, so a second tap during it is ignored. */
+  const eipLoadingRef = useRef<string | null>(null);
+
+  const setPaused = runtime.setPaused;
+  /**
+   * Tapping a word in a bubble. The lookup runs BEFORE the sheet opens (the same order scp
+   * uses) so a word with no det row leaves the scene alone instead of opening an empty sheet.
+   *
+   * ⚠️ The world is held for as long as the sheet is up — see `IWSceneRuntime.setPaused`.
+   * A bubble never expires, but it IS replaced by the next line, so without the hold a
+   * conversation running behind the sheet would swap out the line being read.
+   */
+  const handleSegmentOpen = useCallback(async (segment: string) => {
+    if (eipLoadingRef.current) return;
+    eipLoadingRef.current = segment;
+    setPaused(true);
+    try {
+      const entry = await lookupVocabEntry(segment, scene?.language);
+      eip.openForRoot(entry);
+      setEipOpen(true);
+    } catch (error) {
+      // Silent, like scp's card-info tap: a lookup that misses is an optional detour that
+      // did not pan out, and a dialog over a scene is a heavier interruption than the miss.
+      console.error(`Failed to open the info panel for "${segment}":`, error);
+      setPaused(false);
+    } finally {
+      eipLoadingRef.current = null;
+    }
+  }, [eip, scene?.language, setPaused]);
+
+  // Closing KEEPS the trail (same rule as scp): reopening on the same word resumes the
+  // drill-in chain. Leaving the scene unmounts the hook, which drops everything.
+  const handleCloseEip = useCallback(() => {
+    setEipOpen(false);
+    setPaused(false);
+  }, [setPaused]);
+
   // Written by the stage every frame, read by the bubble layer's own animation frame — see
   // IWSceneStage's `positions` prop for why this is a ref rather than state.
   const positions = useRef(new Map<string, { x: number; y: number }>());
@@ -65,6 +130,7 @@ export default function IWPlayPage() {
         if (cancelled) return;
         setScene(payload.scene);
         setNpcs(payload.npcs);
+        setAuthoredSegments(payload.lineSegments ?? {});
       })
       .catch(() => { if (!cancelled) setLoadError('That scene is not available.'); });
     return () => { cancelled = true; };
@@ -84,7 +150,28 @@ export default function IWPlayPage() {
 
   const masks = useMemo(() => sceneLayoutToMasks(scene?.layout), [scene]);
   const places = useMemo(() => (scene ? interactivePlaces(scene) : []), [scene]);
+
+  /**
+   * actorId → the name a speech bubble prints above the line: the runtime's display labels
+   * (`speakerLabels`, NOT the prompt-facing `labelFor`) plus the learner, whom only a view
+   * has a word for.
+   *
+   * The stage draws no name over the learner's head — their body IS where they are looking —
+   * but a docked bubble is detached from every head, so an unlabelled one would be the only
+   * bubble whose speaker is unknowable.
+   */
+  const speakerNames = useMemo(
+    () => ({ ...runtime.speakerLabels, [IW_ACTOR_PLAYER]: PLAYER_BUBBLE_NAME }),
+    [runtime.speakerLabels],
+  );
   const popupUrl = runtime.popup ? popupImageUrl(runtime.popup.imageId) : undefined;
+
+  // Space the handwriting keyboard is taking at the bottom of the screen, if any,
+  // plus the timing that space must travel on. The inset changes in ONE step, so
+  // without the transition the composer teleports to its final position while the
+  // keyboard is still sliding up behind it — two events instead of one.
+  const keyboardInset = useBeginnerKeyboardInset();
+  const keyboardTransition = useBeginnerKeyboardTransition('padding-bottom');
 
   if (loadError) {
     return (
@@ -100,18 +187,46 @@ export default function IWPlayPage() {
       onBack={() => navigate('/immersive-world')}
       className="iw-play-page"
       contentClassName="iw-play-page__body"
-      contentSx={{ p: 0, position: 'relative', overflow: 'hidden' }}
+      // ⚠️ The beginner keyboard (docs/BEGINNER_KEYBOARD.md § 7a) is portaled OVER
+      // the app, not into this page's flow, so it would otherwise cover the
+      // composer — the one control the learner needs while it is open. This page
+      // cannot scroll out from under it either: the stage is a fixed viewport.
+      // Reserving the height here shrinks `stage-wrap` (it is the flex: 1 child)
+      // and carries the composer up above the keyboard. 0 when it is closed, and
+      // animated on the keyboard's own curve so the two move as one surface
+      // (BEGINNER_KEYBOARD.md § 6z).
+      contentSx={{
+        p: 0,
+        position: 'relative',
+        overflow: 'hidden',
+        paddingBottom: `${keyboardInset}px`,
+        transition: keyboardTransition,
+      }}
       rightContent={
-        runtime.remaining !== null
-          ? (
+        <>
+          {runtime.remaining !== null && (
             // § 7 asks for the wind-down to read in-world rather than as a quota bar. This is
             // the honest minimum until there is something better: a count that only appears
             // once it is meaningful, and never a progress bar draining toward "you are done".
             <Typography className="iw-play-page__remaining" sx={{ fontSize: 11, opacity: 0.6 }}>
               {runtime.remaining} left
             </Typography>
-          )
-          : undefined
+          )}
+          {/*
+            Narration audio mode — the SAME self-contained app-wide control the flp, scp and
+            every game header render (docs/AUDIO_PLAYBACK.md). A scene speaks NPC lines aloud
+            through `useTTS`, so muting on entering a quiet room is as time-sensitive here as
+            it is on the flp, and it should not cost a trip to /settings.
+
+            ⚠️ It is NOT the composer's `IWVolumeChip`, despite both being `HeaderCycleChip`s
+            with volume glyphs. This one is the PHONE's output route (off/passthrough/media,
+            persisted app-wide); that one is how loudly the PLAYER speaks inside the scene
+            (whisper/say/shout, per-utterance). They sit on different rows — this in the
+            header, that in the writing bar — precisely so the two are never read as one
+            control with two copies.
+          */}
+          <AudioModeChip className="iw-play-page__audio-chip" />
+        </>
       }
     >
       <Box className="iw-play-page__stage-wrap" sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
@@ -132,18 +247,28 @@ export default function IWPlayPage() {
               onTapBody={runtime.focusBody}
               onTapPlace={tag => { void runtime.runPlaceInteraction(tag); }}
               places={places}
+              walkable={runtime.graph.walkable}
               focusedId={runtime.focusedId}
               playerId={IW_ACTOR_PLAYER}
               positions={positions}
             />
             <IWSpeechBubbles
               bubbles={runtime.bubbles}
+              lineSegments={runtime.lineSegments}
+              speakerNames={speakerNames}
               positions={positions}
               language={scene.language}
-              // Replay is cache-warm: the clip is already decoded, so re-hearing a line costs
-              // nothing (§ 14 Q41). It is a deliberate press, so it uses the manual voice —
-              // `speakSentence`, not the autoplay-gated automatic one.
+              // A deliberate press, so it uses the manual voice — `speakSentence`, not the
+              // autoplay-gated automatic one. That is what lets the button work UNDER MUTE
+              // (§ 14 Q41), which is the state it matters most in: the line was never
+              // narrated, and this is the learner's only way to hear it.
+              //
+              // Usually cache-warm — the clip was decoded to time the reveal, so re-hearing
+              // costs nothing. Under mute nothing was prepared, so this press pays the synth
+              // round-trip; that is a wait on an explicit request, not a stall in the scene.
               onReplay={text => { void tts.speakSentence(text); }}
+              // § 5.3c: tap a word, read about it. Every bubble, every speaker.
+              onSegmentOpen={segment => { void handleSegmentOpen(segment); }}
             />
           </>
         )}
@@ -175,12 +300,79 @@ export default function IWPlayPage() {
       {scene && (
         <IWComposer
           language={scene.language}
-          knownWords={knownWords}
           disabled={runtime.sending || runtime.frozen}
           sending={runtime.sending}
           onSend={runtime.say}
         />
       )}
+
+      {/* § 5.3c's eip. Mounted only while open so the sheet's open animation replays on every
+          reopen (the flp's rule, and scp's). SheetPanel portals its own scrim and sheet to the
+          frame, so this needs no positioning host of its own — the scrim is also what stops a
+          tap reaching the stage, so reading about a word and playing the scene stay separate
+          modes in the same way sorting and reading do on scp. */}
+      {eipOpen && (() => {
+        // The root tab is seeded before `eipOpen` flips true, so `active` is present; the
+        // nulls below are a paint-safety net only.
+        const active = eip.activeTab;
+        const compareTab = active?.kind === 'compare' ? active : null;
+        return (
+          <InfoCardSection
+            currentEntry={active?.kind === 'entry' ? active.entry : null}
+            selectedTab={active?.kind === 'entry' ? active.selectedSubTab : 0}
+            onTabChange={eip.setActiveSubTab}
+            breakdownItems={active?.kind === 'entry' ? active.breakdownItems : []}
+            showPinyin={learnSettings.showPinyin}
+            showPinyinColor={learnSettings.showPinyinColor}
+            // A scene has no card faces, so there is no flipped state to mirror.
+            isFlipped={false}
+            onClose={handleCloseEip}
+            onBreakdownItemClick={item => { void eip.openForEntryKey(item.character); }}
+            onUsedInItemClick={item => { void eip.openForEntryKey(item.entryKey); }}
+            onExampleSegmentClick={segment => { void eip.openForEntryKey(segment); }}
+            depth={0}
+            onSpeak={tts.speak}
+            onSpeakSentence={tts.speakSentence}
+            speakingKey={tts.speakingKey}
+            selectedSenseIndex={active?.kind === 'entry' ? active.selectedSenseIndex : 0}
+            // Mirrors scp: the tab records the pick so the panel re-renders at once, and the
+            // chosen cluster's label is persisted for a word the learner actually has a card
+            // for. A word met in a scene usually carries no vet row (id 0), and then the pick
+            // simply stays local to the tab.
+            onSelectSense={index => {
+              eip.setActiveSenseIndex(index);
+              const entry = active?.kind === 'entry' ? active.entry : null;
+              if (entry?.id) {
+                saveSelectedSense(entry.id, senseLabelForIndex(entry, index))
+                  .catch(err => console.error('Failed to save selected sense:', err));
+              }
+            }}
+            compareTab={compareTab}
+            onSetCompareSlot={eip.setCompareSlot}
+            onCompareResult={eip.setCompareResult}
+            entryTabId={eip.activeTab?.id}
+            entryTabIndex={eip.activeIndex}
+            tabStrip={
+              <EipTabStrip
+                tabs={eip.tabs}
+                activeIndex={eip.activeIndex}
+                onSelect={eip.setActive}
+                isTabbedMode={eip.isTabbedMode}
+              />
+            }
+            // ✕ = close the showing word; false means "that was the last one" and SheetPanel
+            // plays the dismiss (whose onClose lifts the hold). Closing the last tab here
+            // instead would empty the body for the whole slide-out.
+            onCloseX={() => {
+              if (eip.tabs.length <= 1) return false;
+              eip.closeActiveTab();
+              return true;
+            }}
+            showMinutePoints
+          />
+        );
+      })()}
+      <TooManyTabsSnackbar signal={eip.overflowSignal} />
 
       {/* Out-of-world messages: a refusal, an event that fired, or Q7's frozen ladder. */}
       <Snackbar

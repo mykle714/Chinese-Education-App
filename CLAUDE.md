@@ -38,6 +38,7 @@ mdp = mark discoverable pipeline (refers to the skill)
 pbh = progress bar height
 nme = night market editor
 nms = night market sandbox
+bk = beginner keyboard
 
 
 ## Terminology: "Learn Now" cards
@@ -183,6 +184,9 @@ An hourly Postgres cron on the PPE server. For each **(user, language)** balance
 ### Bento System
 → See [docs/BENTO_SYSTEM.md](./docs/BENTO_SYSTEM.md) — the shared `Bento`/`BentoTile`/`BentoStrip` primitive behind the Home/Discover/Games hubs: the 2-column mosaic, the hero/base/low tile weights, ramp-hue tiles (`RAMP`, hue keys not hex), the ghost glyph, and the Bento-vs-Shelf choice rule. Replaced `HubMenu` (deleted 2026-08-21) — the old `docs/HUB_MENU_SYSTEM.md` was renamed into this file.
 
+### Feature Flags
+→ See [docs/FEATURE_FLAGS.md](./docs/FEATURE_FLAGS.md) — the app's one on/off registry, `FEATURE_FLAGS` + `GAME_FLAGS` in `server/contracts/featureFlags.ts`, read by BOTH halves (the server declines to mount a router; the client drops the route from `ROUTE_META` and hides its entry points). Covers the per-feature flags, the per-game flags, the chokepoint checklist — and specifically **the second entry point each feature leaks through**, which is the part that gets missed (community is also served by `GET /api/users/:userId/designs` in `userRoutes.ts`; a challenge board is also served by `?challengeId=` on `/api/onDeck/*`) — why DI wiring in `dal/setup.ts` is deliberately never gated, and why a flip needs BOTH containers rebuilt. **Study Challenge is currently the only flag switched OFF.**
+
 ### Games
 → See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)
   → Hydra Bubbles: [docs/HYDRA_BUBBLES.md](./docs/HYDRA_BUBBLES.md) — **BUILT 2026-08-18,
@@ -241,6 +245,7 @@ so the progress survives.
 ### Practice Writing (character writing-practice drill)
 → See [docs/PRACTICE_WRITING.md](./docs/PRACTICE_WRITING.md) — the "Practice Writing Me" drill: four assistance levels (Trace / Step Through / Memorize / Test), the 2×2 grid for multi-char words, the generalized modal lockout + greyed-background step-back, Memorize's study-first lock (no-writing badge + Start-Writing pulse), top-1 grading, and completion stars.
 → Recognition path (stroke format, backends, Google proxy, Hanzi Writer guide): [docs/HANDWRITING_RECOGNITION.md](./docs/HANDWRITING_RECOGNITION.md)
+→ Beginner Keyboard (write Chinese without pinyin): [docs/BEGINNER_KEYBOARD.md](./docs/BEGINNER_KEYBOARD.md) — **BUILT 2026-09-07 (end-to-end, mounted app-wide; no migration)**: an app-wide handwriting IME that swaps in for the OS keyboard. The learner draws one *component* at a time into a square canvas, taps it out of a candidate row, and the accumulated unordered multiset of components is looked up against `dictionaryentries_zh.components` (order-insensitive, learner-resolved, never guessed). Covers the closed-set matcher built on `hanzi-writer-data` medians (a 1.25 MB bundled template asset over the UNION of 895 components and 7,144 whole characters, scored by a coarse-centroid → full-stroke cascade; no server call, no stroke-count gate), the mixed candidate bar and its ranking (closeness → `frequencyScore` → in-corpus usage), the 2–4-character word fallback that fires only on an empty list, and the Capacitor-vs-web keyboard-mounting adapter. Mounted app-wide by `BeginnerKeyboardProvider` (a document `focusin` listener, opt-out per field via `data-beginner-keyboard="off"`), gated to `selectedLanguage === 'zh'`, and raised **directly** on focus — there is no "swap" prompt; an `ABC` key inside it hands the field back to the OS keyboard. The reverse lookup is **also bundled** (a further 825 KB across two assets) rather than served — it re-runs on every component tap, so the whole keyboard makes no network request on any interaction path, superseding § 6g's server-service row.
 
 ### Custom Card Icon Layout (flp)
 → See [docs/CARD_ICON_LAYOUT.md](./docs/CARD_ICON_LAYOUT.md) — per-word custom icon arrangements on flashcards: the back-face canvas editor (drag/resize/rotate up to 12 icons via gestures), the `iconLayout` jsonb on the vet tables (normalized coords), the icons8 search proxy + download-on-select, and the face-gating rule (icons render only on English-bearing faces).

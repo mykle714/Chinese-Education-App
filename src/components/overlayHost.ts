@@ -13,7 +13,17 @@
  * So an overlay portals OUT of the page and into the nearest ancestor that both fills
  * the screen and can host it without inverting paint order.
  *
- * The phone frame (`.mobile-demo-frame`) satisfies that on a plain page. It does NOT on
+ * ⚠️ THE HOST MUST BE A POSITIONED ELEMENT, OR IT IS NOT REALLY THE HOST. An overlay
+ * pinned with `position: absolute` resolves against its nearest POSITIONED ancestor, not
+ * against whatever element it happens to be a child of. The phone frame
+ * (`.mobile-demo-frame`, MobileDemoFrame's `FrameRoot`) used to be static, so an overlay
+ * hosted there escaped it and resolved against the initial containing block — invisible
+ * on mobile, where the frame is full-bleed and the two rects coincide, but on DESKTOP the
+ * frame is a 402px centered card and the sheet spanned the whole browser window
+ * (found 2026-09-06). `FrameRoot` now carries `position: relative` itself — it is what
+ * the footer bar pins against — so it is the frame-level host.
+ *
+ * The phone frame satisfies that on a plain page. It does NOT on
  * a page that creates its own stacking context in between: `NodePage`'s `Surface`
  * carries the page-slide `transform` (usePageSlide), and a transformed element both
  * creates a stacking context and becomes the containing block for its positioned
@@ -41,9 +51,13 @@
  * contexts, and nothing about any feature.
  */
 export function nearestOverlayHost(el: HTMLElement): HTMLElement {
-    const frame = el.closest(".mobile-demo-frame") as HTMLElement | null;
-    const frameRect = frame?.getBoundingClientRect();
-    for (let node = el.parentElement; node && node !== frame; node = node.parentElement) {
+    // The frame-level host is the positioned phone frame (see the warning above), and
+    // `document.body` for a page outside the frame entirely. Until 2026-09-13 this first
+    // looked for an inner `.mobile-demo-frame__viewport` box; that box existed only to
+    // reserve an unpaintable strip that turned out not to exist, and is gone.
+    const frameHost = (el.closest(".mobile-demo-frame") ?? document.body) as HTMLElement;
+    const frameRect = frameHost.getBoundingClientRect();
+    for (let node = el.parentElement; node && node !== frameHost; node = node.parentElement) {
         const cs = getComputedStyle(node);
         const createsContext =
             cs.transform !== "none" ||
@@ -57,12 +71,11 @@ export function nearestOverlayHost(el: HTMLElement): HTMLElement {
         // (`position: absolute; inset: 0`); an animated inner box would not, and covering
         // just that box is worse than the paint-order bug it would be dodging — fall back
         // to the frame in that case, which is what every page did before this helper.
-        if (!frameRect) return node;
         const r = node.getBoundingClientRect();
         if (r.top <= frameRect.top + 1 && r.left <= frameRect.left + 1 &&
             r.bottom >= frameRect.bottom - 1 && r.right >= frameRect.right - 1) {
             return node;
         }
     }
-    return frame ?? document.body;
+    return frameHost;
 }

@@ -24,8 +24,8 @@ const FrameRoot = styled(Box)(() => ({
     //
     // `--surface-ground` is the exception, and it is not a page tinting the frame: it
     // is set by src/hooks/useThemeColor.ts to whatever surface currently owns the
-    // screen (a game's flooded ground), so a bounce or a sub-pixel seam shows the
-    // page's colour rather than a paper band under it.
+    // screen (a game's flooded ground), so any sliver the page does not itself cover
+    // shows the page's colour instead of a paper band under it.
     backgroundColor: `var(--surface-ground, ${COLORS.background})`,
     overflow: "hidden",
     display: "flex",

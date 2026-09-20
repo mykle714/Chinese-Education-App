@@ -27,6 +27,7 @@ router.get('/api/onDeck/distributedWorkingLoop', authenticateToken, handle(onDec
 router.get('/api/onDeck/categoryCounts', authenticateToken, handle(onDeckVocabController.getCategoryCounts, onDeckVocabController));
 // Mastered counts per mastery bar — the fdp's up-to-three Mastered rows (migration 143).
 router.get('/api/onDeck/masteredCounts', authenticateToken, handle(onDeckVocabController.getMasteredCounts, onDeckVocabController));
+router.get('/api/onDeck/flpReadyCounts', authenticateToken, handle(onDeckVocabController.getFlpReadyCounts, onDeckVocabController));
 
 // Bubble-match game pool (15 Target + 10 Comfortable by default)
 router.get('/api/onDeck/gamePool', authenticateToken, handle(onDeckVocabController.getGamePool, onDeckVocabController));

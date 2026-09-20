@@ -76,9 +76,10 @@ function applyTopClaim(): void {
     // current surface rather than paper. (Until 2026-09-13 this also backstopped a
     // deliberately reserved strip at the bottom of the iOS home-screen app; that strip
     // turned out to be the bug rather than a necessity and is gone — see
-    // src/hooks/useAppHeight.ts.) Published as a CSS variable rather than pushed through
-    // React state because the frame is a styled component far above every claimant, and
-    // this way a claim repaints it without re-rendering the tree.
+    // src/hooks/useAppHeight.ts.) Published as a CSS
+    // variable rather than pushed through React state because the frame is a styled
+    // component far above every claimant, and this way a claim repaints it without
+    // re-rendering the tree.
     document.documentElement.style.setProperty("--surface-ground", color);
 
     // Safari also uses the DOCUMENT background for the overscroll/rubber-band area at

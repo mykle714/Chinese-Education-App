@@ -263,6 +263,34 @@ export class OnDeckVocabController {
     }
   };
 
+  /**
+   * The fdp's three StudyHand figures (Challenge/Review/Mix): cooldown-aware ready
+   * counts per CORE utcm band, plus how long until the soonest Review-band card wakes.
+   * GET /api/onDeck/flpReadyCounts[?foreignTrack=recognition|reading]
+   * → { counts: {Unfamiliar,Target,Comfortable,Mastered}, reviewNextReadyMs: number|null }
+   *
+   * `foreignTrack` follows the same client-computes-it-and-passes-it-as-a-param
+   * convention as `getDistributedWorkingLoop` — the client already knows the learner's
+   * "Show pinyin" setting, so there is nothing for the server to derive.
+   *
+   * Deliberately narrow: unlike `getCollectionCards`, this never joins the dictionary
+   * or runs the enrichment pipeline, since every figure here is computed from
+   * `typedMarkHistory` alone — see `OnDeckVocabService.getFlpReadyCounts`.
+   */
+  getFlpReadyCounts = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const foreignTrack = parseFlpForeignTrack(req.query.foreignTrack);
+      const language = await getUserLanguage(userId);
+      const result = await this.onDeckVocabService.getFlpReadyCounts(userId, language, foreignTrack);
+      res.json(result);
+    } catch (error: any) {
+      handleControllerError(error, res, 'OnDeckVocabController.getFlpReadyCounts');
+    }
+  };
+
   // Categories the game pool may request counts for (mirrors the SR buckets).
   private static readonly GAME_POOL_CATEGORIES = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered'];
 

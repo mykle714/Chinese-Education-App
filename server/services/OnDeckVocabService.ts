@@ -10,6 +10,7 @@ import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, vetDeckOrProvisionalClause } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
+import { flpReadyCountsByBand, nextFlpReadyMs } from '../contracts/flpReadiness.js';
 import { rankCardQueue, rankCardQueueCooled, isTypeOnCooldown } from './cardQueueRanking.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import type { TTSService } from './TTSService.js';
@@ -146,6 +147,13 @@ export class OnDeckVocabService {
   // definition the client's face-steering also maps through, so the face a learner is
   // shown can never disagree with the mark the client then writes.
   private static readonly DEFAULT_FOREIGN_TRACK: FlpForeignTrack = 'recognition';
+
+  // The bands `getFlpReadyCounts`'s `reviewNextReadyMs` counts down over — the same
+  // Comfortable/Mastered split the fdp's Review card draws from
+  // (FlashcardsDecksPage.tsx's `reviewPool`), which decides which figure gets the
+  // "next ready" message. Kept here rather than derived from the counts payload so
+  // the two never quietly diverge.
+  private static readonly REVIEW_BANDS: readonly string[] = ['Comfortable', 'Mastered'];
 
   // The flp's cooldown WINDOW is keyed PER MARK TYPE: recognition and production each
   // cool down under their OWN per-type category (`computeTypeCategory`), the same one
@@ -756,6 +764,55 @@ export class OnDeckVocabService {
         core: row?.core ?? 0,
         reading: row?.reading ?? 0,
         writing: row?.writing ?? 0,
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * The fdp's three StudyHand figures (Challenge/Review/Mix): how many sorted cards
+   * could an flp session actually serve RIGHT NOW, per CORE utcm band, plus how long
+   * until the soonest Review-band card comes off cooldown.
+   *
+   * Deliberately the narrowest possible read — `id` + `typedMarkHistory` only, no
+   * dictionary join, no enrichment pipeline (see `getBuiltinCollectionCards`, which
+   * needs both for DISPLAY and is why the fdp's card count used to be slow). Every
+   * figure here is computed from `typedMarkHistory` alone, so nothing else is fetched.
+   *
+   * The counting/cooldown arithmetic itself is the SHARED contract
+   * (`server/contracts/flpReadiness.ts`) — the exact functions the client used to run
+   * against the full `allCards` fetch, and the same ones `rankFlpEligible` above
+   * restates for actual queue ordering. One definition, so the fdp figure can never
+   * promise a card the flp would not deal.
+   *
+   * Referenced by docs/DECKS_FEATURE.md § "The card hand".
+   */
+  async getFlpReadyCounts(
+    userId: string,
+    language: string,
+    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
+  ): Promise<{ counts: Record<string, number>; reviewNextReadyMs: number | null }> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    const client = await db.getClient();
+    try {
+      const result = await client.query<{ id: number; typedMarkHistory: TypedMarkHistory | null }>(`
+        SELECT ve.id, ve."typedMarkHistory"
+        FROM ${vetReadFrom(language)}
+        WHERE ve."userId" = $1
+        AND ve."language" = $2
+        -- SORTED: deck read, same rule as getMasteredCountsByBar — a lent provisional
+        -- card must not inflate a figure the learner reads as "my deck".
+        AND ${vetSortedClause()}
+      `, [userId, language]);
+
+      const now = Date.now();
+      const rows = result.rows.map((row) => ({ typedMarkHistory: row.typedMarkHistory ?? undefined }));
+      return {
+        counts: flpReadyCountsByBand(rows, foreignTrack, now),
+        reviewNextReadyMs: nextFlpReadyMs(rows, OnDeckVocabService.REVIEW_BANDS, foreignTrack, now),
       };
     } finally {
       client.release();

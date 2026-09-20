@@ -11,7 +11,6 @@ specific doc.
 |---|---|---|
 | **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the footer tabs (Flashcards / Discover / Home / Account) + the `/` Home menu + back-arrow drill-ins. Settings + Logout live on the Account page. |
 | **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every scrollable footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area; bottom nav is a flat full-width bar). Home, Decks, Discover, Games hub, Account use it. |
-| **Back navigation** | [BACK_NAVIGATION.md](./BACK_NAVIGATION.md) | The framework for leaving a page backwards: the five ways Back happens (arrow, browser button, edge swipe, Android back, programmatic exits) and which ones the app can intercept, the history model (`location.key`, `history.state.idx`, `POP`), six rules (arrow mirrors browser Back, `replace` consumed entries, restore state on Back, guards are courtesies, the leaving page owns the motion, origin rides the entry), and an audit of every page's back handler. |
 | **Drill-in page archetypes** | [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) | Two back-arrow archetypes. **Leaf** (`LeafPage`): down arrow, no footer, back-arrow-only exit, slides up/down. **Node** (`NodePage`): left arrow, keeps footer, slides in/out to the right. Rule of thumb: no footer ⇒ leaf, has footer ⇒ node. |
 | **eip bottom-sheet gestures** | [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) | `SheetPanel`'s height model: three stops (0 / default / max) with the default height as the floor, one snap rule, the resize-vs-scroll mode lock, and release momentum that stops at the default height instead of dismissing. |
 | **Discover surface** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | Two-level Discover surface: the `/discover` hub menu (footer tab) → `/discover/sort/:language` drag-to-sort page (back-arrow header, no footer). |
@@ -357,78 +356,55 @@ Two consequences worth knowing:
   answer is a dark top band on light pages, **not** a return to `default`, which
   cannot colour the band at all.
 
-### The paint-vs-layout gap (fixed 2026-09-06 — two heights, not one)
+### The bottom shortfall (open, and NOT fixable from CSS)
 
-> 🐞 This bug has been "fixed" four times on reasoning a later screenshot contradicted.
-> Every attempt, and what was actually observed after each deployment, is logged in
-> **[IOS_STATUS_BAR_BUG.md](./IOS_STATUS_BAR_BUG.md)** — read it before changing any of
-> the geometry below. Delete that file (and this note) once the current fix is verified
-> on a device.
+`black-translucent` buys the top band at a price that is **not** an inset: iOS extends
+the standalone web view over the **whole** screen but leaves the document's **initial
+containing block** at the old `screen height − status bar height`. The web view is 852pt
+on a 393×852 device; the containing block is 793pt; the difference is exactly
+`env(safe-area-inset-top)` (59pt). Uncorrected, the shell stops 59pt short of the bottom
+of the screen and that strip renders as a flat `#FFFFFF` band **on every page, whatever
+that page's ground is**. The symptom is diagnostic: the top band starts matching and an
+*identically sized* band appears at the base. (Found 2026-09-05.)
 
-`black-translucent` buys the top band at a price that is **not** an inset: the app
-becomes **taller than the layout viewport iOS reports**. `window.innerHeight` /
-`100dvh` stay at `screen height − status bar height` while the app itself covers the
-whole screen. So the shell needs two different heights, and every attempt to serve both
-with one number produced half a fix:
+This is **not** `SAFE_BOTTOM`. That inset describes a strip the page *does* paint and
+merely has to keep content out of; this one is a strip the page fails to paint at all.
 
-| Shell height | Band behind the clock | Bottom of every page |
-|---|---|---|
-| `100dvh` | ❌ flat paper strip over a crimson game | ✅ intact |
-| `window.screen.height` | ✅ matches the page | ❌ last ~60pt laid out past the visible area and sliced (the play panel's "drop here to cancel match" row lost its bottom half) |
-| `window.screen.height` on `#root` + the frame only | ✅ | ❌ 59pt dead white strip — `body` was still clipping them |
-| **`--app-height` on `html, body`, `#root` and the frame** | ✅ | ✅ |
-
-All three wrong rows were observed on a 393×852 device in the home-screen app, the first
-two on 2026-09-05 and the third on 2026-09-13.
-
-**What is actually going on** (measured on-device 2026-09-13 — see
-[IOS_STATUS_BAR_BUG.md](./IOS_STATUS_BAR_BUG.md) § 3 round 6, which carries the probe
-numbers and the method):
-
-`black-translucent` extends the web view over the **whole** screen but leaves the
-document's **initial containing block** at the old `screen − statusBar`. The web view is
-852pt; the ICB is 793pt; the difference is exactly `env(safe-area-inset-top)` (59pt).
-Those bottom 59pt are **on screen and paintable** — a probe filled them and they showed,
-with the home indicator inside them.
+**The fix — measured on-device 2026-09-13**, full attempt log and probe numbers in
+[IOS_STATUS_BAR_BUG.md](./IOS_STATUS_BAR_BUG.md) § 3 round 6:
 
 ⚠️ **No CSS unit can express the real height.** `100%` and `100svh` always give the short
-793; `100vh`, `100dvh` and `100lvh` give 793 or 852 *depending on the page load*, with
-identical CSS. `window.innerHeight` is just as unstable. Only `screen.height` (852) and
-`documentElement.clientHeight` (793) hold still, so `src/hooks/useAppHeight.ts` measures
-the gap from those two and publishes the web view's height as a plain **px** value:
+793; `100vh`, `100dvh` and `100lvh` give 793 *or* 852 depending on the page load, with
+identical CSS, and `window.innerHeight` is just as unstable. Only `screen.height` (852)
+and `documentElement.clientHeight` (793) hold still. `src/hooks/useAppHeight.ts`
+measures the gap from those two and publishes the web view's height as a plain **px**
+value, `--app-height`, set only in the iOS home-screen app (`navigator.standalone`, gap
+in `0 < gap ≤ 100px`) and unset everywhere else, where every consumer falls back to the
+`100dvh` / `100%` it used before the hook existed.
 
-| Variable | Means | Read by |
-|---|---|---|
-| `--app-height` | the web view's real height, in px | **`html, body` (`src/index.css`)**, `#root` (`src/App.css`), `FrameRoot` (`MobileDemoFrame`), `Layout`'s `minHeight` |
-
-It is set **only** in the iOS home-screen app (`navigator.standalone`, and a gap in
-`0 < gap ≤ 100px`). Everywhere else — Safari tabs, Android, desktop — it is unset and
-every consumer falls back to the `100dvh` / `100%` it used before the hook existed.
-
-⚠️ **`html, body` is the load-bearing consumer, and the one three rounds of fixes
+⚠️ **`html, body` is the load-bearing consumer, and the one three earlier rounds
 missed.** `index.css` gives them `overflow: hidden`, which makes `body` a **clipping
-box**: whatever its height is, it is a hard ceiling on `#root` and the frame no matter
-how correctly those are sized. Sizing only `#root` produces a perfectly-sized shell that
-`body` then slices 59pt off, which is exactly what shipped and looked like a dead strip.
+box**: its height is a hard ceiling on `#root` and the frame no matter how correctly
+those are sized. Round 3 and round 5 both sized `#root` and `FrameRoot` to 852 and still
+shipped the strip, because `body` was 793 and quietly slicing 59pt off them.
 
-There is **one** height, not two. A previous version of this section described a
-paint-height/layout-height split with a deliberately reserved strip between them; that
-reserved strip was itself the bottom half of the bug.
+| Consumer | Why |
+|---|---|
+| `html, body` (`src/index.css`) | the clipping box — **without this one, none of the others matter** |
+| `#root` (`src/App.css`) | the shell scroll container |
+| `FrameRoot` (`MobileDemoFrame`) | the phone surface |
+| `Layout`'s `minHeight` | the non-frame shell |
 
-**Rules that fall out of this:**
+⛔ **The region past the containing block is visible and ours.** An earlier version of
+this section said the opposite — that the missing pixels are *outside* the web view, that
+no layout can paint them, and that growing the shell only clips content. A device probe
+painted `793..852` and it appeared on screen with the home indicator inside it. The
+clipping that observation was based on was real, but `body` caused it, not the web view.
+There is **one** height, not a paint height and a shorter layout height.
 
-- **Never lay content out against `--app-height`.** It is a paint height. Anything
-  sized to it runs off the visible area — that is the sliced-game-panel row above.
-- `PHONE_OVERLAY_SX` (`phoneGeometry.ts`) deliberately reads **neither**: those are
-  `position: fixed` dialogs, which resolve against the layout viewport already.
-- The footer bar anchors to `FrameRoot`, which must therefore stay `position: relative` —
-  `bottom: 0` on a static ancestor escapes to the initial containing block and, on
-  desktop, parks the bar at the bottom of the browser window instead of the phone card.
-
-⚠️ **iOS snapshots `index.html`'s `apple-mobile-web-app-*` tags when the icon is added**
-— an installed icon has to be deleted and re-added before a tag change takes effect.
-Note this does *not* apply to the heights above: they are runtime CSS, so they ship with
-a normal reload.
+⚠️ **Whatever ships, iOS snapshots the `apple-mobile-web-app-*` tags when the icon is
+added** — an installed icon has to be deleted and re-added before a *tag* change takes
+effect. CSS and JS changes ship with a normal reload.
 
 ### The status-bar scrim (open)
 
@@ -471,10 +447,7 @@ Today that is only the flp merge sheet's header.
 
 - `src/index.css` — shell `overflow: hidden`, global `user-select: none`, cpcd desktop-selectable exception
 - `src/theme/safeArea.ts` — `SAFE_TOP` / `SAFE_BOTTOM`, and `index.html`'s `viewport-fit=cover` + `apple-mobile-web-app-*` tags (see above)
-- `src/hooks/useThemeColor.ts` — `theme-color` claims for Safari tabs / Android Chrome, plus the `--surface-ground` variable the frame ground reads
-- `src/hooks/useAppHeight.ts` — `--app-height`, the iOS home-screen web view's real height in px
-- `src/index.css` — `html, body` height: the clipping box `--app-height` must reach
-- `src/components/MobileDemoFrame.tsx` — `FrameRoot`; the footer bar anchors to it
+- `src/hooks/useThemeColor.ts` — `theme-color` claims for Safari tabs / Android Chrome only
 - `src/App.css` — `#root` shell scroller
 - `src/hooks/useBlockEdgeSwipe.ts` — edge-swipe-back blocker
 - `src/hooks/useScrollStretch.ts` — displacement-driven elastic card spacing (see above)

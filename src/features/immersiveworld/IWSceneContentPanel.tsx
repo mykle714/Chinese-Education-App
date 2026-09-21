@@ -8,7 +8,7 @@ import type {
 } from '../../../server/contracts/iw';
 import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
 import IWSelectableControls, { type IWCueOption } from './IWSelectableControls';
-import { iwZebraItemSx } from './iwListZebra';
+import { iwZebraItemSx, iwZebraNestedItemSx } from './iwListZebra';
 
 /**
  * IWSceneContentPanel — the three authored LISTS a scene carries besides its cast:
@@ -275,8 +275,8 @@ export default function IWSceneContentPanel({
             <Box
               key={conv.id}
               className="iw-scene-content-panel__conversation"
-              // Zebra ground + the outline it already had. The turns inside stay on this
-              // ground — nesting a second stripe under it is what `iwListZebra` rules out.
+              // Zebra ground + the outline it already had. The turns inside stripe as well,
+              // restarting at white so the first one merges with this ground.
               sx={{ ...iwZebraItemSx(i), border: `1px solid ${COLORS.border}`, p: 1.5 }}
             >
               <Stack direction="row" spacing={1} alignItems="center">
@@ -345,7 +345,12 @@ export default function IWSceneContentPanel({
 
               <Stack spacing={1} sx={{ mt: 1.5 }}>
                 {conv.turns.map((turn, t) => (
-                  <Stack key={t} direction="row" spacing={1} alignItems="flex-start">
+                  <Stack
+                    key={t}
+                    direction="row" spacing={1} alignItems="flex-start"
+                    className="iw-scene-content-panel__turn"
+                    sx={iwZebraNestedItemSx(t)}
+                  >
                     <TextField
                       size="small" select label="Who" sx={{ width: 130 }}
                       value={speakers.includes(turn.npcId) ? turn.npcId : ''}

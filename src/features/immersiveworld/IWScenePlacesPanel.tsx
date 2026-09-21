@@ -17,7 +17,7 @@ import {
 } from '../../../server/contracts/iw';
 import { IW_POPUP_IMAGES, popupImageUrl } from './iwPopupArt';
 import { isPlacedCell } from './useIWSceneDraft';
-import { iwZebraItemSx } from './iwListZebra';
+import { iwZebraItemSx, iwZebraNestedItemSx } from './iwListZebra';
 import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
 
 /**
@@ -246,6 +246,7 @@ export default function IWScenePlacesPanel({
                         key={si}
                         direction="row" spacing={0.5} alignItems="flex-start"
                         className="iw-scene-places-panel__step"
+                        sx={iwZebraNestedItemSx(si)}
                       >
                         <Typography sx={{ fontSize: 11, opacity: 0.5, width: 12, mt: 1.25, flex: '0 0 auto' }}>{si + 1}</Typography>
                         <TextField

@@ -91,6 +91,24 @@ export interface TurnStateInput extends IWContextInput {
   offers?: readonly TurnOffer[];
   /** § 4.1 turn-taking pressure: this NPC spoke on the previous beat. */
   spokeLastTurn?: boolean;
+  /**
+   * The `get_information` step this NPC is in the middle of, if any (2026-09-20).
+   *
+   * Present ONLY while a script is parked on that step, which is what makes it safe to change
+   * the reply contract on its account: the four-line shape is asked for exactly on the turns
+   * that will be read for a fourth line.
+   */
+  collect?: CollectGoal;
+}
+
+/** What an NPC is currently trying to find out, and how many tries it has had. */
+export interface CollectGoal {
+  /** The author's words — an intention, never a line to say (§ 14 Q42). */
+  goal: string;
+  /** 1 on the first answer the NPC hears, 2 on the second, and so on. */
+  attempt: number;
+  /** The last attempt this step will make. After it, the NPC gives up and moves on. */
+  maxTurns: number;
 }
 
 /** What prompted this NPC's turn. */
@@ -215,6 +233,29 @@ export function renderTurnState(input: TurnStateInput): string {
   if (input.spokeLastTurn) {
     // Pressure, not a rule — the NPC may well have more to say.
     sections.push('', 'You spoke on the last beat.');
+  }
+
+  // ⚠️ **THE ONE BLOCK IN LAYER 3 THAT IS AN ERRAND RATHER THAN A PERCEPTION**, and it is
+  // rendered LAST, immediately before the event, because it is what the NPC should be reading
+  // the event against: *did that answer my question?*
+  //
+  // It is deliberately phrased as the NPC's own want and not as an instruction to extract
+  // something. "Find out X" produces an interrogator; "you still do not know X, and you need
+  // to" produces somebody who asks again, differently, and who accepts a near-enough answer —
+  // which is the behaviour a learner needs from a vendor who did not understand them.
+  if (input.collect) {
+    const { goal, attempt, maxTurns } = input.collect;
+    const pressure = attempt >= maxTurns
+      ? 'You have asked more than once and it is not coming. Let it go and settle it yourself.'
+      : attempt > 1
+        ? 'You have already asked once. Ask again in fewer, simpler words, or offer them a choice.'
+        : '';
+    sections.push(
+      '',
+      `WHAT YOU STILL NEED TO KNOW: ${goal}`,
+      'You have not been told this yet. Ask for it in your own way, simply.',
+      ...(pressure ? [pressure] : []),
+    );
   }
 
   sections.push('', renderEvent(input.event), '', CLOSER);

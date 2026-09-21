@@ -68,6 +68,20 @@ export interface IWScriptDeps {
    * left or another action supersedes the script, which are the only two other ways out.
    */
   awaitLearner(actorId: string): Promise<void>;
+  /**
+   * Park until the learner's next audible utterance has been ANSWERED, and report whether the
+   * answer contained what this NPC was after (§ 5.4's `get_information`).
+   *
+   * ⚠️ **IT RESOLVES LATER THAN {@link awaitLearner}, AND THAT IS THE POINT.** `awaitLearner`
+   * resolves the moment the learner speaks; this one waits for the NPC's own turn on that
+   * utterance to come back, because the verdict is part of that reply. A script resuming at
+   * the earlier moment would be racing the line its own NPC is about to say.
+   *
+   * `attempt` is 1-based and reaches the prompt, so the NPC can ask again differently rather
+   * than repeating itself. The host neither counts nor caps — {@link runAuthoredAction} owns
+   * the loop, because the cap is a property of the authored step.
+   */
+  collect(actorId: string, goal: string, attempt: number, maxTurns: number): Promise<'got' | 'not-yet'>;
   /** A step that could not be performed. For a debug overlay — never shown to a learner. */
   note(actorId: string, reason: string): void;
   /** True once this script has been superseded or the scene has been left. */
@@ -188,6 +202,32 @@ export async function runAuthoredAction(
         await deps.awaitLearner(actorId);
         if (deps.cancelled()) return;
         break;
+      case 'collectInfo': {
+        // ⚠️ **THE ONLY LOOP IN THE SCRIPT PLAYER.** Every other step runs once; this one runs
+        // until the NPC has what it came for. The cap is what keeps that honest — the verdict
+        // is the model's judgement, and the failure worth guarding is not a wrong answer but
+        // an NPC that never accepts one (see `IW_COLLECT_TURNS_DEFAULT`).
+        let got = false;
+        for (let attempt = 1; attempt <= instruction.maxTurns; attempt++) {
+          const outcome = await deps.collect(actorId, instruction.goal, attempt, instruction.maxTurns);
+          if (deps.cancelled()) return;
+          if (outcome === 'got') { got = true; break; }
+        }
+        if (!got) {
+          // ⚠️ **GIVING UP IS SPOKEN, NOT SILENT.** A cap that merely released the floor would
+          // be an NPC who asks twice and then stares while the script carries on around them.
+          // The direction is an intention, exactly like a `comment`'s — the NPC's own register
+          // decides the words, and a render that comes back empty is silence, not English.
+          deps.note(actorId, `gave up asking after ${instruction.maxTurns} — "${instruction.goal}"`);
+          const line = await deps.renderLine(
+            actorId,
+            `You could not find out ${instruction.goal}. Let it go and carry on without it.`,
+          );
+          if (deps.cancelled()) return;
+          if (line) await deps.say(actorId, line);
+        }
+        break;
+      }
       case 'skip':
         deps.note(actorId, instruction.reason);
         break;
@@ -201,6 +241,8 @@ export async function runAuthoredAction(
  * A render is written against what the NPC has heard. Anything that can add to that list
  * between now and the comment invalidates a line generated in advance:
  *
+ *   - **`get_information`** is `wait_for_response` several times over, and the NPC speaks on
+ *     every one of those turns. Both halves of the barrier at once.
  *   - **`wait_for_response`** hands the floor to the learner. This is the case that sinks
  *     Q42's batch-per-action plan outright — a script straddles the learner's own sentences,
  *     and a line written before them would answer something nobody said. It stayed a barrier
@@ -213,7 +255,7 @@ export async function runAuthoredAction(
  *     form: a line the performer is about to answer cannot have been written before it.
  */
 const RENDER_BARRIERS: ReadonlySet<string> = new Set([
-  'wait_for_response', 'comment', 'start_conversation', 'prompt_npc',
+  'wait_for_response', 'comment', 'start_conversation', 'prompt_npc', 'get_information',
 ]);
 
 /**

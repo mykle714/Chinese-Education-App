@@ -27,6 +27,8 @@ import {
   IW_MAX_SCENE_DIM,
   IW_MAX_SCENE_NAME_LENGTH,
   IW_MAX_SCENE_NOTES_LENGTH,
+  IW_MAX_COLLECT_GOAL_LENGTH,
+  IW_MAX_COLLECT_TURNS,
   IW_MAX_WAIT_SECONDS,
   IW_MIN_SCENE_DIM,
   type IWActionStep,
@@ -933,6 +935,29 @@ function validateNpcActions(
             problems.push({ field: `${stepAt}.actor`, message: 'An NPC cannot aim this at itself' });
           } else if (!actorIds.has(actor)) {
             problems.push({ field: `${stepAt}.actor`, message: `"${actor}" is not in this scene` });
+          }
+          break;
+        }
+        case 'get_information': {
+          // The goal is the only field that CANNOT be defaulted: the NPC is told what it is
+          // waiting for, and "find out (nothing)" parks the script on an unanswerable
+          // question. `maxTurns` is optional and falls back to the default, so only a
+          // present-but-absurd value is worth refusing.
+          const goal = str((step as { goal?: unknown }).goal).trim();
+          if (!goal) {
+            problems.push({ field: `${stepAt}.goal`, message: 'Say what this NPC is trying to find out' });
+          } else if (goal.length > IW_MAX_COLLECT_GOAL_LENGTH) {
+            problems.push({
+              field: `${stepAt}.goal`,
+              message: `Keep this to ${IW_MAX_COLLECT_GOAL_LENGTH} characters`,
+            });
+          }
+          const turns = (step as { maxTurns?: unknown }).maxTurns;
+          if (turns !== undefined && !isIntInRange(turns, 1, IW_MAX_COLLECT_TURNS)) {
+            problems.push({
+              field: `${stepAt}.maxTurns`,
+              message: `Ask at most 1–${IW_MAX_COLLECT_TURNS} times`,
+            });
           }
           break;
         }

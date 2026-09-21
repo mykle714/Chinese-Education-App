@@ -95,10 +95,16 @@ export type NpcTurnResult =
  * THIS turn, so the front of layer 1 is stable and its contract line is not. That is a known
  * cost of Q42's authored actions and is why `prefix-size.js` measures the stem, not this.
  */
-export function buildSystemBlock(npcId: string, offeredNames: readonly string[]): string | null {
+export function buildSystemBlock(
+  npcId: string,
+  offeredNames: readonly string[],
+  collecting = false,
+): string | null {
   const npc = npcById(npcId);
   if (!npc) return null;
-  return `${renderWorldRules(offeredNames)}\n\n${renderNpcBlock(npc)}`;
+  // `collecting` adds the contract's fourth line (§ 5.4's `get_information`). It moves with
+  // the offered names, in the half of layer 1 that was already per-turn — see the note above.
+  return `${renderWorldRules(offeredNames, collecting)}\n\n${renderNpcBlock(npc)}`;
 }
 
 /**
@@ -131,7 +137,7 @@ export async function takeNpcTurn(request: NpcTurnRequest): Promise<NpcTurnResul
   const user = renderTurnState({ ...request.perception, offers });
   const outcome: IWTurnOutcome = await runNpcTurn({
     rungs: request.rungs ?? getIwLadder(),
-    request: { system: buildSystemBlock(npcId, names)!, user },
+    request: { system: buildSystemBlock(npcId, names, Boolean(request.perception.collect))!, user },
     // The SAME array the prompt rendered — offering one list and validating another grades a
     // fiction (§ 5.4).
     offered: names,

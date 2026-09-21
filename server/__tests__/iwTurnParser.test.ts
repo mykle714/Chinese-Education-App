@@ -17,6 +17,8 @@ describe('parseTurnReply — the § 5.3 table', () => {
     const r = parseTurnReply('热的还是凉的？\ntake the order\npleased', OFFERED);
     expect(r).toEqual({
       say: '热的还是凉的？', action: 'take the order', emote: 'pleased', rescued: [], failed: false,
+      // A turn that was not collecting has no fourth line to read (§ 5.4).
+      collected: false,
     });
   });
 
@@ -191,5 +193,30 @@ describe('it has no error path — only degraded outputs', () => {
       expect(['neutral', 'curious', 'pleased', 'confused', 'impatient', 'amused']).toContain(r.emote);
       expect(typeof r.say).toBe('string');
     }
+  });
+});
+
+describe('the optional fourth line — a get_information turn (§ 5.4)', () => {
+  it('reads `got: yes` as the errand being finished', () => {
+    const reply = parseTurnReply('要几个？\nnone\ncurious\ngot: yes', []);
+    expect(reply.collected).toBe(true);
+    // And it is NOT reported as drift — a fourth line is the contract on these turns.
+    expect(reply.rescued).not.toContain('extra lines');
+  });
+
+  it('reads `got: no`, and a missing line, as not yet', () => {
+    expect(parseTurnReply('要几个？\nnone\ncurious\ngot: no', []).collected).toBe(false);
+    // The safe direction: a model that drops the line costs one more exchange, never an
+    // errand that ends without anybody having answered it.
+    expect(parseTurnReply('要几个？\nnone\ncurious', []).collected).toBe(false);
+  });
+
+  it('tolerates the 冒号 and a stray blank line, like every other line rule', () => {
+    expect(parseTurnReply('好的\n\nnone\nhappy\nGot：Yes', []).collected).toBe(true);
+  });
+
+  it('does not mistake speech for the verdict', () => {
+    // "no" alone is a perfectly good thing for an NPC to say; only the LABEL counts.
+    expect(parseTurnReply('no\nnone\nneutral', []).collected).toBe(false);
   });
 });

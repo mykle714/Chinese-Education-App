@@ -26,6 +26,7 @@ import {
 import { runAuthoredAction, runInteraction, type IWScriptDeps } from './iwScript';
 import {
   endIwSession, newSessionId, renderNpcLine, routeAddressee, segmentUtterance, takeNpcTurn,
+  type IWCollectGoal,
   type IWPerception,
 } from '../immersiveWorldTurnApi';
 import { iwLog, iwWarn } from '../iwDebugLog';
@@ -405,6 +406,17 @@ export function useIWSceneRuntime(
    */
   const learnerWaitersRef = useRef<Array<{ actorId: string; resolve: () => void }>>([]);
   /**
+   * Scripts parked at a `get_information` step (§ 5.4, 2026-09-20).
+   *
+   * Two refs rather than one, because the two facts have different lifetimes. `collectingRef`
+   * is what the PROMPT needs — it must be readable by `perceptionFor` at the moment the turn
+   * is assembled, which is after the learner has spoken and before the reply exists.
+   * `collectWaitersRef` is what the SCRIPT needs, and it resolves a whole turn later, once
+   * that reply has come back carrying the verdict.
+   */
+  const collectingRef = useRef(new Map<string, IWCollectGoal>());
+  const collectWaitersRef = useRef<Array<{ actorId: string; resolve: (outcome: 'got' | 'not-yet') => void }>>([]);
+  /**
    * Serializes speech: two lines revealing at once is noise, so they queue.
    *
    * Still needed after § 4.2, and for a different reason than it was written for. A learner's
@@ -428,6 +440,7 @@ export function useIWSceneRuntime(
     // queues are mutated in place (push/splice) and never reassigned, so the identity holds.
     const pauseWaiters = pauseWaitersRef.current;
     const learnerWaiters = learnerWaitersRef.current;
+    const collectWaiters = collectWaitersRef.current;
     return () => {
       cancelledRef.current = true;
       timers.forEach(clearTimeout);
@@ -439,6 +452,9 @@ export function useIWSceneRuntime(
       // Same argument for a script parked at `wait_for_response`: the learner has left and
       // will never speak again, so the waiter is released to see `cancelledRef` and unwind.
       learnerWaiters.splice(0).forEach(({ resolve }) => resolve());
+      // Same for a script parked mid-errand. `not-yet` rather than `got` so the loop sees a
+      // failure, checks `cancelled` and unwinds without speaking a give-up line at nobody.
+      collectWaiters.splice(0).forEach(({ resolve }) => resolve('not-yet'));
       // Release § 7's session counter. Fire-and-forget by design — a failure here leaks one
       // integer on the server and nothing the learner can see.
       endIwSession(session);
@@ -938,6 +954,47 @@ export function useIWSceneRuntime(
     learnerWaitersRef.current.push({ actorId, resolve });
   }), []);
 
+  /**
+   * Park a script until this NPC's next turn reports whether it got what it was after.
+   *
+   * ⚠️ **THE ERRAND IS REGISTERED BEFORE THE AWAIT AND CLEARED AFTER IT**, which is what makes
+   * `perceptionFor` able to see it: the turn that carries the goal into the prompt is assembled
+   * between those two moments, on the learner's next utterance.
+   *
+   * ⚠️ **AN UTTERANCE ROUTED TO SOMEBODY ELSE DOES NOT COUNT.** The waiter stays parked and
+   * the attempt counter does not advance — asking a friend a question in the middle of
+   * ordering should not spend one of the vendor's three tries, and it certainly should not
+   * make the vendor give up.
+   */
+  const collect = useCallback((
+    actorId: string, goal: string, attempt: number, maxTurns: number,
+  ) => new Promise<'got' | 'not-yet'>(resolve => {
+    collectingRef.current.set(actorId, { goal, attempt, maxTurns });
+    collectWaitersRef.current.push({
+      actorId,
+      resolve: outcome => {
+        collectingRef.current.delete(actorId);
+        resolve(outcome);
+      },
+    });
+  }), []);
+
+  /**
+   * Hand a finished turn's verdict to whatever script is parked on this NPC's errand.
+   *
+   * Called for EVERY terminal outcome, not just a reply: a frozen ladder or a refused turn is
+   * an answer that never arrived, and a waiter left parked on one would strand the script
+   * until the learner happened to speak again. `not-yet` lets the loop spend an attempt and
+   * either ask again or give up, which is the same thing the NPC would do if they had simply
+   * not understood.
+   */
+  const releaseCollectors = useCallback((actorId: string, outcome: 'got' | 'not-yet') => {
+    const waiting = collectWaitersRef.current.filter(w => w.actorId === actorId);
+    if (!waiting.length) return;
+    collectWaitersRef.current = collectWaitersRef.current.filter(w => w.actorId !== actorId);
+    waiting.forEach(({ resolve }) => resolve(outcome));
+  }, []);
+
   const scriptDeps = useCallback((token: number, actorId: string): IWScriptDeps => ({
     worldFor,
     walk,
@@ -948,9 +1005,10 @@ export function useIWSceneRuntime(
     armEvent,
     wait: sleep,
     awaitLearner,
+    collect,
     note,
     cancelled: () => cancelledRef.current || scriptTokensRef.current.get(actorId) !== token,
-  }), [worldFor, walk, face, enqueueSay, renderLine, playConversation, armEvent, sleep, awaitLearner, note]);
+  }), [worldFor, walk, face, enqueueSay, renderLine, playConversation, armEvent, sleep, awaitLearner, collect, note]);
 
   /**
    * Perform one of an NPC's authored actions.
@@ -1085,6 +1143,9 @@ export function useIWSceneRuntime(
     // an NPC who was shouted at across a room knows why they were shouted at.
     event: { kind: 'utterance', speaker: PLAYER_LABEL, text, addressed, volume },
     spokeLastTurn: lastSpeakerRef.current === npcId,
+    // Present only while this NPC's script is parked on a `get_information` step, which is
+    // also exactly when the reply will be read for a fourth line (§ 5.4).
+    collect: collectingRef.current.get(npcId),
   }), [contextFor]);
 
   const setKnownWords = useCallback((words: string[]) => { knownWordsRef.current = words; }, []);
@@ -1311,12 +1372,17 @@ export function useIWSceneRuntime(
             emote: outcome.reply.emote,
             chosen: outcome.reply.chosen,
           });
+          // ⚠️ RELEASED AFTER THE REPLY HAS BEEN SPOKEN, not when it arrived. The parked
+          // script's next step belongs after the NPC's own answer — resuming at the earlier
+          // moment would have the script walking away mid-sentence.
+          releaseCollectors(listener.id, outcome.reply.collected ? 'got' : 'not-yet');
         } else if (outcome.kind === 'frozen') {
           iwWarn('turn', `frozen npc=${listener.id} — the § 14 Q7 ladder was exhausted`, outcome.attempts);
           // § 14 Q7: the ladder was exhausted. The world says NOTHING — no improvised cover
           // line — and the scene freezes behind an honest banner.
           frozenRef.current = true;
           setFrozen(true);
+          releaseCollectors(listener.id, 'not-yet');
           setBanner('The world has gone quiet. Something is wrong on our end — try again in a moment.');
         } else if (outcome.kind === 'refused') {
           // A refusal with no code is a FAULT wearing a decline's clothes (see `refusalBanner`).
@@ -1328,6 +1394,7 @@ export function useIWSceneRuntime(
           }
           iwLog('turn', `refused npc=${listener.id} code=${outcome.refusal?.code ?? '(none)'}`, outcome);
           setBanner(refusalBanner(outcome.refusal?.code));
+          releaseCollectors(listener.id, 'not-yet');
           if (typeof outcome.remaining === 'number') setRemaining(outcome.remaining);
         }
       } catch (error) {
@@ -1338,11 +1405,12 @@ export function useIWSceneRuntime(
         iwWarn('turn', `turn threw for npc=${listener.id}`, { refusal, error });
         setBanner(refusal ? refusalBanner(refusal.code) : 'That did not get through. Try again.');
         note(listener.id, `turn failed — ${(error as Error)?.message ?? 'unknown'}`);
+        releaseCollectors(listener.id, 'not-yet');
       }
     };
 
     void runTurn().finally(() => { if (!cancelledRef.current) setSending(false); });
-  }, [scene, audienceFor, focusedId, perceptionFor, applyReply, note, enqueueSayPlayer, sleep]);
+  }, [scene, audienceFor, focusedId, perceptionFor, applyReply, releaseCollectors, note, enqueueSayPlayer, sleep]);
 
   /**
    * Address a body, or poke a place.

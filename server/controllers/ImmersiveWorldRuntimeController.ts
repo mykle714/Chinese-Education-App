@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { ImmersiveWorldService } from '../services/ImmersiveWorldService.js';
-import type { TurnStateInput } from '../services/iw/turnState.js';
+import type { CollectGoal, TurnStateInput } from '../services/iw/turnState.js';
+import { IW_COLLECT_TURNS_DEFAULT, IW_MAX_COLLECT_GOAL_LENGTH, IW_MAX_COLLECT_TURNS } from '../contracts/iw.js';
 import { IW_MAX_LISTENERS_PER_UTTERANCE, IW_MAX_UTTERANCE_CHARS } from '../services/iw/turnBudget.js';
 import { getUserLanguage } from '../utils/controllerUtils.js';
 import { iwFault, iwLog } from '../services/iw/iwDebugLog.js';
@@ -159,6 +160,9 @@ export class ImmersiveWorldRuntimeController {
           action: result.reply.action,
           emote: result.reply.emote,
           rescued: result.reply.rescued,
+          // Only meaningful when the client sent `perception.collect`; false otherwise, which
+          // is what a client that never collects already ignores (§ 5.4).
+          collected: result.reply.collected,
           chosen: result.chosen,
           rung: result.rung,
           remaining: result.remaining,
@@ -481,6 +485,7 @@ function parseTurnBody(body: any): { request: import('../services/ImmersiveWorld
     ...parsePerception(p),
     event,
     spokeLastTurn: Boolean(p.spokeLastTurn),
+    collect: parseCollect(p.collect),
   };
 
   return {
@@ -597,6 +602,28 @@ function holdingList(value: unknown): string[] | undefined {
   if (typeof value === 'string') return value.trim() ? [value] : undefined;
   const items = strings(value);
   return items.length ? items : undefined;
+}
+
+/**
+ * The `get_information` errand this NPC is in the middle of, or undefined (§ 5.4).
+ *
+ * Clamped rather than rejected, in the same spirit as the rest of this file: a bad `attempt`
+ * from a future or broken client should cost the prompt a line of pressure, never a 400 in
+ * front of somebody mid-sentence. An empty goal is dropped entirely — with nothing to ask
+ * for, the block would render as an instruction to find out nothing.
+ */
+function parseCollect(value: unknown): CollectGoal | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as { goal?: unknown; attempt?: unknown; maxTurns?: unknown };
+  const goal = typeof raw.goal === 'string' ? raw.goal.trim().slice(0, IW_MAX_COLLECT_GOAL_LENGTH) : '';
+  if (!goal) return undefined;
+  const clamp = (n: unknown, lo: number, hi: number, fallback: number): number =>
+    (typeof n === 'number' && Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback);
+  return {
+    goal,
+    attempt: clamp(raw.attempt, 1, IW_MAX_COLLECT_TURNS, 1),
+    maxTurns: clamp(raw.maxTurns, 1, IW_MAX_COLLECT_TURNS, IW_COLLECT_TURNS_DEFAULT),
+  };
 }
 
 /** Every string in an unknown array, or an empty list. Never throws on a hostile body. */

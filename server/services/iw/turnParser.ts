@@ -60,9 +60,31 @@ export interface IWTurnReply {
   rescued: string[];
   /** True when the reply was empty or unreadable — § 14 Q7's canned-line fallback. */
   failed: boolean;
+  /**
+   * The optional fourth line, present only on a `get_information` turn (2026-09-20).
+   *
+   * ⚠️ **ABSENT MEANS `false`, AND THAT IS THE SAFE DIRECTION.** A model that drops the line —
+   * or a turn that was never collecting in the first place — reads as "not yet", so the worst
+   * a missing line costs is one more exchange before the step's own turn cap ends it. The
+   * opposite default would end an errand nobody finished.
+   *
+   * Named `collected` rather than `got` because `IWTurnRefusal.got` on the client already
+   * means something unrelated (the value that broke a limit), and two `got`s reading in the
+   * same breath is the kind of thing that survives a review and then bites.
+   */
+  collected: boolean;
 }
 
 const EMOTE_SET: ReadonlySet<string> = new Set<string>(IW_EMOTES);
+
+/**
+ * The optional `got:` line of a `get_information` turn (§ 5.4).
+ *
+ * Tolerant in the two ways a model actually drifts around a labelled line — a bare `yes`/`no`
+ * without the label would be ambiguous against speech, so the LABEL is required and only the
+ * decoration around it is not.
+ */
+const COLLECT_LINE = /^got\s*[:：]\s*(yes|no)\b/i;
 
 /**
  * Strip a speaker label (`王婶：`, `SAY:`) and wrapping quotes from a speech line.
@@ -111,6 +133,8 @@ function parseJsonEnvelope(buffer: string, offered: readonly string[]): IWTurnRe
     emote,
     rescued: ['emitted JSON, not lines'],
     failed: false,
+    // The JSON shape the model volunteers uses the contract's own key, `got`.
+    collected: obj.got === true || obj.got === 'yes',
   };
 }
 
@@ -125,7 +149,7 @@ export function parseTurnReply(buffer: string, offered: readonly string[] = []):
   const trimmed = buffer.trim();
   if (!trimmed) {
     // The only true failure (§ 5.3's table) — the caller falls back to a canned line.
-    return { say: '', action: IW_NO_ACTION, emote: IW_DEFAULT_EMOTE, rescued: ['empty reply'], failed: true };
+    return { say: '', action: IW_NO_ACTION, emote: IW_DEFAULT_EMOTE, rescued: ['empty reply'], failed: true, collected: false };
   }
 
   // Rule 0 — shape sniff. Only when the buffer actually opens with an envelope, so a reply
@@ -137,7 +161,7 @@ export function parseTurnReply(buffer: string, offered: readonly string[] = []):
 
   const lines = trimmed.split('\n').map(l => l.trim()).filter(l => l && !isFenceLine(l));
   if (!lines.length) {
-    return { say: '', action: IW_NO_ACTION, emote: IW_DEFAULT_EMOTE, rescued: ['empty reply'], failed: true };
+    return { say: '', action: IW_NO_ACTION, emote: IW_DEFAULT_EMOTE, rescued: ['empty reply'], failed: true, collected: false };
   }
 
   const rescued: string[] = [];
@@ -155,15 +179,22 @@ export function parseTurnReply(buffer: string, offered: readonly string[] = []):
   const rest = lines.slice(1);
   const actionLine = rest.find(l => offered.includes(l));
   const emoteLine = rest.find(l => EMOTE_SET.has(l));
+  // Scanned like the other two rather than indexed at 3, for the same reason: a blank line or
+  // a stray label must not move it. Only ever present on a collecting turn, so its ABSENCE is
+  // never rescued — there is nothing here that knows whether one was asked for.
+  const collectLine = rest.find(l => COLLECT_LINE.test(l));
   if (!actionLine) rescued.push(`no legal action line → ${IW_NO_ACTION}`);
   if (!emoteLine) rescued.push('no legal emote line → neutral');
-  if (rest.length > 2) rescued.push('extra lines');
+  // The `got:` line is a legal third member of `rest`, so it is discounted before the
+  // extra-lines rescue fires — otherwise every collecting turn would report drift.
+  if (rest.length > (collectLine ? 3 : 2)) rescued.push('extra lines');
 
   return {
     say,
     action: actionLine ?? IW_NO_ACTION,
     emote: (emoteLine as IWEmote | undefined) ?? IW_DEFAULT_EMOTE,
     rescued,
+    collected: collectLine ? /yes/i.test(collectLine) : false,
     // A reply with no speech AND no action is indistinguishable from silence the model did
     // not intend; it is still not a failure, because `NOTHING` + `none` is a legal turn
     // (§ 4.1 — deciding to stay quiet is a normal reply).

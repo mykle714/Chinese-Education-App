@@ -7,12 +7,13 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import {
   IW_ACTION_STEP_KINDS, IW_ACTION_STEP_LABELS, IW_ACTOR_COMPANION, IW_ACTOR_PLAYER,
-  IW_MAX_ACTION_STEPS, IW_MAX_EVENT_DELAY_SECONDS, IW_MAX_WAIT_SECONDS, isActorStep, isActorStepKind,
+  IW_COLLECT_TURNS_DEFAULT, IW_MAX_ACTION_STEPS, IW_MAX_COLLECT_TURNS, IW_MAX_EVENT_DELAY_SECONDS,
+  IW_MAX_WAIT_SECONDS, isActorStep, isActorStepKind,
   type IWActionStep, type IWActionStepKind,
   type IWNpcAction, type IWNpcOption, type IWScene,
 } from '../../../server/contracts/iw';
 import { isPlacedCell } from './useIWSceneDraft';
-import { iwZebraItemSx } from './iwListZebra';
+import { iwZebraItemSx, iwZebraNestedItemSx } from './iwListZebra';
 import IWSelectableControls, { type IWCueOption } from './IWSelectableControls';
 import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
 
@@ -77,6 +78,10 @@ function blankStep(kind: IWActionStepKind): IWActionStep {
     // 20s, and no event pre-picked: the delay has a sensible default, the referent never does.
     case 'schedule_event': return { kind, eventId: '', seconds: 20 };
     case 'wait_for_response': return { kind };
+    // `maxTurns` is left OUT rather than defaulted, so an author who never touches it gets
+    // whatever `IW_COLLECT_TURNS_DEFAULT` is today rather than a copy of it frozen into the
+    // scene's jsonb the day the step was added.
+    case 'get_information': return { kind, goal: '' };
   }
 }
 
@@ -150,8 +155,6 @@ export default function IWSceneActionsPanel({
               className="iw-scene-actions-panel__npc"
               // Padding is deliberately tight (px < py): the step row inside is the widest
               // thing in the column, and side padding is the cheapest space to give it back.
-              // The zebra ground goes on the NPC and stops there — the action boxes inside
-              // keep their dashed outline on it (see `iwListZebra`).
               sx={{ ...iwZebraItemSx(mi), border: '1px solid', borderColor: 'divider', py: 1.25 }}
             >
               <Stack direction="row" alignItems="center" justifyContent="space-between">
@@ -168,7 +171,15 @@ export default function IWSceneActionsPanel({
                     <Box
                       key={action.id}
                       className="iw-scene-actions-panel__action"
-                      sx={{ border: '1px dashed', borderColor: 'divider', borderRadius: 1, px: 0.75, py: 1 }}
+                      // Zebra under the dashed outline it already had: the outline says
+                      // "this is an action", the alternating ground says "this is not the
+                      // action above" (see `iwListZebra`). The action's own phase restarts
+                      // at white, so an action sitting on a white NPC group vanishes into
+                      // it and only two values are ever on screen.
+                      sx={{
+                        ...iwZebraNestedItemSx(ai),
+                        border: '1px dashed', borderColor: 'divider', px: 0.75, py: 1,
+                      }}
                     >
                       <Stack direction="row" spacing={1} alignItems="flex-start">
                         <TextField
@@ -241,6 +252,7 @@ export default function IWSceneActionsPanel({
                             key={si}
                             direction="row" spacing={0.5} alignItems="flex-start"
                             className="iw-scene-actions-panel__step"
+                            sx={iwZebraNestedItemSx(si)}
                           >
                             <Typography sx={{ fontSize: 11, opacity: 0.5, width: 12, mt: 1.25, flex: '0 0 auto' }}>
                               {si + 1}
@@ -343,6 +355,32 @@ export default function IWSceneActionsPanel({
                                   kind: 'ai_walk', instruction: e.target.value,
                                 })}
                               />
+                            )}
+
+                            {step.kind === 'get_information' && (
+                              <>
+                                <TextField
+                                  size="small" fullWidth
+                                  placeholder="What are they trying to find out? e.g. what the learner wants to order"
+                                  value={step.goal}
+                                  {...warn(`${at}.steps[${si}].goal`)}
+                                  helperText={problem(`${at}.steps[${si}].goal`)
+                                    ?? 'They keep asking, in their own words, until they have it.'}
+                                  onChange={(e) => patchStep(member.npcId, action, si, {
+                                    kind: 'get_information', goal: e.target.value, maxTurns: step.maxTurns,
+                                  })}
+                                />
+                                <TextField
+                                  size="small" type="number" sx={{ width: 110 }} label="asks at most"
+                                  inputProps={{ min: 1, max: IW_MAX_COLLECT_TURNS }}
+                                  // Empty renders the default rather than 0 — see `blankStep`.
+                                  value={step.maxTurns ?? IW_COLLECT_TURNS_DEFAULT}
+                                  {...warn(`${at}.steps[${si}].maxTurns`)}
+                                  onChange={(e) => patchStep(member.npcId, action, si, {
+                                    kind: 'get_information', goal: step.goal, maxTurns: Number(e.target.value),
+                                  })}
+                                />
+                              </>
                             )}
 
                             {/* One control for all three actor-aimed kinds — move toward,

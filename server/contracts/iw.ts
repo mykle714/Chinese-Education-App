@@ -126,6 +126,23 @@ export const IW_MAX_WAIT_SECONDS = 60;
  * and the timer runs in the background, so a five-minute slow burn is a legitimate beat.
  */
 export const IW_MAX_EVENT_DELAY_SECONDS = 600;
+/**
+ * A `get_information` goal — what the NPC is trying to find out, in the author's words.
+ * Same cap as `when` and an `ai_walk` brief: all three are one sentence of guidance.
+ */
+export const IW_MAX_COLLECT_GOAL_LENGTH = 200;
+/**
+ * How many of the learner's answers a `get_information` step will sit through before the NPC
+ * gives up and moves on.
+ *
+ * ⚠️ **THE CAP IS THE WHOLE SAFETY MARGIN OF THE STEP.** The step ends when the MODEL says it
+ * got what it was after, which is a judgement rather than a fact, and the bad case is not a
+ * wrong answer but an NPC that never accepts one — a beginner who genuinely cannot say what
+ * they want being asked a fourth time. Failing forward (give up, in character, and carry on)
+ * is always recoverable; an interrogation loop is not.
+ */
+export const IW_COLLECT_TURNS_DEFAULT = 3;
+export const IW_MAX_COLLECT_TURNS = 5;
 export const IW_MAX_CONVERSATIONS = 8;
 export const IW_MAX_CONVERSATION_TURNS = 12;
 
@@ -520,6 +537,7 @@ export const IW_ACTION_STEP_KINDS = [
   'face',
   'wait',
   'wait_for_response',
+  'get_information',
   'start_conversation',
   'schedule_event',
 ] as const;
@@ -537,6 +555,7 @@ export const IW_ACTION_STEP_LABELS: Record<IWActionStepKind, string> = {
   face: 'Turn to face',
   wait: 'Wait',
   wait_for_response: 'Wait for the learner',
+  get_information: 'Get information',
   start_conversation: 'Start a conversation',
   schedule_event: 'Schedule event',
 };
@@ -686,6 +705,27 @@ export type IWActionStep =
    * left, another action supersedes it for the same NPC, or it is cancelled outright.
    */
   | { kind: 'wait_for_response' }
+  /**
+   * Keep the floor until the learner has told you something (2026-09-20).
+   *
+   * ⚠️ **THE ONE STEP WHOSE LENGTH THE AUTHOR DOES NOT DECIDE.** Every other step runs once;
+   * this one runs until it is satisfied. `wait_for_response` waits for an UTTERANCE — one
+   * reply, whatever it contains — and that is the wrong unit whenever the NPC needed an
+   * answer rather than a noise: the learner says something, the NPC's own reply asks a
+   * follow-up question, and the script resumes anyway with the errand still unfinished. This
+   * step waits for the ANSWER. The NPC keeps the floor, asking again in its own words, until
+   * the model reports it has what it needs or {@link maxTurns} runs out.
+   *
+   * ⚠️ **IT DOES NOT SPEAK.** It is a waiting condition, not a line — the asking is the
+   * `comment` step an author puts in front of it. Only the give-up is spoken by the step
+   * itself, because a cap that silently released the floor would be an NPC that asks twice
+   * and then stares.
+   *
+   * `goal` is written in the AUTHOR's language ("what they want to order"), like every other
+   * direction in this vocabulary, and reaches the NPC as an intention rather than as words to
+   * say (§ 14 Q42). It is never shown to the learner.
+   */
+  | { kind: 'get_information'; goal: string; maxTurns?: number }
   /**
    * Everything aimed at a person: move toward, move away, turn to face. One shape for all
    * three because they differ only in what the engine animates — the author is answering the

@@ -44,6 +44,23 @@ export interface IWPerception {
     | { kind: 'approach'; who: string }
     | { kind: 'world'; description: string };
   spokeLastTurn?: boolean;
+  /**
+   * The `get_information` errand this NPC is in the middle of (§ 5.4, 2026-09-20).
+   *
+   * Sending it does two things at once, and they are deliberately one flag: the goal reaches
+   * the NPC's prompt, and the reply contract grows the fourth line whose answer comes back as
+   * {@link IWTurnReplyEvent.collected}. A turn that omits it is byte-identical to every turn
+   * taken before this existed.
+   */
+  collect?: IWCollectGoal;
+}
+
+/** What an NPC is trying to find out, and which try this is. Mirrors the server's `CollectGoal`. */
+export interface IWCollectGoal {
+  goal: string;
+  /** 1-based. Reaches the prompt so the NPC can ask again differently rather than repeat. */
+  attempt: number;
+  maxTurns: number;
 }
 
 export interface IWTurnRequest {
@@ -72,6 +89,14 @@ export interface IWTurnReplyEvent {
   /** Which tolerant-parser rules had to rescue this reply (§ 5.3). Usually empty. */
   rescued: string[];
   chosen: IWChosenOffer | null;
+  /**
+   * The NPC says it now has what {@link IWPerception.collect} asked for (§ 5.4).
+   *
+   * ⚠️ **FALSE ON EVERY TURN THAT WAS NOT COLLECTING**, including every turn of a scene with
+   * no `get_information` step in it — there is no fourth line to read, and absence means
+   * "not yet" by design. Never read it as "the NPC had nothing to say".
+   */
+  collected: boolean;
   rung: string;
   /** Turns left in this scene run, for the in-world HUD (§ 7). */
   remaining: number;

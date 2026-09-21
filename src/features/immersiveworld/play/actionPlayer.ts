@@ -1,7 +1,9 @@
 import type {
   IWActionStep, IWConversation, IWNpcAction, IWSceneCastMember,
 } from '../../../../server/contracts/iw';
-import { IW_ACTOR_COMPANION, IW_ACTOR_PLAYER } from '../../../../server/contracts/iw';
+import {
+  IW_ACTOR_COMPANION, IW_ACTOR_PLAYER, IW_COLLECT_TURNS_DEFAULT, IW_MAX_COLLECT_TURNS,
+} from '../../../../server/contracts/iw';
 import { approachCells, cellKey, planScenePath, resolvePlaceTarget, type SceneGraph } from '../../../engine/iw/sceneGraph';
 
 /**
@@ -100,8 +102,16 @@ export type IWInstruction =
   | { kind: 'conversation'; conversationId: string }
   /** Arm an authored event to fire no sooner than `ms` from now (migration 161). */
   | { kind: 'scheduleEvent'; eventId: string; ms: number }
-  /** Hand the floor back to the learner. Always the last step of an action. */
+  /** Hand the floor back to the learner, then carry on from here (2026-09-20). */
   | { kind: 'awaitLearner' }
+  /**
+   * Keep the floor until the learner has answered something (§ 5.4's `get_information`).
+   *
+   * The instruction carries the resolved turn cap rather than the raw optional one, so the
+   * host never has to know the default — the same reason `wait` carries ms rather than the
+   * authored seconds.
+   */
+  | { kind: 'collectInfo'; goal: string; maxTurns: number }
   /** The step could not be resolved. `reason` is for a debug overlay, never for a learner. */
   | { kind: 'skip'; reason: string };
 
@@ -182,6 +192,19 @@ export function resolveActionStep(step: IWActionStep, world: ActionWorld): IWIns
 
     case 'wait_for_response':
       return { kind: 'awaitLearner' };
+
+    case 'get_information': {
+      const goal = step.goal?.trim();
+      // A goal-less collect would park the script on a question nobody can answer, since the
+      // NPC is never told what it is waiting for. Skipping is the honest degradation: the
+      // author sees the reason in the overlay and the script plays on.
+      if (!goal) return { kind: 'skip', reason: 'a Get information step with no goal' };
+      const authored = step.maxTurns;
+      const maxTurns = Number.isFinite(authored) && (authored as number) >= 1
+        ? Math.min(IW_MAX_COLLECT_TURNS, Math.round(authored as number))
+        : IW_COLLECT_TURNS_DEFAULT;
+      return { kind: 'collectInfo', goal, maxTurns };
+    }
 
     case 'walk_to_tag': {
       const target = resolvePlaceTarget(world.graph, world.selfCell, step.tag, { occupied: world.occupied });

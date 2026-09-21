@@ -709,8 +709,8 @@ it is the version a learner can follow.
 
 ### 5.1 The wire format — what the model actually emits
 
-One model call per NPC turn. The reply is **exactly three lines of plain text**, speech
-first:
+One model call per NPC turn. The reply is **exactly three lines of plain text** — four while a
+`get_information` step is collecting (§ 5.4c) — speech first:
 
 ```
 热的还是凉的？        line 1 — what they say. Painted into the bubble.
@@ -1364,10 +1364,11 @@ action (`IW_ACTION_STEP_KINDS`, `server/contracts/iw.ts`):
 | `walk_to_actor` / `walk_away_from` / `face` | as the old verbs, but with an author-chosen target rather than a model-invented one |
 | `wait` | hold for 1–60 whole seconds — the beat that makes a script read as behaviour |
 | `wait_for_response` | hand the floor back, then **resume from here** when the learner says something this NPC can hear (2026-09-20). A barrier, not a terminator: steps may follow it and an action may contain several. Nothing runs while the learner composes, which is all § 14 Q29 ever asked for |
+| `get_information` | **the step that waits for an ANSWER rather than an utterance** (2026-09-20) — the NPC keeps the floor, re-asking in its own words, until the model reports on the reply contract's optional fourth line (`got: yes`) that it has been told what the author named, or until `maxTurns` runs out and it gives up in character |
 | `start_conversation` | play one of the scene's authored exchanges (Q6), chosen by the author rather than targeted by the model |
 | `schedule_event` | arm one of the scene's authored EVENTS for `seconds` from now, then move on (migration 161). Does not hold the NPC and does not fire the event itself — the engine injects it at the next legal moment, the same opportunity a complication uses |
 
-That is the whole list — **ten steps**. The test for membership: *can the engine execute it
+That is the whole list — **twelve steps**. The test for membership: *can the engine execute it
 without knowing what the scene is about?* Walking, facing, waiting, saying and playing a
 canned conversation all pass.
 
@@ -1665,6 +1666,70 @@ deleting its last step and the editor dropping the entry.
 `src/features/immersiveworld/iwPopupArt.ts`;
 `src/features/immersiveworld/useIWSceneDraft.ts` → `setInteraction`;
 `database/migrations/162-add-place-interactions.sql`.
+
+### 5.4c `get_information` — waiting for an answer, not for an utterance (BUILT 2026-09-20)
+
+**The problem it solves.** `wait_for_response` waits for *one utterance*, and that is the wrong
+unit whenever the NPC needed an **answer**. The learner says something, the NPC's own reply asks
+a follow-up question — *辣的还是不辣的？* — and the script resumes anyway, with the errand
+unfinished and nobody holding the floor. The gap is not in the parking mechanism (§ 5.4's
+resumable `wait_for_response` handles that) but in its **termination condition**: "an utterance
+arrived" is a fact about the microphone, not about the conversation.
+
+**The unit this step waits on is the GOAL.** An author writes what the NPC is trying to find
+out; the engine keeps the floor with that NPC until the model says it has it.
+
+| Layer | What it holds | Where |
+|---|---|---|
+| Contract | `{ kind: 'get_information'; goal: string; maxTurns?: number }`, `IW_COLLECT_TURNS_DEFAULT` (3), `IW_MAX_COLLECT_TURNS` (5), `IW_MAX_COLLECT_GOAL_LENGTH` | `server/contracts/iw.ts` |
+| Feature logic (pure) | resolution to a `collectInfo` instruction carrying the RESOLVED cap | `src/features/immersiveworld/play/actionPlayer.ts` → `resolveActionStep` |
+| Feature logic (the loop) | the only loop in the script player: ask, judge, ask again, give up | `src/features/immersiveworld/play/iwScript.ts` → `runAuthoredAction` |
+| Runtime state | `collectingRef` (what the prompt needs) + `collectWaitersRef` (what the script needs) | `src/features/immersiveworld/play/useIWSceneRuntime.ts` → `collect`, `releaseCollectors` |
+| Prompt, layer 1 | the contract's **optional fourth line**, spliced beside the offered names | `server/services/iw/worldRules.ts` → `renderReplyContract` |
+| Prompt, layer 3 | `WHAT YOU STILL NEED TO KNOW`, plus per-attempt pressure | `server/services/iw/turnState.ts` → `renderTurnState`, `CollectGoal` |
+| Parse | `IWTurnReply.collected`, from `got: yes｜no` | `server/services/iw/turnParser.ts` |
+
+**Why the verdict is the model's and not a heuristic.** The alternative considered first was
+detecting a question mark on the NPC's own line and re-arming the wait. That is a *syntactic*
+test of the utterance where the real question is *semantic* and about the scene — it misses
+*告诉我你要什么*, it fires on rhetorical questions, and above all nobody ever told it what the
+errand was. Asking the model costs **two output tokens on the turns that are collecting and
+nothing on any other turn**, because the fourth line is spliced into the half of layer 1 that
+was already per-turn (the offered action names). A turn that is not collecting is byte-identical
+to every turn taken before this existed — the cache prefix is untouched.
+
+**Why there is a cap, and why it fails FORWARD.** The step ends on a judgement, and the failure
+worth guarding is not a wrong answer but an NPC that never accepts one: a beginner who genuinely
+cannot say what they want, asked a fourth time. So `maxTurns` releases the floor regardless —
+and the give-up is **spoken**, through the ordinary render path, because a cap that silently
+resumed the script would be an NPC who asks twice and then stares while the world moves on
+around them. This is § 9.2 Q19's instinct (refusal is recoverable; the cost shows up in the
+rating, not in a fail state) applied one level down.
+
+**Four rules the implementation turns on:**
+
+1. **It does not speak.** The asking is the `comment` step in front of it. Only the give-up line
+   is the step's own.
+2. **An utterance routed to somebody ELSE does not count** — the waiter stays parked and the
+   attempt counter does not advance. Asking a friend a question mid-order must not spend one of
+   the vendor's three tries.
+3. **The waiter resolves AFTER the NPC's reply has been spoken**, not when the learner speaks.
+   `awaitLearner` resolves at the earlier moment; this one has to wait for the turn that carries
+   the verdict, or the script would be racing the line its own NPC is about to say.
+4. **A dead turn is `not-yet`, never a stall.** A frozen ladder, a refused turn or a thrown
+   request all release the waiter, so the loop spends an attempt and either asks again or gives
+   up — the same thing the NPC would do having not understood.
+
+**What it does NOT do: store the answer.** The information lands in the transcript like
+everything else, so every later prompt sees it, but there is no named slot and nothing branches
+on it. A slot would only be worth having alongside **conditionals in the step vocabulary**
+(*"if they ordered noodles, walk to the kitchen"*), which the flat twelve-step sequence does not
+have. Add the slot when an author needs the branch, not before.
+
+**Open:** the completion action (§ 9.2) is literally a get-information/get-object beat — *"take
+payment": walk → ask → wait*. Once scene completion is wired at all, it should read this same
+verdict rather than "a script returned", which is a stronger condition and a second consumer of
+a signal that already exists.
 
 ### 5.5 What the NPC is told
 
@@ -3341,10 +3406,21 @@ page: a uniform card fill would leave two neighbours looking identical. Two rule
 - **Neutrals, not the `RAMP`.** A hue cycling down a list reads as *meaning* — the eye takes a
   red third place to be saying something about that place — and nothing in these lists is
   categorical.
-- **Top level only.** The fill goes on the outermost element of each list item and stops
-  there: an action inside its NPC group, a step inside an action, a line inside a conversation
-  all stay on their parent's ground. Three nested striped surfaces turn the Actions and Places
-  panels to mud, and those nested lists already have a border or an indent doing the work.
+- **Every depth, not just the top level** (revised 2026-09-20). The first cut confined the
+  fill to the outermost item of each list, on the theory that stacked striped surfaces would
+  turn the Actions and Places panels to mud. The nested lists turned out to be where the
+  adjacency problem is worst — two `steps` rows, or two lines of a conversation, are a `kind`
+  select plus a text field repeated verbatim with a 6px gap between them — and the border or
+  indent that was meant to be "doing the work" separates the nested list from its **parent**,
+  not one nested row from the next. So nested items stripe too, from the **same** two grounds,
+  via `iwZebraNestedItemSx(index)`: the action boxes in an NPC group, the steps of an action,
+  the steps of a place interaction, and the lines of a conversation.
+- **Mud is avoided by the phase, not by a third colour.** Each nested list restarts its phase
+  at `white`, so the row that sits directly on its parent's ground is the one that *matches*
+  it and disappears into it. At most two distinct values are on screen however deep the
+  nesting runs. The nested fragment differs from the top-level one only in padding (`0.5` vs
+  `0.75`): a nested row is the widest thing in the column, so side padding is the one kind of
+  space it cannot spare.
 
 **The Furniture tool (C).** ONE button places the whole **lumeish** furniture pack — 151
 multi-cell props (docs/LUMEISH_ASSET_PIPELINE.md § 6b). It is the same tool the night market
@@ -4066,7 +4142,8 @@ to be watched for deliberately.
   (`masksToSceneLayout` / `sceneLayoutToMasks` join the painted masks to the stored layout),
   `iwSceneWarnings.ts` → `warningFieldProps`, `IW_WARNING_TEXT_SX` (the shared amber field
   marking, so no panel invents its own colour for a non-blocking complaint),
-  `iwListZebra.ts` → `iwZebraItemSx`, `iwZebraBg` (the shared list-item ground, below)
+  `iwListZebra.ts` → `iwZebraItemSx`, `iwZebraNestedItemSx`, `iwZebraBg` (the shared
+  list-item ground, below)
 - `server/scripts/bench/npc-latency/` → `run.js`, `scenario.js`, `providers.js` — the latency bench behind § 6
   and § 6a. `scenario.js` imports `server/contracts/iw.ts`, which is why the whole harness
   runs under `tsx` (§ 5.6c); its offered action names come from `npcProbes.js` (§ 5.4).
@@ -4133,6 +4210,7 @@ to be watched for deliberately.
 | Q43 | Can a PLACE do something when the learner walks up to it? | ✅ **yes** — an optional interaction script hangs off a place (§ 5.4a, migration 162); `popup` is the one thing it can do that an action cannot |
 | Q44 | What decides what the model is OFFERED? | ✅ **§ 5.4b** — `urgent` (a lean, never a guarantee) and `unlockedBy` (ANY of a cue list) on both actions and conversations; `interactionOnly` hides an action; `selectable` makes a conversation choosable by its first speaker; and a conversation that has already played is withdrawn, along with any action that would replay it |
 | Q45 | Can one NPC's script make ANOTHER NPC speak? | ✅ **yes** — the `prompt_npc` step (2026-09-19), the only step whose subject is not the performer; an omitted target or brief means *the model decides* |
+| Q46 | How does a script know an exchange is FINISHED, when the NPC's own reply may be another question? | ✅ **§ 5.4c** — it waits on the GOAL, not on an utterance: the `get_information` step (2026-09-20) holds the floor until the model reports `got: yes` on the contract's optional fourth line, capped by `maxTurns` and giving up in character. Rejected: detecting a question mark on the NPC's line — a syntactic test of the utterance for a question that is semantic and about the scene |
 
 Also decided outside this log, on judgement rather than measurement: iw builds **its own
 beginner text input** (§ 9a).
@@ -5540,6 +5618,7 @@ authored thing in the feature that produces behaviour rather than text.
 | **Walk away from** (`walk_away_from`) / **Turn to face** (`face`) | The other two actor-aimed steps; one control in the editor, since all three ask *who*. |
 | **Start a conversation** (`start_conversation`) | Play one of the scene's authored overheard exchanges. |
 | **Wait** (`wait`) | Hold still for 1–60 whole seconds. The beat that makes a script read as behaviour rather than as teleporting. |
+| **Get information** (`get_information`) | **BUILT 2026-09-20.** Hold the floor until the learner has told this NPC something. Carries a required `goal` — the author's words for what the NPC is trying to find out ("what they want to order") — and an optional `maxTurns` (1–5, default 3). ⚠️ **It does not speak**: the asking is the `comment` step in front of it, and the only line the step itself produces is the give-up. ⚠️ **It is the one step whose length the author does not decide** — it ends on the MODEL's verdict, which is why the cap is not optional in spirit even though the field is. See § 5.4c. |
 | **Wait for the learner** (`wait_for_response`) | Hand the floor back, and **carry on from here once they have used it** (2026-09-20). Steps may follow it, and an action may hold as many as it likes — `Say → Wait for the learner → Say` is one script, so an NPC that asks a question can react to the answer without the author inventing a second action to trigger. ⚠️ **It resumes only on an utterance this NPC could HEAR** (§ 4c): waking on a whisper aimed at somebody across the stand is the theatre the earshot rework deleted. The consequence for an author is that walking away from a parked NPC leaves it parked — the only other ways out are leaving the scene and another action superseding the script. There is deliberately **no timeout**. |
 | **Schedule event** (`schedule_event`) | Arm one of the scene's authored **events** (see *Event* in § 9.1) for `seconds` from now — 0–600 — and carry on. ⚠️ It does **not** hold the NPC (that is `wait`) and does not fire the event itself: the engine injects it at the next legal opportunity, so the delay is an *earliest*, not an exactly-when. This is what lets a script set in motion something it does not perform — 王婶 calls the order through, and the food arrives twenty seconds later without her standing there. |
 

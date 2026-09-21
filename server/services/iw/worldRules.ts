@@ -94,13 +94,21 @@ sound like a helpful narrator. Say one thing and stop.`;
  * envelope the model opens first (a `{"say": "`, a volunteered fence) is dead air the player
  * sits through before the first glyph.
  */
-export function renderReplyContract(actionNames: readonly string[]): string {
+export function renderReplyContract(actionNames: readonly string[], collecting = false): string {
   const offered = [IW_NO_ACTION, ...actionNames.filter(n => n && n !== IW_NO_ACTION)];
-  return `REPLY CONTRACT — reply with exactly three lines, nothing else, no markdown:
+  // The fourth line exists only while a `get_information` step is running, and it is spliced
+  // in HERE rather than added to the stem for the same reason the offered names are: the
+  // common turn must keep the three-line shape the parser, the bench and § 5.3's measurements
+  // are all written against. A turn that is not collecting is byte-identical to before.
+  const collectLine = collecting
+    ? `\nLine 4: got: yes — if what you were trying to find out has now been told to you.
+        got: no — if it has not. Say no when you are still guessing at it.`
+    : '';
+  return `REPLY CONTRACT — reply with exactly ${collecting ? 'four' : 'three'} lines, nothing else, no markdown:
 Line 1: the Chinese you speak aloud, under 12 characters (or the single word NOTHING).
 Line 2: the NAME of one thing you can do, exactly as written, or ${IW_NO_ACTION}:
         ${offered.join(' | ')}
-Line 3: one emote — one of: ${IW_EMOTES.join(' | ')}
+Line 3: one emote — one of: ${IW_EMOTES.join(' | ')}${collectLine}
 Start line 1 immediately with the Chinese character. No preamble, no labels, no quotes.`;
 }
 
@@ -145,6 +153,6 @@ export function renderLineWorldRules(): string {
  * standing instruction applies: **assert `cache_read_input_tokens > 0` in the turn path**
  * rather than assuming caching engaged.
  */
-export function renderWorldRules(actionNames: readonly string[]): string {
-  return IW_WORLD_RULES_STEM.replace('__CONTRACT__', renderReplyContract(actionNames));
+export function renderWorldRules(actionNames: readonly string[], collecting = false): string {
+  return IW_WORLD_RULES_STEM.replace('__CONTRACT__', renderReplyContract(actionNames, collecting));
 }

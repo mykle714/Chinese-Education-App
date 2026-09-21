@@ -34,6 +34,9 @@ function harness(over: Partial<IWScriptDeps> = {}) {
     // The default is an IMMEDIATE resume — a test that cares about the parking itself hands
     // in its own, as the two `wait_for_response` cases below do.
     awaitLearner: async who => { log.push(`awaitLearner:${who}`); },
+    // The default collector SUCCEEDS on the first ask, so a test that does not care about the
+    // errand sees one round trip. The give-up cases hand in their own.
+    collect: async (who, goal, attempt) => { log.push(`collect:${who}:${goal}:${attempt}`); return 'got'; },
     note: (_who, reason) => { log.push(`note:${reason}`); },
     cancelled: () => false,
     ...over,
@@ -296,5 +299,68 @@ describe('prompt_npc hands the floor to somebody else', () => {
       { kind: 'comment', text: 'answer them' },
     ];
     expect(nextPrefetchableComment(steps, 0)).toBeNull();
+  });
+});
+
+describe('get_information keeps the floor until the NPC has its answer', () => {
+  it('asks once when the first answer carries it', async () => {
+    const { log, deps } = harness();
+    await runAuthoredAction('wangshen', [
+      { kind: 'comment', text: 'ask what they want' },
+      { kind: 'get_information', goal: 'what they want to order' },
+      { kind: 'comment', text: 'repeat the order back' },
+    ], deps);
+    expect(log).toEqual([
+      'render:ask what they want', 'say:[ask what they want]',
+      'collect:wangshen:what they want to order:1',
+      'render:repeat the order back', 'say:[repeat the order back]',
+    ]);
+  });
+
+  it('asks again, with a rising attempt number, until it is satisfied', async () => {
+    let asks = 0;
+    const { log, deps } = harness({
+      collect: async (_who, _goal, attempt) => {
+        asks++;
+        log.push(`collect:${attempt}`);
+        return asks >= 3 ? 'got' : 'not-yet';
+      },
+    });
+    await runAuthoredAction('wangshen', [{ kind: 'get_information', goal: 'their order' }], deps);
+    // Three attempts, and NO give-up line: it got there on the last one.
+    expect(log).toEqual(['collect:1', 'collect:2', 'collect:3']);
+  });
+
+  it('gives up IN CHARACTER at the cap rather than standing there', async () => {
+    let asks = 0;
+    const { log, deps } = harness({ collect: async () => { asks++; return 'not-yet'; } });
+    await runAuthoredAction('wangshen', [
+      { kind: 'get_information', goal: 'their order', maxTurns: 2 },
+      { kind: 'comment', text: 'bring the house dish' },
+    ], deps);
+    // Two asks, a rendered give-up line, and then the script carries on — the whole point of
+    // the cap is that the errand failing is not the scene failing.
+    expect(asks).toBe(2);
+    expect(log.some(l => l.startsWith('render:You could not find out their order'))).toBe(true);
+    expect(log).toContain('say:[bring the house dish]');
+  });
+
+  it('stops dead when the scene is left mid-errand — no give-up line at nobody', async () => {
+    let cancelled = false;
+    const { log, deps } = harness({
+      collect: async () => { cancelled = true; return 'not-yet'; },
+      cancelled: () => cancelled,
+    });
+    await runAuthoredAction('wangshen', [
+      { kind: 'get_information', goal: 'their order' },
+      { kind: 'comment', text: 'never reached' },
+    ], deps);
+    expect(log.some(l => l.startsWith('render:'))).toBe(false);
+  });
+
+  it('SKIPS a goal-less step rather than parking on an unanswerable question', async () => {
+    const { log, deps } = harness();
+    await runAuthoredAction('wangshen', [{ kind: 'get_information', goal: '  ' }], deps);
+    expect(log).toEqual(['note:a Get information step with no goal']);
   });
 });

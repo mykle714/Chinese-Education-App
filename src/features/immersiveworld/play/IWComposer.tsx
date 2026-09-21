@@ -267,7 +267,20 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
             The quick dictionary, and nothing above it. The tray is EMPTY until the learner
             types — no openers, no card list, no standing suggestions of any kind.
           */}
-          <Box className="iw-composer__lookup" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box
+            className="iw-composer__lookup"
+            /*
+              ⚠️ THE QUICK DICTIONARY IS QUERIED IN ENGLISH (or pinyin) — it is the one
+              field in the composer that must NOT raise the handwriting keyboard: the
+              learner is here precisely because they cannot write the word yet. `off`
+              shadows the composer's `keep` because the nearest declaration wins
+              (BEGINNER_KEYBOARD.md § 7a / `eligibility.ts`), so focusing this field also
+              dismisses a keyboard raised from the sentence field and hands the learner
+              back to the OS one.
+            */
+            data-beginner-keyboard="off"
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
+          >
             <SearchIcon sx={{ fontSize: 16, opacity: 0.6 }} />
             <InputBase
               className="iw-composer__lookup-input"

@@ -9,7 +9,7 @@ import { buildLineSystemBlock, renderNpcLine, type IWLineOutcome } from './iw/li
 import { routeAddressee, type RouterCastMember } from './iw/addresseeRouter.js';
 import { renderWorldRules } from './iw/worldRules.js';
 import type { IWTurnReply } from './iw/turnParser.js';
-import { iwTurnBudget, IWTurnBudget, type IWBudgetRefusal } from './iw/turnBudget.js';
+import { iwTurnBudget, IWTurnBudget, type IWBudgetOptions, type IWBudgetRefusal } from './iw/turnBudget.js';
 import type { IImmersiveWorldDAL } from '../dal/interfaces/IImmersiveWorldDAL.js';
 import { npcOptionsForLanguage } from './iw/npcOptions.js';
 import { resolveCastMember } from './iw/sceneCast.js';
@@ -17,6 +17,7 @@ import type { IWLineSegments, IWNpcOption, IWTranscriptEntry } from '../contract
 import { IW_ACTOR_PLAYER } from '../contracts/iw.js';
 import { SceneTranscript } from './iw/sceneTranscript.js';
 import type { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
+import type { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { partsToLineSegments } from './iw/lineSegments.js';
 
 /**
@@ -334,7 +335,39 @@ export class ImmersiveWorldService {
      * existing test predates it, and a transcript is not something a caller opts into.
      */
     private readonly transcript: SceneTranscript = new SceneTranscript(iwDAL),
+    /**
+     * The users table, for the template-author budget exemption ONLY (§ 7).
+     *
+     * OPTIONAL, and its absence means "nobody is exempt" rather than an error — every
+     * pre-existing construction and every test of this class predates it and has no opinion
+     * about accounts. It is the same DAL and the same grant the authoring sibling takes
+     * (`ImmersiveWorldSceneService`), but a different QUESTION: that one asks "may you author?"
+     * and refuses; this one asks "are you the person building this?" and relaxes a ceiling.
+     */
+    private readonly userDAL?: IUserDAL,
   ) {}
+
+  /**
+   * Resolve the caller's § 7 budget exemption — `users.isTemplateAuthor` (migration 115).
+   *
+   * ⚠️ **ONE INDEXED PK READ PER MODEL CALL**, sitting next to a ~1 s model call, so it does
+   * not show up — the same trade this class already makes for re-reading the scene every turn
+   * (see the header). It is deliberately NOT cached: a process-local cache would mean a grant
+   * revoked on PPE kept working until the next rebuild, which is the wrong side to fail on for
+   * a cost bound.
+   *
+   * A lookup that throws or comes back empty resolves to NOT exempt. This is a ceiling being
+   * lifted, not a permission being granted, so the safe default is the learner's one.
+   */
+  private async budgetOptions(userId: string): Promise<IWBudgetOptions> {
+    if (!this.userDAL) return {};
+    try {
+      const user = await this.userDAL.findById(userId);
+      return { unlimited: !!user?.isTemplateAuthor };
+    } catch {
+      return {};
+    }
+  }
 
   /**
    * Run one NPC turn on behalf of an authenticated learner.
@@ -351,7 +384,8 @@ export class ImmersiveWorldService {
     const spoken =
       request.perception.event.kind === 'utterance' ? request.perception.event.text : undefined;
 
-    const verdict = this.budget.check(userId, request.sessionId, spoken);
+    const budgetOpts = await this.budgetOptions(userId);
+    const verdict = this.budget.check(userId, request.sessionId, spoken, budgetOpts);
     if (verdict.refusal) return { kind: 'refused', refusal: verdict.refusal, remaining: verdict.remaining };
 
     const scene = await this.iwDAL.findSceneById(request.sceneId);
@@ -382,7 +416,7 @@ export class ImmersiveWorldService {
         entry(request.npcId, result.reply.say),
       ]);
     }
-    return { ...result, remaining: this.budget.remaining(request.sessionId) };
+    return { ...result, remaining: this.budget.remaining(request.sessionId, budgetOpts) };
   }
 
   /**
@@ -399,7 +433,7 @@ export class ImmersiveWorldService {
     request: IWLineHttpRequest,
     onDelta?: (text: string, attemptIndex: number, complete: boolean) => void,
   ): Promise<IWLineRuntimeResult> {
-    const refusal = this.budget.checkSceneCall(userId);
+    const refusal = this.budget.checkSceneCall(userId, await this.budgetOptions(userId));
     if (refusal) return { kind: 'refused', refusal };
 
     const scene = await this.iwDAL.findSceneById(request.sceneId);
@@ -438,7 +472,7 @@ export class ImmersiveWorldService {
    * a timeout — the learner got no routing out of those and the fallback did the work.
    */
   async routeAddressee(userId: string, request: IWRouteHttpRequest): Promise<IWRouteRuntimeResult> {
-    const refusal = this.budget.checkSceneCall(userId);
+    const refusal = this.budget.checkSceneCall(userId, await this.budgetOptions(userId));
     if (refusal) return { kind: 'refused', refusal };
 
     const scene = await this.iwDAL.findSceneById(request.sceneId);

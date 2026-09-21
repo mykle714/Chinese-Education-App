@@ -176,3 +176,70 @@ describe('the check/spend split', () => {
     expect(budget.remaining('s1')).toBe(IW_SESSION_TURN_BUDGET);
   });
 });
+
+/**
+ * The template-author exemption (2026-09-20).
+ *
+ * Written from the AUTHOR's side rather than the attacker's, because that is the failure it
+ * fixes: someone replaying their own scene to test it burns a whole session run per replay and
+ * reaches the day's money backstop in an afternoon, at which point the editor's own preview
+ * stops answering. The flag itself is resolved in `ImmersiveWorldService`; this file only sees
+ * the `unlimited` option it hands down.
+ */
+describe('IWTurnBudget — the template-author exemption', () => {
+  const author = { unlimited: true };
+
+  it('keeps answering past the session budget', () => {
+    const { budget, advance } = budgetAt();
+    for (let i = 0; i < IW_SESSION_TURN_BUDGET + 5; i++) {
+      budget.spend('author', 's1');
+      advance(IW_MIN_TURN_GAP_MS);
+    }
+    expect(budget.check('author', 's1', undefined, author).refusal).toBeNull();
+    // ...and a learner in the identical state is still wound down.
+    expect(budget.check('author', 's1').refusal).toMatchObject({ code: 'session-spent' });
+  });
+
+  it('keeps answering past the daily cap, for turns AND for scene calls', () => {
+    const { budget, advance } = budgetAt();
+    for (let i = 0; i < IW_DAILY_TURN_CAP + 1; i++) {
+      budget.spend('author', `s${i}`);
+      advance(IW_MIN_TURN_GAP_MS);
+    }
+    expect(budget.check('author', 'sNew', undefined, author).refusal).toBeNull();
+    expect(budget.checkSceneCall('author', author)).toBeNull();
+    expect(budget.checkSceneCall('author')).toMatchObject({ code: 'daily-cap' });
+  });
+
+  it('still refuses an over-long utterance and a too-fast send', () => {
+    // The two bounds the exemption deliberately does not touch: the char cap protects the
+    // prompt rather than the wallet, and the gap is a runaway-loop guard an author's browser
+    // needs as much as a learner's.
+    const { budget } = budgetAt();
+    const long = '字'.repeat(IW_MAX_UTTERANCE_CHARS + 1);
+    expect(budget.check('author', 's1', long, author).refusal).toMatchObject({ code: 'utterance-too-long' });
+    budget.spend('author', 's1');
+    expect(budget.check('author', 's1', '你好', author).refusal).toMatchObject({ code: 'too-fast' });
+  });
+
+  it('reports a full session rather than a draining one', () => {
+    // `remaining` is dressed up in-world ("the market is closing"). A count falling to 0 while
+    // turns keep working would tell an author a story about their scene that is not true.
+    const { budget, advance } = budgetAt();
+    for (let i = 0; i < 10; i++) {
+      budget.spend('author', 's1');
+      advance(IW_MIN_TURN_GAP_MS);
+    }
+    expect(budget.remaining('s1')).toBe(IW_SESSION_TURN_BUDGET - 10);
+    expect(budget.remaining('s1', author)).toBe(IW_SESSION_TURN_BUDGET);
+  });
+
+  it('still counts the spend, so a revoked flag takes effect on the next turn', () => {
+    const { budget, advance } = budgetAt();
+    for (let i = 0; i < IW_DAILY_TURN_CAP; i++) {
+      budget.spend('author', 's1');
+      advance(IW_MIN_TURN_GAP_MS);
+    }
+    expect(budget.check('author', 's2').refusal).toMatchObject({ code: 'daily-cap' });
+  });
+});

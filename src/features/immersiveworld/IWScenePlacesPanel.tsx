@@ -17,6 +17,7 @@ import {
 } from '../../../server/contracts/iw';
 import { IW_POPUP_IMAGES, popupImageUrl } from './iwPopupArt';
 import { isPlacedCell } from './useIWSceneDraft';
+import { iwZebraItemSx } from './iwListZebra';
 import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
 
 /**
@@ -175,7 +176,7 @@ export default function IWScenePlacesPanel({
       )}
 
       <Stack spacing={1}>
-        {tags.map(({ tag, cell }) => {
+        {tags.map(({ tag, cell }, ti) => {
           const steps = interactions[tag] ?? [];
           const open = openTag === tag;
           const at = `interactions.${tag}`;
@@ -183,7 +184,9 @@ export default function IWScenePlacesPanel({
             <Box
               key={tag}
               className="iw-scene-places-panel__place"
-              sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 1 }}
+              // Alternating ground so two adjacent places read apart; the interaction editor
+              // that opens inside keeps this ground rather than taking one of its own.
+              sx={{ ...iwZebraItemSx(ti), border: '1px solid', borderColor: 'divider', p: 1 }}
             >
               <Stack direction="row" spacing={1} alignItems="center">
                 <TextField

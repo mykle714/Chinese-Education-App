@@ -936,17 +936,12 @@ function validateNpcActions(
           }
           break;
         }
-        case 'wait_for_response': {
-          // Anything after it would fire while the learner is still composing — the one
-          // thing § 14 Q29 forbids the world from doing.
-          if (t !== steps.length - 1) {
-            problems.push({
-              field: `${stepAt}.kind`,
-              message: 'Waiting for the learner must be the last step — nothing may run while they are answering',
-            });
-          }
-          break;
-        }
+        // `wait_for_response` has NO check. It used to be refused anywhere but the final
+        // step, because the engine ended the action there and anything after it would have
+        // fired while the learner was still composing (§ 14 Q29). Since 2026-09-20 the step
+        // is a barrier the script RESUMES from — on the learner's next audible utterance —
+        // so nothing runs while they compose no matter where the step sits, and several of
+        // them in one action is an ordinary back-and-forth rather than an error.
       }
     });
   });

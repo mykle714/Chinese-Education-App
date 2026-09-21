@@ -88,6 +88,14 @@ export interface TemplateEditorViewerProps {
   /** Same as {@link showCommunal} for the condition-mask highlight tint. */
   showCondition?: boolean;
   /**
+   * Same as {@link showCommunal} for the iw scene editor's UNWALKABLE tint. Defaults ON, so
+   * every surface that does not know about it (the Load gallery, the sandbox) keeps drawing
+   * it — only a caller that owns a view toggle passes false.
+   */
+  showUnwalkable?: boolean;
+  /** Same as {@link showUnwalkable} for the forced-direction tint and its arrows. */
+  showForcedDirection?: boolean;
+  /**
    * The active tool. The viewer stays tool-agnostic for PAINTING (the parent bakes the
    * tool into {@link onPaintCell}); it needs the tool only to preview the placeholder DROP
    * footprint under the cursor (a normal single-cell hover for every other tool).
@@ -875,6 +883,7 @@ function PlaceholderOccupantHouses(
  */
 export function TemplateMaskOverlays({
   masks, showStreet = true, showCommunal = true, showPlaceholder = true, showCondition = true,
+  showUnwalkable = true, showForcedDirection = true,
   houseMode = showCondition ? 'filled' : 'none',
   origin = ORIGIN_ZERO, depthMode = 'flat',
 }: {
@@ -883,6 +892,8 @@ export function TemplateMaskOverlays({
   showCommunal?: boolean;
   showPlaceholder?: boolean;
   showCondition?: boolean;
+  showUnwalkable?: boolean;
+  showForcedDirection?: boolean;
   /** Local→global cell shift for compositing surfaces. Defaults to the identity. */
   origin?: CellOrigin;
   /** `'flat'` (single board) or `'world'` (per-cell depth, multi-template). See {@link OverlayDepthMode}. */
@@ -950,11 +961,16 @@ export function TemplateMaskOverlays({
       {houseMode !== 'none' && (
         <PlaceholderOccupantHouses areas={houseAreas} origin={origin} depthMode={depthMode} />
       )}
-      {/* The iw scene editor's two masks. Not toggleable, and not gated on a show* flag: they
-          are the only annotations that change what the SIMULATION does rather than how the
-          board looks, so an author must never be able to hide them and then paint blind. A
-          night market board carries neither, so both draw nothing there. */}
-      {(masks.unwalkable?.size ?? 0) > 0 && (
+      {/* The iw scene editor's two masks. A night market board carries neither, so both draw
+          nothing there.
+          ⚠️ THESE TWO CHANGE WHAT THE SIMULATION DOES, not just how the board looks, so
+          hiding one is a real way to paint blind. They were deliberately NOT toggleable for
+          that reason; the toggles added on 2026-09-20 keep the guarantee a different way —
+          the iw palette forces a layer back ON whenever its own paint tool is active (the
+          same rule the template editor's four mask views follow), so the author can only ever
+          hide a layer they are not currently painting. Both flags default ON, so the Load
+          gallery and the sandbox are unchanged. */}
+      {showUnwalkable && (masks.unwalkable?.size ?? 0) > 0 && (
         <MaskTintOverlay
           cells={masks.unwalkable!}
           color={UNWALKABLE_OVERLAY_COLOR}
@@ -962,7 +978,7 @@ export function TemplateMaskOverlays({
           depthMode={depthMode}
         />
       )}
-      {(masks.forcedDirection?.size ?? 0) > 0 && (
+      {showForcedDirection && (masks.forcedDirection?.size ?? 0) > 0 && (
         <>
           <MaskTintOverlay
             cells={new Set(masks.forcedDirection!.keys())}
@@ -1102,6 +1118,8 @@ interface SceneProps {
   showCommunal?: boolean;
   showPlaceholder?: boolean;
   showCondition?: boolean;
+  showUnwalkable?: boolean;
+  showForcedDirection?: boolean;
   activeTool?: EditorTool;
   /** Current placeholder drop size — drives the placeholder tool's footprint ghost. */
   placeholderSize?: { w: number; h: number };
@@ -1128,7 +1146,7 @@ interface SceneProps {
   onPanChange: (pan: { x: number; y: number }) => void;
 }
 
-function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, furnitureSpriteId, forcedFacingGhost, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, markers, pan, zoom, onPanChange }: SceneProps) {
+function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, showUnwalkable, showForcedDirection, activeTool, placeholderSize, decorCategory, decorVariantIdx, furnitureSpriteId, forcedFacingGhost, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, markers, pan, zoom, onPanChange }: SceneProps) {
   const { app, isInitialised } = useApplication();
   const [hover, setHover] = useState<Cell | null>(null);
   // Latest hovered cell for the stable pointer handlers — lets the rectangle-drag release
@@ -1322,6 +1340,8 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
         showCommunal={showCommunal}
         showPlaceholder={showPlaceholder}
         showCondition={showCondition}
+        showUnwalkable={showUnwalkable}
+        showForcedDirection={showForcedDirection}
       />
       {showGrid && <GridOverlay width={width} height={height} />}
       {/* Who stands where (iw). Purely presentational — placement is the parent's business. */}
@@ -1360,7 +1380,7 @@ function EditorScene({ width, height, masks, showGrid, showStreet, showCommunal,
 }
 
 // ─── Outer component: pan/zoom state + wheel zoom + Application mount ─────────────
-function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, activeTool, placeholderSize, decorCategory, decorVariantIdx, furnitureSpriteId, forcedFacingGhost, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, markers }: TemplateEditorViewerProps) {
+function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, showCommunal, showPlaceholder, showCondition, showUnwalkable, showForcedDirection, activeTool, placeholderSize, decorCategory, decorVariantIdx, furnitureSpriteId, forcedFacingGhost, rectangleMode, onRectComplete, pasteMode, pasteFootprint, onPasteAt, eraseMode, onPaintCell, onEditBegin, markers }: TemplateEditorViewerProps) {
   // The board is a fixed authored size, so unlike nmp/nms there is no fit-derived sub-floor here:
   // MIN_ZOOM is both the ladder's bottom rung and the hard floor.
   const { containerRef, pan, zoom, setPan, ready } = useCameraControls({
@@ -1407,6 +1427,8 @@ function TemplateEditorViewer({ width, height, masks, showGrid, showStreet, show
             showCommunal={showCommunal}
             showPlaceholder={showPlaceholder}
             showCondition={showCondition}
+            showUnwalkable={showUnwalkable}
+            showForcedDirection={showForcedDirection}
             activeTool={activeTool}
             placeholderSize={placeholderSize}
             decorCategory={decorCategory}

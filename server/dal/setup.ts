@@ -266,11 +266,18 @@ const immersiveWorldSceneController = new ImmersiveWorldSceneController(immersiv
 // The dictionary is iw's fourth argument, not its second: `budget` and `rungs` keep their
 // positions so every existing construction (and every test) is unchanged. It is there for
 // § 5.3b's segmented speech bubbles, which reuse the est's popup rather than iw's own.
+// `userDAL` is the SIXTH argument for the same reason the dictionary is the fourth: every
+// earlier position is load-bearing for existing constructions and tests. It is taken only for
+// § 7's template-author budget exemption (an author replaying a scene under test would
+// otherwise burn the 60-turn session run and the 400/day cap) — not for any gate; the runtime
+// half never refuses on identity.
 const immersiveWorldService = new ImmersiveWorldService(
   immersiveWorldDAL,
   undefined,
   undefined,
   dictionaryDAL,
+  undefined,
+  userDAL,
 );
 const immersiveWorldRuntimeController = new ImmersiveWorldRuntimeController(immersiveWorldService);
 

@@ -16,6 +16,9 @@ const graph = buildSceneGraph({
   width: 8, height: 8, unwalkable: [], forcedDirection: {}, places: { counter: '4,4' },
 });
 
+/** Let every already-queued promise settle — used to observe a script parked mid-run. */
+const flush = () => new Promise(resolve => { setTimeout(resolve, 0); });
+
 /** A deps double that records the order everything happened in. */
 function harness(over: Partial<IWScriptDeps> = {}) {
   const log: string[] = [];
@@ -28,6 +31,9 @@ function harness(over: Partial<IWScriptDeps> = {}) {
     playConversation: async id => { log.push(`conversation:${id}`); },
     armEvent: id => { log.push(`event:${id}`); },
     wait: async ms => { log.push(`wait:${ms}`); },
+    // The default is an IMMEDIATE resume — a test that cares about the parking itself hands
+    // in its own, as the two `wait_for_response` cases below do.
+    awaitLearner: async who => { log.push(`awaitLearner:${who}`); },
     note: (_who, reason) => { log.push(`note:${reason}`); },
     cancelled: () => false,
     ...over,
@@ -126,14 +132,80 @@ describe('the prefetch actually starts early, and is used exactly once', () => {
 
   it('does not prefetch past a wait_for_response', async () => {
     const renderLine = vi.fn(async (_who: string, d: string) => `[${d}]`);
-    const { deps } = harness({ renderLine });
-    // `wait_for_response` ends the action, so the comment after it never runs at all — and
-    // must not have been rendered speculatively either.
+    // Parked forever, so the assertion is about what was rendered WHILE the learner still
+    // has the floor. The comment on the far side is reachable now (2026-09-20) — it must
+    // still not be written before the sentence it is going to answer exists.
+    const { deps } = harness({ renderLine, awaitLearner: () => new Promise<void>(() => {}) });
+    void runAuthoredAction('wangshen', [
+      { kind: 'wait_for_response' },
+      { kind: 'comment', text: 'greet them' },
+    ], deps);
+    await flush();
+    expect(renderLine).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `wait_for_response` — a barrier the script comes BACK from (2026-09-20).
+ *
+ * It used to `return`, which made "hand the floor back" and "this action is over" the same
+ * step. The promise pinned here is that the steps after it are ordinary steps.
+ */
+describe('wait_for_response parks the script rather than ending it', () => {
+  it('plays the steps after it once the learner has spoken', async () => {
+    let release: (() => void) | null = null;
+    const { log, deps } = harness({
+      awaitLearner: () => new Promise<void>(resolve => { release = resolve; }),
+    });
+    const done = runAuthoredAction('wangshen', [
+      { kind: 'comment', text: 'ask what they want' },
+      { kind: 'wait_for_response' },
+      { kind: 'comment', text: 'repeat the order back' },
+    ], deps);
+
+    // Nothing beyond the barrier has run while the learner holds the floor (§ 14 Q29). A
+    // macrotask, not a microtask: the beats before the barrier are themselves awaits, and a
+    // single `Promise.resolve()` would assert before the script had even reached it.
+    await flush();
+    expect(log).toEqual(['render:ask what they want', 'say:[ask what they want]']);
+
+    release!();
+    await done;
+    expect(log).toEqual([
+      'render:ask what they want', 'say:[ask what they want]',
+      'render:repeat the order back', 'say:[repeat the order back]',
+    ]);
+  });
+
+  it('unwinds without playing the rest when the wait is released by a cancellation', async () => {
+    // The scene-left path: the host resolves every parked waiter so the chain can notice
+    // `cancelled()` and stop. Nothing after the barrier may be performed on the way out.
+    let cancelled = false;
+    const { log, deps } = harness({
+      awaitLearner: async () => { cancelled = true; },
+      cancelled: () => cancelled,
+    });
     await runAuthoredAction('wangshen', [
       { kind: 'wait_for_response' },
       { kind: 'comment', text: 'greet them' },
     ], deps);
-    expect(renderLine).not.toHaveBeenCalled();
+    expect(log).toEqual([]);
+  });
+
+  it('takes several barriers in one action', async () => {
+    const { log, deps } = harness();
+    await runAuthoredAction('wangshen', [
+      { kind: 'wait_for_response' },
+      { kind: 'comment', text: 'answer them' },
+      { kind: 'wait_for_response' },
+      { kind: 'comment', text: 'say goodbye' },
+    ], deps);
+    expect(log).toEqual([
+      'awaitLearner:wangshen',
+      'render:answer them', 'say:[answer them]',
+      'awaitLearner:wangshen',
+      'render:say goodbye', 'say:[say goodbye]',
+    ]);
   });
 });
 
@@ -164,6 +236,7 @@ describe('prompt_npc hands the floor to somebody else', () => {
       note: (_who, reason) => { log.push(`note:${reason}`); },
       // Overridden too, so every beat lands in THIS log — the base harness keeps its own.
       wait: async ms => { log.push(`wait:${ms}`); },
+      awaitLearner: async who => { log.push(`awaitLearner:${who}`); },
     });
     return { log, deps };
   }

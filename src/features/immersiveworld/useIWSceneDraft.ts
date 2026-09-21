@@ -611,8 +611,9 @@ export function useIWSceneDraft(): IWSceneDraft {
         const taken = new Set(actions.map((a) => a.id));
         let n = 1;
         while (taken.has(`act${n}`)) n++;
-        // One `wait_for_response` by default: nearly every action ends by handing the floor
-        // back, and an author who does not want it can delete one step.
+        // One `wait_for_response` by default: nearly every action hands the floor back at
+        // some point, and an author who does not want it can delete the step. It is no
+        // longer the END of the action — the script resumes from it — so steps may follow.
         return {
           ...m,
           actions: [...actions, { id: `act${n}`, name: '', steps: [{ kind: 'wait_for_response' }] }],

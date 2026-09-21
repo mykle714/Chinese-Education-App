@@ -46,6 +46,22 @@ export interface IWEditorTools {
   /** Gridlines over the board. A VIEW toggle: a reload is entitled to forget it. */
   showGrid: boolean;
   setShowGrid: (next: boolean) => void;
+  /**
+   * The three ANNOTATION view toggles (2026-09-20). Same nature as `showGrid` — they change
+   * what the author can see, never what the scene holds, and a reload may forget them.
+   *
+   * ⚠️ The stored flag is not the whole answer: `IWSceneMapPanel` ORs each one with "its own
+   * paint tool is active", so painting a layer always reveals it. These fields are the
+   * author's persistent preference, which is what the palette buttons light from — exactly
+   * the split the template editor's four mask views make.
+   */
+  showUnwalkable: boolean;
+  setShowUnwalkable: (next: boolean) => void;
+  showForcedDirection: boolean;
+  setShowForcedDirection: (next: boolean) => void;
+  /** The green place PINS. Not a tint — a marker list the map panel filters. */
+  showPlaces: boolean;
+  setShowPlaces: (next: boolean) => void;
   /** Index into the active decor tool's rotation — cycled by Space, previewed as the ghost. */
   decorVariantIdx: number;
   /** Index into {@link IW_PAINT_FACINGS} for the forced-direction tool. */
@@ -77,7 +93,12 @@ export const CAST_HOTKEYS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const;
  * and the layout mirrors the physical keyboard, one palette row per keyboard row: T/Y
  * terrain (top letter row), S/D/F decor (home row), Z/X + digits bodies (bottom row /
  * number row). NON-tool keys are handled separately in the keydown effect below: ` grid,
- * A/G floor, B eraser modifier, Space decor-variant cycle.
+ * A/G floor, B eraser modifier, Space decor-variant cycle, E/R/P the annotation views.
+ *
+ * ⚠️ WHY THE ANNOTATION VIEWS ARE NOT ON THE DIGITS, the way the template editor's are: the
+ * whole number row is the CAST here (`CAST_HOTKEYS`, eight keys for a cap of eight). E and R
+ * instead sit immediately right of the two mask paint tools they reveal (Q unwalkable, W
+ * forced direction) on the same keyboard row, and P is the initial of the thing it shows.
  */
 export const HOTKEY_TO_PAINT_TOOL: Record<string, IWPaintTool> = {
   t: 'terrain1', y: 'terrain2',
@@ -90,6 +111,15 @@ export function useIWEditorTools({
   activeTool, eraseMode, npcCast, onToolChange, onEraseModeChange, onFloorChange,
 }: IWEditorToolsDeps): IWEditorTools {
   const [showGrid, setShowGrid] = useState(true);
+
+  /**
+   * The three annotation views. All default ON: an author who has not asked to hide anything
+   * must see everything the board holds, and a hidden layer is the one state that can make an
+   * empty-looking cell lie about what is on it.
+   */
+  const [showUnwalkable, setShowUnwalkable] = useState(true);
+  const [showForcedDirection, setShowForcedDirection] = useState(true);
+  const [showPlaces, setShowPlaces] = useState(true);
 
   /**
    * The selected DECOR variant, as an index into the active decor tool's rotation — cycled by
@@ -143,8 +173,13 @@ export function useIWEditorTools({
 
       const key = e.key.toLowerCase();
 
-      // The one view toggle left, on the nme's own key.
+      // The VIEW toggles. Grid keeps the nme's own key; the three annotation views take
+      // E/R/P (the digits are the cast here — see HOTKEY_TO_PAINT_TOOL's note). Functional
+      // setters, so none of them has to join this effect's dependency list.
       if (key === '`') { setShowGrid(!showGrid); e.preventDefault(); return; }
+      if (key === 'e') { setShowUnwalkable((v) => !v); e.preventDefault(); return; }
+      if (key === 'r') { setShowForcedDirection((v) => !v); e.preventDefault(); return; }
+      if (key === 'p') { setShowPlaces((v) => !v); e.preventDefault(); return; }
 
       // B toggles the eraser MODIFIER, layered on top of the selected tool. A place tool
       // has no layer to erase, so B is a no-op there — mirroring the disabled button.
@@ -198,6 +233,9 @@ export function useIWEditorTools({
 
   return {
     showGrid, setShowGrid,
+    showUnwalkable, setShowUnwalkable,
+    showForcedDirection, setShowForcedDirection,
+    showPlaces, setShowPlaces,
     decorVariantIdx, forcedFacingIdx, forcedFacing,
     furnitureIdx, furnitureSpriteId, furnitureLabel,
   };

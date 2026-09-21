@@ -670,7 +670,21 @@ export type IWActionStep =
    * standing there waiting for it. Use `wait` when the NPC really should stand still.
    */
   | { kind: 'schedule_event'; eventId: string; seconds: number }
-  /** Hand the floor back to the learner. At most one, and only as the final step. */
+  /**
+   * Hand the floor back to the learner, then carry on where it left off (2026-09-20).
+   *
+   * ⚠️ **IT IS NO LONGER A TERMINATOR, AND IT MAY APPEAR ANYWHERE, AS OFTEN AS IT LIKES.**
+   * The engine parks the script here and resumes it on the learner's next utterance that
+   * this NPC can hear (§ 4c) — so an action can be a real back-and-forth (`comment` →
+   * `wait_for_response` → `comment`) instead of ending at the first question it asks. The
+   * old rule ("at most one, and only as the final step", enforced by the validator) existed
+   * only because the step used to END the action, which would otherwise have let a beat fire
+   * while the learner was still composing (§ 14 Q29). A parked script fires nothing, so the
+   * rule was retired with the behaviour that needed it.
+   *
+   * The three ways a parked script ends without the learner ever speaking: the scene is
+   * left, another action supersedes it for the same NPC, or it is cancelled outright.
+   */
   | { kind: 'wait_for_response' }
   /**
    * Everything aimed at a person: move toward, move away, turn to face. One shape for all

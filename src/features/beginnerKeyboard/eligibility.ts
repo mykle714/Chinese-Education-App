@@ -72,6 +72,26 @@ export const KEEP_OPEN_VALUE = 'keep';
 /** CSS selector for a `keep` region, so callers need not re-spell the attribute. */
 export const KEEP_OPEN_SELECTOR = `[${OPT_OUT_ATTRIBUTE}="${KEEP_OPEN_VALUE}"]`;
 
+/** Attribute value marking a region the keyboard must never offer itself on. */
+export const OFF_VALUE = 'off';
+
+/**
+ * The value in force for an element: the NEAREST declaration of the attribute on
+ * it or an ancestor, or null when nothing declares one.
+ *
+ * ⚠️ **NEAREST WINS, SO THE TWO VALUES CAN NEST AND SHADOW EACH OTHER.** The
+ * iw composer is one `keep` region (every control in it acts on the sentence
+ * being composed), but the quick-dictionary tray inside it is an ENGLISH field
+ * that must raise the OS keyboard instead — so it declares `off` inside that
+ * `keep`. Matching each value with its own `closest()` would have found the
+ * outer `keep` regardless of the inner `off` and left the handwriting bar up
+ * over an English query.
+ */
+function attributeInForce(element: Element): string | null {
+  const declaring = element.closest(`[${OPT_OUT_ATTRIBUTE}]`);
+  return declaring ? declaring.getAttribute(OPT_OUT_ATTRIBUTE) : null;
+}
+
 /**
  * Does interacting with this target leave an open keyboard up?
  *
@@ -81,7 +101,7 @@ export const KEEP_OPEN_SELECTOR = `[${OPT_OUT_ATTRIBUTE}="${KEEP_OPEN_VALUE}"]`;
  */
 export function isKeepOpenTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
-  return target.closest(KEEP_OPEN_SELECTOR) !== null;
+  return attributeInForce(target) === KEEP_OPEN_VALUE;
 }
 
 export type EditableField = HTMLInputElement | HTMLTextAreaElement;
@@ -135,7 +155,9 @@ export function traitsOf(field: EditableField): FieldTraits {
     type: field instanceof HTMLTextAreaElement ? '' : field.type,
     disabled: field.disabled,
     readOnly: field.readOnly,
-    optedOut: field.closest(`[${OPT_OUT_ATTRIBUTE}="off"]`) !== null,
+    // Nearest declaration wins, so a `keep` region nested inside an `off` one is
+    // eligible again — the mirror of the `off`-inside-`keep` case above.
+    optedOut: attributeInForce(field) === OFF_VALUE,
   };
 }
 

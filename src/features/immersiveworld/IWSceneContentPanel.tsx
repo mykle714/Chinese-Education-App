@@ -8,6 +8,7 @@ import type {
 } from '../../../server/contracts/iw';
 import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
 import IWSelectableControls, { type IWCueOption } from './IWSelectableControls';
+import { iwZebraItemSx } from './iwListZebra';
 
 /**
  * IWSceneContentPanel — the three authored LISTS a scene carries besides its cast:
@@ -152,7 +153,12 @@ export default function IWSceneContentPanel({
         </Typography>
         <Stack spacing={1}>
           {scene.complications.map((complication, i) => (
-            <Stack key={complication.id} direction="row" spacing={1} alignItems="flex-start">
+            <Stack
+              key={complication.id}
+              className="iw-scene-content-panel__complication-row"
+              direction="row" spacing={1} alignItems="flex-start"
+              sx={iwZebraItemSx(i)}
+            >
               <TextField
                 className="iw-scene-content-panel__complication"
                 size="small" fullWidth multiline
@@ -187,7 +193,12 @@ export default function IWSceneContentPanel({
         </Typography>
         <Stack spacing={1}>
           {scene.events.map((event, i) => (
-            <Stack key={event.id} direction="row" spacing={1} alignItems="flex-start">
+            <Stack
+              key={event.id}
+              className="iw-scene-content-panel__event-row"
+              direction="row" spacing={1} alignItems="flex-start"
+              sx={iwZebraItemSx(i)}
+            >
               <Stack spacing={0.5} sx={{ flex: 1 }}>
                 <TextField
                   className="iw-scene-content-panel__event"
@@ -264,7 +275,9 @@ export default function IWSceneContentPanel({
             <Box
               key={conv.id}
               className="iw-scene-content-panel__conversation"
-              sx={{ border: `1px solid ${COLORS.border}`, borderRadius: 1, p: 1.5 }}
+              // Zebra ground + the outline it already had. The turns inside stay on this
+              // ground — nesting a second stripe under it is what `iwListZebra` rules out.
+              sx={{ ...iwZebraItemSx(i), border: `1px solid ${COLORS.border}`, p: 1.5 }}
             >
               <Stack direction="row" spacing={1} alignItems="center">
                 <TextField

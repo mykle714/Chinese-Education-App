@@ -188,11 +188,18 @@ describe('validateScene', () => {
       expect(messages.some((m) => m.includes('cannot aim this at itself'))).toBe(true);
     });
 
-    it('rejects anything after waiting for the learner', () => {
+    it('ACCEPTS steps after waiting for the learner (2026-09-20)', () => {
+      // The inverse of the rule this test used to pin. `wait_for_response` no longer ends
+      // the action — the script parks there and resumes on the learner's next audible
+      // utterance — so a beat after it is an ordinary beat, and several barriers in one
+      // action is an ordinary back-and-forth.
       const scene = withBringWater();
-      scene.npcCast[0].actions![1].steps.push({ kind: 'wait', seconds: 1 });
-      const messages = validateScene(scene).map((p) => p.message);
-      expect(messages.some((m) => m.includes('must be the last step'))).toBe(true);
+      scene.npcCast[0].actions![1].steps.push(
+        { kind: 'comment', text: '好的。' },
+        { kind: 'wait_for_response' },
+        { kind: 'wait', seconds: 1 },
+      );
+      expect(validateScene(scene)).toEqual([]);
     });
 
     it('rejects two actions sharing a name, because the model chooses by name', () => {
@@ -904,7 +911,7 @@ describe('validateScene places/locations compatibility', () => {
  * Referenced by: docs/IMMERSIVE_WORLD.md § 14 Q45.
  */
 describe('validateScene prompt_npc (2026-09-19)', () => {
-  /** 王婶 calls the order through and the companion answers. `pay`'s last step must stay last. */
+  /** 王婶 calls the order through and the companion answers. Inserted before `pay`'s wait. */
   function withPrompt(step: Partial<Record<string, unknown>> = {}): IWScene {
     const scene = validScene();
     const steps = scene.npcCast[0].actions![0].steps;

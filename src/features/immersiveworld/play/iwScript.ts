@@ -52,6 +52,22 @@ export interface IWScriptDeps {
   /** Arm an authored event. Fire-and-forget: the step does NOT wait for it (migration 161). */
   armEvent(eventId: string, ms: number): void;
   wait(ms: number): Promise<void>;
+  /**
+   * Park until the learner says something THIS ACTOR CAN HEAR (§ 4c), then carry on.
+   *
+   * ⚠️ **IT IS A BARRIER, NOT A TERMINATOR** (2026-09-20). It used to end the action outright,
+   * which made "hand the floor back" and "this is the last thing I do" the same step and
+   * forced every authored beat that follows a learner's sentence into a second action the
+   * author had to find another way to trigger. Now the script simply stops here and resumes
+   * on the learner's next audible utterance, so `say → wait → say` is one script again.
+   *
+   * ⚠️ **AUDIBLE, not merely "the learner spoke".** Waking on a whisper aimed at somebody
+   * across the stand is exactly the theatre the earshot rework deleted (§ 4c): an NPC that
+   * provably could not hear the line must not visibly react to it. The consequence an author
+   * has to know is that walking away from a parked NPC leaves it parked — until the scene is
+   * left or another action supersedes the script, which are the only two other ways out.
+   */
+  awaitLearner(actorId: string): Promise<void>;
   /** A step that could not be performed. For a debug overlay — never shown to a learner. */
   note(actorId: string, reason: string): void;
   /** True once this script has been superseded or the scene has been left. */
@@ -166,8 +182,12 @@ export async function runAuthoredAction(
         deps.armEvent(instruction.eventId, instruction.ms);
         break;
       case 'awaitLearner':
-        // The floor goes back to the learner, and an action's own contract puts this last.
-        return;
+        // The floor goes back to the learner — and comes back here when they have used it.
+        // Nothing runs while they compose (§ 14 Q29), which is the whole of what the old
+        // "must be the final step" rule was protecting; the rest of the script simply waits.
+        await deps.awaitLearner(actorId);
+        if (deps.cancelled()) return;
+        break;
       case 'skip':
         deps.note(actorId, instruction.reason);
         break;
@@ -183,7 +203,9 @@ export async function runAuthoredAction(
  *
  *   - **`wait_for_response`** hands the floor to the learner. This is the case that sinks
  *     Q42's batch-per-action plan outright — a script straddles the learner's own sentences,
- *     and a line written before them would answer something nobody said.
+ *     and a line written before them would answer something nobody said. It stayed a barrier
+ *     when the step became resumable (2026-09-20): a comment on the far side of it is now
+ *     reachable, and rendering it in advance would write the NPC's answer before the question.
  *   - **`comment`** is a line this same NPC is about to speak, which the next one should be
  *     able to build on rather than repeat.
  *   - **`start_conversation`** is several other NPCs speaking.

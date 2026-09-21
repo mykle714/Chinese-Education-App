@@ -9,6 +9,7 @@ import {
   type IWNpcOption, type IWScene, type IWSceneCastMember,
 } from '../../../server/contracts/iw';
 import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
+import { iwZebraItemSx } from './iwListZebra';
 
 /**
  * IWSceneDetailsPanel — the scene's IDENTITY, its completion pair and its cast
@@ -221,6 +222,9 @@ export default function IWSceneDetailsPanel({
                 direction="row"
                 spacing={1}
                 alignItems="center"
+                // The cast list had no ground of its own at all — three rows of name,
+                // facing and two icon buttons ran together. See `iwListZebra`.
+                sx={iwZebraItemSx(i)}
               >
                 <Typography sx={{ flex: 1, fontSize: 14 }}>
                   {npc?.name ?? member.npcId}

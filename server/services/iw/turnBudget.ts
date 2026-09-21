@@ -81,6 +81,28 @@ export const IW_SESSION_TURN_BUDGET = 60;
  */
 export const IW_DAILY_TURN_CAP = 400;
 
+/**
+ * ⚠️ **BOTH TURN CEILINGS ARE LIFTED FOR TEMPLATE AUTHORS** ({@link IWBudgetOptions.unlimited},
+ * 2026-09-20). An author testing a scene replays it dozens of times in a sitting: they burn a
+ * 60-turn session run per replay and can reach the 400/day money backstop in an afternoon, at
+ * which point the tool they are building with refuses to run. The grant is the existing
+ * `users.isTemplateAuthor` (migration 115) — the same one that opens the editor at all — and the
+ * resolution happens in `ImmersiveWorldService`, because this file holds no SQL.
+ *
+ * What is NOT lifted, deliberately: {@link IW_MIN_TURN_GAP_MS} and {@link IW_MAX_UTTERANCE_CHARS}.
+ * Those two are also enforced CLIENT-side (see the note above), so relaxing them here alone would
+ * change nothing an author could observe — and the rate gap is a runaway-loop guard, which an
+ * author's browser needs as much as a learner's.
+ *
+ * The counters still INCREMENT for an exempt user; only the refusals are skipped. An author's
+ * spend stays visible to anything that reads the store, and a flag flipped off takes effect on
+ * the very next turn rather than starting them from zero.
+ */
+export interface IWBudgetOptions {
+  /** This caller is a template author — skip the session budget and the daily cap. */
+  unlimited?: boolean;
+}
+
 /** Why a turn was refused. `null` means it was allowed. */
 export type IWBudgetRefusal =
   /** The utterance is longer than {@link IW_MAX_UTTERANCE_CHARS}. */
@@ -152,9 +174,9 @@ export class IWTurnBudget {
    * (§ 14 Q7's frozen outcome) should not consume the learner's session budget, because
    * they got nothing for it. The caller spends only once a reply exists.
    */
-  check(userId: string, sessionId: string, utterance?: string): IWBudgetVerdict {
+  check(userId: string, sessionId: string, utterance?: string, opts: IWBudgetOptions = {}): IWBudgetVerdict {
     const spent = this.sessions.get(sessionId) ?? 0;
-    const remaining = Math.max(0, IW_SESSION_TURN_BUDGET - spent);
+    const remaining = this.remaining(sessionId, opts);
 
     if (utterance !== undefined) {
       const bad = checkUtterance(utterance);
@@ -168,12 +190,12 @@ export class IWTurnBudget {
       if (gap < IW_MIN_TURN_GAP_MS) {
         return { refusal: { code: 'too-fast', retryAfterMs: IW_MIN_TURN_GAP_MS - gap }, remaining };
       }
-      if (state.day === this.dayKey(now) && state.dayCount >= IW_DAILY_TURN_CAP) {
+      if (!opts.unlimited && state.day === this.dayKey(now) && state.dayCount >= IW_DAILY_TURN_CAP) {
         return { refusal: { code: 'daily-cap', spent: state.dayCount }, remaining };
       }
     }
 
-    if (spent >= IW_SESSION_TURN_BUDGET) {
+    if (!opts.unlimited && spent >= IW_SESSION_TURN_BUDGET) {
       return { refusal: { code: 'session-spent', spent }, remaining: 0 };
     }
     return { refusal: null, remaining };
@@ -233,7 +255,8 @@ export class IWTurnBudget {
    *     calls that cost money. A scene that could generate unbounded lines — or route
    *     unbounded utterances — without touching the cap would be a hole straight through § 7.
    */
-  checkSceneCall(userId: string): IWBudgetRefusal | null {
+  checkSceneCall(userId: string, opts: IWBudgetOptions = {}): IWBudgetRefusal | null {
+    if (opts.unlimited) return null;
     const state = this.users.get(userId);
     if (state && state.day === this.dayKey(this.now()) && state.dayCount >= IW_DAILY_TURN_CAP) {
       return { code: 'daily-cap', spent: state.dayCount };
@@ -263,8 +286,16 @@ export class IWTurnBudget {
     }
   }
 
-  /** Turns left in a scene run, for a HUD that wants it without asking permission. */
-  remaining(sessionId: string): number {
+  /**
+   * Turns left in a scene run, for a HUD that wants it without asking permission.
+   *
+   * ⚠️ An `unlimited` caller is always reported as having the FULL budget rather than a
+   * draining one. The number is dressed up in-world ("the market is closing"), so a count that
+   * fell to 0 while turns kept working would be telling an author a story about their scene
+   * that is not true. Their real spend is still in the counters; it is just not this number.
+   */
+  remaining(sessionId: string, opts: IWBudgetOptions = {}): number {
+    if (opts.unlimited) return IW_SESSION_TURN_BUDGET;
     return Math.max(0, IW_SESSION_TURN_BUDGET - (this.sessions.get(sessionId) ?? 0));
   }
 

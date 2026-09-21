@@ -12,6 +12,7 @@ import {
   type IWNpcAction, type IWNpcOption, type IWScene,
 } from '../../../server/contracts/iw';
 import { isPlacedCell } from './useIWSceneDraft';
+import { iwZebraItemSx } from './iwListZebra';
 import IWSelectableControls, { type IWCueOption } from './IWSelectableControls';
 import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
 
@@ -149,7 +150,9 @@ export default function IWSceneActionsPanel({
               className="iw-scene-actions-panel__npc"
               // Padding is deliberately tight (px < py): the step row inside is the widest
               // thing in the column, and side padding is the cheapest space to give it back.
-              sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, px: 0.75, py: 1.25 }}
+              // The zebra ground goes on the NPC and stops there — the action boxes inside
+              // keep their dashed outline on it (see `iwListZebra`).
+              sx={{ ...iwZebraItemSx(mi), border: '1px solid', borderColor: 'divider', py: 1.25 }}
             >
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{npcName(member.npcId)}</Typography>
@@ -446,10 +449,12 @@ export default function IWSceneActionsPanel({
                           size="small" startIcon={<AddIcon />}
                           disabled={action.steps.length >= IW_MAX_ACTION_STEPS}
                           onClick={() => onUpdateAction(member.npcId, action.id, {
-                            // New steps land BEFORE a trailing wait_for_response, which is
-                            // almost always where the author means them to go — nothing may
-                            // follow that step, so appending would immediately be invalid.
-                            steps: insertBeforeTrailingWait(action.steps, { kind: 'wait', seconds: 2 }),
+                            // A plain append. It used to have to dodge a trailing
+                            // `wait_for_response`, because nothing was allowed to follow that
+                            // step; since 2026-09-20 the script RESUMES from it, so a step
+                            // after it is the ordinary case and the author is free to put one
+                            // there. Reordering is the up/down arrows' job either way.
+                            steps: [...action.steps, { kind: 'wait', seconds: 2 }],
                           })}
                         >
                           Step
@@ -473,17 +478,3 @@ export default function IWSceneActionsPanel({
   );
 }
 
-/**
- * Append `step`, but keep a trailing `wait_for_response` last.
- *
- * Nothing may run after the learner is handed the floor (the validator refuses it), so a
- * plain append would make every "add a step" produce an invalid scene the author then has
- * to reorder. Exported-adjacent logic kept local: nothing else sequences steps.
- */
-function insertBeforeTrailingWait(steps: IWActionStep[], step: IWActionStep): IWActionStep[] {
-  const last = steps[steps.length - 1];
-  if (last?.kind === 'wait_for_response') {
-    return [...steps.slice(0, -1), step, last];
-  }
-  return [...steps, step];
-}

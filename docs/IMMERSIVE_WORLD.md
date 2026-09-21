@@ -239,7 +239,7 @@ independent paint layers) and the validator warns about it.
 |---|---|
 | `IWSceneLayout` (`server/contracts/iw.ts`) | `unwalkable?: string[]` + `forcedDirection?: Record<cell, facing>`. `layout` is jsonb — **no migration**. `street`/`communal` remain gone |
 | `EditorMasks` (`src/engine/market/farmTerrain.ts`) | two optional members, `unwalkable: Set` and `forcedDirection: Map`. The night market never paints either |
-| Scene editor (`IWSceneToolsPanel`) | two tools on the night market's own walkability keys, **Q** (unwalkable) and **W** (forced direction); Space turns the arrow N→E→S→W; the ghost previews it. **The tints have no toggles** — these two change what the simulation does, not how the board looks, so an author must not be able to hide a wall and paint blind |
+| Scene editor (`IWSceneToolsPanel`) | two tools on the night market's own walkability keys, **Q** (unwalkable) and **W** (forced direction); Space turns the arrow N→E→S→W; the ghost previews it. Each tint has a **view toggle** (E / R, 2026-09-20) that is **forced back on while its own tool is armed** — these two change what the simulation does, not how the board looks, so an author must never paint one blind |
 | Board rendering (`TemplateEditorViewer`) | a red tint for unwalkable, a teal tint + a white **arrow** for forced. The arrow's screen direction is *derived* from `sceneActor.facingForStep`, never typed out, so it cannot drift from where the runtime actually turns the body |
 | `sceneValidation.validateLayout` | three cell lists (`terrain1`, `terrain2`, `unwalkable`) + the facing map; warns on an off-board or unparseable cell, a facing that is not a facing, a cell that is both masks, and **a body authored onto a walled cell** (it could never take a step) |
 | Every movement step | `walk_to_tag`, `walk_to_actor`, `walk_away_from` and tap-to-move all path over the weighted graph above |
@@ -1363,7 +1363,7 @@ action (`IW_ACTION_STEP_KINDS`, `server/contracts/iw.ts`):
 | `ai_walk` | **the second step that costs a model call** — the author writes a brief ("to whoever has been waiting longest") and the model returns a DESTINATION from a closed list: this scene's named places plus the bodies present. The engine then plays the ordinary `walk_to_tag` / `walk_to_actor` for whatever came back, over the same `planPath` traversal as every other walk |
 | `walk_to_actor` / `walk_away_from` / `face` | as the old verbs, but with an author-chosen target rather than a model-invented one |
 | `wait` | hold for 1–60 whole seconds — the beat that makes a script read as behaviour |
-| `wait_for_response` | hand the floor back; last step only (§ 14 Q29 forbids anything running while the learner composes) |
+| `wait_for_response` | hand the floor back, then **resume from here** when the learner says something this NPC can hear (2026-09-20). A barrier, not a terminator: steps may follow it and an action may contain several. Nothing runs while the learner composes, which is all § 14 Q29 ever asked for |
 | `start_conversation` | play one of the scene's authored exchanges (Q6), chosen by the author rather than targeted by the model |
 | `schedule_event` | arm one of the scene's authored EVENTS for `seconds` from now, then move on (migration 161). Does not hold the NPC and does not fire the event itself — the engine injects it at the next legal moment, the same opportunity a complication uses |
 
@@ -2419,8 +2419,8 @@ length, and a per-utterance rate limit, both enforced **on the server**.
 > | `IW_MAX_UTTERANCE_CHARS` | 120 | The PROMPT, not the database — layer 3 quotes the learner verbatim (§ 11), so an unbounded utterance is an unbounded call. Counted in **code points** after trimming |
 > | `IW_MIN_TURN_GAP_MS` | 700 | Sends per user. Below any human cadence, above what a loop exploits |
 > | `IW_MAX_LISTENERS_PER_UTTERANCE` | 4 | ⚠️ **No longer bounds the turn fan-out — there isn't one** (§ 4.2). It survives as the cap on the `nearby` block the client sends (×3, so a body can be listed without being addressable) and as the size of the addressee candidate list. **It drops rather than refuses**: a crowded market should get quieter, not error |
-> | `IW_SESSION_TURN_BUDGET` | 60 | One scene run. Reported on every response as `remaining`, for the in-world HUD this section asks for |
-> | `IW_DAILY_TURN_CAP` | 400 | The caller who exhausts a run and starts another. ≈ 32 ¢. **Line renders count against this one too** — see below |
+> | `IW_SESSION_TURN_BUDGET` | 60 | One scene run. Reported on every response as `remaining`, for the in-world HUD this section asks for. **Lifted for template authors — § 7a** |
+> | `IW_DAILY_TURN_CAP` | 400 | The caller who exhausts a run and starts another. ≈ 32 ¢. **Line renders count against this one too** — see below. **Lifted for template authors — § 7a** |
 >
 > ⚠️ **A NON-TURN CALL IS BILLED DIFFERENTLY FROM A TURN (2026-09-07).** Two of them exist —
 > a line render (§ 14 Q42) and an addressee route (§ 4.2) — and `checkSceneCall` /
@@ -2469,6 +2469,40 @@ length, and a per-utterance rate limit, both enforced **on the server**.
 > per-process**: a backend rebuild forgives every daily cap and a second replica would double
 > them. Moving it to the `dictionary_ai_usage` precedent is a phase-3 decision *with a
 > migration attached*, so it is not something to do quietly.
+>
+> ### 7a. Template authors are exempt from both turn ceilings (BUILT 2026-09-20)
+>
+> An account with `users.isTemplateAuthor` (migration 115 — the same grant that opens the scene
+> editor at all) skips **`IW_SESSION_TURN_BUDGET` and `IW_DAILY_TURN_CAP`**, for turns and for
+> scene calls alike. The reason is the authoring loop, not generosity: testing a scene means
+> replaying it, a replay is a fresh session run, and an afternoon of that reaches 400 turns —
+> at which point the tool an author is building with stops answering, and the failure reads as
+> the scene being broken rather than the quota being spent.
+>
+> | Bound | Lifted for an author? | Why |
+> |---|---|---|
+> | `IW_SESSION_TURN_BUDGET` | **yes** | The wind-down is in-world flavour; an author testing a long scene is not a pathological session |
+> | `IW_DAILY_TURN_CAP` | **yes** | A money bound aimed at a scripted caller. An author IS the trusted caller — and there are a handful of them, so the exposure is bounded by the grant |
+> | `IW_MIN_TURN_GAP_MS` | no | A runaway-loop guard an author's browser needs as much as a learner's |
+> | `IW_MAX_UTTERANCE_CHARS` | no | Bounds the PROMPT, not the wallet; and the composer enforces it client-side too, so lifting it server-side alone would change nothing observable |
+>
+> **Where it lives.** `turnBudget.ts` stays account-blind — it takes an `IWBudgetOptions
+> { unlimited }` on `check` / `checkSceneCall` / `remaining` and holds no SQL. The flag is
+> resolved by `ImmersiveWorldService.budgetOptions`, which reads `IUserDAL.findById` **once per
+> model call** (an indexed PK read beside a ~1 s call — the same trade this service already
+> makes re-reading the scene every turn) and is deliberately NOT cached, so revoking the grant
+> takes effect immediately rather than at the next rebuild. A missing or throwing lookup
+> resolves to *not* exempt: this lifts a ceiling, so the safe default is the learner's.
+>
+> Two consequences worth knowing. The counters still **increment** for an exempt caller — only
+> the refusals are skipped — so an author's spend stays observable and a revoked flag bites on
+> the very next turn. And `remaining` reports the **full** budget for them rather than a
+> draining one, because the HUD dresses that number up in-world ("the market is closing"); a
+> count falling to 0 while turns kept working would tell an author an untrue story about their
+> own scene.
+>
+> This is the runtime half's only identity-dependent behaviour, and it is a RELAXATION, not a
+> gate — the runtime still never refuses anyone on the basis of who they are (§ 14 Q7).
 >
 > ⚠️ The daily key is **server-local**, unlike `dictionary_ai_usage`, which keys on the
 > learner's local day. That inconsistency is deliberate and survives only while this is an
@@ -2908,6 +2942,15 @@ iw needed no search of its own. **Completion from the learner's own cards** ship
 of `getGameVocabPool` words and was **removed the following day** along with the openers (see the
 reversal above). So of the four candidate pieces, exactly one now stands: the quick dictionary.
 
+**The quick-dictionary field opts out of the beginner keyboard (2026-09-20).** The composer as
+a whole is a `data-beginner-keyboard="keep"` region so that reaching for send or the volume chip
+does not dismiss an open handwriting bar, but the lookup field inside it is marked
+`data-beginner-keyboard="off"`: it is queried in **English or pinyin**, and a learner is using it
+precisely because they cannot write the word yet. Focusing it therefore drops the handwriting bar
+and raises the OS keyboard. This is what forced `eligibility.ts` to resolve the attribute by
+*nearest declaration* rather than per value — see
+[BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § *`data-beginner-keyboard` now has two values*.
+
 A result is rendered as **the word alone**: a `ForeignText` cpcd row carrying its pinyin, at
 `sm` so the overlay is legible, with **no English beside it**. The learner typed the meaning, so
 a gloss column would spend the row's width repeating the query back at them. It also keeps
@@ -3227,6 +3270,7 @@ decisions and the split is deliberate:
 |---|---|---|---|
 | Number row | `` ` `` | grid | same (plus 1/2 street·communal tints, 3/4 placeholder/condition) |
 | Top letters | T · Y | terrain 1 · terrain 2 | same (Q/W = street/communal, E/R = placeholder/condition) |
+| Top letters | E · R · P | **view toggles**: unwalkable tint · forced-direction arrows · place pins | the equivalent four live on 1–4, which iw cannot use (the digits are the cast) |
 | Home row | S · D · F | surface decor · props · trees | same (G = plank) |
 | Floor row | A · G | dirt floor · wood floor | — (no floor row; nme boards are always dirt) |
 | Bottom row | Z · X · 1–8 · B | player · companion · cast in order · eraser | Z/X undo·redo, C/V copy·paste, B eraser |
@@ -3250,19 +3294,57 @@ board that is otherwise solid; iw's Q paints **unwalkable** and W paints **force
 onto a board that is otherwise open (§ 3a). Same keys, same keyboard row, inverted semantics —
 which is the honest mapping, since both pairs answer "where may a body go?".
 
-Their tints have **no toggles**, unlike every other overlay: these two masks change what the
-simulation does rather than how the board looks, so they are always drawn — an author must not
-be able to hide a wall and then paint blind. That leaves **1/2** free, which is why the cast
-runs **1–8** here (matching `IW_MAX_CAST`) rather than 3–0.
+Their tints were originally drawn **unconditionally**, unlike every other overlay: these two
+masks change what the simulation does rather than how the board looks, so hiding one is a real
+way to paint blind. That left **1/2** free, which is why the cast runs **1–8** here (matching
+`IW_MAX_CAST`) rather than 3–0.
+
+**Both now have a view toggle (2026-09-20), and so do the place pins** — `E` unwalkable, `R`
+forced direction, `P` places, as a three-button group in the palette's View section beside the
+grid and the eraser. The paint-blind guarantee survives by a different mechanism, the one the
+template editor already uses for its four mask views: **the map ORs each stored flag with "its
+own tool is armed"** (`IWSceneMapPanel` → `showUnwalkable` / `showForcedDirection` /
+`showPlaces`), so the only layer an author can hide is one they are not currently painting.
+The palette button lights from the **stored** preference, never the forced-on value, so a
+temporary reveal never rewrites what the author asked for.
+
+Three notes on the shape of this:
+- The **keys could not be the digits** the template editor uses (1–4), because the whole
+  number row is the cast here. E and R instead sit immediately right of the Q/W tools they
+  reveal, and P is the initial of the thing it shows.
+- **Places are pins, not a tint** — `EditorMarker`s the map panel builds — so that toggle is a
+  filter on the marker list rather than a `show*` prop into the viewer. The player, companion
+  and cast pins have **no** toggle: there are at most ten of them, and where somebody stands is
+  the scene rather than an annotation of it.
+- The two tint flags are new **optional props on the shared viewer** (`showUnwalkable`,
+  `showForcedDirection` on `TemplateEditorViewer` → `TemplateMaskOverlays`), defaulting to
+  `true`, so the Load gallery and the Template Sandbox — which render the same overlay stack
+  and know nothing about these toggles — are unchanged.
 
 W's selected facing is cycled by **Space** (N→E→S→W), exactly as Space cycles the decor variant
 and turns a furniture piece around, and the cursor ghosts the arrow a click would stamp. The
 index rides through `onPaintCell`'s `variantIdx` argument like every other palette selector.
 
-E and R stay unbound because a scene has no placeholder areas and no per-version condition
-mask. Z/X/C/V are free for the same reason — iw has no undo or clipboard — so the two fixed
+E and R are **not** the template editor's placeholder/condition tools — a scene has no
+placeholder areas and no per-version condition mask — so iw spends them on the two mask view
+toggles instead. Z/X/C/V are free for a related reason — iw has no undo or clipboard — so the two fixed
 bodies take Z and X. ⚠️ Cast keys are **positional**: removing the first cast member
 re-letters the rest.
+
+**Every list in the side panels is ZEBRA-STRIPED** (2026-09-20, `iwListZebra.ts`). The
+authoring panels are stacks of lists — cast, places, complications, events, conversations,
+per-NPC action groups — and all of them used to sit on the column's single white ground,
+separated by a hairline or by nothing. The fix alternates `COLORS.white` and `COLORS.header`
+down each list (`iwZebraItemSx(index)`), because the problem was **item vs item**, not item vs
+page: a uniform card fill would leave two neighbours looking identical. Two rules:
+
+- **Neutrals, not the `RAMP`.** A hue cycling down a list reads as *meaning* — the eye takes a
+  red third place to be saying something about that place — and nothing in these lists is
+  categorical.
+- **Top level only.** The fill goes on the outermost element of each list item and stops
+  there: an action inside its NPC group, a step inside an action, a line inside a conversation
+  all stay on their parent's ground. Three nested striped surfaces turn the Actions and Places
+  panels to mud, and those nested lists already have a border or an indent doing the work.
 
 **The Furniture tool (C).** ONE button places the whole **lumeish** furniture pack — 151
 multi-cell props (docs/LUMEISH_ASSET_PIPELINE.md § 6b). It is the same tool the night market
@@ -3860,10 +3942,13 @@ to be watched for deliberately.
   the § 5.5 cache assertion. **The only file in iw that constructs a model client**
 - `server/services/ImmersiveWorldService.ts` → `takeNpcTurn` (the pure pipeline),
   `ImmersiveWorldService.runTurn` (the stateful half: scene lookup + § 7 budget),
+  `ImmersiveWorldService.budgetOptions` (§ 7a's template-author exemption — the runtime's only
+  read of the users table, and a relaxation rather than a gate),
   `listPlayableScenes` / `openScene` (the runtime's own reads — published only, no author gate)
 - `server/services/iw/turnBudget.ts` → `IWTurnBudget`, `checkUtterance`, `capListeners`,
-  `IW_SESSION_TURN_BUDGET`, `IW_DAILY_TURN_CAP` — § 7's bound. In-memory and per-process; see
-  § 7's caveat. Its other three numbers (`IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS`,
+  `IW_SESSION_TURN_BUDGET`, `IW_DAILY_TURN_CAP`, `IWBudgetOptions` — § 7's bound. In-memory and
+  per-process; see § 7's caveat. Account-blind: § 7a's exemption arrives as an `unlimited`
+  option, never as a user id it looks up. Its other three numbers (`IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS`,
   `IW_MAX_LISTENERS_PER_UTTERANCE`) live in `server/contracts/iw.ts` and are re-exported here,
   because the client has to respect them to behave well
 - `server/controllers/ImmersiveWorldRuntimeController.ts` → `takeTurn` (the SSE endpoint),
@@ -3884,7 +3969,9 @@ to be watched for deliberately.
 - `src/features/immersiveworld/play/iwScript.ts` → `runAuthoredAction`, `runInteraction` — the
   async loop that plays a script to the end (§ 14 Q42, Q43). `RENDER_BARRIERS` is the set of
   steps a prefetched render cannot be carried across — `prompt_npc` is one, because another
-  voice entering the scene is the thing a prefetch cannot have accounted for (§ 14 Q45)
+  voice entering the scene is the thing a prefetch cannot have accounted for (§ 14 Q45).
+  `IWScriptDeps.awaitLearner` is the 2026-09-20 barrier that a script comes BACK from: a
+  `wait_for_response` no longer ends the action
 - `src/features/immersiveworld/play/useIWSceneRuntime.ts` — the ONE stateful thing in the play
   surface: bodies, bubbles, `audienceFor` (the whole cast, since § 4 was withdrawn), the ONE
   routed turn (§ 4.2 — there is no fan-out any more), authored scripts, § 7's client-side rate
@@ -3978,7 +4065,8 @@ to be watched for deliberately.
   `immersiveWorldSceneApi.ts`
   (`masksToSceneLayout` / `sceneLayoutToMasks` join the painted masks to the stored layout),
   `iwSceneWarnings.ts` → `warningFieldProps`, `IW_WARNING_TEXT_SX` (the shared amber field
-  marking, so no panel invents its own colour for a non-blocking complaint)
+  marking, so no panel invents its own colour for a non-blocking complaint),
+  `iwListZebra.ts` → `iwZebraItemSx`, `iwZebraBg` (the shared list-item ground, below)
 - `server/scripts/bench/npc-latency/` → `run.js`, `scenario.js`, `providers.js` — the latency bench behind § 6
   and § 6a. `scenario.js` imports `server/contracts/iw.ts`, which is why the whole harness
   runs under `tsx` (§ 5.6c); its offered action names come from `npcProbes.js` (§ 5.4).
@@ -5452,10 +5540,33 @@ authored thing in the feature that produces behaviour rather than text.
 | **Walk away from** (`walk_away_from`) / **Turn to face** (`face`) | The other two actor-aimed steps; one control in the editor, since all three ask *who*. |
 | **Start a conversation** (`start_conversation`) | Play one of the scene's authored overheard exchanges. |
 | **Wait** (`wait`) | Hold still for 1–60 whole seconds. The beat that makes a script read as behaviour rather than as teleporting. |
-| **Wait for the learner** (`wait_for_response`) | Hand the floor back. At most one, and **only as the final step** — anything after it would run while the learner is composing, which is the one thing § 14 Q29 forbids. |
+| **Wait for the learner** (`wait_for_response`) | Hand the floor back, and **carry on from here once they have used it** (2026-09-20). Steps may follow it, and an action may hold as many as it likes — `Say → Wait for the learner → Say` is one script, so an NPC that asks a question can react to the answer without the author inventing a second action to trigger. ⚠️ **It resumes only on an utterance this NPC could HEAR** (§ 4c): waking on a whisper aimed at somebody across the stand is the theatre the earshot rework deleted. The consequence for an author is that walking away from a parked NPC leaves it parked — the only other ways out are leaving the scene and another action superseding the script. There is deliberately **no timeout**. |
 | **Schedule event** (`schedule_event`) | Arm one of the scene's authored **events** (see *Event* in § 9.1) for `seconds` from now — 0–600 — and carry on. ⚠️ It does **not** hold the NPC (that is `wait`) and does not fire the event itself: the engine injects it at the next legal opportunity, so the delay is an *earliest*, not an exactly-when. This is what lets a script set in motion something it does not perform — 王婶 calls the order through, and the food arrives twenty seconds later without her standing there. |
 
 ⚠️ **`accept_payment` / `hand_over` / `give_item` / `refuse` are NOT steps** — see sub-answer 4.
+
+**How `wait_for_response` resumes (2026-09-20).** The script is an `async` loop, so "park
+here" is literally an `await`: `runAuthoredAction` calls `IWScriptDeps.awaitLearner(actorId)`
+and the host hands back a promise it keeps in a list of parked scripts
+(`useIWSceneRuntime.ts` → `learnerWaitersRef`, `awaitLearner`). The learner's `say` resolves
+every waiter whose actor is in that utterance's **audience** — the same set § 4c stamps onto
+the transcript entry — and it does so *after* appending the line to `heardRef` and *before*
+the routing call, so a resumed script's next `comment` renders against the sentence it is
+answering and does not wait on a model round trip to wake up. A parked waiter is also drained
+on teardown, so a scene left mid-wait unwinds through the ordinary `cancelled()` check instead
+of stranding its promise chain.
+
+⚠️ **The two beats that now run concurrently.** The learner's utterance both wakes the parked
+script *and* starts the ordinary routed turn (§ 4.2). Both can produce a line, so the speech
+chain (§ 5.3a) is what keeps them from revealing over each other — and if the routed reply is
+that same NPC performing an action, `performNpcAction` bumps its script token and the parked
+script is superseded on its next `cancelled()` check, which is the correct resolution: the NPC
+does the newer thing.
+
+Code: `iwScript.ts` → `IWScriptDeps.awaitLearner`, `runAuthoredAction`;
+`useIWSceneRuntime.ts` → `awaitLearner`, `learnerWaitersRef`, `say`;
+`server/services/iw/sceneValidation.ts` → `validateScene` (the former last-step rule, deleted);
+`IWSceneActionsPanel.tsx` (the former `insertBeforeTrailingWait`, deleted).
 
 **Named places are a new map layer.** A cell can be tagged ("water station", "counter"),
 stored as `layout.places`: `tag → "col,row"` (the key was `locations` until 2026-09-06 — migration 163). It lives inside the existing `layout` blob
@@ -5480,7 +5591,6 @@ storing it per (scene, NPC) is also what keeps NPCs code and scenes data (§ 8).
 - an NPC walking to **itself** (trivially authored from a dropdown; it would deadlock);
 - two actions on one NPC **sharing a name** — the model chooses by name, so a duplicate is
   an ambiguous choice rather than an untidy one;
-- a step after `wait_for_response`;
 - an empty script, a blank `comment`, a wait outside 1–60s, a place tagged off the board, or
   a place that was named and never placed (its cell is the empty string, which cannot parse as
   "col,row" — that is what makes "named but nowhere" a save error rather than a walk to

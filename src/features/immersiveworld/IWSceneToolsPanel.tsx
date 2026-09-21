@@ -20,7 +20,7 @@ import { PaletteButton, paletteBtnSx, toolGroupSx } from '../nightmarket/editorB
 import { DIRT_FLOOR, type BoardFloor, type EditorMasks } from '../../engine/market/farmTerrain';
 import { type IWNpcOption, type IWScene } from '../../../server/contracts/iw';
 import { WEIGHT } from '../../theme/scale';
-import { isPlaceTool, type IWEditorTool, type IWPaintTool } from './useIWSceneDraft';
+import { isForcedDirectionTool, isPlaceTool, type IWEditorTool, type IWPaintTool } from './useIWSceneDraft';
 import { CAST_HOTKEYS, type IWEditorTools } from './useIWEditorTools';
 
 /**
@@ -105,9 +105,9 @@ const TOOL_GROUPS: PaintToolGroup[] = [
   // WALKABILITY — the masks that decide where a body may go. Their accents are the BOARD
   // TINT colours (`UNWALKABLE_OVERLAY_COLOR` / `FORCED_OVERLAY_COLOR` in
   // TemplateEditorViewer), so the button and the cells it paints are recognisably the same
-  // thing. Those two tints have no view toggle: unlike every other overlay they change what
-  // the simulation does rather than how the board looks, so they are always drawn — an
-  // author must not be able to hide a wall and then paint blind.
+  // thing. Both tints DO have a view toggle as of 2026-09-20 (see VIEW_TOGGLES) — the
+  // paint-blind risk they used to be protected from by always drawing is now handled by
+  // forcing a layer back on whenever its own tool here is the active one.
   {
     key: 'walkability', accent: '255,59,48',
     tools: [
@@ -138,6 +138,65 @@ const TOOL_GROUPS: PaintToolGroup[] = [
     tools: [
       { tool: 'furniture', label: 'Furniture (← / → page the pack)', icon: <ChairIcon fontSize="small" />, hotkey: 'C' },
     ],
+  },
+];
+
+/**
+ * The ANNOTATION VIEW toggles (2026-09-20): show/hide what the board draws ON TOP of the
+ * terrain, as opposed to what a click paints.
+ *
+ * ⚠️ EACH ONE SHARES ITS PAINT TOOL'S ICON on purpose. A view button and its layer are the
+ * same subject seen twice, and inventing a second glyph for "the unwalkable layer" would
+ * make the author learn two symbols for one idea. What separates them is position (the View
+ * section, not Paint) and the fact that a view button never becomes the active tool.
+ *
+ * WHY THESE THREE AND NOT THE BODIES. Unwalkable and forced-direction cells can blanket a
+ * board, and places can be dense enough to hide the furniture underneath their labels. The
+ * player/companion/cast pins are at most ten, and they are the SCENE rather than an
+ * annotation of it — nothing would be gained by letting them disappear.
+ *
+ * `read`/`set` take the whole tools object rather than a pre-bound pair, so this stays a
+ * plain data table like {@link TOOL_GROUPS} instead of a list of closures rebuilt per render.
+ */
+interface ViewToggleDef {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  hotkey: string;
+  /** The author's STORED preference — what the button lights from, never the forced-on value. */
+  read: (tools: IWEditorTools) => boolean;
+  set: (tools: IWEditorTools, next: boolean) => void;
+  /** True while the tool that paints this layer is armed, i.e. while the view is forced on. */
+  forcedBy: (activeTool: IWEditorTool) => boolean;
+}
+
+const VIEW_TOGGLES: ViewToggleDef[] = [
+  {
+    key: 'unwalkable',
+    label: 'unwalkable cells',
+    icon: <BlockIcon fontSize="small" />,
+    hotkey: 'E',
+    read: (t) => t.showUnwalkable,
+    set: (t, next) => t.setShowUnwalkable(next),
+    forcedBy: (tool) => tool === 'unwalkable',
+  },
+  {
+    key: 'forced',
+    label: 'forced-direction arrows',
+    icon: <NavigationIcon fontSize="small" />,
+    hotkey: 'R',
+    read: (t) => t.showForcedDirection,
+    set: (t, next) => t.setShowForcedDirection(next),
+    forcedBy: isForcedDirectionTool,
+  },
+  {
+    key: 'places',
+    label: 'place pins',
+    icon: <PlaceIcon fontSize="small" />,
+    hotkey: 'P',
+    read: (t) => t.showPlaces,
+    set: (t, next) => t.setShowPlaces(next),
+    forcedBy: isPlaceTool,
   },
 ];
 
@@ -283,6 +342,31 @@ export default function IWSceneToolsPanel({
             >
               <GridOnIcon fontSize="small" />
             </PaletteButton>
+          </Box>
+          {/* The three annotation views. One group with the neutral accent, like the
+              template editor's four mask views: the hue belongs to the LAYER (which the
+              paint buttons already carry), and four coloured groups in one row would read
+              as four unrelated things. */}
+          <Box className="iw-scene-tool-group iw-scene-tool-group-mask-view" sx={toolGroupSx()}>
+            {VIEW_TOGGLES.map((v) => {
+              const forced = v.forcedBy(activeTool);
+              return (
+                <PaletteButton
+                  key={v.key}
+                  className={`iw-scene-view-toggle iw-scene-view-toggle-${v.key}`}
+                  title={forced
+                    ? `Show ${v.label} (${v.hotkey}) — shown anyway while its own tool is active`
+                    : `Show ${v.label} (${v.hotkey})`}
+                  hotkey={v.hotkey}
+                  // Lit from the STORED preference, not the effective one: a forced reveal is
+                  // the map's business and must not look like the author turned it back on.
+                  active={v.read(tools)}
+                  onClick={() => v.set(tools, !v.read(tools))}
+                >
+                  {v.icon}
+                </PaletteButton>
+              );
+            })}
           </Box>
           <Box className="iw-scene-tool-group iw-scene-tool-group-erase" sx={toolGroupSx(ERASE_ACCENT)}>
             {/* Disabled for the place tools — a body has no layer to erase, so the modifier

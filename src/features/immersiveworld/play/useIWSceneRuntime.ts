@@ -397,6 +397,14 @@ export function useIWSceneRuntime(
   /** Resolvers waiting on an actor's walk to end. One per actor at most. */
   const arrivalsRef = useRef(new Map<string, (how: 'arrived' | 'blocked') => void>());
   /**
+   * Scripts parked at a `wait_for_response` step, with WHO is waiting (2026-09-20).
+   *
+   * A list rather than a map: one actor can legitimately hold two parked scripts for a moment
+   * (a superseded one that has not yet noticed its token changed, and its replacement), and
+   * dropping the first on the floor would strand its promise chain forever.
+   */
+  const learnerWaitersRef = useRef<Array<{ actorId: string; resolve: () => void }>>([]);
+  /**
    * Serializes speech: two lines revealing at once is noise, so they queue.
    *
    * Still needed after § 4.2, and for a different reason than it was written for. A learner's
@@ -416,9 +424,10 @@ export function useIWSceneRuntime(
     cancelledRef.current = false;
     const session = sessionIdRef.current;
     const timers = timersRef.current;
-    // Captured, like `timers`, so the cleanup does not read a ref at teardown time. Both
+    // Captured, like `timers`, so the cleanup does not read a ref at teardown time. All three
     // queues are mutated in place (push/splice) and never reassigned, so the identity holds.
     const pauseWaiters = pauseWaitersRef.current;
+    const learnerWaiters = learnerWaitersRef.current;
     return () => {
       cancelledRef.current = true;
       timers.forEach(clearTimeout);
@@ -427,6 +436,9 @@ export function useIWSceneRuntime(
       // strand its promise chains forever; they resume, see `cancelledRef` and unwind.
       pausedRef.current = false;
       pauseWaiters.splice(0).forEach(resolve => resolve());
+      // Same argument for a script parked at `wait_for_response`: the learner has left and
+      // will never speak again, so the waiter is released to see `cancelledRef` and unwind.
+      learnerWaiters.splice(0).forEach(({ resolve }) => resolve());
       // Release § 7's session counter. Fire-and-forget by design — a failure here leaks one
       // integer on the server and nothing the learner can see.
       endIwSession(session);
@@ -915,6 +927,17 @@ export function useIWSceneRuntime(
     }
   }, [scene, enqueueSay, renderLine, sleep, note]);
 
+  /**
+   * Park a script until the learner says something this actor can hear (`iwScript.ts`).
+   *
+   * There is deliberately no timeout: the three ways out are the learner speaking, the scene
+   * being left, and another action superseding this script — the same set every other await
+   * in this hook lives with.
+   */
+  const awaitLearner = useCallback((actorId: string) => new Promise<void>(resolve => {
+    learnerWaitersRef.current.push({ actorId, resolve });
+  }), []);
+
   const scriptDeps = useCallback((token: number, actorId: string): IWScriptDeps => ({
     worldFor,
     walk,
@@ -924,9 +947,10 @@ export function useIWSceneRuntime(
     playConversation,
     armEvent,
     wait: sleep,
+    awaitLearner,
     note,
     cancelled: () => cancelledRef.current || scriptTokensRef.current.get(actorId) !== token,
-  }), [worldFor, walk, face, enqueueSay, renderLine, playConversation, armEvent, sleep, note]);
+  }), [worldFor, walk, face, enqueueSay, renderLine, playConversation, armEvent, sleep, awaitLearner, note]);
 
   /**
    * Perform one of an NPC's authored actions.
@@ -1156,6 +1180,19 @@ export function useIWSceneRuntime(
     // The learner's own line goes in a bubble too, un-spoken: it is the only record of what
     // they just said once the composer clears, and reading it back is half of noticing a typo.
     void enqueueSayPlayer(text);
+
+    // ⚠️ **RELEASE THE PARKED SCRIPTS HERE, AND IN THIS ORDER** (2026-09-20). A
+    // `wait_for_response` step resumes on the learner's next AUDIBLE utterance, so the filter
+    // is `audible` — the same set the transcript was just stamped with, not "anybody with a
+    // script". Releasing after the `heardRef` append matters: a resumed script's very next
+    // beat is usually a `comment`, and its render has to see the sentence it is answering.
+    // It also happens before the routing/turn call below, on purpose — waking the script is a
+    // local fact and must not wait on a model round trip.
+    const waking = learnerWaitersRef.current.filter(w => audible.has(w.actorId));
+    if (waking.length) {
+      learnerWaitersRef.current = learnerWaitersRef.current.filter(w => !audible.has(w.actorId));
+      waking.forEach(({ resolve }) => resolve());
+    }
 
     // ⚠️ **AND HERE IS WHY THE VOLUME HAD TO COME WITH ITS OWN COPY** (§ 4c). This branch has
     // three quite different meanings now, and telling a learner the wrong one sends them

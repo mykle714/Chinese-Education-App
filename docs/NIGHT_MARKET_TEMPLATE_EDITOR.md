@@ -316,7 +316,11 @@ validator explicitly paints shows. Changing the **width or height** in Propertie
   editor's two walkability masks (docs/IMMERSIVE_WORLD.md § 3a). They live on this shared type
   for the same reason `floor` does — iw reuses the nme's viewer, and a mask that rides in
   `EditorMasks` needs no new prop on it. `TemplateMaskOverlays` draws them when they are
-  non-empty, which on a night market board is never. `terrain1` /
+  non-empty, which on a night market board is never. Since 2026-09-20 each also answers to a
+  `show*` prop (`showUnwalkable` / `showForcedDirection`), **defaulting to `true`** so every
+  surface that does not know about them — this editor, the Load gallery, the sandbox — is
+  unchanged; only the iw palette passes `false`, and only for a layer whose own paint tool is
+  not armed (docs/IMMERSIVE_WORLD.md § 12 phase 1d). `terrain1` /
   `terrain2` are the generically-named surface masks (currently light / dark grass —
   named so the art can be hot-swapped). **`street`, `communal`, `placeholder`, and
   `condition` are spriteless annotations** (two walkability classes, an occupant-slot

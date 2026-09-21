@@ -2243,6 +2243,17 @@ Both are inherited from any ancestor. The only `keep` region today is the whole
 composer root rather than on its four buttons individually, so a control added to
 that row later inherits it.
 
+**Nearest declaration wins (2026-09-20).** The two values nest and shadow each
+other: `attributeInForce` in `eligibility.ts` resolves the single closest element
+carrying the attribute and reads its value, rather than each value looking for its
+own nearest region. Both `isKeepOpenTarget` and `traitsOf`'s `optedOut` go through
+it. The case that forced it is inside that one `keep` region — the iw composer's
+**quick-dictionary field is queried in English/pinyin** (`iw-composer__lookup`,
+marked `off`), and the learner is using it precisely because they cannot write the
+word yet. With per-value `closest()` the outer `keep` was found regardless of the
+inner `off`, so the handwriting bar stayed up over an English query instead of
+dismissing and handing back to the OS keyboard.
+
 ### The transition, and why `field` outlives `open`
 
 `Slide direction="up"`, **300 ms in and 220 ms out** — getting out of the way
@@ -2350,7 +2361,10 @@ list was rejected: it would have meant editing every input in the app and would
 silently miss every one added later.
 
 The policy is a pure predicate (`isEligible`) over a `FieldTraits` record, split
-from the DOM read so it can be tested in the node environment the suite runs in.
+from the DOM read so it can be tested in the node environment the suite runs in. The
+DOM read resolves the attribute by nearest declaration, so an `off` region inside a
+`keep` region (and vice versa) behaves the way the markup reads — see *`data-beginner-keyboard`
+now has two values*.
 
 #### Which routes — a second, wholesale gate (added 2026-09-09)
 

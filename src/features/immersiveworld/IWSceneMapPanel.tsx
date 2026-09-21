@@ -81,6 +81,20 @@ export default function IWSceneMapPanel({
   /** The board's floor, read straight off the masks (absent ⇒ dirt) — no second copy to drift. */
   const floorKind = (masks.floor ?? DIRT_FLOOR).kind;
 
+  /**
+   * The EFFECTIVE annotation views: the author's stored preference OR "its own tool is armed".
+   *
+   * The forced-on half is the whole reason these two layers may be hidden at all. Unwalkable
+   * and forced-direction change what the SIMULATION does, not just how the board looks, so
+   * painting one while it is invisible is the failure worth designing out — and this is the
+   * same rule the template editor applies to its four mask views. The palette buttons light
+   * from the STORED flag (`tools.show*`), not from these, so a forced reveal never silently
+   * rewrites what the author asked for.
+   */
+  const showUnwalkable = tools.showUnwalkable || activeTool === 'unwalkable';
+  const showForcedDirection = tools.showForcedDirection || isForcedDirectionTool(activeTool);
+  const showPlaces = tools.showPlaces || isPlaceTool(activeTool);
+
   const npcName = useCallback(
     (npcId: string) => npcs.find((n) => n.id === npcId)?.name ?? npcId,
     [npcs],
@@ -127,13 +141,21 @@ export default function IWSceneMapPanel({
     // Named places. `parsePlaceCell` returns null for an unplaced tag's empty cell,
     // which is how a named-but-unplaced place draws nothing rather than drawing at (0,0).
     // Two tags on one cell stack two pins there — that is legal, and seeing both is right.
-    ...Object.entries(places).flatMap(([tag, cell]): EditorMarker[] => {
-      const at = parsePlaceCell(cell);
-      return at ? [{ col: at.col, row: at.row, label: tag, color: PLACE_MARKER_COLOR }] : [];
-    }),
+    //
+    // THE ONE PIN KIND WITH A VIEW TOGGLE (2026-09-20). A busy board can carry a place on
+    // every other cell, and their labels sit exactly where the furniture the author is
+    // judging is. The BODIES have no toggle: there are at most ten of them, and where
+    // somebody stands is the scene rather than an annotation of it. Forced back on while a
+    // place tool is armed, so aiming a place can never be done blind.
+    ...(showPlaces
+      ? Object.entries(places).flatMap(([tag, cell]): EditorMarker[] => {
+        const at = parsePlaceCell(cell);
+        return at ? [{ col: at.col, row: at.row, label: tag, color: PLACE_MARKER_COLOR }] : [];
+      })
+      : []),
   ], [scene.playerStartCol, scene.playerStartRow, scene.playerStartFacing,
       scene.companionStartCol, scene.companionStartRow, scene.companionStartFacing,
-      scene.npcCast, npcName, avatarFor, companionAvatar, places]);
+      scene.npcCast, npcName, avatarFor, companionAvatar, places, showPlaces]);
 
   /**
    * One click on the board. A PLACE tool moves a body; every other tool paints its layer.
@@ -173,6 +195,10 @@ export default function IWSceneMapPanel({
         // reads as "off" rather than "forgotten".
         showStreet={false}
         showCommunal={false}
+        // The two iw-only tints. Unlike the pair above these have real content, so they are
+        // the author's toggles — forced back on while their own tool paints (see above).
+        showUnwalkable={showUnwalkable}
+        showForcedDirection={showForcedDirection}
         // A place tool must not preview a paint ghost, so the decor category is suppressed
         // for it (decorCategoryFor already returns null for every place tool).
         decorCategory={decorCategoryFor(activeTool)}

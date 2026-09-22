@@ -1,5 +1,5 @@
 import { Box, Typography } from "@mui/material";
-import type { SxProps, Theme } from "@mui/material/styles";
+import { alpha, type SxProps, type Theme } from "@mui/material/styles";
 import Icon from "../Icon";
 import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -28,6 +28,22 @@ import { FONTS } from "../../theme/fonts";
  * strangers they did not choose and cannot leave, so adding a field to this component
  * means reopening docs/ARENA_FEATURE.md Q20, not adjusting a layout. If one board needs a
  * sixth slot, give that board its own row rather than widening this one for everybody.
+ *
+ * ── THE TYPE IS THE ARENA FLOW'S SCALE, AND IT MOVES EVERY BOARD ─────────────────────
+ * `Arena Flow - Shelf System.html` closes with a block that scales CONTENT type up ~1.29x
+ * while explicitly holding header, banner and footer where they are. Because this is a
+ * shared primitive, taking that scale here moves the friends velocity table and the
+ * tester dashboard's leaderboard with it — which is the point: three boards built on one
+ * component that render at two sizes would be the dedupe undone.
+ *
+ * Every number below is the artboard's own (`.bd .r .n` 14 / `.nm2` 17.5 / `.pr` 14.5 /
+ * `.sc3` 14.5 / `.zone span` 12.5) with ONE exception: the artboard never draws the
+ * `meta` sublabel, because the arena has no use for it. It is set at 12 — the same ~1.29
+ * step applied to its old 9.5 — so the two variants stay in the ratio they were designed
+ * in rather than one of them silently staying small.
+ *
+ * Row PADDING is unchanged: the design scales the type inside `.bd .r` and never touches
+ * the row box, so the rows grow by their leading alone.
  *
  * Sibling primitives: `Row` / `RowList` (src/components/primitives) — use those for a
  * list of ENTITIES, this for a list of RANKS.
@@ -104,11 +120,11 @@ export interface BoardRowProps {
     sublabel?: React.ReactNode;
     /**
      * How that line is SET, which follows what it is:
-     *   `"meta"`  (default) mono 9.5, faint — a machine fact next to a name: a language
+     *   `"meta"`  (default) mono 12, faint — a machine fact next to a name: a language
      *             code, a division number, a timestamp.
-     *   `"prose"` sans 11.5, secondary ink — a sentence a PERSON wrote. Mono at 9.5 is a
-     *             caption face; running a written line through it makes the competitor's
-     *             own words read like a data field, and at that size it barely reads at all.
+     *   `"prose"` sans 14.5, secondary ink — a sentence a PERSON wrote. Mono is a caption
+     *             face; running a written line through it makes the competitor's own words
+     *             read like a data field.
      */
     sublabelVariant?: "meta" | "prose";
     /**
@@ -123,7 +139,7 @@ export interface BoardRowProps {
      * figure is in. Not a sixth slot: it says nothing about the competitor, only what
      * the number already shown means.
      *
-     * Worth its 13px when the board's currency is a thing the app draws elsewhere —
+     * Worth its 17px when the board's currency is a thing the app draws elsewhere —
      * the arena's minutes are the flame from the minute-points badge, so the column
      * reads as "the same points I watch tick up" without a word of caption.
      */
@@ -175,8 +191,8 @@ export const BoardRow: React.FC<BoardRowProps> = ({
             className="board__rank"
             sx={{
                 fontFamily: FONTS.mono,
-                fontSize: 11,
-                width: 17,
+                fontSize: 14,
+                width: 21.5,
                 flexShrink: 0,
                 // Darkened on the viewer's own row: the muted grey that reads fine on
                 // white is too light on the org pastel.
@@ -191,7 +207,7 @@ export const BoardRow: React.FC<BoardRowProps> = ({
                 className="board__name"
                 sx={{
                     fontFamily: FONTS.sans,
-                    fontSize: 13.5,
+                    fontSize: 17.5,
                     fontWeight: 600,
                     letterSpacing: "-0.01em",
                     color: COLORS.onSurface,
@@ -208,8 +224,8 @@ export const BoardRow: React.FC<BoardRowProps> = ({
                     className="board__sublabel"
                     sx={{
                         ...(sublabelVariant === "prose"
-                            ? { fontFamily: FONTS.sans, fontSize: 11.5, color: COLORS.textSecondary }
-                            : { fontFamily: FONTS.mono, fontSize: 9.5, color: COLORS.textFaint }),
+                            ? { fontFamily: FONTS.sans, fontSize: 14.5, color: COLORS.textSecondary }
+                            : { fontFamily: FONTS.mono, fontSize: 12, color: COLORS.textFaint }),
                         marginTop: "1px",
                         // One line, always. The board's whole legibility rests on every row
                         // being the same height, and this slot now carries text the user
@@ -250,18 +266,18 @@ export const BoardRow: React.FC<BoardRowProps> = ({
                     justifyContent: "flex-end",
                     gap: "3px",
                     fontFamily: FONTS.mono,
-                    fontSize: 11.5,
-                    // The artboard fixes this at 34px, which is right for a figure that
+                    fontSize: 14.5,
+                    // The artboard fixes this at 44px, which is right for a figure that
                     // stays small (arena minutes reset weekly) and clips one that does not
                     // (a lifetime points total is five or six digits). `minWidth` keeps the
                     // column aligned for the common case and lets the rare wide figure push.
-                    minWidth: 34,
+                    minWidth: 44,
                     textAlign: "right",
                     flexShrink: 0,
                     color: COLORS.onSurface,
                 }}
             >
-                {scoreIcon && <Icon name={scoreIcon} size={13} color={scoreIconColor ?? COLORS.onSurface} fill={1} />}
+                {scoreIcon && <Icon name={scoreIcon} size={17} color={scoreIconColor ?? COLORS.onSurface} fill={1} />}
                 {score}
             </Typography>
         )}
@@ -281,20 +297,33 @@ export interface BoardZoneProps {
 /**
  * Colours for a divider: its ground, its caption, and its rule.
  *
- * ⚠️ DEPARTURE FROM THE ARTBOARD, and a deliberate one. The design writes these captions
- * as `#0B5C46` and `#7A1024` — two dark hexes that belong to no ramp entry and exist
- * nowhere else in the stylesheet. Minting two off-ramp colours for two words of caption
- * is how a palette starts leaking, so this uses `RAMP.grn.ink` / `RAMP.red.ink` on the
- * matching pastels instead. The result is a step lighter than the artboard and still
- * clears 4.5:1. Revisit if the arena's zones ever need to shout louder than the rest of
- * the app's semantic green and red.
+ * ⚠️ HALF A DEPARTURE FROM THE ARTBOARD — it used to be a whole one. The design writes
+ * these captions as `#0B5C46` and `#7A1024`, and this note used to call BOTH of them
+ * off-ramp darks that were refused on principle.
+ *
+ * That was right about the green and wrong about the red. `#7A1024` converts to
+ * oklch(38% 0.138 18), which IS the design's own `--redA` — our `redA` had simply
+ * drifted (it sat at oklch(54% 0.15 20) until the 2026-09-21 palette alignment). So
+ * `RAMP.red.ink` now renders the artboard's demotion caption exactly, and the red half
+ * of this departure no longer exists.
+ *
+ * The green half stands: `#0B5C46` is oklch(42% 0.081 169) — a dark TEAL-green that is
+ * genuinely no ramp entry (`--grnA` is oklch(53% 0.12 145), 24 degrees away). Minting it
+ * for two words of caption is how a palette starts leaking, so promotion keeps
+ * `RAMP.grn.ink`: a step lighter than the artboard, still clear of 4.5:1. Revisit only
+ * if the green zone ever needs to shout louder than the app's semantic green.
  */
 const ZONE_DIVIDER: Record<
     BoardZoneTone,
     { bg: string; ink: string; rule: string; arrow: string | null }
 > = {
-    promote: { bg: RAMP.grn.fill, ink: RAMP.grn.ink, rule: "rgba(56, 125, 61, 0.32)", arrow: "arrow_upward" },
-    relegate: { bg: RAMP.red.fill, ink: RAMP.red.ink, rule: "rgba(181, 66, 73, 0.30)", arrow: "arrow_downward" },
+    // The rule is its own caption's ink, softened — `alpha()` rather than a hand-written
+    // rgba(), because these two used to be literal copies and the red one silently
+    // drifted off its ink when the palette moved (it was still `#B54249` at 30% after
+    // `redA` became `#78182B`). A rule that is "the caption colour, quieter" should be
+    // derived from the caption colour. The artboard's own alphas are kept: .32 / .30.
+    promote: { bg: RAMP.grn.fill, ink: RAMP.grn.ink, rule: alpha(RAMP.grn.ink, 0.32), arrow: "arrow_upward" },
+    relegate: { bg: RAMP.red.fill, ink: RAMP.red.ink, rule: alpha(RAMP.red.ink, 0.30), arrow: "arrow_downward" },
     // No arrow on the neutral rule: `hold` is the absence of a direction, and an arrow
     // that pointed nowhere would be the one piece of this divider a reader had to decode.
     hold: { bg: COLORS.background, ink: COLORS.textSecondary, rule: COLORS.wood, arrow: null },
@@ -321,10 +350,10 @@ const ZONE_DIVIDER: Record<
  */
 export const BoardZone: React.FC<BoardZoneProps> = ({ label, tone = "hold", className }) => {
     const { bg, ink, rule, arrow } = ZONE_DIVIDER[tone];
-    // 13px against a 9.5px caption: the glyph's drawn height is well under its font size,
+    // 17px against a 12.5px caption: the glyph's drawn height is well under its font size,
     // so matching the two numbers would render an arrow visibly smaller than the letters
     // it is meant to lead.
-    const indicator = arrow ? <Icon name={arrow} size={13} color={ink} weight={600} /> : null;
+    const indicator = arrow ? <Icon name={arrow} size={17} color={ink} weight={600} /> : null;
     return (
         <Box
             className={className ? `board__zone ${className}` : "board__zone"}
@@ -340,6 +369,7 @@ export const BoardZone: React.FC<BoardZoneProps> = ({ label, tone = "hold", clas
                 className="board__zone-caption"
                 // Tighter than the row gap: the arrows belong TO the caption, and at the
                 // row's 8px they would read as three separate items on the line.
+                // (The caption itself is `.bd .zone span` at the scaled-up 12.5px.)
                 sx={{ display: "flex", alignItems: "center", gap: "5px" }}
             >
                 {indicator}
@@ -347,7 +377,7 @@ export const BoardZone: React.FC<BoardZoneProps> = ({ label, tone = "hold", clas
                     className="board__zone-label"
                     sx={{
                         fontFamily: FONTS.label,
-                        fontSize: 9.5,
+                        fontSize: 12.5,
                         letterSpacing: "0.12em",
                         textTransform: "uppercase",
                         color: ink,

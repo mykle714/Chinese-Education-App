@@ -63,19 +63,43 @@ export function resolveTimezone(rawTz: unknown): string {
   }
 }
 
+/**
+ * One formatter per timezone, built on first use.
+ *
+ * ⚠️ CONSTRUCTING AN `Intl.DateTimeFormat` IS EXPENSIVE — it is the dominant cost of
+ * `partsInZone`, and `partsInZone` is called in tight loops: arena clustering walks every
+ * candidate, the arena and maintenance crons walk every (user, language) balance, and the
+ * boundary tests sample thousands of instants per zone. Rebuilding the formatter each
+ * call made `arenaWeek.test.ts` slow enough to trip vitest's 5s per-test timeout.
+ *
+ * The cache is safe to hold forever: a formatter is immutable and keyed only by the zone
+ * name, so the map is bounded by the number of distinct IANA zones the process sees.
+ * It does NOT cache the RESULT — that still depends on the instant.
+ */
+const ZONE_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function zoneFormatter(tz: string): Intl.DateTimeFormat {
+  let fmt = ZONE_FORMATTERS.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      weekday: 'short',
+      hourCycle: 'h23',
+    });
+    ZONE_FORMATTERS.set(tz, fmt);
+  }
+  return fmt;
+}
+
 /** Decompose an instant into wall-clock parts in `tz`. */
 export function partsInZone(instant: Date, tz: string): LocalParts {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    weekday: 'short',
-    hourCycle: 'h23',
-  });
+  const fmt = zoneFormatter(tz);
 
   const bag: Record<string, string> = {};
   for (const p of fmt.formatToParts(instant)) {

@@ -119,6 +119,18 @@ export interface ArenaBoardResponse {
   /** Whether the viewer has already opted into the coming week. */
   optedInNextWeek: boolean;
   /**
+   * When the NEXT arena opens — Tuesday 04:00 in the VIEWER's zone, ISO-8601.
+   *
+   * Sent in every state, including `live`: the page needs it the moment the week
+   * closes, and a board that is live now will be showing results on the next poll.
+   *
+   * Computed server-side rather than derived on the client even though the client has
+   * the same week arithmetic (`src/utils/arenaWeek.ts`): every other boundary on this
+   * response is the server's, and two implementations of "when is Tuesday 04:00" is
+   * exactly the drift the arena has already been bitten by once (§ 5.3).
+   */
+  nextOpensAt: string;
+  /**
    * The VIEWER's own arena message. Sent separately from their board row because
    * the message editor is reachable in every state — including `opt-in`, where
    * `entries` is empty and there is no row to read it off.

@@ -84,19 +84,44 @@ export const errorTextSx = {
 } as const;
 
 /**
- * Human-readable time remaining, e.g. "2d 4h" or "38m".
+ * The countdown, split into `{value, unit}` parts for the big mono readout
+ * (`Arena Flow - Shelf System.html` `.cdcard .big` / `.opens .big`, and `ArenaCountdown`).
  *
- * Deliberately coarse above an hour: a live-ticking second counter on a
- * five-day race invites people to watch the clock instead of study, and it
- * forces a re-render every second for no informational gain.
+ * ⚠️ IT COUNTS SECONDS, which reverses an earlier decision. `formatRemaining` used to
+ * stop at minutes and re-render once a minute, on the argument that a live second
+ * counter on a five-day race invites people to watch the clock instead of study. The
+ * arena flow draws "2d 4h 31m 8s" in every live artboard, and the product owner chose
+ * the design over that argument (2026-09-21). Keep the seconds unless that is revisited;
+ * `ArenaCountdown` is the only ticker, so the cost is one re-render per second on one
+ * mounted page.
+ *
+ * Leading zero units are DROPPED, trailing ones are not: "19h 40m 12s" rather than
+ * "0d 19h 40m 12s", but "3m 0s" rather than "3m". The largest unit is what makes the
+ * number scannable; the smallest is what makes it feel live.
  */
-export function formatRemaining(msRemaining: number): string {
-    if (msRemaining <= 0) return "closed";
-    const totalMinutes = Math.floor(msRemaining / 60000);
-    const days = Math.floor(totalMinutes / 1440);
-    const hours = Math.floor((totalMinutes % 1440) / 60);
-    const minutes = totalMinutes % 60;
-    if (days > 0) return `${days}d ${hours}h`;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
+export interface CountdownPart {
+    value: number;
+    /** Single-letter suffix — `d`, `h`, `m`, `s`. Set smaller and muted beside the value. */
+    unit: "d" | "h" | "m" | "s";
+}
+
+export function formatCountdownParts(msRemaining: number): CountdownPart[] {
+    // Never render a negative clock: a countdown that has run out is "0s", and the
+    // caller decides whether that state is still worth showing at all.
+    const total = Math.max(0, Math.floor(msRemaining / 1000));
+    const days = Math.floor(total / 86400);
+    const hours = Math.floor((total % 86400) / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+
+    const all: CountdownPart[] = [
+        { value: days, unit: "d" },
+        { value: hours, unit: "h" },
+        { value: minutes, unit: "m" },
+        { value: seconds, unit: "s" },
+    ];
+    // Drop leading units that are zero, but never drop everything — at under a minute
+    // the list must still yield "Ns" rather than an empty row.
+    const firstSignificant = all.findIndex((p) => p.value > 0);
+    return firstSignificant === -1 ? [{ value: 0, unit: "s" }] : all.slice(firstSignificant);
 }

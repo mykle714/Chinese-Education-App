@@ -7,10 +7,10 @@ import { COLORS, RAMP, type RampHue } from "../theme/colors";
 // ⚠️ VALUES REWRITTEN for the shelf redesign (docs/SHELF_REDESIGN.md, decision D2).
 // The four categories are now the design's OKLCH PASTELS at the hue each already
 // owned. The names, the shape and every consumer are unchanged — only the values moved:
-//   Unfamiliar  #EF476F -> #FFDDDB  (--red, oklch(93% 0.045  20))
-//   Target      #FF9E5A -> #FFE6C8  (--org, oklch(94% 0.05   70))
-//   Comfortable #05C793 -> #D9F4D9  (--grn, oklch(94% 0.045 145))
-//   Mastered    #779BE7 -> #D2EBFF  (--blu, oklch(93% 0.045 250))
+//   Unfamiliar  #EF476F -> --red   Target      #FF9E5A -> --org
+//   Comfortable #05C793 -> --grn   Mastered    #779BE7 -> --blu
+// The hexes are no longer repeated here; BAND_HUES below names the hue and the ramp
+// supplies the value, so a repaint of the palette carries these with it.
 //
 // ⚠️ A PASTEL IS NOT SELF-SUFFICIENT. Each of these is ~1.15:1 against the paper
 // ground — invisible as a bare dot, chip or bar. They read only when the shape carries
@@ -26,16 +26,33 @@ import { COLORS, RAMP, type RampHue } from "../theme/colors";
 // The near-white partner of each hue (--redTint etc.) is the `accent` in BAND_COLORS
 // below and the `*Accent` token in theme/colors.ts. For INK sitting on a pastel, use
 // the ramp's `*A` member (COLORS.redA / orgA / grnA / bluA) instead.
-export const CATEGORY_COLORS = {
-    Unfamiliar: "#FFDDDB",
-    Target: "#FFE6C8",
-    Comfortable: "#D9F4D9",
-    Mastered: "#D2EBFF",
+/**
+ * The hue each band owns. The hexes below are DERIVED from it, never written out.
+ *
+ * They were four literals until the 2026-09-21 palette alignment, which moved `--red`
+ * and `--blu` and left these four behind on the old values — a silent drift with no
+ * failing test, because a hardcoded pastel is still a valid colour. `BAND_INK` and
+ * `MASTERY_BAR_COLORS` in this same file already read the ramp directly (the theme
+ * cycle that once forced literals here was cut on 2026-08-31); these two maps simply
+ * had not been converted with them.
+ */
+export const BAND_HUES = {
+    Unfamiliar: "red",
+    Target: "org",
+    Comfortable: "grn",
+    Mastered: "blu",
+} as const satisfies Record<string, RampHue>;
+
+export const CATEGORY_COLORS: Record<string, string> = {
+    Unfamiliar: RAMP[BAND_HUES.Unfamiliar].fill,
+    Target: RAMP[BAND_HUES.Target].fill,
+    Comfortable: RAMP[BAND_HUES.Comfortable].fill,
+    Mastered: RAMP[BAND_HUES.Mastered].fill,
     // Fallback for unknown/undefined category. --grey, the ramp's neutral surface —
     // a pastel like the four above, so an unknown category is a colorless chip rather
     // than a dark one.
-    default: "#E7E7EA",
-} as const;
+    default: COLORS.grey,
+};
 
 /**
  * The two-tone pair each band paints a DECK TILE with: a saturated body color and a
@@ -50,11 +67,11 @@ export const CATEGORY_COLORS = {
 // Post-redesign `main` is the 93% PASTEL body and `accent` the 97.5% near-white inner
 // fill — two tiers of one hue rather than saturated-over-pastel. The tile needs its own
 // outline to separate from the paper; see COLORS.markOutline.
-export const BAND_COLORS = {
-    Unfamiliar: { main: "#FFDDDB", accent: "#FFF2F2" },
-    Target: { main: "#FFE6C8", accent: "#FFF5EA" },
-    Comfortable: { main: "#D9F4D9", accent: "#F0FAF0" },
-    Mastered: { main: "#D2EBFF", accent: "#EEF8FF" },
+export const BAND_COLORS: Record<string, { main: string; accent: string }> = {
+    Unfamiliar: { main: RAMP[BAND_HUES.Unfamiliar].fill, accent: RAMP[BAND_HUES.Unfamiliar].tint },
+    Target: { main: RAMP[BAND_HUES.Target].fill, accent: RAMP[BAND_HUES.Target].tint },
+    Comfortable: { main: RAMP[BAND_HUES.Comfortable].fill, accent: RAMP[BAND_HUES.Comfortable].tint },
+    Mastered: { main: RAMP[BAND_HUES.Mastered].fill, accent: RAMP[BAND_HUES.Mastered].tint },
     /**
      * "All" — the whole library. Deliberately GREY: every other tile color on the page
      * carries meaning (a band, a mastery bar, a deck's derived accent), and All is not
@@ -66,8 +83,8 @@ export const BAND_COLORS = {
      * construction rather than by a hand-picked grey — and it sits at the same two
      * tiers as the four hues above (--grey body, paper-white inner fill).
      */
-    All: { main: "#E7E7EA", accent: "#FBFAF8" },
-} as const;
+    All: { main: COLORS.grey, accent: COLORS.background },
+};
 
 /**
  * "Learn Now" — the cards still being learned (every sorted card whose core bar is

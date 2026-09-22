@@ -166,6 +166,20 @@ interface MobileTabScreenProps {
     // scroller's own `touch-action` is overruled by this ancestor and the swipe does
     // nothing at all, silently.
     horizontalPan?: boolean;
+    /**
+     * Wrap the page header in the page's own chrome, without moving it out of the
+     * scroll area (so it still scrolls away exactly as an unwrapped header does).
+     *
+     * Exists for a header that is not a bar ON a surface but part OF one: /arena draws
+     * its division banner full-bleed with the back arrow, title and actions sitting
+     * inside the plate (`DivisionBanner`). The alternative — letting the page render
+     * the banner as its first content child — puts it BELOW the header, which is a
+     * different design and reads as two unrelated bands.
+     *
+     * Defaults to identity, so every existing caller is unaffected. A wrapper is
+     * responsible for its own horizontal padding: `.page-header` already pads to 22px.
+     */
+    wrapHeader?: (header: React.ReactNode) => React.ReactNode;
     children: ReactNode;
 }
 
@@ -183,6 +197,7 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     scrollable = true,
     topFade = true,
     horizontalPan = false,
+    wrapHeader,
     children,
 }) => (
     <ScreenRoot className={className ?? "mobile-tab-screen"} sx={{ backgroundColor: surfaceColor }}>
@@ -192,14 +207,19 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
             topFade={topFade}
             horizontalPan={horizontalPan}
         >
-            <MobileDemoHeader
-                title={title}
-                showBack={showBack}
-                onBack={onBack}
-                arrowDirection={arrowDirection}
-                size={headerSize}
-                extraActions={headerExtraActions}
-            />
+            {(() => {
+                const header = (
+                    <MobileDemoHeader
+                        title={title}
+                        showBack={showBack}
+                        onBack={onBack}
+                        arrowDirection={arrowDirection}
+                        size={headerSize}
+                        extraActions={headerExtraActions}
+                    />
+                );
+                return wrapHeader ? wrapHeader(header) : header;
+            })()}
             <ContentInner className={contentClassName} sx={contentSx}>
                 {children}
             </ContentInner>

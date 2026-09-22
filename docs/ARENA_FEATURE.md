@@ -9,6 +9,13 @@ the lines moved by ties (§ 7).
 **Status: LIVE ON PPE** since 2026-08-16 (migration 146; the `cow-arena` hourly timer is
 installed and armed). Every design question in § 11 was answered before implementation began.
 
+🎨 **The page was rebuilt to `Arena Flow - Shelf System.html` on 2026-09-21** — every state,
+not just `live`. See § 2 and [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entry **9a**. One
+wire field was added (`nextOpensAt`, see § 9) and **no migration**; the rebuild is
+therefore a plain `/deploy`. It ships alongside an app-wide palette alignment and a board
+type scale-up that move Friends and the tester dashboard too — both recorded in
+SHELF_REDESIGN.md § A1.
+
 🚩 **Arena sits behind a feature flag, currently ON** — `FEATURE_FLAGS.arena` in
 `server/contracts/featureFlags.ts`, see [FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 2c.
 Everything below is live and unchanged; the flag exists so the feature *can* be switched
@@ -76,6 +83,17 @@ Relationship to the two boards that already exist:
 One new hub row and one new page, both following the existing Node drill-in archetype
 ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md), [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)).
 
+**The page's design is `Arena Flow - Shelf System.html`** in the user's Claude Design
+project — 15 artboards plus a state map, covering every state rather than the single
+`live` screen the original spec drew. Built as entry **9a** of
+[SHELF_REDESIGN.md](./SHELF_REDESIGN.md), which records what it changed and the four
+rationales it overrode. Read that entry before "fixing" anything on this page that looks
+inconsistent with the rest of the app — several things are, on purpose.
+
+⚠️ **The header lives INSIDE the division banner.** `ArenaPage` passes `wrapHeader` to
+`NodePage`, so the back arrow, title and actions are drawn on the full-bleed plate rather
+than above it. The banner is the page's masthead, not a card on it.
+
 | Route | Component | What it is |
 |---|---|---|
 | `/arena` | `src/features/arena/ArenaPage.tsx` | The board. `chrome: "node"`, `footerTab: "home"`, back-arrow → `/` |
@@ -124,9 +142,16 @@ mismatch is deliberate — the API is a contract and the label is copy. Do not a
 division **colours** (§ 7.0): `DIVISION_NAMES` and `divisionName` remain, but a rung's
 appearance is `DivisionBanner`'s now — and is currently an unstyled placeholder.
 
+⚠️ **The sketch below predates the arena flow** and is kept for the ROW anatomy only.
+Its first line — a board header carrying "CHINESE · IRIDIUM · ends Sun 4:00 PM" — no
+longer exists: the division is on the full-bleed banner at the top of the page and the
+countdown is its own centred block above the board (§ 2.3). The board itself has no
+header row at all; the `Board · 25 / minutes` rule that briefly sat there was removed
+with the flow.
+
 ```
  ┌──────────────────────────────────────────────┐
- │  CHINESE · IRIDIUM          ends Sun 4:00 PM │   ← header: language + division (§ 7.0) + countdown
+ │  (no board header — see the note above)      │
  ├──────────────────────────────────────────────┤
  │ [1]  🇪🇸 Priya                         🔥 412 │   ← promotion zone (top 5)
  │      Ten minutes before work, every day.     │
@@ -188,8 +213,10 @@ Differences from `/friends`, all of them additive:
   flag + region-code badge ("🇪🇸 ES"), built from `LANGUAGE_FLAGS` +
   `languageRegionCode()` so the letters can never disagree with the flag, and degrading
   to "ES ES" on Windows rather than to nothing.
-* **The header carries the division and a countdown** to the next boundary: to Sunday
-  16:00 while active, to Tuesday 04:00 while on break.
+* **The division and the countdown are PAGE chrome, not board chrome.** The rung is the
+  full-bleed banner the page header sits inside; the countdown is a centred 52px mono
+  block below it, counting to Sunday 16:00 while live and to Tuesday 04:00 otherwise
+  (§ 2.3). It ticks **seconds** — a deliberate reversal, see SHELF_REDESIGN entry 9a.
 * **Ranking is the server's.** The client never re-sorts. Same rule as `/friends`.
 * **A row shows name, language flag, message and score — and nothing else.** (It showed
   name, avatar, a flag+region-code badge and score until 2026-08-21; the avatar is gone,
@@ -277,19 +304,70 @@ check their other race, the same as everywhere else in the app.
 
 ### 2.3 The four states of `/arena`
 
-The page is a state machine over "do you have an arena **in this language**, and is it
-live":
+The page is a state machine over two questions: do you hold a seat in a live arena **in
+this language**, and has that arena closed. Everything else — banner, countdown, outcome,
+join — follows from the answer.
 
 | State | When | What renders |
 |---|---|---|
-| **Active** | you are in a live arena | the board, live scores, countdown to Sunday 16:00 |
-| **Results** | your arena has closed, break period | the final board frozen, your promotion/demotion banner, **Join next week's arena** button |
-| **Waiting** | opted in, arena not yet formed (i.e. it is between your opt-in and Tuesday 04:00) | "You're in — your arena opens Tuesday at 4 AM", with your division |
-| **Out** | not opted in and not in an arena | your division, an explanation of the ladder, and **Join** — offered whether or not the break is open (§ 8) |
+| **Live** | you hold a seat and the week is running | banner, countdown to Sunday 16:00, the live board |
+| **Results** | your arena closed; the break | the next countdown, Join, "Last Week's Results" + the outcome card, the **frozen** board |
+| **Waiting** | opted in, arena not yet formed (between your opt-in and Tuesday 04:00) | banner, "Your arena opens in…", the 25-seat field with **your seat lit**, Withdraw |
+| **Out** | not opted in and not in an arena | banner, "Next arena opens in…", the 25-seat field, **Join** — offered whether or not the break is open (§ 8) |
 
 There is no fifth "you missed it" state — a player who did not opt in before Tuesday
-04:00 simply sits in **Out** until the next break period opens, with copy that says when
-that is. Their division is untouched.
+04:00 simply sits in **Out** until the next opening, with copy that says when that is.
+Their division is untouched.
+
+> ⚠️ **"Waiting" and "Out" are NOT wire states**, and this table's names are the DESIGN's,
+> not `ArenaState`'s. The server sends `'opt-in'` or `'closed'` depending on whether the
+> break is open; the page renders those two **identically** and splits instead on
+> `optedInNextWeek`. That wire distinction has been dead since § 8 stopped gating
+> enrolment on the break — it is an `ArenaState` variant nothing reads. Narrowing the
+> union is a server change, tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+
+Every state draws the division banner, deliberately: the rung you hold does not stop
+existing between weeks, and without it the two seat-less states are a bare clock on an
+empty page with nothing naming the arena you are about to join.
+
+**The 25-seat field** (`ArenaSeatField`) in Waiting/Out is a DIAGRAM, not data — no cell
+corresponds to a person, and it must never be wired to one. A pre-formation arena *has*
+no members (§ 5.3), so a "real" version would be a fiction with a data source. It answers
+the two questions a newcomer actually has (how big is the field, what happens at its ends)
+using the board's own zone colours, so promotion-green and demotion-red are already
+familiar when the live board arrives on Tuesday.
+
+**Every state scrolls.** `/arena` passes no `scrollable` prop, so it takes `NodePage`'s
+default. The docked Waiting/Out layout is produced by flex growth (the content column is
+`flex: 1` inside the scroller, so the seat field fills the gap and the action sits against
+the footer), *not* by `overflow: hidden`. The seat-less pair briefly shipped as
+`scrollable={false}`: that docks correctly at the artboards' phone size and silently CLIPS
+the Join button on a shorter viewport or at a large accessibility text size, leaving the
+state's only action unreachable. Flex growth gives the same docked result while it fits
+and scrolls when it does not. Code: `src/features/arena/ArenaPage.tsx` → `seatless`.
+
+### 2.4 The first-visit explainer
+
+Three steps — what a division is, what a minute is, what Sunday does — drawn as the app's
+shared stepped overlay (`src/components/SteppedHelpPopup`, the same component Study
+Challenge uses, so both read as one system). Content in
+`src/features/arena/arenaHelpSteps.ts`; screenshots in `src/assets/arenaHelp/`.
+
+It opens **automatically on a learner's first visit**, over the loaded page so the thing
+being described is behind the scrim, and thereafter only from the `help` button in the
+header. That differs from Study Challenge's explainers, which deliberately have no memory
+at all: the arena's rules are not optional context, they are how the page works.
+
+⚠️ **The "seen" flag is `localStorage`, so it is per DEVICE, not per account.** The same
+learner on a second phone meets the three steps again. The trade was deliberate — the
+alternative is a `users` column and a migration for a flag whose whole job is to stop
+showing a card twice. Reads and writes are try/caught because Safari private mode throws
+on access, and storage being unavailable is treated as "seen" (never meeting it
+automatically beats meeting it on every single visit; the help button still works).
+
+⚠️ `src/assets/arenaHelp/` is currently **empty**, so all three steps render the hatched
+placeholder frame. Because this explainer auto-opens, every new user sees those
+placeholders — worth capturing early.
 
 ---
 
@@ -1276,7 +1354,9 @@ No change to `userminutepoints` or any vet table.
 | Routes | `server/routes/arenaRoutes.ts` | ⚠️ static segments above any `/:id`, as in `friendRoutes` |
 | Cron | `server/scripts/arena-cron.ts` + `database/cron/cow-arena.{service,timer}.template` | the `cow-arena` systemd user timer, hourly at **HH:06**: resolve any arena past Sun 16:00, then form for any timezone crossing Tue 04:00 |
 | Client API | `src/api/arena.ts` | typed calls, **no `token` param** (FRONTEND_LAYERING § 3.2) |
-| Client | `src/features/arena/*` | `ArenaPage` + the four states; `ArenaEntryRow` (a `BoardRow` binding); `ArenaMessageDialog` (the § 2.1a editor) |
+| Client | `src/features/arena/*` | `ArenaPage` + the four states; `DivisionBanner` (the full-bleed plate the header sits in); `ArenaCountdown`; `ArenaSeatField`; `ArenaJoinButton`; `LockedBoard`; `ArenaEntryRow` (a `BoardRow` binding); `ArenaMessageDialog` (the § 2.1a editor); `arenaHelpSteps` (the § 2.4 explainer) |
+| Client (shared) | `src/components/SteppedHelpPopup.tsx` + `steppedHelp.ts` | the stepped explainer, shared with Study Challenge (§ 2.4) |
+| Client (shared) | `src/components/NodePage.tsx` / `MobileTabScreen.tsx` | `wrapHeader`, which exists for this page's banner |
 | Client (shared) | `src/components/leaderboard/Board.tsx` | `Board` / `BoardRow` / `BoardZone` — the ranked-table primitive. **Not** the friends person row; see § 2.1 for why that plan was dropped |
 | Client | `src/pages/HomePage.tsx`, `src/routes/routeMeta.ts`, `src/routes/registry.ts` | the hub row and the route |
 
@@ -1284,7 +1364,7 @@ No change to `userminutepoints` or any vet table.
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/arena` | `ArenaBoardResponse` — `{state, division, arena, entries, boundaries}`; entries ranked, viewer flagged |
+| GET | `/api/arena` | `ArenaBoardResponse` — `{state, division, arenaId, entries, boundaries, divisionChange, optedInNextWeek, nextOpensAt, viewerMessage}`; entries ranked, viewer flagged |
 | POST | `/api/arena/optIn` | 200 `{weekKey}` — 400 only if the caller already holds a live seat (§ 8) |
 | DELETE | `/api/arena/optIn` | 204 — withdraw before formation; 400 once seated |
 | POST | `/api/arena/message` | 200 `{message}` — the STORED line (trimmed, collapsed, sanitised), or `null`. `{message: null}` clears it (§ 2.1a) |
@@ -1292,6 +1372,19 @@ No change to `userminutepoints` or any vet table.
 
 All require `authenticateToken`. Wire types in `server/types/arena.ts`, mirrored in
 `src/api/arena.ts`.
+
+**`nextOpensAt`** (added with the arena flow, § 2.3) is the instant the NEXT arena opens
+— Tuesday 04:00, computed by `nextArenaOpensAt` in `server/shared/arenaWeek.ts`. Sent in
+**every** state, `live` included, so the page already has it when a week turns over
+mid-session.
+
+⚠️ It is computed in the **viewer's** timezone, which is the opposite of `boundaries`. That
+is correct and not an oversight: `boundaries` describes an arena that EXISTS and whose
+clock was frozen at formation (§ 3), whereas the arena `nextOpensAt` names has not formed
+yet and will form at 04:00 in the bucket the viewer's own zone puts them in (§ 5.3). The
+client has the same week arithmetic in `src/utils/arenaWeek.ts` and deliberately does not
+use it — every other boundary on this response is the server's, and two implementations of
+"when is Tuesday 04:00" is exactly the drift § 5.3 has already been bitten by.
 
 ### The cron pass is RESOLVE-then-FORM
 
@@ -1451,13 +1544,24 @@ This document describes (all of the following now exist except where marked):
 `server/dal/setup.ts` (arena wiring), `server/server.ts` (mount),
 `src/api/arena.ts`,
 `src/utils/geohash.ts` (client-side truncation — the privacy contract),
-`src/features/arena/*`,
+`src/features/arena/*` — `ArenaPage`, `DivisionBanner`, `ArenaEntryRow`, `ArenaCountdown`,
+`ArenaSeatField`, `ArenaJoinButton`, `LockedBoard`, `ArenaMessageDialog`, `arenaHelpSteps`,
+`arenaStyles`,
+`src/components/SteppedHelpPopup.tsx` + `src/components/steppedHelp.ts` (the shared
+explainer, § 2.4 — also used by Study Challenge),
+`src/assets/arenaHelp/` (its screenshots),
+`src/components/NodePage.tsx` + `src/components/MobileTabScreen.tsx` (`wrapHeader`, which
+exists for this page's banner — § 2),
+`src/theme/colors.ts` (`RAMP.gld` + `COLORS.gldFrame`, minted for this page's join button
+and locked board),
 `src/components/leaderboard/Board.tsx` (`Board` / `BoardRow` / `BoardZone` — shipped
 2026-08-21; `ArenaEntryRow` is a thin binding of it, see § 2.1),
 `src/pages/HomePage.tsx` (the Arena hub row),
 `src/routes/routeMeta.ts` + `src/routes/registry.ts`.
 
-Tests: `server/__tests__/arenaWeek.test.ts` (boundary maths incl. DST),
+Tests: `server/__tests__/arenaWeek.test.ts` (boundary maths incl. DST, and
+`nextArenaOpensAt`), `src/__tests__/arenaCountdown.test.ts` (the countdown's formatting
+rule),
 `server/__tests__/arenaDal.test.ts` (the resolution statement shape — the isLive flip),
 `server/__tests__/arenaClustering.test.ts`, `server/__tests__/arenaSynthetic.test.ts`,
 `src/__tests__/geohash.test.ts` (reference values).

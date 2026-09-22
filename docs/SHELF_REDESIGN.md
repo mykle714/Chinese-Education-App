@@ -25,17 +25,37 @@ The design lives in the user's Claude Design project **"Cow"**
 
 | File | What it is |
 |---|---|
-| `App Redesign - Shelf System.html` | 18 phone artboards, one per screen. The spec. |
+| `App Redesign - Shelf System.html` | 27 phone artboards, one per screen. The spec. |
 | `shelf-system.css` | The stylesheet those artboards share — token + primitive definitions. |
+
+**Per-flow spec files.** A screen whose STATES matter more than its layout gets its own
+file, drawn against the same `shelf-system.css`. These are spec, not exploration — each
+supersedes its single artboard in the file above:
+
+| File | Covers | Built |
+|---|---|---|
+| `Arena Flow - Shelf System.html` | all of `/arena`, 15 artboards + a state map | entry **9a** (2026-09-21) |
+| `Challenge Flow - Shelf System.html` | View Challenge | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) |
+| `Sort Flow - Shelf System.html` | the sort-cards page | entry 3 |
+| `Extra Info Panel - Shelf System.html` | the eip | entries 19–25 |
+| `Flashcard Learn Page - Shelf System.html` | the flp | entries 19–25 |
 
 Sibling explorations in the same project are **earlier alternatives or narrower
 studies, not the spec**: `Centers - Directions.html`, `Color Grammar.html`,
 `Decks Minimized - Directions.html` / `- Directions v2.html`,
-`Arena Division Banners.html`, `Sort Flow - Shelf System.html`. Read them for context
-on a decision, never as a source of values. (The `Home Menu - 12 Directions.html`,
-`Decks Page - 12 Directions.html`, `Tone Color Explorations.html` and
-`Definition Tab Explorations.html` files this section used to list are **no longer in
-the project** — the list above is what `DesignSync.list_files` returned on 2026-08-23.)
+`Arena Division Banners.html`. Read them for context on a decision, never as a source of
+values. (The `Home Menu - 12 Directions.html`, `Decks Page - 12 Directions.html`,
+`Tone Color Explorations.html` and `Definition Tab Explorations.html` files this section
+used to list are **no longer in the project** — the list above is what
+`DesignSync.list_files` returned on 2026-09-21.)
+
+> ⚠️ **`Color Grammar.html` is the one that gets mistaken for spec**, because it looks
+> authoritative and defines a `:root`. It is a PROPOSAL, and a large one: it would
+> collapse the four mastery band hues into a single four-step ramp (`--m1..m4`), reserve
+> saturated hue for tone ink only, and strip hue from skill type entirely. It also ends
+> on an unresolved open question about which hue the ramp should run on. **None of it is
+> built, and `--m1..m4` / `--t1..t4` exist in no other file.** The palette's source of
+> truth is `shelf-system.css` (plus the `--yel` and `--gld` additions recorded in A1).
 
 **PART B NOW COVERS THE WHOLE ARTBOARD SET.** This file was originally written against
 artboards 1–18 (with a numbering hole at 17). As of 2026-08-24 the spec file holds **27**
@@ -157,7 +177,43 @@ both clean.
 - **Hex, not `oklch()`.** MUI's `alpha()` cannot parse an `oklch()` string and throws;
   it is called on `COLORS.successInk` / `COLORS.warnInk` in `ValidateFlagButtonsView`
   and on tone colors in the flp. Values are authored in oklch (noted per line in
-  `colors.ts`) and shipped as the exact sRGB hex. The conversion script is below.
+  `colors.ts`) and shipped as the exact sRGB hex. The conversion script is below —
+  **use its `gamut_map`, not a per-channel clamp**, or an out-of-sRGB value lands on the
+  wrong hue.
+
+### A1 addendum · Palette alignment (2026-09-21)
+
+A1 claimed the palette WAS `shelf-system.css`. An audit converting every token in both
+directions found that four of them had drifted, and the drift was invisible because a
+hardcoded pastel is still a valid colour:
+
+| Token | Was | Now | Note |
+|---|---|---|---|
+| `red` | `#FFDDDB` | `#FED1D3` | oklch(90% 0.05 **15**), was hue 20 |
+| `redA` | `#B54249` | `#78182B` | oklch(**38%** 0.13 15), was 54% — a much darker wine |
+| `blu` | `#D2EBFF` | `#D3E2FF` | oklch(91% 0.07 **264**), was hue 250 (chroma 0.070→0.043) |
+| `bluA` | `#1F6CB0` | `#204EC3` | oklch(47% 0.19 264) — steel blue → indigo |
+| `yel`/`yelA` | `#F5E7B4`/`#96751A` | `#F8EBC2`/`#8D7100` | minor |
+
+`grn`, `org`, `pur`, `tea` and `grey` were already exact. **`redA` is `COLORS.dangerInk`**,
+so this moved every error message in the app; contrast improved (38% on white ≈ 9:1).
+
+Three literal copies that had gone stale with the drift are now DERIVED and cannot drift
+again: `COLORS.hskChip` (was a copy of `--blu`), `CATEGORY_COLORS` / `BAND_COLORS` in
+`utils/categoryColors.ts` (now read `RAMP` via a new `BAND_HUES` map), and `BoardZone`'s
+two zone rules (now `alpha()` of their own caption ink).
+
+**No migration was needed**, and that is worth knowing for the next repaint: the `cardColor`
+swatches that forced migration 153 are built from the **Tint** tier, which was deliberately
+left alone. Re-deriving the tints onto the new hues moves them by ΔC 0.002 at chroma 0.018
+— invisible — in exchange for a data migration, so it was not done.
+
+**A new ramp entry landed with it: `gld`** (`#FFB410` fill / `#401F00` ink / `#F8D9AA`
+disabled, plus `COLORS.gldFrame` `#E0A82E`). It is the first ramp fill that is NOT a pale
+surface — 82% lightness, carrying its own ink — because it is an ACTION rather than a
+ground. Minted for the arena's join button and locked board (entry 9a). This also weakens
+the standing objection to the twelve division plates: a metals ladder now has at least one
+real ramp entry to build from.
 - **`FONTS.serif` carries TWO faces on purpose** — `"Instrument Serif", "Noto Serif SC"`.
   Instrument Serif has no CJK coverage, so a Chinese headword falls through per glyph
   and stays a serif. Dropping the second face silently un-serifs every CJK hero.
@@ -212,21 +268,44 @@ both clean.
 
 <details><summary>oklch → sRGB hex, for re-deriving a value</summary>
 
+⚠️ **Clamp per channel and you will get the hue wrong.** Several of the design's values
+sit outside sRGB — `--blu`, `--yelA` and `--gld` all do — and squashing each channel into
+range independently moves the colour off its own hue axis. The CSS Color 4 rule is to
+hold L and H and reduce CHROMA until the colour fits, which is what `gamut_map` below
+does. Use it, not `oklch_to_hex`, whenever `in_gamut` is false; `colors.ts` records the
+chroma given up on each mapped line.
+
 ```python
 import math
-def oklch_to_hex(L, C, H):           # L as 0..1, C as authored, H in degrees
+
+def _f(x):  return 12.92*x if x <= 0.0031308 else 1.055*(x**(1/2.4)) - 0.055
+
+def _linear(L, C, H):                # oklch -> linear sRGB, unclamped
     h = math.radians(H); a = C*math.cos(h); b = C*math.sin(h)
     l_ = L + 0.3963377774*a + 0.2158037573*b
     m_ = L - 0.1055613458*a - 0.0638541728*b
     s_ = L - 0.0894841775*a - 1.2914855480*b
     l, m, s = l_**3, m_**3, s_**3
-    r  =  4.0767416621*l - 3.3077115913*m + 0.2309699292*s
-    g  = -1.2684380046*l + 2.6097574011*m - 0.3413193965*s
-    bb = -0.0041960863*l - 0.7034186147*m + 1.7076147010*s
-    def f(x):
-        x = max(0.0, min(1.0, x))
-        return 12.92*x if x <= 0.0031308 else 1.055*(x**(1/2.4)) - 0.055
-    return "#{:02X}{:02X}{:02X}".format(*[round(f(v)*255) for v in (r, g, bb)])
+    return ( 4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+            -1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+            -0.0041960863*l - 0.7034186147*m + 1.7076147010*s)
+
+def in_gamut(L, C, H, eps=1e-4):     # L as 0..1, C as authored, H in degrees
+    return all(-eps <= _f(v) <= 1+eps for v in _linear(L, C, H))
+
+def oklch_to_hex(L, C, H):
+    return "#{:02X}{:02X}{:02X}".format(
+        *[round(max(0.0, min(1.0, _f(v)))*255) for v in _linear(L, C, H)])
+
+def gamut_map(L, C, H):              # returns (hex, chroma actually used)
+    if in_gamut(L, C, H):
+        return oklch_to_hex(L, C, H), C
+    lo, hi = 0.0, C
+    for _ in range(40):              # binary search the largest chroma that fits
+        mid = (lo + hi) / 2
+        if in_gamut(L, mid, H): lo = mid
+        else:                   hi = mid
+    return oklch_to_hex(L, lo, H), lo
 ```
 </details>
 
@@ -1355,7 +1434,9 @@ made structural rather than left to a comment.
 - **Arena** ✅ — migrated. `ArenaEntryRow` is now a thin binding of `BoardRow`; zone
   dividers are derived from the server's per-row `zone` at each band CHANGE, so the line
   can never disagree with the tints either side of it. `arenaStyles.ts` lost `zoneRowSx`
-  and `rankChipSx` (41 dead lines).
+  and `rankChipSx` (41 dead lines). **Re-scaled 2026-09-21** to the arena flow's type
+  block (`.n` 14 / `.nm2` 17.5 / `.pr` 14.5 / `.sc3` 14.5 / `.zone span` 12.5, ~1.29x),
+  which moves the friends table and the tester dashboard with it — see entry 9a.
 - **The tester dashboard** ✅ — migrated, and it was the third bespoke ranked list all
   along; `LeaderboardPlaceholder` shed ~150 lines of row markup inside a pink-gradient
   card that predated the palette entirely. Not Community.
@@ -1367,12 +1448,17 @@ made structural rather than left to a comment.
 
 Two departures from the artboard, both recorded in the component:
 1. **Zone captions use `RAMP.grn.ink` / `RAMP.red.ink`, not the artboard's `#0B5C46` /
-   `#7A1024`.** Those two hexes belong to no ramp entry and appear nowhere else in the
-   stylesheet; minting off-ramp colours for two words of caption is how a palette starts
-   leaking. The result is a step lighter and still clears 4.5:1.
-2. **`.sc` is `minWidth: 34`, not `width: 34`.** Fixed is right for a figure that stays
-   small (arena minutes reset weekly) and clips one that does not (a lifetime points
-   total is five or six digits).
+   `#7A1024`.** ⚠️ **HALF OF THIS DEPARTURE DISSOLVED ON 2026-09-21** and the claim above
+   was only ever right about the green. `#7A1024` converts to **oklch(38% 0.138 18)** —
+   which *is* the design's `--redA`; our `redA` had simply drifted away from it (it sat at
+   oklch(54% 0.15 20) until the palette alignment in A1's addendum). `RAMP.red.ink` now
+   renders the artboard's demotion caption exactly. The **green half stands**: `#0B5C46`
+   is oklch(42% 0.081 169), a dark TEAL-green 24 degrees off `--grnA`, and genuinely no
+   ramp entry. The lesson generalises — before declaring an artboard hex "off-ramp",
+   convert it and check, because a drifted token looks exactly like a designer improvising.
+2. **`.sc` is `minWidth: 44`, not `width: 44`.** (34 before the 2026-09-21 type scale.)
+   Fixed is right for a figure that stays small (arena minutes reset weekly) and clips one
+   that does not (a lifetime points total is five or six digits).
 
 One trap worth keeping: the row separator is drawn **by the parent** as
 `& .board__row + .board__row::before`, not as `& + &` inside the row's own `sx`. The
@@ -1994,6 +2080,104 @@ section rule carries the field size on the left and the unit on the right
 `src/api/arena.ts` → `fetchArenaBoard`, `optInToArena`, `withdrawFromArena`,
 `shareArenaLocation`.
 **Docs:** `docs/ARENA_FEATURE.md`.
+
+## 9a · Arena flow — every state of `/arena` — **Size: L**
+
+**Status: DONE (2026-09-21).** Typecheck, lint, `vite build`, 1045 client tests and 761
+server tests clean. Built to `Arena Flow - Shelf System.html` (15 artboards + a state map),
+which **supersedes artboard 9** — entry 9 above converted the one `live` screen the
+original spec drew and extrapolated the rest; this entry replaces those extrapolations
+with the drawn design.
+
+Arena is **built on dev, not on PPE**.
+
+### What the flow changed, and what it settled
+
+| | Entry 9 (extrapolated) | Entry 9a (drawn) |
+|---|---|---|
+| Banner | card-width plate BELOW the header | **full-bleed, header sits INSIDE it**, name at 40px |
+| Banner lines | name + "5 OF 12" + "next rung · X" | name + ticks only — the other two removed |
+| Countdown | one compact line, coarse to the minute, rank at its right | centred, 52px mono, **ticking seconds**, no rank |
+| Board rule | `Board · 25` / `minutes` | removed |
+| Join | the app's ink pill | a wide **gold** block with a trailing arrow |
+| Seat-less states | a bare card | a **25-seat field diagram** + a docked action |
+| Results | one tinted card | countdown → Join → rule → "Last Week's Results" → outcome → **gold-framed locked board** |
+| Explainer | none | a **3-step overlay**, auto-opened on first visit, reopenable from a header `help` button |
+
+Four of these overrode a rationale written into the old code, and all four were confirmed
+with the product owner rather than assumed:
+
+- **Seconds in the countdown** reverse "a live-ticking second counter on a five-day race
+  invites people to watch the clock instead of study". The design won.
+- **The location privacy sentence was REMOVED** from the join state. The old code argued it
+  was "the entire explanation the user gets", since the browser prompt says only "wants to
+  use your location". ⚠️ Note the design file **disagrees with itself here**: A5's caption
+  still describes the sentence as present while its markup is a bare button. The removal
+  was taken deliberately, not by following the markup blindly.
+- **The banner's "5 OF 12" and "next rung"** went, leaving the tick row as the only thing
+  that changes as you climb. That raises the stakes on the plate placeholder below.
+- **The board's `Board · 25 / minutes` rule** went (A1's caption also still describes it).
+
+### New components
+
+`src/features/arena/`: `ArenaCountdown` (one component for `.cdcard` AND `.opens` — they
+are byte-identical in the stylesheet and differ only in caption), `ArenaSeatField`,
+`ArenaJoinButton`, `LockedBoard`, `arenaHelpSteps`. `DivisionBanner` rewritten.
+
+**`SteppedHelpPopup` was promoted to `src/components/`** from
+`features/studyChallenge/ChallengeHelpPopup`. The arena flow's own caption says its overlay
+is "ported unchanged from the challenge flow", and `features/` is exclusive
+([FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md)) — a second feature importing it in place
+would be the back-edge that rule forbids. Generalised on the way: the `{deck}`
+substitution became a `tokens` map, and the `import.meta.glob` moved OUT to each feature
+(Vite needs a literal pattern resolved relative to the file it is written in, so a shared
+component physically cannot glob a feature's assets — `makeShotResolver` in
+`components/steppedHelp.ts` is the shared half).
+
+### `MobileTabScreen` gained `wrapHeader`
+
+One new optional prop, forwarded by `NodePage`, that wraps the page header in the page's
+own chrome WITHOUT moving it out of the scroll area — so the banner still scrolls away
+exactly as any header does (A2 draws that scrolled state: plain paper, no plate). The
+alternative, letting the page render the banner as its first content child, puts it
+*below* the header and reads as two unrelated bands. Defaults to identity, so no existing
+caller is affected.
+
+### Two layout deviations, both deliberate
+
+1. **The artboards position `.seats` and `.dock` absolutely** against a fixed 874px phone.
+   The page uses flexbox instead: the content column takes `flex: 1` inside the scroller,
+   so the seat field grows into whatever is between the clock and the action and the
+   action docks against the footer on any device height.
+   ⚠️ **Every state scrolls.** The seat-less pair first shipped as `scrollable={false}`,
+   which docks perfectly and then *clips* the Join button on a short phone or at a large
+   text size, with no way to reach it. `flex: 1` still docks while the column fits, and a
+   column that does not fit now simply scrolls.
+2. **The header carries three right-slot items**, not the artboards' two — every
+   `PageHeader` also renders the ambient minute-points flame — so it takes `headerSize="dense"`.
+
+### Backend
+
+One field added: **`ArenaBoardResponse.nextOpensAt`** (+ `nextArenaOpensAt` in
+`server/shared/arenaWeek.ts`). Every non-live artboard counts down to "Tuesday, 4:00 AM"
+and those states shipped `boundaries: null`, with nothing to count to. Computed in the
+VIEWER's zone — correct here precisely because the arena being counted to does not exist
+yet, which is the opposite of `boundariesOf`. No migration.
+
+### Still open after this entry
+
+- **The twelve division plates.** The flow paints every rung `var(--grey)`, so the
+  placeholder is now what the design itself draws — but with the meta and next-rung lines
+  gone, the ticks are the ONLY thing distinguishing rung 3 from rung 11. `RAMP.gld` now
+  exists, which weakens the original "~30 off-ramp hexes" objection. See DEFERRED_WORK.md.
+- **The `opt-in` / `closed` wire split is dead.** The page renders them identically and
+  splits on `optedInNextWeek` instead, which is what the design's map names (`out` vs
+  `waiting`). Narrowing `ArenaState` is a server change; tracked in DEFERRED_WORK.md.
+- **Help screenshots** — `src/assets/arenaHelp/` is empty, so all three steps render the
+  hatched placeholder. Unlike the challenge explainers this one auto-opens on first visit,
+  so every new user sees them.
+
+---
 
 ## 10 · Community — `/community` — **Size: S**
 

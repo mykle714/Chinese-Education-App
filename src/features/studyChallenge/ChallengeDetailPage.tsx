@@ -9,8 +9,8 @@ import ChallengeWordCard from "./ChallengeWordCard";
 import ChallengeTestCard from "./ChallengeTestCard";
 import ChallengeResults from "./ChallengeResults";
 import ChallengeDetailHeader from "./ChallengeDetailHeader";
-import ChallengeHelpPopup from "./ChallengeHelpPopup";
-import { HOW_THE_TEST_WORKS_STEPS, HOW_TO_STUDY_STEPS } from "./challengeHelpSteps";
+import SteppedHelpPopup from "../../components/SteppedHelpPopup";
+import { HOW_THE_TEST_WORKS_STEPS, HOW_TO_STUDY_STEPS, resolveChallengeShot } from "./challengeHelpSteps";
 import { storedWordToReviewWord } from "./reviewWord";
 import { fetchChallenge } from "../../api/studyChallenges";
 import type { ChallengeSummary } from "../../api/studyChallenges";
@@ -485,10 +485,13 @@ function ChallengeDetailPage() {
                 )}
             </Box>
 
-            <ChallengeHelpPopup
+            <SteppedHelpPopup
                 open={help !== null}
                 steps={help === "study" ? HOW_TO_STUDY_STEPS : HOW_THE_TEST_WORKS_STEPS}
-                deckName={challenge ? `vs ${opponentName}` : undefined}
+                resolveShot={resolveChallengeShot}
+                // `{deck}` in a step title. Falls back to the generic word rather than
+                // leaving the placeholder visible while the challenge is still loading.
+                tokens={{ deck: challenge ? `vs ${opponentName}` : "challenge" }}
                 onClose={() => setHelp(null)}
             />
         </NodePage>

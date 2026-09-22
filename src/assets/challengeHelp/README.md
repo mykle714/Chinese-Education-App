@@ -2,7 +2,7 @@
 
 The two stepped explainers on View Challenge (docs/STUDY_CHALLENGE.md § 5.4a, design
 F20/F21) each take one screenshot per step. Drop the files here with EXACTLY these
-names — `ChallengeHelpPopup` picks them up through `import.meta.glob`, so no code
+names — `challengeHelpSteps.ts` picks them up through `import.meta.glob` and hands them to the shared `SteppedHelpPopup`, so no code
 change is needed:
 
 ## "How to study this deck" (the orange button, F20)

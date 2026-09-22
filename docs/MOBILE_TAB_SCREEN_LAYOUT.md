@@ -137,7 +137,7 @@ both covers the frame and can host it without inverting paint order, which is
 (`.mobile-demo-frame__viewport`) otherwise —
 and, because the footer bar paints above any such host, also calls
 `useHideFooter(open)` for its lifetime. Callers: `SheetPanel`, `ChallengeSheet`,
-`ChallengeHelpPopup`, `ChallengeRoundScoreboard` (the last needs no `useHideFooter` —
+`SteppedHelpPopup`, `ChallengeRoundScoreboard` (the last needs no `useHideFooter` —
 it lives on a leaf page, which has no footer).
 
 ### ⚠️ `touch-action: pan-y` is a CEILING on every scroller inside the page
@@ -163,6 +163,30 @@ and some pages cancel exactly those with a non-passive listener (`useBlockEdgeSw
 ⚠️ **Every sideways scroller under this shell needs the flag**, not just pagers — a
 `ShelfRow scrollable`, a horizontally-scrolling toolbar, a filmstrip. Current opt-in:
 `ChallengeDetailPage`.
+
+### `wrapHeader` — a page that draws its own chrome AROUND the header
+
+`<MobileTabScreen wrapHeader={fn}>` (forwarded by `NodePage`) hands the page the header
+element and renders whatever comes back, **in the header's own slot inside the scroll
+area**. Defaults to identity, so it costs existing callers nothing.
+
+It exists for a header that is not a bar ON a surface but part OF one. `/arena` draws a
+full-bleed division banner with the back arrow, title and actions sitting inside the
+plate (`src/features/arena/DivisionBanner.tsx`, docs/ARENA_FEATURE.md § 2). The obvious
+alternative — letting the page render the banner as its first content child — puts it
+*below* the header and reads as two unrelated bands.
+
+Why a wrapper rather than moving the header out of the scroll area: staying inside is the
+whole point. The banner must **scroll away with the header**, exactly as an unwrapped one
+does, and the arena's own artboards draw that scrolled state as plain paper with no plate.
+A frame-level header would stay pinned.
+
+A wrapper owns its own horizontal padding — `.page-header` already pads to `padX` (22px at
+`hub`/`node`/`dense`), so a wrapper that pads again will indent the back arrow relative to
+its own content. The arena's banner cancels the header's `padding-left/right` for this
+reason.
+
+Current opt-in: `ArenaPage`.
 
 ## Footer geometry (single source of truth)
 

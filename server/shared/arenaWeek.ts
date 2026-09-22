@@ -131,6 +131,26 @@ export function arenaWeekKey(weekStart: Date, tz: string): string {
  * enrolls the user into.
  */
 export function nextArenaWeekKey(instant: Date, tz: string): string {
+  return arenaWeekKey(nextArenaOpensAt(instant, tz), tz);
+}
+
+/**
+ * The instant the NEXT arena opens — Tuesday 04:00 local, strictly after `instant`.
+ *
+ * The counterpart to `arenaCloseFor` for the three states that have no live arena to
+ * read a `closesAt` off. `/arena` counts down to it in `results`, `opt-in` and `closed`
+ * (design `Arena Flow - Shelf System.html` `.opens`), and before this existed those
+ * states shipped `boundaries: null` and had nothing to count to.
+ *
+ * ⚠️ COMPUTED IN THE VIEWER'S ZONE, not an arena's, and that is correct: the arena being
+ * counted to does not exist yet. It forms at 04:00 in the bucket the viewer's own
+ * timezone puts them in (§ 5.3), so their clock IS the right one here. That is the
+ * opposite of `boundariesOf`, where a formed arena's own zone wins over the viewer's.
+ *
+ * Note it never returns "now": on Tuesday at exactly 04:00 `arenaWeekStart` already
+ * belongs to the week just opened, so +7 days lands on the following Tuesday.
+ */
+export function nextArenaOpensAt(instant: Date, tz: string): Date {
   const start = arenaWeekStart(instant, tz);
-  return arenaWeekKey(localHourOnOffsetDay(start, tz, 7, ARENA_WEEK_START_HOUR), tz);
+  return localHourOnOffsetDay(start, tz, 7, ARENA_WEEK_START_HOUR);
 }

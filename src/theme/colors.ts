@@ -29,10 +29,23 @@
 // from `RAMP`), whichever module loaded second saw `undefined` and every importer of
 // it died at import time. The four pastels are hoisted out of the object literal
 // instead, so an alias and its ramp member are one constant rather than an import.
-const RED_PASTEL = "#FFDDDB";    // oklch(93% 0.045  20) — --red  — Unfamiliar
+//
+// ⚠️ HOW "ship hex" IS DONE, because a naive conversion is wrong for three of these.
+// Several of the design's oklch values sit OUTSIDE sRGB (`--blu`, `--yelA`, `--gld`).
+// Clipping such a colour channel-wise shifts its HUE; the CSS Color 4 rule — hold L and
+// H, reduce chroma until it fits — does not. Every value below is gamut-MAPPED that way,
+// and where chroma had to be given up the comment records it, so the next reader can see
+// the value is mapped rather than mistyped.
+const RED_PASTEL = "#FED1D3";    // oklch(90% 0.05   15) — --red  — Unfamiliar
 const ORG_PASTEL = "#FFE6C8";    // oklch(94% 0.05   70) — --org  — Target
 const GRN_PASTEL = "#D9F4D9";    // oklch(94% 0.045 145) — --grn  — Comfortable
-const BLU_PASTEL = "#D2EBFF";    // oklch(93% 0.045 250) — --blu  — Mastered
+const BLU_PASTEL = "#D3E2FF";    // oklch(91% 0.07  264) — --blu  — Mastered (C 0.070→0.043)
+
+// The two semantic inks that are ALSO ramp members. Hoisted for the same reason the
+// pastels above are: `dangerInk`/`infoInk` used to repeat these literals inside the
+// object, so a repaint had to be made in two places and a missed one typechecked.
+const RED_INK = "#78182B";       // oklch(38% 0.13   15) — --redA
+const BLU_INK = "#204EC3";       // oklch(47% 0.19  264) — --bluA
 
 export const COLORS = {
     // ── The raw ramp ──────────────────────────────────────────────
@@ -44,10 +57,10 @@ export const COLORS = {
     greyA: "#A4A4A9",    // oklch(72% 0.008 285)
     pur: "#ECE2FF",      // oklch(93% 0.045 300)
     purA: "#7652AC",     // oklch(52% 0.14  300)
-    blu: BLU_PASTEL,     // oklch(93% 0.045 250)
-    bluA: "#1F6CB0",     // oklch(52% 0.13  250)
-    red: RED_PASTEL,     // oklch(93% 0.045  20)
-    redA: "#B54249",     // oklch(54% 0.15   20)
+    blu: BLU_PASTEL,     // oklch(91% 0.07  264)
+    bluA: BLU_INK,       // oklch(47% 0.19  264)
+    red: RED_PASTEL,     // oklch(90% 0.05   15)
+    redA: RED_INK,       // oklch(38% 0.13   15)
     org: ORG_PASTEL,     // oklch(94% 0.05   70)
     orgA: "#A46400",     // oklch(56% 0.13   70)
     grn: GRN_PASTEL,     // oklch(94% 0.045 145)
@@ -62,9 +75,36 @@ export const COLORS = {
     // — far enough off the org axis that a gold card beside a Target-orange chip does
     // not read as a second Target. Added as a ramp member rather than inlined at those
     // two call sites so the next surface that wants gold has somewhere to take it from.
-    yel: "#F5E7B4",      // oklch(94% 0.055  92)
-    yelA: "#96751A",     // oklch(56% 0.12   92)
+    yel: "#F8EBC2",      // oklch(94% 0.055  92)
+    yelA: "#8D7100",     // oklch(56% 0.12   92) (C 0.120→0.115)
     yelTint: "#FDF8E9",  // oklch(97.5% 0.018 92)
+
+    // ── `--gld`, the EIGHTH hue ───────────────────────────────────
+    // A saturated gold, and the one ramp member that is NOT a pale surface. It exists
+    // because the arena flow (docs/ARENA_FEATURE.md) needs two things the seven pastels
+    // cannot say: a single page-level ACTION that is unmistakably the one thing to tap,
+    // and a FROZEN, finished board. Both wanted a metal, and every other hue on the page
+    // is already spoken for — green is promotion, red is demotion, org is "this row is
+    // you". Spending one of those on a button would have made the page's one semantic
+    // colour ambiguous, which is exactly why the arena's join button stopped being green.
+    //
+    // ⚠️ IT BREAKS THE RAMP'S OWN LIGHTNESS BANDS ON PURPOSE. `fill` is 82%, not 93–94%,
+    // so it is the only ramp fill that carries its own ink rather than hosting the page's.
+    // That is what makes it read as an action instead of a surface. Do not "correct" it
+    // to the pastel band — a 94% gold is the `yel` above, and it already exists.
+    //
+    // This is also the palette decision `DivisionBanner.tsx` has been deferring: the
+    // twelve division plates were withheld rather than mint ~30 off-ramp hexes. Gold is
+    // now a real, reusable ramp entry, which is the thing that was missing.
+    gld: "#FFB410",      // oklch(82% 0.19   78) (C 0.190→0.169) — the action's ground
+    gldA: "#401F00",     // oklch(28% 0.09   60) (C 0.090→0.066) — ink ON that ground
+    gldTint: "#F8D9AA",  // oklch(90% 0.07   78) — the same action, disabled
+    // The locked board's frame. A FOURTH value, deliberately outside the {fill, ink,
+    // tint} triple: the design draws the frozen board in an antique gold a step duller
+    // than the button's, so a finished week reads as metal rather than as something to
+    // tap. Using `gld` here would put the page's action colour around a thing that is
+    // not an action — the one confusion the gold was introduced to prevent.
+    gldFrame: "#E0A82E", // oklch(76.5% 0.144 82) — `--lockgold` in the arena artboards
 
     // A THIRD tier at oklch(97.5% 0.018 H) — a near-white tint of each hue.
     // The design uses it for the Arena zone rows (`.bd .r.up` / `.r.dn`); it is
@@ -139,20 +179,23 @@ export const COLORS = {
     // `*Main` is the pastel BODY and `*Accent` the near-white INNER FILL at the same
     // hue. They are a PAIR — never mix a main from one hue with an accent from another.
     // For ink sitting ON one of these, use the `*A` ramp member (redA/orgA/grnA/bluA).
-    redMain: RED_PASTEL,                    // #FFDDDB — --red     — Unfamiliar
+    redMain: RED_PASTEL,                    // #FED1D3 — --red     — Unfamiliar
     redAccent: "#FFF2F2",                   // --redTint
     yellowMain: ORG_PASTEL,                 // #FFE6C8 — --org     — Target
     yellowAccent: "#FFF5EA",                // --orgTint
     greenMain: GRN_PASTEL,                  // #D9F4D9 — --grn     — Comfortable
     greenAccent: "#F0FAF0",                 // --grnTint
-    blueMain: BLU_PASTEL,                   // #D2EBFF — --blu     — Mastered
+    blueMain: BLU_PASTEL,                   // #D3E2FF — --blu     — Mastered
     blueAccent: "#EEF8FF",                  // --bluTint
     purpleAccent: "#F8F4FF",                // --purTint
     // --tea. Claimed by the SIXTH game's hub row: the five accents above were each
     // already taken by a game (`GameDef.bgColor` is a persistent per-game color, not a
     // random one), so Hydra Bubbles needed a hue no other row was using.
     tealAccent: "#EAFBFA",                  // --teaTint
-    hskChip: "#D2EBFF",                     // --blu (pastel; carries MARK_OUTLINE)
+    // Referenced, not repeated: this was a literal copy of the `--blu` pastel, so the
+    // 2026-09-21 palette alignment moved `blu` and left the HSK chip behind on the old
+    // steel blue. A chip that is "the blue pastel" should BE the blue pastel.
+    hskChip: BLU_PASTEL,                    // --blu (pastel; carries MARK_OUTLINE)
 
     /**
      * The inset ring every pastel-filled mark must carry, from the design's
@@ -195,9 +238,9 @@ export const COLORS = {
     // The rule, when picking between these and `*Main`:
     //   - Is it a FILL that something else sits on top of?      -> `*Main` (pastel)
     //   - Is it TEXT, an ICON, a BORDER, or a button's ground?  -> the ink below
-    dangerInk: "#B54249",    // --redA — destructive actions, errors, negative deltas
+    dangerInk: RED_INK,      // --redA — destructive actions, errors, negative deltas
     successInk: "#387D3D",   // --grnA — confirmations, wins, positive deltas
-    infoInk: "#1F6CB0",      // --bluA — neutral emphasis, informational chips
+    infoInk: BLU_INK,        // --bluA — neutral emphasis, informational chips
     warnInk: "#A46400",      // --orgA — cautions, pending states. NOT AI provenance: that is
                              // `aiGenerated` below, which this token briefly and wrongly absorbed.
 
@@ -238,7 +281,7 @@ export const COLORS = {
 export type ColorToken = keyof typeof COLORS;
 
 /**
- * RAMP — the seven hues as {fill, ink, tint} TRIPLES rather than 21 loose tokens.
+ * RAMP — the eight hues as {fill, ink, tint} TRIPLES rather than 24 loose tokens.
  *
  * WHY THIS EXISTS: the three tiers of a hue are only correct TOGETHER. A pastel fill
  * with the wrong hue's ink on it is the one palette mistake that typechecks, looks
@@ -251,9 +294,12 @@ export type ColorToken = keyof typeof COLORS;
  * tier. Reach for `RAMP.red` when it needs two, and never destructure a fill from one
  * entry beside an ink from another.
  *
- *   fill  93–94%  the pastel a thing sits ON (needs an outline unless large + occupied)
- *   ink   52–56%  text, icons, borders, a button's ground
+ *   fill  90–94%  the pastel a thing sits ON (needs an outline unless large + occupied)
+ *   ink   38–56%  text, icons, borders, a button's ground
  *   tint  97.5%   the second tone of a two-tone tile
+ *
+ * `gld` is the one entry that does NOT obey those bands — its fill is 82% and carries
+ * its own ink, because it is an ACTION rather than a surface. See its note in COLORS.
  *
  * `grey` has no tint: it is the achromatic rung, and at 97.5% lightness with no chroma
  * it would be indistinguishable from `background`. Use `background` where a grey tint
@@ -270,6 +316,8 @@ export const RAMP = {
     grn: { fill: COLORS.grn, ink: COLORS.grnA, tint: COLORS.grnTint },
     tea: { fill: COLORS.tea, ink: COLORS.teaA, tint: COLORS.teaTint },
     yel: { fill: COLORS.yel, ink: COLORS.yelA, tint: COLORS.yelTint },
+    // `tint` here is the DISABLED action, not a second tone — see the gld note in COLORS.
+    gld: { fill: COLORS.gld, ink: COLORS.gldA, tint: COLORS.gldTint },
 } as const;
 
 /** A hue's key in {@link RAMP} — the unit a component should take when it needs a

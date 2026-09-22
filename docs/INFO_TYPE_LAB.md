@@ -151,7 +151,7 @@ Converted: `pages/SettingsPage.tsx` · `components/PageHeader.tsx` · `component
 them lowercase) ·
 `components/primitives/Segmented.tsx` · `features/arena/DivisionBanner.tsx` (2) ·
 `features/flashcards/cardOpsCell.ts` · `features/studyChallenge/ChallengeDetailPage.tsx` ·
-`features/studyChallenge/ChallengeHelpPopup.tsx` · `features/studyChallenge/ChallengePanel.tsx` ·
+`components/SteppedHelpPopup.tsx` · `features/studyChallenge/ChallengePanel.tsx` ·
 `features/studyChallenge/ChallengeSheet.tsx` · `features/studyChallenge/ChallengeTestCard.tsx` (2) ·
 `games/bubble-match/BubbleMatchTrackToggle.tsx` · `games/runtime/ChallengeRoundScoreboard.tsx`
 

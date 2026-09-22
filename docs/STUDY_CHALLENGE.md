@@ -53,7 +53,7 @@ on-screen consequences, and `ChallengeDetailPage`'s per-round Play buttons), the
 | **Runbook** | ✅ Retired 2026-08-17 — **shipped to PPE**. Migration 148 was applied before the container rebuild (the deck read selects `decks."editMode"`), and the systemd unit was **re-rendered** by `database/cron/install-timers.sh`, without which the whole time-triggered half stays inert |
 | **Week-counter follow-up (150)** | ✅ On PPE since 2026-08-17. `"weekStart"` → `"weekIndex"`; the rename was applied before the container rebuild (its temporary runbook has been deleted) |
 | **Migration 156** — `study_challenges.taunts jsonb NOT NULL DEFAULT '{}'` | ⚠️ **written, not yet applied anywhere.** Additive and defaulted, so old code tolerates it — but the shipped `toSummary` selects `taunts` by name, so **it must be applied BEFORE the container rebuild** or every challenge read 500s. See § 6a |
-| **Shelf-system redesign** | ✅ built 2026-09-01 — `ChallengeSheet` + `ChallengePanel` (§ 3.2), the two-page View Challenge with `ChallengeTestCard` (§ 5.4b), `ChallengeResults` (§ 6/6a), `ChallengeHelpPopup` (§ 5.4c), the dark round scoreboard (§ 5.5), the relabelled pill lexicon (§ 1) and the tinted history log (§ 1) |
+| **Shelf-system redesign** | ✅ built 2026-09-01 — `ChallengeSheet` + `ChallengePanel` (§ 3.2), the two-page View Challenge with `ChallengeTestCard` (§ 5.4b), `ChallengeResults` (§ 6/6a), `SteppedHelpPopup` (§ 5.4c), the dark round scoreboard (§ 5.5), the relabelled pill lexicon (§ 1) and the tinted history log (§ 1) |
 
 ⚠️ **Migration 148, not 147.** 147 was claimed by the `compute_utcm_category` drop and
 had already been applied to dev, so this one moved (CLAUDE.md § Migration number
@@ -945,7 +945,7 @@ is transparent for the footer's height, so the sheet's pinned action bar was mas
 entirely: the sheet looked right and had no **Send** button (fixed 2026-09-01). It now
 portals to `nearestOverlayHost` and holds `useHideFooter` while open, since the footer
 bar paints above that host and covers the same strip. The same applies to
-`ChallengeHelpPopup` (§ 5.4c).
+`SteppedHelpPopup` (§ 5.4c).
 Full rule: docs/MOBILE_TAB_SCREEN_LAYOUT.md § "Edge fade".
 
 **Its own scroller wears the sheet fade.** The word list dissolves into the pinned action
@@ -1882,7 +1882,7 @@ the second surface reading it went away. `roundsTotal` / `signedPoints` in
 
 ### 5.4c The two stepped explainers (F20/F21)
 
-Two overlays, ONE component (`ChallengeHelpPopup`), so they read as one system:
+Two overlays, ONE component — the shared `components/SteppedHelpPopup` (which /arena also uses) — so they read as one system:
 
 * **"How to study this deck"** — the orange button during the study days. It does NOT
   launch play; it teaches a **filter**. Every surface it names already exists and the
@@ -2903,7 +2903,7 @@ This document describes (phase 1 is fully built — see the status table at the 
   `ChallengeSheet.tsx` + `ChallengePanel.tsx` (issue / waiting / incoming — § 3.2),
   `ChallengeWordCard.tsx` (the two-tap strike — § 3.2),
   `ChallengeDetailPage.tsx` + `ChallengeDetailHeader.tsx` + `ChallengeTestCard.tsx` (the two pages — § 5.4b),
-  `ChallengeHelpPopup.tsx` + `challengeHelpSteps.ts` + `src/assets/challengeHelp/` (the explainers — § 5.4c),
+  `challengeHelpSteps.ts` + `src/assets/challengeHelp/` feeding the shared `components/SteppedHelpPopup.tsx` (the explainers — § 5.4c),
   `ChallengeResults.tsx` (results and taunts — § 6/§ 6a),
   `ChallengeHistoryPage.tsx` (the tinted log — § 1),
 `src/games/types.ts` + `src/games/registry.ts` (`challengeScoring`, and `glyph`, which

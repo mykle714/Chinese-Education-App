@@ -15,6 +15,7 @@ import {
   isBreakPeriod,
   arenaWeekKey,
   nextArenaWeekKey,
+  nextArenaOpensAt,
   resolveTimezone,
 } from '../shared/arenaWeek.js';
 import { bucketCandidates, clusterBucket, commonGeoPrefix } from './arenaClustering.js';
@@ -97,6 +98,10 @@ export class ArenaService {
     const optInWeek = await this.arenaDAL.getOptInWeek(userId, language);
     const nextWeek = nextArenaWeekKey(now, tz);
     const optedInNextWeek = optInWeek === nextWeek;
+    // The instant every non-live state counts down to, and which `live` carries so the
+    // page already has it when the week turns over. The viewer's zone is the right one
+    // here — the arena being counted to has not formed yet. See `nextArenaOpensAt`.
+    const nextOpensAt = nextArenaOpensAt(now, tz).toISOString();
 
     // 1. Racing right now?
     const live = await this.arenaDAL.findLiveArenaForUser(userId, language);
@@ -110,6 +115,7 @@ export class ArenaService {
         boundaries: this.boundariesOf(live, tz),
         divisionChange: null,
         optedInNextWeek,
+        nextOpensAt,
         viewerMessage,
       };
     }
@@ -127,6 +133,7 @@ export class ArenaService {
         boundaries: this.boundariesOf(last, tz),
         divisionChange: mine?.divisionChange ?? null,
         optedInNextWeek,
+        nextOpensAt,
         viewerMessage,
       };
     }
@@ -141,6 +148,7 @@ export class ArenaService {
       boundaries: null,
       divisionChange: null,
       optedInNextWeek,
+      nextOpensAt,
       viewerMessage,
     };
   }

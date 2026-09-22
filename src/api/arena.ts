@@ -55,6 +55,16 @@ export interface ArenaBoardResponse {
     divisionChange: number | null;
     optedInNextWeek: boolean;
     /**
+     * When the NEXT arena opens — Tuesday 04:00 in the VIEWER's zone, ISO-8601. Sent in
+     * every state, `live` included, so the page has it the moment the week turns over.
+     *
+     * The client has the same week arithmetic in `src/utils/arenaWeek.ts`, and
+     * deliberately does not use it here: every other boundary on this response is the
+     * server's, and two implementations of "when is Tuesday 04:00" is the drift the
+     * arena has already been bitten by once.
+     */
+    nextOpensAt: string;
+    /**
      * The VIEWER's own message. Sent separately from their board row because the
      * editor is reachable in every state — including opt-in, where `entries` is empty
      * and there is no row to read it off.

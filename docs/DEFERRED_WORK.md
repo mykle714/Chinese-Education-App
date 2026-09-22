@@ -210,11 +210,11 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 | | |
 |---|---|
 | **What** | `DivisionBanner` draws every rung — Slate through Legendary — on the same neutral grey. It needs a per-rung fill, and a per-rung ink for any fill dark enough to fail normal body text |
-| **Why deferred** | The redesign's entry 9 shipped the banner's SHAPE (name, ladder position, next rung, twelve ticks, the pennant notch) without settling its MATERIAL. The design project's `Arena Division Banners.html` draws all twelve as distinct materials, and porting them — in full, then flattened to base gradients — would have minted ~30 hex values outside the ramp. Both ports were withdrawn on the user's ruling (2026-08-24) rather than take that palette decision under deadline. **D2 is therefore unbroken, and there is no arena-palette precedent to cite** |
-| **Cost of leaving it** | A ladder whose rungs look alike is not a finished ladder: the point of twelve *named* rungs is that climbing one should look like something. What currently differentiates them is the name, the "N of 12" line and the tick row — the ticks carrying more weight than they were drawn to carry. This is the redesign's largest open visual gap, and unlike most gaps it is on a screen a competitor stares at for a week |
+| **Why deferred** | The redesign's entry 9 shipped the banner's SHAPE without settling its MATERIAL. The design project's `Arena Division Banners.html` draws all twelve as distinct materials, and porting them — in full, then flattened to base gradients — would have minted ~30 hex values outside the ramp. Both ports were withdrawn on the user's ruling (2026-08-24) rather than take that palette decision under deadline. ⚠️ **The "no precedent" half of this is now stale**: entry 9a minted `RAMP.gld` (2026-09-21), so the ramp has one real metal to build a ladder from and D2 has a documented exception to reason from. Note also that `Arena Flow - Shelf System.html` paints every rung `var(--grey)` itself, so the placeholder is now what the *design* draws, not merely what we settled for |
+| **Cost of leaving it** | A ladder whose rungs look alike is not a finished ladder: the point of twelve *named* rungs is that climbing one should look like something. **This got worse on 2026-09-21**: the arena flow removed the "N of 12" meta AND the "next rung" line from the banner, so the name and the tick row are now the *only* things that change as you climb. This is the redesign's largest open visual gap, and unlike most gaps it is on a screen a competitor stares at for a week |
 | **The decision to take** | Three options were costed: (a) port the twelve plates as a contained exception to D2 — a rung is a MATERIAL, and the ramp has fewer hues than the ladder has rungs, so ramp-only forces repeats; (b) ramp-only and accept the repeats; (c) the flattened middle, `linear-gradient` layers kept and every `repeating-*` / `radial-gradient` / `conic-gradient` texture dropped. (c) was built and withdrawn; the port rule is recorded in SHELF_REDESIGN entry 9 so it can be rebuilt exactly |
 | **Trigger** | Any deliberate pass on Arena's look, or the moment someone asks why every division looks the same. Arena is **dev-only** — it is not in front of a PPE user, which is part of why this could wait |
-| **References** | `src/features/arena/DivisionBanner.tsx` (the whole change lives here); `src/features/arena/arenaStyles.ts` → `DIVISION_NAMES`; docs/ARENA_FEATURE.md § 7.0; docs/SHELF_REDESIGN.md entry 9 and D2 |
+| **References** | `src/features/arena/DivisionBanner.tsx` (the whole change lives here); `src/features/arena/arenaStyles.ts` → `DIVISION_NAMES`; `src/theme/colors.ts` → `RAMP.gld`; docs/ARENA_FEATURE.md § 7.0; docs/SHELF_REDESIGN.md entries 9 and 9a, and D2 |
 
 ### 16. Starter-pack ordering has no real tie-break under the merged top band
 
@@ -279,6 +279,17 @@ appends the current editor selection to every message. A line left highlighted i
 file is re-sent with each turn regardless of what is being discussed. Clear the selection
 before typing, and treat `.env` files as the one category where an idle highlight costs
 something.
+
+### 20. `ArenaState` carries a dead `opt-in` / `closed` split
+
+| | |
+|---|---|
+| **What** | `GET /api/arena` returns one of four states, but `'opt-in'` and `'closed'` are rendered **identically** by the page. Narrow the union to three (`live` / `results` / `out`) and drop the `isBreakPeriod` branch that chooses between them |
+| **Why deferred** | The distinction died when § 8 stopped gating enrolment on the break period — both states offer the same Join button, because the gate is a live seat, not the clock. The arena flow's state map confirms it: it names four states, and its fourth is **`out` — "not entered, not racing, *whether or not the break is open*"**. What the page actually splits on is `optedInNextWeek` (`waiting` vs `out`), which is a different axis entirely. Left alone during entry 9a because narrowing a server union is a backend change, and the page rebuild was already large |
+| **Cost of leaving it** | Small but real: a wire enum whose variants do not correspond to anything visible is a standing invitation to write `if (state === 'closed')` and add behaviour that the design has no state for. It also makes the four names in `ArenaState` disagree with the four names in ARENA_FEATURE.md § 2.3, which are the design's |
+| **The decision to take** | Whether `out` should be the wire name (matching the design and the page) or whether the server keeps `opt-in` as the single not-racing state. The former is clearer; the latter is a smaller diff |
+| **Trigger** | The next backend pass on arena — ideally the same one that touches `ArenaService.getBoard` for another reason |
+| **References** | `server/types/arena.ts` → `ArenaState`; `server/services/ArenaService.ts` → `getBoard` (the third return); `src/api/arena.ts` → `ArenaState`; `src/features/arena/ArenaPage.tsx` (the `seatless` derivation); docs/ARENA_FEATURE.md § 2.3 and § 8 |
 
 ## Recently closed
 

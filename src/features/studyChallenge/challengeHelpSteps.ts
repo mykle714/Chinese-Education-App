@@ -11,20 +11,30 @@
  * a slot with no file yet renders the labelled placeholder frame, which is a legible
  * intermediate state rather than a broken image.
  *
- * Depended on by: ChallengeHelpPopup.
+ * Depended on by: ChallengeDetailPage, which renders these through the shared
+ * `SteppedHelpPopup` (src/components).
  */
+import { makeShotResolver, type HelpStep } from "../../components/steppedHelp";
 
-export interface ChallengeHelpStep {
-    /** The line over the image — what this step is about. */
-    heading: string;
-    /** Filename in `src/assets/challengeHelp/`. */
-    shot: string;
-    /** What the shot should show, used as the placeholder caption until it exists. */
-    shotDescription: string;
-    /** The instruction under the image. */
-    title: string;
-    body: string;
-}
+/**
+ * The step shape is the shared component's. Re-exported under the old name so this
+ * feature's own modules keep reading in its vocabulary.
+ */
+export type ChallengeHelpStep = HelpStep;
+
+/**
+ * Every screenshot in `src/assets/challengeHelp/`, resolved at build time.
+ *
+ * The glob lives HERE rather than in the popup because Vite needs a literal pattern
+ * resolved relative to the file it is written in — a shared component cannot glob a
+ * feature's assets. Adding a step is a data change in this file plus a dropped file.
+ */
+const SHOTS = import.meta.glob<{ default: string }>(
+    "../../assets/challengeHelp/*.{png,jpg,jpeg,webp}",
+    { eager: true }
+);
+
+export const resolveChallengeShot = makeShotResolver(SHOTS);
 
 /**
  * "How to study this deck" (F20).

@@ -50,6 +50,9 @@ interface NodePageProps {
     // is a ceiling on its descendants, so without this a sideways swipe inside the page
     // does nothing at all. See the note on MobileTabScreen's ScrollArea.
     horizontalPan?: boolean;
+    // Wrap the page header in this page's own chrome — see MobileTabScreen.wrapHeader.
+    // /arena uses it to draw the header inside its full-bleed division banner.
+    wrapHeader?: (header: ReactNode) => ReactNode;
     /**
      * Frame-level furniture rendered as a SIBLING of the scroll area, not inside it:
      * a pull-up `SheetPanel`, a peek lip, a floating overlay.
@@ -78,6 +81,7 @@ const NodePage: React.FC<NodePageProps> = ({
     scrollable,
     topFade,
     horizontalPan,
+    wrapHeader,
     overlay,
     children,
 }) => {
@@ -103,6 +107,7 @@ const NodePage: React.FC<NodePageProps> = ({
                 scrollable={scrollable}
                 topFade={topFade}
                 horizontalPan={horizontalPan}
+                wrapHeader={wrapHeader}
             >
                 {children}
             </MobileTabScreen>

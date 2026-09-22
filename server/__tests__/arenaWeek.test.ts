@@ -6,6 +6,7 @@ import {
   isBreakPeriod,
   arenaWeekKey,
   nextArenaWeekKey,
+  nextArenaOpensAt,
   resolveTimezone,
   ARENA_WEEK_START_HOUR,
   ARENA_CLOSE_HOUR,
@@ -20,13 +21,32 @@ import {
  * the design actually promises the user.
  */
 
+/**
+ * One formatter per zone, built once.
+ *
+ * ⚠️ NOT a micro-optimisation. These tests sample thousands of instants across a full
+ * year in seven zones, and constructing an `Intl.DateTimeFormat` is by far the most
+ * expensive thing in the loop — it dominated the file's runtime and made the suite time
+ * out under parallel load once `nextArenaOpensAt`'s cases were added. Reuse is ~20x.
+ */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(tz: string): Intl.DateTimeFormat {
+  let fmt = FORMATTERS.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23',
+    });
+    FORMATTERS.set(tz, fmt);
+  }
+  return fmt;
+}
+
 /** Read an instant back as local wall-clock parts, for assertions. */
 function localOf(instant: Date, tz: string) {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23',
-  });
+  const fmt = formatterFor(tz);
   const bag: Record<string, string> = {};
   for (const p of fmt.formatToParts(instant)) {
     if (p.type !== 'literal') bag[p.type] = p.value;
@@ -216,5 +236,56 @@ describe('resolveTimezone', () => {
     expect(resolveTimezone('')).toBe('UTC');
     expect(resolveTimezone(undefined)).toBe('UTC');
     expect(resolveTimezone(42)).toBe('UTC');
+  });
+});
+
+describe('nextArenaOpensAt', () => {
+  it('always lands on a FUTURE Tuesday at 04:00 local, in every zone', () => {
+    for (const tz of ZONES) {
+      // A 19-hour stride across a full year: coprime with 24, so it walks every hour
+      // of every weekday and still crosses both DST transitions. (7 was the original
+      // stride and made this the slowest test in the suite — it timed out under full
+      // -suite load while passing when run alone.)
+      for (let h = 0; h < 24 * 365; h += 19) {
+        const now = new Date(Date.UTC(2026, 0, 1, 0, 0) + h * 3600_000);
+        const opens = nextArenaOpensAt(now, tz);
+        const local = localOf(opens, tz);
+
+        expect(local.weekday).toBe('Tue');
+        expect(local.hour).toBe(ARENA_WEEK_START_HOUR);
+        expect(local.minute).toBe(0);
+        // Strictly future: a countdown to "now" would render 0s forever.
+        expect(opens.getTime()).toBeGreaterThan(now.getTime());
+      }
+    }
+  });
+
+  it('is never more than a week away', () => {
+    for (const tz of ZONES) {
+      for (let h = 0; h < 24 * 90; h += 11) {
+        const now = new Date(Date.UTC(2026, 2, 1, 0, 0) + h * 3600_000);
+        const ms = nextArenaOpensAt(now, tz).getTime() - now.getTime();
+        // Up to 7 days plus an hour of DST slack in either direction.
+        expect(ms).toBeLessThanOrEqual(7 * 86400_000 + 3600_000);
+      }
+    }
+  });
+
+  it('agrees with nextArenaWeekKey', () => {
+    for (const tz of ZONES) {
+      for (let h = 0; h < 24 * 30; h += 7) {
+        const now = new Date(Date.UTC(2026, 5, 1, 0, 0) + h * 3600_000);
+        expect(arenaWeekKey(nextArenaOpensAt(now, tz), tz)).toBe(nextArenaWeekKey(now, tz));
+      }
+    }
+  });
+
+  it('at exactly Tuesday 04:00 points at the FOLLOWING Tuesday, not today', () => {
+    // The week that opens at this instant is the one now running, so the "next" one
+    // a learner can still join is seven days out.
+    const tz = 'UTC';
+    const openNow = arenaWeekStart(new Date('2026-03-10T04:00:00Z'), tz);
+    expect(localOf(openNow, tz).date).toBe('2026-03-10');
+    expect(localOf(nextArenaOpensAt(openNow, tz), tz).date).toBe('2026-03-17');
   });
 });

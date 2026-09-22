@@ -44,7 +44,7 @@
  * bar — the same 74px of missing buttons, by a different route.
  *
  * Callers: `SheetPanel` (the flp eip, the decks sheet, scp, both cdps and the compare
- * sheet — `src/components/sheet/SheetPanel.tsx`), `ChallengeSheet` and `ChallengeHelpPopup`
+ * sheet — `src/components/sheet/SheetPanel.tsx`), `ChallengeSheet` and `SteppedHelpPopup`
  * (Study Challenge). Documented in docs/UX_AND_NAVIGATION.md.
  *
  * LAYER: shared UI utility. It knows about the phone frame and about stacking
